@@ -4,12 +4,14 @@ date: 2026-05-27
 target_release: 0.7.0
 desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
 blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323 (read_search_in_tx hot SQL; Pack 2 rewrite); src/rust/crates/fathomdb-engine/src/lib.rs:2846 (_fathomdb_vector_rows writer insert; Pack 1 double-write); src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283 (vector_default CREATE VIRTUAL TABLE; Pack 1 schema migration); src/rust/crates/fathomdb-engine/src/lib.rs:3107 (register_sqlite_vec_extension; unchanged but inspected); src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260 (_fathomdb_embedder_profiles; UNCHANGED — embedder contract preserved); src/rust/crates/fathomdb-engine/src/lib.rs:2174,2242 (writer-loop pins; unchanged); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150 (AC013_BUDGET_P50/P99 re-pin in Pack 2); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487 (ac_013_vector_retrieval_latency); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609 (ac_019_mixed_retrieval_stress_workload_tail); src/rust/crates/fathomdb-engine/tests/perf_gates.rs new ac_NNN_recall_at_10 test (Pack 2); src/rust/crates/fathomdb-engine/Cargo.toml:18 (sqlite-vec pin; stays =0.1.7); dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md (numeric lock-flip target, post Pack 2); dev/notes/pcache2-followups.md (post-0.7.0 ANN follow-ups)
-status: draft, HITL-required
+status: locked (HITL-ratified; 0.7.2 PR-2 recall reframe — ANN fidelity 0.937, floor 0.90 holds)
 ---
 
 # ADR-0.7.0 — Vector binary quantization (Pack 1 + Pack 2)
 
-**Status:** draft, HITL-required.
+**Status:** locked — HITL-ratified. The § 2 recall claim was reframed by 0.7.2
+PR-2 (the 0.828 reading was a measurement artifact; corrected ANN-fidelity is
+recall@10 = 0.937, CI 0.913–0.957, and the floor is kept at 0.90).
 
 This ADR records the data-encoding decision that closes AC-013
 within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is

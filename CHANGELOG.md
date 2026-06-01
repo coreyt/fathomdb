@@ -12,6 +12,122 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.7.2 - unreleased (IN PROGRESS)
+
+RELEASE-HARDENING. The campaign that takes the held 0.7.0 + 0.7.1 work to a
+pushable release: a doc-drift sweep, embedder concurrency hardening, a recall-
+floor reframe (the "recall gap" was a measurement artifact, not a defect), and
+a tiered real-corpus latency budget. **Not released. In progress** — Phase A
+slices PR-1, PR-2(family), PR-9, PR-3 have landed on local `main` (unpushed);
+**PR-4 (the slice that writes the final release notes, creates the `v0.7.1`
+tag, and pushes `main` + both tags) has NOT run.** PR-5/6/7/8 (test/perf
+hardening + campaign closure) are NOT started. Both `v0.7.0` and `v0.7.1` remain
+held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
+
+### Added
+
+- **Embedder concurrency hardening (PR-9, `21f4df6`).** Closes the two
+  robustness items EU-5f surfaced on the projection embed path:
+  - **Invariant-5 per-embed watchdog.** `embed_with_watchdog` runs each embed
+    on a detached thread under a deadline (30 s default, configurable); a hung
+    embed surfaces `RuntimeEmbedderError::Timeout` into the existing retry/
+    failure path instead of parking a projection worker. Panic-transparent
+    (preserves the EU-5f `ProjectionPanic` path).
+  - **Engine-side embed serialization.** An `embed_serialize` guard invokes the
+    shared `Arc<dyn Embedder>` one call at a time. Justified on **safety**
+    (caller-supplied pyo3/napi embedders are `Sync`-only by contract and may not
+    be concurrency-safe), not throughput — it is throughput-neutral on the
+    candle default (candle uses one process-wide rayon pool; the earlier "~13×"
+    throughput rationale was withdrawn).
+  - **Circuit breaker.** `live_embed_threads` counts watchdog threads currently
+    alive; at `embed_circuit_threshold` (8) the breaker latches and jobs fail
+    fast without spawning, bounding the abandoned-thread leak that Invariant-5's
+    no-abort rule makes unavoidable. Keyed on *concurrent* live threads (not a
+    consecutive-timeout streak) so it bounds intermittent hangs and self-clears
+    for slow-but-returning embeds.
+  - codex: 5 passes, BLOCK→PASS (the pass-4 BLOCK on the original consecutive-
+    timeout breaker design was not overridden — it was redesigned to the live-
+    thread-count form above).
+- **Per-push read-path smoke (PR-3, `d9f9b65`).** New always-on,
+  fixture-independent canary `perf_gates::ac_013_vector_read_path_smoke`: an
+  exact-match sentinel must rank 1 through the two-phase bit-KNN + f32 rerank
+  path. No `AGENT_LONG`, `default-embedder` feature, or corpus needed — this is
+  the CI guard that replaces the infeasible canonical N=1M perf run.
+
+### Changed
+
+- **Recall floor reframe — 0.90 HOLDS, now correctly validated (PR-2 family,
+  `78164b9`/`a154037`).** The AC-013b recall@10 "gap" measured at 0.7.1
+  (0.828) was a **measurement artifact** — exclude-after-top-10 plus
+  body-string ground truth over a corpus with ~5.6 % duplicate bodies — **not**
+  an engine deficiency. The corrected ANN-fidelity measurement (exclude the
+  query-source doc *before* top-10; dedup-by-id GT) on the real default embedder
+  (bge-small, N=7,667, K=192, mean-centering) is **recall@10 = 0.937 (CI
+  0.913–0.957, σ=0.0116)**; the full CI clears the 0.90 floor, so the floor is
+  **kept at 0.90, not raised**. This number is **ANN/quantization fidelity**
+  (how faithfully the 1-bit sign-quant index reproduces the same model's exact
+  f32 top-10), **not IR relevance**. The separate embedder IR-relevance ceiling
+  (recall@10 ≈ 0.571, CI 0.530–0.614, on 301 labeled queries) is **not a gate**.
+  `ADR-0.7.0-vector-binary-quant.md` § 2 point 4 was amended to cite the
+  corrected measurement; a fast sentinel `ac_013b_floor_matches_adr` pins the
+  test constant to the ADR. Evidence: `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`,
+  `dev/plans/runs/0.7.2-PR-3-perf-data.md`.
+- **Tiered AC-013 / AC-019 latency budget (PR-3, `d9f9b65`; HITL 2026-06-01).**
+  The vec0 bit-KNN candidate stage is a per-query **O(N) linear scan** (no ANN
+  index), so a single N-independent latency budget is not meaningful. The budget
+  is now **tiered**: the **10,000-row tier is the binding release gate for the
+  0.x and 1.x lines** (`AC013_GATE_N = 10000`; AC-013 asserts 80/300 ms only at
+  `n ≤ gate`, reports above it). The **100k and 1M tiers are tracked targets**
+  for post-1.0 (pre-2.1) ANN-index work, not gated. `ADR-0.7.0-text-query-
+  latency-gates-revised.md` was amended with the tiered table and HITL-locked.
+- **Latency/recall measurement is now LOCAL once-per-release** (PR-3). Real-
+  embedder canonical N=1M is infeasible on CI (~166 h seed at the PR-9-measured
+  1.67 docs/s vs a 240-min workflow timeout; the synthetic 1M seed also did not
+  drain in 3 h locally). Heavy measurement runs locally; CI carries only the
+  read-path smoke above.
+- **Synthetic AC-019 perf gate is now REPORT-ONLY** (PR-3;
+  `perf_gates::ac_019_mixed_retrieval_stress_workload_tail`,
+  `AC019_REPORT_ONLY`). The synthetic isotropic fixture cannot meet the
+  `max(baseline_p99 × 10, 150 ms)` bound — a property of the synthetic data
+  (instant embed → unrealistically fast baseline → too-tight 10× bound), not the
+  engine. The asserting AC-019 signal lives in the real-corpus harness
+  `eu7_real_corpus_ac.rs`, which PASSES at the 10k tier (clean run 343 ms <
+  405 ms bound). AC-013 keeps its hard 10k-tier gate.
+- **Architecture/design/ADR docs aligned to shipped 0.7.x reality (PR-1,
+  `aebf959`).** Doc-drift sweep: 10 HITL-approved corrections across design,
+  architecture, and ADR docs. Docs-only.
+
+### Deferred
+
+- **Automatic in-ingest mean-drift detector → 0.8.x** (PR-2 family,
+  `64f72e0`/`2ef8c3d`). The adaptive mean-recompute drift detector was built and
+  ratified, then **carved out** because its sole justification (recall) collapsed
+  with the measurement-artifact finding and its benefit is unmeasured. It is
+  parked for 0.8.x behind a RED guard (`dev/plans/prompts/0.8.x-auto-mean-drift-
+  DEFERRED.md`), not silently dropped. The **manual doctor verb** (operator-
+  triggered mean recompute) ships.
+- **AC-013/AC-019 at 100k and 1M corpus** — tracked, not gated, pending a
+  post-1.0 ANN index (HNSW/IVF/DiskANN) on the vec0 table to take per-query cost
+  from O(N) to O(log N)/O(√N). (See Known limitations.)
+
+### Removed
+
+(none)
+
+### Known limitations
+
+- **No ANN index — vector search is O(N).** The vec0 bit-KNN candidate stage is
+  a per-query linear scan over all N rows; there is no HNSW/IVF/DiskANN index.
+  The 10k latency tier is met (real bge p50 36 / p99 49 ms at N≈7,667); 100k is
+  ~147 ms p50 (synthetic 384-d) and 1M extrapolates to ~1.5 s — i.e. the 80 ms
+  p50 budget is not met above ~50k. The ANN index is the named post-1.0,
+  pre-2.1 follow-up. (unverified: the exact post-1.0 milestone for the ANN index
+  is named as "post-1.0 / pre-2.1" in the ADRs but no dated milestone exists.)
+- **1M real-corpus recall/latency not freshly measured.** ~166 h seed makes it
+  infeasible on this hardware; 0.937 @ N=7,667 is treated as an upper-ish bound
+  (recall decreases slowly with N) and the 1M latency tier is an O(N)
+  extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
+
 ## 0.7.1 - unreleased
 
 EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
@@ -84,18 +200,101 @@ campaign; the `v0.7.1` tag/push is cut there. See
 
 ### Known limitations
 
-- **Real-corpus recall caveat.** Dev-box scouting over the 7,667-doc corpus
-  measured recall@10 ~0.83 (95% CI ~0.80–0.86) — below the synthetic-fixture
-  0.90 gate. The synthetic AC-013b gate still passes; the real-corpus floor has
-  not been re-derived and canonical N=1M validation has not run. Both are 0.7.2
-  work (RELEASE-HARDENING PR-2/PR-3). Do not rely on a specific real-corpus
-  recall number from this pre-release.
+- **Real-corpus recall caveat (SUPERSEDED in 0.7.2 — see below).** At 0.7.1
+  measurement time, dev-box scouting over the 7,667-doc corpus measured
+  recall@10 ~0.828 (95% CI ~0.80–0.86) — below the 0.90 floor — and the floor
+  re-derivation + canonical validation were deferred to 0.7.2 (PR-2/PR-3).
+  **This 0.828 was later shown to be a measurement artifact** (exclude-after +
+  body-string ground truth). The corrected ANN-fidelity number is **0.937 (CI
+  0.913–0.957)** and the 0.90 floor HOLDS; see the 0.7.2 "Changed" section and
+  `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`. Do not cite the 0.828
+  number; it is superseded.
 - **Topic-drift mean.** Because the mean is pinned on the first 256 ingested
   docs and never recomputed, a workspace whose first 256 docs are
   unrepresentative may under-center. Remedy is reindex (a later campaign).
 - **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
   fail closed when re-opened with the default embedder (identity mismatch, by
   design). The remedy is wipe-and-rewrite; there is no in-place swap.
+
+## 0.7.0 - unreleased
+
+PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
+is **binary vector quantization + f32 rerank** to bring vector retrieval latency
+(AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
+local `v0.7.0` tag was cut, **but the tag is HELD locally and not pushed** —
+0.7.2 PR-4 pushes `main` and both the `v0.7.0` and `v0.7.1` tags together. Do
+not treat 0.7.0 as shipped. AC-013b recall was held OPEN at 0.7.0 ship
+(synthetic isotropic fixture cannot reach the floor; real-embedder validation
+deferred to 0.7.1). Ledger: `dev/plans/runs/STATUS-perf-vector-quant.md`;
+decision: `ADR-0.7.0-vector-binary-quant.md`.
+
+### Added
+
+- **Binary vector quantization (Pack 1).** `vector_default` gains a sibling
+  `embedding_bin bit[768]` column computed via sqlite-vec `vec_quantize_binary`
+  inside the same writer transaction as the f32 insert (double-write at both
+  insert sites). The f32 `embedding` column is retained for the rerank phase and
+  the recall ground-truth pass. Schema migration step 9
+  (`migrations/009_vector_binary_quant.sql`) with an unknown-kind preflight
+  CHECK; dim-aware in-place reshape (`migrate_vector_partition_to_pack1`).
+  Commits: `9b9f840`, `f5da3e4`, `7d4aa2c`, `d96c4b0` (RED).
+- **`source_type` partition key + metadata columns (Pack 1).** vec0
+  partition_key `source_type` (cardinality ~6: email/article/paper/meeting/
+  note/todo) mapped from vector kind at write time via `resolve_source_type`
+  (6-value HITL lock, `doc→article` coercion), plus `kind`/`created_at`/`tags`/
+  `project_mentions` metadata within the vec0 16-column budget. This is the
+  correct shape for real workloads (single-kind AC-013 fixture sees no benefit;
+  bundled to avoid a second migration).
+- **Two-phase query path (Pack 2).** `read_search_in_tx` replaced the
+  single-phase f32 brute-force scan with two-phase **bit-KNN
+  (`TOP_K_BIT_CANDIDATES`, K=64 at 0.7.0; raised to 192 in 0.7.1) + f32 rerank
+  via `vec_distance_l2`**, in a single Deferred read transaction. Commit
+  `26ef3dc`.
+- **Real-corpus test corpora (CORPUS-1..4).** ~7,667-doc multi-source corpus
+  under `data/corpus-data/` (CNN/DailyMail, Enron, QMSum, EnronQA, synthetic
+  notes/todos/daily-logs) + cross-doc chain generator + ingest harness +
+  search-validation gates. Commits across `5c1e92a`..`d9a219d`.
+- **New perf-gates recall test.** `ac_013b_recall_at_10_floor` asserts
+  recall@10 ≥ 0.90 against in-test f32 brute-force ground truth (`d468999`).
+
+### Changed
+
+- **AC-013 latency budget re-pinned to 80 / 300 ms** (`AC013_BUDGET_P50/P99`,
+  `d468999`), superseding the 50 / 200 ms unindexed-path values. Tracked in
+  `ADR-0.7.0-text-query-latency-gates-revised.md`.
+- **Projection scanner throughput fix** (`53a270d`): `PROJECTION_INFLIGHT_LIMIT`
+  raised 8→32 and the dispatcher now fills the full inflight budget per scan
+  cycle (was one job per cycle). Dev-box AC-013 seed dropped ~11× (28.1 s → 2.5 s
+  at N=10K).
+
+### Fixed
+
+- **`engine.write` batch-collapse bug** (`4a95cfd`). `write_inner` now allocates
+  one write cursor per row in a batch, so a batch of N produces N distinct vec0
+  rows (previously collapsed to ~1 unique row, which masked the recall/scanner
+  issues with a degenerate recall=1.0). Regression test
+  `tests/batch_write_per_row_cursor.rs`.
+
+### Deferred / known gaps at 0.7.0 ship
+
+- **AC-013b recall@10 ≥ 0.90 — held OPEN, not retconned.** The synthetic
+  `VaryingEmbedder` fixture cannot reach the floor: sparse (6 of 768 coords)
+  scored 0.1572; dense isotropic (`38f5e3a`) scored 0.5124 — the isotropic-noise
+  floor, since random vectors carry no semantic structure for sign-bit ANN. Only
+  real embeddings can validate the floor, deferred to 0.7.1 EMBEDDER-UNDEFER
+  EU-7. 0.7.0 ships the **latency** win (the load-bearing AC-013 closure) with
+  recall surfaced as a known gap.
+- **Canonical N=1M validation + numeric budget lock** deferred (the seed cost is
+  itself the gate). Later reframed in 0.7.2 PR-3 to a tiered, local-measurement
+  posture.
+- **AC-020 architectural lever** (`ADR-0.7.0-ac020-architectural-lever`,
+  status `draft, HITL-required`) — PCACHE2 remains the named 0.7.0 architectural
+  lever; the binary-quant change is explicitly a data-encoding change, not a
+  second lever.
+
+### Removed
+
+(none)
 
 ## 0.6.1 - 2026-05-25
 

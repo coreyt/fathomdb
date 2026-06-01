@@ -4,12 +4,14 @@ date: 2026-05-25
 target_release: 0.7.0
 desc: Revised AC-012 / AC-013 / AC-019 / AC-020 latency budgets, pinned empirically against canonical-runner measurements at 1M corpus on tier-1 x86_64 ubuntu-latest. Supersedes ADR-0.6.0-text-query-latency-gates for AC-012.
 blast_radius: dev/test-plan.md § Current Perf Attribution; src/rust/crates/fathomdb-engine/tests/perf_gates.rs; .github/workflows/perf-canonical.yml; CI perf gate; dev/requirements.md REQ-010
-status: draft, HITL-required
+status: locked (AC-013/AC-019 tiered budget HITL-locked 2026-06-01; AC-012/AC-020 remain per their own slices)
 ---
 
 # ADR-0.7.0 — Text-query latency gates (revised)
 
-**Status:** draft, HITL-required.
+**Status:** locked — AC-013 / AC-019 tiered budget HITL-locked (2026-06-01,
+0.7.2 PR-3). AC-012 and AC-020 remain as originally drafted, owned by their own
+slices (this lock does not flip their status).
 
 This is the 0.7.0 successor to
 `dev/adr/ADR-0.6.0-text-query-latency-gates.md`. It revises the
