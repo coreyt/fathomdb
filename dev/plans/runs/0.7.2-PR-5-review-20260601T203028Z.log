@@ -1,0 +1,2130 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e84e1-73a3-7253-8ef8-c5efda1e3f86
+--------
+user
+RE-REVIEW (pass 3) of fathomdb 0.7.2 slice PR-5 (corpus test harness). Working
+tree, uncommitted.
+
+Pass-1 BLOCK: silent cold/partial cache-miss (runtime) + no test. FIXED in pass-2
+(you confirmed the runtime fix is correct).
+Pass-2 BLOCK: the PRESENT-BUT-STALE branch of read_cache (identity / doc_manifest_sha
+mismatch Err returns) was not locked by any test, because changing identity/manifest
+also changes the cache filename, so those cases only exercised fresh cold paths.
+
+Pass-3 fix (tests/corpus_harness.rs, in corpus_harness_cache_invalidation):
+  - Added case (1c): write a cold rev-S cache, then TAMPER the sidecar's
+    `doc_manifest_sha` IN PLACE (filename / cache key unchanged), reconstruct the
+    same fixture, and assert the reload is a loud miss with `cache_miss_reason`
+    containing "mismatch" and embed_cache_hit == false. This drives the
+    present-but-stale validation branch directly: if those mismatch checks were
+    regressed to a silent Ok(None)/Ok(Some) fallback, this assertion fails.
+
+Confirm the pass-2 BLOCK is resolved:
+  - Does case (1c) genuinely exercise the present-but-stale branch (file present at
+    the keyed path, meta contents mismatched) rather than a cold/new-path miss?
+  - Would the suite go red if the identity/manifest mismatch checks were regressed
+    to a silent fallback?
+  - Any NEW regression introduced by the added test?
+
+Verdict: PASS, CONCERN, or BLOCK. Read-only sandbox; do not write a verdict file.
+
+codex
+Reviewing the uncommitted PR-5 slice against the pass-2 block. I’m reading the repo’s memory and decision context first, then I’ll inspect the harness diff and trace whether the new case actually hits the present-but-stale branch.
+exec
+/bin/bash -lc 'pwd && rg -n "''^#|feedback_.*'"\\.md|MEMORY\" MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+/home/coreyt/projects/fathomdb
+rg: MEMORY.md: IO error for operation on MEMORY.md: No such file or directory (os error 2)
+
+exec
+/bin/bash -lc 'git status --short' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ M CHANGELOG.md
+ M dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md
+ M src/rust/crates/fathomdb-engine/tests/corpus_fts.rs
+ M src/rust/crates/fathomdb-engine/tests/corpus_graph.rs
+ M src/rust/crates/fathomdb-engine/tests/corpus_vector.rs
+ M src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs
+?? dev/design/agent-memory-impl-strategy.md
+?? dev/plans/prompts/0.7.2-PR-4-release-notes-and-push.md
+?? dev/plans/prompts/0.7.2-PR-5-corpus-harness.md
+?? dev/plans/runs/0.7.2-PR-5-review-20260601T201906Z.log
+?? dev/plans/runs/0.7.2-PR-5-review-20260601T202501Z.log
+?? dev/plans/runs/0.7.2-PR-5-review-20260601T203028Z.log
+?? dev/plans/runs/agent-memory-impl-strategy.wf.js
+?? src/rust/crates/fathomdb-engine/tests/corpus_harness.rs
+?? src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs
+
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|feedback_.*'"\\.md"'$|tests/corpus_harness'"\\.rs"'$|corpus_harness|read_cache|doc_manifest_sha|cache_miss_reason|embed_cache_hit'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs
+
+codex
+`MEMORY.md` is not at repo root, so I’m locating the actual memory file and then reading the specific feedback docs it points to before I assess the new harness case. After that I’ll inspect the uncommitted test file and the cache-validation path together.
+exec
+/bin/bash -lc "rg --files -g 'MEMORY.md' -g 'feedback_*.md'" in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "rg -n \"read_cache|doc_manifest_sha|cache_miss_reason|embed_cache_hit|identity|mismatch|sidecar\" src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs src/rust/crates/fathomdb-engine/tests/corpus_harness.rs src/rust/crates/fathomdb-engine -g '"'!target'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:30:    assert!(!report.embed_cache_hit, "expected a cold-cache miss on first ingest");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:33:        report.cache_miss_reason.as_deref(),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:68:    // Same identity + same subset => same cache filename.
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:89:    assert!(rw.embed_cache_hit, "warm run did not hit the cache");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:91:    assert!(rw.cache_miss_reason.is_none(), "warm hit must not report a miss reason");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:94:/// Cache invalidates on embedder-identity change AND on subset-content
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:115:        "identity change did not change the cache key — STALE-CACHE RISK"
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:117:    assert!(!rb.embed_cache_hit, "identity change reused a stale cache");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:118:    assert!(rb.embedded_live > 0, "identity change did not re-embed");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:120:        rb.cache_miss_reason.is_some(),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:121:        "identity-change miss must be loud (reason surfaced)"
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:128:    assert!(ra2.embed_cache_hit, "rev-A warm re-run was not a cache hit");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:129:    assert!(ra2.cache_miss_reason.is_none(), "rev-A warm re-run wrongly reported a miss");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:131:    // (1b) A PARTIAL cache (sidecar deleted, blob present) is a loud miss,
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:134:    fs::remove_file(&meta).expect("remove sidecar");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:138:    assert!(!ra3.embed_cache_hit, "partial cache was wrongly treated as a hit");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:140:        ra3.cache_miss_reason.as_deref().is_some_and(|r| r.contains("partial")),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:142:        ra3.cache_miss_reason
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:145:    // (1c) A PRESENT-but-STALE cache is a loud miss via read_cache's
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:146:    // manifest/identity validation — NOT a silent fallback. The key-based
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:147:    // cases above can't reach this branch (changing identity/manifest also
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:148:    // changes the filename), so we tamper a sidecar IN PLACE (filename
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:154:    assert!(!rs1.embed_cache_hit, "first rev-S ingest should be a cold write");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:160:    meta["doc_manifest_sha"] = serde_json::Value::String("0".repeat(64));
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:166:    assert!(!rs2.embed_cache_hit, "present-but-stale cache was wrongly trusted");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:168:        rs2.cache_miss_reason.as_deref().is_some_and(|r| r.contains("mismatch")),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:169:        "stale-cache miss must be loud with a mismatch reason, got {:?}",
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:170:        rs2.cache_miss_reason
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:189:    assert!(!rd.embed_cache_hit, "subset-content change reused a stale cache");
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:26://!   keyed — and INVALIDATED — by the embedder identity AND the resolved
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:71:/// Tool-version stamp embedded in the cache sidecar (for diagnostics).
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:74:/// `VaryingEmbedder::new` identity so Pack-4 tests migrate with no
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:91:    pub embed_cache_hit: bool,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:97:    /// `"identity mismatch"`). `None` on a trusted warm hit. Mirrors the
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:99:    pub cache_miss_reason: Option<String>,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:243:    /// Test seam: override the synthetic embedder's identity revision
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:246:    /// the cache-invalidation test to prove an identity change rebuilds the
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:345:            embed_cache_hit: cache_hit,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:347:            cache_miss_reason: embedder.miss_reason.clone(),
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:439:                let identity = inner.identity();
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:441:                Arc::new(CachingEmbedder::load(inner, identity, cache_dir, &self.label, &self.docs))
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:448:            EmbedderKind::Synthetic => Arc::new(VaryingEmbedder::with_identity(
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:488:/// cache keyed by `sha256(identity || subset_label || doc-id manifest)`.
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:494:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:499:    doc_manifest_sha: String,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:515:        identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:520:        let doc_manifest_sha = doc_manifest_sha(docs);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:521:        let key = cache_key(&identity, subset_label, &doc_manifest_sha);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:525:        // Every miss — cold (no file), partial (blob xor sidecar), or
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:530:            match read_cache(&cache_path, &meta_path, &identity, &doc_manifest_sha) {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:544:            identity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:548:            doc_manifest_sha,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:579:        let dim = self.identity.dimension as usize;
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:588:        blob.extend_from_slice(&(self.identity.dimension).to_le_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:592:            debug_assert_eq!(v.len(), dim, "cached vector dim mismatch");
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:604:            "identity": {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:605:                "name": self.identity.name,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:606:                "revision": self.identity.revision,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:607:                "dimension": self.identity.dimension,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:610:            "doc_manifest_sha": self.doc_manifest_sha,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:611:            "dim": self.identity.dimension,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:623:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:624:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:649:fn doc_manifest_sha(docs: &[Doc]) -> String {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:662:/// Any of identity (name/revision/dim), subset label, or doc-manifest
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:664:fn cache_key(identity: &EmbedderIdentity, label: &str, doc_manifest_sha: &str) -> String {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:666:    h.update(identity.name.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:668:    h.update(identity.revision.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:670:    h.update(identity.dimension.to_le_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:674:    h.update(doc_manifest_sha.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:689:/// (blob xor sidecar) — a partial cache is a loud miss, never silently
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:692:fn read_cache(
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:695:    identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:696:    doc_manifest_sha: &str,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:705:            "partial cache (blob={blob_exists}, sidecar={meta_exists}) — treating as miss"
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:716:        return Err(format!("format_version mismatch (got {fmt:?})"));
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:718:    let m_name = meta.pointer("/identity/name").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:719:    let m_rev = meta.pointer("/identity/revision").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:720:    let m_dim = meta.pointer("/identity/dimension").and_then(serde_json::Value::as_u64);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:721:    if m_name != Some(identity.name.as_str())
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:722:        || m_rev != Some(identity.revision.as_str())
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:723:        || m_dim != Some(u64::from(identity.dimension))
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:725:        return Err("identity mismatch".to_string());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:727:    let m_manifest = meta.get("doc_manifest_sha").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:728:    if m_manifest != Some(doc_manifest_sha) {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:729:        return Err("doc_manifest_sha mismatch".to_string());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:733:    parse_blob(&blob, identity.dimension).map(Some)
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:748:        return Err(format!("blob format_version mismatch (got {fmt})"));
+src/rust/crates/fathomdb-engine/src/lib.rs:33:// EU-5b lock-flip: the engine's default embedder identity is now the
+src/rust/crates/fathomdb-engine/src/lib.rs:35:// `EmbedderChoice::Default` will fail-closed on identity mismatch per
+src/rust/crates/fathomdb-engine/src/lib.rs:36:// ADR-0.6.0-vector-identity-embedder-owned; callers can still hold an
+src/rust/crates/fathomdb-engine/src/lib.rs:43:/// is `true` iff the live embedder identity reports this name. NoopEmbedder
+src/rust/crates/fathomdb-engine/src/lib.rs:45:/// engine's default identity becomes bge-small) is a single-line change.
+src/rust/crates/fathomdb-engine/src/lib.rs:123:    runtime_embedder_identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:171:    embedder_identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:247:    /// the identity is MC-required AND no mean has been pinned yet on
+src/rust/crates/fathomdb-engine/src/lib.rs:284:            .field("embedder_identity", &self.embedder_identity)
+src/rust/crates/fathomdb-engine/src/lib.rs:301:            .field("runtime_embedder_identity", &self.runtime_embedder_identity)
+src/rust/crates/fathomdb-engine/src/lib.rs:580:                let (hit, miss, used) = read_cache_status(&connection);
+src/rust/crates/fathomdb-engine/src/lib.rs:598:        embedder_identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:602:        // workspace's identity is MC-required AND no mean has been pinned
+src/rust/crates/fathomdb-engine/src/lib.rs:607:        let mc_required = identity_requires_mean_centering(&embedder_identity);
+src/rust/crates/fathomdb-engine/src/lib.rs:609:            Some(MeanAccumulator::new(embedder_identity.dimension as usize))
+src/rust/crates/fathomdb-engine/src/lib.rs:616:            embedder_identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:764:    /// Static identity capability (`dev/design/embedder.md` §0.6). True
+src/rust/crates/fathomdb-engine/src/lib.rs:765:    /// iff the live embedder identity is the bge-small default, which is
+src/rust/crates/fathomdb-engine/src/lib.rs:766:    /// the only identity that ships with the EU-5a2 mean-centering apply
+src/rust/crates/fathomdb-engine/src/lib.rs:768:    /// caller-supplied identity. EU-5b's identity flip makes the Default
+src/rust/crates/fathomdb-engine/src/lib.rs:990:    /// `identity()` becomes the workspace's default-profile identity.
+src/rust/crates/fathomdb-engine/src/lib.rs:1026:                "embedder identity mismatch: stored {}@{}, supplied {}@{}",
+src/rust/crates/fathomdb-engine/src/lib.rs:1031:                "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
+src/rust/crates/fathomdb-engine/src/lib.rs:1073:                write!(f, "embedder dimension mismatch: expected {expected}, actual {actual}")
+src/rust/crates/fathomdb-engine/src/lib.rs:1227:/// Result of [`Engine::verify_embedder`]. `stored_identity` is the
+src/rust/crates/fathomdb-engine/src/lib.rs:1229:/// `supplied_identity` echoes the operator's input verbatim.
+src/rust/crates/fathomdb-engine/src/lib.rs:1232:    pub stored_identity: String,
+src/rust/crates/fathomdb-engine/src/lib.rs:1234:    pub supplied_identity: String,
+src/rust/crates/fathomdb-engine/src/lib.rs:1277:    pub embedder_identity: String,
+src/rust/crates/fathomdb-engine/src/lib.rs:1329:            default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1352:                let identity = embedder.identity();
+src/rust/crates/fathomdb-engine/src/lib.rs:1355:                    identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1364:                default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1399:        let identity = embedder.identity();
+src/rust/crates/fathomdb-engine/src/lib.rs:1403:            identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1425:            default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1443:            default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1458:            default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1472:            default_embedder_identity(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1485:        let identity = embedder.identity();
+src/rust/crates/fathomdb-engine/src/lib.rs:1488:            identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1498:        embedder_identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1507:            embedder_identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1518:        embedder_identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1529:            &embedder_identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1556:                    embedder_identity.clone(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1590:                        runtime_embedder_identity: embedder_identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1621:        embedder_identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:1637:        probe_wal_sidecar(&path)?;
+src/rust/crates/fathomdb-engine/src/lib.rs:1651:        let mut embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
+src/rust/crates/fathomdb-engine/src/lib.rs:1652:        ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
+src/rust/crates/fathomdb-engine/src/lib.rs:1657:        // the identity is MC-required, no mean is pinned, yet the workspace
+src/rust/crates/fathomdb-engine/src/lib.rs:1663:        if identity_requires_mean_centering(embedder_identity) && !embedder_mean_vec_pinned {
+src/rust/crates/fathomdb-engine/src/lib.rs:1668:                recover_mean_vec_pin(&mut connection, embedder_identity).map_err(|_| {
+src/rust/crates/fathomdb-engine/src/lib.rs:1678:        // Static identity capability — see `dev/design/embedder.md`
+src/rust/crates/fathomdb-engine/src/lib.rs:1679:        // §0.6. Today only the bge-small identity reports `true`; the
+src/rust/crates/fathomdb-engine/src/lib.rs:1680:        // noop scaffolding identity is `false`. EU-5b's identity flip
+src/rust/crates/fathomdb-engine/src/lib.rs:1682:        let embedder_mean_centering_required = embedder_identity.name == BGE_SMALL_EMBEDDER_NAME;
+src/rust/crates/fathomdb-engine/src/lib.rs:1693:            default_embedder: embedder_identity.clone(),
+src/rust/crates/fathomdb-engine/src/lib.rs:1911:        // mirrors the write path: identity must be MC-required AND a
+src/rust/crates/fathomdb-engine/src/lib.rs:1917:            Some(vector) if identity_requires_mean_centering(&self.runtime_embedder_identity) => {
+src/rust/crates/fathomdb-engine/src/lib.rs:1921:                    read_pinned_mean_vec(connection, self.runtime_embedder_identity.dimension)?
+src/rust/crates/fathomdb-engine/src/lib.rs:2341:        // vector iff the identity is MC-required AND a `mean_vec` is
+src/rust/crates/fathomdb-engine/src/lib.rs:2342:        // pinned. NoopEmbedder identity (the only EU-5a2 live one) is
+src/rust/crates/fathomdb-engine/src/lib.rs:2345:        let bin_blob = if identity_requires_mean_centering(&self.runtime_embedder_identity) {
+src/rust/crates/fathomdb-engine/src/lib.rs:2346:            match read_pinned_mean_vec(connection, self.runtime_embedder_identity.dimension)? {
+src/rust/crates/fathomdb-engine/src/lib.rs:2481:    /// identity (returns `EmbedderNotConfigured` rather than corrupting an
+src/rust/crates/fathomdb-engine/src/lib.rs:2485:        let identity = self.runtime_embedder_identity.clone();
+src/rust/crates/fathomdb-engine/src/lib.rs:2486:        if !identity_requires_mean_centering(&identity) {
+src/rust/crates/fathomdb-engine/src/lib.rs:2509:            let report = recompute_mean_in_tx_inner(&tx, &identity, fail)?;
+src/rust/crates/fathomdb-engine/src/lib.rs:2733:    /// `name:revision` identity + dimension; never raises on mismatch.
+src/rust/crates/fathomdb-engine/src/lib.rs:2736:        supplied_identity: &str,
+src/rust/crates/fathomdb-engine/src/lib.rs:2743:        let stored_identity = format!("{}:{}", stored.name, stored.revision);
+src/rust/crates/fathomdb-engine/src/lib.rs:2744:        let identity_match = stored_identity == supplied_identity;
+src/rust/crates/fathomdb-engine/src/lib.rs:2746:        let status = match (identity_match, dimension_match) {
+src/rust/crates/fathomdb-engine/src/lib.rs:2753:            stored_identity,
+src/rust/crates/fathomdb-engine/src/lib.rs:2755:            supplied_identity: supplied_identity.to_string(),
+src/rust/crates/fathomdb-engine/src/lib.rs:2794:    /// embedder identity + dimension plus the registered vectorized
+src/rust/crates/fathomdb-engine/src/lib.rs:2811:            embedder_identity: format!("{}:{}", stored.name, stored.revision),
+src/rust/crates/fathomdb-engine/src/lib.rs:3043:        debug_assert_eq!(v.len(), self.sum.len(), "accumulator dim mismatch");
+src/rust/crates/fathomdb-engine/src/lib.rs:3388:    if ensure_vector_partition(&mut connection, shared.embedder_identity.dimension).is_err() {
+src/rust/crates/fathomdb-engine/src/lib.rs:3455:    /// EU-5a2: `bin_blob == blob` unless the identity is MC-required
+src/rust/crates/fathomdb-engine/src/lib.rs:3646:        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+src/rust/crates/fathomdb-engine/src/lib.rs:3658:        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+src/rust/crates/fathomdb-engine/src/lib.rs:3844:            doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:3851:            doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:3961:    let embedder_identity = &shared.embedder_identity;
+src/rust/crates/fathomdb-engine/src/lib.rs:3962:    let mc = identity_requires_mean_centering(embedder_identity);
+src/rust/crates/fathomdb-engine/src/lib.rs:4134:    identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:4137:    recompute_mean_in_tx(&tx, identity)?;
+src/rust/crates/fathomdb-engine/src/lib.rs:4157:    identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:4159:    recompute_mean_in_tx_inner(tx, identity, false)
+src/rust/crates/fathomdb-engine/src/lib.rs:4168:    identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/src/lib.rs:4172:    let dim = identity.dimension as usize;
+src/rust/crates/fathomdb-engine/src/lib.rs:4175:    let old_mean = read_pinned_mean_vec(tx, identity.dimension)?;
+src/rust/crates/fathomdb-engine/src/lib.rs:4475:/// Pre-`pragma WAL` sidecar validation. SQLite silently discards a WAL
+src/rust/crates/fathomdb-engine/src/lib.rs:4481:fn probe_wal_sidecar(db_path: &Path) -> Result<(), EngineOpenError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:4489:    // sidecar would force an unclean-shutdown open path to allocate
+src/rust/crates/fathomdb-engine/src/lib.rs:4500:        // A short (< 32-byte) sidecar carries no committed frames;
+src/rust/crates/fathomdb-engine/src/lib.rs:4602:        .map(|identity| identity.dimension)
+src/rust/crates/fathomdb-engine/src/lib.rs:4683:/// the engine's sidecar `acquire_lock` at `open_with_migrations`
+src/rust/crates/fathomdb-engine/src/lib.rs:4741:/// EU-5a2 — does the live embedder identity request mean-centering?
+src/rust/crates/fathomdb-engine/src/lib.rs:4744:fn identity_requires_mean_centering(identity: &EmbedderIdentity) -> bool {
+src/rust/crates/fathomdb-engine/src/lib.rs:4745:    identity.name == BGE_SMALL_EMBEDDER_NAME
+src/rust/crates/fathomdb-engine/src/lib.rs:4785:    debug_assert_eq!(v.len(), mean.len(), "subtract_mean dim mismatch");
+src/rust/crates/fathomdb-engine/src/lib.rs:4817:fn default_embedder_identity() -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/src/lib.rs:4845:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4857:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4886:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4897:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4908:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4939:                doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:4948:            // closed via the existing identity-drift channel in both
+src/rust/crates/fathomdb-engine/src/lib.rs:5216:/// failures, type mismatches at the rusqlite layer) — those are not
+src/rust/crates/fathomdb-engine/src/lib.rs:5317:                        OpenStage::EmbedderIdentity => "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/src/lib.rs:5567:fn read_cache_status(
+src/rust/crates/fathomdb-engine/src/lifecycle.rs:55:/// identity or timing context per `dev/design/lifecycle.md` § Public event
+src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs:308:    // corpus (would catch a Pack-1/Pack-2 mismatch early).
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:17://!     are new helpers added for the WAL-replay and embedder-identity
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:75:    doc_anchor: "design/recovery.md#embedder-identity-drift",
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:135:fn ac_035a_embedder_identity_corruption_refuses_open() {
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:190:fn ac_035b_embedder_identity_shape() {
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:198:    assert_eq!(detail.kind, expected.kind, "kind mismatch");
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:199:    assert_eq!(detail.stage, expected.stage, "stage mismatch");
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:223:        "recovery_hint.code mismatch for {:?}",
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:228:        "recovery_hint.doc_anchor mismatch for {:?}",
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:389:// ── Finding 1: bounded WAL sidecar probe ────────────────────────────────────
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:391:// `probe_wal_sidecar` must only read the 32-byte WAL header, never the
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:392:// full sidecar. Without this guard, an unclean shutdown that leaves a
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:395:// latency + RSS regression on the open path. Test makes the WAL sidecar
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:399:fn probe_wal_sidecar_bounded_read() {
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:403:    // Seed a real DB so the open path reaches `probe_wal_sidecar`.
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:408:    let wal_path = corruption::wal_sidecar_path(&path);
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:416:    // rejects; the rest of the sidecar is sparse zeros. A full-file
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:442:        "probe_wal_sidecar took {elapsed:?} on a 256 MiB sidecar; \
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:102:fn mean_vec_dimension_mismatch_fails_closed_on_read() {
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:103:    let (_dir, path, opened) = open_noop("eu5a2_pinned_mismatch");
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:118:            .expect_err("dimension mismatch must fail closed");
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:136:fn mean_centering_apply_path_noop_when_identity_not_mc_required() {
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:137:    // NoopEmbedder identity is NOT mean-centering required. A vector
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:139:    // if a (spurious, non-default-identity) mean_vec were present. The
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:13:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:21:        Self { identity: EmbedderIdentity::new("excise-test", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:26:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:27:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:138:fn ac_048_rejects_stored_embedder_identity_mismatch() {
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:140:    let path = db_path(&dir, "identity");
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:146:    let err = Engine::open(&path).expect_err("identity mismatch must fail open");
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:151:            // EU-5b: default identity flipped to bge-small.
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:166:fn ac_048b_rejects_stored_embedder_dimension_mismatch() {
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:171:    // EU-5b: store the bge-small identity at a non-default dimension so the
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:182:    let err = Engine::open(&path).expect_err("dimension mismatch must fail open");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:16:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:24:            identity: EmbedderIdentity::new("deterministic", "perf-gates", dimension),
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:32:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:33:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:44:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:49:        Self { identity: EmbedderIdentity::new("routed", "perf-gates", dimension) }
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:54:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:55:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:59:        let mut vector = vec![0.0_f32; self.identity.dimension as usize];
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:355:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:361:        Self { identity: EmbedderIdentity::new("varying", "perf-gates-dense", dim), dim }
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:397:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:398:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:756:/// recall < 1 at scale. Uses the synthetic `VaryingEmbedder` (whose identity
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1119:/// across one AC-020 concurrent body. Writes a sidecar JSON to the
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1132:        .expect("G3_5_OUTPUT_PATH env var required for the G.3.5 sidecar JSON");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1227:    std::fs::write(&output_path, body).expect("write G.3.5 sidecar JSON");
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:14:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:20:        Self { identity: EmbedderIdentity::new("pack1-fixed", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:25:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:26:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/dump_profile.rs:2://! embedder identity + dimension plus the registered vectorized kinds.
+src/rust/crates/fathomdb-engine/tests/dump_profile.rs:13:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/dump_profile.rs:22:fn ac_040a_dump_profile_returns_stored_identity_and_dimension() {
+src/rust/crates/fathomdb-engine/tests/dump_profile.rs:31:    assert_eq!(report.embedder_identity, "model-a:rev-7");
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs:45:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs:54:            identity: EmbedderIdentity::new("probe", "rev-a", DIM),
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs:63:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs:64:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:27:fn open_with_embedder_choice_default_succeeds_with_bge_identity() {
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:30:    // workspace reports the bge-small identity. Cold-open downloads
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:62:    // NoopEmbedder's identity ("fathomdb-noop") does NOT require
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:63:    // mean-centering. EU-5b will flip the default identity to bge-small,
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:36://! it via `EmbedderChoice::Caller`. Because its identity name is
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:38://! engage exactly as they do for `EmbedderChoice::Default` (identity-
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:39://! gated; see `identity_requires_mean_centering`), the mean pins at
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:95:/// identity, and mean-centering behaviour are byte-identical to the bare
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:103:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:108:        let identity = inner.identity();
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:109:        Self { inner: Mutex::new(inner), identity }
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:114:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:115:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:698:        "must run against the real bge-small identity"
+src/rust/crates/fathomdb-engine/tests/dump_schema.rs:33:        assert_eq!(&leading_canonical[i], name, "canonical table ordering mismatch");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:14:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:23:            identity: EmbedderIdentity::new("deterministic", "rev-a", 384),
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:36:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:37:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:52:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:57:        Self { identity: EmbedderIdentity::new("routed", "rev-a", dimension) }
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:62:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:63:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:67:        let mut vector = vec![0.0_f32; self.identity.dimension as usize];
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:16:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:24:        Self { identity: EmbedderIdentity::new("rebuild", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:29:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:30:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:40:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:47:            identity: EmbedderIdentity::new("rebuild", "rev-a", dim),
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:54:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:55:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:2://! match / mismatch report against the stored embedder profile.
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:13:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:28:    let identity = EmbedderIdentity::new(name, revision, dim);
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:29:    let embedder: Arc<dyn Embedder> = Arc::new(StubEmbedder(identity));
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:38:fn ac_040a_matching_identity_and_dimension_returns_match() {
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:47:    assert_eq!(report.stored_identity, "model-x:rev-1");
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:49:    assert_eq!(report.supplied_identity, "model-x:rev-1");
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:54:fn ac_040a_mismatched_identity_returns_identity_mismatch() {
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:66:fn ac_040a_mismatched_dimension_returns_dimension_mismatch() {
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs:80:fn ac_040a_both_mismatched_returns_both_mismatch() {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:10:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:16:        Self { identity: EmbedderIdentity::new(name, revision, dimension), vector }
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:21:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:22:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:62:fn ac_030c_runtime_embedder_dimension_mismatch_is_rejected_before_vec_write() {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:63:    let (_dir, path) = fixture_path("runtime_dim_mismatch");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:76:    let (_dir, path) = fixture_path("rollback_dim_mismatch");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:95:fn open_persists_embedder_identity_exactly_as_supplied() {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:96:    let (_dir, path) = fixture_path("identity_persisted");
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:105:fn open_rejects_stored_identity_dimension_mismatch_with_supplied_embedder() {
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs:106:    let (_dir, path) = fixture_path("stored_profile_mismatch");
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:18://! embedder that reports the bge-small identity name (so the engine treats
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:35:// ── Deterministic bge-identity embedder (no candle, no network) ─────────
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:38:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:43:        Self { identity: EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM) }
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:48:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:49:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:76:/// Embedder that reports the bge identity but panics on the Nth `embed`
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:81:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:89:            identity: EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM),
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:97:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:98:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:30:    assert!(!report.embed_cache_hit, "expected a cold-cache miss on first ingest");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:33:        report.cache_miss_reason.as_deref(),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:68:    // Same identity + same subset => same cache filename.
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:89:    assert!(rw.embed_cache_hit, "warm run did not hit the cache");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:91:    assert!(rw.cache_miss_reason.is_none(), "warm hit must not report a miss reason");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:94:/// Cache invalidates on embedder-identity change AND on subset-content
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:115:        "identity change did not change the cache key — STALE-CACHE RISK"
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:117:    assert!(!rb.embed_cache_hit, "identity change reused a stale cache");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:118:    assert!(rb.embedded_live > 0, "identity change did not re-embed");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:120:        rb.cache_miss_reason.is_some(),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:121:        "identity-change miss must be loud (reason surfaced)"
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:128:    assert!(ra2.embed_cache_hit, "rev-A warm re-run was not a cache hit");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:129:    assert!(ra2.cache_miss_reason.is_none(), "rev-A warm re-run wrongly reported a miss");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:131:    // (1b) A PARTIAL cache (sidecar deleted, blob present) is a loud miss,
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:134:    fs::remove_file(&meta).expect("remove sidecar");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:138:    assert!(!ra3.embed_cache_hit, "partial cache was wrongly treated as a hit");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:140:        ra3.cache_miss_reason.as_deref().is_some_and(|r| r.contains("partial")),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:142:        ra3.cache_miss_reason
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:145:    // (1c) A PRESENT-but-STALE cache is a loud miss via read_cache's
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:146:    // manifest/identity validation — NOT a silent fallback. The key-based
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:147:    // cases above can't reach this branch (changing identity/manifest also
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:148:    // changes the filename), so we tamper a sidecar IN PLACE (filename
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:154:    assert!(!rs1.embed_cache_hit, "first rev-S ingest should be a cold write");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:160:    meta["doc_manifest_sha"] = serde_json::Value::String("0".repeat(64));
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:166:    assert!(!rs2.embed_cache_hit, "present-but-stale cache was wrongly trusted");
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:168:        rs2.cache_miss_reason.as_deref().is_some_and(|r| r.contains("mismatch")),
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:169:        "stale-cache miss must be loud with a mismatch reason, got {:?}",
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:170:        rs2.cache_miss_reason
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:189:    assert!(!rd.embed_cache_hit, "subset-content change reused a stale cache");
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:23:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:29:        Self { identity: EmbedderIdentity::new("varying", "batch-cursor-regression", dim), dim }
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:34:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:35:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:48:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:56:            identity: EmbedderIdentity::new("parking", "rev-a", DIM),
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:64:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:65:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:94:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:100:        Self { identity: EmbedderIdentity::new("sometimes-hang", "rev-a", DIM), park }
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:105:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:106:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:126:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:132:        Self { identity: EmbedderIdentity::new("slow", "rev-a", DIM), delay }
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:137:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:138:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/cursors.rs:14:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:13://! bge-small identity (so the engine treats it as mean-centering-required)
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:29:// ── Deterministic bge-identity embedder (no candle, no network) ─────────
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:32:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:37:        Self { identity: EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM) }
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:42:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:43:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:73:    // Per-doc signal (mean-zero), small enough that a topic-mismatched mean
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:354:/// A non-mean-centering caller embedder (distinct identity name), used to
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:358:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:363:        Self { identity: EmbedderIdentity::new("fathomdb-noop", "0.6.0-scaffold", DIM) }
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:368:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:369:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:376:/// (7) `recompute_mean` errors cleanly on a non-MC identity rather than
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:379:fn recompute_rejects_non_mc_identity() {
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:384:    assert!(err.is_err(), "non-MC identity must not be recomputable, got {err:?}");
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:10:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:18:        Self { identity: EmbedderIdentity::new("rebuild-report", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:23:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:24:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs:110:        "must run against the real bge-small identity"
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:80:// inference. Measurement-fidelity wrapper only: vectors/identity/mean
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:84:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:89:        let identity = inner.identity();
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:90:        Self { inner: Mutex::new(inner), identity }
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:95:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:96:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:514:        "EU-8 must run against the real bge-small identity"
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:14:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:22:        Self { identity: EmbedderIdentity::new("vec0-rebuild", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:27:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:28:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:300:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:306:        Self::with_identity("varying", "corpus-pack-4", dim)
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:310:    /// identity name/revision. The produced VECTORS are unchanged (the
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:313:    /// harness's cache-invalidation test to flip the embedder identity
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:316:    pub fn with_identity(name: &str, revision: &str, dim: u32) -> Self {
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:317:        Self { identity: EmbedderIdentity::new(name, revision, dim), dim }
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:342:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:343:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:1://! EU-5b RED tests — lock-flip of the default embedder identity to bge-small.
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:9://!    succeeds, and the reported identity is the bge-small one. (Feature-gated
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:58:    // The engine exposes the default identity via `Engine::open` ->
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:77:fn embedder_choice_default_succeeds_with_bge_identity() {
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:94:        "Default identity must report MC-required after the EU-5b flip"
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:159:// We use a SimulatedBgeEmbedder that reports the bge-small identity name
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:166:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:172:            identity: EmbedderIdentity::new(
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:182:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:183:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:319:        "bit-packed length mismatch: uncentered={} stored={}",
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:82:/// Path of the SQLite write-ahead-log sidecar file for `db_path`.
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:87:pub fn wal_sidecar_path(db_path: &Path) -> PathBuf {
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:93:/// Replace `db_path`'s WAL sidecar with a header that advertises a page
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:100:/// MUST be called against a CLOSED database. The previous WAL sidecar
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:104:    let wal_path = wal_sidecar_path(db_path);
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:105:    let mut file = File::create(&wal_path).expect("create -wal sidecar");
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:127:/// identity. The engine maps this to
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:147:    // rather than sitting in the -wal sidecar (the open path examines
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:26://!   keyed — and INVALIDATED — by the embedder identity AND the resolved
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:71:/// Tool-version stamp embedded in the cache sidecar (for diagnostics).
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:74:/// `VaryingEmbedder::new` identity so Pack-4 tests migrate with no
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:91:    pub embed_cache_hit: bool,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:97:    /// `"identity mismatch"`). `None` on a trusted warm hit. Mirrors the
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:99:    pub cache_miss_reason: Option<String>,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:243:    /// Test seam: override the synthetic embedder's identity revision
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:246:    /// the cache-invalidation test to prove an identity change rebuilds the
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:345:            embed_cache_hit: cache_hit,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:347:            cache_miss_reason: embedder.miss_reason.clone(),
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:439:                let identity = inner.identity();
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:441:                Arc::new(CachingEmbedder::load(inner, identity, cache_dir, &self.label, &self.docs))
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:448:            EmbedderKind::Synthetic => Arc::new(VaryingEmbedder::with_identity(
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:488:/// cache keyed by `sha256(identity || subset_label || doc-id manifest)`.
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:494:    identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:499:    doc_manifest_sha: String,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:515:        identity: EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:520:        let doc_manifest_sha = doc_manifest_sha(docs);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:521:        let key = cache_key(&identity, subset_label, &doc_manifest_sha);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:525:        // Every miss — cold (no file), partial (blob xor sidecar), or
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:530:            match read_cache(&cache_path, &meta_path, &identity, &doc_manifest_sha) {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:544:            identity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:548:            doc_manifest_sha,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:579:        let dim = self.identity.dimension as usize;
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:588:        blob.extend_from_slice(&(self.identity.dimension).to_le_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:592:            debug_assert_eq!(v.len(), dim, "cached vector dim mismatch");
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:604:            "identity": {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:605:                "name": self.identity.name,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:606:                "revision": self.identity.revision,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:607:                "dimension": self.identity.dimension,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:610:            "doc_manifest_sha": self.doc_manifest_sha,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:611:            "dim": self.identity.dimension,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:623:    fn identity(&self) -> EmbedderIdentity {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:624:        self.identity.clone()
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:649:fn doc_manifest_sha(docs: &[Doc]) -> String {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:662:/// Any of identity (name/revision/dim), subset label, or doc-manifest
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:664:fn cache_key(identity: &EmbedderIdentity, label: &str, doc_manifest_sha: &str) -> String {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:666:    h.update(identity.name.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:668:    h.update(identity.revision.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:670:    h.update(identity.dimension.to_le_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:674:    h.update(doc_manifest_sha.as_bytes());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:689:/// (blob xor sidecar) — a partial cache is a loud miss, never silently
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:692:fn read_cache(
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:695:    identity: &EmbedderIdentity,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:696:    doc_manifest_sha: &str,
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:705:            "partial cache (blob={blob_exists}, sidecar={meta_exists}) — treating as miss"
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:716:        return Err(format!("format_version mismatch (got {fmt:?})"));
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:718:    let m_name = meta.pointer("/identity/name").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:719:    let m_rev = meta.pointer("/identity/revision").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:720:    let m_dim = meta.pointer("/identity/dimension").and_then(serde_json::Value::as_u64);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:721:    if m_name != Some(identity.name.as_str())
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:722:        || m_rev != Some(identity.revision.as_str())
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:723:        || m_dim != Some(u64::from(identity.dimension))
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:725:        return Err("identity mismatch".to_string());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:727:    let m_manifest = meta.get("doc_manifest_sha").and_then(serde_json::Value::as_str);
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:728:    if m_manifest != Some(doc_manifest_sha) {
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:729:        return Err("doc_manifest_sha mismatch".to_string());
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:733:    parse_blob(&blob, identity.dimension).map(Some)
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:748:        return Err(format!("blob format_version mismatch (got {fmt})"));
+
+codex
+I’ve confirmed the new assertions are in place. Next I’m reading the exact `read_cache` implementation and the test body around `(1c)` line-by-line, plus the repo memory docs the agent rules require, so I can determine whether the branch coverage claim is real or only apparent.
+exec
+/bin/bash -lc "sed -n '1,220p' src/rust/crates/fathomdb-engine/tests/corpus_harness.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+//! PR-5 corpus-harness TDD surface.
+//!
+//! Exercises [`corpus_harness::CorpusFixture`] on the always-available
+//! synthetic-embedder path so the whole suite runs WITHOUT the
+//! `default-embedder` feature and on corpus-present checkouts. The real
+//! embedder is covered transitively (same cache + ingest code path; only
+//! the inner `Embedder` differs) and gated by `corpus_harness_skip_paths`.
+
+#[path = "support/corpus_harness.rs"]
+mod corpus_harness;
+
+use std::fs;
+
+use corpus_harness::CorpusFixture;
+
+/// Exercises every assert helper on a tiny fixture.
+#[test]
+fn corpus_harness_invariants() {
+    // Isolated cache dir so the cold-miss assertion is independent of any
+    // warm cache a prior run left in the default location.
+    let cache = tempfile::tempdir().expect("tmp cache");
+    let fx = CorpusFixture::small().with_cache_dir(cache.path());
+    let Some((_dir, engine)) = fx.open_or_skip() else { return };
+
+    let report = fx.ingest_into(&engine);
+    assert!(report.nodes > 0, "ingest wrote 0 nodes");
+
+    // First (cold) ingest is a cache miss that embeds live — and the miss
+    // is LOUD: reason observable (and a CORPUS_CACHE_MISS line emitted).
+    assert!(!report.embed_cache_hit, "expected a cold-cache miss on first ingest");
+    assert!(report.embedded_live > 0, "cold ingest embedded nothing live");
+    assert_eq!(
+        report.cache_miss_reason.as_deref(),
+        Some("cold"),
+        "cold ingest must surface a loud cold-miss reason"
+    );
+
+    fx.assert_vec0_row_count_matches_ingest(&engine);
+    fx.assert_fts_index_populated(&engine);
+
+    let qs = fx.query_set(25, 0xC0FFEE);
+    assert!(!qs.is_empty(), "query_set produced no queries");
+    // Held-out queries must never be the verbatim source body.
+    for q in &qs {
+        assert_ne!(q.text.trim(), q.target_body.trim(), "query equals its source body");
+    }
+    fx.assert_search_returns_non_empty_for_each(&engine, &qs);
+}
+
+/// Two identical fixture constructions produce byte-identical cache files.
+#[test]
+fn corpus_harness_determinism() {
+    let dir_a = tempfile::tempdir().expect("tmp a");
+    let dir_b = tempfile::tempdir().expect("tmp b");
+
+    let fx_a = CorpusFixture::small().with_cache_dir(dir_a.path());
+    let fx_b = CorpusFixture::small().with_cache_dir(dir_b.path());
+    if fx_a.skip_reason().is_some() {
+        eprintln!("SKIP: {:?}", fx_a.skip_reason());
+        return;
+    }
+
+    let (_da, ea) = fx_a.open_engine();
+    let ra = fx_a.ingest_into(&ea);
+    let (_db, eb) = fx_b.open_engine();
+    let rb = fx_b.ingest_into(&eb);
+
+    // Same identity + same subset => same cache filename.
+    assert_eq!(
+        ra.cache_path.file_name(),
+        rb.cache_path.file_name(),
+        "equivalent fixtures produced different cache keys"
+    );
+
+    let bytes_a = fs::read(&ra.cache_path).expect("read cache a");
+    let bytes_b = fs::read(&rb.cache_path).expect("read cache b");
+    assert_eq!(
+        bytes_a, bytes_b,
+        "cache blobs are not byte-identical across equivalent constructions ({} vs {} bytes)",
+        bytes_a.len(),
+        bytes_b.len()
+    );
+    assert!(!bytes_a.is_empty(), "cache blob is empty");
+
+    // And the warm read-back is a genuine HIT (proves the cache is used).
+    let fx_warm = CorpusFixture::small().with_cache_dir(dir_a.path());
+    let (_dw, ew) = fx_warm.open_engine();
+    let rw = fx_warm.ingest_into(&ew);
+    assert!(rw.embed_cache_hit, "warm run did not hit the cache");
+    assert_eq!(rw.embedded_live, 0, "warm run still embedded live");
+    assert!(rw.cache_miss_reason.is_none(), "warm hit must not report a miss reason");
+}
+
+/// Cache invalidates on embedder-identity change AND on subset-content
+/// change; and is genuinely reused when neither changes.
+#[test]
+fn corpus_harness_cache_invalidation() {
+    let dir = tempfile::tempdir().expect("tmp");
+
+    let fx_a = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
+    if fx_a.skip_reason().is_some() {
+        eprintln!("SKIP: {:?}", fx_a.skip_reason());
+        return;
+    }
+    let fx_b = CorpusFixture::small().with_synthetic_revision("rev-B").with_cache_dir(dir.path());
+
+    let (_da, ea) = fx_a.open_engine();
+    let ra = fx_a.ingest_into(&ea);
+    let (_db, eb) = fx_b.open_engine();
+    let rb = fx_b.ingest_into(&eb);
+
+    // (1) Identity change -> different cache file, rebuilt not reused.
+    assert_ne!(
+        ra.cache_path, rb.cache_path,
+        "identity change did not change the cache key — STALE-CACHE RISK"
+    );
+    assert!(!rb.embed_cache_hit, "identity change reused a stale cache");
+    assert!(rb.embedded_live > 0, "identity change did not re-embed");
+    assert!(
+        rb.cache_miss_reason.is_some(),
+        "identity-change miss must be loud (reason surfaced)"
+    );
+
+    // Sanity: re-running rev-A from the same dir IS a hit (cache works).
+    let fx_a2 = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
+    let (_da2, ea2) = fx_a2.open_engine();
+    let ra2 = fx_a2.ingest_into(&ea2);
+    assert!(ra2.embed_cache_hit, "rev-A warm re-run was not a cache hit");
+    assert!(ra2.cache_miss_reason.is_none(), "rev-A warm re-run wrongly reported a miss");
+
+    // (1b) A PARTIAL cache (sidecar deleted, blob present) is a loud miss,
+    // never silently trusted or treated as cold.
+    let meta = ra.cache_path.with_extension("meta.json");
+    fs::remove_file(&meta).expect("remove sidecar");
+    let fx_a3 = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
+    let (_da3, ea3) = fx_a3.open_engine();
+    let ra3 = fx_a3.ingest_into(&ea3);
+    assert!(!ra3.embed_cache_hit, "partial cache was wrongly treated as a hit");
+    assert!(
+        ra3.cache_miss_reason.as_deref().is_some_and(|r| r.contains("partial")),
+        "partial-cache miss must be loud with a 'partial' reason, got {:?}",
+        ra3.cache_miss_reason
+    );
+
+    // (1c) A PRESENT-but-STALE cache is a loud miss via read_cache's
+    // manifest/identity validation — NOT a silent fallback. The key-based
+    // cases above can't reach this branch (changing identity/manifest also
+    // changes the filename), so we tamper a sidecar IN PLACE (filename
+    // unchanged) to force the present-but-stale path.
+    let dir_stale = tempfile::tempdir().expect("tmp stale");
+    let fx_s1 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
+    let (_ds1, es1) = fx_s1.open_engine();
+    let rs1 = fx_s1.ingest_into(&es1);
+    assert!(!rs1.embed_cache_hit, "first rev-S ingest should be a cold write");
+
+    let meta_path = rs1.cache_path.with_extension("meta.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_slice(&fs::read(&meta_path).expect("read meta")).expect("parse meta");
+    // Corrupt the manifest sha while leaving the filename (= cache key) intact.
+    meta["doc_manifest_sha"] = serde_json::Value::String("0".repeat(64));
+    fs::write(&meta_path, serde_json::to_vec_pretty(&meta).expect("ser meta")).expect("write meta");
+
+    let fx_s2 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
+    let (_ds2, es2) = fx_s2.open_engine();
+    let rs2 = fx_s2.ingest_into(&es2);
+    assert!(!rs2.embed_cache_hit, "present-but-stale cache was wrongly trusted");
+    assert!(
+        rs2.cache_miss_reason.as_deref().is_some_and(|r| r.contains("mismatch")),
+        "stale-cache miss must be loud with a mismatch reason, got {:?}",
+        rs2.cache_miss_reason
+    );
+
+    // (2) Subset-content change -> different cache file.
+    let dir2 = tempfile::tempdir().expect("tmp2");
+    let all = fx_a.docs().to_vec();
+    assert!(all.len() >= 2, "need >=2 docs to drop one");
+    let dropped = all[1..].to_vec();
+
+    let fx_full = CorpusFixture::from_docs("sub", all).with_cache_dir(dir2.path());
+    let fx_drop = CorpusFixture::from_docs("sub", dropped).with_cache_dir(dir2.path());
+    let (_df, ef) = fx_full.open_engine();
+    let rf = fx_full.ingest_into(&ef);
+    let (_dd, ed) = fx_drop.open_engine();
+    let rd = fx_drop.ingest_into(&ed);
+    assert_ne!(
+        rf.cache_path, rd.cache_path,
+        "subset-content change did not change the cache key — STALE-CACHE RISK"
+    );
+    assert!(!rd.embed_cache_hit, "subset-content change reused a stale cache");
+}
+
+/// SKIP contracts: an empty doc set and the `default-embedder`-off real
+/// path both surface a skip reason rather than panicking.
+#[test]
+fn corpus_harness_skip_paths() {
+    // Empty/absent subset -> skip + None from open_or_skip.
+    let empty = CorpusFixture::from_docs("empty", Vec::new());
+    assert!(empty.skip_reason().is_some(), "empty fixture must report a skip reason");
+    assert!(empty.open_or_skip().is_none(), "empty fixture must skip open");
+
+    // Real-embedder availability is feature-gated.
+    let real = CorpusFixture::small().with_real_embedder();
+    #[cfg(not(feature = "default-embedder"))]
+    {
+        assert!(
+            real.skip_reason().is_some(),
+            "with_real_embedder must SKIP when default-embedder is off"
+        );
+        assert!(real.open_or_skip().is_none(), "real path must skip without the feature");
+    }
+    #[cfg(feature = "default-embedder")]
+    {
+        // With the feature on (and corpus present), the real path is
+        // available — no skip for embedder reasons.
+        if !real.docs().is_empty() {
+            assert!(
+                real.skip_reason().is_none(),
+                "real embedder unexpectedly unavailable with feature on: {:?}",
+                real.skip_reason()
+            );
+
+exec
+/bin/bash -lc "sed -n '488,740p' src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+/// cache keyed by `sha256(identity || subset_label || doc-id manifest)`.
+/// Serves repeat embeds of the same text from memory; persists the full
+/// embed set deterministically (sorted by text digest) so two equivalent
+/// constructions produce byte-identical cache files.
+struct CachingEmbedder {
+    inner: Arc<dyn Embedder>,
+    identity: EmbedderIdentity,
+    /// text-sha256 -> vector
+    cache: RwLock<VecCache>,
+    cache_path: PathBuf,
+    meta_path: PathBuf,
+    doc_manifest_sha: String,
+    subset_label: String,
+    /// `true` if a valid cache file was loaded at construction.
+    loaded_from_disk: bool,
+    /// `Some(reason)` when construction was a cache miss (cold/partial/
+    /// stale); `None` on a trusted hit. Observable counterpart to the
+    /// `CORPUS_CACHE_MISS` log line so tests can lock the loud-miss
+    /// contract without scraping stderr.
+    miss_reason: Option<String>,
+    /// distinct texts embedded live (misses) since construction.
+    live_misses: AtomicUsize,
+}
+
+impl CachingEmbedder {
+    fn load(
+        inner: Arc<dyn Embedder>,
+        identity: EmbedderIdentity,
+        cache_dir: PathBuf,
+        subset_label: &str,
+        docs: &[Doc],
+    ) -> Self {
+        let doc_manifest_sha = doc_manifest_sha(docs);
+        let key = cache_key(&identity, subset_label, &doc_manifest_sha);
+        let cache_path = cache_dir.join(format!("{key}.bin"));
+        let meta_path = cache_dir.join(format!("{key}.meta.json"));
+
+        // Every miss — cold (no file), partial (blob xor sidecar), or
+        // stale/corrupt — is LOUD: a `CORPUS_CACHE_MISS reason=…` line plus
+        // an observable `miss_reason` on the returned embedder. A miss never
+        // fails; we fall through to live embedding.
+        let (cache, loaded, miss_reason) =
+            match read_cache(&cache_path, &meta_path, &identity, &doc_manifest_sha) {
+                Ok(Some(entries)) => (entries, true, None),
+                Ok(None) => (HashMap::new(), false, Some("cold".to_string())),
+                Err(reason) => (HashMap::new(), false, Some(reason)),
+            };
+        if let Some(reason) = &miss_reason {
+            eprintln!(
+                "CORPUS_CACHE_MISS reason={reason} label={subset_label} path={}",
+                cache_path.display()
+            );
+        }
+
+        Self {
+            inner,
+            identity,
+            cache: RwLock::new(cache),
+            cache_path,
+            meta_path,
+            doc_manifest_sha,
+            subset_label: subset_label.to_string(),
+            loaded_from_disk: loaded,
+            miss_reason,
+            live_misses: AtomicUsize::new(0),
+        }
+    }
+
+    /// Persist the current embed set atomically. Returns
+    /// `(loaded_from_disk, live_miss_count)`. A no-op rewrite on a fully
+    /// warm run (loaded + zero misses) is skipped so warm runs do no disk
+    /// I/O; otherwise the blob is written deterministically.
+    fn persist(&self) -> (bool, usize) {
+        let live = self.live_misses.load(Ordering::Relaxed);
+        if self.loaded_from_disk && live == 0 {
+            return (true, 0);
+        }
+        if let Err(e) = self.write_cache() {
+            eprintln!(
+                "CORPUS_CACHE_WRITE_FAIL reason={e} label={} path={}",
+                self.subset_label,
+                self.cache_path.display()
+            );
+        }
+        (self.loaded_from_disk, live)
+    }
+
+    fn write_cache(&self) -> Result<(), String> {
+        if let Some(parent) = self.cache_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+        }
+        let dim = self.identity.dimension as usize;
+        let guard = self.cache.read().expect("cache read lock");
+
+        // Deterministic order: sort entries by their text digest.
+        let mut keys: Vec<&[u8; 32]> = guard.keys().collect();
+        keys.sort_unstable();
+
+        let mut blob: Vec<u8> = Vec::with_capacity(12 + keys.len() * (32 + dim * 4));
+        blob.extend_from_slice(&CACHE_FORMAT_VERSION.to_le_bytes());
+        blob.extend_from_slice(&(self.identity.dimension).to_le_bytes());
+        blob.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+        for k in &keys {
+            let v = &guard[*k];
+            debug_assert_eq!(v.len(), dim, "cached vector dim mismatch");
+            blob.extend_from_slice(&k[..]);
+            for f in v {
+                blob.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        let entry_count = keys.len();
+        drop(guard);
+
+        let meta = serde_json::json!({
+            "format_version": CACHE_FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "identity": {
+                "name": self.identity.name,
+                "revision": self.identity.revision,
+                "dimension": self.identity.dimension,
+            },
+            "subset_label": self.subset_label,
+            "doc_manifest_sha": self.doc_manifest_sha,
+            "dim": self.identity.dimension,
+            "entry_count": entry_count,
+        });
+        let meta_bytes = serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?;
+
+        atomic_write(&self.cache_path, &blob)?;
+        atomic_write(&self.meta_path, &meta_bytes)?;
+        Ok(())
+    }
+}
+
+impl Embedder for CachingEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, input: &str) -> Result<Vector, EmbedderError> {
+        let key = text_sha256(input);
+        if let Some(v) = self.cache.read().expect("cache read lock").get(&key) {
+            return Ok(v.clone());
+        }
+        let v = self.inner.embed(input)?;
+        self.live_misses.fetch_add(1, Ordering::Relaxed);
+        self.cache.write().expect("cache write lock").insert(key, v.clone());
+        Ok(v)
+    }
+}
+
+// ── Cache key + IO helpers ────────────────────────────────────────────--
+
+fn text_sha256(text: &str) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    h.finalize().into()
+}
+
+/// sha256 over the sorted, deduped doc-id list (newline-joined). Stable
+/// regardless of the doc set's in-memory order.
+fn doc_manifest_sha(docs: &[Doc]) -> String {
+    let mut ids: Vec<&str> = docs.iter().map(|d| d.doc_id.as_str()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut h = Sha256::new();
+    for id in ids {
+        h.update(id.as_bytes());
+        h.update(b"\n");
+    }
+    hex(&h.finalize())
+}
+
+/// Cache file stem: `sha256(name \0 revision \0 dim \0 label \0 manifest)`.
+/// Any of identity (name/revision/dim), subset label, or doc-manifest
+/// changing yields a different file — the invalidation contract.
+fn cache_key(identity: &EmbedderIdentity, label: &str, doc_manifest_sha: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(identity.name.as_bytes());
+    h.update(b"\0");
+    h.update(identity.revision.as_bytes());
+    h.update(b"\0");
+    h.update(identity.dimension.to_le_bytes());
+    h.update(b"\0");
+    h.update(label.as_bytes());
+    h.update(b"\0");
+    h.update(doc_manifest_sha.as_bytes());
+    hex(&h.finalize())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// Read + validate the cache. `Ok(Some(map))` on a trusted hit;
+/// `Ok(None)` only when BOTH files are absent (the genuine cold cache);
+/// `Err(reason)` when present-but-stale/corrupt OR partially present
+/// (blob xor sidecar) — a partial cache is a loud miss, never silently
+/// treated as cold. The caller logs every miss and rebuilds; it never
+/// trusts the bytes.
+fn read_cache(
+    cache_path: &Path,
+    meta_path: &Path,
+    identity: &EmbedderIdentity,
+    doc_manifest_sha: &str,
+) -> Result<Option<VecCache>, String> {
+    let blob_exists = cache_path.exists();
+    let meta_exists = meta_path.exists();
+    if !blob_exists && !meta_exists {
+        return Ok(None);
+    }
+    if blob_exists != meta_exists {
+        return Err(format!(
+            "partial cache (blob={blob_exists}, sidecar={meta_exists}) — treating as miss"
+        ));
+    }
+    let meta_bytes = fs::read(meta_path).map_err(|e| format!("read meta: {e}"))?;
+    let meta: serde_json::Value =
+        serde_json::from_slice(&meta_bytes).map_err(|e| format!("parse meta: {e}"))?;
+
+    // Verify the manifest BEFORE trusting any blob bytes (codex focus:
+    // no test silently uses a stale cache).
+    let fmt = meta.get("format_version").and_then(serde_json::Value::as_u64);
+    if fmt != Some(u64::from(CACHE_FORMAT_VERSION)) {
+        return Err(format!("format_version mismatch (got {fmt:?})"));
+    }
+    let m_name = meta.pointer("/identity/name").and_then(serde_json::Value::as_str);
+    let m_rev = meta.pointer("/identity/revision").and_then(serde_json::Value::as_str);
+    let m_dim = meta.pointer("/identity/dimension").and_then(serde_json::Value::as_u64);
+    if m_name != Some(identity.name.as_str())
+        || m_rev != Some(identity.revision.as_str())
+        || m_dim != Some(u64::from(identity.dimension))
+    {
+        return Err("identity mismatch".to_string());
+    }
+    let m_manifest = meta.get("doc_manifest_sha").and_then(serde_json::Value::as_str);
+    if m_manifest != Some(doc_manifest_sha) {
+        return Err("doc_manifest_sha mismatch".to_string());
+    }
+
+    let blob = fs::read(cache_path).map_err(|e| format!("read blob: {e}"))?;
+    parse_blob(&blob, identity.dimension).map(Some)
+}
+
+fn parse_blob(blob: &[u8], expected_dim: u32) -> Result<VecCache, String> {
+    let mut cur = blob;
+    let mut take = |n: usize| -> Result<&[u8], String> {
+        if cur.len() < n {
+            return Err("truncated blob".to_string());
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' | sed 's#"'^../##'"' | sort" in /home/coreyt/projects/fathomdb
+ succeeded in 576ms:
+ado-mcp/MEMORY.md
+
+exec
+/bin/bash -lc "sed -n '1,220p' ../ado-mcp/MEMORY.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+# ado-mcp Project Memory
+
+## Project Overview
+Azure DevOps CLI/TUI/MCP server. Located at `/home/coreyt/projects/ado-mcp`.
+
+## Architecture
+- **Single client layer** (`WorkItemClient`, `RepoClient`) shared by CLI, TUI, MCP
+- **Sync SDK + anyio**: `azure-devops` SDK is sync; wrapped with `anyio.to_thread.run_sync` via `run_in_thread()` in `client/base.py`
+- **Pydantic models** as contract — SDK objects converted immediately in client layer
+- **FastMCP** (v3+) for MCP server with decorator-based tool registration
+
+## Key Files
+- `src/ado_mcp/config.py` — Pydantic Settings, env vars + TOML, `get_settings()` with `@lru_cache`
+- `src/ado_mcp/client/work_items.py` — WIQL two-step pattern (IDs → batch fetch)
+- `src/ado_mcp/client/repos.py` — Git repos, branches, commits, PRs, file content
+- `src/ado_mcp/mcp/server.py` — FastMCP instance; tools registered via `register(mcp)` in tools/
+- `src/ado_mcp/tui/app.py` — `AdoApp(App)` root; screens pushed via `push_screen()`
+
+## Entry Points
+- `ado` → `ado_mcp.cli.app:main`
+- `ado-tui` → `ado_mcp.tui.app:main`
+- `ado-mcp` → `ado_mcp.mcp.server:main`
+
+## Dev Workflow
+- Use `uv` for package management
+- `uv pip install -e ".[dev]"` to install editable with dev deps
+- `uv run pytest tests/ -v` — 29 tests, all pass
+- `uv run ado --help` to verify CLI
+
+## Config
+- `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT` env vars (highest priority)
+- Fallback: `~/.ado-mcp/config.toml`
+- `settings.validate_auth()` raises `ConfigError` if any required field missing
+
+## WIQL Two-Step Pattern
+```python
+# Step 1: returns IDs only
+result = wit_client.query_by_wiql(Wiql(query=wiql_str), project=project)
+ids = [wi.id for wi in result.work_items]
+# Step 2: batch fetch fields (200 per batch)
+items = wit_client.get_work_items(ids=batch, fields=[...], error_policy="omit")
+```
+
+## FastMCP Tool Registration
+Tools use `register(mcp: FastMCP)` pattern — each module has a `register()` function
+called from `mcp/server.py` to keep tools modular.
+
+exec
+/bin/bash -lc "sed -n '1,200p' dev/adr/ADR-0.6.0-decision-index.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+---
+title: 0.6.0 Decision Index
+date: 2026-04-25
+target_release: 0.6.0
+desc: Triage list of candidate decisions; not itself an ADR
+blast_radius: TBD
+status: in-progress
+---
+
+# Decision Index (triage)
+
+This file is a **triage list**, not a decision. Each row is a candidate decision
+that may become an accepted ADR.
+
+Workflow per row: draft → critic (`architecture-inspector`) → HITL marks
+`decide-now | defer | drop`. Decide-now → ADR file
+`ADR-0.6.0-<kebab-title>.md` gets full options/tradeoffs/recommendation;
+HITL accepts → ADR `status: accepted`.
+
+## Phase 1 (already-decided / decision-recording ADRs)
+
+These were settled during Phase 1a/1b HITL. ADRs record the rationale and
+preserve options-considered for posterity; they do not deliberate.
+
+| #   | Category     | Candidate decision                                                                                        | HITL verdict                  | ADR file                                    |
+| --- | ------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------- |
+| 1   | architecture | Async-surface for engine API (sync engine + Path 2 TS-binding fix + Invariants A-D)                       | accepted (deliberation)       | ADR-0.6.0-async-surface.md                  |
+| 2   | design       | Default-embedder architecture (candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB) | implemented in 0.7.1          | ADR-0.6.0-default-embedder.md               |
+| 3   | architecture | sqlite-vec accept-no-fallback (sole-maintainer risk)                                                      | accepted (decision-recording) | ADR-0.6.0-sqlite-vec-acceptance.md          |
+| 4   | interface    | Operator config = JSON-only (toml dropped)                                                                | accepted (decision-recording) | ADR-0.6.0-operator-config-json-only.md      |
+| 5   | architecture | Typed at engine boundary; no raw SQL ever from clients                                                    | accepted (decision-recording) | ADR-0.6.0-typed-write-boundary.md           |
+| 6   | architecture | Operational store lives in same sqlite file (no dual-store)                                               | accepted (decision-recording) | ADR-0.6.0-op-store-same-file.md             |
+| 7   | design       | Embedder protocol contract (sync, unit-norm, no-reentrancy, engine-owned-thread, per-call-timeout)        | accepted (deliberation)       | ADR-0.6.0-embedder-protocol.md              |
+| 8   | architecture | Vector BLOB on-disk invariants (LE f32, alignment, byte-length, BLOB affinity)                            | accepted (decision-recording) | ADR-0.6.0-zerocopy-blob.md                  |
+| 9   | interface    | No 0.5.x→0.6.0 shims; no within-0.6.x multi-release deprecation cycles                                    | accepted (decision-recording) | ADR-0.6.0-no-shims-policy.md                |
+| 10  | architecture | Single-writer-thread engine for 0.6.0; MVCC explicitly out of scope (closes Phase 2 #12 by deferral)      | accepted (decision-recording) | ADR-0.6.0-single-writer-thread.md           |
+| 11  | design       | Vector identity belongs to the embedder; vector configs never carry identity strings                      | accepted (decision-recording) | ADR-0.6.0-vector-identity-embedder-owned.md |
+
+## Phase 2 (deliberation ADRs)
+
+Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
+
+| #   | Category     | Candidate decision                                                                                                                                           | HITL verdict                                                                      | ADR file                                                                 |
+| --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 7   | acceptance   | Single-process durability target (fsync policy, recovery time)                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-durability-fsync-policy.md                                     |
+| 8   | acceptance   | Projection freshness SLI numerical target                                                                                                                    | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-projection-freshness-sli.md                                    |
+| 9   | acceptance   | Retrieval p50/p99 latency gates                                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-retrieval-latency-gates.md                                     |
+| 10  | acceptance   | Tier-1 CI platforms list                                                                                                                                     | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-tier1-ci-platforms.md                                          |
+| 11  | architecture | Crate topology — keep `fathomdb-engine` monolith or split                                                                                                    | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-crate-topology.md                                              |
+| 12  | architecture | Single-writer thread vs MVCC                                                                                                                                 | resolved-by-deferral                                                              | → ADR-0.6.0-single-writer-thread.md (Phase 1 #10); MVCC deferred to 0.7+ |
+| 13  | architecture | Vector index location (vec0 in same sqlite file)                                                                                                             | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-vector-index-location.md                                       |
+| 14  | architecture | Scheduler shape — tokio runtime + per-job tasks                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-scheduler-shape.md                                             |
+| 15  | architecture | Wire format for subprocess bridge                                                                                                                            | resolved-by-deferral                                                              | ADR-0.6.0-subprocess-bridge-deferral.md (revisit 0.8.0)                  |
+| 16  | design       | Projection model — push (eager)                                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-projection-model.md                                            |
+| 17  | design       | Retrieval pipeline shape — fixed stages                                                                                                                      | accepted (HITL 2026-04-27); composable middleware revisit 0.8.0                   | ADR-0.6.0-retrieval-pipeline-shape.md                                    |
+| 18  | design       | Error taxonomy — per-module + top-level wrap                                                                                                                 | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-error-taxonomy.md                                              |
+| 19  | design       | PreparedWrite shape                                                                                                                                          | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-prepared-write-shape.md                                        |
+| 20  | interface    | Python API shape                                                                                                                                             | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-python-api-shape.md                                            |
+| 21  | interface    | TypeScript API — idiomatic + 1:1 type names                                                                                                                  | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-typescript-api-shape.md                                        |
+| 22  | interface    | CLI scope — admin + recovery + read-only query                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-cli-scope.md                                                   |
+| 23  | interface    | Deprecation policy for 0.5.x names                                                                                                                           | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-deprecation-policy-0-5-names.md                                |
+| 24  | acceptance   | Write-throughput SLI                                                                                                                                         | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-write-throughput-sli.md                                        |
+| 25  | design       | JSON Schema validation policy (FU-M5 promoted)                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-json-schema-policy.md                                          |
+| 26  | acceptance   | Text-query latency gates (FU-REQ-010 promoted)                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-text-query-latency-gates.md                                    |
+| 27  | acceptance   | Recovery rank-correlation threshold (FU-AC-PROTOCOL-BACKFILL → AC-027d)                                                                                      | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-recovery-rank-correlation.md                                   |
+| 28  | design       | Provenance retention shape (FU-AC-PROTOCOL-BACKFILL → AC-033)                                                                                                | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-provenance-retention.md                                        |
+| 29  | architecture | Corruption-on-open behavior (FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION resolved)                                                                | accepted (HITL 2026-04-29)                                                        | ADR-0.6.0-corruption-open-behavior.md                                    |
+| 30  | architecture | Database lock mechanism (hybrid sidecar flock + PRAGMA locking_mode=EXCLUSIVE; overrides earlier "no sidecar" assertion in architecture.md § 5 + § 8 + § 11) | superseded (2026-05-02) by ADR-0.6.0-database-lock-mechanism-reader-pool-revision | ADR-0.6.0-database-lock-mechanism.md                                     |
+| 31  | architecture | Database lock mechanism — reader-pool revision (drops PRAGMA locking_mode=EXCLUSIVE; retains sidecar flock; admits `-shm` as a normal WAL artifact)          | accepted (HITL 2026-05-02)                                                        | ADR-0.6.0-database-lock-mechanism-reader-pool-revision.md                |
+
+## Phase 0.7.1 (campaign-specific ADRs)
+
+Decisions that arose during the 0.7.1 EMBEDDER-UNDEFER campaign. Listed
+separately because they post-date the 0.6.0 Phase 1/2 deliberation.
+
+| #   | Category | Candidate decision                                                                                                                               | HITL verdict               | ADR file                                   |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------ |
+| 32  | design   | Narrow exception to NEED-017 / REQ-033 permitting opt-in default-embedder weight fetch on first use, sha256-pinned, with `OpenReport` visibility | accepted (HITL 2026-05-28) | ADR-0.7.1-default-embedder-weight-fetch.md |
+
+## Categories
+
+acceptance | architecture | design | interface.
+
+exec
+/bin/bash -lc 'git diff -- src/rust/crates/fathomdb-engine/tests/corpus_harness.rs src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+codex
+The relevant code path is now clear: `read_cache` only reaches the mismatch checks when both files exist at the keyed path, so I’m verifying whether `(1c)` preserves that keyed path and only corrupts sidecar contents. I’m also checking whether there’s any harness behavior around rewrite/cleanup that could make the test pass for the wrong reason.
+exec
+/bin/bash -lc "find . -maxdepth 3 \\( -name MEMORY.md -o -name 'feedback_*.md' \\) | sort" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+exec
+/bin/bash -lc "sed -n '220,520p' src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+
+    /// Use the shipped real BGE embedder. Requires the `default-embedder`
+    /// Cargo feature; when it is off this flags the fixture as
+    /// `real_unavailable` so [`open_or_skip`](Self::open_or_skip) /
+    /// [`skip_reason`](Self::skip_reason) SKIP gracefully.
+    #[must_use]
+    pub fn with_real_embedder(mut self) -> Self {
+        self.kind = EmbedderKind::Real;
+        self.real_unavailable = !cfg!(feature = "default-embedder");
+        self.embedder = OnceLock::new();
+        self
+    }
+
+    /// Use the always-available dense-isotropic synthetic embedder
+    /// ([`VaryingEmbedder`]). This is the default.
+    #[must_use]
+    pub fn with_synthetic_embedder(mut self) -> Self {
+        self.kind = EmbedderKind::Synthetic;
+        self.real_unavailable = false;
+        self.embedder = OnceLock::new();
+        self
+    }
+
+    /// Test seam: override the synthetic embedder's identity revision
+    /// WITHOUT touching the immutable production `EmbedderIdentity`
+    /// contract. Vectors are unchanged; only the cache key shifts. Used by
+    /// the cache-invalidation test to prove an identity change rebuilds the
+    /// cache.
+    #[must_use]
+    pub fn with_synthetic_revision(mut self, revision: impl Into<String>) -> Self {
+        self.kind = EmbedderKind::Synthetic;
+        self.real_unavailable = false;
+        self.synthetic_revision = revision.into();
+        self.embedder = OnceLock::new();
+        self
+    }
+
+    /// Test seam: override the cache directory (defaults to
+    /// `data/corpus-data/.cache/embeddings/`, or `$FATHOMDB_CORPUS_CACHE_DIR`).
+    #[must_use]
+    pub fn with_cache_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.cache_dir_override = Some(dir.into());
+        self.embedder = OnceLock::new();
+        self
+    }
+
+    // -- introspection / SKIP --
+
+    /// Resolved doc set (deterministic, already filtered by the chosen
+    /// constructor).
+    pub fn docs(&self) -> &[Doc] {
+        &self.docs
+    }
+
+    /// `Some(reason)` when this fixture cannot run — corpus absent on disk,
+    /// or `with_real_embedder` requested without the `default-embedder`
+    /// feature. Callers should emit a `SKIP:` line and return.
+    pub fn skip_reason(&self) -> Option<String> {
+        if self.corpus_absent {
+            return Some(format!(
+                "corpus not present on disk (label={}) — run tests/corpus/scripts/acquire_*.py first",
+                self.label
+            ));
+        }
+        if self.real_unavailable {
+            return Some(format!(
+                "with_real_embedder() requires the `default-embedder` feature (label={})",
+                self.label
+            ));
+        }
+        if self.docs.is_empty() {
+            return Some(format!("fixture resolved 0 docs (label={})", self.label));
+        }
+        None
+    }
+
+    // -- engine + ingest --
+
+    /// Open a fresh temp engine wired with this fixture's embedder and the
+    /// canonical `doc` vector kind. Panics if the fixture is unavailable —
+    /// prefer [`open_or_skip`](Self::open_or_skip) at the top of a test.
+    pub fn open_engine(&self) -> (TempDir, Engine) {
+        assert!(
+            self.skip_reason().is_none(),
+            "open_engine on unavailable fixture: {:?}",
+            self.skip_reason()
+        );
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("corpus.sqlite");
+        let embedder = self.ensure_embedder();
+        let opened = Engine::open_with_embedder_for_test(&path, embedder as Arc<dyn Embedder>)
+            .expect("open engine with corpus-harness embedder");
+        opened
+            .engine
+            .configure_vector_kind_for_test(VECTOR_KIND)
+            .expect("configure vector kind");
+        (dir, opened.engine)
+    }
+
+    /// Like [`open_engine`](Self::open_engine) but returns `None` (after
+    /// emitting a `SKIP:` line) when the fixture is unavailable. Mirrors
+    /// the [`corpus_subset::load_subset_or_skip`] ergonomics.
+    pub fn open_or_skip(&self) -> Option<(TempDir, Engine)> {
+        if let Some(reason) = self.skip_reason() {
+            eprintln!("SKIP: {reason}");
+            return None;
+        }
+        Some(self.open_engine())
+    }
+
+    /// Ingest the resolved doc set into `engine` via the batched
+    /// [`corpus_subset::ingest`] path (nodes then edges, drained), then
+    /// persist the embedding cache. The engine MUST have been opened by
+    /// this same fixture (so it shares the caching embedder); otherwise the
+    /// cache cannot capture the projection embeds.
+    pub fn ingest_into(&self, engine: &Engine) -> IngestReport {
+        let embedder = self.ensure_embedder();
+        let (nodes, edges, edges_by_relation) = corpus_subset::ingest(engine, &self.docs);
+        // Projection has fully drained inside `ingest`, so every body has
+        // been embedded through the caching wrapper by now.
+        let (cache_hit, live) = embedder.persist();
+        IngestReport {
+            nodes,
+            edges,
+            edges_by_relation,
+            embed_cache_hit: cache_hit,
+            embedded_live: live,
+            cache_miss_reason: embedder.miss_reason.clone(),
+            cache_path: embedder.cache_path.clone(),
+        }
+    }
+
+    /// Held-out query set (EU-0 §1.2): deterministically shuffle the doc
+    /// pool with `seed`, synthesize a title-or-lead query per doc (never
+    /// the verbatim body), and return up to `n` of them. Each query carries
+    /// its source doc for target exclusion at recall time.
+    pub fn query_set(&self, n: usize, seed: u64) -> Vec<HeldOutQuery> {
+        if self.docs.is_empty() {
+            return Vec::new();
+        }
+        let mut indices: Vec<usize> = (0..self.docs.len()).collect();
+        // Deterministic Fisher-Yates so queries spread across sources
+        // rather than clustering at the head of the sorted list.
+        let mut rng = SplitMix64::new(seed);
+        for i in (1..indices.len()).rev() {
+            let j = rng.next_in(i + 1);
+            indices.swap(i, j);
+        }
+        let mut out = Vec::with_capacity(n.min(self.docs.len()));
+        for &idx in &indices {
+            if out.len() >= n {
+                break;
+            }
+            let doc = &self.docs[idx];
+            if let Some(text) = synth_query(doc) {
+                out.push(HeldOutQuery {
+                    text,
+                    target_doc_id: doc.doc_id.clone(),
+                    target_body: doc.body.clone(),
+                });
+            }
+        }
+        out
+    }
+
+    // -- invariants --
+
+    /// Assert `vector_default` has at least one vec0 row per ingested
+    /// non-empty-body doc. (Chunked long bodies produce MORE rows, so the
+    /// contract is `>=`, matching the Pack-4 `corpus_vector` gate.) Drains
+    /// the engine first; opens a read-only connection without closing.
+    pub fn assert_vec0_row_count_matches_ingest(&self, engine: &Engine) {
+        engine.drain(15_000).expect("drain before vec0 count");
+        let conn = open_readonly(engine.path());
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vector_default", [], |row| row.get(0))
+            .expect("count vector_default");
+        let expected = self.docs.iter().filter(|d| !d.body.trim().is_empty()).count() as i64;
+        assert!(
+            vec_count >= expected,
+            "vector_default has {vec_count} rows but {expected} non-empty-body docs were ingested \
+             — projection apparently dropped some; vector path is NOT wired end-to-end"
+        );
+    }
+
+    /// Assert the FTS5 `search_index` shadow table is non-empty after
+    /// ingest. Drains first; read-only peek without closing.
+    pub fn assert_fts_index_populated(&self, engine: &Engine) {
+        engine.drain(15_000).expect("drain before fts count");
+        let conn = open_readonly(engine.path());
+        let fts_count: i64 = conn
+            .query_row("SELECT count(*) FROM search_index", [], |row| row.get(0))
+            .expect("count search_index");
+        assert!(fts_count > 0, "search_index is empty after ingest — FTS path is NOT wired");
+    }
+
+    /// Assert `engine.search` returns at least one result for every query
+    /// in `qs`.
+    pub fn assert_search_returns_non_empty_for_each(&self, engine: &Engine, qs: &[HeldOutQuery]) {
+        assert!(!qs.is_empty(), "assert_search_returns_non_empty_for_each: empty query set");
+        for q in qs {
+            let result = engine
+                .search(&q.text)
+                .unwrap_or_else(|e| panic!("search failed for query {:?}: {e:?}", q.target_doc_id));
+            assert!(
+                !result.results.is_empty(),
+                "engine.search returned empty for query from doc {} (text={:?})",
+                q.target_doc_id,
+                q.text
+            );
+        }
+    }
+
+    // -- internals --
+
+    fn ensure_embedder(&self) -> Arc<CachingEmbedder> {
+        self.embedder
+            .get_or_init(|| {
+                let inner: Arc<dyn Embedder> = self.build_inner_embedder();
+                let identity = inner.identity();
+                let cache_dir = self.resolve_cache_dir();
+                Arc::new(CachingEmbedder::load(inner, identity, cache_dir, &self.label, &self.docs))
+            })
+            .clone()
+    }
+
+    fn build_inner_embedder(&self) -> Arc<dyn Embedder> {
+        match self.kind {
+            EmbedderKind::Synthetic => Arc::new(VaryingEmbedder::with_identity(
+                "varying",
+                &self.synthetic_revision,
+                CORPUS_DIM,
+            )),
+            EmbedderKind::Real => build_real_embedder(),
+        }
+    }
+
+    fn resolve_cache_dir(&self) -> PathBuf {
+        if let Some(dir) = &self.cache_dir_override {
+            return dir.clone();
+        }
+        if let Ok(env_dir) = std::env::var("FATHOMDB_CORPUS_CACHE_DIR") {
+            if !env_dir.is_empty() {
+                return PathBuf::from(env_dir);
+            }
+        }
+        let root = repo_root().unwrap_or_else(|| PathBuf::from("."));
+        root.join("data/corpus-data/.cache/embeddings")
+    }
+}
+
+#[cfg(feature = "default-embedder")]
+fn build_real_embedder() -> Arc<dyn Embedder> {
+    // PR-9 landed engine-side embed serialization, so the harness needs NO
+    // Mutex wrapper of its own (unlike eu7_real_corpus_ac.rs, whose
+    // SerializedBge holdover is a noted PR-6/PR-7 follow-up). Cache hits
+    // never touch the candle forward path at all.
+    Arc::new(fathomdb_embedder::CandleBgeEmbedder::new().expect("construct real bge embedder"))
+}
+
+#[cfg(not(feature = "default-embedder"))]
+fn build_real_embedder() -> Arc<dyn Embedder> {
+    unreachable!("with_real_embedder is gated off via skip_reason when default-embedder is absent");
+}
+
+// ── Caching embedder ──────────────────────────────────────────────────--
+
+/// Wraps any [`Embedder`] with an on-disk, per-(model, subset) vector
+/// cache keyed by `sha256(identity || subset_label || doc-id manifest)`.
+/// Serves repeat embeds of the same text from memory; persists the full
+/// embed set deterministically (sorted by text digest) so two equivalent
+/// constructions produce byte-identical cache files.
+struct CachingEmbedder {
+    inner: Arc<dyn Embedder>,
+    identity: EmbedderIdentity,
+    /// text-sha256 -> vector
+    cache: RwLock<VecCache>,
+    cache_path: PathBuf,
+    meta_path: PathBuf,
+    doc_manifest_sha: String,
+    subset_label: String,
+    /// `true` if a valid cache file was loaded at construction.
+    loaded_from_disk: bool,
+    /// `Some(reason)` when construction was a cache miss (cold/partial/
+    /// stale); `None` on a trusted hit. Observable counterpart to the
+    /// `CORPUS_CACHE_MISS` log line so tests can lock the loud-miss
+    /// contract without scraping stderr.
+    miss_reason: Option<String>,
+    /// distinct texts embedded live (misses) since construction.
+    live_misses: AtomicUsize,
+}
+
+impl CachingEmbedder {
+    fn load(
+        inner: Arc<dyn Embedder>,
+        identity: EmbedderIdentity,
+        cache_dir: PathBuf,
+        subset_label: &str,
+        docs: &[Doc],
+    ) -> Self {
+        let doc_manifest_sha = doc_manifest_sha(docs);
+
+exec
+/bin/bash -lc 'git diff --no-index -- /dev/null src/rust/crates/fathomdb-engine/tests/corpus_harness.rs' in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/corpus_harness.rs b/src/rust/crates/fathomdb-engine/tests/corpus_harness.rs
+new file mode 100644
+index 0000000..b190c5b
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/corpus_harness.rs
+@@ -0,0 +1,223 @@
++//! PR-5 corpus-harness TDD surface.
++//!
++//! Exercises [`corpus_harness::CorpusFixture`] on the always-available
++//! synthetic-embedder path so the whole suite runs WITHOUT the
++//! `default-embedder` feature and on corpus-present checkouts. The real
++//! embedder is covered transitively (same cache + ingest code path; only
++//! the inner `Embedder` differs) and gated by `corpus_harness_skip_paths`.
++
++#[path = "support/corpus_harness.rs"]
++mod corpus_harness;
++
++use std::fs;
++
++use corpus_harness::CorpusFixture;
++
++/// Exercises every assert helper on a tiny fixture.
++#[test]
++fn corpus_harness_invariants() {
++    // Isolated cache dir so the cold-miss assertion is independent of any
++    // warm cache a prior run left in the default location.
++    let cache = tempfile::tempdir().expect("tmp cache");
++    let fx = CorpusFixture::small().with_cache_dir(cache.path());
++    let Some((_dir, engine)) = fx.open_or_skip() else { return };
++
++    let report = fx.ingest_into(&engine);
++    assert!(report.nodes > 0, "ingest wrote 0 nodes");
++
++    // First (cold) ingest is a cache miss that embeds live — and the miss
++    // is LOUD: reason observable (and a CORPUS_CACHE_MISS line emitted).
++    assert!(!report.embed_cache_hit, "expected a cold-cache miss on first ingest");
++    assert!(report.embedded_live > 0, "cold ingest embedded nothing live");
++    assert_eq!(
++        report.cache_miss_reason.as_deref(),
++        Some("cold"),
++        "cold ingest must surface a loud cold-miss reason"
++    );
++
++    fx.assert_vec0_row_count_matches_ingest(&engine);
++    fx.assert_fts_index_populated(&engine);
++
++    let qs = fx.query_set(25, 0xC0FFEE);
++    assert!(!qs.is_empty(), "query_set produced no queries");
++    // Held-out queries must never be the verbatim source body.
++    for q in &qs {
++        assert_ne!(q.text.trim(), q.target_body.trim(), "query equals its source body");
++    }
++    fx.assert_search_returns_non_empty_for_each(&engine, &qs);
++}
++
++/// Two identical fixture constructions produce byte-identical cache files.
++#[test]
++fn corpus_harness_determinism() {
++    let dir_a = tempfile::tempdir().expect("tmp a");
++    let dir_b = tempfile::tempdir().expect("tmp b");
++
++    let fx_a = CorpusFixture::small().with_cache_dir(dir_a.path());
++    let fx_b = CorpusFixture::small().with_cache_dir(dir_b.path());
++    if fx_a.skip_reason().is_some() {
++        eprintln!("SKIP: {:?}", fx_a.skip_reason());
++        return;
++    }
++
++    let (_da, ea) = fx_a.open_engine();
++    let ra = fx_a.ingest_into(&ea);
++    let (_db, eb) = fx_b.open_engine();
++    let rb = fx_b.ingest_into(&eb);
++
++    // Same identity + same subset => same cache filename.
++    assert_eq!(
++        ra.cache_path.file_name(),
++        rb.cache_path.file_name(),
++        "equivalent fixtures produced different cache keys"
++    );
++
++    let bytes_a = fs::read(&ra.cache_path).expect("read cache a");
++    let bytes_b = fs::read(&rb.cache_path).expect("read cache b");
++    assert_eq!(
++        bytes_a, bytes_b,
++        "cache blobs are not byte-identical across equivalent constructions ({} vs {} bytes)",
++        bytes_a.len(),
++        bytes_b.len()
++    );
++    assert!(!bytes_a.is_empty(), "cache blob is empty");
++
++    // And the warm read-back is a genuine HIT (proves the cache is used).
++    let fx_warm = CorpusFixture::small().with_cache_dir(dir_a.path());
++    let (_dw, ew) = fx_warm.open_engine();
++    let rw = fx_warm.ingest_into(&ew);
++    assert!(rw.embed_cache_hit, "warm run did not hit the cache");
++    assert_eq!(rw.embedded_live, 0, "warm run still embedded live");
++    assert!(rw.cache_miss_reason.is_none(), "warm hit must not report a miss reason");
++}
++
++/// Cache invalidates on embedder-identity change AND on subset-content
++/// change; and is genuinely reused when neither changes.
++#[test]
++fn corpus_harness_cache_invalidation() {
++    let dir = tempfile::tempdir().expect("tmp");
++
++    let fx_a = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
++    if fx_a.skip_reason().is_some() {
++        eprintln!("SKIP: {:?}", fx_a.skip_reason());
++        return;
++    }
++    let fx_b = CorpusFixture::small().with_synthetic_revision("rev-B").with_cache_dir(dir.path());
++
++    let (_da, ea) = fx_a.open_engine();
++    let ra = fx_a.ingest_into(&ea);
++    let (_db, eb) = fx_b.open_engine();
++    let rb = fx_b.ingest_into(&eb);
++
++    // (1) Identity change -> different cache file, rebuilt not reused.
++    assert_ne!(
++        ra.cache_path, rb.cache_path,
++        "identity change did not change the cache key — STALE-CACHE RISK"
++    );
++    assert!(!rb.embed_cache_hit, "identity change reused a stale cache");
++    assert!(rb.embedded_live > 0, "identity change did not re-embed");
++    assert!(
++        rb.cache_miss_reason.is_some(),
++        "identity-change miss must be loud (reason surfaced)"
++    );
++
++    // Sanity: re-running rev-A from the same dir IS a hit (cache works).
++    let fx_a2 = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
++    let (_da2, ea2) = fx_a2.open_engine();
++    let ra2 = fx_a2.ingest_into(&ea2);
++    assert!(ra2.embed_cache_hit, "rev-A warm re-run was not a cache hit");
++    assert!(ra2.cache_miss_reason.is_none(), "rev-A warm re-run wrongly reported a miss");
++
++    // (1b) A PARTIAL cache (sidecar deleted, blob present) is a loud miss,
++    // never silently trusted or treated as cold.
++    let meta = ra.cache_path.with_extension("meta.json");
++    fs::remove_file(&meta).expect("remove sidecar");
++    let fx_a3 = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
++    let (_da3, ea3) = fx_a3.open_engine();
++    let ra3 = fx_a3.ingest_into(&ea3);
++    assert!(!ra3.embed_cache_hit, "partial cache was wrongly treated as a hit");
++    assert!(
++        ra3.cache_miss_reason.as_deref().is_some_and(|r| r.contains("partial")),
++        "partial-cache miss must be loud with a 'partial' reason, got {:?}",
++        ra3.cache_miss_reason
++    );
++
++    // (1c) A PRESENT-but-STALE cache is a loud miss via read_cache's
++    // manifest/identity validation — NOT a silent fallback. The key-based
++    // cases above can't reach this branch (changing identity/manifest also
++    // changes the filename), so we tamper a sidecar IN PLACE (filename
++    // unchanged) to force the present-but-stale path.
++    let dir_stale = tempfile::tempdir().expect("tmp stale");
++    let fx_s1 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
++    let (_ds1, es1) = fx_s1.open_engine();
++    let rs1 = fx_s1.ingest_into(&es1);
++    assert!(!rs1.embed_cache_hit, "first rev-S ingest should be a cold write");
++
++    let meta_path = rs1.cache_path.with_extension("meta.json");
++    let mut meta: serde_json::Value =
++        serde_json::from_slice(&fs::read(&meta_path).expect("read meta")).expect("parse meta");
++    // Corrupt the manifest sha while leaving the filename (= cache key) intact.
++    meta["doc_manifest_sha"] = serde_json::Value::String("0".repeat(64));
++    fs::write(&meta_path, serde_json::to_vec_pretty(&meta).expect("ser meta")).expect("write meta");
++
++    let fx_s2 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
++    let (_ds2, es2) = fx_s2.open_engine();
++    let rs2 = fx_s2.ingest_into(&es2);
++    assert!(!rs2.embed_cache_hit, "present-but-stale cache was wrongly trusted");
++    assert!(
++        rs2.cache_miss_reason.as_deref().is_some_and(|r| r.contains("mismatch")),
++        "stale-cache miss must be loud with a mismatch reason, got {:?}",
++        rs2.cache_miss_reason
++    );
++
++    // (2) Subset-content change -> different cache file.
++    let dir2 = tempfile::tempdir().expect("tmp2");
++    let all = fx_a.docs().to_vec();
++    assert!(all.len() >= 2, "need >=2 docs to drop one");
++    let dropped = all[1..].to_vec();
++
++    let fx_full = CorpusFixture::from_docs("sub", all).with_cache_dir(dir2.path());
++    let fx_drop = CorpusFixture::from_docs("sub", dropped).with_cache_dir(dir2.path());
++    let (_df, ef) = fx_full.open_engine();
++    let rf = fx_full.ingest_into(&ef);
++    let (_dd, ed) = fx_drop.open_engine();
++    let rd = fx_drop.ingest_into(&ed);
++    assert_ne!(
++        rf.cache_path, rd.cache_path,
++        "subset-content change did not change the cache key — STALE-CACHE RISK"
++    );
++    assert!(!rd.embed_cache_hit, "subset-content change reused a stale cache");
++}
++
++/// SKIP contracts: an empty doc set and the `default-embedder`-off real
++/// path both surface a skip reason rather than panicking.
++#[test]
++fn corpus_harness_skip_paths() {
++    // Empty/absent subset -> skip + None from open_or_skip.
++    let empty = CorpusFixture::from_docs("empty", Vec::new());
++    assert!(empty.skip_reason().is_some(), "empty fixture must report a skip reason");
++    assert!(empty.open_or_skip().is_none(), "empty fixture must skip open");
++
++    // Real-embedder availability is feature-gated.
++    let real = CorpusFixture::small().with_real_embedder();
++    #[cfg(not(feature = "default-embedder"))]
++    {
++        assert!(
++            real.skip_reason().is_some(),
++            "with_real_embedder must SKIP when default-embedder is off"
++        );
++        assert!(real.open_or_skip().is_none(), "real path must skip without the feature");
++    }
++    #[cfg(feature = "default-embedder")]
++    {
++        // With the feature on (and corpus present), the real path is
++        // available — no skip for embedder reasons.
++        if !real.docs().is_empty() {
++            assert!(
++                real.skip_reason().is_none(),
++                "real embedder unexpectedly unavailable with feature on: {:?}",
++                real.skip_reason()
++            );
++        }
++    }
++}
+
+codex
+I’ve narrowed it to one real question: `(1c)` definitely covers `doc_manifest_sha mismatch` at an existing keyed path, but I need exact line refs to decide whether that’s enough to clear the earlier block or whether identity-mismatch coverage is still missing. I’m pulling numbered snippets for the final verdict.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/corpus_harness.rs | sed -n '130,175p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   130	
+   131	    // (1b) A PARTIAL cache (sidecar deleted, blob present) is a loud miss,
+   132	    // never silently trusted or treated as cold.
+   133	    let meta = ra.cache_path.with_extension("meta.json");
+   134	    fs::remove_file(&meta).expect("remove sidecar");
+   135	    let fx_a3 = CorpusFixture::small().with_synthetic_revision("rev-A").with_cache_dir(dir.path());
+   136	    let (_da3, ea3) = fx_a3.open_engine();
+   137	    let ra3 = fx_a3.ingest_into(&ea3);
+   138	    assert!(!ra3.embed_cache_hit, "partial cache was wrongly treated as a hit");
+   139	    assert!(
+   140	        ra3.cache_miss_reason.as_deref().is_some_and(|r| r.contains("partial")),
+   141	        "partial-cache miss must be loud with a 'partial' reason, got {:?}",
+   142	        ra3.cache_miss_reason
+   143	    );
+   144	
+   145	    // (1c) A PRESENT-but-STALE cache is a loud miss via read_cache's
+   146	    // manifest/identity validation — NOT a silent fallback. The key-based
+   147	    // cases above can't reach this branch (changing identity/manifest also
+   148	    // changes the filename), so we tamper a sidecar IN PLACE (filename
+   149	    // unchanged) to force the present-but-stale path.
+   150	    let dir_stale = tempfile::tempdir().expect("tmp stale");
+   151	    let fx_s1 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
+   152	    let (_ds1, es1) = fx_s1.open_engine();
+   153	    let rs1 = fx_s1.ingest_into(&es1);
+   154	    assert!(!rs1.embed_cache_hit, "first rev-S ingest should be a cold write");
+   155	
+   156	    let meta_path = rs1.cache_path.with_extension("meta.json");
+   157	    let mut meta: serde_json::Value =
+   158	        serde_json::from_slice(&fs::read(&meta_path).expect("read meta")).expect("parse meta");
+   159	    // Corrupt the manifest sha while leaving the filename (= cache key) intact.
+   160	    meta["doc_manifest_sha"] = serde_json::Value::String("0".repeat(64));
+   161	    fs::write(&meta_path, serde_json::to_vec_pretty(&meta).expect("ser meta")).expect("write meta");
+   162	
+   163	    let fx_s2 = CorpusFixture::small().with_synthetic_revision("rev-S").with_cache_dir(dir_stale.path());
+   164	    let (_ds2, es2) = fx_s2.open_engine();
+   165	    let rs2 = fx_s2.ingest_into(&es2);
+   166	    assert!(!rs2.embed_cache_hit, "present-but-stale cache was wrongly trusted");
+   167	    assert!(
+   168	        rs2.cache_miss_reason.as_deref().is_some_and(|r| r.contains("mismatch")),
+   169	        "stale-cache miss must be loud with a mismatch reason, got {:?}",
+   170	        rs2.cache_miss_reason
+   171	    );
+   172	
+   173	    // (2) Subset-content change -> different cache file.
+   174	    let dir2 = tempfile::tempdir().expect("tmp2");
+   175	    let all = fx_a.docs().to_vec();
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs | sed -n '515,735p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   515	        identity: EmbedderIdentity,
+   516	        cache_dir: PathBuf,
+   517	        subset_label: &str,
+   518	        docs: &[Doc],
+   519	    ) -> Self {
+   520	        let doc_manifest_sha = doc_manifest_sha(docs);
+   521	        let key = cache_key(&identity, subset_label, &doc_manifest_sha);
+   522	        let cache_path = cache_dir.join(format!("{key}.bin"));
+   523	        let meta_path = cache_dir.join(format!("{key}.meta.json"));
+   524	
+   525	        // Every miss — cold (no file), partial (blob xor sidecar), or
+   526	        // stale/corrupt — is LOUD: a `CORPUS_CACHE_MISS reason=…` line plus
+   527	        // an observable `miss_reason` on the returned embedder. A miss never
+   528	        // fails; we fall through to live embedding.
+   529	        let (cache, loaded, miss_reason) =
+   530	            match read_cache(&cache_path, &meta_path, &identity, &doc_manifest_sha) {
+   531	                Ok(Some(entries)) => (entries, true, None),
+   532	                Ok(None) => (HashMap::new(), false, Some("cold".to_string())),
+   533	                Err(reason) => (HashMap::new(), false, Some(reason)),
+   534	            };
+   535	        if let Some(reason) = &miss_reason {
+   536	            eprintln!(
+   537	                "CORPUS_CACHE_MISS reason={reason} label={subset_label} path={}",
+   538	                cache_path.display()
+   539	            );
+   540	        }
+   541	
+   542	        Self {
+   543	            inner,
+   544	            identity,
+   545	            cache: RwLock::new(cache),
+   546	            cache_path,
+   547	            meta_path,
+   548	            doc_manifest_sha,
+   549	            subset_label: subset_label.to_string(),
+   550	            loaded_from_disk: loaded,
+   551	            miss_reason,
+   552	            live_misses: AtomicUsize::new(0),
+   553	        }
+   554	    }
+   555	
+   556	    /// Persist the current embed set atomically. Returns
+   557	    /// `(loaded_from_disk, live_miss_count)`. A no-op rewrite on a fully
+   558	    /// warm run (loaded + zero misses) is skipped so warm runs do no disk
+   559	    /// I/O; otherwise the blob is written deterministically.
+   560	    fn persist(&self) -> (bool, usize) {
+   561	        let live = self.live_misses.load(Ordering::Relaxed);
+   562	        if self.loaded_from_disk && live == 0 {
+   563	            return (true, 0);
+   564	        }
+   565	        if let Err(e) = self.write_cache() {
+   566	            eprintln!(
+   567	                "CORPUS_CACHE_WRITE_FAIL reason={e} label={} path={}",
+   568	                self.subset_label,
+   569	                self.cache_path.display()
+   570	            );
+   571	        }
+   572	        (self.loaded_from_disk, live)
+   573	    }
+   574	
+   575	    fn write_cache(&self) -> Result<(), String> {
+   576	        if let Some(parent) = self.cache_path.parent() {
+   577	            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+   578	        }
+   579	        let dim = self.identity.dimension as usize;
+   580	        let guard = self.cache.read().expect("cache read lock");
+   581	
+   582	        // Deterministic order: sort entries by their text digest.
+   583	        let mut keys: Vec<&[u8; 32]> = guard.keys().collect();
+   584	        keys.sort_unstable();
+   585	
+   586	        let mut blob: Vec<u8> = Vec::with_capacity(12 + keys.len() * (32 + dim * 4));
+   587	        blob.extend_from_slice(&CACHE_FORMAT_VERSION.to_le_bytes());
+   588	        blob.extend_from_slice(&(self.identity.dimension).to_le_bytes());
+   589	        blob.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+   590	        for k in &keys {
+   591	            let v = &guard[*k];
+   592	            debug_assert_eq!(v.len(), dim, "cached vector dim mismatch");
+   593	            blob.extend_from_slice(&k[..]);
+   594	            for f in v {
+   595	                blob.extend_from_slice(&f.to_le_bytes());
+   596	            }
+   597	        }
+   598	        let entry_count = keys.len();
+   599	        drop(guard);
+   600	
+   601	        let meta = serde_json::json!({
+   602	            "format_version": CACHE_FORMAT_VERSION,
+   603	            "tool_version": TOOL_VERSION,
+   604	            "identity": {
+   605	                "name": self.identity.name,
+   606	                "revision": self.identity.revision,
+   607	                "dimension": self.identity.dimension,
+   608	            },
+   609	            "subset_label": self.subset_label,
+   610	            "doc_manifest_sha": self.doc_manifest_sha,
+   611	            "dim": self.identity.dimension,
+   612	            "entry_count": entry_count,
+   613	        });
+   614	        let meta_bytes = serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?;
+   615	
+   616	        atomic_write(&self.cache_path, &blob)?;
+   617	        atomic_write(&self.meta_path, &meta_bytes)?;
+   618	        Ok(())
+   619	    }
+   620	}
+   621	
+   622	impl Embedder for CachingEmbedder {
+   623	    fn identity(&self) -> EmbedderIdentity {
+   624	        self.identity.clone()
+   625	    }
+   626	
+   627	    fn embed(&self, input: &str) -> Result<Vector, EmbedderError> {
+   628	        let key = text_sha256(input);
+   629	        if let Some(v) = self.cache.read().expect("cache read lock").get(&key) {
+   630	            return Ok(v.clone());
+   631	        }
+   632	        let v = self.inner.embed(input)?;
+   633	        self.live_misses.fetch_add(1, Ordering::Relaxed);
+   634	        self.cache.write().expect("cache write lock").insert(key, v.clone());
+   635	        Ok(v)
+   636	    }
+   637	}
+   638	
+   639	// ── Cache key + IO helpers ────────────────────────────────────────────--
+   640	
+   641	fn text_sha256(text: &str) -> [u8; 32] {
+   642	    let mut h = Sha256::new();
+   643	    h.update(text.as_bytes());
+   644	    h.finalize().into()
+   645	}
+   646	
+   647	/// sha256 over the sorted, deduped doc-id list (newline-joined). Stable
+   648	/// regardless of the doc set's in-memory order.
+   649	fn doc_manifest_sha(docs: &[Doc]) -> String {
+   650	    let mut ids: Vec<&str> = docs.iter().map(|d| d.doc_id.as_str()).collect();
+   651	    ids.sort_unstable();
+   652	    ids.dedup();
+   653	    let mut h = Sha256::new();
+   654	    for id in ids {
+   655	        h.update(id.as_bytes());
+   656	        h.update(b"\n");
+   657	    }
+   658	    hex(&h.finalize())
+   659	}
+   660	
+   661	/// Cache file stem: `sha256(name \0 revision \0 dim \0 label \0 manifest)`.
+   662	/// Any of identity (name/revision/dim), subset label, or doc-manifest
+   663	/// changing yields a different file — the invalidation contract.
+   664	fn cache_key(identity: &EmbedderIdentity, label: &str, doc_manifest_sha: &str) -> String {
+   665	    let mut h = Sha256::new();
+   666	    h.update(identity.name.as_bytes());
+   667	    h.update(b"\0");
+   668	    h.update(identity.revision.as_bytes());
+   669	    h.update(b"\0");
+   670	    h.update(identity.dimension.to_le_bytes());
+   671	    h.update(b"\0");
+   672	    h.update(label.as_bytes());
+   673	    h.update(b"\0");
+   674	    h.update(doc_manifest_sha.as_bytes());
+   675	    hex(&h.finalize())
+   676	}
+   677	
+   678	fn hex(bytes: &[u8]) -> String {
+   679	    let mut s = String::with_capacity(bytes.len() * 2);
+   680	    for b in bytes {
+   681	        s.push_str(&format!("{b:02x}"));
+   682	    }
+   683	    s
+   684	}
+   685	
+   686	/// Read + validate the cache. `Ok(Some(map))` on a trusted hit;
+   687	/// `Ok(None)` only when BOTH files are absent (the genuine cold cache);
+   688	/// `Err(reason)` when present-but-stale/corrupt OR partially present
+   689	/// (blob xor sidecar) — a partial cache is a loud miss, never silently
+   690	/// treated as cold. The caller logs every miss and rebuilds; it never
+   691	/// trusts the bytes.
+   692	fn read_cache(
+   693	    cache_path: &Path,
+   694	    meta_path: &Path,
+   695	    identity: &EmbedderIdentity,
+   696	    doc_manifest_sha: &str,
+   697	) -> Result<Option<VecCache>, String> {
+   698	    let blob_exists = cache_path.exists();
+   699	    let meta_exists = meta_path.exists();
+   700	    if !blob_exists && !meta_exists {
+   701	        return Ok(None);
+   702	    }
+   703	    if blob_exists != meta_exists {
+   704	        return Err(format!(
+   705	            "partial cache (blob={blob_exists}, sidecar={meta_exists}) — treating as miss"
+   706	        ));
+   707	    }
+   708	    let meta_bytes = fs::read(meta_path).map_err(|e| format!("read meta: {e}"))?;
+   709	    let meta: serde_json::Value =
+   710	        serde_json::from_slice(&meta_bytes).map_err(|e| format!("parse meta: {e}"))?;
+   711	
+   712	    // Verify the manifest BEFORE trusting any blob bytes (codex focus:
+   713	    // no test silently uses a stale cache).
+   714	    let fmt = meta.get("format_version").and_then(serde_json::Value::as_u64);
+   715	    if fmt != Some(u64::from(CACHE_FORMAT_VERSION)) {
+   716	        return Err(format!("format_version mismatch (got {fmt:?})"));
+   717	    }
+   718	    let m_name = meta.pointer("/identity/name").and_then(serde_json::Value::as_str);
+   719	    let m_rev = meta.pointer("/identity/revision").and_then(serde_json::Value::as_str);
+   720	    let m_dim = meta.pointer("/identity/dimension").and_then(serde_json::Value::as_u64);
+   721	    if m_name != Some(identity.name.as_str())
+   722	        || m_rev != Some(identity.revision.as_str())
+   723	        || m_dim != Some(u64::from(identity.dimension))
+   724	    {
+   725	        return Err("identity mismatch".to_string());
+   726	    }
+   727	    let m_manifest = meta.get("doc_manifest_sha").and_then(serde_json::Value::as_str);
+   728	    if m_manifest != Some(doc_manifest_sha) {
+   729	        return Err("doc_manifest_sha mismatch".to_string());
+   730	    }
+   731	
+   732	    let blob = fs::read(cache_path).map_err(|e| format!("read blob: {e}"))?;
+   733	    parse_blob(&blob, identity.dimension).map(Some)
+   734	}
+   735	
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs | sed -n '300,345p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   300	    identity: EmbedderIdentity,
+   301	    dim: u32,
+   302	}
+   303	
+   304	impl VaryingEmbedder {
+   305	    pub fn new(dim: u32) -> Self {
+   306	        Self::with_identity("varying", "corpus-pack-4", dim)
+   307	    }
+   308	
+   309	    /// Test seam: construct a [`VaryingEmbedder`] with an explicit
+   310	    /// identity name/revision. The produced VECTORS are unchanged (the
+   311	    /// FNV-1a placement depends only on `dim` and the input text) — only
+   312	    /// the reported [`EmbedderIdentity`] varies. Used by the corpus
+   313	    /// harness's cache-invalidation test to flip the embedder identity
+   314	    /// WITHOUT touching the immutable production `EmbedderIdentity`
+   315	    /// contract.
+   316	    pub fn with_identity(name: &str, revision: &str, dim: u32) -> Self {
+   317	        Self { identity: EmbedderIdentity::new(name, revision, dim), dim }
+   318	    }
+   319	
+   320	    fn vector_for(&self, text: &str) -> Vector {
+   321	        let dim = self.dim as usize;
+   322	        let mut v = vec![0.0_f32; dim];
+   323	        let mut h: u64 = 0xcbf29ce4_84222325;
+   324	        for &b in text.as_bytes() {
+   325	            h ^= b as u64;
+   326	            h = h.wrapping_mul(0x0100_0000_01b3);
+   327	        }
+   328	        for k in 0..6 {
+   329	            let coord = ((h >> (k * 8)) as usize) % dim;
+   330	            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
+   331	            v[coord] += sign * 0.5_f32;
+   332	        }
+   333	        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+   334	        for x in &mut v {
+   335	            *x /= norm;
+   336	        }
+   337	        v
+   338	    }
+   339	}
+   340	
+   341	impl Embedder for VaryingEmbedder {
+   342	    fn identity(&self) -> EmbedderIdentity {
+   343	        self.identity.clone()
+   344	    }
+   345	
+
+codex
+I have enough to close this. The new test is structurally sound for manifest-side stale detection; the remaining question is scope: it proves stale-at-same-path for `doc_manifest_sha`, but it does not independently prove the `/identity/*` mismatch return.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs | sed -n '430,455p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   430	        }
+   431	    }
+   432	
+   433	    // -- internals --
+   434	
+   435	    fn ensure_embedder(&self) -> Arc<CachingEmbedder> {
+   436	        self.embedder
+   437	            .get_or_init(|| {
+   438	                let inner: Arc<dyn Embedder> = self.build_inner_embedder();
+   439	                let identity = inner.identity();
+   440	                let cache_dir = self.resolve_cache_dir();
+   441	                Arc::new(CachingEmbedder::load(inner, identity, cache_dir, &self.label, &self.docs))
+   442	            })
+   443	            .clone()
+   444	    }
+   445	
+   446	    fn build_inner_embedder(&self) -> Arc<dyn Embedder> {
+   447	        match self.kind {
+   448	            EmbedderKind::Synthetic => Arc::new(VaryingEmbedder::with_identity(
+   449	                "varying",
+   450	                &self.synthetic_revision,
+   451	                CORPUS_DIM,
+   452	            )),
+   453	            EmbedderKind::Real => build_real_embedder(),
+   454	        }
+   455	    }
+
+codex
+**Verdict: CONCERN**
+
+- `src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:145` does genuinely add a present-but-stale test, but it only locks the `doc_manifest_sha mismatch` return, not the `identity mismatch` return in [`tests/support/corpus_harness.rs:721`]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:721 ) and [`:728`]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:728 ). In `(1c)`, the sidecar’s identity fields are left intact and only `doc_manifest_sha` is tampered in place at [tests/corpus_harness.rs]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:160 ), so an isolated regression of the identity-mismatch check could still slip through green.
+
+Answers to your checks:
+
+- Yes, `(1c)` really does hit the present-but-stale path, not a cold/new-path miss. The second fixture rebuilds the same key from the same identity/label/doc set at [tests/support/corpus_harness.rs]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:520 )-[521], reads the same blob/meta paths at [522]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:522 )-[523], and because `fx_s2` is a fresh fixture it constructs a fresh `CachingEmbedder::load` at [435]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:435 )-[442]. With both files present, `read_cache` cannot take the cold path at [700]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:700 )-[701].
+- The suite would go red if the `doc_manifest_sha` mismatch were regressed to silent fallback: `Ok(None)` would surface `"cold"` instead of `"mismatch"` via [529]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:529 )-[533], and `Ok(Some(_))` would make `embed_cache_hit` true. But it would not go red for an isolated regression of only the identity-mismatch check, because `(1c)` never creates an identity mismatch.
+- I don’t see a new regression from the added test itself. It is isolated in its own temp cache dir, uses a fresh fixture instance for the reload, and the sidecar tamper is local to that tempdir.
+
+I did not run the suite in this read-only sandbox; this is source-based review.
+tokens used
+108,329
+**Verdict: CONCERN**
+
+- `src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:145` does genuinely add a present-but-stale test, but it only locks the `doc_manifest_sha mismatch` return, not the `identity mismatch` return in [`tests/support/corpus_harness.rs:721`]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:721 ) and [`:728`]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:728 ). In `(1c)`, the sidecar’s identity fields are left intact and only `doc_manifest_sha` is tampered in place at [tests/corpus_harness.rs]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/corpus_harness.rs:160 ), so an isolated regression of the identity-mismatch check could still slip through green.
+
+Answers to your checks:
+
+- Yes, `(1c)` really does hit the present-but-stale path, not a cold/new-path miss. The second fixture rebuilds the same key from the same identity/label/doc set at [tests/support/corpus_harness.rs]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:520 )-[521], reads the same blob/meta paths at [522]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:522 )-[523], and because `fx_s2` is a fresh fixture it constructs a fresh `CachingEmbedder::load` at [435]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:435 )-[442]. With both files present, `read_cache` cannot take the cold path at [700]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:700 )-[701].
+- The suite would go red if the `doc_manifest_sha` mismatch were regressed to silent fallback: `Ok(None)` would surface `"cold"` instead of `"mismatch"` via [529]( /home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:529 )-[533], and `Ok(Some(_))` would make `embed_cache_hit` true. But it would not go red for an isolated regression of only the identity-mismatch check, because `(1c)` never creates an identity mismatch.
+- I don’t see a new regression from the added test itself. It is isolated in its own temp cache dir, uses a fresh fixture instance for the reload, and the sidecar tamper is local to that tempdir.
+
+I did not run the suite in this read-only sandbox; this is source-based review.

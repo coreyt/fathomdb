@@ -22,12 +22,12 @@
 //! unreliable wiring gate. The two assertions below are direct
 //! contract checks that don't depend on KNN scoring quality.
 
-#[path = "support/corpus_subset.rs"]
-mod corpus_subset;
+#[path = "support/corpus_harness.rs"]
+mod corpus_harness;
 
 use std::path::Path;
 
-use corpus_subset::{fixture_engine, ingest, load_subset_or_skip};
+use corpus_harness::{load_subset_or_skip, CorpusFixture};
 use rusqlite::Connection;
 
 const PER_SOURCE: usize = 5;
@@ -58,8 +58,9 @@ fn corpus_pack4_vector_path_wired_end_to_end() {
         .collect();
     assert!(docs.len() >= 20, "need >=20 short-body docs, got {}", docs.len());
 
-    let (_dir, engine) = fixture_engine();
-    let (nodes, _edges, _by_rel) = ingest(&engine, &docs);
+    let fx = CorpusFixture::from_docs("corpus_vector", docs);
+    let Some((_dir, engine)) = fx.open_or_skip() else { return };
+    let nodes = fx.ingest_into(&engine).nodes;
     assert!(nodes > 0, "ingest wrote 0 nodes");
 
     // Assertion 1 — engine.search returns non-empty results for a
@@ -67,7 +68,7 @@ fn corpus_pack4_vector_path_wired_end_to_end() {
     // don't have to deal with reopen semantics.
     let mut queried = 0usize;
     let mut non_empty = 0usize;
-    for doc in &docs {
+    for doc in fx.docs() {
         if doc.body.trim().is_empty() {
             continue;
         }

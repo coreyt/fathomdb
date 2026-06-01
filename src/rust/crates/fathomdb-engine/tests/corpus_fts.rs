@@ -8,19 +8,19 @@
 //! Correctness gate, not perf: runs at default `cargo test` scale and
 //! is bounded by the per-source subset size below.
 
-#[path = "support/corpus_subset.rs"]
-mod corpus_subset;
+#[path = "support/corpus_harness.rs"]
+mod corpus_harness;
 
-use corpus_subset::{fixture_engine, ingest, load_subset_or_skip, salient_word};
+use corpus_harness::{salient_word, CorpusFixture};
 use std::collections::BTreeMap;
 
 const PER_SOURCE: usize = 5;
 
 #[test]
 fn corpus_pack4_fts_returns_hits_for_salient_terms() {
-    let Some(docs) = load_subset_or_skip(PER_SOURCE) else { return };
-    let (_dir, engine) = fixture_engine();
-    let (nodes, _edges, _by_rel) = ingest(&engine, &docs);
+    let fx = CorpusFixture::per_source(PER_SOURCE);
+    let Some((_dir, engine)) = fx.open_or_skip() else { return };
+    let nodes = fx.ingest_into(&engine).nodes;
     assert!(nodes > 0, "ingest wrote 0 nodes");
 
     // Pick a salient query word per doc; skip docs where we can't find
@@ -28,7 +28,7 @@ fn corpus_pack4_fts_returns_hits_for_salient_terms() {
     let mut queried = 0usize;
     let mut hit = 0usize;
     let mut miss_by_source: BTreeMap<String, usize> = BTreeMap::new();
-    for doc in &docs {
+    for doc in fx.docs() {
         let Some(term) = salient_word(&doc.body) else { continue };
         queried += 1;
         let result =

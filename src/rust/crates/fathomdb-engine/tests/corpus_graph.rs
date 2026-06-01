@@ -14,13 +14,13 @@
 //!
 //! Correctness gate, not perf.
 
-#[path = "support/corpus_subset.rs"]
-mod corpus_subset;
+#[path = "support/corpus_harness.rs"]
+mod corpus_harness;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use corpus_subset::{fixture_engine, ingest, load_chain_docs, load_chains_or_skip};
+use corpus_harness::{load_chain_docs, load_chains_or_skip, CorpusFixture};
 use fathomdb_engine::Engine;
 use rusqlite::Connection;
 
@@ -64,8 +64,9 @@ fn corpus_pack4_graph_edges_match_chain_specs() {
     let Some(docs) = load_chain_docs(&wanted) else { return };
     assert!(!docs.is_empty(), "load_chain_docs returned empty");
 
-    let (_dir, engine) = fixture_engine();
-    let (_nodes, edges_written, _by_rel) = ingest(&engine, &docs);
+    let fx = CorpusFixture::from_docs("corpus_graph", docs);
+    let Some((_dir, engine)) = fx.open_or_skip() else { return };
+    let edges_written = fx.ingest_into(&engine).edges;
     assert!(edges_written > 0, "ingest emitted 0 edges (chain wiring would be broken)");
 
     let db_path = engine_db_path(&engine);

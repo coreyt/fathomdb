@@ -303,7 +303,18 @@ pub struct VaryingEmbedder {
 
 impl VaryingEmbedder {
     pub fn new(dim: u32) -> Self {
-        Self { identity: EmbedderIdentity::new("varying", "corpus-pack-4", dim), dim }
+        Self::with_identity("varying", "corpus-pack-4", dim)
+    }
+
+    /// Test seam: construct a [`VaryingEmbedder`] with an explicit
+    /// identity name/revision. The produced VECTORS are unchanged (the
+    /// FNV-1a placement depends only on `dim` and the input text) — only
+    /// the reported [`EmbedderIdentity`] varies. Used by the corpus
+    /// harness's cache-invalidation test to flip the embedder identity
+    /// WITHOUT touching the immutable production `EmbedderIdentity`
+    /// contract.
+    pub fn with_identity(name: &str, revision: &str, dim: u32) -> Self {
+        Self { identity: EmbedderIdentity::new(name, revision, dim), dim }
     }
 
     fn vector_for(&self, text: &str) -> Vector {
