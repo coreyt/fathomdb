@@ -280,34 +280,15 @@ jobs:
         if: ${{ inputs.dry_run != true }}
         run: sleep 60
 
-  publish-rust-t4-engine:
+  # T4 publishes fathomdb-embedder BEFORE fathomdb-engine: engine has a normal
+  # dependency on `fathomdb-embedder = "^<axis-W>"`, so embedder must resolve on
+  # the crates.io index first. (Earlier this pair was swapped — engine at T4,
+  # embedder at T5 — which made engine's publish fail to resolve embedder. Fixed
+  # 0.7.2 PR-4.) Dep graph: embedder needs embedder-api (T1); engine needs
+  # embedder (T4) + query (T3) + schema (T2) + embedder-api (T1).
+  publish-rust-t4-embedder:
     runs-on: ubuntu-latest
     needs: publish-rust-t3-query
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-      - name: cargo publish fathomdb-engine
-        run: |
-          if [ "${DRY_RUN}" = "true" ]; then
-            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-engine
-          else
-            bash scripts/release/cargo-publish-if-new.sh fathomdb-engine
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Wait for crates.io index propagation
-        if: ${{ inputs.dry_run != true }}
-        run: sleep 60
-
-  publish-rust-t5-embedder:
-    runs-on: ubuntu-latest
-    # T5 depends on Axis E (T1) in graph terms but waits for T4 here so the
-    # 60s index-propagation cadence stays linear; parallelizing T5 with T4
-    # would race the crates.io index from two directions for no real wall-
-    # clock win.
-    needs: publish-rust-t4-engine
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
@@ -326,15 +307,37 @@ jobs:
         if: ${{ inputs.dry_run != true }}
         run: sleep 60
 
+  publish-rust-t5-engine:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t4-embedder
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-engine
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-engine
+          else
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-engine
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
   publish-rust-t6-facade:
     runs-on: ubuntu-latest
-    needs: publish-rust-t5-embedder
+    needs: publish-rust-t5-engine
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
       - name: cargo publish fathomdb (facade)
+        # facade depends on fathomdb-engine (now T5).
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
             bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb
@@ -370,7 +373,8 @@ jobs:
 
   # --- Tier 8: binding-package parallel publishes ----------------------------
   # PyPI + npm wrap fathomdb-engine directly (PyO3 / napi-rs). They publish
-  # in parallel after T4 resolves on crates.io — independent of T5..T7.
+  # in parallel after T5 (engine) resolves on crates.io — independent of
+  # T6..T7.
 
   publish-pypi:
     runs-on: ubuntu-latest
@@ -379,7 +383,7 @@ jobs:
     # on dispatch; the build-python matrix still runs on dry-run so wheel
     # buildability stays exercised across platforms.
     if: ${{ inputs.dry_run != true }}
-    needs: publish-rust-t4-engine
+    needs: publish-rust-t5-engine
     environment:
       name: pypi
     steps:
@@ -395,7 +399,7 @@ jobs:
 
   publish-npm:
     runs-on: ubuntu-latest
-    needs: publish-rust-t4-engine
+    needs: publish-rust-t5-engine
     permissions:
       contents: read
       id-token: write
