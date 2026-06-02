@@ -121,11 +121,23 @@ supersession Q1–Q5 are *readied* now and *finalized* at Slice 25.
 
 ## 6. Outstanding worktrees ledger
 
-**Empty.** Slice 0 is `[design-adr]` and owns **no worktree** (cited §1
+**No 0.8.0 slice-managed worktree outstanding.** This ledger tracks worktrees the
+0.8.0 orchestration creates per `orchestration.md` §11 (slice `git worktree add` →
+cherry-pick → cleanup). Slice 0 is `[design-adr]` and owns **no worktree** (cited §1
 adaptation — worktrees are tied to the implementer role; design-adr/verification
 subagents own none). Populate when `git worktree add` succeeds (first at Slice 5);
-remove on cleanup per `orchestration.md` §11. Slice 40 is the final cleanup gate
-(ledger must be empty to CLOSE the phase).
+remove on cleanup per §11. Slice 40 is the final cleanup gate (this ledger must be
+empty to CLOSE the phase).
+
+> **Note (2026-06-02, reconciliation after codex completeness audit):** a raw
+> `git worktree list` shows **two worktrees that are NOT 0.8.0 slice-managed** and
+> are out of this ledger's scope: (1) `.claude/worktrees/agent-ad59c9d7bcc049a3d`
+> — a **locked** Claude-agent harness worktree (live pid) on a 0.6.x-era commit
+> `0debd6b`, an orphan from a prior session; (2) `.claude/worktrees/corpus-work`
+> — branch `corpus-work` @ `c99c5ef` carrying **active corpus-expansion work**
+> (out-of-band, owner-managed). Neither was created by a 0.8.0 slice; neither is
+> Slice 0's to clean up. Slice 40's "ledger empty" gate applies to slice-managed
+> worktrees only.
 
 | Worktree path | Slice | Branch | Baseline SHA | State |
 |---------------|-------|--------|--------------|-------|
