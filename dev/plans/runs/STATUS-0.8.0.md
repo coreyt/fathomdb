@@ -15,26 +15,33 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-02 (Slice 0 **CLOSED**; pointer advanced to Slice 5).
+Last updated: 2026-06-02 (Slice 5 **IN FLIGHT** — worktree created, implementer
+prompt written & handed to the human-run implementer agent; awaiting completion).
 
 ---
 
 ## 1. Current slice
 
-**Slice 0 — Setup + ADR Kickoff** `[design-adr]` — ✅ **CLOSED 2026-06-02.**
-- Ran on the **main thread** (§1); subagents **0.a ∥ 0.b** (no worktree —
-  design-adr adaptation, §1 cited) both returned **PASS** against their bars.
-- Adversarial review **PASS** (codex binary unrunnable in this container —
-  bubblewrap net-namespace init failure; substituted an independent adversarial
-  subagent running the identical four-check + impl-plan rubric; verdict +
-  provenance: `0.8.0-slice-0-review-20260602T115112Z.md`).
-- **Produced the HITL gate package (NOT signed — terminal Slice-0 exit):**
-  substrate Q2 (Option 2A) / Q4 (edges carry temporal) / op-store cascade /
-  forward-migration policy → **gate Slice 15**; supersession Q1–Q5 readied
-  (A1/B1/amend/confirm/SDK-only) → **finalized at Slice 25**.
-- **Next:** Slice 5 (G1) — pointer advanced. Slice 5 is AC-057a-clean and only
-  needs the substrate ADR *draft* to exist (it does), so it is NOT blocked on the
-  HITL substrate sign-off (that gates Slice 15).
+**Slice 5 — G1 Structured Hits + FTS5 tokenizer** `[implementation]` — ⏳ **IN FLIGHT 2026-06-02.**
+- State (§1.5): **WORKTREE_CREATED**. Worktree `/tmp/fdb-slice-5-20260602T215841Z`,
+  branch `slice-5-20260602T215841Z`, baseline `944cbb4` (main HEAD at slice start).
+- Self-contained implementer prompt written: `dev/plans/prompts/0.8.0-slice-5.md`
+  (5.a — implementer, worktree). **Execution model (HITL directive this session):**
+  the human pastes the prompt into a **new agent** which runs the implementer work;
+  the orchestrator (main thread) then gates the transition (output.json present AND
+  branch head advanced past baseline) → cherry-pick → review → 5.b → close.
+- **Plan-adjustment recorded** (see §7): Slice 5's new tokenizer migration is
+  `step_id 11` + bumps `SCHEMA_VERSION 10→11`; this re-numbers Slice 15's G0
+  migration to `step_id 12` / `11→12` (its contract's "step 11 / 10→11" is now stale).
+- **Compat-ledger ack** (§7): the `SearchHit` data-class change (`SearchResult.results`
+  `Vec<String>`→`Vec<SearchHit>`, `Eq` dropped) + tokenizer recall shift are accepted
+  as documented 0.8.0 events (AC-057a-clean; no new verb; no HITL sign-off needed).
+
+### Slice 0 — Setup + ADR Kickoff `[design-adr]` — ✅ CLOSED 2026-06-02
+- Ran on the **main thread** (§1); subagents **0.a ∥ 0.b** both PASS against bars.
+  Adversarial review PASS (codex unrunnable — substituted independent adversarial
+  subagent; `0.8.0-slice-0-review-20260602T115112Z.md`). Produced the HITL gate
+  package (substrate → gates 15; supersession → finalized at 25). Pointer → Slice 5.
 
 ---
 
@@ -48,7 +55,7 @@ applicable to this slice's work-type.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
-| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ❌ not started | 0 | **instantiates** functional harnesses (Py+TS) | ❌ | ❌ |
+| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ⏳ in flight | 0 | **instantiates** functional harnesses (Py+TS) | ⏳ | ⏳ |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ❌ not started | 5 | ❌ extend | ❌ | ❌ |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ❌ not started | 0, 5 | ❌ extend | ❌ | ❌ |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ❌ not started | 15 | ❌ extend | ❌ | ❌ |
@@ -141,11 +148,37 @@ empty to CLOSE the phase).
 
 | Worktree path | Slice | Branch | Baseline SHA | State |
 |---------------|-------|--------|--------------|-------|
-| _(none)_ | — | — | — | — |
+| `/tmp/fdb-slice-5-20260602T215841Z` | 5 | `slice-5-20260602T215841Z` | `944cbb4` | WORKTREE_CREATED (implementer running; awaiting `0.8.0-slice-5-output.json`) |
 
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-02 — Slice 5 SPAWNED (worktree + prompt; in flight)
+
+- **Worktree created** by the orchestrator (main thread, §1):
+  `/tmp/fdb-slice-5-20260602T215841Z` on branch `slice-5-20260602T215841Z` from
+  baseline `944cbb4` (re-verified `git rev-parse main` immediately prior — trap 4).
+  Self-contained 5.a implementer prompt written to `dev/plans/prompts/0.8.0-slice-5.md`.
+- **Execution model (this session):** per HITL directive, the **human pastes the slice
+  prompt into a new agent** that runs the implementer; the orchestrator does NOT spawn it
+  via the Agent tool. The orchestrator still owns the worktree, the §1.5 gate
+  (output.json present AND head advanced), cherry-pick, review, 5.b, and close.
+- **Plan-adjustment (ADJUST-on-divergence, §12.4) — Slice 5 takes schema step 11:**
+  The migrate engine requires contiguous `step_id` (`step_id == current+1`) and the
+  open-time guard errors when `user_version > SCHEMA_VERSION`. The witnessed max step is
+  **10** (`fathomdb-schema/src/lib.rs:254`), `SCHEMA_VERSION=10` (`:6`). Therefore Slice
+  5's NEW tokenizer migration is **`step_id 11`** and **bumps `SCHEMA_VERSION 10→11`**.
+  **Consequence:** Slice 15's contract ("append `step_id:11`, bump `10→11`") is now
+  **stale**; when Slice 15 lands it becomes **`step_id 12` / `SCHEMA_VERSION 11→12`**.
+  Slice 15's contract already anticipates this ("ADJUST on divergence (version ≠ 10…)").
+  This will be reconciled into the Slice 15 closing docs commit; recorded here now so the
+  divergence is not re-learned. Baked into the Slice 5 prompt §3.3.
+- **Compat-ledger ack (the soft Slice-0 item):** the breaking `SearchHit` data-class
+  change (`SearchResult.results: Vec<String>`→`Vec<SearchHit>`, `Eq` dropped because
+  `f64`) and the FTS5 tokenizer-default recall shift are **accepted as documented 0.8.0
+  events**. AC-057a-clean — `search()` enriched, no new verb — so **no HITL sign-off** is
+  required to proceed with Slice 5 (only the substrate ADR *draft*, which exists).
 
 ### 2026-06-02 — Slice 0 CLOSED (PASS; pointer → Slice 5)
 
@@ -197,20 +230,34 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 0 is CLOSED; pointer = Slice 5.** Two parallel tracks:
+**Slice 5 is IN FLIGHT (WORKTREE_CREATED).** The orchestrator is **awaiting the
+implementer's completion** (human runs the `dev/plans/prompts/0.8.0-slice-5.md` prompt
+in a new agent inside the worktree `/tmp/fdb-slice-5-20260602T215841Z`).
 
-1. **HITL gate-package sign-off (gates Slice 15, NOT Slice 5).** HITL signs the
-   substrate-ADR package (Q2=Option 2A / Q4 / op-store cascade / forward-migration
-   policy) — required before Slice 15 (G0 keystone) spawns; and decides the
-   FLAGGED `write_cursor`-as-row-id deviation (accept for 0.8.0, or fold `row_id` +
-   `restore_provenance` into the Slice-15 delta). Supersession Q1–Q5 are readied
-   now, finalized at Slice 25.
-2. **Spawn Slice 5** — G1 Structured Search Hits + global FTS5 tokenizer upgrade
-   (implementation; first behavior slice; **stands up the SDK functional
-   harnesses** per the X1 contract). Slice 5 is AC-057a-clean (enriches `search()`,
-   adds no verb) and needs only the substrate ADR *draft* (present) — **not**
-   blocked on the HITL substrate sign-off. Needs a board compat-ledger ack for the
-   `SearchHit` data-class change + tokenizer recall shift.
+**When the implementer reports done, the orchestrator (this thread) resumes the §9 loop:**
+1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-5-output.json`
+   exists AND the branch head advanced past `944cbb4`. Absent / blocker reported → triage
+   (fix-1 or HALT), do NOT cherry-pick a non-state.
+2. **Cherry-pick** the implementer commits onto `main` (one dependent git op per Bash call,
+   verify each; re-check `git rev-parse main` first — trap 4). Never merge.
+3. **Review** — codex is unrunnable here (trap 5); spawn an independent adversarial review
+   subagent (read-only over the diff) → promote to `0.8.0-slice-5-review-<ts>.md` with a
+   `## Verdict:` line. Focus: floor held across the migration, no `Eq`-derive leak,
+   dedup/vector-first order, Py+TS parity, the step-11/`SCHEMA_VERSION` migration mechanism.
+4. **5.b verification** (no worktree, read-only re-run): recall delta across the migration,
+   functional harnesses exist in both SDKs + cross-binding equivalence, X2 `mkdocs build`, X3 docs.
+5. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override.
+   Substantive CONCERN / BLOCK → fix-1 (fresh implementer into the existing worktree).
+   **Sub-0.90 floor breach is substantive — never overridden → HALT to HITL.**
+6. **Close in ONE docs commit:** Slice 5 CLOSED block in the plan, advance pointer to Slice 10,
+   update this board (incl. X1/X2/X3 columns) + `dev/DOC-INDEX.md` + per-AC scoreboard.
+   Reconcile the Slice-15 step-12 renumber note.
+7. **Worktree cleanup** (§11) after the slice closes.
+
+**Parallel standing item — HITL gate-package sign-off (gates Slice 15, NOT Slice 5):** HITL
+signs the substrate-ADR package (Q2=Option 2A / Q4 / op-store cascade / forward-migration
+policy) and rules on the FLAGGED `write_cursor`-as-row-id deviation — required before Slice 15
+(G0 keystone) spawns. Supersession Q1–Q5 readied now, finalized at Slice 25.
 
 Standing verification checklist (Slice 40 enforces as named release gates):
 `scripts/check.sh AGENT_LONG=1` · `scripts/verify-release-gates.sh` (test seams
