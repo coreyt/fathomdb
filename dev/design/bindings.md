@@ -43,7 +43,7 @@ shape.
 
 CLI is a separate, non-SDK surface (per ADR-0.6.0-cli-scope, architecture.md § 1: "Does NOT mirror full SDK 5-verb surface"). CLI exposes a structurally distinct operator command set (`fathomdb doctor <verb>` and `fathomdb recover`). CLI parity with SDK is NOT required and NOT promised; adding an SDK verb does not imply adding a CLI command.
 
-The SDK surface MUST NOT contain any name in `{recover, restore, repair, fix, rebuild, doctor}` (REQ-037, REQ-054, REQ-031d). These verbs exist exclusively on the CLI surface.
+The SDK surface MUST NOT contain any name in `{recover, restore, repair, fix, rebuild}` (REQ-037, REQ-054, REQ-031d). These verbs exist exclusively on the CLI surface. (The `doctor` CLI namespace is likewise SDK-absent, but by virtue of the positive verb allowlist — it is never added to the SDK surface — not via this recovery-name denylist, so it is not a member of this set.)
 
 REQ-030's bounded-completion surface is **not** a sixth top-level SDK verb.
 It is an `Engine` instance method. The per-language method spelling is owned by

@@ -41,7 +41,8 @@ content.
 - **Contract summary.** Every SDK binding's public top-level surface is
   exactly the five verbs in idiomatic casing. Adding a verb requires
   updating all SDK bindings together. SDK surface MUST NOT contain any
-  name in `{recover, restore, repair, fix, rebuild, doctor}`.
+  name in `{recover, restore, repair, fix, rebuild}` (`doctor` is
+  SDK-absent via the verb allowlist, not this denylist).
 - **Key types/fields/enums/errors.** Verb names; parity invariant;
   recovery-name exclusion list.
 - **Requirement/AC refs.** REQ-053, REQ-037, REQ-054, REQ-031d;
@@ -683,7 +684,8 @@ Option<u32> }`; sidecar file path convention.
   REQ-054, REQ-031d; `acceptance.md` AC-057a, AC-035d, AC-041.
 - **Contract summary.** Symmetric across SDK bindings: a verb appears
   in every SDK binding or in none. SDK surface MUST NOT contain
-  recovery names `{recover, restore, repair, fix, rebuild, doctor}`.
+  recovery names `{recover, restore, repair, fix, rebuild}` (`doctor`
+  is SDK-absent via the verb allowlist, not this denylist).
   CLI is outside this parity claim.
 - **Key types/fields/enums/errors.** Verb set; exclusion list.
 - **Requirement/AC refs.** REQ-053, REQ-037, REQ-054, REQ-031d;
