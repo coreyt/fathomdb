@@ -25,7 +25,9 @@ nav:
   - Default Embedder: embedder.md
   - Compatibility: compatibility/index.md
   - Operations: operations/index.md
-  - Guides: guides/index.md
+  - Guides:
+      - Overview: guides/index.md
+      - Structured Search Hits: guides/structured-search-hits.md
   - Release Notes:
       - 0.6.0: release-notes/0.6.0.md
       - 0.6.1: release-notes/0.6.1.md

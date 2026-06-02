@@ -21,6 +21,7 @@ import {
   type EngineConfig,
   type EngineOpenOptions,
   type WriteReceipt,
+  type SearchHit,
   type SearchResult,
   type SoftFallback,
   type SoftFallbackBranch,
@@ -68,6 +69,9 @@ Enqueue a batch of canonical rows.
 Run hybrid retrieval.
 
 - `query` (`string`).
+- Resolves to a `SearchResult` whose `results` is a `SearchHit[]`; each
+  [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`, `body`,
+  a per-branch `score`, and the `branch` that produced it.
 
 ### `engine.close() -> Promise<void>`
 
@@ -130,9 +134,27 @@ interface WriteReceipt {
 interface SearchResult {
   projectionCursor: number;
   softFallback: SoftFallback | null;
-  results: string[];
+  results: SearchHit[];
 }
 ```
+
+### `SearchHit`
+
+```ts
+interface SearchHit {
+  id: number; // canonical row write_cursor (interim identity carrier)
+  kind: string;
+  body: string;
+  score: number; // vec_distance_l2 (vector branch) or bm25() (text branch)
+  branch: SoftFallbackBranch; // "vector" | "text"
+}
+```
+
+`score` is the raw per-branch relevance: `vec_distance_l2` for the vector
+branch (lower = closer) and `bm25()` for the text branch (more-negative =
+more-relevant). The two are **not** comparable raw — fusing them onto a single
+scale is a later (RRF) concern. `branch` tags which retrieval branch produced
+the hit.
 
 ### `SoftFallback`
 
