@@ -63,9 +63,24 @@ const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
 const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
 /// 0.8.0 Slice 5 (G1) — schema version that introduces the global FTS5
 /// tokenizer-default upgrade (`SCHEMA_VERSION` 11, migration step 11). A DB
-/// migrated across this boundary re-tokenizes `search_index` from canonical
-/// source rows on open (the drop+recreate leaves the FTS index empty).
+/// migrated to (or past) this version re-tokenizes `search_index` from
+/// canonical source rows on open (the drop+recreate leaves the FTS index
+/// empty). Repair is keyed off the completion marker below — NOT off crossing
+/// the step boundary — so it is crash-retryable (see
+/// `SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY`).
 const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
+/// 0.8.0 Slice 5 (G1) fix-1 — `_fathomdb_open_state` key set, in the SAME
+/// transaction as the reproject DELETE+INSERT, once the post-tokenizer-upgrade
+/// re-tokenization commits durably. Step 11 commits `user_version = 11` with an
+/// EMPTY `search_index` in its own transaction; the reproject runs in a later
+/// transaction on open. A crash in that window leaves a durable `user_version =
+/// 11` + empty index. Gating repair on a boundary crossing (`before < 11`)
+/// would skip it on the next open (it sees `before == 11`), stranding the index
+/// empty forever. Gating on this marker's ABSENCE instead makes repair
+/// idempotent and crash-retryable: written atomically with the reindex, so a
+/// crash before commit leaves no marker and the next open re-runs.
+const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
+    "search_index_tokenizer_reproject_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
@@ -1686,10 +1701,21 @@ impl Engine {
         // off `_fathomdb_projection_terminal`, which the migration does not
         // clear). Re-tokenize from the canonical source rows here, on the
         // writer connection, single-threaded, before readers spawn —
-        // projection-only, no source-record migration. Idempotent: only runs
-        // when the open crossed the step-11 boundary.
-        if migration.schema_version_before < SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION
-            && migration.schema_version_after >= SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION
+        // projection-only, no source-record migration.
+        //
+        // Crash-retryable (fix-1): step 11 commits `user_version = 11` with an
+        // empty index in its OWN transaction; this reproject commits in a
+        // LATER transaction. A crash in that window leaves a durable v11 + empty
+        // index, on which a boundary-crossing guard (`before < 11`) is FALSE,
+        // skipping repair forever. So gate on the completion marker's ABSENCE
+        // (written atomically with the reindex) instead: idempotent, and a
+        // crash before the reindex commit simply re-runs on the next open.
+        if migration.schema_version_after >= SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION
+            && !search_index_tokenizer_reproject_complete(&connection).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not read search_index tokenizer reproject marker".to_string(),
+                }
+            })?
         {
             reproject_search_index_after_tokenizer_upgrade(&connection).map_err(|_| {
                 EngineOpenError::Io {
@@ -3826,6 +3852,12 @@ struct CanonicalNodeRow {
 /// every node exactly reproduces the prior index content under the new
 /// tokenizer. Runs in a single transaction on the writer connection before
 /// readers spawn.
+///
+/// Crash-retryable (fix-1): the reindex and its durable completion marker
+/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+/// commit together in ONE `BEGIN IMMEDIATE…COMMIT`. A crash before the commit
+/// rolls both back, leaving no marker; the next open re-runs. A crash after
+/// the commit finds the marker present and skips. Idempotent.
 fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> rusqlite::Result<()> {
     let rows = canonical_node_rows(connection)?;
     connection.execute_batch("BEGIN IMMEDIATE")?;
@@ -3838,6 +3870,11 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
                 statement.execute(params![row.body, row.kind, row.cursor])?;
             }
         }
+        connection.execute(
+            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY, "1"],
+        )?;
         Ok(())
     })();
     match result {
@@ -3846,6 +3883,36 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
             let _ = connection.execute_batch("ROLLBACK");
             Err(err)
         }
+    }
+}
+
+/// 0.8.0 Slice 5 (G1) fix-1 — has the post-tokenizer-upgrade re-tokenization
+/// committed durably on this DB? Keys off the
+/// `SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` row written inside the reindex
+/// transaction; its absence on a v11 DB means the reindex never committed
+/// (fresh-after-step-11 or crash-in-window) and must (re-)run.
+///
+/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+/// reproject): that table is created by migration step 1, so its absence means
+/// the DB never ran our migrations (e.g. a synthetic DB whose `user_version`
+/// was stamped to 11 by hand, or a legacy/foreign shape). Such DBs are
+/// rejected by the downstream embedder-identity/integrity probes; the reproject
+/// must not run — and must not mask those errors — on them. On a genuinely
+/// migrated DB the table always exists, so the crash-repair path is unaffected.
+fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlite::Result<bool> {
+    match connection.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value == "1"),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref message)))
+            if message.contains("no such table") =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
     }
 }
 
