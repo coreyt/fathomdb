@@ -1,6 +1,6 @@
 # FathomDB 0.7.0 test corpus — corpus card
 
-Status: **scaffold** (Corpus-Pack 1 acquisition not yet started).
+Status: **active corpus** (0.8.x QA expansion in progress).
 Drafted: 2026-05-27.
 Authoritative handoff:
 [`dev/plans/prompts/0.7.0-CORPUS-BUILD-HANDOFF.md`](../../dev/plans/prompts/0.7.0-CORPUS-BUILD-HANDOFF.md).
@@ -11,8 +11,8 @@ HITL locks:
 
 ## What this corpus is
 
-A composite real-data + synthetic test corpus (~10K documents,
-"Version B") that exercises FathomDB's three retrieval modalities
+A composite real-data + synthetic test corpus (10K+ raw documents after
+the 0.8.x QAConv/QASPER expansion) that exercises FathomDB's three retrieval modalities
 together: SQLite FTS5, sqlite-vec (`bit[768]` + f32 rerank,
 post-Pack-1), and FathomDB's chunk/document/relation graph.
 
@@ -106,10 +106,12 @@ soft minimums. All output paths are
 | Source | `source_type` | Target docs | License | License posture |
 |---|---|---|---|---|
 | Enron Email Dataset (CMU) | `email` | 2,000 | research-use; ambiguous redistribution; **HITL OK to commit** with impersonation note | commit-eligible |
-| EnronQA (HF MichaelR207/enron_qa_0922) | `email` (QA augmentation) | 200 | undeclared on HF card | cache-only until license clarified |
-| QMSum | `meeting` | 600 | derived from AMI (CC-BY) / ICSI (CC-BY-NC) — chain unverified | cache-only until chain verified |
+| EnronQA (HF MichaelR207/enron_qa_0922) | `email` (existing source; QA export added) | 200 + 710 eval QA | undeclared on HF card | cache-only until license clarified |
+| QMSum | `meeting` (existing source; QA export added) | 600 + 1,584 eval QA | derived from AMI (CC-BY) / ICSI (CC-BY-NC) — chain unverified | cache-only until chain verified |
 | ELITR Minuting Corpus | `meeting` | 400 | CC-BY-NC-SA 4.0 | cache-only — NC + SA blocks redistribution |
-| PMC OA — Commercial-Use bucket | `paper` | 1,500 | CC0 / CC-BY / CC-BY-SA / CC-BY-ND | commit-eligible (deferred — set-aside per HITL 2026-05-27) |
+| QAConv | mixed `email`/`meeting`/`note` | 1,250 + 2,303 eval QA | BSD-3-Clause | commit-eligible |
+| QASPER | `paper` | 1,585 + 7,993 answer-level eval QA | CC-BY-4.0 | commit-eligible with attribution |
+| PMC OA — Commercial-Use bucket | `paper` | deferred | CC0 / CC-BY / CC-BY-SA / CC-BY-ND | defer after QASPER; see `dev/notes/0.8.x-pmc-oa-reconsideration.md` |
 | S2ORC (Semantic Scholar Bulk Dataset API) | `paper` | 1,000 | ODC-By 1.0 (attribution) | cache-only (Semantic Scholar TOS) |
 | OpenAlex (AWS Registry) | `paper` (metadata enrichment only) | — | CC0 | commit-eligible |
 | CNN/DailyMail (HF abisee/cnn_dailymail) | `article` | 2,500 | Apache-2.0 | commit-eligible |
@@ -119,10 +121,10 @@ soft minimums. All output paths are
 | Synthetic chain connectives (Corpus-Pack 2) | mixed (`note`/`email`/`todo`) | ~200 chains, ~600 docs | project license | commit-eligible; provenance=`synthetic-chain` |
 | **Total target** | | **~10,000** | | |
 
-PMC OA is **deferred** (HITL 2026-05-27) — its OA Cloud /
-E-Utils + per-article CC license filtering cost is high and we
-have enough Version-B coverage without it. Reconsider in a
-later release.
+PMC OA remains **deferred** after the 2026-06-02 reconsideration.
+QASPER now fills `paper` for 0.8.x, and PMC OA still needs
+per-article Commercial-Use filtering plus an allowed PMC retrieval
+channel.
 
 ## Cross-document chains (Corpus-Pack 2)
 
@@ -207,7 +209,10 @@ Authoritative copy lives in
 | Enron (CMU) | CMU `enron_mail_20150507.tar.gz` | tarball sha `b3da1b3f…48ca7` (2015-05-07) | `c4df0c71…486ab` |
 | Synthetic notes | generator seed `0x53EEDFA7C012B0F1` | n/a | `b4d19f05…55eb3` |
 | QMSum | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` (2023-08-29), arch sha `b6970687…7d7f` | `19a2e5b4…5e2e` |
-| EnronQA | HF `MichaelR207/enron_qa_0922` | rev `c0b3a919…221e` (2024-09-22) | `bc30eb06…48ab` |
+| EnronQA | HF `MichaelR207/enron_qa_0922` | rev `c0b3a919…221e` (2024-09-22) | `bc30eb06…48ab`; eval `756e7c48…85c0` |
+| QAConv | GH `salesforce/QAConv` `dataset/QAConv-V1.1.zip` | rev `b1f140c3…6407` | `8c416c76…5d1d`; eval `a4a3bc33…f4cf` |
+| QASPER | HF `allenai/qasper` static v0.3 archives | rev `fdc9d821…4a54` | `e84746e1…8a0a`; eval `299866fc…39c1` |
+| QMSum eval QA | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` | eval `85eb381c…8a5` |
 
 ## Out of scope for 0.7.0
 

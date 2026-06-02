@@ -28,6 +28,8 @@ nav:
   - Guides: guides/index.md
   - Release Notes:
       - 0.6.0: release-notes/0.6.0.md
+      - 0.6.1: release-notes/0.6.1.md
+      - 0.8.0: release-notes/0.8.0.md
   - Positions:
       - Index: positions/index.md
       - SDK Parity: positions/sdk-parity.md

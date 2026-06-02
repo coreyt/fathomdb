@@ -1,5 +1,5 @@
 {
-  "comment": "Upstream pins + checksums for data/corpus-data/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256. The 'distribution' field records license posture only — 'commit' = license-clean enough that we could commit if policy permits, 'cache' = license-blocked. All produced JSONL currently lives under data/corpus-data/ (gitignored) regardless of license posture.",
+  "comment": "Upstream pins + checksums for data/corpus-data/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256. The 'distribution' field records license posture only \u2014 'commit' = license-clean enough that we could commit if policy permits, 'cache' = license-blocked. All produced JSONL currently lives under data/corpus-data/ (gitignored) regardless of license posture.",
   "schema_version": 1,
   "sources": {
     "cnn_dailymail": {
@@ -32,7 +32,10 @@
       "output": "data/corpus-data/raw/enronqa.jsonl",
       "doc_count": 200,
       "sha256": "bc30eb0674eb72e6c762e094a514983f767e5122a6dd3a711325dd0fde5248ab",
-      "acquired_at": "2026-05-27"
+      "acquired_at": "2026-05-27",
+      "eval_output": "data/corpus-data/eval/enronqa_qa.jsonl",
+      "eval_qa_count": 710,
+      "eval_sha256": "756e7c483f6cfd26d1903fa7ceaaff156b3f72df2982bb1dabd985f2c40485c0"
     },
     "qmsum": {
       "script": "acquire_qmsum.py",
@@ -55,7 +58,10 @@
         "specific-summary": 200
       },
       "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
-      "acquired_at": "2026-05-27"
+      "acquired_at": "2026-05-27",
+      "eval_output": "data/corpus-data/eval/qmsum_qa.jsonl",
+      "eval_qa_count": 1584,
+      "eval_sha256": "85eb381cf36811bf63f769ad60f65354aeada517c9fad2079561e56ed037b8a5"
     },
     "synthetic_notes": {
       "script": "generate_synthetic_notes.py",
@@ -132,6 +138,43 @@
       },
       "sha256": "74f0248261f701856f72f2921abb1cd004b1773c13201e7b6ae5ad93e810e812",
       "acquired_at": "2026-05-27"
+    },
+    "qaconv": {
+      "script": "acquire_qaconv.py",
+      "upstream": {
+        "kind": "github_repo_zip_file",
+        "id": "salesforce/QAConv",
+        "revision": "b1f140c39580dd4dadb4ecd35e9a247a90016407",
+        "path": "dataset/QAConv-V1.1.zip"
+      },
+      "license": "BSD-3-Clause",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/qaconv.jsonl",
+      "doc_count": 1250,
+      "sha256": "8c416c765134d971870df451eebb3246bbb79617014484e409e7d383b2bc5d1d",
+      "eval_output": "data/corpus-data/eval/qaconv_qa.jsonl",
+      "eval_qa_count": 2303,
+      "eval_sha256": "a4a3bc3307827d3c7c01af648c19534945fce6131fe0eb9f94bbf69dd660f4cf",
+      "acquired_at": "2026-06-02"
+    },
+    "qasper": {
+      "script": "acquire_qasper.py",
+      "upstream": {
+        "kind": "huggingface_dataset_static_archives",
+        "id": "allenai/qasper",
+        "revision": "fdc9d8214fbab5dd782958601db4d678e6934a54",
+        "train_dev_url": "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-train-dev-v0.3.tgz",
+        "test_url": "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-test-and-evaluator-v0.3.tgz"
+      },
+      "license": "CC-BY-4.0",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/qasper.jsonl",
+      "doc_count": 1585,
+      "sha256": "e84746e1be265db1f892a5848f88411d441dd87d7cacf0cc839f2d44886d8a0a",
+      "eval_output": "data/corpus-data/eval/qasper_qa.jsonl",
+      "eval_qa_count": 7993,
+      "eval_sha256": "299866fc33f496adc8da78b5e7c3d6a9f5f01f9f7b774f8769a4d464409239c1",
+      "acquired_at": "2026-06-02"
     }
   }
 }
