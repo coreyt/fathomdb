@@ -1,0 +1,118 @@
+{
+  "slice": "PR-8",
+  "title": "Campaign closure (0.7.2 release + final scoreboard)",
+  "phase": "B (testing/perf hardening) — campaign closure",
+  "status": "CLOSED",
+  "branch": "main",
+  "closed_at": "2026-06-02T01:20Z",
+  "prompt": "dev/plans/prompts/0.7.2-PR-8-campaign-closure.md",
+  "cut_date": "2026-06-01",
+  "cut_date_note": "Dated 2026-06-01 to match the rest of the campaign and the operator's local date (HITL decision); the literal UTC clock had just rolled to 2026-06-02 at cut time.",
+
+  "commits": {
+    "docs_changelog_status": "1f5b042",
+    "version_bump_axis_w": "51a3f94",
+    "doc_archive_hygiene": "34392b3",
+    "tag_target": "51a3f94",
+    "origin_main_after_push": "34392b3"
+  },
+  "tag": {
+    "name": "v0.7.2",
+    "annotated": true,
+    "tag_object_sha": "9702465",
+    "commit_sha": "51a3f945ebdaea2d0ee03953b5b7b96d16d71769",
+    "remote_matches_local": true,
+    "v070_unmoved": "38d5f4f (local marker, never published)",
+    "v071_unmoved": "c893d8b (first published 0.7.x)"
+  },
+
+  "version_bump": {
+    "tool": "scripts/set-version.sh --workspace 0.7.2",
+    "axis_w": "0.7.1 -> 0.7.2 (Cargo [workspace.package] + 8 workspace crates via version.workspace, python pyproject, ts package.json, Cargo.lock)",
+    "axis_e": "fathomdb-embedder-api held at 0.6.0 (unchanged, per dev/design/release.md)",
+    "check_files": "ok: Axis W = 0.7.2; Axis E = 0.6.0"
+  },
+
+  "changelog": {
+    "header_flipped": "## 0.7.2 - unreleased (IN PROGRESS) -> ## 0.7.2 - 2026-06-01",
+    "phase_b_added": ["PR-5 corpus harness", "PR-6 dev-loop perf gates", "PR-7 perf-regression detection"],
+    "pr7_batch_collapse_honesty": "Documented: degradation-only detector cannot flag the 2026-05-27 batch-collapse bug itself (it masqueraded as improved recall 1.0); it flags the regression-shaped correction (1.0 -> 0.1572 at 4a95cfd). Row-count/anomaly rule logged as future work.",
+    "pr3_reframe_honest": "Latency measurement framed as tiered + local-once-per-release + CI read-path smoke, NOT canonical CI N=1M.",
+    "pr2_reframe_honest": "Recall 0.937 framed as ANN-fidelity vs 0.571 IR ceiling; not retconned to IR-perfect.",
+    "070_071_reconciliation": "Fixed pre-existing in-flight CHANGELOG mod: v0.7.1 is the first published 0.7.x; v0.7.0 is a local historical marker, never published. Removed all text implying v0.7.0 was published.",
+    "removed_section": "(none) — no public symbols removed across the campaign; removal-detect linter PASS"
+  },
+
+  "dod_checklist": {
+    "1_v070_v071_pushed": "DONE (reframed) — v0.7.1 PUBLISHED (PR-4 c893d8b); v0.7.0 intentionally held as a local historical marker per HITL, never published. Not a literal 'both pushed' but the HITL-decided disposition.",
+    "2_pr2_family_resolved": "DONE — dev/plans/runs/0.7.2-PR-2bc-decision.md (ratified).",
+    "3_canonical_n1m": "REFRAMED (NOT original mandate) — PR-3 found real-embedder N=1M infeasible on CI (~166h seed); replaced with local-once-per-release measurement + CI read-path smoke + HITL-locked tiered latency budget in ADR-0.7.0-text-query-latency-gates-revised.md. The substantive equivalent shipped; the box wording predates the reframe. NOT retconned to claim canonical-CI N=1M ran.",
+    "4_doc_drift_swept": "DONE — PR-1 aebf959 (codex PASS).",
+    "5_corpus_harness_canonical": "DONE — PR-5 c605a18; Pack-4 (vector/fts/graph) migrated.",
+    "6_devloop_gates": "DONE — PR-6 e2c886d; ~16s warm <=30s; both regressions RED-shows verified (structural assert catches batch-collapse; catastrophic ceiling catches scanner).",
+    "7_perf_history_backfill_bin_ci": "DONE — PR-7 84446ef; 9 rows backfilled; jitter fixture exit 0 (no false positives); CI -> $GITHUB_STEP_SUMMARY.",
+    "8_changelog_phase_b": "DONE — this slice.",
+    "9_pr9_closed": "DONE — 21f4df6 (codex PASS).",
+    "10_status_scoreboard": "DONE — this slice."
+  },
+
+  "codex_review": {
+    "reviewer": "codex codex-cli 0.120.0, --sandbox read-only, model_reasoning_effort=high",
+    "verdict": "PASS (no findings, first pass)",
+    "record": "dev/plans/runs/0.7.2-PR-8-review-20260602T003639Z.md",
+    "log": "dev/plans/runs/0.7.2-PR-8-review-20260602T003639Z.log"
+  },
+
+  "hitl": {
+    "push_sequence_decision": "main-only -> dry-run rehearse -> push tag (HITL 2026-06-02).",
+    "cut_date_decision": "keep 2026-06-01 (HITL 2026-06-02).",
+    "doc_archive_decision": "do it now (HITL 2026-06-02) -> resolved IN PLACE (no relocation) after finding ~120 cross-referenced prompt paths.",
+    "push_approval": "Approved sequence ending in tag push; executed."
+  },
+
+  "push": {
+    "main": "9a8e11b..34392b3 (14 commits, clean fast-forward); 0.7.1 tip c893d8b confirmed in history",
+    "tag": "v0.7.2 pushed -> fired release run",
+    "dry_run_rehearsal": {
+      "run": "26791212302",
+      "result": "GREEN — verify-release + 5-platform builds + cargo publish dry-run t1-t7 (correct tier order embedder-t4 before engine-t5) + npm dry-run; pypi/post-publish-smoke/github-release correctly skipped under dry_run=true"
+    }
+  },
+
+  "publish_pipeline": {
+    "run": "26791589519",
+    "first_attempt": "PARTIAL — all publishes SUCCEEDED (cargo t1-t7, pypi, npm); post-publish-smoke(npm-package) FAILED in 1.6s on npm registry-propagation lag (package was published but not yet resolvable at install time); github-release SKIPPED via needs-cascade.",
+    "recovery": "gh run rerun --failed (publishes idempotent, did not re-run); npm smoke passed on rerun (propagation settled; verified locally first via smoke-npm-package.sh exit 0); github-release then ran GREEN.",
+    "final_state": "ALL GREEN — crates.io (embedder-api 0.6.0 held + schema/query/embedder/engine/facade/cli 0.7.2), PyPI fathomdb 0.7.2 (latest), npm fathomdb 0.7.2 (latest), GitHub release v0.7.2 (published, not draft, not prerelease, 5 python wheels attached).",
+    "honest_note": "Mirrors PR-4's transparency: a post-publish SMOKE flaked on registry propagation (not a publish failure); recovered by rerunning the failed job."
+  },
+
+  "registries_verified": {
+    "crates_io": "publish-rust t1-t7 all success",
+    "pypi": "fathomdb 0.7.2 (info.version)",
+    "npm": "fathomdb 0.7.2, dist-tags.latest = 0.7.2",
+    "github_release": "v0.7.2 draft=false prerelease=false publishedAt=2026-06-02T01:18:39Z"
+  },
+
+  "doc_archive_hygiene": {
+    "decision": "RESOLVED IN PLACE (dbab3af -> amended into 34392b3).",
+    "finding": "~120 distinct prompt paths cross-referenced by path from ~140 ADR/design/impl/run files (incl. immutable historical run logs). Physical relocation would break references or force rewriting immutable logs -> harmful, not hygiene.",
+    "action": "dev/plans/README.md de-staled (falsely claimed '0.6.0 only'); in-place archive convention adopted (status lives in per-campaign STATUS ledger, not filesystem location; completed-release artifacts not relocated). No files moved."
+  },
+
+  "carried_items_final": {
+    "ac019_idle_box_rerun": "RESOLVED (PR-3) — contention artifact, not a regression.",
+    "eu7_gt_embed_progress_log": "RESOLVED (landed f5bd686, PR-2bc S1).",
+    "doc_archive_hygiene": "RESOLVED IN PLACE (PR-8)."
+  },
+
+  "follow_ups": [
+    "GitHub flagged 1 moderate Dependabot vulnerability on the default branch (security/dependabot/2) — pre-existing, NOT introduced by PR-8, NOT a 0.7.2 blocker. Triage separately.",
+    "PR-7 future work: row-count / implausible-perfection anomaly rule to catch the batch-collapse class of bug directly (logged in dev/design/perf-regression-detection.md).",
+    "0.8.x agent-memory work (untracked dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md + dev/design/agent-memory-impl-strategy.md) is the next campaign — out of 0.7.2 scope, left untouched.",
+    "softprops/action-gh-release + several actions on Node 20 (deprecated June 2026) — release.yml maintenance item.",
+    "perf-canonical.yml / release.yml: actionlint skipped by local pre-push hook (not on PATH); CI enforces it."
+  ],
+
+  "campaign_narrative": "0.7.2 closes the RELEASE-HARDENING campaign. Phase A took the held 0.7.0+0.7.1 work to a published, validated release: doc-drift sweep (PR-1), embedder concurrency hardening (PR-9), recall-floor reframe (PR-2 family — the 'gap' was a measurement artifact; ANN-fidelity 0.937, 0.90 floor holds), tiered real-corpus latency budget (PR-3), and the 0.7.1 publish (PR-4). Phase B hardened the test/perf foundation for the 0.8.x agent-memory work: corpus-driven test harness (PR-5), always-on dev-loop perf gates (PR-6), append-only perf-regression detection (PR-7). fathomdb 0.7.2 is the post-1.0-foundation cut. CAMPAIGN CLOSED."
+}

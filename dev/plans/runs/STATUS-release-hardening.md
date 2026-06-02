@@ -1,15 +1,17 @@
-# STATUS — 0.7.2 RELEASE-HARDENING
+# STATUS — 0.7.2 RELEASE-HARDENING — ✅ CAMPAIGN CLOSED — 0.7.2 SHIPPED
 
-_Last updated: 2026-06-01 — **CAMPAIGN CLOSING — PR-8 (campaign closure) IN PROGRESS.**
-All prior slices CLOSED on `main`: Phase A (PR-1, PR-2 family, PR-9, PR-3, PR-4) +
-Phase B (PR-5, PR-6, PR-7). **fathomdb 0.7.1 is PUBLISHED** (crates.io + PyPI + npm +
-GitHub release `v0.7.1`, PR-4 `c893d8b`); `v0.7.0` is a local historical marker only
-(never published, per HITL). PR-8 has finalized + dated the CHANGELOG 0.7.2 section
-(Phase B documented; PR-7 batch-collapse honesty preserved), bumped the workspace
-`0.7.1 → 0.7.2` (Axis W; embedder-api held 0.6.0), and refreshed `Cargo.lock`.
-**REMAINING: codex review → HITL push gate → push `main` + `v0.7.2` → publish
-pipeline.** Local `main` is 11 commits ahead of `origin/main` (Phase B) before the
-PR-8 commits; nothing new pushed yet._
+_Last updated: 2026-06-02 — **CAMPAIGN CLOSED. fathomdb 0.7.2 is PUBLISHED** on
+crates.io (schema/query/embedder/engine/facade/cli 0.7.2; embedder-api held 0.6.0),
+PyPI (`fathomdb` 0.7.2, latest), npm (`fathomdb` 0.7.2, latest), and GitHub release
+`v0.7.2` (published, not draft, 5 python wheels attached). All 10 DoD boxes satisfied
+(box 3 — canonical N=1M — honestly reframed by PR-3, not retconned). Every slice
+CLOSED: Phase A (PR-1, PR-2 family, PR-9, PR-3, PR-4) + Phase B (PR-5, PR-6, PR-7) +
+closure (PR-8). `origin/main` = `34392b3`; `v0.7.2` tag on `51a3f94`; `v0.7.1`
+(`c893d8b`) is the first published 0.7.x; `v0.7.0` (`38d5f4f`) remains a local
+historical marker, never published. codex PASS on PR-8 (no findings). The release run
+(26791589519) published everything green; the npm post-publish smoke flaked once on
+registry-propagation lag and was recovered via `rerun --failed`. Next: 0.8.x
+agent-memory work (separate campaign)._
 
 Orchestrator: main-thread Claude Code session. Pattern per `dev/design/orchestration.md`
 (per-slice prompt → informed subagent implementer/orchestrator (TDD) → codex review →
@@ -60,7 +62,7 @@ as-needed from the handoff section; — = not yet authored).
 | **5** | PR-5 | Corpus-driven test harness (`tests/support/corpus_harness.rs`) | **✅ CLOSED (`c605a18`, local main, unpushed)** | PR-4 | diff+tests ✅; cache-dir confirmed (HITL 2026-06-01) | `…/prompts/0.7.2-PR-5-corpus-harness.md`; closure `…/runs/0.7.2-PR-5-output.json`; review `…/runs/0.7.2-PR-5-review-20260601T203321Z.md` | `CorpusFixture` (small/medium/full + per_source + from_docs), synthetic/real embedder toggle, one-line `ingest_into` (reuses `corpus_subset::ingest` — 4a95cfd batched pattern), `query_set` (EU-0 §1.2), 3 assert helpers. **Per-(model,subset) embedding cache** under `data/corpus-data/.cache/embeddings/` (gitignored; `$FATHOMDB_CORPUS_CACHE_DIR`-overridable): key=sha256(identity+label+doc-manifest), byte-deterministic blob, atomic write, hit-path re-verifies identity+manifest, **every miss (cold/partial/stale) is loud** (`CORPUS_CACHE_MISS` + `IngestReport.cache_miss_reason`). Pack-4 `corpus_vector`/`corpus_fts`/`corpus_graph` migrated **no behavior change**; eu7 migration deferred (PR-6/7). Added `VaryingEmbedder::with_identity` test seam (prod `EmbedderIdentity` untouched). **codex BLOCK→BLOCK→CONCERN→PASS** (no BLOCK overridden — loud-miss contract + both stale-cache branches locked by tests). Matrix GREEN: default & `--features default-embedder`, corpus-present & -absent; clippy clean. AGENT_LONG-gated real-embedder smoke added. **No push.** |
 | **6** | PR-6 | Dev-loop perf gates (`perf_gates_devloop.rs`) | **✅ CLOSED (`e2c886d`, local main, unpushed)** | PR-5 | budget shape HITL-locked 2026-06-01 (perf NOTIFIES, structural BLOCKS, +1 catastrophic hard assert) | `…/prompts/0.7.2-PR-6-devloop-perf-gates.md`; closure `…/runs/0.7.2-PR-6-output.json`; review `…/runs/0.7.2-PR-6-review-20260601T221430Z.md` | 3 always-on devloop ACs (NOT AGENT_LONG-gated) at N≈1000 via PR-5 `CorpusFixture::medium`, same production read path. **Structural invariants HARD** (vec0 row count + FTS) catch batch-collapse `4a95cfd`; **soft latency** p50≤50/p99≤150ms (synthetic) + **recall floor** 0.85 (real) NOTIFY-only; **one hard catastrophic ceiling** (10× soft = p50>500/p99>1500ms, synthetic) catches scanner-throughput `53a270d`. **Signal split:** synthetic isolates LATENCY (instant embed) + recall report-only (~0.35 @ N=1000, sparse-vector artifact); real carries RECALL + latency report-only. **RED-shows verified** (throwaway, reverted): batch-collapse→structural panic (1 row vs 1000), scanner→catastrophic panic (p50=616>500ms). Synthetic warm wall ≈16s ≤30s ✓; clippy clean (default + `default-embedder`). Stable `DEVLOOP_NUMBERS` line for PR-7. **codex pass-1 BLOCK→pass-2 PASS** (no BLOCK overridden: AC-019 schema normalized, real cold-cache reconciled as allowed + latency report-only, latency comment corrected). Doc `dev/design/perf-gates.md`. **No push.** |
 | **6** | PR-7 | Perf regression detection (`dev/perf-history/` + check bin) | **✅ CLOSED (ff to local `main`, unpushed)** | PR-5 | thresholds **15% lat / 0.03 recall** (HITL 2026-06-01); diff+tests ✅ (HITL 2026-06-01) | `…/prompts/0.7.2-PR-7-perf-regression-detection.md`; closure `…/runs/0.7.2-PR-7-output.json`; review `…/runs/0.7.2-PR-7-review-20260601T230046Z.md` | `perf-regression-check` `[[bin]]` under `fathomdb-cli` (layout A). Groups by `(ac_id,n)`; single-latest vs rolling median of prior ≤10; flags p50/p99 >15% or recall >0.03 abs. **Thresholds conservative** (handoff default 10%/0.02; HITL chose 15%/0.03 ≈ 2.4σ recall, ~1% jitter FP). Strict fixed-width RFC3339→epoch (dep-free; unparseable ⇒ exit 2; parsed epoch is sort key). Exit 0/1/2; `--json`; append-only (read-only bin). CI → `$GITHUB_STEP_SUMMARY` (workflow_dispatch-safe; dropped dead PR-comment + `pull-requests:write`). Backfill v0.6.x→0.7.2 (9 rows); most groups single-point ⇒ honest `insufficient-history`. **Batch-collapse honesty (HITL option A):** the 2026-05-27 bug masqueraded as an *improvement* (degenerate recall 1.0), so a degradation detector flags the regression-shaped **correction** (1.0→0.1572 @`4a95cfd`), not the bug itself (true bug-catch = row-count/anomaly rule, logged future work). Committed store CLEAN (exit 0). Tests: integration 12/12, bin-unit (rfc3339) 5/5; clippy/fmt/actionlint clean. **codex BLOCK→BLOCK→BLOCK→PASS** (chronology+CI+honesty → strict-value → fixed-width; no BLOCK overridden). No push. |
-| **7** | PR-8 | Campaign closure | **🔶 IN PROGRESS** (CHANGELOG 0.7.2 finalized + dated; workspace bumped 0.7.1→0.7.2; v0.7.2 tag + push pending HITL) | PR-7, PR-9 | v0.7.2 push (HITL — PENDING) | `…/prompts/0.7.2-PR-8-campaign-closure.md` | Final scoreboard here; CHANGELOG 0.7.2 section sealed; Phase B (PR-5/6/7) documented; PR-7 batch-collapse honesty preserved; box-3 reframe noted (not retconned). Awaiting codex + HITL push OK. |
+| **7** | PR-8 | Campaign closure | **✅ CLOSED — fathomdb 0.7.2 PUBLISHED** (crates.io + PyPI + npm + GitHub release `v0.7.2`); origin/main `34392b3`, tag on `51a3f94` | PR-7, PR-9 | push approved (HITL 2026-06-02); main-only→dry-run→tag sequence | `…/prompts/0.7.2-PR-8-campaign-closure.md`; review `…/runs/0.7.2-PR-8-review-20260602T003639Z.md`; closure `…/runs/0.7.2-PR-8-output.json` | CHANGELOG 0.7.2 sealed + dated 2026-06-01 (Phase B documented; PR-7 batch-collapse honesty preserved; box-3 reframe noted, not retconned; 0.7.0/0.7.1 reconciled — v0.7.1 first published, v0.7.0 local marker). Workspace bumped 0.7.1→0.7.2 (Axis W; embedder-api 0.6.0). Doc-archive hygiene RESOLVED IN PLACE. **codex PASS** (no findings). Dry-run rehearsal GREEN (run 26791212302) → pushed `v0.7.2` → release run 26791589519: all publishes GREEN, post-publish-smoke(npm) flaked on propagation (1.6s) → `rerun --failed` GREEN (smoke + github-release). v0.7.0 NOT published (local marker). |
 
 ## Open items (carried; not gating their own slice)
 
@@ -142,3 +144,26 @@ single-point ⇒ honest `insufficient-history`; committed store CLEAN. Landed
 second of the PR-6/PR-7 sibling pair — rebased onto PR-6 (`ee7ba9f`), STATUS the
 only collision, both rows kept. Closure `…/runs/0.7.2-PR-7-output.json`. **Next:
 PR-8 (campaign closure + 0.7.2 push) — the only remaining Phase-B slice.** No push.
+
+**PR-8 CLOSED — 🎉 CAMPAIGN CLOSED, fathomdb 0.7.2 SHIPPED (2026-06-02).** CHANGELOG
+0.7.2 sealed + dated 2026-06-01 (Phase B documented; PR-7 batch-collapse honesty
+preserved; PR-3 latency + PR-2 recall reframes honest, not retconned; 0.7.0/0.7.1
+reconciled). Workspace bumped 0.7.1→0.7.2 (Axis W lockstep; embedder-api held 0.6.0).
+Doc-archive hygiene RESOLVED IN PLACE (README de-staled; ~120 cross-referenced prompt
+paths make physical relocation harmful, so no files moved). codex **PASS** (no
+findings). Pushed `main` (clean ff) → dry-run rehearsal GREEN → pushed `v0.7.2` →
+release run **26791589519** published all registries GREEN (one npm post-publish-smoke
+propagation flake recovered via `rerun --failed`). **fathomdb 0.7.2 LIVE on crates.io
++ PyPI + npm + GitHub release `v0.7.2`.** All 10 DoD boxes satisfied (box 3 reframed by
+PR-3, noted not retconned). Closure `…/runs/0.7.2-PR-8-output.json`. **`origin/main` =
+`34392b3`.**
+
+## Pointer forward — next campaign
+
+0.7.x is fully shipped and published. The testing/perf foundation for **0.8.x
+(agent-memory work)** is in place: corpus-driven harness (PR-5), always-on dev-loop
+perf gates (PR-6), perf-regression detection (PR-7). The 0.8.x work is scoped in the
+untracked `dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md` +
+`dev/design/agent-memory-impl-strategy.md` — a **separate campaign**, out of this
+ledger's scope. One pre-existing moderate Dependabot alert (`security/dependabot/2`)
+on the default branch is unrelated to 0.7.2 and triaged separately.
