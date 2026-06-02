@@ -75,7 +75,8 @@ fn projection_cursor_bounds_observed_row_count() {
         let result = engine.search("needle").expect("search");
         // results[0] is the compiled SQL string from `compile_text_query`;
         // every entry after that is a body row from canonical_nodes.
-        let row_count = result.results.iter().filter(|s| s.as_str() == "needle").count() as u64;
+        let row_count =
+            result.results.iter().filter(|h| h.body.as_str() == "needle").count() as u64;
         if row_count > result.projection_cursor {
             violations += 1;
             if violations <= 5 {

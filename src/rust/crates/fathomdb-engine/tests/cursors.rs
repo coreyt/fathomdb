@@ -72,7 +72,8 @@ fn ac_059b_write_cursor_is_satisfied_by_projection_cursor_and_queryable() {
     loop {
         let result = opened.engine.search("findable").unwrap();
         if result.projection_cursor >= write_cursor {
-            assert_eq!(result.results, vec!["findable phase seven document".to_string()]);
+            let bodies: Vec<String> = result.results.iter().map(|h| h.body.clone()).collect();
+            assert_eq!(bodies, vec!["findable phase seven document".to_string()]);
             assert!(opened.engine.has_vector_for_cursor_for_test(write_cursor).unwrap());
             break;
         }

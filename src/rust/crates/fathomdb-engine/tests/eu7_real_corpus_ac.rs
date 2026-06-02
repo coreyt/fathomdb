@@ -474,7 +474,13 @@ fn measure_recall(
             }
         }
 
-        let prod = engine.search(&q.text).expect("prod search").results;
+        let prod: Vec<String> = engine
+            .search(&q.text)
+            .expect("prod search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect();
 
         // OLD recall: literal top-10, exclude target after, /10.
         let prod_top10: Vec<&str> = prod.iter().take(10).map(|s| s.as_str()).collect();

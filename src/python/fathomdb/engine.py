@@ -20,6 +20,7 @@ from fathomdb.types import (
     EmbedderIdentity,
     MigrationStepReport,
     OpenReport,
+    SearchHit,
     SearchResult,
     SoftFallback,
     SoftFallbackBranch,
@@ -112,7 +113,16 @@ class Engine:
         return SearchResult(
             projection_cursor=result.projection_cursor,
             soft_fallback=soft,
-            results=list(result.results),
+            results=[
+                SearchHit(
+                    id=hit.id,
+                    kind=hit.kind,
+                    body=hit.body,
+                    score=hit.score,
+                    branch=cast(SoftFallbackBranch, hit.branch),
+                )
+                for hit in result.results
+            ],
         )
 
     def close(self) -> None:

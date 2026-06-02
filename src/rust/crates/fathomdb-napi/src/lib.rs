@@ -33,8 +33,8 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchResult as RustSearchResult, SoftFallbackBranch,
-    WriteReceipt as RustWriteReceipt,
+    PreparedWrite, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -325,10 +325,39 @@ pub struct SoftFallback {
 }
 
 #[napi(object)]
+pub struct SearchHit {
+    /// Canonical row `write_cursor` (interim identity carrier per
+    /// ADR-0.8.0-canonical-identity-substrate).
+    pub id: i64,
+    pub kind: String,
+    pub body: String,
+    /// Raw per-branch relevance: `vec_distance_l2` (vector) or `bm25()`
+    /// (text). Not comparable across branches raw.
+    pub score: f64,
+    /// "vector" | "text"
+    pub branch: String,
+}
+
+impl SearchHit {
+    fn from_rust(h: &RustSearchHit) -> Self {
+        Self {
+            id: h.id as i64,
+            kind: h.kind.clone(),
+            body: h.body.clone(),
+            score: h.score,
+            branch: match h.branch {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+            },
+        }
+    }
+}
+
+#[napi(object)]
 pub struct SearchResult {
     pub projection_cursor: i64,
     pub soft_fallback: Option<SoftFallback>,
-    pub results: Vec<String>,
+    pub results: Vec<SearchHit>,
 }
 
 impl SearchResult {
@@ -341,7 +370,7 @@ impl SearchResult {
                     SoftFallbackBranch::Text => "text".to_string(),
                 },
             }),
-            results: r.results,
+            results: r.results.iter().map(SearchHit::from_rust).collect(),
         }
     }
 }

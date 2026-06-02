@@ -37,8 +37,8 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
-    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    PreparedWrite, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -299,12 +299,37 @@ impl PySoftFallback {
     }
 }
 
+#[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all)]
+#[derive(Clone)]
+struct PySearchHit {
+    id: u64,
+    kind: String,
+    body: String,
+    score: f64,
+    branch: String,
+}
+
+impl PySearchHit {
+    fn from_rust(h: &RustSearchHit) -> Self {
+        Self {
+            id: h.id,
+            kind: h.kind.clone(),
+            body: h.body.clone(),
+            score: h.score,
+            branch: match h.branch {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+            },
+        }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "SearchResult", frozen, get_all)]
 #[derive(Clone)]
 struct PySearchResult {
     projection_cursor: u64,
     soft_fallback: Option<PySoftFallback>,
-    results: Vec<String>,
+    results: Vec<PySearchHit>,
 }
 
 impl PySearchResult {
@@ -312,7 +337,7 @@ impl PySearchResult {
         Self {
             projection_cursor: r.projection_cursor,
             soft_fallback: r.soft_fallback.as_ref().map(PySoftFallback::from_rust),
-            results: r.results,
+            results: r.results.iter().map(PySearchHit::from_rust).collect(),
         }
     }
 }
@@ -723,6 +748,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
     m.add_class::<PySoftFallback>()?;
+    m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyCounterSnapshot>()?;
     m.add_class::<PyMigrationStepReport>()?;
