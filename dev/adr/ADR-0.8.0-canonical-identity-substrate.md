@@ -167,6 +167,12 @@ invalidate-not-delete semantics:
 
 ## AUTHORIZED Slice-15 schema delta (verbatim — Slice 15 executes this exactly)
 
+> **⚠ RENUMBERED 2026-06-02 (at Slice 5 close).** Slice 5 (G1 FTS5 tokenizer upgrade)
+> consumed `step_id 11` / `SCHEMA_VERSION 11` on `main`. The verbatim delta below therefore
+> executes as **`step_id: 12`**, bumping **`SCHEMA_VERSION 11 → 12`** (not `11` / `10→11` as
+> the literal code blocks read). Everything else in the delta is unchanged. Slice 15's closing
+> commit updates these literals; this note is the authority until then.
+
 Slice 15 appends a single migration step. The SQL below is the **authorized
 delta**; it MUST carry the accretion-exemption marker because
 `check_migration_accretion` (`fathomdb-schema/src/lib.rs:362-373`) rejects

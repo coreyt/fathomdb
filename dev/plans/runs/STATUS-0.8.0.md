@@ -15,29 +15,32 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-02 (Slice 5 **PROMPTED** — implementer prompt written & handed
-to the human-run slice agent; the slice agent owns its worktree and merges to `main`).
+Last updated: 2026-06-02 (Slice 5 **CLOSED** — PASS after codex BLOCK→fix-1; merged to
+`main` @ `e76d68b`; pointer advanced to Slice 10).
 
 ---
 
 ## 1. Current slice
 
-**Slice 5 — G1 Structured Hits + FTS5 tokenizer** `[implementation]` — ⏳ **PROMPTED 2026-06-02.**
-- State (§1.5): **PROMPTED** (not yet implementing). Self-contained implementer prompt
-  written: `dev/plans/prompts/0.8.0-slice-5.md`.
-- **Execution model (HITL directive this session — supersedes the orchestration.md
-  main-thread-owns-worktree mechanic for 0.8.0):** the human pastes the slice prompt
-  into a **new slice agent**. **The slice agent owns its own worktree** (creates it from
-  the live `main` HEAD), implements, runs the full self-check, writes `output.json`, and
-  **merges its green work onto local `main` itself** (no push). **The orchestrator does
-  NOT create worktrees and does NOT cherry-pick** — it works on `main` *after* the merge:
-  review → 5.b verification → close + advance pointer.
-- **Plan-adjustment recorded** (see §7): Slice 5's new tokenizer migration is
-  `step_id 11` + bumps `SCHEMA_VERSION 10→11`; this re-numbers Slice 15's G0
-  migration to `step_id 12` / `11→12` (its contract's "step 11 / 10→11" is now stale).
-- **Compat-ledger ack** (§7): the `SearchHit` data-class change (`SearchResult.results`
-  `Vec<String>`→`Vec<SearchHit>`, `Eq` dropped) + tokenizer recall shift are accepted
-  as documented 0.8.0 events (AC-057a-clean; no new verb; no HITL sign-off needed).
+**Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency** `[implementation]` — ❌ **NOT STARTED (NEXT).**
+- Pointer advanced here at Slice 5 close (2026-06-02). Migration-free read-path quality
+  increment landing on Slice 5's `score:f64` carrier; AC-057a-clean. Depends-on: Slice 5 ✅.
+- **Before spawn — HITL gate:** sign retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3
+  (RRF ordering = documented compat event behind `fusion_mode`).
+- Not yet prompted. Same execution model as Slice 5 (slice agent owns its worktree + merges to `main`).
+
+### Slice 5 — G1 Structured Hits + FTS5 tokenizer `[implementation]` — ✅ CLOSED 2026-06-02 (PASS after BLOCK→fix-1)
+- Slice agent owned worktree `/tmp/fdb-slice-5-20260602T221543Z` (branch
+  `slice-5-20260602T221543Z`, baseline `8108bac`) and merged onto local `main` itself (no push).
+  Initial merge `c4ab615`; **fix-1 merge `e76d68b` (final)**. Worktree removed at close (§6).
+- **codex §9 review (primary, runnable here):** slice-diff pass found one **[P1]** crash-safety
+  bug (boundary-gated reindex → forever-empty FTS index on a crash in the step-11/reproject
+  window) → **BLOCK → fix-1**. fix-1 made the reindex crash-retryable + idempotent via an atomic
+  completion marker (`_fathomdb_open_state`); codex **re-review of fix-1 diff: PASS, no findings**.
+- **Recall floor held across the migration:** 1.000 → 1.000 (delta +0.000). `Eq` dropped; structured
+  `SearchHit` both branches; dedup+vector-first preserved; Py+TS parity; X1 harnesses stood up.
+- **Environment-only blocker for HITL:** `agent-verify.sh STRICT=1` AC-037 `netns-deny-egress`
+  (no rootless userns in this sandbox) — confirm on a userns-capable host. NOT a code defect.
 
 ### Slice 0 — Setup + ADR Kickoff `[design-adr]` — ✅ CLOSED 2026-06-02
 - Ran on the **main thread** (§1); subagents **0.a ∥ 0.b** both PASS against bars.
@@ -57,8 +60,8 @@ applicable to this slice's work-type.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
-| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ⏳ prompted | 0 | **instantiates** functional harnesses (Py+TS) | ⏳ | ⏳ |
-| **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ❌ not started | 5 | ❌ extend | ❌ | ❌ |
+| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
+| **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ❌ not started (**NEXT**) | 5 | ❌ extend | ❌ | ❌ |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ❌ not started | 0, 5 | ❌ extend | ❌ | ❌ |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ❌ not started | 15 | ❌ extend | ❌ | ❌ |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
@@ -79,7 +82,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | AC / gap | Owning slice | Latest status |
 |----------|-------------|---------------|
 | **AC-057a → governed-surface AC** (supersession of the five-verb cap; new measurable allowlist/parity/denylist/no-raw-SQL AC) | **25** (readied at 0) | 🟡 **decision-ready** — supersession ADR advanced (Q1–Q5 = A1/B1/amend/confirm/SDK-only); HITL signs at Slice 25; conformance rewrite enumerated, not executed |
-| **G1** structured `SearchHit{id,kind,body,score,branch}` + FTS5 tokenizer floor | **5** | ❌ not started |
+| **G1** structured `SearchHit{id,kind,body,score,branch}` + FTS5 tokenizer floor | **5** | ✅ **DONE** (closed 2026-06-02, `main`@`e76d68b`) — `Vec<SearchHit>`, `Eq` dropped, both branches scored; step-11 tokenizer migration (`SCHEMA_VERSION 11`) crash-retryable; floor 1.000/1.000 across migration |
 | **G9** RRF fusion (`Σ1/(k+rank)`, k=60) + `rerank_fused` seam | **10** | ❌ not started |
 | **G10** metadata-filtered KNN (`Option<SearchFilter>`) | **10** | ❌ not started |
 | **G12-recency** (`write_cursor`-derived reweight after bit-KNN, gated) | **10** | ❌ not started |
@@ -87,7 +90,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ❌ not started |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ baseline 0.7.2 (must hold pre/post `SearchHit` reshape + tokenizer) |
+| Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 `SearchHit` reshape + tokenizer (measured across the 10→11 migration: 1.000 → 1.000); 10/15 still gate |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green + must stay **byte-unchanged** through Slice 25 |
 
 ---
@@ -157,11 +160,48 @@ the worktree at slice close.
 
 | Worktree path | Slice | Branch | Baseline SHA | State |
 |---------------|-------|--------|--------------|-------|
-| _(none recorded yet — Slice 5 agent creates its own at run time)_ | 5 | _(slice-5-`<TS>`)_ | _(live main HEAD)_ | PROMPTED |
+| `/tmp/fdb-slice-5-20260602T221543Z` | 5 | `slice-5-20260602T221543Z` | `8108bac` | ✅ REMOVED at close (2026-06-02; merged → `main`@`e76d68b`, branch deleted) |
+
+**No 0.8.0 slice-managed worktree outstanding** after Slice 5 close.
 
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-02 — Slice 5 CLOSED (PASS after codex BLOCK→fix-1; pointer → Slice 10)
+
+- **Slice agent** built + merged Slice 5 to local `main` itself (initial `c4ab615`), then the
+  orchestrator reviewed on `main`. **codex** is the **proven primary §9 reviewer here** (runnable
+  via the user-added `Bash(codex exec review:*)` rule + `--dangerously-bypass-approvals-and-sandbox`
+  — this **supersedes** the Slice-0 "codex unrunnable, use a subagent" note; the Slice-0 verdict's
+  bwrap-netns failure was the *read-only sandbox* mode, not the bypass mode).
+- **codex slice-diff review found one [P1] crash-safety bug:** the tokenizer reindex
+  (`reproject_search_index_after_tokenizer_upgrade`) was gated on the one-time `before<11 && after>=11`
+  boundary crossing, but step 11 commits `user_version=11` + an empty `search_index` in its OWN tx
+  (`fathomdb-schema/src/lib.rs:348-356`) and the reproject runs in a LATER tx. A crash in that window
+  left the FTS index empty FOREVER (next open sees `before==11`, skips repair) → silent recall
+  collapse on migrated DBs. **Verdict: BLOCK → fix-1** (substantive; not a floor breach, not
+  prompt-induced). `runs/0.8.0-slice-5-review-20260602T225034Z.md`.
+- **fix-1 (TDD, same worktree):** RED `pr_g1_tokenizer_crash_recovery.rs` reconstructs the crash
+  artifact (v11 + empty index + cleared marker via raw `Connection`) and asserts recovery — RED on
+  the boundary-gated code (recall 0.000). GREEN gates on `schema≥11 && !marker` where the marker
+  (`search_index_tokenizer_reproject_complete` in `_fathomdb_open_state`) is written atomically inside
+  the reindex tx → crash-retryable + idempotent. Missing `_fathomdb_open_state` → "complete/skip"
+  (only hand-stamped/foreign DBs, which downstream probes reject — don't mask). No `SCHEMA_VERSION`
+  bump, no new migration step (open-path repair). Merge `e76d68b`. **codex re-review of the fix-1
+  diff: PASS, no findings.** `runs/0.8.0-slice-5-review-fix1-20260602T230351Z.md`.
+- **Orchestrator-independent 5.b on `main`:** `pr_g1_search_hits` (4), `pr_g1_tokenizer_recall` (1),
+  `pr_g1_tokenizer_crash_recovery` (1), `compatibility` (8), `fathomdb-schema` migrations (8) green;
+  clippy clean; `mkdocs build --strict` green; Py/TS `SearchHit` parity surface confirmed; X1
+  harnesses present. Recall floor 1.000/1.000 across the migration.
+- **Plan-adjustment applied to docs:** Slice 5 consumed `step_id 11` / `SCHEMA_VERSION 11` → Slice 15
+  renumbers to **`step_id 12` / `SCHEMA_VERSION 11→12`**; RENUMBERED notes added to the impl-plan
+  Slice 15 heading + AUTHORIZED-delta in the canonical-identity ADR (full inline renumber lands in
+  Slice 15's closing commit).
+- **Environment-only blocker (carried to HITL, did NOT block close):** `agent-verify.sh STRICT=1`
+  fails AC-037 `netns-deny-egress` (`unshare -rUn` — no rootless userns in this sandbox). All code
+  phases pass standalone. Confirm AC-037 on a userns-capable host.
+- **Closed in ONE docs commit** advancing the pointer to **Slice 10**; slice-5 worktree removed (§6).
 
 ### 2026-06-02 — Execution-model correction (HITL): orchestrator owns NO worktree
 
@@ -250,34 +290,34 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 5 is PROMPTED.** The human pastes `dev/plans/prompts/0.8.0-slice-5.md` into a new
-slice agent. **The slice agent owns its worktree and merges its green work onto `main`.**
-The orchestrator (this thread) does NOT create a worktree and does NOT cherry-pick.
+**Slice 5 is CLOSED (PASS after fix-1). Pointer → Slice 10.** Slice 10 is **not yet prompted.**
 
-**When the slice agent reports it has merged, the orchestrator resumes — working on `main`:**
-1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-5-output.json`
-   exists AND `main` advanced past the slice baseline (the merge landed:
-   `merged_to_main_sha` present and reachable from `main`). Absent / blocker reported / not
-   merged → triage (direct a fix pass or HALT), do NOT proceed as if closed.
-2. **Review on `main`** — codex is unrunnable here (trap 5); spawn an independent adversarial
-   review subagent (read-only over the merged diff `<baseline>..main`) → promote to
-   `0.8.0-slice-5-review-<ts>.md` with a `## Verdict:` line. Focus: floor held across the
-   migration, no `Eq`-derive leak, dedup/vector-first order, Py+TS parity, the
-   step-11/`SCHEMA_VERSION 10→11` migration mechanism.
-3. **5.b verification** (read-only re-run): recall delta across the migration, functional
-   harnesses exist in both SDKs + cross-binding equivalence, X2 `mkdocs build`, X3 docs.
-4. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override.
-   Substantive CONCERN / BLOCK → direct a fix pass (a fresh slice-agent run on the same
-   worktree/branch). **Sub-0.90 floor breach is substantive — never overridden → HALT to HITL.**
-5. **Close in ONE docs commit on `main`:** Slice 5 CLOSED block in the plan, advance pointer
-   to Slice 10, update this board (incl. X1/X2/X3 columns) + `dev/DOC-INDEX.md` + per-AC
-   scoreboard. Reconcile the Slice-15 step-12 renumber note.
-6. **Worktree cleanup** (§11) — the orchestrator removes the slice agent's worktree after close.
+**Before Slice 10 spawn — HITL gate:** sign the retrieval ADR Q1 (Option 1A — G9/G10
+table-stakes) + Q3 (RRF ordering = documented compat event behind `fusion_mode`). Slice 10 is
+migration-free and AC-057a-clean; it lands on Slice 5's `score:f64` carrier (now on `main`@`e76d68b`).
 
-**Parallel standing item — HITL gate-package sign-off (gates Slice 15, NOT Slice 5):** HITL
+**To start Slice 10 (orchestrator):**
+1. Re-derive disk witnesses: Slice 5 CLOSED block present + `main`@`e76d68b` is the baseline;
+   recall baseline = Slice 5's 1.000 (report the Slice-10 delta vs this).
+2. Write the self-contained Slice 10 implementer prompt to `dev/plans/prompts/0.8.0-slice-10.md`
+   (same execution model: slice agent owns its worktree, TDD, merges to `main`; codex §9 review —
+   **codex is the proven primary reviewer here**, not a subagent).
+3. Per the impl-plan Slice 10 contract: 10.a (RRF + rerank seam + G12 recency) and 10.b
+   (G10 filtered-KNN) — confirm the contract's parallelization before spawning.
+
+**Standing reviewer note:** use **`codex exec review --base <slice-baseline>
+--dangerously-bypass-approvals-and-sandbox`** (no custom PROMPT — `--base` rejects it) as the
+primary §9 pass; promote the log to `…-review-<ts>.md` with a `## Verdict:` line. The Slice-0
+"codex unrunnable" note referred to read-only-sandbox mode; the bypass mode works here (user rule).
+
+**Parallel standing item — HITL gate-package sign-off (gates Slice 15, NOT Slice 10):** HITL
 signs the substrate-ADR package (Q2=Option 2A / Q4 / op-store cascade / forward-migration
 policy) and rules on the FLAGGED `write_cursor`-as-row-id deviation — required before Slice 15
-(G0 keystone) spawns. Supersession Q1–Q5 readied now, finalized at Slice 25.
+(G0 keystone) spawns. **Reminder:** Slice 15 is now `step_id 12` / `SCHEMA_VERSION 11→12`.
+Supersession Q1–Q5 readied now, finalized at Slice 25.
+
+**Carried HITL item from Slice 5:** confirm AC-037 `netns-deny-egress` on a host with rootless
+userns (the sandbox here lacks `unshare -rUn`; environment-only, not a code defect).
 
 Standing verification checklist (Slice 40 enforces as named release gates):
 `scripts/check.sh AGENT_LONG=1` · `scripts/verify-release-gates.sh` (test seams
