@@ -3891,18 +3891,29 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
 /// `SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` row written inside the reindex
 /// transaction; its absence on a v11 DB means the reindex never committed
 /// (fresh-after-step-11 or crash-in-window) and must (re-)run.
+///
+/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+/// reproject): that table is created by migration step 1, so its absence means
+/// the DB never ran our migrations (e.g. a synthetic DB whose `user_version`
+/// was stamped to 11 by hand, or a legacy/foreign shape). Such DBs are
+/// rejected by the downstream embedder-identity/integrity probes; the reproject
+/// must not run — and must not mask those errors — on them. On a genuinely
+/// migrated DB the table always exists, so the crash-repair path is unaffected.
 fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlite::Result<bool> {
-    connection
-        .query_row(
-            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
-            [SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY],
-            |row| row.get::<_, String>(0),
-        )
-        .map(|value| value == "1")
-        .or_else(|err| match err {
-            rusqlite::Error::QueryReturnedNoRows => Ok(false),
-            _ => Err(err),
-        })
+    match connection.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value == "1"),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref message)))
+            if message.contains("no such table") =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
