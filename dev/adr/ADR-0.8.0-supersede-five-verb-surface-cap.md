@@ -4,14 +4,19 @@ date: 2026-06-01
 target_release: 0.8.0
 desc: Supersede AC-057a's five-verb *scope cap* (a development scaffolding device) with a governed, open-but-curated SDK surface. Preserve and re-home the three load-bearing guarantees AC-057a bundled (SDK parity, recovery-unreachability, typed boundary). Unblocks the gated read verbs G2/G3/G4/G5/G7.
 blast_radius: dev/acceptance.md (AC-057a supersede + new AC for governed surface); dev/requirements.md (REQ-053 amend); dev/design/bindings.md § 1 (surface-set parity invariant rewrite); src/python/tests/test_surface.py + src/ts/tests/surface.test.ts (set-equality → allowlist+parity); src/python/tests/test_no_recovery_surface.py + src/ts/tests/no-recovery-surface.test.ts (PRESERVED, unchanged); dev/design/0.8.0-agent-memory-fit.md §7 (read-verb HITL question resolved); ADR-0.8.0-agent-memory-retrieval-and-identity.md (Q1/Q2 surface interaction); dev/traceability.md
-status: draft, HITL-required
+status: decision-ready, HITL-sign-off-pending
 origin: HITL direction 2026-06-01 ("AC-057a … was used to manage scope during development … supersede it thoughtfully"); dev/design/0.8.0-agent-memory-fit.md §7 Q1/Q2; dev/profiling/v05-lineage.md (v0.5.x had the broader surface)
 supersedes: AC-057a (five-verb application-runtime SDK surface, REQ-053)
 ---
 
 # ADR-0.8.0 — Supersede the five-verb surface cap
 
-**Status:** draft, HITL-required.
+**Status:** decision-ready, HITL-sign-off-pending. _(Advanced by Slice 0.b,
+2026-06-02: each of Q1–Q5 now carries a recommended decision framed as a single
+sign-off-able question; the conformance-rewrite scope is enumerated but NOT
+executed — that is Slice 25; the three load-bearing guarantees are carried
+forward explicitly. HITL signs at Slice 25; the signature is the HARD gate
+unblocking Slice 30.)_
 
 AC-057a fixed the SDK application surface at **exactly five verbs**
 (`Engine.open`, `admin.configure`, `write`, `search`, `close`) and gated it with
@@ -195,18 +200,122 @@ recency/importance (G12) are scoring signals, governance-free.
   G5/G7) move from "blocked on HITL" to "additive under governance."
 - `dev/roadmap/0.8.0.md` retrieval-anchor scope gains the read verbs explicitly.
 
-## Open questions for HITL
+## Decisions for HITL sign-off (Q1–Q5 — decision-ready)
 
-1. Accept A1 (supersede + ship G1/G2/G3 in 0.8.0) vs A2 (supersede policy only,
-   defer verbs)?
-2. Accept B1 (`read.*` namespace) vs B2 (`admin.*`) vs B3 (top-level)?
-3. Should REQ-053 be **amended** (re-scoped to the governed surface) or
-   **superseded** by a new REQ id, for traceability cleanliness?
-4. Logical-id reads: confirm `restore`/`purge` stay **CLI-only** (denylist) while
-   a *non-destructive* `read.get(logical_id)` is allowed on the SDK — i.e. the
-   denylist is about *recovery/mutation* names, not about reading by id.
-5. Does the governed-surface AC also bind the **Rust facade** (`interfaces/rust.md`),
-   or stay SDK-only (Python/TS) as AC-057a did? (Rust was never in the parity set.)
+Each question below is framed as a **single sign-off-able decision** with a
+**recommended answer**. HITL signs the bundle at **Slice 25** (the conformance
+rewrite lands in that same slice); the signature is the **HARD gate** unblocking
+Slice 30 (the SDK read verbs). Recommended bundle: **Q1=A1, Q2=B1, Q3=amend,
+Q4=confirm, Q5=SDK-only.**
+
+### Q1 — How far to open in 0.8.0 → **recommend A1**
+> *Sign-off question:* "Supersede AC-057a's five-verb cap now, replacing it with
+> the governed-surface AC (parity + recovery-denylist + typed-boundary +
+> allowlist), and ship the table-stakes read verbs **G1 (structured hits) + G2
+> (`read.get`/`read.get_many`) + G3 (`read.collection`/`read.mutations`)** in
+> 0.8.0 — with G4/G5/G7 landing incrementally behind the same governance — rather
+> than A2 (supersede the *policy* only and defer all read verbs)?"
+
+**Recommended: A1.** A1 unblocks the consumers' universal by-id table-stakes gap
+immediately while keeping each verb a reviewable increment; A2 leaves G2 open
+another cycle for no governance reason. A3 (raise the count to a fixed N) is
+**rejected** — a frozen count is the wrong abstraction; the next consumer need
+re-litigates it.
+
+### Q2 — Read-verb namespace → **recommend B1 (`read.*`)**
+> *Sign-off question:* "Land the read verbs under a dedicated **`read.*`**
+> namespace (`read.get`, `read.get_many`, `read.collection`, `read.mutations`, …),
+> rather than overloading `admin.*` (B2) or adding top-level `Engine` methods
+> (B3)?"
+
+**Recommended: B1.** `read.*` keeps the write/lifecycle core (`Engine.*` +
+`admin.*`) legible, makes "this is a read" self-documenting, and gives a clean
+parity surface to enumerate. B2 conflates operator config (`admin.configure`)
+with application reads and muddies the boundary the recovery-denylist relies on;
+B3 has the largest blast radius on the "core five" mental model.
+
+### Q3 — REQ-053 amend vs supersede → **recommend AMEND**
+> *Sign-off question:* "Re-scope **REQ-053 in place** (amend its text from
+> 'exactly five verbs' to the governed-surface requirement: parity + recovery
+> denylist + typed boundary + allowlist) rather than retiring REQ-053 and minting
+> a new REQ id?"
+
+**Recommended: amend.** The constraint that REQ-053 expresses — *the SDK surface
+is governed and parity-locked* — is unchanged in **intent**; only the mechanism
+moves from a count to a rule. Amending keeps the single REQ↔AC↔test trace edge
+intact (cleanest traceability: one requirement, one governed-surface AC, one
+allowlist+parity test) and avoids a dangling "superseded REQ-053 → REQ-0NN"
+redirect that every downstream trace row would have to chase. (If HITL prefers a
+fresh id for audit-trail reasons, supersede-by-new-REQ is the fallback; it cascades
+a traceability-reconciliation pass, pre-registered as reserved-gap Slice 27/28.)
+
+### Q4 — Logical-id reads vs the recovery denylist → **recommend CONFIRM**
+> *Sign-off question:* "Confirm the recovery denylist is about **recovery/mutation
+> names**, not about reading by id: the five FORBIDDEN names `{recover, restore,
+> repair, fix, rebuild}` stay **SDK-unreachable** and `restore_logical_id` /
+> `purge_logical_id` stay **CLI-only** (`recover --*-logical-id`), while a
+> **non-destructive** `read.get(logical_id)` IS allowed on the SDK?"
+
+**Recommended: confirm.** A by-id *read* touches none of the write / projection /
+durability / recovery invariants the denylist protects; it is orthogonal to the
+recovery boundary. The denylist clause is preserved verbatim and `doctor` stays a
+CLI verb / SDK-absent; only the *non-destructive read* path is opened.
+
+### Q5 — Does the governed-surface AC bind the Rust facade? → **recommend SDK-only (Py/TS)**
+> *Sign-off question:* "Scope the governed-surface AC to the **Python + TypeScript
+> SDKs only** (as AC-057a was — Rust was never in the parity set), rather than also
+> binding the Rust facade (`dev/interfaces/rust.md`)?"
+
+**Recommended: SDK-only.** AC-057a's parity invariant covered Py+TS; the Rust
+facade is a different consumer contract and was never in the parity set. Keeping
+the governed-surface AC SDK-only matches the established boundary and avoids
+inventing a Rust-parity obligation 0.8.0 does not need. (If HITL wants the Rust
+facade bound, that adds a Rust positive-allowlist pin — pre-registered as
+reserved-gap Slice 27.)
+
+## Conformance-rewrite scope — ENUMERATED, not executed (owned by Slice 25)
+
+This ADR **does not touch code or specs**; it readies the decision. When HITL
+signs Q1–Q5, **Slice 25** executes the rewrite across exactly these touch-points
+(from the `blast_radius` frontmatter), set-equality → allowlist+parity:
+
+| Touch-point | Change at Slice 25 | Notes |
+|---|---|---|
+| `src/python/tests/test_surface.py` | set-equality → allowlist-membership + cross-binding parity | `.issubset`/"five verbs" assertions replaced |
+| `src/ts/tests/surface.test.ts` | set-equality → allowlist-membership + cross-binding parity | mirror of the Python suite |
+| `dev/acceptance.md` (AC-057a `:882`) | AC-057a marked **superseded**; add a NEW governed-surface AC (measurable allowlist/parity/denylist/no-raw-SQL assertion) | not deleted — superseded with a forward pointer |
+| `dev/requirements.md` REQ-053 | **amend** in place (Q3 recommended) re-scoped to the governed surface | supersede-by-new-REQ is the Q3 fallback |
+| `dev/design/bindings.md` §1 | surface-set-parity (exactly five) → governed-surface invariant | **§10 recovery-unreachability stays UNCHANGED** |
+| `dev/traceability.md` | re-point REQ-053 ↔ new governed-surface AC | one trace edge if Q3=amend |
+
+**Explicitly UNCHANGED (do NOT touch at Slice 25 — preserved + must stay green):**
+`src/python/tests/test_no_recovery_surface.py`,
+`src/ts/tests/no-recovery-surface.test.ts`,
+`src/rust/crates/fathomdb/tests/no_recovery_surface.rs`, and
+`dev/design/bindings.md` §10. These bind the recovery-name denylist (guarantee 2
+below) and must remain **byte-unchanged** through the rewrite — a git diff of zero
+lines is part of Slice 25's acceptance bar.
+
+## Three load-bearing guarantees carried forward (do NOT drop)
+
+The supersession retires the scope cap (element 1) and **carries elements 2–4
+forward intact**:
+
+1. **SDK parity** — a read verb appears in Python *and* TypeScript or neither;
+   re-expressed as allowlist-equality across the two bindings, enforced by the
+   rewritten conformance test (membership + cross-binding equality), not by a count.
+2. **Recovery-name denylist** — the surface MUST NOT contain any name in
+   `{recover, restore, repair, fix, rebuild}` (`doctor` stays a CLI verb /
+   SDK-absent); preserved **verbatim** as a permanent clause of the new
+   governed-surface AC; the four recovery artifacts above stay byte-unchanged.
+3. **Typed-write / no-raw-SQL boundary** — reads take typed args + a small fixed
+   filter grammar (equality + range over body-JSON), **never raw SQL and never a
+   query DSL**; the typed-write boundary (ADR-0.6.0-typed-write-boundary) is
+   untouched.
+
+If any of these three is silently weakened during the Slice 25 rewrite, the
+verdict is a BLOCK (not a CONCERN) — they are the whole reason this ADR separates
+the cap from the guarantees rather than deleting the test.
 
 ## Non-goals
 
