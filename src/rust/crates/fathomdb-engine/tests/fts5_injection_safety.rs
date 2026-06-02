@@ -135,8 +135,8 @@ fn fts5_control_syntax_is_safe_and_matches_reference() {
                 let mut engine_bodies: Vec<String> = result
                     .results
                     .iter()
-                    .filter(|s| body_set.contains(s.as_str()))
-                    .cloned()
+                    .map(|h| h.body.clone())
+                    .filter(|b| body_set.contains(b.as_str()))
                     .collect();
                 engine_bodies.sort();
                 engine_bodies.dedup();

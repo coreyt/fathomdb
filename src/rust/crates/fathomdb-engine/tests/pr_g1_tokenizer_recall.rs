@@ -106,6 +106,7 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
         opened.engine.close().unwrap();
         r
     };
+    eprintln!("[pr_g1_tokenizer_recall] BEFORE (v10 unicode61) recall = {before_recall:.3}");
     assert!(
         before_recall >= FLOOR,
         "BEFORE-migration recall {before_recall:.3} is below the {FLOOR} floor"
@@ -131,6 +132,11 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
         r
     };
 
+    eprintln!(
+        "[pr_g1_tokenizer_recall] AFTER (v11 porter unicode61 remove_diacritics) recall = \
+         {after_recall:.3} (delta {:+.3})",
+        after_recall - before_recall
+    );
     assert!(
         after_recall >= FLOOR,
         "AFTER-migration recall {after_recall:.3} is below the {FLOOR} floor \

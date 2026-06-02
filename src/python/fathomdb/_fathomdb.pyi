@@ -15,10 +15,17 @@ class WriteReceipt:
 class SoftFallback:
     branch: str
 
+class SearchHit:
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: str
+
 class SearchResult:
     projection_cursor: int
     soft_fallback: SoftFallback | None
-    results: list[str]
+    results: list[SearchHit]
 
 class CounterSnapshot:
     queries: int

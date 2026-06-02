@@ -140,14 +140,28 @@ fn ac_028c_excise_source_does_not_perturb_other_sources() {
     write_node(&opened.engine, "s2 gamma s2onlytoken", "S2");
     write_node(&opened.engine, "s2 delta s2onlytoken", "S2");
 
-    let s2_before = opened.engine.search("s2onlytoken").expect("search").results;
+    let s2_before: Vec<String> = opened
+        .engine
+        .search("s2onlytoken")
+        .expect("search")
+        .results
+        .iter()
+        .map(|h| h.body.clone())
+        .collect();
     let mut s2_before_sorted = s2_before.clone();
     s2_before_sorted.sort();
     assert_eq!(s2_before_sorted.len(), 2, "S2 baseline = 2");
 
     opened.engine.excise_source("S1").expect("excise");
 
-    let mut s2_after = opened.engine.search("s2onlytoken").expect("search").results;
+    let mut s2_after: Vec<String> = opened
+        .engine
+        .search("s2onlytoken")
+        .expect("search")
+        .results
+        .iter()
+        .map(|h| h.body.clone())
+        .collect();
     s2_after.sort();
     assert_eq!(s2_after, s2_before_sorted, "S2 result set must be untouched by S1 excise");
 

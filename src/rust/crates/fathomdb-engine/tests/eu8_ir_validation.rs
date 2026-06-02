@@ -322,7 +322,13 @@ fn measure_ir_recall(
     let mut per_shape: BTreeMap<String, AggBucket> = BTreeMap::new();
 
     for q in ir_queries {
-        let bodies = engine.search(&q.text).expect("ir search").results;
+        let bodies: Vec<String> = engine
+            .search(&q.text)
+            .expect("ir search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect();
         let (ids, unmapped) = map_bodies_to_doc_ids(&bodies, body_to_doc_id);
         total_unmapped += unmapped;
         let r = compute_ir_metrics(&q.expected_doc_ids, &ids, K);

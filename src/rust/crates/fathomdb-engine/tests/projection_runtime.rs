@@ -246,7 +246,8 @@ fn ac_031_hybrid_search_surfaces_vector_soft_fallback_when_projection_lags() {
         .expect("write");
 
     let result = opened.engine.search("hybrid").expect("search");
-    assert_eq!(result.results, vec!["phase nine hybrid search".to_string()]);
+    let bodies: Vec<String> = result.results.iter().map(|h| h.body.clone()).collect();
+    assert_eq!(bodies, vec!["phase nine hybrid search".to_string()]);
     assert_eq!(result.projection_cursor + 1, receipt.cursor);
     assert_eq!(
         result.soft_fallback,
@@ -272,7 +273,8 @@ fn hybrid_search_returns_vector_results_when_text_branch_has_no_match() {
     opened.engine.drain(10_000).expect("drain");
 
     let result = opened.engine.search("semantic-query").expect("search");
-    assert_eq!(result.results, vec!["vector-only document".to_string()]);
+    let bodies: Vec<String> = result.results.iter().map(|h| h.body.clone()).collect();
+    assert_eq!(bodies, vec!["vector-only document".to_string()]);
     assert_eq!(result.soft_fallback, None);
 }
 
@@ -294,7 +296,8 @@ fn hybrid_search_deduplicates_rows_seen_by_text_and_vector_branches() {
     opened.engine.drain(10_000).expect("drain");
 
     let result = opened.engine.search("hybrid").expect("search");
-    assert_eq!(result.results, vec!["hybrid retrieval document".to_string()]);
+    let bodies: Vec<String> = result.results.iter().map(|h| h.body.clone()).collect();
+    assert_eq!(bodies, vec!["hybrid retrieval document".to_string()]);
     assert_eq!(result.soft_fallback, None);
 }
 

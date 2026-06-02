@@ -13,7 +13,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity};
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, PreparedWrite, SearchHit, SoftFallbackBranch};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
