@@ -3,9 +3,9 @@ title: ADR-0.8.0-agent-memory-retrieval-and-identity
 date: 2026-05-31
 target_release: 0.8.0
 desc: Input to 0.8.0 planning. (1) Reclassify hybrid fusion+rerank (G9) and vector metadata columns (G10) from "differentiating" to table-stakes for the named consumer class. (2) Direct the deferred canonical-identity substrate (G0) to be designed bi-temporal-aware (G11) so supersession is not built twice.
-blast_radius: dev/roadmap/0.8.0.md (knowledge-store + identity scope); src/rust/crates/fathomdb-engine/src/lib.rs (search fusion path `read_search_in_tx`; vector partition `vector_default`); src/rust/crates/fathomdb-schema/src/lib.rs (canonical-identity substrate migration; vector metadata columns); dev/design/agent-memory-fit.md (source analysis §4/§8); ADR-0.8.0-canonical-identity-substrate (to be drafted — this ADR constrains its shape); AC-057a / dev/design/bindings.md § 1 (five-verb invariant — read-verb question)
+blast_radius: dev/roadmap/0.8.0.md (knowledge-store + identity scope); src/rust/crates/fathomdb-engine/src/lib.rs (search fusion path `read_search_in_tx`; vector partition `vector_default`); src/rust/crates/fathomdb-schema/src/lib.rs (canonical-identity substrate migration; vector metadata columns); dev/design/0.8.0-agent-memory-fit.md (source analysis §4/§8); ADR-0.8.0-canonical-identity-substrate (to be drafted — this ADR constrains its shape); AC-057a / dev/design/bindings.md § 1 (five-verb invariant — read-verb question)
 status: draft, HITL-required
-origin: dev/design/agent-memory-fit.md §8 (external validation: shipping peers + agent-memory literature)
+origin: dev/design/0.8.0-agent-memory-fit.md §8 (external validation: shipping peers + agent-memory literature)
 ---
 
 # ADR-0.8.0 — Agent-memory retrieval quality + bi-temporal-aware identity
@@ -26,7 +26,7 @@ canonical-identity work is detailed:
    point-in-time validity are not re-engineered in a later release?
 
 Gap labels (G0, G9, G10, G11, …) are defined in
-[`dev/design/agent-memory-fit.md`](../design/agent-memory-fit.md) §4 and §8c.
+[`dev/design/0.8.0-agent-memory-fit.md`](../design/0.8.0-agent-memory-fit.md) §4 and §8c.
 
 ## Context
 
@@ -41,17 +41,17 @@ window to avoid a costly rebuild.
 
 ### Evidence base
 
-Two independent investigations, recorded in `dev/design/agent-memory-fit.md`:
+Two independent investigations, recorded in `dev/design/0.8.0-agent-memory-fit.md`:
 
 - **Named consumers are real, public, local-first agent-memory products** —
   Memex, **Hermes Agent** (Nous Research, OSS, Feb 2026), **OpenClaw Agent** —
   not internal projects. **Two of the three run on SQLite + sqlite-vec / FTS5**,
-  the exact substrate FathomDB *is* (`agent-memory-fit.md` §8a).
+  the exact substrate FathomDB *is* (`0.8.0-agent-memory-fit.md` §8a).
 - **A verified deep-research pass** over the agent-memory literature (Zep/Graphiti
   arXiv 2501.13956; Mem0 + arXiv 2504.19413; Microsoft GraphRAG arXiv 2404.16130;
   Zhang et al. agent-memory survey arXiv 2404.13501; Generative Agents; sqlite-vec
   docs; Azure AI Search hybrid-ranking docs). 25/25 extracted claims confirmed
-  under 3-vote adversarial verification (`agent-memory-fit.md` §8b/§8d).
+  under 3-vote adversarial verification (`0.8.0-agent-memory-fit.md` §8b/§8d).
 
 ### What "below the floor" means concretely
 
@@ -66,7 +66,7 @@ already planned; question 2 is about *how* it is designed.
 
 ## Question 1 — reclassify G9 + G10 as table-stakes
 
-`agent-memory-fit.md` §8d currently ranks capabilities table-stakes /
+`0.8.0-agent-memory-fit.md` §8d currently ranks capabilities table-stakes /
 differentiating / world-class. The research moved two items the original §4
 analysis had under-weighted:
 
@@ -131,7 +131,7 @@ additive `logical_id`, `superseded_at`, partial unique index on
 supersession writes `superseded_at` on the prior row in-txn. A separate
 `ADR-0.8.0-canonical-identity-substrate` is to be drafted.
 
-The research (`agent-memory-fit.md` §8b, Pillar 3) shows the **world-class
+The research (`0.8.0-agent-memory-fit.md` §8b, Pillar 3) shows the **world-class
 longitudinal-understanding mechanism is a bi-temporal model**: facts/edges carry
 **four timestamps** — system *created/expired* (transaction time) and real-world
 *valid/invalid* (valid time) — and contradictions are handled by **invalidating,
@@ -201,11 +201,22 @@ edge invalidation (G11 full) — only to not foreclose them.
   `search` verb, or held until the `list`/filter-grammar decision; either way it
   is a parameter question, not a new top-level verb.
 - **G0 (identity)** is a write-path + schema change; by-id **read** verbs (G2) are
-  a *separate* AC-057a question (already open as `agent-memory-fit.md` §7 Q1) and
+  a *separate* AC-057a question (already open as `0.8.0-agent-memory-fit.md` §7 Q1) and
   are **out of scope for this ADR**.
 
 This ADR therefore does **not** require relaxing AC-057a. The read-verb question
-remains where `dev/design/agent-memory-fit.md` §7 leaves it.
+remains where `dev/design/0.8.0-agent-memory-fit.md` §7 leaves it.
+
+> **Scope reclass (v0.5.x triage, 2026-06-01 — `0.8.0-v05-feature-triage.md`):**
+> the read-verb question is now answered by
+> `ADR-0.8.0-supersede-five-verb-surface-cap` ("yes, under governance"). Net
+> reclass: **G1 / G2 / G3-read / G8 → ADD-0.8.0** under the governed surface;
+> **G5 / G6 / G4 / G9-confidence → DEFER-0.8.x**; the v0.5.x "grouped query"
+> resolves to the **G6 retrieve+expand** fan-out (not statistical aggregation,
+> which stays app-side); valid-time edges (G11 full) remain design-now /
+> implement-0.9.x+. Consumer-importance corrections: **OpenClaw is NICE (not
+> important) for all graph features** (no graph); **G0 transaction-time identity
+> is table-stakes** (keystone), only valid-time is differentiating.
 
 ## Open questions for HITL
 
@@ -218,7 +229,7 @@ remains where `dev/design/agent-memory-fit.md` §7 leaves it.
    behind a knob?
 4. Do edges carry identity + temporal columns in the 0.8.0 substrate, or nodes
    only (deferring edge-temporal to the graph-traversal cycle)?
-5. Should `dev/design/agent-memory-fit.md` §8d's table-stakes/differentiating/
+5. Should `dev/design/0.8.0-agent-memory-fit.md` §8d's table-stakes/differentiating/
    world-class ranking become the canonical 0.8.0-planning capability ladder, or
    is it advisory input only?
 
@@ -231,7 +242,7 @@ remains where `dev/design/agent-memory-fit.md` §7 leaves it.
   vector+text branches** and **metadata-filtered vector search**.
 - `ADR-0.8.0-canonical-identity-substrate` inherits a bi-temporal-aware design
   constraint and an explicit invalidate-not-delete semantic.
-- `agent-memory-fit.md` §8d is promoted (or re-marked advisory per Q5) and G9/G10
+- `0.8.0-agent-memory-fit.md` §8d is promoted (or re-marked advisory per Q5) and G9/G10
   move to the table-stakes tier in that doc.
 - AC-057a is untouched; the by-id read-verb decision stays open and separate.
 
@@ -240,7 +251,11 @@ remains where `dev/design/agent-memory-fit.md` §7 leaves it.
 - This ADR settles **classification and design-constraint** questions only. The
   concrete schema, RRF parameters, filter grammar, and acceptance bars are owned
   by 0.8.0 planning + the substrate ADR.
-- **Not in scope:** graph traversal verbs (G5), retrieve-then-expand (G6),
-  community summaries, full bi-temporal valid-time implementation (G11 full),
-  by-id read verbs (G2), and any AC-057a relaxation. Those remain 0.8.x/0.9.0
-  candidates gated on the separate read-surface HITL decision.
+- **Not in scope for *this* ADR** (owned elsewhere, not "blocked"): the read-verb
+  surface — by-id (G2), graph traversal (G5), retrieve-then-expand (G6),
+  `read.list`/`read.history` (G4/G7) — is **governed under
+  `ADR-0.8.0-supersede-five-verb-surface-cap`** (the five-verb cap is superseded;
+  reads are additive under governance, not relaxation-of-an-invariant). Per the
+  v0.5.x triage, **G2/G3-read are ADD-0.8.0; G5/G6/G4/G7 are DEFER-0.8.x** under
+  that governance. Still genuinely out here: community summaries and full
+  bi-temporal valid-time (G11 full) remain 0.9.0 candidates.
