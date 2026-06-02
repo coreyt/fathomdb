@@ -15,21 +15,23 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-02 (Slice 5 **IN FLIGHT** — worktree created, implementer
-prompt written & handed to the human-run implementer agent; awaiting completion).
+Last updated: 2026-06-02 (Slice 5 **PROMPTED** — implementer prompt written & handed
+to the human-run slice agent; the slice agent owns its worktree and merges to `main`).
 
 ---
 
 ## 1. Current slice
 
-**Slice 5 — G1 Structured Hits + FTS5 tokenizer** `[implementation]` — ⏳ **IN FLIGHT 2026-06-02.**
-- State (§1.5): **WORKTREE_CREATED**. Worktree `/tmp/fdb-slice-5-20260602T215841Z`,
-  branch `slice-5-20260602T215841Z`, baseline `944cbb4` (main HEAD at slice start).
-- Self-contained implementer prompt written: `dev/plans/prompts/0.8.0-slice-5.md`
-  (5.a — implementer, worktree). **Execution model (HITL directive this session):**
-  the human pastes the prompt into a **new agent** which runs the implementer work;
-  the orchestrator (main thread) then gates the transition (output.json present AND
-  branch head advanced past baseline) → cherry-pick → review → 5.b → close.
+**Slice 5 — G1 Structured Hits + FTS5 tokenizer** `[implementation]` — ⏳ **PROMPTED 2026-06-02.**
+- State (§1.5): **PROMPTED** (not yet implementing). Self-contained implementer prompt
+  written: `dev/plans/prompts/0.8.0-slice-5.md`.
+- **Execution model (HITL directive this session — supersedes the orchestration.md
+  main-thread-owns-worktree mechanic for 0.8.0):** the human pastes the slice prompt
+  into a **new slice agent**. **The slice agent owns its own worktree** (creates it from
+  the live `main` HEAD), implements, runs the full self-check, writes `output.json`, and
+  **merges its green work onto local `main` itself** (no push). **The orchestrator does
+  NOT create worktrees and does NOT cherry-pick** — it works on `main` *after* the merge:
+  review → 5.b verification → close + advance pointer.
 - **Plan-adjustment recorded** (see §7): Slice 5's new tokenizer migration is
   `step_id 11` + bumps `SCHEMA_VERSION 10→11`; this re-numbers Slice 15's G0
   migration to `step_id 12` / `11→12` (its contract's "step 11 / 10→11" is now stale).
@@ -55,7 +57,7 @@ applicable to this slice's work-type.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
-| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ⏳ in flight | 0 | **instantiates** functional harnesses (Py+TS) | ⏳ | ⏳ |
+| **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ⏳ prompted | 0 | **instantiates** functional harnesses (Py+TS) | ⏳ | ⏳ |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ❌ not started | 5 | ❌ extend | ❌ | ❌ |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ❌ not started | 0, 5 | ❌ extend | ❌ | ❌ |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ❌ not started | 15 | ❌ extend | ❌ | ❌ |
@@ -146,24 +148,42 @@ empty to CLOSE the phase).
 > Slice 0's to clean up. Slice 40's "ledger empty" gate applies to slice-managed
 > worktrees only.
 
+**Execution-model note (2026-06-02):** for the 0.8.0 campaign the **slice agent owns
+its worktree** (creates it from live `main`, merges back to `main` itself). The
+orchestrator does NOT create or own slice worktrees. This ledger therefore tracks
+**slice-agent-owned** worktrees (name/branch known only once the agent runs — record
+them from `output.json` at slice close, then remove per §11). The orchestrator removes
+the worktree at slice close.
+
 | Worktree path | Slice | Branch | Baseline SHA | State |
 |---------------|-------|--------|--------------|-------|
-| `/tmp/fdb-slice-5-20260602T215841Z` | 5 | `slice-5-20260602T215841Z` | `944cbb4` | WORKTREE_CREATED (implementer running; awaiting `0.8.0-slice-5-output.json`) |
+| _(none recorded yet — Slice 5 agent creates its own at run time)_ | 5 | _(slice-5-`<TS>`)_ | _(live main HEAD)_ | PROMPTED |
 
 ---
 
 ## 7. Recent decisions (newest on top)
 
-### 2026-06-02 — Slice 5 SPAWNED (worktree + prompt; in flight)
+### 2026-06-02 — Execution-model correction (HITL): orchestrator owns NO worktree
 
-- **Worktree created** by the orchestrator (main thread, §1):
-  `/tmp/fdb-slice-5-20260602T215841Z` on branch `slice-5-20260602T215841Z` from
-  baseline `944cbb4` (re-verified `git rev-parse main` immediately prior — trap 4).
-  Self-contained 5.a implementer prompt written to `dev/plans/prompts/0.8.0-slice-5.md`.
-- **Execution model (this session):** per HITL directive, the **human pastes the slice
-  prompt into a new agent** that runs the implementer; the orchestrator does NOT spawn it
-  via the Agent tool. The orchestrator still owns the worktree, the §1.5 gate
-  (output.json present AND head advanced), cherry-pick, review, 5.b, and close.
+- **HITL correction:** the orchestrator must **not** create worktrees. The **slice agent**
+  does implementation work on a worktree **it owns** and **merges to `main` itself**; the
+  orchestrator works on `main` *after* the merge (review → 5.b → close + advance pointer).
+  This **supersedes** the `orchestration.md` "main-thread creates the worktree / cherry-pick"
+  mechanic for the 0.8.0 campaign.
+- **Correction applied:** I had erroneously created `/tmp/fdb-slice-5-20260602T215841Z` +
+  branch `slice-5-20260602T215841Z` from `944cbb4`. **Removed** the worktree
+  (`git worktree remove --force`) and **deleted** the branch (`git branch -D`); `git
+  worktree list` clean (only `main` + the unrelated locked harness worktree). The Slice 5
+  prompt was rewritten: §0 now has the **slice agent** create its own worktree from live
+  `main`; §5 has it **merge to `main`** (no push) when green + `output.json` written.
+
+### 2026-06-02 — Slice 5 PROMPTED (implementer prompt written)
+
+- Self-contained Slice 5 implementer prompt written to `dev/plans/prompts/0.8.0-slice-5.md`.
+  **Execution model:** the **human pastes the slice prompt into a new slice agent** which
+  owns its worktree and merges to `main`. The orchestrator gates on the §1.5 witness
+  (`0.8.0-slice-5-output.json` present AND `main` advanced past the slice baseline by the
+  merge), then reviews on `main`, runs 5.b, and closes.
 - **Plan-adjustment (ADJUST-on-divergence, §12.4) — Slice 5 takes schema step 11:**
   The migrate engine requires contiguous `step_id` (`step_id == current+1`) and the
   open-time guard errors when `user_version > SCHEMA_VERSION`. The witnessed max step is
@@ -230,29 +250,29 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 5 is IN FLIGHT (WORKTREE_CREATED).** The orchestrator is **awaiting the
-implementer's completion** (human runs the `dev/plans/prompts/0.8.0-slice-5.md` prompt
-in a new agent inside the worktree `/tmp/fdb-slice-5-20260602T215841Z`).
+**Slice 5 is PROMPTED.** The human pastes `dev/plans/prompts/0.8.0-slice-5.md` into a new
+slice agent. **The slice agent owns its worktree and merges its green work onto `main`.**
+The orchestrator (this thread) does NOT create a worktree and does NOT cherry-pick.
 
-**When the implementer reports done, the orchestrator (this thread) resumes the §9 loop:**
+**When the slice agent reports it has merged, the orchestrator resumes — working on `main`:**
 1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-5-output.json`
-   exists AND the branch head advanced past `944cbb4`. Absent / blocker reported → triage
-   (fix-1 or HALT), do NOT cherry-pick a non-state.
-2. **Cherry-pick** the implementer commits onto `main` (one dependent git op per Bash call,
-   verify each; re-check `git rev-parse main` first — trap 4). Never merge.
-3. **Review** — codex is unrunnable here (trap 5); spawn an independent adversarial review
-   subagent (read-only over the diff) → promote to `0.8.0-slice-5-review-<ts>.md` with a
-   `## Verdict:` line. Focus: floor held across the migration, no `Eq`-derive leak,
-   dedup/vector-first order, Py+TS parity, the step-11/`SCHEMA_VERSION` migration mechanism.
-4. **5.b verification** (no worktree, read-only re-run): recall delta across the migration,
-   functional harnesses exist in both SDKs + cross-binding equivalence, X2 `mkdocs build`, X3 docs.
-5. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override.
-   Substantive CONCERN / BLOCK → fix-1 (fresh implementer into the existing worktree).
-   **Sub-0.90 floor breach is substantive — never overridden → HALT to HITL.**
-6. **Close in ONE docs commit:** Slice 5 CLOSED block in the plan, advance pointer to Slice 10,
-   update this board (incl. X1/X2/X3 columns) + `dev/DOC-INDEX.md` + per-AC scoreboard.
-   Reconcile the Slice-15 step-12 renumber note.
-7. **Worktree cleanup** (§11) after the slice closes.
+   exists AND `main` advanced past the slice baseline (the merge landed:
+   `merged_to_main_sha` present and reachable from `main`). Absent / blocker reported / not
+   merged → triage (direct a fix pass or HALT), do NOT proceed as if closed.
+2. **Review on `main`** — codex is unrunnable here (trap 5); spawn an independent adversarial
+   review subagent (read-only over the merged diff `<baseline>..main`) → promote to
+   `0.8.0-slice-5-review-<ts>.md` with a `## Verdict:` line. Focus: floor held across the
+   migration, no `Eq`-derive leak, dedup/vector-first order, Py+TS parity, the
+   step-11/`SCHEMA_VERSION 10→11` migration mechanism.
+3. **5.b verification** (read-only re-run): recall delta across the migration, functional
+   harnesses exist in both SDKs + cross-binding equivalence, X2 `mkdocs build`, X3 docs.
+4. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override.
+   Substantive CONCERN / BLOCK → direct a fix pass (a fresh slice-agent run on the same
+   worktree/branch). **Sub-0.90 floor breach is substantive — never overridden → HALT to HITL.**
+5. **Close in ONE docs commit on `main`:** Slice 5 CLOSED block in the plan, advance pointer
+   to Slice 10, update this board (incl. X1/X2/X3 columns) + `dev/DOC-INDEX.md` + per-AC
+   scoreboard. Reconcile the Slice-15 step-12 renumber note.
+6. **Worktree cleanup** (§11) — the orchestrator removes the slice agent's worktree after close.
 
 **Parallel standing item — HITL gate-package sign-off (gates Slice 15, NOT Slice 5):** HITL
 signs the substrate-ADR package (Q2=Option 2A / Q4 / op-store cascade / forward-migration
