@@ -1,0 +1,14 @@
+{
+  "_comment": "X1 cross-binding equivalence fixture (0.8.0 Slice 5 / G1). Both the Python (test_functional_search.py) and TypeScript (functional-search.test.ts) functional harnesses write this exact corpus, run these exact queries, and assert the engine returns the listed bodies (as structured SearchHits) — proving the two FFI bindings surface equivalent hits for the same DB + query. Bodies are FTS-only (no vector kind configured), so the result is deterministic across bindings without a network embedder.",
+  "corpus": [
+    { "kind": "note", "body": "alpha structured retrieval document" },
+    { "kind": "note", "body": "beta structured search payload" },
+    { "kind": "doc", "body": "gamma unrelated content" },
+    { "kind": "doc", "body": "delta retrieval and ranking notes" }
+  ],
+  "queries": [
+    { "query": "structured", "expected_bodies": ["alpha structured retrieval document", "beta structured search payload"] },
+    { "query": "gamma", "expected_bodies": ["gamma unrelated content"] },
+    { "query": "retrieval", "expected_bodies": ["alpha structured retrieval document", "delta retrieval and ranking notes"] }
+  ]
+}
