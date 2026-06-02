@@ -12,17 +12,18 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
-## 0.7.2 - unreleased (IN PROGRESS)
+## 0.7.2 - 2026-06-01
 
 RELEASE-HARDENING. The campaign that takes the held 0.7.0 + 0.7.1 work to a
-pushable release: a doc-drift sweep, embedder concurrency hardening, a recall-
-floor reframe (the "recall gap" was a measurement artifact, not a defect), and
-a tiered real-corpus latency budget. **Not released. In progress** — Phase A
-slices PR-1, PR-2(family), PR-9, PR-3 have landed on local `main` (unpushed);
-**PR-4 (the slice that writes the final release notes, creates the `v0.7.1`
-tag, and pushes `main` + both tags) has NOT run.** PR-5/6/7/8 (test/perf
-hardening + campaign closure) are NOT started. Both `v0.7.0` and `v0.7.1` remain
-held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
+fully shipped, validated release. **Phase A closed the release:** a doc-drift
+sweep (PR-1), embedder concurrency hardening (PR-9), a recall-floor reframe
+(PR-2 family — the "recall gap" was a measurement artifact, not a defect), a
+tiered real-corpus latency budget (PR-3), and the 0.7.0+0.7.1 publish (PR-4 —
+`v0.7.1` is the first published 0.7.x; `v0.7.0` stays a local historical
+marker, intentionally never published). **Phase B hardened the test/perf
+foundation** for the 0.8.x agent-memory work: a corpus-driven test harness
+(PR-5), always-on dev-loop perf gates (PR-6), and append-only perf-regression
+detection (PR-7). Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
 
 ### Added
 
@@ -53,6 +54,46 @@ held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
   exact-match sentinel must rank 1 through the two-phase bit-KNN + f32 rerank
   path. No `AGENT_LONG`, `default-embedder` feature, or corpus needed — this is
   the CI guard that replaces the infeasible canonical N=1M perf run.
+- **Corpus-driven test harness (PR-5, `c605a18`).** `tests/support/
+  corpus_harness.rs` is now the canonical entry point for corpus-driven tests:
+  `CorpusFixture` (`small`/`medium`/`full` + `per_source` + `from_docs`), a
+  synthetic/real embedder toggle, one-line `ingest_into`, a `query_set`
+  held-out query builder, and three invariant helpers (vec0 row count, FTS
+  populated, non-empty search). Backed by a **per-(model, subset) embedding
+  cache** under `data/corpus-data/.cache/embeddings/` (gitignored;
+  `$FATHOMDB_CORPUS_CACHE_DIR`-overridable; key = sha256(identity + subset
+  label + doc-id manifest); byte-deterministic blob; atomic write; the hit
+  path re-verifies identity + manifest before trusting bytes; **every miss is
+  loud**). Pack-4 tests (`corpus_vector`/`corpus_fts`/`corpus_graph`) migrated
+  with no behavior change. Test-only `VaryingEmbedder::with_identity` seam
+  added (the production `EmbedderIdentity` contract is untouched).
+- **Always-on dev-loop perf gates (PR-6, `e2c886d`).** `tests/
+  perf_gates_devloop.rs` — three perf ACs at N≈1000 that run on **every**
+  `cargo test` (not `AGENT_LONG`-gated), in ≈16 s warm (≤30 s budget), over
+  the real production read path. **Structural invariants HARD-assert** (vec0
+  row count + FTS) to catch the batch-collapse class of regression; **latency
+  is soft/NOTIFY-only** (synthetic p50≤50 / p99≤150 ms) with **one hard
+  catastrophic ceiling** (10× soft) so an orders-of-magnitude scanner
+  regression still RED-fails; **recall floor 0.85 is NOTIFY-only on the real
+  path**. Signal split: synthetic isolates latency, real carries recall, the
+  off-signal is report-only on each. Two-tier model documented in
+  `dev/design/perf-gates.md` (devloop = fast feedback; canonical = ship
+  verdict).
+- **Perf-regression detection (PR-7, `84446ef`).** New `perf-regression-check`
+  binary in `fathomdb-cli` reads the append-only `dev/perf-history/` store,
+  groups runs by `(ac_id, n)`, and flags the single latest run against the
+  rolling median of the prior ≤10 when p50/p99 degrades >15 % or recall drops
+  >0.03 absolute (HITL-locked, conservative vs the 10 %/0.02 default). Strict
+  fixed-width RFC3339→epoch parsing (dependency-free); exit codes 0/1/2; a
+  `--json` mode; read-only (never mutates the store). CI integration in
+  `perf-canonical.yml` posts verdicts to `$GITHUB_STEP_SUMMARY`. History
+  backfilled v0.6.x → v0.7.2 (9 rows). **Honest limitation:** the detector is
+  degradation-only, so it cannot flag the 2026-05-27 batch-collapse bug
+  *itself* — that bug masqueraded as *improved* recall (degenerate 1.0), so
+  the detector instead flags the regression-shaped *correction* (recall
+  1.0 → 0.1572 at `4a95cfd`). Catching the bug itself needs a row-count /
+  implausible-perfection anomaly rule, logged as future work in
+  `dev/design/perf-regression-detection.md`.
 
 ### Changed
 
@@ -136,8 +177,11 @@ f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
 held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
 recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
 "gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
-and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
-published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
+and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is tagged
+on the version-bump commit and is **the first published 0.7.x** (crates.io +
+PyPI + npm + GitHub release, 2026-06-01); `v0.7.0` was held as a local
+historical marker and intentionally not published (see the 0.7.0 section). See
+`dev/plans/0.7.1-implementation.md`.
 
 ### Added
 
@@ -224,8 +268,10 @@ PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
 is **binary vector quantization + f32 rerank** to bring vector retrieval latency
 (AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
 local `v0.7.0` tag was cut, then **held unpushed pending 0.7.1's embedder work**
-(per the 2026-05-27 instruction). It is published here together with `v0.7.1` so
-the release narrative is coherent: 0.7.0 ships the latency win; 0.7.1 ships the
+(per the 2026-05-27 instruction). `v0.7.0` **remains a local historical marker
+and was never published** — its tagged tree predates the release-gate CI fixes
+and would fail preflight; `v0.7.1` is the first published 0.7.x and ships on its
+own, carrying both the 0.7.0 latency win and the 0.7.1
 default embedder that finally lets recall be measured on real text. AC-013b
 recall was held OPEN at 0.7.0 ship
 (synthetic isotropic fixture cannot reach the floor; real-embedder validation
