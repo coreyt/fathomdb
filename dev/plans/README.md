@@ -1,30 +1,48 @@
 # Plans
 
-`dev/plans/` is the home for **0.6.0 implementation planning and execution
-artifacts**.
+`dev/plans/` is the home for **per-release implementation planning and
+execution artifacts** across every shipped and in-flight FathomDB release line
+(0.6.0 → 0.6.1 → 0.7.0 → 0.7.1 → 0.7.2 → 0.8.x). It is an **append-only
+historical record**, not a workspace that gets pruned per release.
 
-Canonical files:
+## Layout
 
-- `0.6.0-implementation.md` — single source of truth for the 0.6.0
-  implementation sequence, current execution posture, and phase/pack status
-- `../progress/0.6.0.md` — chronological work log for the 0.6.0 rewrite
-
-Supporting 0.6.0 plan artifacts:
-
-- `0.6.0-Phase-9-Pack-*.md` — packet- or pack-specific plans
-- `prompts/` — execution prompts used for packet work
-- `runs/` — packet logs, outputs, reviewer notes, and status boards
+- `<version>-implementation.md` — per-release single source of truth for the
+  implementation sequence, execution posture, and phase/pack status
+  (`0.6.0-implementation.md`, `0.7.0-implementation.md`,
+  `0.7.1-implementation.md`, …).
+- `../progress/<version>.md` — chronological work log per release line.
+- `prompts/` — execution prompts used for slice/packet work, one file per
+  slice (e.g. `0.7.2-PR-8-campaign-closure.md`).
+- `runs/` — slice logs, output JSONs, reviewer notes, and status boards
+  (e.g. `STATUS-release-hardening.md`, `0.7.2-PR-8-output.json`).
 
 Directory split:
 
-- `dev/plans/` = 0.6.0 execution planning
-- `dev/roadmap/` = 0.7.0+ future-release planning
+- `dev/plans/` = release execution planning + run artifacts (all versions).
+- `dev/roadmap/` = forward-looking, not-yet-scheduled backlog and deferrals.
 
-Rules:
+## Archive convention (in place — do NOT relocate)
 
-- if a document is the active 0.6.0 implementation source of truth, keep it in
-  this directory
-- if a document is an intermediate packet plan, prompt, or run artifact for
-  0.6.0, keep it in this directory
-- if a document is a future-release backlog or deliberate deferral beyond 0.6.0,
-  move it to `dev/roadmap/`
+Completed-release prompts and run artifacts are **archived in place**, not moved
+to a subdirectory. This is deliberate: artifacts are cross-referenced **by path**
+from ADRs, design docs, implementation docs, and prior run logs (≈120 distinct
+prompt paths are referenced from ≈140 files as of 0.7.2). Physically relocating
+a completed prompt would break those references or force rewrites of immutable
+historical run logs. Instead:
+
+- A prompt/run artifact is "archived" when its release line has shipped; its
+  status lives in that release's `STATUS-*.md` / `*-implementation.md` ledger,
+  not in its filesystem location.
+- The active to-do surface is always the current campaign's `STATUS-*.md`
+  scoreboard (e.g. `runs/STATUS-release-hardening.md` for 0.7.2), not a scan of
+  `prompts/`.
+- Do not delete or move shipped-release artifacts. If a path must change, update
+  every inbound reference in the same change and leave a note in the ledger.
+
+## Rules
+
+- Active source-of-truth and in-flight slice artifacts: keep in this directory.
+- Completed-release prompts and run logs: keep in place (see archive convention).
+- Future-release backlog or deliberate deferral beyond the active line:
+  `dev/roadmap/`.

@@ -72,10 +72,13 @@ as-needed from the handoff section; — = not yet authored).
 - ~~**EU-7 harness follow-up**~~ — **RESOLVED (already landed `f5bd686`, PR-2bc S1).**
   The `EU7_GT_EMBED_PROGRESS` periodic log line is wired at
   `eu7_real_corpus_ac.rs:725`; this entry was stale.
-- **Doc-archive hygiene** (out of campaign scope) — ~100 completed-release prompts in
-  `dev/plans/prompts/` + run artifacts have no archive convention; `dev/plans/README.md`
-  is itself stale (claims the dir is "0.6.0 only"). Decide a convention before moving
-  tracked files (cross-refs by path exist).
+- ~~**Doc-archive hygiene**~~ — **RESOLVED IN PLACE (PR-8, `dbab3af`).** HITL chose
+  to do it. Investigation found ≈120 distinct prompt paths cross-referenced by path
+  from ≈140 ADR/design/impl/run files (incl. immutable historical run logs), so a
+  physical relocation would break references — actively harmful, not hygiene. Resolution:
+  `dev/plans/README.md` de-staled (it falsely claimed "0.6.0 only") + an **in-place**
+  archive convention adopted (status lives in the per-campaign STATUS ledger, not the
+  filesystem location; completed-release artifacts are not relocated). No files moved.
 
 ## Honesty report
 
