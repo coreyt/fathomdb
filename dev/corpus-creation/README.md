@@ -61,6 +61,8 @@ uv run tests/corpus/scripts/acquire_bahmutov_dailylogs.py
 uv run tests/corpus/scripts/acquire_enron.py        # downloads 443 MB tarball
 uv run tests/corpus/scripts/acquire_qmsum.py
 uv run tests/corpus/scripts/acquire_enronqa.py
+python3 tests/corpus/scripts/acquire_qaconv.py
+python3 tests/corpus/scripts/acquire_qasper.py
 uv run tests/corpus/scripts/generate_synthetic_notes.py
 uv run tests/corpus/scripts/generate_chain_corpus.py   # depends on the above
 
@@ -76,7 +78,7 @@ for name, src in m['sources'].items():
 EOF
 
 # Ingest into a fresh FathomDB instance. ~2s on dev-box for the
-# 7,667-doc full corpus.
+# 10K+ doc full corpus after the 0.8.x QA expansion.
 cargo run --example ingest_corpus -p fathomdb-engine -- \
   --db tests/corpus/.cache/db \
   --jsonl-dir data/corpus-data/raw \

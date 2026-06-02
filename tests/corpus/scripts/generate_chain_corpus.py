@@ -26,6 +26,7 @@ Chain shapes (deterministic rotation across 6 shapes for 200 chains
   EMAIL -> MEETING -> TODO               (Enron + QMSum anchors)
   ARTICLE -> NOTE -> TODO                (CNN/DM anchor)
   TODO -> NOTE -> EMAIL                  (Landes anchor)
+  PAPER -> NOTE -> TODO                  (QASPER anchor)
 
 Relation vocabulary (locked in corpus-card.md):
   replies_to, follows_up_on, summarizes, action_from,
@@ -83,11 +84,15 @@ ANCHOR = datetime(2025, 6, 1, tzinfo=timezone.utc)
 SOURCES = (
     ("enron",            "email"),
     ("enronqa",          "email"),
+    ("qaconv",           "email"),
+    ("qaconv",           "meeting"),
+    ("qaconv",           "note"),
     ("cnn_dailymail",    "article"),
     ("bahmutov_dailylogs", "note"),
     ("synthetic_notes",  "note"),
     ("landes_todos",     "todo"),
     ("qmsum",            "meeting"),
+    ("qasper",           "paper"),
 )
 
 
@@ -535,6 +540,66 @@ def chain_todo_note_email(chain_id: str, rng: random.Random, anchors: dict) -> d
     }
 
 
+def chain_paper_note_todo(chain_id: str, rng: random.Random, anchors: dict) -> dict | None:
+    if not anchors.get("paper") or not anchors.get("note"):
+        return None
+    paper = pick(rng, anchors["paper"])
+    topic = anchor_topic(paper)
+    project = anchor_project(paper, fallback="paper-reading")
+
+    note_body = (
+        f"# paper note: {topic[:100]}\n\n"
+        f"The paper is relevant to {project}. Main takeaway for our retrieval work: "
+        f"capture the evidence trail before turning it into an action item.\n"
+    )
+    note = synth_doc(
+        chain_id=chain_id, role="note", source_type="note",
+        title=f"paper note: {topic[:60]}",
+        body=note_body,
+        created_at=chain_date(rng, 1),
+        parent_doc_id=paper["doc_id"],
+        thread_id=paper.get("thread_id"),
+        people=paper.get("people_mentions", [])[:3],
+        projects=[project],
+        extra_tags=("relation:summarizes",),
+    )
+    todo_body = (
+        f"follow up on the paper \"{topic[:80]}\": check whether the evidence section "
+        f"changes the {project} evaluation plan.\n\nProject: {project}\nPriority: P2\n"
+    )
+    todo = synth_doc(
+        chain_id=chain_id, role="todo", source_type="todo",
+        title=f"check evidence from {topic[:50]}",
+        body=todo_body,
+        created_at=chain_date(rng, 2),
+        parent_doc_id=note.doc_id,
+        thread_id=paper.get("thread_id"),
+        people=paper.get("people_mentions", [])[:3],
+        projects=[project],
+        extra_tags=("relation:action_from",),
+    )
+    chain_ids = [paper["doc_id"], note.doc_id, todo.doc_id]
+    queries = [
+        {
+            "query": f"what action came out of the paper about \"{topic[:80]}\"?",
+            "expected_top_k_doc_ids": chain_ids,
+            "relation_type": "action_from",
+        },
+        {
+            "query": f"where are my notes on the paper about \"{topic[:80]}\"?",
+            "expected_top_k_doc_ids": [note.doc_id, paper["doc_id"]],
+            "relation_type": "summarizes",
+        },
+    ]
+    return {
+        "shape": "PAPER->NOTE->TODO",
+        "anchors": [paper["doc_id"]],
+        "synthetic": [note, todo],
+        "chain_ids": chain_ids,
+        "queries": queries,
+    }
+
+
 CHAIN_BUILDERS = [
     chain_email_note_todo,
     chain_article_note_email,
@@ -542,6 +607,7 @@ CHAIN_BUILDERS = [
     chain_email_meeting_todo,
     chain_article_note_todo,
     chain_todo_note_email,
+    chain_paper_note_todo,
 ]
 
 
