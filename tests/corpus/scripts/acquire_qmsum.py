@@ -50,7 +50,15 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import (  # noqa: E402
+    CorpusDoc,
+    EvalQaRow,
+    corpus_data_dir,
+    doc_id,
+    qa_id,
+    write_eval_jsonl,
+    write_jsonl,
+)
 
 UPSTREAM_REPO = "Yale-LILY/QMSum"
 UPSTREAM_SHA = "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e"
@@ -157,7 +165,7 @@ def make_docs_for_meeting(domain: str, meeting_id: str, payload: dict) -> list[C
 
 
 def iter_meetings(archive: bytes):
-    """Yield (domain, meeting_id, payload) in canonical sorted-path order."""
+    """Yield (domain, split, meeting_id, payload) in canonical sorted-path order."""
     # tarfile in streaming mode doesn't allow re-seek; we need sorted order, so
     # buffer payloads into a dict first.
     found: dict[str, tuple[str, dict]] = {}
@@ -182,11 +190,45 @@ def iter_meetings(archive: bytes):
             if f is None:
                 continue
             payload = json.loads(f.read().decode("utf-8"))
-            found[inner] = (domain, meeting_id, payload)
+            split = sub[2]
+            found[inner] = (domain, split, meeting_id, payload)
     for path in sorted(found.keys()):
-        d, mid, p = found[path]
-        yield d, mid, p
+        d, split, mid, p = found[path]
+        yield d, split, mid, p
 
+
+
+def build_qa_rows(domain: str, split: str, meeting_id: str, payload: dict) -> list[EvalQaRow]:
+    transcript_doc_id = doc_id(PROVENANCE, f"transcript:{meeting_id}")
+    rows: list[EvalQaRow] = []
+    for query_type, key in (("general", "general_query_list"), ("specific", "specific_query_list")):
+        for index, q in enumerate(payload.get(key) or []):
+            question = str(q.get("query") or "").strip()
+            answer = str(q.get("answer") or "").strip()
+            if not question or not answer:
+                continue
+            rows.append(EvalQaRow(
+                qa_id=qa_id("qmsum", meeting_id, query_type, str(index)),
+                source="qmsum",
+                source_type="meeting",
+                question=question,
+                answers=[answer],
+                answer_type="summary",
+                evidence_doc_ids=[transcript_doc_id],
+                evidence_spans=[],
+                negative_doc_ids=[],
+                relation_type="summarizes",
+                metadata={
+                    "split": split,
+                    "thread_id": meeting_id,
+                    "upstream_id": f"{domain}:{meeting_id}:{query_type}:{index}",
+                    "query_type": query_type,
+                    "domain": domain,
+                },
+                license=LICENSE_SPDX,
+                provenance=PROVENANCE,
+            ))
+    return rows
 
 def main() -> int:
     archive = fetch_archive()
@@ -194,12 +236,18 @@ def main() -> int:
     print(f"archive sha256: {archive_sha}", flush=True)
 
     out_path = corpus_data_dir() / "raw" / "qmsum.jsonl"
+    eval_path = corpus_data_dir() / "eval" / "qmsum_qa.jsonl"
 
     docs: list[CorpusDoc] = []
+    qa_rows: list[EvalQaRow] = []
     meetings_seen = 0
-    for domain, meeting_id, payload in iter_meetings(archive):
+    for domain, split, meeting_id, payload in iter_meetings(archive):
+        meeting_docs = make_docs_for_meeting(domain, meeting_id, payload)
+        if not meeting_docs:
+            continue
         meetings_seen += 1
-        for d in make_docs_for_meeting(domain, meeting_id, payload):
+        qa_rows.extend(build_qa_rows(domain, split, meeting_id, payload))
+        for d in meeting_docs:
             docs.append(d)
             if len(docs) >= TARGET_COUNT:
                 break
@@ -208,9 +256,12 @@ def main() -> int:
     print(f"used {meetings_seen} meetings", flush=True)
 
     count, sha = write_jsonl(out_path, docs)
+    qa_count, qa_sha = write_eval_jsonl(eval_path, qa_rows)
     print(f"wrote {count} docs to {out_path}")
     print(f"sha256 = {sha}")
-    return 0 if count == TARGET_COUNT else 1
+    print(f"wrote {qa_count} eval QA rows to {eval_path}")
+    print(f"eval sha256 = {qa_sha}")
+    return 0 if count == TARGET_COUNT and qa_count > 0 else 1
 
 
 if __name__ == "__main__":

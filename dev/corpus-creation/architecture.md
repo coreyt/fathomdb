@@ -343,6 +343,52 @@ Per-source specifics:
 - See [§7 Chain generator](#7-chain-generator-pack-2) for the
   design.
 
+### 5.9 QAConv (`acquire_qaconv.py`)
+
+- Source: GitHub `salesforce/QAConv` at commit
+  `b1f140c39580dd4dadb4ecd35e9a247a90016407`, file
+  `dataset/QAConv-V1.1.zip`.
+- License: BSD-3-Clause. Commit-eligible.
+- Count: 1,250 conversation segment docs, mapped only to existing
+  `email`, `meeting`, and `note` source types.
+- Eval: 2,303 grounded QA rows in
+  `data/corpus-data/eval/qaconv_qa.jsonl`.
+- Subsample policy: sort by split/source/segment/question and select
+  balanced source-type coverage before applying the document cap.
+
+### 5.10 QASPER (`acquire_qasper.py`)
+
+- Source: Hugging Face `allenai/qasper` metadata at revision
+  `fdc9d8214fbab5dd782958601db4d678e6934a54`; raw v0.3 JSON is
+  read directly from the QASPER S3 archives instead of executing the
+  HF custom dataset loader.
+- License: CC-BY-4.0. Commit-eligible with attribution.
+- Count: 1,585 paper docs, filling the previously-empty `paper`
+  source type.
+- Eval: 7,993 answer-level QA/evidence rows in
+  `data/corpus-data/eval/qasper_qa.jsonl`.
+- Chain impact: `generate_chain_corpus.py` now supports
+  `PAPER->NOTE->TODO` using existing `summarizes` and `action_from`
+  relation tags. Full chain regeneration requires all Pack-1 raw
+  JSONLs to be present.
+
+### 5.11 Existing-source QA exports
+
+- EnronQA remains an existing 200-doc `email` source. Its acquisition
+  script now also emits 710 eval-only QA rows, grounded only to the
+  selected EnronQA docs. License posture remains cache-only.
+- QMSum remains an existing 600-doc `meeting` source. Its acquisition
+  script now also emits 1,584 original query-answer rows, grounded to
+  the selected meeting transcript docs. License posture remains
+  cache-only until the upstream transcript chain is verified.
+
+### 5.12 PMC OA reconsideration
+
+PMC OA is still deferred for 0.8.x. The Commercial-Use bucket remains
+available, but automated retrieval must use PMC-approved channels and
+per-article licenses still need filtering. See
+[`../notes/0.8.x-pmc-oa-reconsideration.md`](../notes/0.8.x-pmc-oa-reconsideration.md).
+
 ## 6. License posture and distribution
 
 All produced JSONL — regardless of upstream license posture —
@@ -367,6 +413,8 @@ re-litigating which ones qualify:
 | Chain connectives | `commit` | project license |
 | QMSum | `cache` | upstream license chain not verified (AMI/ICSI/Parliament) |
 | EnronQA | `cache` | undeclared license on HF card |
+| QAConv | `commit` | BSD-3-Clause |
+| QASPER | `commit` | CC-BY-4.0; attribution required |
 | (Deferred) PMC OA | `cache`-eligible | mixed CC; needs per-article filter |
 | (Deferred) S2ORC | `cache` | ODC-By 1.0; Semantic Scholar API TOS |
 | (Deferred) ELITR | `cache` | CC-BY-NC-SA 4.0 |
@@ -393,8 +441,8 @@ A chain is a small ordered set of doc_ids spanning multiple
 
 ### 7.1 Chain shapes shipped in v1
 
-Six shapes, rotated deterministically over 200 chain indices
-(33-34 chains per shape):
+Seven supported shapes, rotated deterministically over 200 chain indices
+when every anchor source is present:
 
 | Shape | Anchor source | Synthetic docs | Why |
 |---|---|---|---|
@@ -404,6 +452,7 @@ Six shapes, rotated deterministically over 200 chain indices
 | `EMAIL->MEETING->TODO` | Enron + QMSum (2 anchors) | todo (follows_up_on) | cross-anchor chain |
 | `ARTICLE->NOTE->TODO` | CNN/DM article | note + todo | "article → followup TODO" |
 | `TODO->NOTE->EMAIL` | Landes todo | note + email | "in-progress to-do → status note → ask for help" |
+| `PAPER->NOTE->TODO` | QASPER paper | note + todo | "paper reading → note → follow-up action" |
 
 The 7-value relation vocabulary
 (`replies_to`, `follows_up_on`, `summarizes`, `action_from`,
