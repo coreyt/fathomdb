@@ -10,7 +10,28 @@ origin: ADR-0.8.0-agent-memory-retrieval-and-identity Q2 (Option 2A recommendati
 
 # ADR-0.8.0 — Canonical-identity substrate (G0 keystone)
 
-**Status:** draft, HITL-required.
+**Status:** ✅ **SIGNED / accepted (HITL 2026-06-03).** Slice 15 is gate-clear to prompt.
+
+> **HITL sign-off 2026-06-03 (substrate gate package — completes the partial sign-off of 2026-06-02).**
+> The 2026-06-02 session signed Q2 (=Option 2A) and Q4 (=edges carry temporal columns). The three
+> remaining substrate items are now **signed** at the §3 keystone gate:
+> - **Decision 4 — op-store cascade under supersession: RATIFIED as-is.** Supersession + cascade
+>   in one transaction (atomic tombstone-then-insert with the write batch); `latest_state` updates
+>   to the new active row; `append_only_log` accretes; vec0/FTS5 projection shadows NOT cascaded by
+>   G0 (deferred to reserved Slice 16).
+> - **Forward-migration policy: SIGNED = in-place additive `ALTER` (no re-open, no data migration).**
+>   Accepted consequence: legacy (pre-0.8.0) rows carry `logical_id = NULL` until rewritten; the
+>   engine owns a documented NULL-on-legacy-rows rule (G2 `read.get(logical_id)` resolves a pre-0.8.0
+>   row by `logical_id` only once it is rewritten — it stays reachable by its existing means meanwhile).
+> - **FLAGGED `write_cursor`-as-row-id deviation: ACCEPTED for 0.8.0 G0; dedicated `row_id` +
+>   `restore_provenance` DEFERRED** to a later additive slice. Rationale on record: `write_cursor`
+>   is a sufficient per-version identity for G2 + supersession history; the deferral is bounded and
+>   additively-reversible (no cursor-renumber slice and no committed `restore_provenance` consumer is
+>   on the 0.8.0 roadmap; `recover/restore` are SDK-absent under the recovery-denylist). Revisit only
+>   if a future slice renumbers/compacts cursors or recovery requires structured provenance.
+>
+> Slice 15 still FLAGS the `write_cursor`-as-row-id deviation in its `output.json` per its contract
+> (sign-off ≠ self-resolution licence); it now lands the accepted shape rather than escalating it.
 
 This ADR settles the **storage substrate** for canonical identity and
 supersession that 0.8.0's knowledge-store (Memex et al.) consumes. It is the

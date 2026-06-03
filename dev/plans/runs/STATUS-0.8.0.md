@@ -23,14 +23,17 @@ pointer → Slice 15, **HITL-gated**: substrate cascade + migration policy + `wr
 ## 1. Current slice
 
 **Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12)** `[implementation]` —
-⛔ **NEXT, but HITL-GATED (do not spawn).**
-- State (§1.5): **awaiting HITL sign-off** (the §3 keystone gate). Depends-on: Slice 0 ✅ + Slice 5 ✅.
-- **STOP — substrate gate package partially signed.** Q2 (=Option 2A) + Q4 (=edges-too) ✅ signed
-  (2026-06-02). **OPEN + required before spawn:** (a) op-store cascade-under-supersession contract;
-  (b) forward-migration policy (in-place additive ALTER, no data migration); (c) the FLAGGED
-  `write_cursor`-as-row-id deviation. Present options + recommendation to HITL; wait. See §5 + §8.
+✅ **GATE CLEARED 2026-06-03 — ready to PROMPT (not yet prompted).**
+- State (§1.5): **gate-clear, awaiting prompt.** Depends-on: Slice 0 ✅ + Slice 5 ✅.
+- **Substrate gate package ✅ FULLY SIGNED 2026-06-03** (§5): Q2=2A, Q4=edges-too (2026-06-02);
+  op-store cascade=ratify Decision 4 as-is; forward-migration=in-place additive `ALTER` (legacy rows
+  NULL `logical_id`, lazily backfilled — engine owns the NULL-on-legacy rule); `write_cursor`-as-row-id
+  ACCEPTED for 0.8.0 (dedicated `row_id`+`restore_provenance` DEFERRED). Slice 15 still FLAGS the
+  `write_cursor` deviation in `output.json` (lands the accepted shape, does not escalate).
 - **Renumber reminder:** Slice 5 consumed `step_id 11` / `SCHEMA_VERSION 11`, so Slice 15 is now
   **`step_id 12` / `SCHEMA_VERSION 11→12`** (full inline renumber lands in Slice 15's closing commit).
+- **Next orchestrator action:** instantiate `dev/plans/prompts/0.8.0-slice-15.md` from the
+  SLICE-TEMPLATE; the human pastes it into a new slice agent (agent owns worktree + merges to `main`).
 
 ### Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency `[implementation]` — ✅ CLOSED 2026-06-03 (PASS after CONCERN→fix-1→BLOCK→fix-2)
 - Slice agent owned worktree `/tmp/fdb-slice-10-20260603T014621Z` (branch `slice-10-20260603T014621Z`,
@@ -147,16 +150,20 @@ Both gating ADRs:
 
 | Package | Questions | Recommendation | Gates | Signed at |
 |---------|-----------|----------------|-------|-----------|
-| **Substrate** | Q2 ✅ (**2A** bi-temporal-aware, ship transaction-time subset only — SIGNED 2026-06-02); Q4 ✅ (**edges too** carry `logical_id`+`superseded_at`, schema-only — SIGNED 2026-06-02); ⏳ op-store cascade-under-supersession contract; ⏳ forward-migration policy (in-place ALTER under no-data-migration, not re-open); ⏳ FLAGGED `write_cursor`-as-row-id deviation | per 0.a ADR | **Slice 15** | **Q2/Q4 signed; cascade + migration-policy + write_cursor deviation STILL OPEN** |
+| **Substrate** | Q2 ✅ (**2A**, SIGNED 2026-06-02); Q4 ✅ (**edges too**, SIGNED 2026-06-02); op-store cascade ✅ (**ratify Decision 4 as-is** — atomic same-txn, shadows deferred to Slice 16, SIGNED 2026-06-03); forward-migration ✅ (**in-place additive `ALTER`**, legacy rows NULL logical_id lazily backfilled, SIGNED 2026-06-03); `write_cursor`-as-row-id ✅ (**ACCEPTED for 0.8.0; dedicated `row_id`+`restore_provenance` DEFERRED**, SIGNED 2026-06-03) | per 0.a ADR | **Slice 15** | ✅ **FULLY SIGNED 2026-06-03 — Slice 15 gate CLEARED** |
 | **Supersession** | Q1 (**A1** supersede + ship G1/G2/G3 now); Q2 (**B1** `read.*` namespace); Q3 (**amend** REQ-053 in place); Q4 (**confirm** denylist is mutation-names; `read.get(logical_id)` SDK-allowed); Q5 (**SDK-only** Py/TS; Rust facade not bound) | A1/B1/amend/confirm/SDK-only | **Slice 30** (HARD gate) | **finalized at Slice 25** |
 | **Retrieval** (downstream) | Q1 ✅ (**Option 1A** — G9/G10 table-stakes); Q3 ✅ (**documented-only, NO knob** — `fusion_mode` dropped); Q5 ✅ (§8d **advisory**) | per retrieval ADR | **Slice 10** | **✅ SIGNED 2026-06-02 → Slice 10 gate CLEARED** |
 
 **Retrieval package SIGNED 2026-06-02** (`ADR-0.8.0-agent-memory-retrieval-and-identity.md`
 §"HITL decisions"): Q1=1A, Q2=2A, Q3=documented-only/no-knob, Q4=edges-too, Q5=advisory. **Slice 10
 is gate-clear to prompt.** The Slice 10 contract was reconciled to drop the `fusion_mode` knob.
-The **substrate package** (gates Slice 15) is now **partially signed** — Q2/Q4 done; the op-store
-cascade contract, forward-migration policy, and the FLAGGED `write_cursor`-as-row-id deviation
-**remain open** and must be signed before Slice 15 spawns.
+The **substrate package** (gates Slice 15) is now ✅ **FULLY SIGNED (HITL 2026-06-03)** — the three
+items open after the 2026-06-02 partial sign-off are settled: op-store cascade = **ratify Decision 4
+as-is**; forward-migration = **in-place additive `ALTER`** (legacy rows carry NULL `logical_id`,
+lazily backfilled on rewrite — engine owns the NULL-on-legacy rule); `write_cursor`-as-row-id =
+**ACCEPTED for 0.8.0, dedicated `row_id`+`restore_provenance` DEFERRED** to a later additive slice.
+Recorded in `ADR-0.8.0-canonical-identity-substrate.md` (Status → SIGNED). **Slice 15 is gate-clear
+to prompt.** Supersession Q1–Q5 still finalize at Slice 25.
 
 **AC-037 (no-egress gate) disposition (HITL 2026-06-02):** by default the gate can't run on
 windchill3 (`kernel.apparmor_restrict_unprivileged_userns=1` — Ubuntu 23.10+/24.04 lockdown) and
@@ -459,26 +466,28 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 10 is CLOSED (PASS).** Pointer → **Slice 15 (G0 keystone)** — but **⛔ STOP: Slice 15 is
-HITL-gated (the §3 keystone gate). Do NOT write the Slice 15 prompt or spawn it until HITL signs.**
+**Slice 10 CLOSED (PASS). Substrate gate package ✅ FULLY SIGNED 2026-06-03 (§5) — Slice 15 is
+GATE-CLEAR.** The §3 keystone HITL gate is satisfied; the orchestrator may now prompt Slice 15.
 
-**The orchestrator's next move is to HALT and present the substrate gate package to HITL.** Q2
-(=Option 2A) and Q4 (=edges-too) are **✅ signed** (2026-06-02). **Three items remain open and MUST
-be signed before Slice 15 spawns:**
-1. **Op-store cascade-under-supersession contract** — when a node/edge is superseded
-   (`superseded_at` set), what happens to its op-store mutation rows? (cascade-mark vs retain-as-history).
-2. **Forward-migration policy** — confirm the substrate migration is an **in-place additive ALTER**
-   under the no-data-migration rule (add `logical_id` + `superseded_at` + partial-unique-active index),
-   **not** a re-open/reproject. (Slice 5's tokenizer migration is the precedent for an additive step.)
-3. **FLAGGED `write_cursor`-as-row-id deviation** — the substrate ADR proposes `logical_id` default =
-   `write_cursor`; HITL must rule the row-id-as-identity deviation in or out.
+**Next orchestrator action — instantiate the Slice 15 prompt:**
+1. Build `dev/plans/prompts/0.8.0-slice-15.md` from `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md`,
+   carrying every fact by reference: baseline = current `main` HEAD; the **AUTHORIZED Slice-15 schema
+   delta verbatim** from `ADR-0.8.0-canonical-identity-substrate.md` §"AUTHORIZED Slice-15 schema delta"
+   executed as **`step_id 12` / `SCHEMA_VERSION 11→12`** (Slice 5 consumed step 11); the signed
+   decisions (cascade D4 atomic same-txn; in-place additive `ALTER`; **NULL-on-legacy-rows rule** the
+   engine must own; `write_cursor`-as-row-id accepted, still FLAGGED in `output.json`); partial-unique-
+   active index; accretion-exemption marker; folded G4/G5 indexes; G8/G2/G3 hang off this keystone;
+   X1/X2/X3; the §6 scope-discipline + no-remote rules; reserved Slice 16 (shadow vec0/FTS5 reconciliation).
+2. The human pastes it into a new slice agent; **the agent owns its worktree and merges to `main`**.
+   The orchestrator resumes on `main`: gate the transition → codex §9 review → 15.b → close + advance
+   pointer to **Slice 20 ∥ 25**. (Slice 15 is the keystone — serialize all `commit_batch`/carrier work
+   through it; §4.)
 
-Present options + a recommendation for each; **wait for sign-off.** Reminder: Slice 15 is now
-**`step_id 12` / `SCHEMA_VERSION 11→12`** (Slice 5 consumed step 11). Supersession Q1–Q5 are readied
-now and finalized at **Slice 25** (the hard gate for the SDK read verbs in Slice 30).
+Reminder: anything touching `commit_batch` must serialize through Slice 15 (§4). Supersession Q1–Q5
+finalize at **Slice 25** (hard gate for the SDK read verbs in Slice 30) — readied now, not yet signed.
 
-This is a natural session/compaction boundary (§12.7): everything in flight is landed; the board is
-current; stop here and escalate.
+This is a natural session/compaction boundary (§12.7): Slice 10 is landed, the gate is signed, the
+board is current. Safe to stop or `/compact` here; resume by writing the Slice 15 prompt.
 
 **AC-037 (no-egress) — signed 2026-06-02; one-time confirm ✅ DONE:** confirmed GREEN on windchill3
 (temp `apparmor_restrict_unprivileged_userns=0`, restored after) — no off-loopback connects on the
