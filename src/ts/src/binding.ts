@@ -52,6 +52,7 @@ function loadNative(): unknown {
 interface NativeWriteReceipt {
   cursor: number;
   rowCursors: number[];
+  danglingEdgeEndpoints: number;
 }
 
 interface NativeSoftFallback {

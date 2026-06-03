@@ -44,6 +44,14 @@ export interface WriteReceipt {
    * `[cursor-N+1, …, cursor]`.
    */
   rowCursors: number[];
+  /**
+   * G8 (Slice 20 / F10) — count of edge endpoints in this batch that point at a
+   * non-existent or superseded canonical node (an active node carrying that
+   * `logical_id`). `from_id`/`to_id` are probed independently, so one edge
+   * contributes 0, 1, or 2. Informational only: the batch commits regardless
+   * (flag-and-count). `0` when the batch committed no active edges.
+   */
+  danglingEdgeEndpoints: number;
 }
 
 export type SoftFallbackBranch = "vector" | "text";

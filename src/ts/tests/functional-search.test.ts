@@ -187,6 +187,33 @@ test("functional write: a supersession write surfaces its row cursor", async () 
   }
 });
 
+// Slice 20 / X1 / G8 — a write whose batch contains a dangling edge returns
+// danglingEdgeEndpoints > 0; a clean batch returns 0. The Python harness
+// (test_functional_dangling_edge_count_across_ffi) asserts the SAME values for
+// the SAME batches, proving Py ≡ TS for the dangling count.
+test("functional write: dangling-edge count (Py ≡ TS)", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    // Clean batch: the edge's endpoints resolve to live logicalId nodes inserted
+    // later in the SAME batch (cross-row) -> 0 dangling.
+    const clean = await engine.write([
+      { kind: "doc", body: "n1", logicalId: "N1" },
+      { kind: "doc", body: "n2", logicalId: "N2" },
+      { edge: { kind: "rel", from: "N1", to: "N2" } },
+    ]);
+    assert.equal(clean.danglingEdgeEndpoints, 0);
+
+    // Dangling batch: both endpoints reference missing logicalIds -> 2
+    // (flag-and-count: the write still succeeds).
+    const dangling = await engine.write([
+      { edge: { kind: "rel", from: "GHOST_A", to: "GHOST_B" } },
+    ]);
+    assert.equal(dangling.danglingEdgeEndpoints, 2);
+  } finally {
+    await engine.close();
+  }
+});
+
 test("functional search: a SearchFilter prunes results", async () => {
   const fixture = loadFixture();
   const engine = await Engine.open(freshDbPath());

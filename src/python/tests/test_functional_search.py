@@ -166,6 +166,33 @@ def test_functional_supersession_write_surfaces_row_cursor(db_path: str) -> None
         engine.close()
 
 
+def test_functional_dangling_edge_count_across_ffi(db_path: str) -> None:
+    """Slice 20 / X1 / G8 — a write whose batch contains a dangling edge returns
+    `dangling_edge_endpoints` > 0; a clean batch returns 0. The TS harness
+    (`functional-dangling-edges.test.ts`) asserts the SAME values for the SAME
+    batches, proving Py ≡ TS for the dangling count (real engine, no mocks)."""
+
+    engine = Engine.open(db_path)
+    try:
+        # Clean batch: the edge's endpoints resolve to live `logical_id` nodes
+        # inserted later in the SAME batch (cross-row) -> 0 dangling.
+        clean = engine.write(
+            [
+                {"kind": "doc", "body": "n1", "logical_id": "N1"},
+                {"kind": "doc", "body": "n2", "logical_id": "N2"},
+                {"edge": {"kind": "rel", "from": "N1", "to": "N2"}},
+            ]
+        )
+        assert clean.dangling_edge_endpoints == 0
+
+        # Dangling batch: both endpoints reference missing `logical_id`s -> 2
+        # (flag-and-count: the write still succeeds).
+        dangling = engine.write([{"edge": {"kind": "rel", "from": "GHOST_A", "to": "GHOST_B"}}])
+        assert dangling.dangling_edge_endpoints == 2
+    finally:
+        engine.close()
+
+
 def test_functional_filtered_search_prunes(db_path: str) -> None:
     """Slice 10 / X1 — a `SearchFilter` prunes results. "retrieval" matches a
     `note` (alpha) and a `doc` (delta); filtering `kind="note"` drops the doc."""

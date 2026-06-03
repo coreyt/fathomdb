@@ -839,6 +839,13 @@ pub struct WriteReceipt {
     /// (HITL-accepted for 0.8.0; a dedicated `row_id` is deferred). For an
     /// N-row batch this is `[cursor-N+1, …, cursor]`.
     pub row_cursors: Vec<u64>,
+    /// G8 (Slice 20 / F10) — count of edge endpoints in this batch that point at
+    /// a non-existent **or superseded** canonical node. An endpoint is dangling
+    /// when no **active** node (`superseded_at IS NULL`) carries its `logical_id`;
+    /// `from_id` and `to_id` are probed independently, so one edge contributes 0,
+    /// 1, or 2. This is **informational** (default FLAG-AND-COUNT: the batch
+    /// commits regardless) and `0` whenever the batch committed no active edges.
+    pub dangling_edge_endpoints: u64,
 }
 
 /// Soft-fallback signal carried on hybrid `search` results.
@@ -1945,16 +1952,19 @@ impl Engine {
         let last_cursor = base_cursor.saturating_add(increment);
         let pending_projection = !projection_jobs.is_empty();
 
-        if let Err(err) = commit_batch(
+        let dangling_edge_endpoints = match commit_batch(
             connection,
             batch,
             &plans,
             base_cursor,
             self.provenance_row_cap.load(Ordering::Relaxed),
         ) {
-            self.emit_sqlite_internal_error(&err);
-            return Err(EngineError::Storage);
-        }
+            Ok(count) => count,
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                return Err(EngineError::Storage);
+            }
+        };
         self.next_cursor.store(last_cursor, Ordering::SeqCst);
         if pending_projection {
             self.projection_runtime.notify_new_work();
@@ -1965,7 +1975,7 @@ impl Engine {
         let row_cursors = (0..batch.len())
             .map(|i| base_cursor.saturating_add((i as u64).saturating_add(1)))
             .collect();
-        Ok(WriteReceipt { cursor: last_cursor, row_cursors })
+        Ok(WriteReceipt { cursor: last_cursor, row_cursors, dangling_edge_endpoints })
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -2609,7 +2619,9 @@ impl Engine {
         }
 
         self.next_cursor.store(cursor, Ordering::SeqCst);
-        Ok(WriteReceipt { cursor, row_cursors: vec![cursor] })
+        // G8 — this path (embedder-profile pin) commits no canonical edges, so
+        // no endpoint can dangle.
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
     }
 
     /// EU-5b test seam — drain MeanVecPinned events queued by the
@@ -5730,7 +5742,7 @@ fn commit_batch(
     plans: &[WritePlan],
     base_cursor: u64,
     provenance_row_cap: u64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<u64> {
     let tx = connection.transaction()?;
 
     for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
@@ -5838,10 +5850,59 @@ fn commit_batch(
         }
     }
 
+    // G8 (Slice 20 / F10) — cross-row dangling-edge flag-and-count. This runs
+    // AFTER the batch loop (so every same-batch node is already on disk in `tx`
+    // and a same-batch later-inserted endpoint is visible) and BEFORE retention /
+    // projection-cursor / commit. It is the cross-row reason this lives here and
+    // not in single-row pre-insert `validate_write`. Default is FLAG-AND-COUNT:
+    // we only COUNT, never roll back (strict-mode rollback is deferred to
+    // reserved-gap band 22 — adding a write-options surface is out of scope).
+    //
+    // Probe is `logical_id`-alone against the step-12 partial index
+    // `canonical_nodes_logical_active_idx ON canonical_nodes(logical_id, kind)
+    // WHERE superseded_at IS NULL` (its leading column + partial predicate), so
+    // it SEARCHes the index with no SCAN (see `tests/pr_g8_dangling_edges.rs`
+    // case (f)). There is no node-kind to match: `canonical_edges` stores only
+    // the edge's own kind, not the endpoint node's kind.
+    let dangling_edge_endpoints = {
+        let mut probe = tx.prepare(
+            "SELECT 1 FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+        )?;
+        let mut count: u64 = 0;
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { kind, from, to, logical_id, .. } = write {
+                // Honor `edge.superseded_at IS NULL`: an edge inserted in this
+                // batch is active unless a LATER same-batch edge with the same
+                // (Some(logical_id), kind) tombstoned it (the loop's supersession
+                // UPDATE). Skip such an in-batch-superseded edge.
+                if let Some(lid) = logical_id {
+                    let superseded_in_batch = batch[i + 1..].iter().any(|w| {
+                        matches!(
+                            w,
+                            PreparedWrite::Edge { kind: k2, logical_id: Some(l2), .. }
+                                if l2 == lid && k2 == kind
+                        )
+                    });
+                    if superseded_in_batch {
+                        continue;
+                    }
+                }
+                // Probe `from_id` and `to_id` independently (0, 1, or 2 per edge).
+                for endpoint in [from, to] {
+                    if !probe.exists(params![endpoint])? {
+                        count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+        count
+    };
+
     enforce_provenance_retention(&tx, provenance_row_cap)?;
     advance_projection_cursor(&tx)?;
 
-    tx.commit()
+    tx.commit()?;
+    Ok(dangling_edge_endpoints)
 }
 
 fn load_next_cursor(connection: &Connection) -> u64 {
