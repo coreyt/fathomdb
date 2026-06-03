@@ -288,11 +288,18 @@ struct PyWriteReceipt {
     cursor: u64,
     /// G0 (Slice 15) — per-row `write_cursor`s, 1:1 with the input batch order.
     row_cursors: Vec<u64>,
+    /// G8 (Slice 20) — count of edge endpoints in this batch pointing at a
+    /// non-existent or superseded canonical node (informational; flag-and-count).
+    dangling_edge_endpoints: u64,
 }
 
 impl PyWriteReceipt {
     fn from_rust(r: RustWriteReceipt) -> Self {
-        Self { cursor: r.cursor, row_cursors: r.row_cursors }
+        Self {
+            cursor: r.cursor,
+            row_cursors: r.row_cursors,
+            dangling_edge_endpoints: r.dangling_edge_endpoints,
+        }
     }
 }
 

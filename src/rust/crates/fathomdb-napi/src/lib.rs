@@ -314,6 +314,11 @@ pub struct WriteReceipt {
     /// (surfaced as `rowCursors`). Each `u64` is narrowed to `i64` at the FFI
     /// boundary, matching the existing `cursor` cast.
     pub row_cursors: Vec<i64>,
+    /// G8 (Slice 20) — count of edge endpoints in this batch pointing at a
+    /// non-existent or superseded canonical node (surfaced as
+    /// `danglingEdgeEndpoints`; informational, flag-and-count). Narrowed `u64 →
+    /// i64` at the FFI boundary, matching the `cursor`/`rowCursors` precedent.
+    pub dangling_edge_endpoints: i64,
 }
 
 impl WriteReceipt {
@@ -321,6 +326,7 @@ impl WriteReceipt {
         Self {
             cursor: r.cursor as i64,
             row_cursors: r.row_cursors.into_iter().map(|c| c as i64).collect(),
+            dangling_edge_endpoints: r.dangling_edge_endpoints as i64,
         }
     }
 }
