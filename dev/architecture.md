@@ -143,12 +143,19 @@ Caller (Rust / Python / TS)
       queue table is written
       (projection_cursor for the vector projection NOT YET advanced —
        advances at step 5)
+    - G8 dangling-edge pass (cross-row, in-tx, after every row is on disk):
+      for each active edge in the batch, probe canonical_nodes for an
+      active node (superseded_at IS NULL) carrying its from_id/to_id
+      logical_id; sum the misses (both endpoints independently). This is
+      flag-and-count only — it never rolls back (strict mode deferred).
     - COMMIT
     - Provenance retention: if row count > cap × 1.05, evict oldest
       (provenance-retention)
-    - Return WriteReceipt { cursor: c_w, row_cursors: [per-row cursors] }
-      to caller (row_cursors is the write_cursor-as-row-id identity
-      carrier, 1:1 with the batch; dedicated row_id deferred)
+    - Return WriteReceipt { cursor: c_w, row_cursors: [per-row cursors],
+      dangling_edge_endpoints: n } to caller (row_cursors is the
+      write_cursor-as-row-id identity carrier, 1:1 with the batch;
+      dedicated row_id deferred; dangling_edge_endpoints is the G8
+      informational count)
       (`cursor` here is the write-commit cursor, not the read-side
        `projection_cursor`)
     - INVARIANT (async-surface A): write transaction committed and

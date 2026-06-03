@@ -68,9 +68,12 @@ Enqueue a batch of canonical rows.
   `(logicalId, kind)` (the prior version is tombstoned and the new one
   becomes active — invalidate-not-delete). Omitting it is a plain
   insert with a NULL `logicalId` that never collides with other NULLs.
-- Returns: `WriteReceipt { cursor, rowCursors }` — `cursor` is the
-  batch high-water `write_cursor`; `rowCursors` are the per-row
-  `write_cursor`s, 1:1 with the input batch order.
+- Returns: `WriteReceipt { cursor, rowCursors, danglingEdgeEndpoints }` —
+  `cursor` is the batch high-water `write_cursor`; `rowCursors` are the
+  per-row `write_cursor`s, 1:1 with the input batch order;
+  `danglingEdgeEndpoints` (G8) counts the edge endpoints in this batch
+  pointing at a non-existent or superseded node — see
+  [`WriteReceipt`](#writereceipt).
 
 ### `engine.search(query, filter?) -> Promise<SearchResult>`
 
@@ -141,11 +144,23 @@ string; body: string }`.
 interface WriteReceipt {
   cursor: number; // batch high-water write_cursor
   rowCursors: number[]; // G0 — per-row write_cursor, 1:1 with the batch
+  danglingEdgeEndpoints: number; // G8 — edge endpoints pointing at no active node
 }
 ```
 
 `rowCursors` is the `write_cursor`-as-row-id identity carrier (G0 /
 Slice 15): for an N-row batch it is `[cursor - N + 1, …, cursor]`.
+
+`danglingEdgeEndpoints` (G8 / Slice 20) counts how many edge endpoints
+in the batch point at a node that has **no active version** — either
+never written, or superseded (an active node = `superseded_at IS NULL`
+carrying that `logicalId`). `from`/`to` are probed independently, so one
+edge contributes 0, 1, or 2. It is **informational only**: the batch
+always commits (flag-and-count; the write never rejects on a dangling
+endpoint). Because endpoints match on `logicalId`, an edge pointing at a
+legacy / own-identity node (NULL `logicalId`) counts as dangling — only
+`logicalId`-keyed nodes are valid endpoints. `0` when the batch committed
+no active edges.
 
 ### `SearchResult`
 

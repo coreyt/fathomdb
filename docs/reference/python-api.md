@@ -59,10 +59,13 @@ writer thread has accepted the batch.
   new version becomes active (invalidate-not-delete). Omitting it (the
   default) is a plain insert with a NULL `logical_id` and never
   collides with other NULL rows.
-- Returns: `WriteReceipt(cursor: int, row_cursors: tuple[int, ...])`.
-  `cursor` advances monotonically across writes (the batch high-water
-  cursor); `row_cursors` are the per-row `write_cursor`s, 1:1 with the
-  input batch order.
+- Returns: `WriteReceipt(cursor: int, row_cursors: tuple[int, ...],
+  dangling_edge_endpoints: int)`. `cursor` advances monotonically across
+  writes (the batch high-water cursor); `row_cursors` are the per-row
+  `write_cursor`s, 1:1 with the input batch order;
+  `dangling_edge_endpoints` (G8) counts the edge endpoints in this batch
+  pointing at a non-existent or superseded node — see
+  [`WriteReceipt`](#writereceipt).
 
 ### `engine.search(query, filter=None) -> SearchResult`
 
@@ -137,10 +140,22 @@ it; the returned cursor places the apply in the global write order.
 class WriteReceipt:
     cursor: int                       # batch high-water write_cursor
     row_cursors: tuple[int, ...]      # G0 — per-row write_cursor, 1:1 with the batch
+    dangling_edge_endpoints: int      # G8 — edge endpoints pointing at no active node
 ```
 
 `row_cursors` is the `write_cursor`-as-row-id identity carrier (G0 /
 Slice 15): for an N-row batch it is `(cursor - N + 1, …, cursor)`.
+
+`dangling_edge_endpoints` (G8 / Slice 20) counts how many edge endpoints
+in the batch point at a node that has **no active version** — either
+never written, or superseded (an active node = `superseded_at IS NULL`
+carrying that `logical_id`). `from_id` and `to_id` are probed
+independently, so one edge contributes 0, 1, or 2. It is **informational
+only**: the batch always commits (flag-and-count; the write never
+rejects on a dangling endpoint). Because endpoints match on `logical_id`,
+an edge pointing at a legacy / own-identity node (NULL `logical_id`)
+counts as dangling — only `logical_id`-keyed nodes are valid endpoints.
+`0` when the batch committed no active edges.
 
 ### `SearchResult`
 
