@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from fathomdb import Engine, admin
+from fathomdb import Engine, SearchFilter, admin
 from fathomdb._fathomdb import force_panic_for_test
 from fathomdb.errors import EngineError, WriteValidationError
 
@@ -117,5 +117,44 @@ def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
     try:
         with pytest.raises(WriteValidationError):
             engine.write([{"kind": "do\x00c", "body": "{}"}])
+    finally:
+        engine.close()
+
+
+# --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
+# The new filter kwargs (source_type, kind, status) are FFI strings and must
+# be routed through the same validate_ffi_string_py gate as `query` and the
+# write fields. created_after is i64 — no string validation. These tests pin
+# the *binding wiring* (that search's filter args reject NUL / lone surrogate
+# before reaching the engine), not the helper itself.
+
+_FILTER_NUL = "a\x00b"
+_FILTER_SURROGATE = "a\ud800b"
+
+
+@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+def test_embedded_nul_in_search_filter_rejected(db_path: str, field: str) -> None:
+    """AC-068a — embedded NUL in a search filter string raises
+    WriteValidationError before the query reaches the engine."""
+
+    engine = Engine.open(db_path)
+    try:
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.search("q", SearchFilter(**{field: _FILTER_NUL}))
+        assert isinstance(excinfo.value, EngineError)
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
+    """AC-068b — a lone UTF-16 surrogate in a search filter string raises
+    WriteValidationError before the query reaches the engine."""
+
+    engine = Engine.open(db_path)
+    try:
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.search("q", SearchFilter(**{field: _FILTER_SURROGATE}))
+        assert isinstance(excinfo.value, EngineError)
     finally:
         engine.close()

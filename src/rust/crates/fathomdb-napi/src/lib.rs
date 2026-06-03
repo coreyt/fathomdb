@@ -660,6 +660,22 @@ impl Engine {
                 JsonValue::Null,
             ));
         }
+        // G10 filter strings cross the FFI exactly like `query` and the write
+        // fields, so they go through the same Rust-side guard BEFORE the engine
+        // is touched (defense-in-depth for embedded NUL, as on the write path).
+        // `created_after` is numeric — no string validation. Lone UTF-16
+        // surrogates are napi-rs-lossy here (replaced with U+FFFD before Rust
+        // sees them), so — like write/configure — the TS `search` wrapper guards
+        // those JS-side (see src/validation.ts). Validating here leaves the
+        // all-`None` collapse below (the byte-identical unfiltered path) intact.
+        if let Some(f) = filter.as_ref() {
+            for s in [f.source_type.as_deref(), f.kind.as_deref(), f.status.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                validate_ffi_string_napi(s)?;
+            }
+        }
         // G10 — build the closed filter; an all-`None` (or omitted) filter stays
         // the unfiltered, byte-identical path.
         let filter = filter.and_then(|f| {

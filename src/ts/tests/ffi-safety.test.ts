@@ -151,3 +151,46 @@ test("AC-068a embedded NUL in node kind also rejected before write", async () =>
     await engine.close();
   }
 });
+
+// --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
+// The new filter fields (sourceType, kind, status) are FFI strings and must be
+// routed through the same validate_ffi_string_napi gate as `query` and the
+// write fields. createdAfter is a number — no string validation. These pin the
+// *binding wiring* (that search's filter args reject NUL / lone surrogate
+// before the query reaches the engine).
+
+const FILTER_STRING_FIELDS = ["sourceType", "kind", "status"] as const;
+
+for (const field of FILTER_STRING_FIELDS) {
+  test(`AC-068a embedded NUL in search filter ${field} rejected as WriteValidationError`, async () => {
+    const engine = await Engine.open(freshDbPath());
+    try {
+      await assert.rejects(
+        () => engine.search("q", { [field]: `a${NUL}b` }),
+        (err: unknown) => {
+          assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+          assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
+          return true;
+        },
+      );
+    } finally {
+      await engine.close();
+    }
+  });
+
+  test(`AC-068b unpaired UTF-16 surrogate in search filter ${field} rejected as WriteValidationError`, async () => {
+    const engine = await Engine.open(freshDbPath());
+    try {
+      await assert.rejects(
+        () => engine.search("q", { [field]: `a${SURROGATE}b` }),
+        (err: unknown) => {
+          assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+          assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
+          return true;
+        },
+      );
+    } finally {
+      await engine.close();
+    }
+  });
+}
