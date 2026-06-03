@@ -244,8 +244,14 @@ fn sentinel_backfills_status_on_simulated_pack1_db() {
         .query_row("SELECT kind FROM vector_default WHERE rowid=1", [], |row| row.get(0))
         .expect("seeded row preserved");
     assert_eq!(kind, "doc", "back-fill preserves the existing row");
-    let status: Option<String> = conn
+    // vec0 TEXT metadata columns are NOT NULL-able, so the "no population yet"
+    // back-fill value is the empty-string sentinel `''`, not NULL (forced
+    // deviation from the prompt's "NULL plumbing"; reserved-gap candidate 13).
+    let status: String = conn
         .query_row("SELECT status FROM vector_default WHERE rowid=1", [], |row| row.get(0))
         .expect("status column readable");
-    assert_eq!(status, None, "status back-fills NULL (no population source yet)");
+    assert_eq!(
+        status, "",
+        "status back-fills the empty-string sentinel (no population source yet)"
+    );
 }
