@@ -33,9 +33,12 @@ are now available to all downstream slices.
   step-12 `canonical_nodes_logical_active_idx`, legacy-NULL-endpoint consequence documented; G8 adds NO
   SDK verb, AC-057a-clean, NO new HITL gate). Human pastes it into a fresh slice agent (owns worktree +
   merges to `main`).
-- **Slice 25 — pre-Slice-30 supersession gate PRESENTED to HITL 2026-06-03** (governed-surface Q1–Q5
-  bundle from `ADR-0.8.0-supersede-five-verb-surface-cap.md`). The Slice 25 prompt is instantiated only
-  after the bundle is signed; the signature is the HARD gate unblocking Slice 30.
+- **Slice 25 — pre-Slice-30 supersession gate ✅ SIGNED 2026-06-03** (governed-surface Q1–Q5 bundle from
+  `ADR-0.8.0-supersede-five-verb-surface-cap.md`): **Q1=A1, Q2=B1, Q3=amend, Q4=confirm, Q5=BIND-RUST**.
+  Q5 deviated from the recommended SDK-only — HITL bound the Rust facade too, **activating reserved-gap
+  Slice 27** (Rust positive-allowlist pin). Slice 25 is now gate-clear to prompt; the Slice 25 prompt
+  must carry the as-signed bundle + the Rust-binding note (Py+TS allowlist+parity rewrite lands at 25,
+  Rust pin at 27). The signature is the HARD gate unblocking Slice 30.
 - **Reserved-gap carry (now OWNED downstream):** **Slice 16 — shadow reconciliation** (excise/refresh
   stale FTS5/vec0 shadow rows for superseded `write_cursor`s) and/or the **G2/Slice 30** read-path
   `superseded_at IS NULL` join now own read-visibility closure. Until then, **supersession has NO
@@ -150,7 +153,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 
 | AC / gap | Owning slice | Latest status |
 |----------|-------------|---------------|
-| **AC-057a → governed-surface AC** (supersession of the five-verb cap; new measurable allowlist/parity/denylist/no-raw-SQL AC) | **25** (readied at 0) | 🟡 **decision-ready** — supersession ADR advanced (Q1–Q5 = A1/B1/amend/confirm/SDK-only); HITL signs at Slice 25; conformance rewrite enumerated, not executed |
+| **AC-057a → governed-surface AC** (supersession of the five-verb cap; new measurable allowlist/parity/denylist/no-raw-SQL AC) | **25** (signed pre-30; Rust pin → **27**) | 🟢 **SIGNED 2026-06-03** — Q1=A1/Q2=B1/Q3=amend/Q4=confirm/**Q5=BIND-RUST** (deviation: Rust facade bound too → reserved-gap **Slice 27** Rust allowlist pin). Conformance rewrite (Py+TS set-equality → allowlist+parity; recovery suites byte-unchanged) executes at **Slice 25**; Rust-facade allowlist assertion at **Slice 27**. HARD gate unblocking Slice 30 |
 | **G1** structured `SearchHit{id,kind,body,score,branch}` + FTS5 tokenizer floor | **5** | ✅ **DONE** (closed 2026-06-02, `main`@`e76d68b`) — `Vec<SearchHit>`, `Eq` dropped, both branches scored; step-11 tokenizer migration (`SCHEMA_VERSION 11`) crash-retryable; floor 1.000/1.000 across migration |
 | **G9** RRF fusion (`Σ1/(k+rank)`, k=60) + `rerank_fused` seam | **10** | ✅ **DONE** (closed 2026-06-03, `main`@`e9f833a`) — `RRF_K=60.0`, unconditional ranking (no `fusion_mode` knob — HITL Q3); `rerank_fused` identity stub; vector-empty soft-fallback before collapse; `pr_g9_rrf_fusion.rs` pins determinism (6 green) |
 | **G10** metadata-filtered KNN (`Option<SearchFilter>`) | **10** | ✅ **DONE** — `Option<SearchFilter>{source_type,kind,created_after,status}` in the single phase-1 KNN; **`filter=None` byte-identical to 0.7.2** (pin green); 3-way shape-sentinel fixes `embedding_bin` no-op; FFI filter strings validated (fix-1). `status` empty-string-sentinel plumbing only — population = reserved-gap 13 |
@@ -192,7 +195,7 @@ Both gating ADRs:
 | Package | Questions | Recommendation | Gates | Signed at |
 |---------|-----------|----------------|-------|-----------|
 | **Substrate** | Q2 ✅ (**2A**, SIGNED 2026-06-02); Q4 ✅ (**edges too**, SIGNED 2026-06-02); op-store cascade ✅ (**ratify Decision 4 as-is** — atomic same-txn, shadows deferred to Slice 16, SIGNED 2026-06-03); forward-migration ✅ (**in-place additive `ALTER`**, legacy rows NULL logical_id lazily backfilled, SIGNED 2026-06-03); `write_cursor`-as-row-id ✅ (**ACCEPTED for 0.8.0; dedicated `row_id`+`restore_provenance` DEFERRED**, SIGNED 2026-06-03) | per 0.a ADR | **Slice 15** | ✅ **FULLY SIGNED 2026-06-03 — Slice 15 gate CLEARED** |
-| **Supersession** | Q1 (**A1** supersede + ship G1/G2/G3 now); Q2 (**B1** `read.*` namespace); Q3 (**amend** REQ-053 in place); Q4 (**confirm** denylist is mutation-names; `read.get(logical_id)` SDK-allowed); Q5 (**SDK-only** Py/TS; Rust facade not bound) | A1/B1/amend/confirm/SDK-only | **Slice 30** (HARD gate) | **finalized at Slice 25** |
+| **Supersession** | Q1 ✅ (**A1** supersede + ship G1/G2/G3 now); Q2 ✅ (**B1** `read.*` namespace); Q3 ✅ (**amend** REQ-053 in place); Q4 ✅ (**confirm** denylist is mutation-names; `read.get(logical_id)` SDK-allowed); Q5 ✅ (**BIND-RUST** — DEVIATION from recommended SDK-only; HITL bound the Rust facade too → activates reserved-gap **Slice 27** Rust allowlist pin) | A1/B1/amend/confirm/**BIND-RUST** | **Slice 30** (HARD gate) | ✅ **SIGNED 2026-06-03 (pre-Slice-30 gate) — Slice 30 path CLEARED; conformance rewrite executes at Slice 25** |
 | **Retrieval** (downstream) | Q1 ✅ (**Option 1A** — G9/G10 table-stakes); Q3 ✅ (**documented-only, NO knob** — `fusion_mode` dropped); Q5 ✅ (§8d **advisory**) | per retrieval ADR | **Slice 10** | **✅ SIGNED 2026-06-02 → Slice 10 gate CLEARED** |
 
 **Retrieval package SIGNED 2026-06-02** (`ADR-0.8.0-agent-memory-retrieval-and-identity.md`
@@ -203,8 +206,12 @@ items open after the 2026-06-02 partial sign-off are settled: op-store cascade =
 as-is**; forward-migration = **in-place additive `ALTER`** (legacy rows carry NULL `logical_id`,
 lazily backfilled on rewrite — engine owns the NULL-on-legacy rule); `write_cursor`-as-row-id =
 **ACCEPTED for 0.8.0, dedicated `row_id`+`restore_provenance` DEFERRED** to a later additive slice.
-Recorded in `ADR-0.8.0-canonical-identity-substrate.md` (Status → SIGNED). **Slice 15 is gate-clear
-to prompt.** Supersession Q1–Q5 still finalize at Slice 25.
+Recorded in `ADR-0.8.0-canonical-identity-substrate.md` (Status → SIGNED). **Slice 15 CLOSED.**
+The **supersession package** (pre-Slice-30 gate) is now ✅ **SIGNED 2026-06-03**: Q1=A1, Q2=B1,
+Q3=amend, Q4=confirm, **Q5=BIND-RUST** (deviation from recommended SDK-only — HITL bound the Rust facade,
+activating reserved-gap **Slice 27**). Recorded in `ADR-0.8.0-supersede-five-verb-surface-cap.md`
+(Status → SIGNED). **Slice 25 is gate-clear to prompt; Slice 30's read-verb path is CLEARED** (Slice 30
+still depends on Slice 25 CLOSED, i.e. the conformance rewrite landing).
 
 **AC-037 (no-egress gate) disposition (HITL 2026-06-02):** by default the gate can't run on
 windchill3 (`kernel.apparmor_restrict_unprivileged_userns=1` — Ubuntu 23.10+/24.04 lockdown) and
@@ -256,6 +263,32 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-03 — pre-Slice-30 supersession gate SIGNED + Slice 20 PROMPTED
+
+- **Slice 20 (G8) PROMPTED** — `dev/plans/prompts/0.8.0-slice-20.md` authored (baseline `5fa0e9e`,
+  anchors re-verified at `5fa0e9e`). The contract's flagged "probe-vs-index predicate" HALT was
+  **resolved by construction, not improvised**: the contract frames it as *logical_id-alone vs
+  edges-carry-kind* — both assume endpoints are node `logical_id`s — and the landed `canonical_edges`
+  stores only the edge's **own** `kind` (not the endpoint node's kind), so "edges-carry-kind" is
+  schema-ruled-out. Predicate = active-node EXISTS by `logical_id`, hitting the step-12
+  `canonical_nodes_logical_active_idx` by its leading column. The legacy-NULL-`logical_id`-endpoint
+  consequence (such endpoints read as dangling; benign — flag-and-count, no consumer sets `logical_id`)
+  is documented in the prompt for the design memo. G8 adds **no SDK verb** → no new HITL gate.
+- **Pre-Slice-30 supersession gate SIGNED (HITL 2026-06-03)** from
+  `ADR-0.8.0-supersede-five-verb-surface-cap.md`: **Q1=A1** (supersede AC-057a's five-verb cap; ship G1
+  + G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` this release); **Q2=B1**
+  (`read.*` namespace); **Q3=amend** (REQ-053 in place); **Q4=confirm** (`read.get(logical_id)`
+  SDK-allowed; `{recover,restore,repair,fix,rebuild}` SDK-unreachable; `restore_logical_id`/
+  `purge_logical_id` CLI-only; `doctor` SDK-absent via allowlist). **Q5=BIND-RUST — DEVIATION from the
+  recommended SDK-only:** HITL elected to bind the **Rust facade** (`dev/interfaces/rust.md`) into the
+  governed-surface AC, not just Py+TS. Per the Q5 fallback this **activates reserved-gap Slice 27** (Rust
+  positive-allowlist pin): Slice 25 lands the Py+TS allowlist+parity rewrite **and records** the AC also
+  binds Rust; Slice 27 executes the Rust-facade allowlist/parity assertion. The three load-bearing
+  guarantees (parity, recovery-denylist, typed boundary) are preserved; recovery suites stay
+  byte-unchanged. **This signature is the HARD gate unblocking Slice 30.** ADR Status → SIGNED.
+- **Next:** Slice 25 is now gate-clear to prompt (must carry the as-signed bundle + the Rust-binding
+  note). Slice 20 ∥ Slice 25 from baseline `5fa0e9e`.
 
 ### 2026-06-03 — Slice 15 CLOSED (KEYSTONE G0 substrate; PASS via codex override of 1 × [P2] = reserved Slice-16 gap; pointer → Slice 20 ∥ 25)
 

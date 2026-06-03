@@ -4,19 +4,30 @@ date: 2026-06-01
 target_release: 0.8.0
 desc: Supersede AC-057a's five-verb *scope cap* (a development scaffolding device) with a governed, open-but-curated SDK surface. Preserve and re-home the three load-bearing guarantees AC-057a bundled (SDK parity, recovery-unreachability, typed boundary). Unblocks the gated read verbs G2/G3/G4/G5/G7.
 blast_radius: dev/acceptance.md (AC-057a supersede + new AC for governed surface); dev/requirements.md (REQ-053 amend); dev/design/bindings.md § 1 (surface-set parity invariant rewrite); src/python/tests/test_surface.py + src/ts/tests/surface.test.ts (set-equality → allowlist+parity); src/python/tests/test_no_recovery_surface.py + src/ts/tests/no-recovery-surface.test.ts (PRESERVED, unchanged); dev/design/0.8.0-agent-memory-fit.md §7 (read-verb HITL question resolved); ADR-0.8.0-agent-memory-retrieval-and-identity.md (Q1/Q2 surface interaction); dev/traceability.md
-status: decision-ready, HITL-sign-off-pending
+status: ✅ SIGNED / accepted (HITL 2026-06-03) — Q1=A1, Q2=B1, Q3=amend, Q4=confirm, Q5=BIND-RUST (deviation from recommended SDK-only → activates reserved-gap Slice 27); conformance rewrite executes at Slice 25, Rust-facade allowlist pin at Slice 27; signature is the HARD gate unblocking Slice 30
 origin: HITL direction 2026-06-01 ("AC-057a … was used to manage scope during development … supersede it thoughtfully"); dev/design/0.8.0-agent-memory-fit.md §7 Q1/Q2; dev/profiling/v05-lineage.md (v0.5.x had the broader surface)
 supersedes: AC-057a (five-verb application-runtime SDK surface, REQ-053)
 ---
 
 # ADR-0.8.0 — Supersede the five-verb surface cap
 
-**Status:** decision-ready, HITL-sign-off-pending. _(Advanced by Slice 0.b,
-2026-06-02: each of Q1–Q5 now carries a recommended decision framed as a single
-sign-off-able question; the conformance-rewrite scope is enumerated but NOT
-executed — that is Slice 25; the three load-bearing guarantees are carried
-forward explicitly. HITL signs at Slice 25; the signature is the HARD gate
-unblocking Slice 30.)_
+**Status:** ✅ **SIGNED / accepted (HITL 2026-06-03).** _(Advanced by Slice 0.b,
+2026-06-02; signed as the pre-Slice-30 gate 2026-06-03.)_
+
+> **HITL SIGN-OFF 2026-06-03 (pre-Slice-30 gate).** The Q1–Q5 bundle is signed:
+> **Q1 = A1** (supersede the cap; ship G1 + G2 `read.get`/`read.get_many` + G3
+> `read.collection`/`read.mutations` this release; G4/G5/G7 follow behind the same
+> governance); **Q2 = B1** (new `read.*` namespace); **Q3 = amend** (re-scope REQ-053
+> in place); **Q4 = confirm** (non-destructive `read.get(logical_id)` is SDK-allowed;
+> `{recover,restore,repair,fix,rebuild}` stay SDK-unreachable; `restore_logical_id`/
+> `purge_logical_id` stay CLI-only; `doctor` SDK-absent via the allowlist). **Q5 =
+> BIND-RUST — DEVIATION from the recommended SDK-only.** HITL elected to **also bind
+> the Rust facade** (`dev/interfaces/rust.md`) into the governed-surface AC, not just
+> Python + TypeScript. Per the Q5 fallback this **adds a Rust positive-allowlist pin,
+> executed as reserved-gap Slice 27** (the Py+TS allowlist+parity rewrite still lands
+> at Slice 25; the Rust-facade allowlist pin lands at Slice 27). The three load-bearing
+> guarantees (parity, recovery-denylist, typed boundary) are preserved; the recovery
+> suites stay byte-unchanged. **This signature is the HARD gate that unblocks Slice 30.**
 
 AC-057a fixed the SDK application surface at **exactly five verbs**
 (`Engine.open`, `admin.configure`, `write`, `search`, `close`) and gated it with
@@ -205,10 +216,13 @@ recency/importance (G12) are scoring signals, governance-free.
 ## Decisions for HITL sign-off (Q1–Q5 — decision-ready)
 
 Each question below is framed as a **single sign-off-able decision** with a
-**recommended answer**. HITL signs the bundle at **Slice 25** (the conformance
-rewrite lands in that same slice); the signature is the **HARD gate** unblocking
-Slice 30 (the SDK read verbs). Recommended bundle: **Q1=A1, Q2=B1, Q3=amend,
-Q4=confirm, Q5=SDK-only.**
+**recommended answer**. HITL signs the bundle as the pre-Slice-30 gate; the
+conformance rewrite lands at **Slice 25**; the signature is the **HARD gate**
+unblocking Slice 30 (the SDK read verbs). Recommended bundle was **Q1=A1, Q2=B1,
+Q3=amend, Q4=confirm, Q5=SDK-only**. **✅ AS SIGNED (HITL 2026-06-03): Q1=A1, Q2=B1,
+Q3=amend, Q4=confirm, Q5=BIND-RUST** — Q5 deviated to also bind the Rust facade,
+activating reserved-gap Slice 27 (Rust positive-allowlist pin). See the sign-off
+block at the top of this ADR and the Q5 note below.
 
 ### Q1 — How far to open in 0.8.0 → **recommend A1**
 > *Sign-off question:* "Supersede AC-057a's five-verb cap now, replacing it with
@@ -276,6 +290,16 @@ the governed-surface AC SDK-only matches the established boundary and avoids
 inventing a Rust-parity obligation 0.8.0 does not need. (If HITL wants the Rust
 facade bound, that adds a Rust positive-allowlist pin — pre-registered as
 reserved-gap Slice 27.)
+
+> **✅ SIGNED 2026-06-03 = BIND-RUST (the fallback, NOT the recommended SDK-only).**
+> HITL elected to bind the Rust facade (`dev/interfaces/rust.md`) into the
+> governed-surface AC alongside Python + TypeScript. **Consequence (now active):** the
+> Rust positive-allowlist pin is **reserved-gap Slice 27** — Slice 25 lands the Py+TS
+> allowlist+parity rewrite and **records that the AC also binds Rust**, and Slice 27
+> executes the Rust-facade allowlist/parity assertion (`dev/interfaces/rust.md` +
+> whatever Rust-surface conformance test the pin needs). Slice 25's acceptance bar is
+> unchanged for Py+TS; the Rust obligation does not block Slice 30 (it is additive
+> governance, sequenced at 27).
 
 ## Conformance-rewrite scope — ENUMERATED, not executed (owned by Slice 25)
 
