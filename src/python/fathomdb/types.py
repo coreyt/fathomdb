@@ -32,12 +32,30 @@ class SoftFallback:
 
 
 @dataclass(frozen=True)
+class SearchHit:
+    """One structured hit in a `SearchResult` (G1 / AC-057a-clean).
+
+    `id` is the canonical row's `write_cursor` — the interim identity carrier
+    per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`. `score` is the raw
+    per-branch relevance (`vec_distance_l2` for the vector branch, `bm25()` for
+    the text branch); the two are not comparable raw. `branch` tags which
+    retrieval branch produced the hit.
+    """
+
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: SoftFallbackBranch
+
+
+@dataclass(frozen=True)
 class SearchResult:
     """Result returned by `engine.search`."""
 
     projection_cursor: int
     soft_fallback: SoftFallback | None = None
-    results: list[str] = field(default_factory=list)
+    results: list[SearchHit] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -217,6 +235,7 @@ __all__ = [
     "MeanVecPinnedEvent",
     "MigrationStepReport",
     "OpenReport",
+    "SearchHit",
     "SearchResult",
     "SoftFallback",
     "SoftFallbackBranch",

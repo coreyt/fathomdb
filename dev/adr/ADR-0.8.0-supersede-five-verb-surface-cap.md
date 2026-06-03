@@ -35,7 +35,7 @@ the guarantees**, and replace the closed surface with a *governed, open* one.
 |---|---|---|---|
 | 1 | **Scope cap** — "exactly five, no sixth verb" (`dev/acceptance.md:882`, set-equality assertion; `bindings.md` § 1) | **Scaffolding** — bounded dev scope, prevented surface sprawl before the substrate was ready | **RETIRE** |
 | 2 | **SDK parity** — a verb appears in *every* SDK binding or none; no per-binding drift (`bindings.md` § 1, REQ-053) | **Load-bearing** — Python/TS must stay in lockstep | **PRESERVE + re-home** |
-| 3 | **Recovery-unreachability** — SDK MUST NOT expose `{recover, restore, repair, fix, rebuild, doctor}`; recovery is CLI-only (REQ-037 / REQ-054 / REQ-031d; `bindings.md` § 10; AC-058) | **Load-bearing** — a safety/contract boundary, *independent of verb count* | **PRESERVE, untouched** |
+| 3 | **Recovery-unreachability** — SDK MUST NOT expose `{recover, restore, repair, fix, rebuild}`; recovery is CLI-only (REQ-037 / REQ-054 / REQ-031d; `bindings.md` § 10; AC-058). (`doctor` is likewise SDK-absent, but via the positive verb allowlist, not this denylist.) | **Load-bearing** — a safety/contract boundary, *independent of verb count* | **PRESERVE, untouched** |
 | 4 | **Typed-write boundary** — no raw SQL from clients; `PreparedWrite` is the only write shape (ADR-0.6.0-typed-write-boundary) | **Load-bearing** — independent of verb count | **PRESERVE, untouched** |
 
 Only element 1 is scaffolding. The supersession must touch *only* element 1 and
@@ -82,7 +82,8 @@ recovery-name denylist."** Concretely:
     neither — enforced by the rewritten conformance test (allowlist membership +
     cross-binding equality), not by a count.
   - **Recovery denylist (element 3):** the surface MUST NOT contain any name in
-    `{recover, restore, repair, fix, rebuild, doctor}` — preserved verbatim;
+    `{recover, restore, repair, fix, rebuild}` — preserved verbatim (`doctor`
+    is SDK-absent via the allowlist, not this denylist);
     `restore_logical_id`/`purge_logical_id` stay **CLI-only** (`recover --*-logical-id`).
   - **Typed boundary (element 4):** reads take typed args + a small fixed filter
     grammar (equality + range over body-JSON), **never raw SQL** — the same line
@@ -177,9 +178,10 @@ recency/importance (G12) are scoring signals, governance-free.
 ## What this ADR explicitly preserves (do not drop)
 
 - **Recovery-unreachability** — `test_no_recovery_surface` (py + ts) stays GREEN
-  and unchanged; the `{recover,restore,repair,fix,rebuild,doctor}` denylist
-  becomes a permanent clause of the new governed-surface AC. AC-058 (recovery
-  CLI-reachable) unchanged.
+  and unchanged; its `{recover,restore,repair,fix,rebuild}` denylist (the same
+  five names the byte-unchanged test artifacts assert; `doctor` is kept off the
+  SDK by the positive verb allowlist, not this denylist) becomes a permanent
+  clause of the new governed-surface AC. AC-058 (recovery CLI-reachable) unchanged.
 - **SDK parity** — re-expressed as allowlist-equality across Python + TS.
 - **Typed-write boundary** — no raw SQL; reads get a fixed filter grammar, not a DSL.
 - **The five core verbs** — unchanged in name, shape, and semantics.
@@ -258,8 +260,10 @@ a traceability-reconciliation pass, pre-registered as reserved-gap Slice 27/28.)
 
 **Recommended: confirm.** A by-id *read* touches none of the write / projection /
 durability / recovery invariants the denylist protects; it is orthogonal to the
-recovery boundary. The denylist clause is preserved verbatim and `doctor` stays a
-CLI verb / SDK-absent; only the *non-destructive read* path is opened.
+recovery boundary. The denylist clause `{recover, restore, repair, fix, rebuild}`
+is preserved verbatim; `doctor` is a CLI diagnostic verb that is SDK-absent via the
+positive verb allowlist (it is never added to the SDK), not via this denylist. Only
+the *non-destructive read* path is opened.
 
 ### Q5 — Does the governed-surface AC bind the Rust facade? → **recommend SDK-only (Py/TS)**
 > *Sign-off question:* "Scope the governed-surface AC to the **Python + TypeScript
@@ -305,8 +309,8 @@ forward intact**:
    re-expressed as allowlist-equality across the two bindings, enforced by the
    rewritten conformance test (membership + cross-binding equality), not by a count.
 2. **Recovery-name denylist** — the surface MUST NOT contain any name in
-   `{recover, restore, repair, fix, rebuild}` (`doctor` stays a CLI verb /
-   SDK-absent); preserved **verbatim** as a permanent clause of the new
+   `{recover, restore, repair, fix, rebuild}` (`doctor` is SDK-absent via the verb
+   allowlist, not this denylist); preserved **verbatim** as a permanent clause of the new
    governed-surface AC; the four recovery artifacts above stay byte-unchanged.
 3. **Typed-write / no-raw-SQL boundary** — reads take typed args + a small fixed
    filter grammar (equality + range over body-JSON), **never raw SQL and never a

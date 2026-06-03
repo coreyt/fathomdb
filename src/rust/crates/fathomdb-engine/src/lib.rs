@@ -61,6 +61,26 @@ const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
 /// the call landed; 30 s is generous for normal job sizes and bounded
 /// for tests.
 const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
+/// 0.8.0 Slice 5 (G1) — schema version that introduces the global FTS5
+/// tokenizer-default upgrade (`SCHEMA_VERSION` 11, migration step 11). A DB
+/// migrated to (or past) this version re-tokenizes `search_index` from
+/// canonical source rows on open (the drop+recreate leaves the FTS index
+/// empty). Repair is keyed off the completion marker below — NOT off crossing
+/// the step boundary — so it is crash-retryable (see
+/// `SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY`).
+const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
+/// 0.8.0 Slice 5 (G1) fix-1 — `_fathomdb_open_state` key set, in the SAME
+/// transaction as the reproject DELETE+INSERT, once the post-tokenizer-upgrade
+/// re-tokenization commits durably. Step 11 commits `user_version = 11` with an
+/// EMPTY `search_index` in its own transaction; the reproject runs in a later
+/// transaction on open. A crash in that window leaves a durable `user_version =
+/// 11` + empty index. Gating repair on a boundary crossing (`before < 11`)
+/// would skip it on the next open (it sees `before == 11`), stranding the index
+/// empty forever. Gating on this marker's ABSENCE instead makes repair
+/// idempotent and crash-retryable: written atomically with the reindex, so a
+/// crash before commit leaves no marker and the next open re-runs.
+const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
+    "search_index_tokenizer_reproject_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
@@ -386,7 +406,7 @@ enum ReaderRequest {
     },
 }
 
-type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)>;
+type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)>;
 
 /// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
 /// the debug-only `CacheStatus` broadcast path and the test accessor;
@@ -816,11 +836,37 @@ pub enum SoftFallbackBranch {
     Text,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// A single structured search hit (G1 / AC-057a-clean).
+///
+/// Both retrieval branches emit this shape. `id` is the canonical row's
+/// `write_cursor` — the **interim** identity carrier per
+/// `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`; it swaps to
+/// `logical_id` at the G0 keystone (Slice 15) with no carrier reshape.
+/// `score` is the raw per-branch relevance: `vec_distance_l2` for the vector
+/// branch (lower = closer) and `bm25()` for the text branch (more-negative =
+/// more-relevant). The two are **not** comparable raw — normalizing them into
+/// a single fused scale is the Slice-10 RRF concern. `branch` tags which
+/// retrieval branch produced the hit.
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — `score: f64` forbids
+/// total equality.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchHit {
+    pub id: u64,
+    pub kind: String,
+    pub body: String,
+    pub score: f64,
+    pub branch: SoftFallbackBranch,
+}
+
+/// Hybrid `search` result. `results` carries structured [`SearchHit`]s in
+/// vector-first, dedup-on-body order. Derives `Clone, Debug, PartialEq` but
+/// **not `Eq`** — each hit carries a `score: f64`.
+#[derive(Clone, Debug, PartialEq)]
 pub struct SearchResult {
     pub projection_cursor: u64,
     pub soft_fallback: Option<SoftFallback>,
-    pub results: Vec<String>,
+    pub results: Vec<SearchHit>,
 }
 
 /// Batch input shape for [`Engine::write`].
@@ -1648,6 +1694,36 @@ impl Engine {
         reject_legacy_shape(&connection)?;
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
+        // 0.8.0 Slice 5 (G1) — global FTS5 tokenizer-default upgrade. Step 11
+        // drops + recreates `search_index` with the new tokenizer, leaving it
+        // EMPTY on a migrated DB. The projection scheduler will NOT
+        // repopulate it (`database_has_pending_projection_work` keys "pending"
+        // off `_fathomdb_projection_terminal`, which the migration does not
+        // clear). Re-tokenize from the canonical source rows here, on the
+        // writer connection, single-threaded, before readers spawn —
+        // projection-only, no source-record migration.
+        //
+        // Crash-retryable (fix-1): step 11 commits `user_version = 11` with an
+        // empty index in its OWN transaction; this reproject commits in a
+        // LATER transaction. A crash in that window leaves a durable v11 + empty
+        // index, on which a boundary-crossing guard (`before < 11`) is FALSE,
+        // skipping repair forever. So gate on the completion marker's ABSENCE
+        // (written atomically with the reindex) instead: idempotent, and a
+        // crash before the reindex commit simply re-runs on the next open.
+        if migration.schema_version_after >= SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION
+            && !search_index_tokenizer_reproject_complete(&connection).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not read search_index tokenizer reproject marker".to_string(),
+                }
+            })?
+        {
+            reproject_search_index_after_tokenizer_upgrade(&connection).map_err(|_| {
+                EngineOpenError::Io {
+                    message: "could not re-tokenize search_index after tokenizer upgrade"
+                        .to_string(),
+                }
+            })?;
+        }
         let mut embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
         ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
@@ -3199,7 +3275,7 @@ fn read_search_in_tx(
     query_vector: Option<&str>,
     query_vector_bin: Option<&str>,
     final_limit: usize,
-) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
+) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
@@ -3228,26 +3304,39 @@ fn read_search_in_tx(
                      ORDER BY distance
                      LIMIT {top_k}
                  )
-                 SELECT c.rowid
+                 SELECT c.rowid, vec_distance_l2(v.embedding, vec_f32(?2)) AS l2
                  FROM candidates c
                  JOIN vector_default v ON v.rowid = c.rowid
-                 ORDER BY vec_distance_l2(v.embedding, vec_f32(?2))
+                 ORDER BY l2
                  LIMIT {final_limit}",
                 top_k = TOP_K_BIT_CANDIDATES,
             );
             let mut statement = tx.prepare(&sql)?;
-            let rows =
-                statement.query_map([bin_vector, query_vector], |row| row.get::<_, i64>(0))?;
+            let rows = statement.query_map([bin_vector, query_vector], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
+            })?;
             for row in rows.flatten() {
                 rowids.push(row);
             }
         }
+        // G1: carry the canonical row's `write_cursor` (interim id), `kind`,
+        // `body`, and the `vec_distance_l2` rerank score per hit. The
+        // `_fathomdb_vector_rows.rowid` equals the canonical `write_cursor`,
+        // so the candidate rowid IS the hit id.
         let mut results = Vec::new();
         let mut statement =
-            tx.prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
-        for rowid in rowids {
-            if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
-                results.push(body);
+            tx.prepare("SELECT kind, body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        for (rowid, score) in rowids {
+            if let Ok((kind, body)) = statement
+                .query_row([rowid], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            {
+                results.push(SearchHit {
+                    id: rowid as u64,
+                    kind,
+                    body,
+                    score,
+                    branch: SoftFallbackBranch::Vector,
+                });
             }
         }
         results
@@ -3272,11 +3361,15 @@ fn read_search_in_tx(
     } else {
         None
     };
+    // Dedup-on-body + vector-first ordering (preserved from 0.6.x/0.7.2): a
+    // body surfaced by both branches appears once, vector-first. The dedup
+    // key stays the body string so behavior is byte-identical to the prior
+    // `Vec<String>` merge; only the carried shape changed.
     let mut seen = BTreeSet::new();
-    let mut results = Vec::new();
-    for row in vector_results {
-        if seen.insert(row.clone()) {
-            results.push(row);
+    let mut results: Vec<SearchHit> = Vec::new();
+    for hit in vector_results {
+        if seen.insert(hit.body.clone()) {
+            results.push(hit);
         }
     }
     {
@@ -3291,19 +3384,31 @@ fn read_search_in_tx(
         } else {
             None
         };
+        // G1: SELECT body + kind + write_cursor (interim id) and the
+        // `bm25()` text-relevance score. Order is unchanged (`write_cursor`)
+        // so dedup-on-body + vector-first ordering matches 0.7.2.
         let sql = match perf_limit {
             Some(k) => format!(
-                "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor LIMIT {k}"
+                "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
+                 WHERE search_index MATCH ?1 ORDER BY write_cursor LIMIT {k}"
             ),
-            None => "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor"
+            None => "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
+                 WHERE search_index MATCH ?1 ORDER BY write_cursor"
                 .to_string(),
         };
         let mut statement = tx.prepare(&sql)?;
-        let rows = statement
-            .query_map([compiled.match_expression.as_str()], |row| row.get::<_, String>(0))?;
-        for row in rows.flatten() {
-            if seen.insert(row.clone()) {
-                results.push(row);
+        let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+            Ok(SearchHit {
+                body: row.get::<_, String>(0)?,
+                kind: row.get::<_, String>(1)?,
+                id: row.get::<_, i64>(2)? as u64,
+                score: row.get::<_, f64>(3)?,
+                branch: SoftFallbackBranch::Text,
+            })
+        })?;
+        for hit in rows.flatten() {
+            if seen.insert(hit.body.clone()) {
+                results.push(hit);
             }
         }
     }
@@ -3736,6 +3841,79 @@ struct CanonicalNodeRow {
     cursor: u64,
     kind: String,
     body: String,
+}
+
+/// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
+/// rows after the step-11 tokenizer-default upgrade drops + recreates the FTS5
+/// virtual table. Projection-only: it reads `canonical_nodes` (the source of
+/// truth, untouched) and rewrites the FTS shadow; it performs **no**
+/// source-record migration. Every canonical node already carries an FTS row at
+/// write time (the projection-time INSERT is unconditional), so reinserting
+/// every node exactly reproduces the prior index content under the new
+/// tokenizer. Runs in a single transaction on the writer connection before
+/// readers spawn.
+///
+/// Crash-retryable (fix-1): the reindex and its durable completion marker
+/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+/// commit together in ONE `BEGIN IMMEDIATE…COMMIT`. A crash before the commit
+/// rolls both back, leaving no marker; the next open re-runs. A crash after
+/// the commit finds the marker present and skips. Idempotent.
+fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> rusqlite::Result<()> {
+    let rows = canonical_node_rows(connection)?;
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        connection.execute("DELETE FROM search_index", [])?;
+        {
+            let mut statement = connection
+                .prepare("INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)")?;
+            for row in &rows {
+                statement.execute(params![row.body, row.kind, row.cursor])?;
+            }
+        }
+        connection.execute(
+            "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY, "1"],
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => connection.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
+/// 0.8.0 Slice 5 (G1) fix-1 — has the post-tokenizer-upgrade re-tokenization
+/// committed durably on this DB? Keys off the
+/// `SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` row written inside the reindex
+/// transaction; its absence on a v11 DB means the reindex never committed
+/// (fresh-after-step-11 or crash-in-window) and must (re-)run.
+///
+/// A MISSING `_fathomdb_open_state` table is reported as "complete" (skip the
+/// reproject): that table is created by migration step 1, so its absence means
+/// the DB never ran our migrations (e.g. a synthetic DB whose `user_version`
+/// was stamped to 11 by hand, or a legacy/foreign shape). Such DBs are
+/// rejected by the downstream embedder-identity/integrity probes; the reproject
+/// must not run — and must not mask those errors — on them. On a genuinely
+/// migrated DB the table always exists, so the crash-repair path is unaffected.
+fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlite::Result<bool> {
+    match connection.query_row(
+        "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+        [SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value == "1"),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref message)))
+            if message.contains("no such table") =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {

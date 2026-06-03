@@ -365,7 +365,13 @@ fn ac_013b_devloop() {
             }
         }
 
-        let prod = engine.search(&q.text).expect("measure search").results;
+        let prod: Vec<String> = engine
+            .search(&q.text)
+            .expect("measure search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect();
         let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
         total_hits += prod.iter().filter(|b| gt_set.contains(b)).count();
         total_queries += 1;

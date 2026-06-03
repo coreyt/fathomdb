@@ -26,8 +26,8 @@ refresh in the closing commit when you touch a doc).
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = SDK surface governance | 25 amends REQ-053 | 2026-05-28 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap → governed-surface AC | 25 (AC-057a supersede); 40 scoreboard | 2026-06-01 |
-| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface | 2026-05-31 |
-| `dev/test-plan.md` | Test strategy + tiers (incl. the new functional-harness tier, X1) | 5 adds functional tier | 2026-05-27 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface | 2026-06-02 |
+| `dev/test-plan.md` | Test strategy + tiers (incl. the new functional-harness tier, X1) | 5 adds functional tier | 2026-06-02 |
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
 | `dev/learnings.md` | Cross-phase engineering learnings | per-slice as discovered | 2026-05-31 |
@@ -43,6 +43,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/bindings.md` | SDK bindings spec; §1 surface-set parity (→ governed surface at 25); §10 recovery-unreachability (UNCHANGED) | 25 rewrites §1; §10 preserved | 2026-05-03 |
 | `dev/design/0.8.0-agent-memory-fit.md` | Agent-memory gap ladder (G0–G12) + §7 read-verb HITL questions | scope source for 0.8.0 | 2026-06-02 |
 | `dev/design/0.8.0-v05-feature-triage.md` | v0.5.x feature triage (ship/defer/drop) | scope source of truth | 2026-06-02 |
+| `dev/design/0.8.0-slice-5-G1-design.md` | Slice 5 design memo — structured `SearchHit` shape, per-branch score, dedup/order, step-11 tokenizer migration + re-tokenization, X1/X2/X3 plan | 5 (G1) | 2026-06-02 |
 | `dev/design/agent-memory-impl-strategy.md` | Slice shapes / impl strategy for the gap ladder | 5/10/15/20/30 shapes | 2026-06-02 |
 | `dev/design/retrieval.md` | Retrieval pipeline design (vector + FTS5, fusion) | 5/10 | (tree) |
 | `dev/design/projections.md` | Projection model | 5/15 | (tree) |
@@ -90,8 +91,8 @@ refresh in the closing commit when you touch a doc).
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
 | `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
-| `docs/reference/python-api.md` | Python API reference | 5 (`SearchHit`), 30 (`read.*`) | 2026-05-17 |
-| `docs/reference/typescript-api.md` | TypeScript API reference | 5 (`SearchHit`), 30 (`read.*`) | 2026-05-17 |
+| `docs/reference/python-api.md` | Python API reference | 5 (`SearchHit`), 30 (`read.*`) | 2026-06-02 |
+| `docs/reference/typescript-api.md` | TypeScript API reference | 5 (`SearchHit`), 30 (`read.*`) | 2026-06-02 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only) | preserved | 2026-05-17 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |
@@ -99,7 +100,8 @@ refresh in the closing commit when you touch a doc).
 | `docs/embedder.md` | Default embedder | — | 2026-06-01 |
 | `docs/compatibility/index.md` | Compatibility matrix | 40 (compat events) | 2026-05-17 |
 | `docs/operations/index.md` | Operations guide | — | 2026-05-01 |
-| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-05-01 |
+| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-06-02 |
+| `docs/guides/structured-search-hits.md` | Structured `SearchHit` usage guide (id/kind/body/score/branch; Py + TS) | 5 (G1) | 2026-06-02 |
 | `docs/positions/index.md` | Positions hub | — | 2026-05-01 |
 | `docs/positions/sdk-parity.md` | Position: SDK parity (guarantee carried forward by 25) | 25 | 2026-05-01 |
 | `docs/positions/recovery-surface.md` | Position: recovery surface (denylist, CLI-only) | preserved by 25/30 | 2026-05-01 |
@@ -108,3 +110,19 @@ refresh in the closing commit when you touch a doc).
 | `docs/release-notes/0.6.0.md` | 0.6.0 release notes | — | 2026-05-17 |
 | `docs/release-notes/0.6.1.md` | 0.6.1 release notes (**added to nav at Slice 0** — was orphaned) | X2 | 2026-05-24 |
 | `docs/release-notes/0.8.0.md` | 0.8.0 release notes (**stub at Slice 0**; finalized at Slice 40) | 0 stub; 40 finalizes | 2026-06-02 |
+
+## Corpus / eval expansion (out-of-band, owner-managed — integrated at Slice-5 push 2026-06-02)
+
+> These come from the parallel **corpus-work** line (origin/main `83f5156`), integrated into
+> `main` when the 0.8.0 campaign was pushed. They are **owner-managed**, not driven by a campaign
+> slice; the owner curates/expands these rows. Listed here so DOC-INDEX maps the full shipped doc
+> surface (Slice-40 gate m).
+
+| Doc | Purpose | Owning slice/AC | Last-touched |
+|-----|---------|-----------------|--------------|
+| `dev/corpus-creation/README.md` + `architecture.md` | Corpus-creation overview + architecture | corpus-work (out-of-band) | 2026-06-02 |
+| `dev/notes/0.8.x-corpus-source-expansion-research.md` | Corpus source-expansion research notes | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/notes/0.8.x-pmc-oa-reconsideration.md` | PMC-OA source reconsideration note | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/plans/prompts/0.8.x-corpus-qa-expansion-handoff.md` | Corpus QA-expansion handoff prompt | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/plans/prompts/0.8.x-corpus-source-expansion-search.md` | Corpus source-expansion search prompt | corpus-work (0.8.x) | 2026-06-02 |
+| `tests/corpus/corpus-card.md` + `README.md` | Eval corpus card + acquisition README (scripts under `tests/corpus/scripts/`) | corpus-work (eval) | 2026-06-02 |

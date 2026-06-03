@@ -57,10 +57,18 @@ interface NativeSoftFallback {
   branch: string;
 }
 
+interface NativeSearchHit {
+  id: number;
+  kind: string;
+  body: string;
+  score: number;
+  branch: string;
+}
+
 interface NativeSearchResult {
   projectionCursor: number;
   softFallback: NativeSoftFallback | null;
-  results: string[];
+  results: NativeSearchHit[];
 }
 
 interface NativeMigrationStepReport {

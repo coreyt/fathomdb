@@ -689,7 +689,14 @@ fn ac_013b_recall_at_10_floor() {
             }
         }
 
-        let prod = opened.engine.search(q).expect("measure search").results;
+        let prod: Vec<String> = opened
+            .engine
+            .search(q)
+            .expect("measure search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect();
 
         let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
         let hits = prod.iter().filter(|b| gt_set.contains(b)).count();
@@ -807,23 +814,24 @@ fn ac_013_vector_read_path_smoke() {
     // `search()` returns empty here and the test fails (the property the old
     // body-as-query form could not guarantee).
     let result = opened.engine.search(VECTOR_PROBE_QUERY).expect("smoke search");
+    let result_bodies: Vec<String> = result.results.iter().map(|h| h.body.clone()).collect();
     assert!(
-        !result.results.is_empty(),
+        !result_bodies.is_empty(),
         "vector read path returned no results for an FTS-absent query — bit-KNN/rerank is broken"
     );
     assert!(
-        result.results.iter().all(|b| bodies.contains(b)),
+        result_bodies.iter().all(|b| bodies.contains(b)),
         "vector results must be seeded corpus bodies; got {:?}",
-        result.results
+        result_bodies
     );
     // SMOKE_N < K => exact rerank => the true f32-nearest is rank 1.
     assert_eq!(
-        result.results.first(),
+        result_bodies.first(),
         Some(nearest),
         "exact f32-nearest must rank 1 through bit-KNN + f32 rerank (SMOKE_N<K => exact rerank); \
          got top-{} = {:?}",
-        result.results.len(),
-        result.results.first(),
+        result_bodies.len(),
+        result_bodies.first(),
     );
 }
 

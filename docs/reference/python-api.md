@@ -9,6 +9,7 @@ Module: `fathomdb`. Authoritative spec:
 from fathomdb import (
     Engine,
     EngineConfig,
+    SearchHit,
     SearchResult,
     SoftFallback,
     SoftFallbackBranch,
@@ -61,7 +62,9 @@ Run hybrid retrieval (FTS5 + vector) for `query`.
 
 - `query` (`str`).
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
-  SoftFallback | None, results: list[str])`.
+  SoftFallback | None, results: list[SearchHit])`. Each
+  [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
+  `body`, a per-branch `score`, and the `branch` that produced it.
 
 ### `engine.close() -> None`
 
@@ -126,8 +129,26 @@ class WriteReceipt:
 class SearchResult:
     projection_cursor: int
     soft_fallback: SoftFallback | None = None
-    results: list[str] = []
+    results: list[SearchHit] = []
 ```
+
+### `SearchHit`
+
+```python
+@dataclass(frozen=True)
+class SearchHit:
+    id: int          # canonical row write_cursor (interim identity carrier)
+    kind: str
+    body: str
+    score: float     # vec_distance_l2 (vector branch) or bm25() (text branch)
+    branch: SoftFallbackBranch  # Literal["vector", "text"]
+```
+
+`score` is the raw per-branch relevance: `vec_distance_l2` for the vector
+branch (lower = closer) and `bm25()` for the text branch (more-negative =
+more-relevant). The two are **not** comparable raw — fusing them onto a single
+scale is a later (RRF) concern. `branch` tags which retrieval branch produced
+the hit.
 
 ### `SoftFallback`
 

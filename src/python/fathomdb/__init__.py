@@ -14,6 +14,7 @@ from fathomdb.config import EngineConfig
 from fathomdb.engine import Engine
 from fathomdb.types import (
     CounterSnapshot,
+    SearchHit,
     SearchResult,
     SoftFallback,
     SoftFallbackBranch,
@@ -24,6 +25,7 @@ __all__ = [
     "CounterSnapshot",
     "Engine",
     "EngineConfig",
+    "SearchHit",
     "SearchResult",
     "SoftFallback",
     "SoftFallbackBranch",

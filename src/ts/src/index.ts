@@ -46,10 +46,23 @@ export interface SoftFallback {
   branch: SoftFallbackBranch;
 }
 
+export interface SearchHit {
+  /** Canonical row `write_cursor` (interim identity carrier). */
+  id: number;
+  kind: string;
+  body: string;
+  /**
+   * Raw per-branch relevance: `vec_distance_l2` (vector) or `bm25()` (text).
+   * Not comparable across branches raw.
+   */
+  score: number;
+  branch: SoftFallbackBranch;
+}
+
 export interface SearchResult {
   projectionCursor: number;
   softFallback: SoftFallback | null;
-  results: string[];
+  results: SearchHit[];
 }
 
 export interface MigrationStepReport {
@@ -287,7 +300,13 @@ export class Engine {
       projectionCursor: r.projectionCursor,
       softFallback:
         branch === "vector" || branch === "text" ? { branch } : null,
-      results: r.results,
+      results: r.results.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: h.branch === "vector" ? "vector" : "text",
+      })),
     };
   }
 

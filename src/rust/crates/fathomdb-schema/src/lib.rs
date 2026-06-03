@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -251,6 +251,30 @@ pub const MIGRATIONS: &[Migration] = &[
     Migration {
         step_id: 10,
         sql: "ALTER TABLE _fathomdb_embedder_profiles ADD COLUMN mean_vec BLOB",
+    },
+    // 0.8.0 Slice 5 (G1) — global FTS5 tokenizer-default upgrade.
+    // Per `dev/plans/0.8.0-implementation.md` § "Slice 5" and the design
+    // memo `dev/design/0.8.0-slice-5-G1-design.md`. Migrations are
+    // forward-only and immutable, and FTS5 has no `ALTER … tokenize`, so the
+    // tokenizer default is upgraded by dropping and recreating the
+    // `search_index` virtual table rather than editing the step-5 DDL (which
+    // would change the tokenizer for new DBs only). The drop+recreate leaves
+    // the FTS index empty on a migrated DB; the engine re-tokenizes from the
+    // canonical source rows immediately after this step lands (open path,
+    // `reproject_search_index_after_tokenizer_upgrade`) — projection-only, no
+    // source-record migration. `DROP TABLE` already satisfies the accretion
+    // guard's `names_removal` branch; the exemption marker is carried to
+    // document intent and match the established pattern.
+    Migration {
+        step_id: 11,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: tokenizer-default upgrade (drop+recreate FTS5 projection; no source-record migration)
+              DROP TABLE IF EXISTS search_index;
+              CREATE VIRTUAL TABLE search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
     },
 ];
 

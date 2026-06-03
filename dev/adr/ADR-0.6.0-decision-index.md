@@ -77,6 +77,19 @@ separately because they post-date the 0.6.0 Phase 1/2 deliberation.
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------ |
 | 32  | design   | Narrow exception to NEED-017 / REQ-033 permitting opt-in default-embedder weight fetch on first use, sha256-pinned, with `OpenReport` visibility | accepted (HITL 2026-05-28) | ADR-0.7.1-default-embedder-weight-fetch.md |
 
+## Phase 0.8.0 (campaign-specific ADRs)
+
+Decisions for the 0.8.0 agent-memory-fit campaign (canonical-identity substrate +
+governed-surface supersession). Listed separately because they post-date the
+0.7.1 campaign; several remain HITL-pending and gate Slice 15 / Slice 25.
+
+| #   | Category     | Candidate decision                                                                                                                                                                                                                                  | HITL verdict                          | ADR file                                         |
+| --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- | ------------------------------------------------ |
+| 33  | design       | Agent-memory retrieval & identity (planning input) — reclassify hybrid fusion+rerank (G9) and vector-metadata columns (G10) to table-stakes; direct the G0 substrate to be designed bi-temporal-aware (G11, Option 2A) so supersession is not built twice | draft, HITL-required                  | ADR-0.8.0-agent-memory-retrieval-and-identity.md |
+| 34  | architecture | Canonical-identity substrate (G0 keystone) — `logical_id` + `superseded_at` on `canonical_nodes` AND `canonical_edges`; transaction-time now, valid-time additive later (no reshape); authorizes the Slice-15 schema delta (`SCHEMA_VERSION` 10→11); flags `write_cursor`-as-row-id for HITL | draft, HITL-required                  | ADR-0.8.0-canonical-identity-substrate.md        |
+| 35  | acceptance   | Supersede AC-057a's five-verb *scope cap* with a governed, open-but-curated SDK surface; preserve the three load-bearing guarantees (SDK parity, recovery-name denylist, typed boundary); unblocks gated read verbs G2/G3/G4/G5/G7                       | decision-ready, HITL-sign-off-pending | ADR-0.8.0-supersede-five-verb-surface-cap.md     |
+| 36  | design       | Embedder identity-change workflow — deferred workflow for intentional embedder identity swaps                                                                                                                                                          | draft (deferred)                      | ADR-0.8.0-embedder-identity-change-workflow.md   |
+
 ## Categories
 
 acceptance | architecture | design | interface.
