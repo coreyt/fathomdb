@@ -110,3 +110,19 @@ refresh in the closing commit when you touch a doc).
 | `docs/release-notes/0.6.0.md` | 0.6.0 release notes | — | 2026-05-17 |
 | `docs/release-notes/0.6.1.md` | 0.6.1 release notes (**added to nav at Slice 0** — was orphaned) | X2 | 2026-05-24 |
 | `docs/release-notes/0.8.0.md` | 0.8.0 release notes (**stub at Slice 0**; finalized at Slice 40) | 0 stub; 40 finalizes | 2026-06-02 |
+
+## Corpus / eval expansion (out-of-band, owner-managed — integrated at Slice-5 push 2026-06-02)
+
+> These come from the parallel **corpus-work** line (origin/main `83f5156`), integrated into
+> `main` when the 0.8.0 campaign was pushed. They are **owner-managed**, not driven by a campaign
+> slice; the owner curates/expands these rows. Listed here so DOC-INDEX maps the full shipped doc
+> surface (Slice-40 gate m).
+
+| Doc | Purpose | Owning slice/AC | Last-touched |
+|-----|---------|-----------------|--------------|
+| `dev/corpus-creation/README.md` + `architecture.md` | Corpus-creation overview + architecture | corpus-work (out-of-band) | 2026-06-02 |
+| `dev/notes/0.8.x-corpus-source-expansion-research.md` | Corpus source-expansion research notes | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/notes/0.8.x-pmc-oa-reconsideration.md` | PMC-OA source reconsideration note | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/plans/prompts/0.8.x-corpus-qa-expansion-handoff.md` | Corpus QA-expansion handoff prompt | corpus-work (0.8.x) | 2026-06-02 |
+| `dev/plans/prompts/0.8.x-corpus-source-expansion-search.md` | Corpus source-expansion search prompt | corpus-work (0.8.x) | 2026-06-02 |
+| `tests/corpus/corpus-card.md` + `README.md` | Eval corpus card + acquisition README (scripts under `tests/corpus/scripts/`) | corpus-work (eval) | 2026-06-02 |
