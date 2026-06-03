@@ -191,6 +191,24 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-02 — Slice prompt TEMPLATE authored (path-isolation + recover-out-loud + console-log contract)
+
+- Recurring failure across slices: edits landing in the **canonical repo** instead of the
+  worktree (Slice 10 hit this — `lib.rs` edits strayed to `/home/coreyt/projects/fathomdb`;
+  the agent detected and migrated them, but ad-hoc). Authored
+  **`dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md`** as the standard scaffold for every future
+  slice prompt (15, 20, …). Key features: (1) **§0 path-isolation rule + `$WT`/`$CANON`
+  preflight assertion + a stray-edit tripwire** (`git -C $CANON status --porcelain -- src/ …`
+  run after each edit batch); (2) **§7 codified stray-edit recovery recipe** (capture patch →
+  restore canonical → apply in worktree → verify both sides) so recovery is fast and clean,
+  not improvised; (3) **§8 console-logging contract** — emit `[DETECT]` the instant a problem
+  is noticed, `[RESOLVE]` after fixing with verification, and a final `[SUMMARY]`, mirrored
+  into `output.json`; (4) firm-but-not-overbearing framing ("mistakes are expected; the only
+  failure is an unreported one"). Carries the §6 scope-discipline + no-remote rules from the
+  Slice-10 hardening. **Orchestrator instantiates it per slice** by filling the `{{…}}` fields.
+- Slice 10's prompt predates the template (already in flight); it recovered the stray edit
+  manually. Slice 15+ will be instantiated **from the template**.
+
 ### 2026-06-02 — OOB-work evaluation (Slice 5 + the corpus-line integration)
 
 - **Slice 5 implementation: necessary + well-scoped.** The 1155-line impl diff (`8108bac..e76d68b`)
