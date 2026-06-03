@@ -8,6 +8,7 @@ here for Python and mirrored by the napi-rs binding in Phase 11b.
 from __future__ import annotations
 
 import os
+from typing import Callable
 
 import pytest
 
@@ -131,30 +132,45 @@ def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
 _FILTER_NUL = "a\x00b"
 _FILTER_SURROGATE = "a\ud800b"
 
+# Typed factories over the three FFI-string filter fields. Using an explicit
+# per-field callable (rather than `SearchFilter(**{field: value})`) keeps the
+# keyword literal so pyright infers the correct `str` argument type instead of
+# treating the kwargs as a `dict[str, str]` that might land on the i64
+# `created_after` field.
+_STRING_FILTER_FACTORIES: list[Callable[[str], SearchFilter]] = [
+    lambda v: SearchFilter(source_type=v),
+    lambda v: SearchFilter(kind=v),
+    lambda v: SearchFilter(status=v),
+]
 
-@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
-def test_embedded_nul_in_search_filter_rejected(db_path: str, field: str) -> None:
+
+@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
+def test_embedded_nul_in_search_filter_rejected(
+    db_path: str, field_factory: Callable[[str], SearchFilter]
+) -> None:
     """AC-068a — embedded NUL in a search filter string raises
     WriteValidationError before the query reaches the engine."""
 
     engine = Engine.open(db_path)
     try:
         with pytest.raises(WriteValidationError) as excinfo:
-            engine.search("q", SearchFilter(**{field: _FILTER_NUL}))
+            engine.search("q", field_factory(_FILTER_NUL))
         assert isinstance(excinfo.value, EngineError)
     finally:
         engine.close()
 
 
-@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
-def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
+@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
+def test_unpaired_surrogate_in_search_filter_rejected(
+    db_path: str, field_factory: Callable[[str], SearchFilter]
+) -> None:
     """AC-068b — a lone UTF-16 surrogate in a search filter string raises
     WriteValidationError before the query reaches the engine."""
 
     engine = Engine.open(db_path)
     try:
         with pytest.raises(WriteValidationError) as excinfo:
-            engine.search("q", SearchFilter(**{field: _FILTER_SURROGATE}))
+            engine.search("q", field_factory(_FILTER_SURROGATE))
         assert isinstance(excinfo.value, EngineError)
     finally:
         engine.close()
