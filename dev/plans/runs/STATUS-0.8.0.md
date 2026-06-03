@@ -191,6 +191,39 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-02 — Slice 0 & 5 OOB forensic audit + best-practices review → verdict
+
+- **Forensic finding (read-only audit vs the written contracts):** Slices 0 and 5 had
+  **essentially NO avoidable scope creep at the slice-agent level.** Every within-slice
+  "OOB" item was one of: (a) **justified deviation** to make an *in-scope* deliverable
+  actually work — Slice 0 `docs/release-notes/0.8.0.md` stub (the in-scope nav entry would
+  fail `mkdocs --strict` without it); Slice 5 `mkdocs.yml` Guides-nav promotion (else the
+  in-scope guide page orphans); Slice 5 open-path re-tokenization wiring + `011_…sql`
+  (without it the drop+recreate leaves a permanently-empty index on migrated DBs — the
+  contract under-specified the trigger); (b) **review-induced remediation explicitly
+  provided-for** — Slice 5 fix-1 crash-recovery (the §6 fix-1 clause; codex P1 BLOCK→PASS),
+  Slice 0 recovery-denylist prose fix (codex cross-round catch); (c) **authorized
+  forward-propagation** — Slice 5 close-commit renumber of Slice 15/ADR/plan (the CLOSED
+  block pre-authored it). Schema/version check: Slice 5 used `SCHEMA_VERSION 10→11` / `step_id
+  11` **exactly** as specified — no divergence.
+- **The one genuinely heavy OOB was NOT slice-agent creep:** the corpus-line integration
+  (`83f5156`→`316cdf7`/`a6080f9`/`c27028b`) was a **separate, HITL-authorized post-close
+  orchestrator action** (push/PR/merge), merged ~80 min *after* Slice 5 closed (`14a7a06`).
+  Already flagged in `e4ae932`; outcome defensible, manner heavy/irreversible.
+- **Best-practices review (web):** the literature reframes the whole question — under-specified
+  prompts cause *interpretation drift*, not self-clarification (reinteractive); deviations must
+  *round-trip into the spec* (spec-driven development / Thoughtworks); delegation needs explicit
+  **task boundaries** + **end-state** (not step-by-step) verification, and forced deviations are
+  *defect reports on the prompt* ("think like your agents" — Anthropic multi-agent).
+- **Verdict:** the slices behaved well; the residue is **contract under-specification**, not
+  agent misbehavior. Several justified deviations exist *only* because the prompt didn't name
+  companion artifacts (release-note stubs, nav entries) or mechanism triggers (re-tokenization).
+  **Actions taken:** (1) template §6 now distinguishes scope-creep from justified-deviation with
+  a round-trip rule (`35f1553`); (2) template authoring checklist now requires naming companion
+  artifacts + mechanism triggers; (3) minor process note — Slice 0 needed two *post-close*
+  reconciliation commits (`a42f234`, `944cbb4`): prefer closing only after review converges
+  (end-state-clean), folding corrections into the close commit.
+
 ### 2026-06-02 — Slice prompt TEMPLATE authored (path-isolation + recover-out-loud + console-log contract)
 
 - Recurring failure across slices: edits landing in the **canonical repo** instead of the
