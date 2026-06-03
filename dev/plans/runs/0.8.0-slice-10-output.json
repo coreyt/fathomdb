@@ -1,0 +1,45 @@
+{
+  "phase": "0.8.0-slice-10",
+  "baseline_sha": "e4ae932967e26da32184b9a97d9a819f5c84037e",
+  "branch": "slice-10-20260603T014621Z",
+  "head_sha": "bc63a1e8cfff810a59814b926163004ddb377ae4",
+  "merged_to_main_sha": "<filled after merge>",
+  "commits": [
+    "aa3315c: docs(0.8.0): Slice 10 design memo — RRF fusion + filtered KNN + recency (no fusion_mode knob)",
+    "74b06b9: test(0.8.0): Slice 10 RED — G9 RRF determinism, G10 filtered-KNN + byte-identity pin, G12-recency",
+    "9ee907b: feat(0.8.0): Slice 10 GREEN engine — G9 RRF fusion (unconditional) + rerank seam, G10 filtered-KNN + 3-way sentinel, G12-recency",
+    "bc63a1e: feat(0.8.0): Slice 10 SDK parity (Py+TS SearchFilter) + X1 harnesses + X3 docs"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "74b06b97ec198bd26aecfdb2924d0a9ed400e6f8",
+    "test_files": [
+      "pr_g9_rrf_fusion.rs",
+      "pr_g10_filtered_knn.rs",
+      "pr_g12_recency.rs",
+      "byte-identical-unfiltered pin (unfiltered_phase1_sql_byte_identical_to_0_7_2 in pr_g10_filtered_knn.rs)"
+    ]
+  },
+  "blockers_encountered": [
+    {
+      "id": "vec0-text-metadata-not-nullable",
+      "description": "GROUND-TRUTH CONTRADICTS PROMPT: the contract says `status` ships 'NULL plumbing only', but vec0 TEXT metadata columns are NOT NULL-able ('Expected text for TEXT metadata column status, received NULL' — both an explicit NULL and an omitted column fail the projection INSERT). NULL is impossible for a filterable (metadata, not aux) status column.",
+      "resolution": "ADAPTED MINIMALLY + FLAGGED (justified deviation, not creep): `status` ships an EMPTY-STRING SENTINEL `''` instead of NULL everywhere (create_vector_partition, the 3-way-sentinel back-fill, both migration repopulates, commit_projection_outcomes, run_pin_and_requantize_pass). Behavior is identical to the intent — a real-status filter (status=Some(\"open\")) prunes every row until a population source lands (reserved-gap 13). One RED assertion that hard-coded the impossible NULL expectation was corrected to `''` (a factually-impossible spec, not weakening). Surfaced loudly in code comments + design memo + API docs."
+    },
+    {
+      "id": "vec0-bit-subtype-on-pack1-upgrade",
+      "description": "The Pack1->Pack2 status back-fill must repopulate the vec0 `embedding_bin` BIT column; re-inserting the staged raw blob fails vec0's type check (the BIT subtype is lost on a plain blob).",
+      "resolution": "RESOLVED in-scope: re-tag the staged blob with `vec_bit(embedding_bin)` on re-insert, preserving the existing (possibly mean-centered) bits verbatim — no re-quantize, so centering survives the upgrade. Verified by sentinel_backfills_status_on_simulated_pack1_db."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "ANCHOR DRIFT: post-Slice-5 anchors moved (read_search_in_tx, ensure/create_vector_partition, projection INSERTs); all re-grepped and adapted per the ADJUST-on-divergence clause.",
+    "KNOWN LIMITATION: `status` ships empty-string-sentinel plumbing only (no real population source) — reserved-gap candidate 13.",
+    "DEVIATION (flagged): empty-string sentinel for `status` instead of NULL (vec0 constraint — see blockers_encountered).",
+    "ReaderRequest::Search filter field boxed (Option<Box<SearchFilter>>) to keep the variant small (clippy result_large_err under -D warnings).",
+    "G12-importance and F9 confidence DEFERRED as required (reserved-gap / 0.8.x) — only the recency half landed.",
+    "Stale doc corrected (stale>missing): docs/guides/structured-search-hits.md score description updated from raw-per-branch to RRF-fused."
+  ],
+  "agent_verify_result": "PASS on every gate this slice owns; one PRE-EXISTING (baseline-identical) failure noted. GREEN: cargo test -p fathomdb-engine -p fathomdb-schema (incl. pr_g9/pr_g10/pr_g12, byte-identity pin, ac_013b fast-path); cargo clippy --workspace --all-targets -D warnings; pytest full suite (79 passed, 4 skipped); npm test (49 passed, incl. tsc + the new filtered + cross-binding RRF-order tests); mkdocs build --strict; ruff. RECALL DELTA vs Slice 5 baseline = 0.0000 (RECALL-NEUTRAL): the AGENT_LONG synthetic ac_013b measurement is recall@10=0.7339 on BOTH the unmodified baseline (e4ae932) AND this branch — byte-identical number, so RRF did not move recall; the real-embedder anchor remains 0.937 (eu7/eu8, gated, orchestrator 10.b re-runs). The 0.7339 synthetic value is a pre-existing AGENT_LONG-gated property (agent-verify skips AGENT_LONG); the fast ac_013b floor test is GREEN. PRE-EXISTING, NOT-MINE: agent-verify typecheck (pyright) fails identically on baseline (12 errors) and this branch (11 errors) — all in files this slice never touched (test_use_default_embedder.py, test_workflow_yaml.py, _pyright_narrowing_fixture.py); my Python surface (engine.py/types.py/__init__.py/_fathomdb.pyi/test_functional_search.py) is pyright-clean. This is an environment/pyright-config condition on main itself, surfaced loud-not-silent for the orchestrator.",
+  "next_step_for_orchestrator": "Slice 10 merged to main at <merged_to_main_sha>; review on main, run 10.b verification (re-run eu7/eu8 recall reading hit.body; confirm byte-identity diff empty + RRF determinism + 3-way-sentinel-on-Pack1 + recency latency gate + Py/TS filter parity), then close + advance pointer to Slice 15. NOTE the flagged vec0 empty-string-sentinel deviation (status NOT NULL-able) and the pre-existing baseline-identical pyright/agent-verify-typecheck condition (environment, not Slice 10)."
+}

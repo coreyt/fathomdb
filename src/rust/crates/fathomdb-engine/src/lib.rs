@@ -289,6 +289,11 @@ struct ProjectionRuntimeShared {
     /// query-source doc before truncating to 10. Production reads this atomic
     /// (default 10) — there is NO env var read on the hot path.
     search_limit_override: AtomicUsize,
+    /// Slice 10 / G12-recency — dedicated recency-reweight flag, **off by
+    /// default** (NOT `fusion_mode`). When set, fused hits are reweighted toward
+    /// the more recent `write_cursor` AFTER bit-KNN. Flipped by the
+    /// `set_recency_reweight_enabled_for_test` seam; no production toggle yet.
+    recency_reweight_enabled: AtomicBool,
     /// 0.7.2 PR-2b — debug-only fault injection: when set, `recompute_mean_in_tx`
     /// errors AFTER writing `mean_vec` but BEFORE finishing the re-quantize
     /// pass, so the crash-atomicity test can prove the whole recompute rolls
@@ -382,6 +387,15 @@ enum ReaderRequest {
         /// `SEARCH_RERANK_LIMIT` = 10, clamped >=10) by `search_inner`
         /// before dispatch, so the worker never reads any env var.
         search_limit: usize,
+        /// G10 — optional closed metadata filter (`None` = unfiltered, the
+        /// byte-identical-to-0.7.2 path). Applied in the phase-1 candidates
+        /// statement (vector branch) and as a Rust post-filter (text branch).
+        /// Boxed so the `ReaderRequest::Search` variant stays small (the request
+        /// rides a `Result<(), ReaderRequest>` retry channel).
+        filter: Option<Box<SearchFilter>>,
+        /// G12-recency — whether the dedicated recency reweight is enabled for
+        /// this request (read from `recency_reweight_enabled`, off by default).
+        recency_enabled: bool,
         respond: SyncSender<ReaderResponse>,
     },
     Shutdown,
@@ -578,6 +592,8 @@ fn reader_worker_loop(
                 query_vector,
                 query_vector_bin,
                 search_limit,
+                filter,
+                recency_enabled,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -586,6 +602,8 @@ fn reader_worker_loop(
                     query_vector.as_deref(),
                     query_vector_bin.as_deref(),
                     search_limit,
+                    filter.as_deref(),
+                    recency_enabled,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -648,6 +666,7 @@ impl ProjectionRuntime {
             pending_events: Mutex::new(Vec::new()),
             commit_gate: Mutex::new(()),
             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
+            recency_reweight_enabled: AtomicBool::new(false),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
         });
@@ -842,11 +861,12 @@ pub enum SoftFallbackBranch {
 /// `write_cursor` — the **interim** identity carrier per
 /// `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`; it swaps to
 /// `logical_id` at the G0 keystone (Slice 15) with no carrier reshape.
-/// `score` is the raw per-branch relevance: `vec_distance_l2` for the vector
-/// branch (lower = closer) and `bm25()` for the text branch (more-negative =
-/// more-relevant). The two are **not** comparable raw — normalizing them into
-/// a single fused scale is the Slice-10 RRF concern. `branch` tags which
-/// retrieval branch produced the hit.
+/// `score` is the **G9 RRF-fused** relevance (`Σ 1/(RRF_K + rank)` over the
+/// branches that surfaced this body; higher = more relevant), optionally
+/// recency-reweighted when the dedicated recency flag is on. Raw `vec_distance_l2`
+/// and `bm25()` are fused on **rank**, never compared raw (they are not
+/// comparable). `branch` tags which retrieval branch produced the representative
+/// hit (vector-first when a body is surfaced by both).
 ///
 /// Derives `Clone, Debug, PartialEq` but **not `Eq`** — `score: f64` forbids
 /// total equality.
@@ -867,6 +887,41 @@ pub struct SearchResult {
     pub projection_cursor: u64,
     pub soft_fallback: Option<SoftFallback>,
     pub results: Vec<SearchHit>,
+}
+
+/// G10 — closed metadata filter for [`Engine::search_filtered`] (Slice 10).
+///
+/// All fields are optional; a `None` field imposes no constraint, and an
+/// all-`None` filter (or `None` filter) is the unfiltered path whose phase-1 SQL
+/// is byte-identical to 0.7.2. This is a **closed struct**, not an open filter
+/// DSL (ADR-0.8.0-agent-memory-retrieval-and-identity Q1); the filter-grammar /
+/// `list` decision stays a later-slice concern.
+///
+/// `created_after` is a `created_at >= bound` lower bound in unix seconds.
+/// `status` is wired through to the vec0 `status` metadata column. vec0 TEXT
+/// metadata columns are **NOT NULL-able**, so the "no real population yet" state
+/// is an **empty-string sentinel** `''` (a forced deviation from the planned
+/// "NULL plumbing"; a real population source is reserved-gap candidate 13). A
+/// `status = Some("open")`-style filter therefore prunes every row until that
+/// population slice lands.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SearchFilter {
+    pub source_type: Option<String>,
+    pub kind: Option<String>,
+    pub created_after: Option<i64>,
+    pub status: Option<String>,
+}
+
+impl SearchFilter {
+    /// True when no field constrains the search — equivalent to `None`. Used to
+    /// keep the unfiltered code path (and its byte-identical SQL) on the
+    /// all-`None` struct.
+    fn is_unfiltered(&self) -> bool {
+        self.source_type.is_none()
+            && self.kind.is_none()
+            && self.created_after.is_none()
+            && self.status.is_none()
+    }
 }
 
 /// Batch input shape for [`Engine::write`].
@@ -1893,9 +1948,22 @@ impl Engine {
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
+        self.search_filtered(query, None)
+    }
+
+    /// G10 — hybrid `search` with an optional closed [`SearchFilter`]. `None`
+    /// (or an all-`None` filter) is the unfiltered path whose phase-1 SQL is
+    /// byte-identical to 0.7.2. The filter prunes the vector branch in the
+    /// single phase-1 candidates statement and constrains the text branch by the
+    /// same metadata. Ranking is the unconditional G9 RRF fusion.
+    pub fn search_filtered(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+    ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query);
+        let outcome = self.search_inner(query, filter);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -1965,7 +2033,11 @@ impl Engine {
         }
     }
 
-    fn search_inner(&self, query: &str) -> Result<SearchResult, EngineError> {
+    fn search_inner(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+    ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
@@ -2014,12 +2086,16 @@ impl Engine {
             .search_limit_override
             .load(Ordering::SeqCst)
             .max(SEARCH_RERANK_LIMIT);
+        let recency_enabled =
+            self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
         let request = ReaderRequest::Search {
             compiled,
             query_vector,
             query_vector_bin,
             search_limit,
+            filter: filter.map(Box::new),
+            recency_enabled,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -2459,9 +2535,14 @@ impl Engine {
         )
         .map_err(|_| EngineError::Storage)?;
         tx.execute(
+            // Slice 10 / G10 — `status` ships an empty-string sentinel only:
+            // vec0 TEXT metadata columns are NOT NULL-able ("Expected text for
+            // TEXT metadata column"), so the "no real population yet" state is
+            // `''`, not NULL (deviation from the prompt's "NULL plumbing" wording,
+            // forced by vec0; reserved-gap candidate 13 is the real source).
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
             params![cursor, blob, bin_blob, source_type, kind, now_unix],
         )
         .map_err(|_| EngineError::Storage)?;
@@ -2607,6 +2688,14 @@ impl Engine {
     #[doc(hidden)]
     pub fn set_search_limit_for_test(&self, limit: usize) {
         self.projection_runtime.shared.search_limit_override.store(limit, Ordering::SeqCst);
+    }
+
+    /// Slice 10 / G12-recency test seam — flip the dedicated recency-reweight
+    /// flag (off by default). The reweight runs AFTER bit-KNN on the fused hits;
+    /// it is never a vec0 predicate and is NOT `fusion_mode`.
+    #[doc(hidden)]
+    pub fn set_recency_reweight_enabled_for_test(&self, enabled: bool) {
+        self.projection_runtime.shared.recency_reweight_enabled.store(enabled, Ordering::SeqCst);
     }
 
     /// 0.7.2 PR-2b test seam — arm a one-shot fault inside the NEXT
@@ -3199,9 +3288,13 @@ fn run_pin_and_requantize_pass(
             .map_err(|_| EngineError::Storage)?;
 
         tx.execute(
+            // Slice 10 / G10 — `status` ships the empty-string sentinel (vec0
+            // TEXT metadata is NOT NULL-able). The re-quantize pass runs at
+            // mean-pin time when every `status` is the `''` sentinel anyway, so
+            // re-inserting `''` is loss-free today (reserved-gap candidate 13).
             "INSERT INTO vector_default(
-                rowid, embedding, embedding_bin, source_type, kind, created_at
-             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
             params![rowid, blob, centered_blob, source_type, kind, created_at],
         )
         .map_err(|_| EngineError::Storage)?;
@@ -3268,6 +3361,254 @@ pub mod mean_centering_internals_for_test {
     }
 }
 
+/// G9 — Reciprocal Rank Fusion constant (`k ≈ 60`, the standard value;
+/// `0.8.0-agent-memory-fit.md` §8d). Fusion is on **rank**, never raw score.
+pub const RRF_K: f64 = 60.0;
+
+/// G12-recency — additive recency weight, smaller than one RRF rank-step
+/// (`1/(RRF_K+1) ≈ 0.0164`) so recency breaks near-ties and nudges but never
+/// overrides a clear RRF signal. Conservative by construction.
+pub const RECENCY_WEIGHT: f64 = 0.5 / RRF_K;
+
+/// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
+///
+/// Each branch contributes `1/(RRF_K + rank)` (1-based rank within that branch),
+/// accumulated **keyed on `SearchHit.body`**, so a body surfaced by both branches
+/// accumulates both terms (agreement boosts it). The fused value is written into
+/// `SearchHit.score`. A both-branch body surfaces **once** with the **vector**
+/// branch's identity (vector-first). Output is sorted by score descending, then
+/// vector-first, then insertion order — a pure, deterministic function of the two
+/// input lists (no `HashMap` iteration order leaks in). This is the
+/// **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no legacy
+/// path).
+#[doc(hidden)]
+#[must_use]
+pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    struct Entry {
+        hit: SearchHit,
+        score: f64,
+        in_vector: bool,
+        order: usize,
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool| {
+        let contrib = 1.0 / (RRF_K + (rank0 as f64 + 1.0));
+        if let Some(existing) = entries.iter_mut().find(|e| e.hit.body == hit.body) {
+            // Dedup on body; the representative hit (vector-first) is retained.
+            existing.score += contrib;
+        } else {
+            let order = entries.len();
+            entries.push(Entry { hit, score: contrib, in_vector, order });
+        }
+    };
+    for (rank0, hit) in vector_hits.into_iter().enumerate() {
+        accumulate(hit, rank0, true);
+    }
+    for (rank0, hit) in text_hits.into_iter().enumerate() {
+        accumulate(hit, rank0, false);
+    }
+    entries.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            // vector-first on equal score (true sorts before false).
+            .then_with(|| b.in_vector.cmp(&a.in_vector))
+            .then_with(|| a.order.cmp(&b.order))
+    });
+    entries
+        .into_iter()
+        .map(|mut e| {
+            e.hit.score = e.score;
+            e.hit
+        })
+        .collect()
+}
+
+/// G12-recency — reweight fused hits toward the more recent (higher
+/// `write_cursor`/`id`) AFTER bit-KNN (never a vec0 predicate). Gated by the
+/// caller's dedicated recency flag; `enabled=false` is a no-op (pure RRF).
+#[doc(hidden)]
+#[must_use]
+pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<SearchHit> {
+    if !enabled || hits.len() < 2 {
+        return hits;
+    }
+    let min_id = hits.iter().map(|h| h.id).min().unwrap_or(0);
+    let max_id = hits.iter().map(|h| h.id).max().unwrap_or(0);
+    if max_id == min_id {
+        return hits;
+    }
+    let span = (max_id - min_id) as f64;
+    let mut reweighted: Vec<SearchHit> = hits
+        .into_iter()
+        .map(|mut h| {
+            let norm = (h.id - min_id) as f64 / span;
+            h.score += RECENCY_WEIGHT * norm;
+            h
+        })
+        .collect();
+    // Stable sort preserves the fused order on exact ties.
+    reweighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    reweighted
+}
+
+/// G9 rerank seam — identity stub. Returns the fused order unchanged for now;
+/// the MMR/cross-encoder rerank lands additively in a later slice. This is the
+/// rerank hook, **not** the dropped `fusion_mode` knob.
+#[doc(hidden)]
+#[must_use]
+pub fn rerank_fused(hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    hits
+}
+
+/// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
+/// `WHERE` for the present filter fields. Placeholders are numbered from `?3`
+/// (`?1` = sign-quant query, `?2` = f32 rerank query). Field order is canonical
+/// (`source_type`, `kind`, `created_after`, `status`) and is mirrored exactly by
+/// [`vector_filter_values`]. Empty for `None`/all-`None` (byte-identity path).
+fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
+    let Some(filter) = filter else {
+        return String::new();
+    };
+    if filter.is_unfiltered() {
+        return String::new();
+    }
+    let mut cols: Vec<(&str, &str)> = Vec::new();
+    if filter.source_type.is_some() {
+        cols.push(("source_type", "="));
+    }
+    if filter.kind.is_some() {
+        cols.push(("kind", "="));
+    }
+    if filter.created_after.is_some() {
+        cols.push(("created_at", ">="));
+    }
+    if filter.status.is_some() {
+        cols.push(("status", "="));
+    }
+    let mut clause = String::new();
+    for (i, (col, op)) in cols.iter().enumerate() {
+        clause.push_str(&format!(" AND {col}{op}?{}", i + 3));
+    }
+    clause
+}
+
+/// G10 — the bound values for the present filter fields, in the SAME canonical
+/// order as [`vector_filter_clause`] so placeholder `?{n}` lines up with value
+/// `n-3`.
+fn vector_filter_values(filter: Option<&SearchFilter>) -> Vec<rusqlite::types::Value> {
+    use rusqlite::types::Value;
+    let mut out = Vec::new();
+    let Some(filter) = filter else {
+        return out;
+    };
+    if filter.is_unfiltered() {
+        return out;
+    }
+    if let Some(s) = &filter.source_type {
+        out.push(Value::Text(s.clone()));
+    }
+    if let Some(s) = &filter.kind {
+        out.push(Value::Text(s.clone()));
+    }
+    if let Some(c) = filter.created_after {
+        out.push(Value::Integer(c));
+    }
+    if let Some(s) = &filter.status {
+        out.push(Value::Text(s.clone()));
+    }
+    out
+}
+
+/// G10 — build the single phase-1 candidates statement. With `filter=None` (or
+/// all-`None`) the `{filter_clause}` is empty and the SQL is **byte-identical to
+/// 0.7.2** (the documented behavior-compat invariant; pinned by
+/// `pr_g10_filtered_knn.rs`). The KNN form (`ORDER BY distance LIMIT top_k`, no
+/// `k=`) is preserved.
+fn build_vector_phase1_sql(filter: Option<&SearchFilter>, final_limit: usize) -> String {
+    let filter_clause = vector_filter_clause(filter);
+    format!(
+        "WITH candidates AS (
+                     SELECT rowid
+                     FROM vector_default
+                     WHERE embedding_bin MATCH vec_quantize_binary(vec_f32(?1)){filter_clause}
+                     ORDER BY distance
+                     LIMIT {top_k}
+                 )
+                 SELECT c.rowid, vec_distance_l2(v.embedding, vec_f32(?2)) AS l2
+                 FROM candidates c
+                 JOIN vector_default v ON v.rowid = c.rowid
+                 ORDER BY l2
+                 LIMIT {final_limit}",
+        top_k = TOP_K_BIT_CANDIDATES,
+    )
+}
+
+/// Test seam — exposes [`build_vector_phase1_sql`] at the production
+/// `SEARCH_RERANK_LIMIT` so `pr_g10_filtered_knn.rs` can pin the `filter=None`
+/// byte-identity and the appended predicates.
+#[doc(hidden)]
+#[must_use]
+pub fn vector_phase1_sql_for_test(filter: Option<&SearchFilter>) -> String {
+    build_vector_phase1_sql(filter, SEARCH_RERANK_LIMIT)
+}
+
+/// G10 — does a text-branch hit satisfy the filter? The vector branch is
+/// pruned in-SQL; the text branch is constrained here against the same metadata:
+/// `kind` directly, `source_type` via [`resolve_source_type`], and
+/// `created_after`/`status` from `vector_default` by `rowid == write_cursor`. A
+/// text-only row absent from the vector partition cannot satisfy a
+/// `created_after`/`status` predicate, so it is excluded — filtered semantic
+/// search is a vector-metadata capability.
+fn text_hit_passes_filter(
+    tx: &rusqlite::Transaction<'_>,
+    id: u64,
+    kind: &str,
+    filter: Option<&SearchFilter>,
+) -> rusqlite::Result<bool> {
+    let Some(filter) = filter else {
+        return Ok(true);
+    };
+    if filter.is_unfiltered() {
+        return Ok(true);
+    }
+    if let Some(k) = &filter.kind {
+        if kind != k {
+            return Ok(false);
+        }
+    }
+    if let Some(st) = &filter.source_type {
+        match resolve_source_type(kind) {
+            Ok(resolved) if resolved == st.as_str() => {}
+            _ => return Ok(false),
+        }
+    }
+    if filter.created_after.is_some() || filter.status.is_some() {
+        let meta: Option<(i64, Option<String>)> = tx
+            .query_row(
+                "SELECT created_at, status FROM vector_default WHERE rowid = ?1 LIMIT 1",
+                [id as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?;
+        let Some((created_at, status)) = meta else {
+            // No vector-partition row: cannot satisfy a vec-metadata predicate.
+            return Ok(false);
+        };
+        if let Some(bound) = filter.created_after {
+            if created_at < bound {
+                return Ok(false);
+            }
+        }
+        if let Some(want) = &filter.status {
+            if status.as_deref() != Some(want.as_str()) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Read projection cursor and matching body rows inside one read tx.
 fn read_search_in_tx(
     reader: &mut Connection,
@@ -3275,6 +3616,8 @@ fn read_search_in_tx(
     query_vector: Option<&str>,
     query_vector_bin: Option<&str>,
     final_limit: usize,
+    filter: Option<&SearchFilter>,
+    recency_enabled: bool,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -3296,23 +3639,19 @@ fn read_search_in_tx(
             // harness can pull top-(10+slack) and exclude the self-retrieving
             // query-source doc BEFORE truncating to 10 (standard ANN-recall
             // practice); it can never shrink below production semantics.
-            let sql = format!(
-                "WITH candidates AS (
-                     SELECT rowid
-                     FROM vector_default
-                     WHERE embedding_bin MATCH vec_quantize_binary(vec_f32(?1))
-                     ORDER BY distance
-                     LIMIT {top_k}
-                 )
-                 SELECT c.rowid, vec_distance_l2(v.embedding, vec_f32(?2)) AS l2
-                 FROM candidates c
-                 JOIN vector_default v ON v.rowid = c.rowid
-                 ORDER BY l2
-                 LIMIT {final_limit}",
-                top_k = TOP_K_BIT_CANDIDATES,
-            );
+            // G10: the metadata filter is appended to this single phase-1
+            // statement (`AND col=?n` from ?3); `filter=None` keeps the SQL
+            // byte-identical to 0.7.2. `?1`/`?2` are the sign-quant + f32 query
+            // vectors; filter values bind at ?3.. in `vector_filter_clause`
+            // order.
+            let sql = build_vector_phase1_sql(filter, final_limit);
+            let mut params: Vec<rusqlite::types::Value> = vec![
+                rusqlite::types::Value::Text(bin_vector.to_string()),
+                rusqlite::types::Value::Text(query_vector.to_string()),
+            ];
+            params.extend(vector_filter_values(filter));
             let mut statement = tx.prepare(&sql)?;
-            let rows = statement.query_map([bin_vector, query_vector], |row| {
+            let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
             })?;
             for row in rows.flatten() {
@@ -3361,18 +3700,11 @@ fn read_search_in_tx(
     } else {
         None
     };
-    // Dedup-on-body + vector-first ordering (preserved from 0.6.x/0.7.2): a
-    // body surfaced by both branches appears once, vector-first. The dedup
-    // key stays the body string so behavior is byte-identical to the prior
-    // `Vec<String>` merge; only the carried shape changed.
-    let mut seen = BTreeSet::new();
-    let mut results: Vec<SearchHit> = Vec::new();
-    for hit in vector_results {
-        if seen.insert(hit.body.clone()) {
-            results.push(hit);
-        }
-    }
-    {
+    // Collect the text branch (ranked by `write_cursor`, as 0.7.2), then
+    // post-filter it against the same metadata the vector branch was pruned by
+    // in SQL (the vector branch is filtered in phase 1; the text branch has no
+    // metadata columns of its own).
+    let text_candidates: Vec<SearchHit> = {
         // 0.7.0 perf-experiments: optional FTS5 LIMIT cap. Gated on
         // FATHOMDB_PERF_EXPERIMENTS=1; opt-in via
         // FATHOMDB_PERF_SEARCH_LIMIT=<k>. No-op by default — preserves
@@ -3385,8 +3717,9 @@ fn read_search_in_tx(
             None
         };
         // G1: SELECT body + kind + write_cursor (interim id) and the
-        // `bm25()` text-relevance score. Order is unchanged (`write_cursor`)
-        // so dedup-on-body + vector-first ordering matches 0.7.2.
+        // `bm25()` text-relevance score. Order is `write_cursor` (the per-branch
+        // rank RRF fuses on). This text SQL is unchanged from 0.7.2 — the filter
+        // is applied as a Rust post-filter so the unfiltered path is untouched.
         let sql = match perf_limit {
             Some(k) => format!(
                 "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
@@ -3406,14 +3739,26 @@ fn read_search_in_tx(
                 branch: SoftFallbackBranch::Text,
             })
         })?;
-        for hit in rows.flatten() {
-            if seen.insert(hit.body.clone()) {
-                results.push(hit);
-            }
+        rows.flatten().collect()
+    };
+    let mut text_results: Vec<SearchHit> = Vec::with_capacity(text_candidates.len());
+    for hit in text_candidates {
+        if text_hit_passes_filter(&tx, hit.id, &hit.kind, filter)? {
+            text_results.push(hit);
         }
     }
     tx.commit()?;
-    Ok((cursor, soft_fallback, results))
+
+    // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
+    // tiebreak) into the unconditional new ranking, recency-reweight (gated,
+    // off by default), then pass through the identity rerank seam. The
+    // vector-empty `soft_fallback` signal was computed above, BEFORE this
+    // branch-collapse.
+    let fused = rerank_fused(apply_recency_reweight(
+        fuse_rrf(vector_results, text_results),
+        recency_enabled,
+    ));
+    Ok((cursor, soft_fallback, fused))
 }
 
 fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
@@ -4211,9 +4556,12 @@ fn commit_projection_outcomes(
                     _ => bin_blob.clone(),
                 };
                 tx.execute(
+                    // Slice 10 / G10 — `status` ships the empty-string sentinel
+                    // (vec0 TEXT metadata is NOT NULL-able); no real population
+                    // source yet (reserved-gap candidate 13).
                     "INSERT OR IGNORE INTO vector_default(
-                        rowid, embedding, embedding_bin, source_type, kind, created_at
-                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+                        rowid, embedding, embedding_bin, source_type, kind, created_at, status
+                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
                     params![cursor, blob, centered_blob, source_type, kind, now_unix],
                 )?;
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
@@ -4813,24 +5161,91 @@ fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusql
         )
         .optional()?;
 
+    // Slice 10 / G10 — 3-way shape-sentinel (fixes the prior
+    // `contains("embedding_bin")` no-op that hid the `status` column from
+    // existing Pack-1 DBs):
+    //   `status` present       -> Pack-2 (current) shape, no-op.
+    //   `embedding_bin` present -> Pack-1 -> stage + recreate + back-fill status.
+    //   neither                 -> legacy single-column -> migrate to current.
     match existing_sql {
         None => create_vector_partition(connection, dimension),
-        Some(sql) if sql.contains("embedding_bin") => Ok(()),
+        Some(sql) if sql.contains("status") => Ok(()),
+        Some(sql) if sql.contains("embedding_bin") => {
+            migrate_vector_partition_pack1_to_pack2(connection, dimension)
+        }
         Some(_) => migrate_vector_partition_to_pack1(connection, dimension),
     }
 }
 
-fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
-    let sql = format!(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS {DEFAULT_VECTOR_PARTITION} USING vec0(\
+/// The current (Pack-2) `vector_default` vec0 shape. Slice 10 / G10 adds a plain
+/// `status TEXT` metadata column — **not** aux (`+status`): aux columns
+/// hard-error under a KNN `WHERE`, and the G10 filter constrains `status` in the
+/// phase-1 KNN statement. `status` ships NULL plumbing only (no population source
+/// yet).
+fn vector_partition_create_sql(dimension: u32, if_not_exists: bool) -> String {
+    let guard = if if_not_exists { "IF NOT EXISTS " } else { "" };
+    format!(
+        "CREATE VIRTUAL TABLE {guard}{DEFAULT_VECTOR_PARTITION} USING vec0(\
             embedding float[{dimension}],\
             embedding_bin bit[{dimension}],\
             source_type TEXT partition key,\
             kind TEXT,\
-            created_at INTEGER\
+            created_at INTEGER,\
+            status TEXT\
          )"
-    );
-    connection.execute_batch(&sql)
+    )
+}
+
+fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
+    connection.execute_batch(&vector_partition_create_sql(dimension, true))
+}
+
+/// Slice 10 / G10 — stage + recreate + back-fill upgrade of an existing
+/// **Pack-1** `vector_default` (has `embedding_bin`, lacks `status`) to the
+/// Pack-2 shape. The existing `embedding_bin` blob is preserved verbatim (it may
+/// be mean-centered; re-quantizing from `embedding` would drop the centering),
+/// and `status` back-fills NULL. Same transactional discipline as
+/// `migrate_vector_partition_to_pack1`: a single `Connection::transaction()`;
+/// reader handles are not opened until `ensure_vector_partition` returns, and
+/// cross-process access is serialized by the sidecar lock, so readers never see
+/// a partial reshape.
+fn migrate_vector_partition_pack1_to_pack2(
+    connection: &mut Connection,
+    dimension: u32,
+) -> rusqlite::Result<()> {
+    let tx = connection.transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE _fathomdb_vector_pack2_stage (
+             rowid         INTEGER PRIMARY KEY,
+             embedding     BLOB NOT NULL,
+             embedding_bin BLOB NOT NULL,
+             source_type   TEXT,
+             kind          TEXT,
+             created_at    INTEGER
+         );
+         INSERT INTO _fathomdb_vector_pack2_stage(
+             rowid, embedding, embedding_bin, source_type, kind, created_at
+         )
+             SELECT rowid, embedding, embedding_bin, source_type, kind, created_at
+             FROM vector_default;
+         DROP TABLE vector_default;",
+    )?;
+    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    // `vec_bit(...)` re-tags the staged blob with the BIT subtype vec0's bit
+    // column requires (a raw blob loses the subtype and fails the type check).
+    // This preserves the existing (possibly mean-centered) bits verbatim — no
+    // re-quantize, so centering survives the upgrade. `status` back-fills the
+    // empty-string sentinel (vec0 TEXT metadata is NOT NULL-able; reserved-gap
+    // candidate 13).
+    tx.execute_batch(
+        "INSERT INTO vector_default(
+             rowid, embedding, embedding_bin, source_type, kind, created_at, status
+         )
+             SELECT rowid, embedding, vec_bit(embedding_bin), source_type, kind, created_at, ''
+             FROM _fathomdb_vector_pack2_stage;
+         DROP TABLE _fathomdb_vector_pack2_stage;",
+    )?;
+    tx.commit()
 }
 
 /// SQL fragment implementing the D3 `kind -> source_type` map.
@@ -4879,19 +5294,16 @@ fn migrate_vector_partition_to_pack1(
              JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
          DROP TABLE vector_default;",
     )?;
-    let create_sql = format!(
-        "CREATE VIRTUAL TABLE {DEFAULT_VECTOR_PARTITION} USING vec0(\
-            embedding float[{dimension}],\
-            embedding_bin bit[{dimension}],\
-            source_type TEXT partition key,\
-            kind TEXT,\
-            created_at INTEGER\
-         )"
-    );
-    tx.execute_batch(&create_sql)?;
+    // Slice 10 / G10 — recreate directly at the Pack-2 shape (adds `status`), so
+    // a legacy single-column DB lands the current shape in one reshape.
+    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    // `status` back-fills the empty-string sentinel (vec0 TEXT metadata is NOT
+    // NULL-able; reserved-gap candidate 13). Legacy single-column DBs predate
+    // mean-centering, so re-quantizing from the un-centered `embedding` is
+    // correct here.
     let repopulate_sql = format!(
         "INSERT INTO vector_default(
-             rowid, embedding, embedding_bin, source_type, kind, created_at
+             rowid, embedding, embedding_bin, source_type, kind, created_at, status
          )
          SELECT
              s.rowid,
@@ -4899,7 +5311,8 @@ fn migrate_vector_partition_to_pack1(
              vec_quantize_binary(s.embedding),
              {KIND_TO_SOURCE_TYPE_CASE_SQL},
              s.kind,
-             strftime('%s', 'now')
+             strftime('%s', 'now'),
+             ''
          FROM _fathomdb_vector_migration_v0_7_0 s;
          DROP TABLE _fathomdb_vector_migration_v0_7_0;"
     );

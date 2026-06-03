@@ -33,8 +33,8 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    PreparedWrite, SearchFilter as RustSearchFilter, SearchHit as RustSearchHit,
+    SearchResult as RustSearchResult, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -353,6 +353,18 @@ impl SearchHit {
     }
 }
 
+/// G10 — closed metadata filter input for `search(query, filter?)`. All fields
+/// optional; an all-`None` filter (or omitted) is the unfiltered path. Mirrors
+/// the Python `SearchFilter` (cross-binding parity). napi maps the snake_case
+/// fields to camelCase JS (`sourceType`, `createdAfter`).
+#[napi(object)]
+pub struct SearchFilterInput {
+    pub source_type: Option<String>,
+    pub kind: Option<String>,
+    pub created_after: Option<i64>,
+    pub status: Option<String>,
+}
+
 #[napi(object)]
 pub struct SearchResult {
     pub projection_cursor: i64,
@@ -635,7 +647,11 @@ impl Engine {
     }
 
     #[napi]
-    pub async fn search(&self, query: String) -> Result<SearchResult> {
+    pub async fn search(
+        &self,
+        query: String,
+        filter: Option<SearchFilterInput>,
+    ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
             return Err(typed_error(
@@ -644,8 +660,27 @@ impl Engine {
                 JsonValue::Null,
             ));
         }
+        // G10 — build the closed filter; an all-`None` (or omitted) filter stays
+        // the unfiltered, byte-identical path.
+        let filter = filter.and_then(|f| {
+            let rust = RustSearchFilter {
+                source_type: f.source_type,
+                kind: f.kind,
+                created_after: f.created_after,
+                status: f.status,
+            };
+            if rust.source_type.is_none()
+                && rust.kind.is_none()
+                && rust.created_after.is_none()
+                && rust.status.is_none()
+            {
+                None
+            } else {
+                Some(rust)
+            }
+        });
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search(&query)).await?;
+        let result = call_engine(move || engine.search_filtered(&query, filter)).await?;
         Ok(SearchResult::from_rust(result))
     }
 

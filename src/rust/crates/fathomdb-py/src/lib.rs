@@ -37,8 +37,9 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    PreparedWrite, SearchFilter as RustSearchFilter, SearchHit as RustSearchHit,
+    SearchResult as RustSearchResult, SoftFallback as RustSoftFallback, SoftFallbackBranch,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -525,11 +526,32 @@ impl PyEngine {
         Ok(PyWriteReceipt::from_rust(receipt))
     }
 
-    fn search(&self, py: Python<'_>, query: &str) -> PyResult<PySearchResult> {
+    /// G10 — hybrid search with an optional closed metadata filter. Each filter
+    /// field is an optional kwarg; all-`None` is the unfiltered (byte-identical)
+    /// path. Mirrors the TS `search(query, filter?)` surface (binding parity).
+    #[pyo3(signature = (query, source_type=None, kind=None, created_after=None, status=None))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        source_type: Option<String>,
+        kind: Option<String>,
+        created_after: Option<i64>,
+        status: Option<String>,
+    ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
-        let result = call_engine(py, move || engine.search(&query))?;
+        let filter = if source_type.is_some()
+            || kind.is_some()
+            || created_after.is_some()
+            || status.is_some()
+        {
+            Some(RustSearchFilter { source_type, kind, created_after, status })
+        } else {
+            None
+        };
+        let result = call_engine(py, move || engine.search_filtered(&query, filter))?;
         Ok(PySearchResult::from_rust(result))
     }
 

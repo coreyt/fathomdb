@@ -71,6 +71,13 @@ interface NativeSearchResult {
   results: NativeSearchHit[];
 }
 
+interface NativeSearchFilter {
+  sourceType?: string;
+  kind?: string;
+  createdAfter?: number;
+  status?: string;
+}
+
 interface NativeMigrationStepReport {
   stepId: number;
   durationMs: number | null;
@@ -147,7 +154,10 @@ interface NativeAdminConfigureOptions {
 
 export interface NativeEngine {
   write(batch: unknown[]): Promise<NativeWriteReceipt>;
-  search(query: string): Promise<NativeSearchResult>;
+  search(
+    query: string,
+    filter?: NativeSearchFilter,
+  ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;
   counters(): NativeCounterSnapshot;

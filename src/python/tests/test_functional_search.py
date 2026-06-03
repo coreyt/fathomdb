@@ -18,7 +18,7 @@ import json
 import time
 from pathlib import Path
 
-from fathomdb import Engine, SearchHit
+from fathomdb import Engine, SearchFilter, SearchHit
 
 _FIXTURE = Path(__file__).resolve().parent / "functional_search_fixture.json"
 
@@ -88,5 +88,60 @@ def test_functional_search_cross_binding_equivalence(db_path: str) -> None:
             )
             # Every hit from the FTS-only corpus carries the text branch tag.
             assert all(hit.branch == "text" for hit in hits)
+    finally:
+        engine.close()
+
+
+# Slice 10 / X1 — RRF-fused order shared by both bindings. The text branch ranks
+# by `write_cursor` (insertion order), so "retrieval" surfaces alpha (written
+# first) before delta. Both the Python and TS harnesses assert this exact order,
+# proving cross-binding RRF-ordering equivalence.
+_RRF_ORDER_QUERY = "retrieval"
+_RRF_EXPECTED_ORDER = [
+    "alpha structured retrieval document",
+    "delta retrieval and ranking notes",
+]
+
+
+def test_functional_rrf_fused_order_cross_binding(db_path: str) -> None:
+    fixture = _load_fixture()
+    engine = Engine.open(db_path)
+    try:
+        for doc in fixture["corpus"]:
+            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+        engine.drain(timeout_s=30)
+
+        hits = _search_after_projection(engine, _RRF_ORDER_QUERY)
+        assert [hit.body for hit in hits] == _RRF_EXPECTED_ORDER, (
+            "RRF-fused order must match the TS binding (rank by write_cursor)"
+        )
+        # Fused score is sorted descending.
+        scores = [hit.score for hit in hits]
+        assert scores == sorted(scores, reverse=True)
+    finally:
+        engine.close()
+
+
+def test_functional_filtered_search_prunes(db_path: str) -> None:
+    """Slice 10 / X1 — a `SearchFilter` prunes results. "retrieval" matches a
+    `note` (alpha) and a `doc` (delta); filtering `kind="note"` drops the doc."""
+
+    fixture = _load_fixture()
+    engine = Engine.open(db_path)
+    try:
+        for doc in fixture["corpus"]:
+            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+        engine.drain(timeout_s=30)
+
+        unfiltered = _search_after_projection(engine, "retrieval")
+        assert {hit.kind for hit in unfiltered} == {"note", "doc"}
+
+        filtered = engine.search("retrieval", SearchFilter(kind="note"))
+        assert [hit.body for hit in filtered.results] == ["alpha structured retrieval document"]
+        assert all(hit.kind == "note" for hit in filtered.results)
+
+        # A filter on the NULL-plumbed `status` prunes everything.
+        empty = engine.search("retrieval", SearchFilter(status="open"))
+        assert empty.results == []
     finally:
         engine.close()

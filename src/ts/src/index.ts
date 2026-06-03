@@ -52,11 +52,28 @@ export interface SearchHit {
   kind: string;
   body: string;
   /**
-   * Raw per-branch relevance: `vec_distance_l2` (vector) or `bm25()` (text).
-   * Not comparable across branches raw.
+   * G9 RRF-fused relevance (`Σ 1/(RRF_K + rank)`; higher = more relevant),
+   * optionally recency-reweighted. Raw `vec_distance_l2`/`bm25()` are fused on
+   * rank, never compared raw.
    */
   score: number;
   branch: SoftFallbackBranch;
+}
+
+/**
+ * G10 — closed metadata filter for `engine.search(query, filter?)`. All fields
+ * optional; an all-`undefined` filter (or omitted) is the unfiltered path. A
+ * closed shape, not an open DSL. `createdAfter` is a `created_at >= bound` lower
+ * bound in unix seconds. `status` filters the vec0 `status` metadata column,
+ * which ships an empty-string sentinel only (no real population source yet), so
+ * a `status: "open"`-style filter prunes every row until a population slice
+ * lands. Mirrors the Python `SearchFilter` (cross-binding parity).
+ */
+export interface SearchFilter {
+  sourceType?: string;
+  kind?: string;
+  createdAfter?: number;
+  status?: string;
 }
 
 export interface SearchResult {
@@ -292,9 +309,12 @@ export class Engine {
     return intercept(() => this.#native.write(batch));
   }
 
-  async search(query: string): Promise<SearchResult> {
+  async search(
+    query: string,
+    filter?: SearchFilter,
+  ): Promise<SearchResult> {
     validateFfiString(query);
-    const r = await intercept(() => this.#native.search(query));
+    const r = await intercept(() => this.#native.search(query, filter));
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,

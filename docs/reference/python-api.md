@@ -56,15 +56,23 @@ writer thread has accepted the batch.
 - Returns: `WriteReceipt(cursor: int)`. The cursor advances
   monotonically across writes.
 
-### `engine.search(query) -> SearchResult`
+### `engine.search(query, filter=None) -> SearchResult`
 
-Run hybrid retrieval (FTS5 + vector) for `query`.
+Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**.
 
 - `query` (`str`).
+- `filter` ([`SearchFilter`](#searchfilter) | `None`) — optional closed metadata
+  filter. `None` (or an all-`None` filter) is the unfiltered path.
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
-  `body`, a per-branch `score`, and the `branch` that produced it.
+  `body`, the **RRF-fused** `score`, and the `branch` that produced it.
+
+> **Ranking is RRF (behavior-compat event).** Results are ordered by Reciprocal
+> Rank Fusion (`Σ 1/(60 + rank)`) of the vector and text branches — a body the
+> two branches agree on ranks above one only a single branch found. This is the
+> deliberate, documented 0.8.0 ranking change; pre-0.8.0 union-dedup ordering is
+> not retained. See [hybrid search guide](../guides/hybrid-search-filtering.md).
 
 ### `engine.close() -> None`
 
@@ -140,15 +148,33 @@ class SearchHit:
     id: int          # canonical row write_cursor (interim identity carrier)
     kind: str
     body: str
-    score: float     # vec_distance_l2 (vector branch) or bm25() (text branch)
+    score: float     # G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
     branch: SoftFallbackBranch  # Literal["vector", "text"]
 ```
 
-`score` is the raw per-branch relevance: `vec_distance_l2` for the vector
-branch (lower = closer) and `bm25()` for the text branch (more-negative =
-more-relevant). The two are **not** comparable raw — fusing them onto a single
-scale is a later (RRF) concern. `branch` tags which retrieval branch produced
-the hit.
+`score` is the **G9 RRF-fused** relevance (higher = more relevant), optionally
+recency-reweighted. Raw `vec_distance_l2` (vector) and `bm25()` (text) are fused
+on **rank**, never compared raw (they are not comparable). `branch` tags which
+branch produced the representative hit (vector-first when both surface a body).
+
+### `SearchFilter`
+
+```python
+@dataclass(frozen=True)
+class SearchFilter:
+    source_type: str | None = None
+    kind: str | None = None
+    created_after: int | None = None   # created_at >= bound (unix seconds)
+    status: str | None = None
+```
+
+G10 — a **closed** metadata filter (not an open DSL) for `engine.search`. Each
+present field constrains the vector branch in a single phase-1 KNN statement and
+constrains the text branch by the same metadata; `None`/all-`None` is the
+unfiltered path (byte-identical to the pre-filter query). `status` filters the
+vec0 `status` column, which ships an **empty-string sentinel only** (no real
+population source yet — vec0 TEXT metadata is not NULL-able), so a
+`status="open"`-style filter prunes every row until a population slice lands.
 
 ### `SoftFallback`
 

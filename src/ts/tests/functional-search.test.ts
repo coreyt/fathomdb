@@ -111,3 +111,63 @@ test("functional search: cross-binding equivalence with the Python harness", asy
     await engine.close();
   }
 });
+
+// Slice 10 / X1 — RRF-fused order shared by both bindings. The text branch ranks
+// by `write_cursor` (insertion order), so "retrieval" surfaces alpha (written
+// first) before delta. The Python harness asserts this same order.
+const RRF_ORDER_QUERY = "retrieval";
+const RRF_EXPECTED_ORDER = [
+  "alpha structured retrieval document",
+  "delta retrieval and ranking notes",
+];
+
+test("functional search: RRF-fused order matches the Python binding", async () => {
+  const fixture = loadFixture();
+  const engine = await Engine.open(freshDbPath());
+  try {
+    for (const doc of fixture.corpus) {
+      await engine.write([{ kind: doc.kind, body: doc.body }]);
+    }
+    await engine.drain(30_000);
+
+    const hits = await searchAfterProjection(engine, RRF_ORDER_QUERY);
+    assert.deepEqual(
+      hits.map((h) => h.body),
+      RRF_EXPECTED_ORDER,
+      "RRF-fused order must match the Python binding (rank by write_cursor)",
+    );
+    const scores = hits.map((h) => h.score);
+    assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
+  } finally {
+    await engine.close();
+  }
+});
+
+test("functional search: a SearchFilter prunes results", async () => {
+  const fixture = loadFixture();
+  const engine = await Engine.open(freshDbPath());
+  try {
+    for (const doc of fixture.corpus) {
+      await engine.write([{ kind: doc.kind, body: doc.body }]);
+    }
+    await engine.drain(30_000);
+
+    const unfiltered = await searchAfterProjection(engine, "retrieval");
+    const kinds = new Set(unfiltered.map((h) => h.kind));
+    assert.ok(kinds.has("note") && kinds.has("doc"));
+
+    // Filter kind=note drops the doc hit.
+    const filtered = await engine.search("retrieval", { kind: "note" });
+    assert.deepEqual(
+      filtered.results.map((h) => h.body),
+      ["alpha structured retrieval document"],
+    );
+    assert.ok(filtered.results.every((h) => h.kind === "note"));
+
+    // A filter on the NULL-plumbed `status` prunes everything.
+    const empty = await engine.search("retrieval", { status: "open" });
+    assert.deepEqual(empty.results, []);
+  } finally {
+    await engine.close();
+  }
+});
