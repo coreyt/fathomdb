@@ -50,7 +50,7 @@ fn edge(kind: &str, from: &str, to: &str, logical_id: Option<&str>) -> PreparedW
 #[test]
 fn s20_edge_to_one_missing_endpoint_counts_one() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(&db_path(&dir, "one_missing")).expect("open");
+    let opened = Engine::open(db_path(&dir, "one_missing")).expect("open");
 
     // A live node `A`, then an edge A -> MISSING. Only the `to` endpoint dangles.
     let receipt = opened
@@ -71,7 +71,7 @@ fn s20_edge_to_one_missing_endpoint_counts_one() {
 #[test]
 fn s20_same_batch_later_inserted_node_is_not_flagged() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(&db_path(&dir, "same_batch")).expect("open");
+    let opened = Engine::open(db_path(&dir, "same_batch")).expect("open");
 
     // Edge FIRST, then both its endpoints — exactly the bulk-loader ordering.
     let receipt = opened
@@ -164,7 +164,7 @@ fn s20_default_flag_and_count_commits_the_batch() {
 #[test]
 fn s20_count_is_sum_over_both_endpoints() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(&db_path(&dir, "sum_both")).expect("open");
+    let opened = Engine::open(db_path(&dir, "sum_both")).expect("open");
 
     // Two live nodes, then: one fully-clean edge (0) + one fully-dangling edge (2).
     let receipt = opened
@@ -191,7 +191,7 @@ fn s20_count_is_sum_over_both_endpoints() {
 #[test]
 fn s20_endpoint_probe_hits_partial_index_no_scan() {
     let dir = TempDir::new().unwrap();
-    let conn = Connection::open(&db_path(&dir, "plan")).expect("open sqlite");
+    let conn = Connection::open(db_path(&dir, "plan")).expect("open sqlite");
     migrate(&conn).expect("migrate to head");
 
     let plan: Vec<String> = {
@@ -227,7 +227,7 @@ fn s20_endpoint_probe_hits_partial_index_no_scan() {
 #[test]
 fn s20_legacy_null_logical_id_batch_writes_with_defined_count() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(&db_path(&dir, "legacy")).expect("open");
+    let opened = Engine::open(db_path(&dir, "legacy")).expect("open");
 
     // Legacy nodes carry NULL logical_id; the edge's endpoints ("l0"/"l1") match
     // no active logical_id, so both dangle -> count 2, but the write succeeds.
