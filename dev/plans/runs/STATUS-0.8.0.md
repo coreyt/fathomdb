@@ -25,8 +25,9 @@ Last updated: 2026-06-02 (Slice 5 **CLOSED** — PASS after codex BLOCK→fix-1;
 **Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency** `[implementation]` — ❌ **NOT STARTED (NEXT).**
 - Pointer advanced here at Slice 5 close (2026-06-02). Migration-free read-path quality
   increment landing on Slice 5's `score:f64` carrier; AC-057a-clean. Depends-on: Slice 5 ✅.
-- **Before spawn — HITL gate:** sign retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3
-  (RRF ordering = documented compat event behind `fusion_mode`).
+- **HITL gate ✅ CLEARED 2026-06-02:** retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3
+  (RRF = documented compat event, **NO knob**) + Q5 (§8d advisory) all signed. Slice 10 contract
+  reconciled to drop the `fusion_mode` escape hatch. **Slice 10 is ready to prompt.**
 - Not yet prompted. Same execution model as Slice 5 (slice agent owns its worktree + merges to `main`).
 
 ### Slice 5 — G1 Structured Hits + FTS5 tokenizer `[implementation]` — ✅ CLOSED 2026-06-02 (PASS after BLOCK→fix-1)
@@ -122,12 +123,23 @@ Both gating ADRs:
 
 | Package | Questions | Recommendation | Gates | Signed at |
 |---------|-----------|----------------|-------|-----------|
-| **Substrate** | Q2 (Option 2A bi-temporal-aware, ship transaction-time subset only); Q4 (edges carry `logical_id`+`superseded_at`); op-store cascade-under-supersession contract; forward-migration policy (in-place ALTER under no-data-migration, not re-open) | per 0.a ADR | **Slice 15** | after Slice 0 |
+| **Substrate** | Q2 ✅ (**2A** bi-temporal-aware, ship transaction-time subset only — SIGNED 2026-06-02); Q4 ✅ (**edges too** carry `logical_id`+`superseded_at`, schema-only — SIGNED 2026-06-02); ⏳ op-store cascade-under-supersession contract; ⏳ forward-migration policy (in-place ALTER under no-data-migration, not re-open); ⏳ FLAGGED `write_cursor`-as-row-id deviation | per 0.a ADR | **Slice 15** | **Q2/Q4 signed; cascade + migration-policy + write_cursor deviation STILL OPEN** |
 | **Supersession** | Q1 (**A1** supersede + ship G1/G2/G3 now); Q2 (**B1** `read.*` namespace); Q3 (**amend** REQ-053 in place); Q4 (**confirm** denylist is mutation-names; `read.get(logical_id)` SDK-allowed); Q5 (**SDK-only** Py/TS; Rust facade not bound) | A1/B1/amend/confirm/SDK-only | **Slice 30** (HARD gate) | **finalized at Slice 25** |
-| **Retrieval** (downstream) | Q1 (Option 1A — G9/G10 table-stakes); Q3 (RRF ordering = documented compat event behind `fusion_mode`) | per retrieval ADR | **Slice 10** | before Slice 10 spawn |
+| **Retrieval** (downstream) | Q1 ✅ (**Option 1A** — G9/G10 table-stakes); Q3 ✅ (**documented-only, NO knob** — `fusion_mode` dropped); Q5 ✅ (§8d **advisory**) | per retrieval ADR | **Slice 10** | **✅ SIGNED 2026-06-02 → Slice 10 gate CLEARED** |
 
-HITL **signs the Slice-0 gate package first** (substrate → gates 15); the
-supersession Q1–Q5 are *readied* now and *finalized* at Slice 25.
+**Retrieval package SIGNED 2026-06-02** (`ADR-0.8.0-agent-memory-retrieval-and-identity.md`
+§"HITL decisions"): Q1=1A, Q2=2A, Q3=documented-only/no-knob, Q4=edges-too, Q5=advisory. **Slice 10
+is gate-clear to prompt.** The Slice 10 contract was reconciled to drop the `fusion_mode` knob.
+The **substrate package** (gates Slice 15) is now **partially signed** — Q2/Q4 done; the op-store
+cascade contract, forward-migration policy, and the FLAGGED `write_cursor`-as-row-id deviation
+**remain open** and must be signed before Slice 15 spawns.
+
+**AC-037 (no-egress gate) disposition (HITL 2026-06-02):** the gate can't run on windchill3
+(`kernel.apparmor_restrict_unprivileged_userns=1` — Ubuntu 23.10+/24.04 lockdown) and is **not
+wired into CI anywhere**. **Decision:** accept-by-reasoning for Slice 5 (it added no networking;
+`reproject_…` is pure local SQLite), and **wire `scripts/agent-security.sh` into CI on a
+userns-permissive runner (e.g. `ubuntu-22.04`) as a Slice 40 release gate** (gate added to the
+Slice 40 contract). Optional one-time local confirm via temporarily setting the sysctl to 0.
 
 ---
 
@@ -292,9 +304,10 @@ exist" note for the 0.8.0 campaign.
 
 **Slice 5 is CLOSED (PASS after fix-1). Pointer → Slice 10.** Slice 10 is **not yet prompted.**
 
-**Before Slice 10 spawn — HITL gate:** sign the retrieval ADR Q1 (Option 1A — G9/G10
-table-stakes) + Q3 (RRF ordering = documented compat event behind `fusion_mode`). Slice 10 is
-migration-free and AC-057a-clean; it lands on Slice 5's `score:f64` carrier (now on `main`@`e76d68b`).
+**HITL gate ✅ CLEARED 2026-06-02:** retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3 (RRF
+= documented compat event, **NO knob**) + Q5 (§8d advisory) signed; the Slice 10 contract was
+reconciled to drop the `fusion_mode` knob. Slice 10 is migration-free and AC-057a-clean; it lands
+on Slice 5's `score:f64` carrier (now on `main`@`e76d68b`). **Slice 10 may be prompted.**
 
 **To start Slice 10 (orchestrator):**
 1. Re-derive disk witnesses: Slice 5 CLOSED block present + `main`@`e76d68b` is the baseline;
@@ -310,14 +323,16 @@ migration-free and AC-057a-clean; it lands on Slice 5's `score:f64` carrier (now
 primary §9 pass; promote the log to `…-review-<ts>.md` with a `## Verdict:` line. The Slice-0
 "codex unrunnable" note referred to read-only-sandbox mode; the bypass mode works here (user rule).
 
-**Parallel standing item — HITL gate-package sign-off (gates Slice 15, NOT Slice 10):** HITL
-signs the substrate-ADR package (Q2=Option 2A / Q4 / op-store cascade / forward-migration
-policy) and rules on the FLAGGED `write_cursor`-as-row-id deviation — required before Slice 15
-(G0 keystone) spawns. **Reminder:** Slice 15 is now `step_id 12` / `SCHEMA_VERSION 11→12`.
-Supersession Q1–Q5 readied now, finalized at Slice 25.
+**Parallel standing item — substrate gate package (gates Slice 15, NOT Slice 10):** Q2 (=2A) and
+Q4 (=edges-too) are now **✅ signed** (2026-06-02). **Still open** before Slice 15 (G0 keystone)
+spawns: the op-store cascade-under-supersession contract, the forward-migration policy, and the
+FLAGGED `write_cursor`-as-row-id deviation. **Reminder:** Slice 15 is now `step_id 12` /
+`SCHEMA_VERSION 11→12`. Supersession Q1–Q5 readied now, finalized at Slice 25.
 
-**Carried HITL item from Slice 5:** confirm AC-037 `netns-deny-egress` on a host with rootless
-userns (the sandbox here lacks `unshare -rUn`; environment-only, not a code defect).
+**AC-037 (no-egress) — disposition signed 2026-06-02:** accept-by-reasoning for Slice 5 (no
+networking added); **wire `agent-security.sh` into CI on a userns-permissive runner as a Slice 40
+release gate** (added to the Slice 40 contract). Can't run on windchill3 (AppArmor
+`apparmor_restrict_unprivileged_userns=1`); optional one-time local confirm via temp sysctl=0.
 
 Standing verification checklist (Slice 40 enforces as named release gates):
 `scripts/check.sh AGENT_LONG=1` · `scripts/verify-release-gates.sh` (test seams

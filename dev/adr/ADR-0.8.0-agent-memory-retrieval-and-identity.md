@@ -4,7 +4,7 @@ date: 2026-05-31
 target_release: 0.8.0
 desc: Input to 0.8.0 planning. (1) Reclassify hybrid fusion+rerank (G9) and vector metadata columns (G10) from "differentiating" to table-stakes for the named consumer class. (2) Direct the deferred canonical-identity substrate (G0) to be designed bi-temporal-aware (G11) so supersession is not built twice.
 blast_radius: dev/roadmap/0.8.0.md (knowledge-store + identity scope); src/rust/crates/fathomdb-engine/src/lib.rs (search fusion path `read_search_in_tx`; vector partition `vector_default`); src/rust/crates/fathomdb-schema/src/lib.rs (canonical-identity substrate migration; vector metadata columns); dev/design/0.8.0-agent-memory-fit.md (source analysis §4/§8); ADR-0.8.0-canonical-identity-substrate (to be drafted — this ADR constrains its shape); AC-057a / dev/design/bindings.md § 1 (five-verb invariant — read-verb question)
-status: draft, HITL-required
+status: accepted (HITL 2026-06-02) — see "## HITL decisions (2026-06-02)"
 origin: dev/design/0.8.0-agent-memory-fit.md §8 (external validation: shipping peers + agent-memory literature)
 ---
 
@@ -232,6 +232,38 @@ remains where `dev/design/0.8.0-agent-memory-fit.md` §7 leaves it.
 5. Should `dev/design/0.8.0-agent-memory-fit.md` §8d's table-stakes/differentiating/
    world-class ranking become the canonical 0.8.0-planning capability ladder, or
    is it advisory input only?
+
+## HITL decisions (2026-06-02)
+
+All five open questions are **signed**. This section is authoritative where it
+differs from the Options/Recommendation prose above.
+
+1. **Q1 = Option 1A.** G9 (RRF fusion + rerank hook) **and** G10 (metadata-filtered
+   KNN) are reclassified **table-stakes** and both ship in **0.8.0 Slice 10**. G10
+   uses a **closed `SearchFilter{source_type, kind, created_after, status}` struct**,
+   **not** an open filter DSL — the filter-grammar/G4 ADR stays a **Slice 35** concern.
+2. **Q2 = Option 2A.** The canonical-identity substrate (Slice 15) is **designed
+   bi-temporal-aware** (column shape + invalidate-not-delete reserved so valid-time is
+   additive later) but **implements only single-supersession** (`superseded_at`) in
+   0.8.0. No valid-time, no graph traversal (G5), no edge invalidation (G11-full) in 0.8.0.
+3. **Q3 = documented-only, NO knob.** RRF is the **unconditional** new ranking; the
+   ordering change is a **documented behavior-compat event** (0.8.0 release note) pinned
+   by an acceptance test (`pr_g9_rrf_fusion.rs`, determinism). The earlier "consider a
+   `fusion_mode` knob" hedge is **rejected** — HITL: *"do not worry about migration; do
+   not carry the overhead."* No legacy-union-ordering code path is retained. (The Slice 10
+   contract in `dev/plans/0.8.0-implementation.md` has been reconciled to drop the knob.)
+4. **Q4 = edges too.** Both `canonical_nodes` **and** `canonical_edges` carry
+   `logical_id` + `superseded_at` in the 0.8.0 substrate (matches the substrate ADR's
+   authorized delta). **Schema-only** — 0.8.0 implements only *node* supersession
+   behavior; reserving the edge columns keeps later edge-temporal additive.
+5. **Q5 = advisory.** §8d remains research-backed **advisory input**; the implementation
+   plan + ADRs stay the authoritative scope (no second source of truth to keep in lockstep).
+
+> **Gating:** Q1 + Q3 gated **Slice 10** (now cleared → Slice 10 may be prompted). Q2 + Q4
+> feed the **substrate gate package** that gates **Slice 15** (the keystone); the remainder
+> of that package — op-store cascade-under-supersession contract, forward-migration policy,
+> and the FLAGGED `write_cursor`-as-row-id deviation — is **still open** and must be signed
+> before Slice 15 spawns.
 
 ## Consequences if accepted (1A + 2A)
 
