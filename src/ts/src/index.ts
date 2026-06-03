@@ -314,6 +314,16 @@ export class Engine {
     filter?: SearchFilter,
   ): Promise<SearchResult> {
     validateFfiString(query);
+    // G10 filter strings cross the FFI like `query` and must clear the same
+    // AC-068a/AC-068b guard. napi-rs lossily replaces lone UTF-16 surrogates
+    // with U+FFFD before the Rust-side guard runs (see validation.ts), so —
+    // exactly like write/configure — the surrogate check must happen JS-side.
+    // `createdAfter` is numeric (no string validation).
+    if (filter !== undefined) {
+      if (filter.sourceType !== undefined) validateFfiString(filter.sourceType);
+      if (filter.kind !== undefined) validateFfiString(filter.kind);
+      if (filter.status !== undefined) validateFfiString(filter.status);
+    }
     const r = await intercept(() => this.#native.search(query, filter));
     const branch = r.softFallback?.branch;
     return {

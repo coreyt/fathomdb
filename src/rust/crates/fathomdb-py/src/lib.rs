@@ -116,6 +116,17 @@ fn extract_validated_str(value: &Bound<'_, PyAny>) -> PyResult<String> {
     }
 }
 
+/// `Option` lift of [`extract_validated_str`]: `None`/`None`-valued stays
+/// `None` (preserving the all-`None` byte-identical unfiltered path); a
+/// present value is extracted and validated through the same FFI gate as the
+/// write path. Used by `search` for the G10 `SearchFilter` string fields.
+fn extract_opt_validated_str(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<String>> {
+    match value {
+        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(v)?)),
+        _ => Ok(None),
+    }
+}
+
 // ===== Error mapping ==================================================
 
 /// Translate every `EngineError` variant to its Python counterpart.
@@ -534,12 +545,20 @@ impl PyEngine {
         &self,
         py: Python<'_>,
         query: &str,
-        source_type: Option<String>,
-        kind: Option<String>,
+        source_type: Option<Bound<'_, PyAny>>,
+        kind: Option<Bound<'_, PyAny>>,
         created_after: Option<i64>,
-        status: Option<String>,
+        status: Option<Bound<'_, PyAny>>,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
+        // G10 filter strings cross the FFI exactly like `query` and the write
+        // fields, so they go through the same validation gate
+        // (`extract_validated_str`: rejects embedded NUL and lone UTF-16
+        // surrogate as the typed `WriteValidationError`). `None` stays `None`
+        // so the all-`None` filter remains the byte-identical unfiltered path.
+        let source_type = extract_opt_validated_str(source_type.as_ref())?;
+        let kind = extract_opt_validated_str(kind.as_ref())?;
+        let status = extract_opt_validated_str(status.as_ref())?;
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
         let filter = if source_type.is_some()
