@@ -23,8 +23,11 @@ pointer → Slice 15, **HITL-gated**: substrate cascade + migration policy + `wr
 ## 1. Current slice
 
 **Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12)** `[implementation]` —
-✅ **GATE CLEARED 2026-06-03 — ready to PROMPT (not yet prompted).**
-- State (§1.5): **gate-clear, awaiting prompt.** Depends-on: Slice 0 ✅ + Slice 5 ✅.
+⏳ **PROMPTED 2026-06-03** (gate cleared). Prompt: `dev/plans/prompts/0.8.0-slice-15.md`.
+- State (§1.5): **PROMPTED** — self-contained prompt written (baseline `68bf3d6`; verbatim ADR schema
+  delta as `step_id 12`/`SCHEMA_VERSION 11→12`; anchors re-verified at `68bf3d6` with re-grep
+  instruction; signed decisions + NULL-on-legacy rule carried). Human pastes it into a new slice agent;
+  the agent owns its worktree + merges to `main`. Depends-on: Slice 0 ✅ + Slice 5 ✅ + Slice 10 ✅.
 - **Substrate gate package ✅ FULLY SIGNED 2026-06-03** (§5): Q2=2A, Q4=edges-too (2026-06-02);
   op-store cascade=ratify Decision 4 as-is; forward-migration=in-place additive `ALTER` (legacy rows
   NULL `logical_id`, lazily backfilled — engine owns the NULL-on-legacy rule); `write_cursor`-as-row-id
@@ -466,28 +469,43 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 10 CLOSED (PASS). Substrate gate package ✅ FULLY SIGNED 2026-06-03 (§5) — Slice 15 is
-GATE-CLEAR.** The §3 keystone HITL gate is satisfied; the orchestrator may now prompt Slice 15.
+**Slice 10 CLOSED (PASS). Substrate gate ✅ SIGNED 2026-06-03. Slice 15 ✅ PROMPTED 2026-06-03.**
+The self-contained keystone prompt is written: `dev/plans/prompts/0.8.0-slice-15.md` (baseline
+`68bf3d6`; verbatim ADR schema delta as `step_id 12`/`SCHEMA_VERSION 11→12`; signed decisions + the
+NULL-on-legacy-rows rule; anchors re-verified at `68bf3d6` with a re-grep instruction since the engine
+moved in Slice 10).
 
-**Next orchestrator action — instantiate the Slice 15 prompt:**
-1. Build `dev/plans/prompts/0.8.0-slice-15.md` from `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md`,
-   carrying every fact by reference: baseline = current `main` HEAD; the **AUTHORIZED Slice-15 schema
-   delta verbatim** from `ADR-0.8.0-canonical-identity-substrate.md` §"AUTHORIZED Slice-15 schema delta"
-   executed as **`step_id 12` / `SCHEMA_VERSION 11→12`** (Slice 5 consumed step 11); the signed
-   decisions (cascade D4 atomic same-txn; in-place additive `ALTER`; **NULL-on-legacy-rows rule** the
-   engine must own; `write_cursor`-as-row-id accepted, still FLAGGED in `output.json`); partial-unique-
-   active index; accretion-exemption marker; folded G4/G5 indexes; G8/G2/G3 hang off this keystone;
-   X1/X2/X3; the §6 scope-discipline + no-remote rules; reserved Slice 16 (shadow vec0/FTS5 reconciliation).
-2. The human pastes it into a new slice agent; **the agent owns its worktree and merges to `main`**.
-   The orchestrator resumes on `main`: gate the transition → codex §9 review → 15.b → close + advance
-   pointer to **Slice 20 ∥ 25**. (Slice 15 is the keystone — serialize all `commit_batch`/carrier work
-   through it; §4.)
+**Execution model:** the human pastes the prompt into a new slice agent; **the agent owns its worktree
+and merges its green work onto `main` itself** (no push). The orchestrator (this thread) does NOT
+create a worktree.
 
-Reminder: anything touching `commit_batch` must serialize through Slice 15 (§4). Supersession Q1–Q5
-finalize at **Slice 25** (hard gate for the SDK read verbs in Slice 30) — readied now, not yet signed.
+**When the slice agent reports it has merged, the orchestrator resumes — on `main`:**
+1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-15-output.json` exists AND
+   `main` advanced past baseline (`merged_to_main_sha` reachable). Absent/blocker → triage or HALT.
+2. **codex §9 review** (primary): `codex exec review --base <slice-baseline>
+   --dangerously-bypass-approvals-and-sandbox`. Focus: migration idempotence + crash-safety between the
+   `user_version=12` commit and engine reshape; **partial-unique NULL-safety** (legacy NULL rows never
+   collide); exemption-marker correctness; tombstone-then-insert atomicity (no row visible
+   mid-supersession); `row_cursors` Py≡TS parity; the `write_cursor`-as-row-id deviation vs the ADR
+   (accepted — confirm it's flagged, not escalated); **recall floor + unfiltered byte-identity un-regressed.**
+   Promote → `0.8.0-slice-15-review-<ts>.md` with a `## Verdict:` line.
+3. **15.b verification** (read-only on `main`): migration idempotence (apply twice + from-scratch;
+   `user_version==12`); partial-unique correctness (NULL legacy never collide; two active collide;
+   superseded+active coexist); folded G4/G5 indexes present + exemption marker is the only thing passing
+   the guard; Pack-1 upgrade (old rows back-fill NULL, queryable); `row_cursors` Py+TS 1:1; floor +
+   byte-identity not regressed.
+4. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override. Substantive CONCERN /
+   BLOCK → fix-N (fresh implementer into the existing worktree/branch). **Floor breach / partial-unique
+   NULL-collision / mid-supersession visibility is substantive — never overridden → HALT to HITL.**
+5. **Close in ONE docs commit on `main`:** Slice 15 CLOSED block; **full inline renumber** of any
+   remaining stale "step 11 / 10→11" literals in the Slice 15 contract + the canonical-identity ADR
+   delta literals (they read `step_id:11` / `10→11`; the authority note says execute as 12 / 11→12 — the
+   close commit makes the literals match); advance pointer to **Slice 20 ∥ 25**; register reserved-gap-16
+   (shadow vec0/FTS5 reconciliation); note G12-importance still deferred; update board + DOC-INDEX +
+   per-AC scoreboard (G0 → DONE). 6. **Worktree cleanup** (§11).
 
-This is a natural session/compaction boundary (§12.7): Slice 10 is landed, the gate is signed, the
-board is current. Safe to stop or `/compact` here; resume by writing the Slice 15 prompt.
+Reminder: Slice 15 is the keystone — anything touching `commit_batch`/the carrier serializes through it
+(§4). Supersession Q1–Q5 finalize at **Slice 25** (hard gate for the SDK read verbs in Slice 30).
 
 **AC-037 (no-egress) — signed 2026-06-02; one-time confirm ✅ DONE:** confirmed GREEN on windchill3
 (temp `apparmor_restrict_unprivileged_userns=0`, restored after) — no off-loopback connects on the
