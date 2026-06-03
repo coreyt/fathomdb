@@ -2,8 +2,8 @@
   "phase": "0.8.0-slice-10",
   "baseline_sha": "e4ae932967e26da32184b9a97d9a819f5c84037e",
   "branch": "slice-10-20260603T014621Z",
-  "head_sha": "bc63a1e8cfff810a59814b926163004ddb377ae4",
-  "merged_to_main_sha": "<filled after merge>",
+  "head_sha": "7fafaa1 (post-rebase branch HEAD; pre-rebase was bc63a1e — branch rebased onto main c5d625e, a docs-only advance with zero file overlap)",
+  "merged_to_main_sha": "b4865f698a17c7533f44863b756d968bf57834c4",
   "commits": [
     "aa3315c: docs(0.8.0): Slice 10 design memo — RRF fusion + filtered KNN + recency (no fusion_mode knob)",
     "74b06b9: test(0.8.0): Slice 10 RED — G9 RRF determinism, G10 filtered-KNN + byte-identity pin, G12-recency",
