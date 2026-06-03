@@ -12,6 +12,7 @@ from fathomdb.types import EmbedderEvent
 class WriteReceipt:
     cursor: int
     row_cursors: list[int]
+    dangling_edge_endpoints: int
 
 class SoftFallback:
     branch: str
