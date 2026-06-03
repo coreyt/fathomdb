@@ -40,8 +40,11 @@ Last updated: 2026-06-02 (Slice 5 **CLOSED** — PASS after codex BLOCK→fix-1;
   completion marker (`_fathomdb_open_state`); codex **re-review of fix-1 diff: PASS, no findings**.
 - **Recall floor held across the migration:** 1.000 → 1.000 (delta +0.000). `Eq` dropped; structured
   `SearchHit` both branches; dedup+vector-first preserved; Py+TS parity; X1 harnesses stood up.
-- **Environment-only blocker for HITL:** `agent-verify.sh STRICT=1` AC-037 `netns-deny-egress`
-  (no rootless userns in this sandbox) — confirm on a userns-capable host. NOT a code defect.
+- **AC-037 `netns-deny-egress` — ✅ CONFIRMED GREEN 2026-06-02** on windchill3 (temp
+  `apparmor_restrict_unprivileged_userns=0`, restored after): "all connect() syscalls were
+  loopback / AF_UNIX / AF_NETLINK" — the merged Slice 5 + fix-1 code makes no network egress.
+  (`agent-verify.sh STRICT=1` still reports it as a blocker on AppArmor-locked hosts; continuous
+  CI coverage is Slice 40 gate (n).)
 
 ### Slice 0 — Setup + ADR Kickoff `[design-adr]` — ✅ CLOSED 2026-06-02
 - Ran on the **main thread** (§1); subagents **0.a ∥ 0.b** both PASS against bars.
@@ -134,12 +137,14 @@ The **substrate package** (gates Slice 15) is now **partially signed** — Q2/Q4
 cascade contract, forward-migration policy, and the FLAGGED `write_cursor`-as-row-id deviation
 **remain open** and must be signed before Slice 15 spawns.
 
-**AC-037 (no-egress gate) disposition (HITL 2026-06-02):** the gate can't run on windchill3
-(`kernel.apparmor_restrict_unprivileged_userns=1` — Ubuntu 23.10+/24.04 lockdown) and is **not
-wired into CI anywhere**. **Decision:** accept-by-reasoning for Slice 5 (it added no networking;
-`reproject_…` is pure local SQLite), and **wire `scripts/agent-security.sh` into CI on a
-userns-permissive runner (e.g. `ubuntu-22.04`) as a Slice 40 release gate** (gate added to the
-Slice 40 contract). Optional one-time local confirm via temporarily setting the sysctl to 0.
+**AC-037 (no-egress gate) disposition (HITL 2026-06-02):** by default the gate can't run on
+windchill3 (`kernel.apparmor_restrict_unprivileged_userns=1` — Ubuntu 23.10+/24.04 lockdown) and
+is **not wired into CI anywhere**. **One-time confirm DONE ✅ 2026-06-02:** with the sysctl
+temporarily set to 0 on windchill3 (restored to 1 after), the gate passed — *"AC-037 OK: all
+connect() syscalls were loopback / AF_UNIX / AF_NETLINK"* — proving the merged Slice 5 + fix-1
+code has no network egress. **Durable decision (kept):** **wire `scripts/agent-security.sh` into
+CI on a userns-permissive runner (e.g. `ubuntu-22.04`) as Slice 40 release gate (n)** for
+continuous coverage — the one-time pass is point-in-time, not a substitute for the CI gate.
 
 ---
 
@@ -212,7 +217,8 @@ the worktree at slice close.
   Slice 15's closing commit).
 - **Environment-only blocker (carried to HITL, did NOT block close):** `agent-verify.sh STRICT=1`
   fails AC-037 `netns-deny-egress` (`unshare -rUn` — no rootless userns in this sandbox). All code
-  phases pass standalone. Confirm AC-037 on a userns-capable host.
+  phases pass standalone. **AC-037 since CONFIRMED GREEN on windchill3 (2026-06-02, temp sysctl) —
+  no off-loopback connects.**
 - **Closed in ONE docs commit** advancing the pointer to **Slice 10**; slice-5 worktree removed (§6).
 
 ### 2026-06-02 — Execution-model correction (HITL): orchestrator owns NO worktree
@@ -329,10 +335,10 @@ spawns: the op-store cascade-under-supersession contract, the forward-migration 
 FLAGGED `write_cursor`-as-row-id deviation. **Reminder:** Slice 15 is now `step_id 12` /
 `SCHEMA_VERSION 11→12`. Supersession Q1–Q5 readied now, finalized at Slice 25.
 
-**AC-037 (no-egress) — disposition signed 2026-06-02:** accept-by-reasoning for Slice 5 (no
-networking added); **wire `agent-security.sh` into CI on a userns-permissive runner as a Slice 40
-release gate** (added to the Slice 40 contract). Can't run on windchill3 (AppArmor
-`apparmor_restrict_unprivileged_userns=1`); optional one-time local confirm via temp sysctl=0.
+**AC-037 (no-egress) — signed 2026-06-02; one-time confirm ✅ DONE:** confirmed GREEN on windchill3
+(temp `apparmor_restrict_unprivileged_userns=0`, restored after) — no off-loopback connects on the
+merged Slice 5 + fix-1 code. **Kept:** `agent-security.sh` wired into CI on a userns-permissive
+runner as **Slice 40 gate (n)** for continuous coverage.
 
 Standing verification checklist (Slice 40 enforces as named release gates):
 `scripts/check.sh AGENT_LONG=1` · `scripts/verify-release-gates.sh` (test seams
