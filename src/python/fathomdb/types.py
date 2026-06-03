@@ -50,6 +50,25 @@ class SearchHit:
 
 
 @dataclass(frozen=True)
+class SearchFilter:
+    """G10 — closed metadata filter for `engine.search(query, filter=...)`.
+
+    All fields optional; an all-`None` filter (or no filter) is the unfiltered
+    path. A **closed struct**, not an open filter DSL. `created_after` is a
+    `created_at >= bound` lower bound in unix seconds. `status` filters the vec0
+    `status` metadata column, which ships an empty-string sentinel only (no real
+    population source yet — vec0 TEXT metadata is not NULL-able), so a
+    `status="open"`-style filter prunes every row until a population slice lands.
+    Mirrors the TypeScript `SearchFilter` (cross-binding parity).
+    """
+
+    source_type: str | None = None
+    kind: str | None = None
+    created_after: int | None = None
+    status: str | None = None
+
+
+@dataclass(frozen=True)
 class SearchResult:
     """Result returned by `engine.search`."""
 
@@ -235,6 +254,7 @@ __all__ = [
     "MeanVecPinnedEvent",
     "MigrationStepReport",
     "OpenReport",
+    "SearchFilter",
     "SearchHit",
     "SearchResult",
     "SoftFallback",

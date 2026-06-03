@@ -4,7 +4,8 @@
 //! `filter=None` emits SQL **byte-identical to 0.7.2** (the pinned behavior-compat
 //! invariant); `status` is a plain `TEXT` metadata column (aux hard-errors under a
 //! KNN `WHERE`) and lands on an existing **Pack-1** DB via the 3-way shape-sentinel;
-//! `status` ships NULL plumbing only, so filtering `status=Some(_)` prunes every row.
+//! `status` ships an empty-string sentinel only (vec0 TEXT metadata is NOT NULL-able),
+//! so filtering `status=Some("open")` prunes every row.
 //! No mocking of the database.
 
 use std::sync::Arc;

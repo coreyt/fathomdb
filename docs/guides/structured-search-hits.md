@@ -12,14 +12,15 @@ can rank, filter, and attribute results without a second lookup.
 | `id`     | int               | The canonical row's write cursor (the stable per-row identity).         |
 | `kind`   | str               | The record kind supplied at write time.                                 |
 | `body`   | str               | The matched record body.                                                |
-| `score`  | float             | Raw per-branch relevance (see below).                                   |
-| `branch` | `"vector"`/`"text"` | Which retrieval branch surfaced the hit.                              |
+| `score`  | float             | G9 RRF-fused relevance (see below).                                     |
+| `branch` | `"vector"`/`"text"` | Which retrieval branch produced the representative hit.               |
 
-`score` is the **raw per-branch** relevance: the vector branch reports
-`vec_distance_l2` (lower = closer) and the text branch reports `bm25()`
-(more-negative = more-relevant). The two scales are **not** comparable raw;
-treat `score` as a within-branch ordering signal. Results are returned
-vector-branch-first, deduplicated on body.
+`score` is the **G9 RRF-fused** relevance (`Σ 1/(60 + rank)`; higher = more
+relevant). The vector (`vec_distance_l2`) and text (`bm25()`) branches are fused
+on **rank**, never compared raw. Results are sorted by the fused score
+descending (vector-first tiebreak), deduplicated on body. See
+[Hybrid search & filtering](hybrid-search-filtering.md) for the full ranking +
+filter model.
 
 ## Python
 

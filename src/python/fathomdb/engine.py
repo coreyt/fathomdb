@@ -20,6 +20,7 @@ from fathomdb.types import (
     EmbedderIdentity,
     MigrationStepReport,
     OpenReport,
+    SearchFilter,
     SearchHit,
     SearchResult,
     SoftFallback,
@@ -102,8 +103,17 @@ class Engine:
         receipt = self._native.write(batch or [])
         return WriteReceipt(cursor=receipt.cursor)
 
-    def search(self, query: str) -> SearchResult:
-        result = self._native.search(query)
+    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+        if filter is None:
+            result = self._native.search(query)
+        else:
+            result = self._native.search(
+                query,
+                source_type=filter.source_type,
+                kind=filter.kind,
+                created_after=filter.created_after,
+                status=filter.status,
+            )
         fallback = result.soft_fallback
         soft = (
             SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
