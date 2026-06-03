@@ -1,0 +1,259 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019e8d9b-210f-7962-8b37-3d29d7693dd9
+--------
+user
+changes against '46ce583'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null; for f in feedback_*.md; do [ -f "$f" ] && echo "--- $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git status --short && git diff --stat 46ce583daaffd81caa582a4d61810a58cb19af33 && git diff 46ce583daaffd81caa582a4d61810a58cb19af33' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+?? dev/plans/prompts/0.8.0-slice-10-fix1.md
+?? dev/plans/runs/0.8.0-slice-10-fix1-output.json
+?? dev/plans/runs/0.8.0-slice-10-fix2-output.json
+?? dev/plans/runs/0.8.0-slice-10-review-20260603T122916Z.log
+?? dev/plans/runs/0.8.0-slice-10-review-20260603T122916Z.md
+?? dev/plans/runs/0.8.0-slice-10-review-fix1-20260603T130241Z.log
+?? dev/plans/runs/0.8.0-slice-10-review-fix2-20260603T131007Z.log
+ src/python/tests/test_ffi_safety.py | 30 +++++++++++++++++++++++-------
+ 1 file changed, 23 insertions(+), 7 deletions(-)
+diff --git a/src/python/tests/test_ffi_safety.py b/src/python/tests/test_ffi_safety.py
+index c525d6d..f77ca85 100644
+--- a/src/python/tests/test_ffi_safety.py
++++ b/src/python/tests/test_ffi_safety.py
+@@ -8,6 +8,7 @@ here for Python and mirrored by the napi-rs binding in Phase 11b.
+ from __future__ import annotations
+ 
+ import os
++from typing import Callable
+ 
+ import pytest
+ 
+@@ -131,30 +132,45 @@ def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
+ _FILTER_NUL = "a\x00b"
+ _FILTER_SURROGATE = "a\ud800b"
+ 
+-
+-@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+-def test_embedded_nul_in_search_filter_rejected(db_path: str, field: str) -> None:
++# Typed factories over the three FFI-string filter fields. Using an explicit
++# per-field callable (rather than `SearchFilter(**{field: value})`) keeps the
++# keyword literal so pyright infers the correct `str` argument type instead of
++# treating the kwargs as a `dict[str, str]` that might land on the i64
++# `created_after` field.
++_STRING_FILTER_FACTORIES: list[Callable[[str], SearchFilter]] = [
++    lambda v: SearchFilter(source_type=v),
++    lambda v: SearchFilter(kind=v),
++    lambda v: SearchFilter(status=v),
++]
++
++
++@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
++def test_embedded_nul_in_search_filter_rejected(
++    db_path: str, field_factory: Callable[[str], SearchFilter]
++) -> None:
+     """AC-068a — embedded NUL in a search filter string raises
+     WriteValidationError before the query reaches the engine."""
+ 
+     engine = Engine.open(db_path)
+     try:
+         with pytest.raises(WriteValidationError) as excinfo:
+-            engine.search("q", SearchFilter(**{field: _FILTER_NUL}))
++            engine.search("q", field_factory(_FILTER_NUL))
+         assert isinstance(excinfo.value, EngineError)
+     finally:
+         engine.close()
+ 
+ 
+-@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+-def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
++@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
++def test_unpaired_surrogate_in_search_filter_rejected(
++    db_path: str, field_factory: Callable[[str], SearchFilter]
++) -> None:
+     """AC-068b — a lone UTF-16 surrogate in a search filter string raises
+     WriteValidationError before the query reaches the engine."""
+ 
+     engine = Engine.open(db_path)
+     try:
+         with pytest.raises(WriteValidationError) as excinfo:
+-            engine.search("q", SearchFilter(**{field: _FILTER_SURROGATE}))
++            engine.search("q", field_factory(_FILTER_SURROGATE))
+         assert isinstance(excinfo.value, EngineError)
+     finally:
+         engine.close()
+
+exec
+/bin/bash -lc "sed -n '1,240p' src/python/tests/test_ffi_safety.py && grep -R \"class SearchFilter\\|SearchFilter\" -n src/python/fathomdb src/python | head -50" in /home/coreyt/projects/fathomdb
+ succeeded in 663ms:
+src/python/fathomdb/__init__.py:17:    SearchFilter,
+src/python/fathomdb/__init__.py:29:    "SearchFilter",
+src/python/fathomdb/types.py:53:class SearchFilter:
+src/python/fathomdb/types.py:62:    Mirrors the TypeScript `SearchFilter` (cross-binding parity).
+src/python/fathomdb/types.py:257:    "SearchFilter",
+src/python/fathomdb/engine.py:23:    SearchFilter,
+src/python/fathomdb/engine.py:106:    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+src/python/tests/test_ffi_safety.py:15:from fathomdb import Engine, SearchFilter, admin
+src/python/tests/test_ffi_safety.py:125:# --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
+src/python/tests/test_ffi_safety.py:136:# per-field callable (rather than `SearchFilter(**{field: value})`) keeps the
+src/python/tests/test_ffi_safety.py:140:_STRING_FILTER_FACTORIES: list[Callable[[str], SearchFilter]] = [
+src/python/tests/test_ffi_safety.py:141:    lambda v: SearchFilter(source_type=v),
+src/python/tests/test_ffi_safety.py:142:    lambda v: SearchFilter(kind=v),
+src/python/tests/test_ffi_safety.py:143:    lambda v: SearchFilter(status=v),
+src/python/tests/test_ffi_safety.py:149:    db_path: str, field_factory: Callable[[str], SearchFilter]
+src/python/tests/test_ffi_safety.py:165:    db_path: str, field_factory: Callable[[str], SearchFilter]
+src/python/tests/test_functional_search.py:21:from fathomdb import Engine, SearchFilter, SearchHit
+src/python/tests/test_functional_search.py:126:    """Slice 10 / X1 — a `SearchFilter` prunes results. "retrieval" matches a
+src/python/tests/test_functional_search.py:139:        filtered = engine.search("retrieval", SearchFilter(kind="note"))
+src/python/tests/test_functional_search.py:144:        empty = engine.search("retrieval", SearchFilter(status="open"))
+src/python/fathomdb/__init__.py:17:    SearchFilter,
+src/python/fathomdb/__init__.py:29:    "SearchFilter",
+src/python/fathomdb/types.py:53:class SearchFilter:
+src/python/fathomdb/types.py:62:    Mirrors the TypeScript `SearchFilter` (cross-binding parity).
+src/python/fathomdb/types.py:257:    "SearchFilter",
+src/python/fathomdb/engine.py:23:    SearchFilter,
+src/python/fathomdb/engine.py:106:    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+
+exec
+/bin/bash -lc "sed -n '45,80p' src/python/fathomdb/types.py && sed -n '90,130p' src/python/fathomdb/engine.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: SoftFallbackBranch
+
+
+@dataclass(frozen=True)
+class SearchFilter:
+    """G10 — closed metadata filter for `engine.search(query, filter=...)`.
+
+    All fields optional; an all-`None` filter (or no filter) is the unfiltered
+    path. A **closed struct**, not an open filter DSL. `created_after` is a
+    `created_at >= bound` lower bound in unix seconds. `status` filters the vec0
+    `status` metadata column, which ships an empty-string sentinel only (no real
+    population source yet — vec0 TEXT metadata is not NULL-able), so a
+    `status="open"`-style filter prunes every row until a population slice lands.
+    Mirrors the TypeScript `SearchFilter` (cross-binding parity).
+    """
+
+    source_type: str | None = None
+    kind: str | None = None
+    created_after: int | None = None
+    status: str | None = None
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Result returned by `engine.search`."""
+
+    projection_cursor: int
+    soft_fallback: SoftFallback | None = None
+    results: list[SearchHit] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+        resolved = config if config is not None else EngineConfig(**engine_config)
+        native = _NativeEngine.open(path, use_default_embedder=use_default_embedder)
+        return cls(native, path=path, config=resolved)
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def config(self) -> EngineConfig:
+        return self._config
+
+    def write(self, batch: list[Any] | None = None) -> WriteReceipt:
+        receipt = self._native.write(batch or [])
+        return WriteReceipt(cursor=receipt.cursor)
+
+    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+        if filter is None:
+            result = self._native.search(query)
+        else:
+            result = self._native.search(
+                query,
+                source_type=filter.source_type,
+                kind=filter.kind,
+                created_after=filter.created_after,
+                status=filter.status,
+            )
+        fallback = result.soft_fallback
+        soft = (
+            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+            if fallback is not None
+            else None
+        )
+        return SearchResult(
+            projection_cursor=result.projection_cursor,
+            soft_fallback=soft,
+            results=[
+                SearchHit(
+                    id=hit.id,
+                    kind=hit.kind,
+                    body=hit.body,
+
+exec
+/bin/bash -lc ./scripts/agent-typecheck.sh in /home/coreyt/projects/fathomdb
+ exited 1 in 4188ms:
+FAIL typecheck-python (exit=1, 1082ms)
+----
+/home/coreyt/projects/fathomdb/src/python/fathomdb/types.py
+  /home/coreyt/projects/fathomdb/src/python/fathomdb/types.py:176:12 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+/home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "DefaultEmbedderCacheHitEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "MeanVecPinnedEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "UnknownEmbedderEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:37 - error: Pyright comments used to control file-level settings must appear on their own line
+    Use "# pyright: ignore[<diagnostic rules>]" to suppress diagnostics for a single line
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:46 - error: "error" is an unknown directive for pyright comment; expected "strict", "standard", or "basic"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:39:29 - information: Type of "event["file"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:40:29 - information: Type of "event["url"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:41:29 - information: Type of "event["bytes"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:42:29 - information: Type of "event["sha256"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:43:29 - information: Type of "event["cache_path"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:44:29 - information: Type of "event["duration_ms"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:46:29 - information: Type of "event["file"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:47:29 - information: Type of "event["sha256"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:48:29 - information: Type of "event["cache_path"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:50:29 - information: Type of "event["dim"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:51:29 - information: Type of "event["doc_count"]" is "int"
+/home/coreyt/projects/fathomdb/src/python/tests/test_property_template.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_property_template.py:15:10 - error: Import "hypothesis" could not be resolved (reportMissingImports)
+/home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:61:20 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:74:20 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:133:16 - error: Cannot access attribute "_configure_vector_kind_for_test" for class "Engine"
+    Attribute "_configure_vector_kind_for_test" is unknown (reportAttributeAccessIssue)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:135:20 - error: Cannot access attribute "_write_vector_for_test" for class "Engine"
+    Attribute "_write_vector_for_test" is unknown (reportAttributeAccessIssue)
+/home/coreyt/projects/fathomdb/src/python/tests/test_workflow_yaml.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_workflow_yaml.py:28:8 - error: Import "tomllib" could not be resolved (reportMissingImports)
+12 errors, 0 warnings, 11 informations
+WARNING: there is a new pyright version available (v1.1.409 -> v1.1.410).
+Please install the new version or set PYRIGHT_PYTHON_FORCE_VERSION to `latest`
+
+----
+full log: /tmp/fathomdb-agent-typecheck-python-101419.log
+
+codex
+The diff only changes Python tests to use typed SearchFilter factories instead of dynamic kwargs. I did not find any introduced correctness issues in the changed lines.
+The diff only changes Python tests to use typed SearchFilter factories instead of dynamic kwargs. I did not find any introduced correctness issues in the changed lines.
+CODEX_EXIT=0

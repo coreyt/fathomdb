@@ -1,0 +1,1300 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019e8d94-39a9-77a1-a59e-454eca571755
+--------
+user
+changes against 'b823f65'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; ls feedback_*.md 2>/dev/null | xargs -r -n1 sh -c 'echo --- "'$0 ---; cat "$0"'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+
+--- feedback files ---
+
+exec
+/bin/bash -lc 'git diff --stat b823f65a52a56cf0adc2c909c2647d9c60970191 && git diff --name-only b823f65a52a56cf0adc2c909c2647d9c60970191' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ src/python/tests/test_ffi_safety.py      | 41 +++++++++++++++++++++++++++++-
+ src/rust/crates/fathomdb-napi/src/lib.rs | 16 ++++++++++++
+ src/rust/crates/fathomdb-py/src/lib.rs   | 25 ++++++++++++++++---
+ src/ts/src/index.ts                      | 10 ++++++++
+ src/ts/tests/ffi-safety.test.ts          | 43 ++++++++++++++++++++++++++++++++
+ 5 files changed, 131 insertions(+), 4 deletions(-)
+src/python/tests/test_ffi_safety.py
+src/rust/crates/fathomdb-napi/src/lib.rs
+src/rust/crates/fathomdb-py/src/lib.rs
+src/ts/src/index.ts
+src/ts/tests/ffi-safety.test.ts
+
+exec
+/bin/bash -lc 'git diff b823f65a52a56cf0adc2c909c2647d9c60970191' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/src/python/tests/test_ffi_safety.py b/src/python/tests/test_ffi_safety.py
+index 74102ea..c525d6d 100644
+--- a/src/python/tests/test_ffi_safety.py
++++ b/src/python/tests/test_ffi_safety.py
+@@ -11,7 +11,7 @@ import os
+ 
+ import pytest
+ 
+-from fathomdb import Engine, admin
++from fathomdb import Engine, SearchFilter, admin
+ from fathomdb._fathomdb import force_panic_for_test
+ from fathomdb.errors import EngineError, WriteValidationError
+ 
+@@ -119,3 +119,42 @@ def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
+             engine.write([{"kind": "do\x00c", "body": "{}"}])
+     finally:
+         engine.close()
++
++
++# --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
++# The new filter kwargs (source_type, kind, status) are FFI strings and must
++# be routed through the same validate_ffi_string_py gate as `query` and the
++# write fields. created_after is i64 — no string validation. These tests pin
++# the *binding wiring* (that search's filter args reject NUL / lone surrogate
++# before reaching the engine), not the helper itself.
++
++_FILTER_NUL = "a\x00b"
++_FILTER_SURROGATE = "a\ud800b"
++
++
++@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
++def test_embedded_nul_in_search_filter_rejected(db_path: str, field: str) -> None:
++    """AC-068a — embedded NUL in a search filter string raises
++    WriteValidationError before the query reaches the engine."""
++
++    engine = Engine.open(db_path)
++    try:
++        with pytest.raises(WriteValidationError) as excinfo:
++            engine.search("q", SearchFilter(**{field: _FILTER_NUL}))
++        assert isinstance(excinfo.value, EngineError)
++    finally:
++        engine.close()
++
++
++@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
++def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
++    """AC-068b — a lone UTF-16 surrogate in a search filter string raises
++    WriteValidationError before the query reaches the engine."""
++
++    engine = Engine.open(db_path)
++    try:
++        with pytest.raises(WriteValidationError) as excinfo:
++            engine.search("q", SearchFilter(**{field: _FILTER_SURROGATE}))
++        assert isinstance(excinfo.value, EngineError)
++    finally:
++        engine.close()
+diff --git a/src/rust/crates/fathomdb-napi/src/lib.rs b/src/rust/crates/fathomdb-napi/src/lib.rs
+index 95e375a..0844c4c 100644
+--- a/src/rust/crates/fathomdb-napi/src/lib.rs
++++ b/src/rust/crates/fathomdb-napi/src/lib.rs
+@@ -660,6 +660,22 @@ impl Engine {
+                 JsonValue::Null,
+             ));
+         }
++        // G10 filter strings cross the FFI exactly like `query` and the write
++        // fields, so they go through the same Rust-side guard BEFORE the engine
++        // is touched (defense-in-depth for embedded NUL, as on the write path).
++        // `created_after` is numeric — no string validation. Lone UTF-16
++        // surrogates are napi-rs-lossy here (replaced with U+FFFD before Rust
++        // sees them), so — like write/configure — the TS `search` wrapper guards
++        // those JS-side (see src/validation.ts). Validating here leaves the
++        // all-`None` collapse below (the byte-identical unfiltered path) intact.
++        if let Some(f) = filter.as_ref() {
++            for s in [f.source_type.as_deref(), f.kind.as_deref(), f.status.as_deref()]
++                .into_iter()
++                .flatten()
++            {
++                validate_ffi_string_napi(s)?;
++            }
++        }
+         // G10 — build the closed filter; an all-`None` (or omitted) filter stays
+         // the unfiltered, byte-identical path.
+         let filter = filter.and_then(|f| {
+diff --git a/src/rust/crates/fathomdb-py/src/lib.rs b/src/rust/crates/fathomdb-py/src/lib.rs
+index d772515..2ad8902 100644
+--- a/src/rust/crates/fathomdb-py/src/lib.rs
++++ b/src/rust/crates/fathomdb-py/src/lib.rs
+@@ -116,6 +116,17 @@ fn extract_validated_str(value: &Bound<'_, PyAny>) -> PyResult<String> {
+     }
+ }
+ 
++/// `Option` lift of [`extract_validated_str`]: `None`/`None`-valued stays
++/// `None` (preserving the all-`None` byte-identical unfiltered path); a
++/// present value is extracted and validated through the same FFI gate as the
++/// write path. Used by `search` for the G10 `SearchFilter` string fields.
++fn extract_opt_validated_str(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<String>> {
++    match value {
++        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(v)?)),
++        _ => Ok(None),
++    }
++}
++
+ // ===== Error mapping ==================================================
+ 
+ /// Translate every `EngineError` variant to its Python counterpart.
+@@ -534,12 +545,20 @@ impl PyEngine {
+         &self,
+         py: Python<'_>,
+         query: &str,
+-        source_type: Option<String>,
+-        kind: Option<String>,
++        source_type: Option<Bound<'_, PyAny>>,
++        kind: Option<Bound<'_, PyAny>>,
+         created_after: Option<i64>,
+-        status: Option<String>,
++        status: Option<Bound<'_, PyAny>>,
+     ) -> PyResult<PySearchResult> {
+         validate_ffi_string_py(query)?;
++        // G10 filter strings cross the FFI exactly like `query` and the write
++        // fields, so they go through the same validation gate
++        // (`extract_validated_str`: rejects embedded NUL and lone UTF-16
++        // surrogate as the typed `WriteValidationError`). `None` stays `None`
++        // so the all-`None` filter remains the byte-identical unfiltered path.
++        let source_type = extract_opt_validated_str(source_type.as_ref())?;
++        let kind = extract_opt_validated_str(kind.as_ref())?;
++        let status = extract_opt_validated_str(status.as_ref())?;
+         let engine = Arc::clone(&self.inner);
+         let query = query.to_string();
+         let filter = if source_type.is_some()
+diff --git a/src/ts/src/index.ts b/src/ts/src/index.ts
+index dea0340..7c74067 100644
+--- a/src/ts/src/index.ts
++++ b/src/ts/src/index.ts
+@@ -314,6 +314,16 @@ export class Engine {
+     filter?: SearchFilter,
+   ): Promise<SearchResult> {
+     validateFfiString(query);
++    // G10 filter strings cross the FFI like `query` and must clear the same
++    // AC-068a/AC-068b guard. napi-rs lossily replaces lone UTF-16 surrogates
++    // with U+FFFD before the Rust-side guard runs (see validation.ts), so —
++    // exactly like write/configure — the surrogate check must happen JS-side.
++    // `createdAfter` is numeric (no string validation).
++    if (filter !== undefined) {
++      if (filter.sourceType !== undefined) validateFfiString(filter.sourceType);
++      if (filter.kind !== undefined) validateFfiString(filter.kind);
++      if (filter.status !== undefined) validateFfiString(filter.status);
++    }
+     const r = await intercept(() => this.#native.search(query, filter));
+     const branch = r.softFallback?.branch;
+     return {
+diff --git a/src/ts/tests/ffi-safety.test.ts b/src/ts/tests/ffi-safety.test.ts
+index 7c79018..7fc73f6 100644
+--- a/src/ts/tests/ffi-safety.test.ts
++++ b/src/ts/tests/ffi-safety.test.ts
+@@ -151,3 +151,46 @@ test("AC-068a embedded NUL in node kind also rejected before write", async () =>
+     await engine.close();
+   }
+ });
++
++// --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
++// The new filter fields (sourceType, kind, status) are FFI strings and must be
++// routed through the same validate_ffi_string_napi gate as `query` and the
++// write fields. createdAfter is a number — no string validation. These pin the
++// *binding wiring* (that search's filter args reject NUL / lone surrogate
++// before the query reaches the engine).
++
++const FILTER_STRING_FIELDS = ["sourceType", "kind", "status"] as const;
++
++for (const field of FILTER_STRING_FIELDS) {
++  test(`AC-068a embedded NUL in search filter ${field} rejected as WriteValidationError`, async () => {
++    const engine = await Engine.open(freshDbPath());
++    try {
++      await assert.rejects(
++        () => engine.search("q", { [field]: `a${NUL}b` }),
++        (err: unknown) => {
++          assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
++          assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
++          return true;
++        },
++      );
++    } finally {
++      await engine.close();
++    }
++  });
++
++  test(`AC-068b unpaired UTF-16 surrogate in search filter ${field} rejected as WriteValidationError`, async () => {
++    const engine = await Engine.open(freshDbPath());
++    try {
++      await assert.rejects(
++        () => engine.search("q", { [field]: `a${SURROGATE}b` }),
++        (err: unknown) => {
++          assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
++          assert.ok(err instanceof FathomDbError, "must extend FathomDbError");
++          return true;
++        },
++      );
++    } finally {
++      await engine.close();
++    }
++  });
++}
+
+exec
+/bin/bash -lc "sed -n '1,180p' src/rust/crates/fathomdb-py/src/lib.rs; sed -n '500,590p' src/rust/crates/fathomdb-py/src/lib.rs; grep -R \"fn search\" -n src/rust/crates/fathomdb-py src/python | head -20" in /home/coreyt/projects/fathomdb
+ succeeded in 309ms:
+src/rust/crates/fathomdb-py/src/lib.rs:544:    fn search(
+
+exec
+/bin/bash -lc "grep -R \"class SearchFilter\\|def search\" -n src/python src/ts/src src/rust/crates/fathomdb-napi/src/lib.rs | head -80 && sed -n '1,220p' src/python/fathomdb/__init__.py && sed -n '280,340p' src/ts/src/index.ts" in /home/coreyt/projects/fathomdb
+ succeeded in 310ms:
+src/python/fathomdb/types.py:53:class SearchFilter:
+src/python/fathomdb/engine.py:106:    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+src/python/fathomdb/_fathomdb.pyi:75:    def search(
+"""FathomDB Python SDK public surface.
+
+Top-level five-verb surface and exception hierarchy owned by
+`dev/interfaces/python.md` + `dev/design/errors.md`. The package delegates
+to the native PyO3 extension `fathomdb._fathomdb` which binds to
+`fathomdb-engine`.
+"""
+
+from __future__ import annotations
+
+from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
+from fathomdb import admin, errors
+from fathomdb.config import EngineConfig
+from fathomdb.engine import Engine
+from fathomdb.types import (
+    CounterSnapshot,
+    SearchFilter,
+    SearchHit,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
+
+__all__ = [
+    "CounterSnapshot",
+    "Engine",
+    "EngineConfig",
+    "SearchFilter",
+    "SearchHit",
+    "SearchResult",
+    "SoftFallback",
+    "SoftFallbackBranch",
+    "WriteReceipt",
+    "__version__",
+    "admin",
+    "errors",
+]
+__version__ = "0.6.0"
+    rethrowTyped(err);
+  }
+}
+
+function interceptSync<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    rethrowTyped(err);
+  }
+}
+
+export class Engine {
+  readonly #native: NativeEngine;
+  readonly config: EngineConfig;
+
+  private constructor(inner: NativeEngine, config: EngineConfig) {
+    this.#native = inner;
+    this.config = config;
+  }
+
+  static async open(path: string, options: EngineOpenOptions = {}): Promise<Engine> {
+    validateFfiString(path);
+    const inner = await intercept(() => native.Engine.open(path, options));
+    return new Engine(inner, options.engineConfig ?? {});
+  }
+
+  async write(batch: unknown[] = []): Promise<WriteReceipt> {
+    validateFfiTree(batch);
+    return intercept(() => this.#native.write(batch));
+  }
+
+  async search(
+    query: string,
+    filter?: SearchFilter,
+  ): Promise<SearchResult> {
+    validateFfiString(query);
+    // G10 filter strings cross the FFI like `query` and must clear the same
+    // AC-068a/AC-068b guard. napi-rs lossily replaces lone UTF-16 surrogates
+    // with U+FFFD before the Rust-side guard runs (see validation.ts), so —
+    // exactly like write/configure — the surrogate check must happen JS-side.
+    // `createdAfter` is numeric (no string validation).
+    if (filter !== undefined) {
+      if (filter.sourceType !== undefined) validateFfiString(filter.sourceType);
+      if (filter.kind !== undefined) validateFfiString(filter.kind);
+      if (filter.status !== undefined) validateFfiString(filter.status);
+    }
+    const r = await intercept(() => this.#native.search(query, filter));
+    const branch = r.softFallback?.branch;
+    return {
+      projectionCursor: r.projectionCursor,
+      softFallback:
+        branch === "vector" || branch === "text" ? { branch } : null,
+      results: r.results.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: h.branch === "vector" ? "vector" : "text",
+      })),
+    };
+
+exec
+/bin/bash -lc "sed -n '1,180p' src/python/fathomdb/types.py; sed -n '80,140p' src/python/fathomdb/engine.py; sed -n '60,95p' src/python/fathomdb/_fathomdb.pyi; sed -n '620,710p' src/rust/crates/fathomdb-napi/src/lib.rs; grep -R \"interface SearchFilter\\|type SearchFilter\" -n src/ts/src" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""Caller-visible result shapes for the FathomDB Python SDK.
+
+Field names owned by `dev/interfaces/python.md` § Caller-visible data shapes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal, TypedDict, TypeGuard, Union
+
+#: Typed soft-fallback branch values per `dev/design/retrieval.md`.
+SoftFallbackBranch = Literal["vector", "text"]
+
+
+@dataclass(frozen=True)
+class WriteReceipt:
+    """Receipt returned by `engine.write` and `admin.configure`."""
+
+    cursor: int
+
+
+@dataclass(frozen=True)
+class SoftFallback:
+    """Hybrid-search soft-fallback signal.
+
+    `branch` indicates which non-essential branch could not contribute. Total
+    request failure is not expressed via this carrier (see
+    `dev/design/retrieval.md`).
+    """
+
+    branch: SoftFallbackBranch
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """One structured hit in a `SearchResult` (G1 / AC-057a-clean).
+
+    `id` is the canonical row's `write_cursor` — the interim identity carrier
+    per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`. `score` is the raw
+    per-branch relevance (`vec_distance_l2` for the vector branch, `bm25()` for
+    the text branch); the two are not comparable raw. `branch` tags which
+    retrieval branch produced the hit.
+    """
+
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: SoftFallbackBranch
+
+
+@dataclass(frozen=True)
+class SearchFilter:
+    """G10 — closed metadata filter for `engine.search(query, filter=...)`.
+
+    All fields optional; an all-`None` filter (or no filter) is the unfiltered
+    path. A **closed struct**, not an open filter DSL. `created_after` is a
+    `created_at >= bound` lower bound in unix seconds. `status` filters the vec0
+    `status` metadata column, which ships an empty-string sentinel only (no real
+    population source yet — vec0 TEXT metadata is not NULL-able), so a
+    `status="open"`-style filter prunes every row until a population slice lands.
+    Mirrors the TypeScript `SearchFilter` (cross-binding parity).
+    """
+
+    source_type: str | None = None
+    kind: str | None = None
+    created_after: int | None = None
+    status: str | None = None
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Result returned by `engine.search`."""
+
+    projection_cursor: int
+    soft_fallback: SoftFallback | None = None
+    results: list[SearchHit] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MigrationStepReport:
+    """One row in `OpenReport.migration_steps`.
+
+    Mirrors the native `fathomdb_schema::MigrationStepReport` per
+    `src/rust/crates/fathomdb-engine/src/lib.rs:541-548`.
+    """
+
+    step_id: int
+    duration_ms: int | None
+    failed: bool
+
+
+class DefaultEmbedderDownloadEvent(TypedDict):
+    """`embedder_events` entry emitted when the loader downloads a weight
+    file from HuggingFace. Per `dev/design/0.7.1-EU-6-FIX-2-design.md`
+    §2.1. Mirrors the Rust emitter at
+    `src/rust/crates/fathomdb-py/src/lib.rs:417-432`."""
+
+    kind: Literal["DefaultEmbedderDownload"]
+    file: str
+    url: str
+    bytes: int
+    sha256: str
+    cache_path: str
+    duration_ms: int
+
+
+class DefaultEmbedderCacheHitEvent(TypedDict):
+    """`embedder_events` entry emitted on a cache hit for a weight file.
+    Per `dev/design/0.7.1-EU-6-FIX-2-design.md` §2.1."""
+
+    kind: Literal["DefaultEmbedderCacheHit"]
+    file: str
+    sha256: str
+    cache_path: str
+
+
+class MeanVecPinnedEvent(TypedDict):
+    """`embedder_events` entry emitted after the 256-doc threshold pins
+    the workspace mean vector. Per
+    `dev/design/0.7.1-EU-6-FIX-2-design.md` §2.1."""
+
+    kind: Literal["MeanVecPinned"]
+    dim: int
+    doc_count: int
+
+
+class UnknownEmbedderEvent(TypedDict, total=False):
+    """Forward-compat fallback. Any `kind` not recognised by this build
+    surfaces at runtime under this shape. Part of the public
+    `EmbedderEvent` union for soundness (a future or replaced native
+    extension may emit kinds this build does not know about). Because
+    its `kind` field is the open type ``str``, pyright cannot exclude
+    this member purely from a literal ``event["kind"] == "..."`` check
+    — wrap such checks in :func:`is_known_embedder_event` first to
+    recover precise narrowing on the three known variants."""
+
+    kind: str
+
+
+EmbedderEvent = Union[
+    DefaultEmbedderDownloadEvent,
+    DefaultEmbedderCacheHitEvent,
+    MeanVecPinnedEvent,
+    UnknownEmbedderEvent,
+]
+"""Discriminated union surfaced by `OpenReport.embedder_events`. Includes
+`UnknownEmbedderEvent` for forward-compat soundness. For precise literal
+narrowing on the three known variants, gate the `if event["kind"] == "..."`
+chain on :func:`is_known_embedder_event` first."""
+
+
+def is_known_embedder_event(
+    event: EmbedderEvent,
+) -> TypeGuard[
+    Union[
+        DefaultEmbedderDownloadEvent,
+        DefaultEmbedderCacheHitEvent,
+        MeanVecPinnedEvent,
+    ]
+]:
+    """Narrow an :data:`EmbedderEvent` to the three known variants.
+
+    Used as a guard before discriminating on ``event["kind"]``. Pyright
+    cannot exclude :class:`UnknownEmbedderEvent` (whose ``kind`` is the
+    open type ``str``) from a literal ``kind == "..."`` check on the
+    bare union — so the two-step pattern is::
+
+        if is_known_embedder_event(event):
+            if event["kind"] == "DefaultEmbedderDownload":
+                bytes_: int = event["bytes"]  # narrowed precisely
+
+    See ``dev/interfaces/python.md`` and
+    ``dev/design/0.7.1-EU-6-FIX-2-design.md`` §6.3.
+    """
+    return event["kind"] in (
+        "DefaultEmbedderDownload",
+        "DefaultEmbedderCacheHit",
+        "MeanVecPinned",
+    )
+            raise ValueError(
+                "Engine.open accepts either config= or per-knob keyword arguments, not both",
+            )
+
+        unknown = set(engine_config) - _KWARG_FIELDS
+        if unknown:
+            raise TypeError(
+                f"Engine.open got unexpected keyword arguments: {sorted(unknown)!r}",
+            )
+
+        resolved = config if config is not None else EngineConfig(**engine_config)
+        native = _NativeEngine.open(path, use_default_embedder=use_default_embedder)
+        return cls(native, path=path, config=resolved)
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def config(self) -> EngineConfig:
+        return self._config
+
+    def write(self, batch: list[Any] | None = None) -> WriteReceipt:
+        receipt = self._native.write(batch or [])
+        return WriteReceipt(cursor=receipt.cursor)
+
+    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+        if filter is None:
+            result = self._native.search(query)
+        else:
+            result = self._native.search(
+                query,
+                source_type=filter.source_type,
+                kind=filter.kind,
+                created_after=filter.created_after,
+                status=filter.status,
+            )
+        fallback = result.soft_fallback
+        soft = (
+            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+            if fallback is not None
+            else None
+        )
+        return SearchResult(
+            projection_cursor=result.projection_cursor,
+            soft_fallback=soft,
+            results=[
+                SearchHit(
+                    id=hit.id,
+                    kind=hit.kind,
+                    body=hit.body,
+                    score=hit.score,
+                    branch=cast(SoftFallbackBranch, hit.branch),
+                )
+                for hit in result.results
+            ],
+        )
+
+    def close(self) -> None:
+        self._native.close()
+
+
+class Engine:
+    @staticmethod
+    def open(path: str, use_default_embedder: bool = ...) -> "Engine": ...
+    # NOTE: `_configure_vector_kind_for_test` and `_write_vector_for_test`
+    # are intentionally NOT declared here. They only exist on the binary
+    # when the `test-hooks` Cargo feature is enabled (see
+    # `src/rust/crates/fathomdb-py/src/lib.rs::#[cfg(any(test, feature =
+    # "test-hooks"))]`), and that feature is dev-only — it is not part of
+    # the shipped wheel's feature axis (`pyproject.toml [tool.maturin]
+    # features` and `release.yml` build-python's `args:`). Advertising
+    # them on the public stub would imply they are callable by end users,
+    # which is false.
+    def open_report(self) -> OpenReport: ...
+    def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
+    def search(
+        self,
+        query: str,
+        source_type: str | None = ...,
+        kind: str | None = ...,
+        created_after: int | None = ...,
+        status: str | None = ...,
+    ) -> SearchResult: ...
+    def close(self) -> None: ...
+    def drain(self, timeout_s: float = ...) -> None: ...
+    def counters(self) -> CounterSnapshot: ...
+    def set_profiling(self, enabled: bool) -> None: ...
+    def set_slow_threshold_ms(self, value: int) -> None: ...
+    def attach_logging_subscriber(
+        self,
+        logger: Any,
+        heartbeat_interval_ms: int | None = ...,
+    ) -> None: ...
+
+def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
+def force_panic_for_test() -> None: ...
+            Err(join_err) => {
+                return Err(typed_error(
+                    CODE_PANIC,
+                    format!("spawn_blocking join error: {join_err}"),
+                    JsonValue::Null,
+                ))
+            }
+        };
+        Ok(Engine { inner: Arc::new(opened.engine), open_report: Arc::new(opened.report) })
+    }
+
+    /// Structured open report captured at [`Engine::open`] time. Sync
+    /// accessor (no Promise — the data lives on the engine struct
+    /// after open). Idempotent: each call returns a fresh copy of the
+    /// same snapshot.
+    #[napi]
+    pub fn open_report(&self) -> Result<OpenReport> {
+        let report = Arc::clone(&self.open_report);
+        call_engine_sync(move || Ok(OpenReport::from_rust(&report)))
+    }
+
+    #[napi]
+    pub async fn write(&self, batch: Vec<JsonValue>) -> Result<WriteReceipt> {
+        let prepared = translate_batch(batch)?;
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(move || engine.write(&prepared)).await?;
+        Ok(WriteReceipt::from_rust(receipt))
+    }
+
+    #[napi]
+    pub async fn search(
+        &self,
+        query: String,
+        filter: Option<SearchFilterInput>,
+    ) -> Result<SearchResult> {
+        validate_ffi_string_napi(&query)?;
+        if query.trim().is_empty() {
+            return Err(typed_error(
+                CODE_WRITE_VALIDATION,
+                "query must not be empty",
+                JsonValue::Null,
+            ));
+        }
+        // G10 filter strings cross the FFI exactly like `query` and the write
+        // fields, so they go through the same Rust-side guard BEFORE the engine
+        // is touched (defense-in-depth for embedded NUL, as on the write path).
+        // `created_after` is numeric — no string validation. Lone UTF-16
+        // surrogates are napi-rs-lossy here (replaced with U+FFFD before Rust
+        // sees them), so — like write/configure — the TS `search` wrapper guards
+        // those JS-side (see src/validation.ts). Validating here leaves the
+        // all-`None` collapse below (the byte-identical unfiltered path) intact.
+        if let Some(f) = filter.as_ref() {
+            for s in [f.source_type.as_deref(), f.kind.as_deref(), f.status.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                validate_ffi_string_napi(s)?;
+            }
+        }
+        // G10 — build the closed filter; an all-`None` (or omitted) filter stays
+        // the unfiltered, byte-identical path.
+        let filter = filter.and_then(|f| {
+            let rust = RustSearchFilter {
+                source_type: f.source_type,
+                kind: f.kind,
+                created_after: f.created_after,
+                status: f.status,
+            };
+            if rust.source_type.is_none()
+                && rust.kind.is_none()
+                && rust.created_after.is_none()
+                && rust.status.is_none()
+            {
+                None
+            } else {
+                Some(rust)
+            }
+        });
+        let engine = Arc::clone(&self.inner);
+        let result = call_engine(move || engine.search_filtered(&query, filter)).await?;
+        Ok(SearchResult::from_rust(result))
+    }
+
+    #[napi]
+    pub async fn close(&self) -> Result<()> {
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.close()).await
+    }
+
+    #[napi]
+    pub async fn drain(&self, timeout_ms: u32) -> Result<()> {
+src/ts/src/index.ts:72:export interface SearchFilter {
+
+exec
+/bin/bash -lc "sed -n '60,85p' src/ts/src/index.ts; grep -n \"struct SearchFilterInput\" -n src/rust/crates/fathomdb-napi/src/lib.rs -C2; grep -R \"validateFfiString\" -n src/ts/src/validation.ts src/ts/src/index.ts src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  branch: SoftFallbackBranch;
+}
+
+/**
+ * G10 — closed metadata filter for `engine.search(query, filter?)`. All fields
+ * optional; an all-`undefined` filter (or omitted) is the unfiltered path. A
+ * closed shape, not an open DSL. `createdAfter` is a `created_at >= bound` lower
+ * bound in unix seconds. `status` filters the vec0 `status` metadata column,
+ * which ships an empty-string sentinel only (no real population source yet), so
+ * a `status: "open"`-style filter prunes every row until a population slice
+ * lands. Mirrors the Python `SearchFilter` (cross-binding parity).
+ */
+export interface SearchFilter {
+  sourceType?: string;
+  kind?: string;
+  createdAfter?: number;
+  status?: string;
+}
+
+export interface SearchResult {
+  projectionCursor: number;
+  softFallback: SoftFallback | null;
+  results: SearchHit[];
+}
+
+export interface MigrationStepReport {
+359-/// fields to camelCase JS (`sourceType`, `createdAfter`).
+360-#[napi(object)]
+361:pub struct SearchFilterInput {
+362-    pub source_type: Option<String>,
+363-    pub kind: Option<String>,
+src/ts/src/validation.ts:10:export function validateFfiString(value: string): void {
+src/ts/src/validation.ts:33:    validateFfiString(value);
+src/ts/src/index.ts:13:import { validateFfiString, validateFfiTree } from "./validation.js";
+src/ts/src/index.ts:302:    validateFfiString(path);
+src/ts/src/index.ts:316:    validateFfiString(query);
+src/ts/src/index.ts:323:      if (filter.sourceType !== undefined) validateFfiString(filter.sourceType);
+src/ts/src/index.ts:324:      if (filter.kind !== undefined) validateFfiString(filter.kind);
+src/ts/src/index.ts:325:      if (filter.status !== undefined) validateFfiString(filter.status);
+src/ts/src/index.ts:393:    validateFfiString(options.name);
+src/ts/src/index.ts:394:    validateFfiString(options.body);
+
+exec
+/bin/bash -lc "sed -n '1,50p' src/ts/src/validation.ts; sed -n '350,370p' src/rust/crates/fathomdb-napi/src/lib.rs; grep -R \"created_after\" -n src/rust/crates src/python/tests src/ts/tests | head -40" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+// TS-side FFI string guard (AC-068a / AC-068b).
+//
+// napi-rs converts JS strings to Rust `String` via NAPI's UTF-8 path,
+// which silently replaces lone UTF-16 surrogates with U+FFFD; the
+// Rust-side guard never sees them. We catch them in TS BEFORE the
+// native call so the no-row-written invariant holds end-to-end.
+
+import { WriteValidationError } from "./errors.js";
+
+export function validateFfiString(value: string): void {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 0) {
+      throw new WriteValidationError("embedded NUL byte in FFI string");
+    }
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (i + 1 >= value.length) {
+        throw new WriteValidationError("unpaired UTF-16 high surrogate in FFI string");
+      }
+      const next = value.charCodeAt(i + 1);
+      if (next < 0xdc00 || next > 0xdfff) {
+        throw new WriteValidationError("unpaired UTF-16 high surrogate in FFI string");
+      }
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new WriteValidationError("unpaired UTF-16 low surrogate in FFI string");
+    }
+  }
+}
+
+export function validateFfiTree(value: unknown): void {
+  if (typeof value === "string") {
+    validateFfiString(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      validateFfiTree(item);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      validateFfiTree(v);
+    }
+  }
+}
+                SoftFallbackBranch::Text => "text".to_string(),
+            },
+        }
+    }
+}
+
+/// G10 — closed metadata filter input for `search(query, filter?)`. All fields
+/// optional; an all-`None` filter (or omitted) is the unfiltered path. Mirrors
+/// the Python `SearchFilter` (cross-binding parity). napi maps the snake_case
+/// fields to camelCase JS (`sourceType`, `createdAfter`).
+#[napi(object)]
+pub struct SearchFilterInput {
+    pub source_type: Option<String>,
+    pub kind: Option<String>,
+    pub created_after: Option<i64>,
+    pub status: Option<String>,
+}
+
+#[napi(object)]
+pub struct SearchResult {
+    pub projection_cursor: i64,
+src/rust/crates/fathomdb-py/src/lib.rs:543:    #[pyo3(signature = (query, source_type=None, kind=None, created_after=None, status=None))]
+src/rust/crates/fathomdb-py/src/lib.rs:550:        created_after: Option<i64>,
+src/rust/crates/fathomdb-py/src/lib.rs:566:            || created_after.is_some()
+src/rust/crates/fathomdb-py/src/lib.rs:569:            Some(RustSearchFilter { source_type, kind, created_after, status })
+src/rust/crates/fathomdb-napi/src/lib.rs:364:    pub created_after: Option<i64>,
+src/rust/crates/fathomdb-napi/src/lib.rs:666:        // `created_after` is numeric — no string validation. Lone UTF-16
+src/rust/crates/fathomdb-napi/src/lib.rs:685:                created_after: f.created_after,
+src/rust/crates/fathomdb-napi/src/lib.rs:690:                && rust.created_after.is_none()
+src/rust/crates/fathomdb-engine/src/lib.rs:900:/// `created_after` is a `created_at >= bound` lower bound in unix seconds.
+src/rust/crates/fathomdb-engine/src/lib.rs:911:    pub created_after: Option<i64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:922:            && self.created_after.is_none()
+src/rust/crates/fathomdb-engine/src/lib.rs:3467:/// (`source_type`, `kind`, `created_after`, `status`) and is mirrored exactly by
+src/rust/crates/fathomdb-engine/src/lib.rs:3483:    if filter.created_after.is_some() {
+src/rust/crates/fathomdb-engine/src/lib.rs:3514:    if let Some(c) = filter.created_after {
+src/rust/crates/fathomdb-engine/src/lib.rs:3559:/// `created_after`/`status` from `vector_default` by `rowid == write_cursor`. A
+src/rust/crates/fathomdb-engine/src/lib.rs:3561:/// `created_after`/`status` predicate, so it is excluded — filtered semantic
+src/rust/crates/fathomdb-engine/src/lib.rs:3586:    if filter.created_after.is_some() || filter.status.is_some() {
+src/rust/crates/fathomdb-engine/src/lib.rs:3598:        if let Some(bound) = filter.created_after {
+src/python/tests/test_ffi_safety.py:127:# write fields. created_after is i64 — no string validation. These tests pin
+
+exec
+/bin/bash -lc "sed -n '1,130p' src/python/tests/test_ffi_safety.py; grep -R \"unpaired\\|surrogate\" -n src/python/tests src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""FFI safety-contract tests for the PyO3 binding.
+
+Covers AC-067 (panic catch), AC-068a (embedded NUL rejected), and
+AC-068b (unpaired UTF-16 surrogate rejected). The contract is locked
+here for Python and mirrored by the napi-rs binding in Phase 11b.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from fathomdb import Engine, SearchFilter, admin
+from fathomdb._fathomdb import force_panic_for_test
+from fathomdb.errors import EngineError, WriteValidationError
+
+
+def test_panic_surfaces_as_python_exception(db_path: str) -> None:
+    """AC-067 — engine panics must not abort the host process.
+
+    The binding must raise PyO3's `PanicException` (not `EngineError`):
+    panic is a contract bug, not a typed engine outcome, so callers that
+    catch `EngineError` must not silently swallow it.
+    """
+
+    pid_before = os.getpid()
+    with pytest.raises(BaseException) as excinfo:
+        force_panic_for_test()
+    pid_after = os.getpid()
+    assert pid_before == pid_after, "host process must not be aborted by engine panic"
+
+    exc_type = type(excinfo.value)
+    assert exc_type.__name__ == "PanicException", (
+        f"expected pyo3 PanicException, got {exc_type.__module__}.{exc_type.__name__}"
+    )
+    assert exc_type.__module__ == "pyo3_runtime", (
+        f"PanicException must come from pyo3_runtime, got {exc_type.__module__}"
+    )
+    assert not isinstance(excinfo.value, EngineError), (
+        "PanicException must NOT subclass EngineError"
+    )
+
+    # Subsequent engine work must still succeed.
+    engine = Engine.open(db_path)
+    try:
+        snapshot = engine.counters()
+        assert snapshot is not None
+    finally:
+        engine.close()
+
+
+def test_embedded_nul_in_body_rejected_before_write(db_path: str) -> None:
+    """AC-068a — embedded NUL in any FFI string raises
+    WriteValidationError, and no row is written."""
+
+    engine = Engine.open(db_path)
+    try:
+        # Register a latest-state collection so the body would otherwise
+        # commit a row.
+        admin.configure(engine, name="nul_col", body="{}")
+        before = engine.counters().write_rows
+
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.write(
+                [
+                    {
+                        "op_store": {
+                            "collection": "nul_col",
+                            "record_key": "k1",
+                            "body": '{"x":"a\x00b"}',
+                        }
+                    }
+                ]
+            )
+        assert isinstance(excinfo.value, EngineError)
+
+        after = engine.counters().write_rows
+        assert after == before, "no row may be written when a NUL is rejected"
+    finally:
+        engine.close()
+
+
+def test_unpaired_surrogate_in_body_rejected_before_write(db_path: str) -> None:
+    """AC-068b — lone UTF-16 surrogate codepoints raise
+    WriteValidationError, and no row is written."""
+
+    engine = Engine.open(db_path)
+    try:
+        admin.configure(engine, name="sur_col", body="{}")
+        before = engine.counters().write_rows
+
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.write(
+                [
+                    {
+                        "op_store": {
+                            "collection": "sur_col",
+                            "record_key": "k1",
+                            "body": '{"x":"a\ud800b"}',
+                        }
+                    }
+                ]
+            )
+        assert isinstance(excinfo.value, EngineError)
+
+        after = engine.counters().write_rows
+        assert after == before, "no row may be written when a surrogate is rejected"
+    finally:
+        engine.close()
+
+
+def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
+    """AC-068a — applies to every FFI string field, not just bodies."""
+
+    engine = Engine.open(db_path)
+    try:
+        with pytest.raises(WriteValidationError):
+            engine.write([{"kind": "do\x00c", "body": "{}"}])
+    finally:
+        engine.close()
+
+
+# --- Slice 10 fix-1: G10 SearchFilter string fields cross the FFI too ---
+# The new filter kwargs (source_type, kind, status) are FFI strings and must
+# be routed through the same validate_ffi_string_py gate as `query` and the
+# write fields. created_after is i64 — no string validation. These tests pin
+# the *binding wiring* (that search's filter args reject NUL / lone surrogate
+# before reaching the engine), not the helper itself.
+
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-9.0.3.pyc: binary file matches
+src/python/tests/test_ffi_safety.py:4:AC-068b (unpaired UTF-16 surrogate rejected). The contract is locked
+src/python/tests/test_ffi_safety.py:84:def test_unpaired_surrogate_in_body_rejected_before_write(db_path: str) -> None:
+src/python/tests/test_ffi_safety.py:85:    """AC-068b — lone UTF-16 surrogate codepoints raise
+src/python/tests/test_ffi_safety.py:108:        assert after == before, "no row may be written when a surrogate is rejected"
+src/python/tests/test_ffi_safety.py:128:# the *binding wiring* (that search's filter args reject NUL / lone surrogate
+src/python/tests/test_ffi_safety.py:150:def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
+src/python/tests/test_ffi_safety.py:151:    """AC-068b — a lone UTF-16 surrogate in a search filter string raises
+src/rust/crates/fathomdb-py/src/lib.rs:21://!    for embedded NUL or unpaired UTF-16 surrogates BEFORE the writer
+src/rust/crates/fathomdb-py/src/lib.rs:79:/// Reject strings carrying an embedded NUL or an unpaired UTF-16
+src/rust/crates/fathomdb-py/src/lib.rs:80:/// surrogate codepoint (`U+D800..=U+DFFF`).
+src/rust/crates/fathomdb-py/src/lib.rs:92:            return Err(format!("unpaired UTF-16 surrogate U+{cp:04X} in FFI string"));
+src/rust/crates/fathomdb-py/src/lib.rs:104:/// fails on lone surrogates (the underlying `PyUnicode_AsUTF8AndSize`
+src/rust/crates/fathomdb-py/src/lib.rs:114:            "string contains characters not representable as UTF-8 (lone surrogate)",
+src/rust/crates/fathomdb-py/src/lib.rs:557:        // surrogate as the typed `WriteValidationError`). `None` stays `None`
+src/rust/crates/fathomdb-py/src/lib.rs:846:    fn validate_ffi_string_rejects_lone_surrogate() {
+src/rust/crates/fathomdb-py/src/lib.rs:847:        // The surrogate codepoint U+D800 cannot appear in a Rust &str
+src/rust/crates/fathomdb-py/src/lib.rs:852:        // surrogates. The exhaustive guard sits in Python; the Rust
+
+exec
+/bin/bash -lc "grep -n \"extract_validated_str\\|translate_batch\\|admin_configure\" -n src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+107:fn extract_validated_str(value: &Bound<'_, PyAny>) -> PyResult<String> {
+119:/// `Option` lift of [`extract_validated_str`]: `None`/`None`-valued stays
+125:        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(v)?)),
+534:        let prepared = translate_batch(&batch)?;
+556:        // (`extract_validated_str`: rejects embedded NUL and lone UTF-16
+653:fn admin_configure(
+659:    let name = extract_validated_str(name)?;
+660:    let body = extract_validated_str(body)?;
+683:fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
+697:        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(&v)?)),
+798:    m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
+
+exec
+/bin/bash -lc "sed -n '640,725p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+        let _ = logger;
+        let _ = heartbeat_interval_ms;
+        // Subscriber wiring lands in a later 0.6.x slice; the binding
+        // accepts the call so callers can wire a logger against the
+        // public surface.
+        Ok(())
+    }
+}
+
+// ===== admin.configure ================================================
+
+#[pyfunction]
+#[pyo3(signature = (engine, name, body))]
+fn admin_configure(
+    py: Python<'_>,
+    engine: &PyEngine,
+    name: &Bound<'_, PyAny>,
+    body: &Bound<'_, PyAny>,
+) -> PyResult<PyWriteReceipt> {
+    let name = extract_validated_str(name)?;
+    let body = extract_validated_str(body)?;
+    if name.is_empty() {
+        return Err(PyValueError::new_err("admin.configure requires a non-empty name"));
+    }
+    // why: `dev/interfaces/python.md` § Runtime surface pins the
+    // admin.configure(name=, body=) signature; the engine's
+    // `PreparedWrite::AdminSchema` requires `kind ∈ {latest_state,
+    // append_only_log}`. The Python verb is sugar over latest-state
+    // collection registration in 0.6.0; an explicit `kind` knob lands
+    // in a later 0.6.x slice if needed.
+    let batch = vec![PreparedWrite::AdminSchema {
+        name,
+        kind: "latest_state".to_string(),
+        schema_json: body,
+        retention_json: "{}".to_string(),
+    }];
+    let inner = Arc::clone(&engine.inner);
+    let receipt = call_engine(py, move || inner.write(&batch))?;
+    Ok(PyWriteReceipt::from_rust(receipt))
+}
+
+// ===== Batch translation ==============================================
+
+fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
+    let mut out = Vec::with_capacity(batch.len());
+    for item in batch.iter() {
+        out.push(translate_write_item(&item)?);
+    }
+    Ok(out)
+}
+
+fn dict_get<'py>(d: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    d.get_item(key)
+}
+
+fn dict_str(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
+    match dict_get(d, key)? {
+        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(&v)?)),
+        _ => Ok(None),
+    }
+}
+
+fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
+    dict_str(d, key)?.ok_or_else(|| {
+        WriteValidationError::new_err(format!("write item missing required field {key:?}"))
+    })
+}
+
+fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+    let dict = item
+        .downcast::<PyDict>()
+        .map_err(|_| WriteValidationError::new_err("write item must be a dict"))?;
+
+    if let Some(inner) = dict_get(dict, "edge")? {
+        return translate_edge(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "op_store")? {
+        return translate_op_store(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "admin_schema")? {
+        return translate_admin_schema(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "node")? {
+        return translate_node(&inner);
+    }
+
+
+exec
+/bin/bash -lc ./scripts/agent-typecheck.sh in /home/coreyt/projects/fathomdb
+ exited 1 in 4388ms:
+FAIL typecheck-python (exit=1, 1112ms)
+----
+/home/coreyt/projects/fathomdb/src/python/fathomdb/types.py
+  /home/coreyt/projects/fathomdb/src/python/fathomdb/types.py:176:12 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+/home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "DefaultEmbedderCacheHitEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "MeanVecPinnedEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:19 - error: Could not access item in TypedDict
+    "bytes" is not a defined key in "UnknownEmbedderEvent" (reportGeneralTypeIssues)
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:37 - error: Pyright comments used to control file-level settings must appear on their own line
+    Use "# pyright: ignore[<diagnostic rules>]" to suppress diagnostics for a single line
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:30:46 - error: "error" is an unknown directive for pyright comment; expected "strict", "standard", or "basic"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:39:29 - information: Type of "event["file"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:40:29 - information: Type of "event["url"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:41:29 - information: Type of "event["bytes"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:42:29 - information: Type of "event["sha256"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:43:29 - information: Type of "event["cache_path"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:44:29 - information: Type of "event["duration_ms"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:46:29 - information: Type of "event["file"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:47:29 - information: Type of "event["sha256"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:48:29 - information: Type of "event["cache_path"]" is "str"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:50:29 - information: Type of "event["dim"]" is "int"
+  /home/coreyt/projects/fathomdb/src/python/tests/_pyright_narrowing_fixture.py:51:29 - information: Type of "event["doc_count"]" is "int"
+/home/coreyt/projects/fathomdb/src/python/tests/test_ffi_safety.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_ffi_safety.py:143:47 - error: Argument of type "str" cannot be assigned to parameter "created_after" of type "int | None" in function "__init__"
+    Type "str" is not assignable to type "int | None"
+      "str" is not assignable to "int"
+      "str" is not assignable to "None" (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_ffi_safety.py:157:47 - error: Argument of type "str" cannot be assigned to parameter "created_after" of type "int | None" in function "__init__"
+    Type "str" is not assignable to type "int | None"
+      "str" is not assignable to "int"
+      "str" is not assignable to "None" (reportArgumentType)
+/home/coreyt/projects/fathomdb/src/python/tests/test_property_template.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_property_template.py:15:10 - error: Import "hypothesis" could not be resolved (reportMissingImports)
+/home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:61:20 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:74:20 - error: Could not access item in TypedDict
+    "kind" is not a required key in "UnknownEmbedderEvent", so access may result in runtime exception (reportTypedDictNotRequiredAccess)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:133:16 - error: Cannot access attribute "_configure_vector_kind_for_test" for class "Engine"
+    Attribute "_configure_vector_kind_for_test" is unknown (reportAttributeAccessIssue)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_use_default_embedder.py:135:20 - error: Cannot access attribute "_write_vector_for_test" for class "Engine"
+    Attribute "_write_vector_for_test" is unknown (reportAttributeAccessIssue)
+/home/coreyt/projects/fathomdb/src/python/tests/test_workflow_yaml.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_workflow_yaml.py:28:8 - error: Import "tomllib" could not be resolved (reportMissingImports)
+14 errors, 0 warnings, 11 informations
+WARNING: there is a new pyright version available (v1.1.409 -> v1.1.410).
+Please install the new version or set PYRIGHT_PYTHON_FORCE_VERSION to `latest`
+
+----
+full log: /tmp/fathomdb-agent-typecheck-python-97005.log
+
+exec
+/bin/bash -lc "nl -ba src/python/tests/test_ffi_safety.py | sed -n '135,160p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   135	@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+   136	def test_embedded_nul_in_search_filter_rejected(db_path: str, field: str) -> None:
+   137	    """AC-068a — embedded NUL in a search filter string raises
+   138	    WriteValidationError before the query reaches the engine."""
+   139	
+   140	    engine = Engine.open(db_path)
+   141	    try:
+   142	        with pytest.raises(WriteValidationError) as excinfo:
+   143	            engine.search("q", SearchFilter(**{field: _FILTER_NUL}))
+   144	        assert isinstance(excinfo.value, EngineError)
+   145	    finally:
+   146	        engine.close()
+   147	
+   148	
+   149	@pytest.mark.parametrize("field", ["source_type", "kind", "status"])
+   150	def test_unpaired_surrogate_in_search_filter_rejected(db_path: str, field: str) -> None:
+   151	    """AC-068b — a lone UTF-16 surrogate in a search filter string raises
+   152	    WriteValidationError before the query reaches the engine."""
+   153	
+   154	    engine = Engine.open(db_path)
+   155	    try:
+   156	        with pytest.raises(WriteValidationError) as excinfo:
+   157	            engine.search("q", SearchFilter(**{field: _FILTER_SURROGATE}))
+   158	        assert isinstance(excinfo.value, EngineError)
+   159	    finally:
+   160	        engine.close()
+
+exec
+/bin/bash -lc 'cd src/ts && npm test -- --runInBand 2>/dev/null || npm run typecheck 2>/dev/null || true' in /home/coreyt/projects/fathomdb
+ succeeded in 42455ms:
+
+> fathomdb@0.7.2 build:native:debug
+> napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks,default-embedder --js false
+
+✔ runtime embedder events match the typed-union shape (2965.005226ms)
+✔ every leaf class extends FathomDbError (0.945683ms)
+✔ EmbedderNotConfiguredError sits under EmbedderError under FathomDbError (0.15746ms)
+✔ KindNotVectorIndexedError sits under VectorError under FathomDbError (0.873255ms)
+✔ CorruptionError carries typed recovery hint payload (0.200212ms)
+✔ DatabaseLockedError carries typed holderPid (0.14672ms)
+✔ EmbedderIdentityMismatchError carries typed identity attrs (0.173541ms)
+✔ EmbedderDimensionMismatchError carries typed dimensions (0.161548ms)
+✔ search rejects empty query via WriteValidationError under FathomDbError root (36.60894ms)
+
+thread '<unnamed>' (97948) panicked at src/rust/crates/fathomdb-napi/src/lib.rs:1020:13:
+force_panic_for_test: AC-067 probe
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread '<unnamed>' (97948) panicked at src/rust/crates/fathomdb-napi/src/lib.rs:1009:9:
+force_panic_in_accessor_for_test: AC-067 sync probe
+✔ AC-067 panic surfaces as FathomDbPanicError, process unchanged (36.039996ms)
+✔ AC-067 panic on sync accessor surfaces as FathomDbPanicError (0.50396ms)
+✔ AC-068a embedded NUL in op-store body rejected as WriteValidationError (33.859207ms)
+✔ AC-068b unpaired UTF-16 surrogate in op-store body rejected as WriteValidationError (29.776894ms)
+✔ AC-068a embedded NUL in node kind also rejected before write (26.392531ms)
+✔ AC-068a embedded NUL in search filter sourceType rejected as WriteValidationError (26.500668ms)
+✔ AC-068b unpaired UTF-16 surrogate in search filter sourceType rejected as WriteValidationError (25.09663ms)
+✔ AC-068a embedded NUL in search filter kind rejected as WriteValidationError (23.382291ms)
+✔ AC-068b unpaired UTF-16 surrogate in search filter kind rejected as WriteValidationError (21.949741ms)
+✔ AC-068a embedded NUL in search filter status rejected as WriteValidationError (21.553534ms)
+✔ AC-068b unpaired UTF-16 surrogate in search filter status rejected as WriteValidationError (22.043919ms)
+✔ functional search: structured hit shape across the FFI (43.116468ms)
+✔ functional search: cross-binding equivalence with the Python harness (38.267041ms)
+✔ functional search: RRF-fused order matches the Python binding (32.884689ms)
+✔ functional search: a SearchFilter prunes results (33.079019ms)
+✔ module top-level exports include no recovery verbs (1.105899ms)
+✔ Engine class statics include no recovery methods (0.120119ms)
+✔ Engine instance has no recovery methods (35.52837ms)
+✔ admin namespace exports no recovery verbs (0.214829ms)
+✔ openReport returns the spec-locked native fields (36.948267ms)
+✔ openReport is idempotent — repeat calls return identical data (31.765665ms)
+✔ Engine.open Promise signature unchanged — resolves to just Engine (26.468466ms)
+[skip] RELEASE_SURFACE_TESTS!=1; release-surface tests disabled
+[skip] RELEASE_SURFACE_TESTS!=1; release-surface tests disabled
+✔ release-equivalent .node does not expose test-hooks methods (1.150754ms)
+✔ release-equivalent .node opens engine with useDefaultEmbedder: true (0.198579ms)
+✔ op-store write violating schema raises SchemaValidationError and writes no row (41.151882ms)
+✔ cursor advances on write (35.882394ms)
+✔ Engine exposes five-verb shape plus instrumentation methods (35.934684ms)
+✔ admin.configure is exported beside Engine (31.298224ms)
+✔ Engine.open accepts engineConfig with camelCase knobs (27.322464ms)
+✔ write returns a typed receipt with cursor (27.983144ms)
+✔ search returns soft-fallback null by default (26.04564ms)
+✔ SoftFallback branch is the typed two-member union (0.149255ms)
+✔ instrumentation stubs return canonical types (24.18925ms)
+✔ DatabaseLockedError carries holderPid attr (0.741314ms)
+✔ opening the same database twice surfaces DatabaseLockedError with holderPid (35.967387ms)
+✔ CorruptionError carries typed kind/stage/recoveryHintCode/docAnchor (0.271007ms)
+✔ EmbedderDimensionMismatchError carries typed stored/supplied (0.138564ms)
+✔ EmbedderIdentityMismatchError carries typed identity attrs (0.16759ms)
+✔ EmbedderNotConfiguredError is a distinct leaf under EmbedderError (0.168731ms)
+✔ KindNotVectorIndexedError is a distinct leaf under VectorError (0.178972ms)
+✔ engineOpen with useDefaultEmbedder: true succeeds (2959.418264ms)
+✔ engineOpen with useDefaultEmbedder: false makes no network call (21.770969ms)
+✔ engineOpen with no useDefaultEmbedder option defaults to no-network (21.669365ms)
+✔ openReport carries embedder mean-centering booleans (2973.542969ms)
+✔ openReport.embedderMeanVecPinned is false on fresh workspace (2950.882331ms)
+✔ openReport.embedderMeanVecPinned transitions after 256 writes (27091.061251ms)
+ℹ tests 55
+ℹ suites 0
+ℹ pass 55
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36162.713747
+
+codex
+The patch introduces Python test code that fails the repository typecheck gate. The runtime behavior may be correct, but the required verification path is currently blocked.
+
+Review comment:
+
+- [P1] Avoid dynamic kwargs that fail pyright — /home/coreyt/projects/fathomdb/src/python/tests/test_ffi_safety.py:143-143
+  When `./scripts/agent-typecheck.sh` runs pyright over the tests, this `**{field: _FILTER_NUL}` is inferred as a generic `dict[str, str]`, so pyright treats it as potentially supplying `created_after` and reports `str` is not assignable to `int | None` here and on the surrogate test below. This blocks the typecheck/verify gate; use an explicit branch, typed factory, or literal-specific parametrization for the three string fields.
+The patch introduces Python test code that fails the repository typecheck gate. The runtime behavior may be correct, but the required verification path is currently blocked.
+
+Review comment:
+
+- [P1] Avoid dynamic kwargs that fail pyright — /home/coreyt/projects/fathomdb/src/python/tests/test_ffi_safety.py:143-143
+  When `./scripts/agent-typecheck.sh` runs pyright over the tests, this `**{field: _FILTER_NUL}` is inferred as a generic `dict[str, str]`, so pyright treats it as potentially supplying `created_after` and reports `str` is not assignable to `int | None` here and on the surrogate test below. This blocks the typecheck/verify gate; use an explicit branch, typed factory, or literal-specific parametrization for the three string fields.
+CODEX_EXIT=0

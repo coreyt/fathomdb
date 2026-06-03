@@ -1,0 +1,30 @@
+{
+  "phase": "0.8.0-slice-10-fix2",
+  "baseline_sha": "46ce583daaffd81caa582a4d61810a58cb19af33",
+  "branch": "slice-10-fix1-20260603T123527Z",
+  "head_sha": "28ac3b0e04e71388c558d317ad224e11b271f2ca",
+  "merge_sha": "e9f833a1ad378f7a4df748fc70a346a91285403d",
+  "scope": "test-only remediation of one codex [P1] re-review finding from fix-1",
+  "p1_addressed": {
+    "finding": "src/python/tests/test_ffi_safety.py:143 (and :157) — SearchFilter(**{field: value}) is inferred by pyright as dict[str, str], so pyright treats it as potentially supplying the i64 created_after field and reports 'str not assignable to int | None', blocking the typecheck/verify gate.",
+    "cited_files_lines": [
+      "src/python/tests/test_ffi_safety.py:143",
+      "src/python/tests/test_ffi_safety.py:157"
+    ]
+  },
+  "approach": "Replaced the dynamic **{field: value} kwargs construction in the two parametrized filter tests (test_embedded_nul_in_search_filter_rejected, test_unpaired_surrogate_in_search_filter_rejected) with a typed per-field factory list `_STRING_FILTER_FACTORIES: list[Callable[[str], SearchFilter]]` holding three literal-keyword lambdas (source_type=v, kind=v, status=v). Tests now parametrize over `field_factory` and call `engine.search('q', field_factory(BADSTRING))`. Keeps the keyword literal so pyright infers the correct `str` argument type. Added `from typing import Callable` import. Same three-field coverage (source_type/kind/status) and identical assertions (pytest.raises(WriteValidationError) + isinstance(excinfo.value, EngineError)). No behavior change; no non-test files touched.",
+  "verification": {
+    "pyright_clean": "CONFIRMED — `pyright -p src/python` (via canonical .venv/bin/pyright) reports ZERO errors for test_ffi_safety.py after the fix. Proof of load-bearing: stashing the fix and re-running reproduced exactly the codex-cited errors at test_ffi_safety.py:143:47 and :157:47 ('Argument of type str cannot be assigned to parameter created_after of type int | None'); with the fix applied those errors are gone.",
+    "pre_existing_baseline_errors_unchanged": "Pre-existing baseline pyright errors in other files (test_use_default_embedder.py, _pyright_narrowing_fixture.py, types.py) are out of scope and untouched; zero NEW errors introduced. NOTE: this worktree has no local .venv (config venvPath=../.. / venv=.venv unresolved), which surfaces a few additional venv-resolution-only import diagnostics (e.g. hypothesis in test_property_template.py) that do not appear in the canonical-repo gate run; none are in test_ffi_safety.py.",
+    "pytest": "GREEN — `pytest src/python/tests/test_ffi_safety.py -q` => 10 passed in 0.24s (includes all 6 filter cases: 3 NUL + 3 surrogate).",
+    "ruff": "clean (ruff check on the file; pre-commit ruff also passed).",
+    "clippy": "clean — `cargo clippy --workspace --all-targets -- -D warnings` finished with no warnings (no Rust changes; unaffected)."
+  },
+  "path_isolation": "Confirmed `git -C /home/coreyt/projects/fathomdb status --porcelain -- src/` was EMPTY before merge (no stray edit leaked to the canonical repo); all edits made only inside the worktree.",
+  "canonical_main_check": "Before merge, canonical main == 46ce583 (matched fix-1 baseline); no rebase needed. Merged with --no-ff into local main; no push/fetch/PR/origin.",
+  "files_changed": [
+    "src/python/tests/test_ffi_safety.py"
+  ],
+  "commit": "28ac3b0e04e71388c558d317ad224e11b271f2ca (fix(0.8.0): Slice 10 fix-2 — pyright-safe SearchFilter validation tests (codex P1))",
+  "worktree": "/tmp/fdb-slice-10-fix1-20260603T123527Z (left in place)"
+}
