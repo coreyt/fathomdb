@@ -28,10 +28,14 @@ PASS via codex override (single [P2] = HITL-pre-signed reserved Slice-16 shadow 
 gate that unblocks Slice 30). Slice 15 (G0 keystone substrate) is **CLOSED** on `main` @ `5fa0e9e`, so
 the canonical `logical_id`/`superseded_at` columns + tombstone-then-insert supersession + `row_cursors`
 are now available to all downstream slices.
-- **Next orchestrator action:** author `dev/plans/prompts/0.8.0-slice-20.md` (G8 dangling-edge) from the
-  SLICE-TEMPLATE; baseline `5fa0e9e`. Slice 25 prompt follows (its prompt must carry the supersession
-  Q1–Q5 sign-off — that gate is not yet presented). The human pastes each into a fresh slice agent
-  (agent owns worktree + merges to `main`).
+- **Slice 20 ✅ PROMPTED 2026-06-03** — `dev/plans/prompts/0.8.0-slice-20.md` written (baseline `5fa0e9e`;
+  anchors re-verified at `5fa0e9e`; probe predicate SETTLED-by-construction = logical_id-alone against
+  step-12 `canonical_nodes_logical_active_idx`, legacy-NULL-endpoint consequence documented; G8 adds NO
+  SDK verb, AC-057a-clean, NO new HITL gate). Human pastes it into a fresh slice agent (owns worktree +
+  merges to `main`).
+- **Slice 25 — pre-Slice-30 supersession gate PRESENTED to HITL 2026-06-03** (governed-surface Q1–Q5
+  bundle from `ADR-0.8.0-supersede-five-verb-surface-cap.md`). The Slice 25 prompt is instantiated only
+  after the bundle is signed; the signature is the HARD gate unblocking Slice 30.
 - **Reserved-gap carry (now OWNED downstream):** **Slice 16 — shadow reconciliation** (excise/refresh
   stale FTS5/vec0 shadow rows for superseded `write_cursor`s) and/or the **G2/Slice 30** read-path
   `superseded_at IS NULL` join now own read-visibility closure. Until then, **supersession has NO
@@ -128,7 +132,7 @@ applicable to this slice's work-type.
 | **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
-| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ▶️ READY (next) | 15 | ❌ extend | ❌ | ❌ |
+| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ⏳ PROMPTED | 15 | ⏳ extend | ⏳ | ⏳ |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
