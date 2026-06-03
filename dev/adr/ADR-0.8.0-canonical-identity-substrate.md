@@ -2,8 +2,8 @@
 title: ADR-0.8.0-canonical-identity-substrate
 date: 2026-06-02
 target_release: 0.8.0
-desc: Settle the canonical-identity substrate (G0 keystone) for 0.8.0. Inherits Option 2A (design bi-temporal-aware, ship the minimal transaction-time subset) from ADR-0.8.0-agent-memory-retrieval-and-identity. Settles four substrate questions as decisions, authorizes the exact Slice-15 schema delta verbatim (logical_id + superseded_at on canonical_nodes AND canonical_edges; partial-unique-active index; folded G4/G5 indexes; accretion exemption; SCHEMA_VERSION 10→11), states the forward-migration policy, flags the write_cursor-as-row-id deviation for HITL, and names the shadow vec0/FTS5 reconciliation as a reserved Slice-16 follow-on.
-blast_radius: src/rust/crates/fathomdb-schema/src/lib.rs (MIGRATIONS step 11; SCHEMA_VERSION 10→11; check_migration_accretion exemption marker); src/rust/crates/fathomdb-engine/src/lib.rs (PreparedWrite::Node/Edge logical_id; validate_write; commit_batch tombstone-then-insert; WriteReceipt.row_cursors); dev/roadmap/0.8.0.md:84-108 (substrate scope + forward-migration policy); dev/plans/0.8.0-implementation.md Slice 15 (keystone) + Slice 16 (reserved gap); dev/design/0.8.0-agent-memory-fit.md §4/§7 (G0 keystone, G11 deferred); fathomdb-py / fathomdb-napi (row_cursors parity)
+desc: Settle the canonical-identity substrate (G0 keystone) for 0.8.0. Inherits Option 2A (design bi-temporal-aware, ship the minimal transaction-time subset) from ADR-0.8.0-agent-memory-retrieval-and-identity. Settles four substrate questions as decisions, authorizes the exact Slice-15 schema delta verbatim (logical_id + superseded_at on canonical_nodes AND canonical_edges; partial-unique-active index; folded G4/G5 indexes; accretion exemption; SCHEMA_VERSION 11→12), states the forward-migration policy, flags the write_cursor-as-row-id deviation for HITL, and names the shadow vec0/FTS5 reconciliation as a reserved Slice-16 follow-on.
+blast_radius: src/rust/crates/fathomdb-schema/src/lib.rs (MIGRATIONS step 12; SCHEMA_VERSION 11→12; check_migration_accretion exemption marker); src/rust/crates/fathomdb-engine/src/lib.rs (PreparedWrite::Node/Edge logical_id; validate_write; commit_batch tombstone-then-insert; WriteReceipt.row_cursors); dev/roadmap/0.8.0.md:84-108 (substrate scope + forward-migration policy); dev/plans/0.8.0-implementation.md Slice 15 (keystone) + Slice 16 (reserved gap); dev/design/0.8.0-agent-memory-fit.md §4/§7 (G0 keystone, G11 deferred); fathomdb-py / fathomdb-napi (row_cursors parity)
 status: draft, HITL-required
 origin: ADR-0.8.0-agent-memory-retrieval-and-identity Q2 (Option 2A recommendation, lines ~178-195); dev/roadmap/0.8.0.md:84-108 (originally-deferred substrate scope, moved to 0.8.0 by HITL 2026-05-24); dev/design/0.8.0-agent-memory-fit.md §8b Pillar 3 (bi-temporal world-model literature)
 ---
@@ -188,11 +188,11 @@ invalidate-not-delete semantics:
 
 ## AUTHORIZED Slice-15 schema delta (verbatim — Slice 15 executes this exactly)
 
-> **⚠ RENUMBERED 2026-06-02 (at Slice 5 close).** Slice 5 (G1 FTS5 tokenizer upgrade)
-> consumed `step_id 11` / `SCHEMA_VERSION 11` on `main`. The verbatim delta below therefore
-> executes as **`step_id: 12`**, bumping **`SCHEMA_VERSION 11 → 12`** (not `11` / `10→11` as
-> the literal code blocks read). Everything else in the delta is unchanged. Slice 15's closing
-> commit updates these literals; this note is the authority until then.
+> **✅ RENUMBER APPLIED 2026-06-03 (at Slice 15 close).** Slice 5 (G1 FTS5 tokenizer upgrade)
+> consumed `step_id 11` / `SCHEMA_VERSION 11` on `main`, so this delta landed as **`step_id: 12`**,
+> bumping **`SCHEMA_VERSION 11 → 12`**. The literal code blocks below are now updated to match what
+> shipped (`fathomdb-schema/src/lib.rs:294-310`, `SCHEMA_VERSION = 12` at `:6`). Everything else in
+> the delta landed unchanged.
 
 Slice 15 appends a single migration step. The SQL below is the **authorized
 delta**; it MUST carry the accretion-exemption marker because
@@ -201,9 +201,9 @@ delta**; it MUST carry the accretion-exemption marker because
 `-- MIGRATION-ACCRETION-EXEMPTION: ` marker.
 
 ```rust
-// Append AFTER the step-10 Migration (fathomdb-schema/src/lib.rs:251-254).
+// Append AFTER the step-11 Migration (fathomdb-schema/src/lib.rs:269-280).
 Migration {
-    step_id: 11,
+    step_id: 12,
     sql: "-- MIGRATION-ACCRETION-EXEMPTION: G0 transaction-time identity substrate
           ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT;
           ALTER TABLE canonical_nodes ADD COLUMN superseded_at INTEGER;
@@ -225,7 +225,7 @@ Migration {
 And the version bump:
 
 ```rust
-pub const SCHEMA_VERSION: u32 = 11; // was 10 (fathomdb-schema/src/lib.rs:6)
+pub const SCHEMA_VERSION: u32 = 12; // was 11 (fathomdb-schema/src/lib.rs:6)
 ```
 
 **Authorized elements (each REQUIRED, none optional):**
@@ -249,13 +249,13 @@ pub const SCHEMA_VERSION: u32 = 11; // was 10 (fathomdb-schema/src/lib.rs:6)
    the `ADD COLUMN`s (it sees schema-adding SQL with no `DROP`). Slice 15's
    accretion-guard test (mirroring `ac_049`) must assert the marker is the **only**
    thing letting the guard pass.
-5. **`SCHEMA_VERSION 10 → 11`** at `fathomdb-schema/src/lib.rs:6` (witnessed
-   current = 10). The migration registry must stay contiguous (the migrate loop
+5. **`SCHEMA_VERSION 11 → 12`** at `fathomdb-schema/src/lib.rs:6` (witnessed
+   current = 11). The migration registry must stay contiguous (the migrate loop
    asserts `step_id == current + 1`).
 
 **Idempotence / Pack-1-upgrade requirement.** `IF NOT EXISTS` on every index;
-the `ALTER … ADD COLUMN`s run once (guarded by the `user_version` gate — step 11
-only runs when `user_version < 11`). Applying step 11 to a from-scratch DB and to
+the `ALTER … ADD COLUMN`s run once (guarded by the `user_version` gate — step 12
+only runs when `user_version < 12`). Applying step 12 to a from-scratch DB and to
 a legacy 0.7.x DB must both land identically (columns present, legacy rows
 back-fill NULL); re-open is a no-op.
 
@@ -274,8 +274,8 @@ ADR. We choose **in-place additive `ALTER`**:
   is an O(1) catalog-only operation — it does **not** rewrite existing rows. There
   is **no data migration**: legacy rows simply read NULL for the new columns.
 - A 0.7.x → 0.8.0 upgrade therefore needs **no re-open / re-ingest**. The standard
-  open-time `migrate()` path runs step 11 transactionally (`BEGIN IMMEDIATE …
-  COMMIT`, advancing `user_version` to 11 atomically per `apply_one`), and the DB
+  open-time `migrate()` path runs step 12 transactionally (`BEGIN IMMEDIATE …
+  COMMIT`, advancing `user_version` to 12 atomically per `apply_one`), and the DB
   is immediately usable.
 - Legacy rows are **correct by construction** for the new verbs: a NULL
   `logical_id` means "not a supersession participant," which is the right default
@@ -351,8 +351,8 @@ gate with no correctness benefit. Rejected.
 
 ## Consequences if signed off
 
-- Slice 15 executes the **verbatim** delta above (schema crate: step 11 +
-  `SCHEMA_VERSION 11`; engine crate: `PreparedWrite::Node/Edge.logical_id`,
+- Slice 15 executes the **verbatim** delta above (schema crate: step 12 +
+  `SCHEMA_VERSION 12`; engine crate: `PreparedWrite::Node/Edge.logical_id`,
   `validate_write`, `commit_batch` tombstone-then-insert, `WriteReceipt.row_cursors`;
   bindings: `row_cursors` Py+TS parity). **No design choices remain for Slice 15**
   — it consumes this ADR.

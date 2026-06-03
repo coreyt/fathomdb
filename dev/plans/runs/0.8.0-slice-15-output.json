@@ -1,0 +1,88 @@
+{
+  "phase": "0.8.0-slice-15",
+  "title": "G0 Canonical Identity Substrate (KEYSTONE — schema 11→12)",
+  "state": "MERGED_TO_LOCAL_MAIN",
+  "baseline_sha": "d51b1b3",
+  "baseline_note": "Prompt named 68bf3d6 but main had advanced to d51b1b3 (the Slice-15 PROMPTED doc commit; source byte-identical to 68bf3d6). Per §0, used the actual HEAD d51b1b3 as baseline.",
+  "branch": "slice-15-20260603T155709Z",
+  "merged_to_main_sha": "5fa0e9ec971fb966859fe581c5d2c5fc4ac0cff9",
+  "commits": [
+    {"sha": "6d8d6e9", "kind": "RED", "subject": "Slice 15 RED — migration step-12 pins + pr_g0_identity.rs (references logical_id/row_cursors not yet existing → compile-fail RED)"},
+    {"sha": "0227773", "kind": "GREEN", "subject": "Slice 15 GREEN — G0 canonical identity substrate (schema + engine + bindings + constructor churn)"},
+    {"sha": "38e7da1", "kind": "DOCS", "subject": "Slice 15 X3 — architecture/test-plan/DOC-INDEX/python-api/typescript-api"},
+    {"sha": "c06472c", "kind": "TEST", "subject": "close edge-supersession coverage gap (Decision 3 / Q4)"}
+  ],
+  "findings_addressed": [
+    "Schema step_id 12 / SCHEMA_VERSION 11→12: logical_id TEXT + superseded_at INTEGER on canonical_nodes AND canonical_edges; partial UNIQUE INDEX (logical_id, kind) WHERE superseded_at IS NULL per table; folded G4/G5 indexes (canonical_nodes(kind), canonical_edges(from_id), canonical_edges(to_id)); accretion-exemption marker (required, pinned).",
+    "Engine: PreparedWrite::{Node,Edge}.logical_id; validate_write threads + rejects empty logical_id; commit_batch tombstone-then-insert supersession (same txn, idempotent, one active per (logical_id,kind)); logical_id=None path byte-identical to 0.7.x.",
+    "WriteReceipt.row_cursors: Vec<u64> populated in write_inner (per-row write_cursor, 1:1 with batch); surfaced Py (list[int]) + TS (rowCursors:number[]) with cross-binding equivalence; logical_id/logicalId on the node+edge input path in both SDKs.",
+    "NULL-on-legacy-rows rule documented (design memo + code comment) and pinned (partial-unique NULL-safety test).",
+    "In-place additive ALTER forward migration (no re-open, no data migration); legacy v11→v12 upgrade pinned with NULL back-fill + idempotent re-migrate."
+  ],
+  "tdd_evidence": {
+    "red_sha": "6d8d6e9",
+    "test_files": [
+      "src/rust/crates/fathomdb-schema/tests/migrations.rs",
+      "src/rust/crates/fathomdb-engine/tests/pr_g0_identity.rs",
+      "src/python/tests/test_functional_search.py",
+      "src/ts/tests/functional-search.test.ts"
+    ],
+    "new_engine_tests": [
+      "s15_supersession_is_idempotent_one_active_version (a+d)",
+      "s15_edge_supersession_is_idempotent_one_active_version (a-edges / Q4)",
+      "s15_null_logical_id_rows_never_collide (b, NULL-safety)",
+      "s15_partial_unique_active_index_rejects_two_active_versions (c)",
+      "s15_row_cursors_are_one_to_one_with_the_batch (e)",
+      "s15_legacy_pre_step12_db_upgrades_in_place_with_null_backfill (f)"
+    ],
+    "new_schema_tests": [
+      "s12_g0_substrate_passes_accretion_guard_only_with_marker",
+      "s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index"
+    ],
+    "x1_binding_tests": [
+      "test_functional_row_cursors_one_to_one / rowCursors are 1:1 with the batch (Py≡TS)",
+      "test_functional_supersession_write_surfaces_row_cursor / a supersession write surfaces its row cursor"
+    ]
+  },
+  "self_check_results": {
+    "cargo_test_schema_engine": "PASS (0 failed; incl. migrations.rs + pr_g0_identity.rs)",
+    "cargo_test_cli_facade": "PASS (0 failed)",
+    "cargo_build_py_napi": "PASS",
+    "ts_npm_test": "PASS (57 passed, 0 failed)",
+    "pytest_full": "PASS (86 passed, 5 skipped)",
+    "cargo_clippy_workspace_all_targets_Dwarnings": "PASS (clean)",
+    "cargo_fmt_check": "PASS",
+    "mkdocs_build_strict": "PASS",
+    "ruff_check": "PASS",
+    "pyright": "11 errors — IDENTICAL per-file profile to canonical baseline (types.py:180 UnknownEmbedderEvent, _pyright_narrowing_fixture.py, test_property_template.py hypothesis-import, test_use_default_embedder.py). ZERO new pyright errors introduced.",
+    "guardrails": "Recall floor ≥0.90 held (pr_g1_tokenizer_recall, eu7/eu8 green); unfiltered phase-1 byte-identity pin green (pr_g10_filtered_knn); logical_id=None write path behavior-identical."
+  },
+  "agent_verify_result": "EXIT=1 due ONLY to the pre-existing AC-037 (netns-deny-egress) toolchain BLOCKER: 'unshare -rUn failed; rootless userns+netns unavailable' — the documented apparmor_restrict_unprivileged_userns=1 lockdown on this host (see MEMORY eu5f / AC-037 disposition). All other steps PASS (lint, typecheck, AC-038, AC-050a x3, AC-050c). agent-security: 0 violation(s), 1 blocker(s). NOT a code regression and NOT owned by this slice.",
+  "blockers_encountered": [
+    {
+      "id": "FLAG-write-cursor-as-row-id",
+      "type": "accepted-recorded-deviation",
+      "description": "write_cursor reused as the per-row identity (surfaced as WriteReceipt.row_cursors) INSTEAD of a dedicated row_id column + restore_provenance payload named in the roadmap. HITL ACCEPTED this for 0.8.0 G0 (dedicated row_id + restore_provenance DEFERRED to a later additive slice) per ADR sign-off 2026-06-03. Landed the accepted shape; flagged here per contract (sign-off ≠ silent reconciliation). NOT escalated.",
+      "resolution": "Landed write_cursor-as-row-id; recorded, not self-resolved."
+    },
+    {
+      "id": "RESERVED-GAP-16-shadow-reconciliation",
+      "type": "reserved-gap (Slice 16)",
+      "description": "G0 lands the CANONICAL active-vs-superseded distinction but does NOT excise/filter stale projection shadow rows (search_index FTS5, _fathomdb_vector_rows/vector_default vec0, _fathomdb_projection_terminal) for superseded write_cursors. CONSEQUENCE: after a supersession, `search` can still surface a SUPERSEDED body until Slice 16 — supersession currently has NO observable read effect (no current consumer sets logical_id, so recall/byte-identity are unaffected; logical_id=None corpus is unchanged). The read path does NOT yet filter on canonical superseded_at IS NULL. Reserved Slice 16 (shadow reconciliation) and/or a read-path canonical-join filter (G2/Slice 30) closes it.",
+      "resolution": "NOT done in this slice (explicitly out of scope per §2). Flagged for Slice 16."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "Folded G4/G5 read indexes (canonical_nodes(kind), canonical_edges(from_id), canonical_edges(to_id)) landed in step 12 per the authorized delta (one accretion offset budget).",
+    "Constructor churn: added logical_id:None to ~90 existing PreparedWrite::{Node,Edge} construction sites across engine/cli tests + 2 examples + 3 internal lib.rs test seams (mechanical, required by the new non-defaulted enum field).",
+    "validate_write now rejects an empty-string logical_id (Some(\"\")) → WriteValidation, mirroring the existing source_id validation. New field, no back-compat impact.",
+    "Migration-boundary test pins adapted for head=12: compatibility.rs step-id vec (…,12); pr_g1_tokenizer_crash_recovery.rs v11→v12 version assertions (reproject is marker-gated, not boundary-gated — intent unchanged).",
+    "FORCED DEVIATION (loud): pr_g1_tokenizer_recall.rs phase A — the head engine writer now references the step-12 identity columns, so a sub-step-12 (v10) DB can no longer accept engine.write. Re-seeded the v10 'before' corpus directly into canonical_nodes + search_index (exactly the v10 writer's rows), preserving the REAL step-11 reproject source for phase B. V10_MIGRATIONS now drops the last TWO steps (11+12) to stay at v10. Recall-floor intent fully preserved (test green)."
+  ],
+  "deviations_for_orchestrator_awareness": [
+    "Engine writer now hard-requires head schema (step-12 columns). Test seams that open at sub-head schemas (open_with_migrations_for_test / migrate_with_steps[..N]) can no longer use engine.write to ingest; they must seed canonical rows directly. This is inherent to adding a write-path column and is the cause of the pr_g1_tokenizer_recall adaptation above. No production impact (Engine::open always migrates to head).",
+    "Op-store cascade (Decision 4) required NO code change: commit_batch already commits canonical supersession + latest_state upsert + append_only_log append in one transaction, so atomicity holds by construction. There is no cascade FROM canonical supersession TO op-store (op-store writes are independent PreparedWrite variants). Flagged 'preserved, not changed' — no dedicated cascade test added (no mechanism to break)."
+  ],
+  "latent_errors_assessment": "NO unresolved code-level errors introduced by this slice. The only failing gate is the pre-existing AC-037 environment blocker (apparmor userns lockdown), and the pre-existing pyright baseline (zero new errors). The two open items (write_cursor-as-row-id deviation; shadow/read-visibility reserved gap) are DESIGNED + FLAGGED, not bugs. DoD met.",
+  "next_step_for_orchestrator": "Review (codex §9 adversarial pass on the schema delta + commit_batch supersession + bindings parity) → verify → close. On close: advance the board/plan pointer from Slice 15 to the next slice (Slice 20 G8 ∥ Slice 25), fold the CLOSED block, and carry forward the reserved Slice-16 shadow-reconciliation gap + the read-path superseded-visibility note (supersession has no observable read effect until Slice 16/G2). Remove the worktree /tmp/fdb-slice-15-20260603T155709Z (and the gitignored built _fathomdb.abi3.so inside it). Note the AC-037 baseline blocker is unchanged (Slice 40 wires agent-security into CI on a userns-permissive runner)."
+}

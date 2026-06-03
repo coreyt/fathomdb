@@ -16,27 +16,61 @@ pointer**; they record the contracts/shape.
 prompt in `dev/plans/prompts/`.
 
 Last updated: 2026-06-03 (Slice 10 **CLOSED** — PASS after codex CONCERN→fix-1→BLOCK→fix-2;
-pointer → Slice 15, **HITL-gated**: substrate cascade + migration policy + `write_cursor` deviation).
+pointer → Slice 20 (G8) ∥ Slice 25 after Slice 15 **CLOSED** — KEYSTONE G0 substrate, schema 11→12;
+PASS via codex override (single [P2] = HITL-pre-signed reserved Slice-16 shadow gap)).
 
 ---
 
 ## 1. Current slice
 
-**Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12)** `[implementation]` —
-⏳ **PROMPTED 2026-06-03** (gate cleared). Prompt: `dev/plans/prompts/0.8.0-slice-15.md`.
-- State (§1.5): **PROMPTED** — self-contained prompt written (baseline `68bf3d6`; verbatim ADR schema
-  delta as `step_id 12`/`SCHEMA_VERSION 11→12`; anchors re-verified at `68bf3d6` with re-grep
-  instruction; signed decisions + NULL-on-legacy rule carried). Human pastes it into a new slice agent;
-  the agent owns its worktree + merges to `main`. Depends-on: Slice 0 ✅ + Slice 5 ✅ + Slice 10 ✅.
-- **Substrate gate package ✅ FULLY SIGNED 2026-06-03** (§5): Q2=2A, Q4=edges-too (2026-06-02);
-  op-store cascade=ratify Decision 4 as-is; forward-migration=in-place additive `ALTER` (legacy rows
-  NULL `logical_id`, lazily backfilled — engine owns the NULL-on-legacy rule); `write_cursor`-as-row-id
-  ACCEPTED for 0.8.0 (dedicated `row_id`+`restore_provenance` DEFERRED). Slice 15 still FLAGS the
-  `write_cursor` deviation in `output.json` (lands the accepted shape, does not escalate).
-- **Renumber reminder:** Slice 5 consumed `step_id 11` / `SCHEMA_VERSION 11`, so Slice 15 is now
-  **`step_id 12` / `SCHEMA_VERSION 11→12`** (full inline renumber lands in Slice 15's closing commit).
-- **Next orchestrator action:** instantiate `dev/plans/prompts/0.8.0-slice-15.md` from the
-  SLICE-TEMPLATE; the human pastes it into a new slice agent (agent owns worktree + merges to `main`).
+**Next: Slice 20 — G8 Dangling-Edge Integrity `[implementation]` ∥ Slice 25 — Supersession Surface**
+— ▶️ **READY** (no HITL gate for Slice 20; Slice 25 carries the supersession Q1–Q5 finalize, a hard
+gate that unblocks Slice 30). Slice 15 (G0 keystone substrate) is **CLOSED** on `main` @ `5fa0e9e`, so
+the canonical `logical_id`/`superseded_at` columns + tombstone-then-insert supersession + `row_cursors`
+are now available to all downstream slices.
+- **Next orchestrator action:** author `dev/plans/prompts/0.8.0-slice-20.md` (G8 dangling-edge) from the
+  SLICE-TEMPLATE; baseline `5fa0e9e`. Slice 25 prompt follows (its prompt must carry the supersession
+  Q1–Q5 sign-off — that gate is not yet presented). The human pastes each into a fresh slice agent
+  (agent owns worktree + merges to `main`).
+- **Reserved-gap carry (now OWNED downstream):** **Slice 16 — shadow reconciliation** (excise/refresh
+  stale FTS5/vec0 shadow rows for superseded `write_cursor`s) and/or the **G2/Slice 30** read-path
+  `superseded_at IS NULL` join now own read-visibility closure. Until then, **supersession has NO
+  observable read effect** — `search` can surface a superseded body (benign in 0.8.0: no consumer sets
+  `logical_id`; `logical_id=None` path is byte-identical). codex flagged this as [P2] at Slice 15 close;
+  **overridden** per the HITL substrate sign-off (shadows NOT cascaded — deferred to Slice 16).
+
+### Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12) `[implementation]` — ✅ CLOSED 2026-06-03 (PASS via codex override of 1 × [P2] = reserved Slice-16 gap)
+- Slice agent owned worktree `/tmp/fdb-slice-15-20260603T155709Z` (branch `slice-15-20260603T155709Z`,
+  baseline `d51b1b3` — byte-identical to the prompt's named `68bf3d6`) and merged onto local `main`
+  itself (`--no-ff` merge `5fa0e9e` of slice tip `c06472c`; net diff `d51b1b3..main`, 57 files).
+  Worktree removed at close. `output.json` present + thorough.
+- **Delivered (schema `step_id 12` / `SCHEMA_VERSION 11→12`, verbatim authorized ADR delta):**
+  `logical_id TEXT` + `superseded_at INTEGER` on **both** canonical_nodes AND canonical_edges; per-table
+  partial `UNIQUE INDEX (logical_id, kind) WHERE superseded_at IS NULL`; folded **G4/G5** read indexes
+  (`canonical_nodes(kind)`, `canonical_edges(from_id)`, `canonical_edges(to_id)`); accretion-exemption
+  marker. Engine: `PreparedWrite::{Node,Edge}.logical_id`, `validate_write` rejects empty `logical_id`,
+  `commit_batch` tombstone-then-insert supersession (same txn, idempotent, one active per `(logical_id,kind)`;
+  `logical_id=None` byte-identical to 0.7.x). `WriteReceipt.row_cursors: Vec<u64>` (per-row `write_cursor`,
+  1:1 with batch) surfaced Py (`list[int]`) + TS (`rowCursors:number[]`), cross-binding equivalence.
+  NULL-on-legacy-rows rule documented + pinned (partial-unique NULL-safety test).
+- **Two recorded deviations (flagged, not bugs):** (1) `write_cursor`-as-row-id — HITL-ACCEPTED for
+  0.8.0 (dedicated `row_id`+`restore_provenance` DEFERRED); landed accepted shape, flagged in `output.json`.
+  (2) `pr_g1_tokenizer_recall.rs` FORCED DEVIATION (loud) — head writer now requires step-12 columns, so the
+  v10 "before" corpus is seeded directly into `canonical_nodes`+`search_index` (V10_MIGRATIONS drops steps
+  11+12); recall-floor intent preserved, test green. Op-store cascade (Decision 4) needed **no code change**
+  (`commit_batch` already commits supersession + latest_state + append_only_log in one txn).
+- **§9 review (codex primary, base `d51b1b3`): PASS via override.** R1: **1 × [P2]** — read path doesn't
+  filter `superseded_at IS NULL`; stale shadow rows can surface a superseded body
+  (`lib.rs:5748-5751`). This is exactly **`RESERVED-GAP-16`**, pre-signed out of scope by the HITL substrate
+  gate (shadows NOT cascaded → deferred to Slice 16) and not an observable regression → **orchestrator
+  override (§7)**, not fix-N. No [P0]/[P1]. Verdict: `0.8.0-slice-15-review-20260603T164851Z.md`.
+- **15.b on `main`:** schema migrations (incl. s12 accretion-marker + columns/index tests) + engine
+  `pr_g0_identity.rs` (6 new: supersession idempotent node+edge, NULL-collision, partial-unique-active
+  reject, row_cursors 1:1, legacy v11→v12 in-place NULL-backfill) green; Py 86 passed/5 skipped, TS 57;
+  clippy/fmt/ruff/`mkdocs --strict` clean. Recall floor ≥0.90 held; unfiltered byte-identity pin green.
+- **Carried (not gating):** pre-existing baseline pyright (11 errors, identical per-file profile to
+  canonical — zero new); AC-037 `netns-deny-egress` still reports a blocker on AppArmor-locked hosts
+  (Slice 40 wires `agent-security.sh` into CI on a userns-permissive runner).
 
 ### Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency `[implementation]` — ✅ CLOSED 2026-06-03 (PASS after CONCERN→fix-1→BLOCK→fix-2)
 - Slice agent owned worktree `/tmp/fdb-slice-10-20260603T014621Z` (branch `slice-10-20260603T014621Z`,
@@ -93,8 +127,8 @@ applicable to this slice's work-type.
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
 | **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
-| **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ⛔ HITL-gated (next) | 0, 5 | ❌ extend | ❌ | ❌ |
-| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ❌ not started | 15 | ❌ extend | ❌ | ❌ |
+| **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
+| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ▶️ READY (next) | 15 | ❌ extend | ❌ | ❌ |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
@@ -117,11 +151,11 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G9** RRF fusion (`Σ1/(k+rank)`, k=60) + `rerank_fused` seam | **10** | ✅ **DONE** (closed 2026-06-03, `main`@`e9f833a`) — `RRF_K=60.0`, unconditional ranking (no `fusion_mode` knob — HITL Q3); `rerank_fused` identity stub; vector-empty soft-fallback before collapse; `pr_g9_rrf_fusion.rs` pins determinism (6 green) |
 | **G10** metadata-filtered KNN (`Option<SearchFilter>`) | **10** | ✅ **DONE** — `Option<SearchFilter>{source_type,kind,created_after,status}` in the single phase-1 KNN; **`filter=None` byte-identical to 0.7.2** (pin green); 3-way shape-sentinel fixes `embedding_bin` no-op; FFI filter strings validated (fix-1). `status` empty-string-sentinel plumbing only — population = reserved-gap 13 |
 | **G12-recency** (`write_cursor`-derived reweight after bit-KNN, gated) | **10** | ✅ **DONE** — `write_cursor`-derived reweight after bit-KNN, dedicated off-by-default flag + latency gate; G12-importance / F9 deferred (reserved-gap) |
-| **G0** canonical identity substrate (`logical_id`+`superseded_at`, schema 10→11, partial-unique-active) | **15** (KEYSTONE) | ❌ not started |
+| **G0** canonical identity substrate (`logical_id`+`superseded_at`, schema 11→12, partial-unique-active) | **15** (KEYSTONE) | ✅ **DONE** (closed 2026-06-03, `main`@`5fa0e9e`) — `logical_id`+`superseded_at` on both canonical tables, per-table partial UNIQUE-active index, folded G4/G5 indexes, `step_id 12`/`SCHEMA_VERSION 11→12` accretion-exempt; tombstone-then-insert supersession in `commit_batch` (idempotent, `logical_id=None` byte-identical to 0.7.x); `WriteReceipt.row_cursors` Py+TS parity; `pr_g0_identity.rs` 6 green. **Read-visibility (superseded shadows) deferred to reserved Slice 16 / G2-Slice 30 — codex [P2] overridden per HITL gate.** `write_cursor`-as-row-id accepted+flagged |
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ❌ not started |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 (1.000→1.000) **and Slice 10** (RRF-neutral, Δ vs Slice 5 = 0.0000; real-embedder anchor 0.937 eu7/eu8-gated); 15 still gates |
+| Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 (1.000→1.000), Slice 10 (Δ 0.0000) **and Slice 15** (G0 additive; `logical_id=None` path byte-identical; unfiltered byte-identity pin green; real-embedder anchor 0.937 eu7/eu8-gated); **40** gates |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green + must stay **byte-unchanged** through Slice 25 |
 
 ---
@@ -211,12 +245,46 @@ the worktree at slice close.
 | `/tmp/fdb-slice-5-20260602T221543Z` | 5 | `slice-5-20260602T221543Z` | `8108bac` | ✅ REMOVED at close (2026-06-02; merged → `main`@`e76d68b`, branch deleted) |
 | `/tmp/fdb-slice-10-20260603T014621Z` | 10 | `slice-10-20260603T014621Z` | `e4ea932`→`c5d625e` | ✅ REMOVED at close (2026-06-03; merged → `main`@`b4865f6`; dir already gone, admin entry pruned) |
 | `/tmp/fdb-slice-10-fix1-20260603T123527Z` | 10 (fix-1/fix-2) | `slice-10-fix1-20260603T123527Z` | `b823f65` | ✅ REMOVED at close (2026-06-03; fix-1 `46ce583` + fix-2 `e9f833a` merged → `main`, branch deleted) |
+| `/tmp/fdb-slice-15-20260603T155709Z` | 15 | `slice-15-20260603T155709Z` | `d51b1b3` | ✅ REMOVED at close (2026-06-03; merged → `main`@`5fa0e9e`, branch deleted; built `_fathomdb.abi3.so` inside it removed with the dir) |
 
-**No 0.8.0 slice-managed worktree outstanding** after Slice 10 close.
+**No 0.8.0 slice-managed worktree outstanding** after Slice 15 close.
 
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-03 — Slice 15 CLOSED (KEYSTONE G0 substrate; PASS via codex override of 1 × [P2] = reserved Slice-16 gap; pointer → Slice 20 ∥ 25)
+
+- **Gate (§1.5 inv. 2) PASSED:** the Slice 15 agent reported merge; git confirmed `output.json` present,
+  `merged_to_main_sha` `5fa0e9e` reachable, `main` advanced past baseline `d51b1b3`. The agent used
+  baseline `d51b1b3` (the PROMPTED doc commit), not the prompt's named `68bf3d6` — byte-identical source,
+  documented in `output.json` per §0. Merge is a `--no-ff` of slice tip `c06472c`; net diff `d51b1b3..main`.
+- **Schema landed as authorized:** `step_id 12` / `SCHEMA_VERSION 11→12`, verbatim ADR delta — `logical_id`+
+  `superseded_at` on both canonical tables, per-table partial UNIQUE-active index, folded G4/G5 read indexes,
+  accretion-exemption marker. Verified against the ADR before close.
+- **§9 review = codex (primary, base `d51b1b3`): 1 × [P2], no [P0]/[P1].** The finding — read/search path
+  doesn't join on `superseded_at IS NULL`, so a `logical_id` rewrite leaves stale FTS5/vec0 shadow rows that
+  can surface a superseded body (`lib.rs:5748-5751`) — is **exactly `RESERVED-GAP-16`**, which the slice agent
+  flagged as out of scope (§2) and which the **HITL substrate gate (2026-06-03) pre-signed as deferred**
+  ("vec0/FTS5 shadows NOT cascaded — deferred to reserved Slice 16"). → **orchestrator OVERRIDE (§7), not
+  fix-N**: it is a designed reserved gap, not a forced deviation or new defect, and not an observable
+  regression (no consumer sets `logical_id`; `logical_id=None` byte-identical; recall/byte-identity green;
+  retrieval ADR Q2=2A means read-visibility lands later by design). Read-visibility now OWNED by Slice 16
+  (shadow reconciliation) and/or the G2/Slice 30 read-path filter. Verdict doc:
+  `0.8.0-slice-15-review-20260603T164851Z.md`.
+- **Two flagged deviations (recorded, not bugs):** (1) `write_cursor`-as-row-id — HITL-ACCEPTED 2026-06-03,
+  dedicated `row_id`+`restore_provenance` DEFERRED; landed accepted shape, flagged in `output.json` (sign-off
+  ≠ silent reconciliation). (2) `pr_g1_tokenizer_recall.rs` FORCED DEVIATION (loud) — the head writer now
+  requires step-12 columns, so the v10 "before" corpus is seeded directly into `canonical_nodes`+`search_index`
+  (V10_MIGRATIONS drops steps 11+12); recall-floor intent preserved, test green. Op-store cascade (Decision 4)
+  needed **no code change** (`commit_batch` already atomic across supersession + latest_state + append_only_log).
+- **Independent 15.b on `main`:** schema migrations (incl. s12 accretion-marker + columns/index tests) +
+  engine `pr_g0_identity.rs` (6 new) green; Py 86 passed/5 skipped, TS 57; clippy/fmt/ruff/`mkdocs --strict`
+  clean. Recall floor ≥0.90 held; unfiltered byte-identity pin green → PASS.
+- **Carried, NOT gating:** pre-existing baseline pyright (11 errors, identical per-file profile to canonical,
+  zero new); AC-037 `netns-deny-egress` still a blocker on AppArmor-locked hosts (Slice 40 CI gate (n)).
+- **Pointer → Slice 20 (G8 dangling-edge) ∥ Slice 25 (supersession sign-off).** Slice 20 has no HITL gate;
+  Slice 25 carries the supersession Q1–Q5 finalize (hard gate unblocking Slice 30 — not yet presented).
 
 ### 2026-06-03 — Slice 10 CLOSED (PASS after codex CONCERN→fix-1→BLOCK→fix-2; pointer → Slice 15, HITL-gated)
 
@@ -469,43 +537,38 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 10 CLOSED (PASS). Substrate gate ✅ SIGNED 2026-06-03. Slice 15 ✅ PROMPTED 2026-06-03.**
-The self-contained keystone prompt is written: `dev/plans/prompts/0.8.0-slice-15.md` (baseline
-`68bf3d6`; verbatim ADR schema delta as `step_id 12`/`SCHEMA_VERSION 11→12`; signed decisions + the
-NULL-on-legacy-rows rule; anchors re-verified at `68bf3d6` with a re-grep instruction since the engine
-moved in Slice 10).
+**Slice 15 CLOSED (KEYSTONE G0, PASS via override) 2026-06-03 on `main`@`5fa0e9e`. Pointer → Slice 20
+(G8 dangling-edge) ∥ Slice 25 (supersession sign-off).** The canonical `logical_id`/`superseded_at`
+substrate + tombstone-then-insert supersession + `WriteReceipt.row_cursors` are now on `main` and
+available to all downstream slices. Worktree removed; board/plan/ADR pointers advanced; reserved-gap-16
+(shadow reconciliation / read-visibility) carried forward.
 
-**Execution model:** the human pastes the prompt into a new slice agent; **the agent owns its worktree
-and merges its green work onto `main` itself** (no push). The orchestrator (this thread) does NOT
-create a worktree.
+**Next orchestrator step = author the next slice prompt(s).** Slice 20 has **no HITL gate** — proceed.
+Slice 25 carries the **supersession Q1–Q5 finalize**, a hard gate that unblocks Slice 30 (the SDK read
+verbs); that gate is **not yet presented to HITL**, so the Slice 25 prompt cannot be instantiated until
+it is signed.
 
-**When the slice agent reports it has merged, the orchestrator resumes — on `main`:**
-1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-15-output.json` exists AND
-   `main` advanced past baseline (`merged_to_main_sha` reachable). Absent/blocker → triage or HALT.
-2. **codex §9 review** (primary): `codex exec review --base <slice-baseline>
-   --dangerously-bypass-approvals-and-sandbox`. Focus: migration idempotence + crash-safety between the
-   `user_version=12` commit and engine reshape; **partial-unique NULL-safety** (legacy NULL rows never
-   collide); exemption-marker correctness; tombstone-then-insert atomicity (no row visible
-   mid-supersession); `row_cursors` Py≡TS parity; the `write_cursor`-as-row-id deviation vs the ADR
-   (accepted — confirm it's flagged, not escalated); **recall floor + unfiltered byte-identity un-regressed.**
-   Promote → `0.8.0-slice-15-review-<ts>.md` with a `## Verdict:` line.
-3. **15.b verification** (read-only on `main`): migration idempotence (apply twice + from-scratch;
-   `user_version==12`); partial-unique correctness (NULL legacy never collide; two active collide;
-   superseded+active coexist); folded G4/G5 indexes present + exemption marker is the only thing passing
-   the guard; Pack-1 upgrade (old rows back-fill NULL, queryable); `row_cursors` Py+TS 1:1; floor +
-   byte-identity not regressed.
-4. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override. Substantive CONCERN /
-   BLOCK → fix-N (fresh implementer into the existing worktree/branch). **Floor breach / partial-unique
-   NULL-collision / mid-supersession visibility is substantive — never overridden → HALT to HITL.**
-5. **Close in ONE docs commit on `main`:** Slice 15 CLOSED block; **full inline renumber** of any
-   remaining stale "step 11 / 10→11" literals in the Slice 15 contract + the canonical-identity ADR
-   delta literals (they read `step_id:11` / `10→11`; the authority note says execute as 12 / 11→12 — the
-   close commit makes the literals match); advance pointer to **Slice 20 ∥ 25**; register reserved-gap-16
-   (shadow vec0/FTS5 reconciliation); note G12-importance still deferred; update board + DOC-INDEX +
-   per-AC scoreboard (G0 → DONE). 6. **Worktree cleanup** (§11).
+1. **Author `dev/plans/prompts/0.8.0-slice-20.md`** (G8 dangling-edge flag-and-count →
+   `WriteReceipt.dangling_edge_endpoints`) from the SLICE-TEMPLATE; **baseline `5fa0e9e`**. Re-verify the
+   engine anchors at `5fa0e9e` (`commit_batch`/`validate_write`/`WriteReceipt` moved again in Slice 15 —
+   the receipt now carries `row_cursors`). G8 is additive (a count on the receipt) and edge-write-path
+   only; it does NOT reshape the carrier, so it parallelizes cleanly with Slice 25.
+2. **Slice 25** — before prompting, present the **supersession gate** (Q1=A1, Q2=B1, Q3=amend, Q4=confirm,
+   Q5=SDK-only per §5) to HITL for sign-off; only then instantiate `0.8.0-slice-25.md`.
+3. **Execution model unchanged:** the human pastes each prompt into a fresh slice agent; **the agent owns
+   its worktree and merges onto `main` itself** (no push). The orchestrator does NOT create a worktree.
+4. **On each agent's merge report, resume the standard loop:** gate transition (§1.5 inv. 2) → codex §9
+   review (`--base <slice-baseline> --dangerously-bypass-approvals-and-sandbox`) → N.b verification →
+   decide (PASS / CONCERN→§7 override / BLOCK→fix-N; HALT to HITL on substantive invariant breach) →
+   close in ONE docs commit advancing the pointer → worktree cleanup (§11).
 
-Reminder: Slice 15 is the keystone — anything touching `commit_batch`/the carrier serializes through it
-(§4). Supersession Q1–Q5 finalize at **Slice 25** (hard gate for the SDK read verbs in Slice 30).
+**Reserved-gap-16 (now live):** read-visibility of supersession is OWNED by **Slice 16** (excise/refresh
+stale FTS5/vec0 shadow rows for superseded `write_cursor`s) and/or the **G2/Slice 30** read-path
+`superseded_at IS NULL` join. Until one lands, `search` can surface a superseded body — benign in 0.8.0
+(no consumer sets `logical_id`). If Slice 16 is sequenced, slot it after Slice 20/25 baselines settle.
+
+Reminder: Slice 15 was the keystone — anything touching `commit_batch`/the carrier already serialized
+through it (§4). Supersession Q1–Q5 finalize at **Slice 25** (hard gate for the SDK read verbs in Slice 30).
 
 **AC-037 (no-egress) — signed 2026-06-02; one-time confirm ✅ DONE:** confirmed GREEN on windchill3
 (temp `apparmor_restrict_unprivileged_userns=0`, restored after) — no off-loopback connects on the
