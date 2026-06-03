@@ -53,6 +53,7 @@ fn write_node(engine: &Engine, body: &str, source_id: &str) -> u64 {
             kind: "doc".to_string(),
             body: body.to_string(),
             source_id: Some(source_id.to_string()),
+            logical_id: None,
         }])
         .expect("write")
         .cursor

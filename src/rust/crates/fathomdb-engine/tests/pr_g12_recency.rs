@@ -100,6 +100,7 @@ fn recency_flag_off_by_default_e2e() {
                 kind: "doc".to_string(),
                 body: body.to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write");
     }

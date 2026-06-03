@@ -17,6 +17,10 @@ class WriteReceipt:
     """Receipt returned by `engine.write` and `admin.configure`."""
 
     cursor: int
+    #: G0 (Slice 15) — per-row ``write_cursor``s, 1:1 with the input batch
+    #: order. The ``write_cursor``-as-row-id identity carrier; for an N-row
+    #: batch this is ``[cursor - N + 1, …, cursor]``.
+    row_cursors: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

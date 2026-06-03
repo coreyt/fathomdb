@@ -125,6 +125,7 @@ fn sustained_seed_serialized_path_completes_and_is_correct() {
                 kind: "doc".to_string(),
                 body: b.clone(),
                 source_id: None,
+                logical_id: None,
             })
             .collect();
         engine.write(&batch).expect("seed write");

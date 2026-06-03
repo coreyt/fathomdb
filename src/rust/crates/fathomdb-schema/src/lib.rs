@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -275,6 +275,38 @@ pub const MIGRATIONS: &[Migration] = &[
                   write_cursor UNINDEXED,
                   tokenize = 'porter unicode61 remove_diacritics 2'
               );",
+    },
+    // 0.8.0 Slice 15 (G0 KEYSTONE) — transaction-time canonical-identity
+    // substrate. Per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`
+    // (SIGNED 2026-06-03) and `dev/design/slice-15-g0-design.md`. Two additive
+    // nullable columns on BOTH canonical tables: `logical_id TEXT` (stable
+    // cross-re-ingestion identity; NULL = legacy/own-identity row) and
+    // `superseded_at INTEGER` (transaction-time tombstone; NULL = active row).
+    // A partial UNIQUE INDEX `(logical_id, kind) WHERE superseded_at IS NULL`
+    // per table enforces one active version per logical id — NULL-safe, so the
+    // many legacy NULL-logical_id rows never collide (SQLite treats each NULL as
+    // distinct; load-bearing). The folded G4/G5 read indexes
+    // (`canonical_nodes(kind)`, `canonical_edges(from_id)/(to_id)`) ride this one
+    // accretion offset budget. Pure additive ALTER (no DROP) → the exemption
+    // marker is REQUIRED (the accretion guard rejects ADD COLUMN without it);
+    // legacy rows read NULL with no data migration / re-open (in-place ALTER).
+    Migration {
+        step_id: 12,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G0 transaction-time identity substrate
+              ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_nodes ADD COLUMN superseded_at INTEGER;
+              ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_nodes_logical_active_idx
+                  ON canonical_nodes(logical_id, kind) WHERE superseded_at IS NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
+                  ON canonical_edges(logical_id, kind) WHERE superseded_at IS NULL;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_kind_idx
+                  ON canonical_nodes(kind);
+              CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
+                  ON canonical_edges(from_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
+                  ON canonical_edges(to_id);",
     },
 ];
 

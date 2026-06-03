@@ -69,7 +69,12 @@ fn _power_cut_victim_entry() {
         let body = micros_since_epoch().to_string();
         opened
             .engine
-            .write(&[PreparedWrite::Node { kind: "doc".to_string(), body, source_id: None }])
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body,
+                source_id: None,
+                logical_id: None,
+            }])
             .expect("victim write");
         if first {
             // Fence: the parent waits for this sentinel before sampling

@@ -104,6 +104,7 @@ fn concurrent_searches_route_to_workers_without_loss_or_duplication() {
             kind: "doc".to_string(),
             body: "hello world".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("seed write");
 

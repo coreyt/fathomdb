@@ -133,6 +133,7 @@ fn write_docs_production(engine: &Engine, start: usize, count: usize, batch: usi
                 kind: "doc".to_string(),
                 body: format!("doc-{}", start + written + i),
                 source_id: None,
+                logical_id: None,
             })
             .collect();
         engine.write(&nodes).expect("production write");
@@ -328,6 +329,7 @@ fn panicking_embedder_does_not_wedge_drain() {
             kind: "doc".to_string(),
             body: format!("panic-doc-{i}"),
             source_id: None,
+            logical_id: None,
         })
         .collect();
     engine.write(&nodes).expect("write");

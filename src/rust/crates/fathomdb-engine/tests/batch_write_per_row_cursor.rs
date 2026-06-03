@@ -73,6 +73,7 @@ fn batched_write_produces_one_vec0_row_per_node() {
             kind: "doc".to_string(),
             body: format!("body-{i} unique-token-{i}"),
             source_id: Some(format!("id-{i}")),
+            logical_id: None,
         })
         .collect();
     engine.write(&batch).expect("write batch");
@@ -97,6 +98,7 @@ fn batched_write_each_node_searchable_by_body() {
             kind: "doc".to_string(),
             body: body.clone(),
             source_id: Some(format!("id-{i}")),
+            logical_id: None,
         })
         .collect();
     engine.write(&batch).expect("write batch");

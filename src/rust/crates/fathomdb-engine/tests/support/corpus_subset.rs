@@ -383,6 +383,7 @@ pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, 
             kind: VECTOR_KIND.to_string(),
             body: doc.body.clone(),
             source_id: Some(doc.doc_id.clone()),
+            logical_id: None,
         })
         .collect();
     let nodes_written = node_batch.len();
@@ -403,6 +404,7 @@ pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, 
             from: parent.clone(),
             to: doc.doc_id.clone(),
             source_id: Some(doc.doc_id.clone()),
+            logical_id: None,
         });
     }
     let edges_written = edge_batch.len();

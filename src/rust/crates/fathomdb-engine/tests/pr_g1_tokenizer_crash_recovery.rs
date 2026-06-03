@@ -62,6 +62,7 @@ fn ingest(engine: &Engine) {
                 kind: "doc".to_string(),
                 body: doc.body.to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write corpus doc");
     }
@@ -84,11 +85,14 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join(format!("tok_crash{SQLITE_SUFFIX}"));
 
-    // --- Build a fully-migrated (v11) corpus the normal way. The reproject
-    // ran on this open, so recall is healthy. ---
+    // --- Build a fully-migrated (head) corpus the normal way. The reproject
+    // ran on this open, so recall is healthy. (Head is SCHEMA_VERSION 12 after
+    // the Slice-15 G0 substrate step; the tokenizer reproject is gated on its
+    // completion marker, not the step boundary, so this test is unchanged in
+    // intent — only the head version literal moves 11 → 12.) ---
     {
-        let opened = Engine::open(&path).expect("open v11");
-        assert_eq!(opened.report.schema_version_after, 11, "must open at SCHEMA_VERSION 11");
+        let opened = Engine::open(&path).expect("open head");
+        assert_eq!(opened.report.schema_version_after, 12, "must open at SCHEMA_VERSION 12");
         ingest(&opened.engine);
         let recall = measure_recall(&opened.engine);
         assert!(recall >= FLOOR, "baseline v11 recall {recall:.3} below floor");
@@ -96,15 +100,15 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
     }
 
     // --- Reconstruct the durable post-crash artifact directly on the DB file:
-    // empty `search_index` while `user_version` stays 11, and (if the fix uses
-    // a completion marker) the marker cleared — exactly what a crash after the
-    // step-11 commit but before the reproject commit leaves behind. No mock:
-    // this is the real SQLite file in the real crash-window state. ---
+    // empty `search_index` while `user_version` stays at head, and (if the fix
+    // uses a completion marker) the marker cleared — exactly what a crash after
+    // the tokenizer-step commit but before the reproject commit leaves behind.
+    // No mock: this is the real SQLite file in the real crash-window state. ---
     {
         let raw = Connection::open(&path).expect("raw open");
         let user_version: u32 =
             raw.query_row("PRAGMA user_version", [], |r| r.get(0)).expect("user_version");
-        assert_eq!(user_version, 11, "precondition: durable schema is v11");
+        assert_eq!(user_version, 12, "precondition: durable schema is head (v12)");
 
         raw.execute("DELETE FROM search_index", []).expect("simulate empty fts index");
         raw.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [REPROJECT_MARKER_KEY])
@@ -114,10 +118,10 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
             .query_row("SELECT COUNT(*) FROM search_index", [], |r| r.get(0))
             .expect("count fts rows");
         assert_eq!(fts_rows, 0, "crash artifact must leave search_index empty");
-        // user_version must remain 11 — the crash did NOT roll back the step.
+        // user_version must remain at head — the crash did NOT roll back a step.
         let after: u32 =
             raw.query_row("PRAGMA user_version", [], |r| r.get(0)).expect("user_version");
-        assert_eq!(after, 11, "crash artifact must keep user_version = 11");
+        assert_eq!(after, 12, "crash artifact must keep user_version = 12");
         drop(raw);
     }
 
@@ -129,8 +133,8 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
         let opened = Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {})
             .expect("reopen after crash artifact");
         assert_eq!(
-            opened.report.schema_version_before, 11,
-            "reopen observes a durable v11 (no boundary crossing)"
+            opened.report.schema_version_before, 12,
+            "reopen observes a durable v12 head (no boundary crossing)"
         );
         let recall = measure_recall(&opened.engine);
         opened.engine.close().unwrap();

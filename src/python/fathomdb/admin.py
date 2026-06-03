@@ -26,7 +26,7 @@ def configure(engine: "Engine", *, name: str, body: str) -> WriteReceipt:
     if body is None:
         raise ValueError("admin.configure requires a body")
     receipt = _native_configure(engine._native, name, body)
-    return WriteReceipt(cursor=receipt.cursor)
+    return WriteReceipt(cursor=receipt.cursor, row_cursors=tuple(receipt.row_cursors))
 
 
 __all__ = ["configure"]

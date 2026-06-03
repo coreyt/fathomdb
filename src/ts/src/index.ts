@@ -38,6 +38,12 @@ export interface EngineOpenOptions {
 
 export interface WriteReceipt {
   cursor: number;
+  /**
+   * G0 (Slice 15) — per-row `write_cursor`s, 1:1 with the input batch order.
+   * The `write_cursor`-as-row-id identity carrier; for an N-row batch this is
+   * `[cursor-N+1, …, cursor]`.
+   */
+  rowCursors: number[];
 }
 
 export type SoftFallbackBranch = "vector" | "text";

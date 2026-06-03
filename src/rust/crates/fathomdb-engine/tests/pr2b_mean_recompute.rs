@@ -128,6 +128,7 @@ fn write_docs<F: Fn(usize) -> String>(engine: &Engine, count: usize, batch: usiz
                 kind: "doc".to_string(),
                 body: body(written + i),
                 source_id: None,
+                logical_id: None,
             })
             .collect();
         engine.write(&nodes).expect("production write");

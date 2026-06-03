@@ -12,6 +12,7 @@ fn write_node(engine: &fathomdb_engine::Engine, body: &str, source_id: &str) -> 
             kind: "doc".to_string(),
             body: body.to_string(),
             source_id: Some(source_id.to_string()),
+            logical_id: None,
         }])
         .expect("write")
         .cursor
@@ -57,6 +58,7 @@ fn ac_042_trace_source_ref_includes_edges_alongside_nodes() {
             from: "a".to_string(),
             to: "b".to_string(),
             source_id: Some("S1".to_string()),
+            logical_id: None,
         }])
         .expect("edge write");
 
@@ -79,6 +81,7 @@ fn ac_042_trace_source_ref_excludes_null_source_rows() {
             kind: "doc".to_string(),
             body: "nullable".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
 

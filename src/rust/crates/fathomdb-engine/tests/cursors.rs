@@ -42,6 +42,7 @@ fn ac_059a_projection_cursor_is_monotonic_non_decreasing() {
                     kind: "doc".to_string(),
                     body: format!("doc {i}"),
                     source_id: None,
+                    logical_id: None,
                 }])
                 .unwrap();
         }
@@ -64,6 +65,7 @@ fn ac_059b_write_cursor_is_satisfied_by_projection_cursor_and_queryable() {
             kind: "doc".to_string(),
             body: "findable phase seven document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .unwrap()
         .cursor;
@@ -95,6 +97,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
             kind: "doc".to_string(),
             body: "first".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .unwrap()
         .cursor;
@@ -105,6 +108,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
             kind: "force_storage_failure_for_test".to_string(),
             body: "allowed".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("test-like node kind is still user data");
     assert_eq!(err.cursor, committed + 1);
@@ -116,6 +120,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
             kind: "doc".to_string(),
             body: "must fail".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect_err("forced storage failure should fail after validation");
     assert_eq!(err, fathomdb_engine::EngineError::Storage);
@@ -133,6 +138,7 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
             kind: "doc".to_string(),
             body: "first".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .unwrap()
         .cursor;
@@ -150,6 +156,7 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
                 kind: "doc".to_string(),
                 body: "must fail".to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect_err("forced storage failure should fail")
     });

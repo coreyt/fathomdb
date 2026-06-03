@@ -53,6 +53,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
             source_id: Some("src-a".to_string()),
+            logical_id: None,
         }])
         .expect("write a");
     opened
@@ -61,6 +62,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             kind: "doc".to_string(),
             body: "beta".to_string(),
             source_id: Some("src-a".to_string()),
+            logical_id: None,
         }])
         .expect("write a2");
     opened
@@ -69,6 +71,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             kind: "doc".to_string(),
             body: "gamma".to_string(),
             source_id: Some("src-b".to_string()),
+            logical_id: None,
         }])
         .expect("write b");
     opened.engine.close().expect("close");

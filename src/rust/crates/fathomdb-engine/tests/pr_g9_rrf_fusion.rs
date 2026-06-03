@@ -118,6 +118,7 @@ fn rrf_end_to_end_order_is_deterministic() {
                 kind: "doc".to_string(),
                 body: body.to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write");
     }
@@ -153,6 +154,7 @@ fn vector_empty_soft_fallback_signal_survives_fusion() {
             kind: "doc".to_string(),
             body: "phase nine hybrid search".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
 

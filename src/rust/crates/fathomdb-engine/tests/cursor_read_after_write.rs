@@ -57,6 +57,7 @@ fn projection_cursor_bounds_observed_row_count() {
                     kind: "doc".to_string(),
                     body: "needle".to_string(),
                     source_id: None,
+                    logical_id: None,
                 }]);
                 thread::sleep(Duration::from_micros(50));
             }

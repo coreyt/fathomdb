@@ -162,6 +162,7 @@ fn ac_002_no_log_files_without_subscriber() {
             kind: "doc".to_string(),
             body: "hello".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     let _ = opened.engine.search("hello").expect("search");
@@ -217,6 +218,7 @@ fn ac_003a_writer_events_flow_to_subscriber() {
         kind: "doc".to_string(),
         body: "hello".to_string(),
         source_id: None,
+        logical_id: None,
     }]);
     let captured = sink.events.lock().unwrap();
     assert!(captured
@@ -302,6 +304,7 @@ fn ac_004b_counter_delta_exact_over_mixed_ops() {
                 kind: "doc".to_string(),
                 body: "hello".to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write");
     }
@@ -443,6 +446,7 @@ fn ac_006_interior_page_corruption_emits_sqlite_corrupt() {
             kind: "doc".to_string(),
             body: "interior".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("seed write");
     opened.engine.close().expect("close before corruption");

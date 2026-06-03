@@ -116,6 +116,7 @@ fn fts5_control_syntax_is_safe_and_matches_reference() {
             kind: "doc".to_string(),
             body: (*body).to_string(),
             source_id: None,
+            logical_id: None,
         })
         .collect();
     engine.write(&writes).expect("seed write");

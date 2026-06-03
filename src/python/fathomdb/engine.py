@@ -101,7 +101,7 @@ class Engine:
 
     def write(self, batch: list[Any] | None = None) -> WriteReceipt:
         receipt = self._native.write(batch or [])
-        return WriteReceipt(cursor=receipt.cursor)
+        return WriteReceipt(cursor=receipt.cursor, row_cursors=tuple(receipt.row_cursors))
 
     def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
         if filter is None:

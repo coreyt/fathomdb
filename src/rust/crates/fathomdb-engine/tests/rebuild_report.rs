@@ -50,6 +50,7 @@ fn rebuild_projections_returns_structured_report() {
                 kind: "doc".to_string(),
                 body: format!("payload {i}"),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write");
     }
@@ -88,6 +89,7 @@ fn rebuild_vec0_returns_structured_report() {
                 kind: "doc".to_string(),
                 body: format!("payload {i}"),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write");
     }
