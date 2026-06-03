@@ -122,6 +122,50 @@ def test_functional_rrf_fused_order_cross_binding(db_path: str) -> None:
         engine.close()
 
 
+def test_functional_row_cursors_one_to_one(db_path: str) -> None:
+    """Slice 15 / X1 / G0 — `WriteReceipt.row_cursors` is 1:1 with the batch in
+    input order and deterministic on a fresh DB. The exact values ([1, 2, 3]
+    then [4, 5]) are what the TypeScript harness also asserts, proving Py ≡ TS
+    `row_cursors` for the same DB + writes (cross-binding equivalence)."""
+
+    engine = Engine.open(db_path)
+    try:
+        first = engine.write(
+            [
+                {"kind": "doc", "body": "rc-a"},
+                {"kind": "doc", "body": "rc-b"},
+                {"kind": "doc", "body": "rc-c"},
+            ]
+        )
+        assert list(first.row_cursors) == [1, 2, 3]
+        assert first.cursor == 3
+        assert first.row_cursors[-1] == first.cursor
+
+        second = engine.write([{"kind": "doc", "body": "rc-d"}, {"kind": "doc", "body": "rc-e"}])
+        assert list(second.row_cursors) == [4, 5]
+        assert second.cursor == 5
+    finally:
+        engine.close()
+
+
+def test_functional_supersession_write_surfaces_row_cursor(db_path: str) -> None:
+    """Slice 15 / X1 / G0 — a supersession write (same `logical_id`) is accepted
+    by the SDK and returns its per-row cursor. Active-only read visibility
+    (filtering the superseded version out of `search`) is reserved for G2 +
+    shadow reconciliation (Slice 16); here we assert the write path round-trips
+    `logical_id` + `row_cursors`. The TS harness asserts the same values."""
+
+    engine = Engine.open(db_path)
+    try:
+        v1 = engine.write([{"kind": "doc", "body": "fact v1", "logical_id": "L1"}])
+        v2 = engine.write([{"kind": "doc", "body": "fact v2", "logical_id": "L1"}])
+        assert list(v1.row_cursors) == [1]
+        assert list(v2.row_cursors) == [2]
+        assert v2.cursor > v1.cursor
+    finally:
+        engine.close()
+
+
 def test_functional_filtered_search_prunes(db_path: str) -> None:
     """Slice 10 / X1 — a `SearchFilter` prunes results. "retrieval" matches a
     `note` (alpha) and a `doc` (delta); filtering `kind="note"` drops the doc."""

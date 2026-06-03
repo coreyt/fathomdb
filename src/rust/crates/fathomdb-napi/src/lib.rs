@@ -310,11 +310,18 @@ where
 #[napi(object)]
 pub struct WriteReceipt {
     pub cursor: i64,
+    /// G0 (Slice 15) — per-row `write_cursor`s, 1:1 with the input batch order
+    /// (surfaced as `rowCursors`). Each `u64` is narrowed to `i64` at the FFI
+    /// boundary, matching the existing `cursor` cast.
+    pub row_cursors: Vec<i64>,
 }
 
 impl WriteReceipt {
     fn from_rust(r: RustWriteReceipt) -> Self {
-        Self { cursor: r.cursor as i64 }
+        Self {
+            cursor: r.cursor as i64,
+            row_cursors: r.row_cursors.into_iter().map(|c| c as i64).collect(),
+        }
     }
 }
 
@@ -932,7 +939,8 @@ fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
     let kind = json_str_required(item, "kind")?;
     let body = json_serialised(item, "body")?.unwrap_or_else(|| "{}".to_string());
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
-    Ok(PreparedWrite::Node { kind, body, source_id })
+    let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
+    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
 }
 
 fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
@@ -940,7 +948,8 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let from = json_str_required(item, "from")?;
     let to = json_str_required(item, "to")?;
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id })
+    let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
+    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
 }
 
 fn translate_op_store(item: &JsonValue) -> Result<PreparedWrite> {

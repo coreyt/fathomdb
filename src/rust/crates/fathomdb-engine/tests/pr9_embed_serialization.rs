@@ -102,6 +102,7 @@ fn embeds_are_serialized_engine_side() {
             kind: "doc".to_string(),
             body: format!("serialize-doc-{i}"),
             source_id: None,
+            logical_id: None,
         })
         .collect();
     engine.write(&nodes).expect("write");

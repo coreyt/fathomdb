@@ -368,6 +368,7 @@ fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
                 kind: "doc".to_string(),
                 body: b.clone(),
                 source_id: None,
+                logical_id: None,
             })
             .collect();
         engine.write(&batch).expect("seed write");

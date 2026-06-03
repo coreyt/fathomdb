@@ -25,6 +25,7 @@ fn run(path: PathBuf) -> Result<(), String> {
             kind: "doc".to_string(),
             body: "security cycle fixture body".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .map_err(|e| format!("write: {e:?}"))?;
 

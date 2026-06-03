@@ -40,6 +40,7 @@ fn ac_040a_dump_row_counts_reflects_canonical_writes() {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     let report = opened.engine.dump_row_counts().expect("dump_row_counts");

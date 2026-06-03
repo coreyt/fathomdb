@@ -151,7 +151,12 @@ fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
 }
 
 fn doc(body: &str) -> PreparedWrite {
-    PreparedWrite::Node { kind: "doc".to_string(), body: body.to_string(), source_id: None }
+    PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        source_id: None,
+        logical_id: None,
+    }
 }
 
 fn wait_for_status(

@@ -71,6 +71,7 @@ fn ac_g1_hit_shape_text_branch() {
             kind: "note".to_string(),
             body: "structured retrieval hit shape document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -106,6 +107,7 @@ fn ac_g1_hit_shape_vector_branch() {
             // way this surfaces is the vector branch.
             body: "semantic only payload".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -135,6 +137,7 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             kind: "doc".to_string(),
             body: "hybrid retrieval document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write 1");
     let r2 = opened
@@ -143,6 +146,7 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             kind: "doc".to_string(),
             body: "another hybrid document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write 2");
     opened.engine.drain(10_000).expect("drain");
@@ -192,6 +196,7 @@ fn ac_g1_no_eq_but_partial_eq() {
             kind: "note".to_string(),
             body: "equality probe document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");

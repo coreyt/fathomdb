@@ -39,7 +39,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 10);
+    assert_eq!(report.migration_steps.len(), 11);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
@@ -52,7 +52,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
@@ -69,7 +69,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }
@@ -178,6 +178,92 @@ fn phase9_pack_b_migration_008_adds_source_id_columns_and_indexes() {
     assert_eq!(edges_idx, 1);
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+}
+
+// Slice 15 (G0) — the step-12 substrate migration is pure additive `ALTER …
+// ADD COLUMN` (no DROP), so the accretion guard rejects it UNLESS the exemption
+// marker is present. This pins that the marker is the only thing letting it pass
+// (mirrors `ac_049`).
+#[test]
+fn s12_g0_substrate_passes_accretion_guard_only_with_marker() {
+    let step12 = fathomdb_schema::MIGRATIONS
+        .iter()
+        .find(|m| m.step_id == 12)
+        .expect("step 12 (G0 substrate) must exist");
+
+    // As-authored (with the marker): accepted.
+    check_migration_accretion("012_g0_substrate.sql", step12.sql)
+        .expect("step 12 must pass the accretion guard with its exemption marker");
+
+    // Strip the exemption-marker line: the same additive-ALTER SQL is now rejected.
+    let without_marker: String = step12
+        .sql
+        .lines()
+        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let err = check_migration_accretion("012_g0_substrate.sql", &without_marker)
+        .expect_err("step 12 without the exemption marker must be rejected");
+    assert_eq!(err, MigrationAccretionError { offender: "012_g0_substrate.sql".to_string() });
+}
+
+// Slice 15 (G0) — applying the full migration set lands the transaction-time
+// identity substrate: `logical_id` + `superseded_at` on BOTH canonical tables,
+// the partial-unique-active index per table, the folded G4/G5 read indexes, and
+// `user_version == 12`.
+#[test]
+fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let column_present = |table: &str, column: &str| -> bool {
+        conn.prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|name| name == column)
+    };
+    for table in ["canonical_nodes", "canonical_edges"] {
+        assert!(column_present(table, "logical_id"), "{table}.logical_id must be present");
+        assert!(column_present(table, "superseded_at"), "{table}.superseded_at must be present");
+    }
+
+    let index_present = |name: &str| -> u64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            [name],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    for idx in [
+        "canonical_nodes_logical_active_idx",
+        "canonical_edges_logical_active_idx",
+        "canonical_nodes_kind_idx",
+        "canonical_edges_from_id_idx",
+        "canonical_edges_to_id_idx",
+    ] {
+        assert_eq!(index_present(idx), 1, "index {idx} must exist after step 12");
+    }
+
+    // The active-row uniqueness index must be partial (WHERE superseded_at IS NULL).
+    let partial_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='canonical_nodes_logical_active_idx'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        partial_sql.contains("superseded_at IS NULL"),
+        "the active index must be partial on superseded_at IS NULL, got: {partial_sql}"
+    );
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 12);
 }
 
 #[test]

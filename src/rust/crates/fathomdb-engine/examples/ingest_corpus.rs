@@ -259,6 +259,7 @@ fn run(args: Args) -> Result<(), String> {
             kind: doc.source_type.clone(),
             body: doc.body.clone(),
             source_id: Some(doc.doc_id.clone()),
+            logical_id: None,
         });
         if node_batch.len() >= NODE_BATCH {
             nodes_written += flush_nodes(&engine, &mut node_batch)?;
@@ -294,6 +295,7 @@ fn run(args: Args) -> Result<(), String> {
             from: parent.clone(),
             to: doc.doc_id.clone(),
             source_id: Some(doc.doc_id.clone()),
+            logical_id: None,
         });
         if edge_batch.len() >= EDGE_BATCH {
             edges_written += flush_edges(&engine, &mut edge_batch)?;

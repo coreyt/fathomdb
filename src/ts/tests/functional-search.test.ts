@@ -143,6 +143,50 @@ test("functional search: RRF-fused order matches the Python binding", async () =
   }
 });
 
+// Slice 15 / X1 / G0 — WriteReceipt.rowCursors is 1:1 with the batch in input
+// order and deterministic on a fresh DB. The exact values ([1,2,3] then [4,5])
+// are what the Python harness also asserts, proving Py ≡ TS rowCursors for the
+// same DB + writes (cross-binding equivalence).
+test("functional write: rowCursors are 1:1 with the batch (Py ≡ TS)", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    const first = await engine.write([
+      { kind: "doc", body: "rc-a" },
+      { kind: "doc", body: "rc-b" },
+      { kind: "doc", body: "rc-c" },
+    ]);
+    assert.deepEqual(first.rowCursors, [1, 2, 3]);
+    assert.equal(first.cursor, 3);
+    assert.equal(first.rowCursors[first.rowCursors.length - 1], first.cursor);
+
+    const second = await engine.write([
+      { kind: "doc", body: "rc-d" },
+      { kind: "doc", body: "rc-e" },
+    ]);
+    assert.deepEqual(second.rowCursors, [4, 5]);
+    assert.equal(second.cursor, 5);
+  } finally {
+    await engine.close();
+  }
+});
+
+// Slice 15 / X1 / G0 — a supersession write (same logicalId) is accepted by the
+// SDK and returns its per-row cursor. Active-only read visibility is reserved
+// for G2 + shadow reconciliation (Slice 16); the Python harness asserts the
+// same values.
+test("functional write: a supersession write surfaces its row cursor", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    const v1 = await engine.write([{ kind: "doc", body: "fact v1", logicalId: "L1" }]);
+    const v2 = await engine.write([{ kind: "doc", body: "fact v2", logicalId: "L1" }]);
+    assert.deepEqual(v1.rowCursors, [1]);
+    assert.deepEqual(v2.rowCursors, [2]);
+    assert.ok(v2.cursor > v1.cursor);
+  } finally {
+    await engine.close();
+  }
+});
+
 test("functional search: a SearchFilter prunes results", async () => {
   const fixture = loadFixture();
   const engine = await Engine.open(freshDbPath());

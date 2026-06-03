@@ -831,7 +831,14 @@ struct LoaderInfo {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteReceipt {
+    /// The batch high-water cursor — the `write_cursor` of the last row written
+    /// (also the engine's new `next_cursor`). Unchanged from 0.7.x.
     pub cursor: u64,
+    /// G0 (Slice 15) — the per-row `write_cursor` of each row in the batch, 1:1
+    /// with input order. This is the `write_cursor`-as-row-id identity carrier
+    /// (HITL-accepted for 0.8.0; a dedicated `row_id` is deferred). For an
+    /// N-row batch this is `[cursor-N+1, …, cursor]`.
+    pub row_cursors: Vec<u64>,
 }
 
 /// Soft-fallback signal carried on hybrid `search` results.
@@ -940,6 +947,12 @@ pub enum PreparedWrite {
         /// participate in `excise_source` / `trace_source_ref` must
         /// supply a stable identifier.
         source_id: Option<String>,
+        /// G0 (Slice 15) — stable cross-re-ingestion identity. `Some(id)`
+        /// makes this write a transaction-time supersession of the prior
+        /// active version of `(logical_id, kind)` (tombstone-then-insert).
+        /// `None` is the legacy/own-identity default: a plain insert with a
+        /// NULL `logical_id` (NULL-safe — never collides with other NULLs).
+        logical_id: Option<String>,
     },
     Edge {
         kind: String,
@@ -947,6 +960,9 @@ pub enum PreparedWrite {
         to: String,
         /// REQ-026 / AC-028 / AC-042 recovery seam — see Node.
         source_id: Option<String>,
+        /// G0 (Slice 15) — see Node. Supersession semantics are identical on
+        /// edges (keyed by `(logical_id, kind)`).
+        logical_id: Option<String>,
     },
     OpStore {
         collection: String,
@@ -1944,7 +1960,12 @@ impl Engine {
             self.projection_runtime.notify_new_work();
         }
 
-        Ok(WriteReceipt { cursor: last_cursor })
+        // G0 — surface the per-row cursors (1:1 with input order). Row i got
+        // `base_cursor + i + 1`, matching the allocation in `commit_batch`.
+        let row_cursors = (0..batch.len())
+            .map(|i| base_cursor.saturating_add((i as u64).saturating_add(1)))
+            .collect();
+        Ok(WriteReceipt { cursor: last_cursor, row_cursors })
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -2282,6 +2303,7 @@ impl Engine {
             kind: "doc".to_string(),
             body: "poison-fixture-seed".to_string(),
             source_id: None,
+            logical_id: None,
         }])?;
 
         let poison_outcome: Mutex<Option<EngineError>> = Mutex::new(None);
@@ -2302,6 +2324,7 @@ impl Engine {
                     kind: "doc".to_string(),
                     body: "writer-progress".to_string(),
                     source_id: None,
+                    logical_id: None,
                 }]);
             });
             // One poison thread — empty batch is a deterministic
@@ -2586,7 +2609,7 @@ impl Engine {
         }
 
         self.next_cursor.store(cursor, Ordering::SeqCst);
-        Ok(WriteReceipt { cursor })
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor] })
     }
 
     /// EU-5b test seam — drain MeanVecPinned events queued by the
@@ -5589,7 +5612,7 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, source_id } => {
+        PreparedWrite::Node { kind, body, source_id, logical_id } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -5598,14 +5621,26 @@ fn validate_write(
                     return Err(EngineError::WriteValidation);
                 }
             }
+            // G0 — an explicit logical_id must be non-empty (NULL/None is the
+            // legacy default; an empty string is never a valid identity).
+            if let Some(logical_id) = logical_id {
+                if logical_id.is_empty() {
+                    return Err(EngineError::WriteValidation);
+                }
+            }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, source_id } => {
+        PreparedWrite::Edge { kind, from, to, source_id, logical_id } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
             if let Some(source_id) = source_id {
                 if source_id.is_empty() {
+                    return Err(EngineError::WriteValidation);
+                }
+            }
+            if let Some(logical_id) = logical_id {
+                if logical_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }
@@ -5703,11 +5738,23 @@ fn commit_batch(
         // comment in `Engine::write_inner`.
         let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
         match (write, plan) {
-            (PreparedWrite::Node { kind, body, source_id }, WritePlan::Node) => {
+            (PreparedWrite::Node { kind, body, source_id, logical_id }, WritePlan::Node) => {
+                // G0 — supersession is tombstone-then-insert in this same txn:
+                // mark the prior active version superseded BEFORE inserting the
+                // new active row, so the partial-unique-active index never sees
+                // two active rows for one (logical_id, kind). No-op when logical_id
+                // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
+                if let Some(logical_id) = logical_id {
+                    tx.execute(
+                        "UPDATE canonical_nodes SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
+                        params![cursor, logical_id, kind],
+                    )?;
+                }
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id)
-                     VALUES(?1, ?2, ?3, ?4)",
-                    params![cursor, kind, body, source_id],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id)
+                     VALUES(?1, ?2, ?3, ?4, ?5)",
+                    params![cursor, kind, body, source_id, logical_id],
                 )?;
                 tx.execute(
                     "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
@@ -5727,11 +5774,20 @@ fn commit_batch(
                     record_projection_terminal(&tx, cursor, "up_to_date")?;
                 }
             }
-            (PreparedWrite::Edge { kind, from, to, source_id }, WritePlan::Edge) => {
+            (PreparedWrite::Edge { kind, from, to, source_id, logical_id }, WritePlan::Edge) => {
+                // G0 — identical tombstone-then-insert supersession on edges,
+                // keyed by (logical_id, kind). No-op when logical_id is None.
+                if let Some(logical_id) = logical_id {
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
+                        params![cursor, logical_id, kind],
+                    )?;
+                }
                 tx.execute(
-                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id)
-                     VALUES(?1, ?2, ?3, ?4, ?5)",
-                    params![cursor, kind, from, to, source_id],
+                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id, logical_id)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![cursor, kind, from, to, source_id, logical_id],
                 )?;
                 record_projection_terminal(&tx, cursor, "up_to_date")?;
             }
@@ -6323,6 +6379,7 @@ mod tests {
                 kind: "doc".to_string(),
                 body: "hello".to_string(),
                 source_id: None,
+                logical_id: None,
             }])
             .expect("write should succeed");
 

@@ -18,6 +18,7 @@ fn ac_039a_manifest_digest_matches_export_bytes() {
             kind: "doc".to_string(),
             body: "hello world".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
 
@@ -52,6 +53,7 @@ fn ac_039b_one_byte_tamper_detected_by_recompute() {
             kind: "doc".to_string(),
             body: "hello tamper".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
 

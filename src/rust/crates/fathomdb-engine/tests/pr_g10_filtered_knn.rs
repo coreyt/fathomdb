@@ -102,11 +102,13 @@ fn filter_prunes_vector_candidates_by_kind() {
                 kind: "doc".to_string(),
                 body: "semantic alpha document".to_string(),
                 source_id: None,
+                logical_id: None,
             },
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: "semantic beta note".to_string(),
                 source_id: None,
+                logical_id: None,
             },
         ])
         .expect("write");
@@ -142,6 +144,7 @@ fn status_filter_prunes_all_because_population_is_null_only() {
             kind: "doc".to_string(),
             body: "status probe document".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");

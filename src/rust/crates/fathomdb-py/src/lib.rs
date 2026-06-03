@@ -286,11 +286,13 @@ fn call_engine<R: Send>(
 #[derive(Clone)]
 struct PyWriteReceipt {
     cursor: u64,
+    /// G0 (Slice 15) — per-row `write_cursor`s, 1:1 with the input batch order.
+    row_cursors: Vec<u64>,
 }
 
 impl PyWriteReceipt {
     fn from_rust(r: RustWriteReceipt) -> Self {
-        Self { cursor: r.cursor }
+        Self { cursor: r.cursor, row_cursors: r.row_cursors }
     }
 }
 
@@ -735,7 +737,8 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let kind = dict_str_required(dict, "kind")?;
     let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
     let source_id = dict_str(dict, "source_id")?;
-    Ok(PreparedWrite::Node { kind, body, source_id })
+    let logical_id = dict_str(dict, "logical_id")?;
+    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
 }
 
 fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
@@ -746,7 +749,8 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let from = dict_str_required(dict, "from")?;
     let to = dict_str_required(dict, "to")?;
     let source_id = dict_str(dict, "source_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id })
+    let logical_id = dict_str(dict, "logical_id")?;
+    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
 }
 
 fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {

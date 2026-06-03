@@ -541,6 +541,7 @@ fn eu8_ir_validation() {
                     kind: VECTOR_KIND.to_string(),
                     body: d.body.clone(),
                     source_id: Some(d.doc_id.clone()),
+                    logical_id: None,
                 })
                 .collect();
             engine.write(&batch).expect("seed write");

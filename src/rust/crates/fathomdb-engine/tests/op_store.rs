@@ -88,6 +88,7 @@ fn ac_060b_schema_validation_failure_leaves_no_batch_residue() {
                 kind: "doc".to_string(),
                 body: "must not commit".to_string(),
                 source_id: None,
+                logical_id: None,
             },
             PreparedWrite::OpStore {
                 collection: "validated".to_string(),

@@ -11,17 +11,19 @@
 //! `AGENT_LONG`). No mocking of the database: a real engine is opened against a
 //! real on-disk SQLite file at each schema version.
 
-use fathomdb_engine::{Engine, PreparedWrite};
-use fathomdb_schema::{Migration, MIGRATIONS, SQLITE_SUFFIX};
+use fathomdb_engine::Engine;
+use fathomdb_schema::{migrate_with_steps, Migration, MIGRATIONS, SQLITE_SUFFIX};
+use rusqlite::Connection;
 use tempfile::TempDir;
 
 /// The schema as it stood at `SCHEMA_VERSION = 10` (before this slice's step
 /// 11). Slicing the canonical registry keeps this in lockstep with the real
 /// steps 1..=10 rather than re-transcribing them.
 const V10_MIGRATIONS: &[Migration] = {
-    // 10 steps with ids 1..=10 occupy the first 10 entries; step 11 (this
-    // slice) is the last. Take everything but the final step.
-    let (head, _tail) = MIGRATIONS.split_at(MIGRATIONS.len() - 1);
+    // 10 steps with ids 1..=10 occupy the first 10 entries. Step 11 (the Slice-5
+    // tokenizer upgrade) and step 12 (the Slice-15 G0 substrate) are the last
+    // two. Drop both so phase A opens at the pre-tokenizer v10.
+    let (head, _tail) = MIGRATIONS.split_at(MIGRATIONS.len() - 2);
     head
 };
 
@@ -59,17 +61,26 @@ const QUERIES: &[(&str, &str)] = &[
     ("boundary", "recall floor must hold across the migration boundary"),
 ];
 
-fn ingest(engine: &Engine) {
-    for doc in CORPUS {
-        engine
-            .write(&[PreparedWrite::Node {
-                kind: "doc".to_string(),
-                body: doc.body.to_string(),
-                source_id: None,
-            }])
-            .expect("write corpus doc");
+/// Seed the corpus directly into a pre-step-12 (v10) DB's canonical + FTS
+/// tables. The head engine writer now references the Slice-15 step-12 identity
+/// columns (`logical_id`/`superseded_at`), which a v10 DB lacks, so `engine.write`
+/// cannot target a v10 schema. We write the same `canonical_nodes`
+/// (write_cursor/kind/body) and `search_index` (body/kind/write_cursor) rows the
+/// v10 writer produced — preserving the real step-11 reproject source for phase B.
+fn seed_v10_corpus(conn: &Connection) {
+    for (i, doc) in CORPUS.iter().enumerate() {
+        let cursor = (i + 1) as i64;
+        conn.execute(
+            "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(?1, 'doc', ?2)",
+            rusqlite::params![cursor, doc.body],
+        )
+        .expect("seed canonical row");
+        conn.execute(
+            "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, 'doc', ?2)",
+            rusqlite::params![doc.body, cursor],
+        )
+        .expect("seed unicode61 fts row");
     }
-    engine.drain(30_000).expect("drain corpus");
 }
 
 /// Fraction of queries whose relevant body is present in the result set.
@@ -92,7 +103,14 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join(format!("tok_recall{SQLITE_SUFFIX}"));
 
-    // --- Phase A: build a v10 (unicode61) DB and measure the BEFORE floor. ---
+    // --- Phase A: build a v10 (unicode61) DB + corpus and measure the BEFORE
+    // floor. The corpus is seeded directly (see `seed_v10_corpus`) because the
+    // head engine writer requires the step-12 identity columns a v10 DB lacks. ---
+    {
+        let raw = Connection::open(&path).expect("raw open for v10 ingest");
+        migrate_with_steps(&raw, V10_MIGRATIONS).expect("migrate to v10");
+        seed_v10_corpus(&raw);
+    }
     let before_recall = {
         let opened =
             Engine::open_with_migrations_for_test(&path, V10_MIGRATIONS, |_| {}).expect("open v10");
@@ -101,7 +119,6 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
             opened.report.schema_version_after, 10,
             "phase A must open at SCHEMA_VERSION 10"
         );
-        ingest(&opened.engine);
         let r = measure_recall(&opened.engine);
         opened.engine.close().unwrap();
         r
@@ -112,19 +129,21 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
         "BEFORE-migration recall {before_recall:.3} is below the {FLOOR} floor"
     );
 
-    // --- Phase B: re-open with the FULL migration set so step 11 runs, then
-    // measure the AFTER floor on the SAME on-disk corpus. If re-tokenization
-    // is not wired, search_index was dropped+recreated empty and recall is 0. ---
+    // --- Phase B: re-open with the FULL migration set so step 11 (tokenizer)
+    // runs — step 12 (G0 substrate) also runs but is additive-only and does not
+    // touch the FTS shadow. Measure the AFTER floor on the SAME on-disk corpus.
+    // If re-tokenization is not wired, search_index was dropped+recreated empty
+    // and recall is 0. ---
     let after_recall = {
         let opened =
-            Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {}).expect("open v11");
+            Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {}).expect("open head");
         assert_eq!(
-            opened.report.schema_version_after, 11,
-            "phase B must migrate to SCHEMA_VERSION 11"
+            opened.report.schema_version_after, 12,
+            "phase B must migrate to head SCHEMA_VERSION 12 (runs the step-11 tokenizer upgrade)"
         );
         assert!(
             opened.report.schema_version_before == 10,
-            "phase B must observe a 10 -> 11 migration, saw before={}",
+            "phase B must observe a 10 -> 12 migration, saw before={}",
             opened.report.schema_version_before
         );
         let r = measure_recall(&opened.engine);

@@ -28,6 +28,7 @@ fn ac_040a_truncate_wal_after_write_reports_done() {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
             source_id: None,
+            logical_id: None,
         }])
         .expect("write");
     let report = opened.engine.truncate_wal().expect("truncate_wal");
