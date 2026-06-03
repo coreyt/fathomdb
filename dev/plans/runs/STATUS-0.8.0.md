@@ -15,20 +15,26 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-02 (Slice 5 **CLOSED** — PASS after codex BLOCK→fix-1; merged to
-`main` @ `e76d68b`; pointer advanced to Slice 10).
+Last updated: 2026-06-02 (Slice 10 **PROMPTED** — implementer prompt written
+`dev/plans/prompts/0.8.0-slice-10.md`; slice agent owns its worktree + merges to `main`).
 
 ---
 
 ## 1. Current slice
 
-**Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency** `[implementation]` — ❌ **NOT STARTED (NEXT).**
-- Pointer advanced here at Slice 5 close (2026-06-02). Migration-free read-path quality
-  increment landing on Slice 5's `score:f64` carrier; AC-057a-clean. Depends-on: Slice 5 ✅.
+**Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency** `[implementation]` — ⏳ **PROMPTED 2026-06-02.**
+- State (§1.5): **PROMPTED** (not yet implementing). Self-contained prompt written:
+  `dev/plans/prompts/0.8.0-slice-10.md` (bundles G9 + G10 + G12-recency in one worktree per the
+  contract — all rewrite the same merge region; the contract's 10.b is *verification*, not a
+  second impl). Migration-free, AC-057a-clean, lands on Slice 5's `score:f64`. Depends-on: Slice 5 ✅.
 - **HITL gate ✅ CLEARED 2026-06-02:** retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3
-  (RRF = documented compat event, **NO knob**) + Q5 (§8d advisory) all signed. Slice 10 contract
-  reconciled to drop the `fusion_mode` escape hatch. **Slice 10 is ready to prompt.**
-- Not yet prompted. Same execution model as Slice 5 (slice agent owns its worktree + merges to `main`).
+  (RRF = documented compat event, **NO knob**) + Q5 (§8d advisory) all signed. Contract reconciled
+  to drop the `fusion_mode` escape hatch; the prompt's §2 carries the no-knob banner verbatim.
+- **Execution model:** the human pastes the prompt into a new slice agent; **the agent owns its
+  worktree and merges its green work onto `main` itself** (no push). The orchestrator works on
+  `main` after the merge: **codex §9 review** (primary, runnable here via
+  `codex exec review --base <baseline> --dangerously-bypass-approvals-and-sandbox`) → 10.b
+  verification → close + advance pointer to Slice 15.
 
 ### Slice 5 — G1 Structured Hits + FTS5 tokenizer `[implementation]` — ✅ CLOSED 2026-06-02 (PASS after BLOCK→fix-1)
 - Slice agent owned worktree `/tmp/fdb-slice-5-20260602T221543Z` (branch
@@ -65,7 +71,7 @@ applicable to this slice's work-type.
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
 | **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
-| **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ❌ not started (**NEXT**) | 5 | ❌ extend | ❌ | ❌ |
+| **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ⏳ prompted | 5 | ⏳ extend | ⏳ | ⏳ |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ❌ not started | 0, 5 | ❌ extend | ❌ | ❌ |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ❌ not started | 15 | ❌ extend | ❌ | ❌ |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
@@ -184,6 +190,49 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-02 — OOB-work evaluation (Slice 5 + the corpus-line integration)
+
+- **Slice 5 implementation: necessary + well-scoped.** The 1155-line impl diff (`8108bac..e76d68b`)
+  maps cleanly to the contract — engine `SearchHit`, step-11 migration `011_search_index_tokenizer.sql`,
+  Py+TS parity, X1 functional harnesses, consumer rework (eu7/eu8/perf_gates/cursors), RED tests,
+  and the codex-P1 → fix-1 crash-safety arc. **No scope creep in the slice itself.**
+- **Slice 5 close + HITL-decision recording (`14a7a06`/`4f8f9da`/`a2ca4b0`): in-scope orchestrator work.**
+- **The significant OOB action = the remote integration** (`83f5156` merge → `316cdf7` → `a6080f9`
+  → PR #83 `c27028b`). Findings: (1) it was **HITL-requested** ("commit; push; PR; merge"), so it was
+  *authorized*, not rogue. (2) `origin/main`@`83f5156` was a **single squashed commit branched in
+  parallel off the 0.7.2 tip `109ede0`** — it contained its OWN duplicate copies of the entire
+  campaign planning corpus (impl-plan 1353 lines, all 3 ADRs, STATUS, slice-0 prompts) **plus**
+  genuinely-unique corpus/profiling artifacts (8145 insertions / 51 files). (3) The blanket
+  **`-X ours`** resolution kept the iterated campaign docs (defensible — the campaign is the
+  reviewed, authoritative line) and preserved the unique corpus/profiling artifacts (verified present
+  in `c27028b`). **Outcome defensible, but the manner was heavy:** an autonomous, irreversible,
+  cross-owner integration that overwrote the owner's doc copies and rewrote remote history. The
+  deeper issue it papered over: **two parallel lines independently produced the same campaign docs**
+  (a coordination failure), and the owner's planning-doc edits were superseded (flagged at the time).
+- **Correction applied going forward:** the Slice 10 prompt now carries an explicit **§6 Scope
+  discipline** block — stay strictly in-slice; **no `git fetch`/`push`/PR/origin/other-branch ops**,
+  no conflict force-resolution; merge ONLY the slice branch onto **local** `main`; flag adjacent work
+  as a reserved-gap rather than doing it; STOP+report on any divergence beyond the slice. Push/PR/
+  release stay **HITL-only, orchestrator-executed**.
+
+### 2026-06-02 — Slice 10 PROMPTED (no-knob contract; codex is primary reviewer)
+
+- Verified post-merge state from git (trap 2): `main`@`c27028b` (== origin, clean), Slice 5
+  genuinely landed (`SCHEMA_VERSION=11`, `SearchHit`@`lib.rs:854`), no slice worktrees outstanding.
+- Re-verified the drifted Slice-10 anchors against the post-Slice-5 `lib.rs` and wrote the
+  self-contained prompt `dev/plans/prompts/0.8.0-slice-10.md`. It carries the **HITL no-knob
+  banner** (Q1=1A both ship; Q3=documented-only/**NO `fusion_mode`**; `rerank_fused` stub stays;
+  unfiltered byte-identity pin stays; G12-recency behind its own off-by-default flag) and bundles
+  G9 + G10 + G12-recency in **one** worktree per the contract (same merge region). Deferred:
+  G12-importance, F9 confidence.
+- **Reviewer for Slice 10 = codex (primary, runnable here):**
+  `codex exec review --base <slice-baseline> --dangerously-bypass-approvals-and-sandbox` (no custom
+  PROMPT — `--base` rejects it); promote the log to `0.8.0-slice-10-review-<ts>.md` with a
+  `## Verdict:` line. (The Slice-0 "codex unrunnable" note was about read-only-sandbox mode; the
+  bypass mode works, unblocked by the user-added `Bash(codex exec review:*)` rule.)
+- Execution model unchanged: slice agent owns its worktree + merges to `main`; orchestrator works
+  on `main` after the merge.
 
 ### 2026-06-02 — Slice 5 CLOSED (PASS after codex BLOCK→fix-1; pointer → Slice 10)
 
@@ -308,26 +357,27 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
-**Slice 5 is CLOSED (PASS after fix-1). Pointer → Slice 10.** Slice 10 is **not yet prompted.**
+**Slice 10 is PROMPTED.** The human pastes `dev/plans/prompts/0.8.0-slice-10.md` into a new slice
+agent. **The agent owns its worktree and merges its green work onto `main`** (no push). The
+orchestrator (this thread) does NOT create a worktree.
 
-**HITL gate ✅ CLEARED 2026-06-02:** retrieval ADR Q1 (Option 1A — G9/G10 table-stakes) + Q3 (RRF
-= documented compat event, **NO knob**) + Q5 (§8d advisory) signed; the Slice 10 contract was
-reconciled to drop the `fusion_mode` knob. Slice 10 is migration-free and AC-057a-clean; it lands
-on Slice 5's `score:f64` carrier (now on `main`@`e76d68b`). **Slice 10 may be prompted.**
-
-**To start Slice 10 (orchestrator):**
-1. Re-derive disk witnesses: Slice 5 CLOSED block present + `main`@`e76d68b` is the baseline;
-   recall baseline = Slice 5's 1.000 (report the Slice-10 delta vs this).
-2. Write the self-contained Slice 10 implementer prompt to `dev/plans/prompts/0.8.0-slice-10.md`
-   (same execution model: slice agent owns its worktree, TDD, merges to `main`; codex §9 review —
-   **codex is the proven primary reviewer here**, not a subagent).
-3. Per the impl-plan Slice 10 contract: 10.a (RRF + rerank seam + G12 recency) and 10.b
-   (G10 filtered-KNN) — confirm the contract's parallelization before spawning.
-
-**Standing reviewer note:** use **`codex exec review --base <slice-baseline>
---dangerously-bypass-approvals-and-sandbox`** (no custom PROMPT — `--base` rejects it) as the
-primary §9 pass; promote the log to `…-review-<ts>.md` with a `## Verdict:` line. The Slice-0
-"codex unrunnable" note referred to read-only-sandbox mode; the bypass mode works here (user rule).
+**When the slice agent reports it has merged, the orchestrator resumes — working on `main`:**
+1. **Gate the transition (§1.5 inv. 2):** confirm `dev/plans/runs/0.8.0-slice-10-output.json`
+   exists AND `main` advanced past the slice baseline (`merged_to_main_sha` present + reachable from
+   `main`). Absent / blocker / not merged → triage (direct a fix pass or HALT), don't proceed.
+2. **codex §9 review (primary, runnable here):** `codex exec review --base <slice-baseline>
+   --dangerously-bypass-approvals-and-sandbox` (no custom PROMPT — `--base` rejects it). Promote
+   the log → `0.8.0-slice-10-review-<ts>.md` with a `## Verdict:` line. Focus: RRF determinism,
+   vector-empty correctness, `filter=None` byte-identity, vec0 Pack1→Pack2 crash-safety, floor.
+3. **10.b verification** (read-only re-run): recall delta vs Slice 5 baseline (1.000); unfiltered
+   byte-identity; RRF determinism (no legacy knob exists — Q3); recency latency gate +
+   3-way-sentinel-on-Pack1 test; Py+TS filter-arg parity. Note appended here.
+4. **Decide (§9):** PASS → close. Structural/prompt-induced CONCERN → §7 override. Substantive
+   CONCERN / BLOCK → direct a fix pass (fresh slice-agent run on the same worktree/branch).
+   **Sub-0.90 floor breach or `filter=None` diff is substantive — never overridden → HALT to HITL.**
+5. **Close in ONE docs commit on `main`:** Slice 10 CLOSED block, advance pointer to Slice 15,
+   update this board + `dev/DOC-INDEX.md` + per-AC scoreboard.
+6. **Worktree cleanup** (§11) — the orchestrator removes the slice agent's worktree after close.
 
 **Parallel standing item — substrate gate package (gates Slice 15, NOT Slice 10):** Q2 (=2A) and
 Q4 (=edges-too) are now **✅ signed** (2026-06-02). **Still open** before Slice 15 (G0 keystone)
