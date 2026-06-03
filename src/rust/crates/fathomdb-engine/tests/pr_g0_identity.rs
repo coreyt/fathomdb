@@ -23,6 +23,16 @@ fn node(kind: &str, body: &str, logical_id: Option<&str>) -> PreparedWrite {
     }
 }
 
+fn edge(kind: &str, from: &str, to: &str, logical_id: Option<&str>) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: kind.to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: logical_id.map(str::to_string),
+    }
+}
+
 /// (a) + (d) — re-writing the same `logical_id` supersedes the prior active row
 /// (tombstone-then-insert) and leaves exactly one active version, with the
 /// superseded version retained (invalidate-not-delete).
@@ -73,6 +83,37 @@ fn s15_supersession_is_idempotent_one_active_version() {
         )
         .unwrap();
     assert_eq!(superseded_null_tombstone, 0, "superseded rows must carry a tombstone cursor");
+}
+
+/// (a-edges) — supersession works identically on `canonical_edges` (Decision 3 /
+/// Q4: edges carry the temporal columns, not nodes only). Re-writing the same
+/// edge `logical_id` tombstones the prior active edge and leaves exactly one
+/// active, keyed by `(logical_id, kind)`.
+#[test]
+fn s15_edge_supersession_is_idempotent_one_active_version() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "edge_supersede");
+    {
+        let opened = Engine::open(&path).expect("open");
+        opened.engine.write(&[edge("rel", "a", "b", Some("E1"))]).expect("write v1");
+        opened.engine.write(&[edge("rel", "a", "c", Some("E1"))]).expect("supersede to v2");
+        opened.engine.close().unwrap();
+    }
+
+    let conn = Connection::open(&path).expect("open sqlite");
+    let total: u64 = conn
+        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE logical_id = 'E1'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(total, 2, "both edge versions retained (invalidate-not-delete)");
+
+    let active_to: String = conn
+        .query_row(
+            "SELECT to_id FROM canonical_edges WHERE logical_id = 'E1' AND superseded_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(active_to, "c", "exactly one active edge, the most-recent version");
 }
 
 /// (b) — partial-unique NULL-safety: many NULL-`logical_id` (legacy / own-identity)
