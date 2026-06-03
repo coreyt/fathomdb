@@ -62,7 +62,15 @@ See [errors](errors.md).
 Enqueue a batch of canonical rows.
 
 - `batch` (`unknown[]`) — caller-shaped canonical rows. Defaults
-  to `[]`.
+  to `[]`. A node/edge item may carry an optional `logicalId`
+  (`string`): supplying it makes the write a transaction-time
+  **supersession** of the prior active version of that
+  `(logicalId, kind)` (the prior version is tombstoned and the new one
+  becomes active — invalidate-not-delete). Omitting it is a plain
+  insert with a NULL `logicalId` that never collides with other NULLs.
+- Returns: `WriteReceipt { cursor, rowCursors }` — `cursor` is the
+  batch high-water `write_cursor`; `rowCursors` are the per-row
+  `write_cursor`s, 1:1 with the input batch order.
 
 ### `engine.search(query, filter?) -> Promise<SearchResult>`
 
@@ -131,9 +139,13 @@ string; body: string }`.
 
 ```ts
 interface WriteReceipt {
-  cursor: number;
+  cursor: number; // batch high-water write_cursor
+  rowCursors: number[]; // G0 — per-row write_cursor, 1:1 with the batch
 }
 ```
+
+`rowCursors` is the `write_cursor`-as-row-id identity carrier (G0 /
+Slice 15): for an N-row batch it is `[cursor - N + 1, …, cursor]`.
 
 ### `SearchResult`
 

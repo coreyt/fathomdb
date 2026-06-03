@@ -52,9 +52,17 @@ Enqueue a batch of canonical rows. Synchronous; blocks until the
 writer thread has accepted the batch.
 
 - `batch` (`list[Any] | None`) — caller-shaped canonical rows.
-  Defaults to `[]`.
-- Returns: `WriteReceipt(cursor: int)`. The cursor advances
-  monotonically across writes.
+  Defaults to `[]`. A node/edge item may carry an optional
+  `logical_id` (`str`): supplying it makes the write a
+  transaction-time **supersession** of the prior active version of
+  that `(logical_id, kind)` — the prior version is tombstoned and the
+  new version becomes active (invalidate-not-delete). Omitting it (the
+  default) is a plain insert with a NULL `logical_id` and never
+  collides with other NULL rows.
+- Returns: `WriteReceipt(cursor: int, row_cursors: tuple[int, ...])`.
+  `cursor` advances monotonically across writes (the batch high-water
+  cursor); `row_cursors` are the per-row `write_cursor`s, 1:1 with the
+  input batch order.
 
 ### `engine.search(query, filter=None) -> SearchResult`
 
@@ -127,8 +135,12 @@ it; the returned cursor places the apply in the global write order.
 ```python
 @dataclass(frozen=True)
 class WriteReceipt:
-    cursor: int
+    cursor: int                       # batch high-water write_cursor
+    row_cursors: tuple[int, ...]      # G0 — per-row write_cursor, 1:1 with the batch
 ```
+
+`row_cursors` is the `write_cursor`-as-row-id identity carrier (G0 /
+Slice 15): for an N-row batch it is `(cursor - N + 1, …, cursor)`.
 
 ### `SearchResult`
 
