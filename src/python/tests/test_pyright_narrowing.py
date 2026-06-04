@@ -24,7 +24,11 @@ from pathlib import Path
 
 import pytest
 
-_FIXTURE = Path(__file__).resolve().parent / "_pyright_narrowing_fixture.py"
+_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "_typecheck_fixtures"
+    / "_pyright_narrowing_fixture.py"
+)
 # The Python SDK's `pyproject.toml` carries the pyright config
 # (pythonVersion = "3.10", include paths). Without `--project`, pyright
 # loads the workspace-root cwd defaults and cannot resolve
