@@ -14,6 +14,8 @@ and `dev/design/bindings.md` § 1 / § 3.
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 
 from fathomdb import (
     CounterSnapshot,
@@ -26,26 +28,27 @@ from fathomdb import (
 )
 
 
-# The governed SDK surface allowlist (AC-074 / REQ-053). The set of public
-# application-command callables across the SDK bindings, B1 `read.*` namespace.
-# This constant is declared identically in `src/ts/tests/surface.test.ts`; the
-# two are membership-identical (cross-binding parity, P2) and byte-compared by
-# the Slice 25.b audit. The `read.*` members are documented-allowlist members
-# now but do NOT go live as importable symbols until Slice 30 — so the
-# membership check below (P1) uses subset, never equality.
-GOVERNED_SURFACE_ALLOWLIST = {
-    # Core (live today, unchanged)
-    "Engine.open",
-    "admin.configure",
-    "write",
-    "search",
-    "close",
-    # Read surface (B1 read.*, ships 0.8.0, goes LIVE at Slice 30)
-    "read.get",
-    "read.get_many",
-    "read.collection",
-    "read.mutations",
-}
+def _load_governed_surface_contract() -> dict[str, list[str]]:
+    """Load the *single shared* governed-surface contract (AC-074 / REQ-053).
+
+    The allowlist is declared exactly once, in
+    `src/conformance/governed-surface-allowlist.json`, and read by BOTH the
+    Python suite and the TypeScript suite (`src/ts/tests/surface.test.ts`).
+    There is no per-binding duplicate literal, so Python and TypeScript cannot
+    drift apart (cross-binding parity, P2). The `read.*` members are
+    documented-allowlist members now but do NOT go live as importable symbols
+    until Slice 30 — so the membership check (P1) is subset, never equality.
+    """
+    # tests/ -> python/ -> src/ -> src/conformance/...
+    here = Path(__file__).resolve()
+    contract_path = here.parents[2] / "conformance" / "governed-surface-allowlist.json"
+    with contract_path.open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_CONTRACT = _load_governed_surface_contract()
+GOVERNED_SURFACE_ALLOWLIST = frozenset(_CONTRACT["allowlist"])
+_CORE_LIVE_SURFACE = frozenset(_CONTRACT["core"])
 
 # Engine-attached instrumentation/control methods are observability, NOT
 # application commands — excluded from the allowlist (preserved from AC-057a's
@@ -60,24 +63,38 @@ _INSTRUMENTATION = frozenset(
     }
 )
 
+# Other public `Engine` members that are NOT application commands: the
+# open-time report accessor (Shape D, an observability accessor) and the
+# `path` / `config` data accessors. Subtracted from the introspected surface
+# alongside `_INSTRUMENTATION` so the live-command set is exactly the command
+# verbs. A NEW public command (e.g. `Engine.delete`) is NOT in this exclusion
+# set, so it would enter `live` and fail the subset check (P1).
+_ENGINE_NON_COMMAND = _INSTRUMENTATION | frozenset({"open_report", "path", "config"})
+
 # The permanent recovery-name denylist (the FIVE names). `doctor` is SDK-absent
 # by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
-_RECOVERY_DENYLIST = frozenset({"recover", "restore", "repair", "fix", "rebuild"})
+_RECOVERY_DENYLIST = frozenset(_CONTRACT["recovery_denylist"])
 
 
 def _live_python_command_surface() -> set[str]:
     """Introspect the *live* public application-command surface.
 
-    The `Engine` lifecycle/command verbs plus the `admin` namespace callables,
-    excluding data/config/error types and the instrumentation/control methods.
-    Built from actual symbol presence so the membership check (P1) is honest:
-    a name only enters the live set if the live binding actually exposes it.
+    Built from the REAL public symbols of `Engine` (`dir(Engine)`, minus
+    dunder/private names) and the introspected `admin` namespace, subtracting
+    the instrumentation/control methods and the other non-command members
+    (`open_report`, `path`, `config`). The result is honest: any public name
+    the live binding actually exposes that is not a known non-command verb
+    enters the live set — so a hypothetical `Engine.delete` would surface here
+    and fail the subset check (P1), rather than being silently ignored.
     """
     live: set[str] = set()
-    for verb in ("open", "write", "search", "close"):
-        if hasattr(Engine, verb) and verb not in _INSTRUMENTATION:
-            # `open` is the canonical `Engine.open`; the rest are bare verbs.
-            live.add("Engine.open" if verb == "open" else verb)
+    for name in dir(Engine):
+        if name.startswith("_"):
+            continue
+        if name in _ENGINE_NON_COMMAND:
+            continue
+        # `open` is the canonical `Engine.open`; the rest are bare verbs.
+        live.add("Engine.open" if name == "open" else name)
     for verb in getattr(admin, "__all__", ()):
         if callable(getattr(admin, verb, None)):
             live.add(f"admin.{verb}")
@@ -95,28 +112,26 @@ def test_public_surface_is_allowlist() -> None:
     extra = live - GOVERNED_SURFACE_ALLOWLIST
     assert not extra, f"live command(s) outside the governed allowlist: {sorted(extra)}"
     # The core write/lifecycle commands are live today.
-    assert {"Engine.open", "admin.configure", "write", "search", "close"} <= live
+    assert _CORE_LIVE_SURFACE <= live
 
 
 def test_surface_parity_py_matches_ts() -> None:
-    """P2 — the Python governed allowlist equals the TypeScript one.
+    """P2 — Python and TypeScript read ONE shared governed allowlist.
 
-    `src/ts/tests/surface.test.ts` declares the identical
-    GOVERNED_SURFACE_ALLOWLIST; the mirror below is the TS contract and the
-    Slice 25.b audit byte-compares the two constants across files.
+    The allowlist is declared exactly once, in
+    `src/conformance/governed-surface-allowlist.json`. This suite loads it via
+    `_load_governed_surface_contract()`; `src/ts/tests/surface.test.ts` loads
+    the same file. Because there is a single declaration, Python and TypeScript
+    can no longer carry divergent copies — parity is structural, not a
+    byte-compared duplicate. This test pins that the suite genuinely consumes
+    the shared contract (the introspected live surface is a subset of it).
     """
-    ts_governed_surface_allowlist = {
-        "Engine.open",
-        "admin.configure",
-        "write",
-        "search",
-        "close",
-        "read.get",
-        "read.get_many",
-        "read.collection",
-        "read.mutations",
-    }
-    assert GOVERNED_SURFACE_ALLOWLIST == ts_governed_surface_allowlist
+    contract = _load_governed_surface_contract()
+    # The constant the suite enforces against IS the shared contract's allowlist.
+    assert GOVERNED_SURFACE_ALLOWLIST == frozenset(contract["allowlist"])
+    # The TypeScript suite reads this identical file; drift is impossible
+    # because there is no second copy to diverge from.
+    assert _live_python_command_surface() <= GOVERNED_SURFACE_ALLOWLIST
 
 
 def test_allowlist_excludes_recovery_denylist() -> None:

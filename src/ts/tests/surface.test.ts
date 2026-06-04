@@ -13,30 +13,45 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Engine, admin, type EngineConfig, type SoftFallback } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
-// The governed SDK surface allowlist (AC-074 / REQ-053). The set of public
-// application-command callables across the SDK bindings, B1 `read.*` namespace.
-// Declared identically in `src/python/tests/test_surface.py`; the two are
-// membership-identical (cross-binding parity, P2) and byte-compared by the
-// Slice 25.b audit. The `read.*` members are documented-allowlist members now
-// but do NOT go live as callable symbols until Slice 30 — so the membership
-// check below (P1) is a subset test, never equality.
-const GOVERNED_SURFACE_ALLOWLIST: ReadonlySet<string> = new Set([
-  // Core (live today, unchanged)
-  "Engine.open",
-  "admin.configure",
-  "write",
-  "search",
-  "close",
-  // Read surface (B1 read.*, ships 0.8.0, goes LIVE at Slice 30)
-  "read.get",
-  "read.get_many",
-  "read.collection",
-  "read.mutations",
-]);
+// The governed SDK surface allowlist (AC-074 / REQ-053) is declared exactly
+// ONCE, in `src/conformance/governed-surface-allowlist.json`, and read by BOTH
+// this suite and the Python suite (`src/python/tests/test_surface.py`). There
+// is no per-binding duplicate literal, so TypeScript and Python cannot drift
+// apart (cross-binding parity, P2). The `read.*` members are documented-
+// allowlist members now but do NOT go live as callable symbols until Slice 30 —
+// so the membership check below (P1) is a subset test, never equality.
+interface GovernedSurfaceContract {
+  allowlist: string[];
+  core: string[];
+  recovery_denylist: string[];
+}
+
+function loadGovernedSurfaceContract(): GovernedSurfaceContract {
+  // This file compiles to `src/ts/dist/tests/surface.test.js` and runs from
+  // there; the shared contract lives at `src/conformance/...`.
+  //   dist/tests -> dist -> src/ts -> src -> src/conformance
+  const here = dirname(fileURLToPath(import.meta.url));
+  const contractPath = join(
+    here,
+    "..",
+    "..",
+    "..",
+    "conformance",
+    "governed-surface-allowlist.json",
+  );
+  return JSON.parse(readFileSync(contractPath, "utf8")) as GovernedSurfaceContract;
+}
+
+const CONTRACT = loadGovernedSurfaceContract();
+const GOVERNED_SURFACE_ALLOWLIST: ReadonlySet<string> = new Set(CONTRACT.allowlist);
+const CORE_LIVE_SURFACE: readonly string[] = CONTRACT.core;
 
 // Engine-attached instrumentation/control methods are observability, NOT
 // application commands — excluded from the allowlist (preserved from AC-057a's
@@ -49,9 +64,49 @@ const INSTRUMENTATION = [
   "attachSubscriber",
 ] as const;
 
+// Other public `Engine` members that are NOT application commands: the
+// open-time report accessor (Shape D) and the `config` data accessor.
+// Subtracted from the introspected surface alongside INSTRUMENTATION so the
+// live-command set is exactly the command verbs. A NEW public command (e.g.
+// `Engine.delete`) is NOT in this exclusion set, so it would enter `live` and
+// fail the subset check (P1).
+const ENGINE_NON_COMMAND = new Set<string>([...INSTRUMENTATION, "openReport", "config"]);
+
 // The permanent recovery-name denylist (the FIVE names). `doctor` is SDK-absent
 // by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
-const RECOVERY_DENYLIST = ["recover", "restore", "repair", "fix", "rebuild"] as const;
+const RECOVERY_DENYLIST = CONTRACT.recovery_denylist;
+
+// Introspect the REAL live public command surface of the TypeScript SDK,
+// mirroring the enumeration style of `no-recovery-surface.test.ts`: static
+// names off `Engine`, plus prototype + own instance names off a live engine,
+// minus dunder/private/constructor and the known non-command members. Any
+// public name the binding actually exposes that is not a known non-command verb
+// enters the live set — so a hypothetical `Engine.delete` would surface here
+// and fail the subset check, rather than being silently ignored.
+function liveTsCommandSurface(engine: Engine): Set<string> {
+  const live = new Set<string>();
+  const proto = Object.getPrototypeOf(engine) as object;
+  const instanceNames = new Set<string>([
+    ...Object.getOwnPropertyNames(proto),
+    ...Object.keys(engine as unknown as Record<string, unknown>),
+  ]);
+  for (const name of instanceNames) {
+    if (name.startsWith("_") || name === "constructor") continue;
+    if (ENGINE_NON_COMMAND.has(name)) continue;
+    const value = (engine as unknown as Record<string, unknown>)[name];
+    if (typeof value !== "function") continue; // skip data accessors like `config`
+    live.add(name);
+  }
+  // Static command verbs off the `Engine` class itself.
+  for (const name of Object.getOwnPropertyNames(Engine)) {
+    if (name.startsWith("_")) continue;
+    if (["length", "name", "prototype"].includes(name)) continue;
+    if (typeof (Engine as unknown as Record<string, unknown>)[name] !== "function") continue;
+    live.add(name === "open" ? "Engine.open" : name);
+  }
+  if (typeof admin.configure === "function") live.add("admin.configure");
+  return live;
+}
 
 test("public surface is the governed allowlist (membership, not a count)", async () => {
   // P1 — every live public application command is a governed-allowlist member.
@@ -62,14 +117,7 @@ test("public surface is the governed allowlist (membership, not a count)", async
 
   const engine = await Engine.open(freshDbPath());
   try {
-    const live = new Set<string>();
-    if (typeof Engine.open === "function") live.add("Engine.open");
-    for (const v of ["write", "search", "close"] as const) {
-      if (typeof (engine as unknown as Record<string, unknown>)[v] === "function") {
-        live.add(v);
-      }
-    }
-    if (typeof admin.configure === "function") live.add("admin.configure");
+    const live = liveTsCommandSurface(engine);
 
     for (const name of live) {
       assert.ok(
@@ -77,7 +125,7 @@ test("public surface is the governed allowlist (membership, not a count)", async
         `live command ${name} is outside the governed allowlist`,
       );
     }
-    for (const core of ["Engine.open", "admin.configure", "write", "search", "close"]) {
+    for (const core of CORE_LIVE_SURFACE) {
       assert.ok(live.has(core), `core command ${core} must be live`);
     }
   } finally {
@@ -85,25 +133,28 @@ test("public surface is the governed allowlist (membership, not a count)", async
   }
 });
 
-test("surface parity: TS allowlist matches Python", () => {
-  // P2 — the TypeScript governed allowlist equals the Python one.
-  // `src/python/tests/test_surface.py` declares the identical
-  // GOVERNED_SURFACE_ALLOWLIST; the mirror below is the Python contract and the
-  // Slice 25.b audit byte-compares the two constants across files.
-  const pythonGovernedSurfaceAllowlist = new Set([
-    "Engine.open",
-    "admin.configure",
-    "write",
-    "search",
-    "close",
-    "read.get",
-    "read.get_many",
-    "read.collection",
-    "read.mutations",
-  ]);
-  assert.equal(GOVERNED_SURFACE_ALLOWLIST.size, pythonGovernedSurfaceAllowlist.size);
-  for (const name of pythonGovernedSurfaceAllowlist) {
-    assert.ok(GOVERNED_SURFACE_ALLOWLIST.has(name), `parity: TS allowlist missing ${name}`);
+test("surface parity: TS and Python read one shared allowlist", async () => {
+  // P2 — the governed allowlist is declared exactly ONCE, in
+  // `src/conformance/governed-surface-allowlist.json`. This suite loads it via
+  // `loadGovernedSurfaceContract()`; `src/python/tests/test_surface.py` loads
+  // the same file. Because there is a single declaration, TypeScript and Python
+  // can no longer carry divergent copies — parity is structural, not a
+  // byte-compared duplicate. This test pins that the suite genuinely consumes
+  // the shared contract (the introspected live surface is a subset of it).
+  const contract = loadGovernedSurfaceContract();
+  assert.deepEqual([...GOVERNED_SURFACE_ALLOWLIST].sort(), [...new Set(contract.allowlist)].sort());
+
+  const engine = await Engine.open(freshDbPath());
+  try {
+    const live = liveTsCommandSurface(engine);
+    for (const name of live) {
+      assert.ok(
+        GOVERNED_SURFACE_ALLOWLIST.has(name),
+        `live command ${name} is outside the shared governed allowlist`,
+      );
+    }
+  } finally {
+    await engine.close();
   }
 });
 
