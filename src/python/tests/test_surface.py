@@ -1,18 +1,20 @@
 """Public surface assertions for the Python SDK.
 
-Binds AC-057a (REQ-053): five-verb runtime SDK surface.
+Binds AC-074 (REQ-053): governed SDK surface — a curated allowlist with
+cross-binding parity, a permanent recovery-name denylist, and the typed /
+no-raw-SQL boundary. (AC-057a's verb-count scope cap is superseded by AC-074;
+the surface is now governed-but-open, not capped.)
 
-Pins the five-verb top-level surface, the engine-attached instrumentation
-methods, the keyword vs EngineConfig forms of `Engine.open`, and the
-soft-fallback record shape per `dev/interfaces/python.md` and
-`dev/design/bindings.md` § 3.
+Pins the governed-surface allowlist (membership, not a count), the
+engine-attached instrumentation methods, the keyword vs EngineConfig forms of
+`Engine.open`, and the soft-fallback record shape per `dev/interfaces/python.md`
+and `dev/design/bindings.md` § 1 / § 3.
 """
 
 from __future__ import annotations
 
 import inspect
 
-import fathomdb
 from fathomdb import (
     CounterSnapshot,
     Engine,
@@ -24,17 +26,106 @@ from fathomdb import (
 )
 
 
-def test_top_level_exports_match_canonical_set() -> None:
-    expected = {
-        "Engine",
-        "EngineConfig",
-        "SearchResult",
-        "SoftFallback",
-        "WriteReceipt",
-        "admin",
-        "errors",
+# The governed SDK surface allowlist (AC-074 / REQ-053). The set of public
+# application-command callables across the SDK bindings, B1 `read.*` namespace.
+# This constant is declared identically in `src/ts/tests/surface.test.ts`; the
+# two are membership-identical (cross-binding parity, P2) and byte-compared by
+# the Slice 25.b audit. The `read.*` members are documented-allowlist members
+# now but do NOT go live as importable symbols until Slice 30 — so the
+# membership check below (P1) uses subset, never equality.
+GOVERNED_SURFACE_ALLOWLIST = {
+    # Core (live today, unchanged)
+    "Engine.open",
+    "admin.configure",
+    "write",
+    "search",
+    "close",
+    # Read surface (B1 read.*, ships 0.8.0, goes LIVE at Slice 30)
+    "read.get",
+    "read.get_many",
+    "read.collection",
+    "read.mutations",
+}
+
+# Engine-attached instrumentation/control methods are observability, NOT
+# application commands — excluded from the allowlist (preserved from AC-057a's
+# measurement boundary).
+_INSTRUMENTATION = frozenset(
+    {
+        "drain",
+        "counters",
+        "set_profiling",
+        "set_slow_threshold_ms",
+        "attach_logging_subscriber",
     }
-    assert expected.issubset(set(fathomdb.__all__))
+)
+
+# The permanent recovery-name denylist (the FIVE names). `doctor` is SDK-absent
+# by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
+_RECOVERY_DENYLIST = frozenset({"recover", "restore", "repair", "fix", "rebuild"})
+
+
+def _live_python_command_surface() -> set[str]:
+    """Introspect the *live* public application-command surface.
+
+    The `Engine` lifecycle/command verbs plus the `admin` namespace callables,
+    excluding data/config/error types and the instrumentation/control methods.
+    Built from actual symbol presence so the membership check (P1) is honest:
+    a name only enters the live set if the live binding actually exposes it.
+    """
+    live: set[str] = set()
+    for verb in ("open", "write", "search", "close"):
+        if hasattr(Engine, verb) and verb not in _INSTRUMENTATION:
+            # `open` is the canonical `Engine.open`; the rest are bare verbs.
+            live.add("Engine.open" if verb == "open" else verb)
+    for verb in getattr(admin, "__all__", ()):
+        if callable(getattr(admin, verb, None)):
+            live.add(f"admin.{verb}")
+    return live
+
+
+def test_public_surface_is_allowlist() -> None:
+    """P1 — every live public application command is a governed-allowlist member.
+
+    Membership (subset), NOT equality: the allowlist is a superset that includes
+    the not-yet-live `read.*` verbs (live at Slice 30), so a live surface that is
+    currently the core five is honestly green against the 9-member allowlist.
+    """
+    live = _live_python_command_surface()
+    extra = live - GOVERNED_SURFACE_ALLOWLIST
+    assert not extra, f"live command(s) outside the governed allowlist: {sorted(extra)}"
+    # The core write/lifecycle commands are live today.
+    assert {"Engine.open", "admin.configure", "write", "search", "close"} <= live
+
+
+def test_surface_parity_py_matches_ts() -> None:
+    """P2 — the Python governed allowlist equals the TypeScript one.
+
+    `src/ts/tests/surface.test.ts` declares the identical
+    GOVERNED_SURFACE_ALLOWLIST; the mirror below is the TS contract and the
+    Slice 25.b audit byte-compares the two constants across files.
+    """
+    ts_governed_surface_allowlist = {
+        "Engine.open",
+        "admin.configure",
+        "write",
+        "search",
+        "close",
+        "read.get",
+        "read.get_many",
+        "read.collection",
+        "read.mutations",
+    }
+    assert GOVERNED_SURFACE_ALLOWLIST == ts_governed_surface_allowlist
+
+
+def test_allowlist_excludes_recovery_denylist() -> None:
+    """P3 — allowlist ∩ {recover,restore,repair,fix,rebuild} = ∅.
+
+    Allowlist-level assertion only; the byte-frozen `test_no_recovery_surface.py`
+    remains the live enforcement of recovery unreachability.
+    """
+    assert GOVERNED_SURFACE_ALLOWLIST & _RECOVERY_DENYLIST == set()
 
 
 def test_admin_is_module_level_namespace() -> None:
@@ -42,10 +133,7 @@ def test_admin_is_module_level_namespace() -> None:
     assert hasattr(admin, "configure")
 
 
-def test_engine_exposes_five_verbs_plus_instrumentation() -> None:
-    for verb in ("open", "write", "search", "close"):
-        assert hasattr(Engine, verb), f"Engine must expose {verb}"
-
+def test_engine_exposes_instrumentation_methods() -> None:
     for instr in (
         "drain",
         "counters",
