@@ -1,7 +1,7 @@
 pub mod lifecycle;
 mod pcache2;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
@@ -5865,6 +5865,20 @@ fn commit_batch(
     // case (f)). There is no node-kind to match: `canonical_edges` stores only
     // the edge's own kind, not the endpoint node's kind.
     let dangling_edge_endpoints = {
+        // O(N) pre-pass: record, per (logical_id, kind), the LAST (highest) index
+        // at which an `Edge { logical_id: Some(_), .. }` with that key appears.
+        // Iterating front-to-back and overwriting means the stored value ends up
+        // as the final index for each key. An edge at index `i` with that key is
+        // then in-batch-superseded iff `last_index[(lid, kind)] > i`. This is
+        // behavior-identical to the prior per-edge `batch[i+1..]` `.any(..)` scan
+        // (which was O(N²) under the single-writer txn) — same skip-set, same count.
+        let mut last_index: HashMap<(&str, &str), usize> = HashMap::new();
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { kind, logical_id: Some(lid), .. } = write {
+                last_index.insert((lid.as_str(), kind.as_str()), i);
+            }
+        }
+
         let mut probe = tx.prepare(
             "SELECT 1 FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
         )?;
@@ -5874,15 +5888,12 @@ fn commit_batch(
                 // Honor `edge.superseded_at IS NULL`: an edge inserted in this
                 // batch is active unless a LATER same-batch edge with the same
                 // (Some(logical_id), kind) tombstoned it (the loop's supersession
-                // UPDATE). Skip such an in-batch-superseded edge.
+                // UPDATE). Skip such an in-batch-superseded edge. Edges with
+                // `logical_id: None` are never superseded-in-batch.
                 if let Some(lid) = logical_id {
-                    let superseded_in_batch = batch[i + 1..].iter().any(|w| {
-                        matches!(
-                            w,
-                            PreparedWrite::Edge { kind: k2, logical_id: Some(l2), .. }
-                                if l2 == lid && k2 == kind
-                        )
-                    });
+                    let superseded_in_batch = last_index
+                        .get(&(lid.as_str(), kind.as_str()))
+                        .is_some_and(|&last| last > i);
                     if superseded_in_batch {
                         continue;
                     }

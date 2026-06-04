@@ -184,6 +184,41 @@ fn s20_count_is_sum_over_both_endpoints() {
     opened.engine.close().unwrap();
 }
 
+/// (g) [O(N) precompute equivalence] — a batch with MULTIPLE active logical edges
+/// plus a LATER same-`(logical_id, kind)` edge that tombstones an EARLIER one. The
+/// superseded earlier edge carries a dangling endpoint (`GHOST`); only the
+/// final-active edge's (clean) endpoints are probed. This pins the last-index
+/// precompute that replaced the per-edge `batch[i+1..]` scan: an earlier edge is
+/// skipped iff a strictly-later same-key edge exists. A precompute that recorded
+/// the FIRST index (or otherwise mis-ordered) would skip the final-active edge and
+/// probe the superseded `GHOST` endpoint instead -> count would be 1, not 0.
+#[test]
+fn s20_on_supersession_skips_earlier_keeps_final_active() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "precompute_equiv")).expect("open");
+
+    // Live node A. Then:
+    //  e1: (logical_id=E, kind=rel)  A -> GHOST   <- earlier, dangling `to`, superseded by e3
+    //  e2: (logical_id=F, kind=rel)  A -> A       <- a *second* active logical edge (clean)
+    //  e3: (logical_id=E, kind=rel)  A -> A       <- LATER same (E,rel): tombstones e1, final-active, clean
+    let receipt = opened
+        .engine
+        .write(&[
+            node("doc", "a", Some("A")),
+            edge("rel", "A", "GHOST", Some("E")),
+            edge("rel", "A", "A", Some("F")),
+            edge("rel", "A", "A", Some("E")),
+        ])
+        .expect("write");
+
+    assert_eq!(
+        receipt.dangling_edge_endpoints, 0,
+        "earlier (E,rel) edge is in-batch-superseded by the later one and skipped; \
+         the final-active edge + the (F,rel) edge are clean -> 0 (last-index precompute)"
+    );
+    opened.engine.close().unwrap();
+}
+
 /// (f) [latency / plan gate] — the per-endpoint EXISTS probe hits the step-12
 /// partial index `canonical_nodes_logical_active_idx` (leading column
 /// `logical_id`, partial predicate `superseded_at IS NULL`) and does NOT do a
