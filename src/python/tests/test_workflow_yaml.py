@@ -25,8 +25,21 @@ the ``verify-release`` job) covers workflow schema validity.
 from __future__ import annotations
 
 import json
-import tomllib
+import sys
 from pathlib import Path
+
+# `tomllib` is stdlib only on Python 3.11+. The repo targets `>=3.10`
+# (and pyright is pinned to 3.10), where the bare `import tomllib` would
+# raise `ModuleNotFoundError` at collection time. Guard on the version and
+# fall back to the third-party `tomli` (same API). The `else` branch's
+# `tomli` is not a declared dependency, so the targeted ignore is honest:
+# on a 3.11+ runtime this branch is never taken; under pyright (pinned to
+# 3.10) it is the live branch and resolves the import soundly at runtime
+# only where `tomli` is present, while keeping the type surface identical.
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib  # pyright: ignore[reportMissingImports]
 
 import pytest
 import yaml

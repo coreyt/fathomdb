@@ -12,7 +12,11 @@ Replace this trivial property when real Python API surface lands.
 import pytest
 
 try:
-    from hypothesis import given, strategies as st
+    # Optional dev/test dep (declared in `[test]`/`[dev]` extras only).
+    # Env-independent: when pyright runs without the extra installed it
+    # would flag `reportMissingImports`; the `try/except` already guards
+    # the runtime path, so a targeted, line-scoped ignore is the honest fix.
+    from hypothesis import given, strategies as st  # pyright: ignore[reportMissingImports]
 except ImportError:  # pragma: no cover
     pytest.skip("hypothesis not installed; install with `pip install -e src/python[test]`",
                 allow_module_level=True)
