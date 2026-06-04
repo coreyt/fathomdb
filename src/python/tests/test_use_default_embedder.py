@@ -130,9 +130,13 @@ def test_open_report_mean_vec_pinned_transitions_after_threshold(
     engine = Engine.open(db_path, use_default_embedder=True)
     try:
         native: _NativeEngine = engine._native  # type: ignore[attr-defined]
-        native._configure_vector_kind_for_test("doc")
+        # `_configure_vector_kind_for_test` / `_write_vector_for_test` are
+        # `test-hooks`-feature-only FFI methods, deliberately absent from the
+        # release binding's `_fathomdb.pyi` stub (see its NOTE) — so pyright
+        # cannot see them. Targeted, line-scoped (matches :132's style).
+        native._configure_vector_kind_for_test("doc")  # type: ignore[attr-defined]
         for i in range(_MEAN_VEC_PIN_THRESHOLD):
-            native._write_vector_for_test("doc", f"doc-{i}")
+            native._write_vector_for_test("doc", f"doc-{i}")  # type: ignore[attr-defined]
     finally:
         engine.close()
 
