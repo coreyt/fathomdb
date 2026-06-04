@@ -15,23 +15,28 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-04 (Slice 21 **CLOSED** — pyright-zero cleanup; merged to `main`@`7aaf6f1`;
-**codex §9 clean PASS, no findings**. Pyright over `src/python` now **0/0/0** so `agent-verify` no
-longer short-circuits at typecheck; only the environmental **AC-037 userns** blocker remains. Item D
-was amended (relocate negative-error fixture outside pyright `include` + repoint test) after the prompt's
-premise proved false vs the on-disk subprocess test — both gates verified green. Pointer → **Slice 25**
-(supersession sign-off + conformance rewrite — the Q1–Q5 gate is already SIGNED, so Slice 25 is clear
-to prompt)).
+Last updated: 2026-06-04 (Slice 25 **PROMPTED** — `dev/plans/prompts/0.8.0-slice-25.md` authored,
+baseline `06d5c59`, anchors re-verified at `06d5c59`. Supersession Q1–Q5 gate **already SIGNED**
+2026-06-03 → HITL hard gate **pre-satisfied**; prompt carries the as-signed bundle + the Rust-binding
+note (Py+TS allowlist+parity rewrite at **25**; Rust pin at reserved-gap **27**). Work-type corrected:
+the ADR is already accepted, but the conformance rewrite is real test/doc-source → slice agent **owns a
+worktree + writes `output.json`** (not the plan's blanket "design-adr, no output.json"). Awaiting
+hand-off to an implementer.).
 
 ---
 
 ## 1. Current slice
 
-**Next: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️
-**gate-clear** (the supersession Q1–Q5 gate is already SIGNED — see below; the Slice 25 prompt carries
-the as-signed bundle + the Rust-binding note: Py+TS allowlist+parity rewrite lands at 25, Rust pin at
-the activated reserved-gap Slice 27). Slice 25's signature is the HARD gate unblocking Slice 30. Slice
-25 is `[design-adr]` (no worktree, no `output.json`; falsifiable acceptance bar + artifact-on-disk review).
+**Current: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite — 📝 PROMPTED 2026-06-04**
+(`dev/plans/prompts/0.8.0-slice-25.md`, baseline `06d5c59`, anchors re-verified at `06d5c59`). The
+supersession Q1–Q5 gate is **already SIGNED** (2026-06-03 — see below), so the HITL hard gate is
+**pre-satisfied**; the prompt carries the as-signed bundle (Q1=A1/Q2=B1/Q3=amend/Q4=confirm/Q5=BIND-RUST)
++ the Rust-binding note (Py+TS allowlist+parity rewrite lands at **25**; Rust positive-allowlist pin at
+the activated reserved-gap **Slice 27**). **Work-type corrected from the plan's blanket "design-adr":**
+the ADR is already signed/accepted (nothing to author), but the **conformance rewrite is real test/doc-as-
+source code → the slice agent OWNS a worktree and writes `output.json`** (TDD-as-falsifiable-bar). On
+return: 25.b adversarial allowlist/leakage/parity audit + codex §9; close on codex PASS (HITL signature
+already exists) → advance pointer to Slice 30; Slice 27 (Rust pin) remains reserved.
 - **Slice 21 ✅ CLOSED 2026-06-04** (reserved-gap, interim) — pyright-zero cleanup merged to `main` @
   `7aaf6f1` (slice tip `0a90ea1`, baseline `802527e`). Pyright over `src/python` now **0 errors / 0
   warnings / 0 informations**, so `agent-verify` no longer short-circuits at typecheck; the ONLY standing
@@ -163,7 +168,7 @@ applicable to this slice's work-type.
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
-| **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
+| **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ⏳ PROMPTED (2026-06-04) | 0, 15 | ⏳ (Py≡TS allowlist parity = X1) | ⏳ | ⏳ |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
@@ -292,6 +297,45 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-04 — Slice 25 PROMPTED (governed-surface conformance rewrite; ADR already SIGNED; three plan-adjustments recorded)
+
+- **Authored** `dev/plans/prompts/0.8.0-slice-25.md` (baseline `06d5c59`; all anchors — `acceptance.md`
+  AC-057a `:882`, trace `:1183`; `requirements.md` REQ-053 `:445`; `bindings.md` §1 `:30` / §10 `:215` /
+  §13 `:269,286` / §14 `:294,304` — **re-verified at `06d5c59`, no drift**). Per
+  [[slice-prompt-verify-test-claims]] (acute for conformance-suite prompts) the orchestrator read **all
+  five conformance suites in full** at baseline before writing any load-bearing guardrail, plus the signed
+  ADR; a read-only Explore agent mapped the doc-edit anchors.
+- **Three plan-adjustments vs the `0.8.0-implementation.md` contract, recorded in the prompt (§1/§2):**
+  (1) **HITL hard gate is PRE-SATISFIED** — the ADR `ADR-0.8.0-supersede-five-verb-surface-cap.md` is
+  **already SIGNED/ACCEPTED 2026-06-03** (Q1=A1/Q2=B1/Q3=amend/Q4=confirm/Q5=BIND-RUST); the contract's
+  "do not CLOSE until HITL signs Q1–Q5" is moot. The prompt carries the as-signed bundle and tells the
+  agent **not to re-author/re-promote** the ADR (only verify it records the bundle). (2) **Trace edge
+  lives in `acceptance.md:1183`** (`| REQ-053 | AC-057a |`), **not** `dev/traceability.md` (Explore
+  confirmed no per-line REQ-053/AC-057a rows there) — the contract pointed at the wrong file; prompt
+  repoints `:1183`. (3) **Work-type correction** — the board/plan blanket-label Slice 25 "design-adr (no
+  worktree, no output.json)", but the conformance rewrite is **real test/doc-as-source code**, so the
+  slice agent **owns a worktree + writes `output.json`** (TDD-as-falsifiable-bar; matches the contract's
+  own closure clause "this slice touches real test/doc-as-source code").
+- **Q5=BIND-RUST consequence honored:** Slice 25 stays **Py+TS-scoped** — it records in the new AC that the
+  governed surface also binds the Rust facade, and **defers the actual Rust positive-allowlist pin +
+  `dev/interfaces/rust.md` governed-surface docs to the activated reserved-gap Slice 27**. Q3=amend means
+  **no** Slice 28 traceability cascade; B1 means **no** Slice 26 namespace sweep.
+- **Precision guards baked in** (where this slice could go silently wrong): the "exactly five" cap lives in
+  **spec prose** (AC-057a `:886-887`, REQ-053 `:447`, `bindings.md §1:32`), **not** a literal `==`/`len(5)`
+  in the tests (they are `.issubset`/`hasattr`/`typeof` presence) — so the rewrite/audit hunts naming +
+  docstring + prose leakage, not a strict-equality that does not exist; **new AC = AC-074** (gated-slice
+  carve-out per [[acceptance-md-locked-no-feature-acs]] — `acceptance.md` LOCKED at AC-073); **byte-freeze
+  fences** with an `--exit-code` zero-line-diff check (the 3 recovery suites whole-file +
+  [[recovery-denylist-five-names]] preserved + `bindings.md §10` section-level), with an explicit "if a
+  fence conflicts with a green, STOP — do not fake it"; an **honest-green rule** for the not-yet-live
+  `read.*` verbs (documented-allowlist members, not live symbols — live at Slice 30); and **pre-classified
+  out-of-scope source-comment leakage** (`__init__.py:3`, `engine.py:3`, `fathomdb-py/src/lib.rs:736`) so
+  the post-merge audit does not false-BLOCK on them.
+- **On hand-off + return:** the slice agent runs the full loop (worktree → RED rewrite → GREEN spec edits →
+  byte-freeze verify → merge to local `main`). Orchestrator then runs **25.b** (adversarial allowlist/
+  leakage/parity audit) + **codex §9**; closes on **codex PASS** (HITL signature already exists) and
+  advances the pointer to **Slice 30**. **Slice 27** (Rust pin) remains a reserved-gap to prompt separately.
 
 ### 2026-06-04 — Interim Slice 21 (pyright-zero cleanup) inserted + PROMPTED (HITL direction)
 
