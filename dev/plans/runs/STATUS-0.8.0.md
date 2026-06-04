@@ -31,17 +31,25 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Next: Slice 30 — G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` (`read.*`)
-`[implementation]`** — ▶️ **gate-clear.** Both hard gates are satisfied: G0 keystone (Slice 15) CLOSED
-**and** the supersession sign-off + conformance rewrite (Slice 25) CLOSED. Slice 30 lands the first
-governed SDK read verbs (active-only by-`logical_id` point lookup + paginated op-store read-back) under
-the `read.*` namespace, riding the existing ReaderWorkerPool DEFERRED-tx snapshot path (never the writer
-lock). Read the Slice 30 contract in `0.8.0-implementation.md` (§ "Slice 30"); it reuses the landed
-substrate (logical_id/superseded_at + partial-unique-active + folded from_id/to_id/kind indexes) and the
-`read.*` namespace + allowlist from Slice 25 (the four `read.*` verbs are already documented-allowlist
-members in `src/conformance/governed-surface-allowlist.json` — Slice 30 makes them **live**, which the
-governed-surface membership test now genuinely enforces). No new HITL gate. **Reserved-gap Slice 27**
-(Rust positive-allowlist pin, Q5=BIND-RUST) remains to prompt separately; it does **not** block Slice 30.
+**Current: Slice 30 — G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` (`read.*`)
+`[implementation]` — 📝 PROMPTED 2026-06-04** (`dev/plans/prompts/0.8.0-slice-30.md`, baseline `67d3980`,
+all engine/binding anchors **re-verified at `67d3980`** by a thorough Explore sweep). Both hard gates are
+satisfied: G0 keystone (Slice 15) CLOSED **and** the supersession sign-off + conformance rewrite (Slice
+25) CLOSED → **gate-clear, no HITL gate of its own.** Slice 30 lands the first governed SDK read verbs
+(active-only by-`logical_id` point lookup + paginated op-store read-back) under the `read.*` namespace,
+riding the existing ReaderWorkerPool DEFERRED-tx snapshot path (never the writer lock). The four `read.*`
+verbs are already documented-allowlist members in `src/conformance/governed-surface-allowlist.json` —
+Slice 30 makes them **live** AND extends the surface-suite introspection to genuinely enforce them.
+**Two contract corrections baked into the prompt (verified vs disk):** (1) the contract's `lib.rs` line
+anchors are **stale by 25–160 lines** (authored against an older engine) — prompt carries the re-verified
+ones; (2) `ReaderResponse` is **already** `Result<(u64, Option<SoftFallback>, Vec<SearchHit>)>` (NOT
+`Vec<String>` as the contract claims) → widening = per-request typed channels for G2/G3, leave Search
+untouched. **No new AC/REQ/NEED ids** (acceptance.md locked; impl slice binds gaps G2/G3/F2/F4-READ +
+AC-074 + REQ-053 — the Explore agent's "mint AC-075/076" suggestion was explicitly rejected per
+[[acceptance-md-locked-no-feature-acs]], the trap that bit Slice 20). On return: 30.b parity-matrix +
+reader-isolation verify + codex §9; close on codex PASS → advance pointer to **Slice 40** (final).
+**Reserved-gaps:** Slice 27 (Rust pin, Q5=BIND-RUST) · 31 (typed NotFound class) · 32 (cursor hardening)
+· 33 (CLI op-store read-back) — all prompt-separately, none block Slice 40.
 
 - **Slice 25 ✅ CLOSED 2026-06-04** — governed-surface conformance rewrite. Merged `d8665fe`, **fix-1
   final `b86ef63`**. AC-057a → **AC-074** (measurable governed SDK surface; Q5=BIND-RUST recorded, Rust
@@ -188,7 +196,7 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
+| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ⏳ PROMPTED (2026-06-04) | 15, 25 | ⏳ extend (retrieve+admin functional + cross-binding equiv) | ⏳ | ⏳ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -318,6 +326,41 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-04 — Slice 30 PROMPTED (governed SDK read verbs; anchors re-verified; two contract corrections; no new AC ids)
+
+- **Authored** `dev/plans/prompts/0.8.0-slice-30.md` (baseline `67d3980`). A **very-thorough Explore
+  sweep re-verified every engine/binding anchor** at `67d3980` — the contract's `lib.rs` line numbers
+  were **stale by 25–160 lines** (authored against an older engine). Re-verified (in
+  `src/rust/crates/fathomdb-engine/src/lib.rs`): `ReaderRequest` enum `:375`, `ReaderResponse` `:423`,
+  `ReaderWorkerPool` `:354`, `reader_worker_loop` `:572`, `search_inner` dispatch `:2122-2135`,
+  `read_search_in_tx` `:3648`/DEFERRED tx `:3657`, `_for_test` op-store SELECTs `:2436/2456/2470`,
+  `canonical_nodes` projection `:4170`; `operational_mutations` schema in
+  `fathomdb-schema/migrations/004_op_store.sql`.
+- **Two contract corrections baked into the prompt (verified vs disk):** (1) **`ReaderResponse` is
+  ALREADY `Result<(u64, Option<SoftFallback>, Vec<SearchHit>)>`** — NOT `Vec<String>` as the contract
+  states; so the "widen from `Vec<String>`" premise is false. Prompt directs **per-request typed
+  `respond` channels** for the new G2/G3 variants, leaving the `Search` path's `ReaderResponse`
+  byte-untouched (Slice 10 unfiltered pin stays green). (2) **No new AC/REQ/NEED ids** — `acceptance.md`
+  is LOCKED at AC-073 (AC-074 was only added because Slice 25 is a *gated* slice). Slice 30 is an
+  implementation slice → binds **gaps G2/G3/F2/F4-READ + AC-074 + REQ-053** by gap label + TDD test
+  names. The Explore agent suggested minting AC-075/076; **rejected** per [[acceptance-md-locked-no-feature-acs]]
+  (the exact trap that bit the Slice 20 prompt, fixed `1a7b75f`).
+- **Critical conformance step named (anti-[[conformance-rewrite-vacuous-green-trap]]):** the live-surface
+  introspection in `test_surface.py:79-101` (`_live_python_command_surface`) and `surface.test.ts:86-109`
+  (`liveTsCommandSurface`) does **not** currently introspect a `read` namespace. The prompt requires
+  extending both so the now-live `read.*` verbs are **genuinely enforced** (membership + parity catch a
+  fake extra verb / one-sided drift — demonstrated in RED), and updating the "not live until Slice 30"
+  honest-green comments + the allowlist JSON `_comment`. The shared `governed-surface-allowlist.json`
+  stays the single source of truth (already lists the four `read.*` in `allowlist`, not `core`).
+- **Guardrails baked in:** reader-pool/DEFERRED-tx only (never `connection.lock()`); mandatory limit +
+  after-id cursor on G3 (no unbounded SELECT); active-only (`superseded_at IS NULL`) default on G2;
+  Py+TS **lockstep** parity with identical typed error surfacing; not-found = `None`/`null` (a typed
+  NotFound class is **reserved-gap 31**, not built here); byte-frozen recovery suites; no raw-SQL/DSL.
+  X1 = `test_functional_retrieve.py` + `functional-retrieve.test.ts` mirroring the `functional-search`
+  shared-fixture cross-binding-equivalence house style.
+- **On return:** 30.b parity-matrix + reader-isolation verify + codex §9; close on codex PASS → pointer
+  → **Slice 40** (final verification + release readiness). Reserved-gaps 27/31/32/33 prompt separately.
 
 ### 2026-06-04 — Slice 25 CLOSED (governed-surface conformance rewrite; PASS after codex 2 × [P1] BLOCK → fix-1; pointer → Slice 30)
 
