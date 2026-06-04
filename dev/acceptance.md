@@ -617,8 +617,8 @@ the only test-plan.md responsibility for this section.)
 
 **Requirement ref:** REQ-031d
 **Test id:** T-035d
-**Assertion:** `fathomdb recover` is invocable via the CLI with `--help` properties per AC-040a / AC-040b; no recovery verb is reachable from the runtime SDK (Python / TypeScript) — no public symbol named `recover`, `restore_*`, `repair`, or equivalent is exposed by the five-verb application surface (REQ-053 / AC-057a).
-**Measurement:** (1) Invoke `fathomdb recover --help`; assert per AC-040a / AC-040b. (2) Per binding: enumerate the public surface per AC-057a's surface definition; assert none of `{recover, restore, repair, fix, rebuild}` are members.
+**Assertion:** `fathomdb recover` is invocable via the CLI with `--help` properties per AC-040a / AC-040b; no recovery verb is reachable from the runtime SDK (Python / TypeScript) — no public symbol named `recover`, `restore_*`, `repair`, or equivalent is exposed by the governed SDK surface (REQ-053 / AC-074, recovery-denylist clause).
+**Measurement:** (1) Invoke `fathomdb recover --help`; assert per AC-040a / AC-040b. (2) Per binding: enumerate the public surface per AC-074's governed-surface definition; assert none of `{recover, restore, repair, fix, rebuild}` are members.
 **Fixture:** as AC-040a + as AC-057a.
 
 ## Security
@@ -881,11 +881,30 @@ the only test-plan.md responsibility for this section.)
 
 ## AC-057a: Five-verb application runtime SDK surface
 
+> **⚠ SUPERSEDED (0.8.0, Slice 25) by [AC-074](#ac-074-governed-sdk-surface--allowlist--parity--recovery-denylist--typedno-raw-sql-boundary).** AC-057a's "exactly five" verb-count **scope cap** was a development scaffolding device (`ADR-0.8.0-supersede-five-verb-surface-cap`, SIGNED 2026-06-03). It is retired in favour of a **governed, open** surface (allowlist-membership + cross-binding parity, not a count). The three load-bearing guarantees AC-057a bundled — SDK Py+TS parity, recovery-name unreachability, and the typed/no-raw-SQL boundary — are carried forward intact by AC-074. Kept as a forward pointer; **not deleted**.
+
+**Superseded by:** AC-074 (governed SDK surface).
 **Requirement ref:** REQ-053
 **Test id:** T-057a
 **Assertion:** The Python and TypeScript runtime SDK public application-command surface is exactly the canonical five-verb set in bindings-idiomatic casing: `Engine.open`, `admin.configure`, `write`, `search`, `close`; public data types, config types, and error classes do not count as application commands.
 **Measurement:** Per binding: introspect the documented `Engine` and `admin` command callables; assert command set equality with the canonical five and assert no additional public application command callable exists outside the documented instrumentation/control methods.
 **Fixture:** binding-introspection fixture.
+
+## AC-074: Governed SDK surface — allowlist + parity + recovery-denylist + typed/no-raw-SQL boundary
+
+**Requirement ref:** REQ-053
+**Test id:** T-074 (`test_public_surface_is_allowlist`, `test_surface_parity_py_matches_ts`)
+**Supersedes:** AC-057a (the "exactly five" scope cap).
+**Assertion:** The SDK application-command surface is **governed, not capped** — a curated allowlist with cross-binding parity, a permanent recovery-name denylist, and the typed/no-raw-SQL boundary. Concretely, four falsifiable properties hold:
+1. **Allowlist-membership (P1):** every *live* public application command in the Python and TypeScript SDKs is a member of the governed allowlist `{Engine.open, admin.configure, write, search, close, read.get, read.get_many, read.collection, read.mutations}` (B1 `read.*` namespace). The `read.*` members are documented-allowlist members shipping in 0.8.0 but go **live at Slice 30**; until then the live surface is a subset, so membership (not equality) is the binding check. Public data types, config types, error classes, and the engine-attached instrumentation/control methods (`drain`, `counters`, `set_profiling`/`setProfiling`, `set_slow_threshold_ms`/`setSlowThresholdMs`, `attach_logging_subscriber`/`attachSubscriber`) are **not** application commands and are not allowlist members.
+2. **Cross-binding parity (P2):** the Python governed allowlist equals the TypeScript governed allowlist (membership-identical) — a verb appears in every SDK binding or in none.
+3. **Recovery-denylist empty-intersection (P3):** the allowlist contains no name in `{recover, restore, repair, fix, rebuild}`. `doctor` is SDK-absent by **non-membership in the positive allowlist** (it is a CLI verb), **not** via this recovery denylist. The byte-frozen `test_no_recovery_surface.{py,ts}` / `no_recovery_surface.rs` remain the live enforcement of recovery unreachability (AC-035d / AC-058 unchanged).
+4. **Typed / no-raw-SQL boundary (P4):** no public SDK entrypoint accepts raw SQL or a query DSL; reads take typed args + a small fixed filter grammar (equality + range over body-JSON). The typed-write boundary (`ADR-0.6.0-typed-write-boundary`) is untouched.
+
+This AC **also binds the Rust facade** (`dev/interfaces/rust.md`) per the signed Q5 = BIND-RUST; the Rust-facade positive-allowlist/parity pin executes at **reserved-gap Slice 27** (it is additive governance and does not block Slice 30). The Python + TypeScript allowlist+parity rewrite lands here at Slice 25.
+
+**Measurement:** Per binding, introspect the live public application-command surface (the `Engine` command verbs + the `admin` namespace callables, excluding data/config/error types and the instrumentation/control methods) and assert it is a **subset** of the governed allowlist constant `GOVERNED_SURFACE_ALLOWLIST`; assert the Python and TypeScript `GOVERNED_SURFACE_ALLOWLIST` constants are membership-identical (Slice 25.b byte-compares them); assert `GOVERNED_SURFACE_ALLOWLIST ∩ {recover,restore,repair,fix,rebuild} = ∅`; assert no public entrypoint exposes a raw-SQL parameter. Rust-facade measurement is defined at Slice 27.
+**Fixture:** binding-introspection fixture (`test_surface.py` / `surface.test.ts`).
 
 ## AC-058: Recovery verbs CLI-reachable
 
@@ -1180,7 +1199,7 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-050  | AC-054                |
 | REQ-051  | AC-055                |
 | REQ-052  | AC-056                |
-| REQ-053  | AC-057a               |
+| REQ-053  | AC-074                |
 | REQ-054  | AC-058                |
 | REQ-055  | AC-059a/b             |
 | REQ-056  | AC-060a/b             |
