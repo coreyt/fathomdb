@@ -117,6 +117,29 @@ When a caller submits "primary write + op-store row" together, the 0.6.0
 contract is atomic visibility: callers never observe the primary write without
 its same-batch op-store row.
 
+## Read-back contract (`read.collection` / `read.mutations` — Slice 30 / G3)
+
+The governed `read.collection` / `read.mutations` verbs read an
+`append_only_log` collection's appended rows back over `operational_mutations`.
+The contract:
+
+- the read runs on the **ReaderWorkerPool DEFERRED-tx snapshot path** (never the
+  writer `connection.lock()`), preserving single-writer isolation (REQ-018);
+- rows are returned strictly **`ORDER BY id`** (the autoincrement PK), so order
+  is the append order;
+- a **mandatory `limit`** caps each page — there is no public path that issues an
+  unbounded SELECT — and the engine clamps the effective SQL `LIMIT` to a ~1M cap
+  (`READ_COLLECTION_MAX_LIMIT`; cursor/limit hardening under a genuine ~1M-row log
+  is a reserved follow-on);
+- an optional **`after_id` cursor** (`WHERE id > ?`) paginates: each next page
+  resumes strictly after the previous page's last `id`, with no boundary overlap;
+- each returned `OpStoreRow` carries `{ id, collection, record_key, op_kind,
+  payload (the stored payload_json), schema_id, write_cursor }`.
+
+`read.mutations` is a mutation-log-oriented alias surface over the identical
+read-back. Both verbs land in **lockstep** across the Python and TypeScript SDKs.
+The read-back is **read-only and typed** — no raw-SQL or filter-DSL surface.
+
 ## Projection-failure ownership
 
 The durable `projection_failures` collection belongs to this subsystem because

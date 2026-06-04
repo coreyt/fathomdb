@@ -136,6 +136,41 @@ const receipt = await admin.configure(engine, { name: "my-schema", body: schemaJ
 Promise<WriteReceipt>` where `AdminConfigureOptions = { name:
 string; body: string }`.
 
+## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+
+```ts
+import { read } from "fathomdb";
+```
+
+The `read.*` namespace exposes the governed retrieval verbs. Every read rides
+the engine's **ReaderWorkerPool DEFERRED-tx snapshot path** — never the writer
+lock — preserving single-writer isolation. Verb names are camelCase in TS but
+the governed allowlist names stay dotted snake_case (`read.get_many`).
+
+### `read.get(engine, logicalId: string): Promise<NodeRecord | null>`
+
+Active-only point lookup by `logicalId` (active = `superseded_at IS NULL`). A
+superseded version is never returned. A missing or superseded id resolves to
+`null` — a **normal absence, not a thrown error**.
+
+### `read.getMany(engine, logicalIds: string[]): Promise<(NodeRecord | null)[]>`
+
+Batched point lookup. Returns one slot per requested id, **in request order**;
+a missing/superseded id is `null` in its slot (partial, never all-or-nothing).
+`read.get` delegates to `read.getMany`.
+
+### `read.collection(engine, collection, options): Promise<OpStoreRow[]>`
+
+Paginated op-store read-back over `operational_mutations` for `collection`,
+**`ORDER BY id`**, where `options: ReadCollectionOptions = { afterId?: number;
+limit: number }`. `limit` is **mandatory** (the engine clamps it to a ~1M cap,
+so no call yields an unbounded read); `afterId` is the exclusive cursor.
+
+### `read.mutations(engine, collection, options): Promise<OpStoreRow[]>`
+
+Mutation-log-oriented alias surface over the **same** op-store read-back as
+`read.collection` (identical args + semantics).
+
 ## Data shapes
 
 ### `WriteReceipt`
@@ -161,6 +196,36 @@ endpoint). Because endpoints match on `logicalId`, an edge pointing at a
 legacy / own-identity node (NULL `logicalId`) counts as dangling — only
 `logicalId`-keyed nodes are valid endpoints. `0` when the batch committed
 no active edges.
+
+### `NodeRecord`
+
+```ts
+interface NodeRecord {
+  logicalId: string;
+  kind: string;
+  body: string;
+  writeCursor: number; // interim id carrier (parity with SearchHit.id)
+}
+```
+
+Returned by `read.get` / `read.getMany` for an **active** canonical node
+(`superseded_at IS NULL`). Mirrors the Python `NodeRecord`.
+
+### `OpStoreRow`
+
+```ts
+interface OpStoreRow {
+  id: number; // operational_mutations PK + the afterId cursor key
+  collection: string;
+  recordKey: string;
+  opKind: string; // always "append"
+  payload: string; // the stored payload_json
+  schemaId: string | null;
+  writeCursor: number;
+}
+```
+
+Returned by `read.collection` / `read.mutations`. Mirrors the Python `OpStoreRow`.
 
 ### `SearchResult`
 

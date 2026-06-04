@@ -29,6 +29,7 @@ nav:
       - Overview: guides/index.md
       - Structured Search Hits: guides/structured-search-hits.md
       - Hybrid Search & Filtering: guides/hybrid-search-filtering.md
+      - Retrieve by Id: guides/retrieve-by-id.md
   - Release Notes:
       - 0.6.0: release-notes/0.6.0.md
       - 0.6.1: release-notes/0.6.1.md

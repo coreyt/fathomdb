@@ -178,6 +178,7 @@ exclusion set; `admin.__all__`). The `read.*` flip mirrors that exactly:
   canonical allowlist name, so a one-sided extra/missing verb still fails parity.
 
 Falsifiability demonstrated in RED:
+
 - A hypothetical extra live `read.delete` (or `Engine.delete`) enters `live` and
   fails the subset-of-allowlist check (P1).
 - A `read.*` verb present in one binding but missing from the other fails the
@@ -191,6 +192,7 @@ The honest-green "not live until Slice 30" comments in `test_surface.py`,
 ## Test plan (TDD)
 
 RED (engine + conformance), committed first:
+
 - `tests/pr_g2_get_by_id.rs` — active-only by `logical_id`; superseded NOT
   returned; request order preserved; missing id → `None` slot (not an error);
   reads ride the reader pool (concurrent read while a writer tx is open).

@@ -131,6 +131,41 @@ receipt = admin.configure(engine, name="my-schema", body=schema_json)
 Submit an admin schema configuration. The writer thread applies
 it; the returned cursor places the apply in the global write order.
 
+## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+
+```python
+from fathomdb import read
+```
+
+The `read.*` namespace exposes the governed retrieval verbs. Every read rides
+the engine's **ReaderWorkerPool DEFERRED-tx snapshot path** — never the writer
+lock — preserving single-writer isolation.
+
+### `read.get(engine, logical_id: str) -> NodeRecord | None`
+
+Active-only point lookup by `logical_id` (active = `superseded_at IS NULL`). A
+superseded version is never returned. A missing or superseded id returns `None`
+— a **normal absence, not an exception** (a typed `NotFound` is a later-slice
+concern).
+
+### `read.get_many(engine, logical_ids: list[str]) -> list[NodeRecord | None]`
+
+Batched point lookup. Returns one slot per requested id, **in request order**;
+a missing/superseded id is `None` in its slot (partial result, never
+all-or-nothing). `read.get` delegates to `read.get_many`.
+
+### `read.collection(engine, collection, *, after_id=None, limit) -> list[OpStoreRow]`
+
+Paginated op-store read-back over `operational_mutations` for `collection`,
+**`ORDER BY id`**. `limit` is **mandatory** (the engine clamps it to a ~1M cap,
+so no call yields an unbounded read); `after_id` is the exclusive cursor for the
+next page.
+
+### `read.mutations(engine, collection, *, after_id=None, limit) -> list[OpStoreRow]`
+
+Mutation-log-oriented alias surface over the **same** op-store read-back as
+`read.collection` (identical args + semantics).
+
 ## Data shapes
 
 ### `WriteReceipt`
@@ -156,6 +191,37 @@ rejects on a dangling endpoint). Because endpoints match on `logical_id`,
 an edge pointing at a legacy / own-identity node (NULL `logical_id`)
 counts as dangling — only `logical_id`-keyed nodes are valid endpoints.
 `0` when the batch committed no active edges.
+
+### `NodeRecord`
+
+```python
+@dataclass(frozen=True)
+class NodeRecord:
+    logical_id: str
+    kind: str
+    body: str
+    write_cursor: int   # interim id carrier (same column SearchHit.id carries)
+```
+
+Returned by `read.get` / `read.get_many` for an **active** canonical node
+(`superseded_at IS NULL`). Mirrors the TypeScript `NodeRecord`.
+
+### `OpStoreRow`
+
+```python
+@dataclass(frozen=True)
+class OpStoreRow:
+    id: int               # operational_mutations PK + the after_id cursor key
+    collection: str
+    record_key: str
+    op_kind: str          # always "append"
+    payload: str          # the stored payload_json
+    schema_id: str | None
+    write_cursor: int
+```
+
+Returned by `read.collection` / `read.mutations`. `id` is the after-id cursor
+key. Mirrors the TypeScript `OpStoreRow`.
 
 ### `SearchResult`
 
