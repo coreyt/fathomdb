@@ -37,6 +37,21 @@ class CounterSnapshot:
     cache_hit: int
     cache_miss: int
 
+class NodeRecord:
+    logical_id: str
+    kind: str
+    body: str
+    write_cursor: int
+
+class OpStoreRow:
+    id: int
+    collection: str
+    record_key: str
+    op_kind: str
+    payload: str
+    schema_id: str | None
+    write_cursor: int
+
 class MigrationStepReport:
     step_id: int
     duration_ms: int | None
@@ -94,6 +109,20 @@ class Engine:
     ) -> None: ...
 
 def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
+def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
+def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
+def read_collection(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
+def read_mutations(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...

@@ -264,6 +264,31 @@ Return Search { results, projection_cursor: c_r,
                 soft_fallback: Option<...> }
 ```
 
+### Governed `read.*` retrieval (Slice 30 / G2 + G3)
+
+The governed read verbs (`read.get` / `read.get_many` / `read.collection` /
+`read.mutations`) ride the **same** ReaderWorkerPool path as `search`: each
+dispatches a typed `ReaderRequest` (`GetById` / `ReadCollection`) to a reader
+worker that opens a `BEGIN DEFERRED` snapshot read-tx (REQ-018; **never** the
+writer `connection.lock()`). Each new request variant carries its **own** typed
+`respond` channel, so `search`'s `ReaderResponse` shape is left byte-identical —
+no Search regression.
+
+```text
+read.get / read.get_many   → ReaderRequest::GetById
+    SELECT logical_id, kind, body, write_cursor FROM canonical_nodes
+    WHERE logical_id IN (…) AND superseded_at IS NULL   -- active-only default
+  → Vec<Option<NodeRecord>> in request order (None on miss/superseded)
+
+read.collection / read.mutations → ReaderRequest::ReadCollection
+    SELECT … FROM operational_mutations
+    WHERE collection_name = ? AND id > ?after ORDER BY id LIMIT ?clamped
+  → Vec<OpStoreRow>   -- mandatory limit (≤ ~1M cap), after-id cursor
+```
+
+Typed args only — **no raw SQL, no filter DSL** crosses the surface. Not-found is
+a normal `None`/`null`, never an error.
+
 Numbered traceability: see § 7.
 
 ## 5. On-disk layout

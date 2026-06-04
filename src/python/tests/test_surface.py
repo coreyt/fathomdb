@@ -25,6 +25,7 @@ from fathomdb import (
     SoftFallback,
     WriteReceipt,
     admin,
+    read,
 )
 
 
@@ -35,9 +36,10 @@ def _load_governed_surface_contract() -> dict[str, list[str]]:
     `src/conformance/governed-surface-allowlist.json`, and read by BOTH the
     Python suite and the TypeScript suite (`src/ts/tests/surface.test.ts`).
     There is no per-binding duplicate literal, so Python and TypeScript cannot
-    drift apart (cross-binding parity, P2). The `read.*` members are
-    documented-allowlist members now but do NOT go live as importable symbols
-    until Slice 30 — so the membership check (P1) is subset, never equality.
+    drift apart (cross-binding parity, P2). As of Slice 30 the four `read.*`
+    members are LIVE: they are introspected from the `read` namespace and enter
+    the live set, so the membership check (P1) is still subset (never equality)
+    but `read.*` is now actually asserted-live, not documented-only.
     """
     # tests/ -> python/ -> src/ -> src/conformance/...
     here = Path(__file__).resolve()
@@ -75,17 +77,26 @@ _ENGINE_NON_COMMAND = _INSTRUMENTATION | frozenset({"open_report", "path", "conf
 # by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
 _RECOVERY_DENYLIST = frozenset(_CONTRACT["recovery_denylist"])
 
+# Slice 30 — the four governed read verbs that go LIVE under the `read.*`
+# namespace. Asserted present-in-the-introspected-surface so a future REMOVAL of
+# any `read.*` verb fails this suite (not merely a documented-allowlist member).
+_NOW_LIVE_READ_VERBS = frozenset(
+    {"read.get", "read.get_many", "read.collection", "read.mutations"}
+)
+
 
 def _live_python_command_surface() -> set[str]:
     """Introspect the *live* public application-command surface.
 
     Built from the REAL public symbols of `Engine` (`dir(Engine)`, minus
-    dunder/private names) and the introspected `admin` namespace, subtracting
-    the instrumentation/control methods and the other non-command members
-    (`open_report`, `path`, `config`). The result is honest: any public name
-    the live binding actually exposes that is not a known non-command verb
-    enters the live set — so a hypothetical `Engine.delete` would surface here
-    and fail the subset check (P1), rather than being silently ignored.
+    dunder/private names), the introspected `admin` namespace, and — as of
+    Slice 30 — the introspected `read` namespace (`read.__all__`, mirroring the
+    `admin.__all__` loop), subtracting the instrumentation/control methods and
+    the other non-command members (`open_report`, `path`, `config`). The result
+    is honest: any public name the live binding actually exposes that is not a
+    known non-command verb enters the live set — so a hypothetical
+    `Engine.delete` or a stray `read.delete` would surface here and fail the
+    subset check (P1), rather than being silently ignored.
     """
     live: set[str] = set()
     for name in dir(Engine):
@@ -98,21 +109,44 @@ def _live_python_command_surface() -> set[str]:
     for verb in getattr(admin, "__all__", ()):
         if callable(getattr(admin, verb, None)):
             live.add(f"admin.{verb}")
+    # Slice 30 — the governed `read.*` namespace. `read.__all__` is the snake_case
+    # verb list (`get`, `get_many`, `collection`, `mutations`); each emits the
+    # dotted allowlist name verbatim. A stray non-allowlisted `read` verb (e.g.
+    # `read.delete`) enters `live` and fails the P1 subset check.
+    for verb in getattr(read, "__all__", ()):
+        if callable(getattr(read, verb, None)):
+            live.add(f"read.{verb}")
     return live
 
 
 def test_public_surface_is_allowlist() -> None:
     """P1 — every live public application command is a governed-allowlist member.
 
-    Membership (subset), NOT equality: the allowlist is a superset that includes
-    the not-yet-live `read.*` verbs (live at Slice 30), so a live surface that is
-    currently the core five is honestly green against the 9-member allowlist.
+    Membership (subset), NOT equality: the allowlist is a superset; the live
+    surface as of Slice 30 is the core five PLUS the four `read.*` verbs, all
+    members of the 9-name allowlist.
     """
     live = _live_python_command_surface()
     extra = live - GOVERNED_SURFACE_ALLOWLIST
     assert not extra, f"live command(s) outside the governed allowlist: {sorted(extra)}"
     # The core write/lifecycle commands are live today.
     assert _CORE_LIVE_SURFACE <= live
+
+
+def test_read_namespace_verbs_are_live() -> None:
+    """Slice 30 — the four `read.*` verbs are now LIVE (introspected), not just
+    documented-allowlist members. A future removal of any one fails here."""
+    live = _live_python_command_surface()
+    missing = _NOW_LIVE_READ_VERBS - live
+    assert not missing, f"read.* verbs that must be live are missing: {sorted(missing)}"
+    # And they remain governed-allowlist members.
+    assert _NOW_LIVE_READ_VERBS <= GOVERNED_SURFACE_ALLOWLIST
+
+
+def test_read_is_module_level_namespace() -> None:
+    assert inspect.ismodule(read)
+    for verb in ("get", "get_many", "collection", "mutations"):
+        assert callable(getattr(read, verb, None)), f"read.{verb} must be callable"
 
 
 def test_surface_parity_py_matches_ts() -> None:

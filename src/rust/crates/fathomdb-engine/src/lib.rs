@@ -398,6 +398,23 @@ enum ReaderRequest {
         recency_enabled: bool,
         respond: SyncSender<ReaderResponse>,
     },
+    /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
+    /// slot per requested id, in request order, `None` where no active row
+    /// carries that id. Its own typed `respond` channel keeps the `Search`
+    /// `ReaderResponse` byte-identical (no Search regression).
+    GetById {
+        logical_ids: Vec<String>,
+        respond: SyncSender<rusqlite::Result<Vec<Option<NodeRecord>>>>,
+    },
+    /// Slice 30 (G3) — paginated op-store read-back over `operational_mutations`
+    /// for a `collection`, `ORDER BY id`, with a MANDATORY (already-clamped)
+    /// limit + optional after-id cursor.
+    ReadCollection {
+        collection: String,
+        after_id: Option<i64>,
+        limit: usize,
+        respond: SyncSender<rusqlite::Result<Vec<OpStoreRow>>>,
+    },
     Shutdown,
     /// Pack 6.G G.1 — debug-only request that asks a worker to read its
     /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
@@ -607,6 +624,14 @@ fn reader_worker_loop(
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
+                let _ = respond.send(result);
+            }
+            ReaderRequest::GetById { logical_ids, respond } => {
+                let result = read_get_by_id_in_tx(&mut connection, &logical_ids);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::ReadCollection { collection, after_id, limit, respond } => {
+                let result = read_collection_in_tx(&mut connection, &collection, after_id, limit);
                 let _ = respond.send(result);
             }
             #[cfg(debug_assertions)]
@@ -891,6 +916,34 @@ pub struct SearchHit {
     pub body: String,
     pub score: f64,
     pub branch: SoftFallbackBranch,
+}
+
+/// Slice 30 (G2) — an active canonical node row returned by `read.get` /
+/// `read.get_many`.
+///
+/// `logical_id` is the queried stable identity (echoed). `write_cursor` is the
+/// interim id carrier (same column `SearchHit.id` carries). Only ACTIVE rows
+/// (`superseded_at IS NULL`) are ever materialised into this shape; a missing or
+/// superseded `logical_id` is a normal absence (`None`), never an error.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeRecord {
+    pub logical_id: String,
+    pub kind: String,
+    pub body: String,
+    pub write_cursor: u64,
+}
+
+/// Slice 30 (G3) — one `operational_mutations` row returned by `read.collection`
+/// / `read.mutations`. `id` is the autoincrement PK (the after-id cursor key).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpStoreRow {
+    pub id: i64,
+    pub collection: String,
+    pub record_key: String,
+    pub op_kind: String,
+    pub payload: String,
+    pub schema_id: Option<String>,
+    pub write_cursor: u64,
 }
 
 /// Hybrid `search` result. `results` carries structured [`SearchHit`]s in
@@ -2142,6 +2195,92 @@ impl Engine {
         };
 
         Ok(SearchResult { projection_cursor: cursor, soft_fallback, results })
+    }
+
+    /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
+    /// Delegates to [`Engine::read_get_many`]; returns the single slot. A
+    /// missing/superseded id is `None` (a normal absence, not an error). Reads
+    /// ride the ReaderWorkerPool DEFERRED-tx path (never the writer lock).
+    pub fn read_get(&self, logical_id: &str) -> Result<Option<NodeRecord>, EngineError> {
+        let ids = [logical_id.to_string()];
+        let rows = self.read_get_many(&ids)?;
+        Ok(rows.into_iter().next().flatten())
+    }
+
+    /// Slice 30 (G2) — `read.get_many`: active-only point lookup over many
+    /// `logical_id`s. Returns one slot per requested id in REQUEST ORDER, `None`
+    /// where no active row carries that id (partial, never all-or-nothing).
+    pub fn read_get_many(
+        &self,
+        logical_ids: &[String],
+    ) -> Result<Vec<Option<NodeRecord>>, EngineError> {
+        self.ensure_open()?;
+        if logical_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request =
+            ReaderRequest::GetById { logical_ids: logical_ids.to_vec(), respond: response_tx };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 30 (G3) — `read.collection`: paginated op-store read-back over
+    /// `operational_mutations` for `collection`, `ORDER BY id`. `limit` is
+    /// MANDATORY (clamped to the ~1M cap); `after_id` is the exclusive cursor.
+    /// Reads ride the ReaderWorkerPool DEFERRED-tx path.
+    pub fn read_collection(
+        &self,
+        collection: &str,
+        after_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<OpStoreRow>, EngineError> {
+        self.read_collection_dispatch(collection, after_id, limit)
+    }
+
+    /// Slice 30 (G3) — `read.mutations`: the mutation-log-oriented alias surface
+    /// over the SAME op-store read-back as [`Engine::read_collection`].
+    pub fn read_mutations(
+        &self,
+        collection: &str,
+        after_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<OpStoreRow>, EngineError> {
+        self.read_collection_dispatch(collection, after_id, limit)
+    }
+
+    fn read_collection_dispatch(
+        &self,
+        collection: &str,
+        after_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<OpStoreRow>, EngineError> {
+        self.ensure_open()?;
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::ReadCollection {
+            collection: collection.to_string(),
+            after_id,
+            limit,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
     }
 
     pub fn close(&self) -> Result<(), EngineError> {
@@ -3794,6 +3933,103 @@ fn read_search_in_tx(
         recency_enabled,
     ));
     Ok((cursor, soft_fallback, fused))
+}
+
+/// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
+/// `read.collection` / `read.mutations` LIMIT is `min(caller_limit, this)`, so
+/// no API path can issue an unbounded SELECT. Cursor/limit hardening under a
+/// genuine ~1M-row append-only log is reserved-gap Slice 32.
+const READ_COLLECTION_MAX_LIMIT: usize = 1_000_000;
+
+/// Slice 30 (G2) — active-only point lookup by `logical_id` on the DEFERRED
+/// reader tx (mirrors `read_search_in_tx`'s snapshot-stable BEGIN DEFERRED). One
+/// returned slot per requested id, in REQUEST ORDER; `None` where no ACTIVE row
+/// (`superseded_at IS NULL`) carries that id. Mirrors the `:4170` canonical
+/// projection columns + `logical_id`; superseded versions are never returned.
+fn read_get_by_id_in_tx(
+    reader: &mut Connection,
+    logical_ids: &[String],
+) -> rusqlite::Result<Vec<Option<NodeRecord>>> {
+    if logical_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    // De-duplicate the requested ids for the IN(...) probe, then re-expand into
+    // request order (a repeated id echoes the same active row).
+    let mut found: HashMap<String, NodeRecord> = HashMap::new();
+    {
+        let unique: Vec<&String> = {
+            let mut seen = std::collections::HashSet::new();
+            logical_ids.iter().filter(|id| seen.insert((*id).clone())).collect()
+        };
+        let placeholders = std::iter::repeat_n("?", unique.len()).collect::<Vec<_>>().join(", ");
+        let sql = format!(
+            "SELECT logical_id, kind, body, write_cursor
+             FROM canonical_nodes
+             WHERE logical_id IN ({placeholders}) AND superseded_at IS NULL"
+        );
+        let mut statement = tx.prepare(&sql)?;
+        let params = rusqlite::params_from_iter(unique.iter().map(|s| s.as_str()));
+        let rows = statement.query_map(params, |row| {
+            let logical_id: String = row.get(0)?;
+            Ok(NodeRecord {
+                logical_id,
+                kind: row.get(1)?,
+                body: row.get(2)?,
+                write_cursor: row.get::<_, i64>(3)? as u64,
+            })
+        })?;
+        for row in rows {
+            let record = row?;
+            found.insert(record.logical_id.clone(), record);
+        }
+    }
+    // tx is read-only; dropping it rolls back the (empty) transaction.
+    let out = logical_ids.iter().map(|id| found.get(id).cloned()).collect();
+    Ok(out)
+}
+
+/// Slice 30 (G3) — paginated op-store read-back over `operational_mutations` for
+/// one `collection`, `ORDER BY id`, on the DEFERRED reader tx. The effective SQL
+/// LIMIT is `min(limit, READ_COLLECTION_MAX_LIMIT)`; a caller `limit == 0`
+/// returns an empty `Vec` without a SELECT. The after-id cursor (`id > ?`,
+/// default 0) excludes the boundary row. The `_for_test` SELECTs
+/// (`lib.rs` op-store probes) are a shape oracle only — this is a new statement.
+fn read_collection_in_tx(
+    reader: &mut Connection,
+    collection: &str,
+    after_id: Option<i64>,
+    limit: usize,
+) -> rusqlite::Result<Vec<OpStoreRow>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let clamped = limit.min(READ_COLLECTION_MAX_LIMIT) as i64;
+    let after = after_id.unwrap_or(0);
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let mut statement = tx.prepare(
+        "SELECT id, collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+         FROM operational_mutations
+         WHERE collection_name = ?1 AND id > ?2
+         ORDER BY id
+         LIMIT ?3",
+    )?;
+    let rows = statement.query_map(params![collection, after, clamped], |row| {
+        Ok(OpStoreRow {
+            id: row.get(0)?,
+            collection: row.get(1)?,
+            record_key: row.get(2)?,
+            op_kind: row.get(3)?,
+            payload: row.get(4)?,
+            schema_id: row.get(5)?,
+            write_cursor: row.get::<_, i64>(6)? as u64,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
 }
 
 fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {

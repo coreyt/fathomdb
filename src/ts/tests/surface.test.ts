@@ -17,16 +17,17 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Engine, admin, type EngineConfig, type SoftFallback } from "../src/index.js";
+import { Engine, admin, read, type EngineConfig, type SoftFallback } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
 // The governed SDK surface allowlist (AC-074 / REQ-053) is declared exactly
 // ONCE, in `src/conformance/governed-surface-allowlist.json`, and read by BOTH
 // this suite and the Python suite (`src/python/tests/test_surface.py`). There
 // is no per-binding duplicate literal, so TypeScript and Python cannot drift
-// apart (cross-binding parity, P2). The `read.*` members are documented-
-// allowlist members now but do NOT go live as callable symbols until Slice 30 —
-// so the membership check below (P1) is a subset test, never equality.
+// apart (cross-binding parity, P2). As of Slice 30 the four `read.*` members are
+// LIVE: they are introspected off the `read` namespace object and enter the live
+// set, so the membership check below (P1) is still a subset test (never
+// equality) but `read.*` is now actually asserted-live, not documented-only.
 interface GovernedSurfaceContract {
   allowlist: string[];
   core: string[];
@@ -76,6 +77,24 @@ const ENGINE_NON_COMMAND = new Set<string>([...INSTRUMENTATION, "openReport", "c
 // by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
 const RECOVERY_DENYLIST = CONTRACT.recovery_denylist;
 
+// Slice 30 — the four governed read verbs that go LIVE under `read.*`. Asserted
+// present-in-the-introspected-surface so a future REMOVAL of any `read.*` verb
+// fails this suite (parity with the Python `_NOW_LIVE_READ_VERBS` check).
+const NOW_LIVE_READ_VERBS = [
+  "read.get",
+  "read.get_many",
+  "read.collection",
+  "read.mutations",
+] as const;
+
+// camelCase → snake_case so the introspected TS `read` verb identity maps to the
+// single shared allowlist's dotted snake_case names (`getMany` → `get_many`).
+// This is the ONLY place TS verb identity is normalized to the canonical
+// allowlist name, so a one-sided extra/missing `read.*` verb still fails parity.
+function toSnakeCase(name: string): string {
+  return name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
 // Introspect the REAL live public command surface of the TypeScript SDK,
 // mirroring the enumeration style of `no-recovery-surface.test.ts`: static
 // names off `Engine`, plus prototype + own instance names off a live engine,
@@ -105,14 +124,24 @@ function liveTsCommandSurface(engine: Engine): Set<string> {
     live.add(name === "open" ? "Engine.open" : name);
   }
   if (typeof admin.configure === "function") live.add("admin.configure");
+  // Slice 30 — the governed `read.*` namespace. Introspect the `read` object's
+  // own function-valued keys (mirroring the `admin` introspection); normalize
+  // camelCase → snake_case so the emitted name matches the dotted allowlist. A
+  // stray non-allowlisted `read` verb (e.g. `read.delete`) enters `live` and
+  // fails the P1 subset check.
+  for (const key of Object.keys(read as unknown as Record<string, unknown>)) {
+    if (key.startsWith("_")) continue;
+    if (typeof (read as unknown as Record<string, unknown>)[key] !== "function") continue;
+    live.add(`read.${toSnakeCase(key)}`);
+  }
   return live;
 }
 
 test("public surface is the governed allowlist (membership, not a count)", async () => {
   // P1 — every live public application command is a governed-allowlist member.
-  // Membership (subset), NOT equality: the allowlist is a superset including the
-  // not-yet-live read.* verbs (live at Slice 30), so a live surface that is
-  // currently the core five is honestly green against the 9-member allowlist.
+  // Membership (subset), NOT equality: the allowlist is a superset; the live
+  // surface as of Slice 30 is the core five PLUS the four read.* verbs, all
+  // members of the 9-name allowlist.
   assert.equal(typeof Engine.open, "function", "Engine.open must be a static method");
 
   const engine = await Engine.open(freshDbPath());
@@ -127,6 +156,19 @@ test("public surface is the governed allowlist (membership, not a count)", async
     }
     for (const core of CORE_LIVE_SURFACE) {
       assert.ok(live.has(core), `core command ${core} must be live`);
+    }
+  } finally {
+    await engine.close();
+  }
+});
+
+test("read.* namespace verbs are live (Slice 30, introspected not documented-only)", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    const live = liveTsCommandSurface(engine);
+    for (const verb of NOW_LIVE_READ_VERBS) {
+      assert.ok(live.has(verb), `read verb ${verb} must be live (introspected)`);
+      assert.ok(GOVERNED_SURFACE_ALLOWLIST.has(verb), `${verb} must be an allowlist member`);
     }
   } finally {
     await engine.close();

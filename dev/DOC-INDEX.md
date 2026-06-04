@@ -26,7 +26,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface) | 25 (AC-057a→AC-074); 40 scoreboard | 2026-06-04 |
-| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface | 2026-06-03 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch) | 2026-06-04 |
 | `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
@@ -48,12 +48,13 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/slice-15-g0-design.md` | Slice 15 design memo — G0 canonical-identity substrate: step-12 additive `ALTER` (exemption-marker rationale), tombstone-then-insert supersession + same-txn atomicity, NULL-on-legacy-rows rule, `row_cursors` semantics, op-store cascade, reserved Slice-16 shadow reconciliation, test plan | 15 (G0 keystone) | 2026-06-03 |
 | `dev/design/slice-20-g8-design.md` | Slice 20 design memo — G8 dangling-edge flag-and-count: cross-row post-row-insert EXISTS pass inside `commit_batch`'s open tx (why not `validate_write`), logical_id-alone probe + step-12 partial-index hit argument, legacy-NULL endpoint consequence, flag-and-count default (strict-mode deferred to band 22), test plan | 20 (G8/F10) | 2026-06-03 |
 | `dev/design/slice-25-conformance-design.md` | Slice 25 design memo — governed-surface conformance rewrite: the allowlist (core 5 + `read.*` 4), the four falsifiable properties (P1 allowlist-membership · P2 cross-binding parity · P3 recovery-denylist empty-intersection · P4 no-raw-SQL), the honest-green plan for not-yet-live `read.*`, touch-points | 25 (AC-057a→AC-074) | 2026-06-04 |
+| `dev/design/slice-30-design.md` | Slice 30 design memo — governed `read.*` (G2 `read.get`/`read.get_many` active-only by `logical_id`; G3 `read.collection`/`read.mutations` op-store read-back with mandatory limit + after-id cursor): per-request typed reader channels (no `ReaderResponse`/Search reshape), `NodeRecord`/`OpStoreRow` shapes, get_many partial-order-preserved, not-found=`None`/`null` (NotFound→gap 31), conformance-genuinely-enforced plan, test plan | 30 (G2/G3) | 2026-06-04 |
 | `dev/design/agent-memory-impl-strategy.md` | Slice shapes / impl strategy for the gap ladder | 5/10/15/20/30 shapes | 2026-06-02 |
 | `dev/design/retrieval.md` | Retrieval pipeline design (vector + FTS5, fusion) | 5/10 | (tree) |
 | `dev/design/projections.md` | Projection model | 5/15 | (tree) |
 | `dev/design/migrations.md` | Migration model (forward-only, accretion guard) | 5/15 (schema 10→11) | (tree) |
 | `dev/design/vector.md`, `ann-index-vec0.md` | Vector store / vec0 ANN index | 10/15 | (tree) |
-| `dev/design/op-store.md` | Operational mutation store | 30 (`read.collection`/`read.mutations`) | (tree) |
+| `dev/design/op-store.md` | Operational mutation store (incl. the Slice 30 `read.collection`/`read.mutations` read-back contract: reader-pool DEFERRED-tx, `ORDER BY id`, mandatory limit ≤ ~1M cap, after-id cursor) | 30 (`read.collection`/`read.mutations`) | 2026-06-04 |
 | `dev/design/engine.md`, `lifecycle.md`, `scheduler.md`, `recovery.md`, `errors.md`, `embedder.md`, `embedder-decision.md`, `release.md`, `perf-gates.md`, `perf-regression-detection.md`, `0.7.0-vector-quant-pack1.md`, `0.7.1-EU-6-FIX-*.md` | Engine/lifecycle/scheduler/recovery/error/embedder/release/perf design notes | per-slice as touched | (tree) |
 
 ## `dev/adr/` — architecture decision records
@@ -95,8 +96,8 @@ refresh in the closing commit when you touch a doc).
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
 | `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
-| `docs/reference/python-api.md` | Python API reference | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-03 |
-| `docs/reference/typescript-api.md` | TypeScript API reference | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-03 |
+| `docs/reference/python-api.md` | Python API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-04 |
+| `docs/reference/typescript-api.md` | TypeScript API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-04 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only) | preserved | 2026-05-17 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |
@@ -104,8 +105,9 @@ refresh in the closing commit when you touch a doc).
 | `docs/embedder.md` | Default embedder | — | 2026-06-01 |
 | `docs/compatibility/index.md` | Compatibility matrix | 40 (compat events) | 2026-05-17 |
 | `docs/operations/index.md` | Operations guide | — | 2026-05-01 |
-| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-06-02 |
+| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-06-04 |
 | `docs/guides/structured-search-hits.md` | Structured `SearchHit` usage guide (id/kind/body/score/branch; Py + TS) | 5 (G1); 10 (score → RRF) | 2026-06-03 |
+| `docs/guides/retrieve-by-id.md` | Retrieve-by-id guide — `read.get`/`read.get_many` point lookup by `logical_id` (active-only) + `read.collection`/`read.mutations` paginated op-store read-back (mandatory limit + after-id cursor); Py + TS | 30 (G2/G3) | 2026-06-04 |
 | `docs/guides/hybrid-search-filtering.md` | Hybrid search guide — G9 RRF ranking (documented behavior-compat event) + G10 `SearchFilter` metadata filtering, Py + TS examples | 10 (G9/G10) | 2026-06-03 |
 | `docs/positions/index.md` | Positions hub | — | 2026-05-01 |
 | `docs/positions/sdk-parity.md` | Position: SDK parity (guarantee carried forward by 25) | 25 | 2026-05-01 |

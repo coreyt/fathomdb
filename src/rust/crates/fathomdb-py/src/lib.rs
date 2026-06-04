@@ -36,10 +36,10 @@ use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchFilter as RustSearchFilter, SearchHit as RustSearchHit,
-    SearchResult as RustSearchResult, SoftFallback as RustSoftFallback, SoftFallbackBranch,
-    WriteReceipt as RustWriteReceipt,
+    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -359,6 +359,52 @@ impl PySearchResult {
             projection_cursor: r.projection_cursor,
             soft_fallback: r.soft_fallback.as_ref().map(PySoftFallback::from_rust),
             results: r.results.iter().map(PySearchHit::from_rust).collect(),
+        }
+    }
+}
+
+#[pyclass(module = "fathomdb._fathomdb", name = "NodeRecord", frozen, get_all)]
+#[derive(Clone)]
+struct PyNodeRecord {
+    logical_id: String,
+    kind: String,
+    body: String,
+    write_cursor: u64,
+}
+
+impl PyNodeRecord {
+    fn from_rust(r: &RustNodeRecord) -> Self {
+        Self {
+            logical_id: r.logical_id.clone(),
+            kind: r.kind.clone(),
+            body: r.body.clone(),
+            write_cursor: r.write_cursor,
+        }
+    }
+}
+
+#[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all)]
+#[derive(Clone)]
+struct PyOpStoreRow {
+    id: i64,
+    collection: String,
+    record_key: String,
+    op_kind: String,
+    payload: String,
+    schema_id: Option<String>,
+    write_cursor: u64,
+}
+
+impl PyOpStoreRow {
+    fn from_rust(r: &RustOpStoreRow) -> Self {
+        Self {
+            id: r.id,
+            collection: r.collection.clone(),
+            record_key: r.record_key.clone(),
+            op_kind: r.op_kind.clone(),
+            payload: r.payload.clone(),
+            schema_id: r.schema_id.clone(),
+            write_cursor: r.write_cursor,
         }
     }
 }
@@ -687,6 +733,82 @@ fn admin_configure(
     Ok(PyWriteReceipt::from_rust(receipt))
 }
 
+// ===== read.* (G2/G3) =================================================
+//
+// Slice 30 — the governed `read.*` namespace native fns. `read.get` /
+// `read.get_many` are active-only point lookups by `logical_id` (not-found is a
+// normal `None`, never an exception — a typed NotFound class is reserved-gap
+// Slice 31). `read.collection` / `read.mutations` are the paginated op-store
+// read-back with a MANDATORY limit + after-id cursor. All four ride the engine's
+// ReaderWorkerPool DEFERRED-tx path inside the engine; the binding only marshals.
+
+#[pyfunction]
+#[pyo3(signature = (engine, logical_id))]
+fn read_get(
+    py: Python<'_>,
+    engine: &PyEngine,
+    logical_id: &Bound<'_, PyAny>,
+) -> PyResult<Option<PyNodeRecord>> {
+    let logical_id = extract_validated_str(logical_id)?;
+    let inner = Arc::clone(&engine.inner);
+    let record = call_engine(py, move || inner.read_get(&logical_id))?;
+    Ok(record.as_ref().map(PyNodeRecord::from_rust))
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, logical_ids))]
+fn read_get_many(
+    py: Python<'_>,
+    engine: &PyEngine,
+    logical_ids: &Bound<'_, PyList>,
+) -> PyResult<Vec<Option<PyNodeRecord>>> {
+    let mut ids = Vec::with_capacity(logical_ids.len());
+    for item in logical_ids.iter() {
+        ids.push(extract_validated_str(&item)?);
+    }
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_get_many(&ids))?;
+    Ok(rows.iter().map(|r| r.as_ref().map(PyNodeRecord::from_rust)).collect())
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, collection, after_id=None, limit=0))]
+fn read_collection(
+    py: Python<'_>,
+    engine: &PyEngine,
+    collection: &Bound<'_, PyAny>,
+    after_id: Option<i64>,
+    limit: u64,
+) -> PyResult<Vec<PyOpStoreRow>> {
+    read_collection_impl(py, engine, collection, after_id, limit)
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, collection, after_id=None, limit=0))]
+fn read_mutations(
+    py: Python<'_>,
+    engine: &PyEngine,
+    collection: &Bound<'_, PyAny>,
+    after_id: Option<i64>,
+    limit: u64,
+) -> PyResult<Vec<PyOpStoreRow>> {
+    read_collection_impl(py, engine, collection, after_id, limit)
+}
+
+fn read_collection_impl(
+    py: Python<'_>,
+    engine: &PyEngine,
+    collection: &Bound<'_, PyAny>,
+    after_id: Option<i64>,
+    limit: u64,
+) -> PyResult<Vec<PyOpStoreRow>> {
+    let collection = extract_validated_str(collection)?;
+    let limit = limit as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_collection(&collection, after_id, limit))?;
+    Ok(rows.iter().map(PyOpStoreRow::from_rust).collect())
+}
+
 // ===== Batch translation ==============================================
 
 fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
@@ -806,7 +928,14 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMigrationStepReport>()?;
     m.add_class::<PyEmbedderIdentity>()?;
     m.add_class::<PyOpenReport>()?;
+    m.add_class::<PyNodeRecord>()?;
+    m.add_class::<PyOpStoreRow>()?;
     m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
+    // Slice 30 — governed read.* native fns (G2/G3).
+    m.add_function(wrap_pyfunction!(read_get, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_collection, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;

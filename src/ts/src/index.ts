@@ -13,6 +13,8 @@ import { rethrowTyped } from "./errors.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
+export { read } from "./read.js";
+export type { NodeRecord, OpStoreRow, ReadCollectionOptions } from "./read.js";
 
 export interface EngineConfig {
   embedderPoolSize?: number;

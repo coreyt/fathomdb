@@ -32,9 +32,10 @@ use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
-    PreparedWrite, SearchFilter as RustSearchFilter, SearchHit as RustSearchHit,
-    SearchResult as RustSearchResult, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -362,6 +363,56 @@ impl SearchHit {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
             },
+        }
+    }
+}
+
+/// Slice 30 (G2) — an active canonical node row from `read.get` /
+/// `read.getMany`. napi maps snake_case → camelCase JS (`logicalId`,
+/// `writeCursor`).
+#[napi(object)]
+pub struct NodeRecord {
+    pub logical_id: String,
+    pub kind: String,
+    pub body: String,
+    pub write_cursor: i64,
+}
+
+impl NodeRecord {
+    fn from_rust(r: &RustNodeRecord) -> Self {
+        Self {
+            logical_id: r.logical_id.clone(),
+            kind: r.kind.clone(),
+            body: r.body.clone(),
+            write_cursor: r.write_cursor as i64,
+        }
+    }
+}
+
+/// Slice 30 (G3) — one `operational_mutations` row from `read.collection` /
+/// `read.mutations`. `id` is the after-id cursor key. napi maps snake_case →
+/// camelCase JS (`recordKey`, `opKind`, `schemaId`, `writeCursor`).
+#[napi(object)]
+pub struct OpStoreRow {
+    pub id: i64,
+    pub collection: String,
+    pub record_key: String,
+    pub op_kind: String,
+    pub payload: String,
+    pub schema_id: Option<String>,
+    pub write_cursor: i64,
+}
+
+impl OpStoreRow {
+    fn from_rust(r: &RustOpStoreRow) -> Self {
+        Self {
+            id: r.id,
+            collection: r.collection.clone(),
+            record_key: r.record_key.clone(),
+            op_kind: r.op_kind.clone(),
+            payload: r.payload.clone(),
+            schema_id: r.schema_id.clone(),
+            write_cursor: r.write_cursor as i64,
         }
     }
 }
@@ -801,6 +852,78 @@ pub async fn admin_configure(
     let inner = Arc::clone(&engine.inner);
     let receipt = call_engine(move || inner.write(&batch)).await?;
     Ok(WriteReceipt::from_rust(receipt))
+}
+
+// ===== read.* (G2/G3) =================================================
+//
+// Slice 30 — the governed `read.*` namespace native fns. `read.get` /
+// `read.getMany` are active-only point lookups by `logicalId` (not-found is a
+// normal `null`, never a thrown error — a typed NotFound class is reserved-gap
+// Slice 31). `read.collection` / `read.mutations` are the paginated op-store
+// read-back with a MANDATORY limit + after-id cursor. All four ride the engine's
+// ReaderWorkerPool DEFERRED-tx path; the binding only marshals.
+
+/// Slice 30 (G3) — options for `read.collection` / `read.mutations`. `limit` is
+/// MANDATORY (no default — the engine clamps it to the ~1M cap); `afterId` is
+/// the exclusive cursor.
+#[napi(object)]
+pub struct ReadCollectionOptions {
+    pub after_id: Option<i64>,
+    pub limit: i64,
+}
+
+#[napi(js_name = "readGet")]
+pub async fn read_get(engine: &Engine, logical_id: String) -> Result<Option<NodeRecord>> {
+    validate_ffi_string_napi(&logical_id)?;
+    let inner = Arc::clone(&engine.inner);
+    let record = call_engine(move || inner.read_get(&logical_id)).await?;
+    Ok(record.as_ref().map(NodeRecord::from_rust))
+}
+
+#[napi(js_name = "readGetMany")]
+pub async fn read_get_many(
+    engine: &Engine,
+    logical_ids: Vec<String>,
+) -> Result<Vec<Option<NodeRecord>>> {
+    for id in &logical_ids {
+        validate_ffi_string_napi(id)?;
+    }
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.read_get_many(&logical_ids)).await?;
+    Ok(rows.iter().map(|r| r.as_ref().map(NodeRecord::from_rust)).collect())
+}
+
+#[napi(js_name = "readCollection")]
+pub async fn read_collection(
+    engine: &Engine,
+    collection: String,
+    options: ReadCollectionOptions,
+) -> Result<Vec<OpStoreRow>> {
+    read_collection_impl(engine, collection, options).await
+}
+
+#[napi(js_name = "readMutations")]
+pub async fn read_mutations(
+    engine: &Engine,
+    collection: String,
+    options: ReadCollectionOptions,
+) -> Result<Vec<OpStoreRow>> {
+    read_collection_impl(engine, collection, options).await
+}
+
+async fn read_collection_impl(
+    engine: &Engine,
+    collection: String,
+    options: ReadCollectionOptions,
+) -> Result<Vec<OpStoreRow>> {
+    validate_ffi_string_napi(&collection)?;
+    let after_id = options.after_id;
+    // A negative limit is meaningless; clamp the floor to 0 (empty read). The
+    // engine clamps the ceiling to the ~1M cap.
+    let limit = options.limit.max(0) as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.read_collection(&collection, after_id, limit)).await?;
+    Ok(rows.iter().map(OpStoreRow::from_rust).collect())
 }
 
 // ===== Batch translation ==============================================
