@@ -15,9 +15,13 @@ parity rules remain owned by `design/bindings.md`.
 ## Support posture
 
 The Rust facade is stable public Rust contract in 0.6.0 and is the
-ground-truth source for engine-side type names. It is not part of the
-Python/TypeScript five-verb SDK parity set tested by AC-057a; Rust keeps the
-facade shape below unless a successor ADR expands it.
+ground-truth source for engine-side type names. The Python/TypeScript governed
+SDK surface parity set is tested by AC-074 (which supersedes AC-057a's
+five-verb cap). Under the signed Q5 = BIND-RUST
+(`ADR-0.8.0-supersede-five-verb-surface-cap`) the Rust facade is **also** bound
+by AC-074; its positive-allowlist/parity pin lands at reserved-gap **Slice 27**
+(not yet executed here). Rust keeps the facade shape below unless a successor
+ADR expands it.
 
 ## Public surface
 

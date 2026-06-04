@@ -442,12 +442,25 @@ the ADR is authoritative.
 
 ## Public surface (REQ-053..REQ-059)
 
-- **REQ-053 — Five-verb application runtime SDK surface.** Public
-  application runtime SDK surface is `Engine.open`, `admin.configure`,
-  `write`, `search`, `close` — five verbs, no more. (CLI is a separate
-  surface — see REQ-036, REQ-054.)
+- **REQ-053 — Governed application runtime SDK surface.** The public
+  application runtime SDK surface is **governed, not capped** (amended 0.8.0,
+  Slice 25, per `ADR-0.8.0-supersede-five-verb-surface-cap`): a curated,
+  parity-locked **allowlist** partitioned into a write/admin/lifecycle core
+  (`Engine.open`, `admin.configure`, `write`, `search`, `close`) and an
+  additive `read.*` read surface (`read.get`, `read.get_many`,
+  `read.collection`, `read.mutations`, … added by demonstrated need). The
+  surface is constrained by three permanent rules: **cross-binding parity** (a
+  verb appears in every SDK binding or in none), a **recovery-name denylist**
+  (`{recover, restore, repair, fix, rebuild}` are never SDK-reachable; `doctor`
+  is SDK-absent via allowlist non-membership), and the **typed / no-raw-SQL
+  boundary** (typed args + a small fixed filter grammar, never raw SQL or a
+  query DSL). Adding a verb is a deliberate, documented event, not silent
+  drift. (CLI is a separate surface — see REQ-036, REQ-054.) Supersedes the
+  earlier "exactly five verbs, no more" scope cap, which was a development
+  scaffolding device.
   _Source:_ `dev/notes/0.5.7-corrected-scope.md` § 0.6.0 RFC;
-  `dev/notes/0.6.0-rewrite-proposal.md` § Public API: five verbs.
+  `dev/notes/0.6.0-rewrite-proposal.md` § Public API;
+  `ADR-0.8.0-supersede-five-verb-surface-cap` (governed surface).
   _Cross-cite:_ ADR-0.6.0-prepared-write-shape (write-shape),
   ADR-0.6.0-typed-write-boundary.
 

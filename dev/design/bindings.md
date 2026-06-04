@@ -27,28 +27,47 @@ Per `plan.md` Phase 3 step 4, `design/bindings.md` is written first to test whet
 
 Per-binding _signatures_ still belong in `interfaces/{python,ts,cli}.md`. This file commits to _protocol_, not to syntax.
 
-## 1. Surface-set parity invariant
+## 1. Governed SDK surface invariant (allowlist + parity)
 
-Every **SDK** binding's public top-level surface MUST be exactly the five-verb canonical set in that binding's idiomatic casing:
+Every **SDK** binding's public application-command surface MUST be a member of a
+**governed allowlist** — a curated, parity-locked set, not a frozen count
+(amended 0.8.0, Slice 25, per `ADR-0.8.0-supersede-five-verb-surface-cap`;
+supersedes the earlier "exactly five, no sixth verb" scope cap). The allowlist
+is partitioned into a write/admin/lifecycle core and an additive `read.*` read
+surface, in each binding's idiomatic casing:
 
 ```text
-Engine.open    admin.configure    write    search    close
+core:   Engine.open    admin.configure    write    search    close
+read.*: read.get    read.get_many    read.collection    read.mutations
 ```
 
-(REQ-053; gated by AC-057a.) The parity claim is symmetric _across SDK bindings_ (Python + TypeScript): a verb appears in every SDK binding or in none. Adding a verb requires updating all SDK bindings together; per-SDK-binding surface sets are not allowed to drift.
+(REQ-053; gated by AC-074. The `read.*` members ship in 0.8.0 but go live at
+Slice 30; until then they are documented-allowlist members, so the conformance
+check is allowlist-membership, not set-equality.) The invariant has three
+permanent clauses:
 
-Rust is a stable public facade contract, but it is not part of the
-Python/TypeScript SDK parity set. `interfaces/rust.md` owns the Rust facade
-shape.
+- **Cross-binding parity.** The claim is symmetric _across SDK bindings_ (Python
+  + TypeScript): a verb appears in every SDK binding or in none. Adding a verb
+  requires updating all SDK bindings together; per-SDK-binding surface sets are
+  not allowed to drift. Enforced as allowlist-equality (membership + cross-binding
+  equality), not a count.
+- **Recovery-name denylist** (see below) — preserved verbatim.
+- **Typed / no-raw-SQL boundary** — reads take typed args + a small fixed filter
+  grammar (equality + range over body-JSON), never raw SQL or a query DSL.
+
+Rust is a stable public facade contract. Under the signed Q5 = BIND-RUST it is
+**also bound** by the governed-surface AC (AC-074); the Rust-facade
+positive-allowlist/parity pin executes at reserved-gap Slice 27.
+`interfaces/rust.md` owns the Rust facade shape.
 
 CLI is a separate, non-SDK surface (per ADR-0.6.0-cli-scope, architecture.md § 1: "Does NOT mirror full SDK 5-verb surface"). CLI exposes a structurally distinct operator command set (`fathomdb doctor <verb>` and `fathomdb recover`). CLI parity with SDK is NOT required and NOT promised; adding an SDK verb does not imply adding a CLI command.
 
 The SDK surface MUST NOT contain any name in `{recover, restore, repair, fix, rebuild}` (REQ-037, REQ-054, REQ-031d). These verbs exist exclusively on the CLI surface. (The `doctor` CLI namespace is likewise SDK-absent, but by virtue of the positive verb allowlist — it is never added to the SDK surface — not via this recovery-name denylist, so it is not a member of this set.)
 
-REQ-030's bounded-completion surface is **not** a sixth top-level SDK verb.
+REQ-030's bounded-completion surface is **not** a top-level SDK application verb.
 It is an `Engine` instance method. The per-language method spelling is owned by
 `interfaces/{rust,python,typescript}.md`; this file commits only that it must
-not widen the top-level parity set from five verbs to six.
+not widen the governed application-command allowlist with an undocumented verb.
 
 ## 2. Lifecycle dispatch model
 
@@ -266,7 +285,7 @@ This is a _non-presence_ claim, not a per-binding signature, and is therefore ow
 
 **REQs covered:**
 
-- REQ-053 (five-verb SDK surface) — § 1
+- REQ-053 (governed SDK surface — allowlist + parity) — § 1
 - REQ-054 (recovery CLI-only) — § 10
 - REQ-037 (SDK unreachability of recovery) — § 10
 - REQ-056 (typed errors) — § 3
@@ -283,7 +302,8 @@ This is a _non-presence_ claim, not a per-binding signature, and is therefore ow
 - AC-022a (close releases lock) — § 7
 - AC-035a/b/c/d (corruption refuse + shape + lock release + recovery CLI-only) — § 7, § 10, § 11
 - AC-056 (registry-installed wheel smoke gate) — § 9
-- AC-057a (five-verb SDK surface set) — § 1, § 10
+- AC-074 (governed SDK surface set — allowlist + parity + recovery-denylist + typed boundary) — § 1
+- AC-057a (superseded by AC-074; its recovery-non-presence clause still gated in the byte-frozen § 10) — § 10
 - AC-060a (typed errors per variant) — § 3
 - AC-060b (JSON-Schema save-time cadence) — § 4
 
@@ -291,7 +311,7 @@ This is a _non-presence_ claim, not a per-binding signature, and is therefore ow
 
 The bindings layer is normative on:
 
-1. Surface-set parity across SDK bindings (five verbs; no recovery on SDK).
+1. Governed SDK surface — a curated, parity-locked application-command allowlist (a verb appears in every SDK binding or none; no recovery on SDK).
 2. Error-mapping _protocol_ (one class per variant; typed attrs; single rooted hierarchy; no string-pattern dispatch). The matrix itself lives in `design/errors.md`.
 3. Dispatch model and Invariant A–D no-escape-hatch posture.
 4. Typed write boundary across bindings.
