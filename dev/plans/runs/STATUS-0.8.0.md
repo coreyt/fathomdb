@@ -15,28 +15,47 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-04 (Slice 25 **PROMPTED** — `dev/plans/prompts/0.8.0-slice-25.md` authored,
-baseline `06d5c59`, anchors re-verified at `06d5c59`. Supersession Q1–Q5 gate **already SIGNED**
-2026-06-03 → HITL hard gate **pre-satisfied**; prompt carries the as-signed bundle + the Rust-binding
-note (Py+TS allowlist+parity rewrite at **25**; Rust pin at reserved-gap **27**). Work-type corrected:
-the ADR is already accepted, but the conformance rewrite is real test/doc-source → slice agent **owns a
-worktree + writes `output.json`** (not the plan's blanket "design-adr, no output.json"). Awaiting
-hand-off to an implementer.).
+Last updated: 2026-06-04 (Slice 25 **CLOSED** — governed-surface conformance rewrite merged to
+`main`@`d8665fe`, **fix-1 @ `b86ef63`** (final HEAD). AC-057a **superseded by AC-074** (governed SDK
+surface — allowlist+parity+recovery-denylist+no-raw-SQL, measurable; records Q5=BIND-RUST → Rust pin at
+**Slice 27**); REQ-053 amended in place (Q3); `bindings.md` §1/§13/§14 rewritten; trace `:1183` +
+`rust.md` repointed AC-057a→AC-074. **§9 codex: R1 = 2 × [P1] BLOCK → fix-1** (rewritten suites didn't
+actually enforce allowlist-introspection or Py↔TS parity — both were vacuous/cosmetic) → **fix-1 clean
+PASS** (genuine `dir(Engine)` introspection both bindings + single shared
+`src/conformance/governed-surface-allowlist.json`). HITL Q1–Q5 gate was **already SIGNED 2026-06-03**, so
+codex PASS was the only remaining gate. Byte-freeze held (recovery suites + `bindings.md` §10 unchanged).
+Both worktrees removed. **Pointer → Slice 30** (G2/G3 read verbs go live); **Slice 27** (Rust pin)
+remains reserved.).
 
 ---
 
 ## 1. Current slice
 
-**Current: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite — 📝 PROMPTED 2026-06-04**
-(`dev/plans/prompts/0.8.0-slice-25.md`, baseline `06d5c59`, anchors re-verified at `06d5c59`). The
-supersession Q1–Q5 gate is **already SIGNED** (2026-06-03 — see below), so the HITL hard gate is
-**pre-satisfied**; the prompt carries the as-signed bundle (Q1=A1/Q2=B1/Q3=amend/Q4=confirm/Q5=BIND-RUST)
-+ the Rust-binding note (Py+TS allowlist+parity rewrite lands at **25**; Rust positive-allowlist pin at
-the activated reserved-gap **Slice 27**). **Work-type corrected from the plan's blanket "design-adr":**
-the ADR is already signed/accepted (nothing to author), but the **conformance rewrite is real test/doc-as-
-source code → the slice agent OWNS a worktree and writes `output.json`** (TDD-as-falsifiable-bar). On
-return: 25.b adversarial allowlist/leakage/parity audit + codex §9; close on codex PASS (HITL signature
-already exists) → advance pointer to Slice 30; Slice 27 (Rust pin) remains reserved.
+**Next: Slice 30 — G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` (`read.*`)
+`[implementation]`** — ▶️ **gate-clear.** Both hard gates are satisfied: G0 keystone (Slice 15) CLOSED
+**and** the supersession sign-off + conformance rewrite (Slice 25) CLOSED. Slice 30 lands the first
+governed SDK read verbs (active-only by-`logical_id` point lookup + paginated op-store read-back) under
+the `read.*` namespace, riding the existing ReaderWorkerPool DEFERRED-tx snapshot path (never the writer
+lock). Read the Slice 30 contract in `0.8.0-implementation.md` (§ "Slice 30"); it reuses the landed
+substrate (logical_id/superseded_at + partial-unique-active + folded from_id/to_id/kind indexes) and the
+`read.*` namespace + allowlist from Slice 25 (the four `read.*` verbs are already documented-allowlist
+members in `src/conformance/governed-surface-allowlist.json` — Slice 30 makes them **live**, which the
+governed-surface membership test now genuinely enforces). No new HITL gate. **Reserved-gap Slice 27**
+(Rust positive-allowlist pin, Q5=BIND-RUST) remains to prompt separately; it does **not** block Slice 30.
+
+- **Slice 25 ✅ CLOSED 2026-06-04** — governed-surface conformance rewrite. Merged `d8665fe`, **fix-1
+  final `b86ef63`**. AC-057a → **AC-074** (measurable governed SDK surface; Q5=BIND-RUST recorded, Rust
+  pin → Slice 27); REQ-053 amended (Q3); `bindings.md` §1/§13/§14 rewritten; trace `:1183` + `rust.md`
+  repointed. **codex §9: R1 = 2 × [P1] BLOCK → fix-1 → clean PASS.** R1 caught that the rewritten suites
+  did not actually enforce their guarantees — the live-surface enumeration was hard-coded (membership
+  passed vacuously) and the "parity" test compared a same-file duplicate literal (Py↔TS drift
+  undetectable). fix-1 made introspection genuine in both bindings (`dir(Engine)` minus a documented
+  non-command set) and moved the allowlist to a **single shared contract** both suites read. HITL Q1–Q5
+  gate was **already SIGNED 2026-06-03** (pre-satisfied). Byte-freeze held (3 recovery suites +
+  `bindings.md` §10 zero-line diff). 25.b adversarial audit returned clean PASS but **missed both R1
+  [P1]s** → independent codex is load-bearing. Verdicts: `0.8.0-slice-25-review-20260604T194140Z.md` +
+  `0.8.0-slice-25-review-fix1-20260604T195903Z.md`. Both worktrees removed (§11). Carried (not gating):
+  `src/ts/package-lock.json` pre-existing `0.6.1`-vs-`0.7.2` drift (untouched).
 - **Slice 21 ✅ CLOSED 2026-06-04** (reserved-gap, interim) — pyright-zero cleanup merged to `main` @
   `7aaf6f1` (slice tip `0a90ea1`, baseline `802527e`). Pyright over `src/python` now **0 errors / 0
   warnings / 0 informations**, so `agent-verify` no longer short-circuits at typecheck; the ONLY standing
@@ -168,7 +187,7 @@ applicable to this slice's work-type.
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
-| **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ⏳ PROMPTED (2026-06-04) | 0, 15 | ⏳ (Py≡TS allowlist parity = X1) | ⏳ | ⏳ |
+| **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
@@ -185,7 +204,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 
 | AC / gap | Owning slice | Latest status |
 |----------|-------------|---------------|
-| **AC-057a → governed-surface AC** (supersession of the five-verb cap; new measurable allowlist/parity/denylist/no-raw-SQL AC) | **25** (signed pre-30; Rust pin → **27**) | 🟢 **SIGNED 2026-06-03** — Q1=A1/Q2=B1/Q3=amend/Q4=confirm/**Q5=BIND-RUST** (deviation: Rust facade bound too → reserved-gap **Slice 27** Rust allowlist pin). Conformance rewrite (Py+TS set-equality → allowlist+parity; recovery suites byte-unchanged) executes at **Slice 25**; Rust-facade allowlist assertion at **Slice 27**. HARD gate unblocking Slice 30 |
+| **AC-057a → AC-074 governed-surface AC** (supersession of the five-verb cap; new measurable allowlist/parity/denylist/no-raw-SQL AC) | **25** (DONE; Rust pin → **27**) | ✅ **DONE** (closed 2026-06-04, `main`@`b86ef63`) — HITL **SIGNED 2026-06-03** (Q1=A1/Q2=B1/Q3=amend/Q4=confirm/**Q5=BIND-RUST**). **AC-074** added (measurable allowlist-membership + cross-binding parity + recovery-denylist-empty-intersection + no-raw-SQL; records Rust binding); AC-057a marked superseded (forward pointer, not deleted); REQ-053 amended in place (Q3). Conformance suites flipped presence→**genuine `dir(Engine)` introspection (P1) + single-shared-contract Py≡TS parity (P2)** after codex R1 2×[P1] BLOCK→fix-1 (the first rewrite enforced neither — vacuous membership + same-file-duplicate parity). **Recovery suites + `bindings.md` §10 byte-unchanged** (zero-line diff verified). **Rust-facade allowlist pin → reserved-gap Slice 27.** HARD gate unblocking Slice 30 now CLEARED |
 | **G1** structured `SearchHit{id,kind,body,score,branch}` + FTS5 tokenizer floor | **5** | ✅ **DONE** (closed 2026-06-02, `main`@`e76d68b`) — `Vec<SearchHit>`, `Eq` dropped, both branches scored; step-11 tokenizer migration (`SCHEMA_VERSION 11`) crash-retryable; floor 1.000/1.000 across migration |
 | **G9** RRF fusion (`Σ1/(k+rank)`, k=60) + `rerank_fused` seam | **10** | ✅ **DONE** (closed 2026-06-03, `main`@`e9f833a`) — `RRF_K=60.0`, unconditional ranking (no `fusion_mode` knob — HITL Q3); `rerank_fused` identity stub; vector-empty soft-fallback before collapse; `pr_g9_rrf_fusion.rs` pins determinism (6 green) |
 | **G10** metadata-filtered KNN (`Option<SearchFilter>`) | **10** | ✅ **DONE** — `Option<SearchFilter>{source_type,kind,created_after,status}` in the single phase-1 KNN; **`filter=None` byte-identical to 0.7.2** (pin green); 3-way shape-sentinel fixes `embedding_bin` no-op; FFI filter strings validated (fix-1). `status` empty-string-sentinel plumbing only — population = reserved-gap 13 |
@@ -195,7 +214,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
 | Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 (1.000→1.000), Slice 10 (Δ 0.0000) **and Slice 15** (G0 additive; `logical_id=None` path byte-identical; unfiltered byte-identity pin green; real-embedder anchor 0.937 eu7/eu8-gated); **40** gates |
-| Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green + must stay **byte-unchanged** through Slice 25 |
+| Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green; **byte-unchanged through Slice 25 CONFIRMED** (zero-line diff on `test_no_recovery_surface.py` / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` + `bindings.md` §10 across both the Slice 25 rewrite and fix-1; verified by orchestrator + codex). AC-074 carries the five-name denylist as a permanent clause; `doctor` SDK-absent via allowlist non-membership |
 
 ---
 
@@ -291,12 +310,58 @@ the worktree at slice close.
 | `/tmp/fdb-slice-15-20260603T155709Z` | 15 | `slice-15-20260603T155709Z` | `d51b1b3` | ✅ REMOVED at close (2026-06-03; merged → `main`@`5fa0e9e`, branch deleted; built `_fathomdb.abi3.so` inside it removed with the dir) |
 | `/tmp/fdb-slice-20-20260603T183744Z` | 20 | `slice-20-20260603T183744Z` | `57c023c` (rebased onto `1a7b75f`) | ✅ REMOVED at close (2026-06-04; merged → `main`@`307aeac`, branch deleted) |
 | `/tmp/fdb-slice-20-fix1-20260604T124047Z` | 20 (fix-1) | `slice-20-fix1-20260604T124047Z` | `307aeac` | ✅ REMOVED at close (2026-06-04; fix-1 `54e3e93` merged → `main`, branch deleted) |
+| `/tmp/fdb-slice-25-20260604T174057Z` | 25 | `slice-25-20260604T174057Z` | `a736106` | ✅ REMOVED at close (2026-06-04; merged → `main`@`d8665fe`, branch deleted) |
+| `/tmp/fdb-slice-25-fix1-20260604T194813Z` | 25 (fix-1) | `slice-25-fix1-20260604T194813Z` | `d8665fe` | ✅ REMOVED at close (2026-06-04; fix-1 `b86ef63` merged → `main`, branch deleted) |
 
-**No 0.8.0 slice-managed worktree outstanding** after Slice 20 close.
+**No 0.8.0 slice-managed worktree outstanding** after Slice 25 close.
 
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-04 — Slice 25 CLOSED (governed-surface conformance rewrite; PASS after codex 2 × [P1] BLOCK → fix-1; pointer → Slice 30)
+
+- **Transition gate (§1.5 inv. 2) PASSED from git:** the slice agent merged the rewrite to local `main`
+  itself (`--no-ff` `d8665fe` of tip `5fdff85`, baseline `a736106`); `output.json` present + thorough,
+  merge reachable, main advanced. Verified independently, not from narration (trap 2).
+- **What landed (docs+test, ZERO runtime/engine/schema/Rust change):** `test_surface.py` +
+  `surface.test.ts` flipped from `.issubset`/`hasattr`/`typeof` presence to governed-surface
+  allowlist-membership + cross-binding parity + recovery-denylist-intersection; **AC-057a superseded by
+  new AC-074** (measurable allowlist/parity/denylist/no-raw-SQL; records Q5=BIND-RUST → Rust pin at Slice
+  27; forward pointer, not deleted); **REQ-053 amended in place** (Q3); `bindings.md` §1/§13/§14 rewritten;
+  trace `acceptance.md:1183` + AC-035d parenthetical + `rust.md` repointed AC-057a→AC-074.
+- **§9 review = codex (primary). R1 (base `a736106`): 2 × [P1], no [P0].** The rewritten suites did **not
+  actually enforce** their two primary guarantees: (#1) the live-surface enumeration was **hard-coded**
+  (`test_surface.py:77-84` + TS mirror) so an unauthorized live command (`Engine.delete`/`read.*`) passed
+  the membership check **vacuously**; (#2) the "parity" test compared each binding's allowlist to a
+  **same-file duplicate literal**, so Py↔TS drift was **undetectable** (cosmetic parity). Substantive, in
+  the slice's own new code, not designed reserved-gaps → **BLOCK → fix-1** (campaign convention: [P1] =
+  fix-N; §9 forbids overriding a BLOCK). Verdict: `0.8.0-slice-25-review-20260604T194140Z.md`.
+- **fix-1 (fresh implementer, own worktree off `d8665fe`, merge `b86ef63`):** made the enumeration
+  genuinely introspective in both bindings (`dir(Engine)` minus a documented non-command exclusion set
+  `{instrumentation, open_report, path, config}`; TS statics+prototype minus instrumentation) and moved the
+  allowlist to a **single shared contract** `src/conformance/governed-surface-allowlist.json` both suites
+  read — so Py↔TS divergence is structurally impossible. Each fix proven via RED (a fake `Engine.delete`
+  fails the subset check; removing a member from the shared file fails both suites), then reverted to green.
+  **fix-1 re-review (codex, base `d8665fe`): clean PASS, no findings.** Verdict:
+  `0.8.0-slice-25-review-fix1-20260604T195903Z.md`.
+- **HITL Q1–Q5 gate was already SIGNED 2026-06-03** (pre-satisfied) — so **codex PASS was the only
+  remaining gate**. ADR verified (records the as-signed bundle), not re-authored.
+- **Byte-freeze held throughout** (R1 rewrite AND fix-1): zero-line diff on `test_no_recovery_surface.py`
+  / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` and `bindings.md` §10 — verified by
+  orchestrator (git `--exit-code`) and codex.
+- **Process notes / carried (flagged, not gating):** (1) the **25.b adversarial subagent audit returned a
+  clean PASS but MISSED both R1 [P1]s** (it accepted the membership/parity assertions at face value) → the
+  independent **codex** pass is load-bearing, not redundant with the subagent audit — a reusable lesson.
+  (2) `src/ts/package-lock.json` carries a **pre-existing** version drift (lock `0.6.1` vs `package.json`
+  `0.7.2`), unrelated to Slice 25 — fix-1 reverted the `npm install` churn; candidate for a housekeeping
+  slice. (3) Three plan-adjustments vs the contract were round-tripped into the Slice 25 CLOSED block in
+  `0.8.0-implementation.md` (gate pre-signed; work-type owns worktree+output.json; trace edge in
+  `acceptance.md:1183` not `traceability.md`).
+- **Both Slice-25 worktrees removed at close** (§11); ledger empty. No new AC beyond **AC-074**
+  (`acceptance.md` was LOCKED at AC-073; Slice 25 is a gated slice authorized to add/supersede). **Pointer
+  → Slice 30** (G2/G3 `read.*` read verbs go live). **Slice 27** (Rust positive-allowlist pin, Q5=BIND-RUST)
+  remains a reserved-gap to prompt separately; it does **not** block Slice 30.
 
 ### 2026-06-04 — Slice 25 PROMPTED (governed-surface conformance rewrite; ADR already SIGNED; three plan-adjustments recorded)
 

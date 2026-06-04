@@ -1,0 +1,78 @@
+{
+  "phase": "slice-25-fix1",
+  "baseline_sha": "d8665fe1786963ff911026f513e219f1df216be3",
+  "branch": "slice-25-fix1-20260604T194813Z",
+  "head_sha": "62432d93059d3f9f715edf5cd12ad08c11c128a7",
+  "merged_to_main_sha": "b86ef63238ba75f55fb173f00d75b15f4e4cb272",
+  "commits": [
+    {
+      "sha": "e2f9cb2",
+      "subject": "test(0.8.0): Slice 25 fix-1 — add single-source governed-surface allowlist contract (RED scaffold for Py/TS parity)"
+    },
+    {
+      "sha": "62432d9",
+      "subject": "fix(0.8.0): Slice 25 fix-1 — governed-surface tests enforce real introspection + shared-contract parity (codex 2x[P1])"
+    }
+  ],
+  "findings_addressed": [
+    {
+      "id": "P1-1",
+      "title": "Live command surface was hard-coded, so the allowlist membership check passed vacuously",
+      "fix": "Fix A — both bindings now build the live command surface by genuine introspection. Python: _live_python_command_surface() iterates dir(Engine), strips dunder/private names and the non-command members (_INSTRUMENTATION plus open_report/path/config), and introspects admin.__all__. TypeScript: liveTsCommandSurface() enumerates Engine statics + prototype/own instance function names (the no-recovery-surface.test.ts style) minus the non-command members. No hard-coded verb list is the source of `live` in either binding; a new public command (e.g. Engine.delete) would now surface as an extra and fail test_public_surface_is_allowlist."
+    },
+    {
+      "id": "P1-2",
+      "title": "Parity test compared against a same-file duplicate literal, so cross-binding drift was undetectable",
+      "fix": "Fix B — the allowlist now has a single declaration at src/conformance/governed-surface-allowlist.json. Python loads it via _load_governed_surface_contract() (Path(__file__).parents[2]/conformance/...); TypeScript loads the same file via loadGovernedSurfaceContract() (fileURLToPath(import.meta.url), resolved from dist/tests/ up to src/conformance). Both same-file duplicate literals are removed. The parity test pins that each suite consumes the shared contract; divergence is structurally impossible because there is only one copy."
+    }
+  ],
+  "tdd_evidence": {
+    "fix_a_python": {
+      "red_perturbation": "Monkeypatched Engine.delete = lambda self: None then called test_public_surface_is_allowlist via the imported module.",
+      "red_result": "FAILED as expected: AssertionError 'live command(s) outside the governed allowlist: [\\'delete\\']'. Perturbation removed (del Engine.delete).",
+      "green_after": "test_public_surface_is_allowlist passes with the perturbation removed (live surface = five core, subset of 9-member allowlist)."
+    },
+    "fix_a_ts": {
+      "red_perturbation": "Set Engine.prototype.delete = function(){} in a throwaway scratch script reusing liveTsCommandSurface logic against compiled dist.",
+      "red_result": "RED-OK: live command(s) outside allowlist: ['delete']. Perturbation removed (delete Engine.prototype.delete); scratch script deleted.",
+      "green_after": "surface.test.ts 'public surface is the governed allowlist' passes; introspected live surface is a subset of the shared allowlist."
+    },
+    "fix_b_python": {
+      "red_perturbation": "Removed 'write' from src/conformance/governed-surface-allowlist.json (simulates Py-vs-contract / cross-binding drift), then ran pytest on test_public_surface_is_allowlist and test_surface_parity_py_matches_ts.",
+      "red_result": "2 failed — subset/parity checks both reported 'write' as an extra item. Contract restored from backup; git diff confirmed no residual change.",
+      "green_after": "Both tests pass after restoring the shared contract."
+    },
+    "fix_b_ts": {
+      "red_perturbation": "Removed 'search' from the single shared src/conformance/governed-surface-allowlist.json, then ran node --test on dist/tests/surface.test.js.",
+      "red_result": "2 failed — 'public surface is the governed allowlist' and 'surface parity: TS and Python read one shared allowlist'. This also demonstrates the anti-drift property: a one-place change to the shared file is seen by BOTH bindings (Python suite failed on the same perturbation). Contract restored; 'search' confirmed present again."
+    }
+  },
+  "byte_freeze_verified": {
+    "src/python/tests/test_no_recovery_surface.py": "unchanged (zero-line diff vs baseline)",
+    "src/ts/tests/no-recovery-surface.test.ts": "unchanged (zero-line diff vs baseline)",
+    "src/rust/crates/fathomdb/tests/no_recovery_surface.rs": "unchanged (zero-line diff vs baseline)",
+    "dev/design/bindings.md": "untouched (zero-line diff vs baseline)",
+    "verified_on": "both the worktree branch head and the merged local main (b86ef63)"
+  },
+  "blockers_encountered": "none",
+  "additional_changes_made_in_scope": {
+    "shared_fixture_path": "src/conformance/governed-surface-allowlist.json",
+    "fixture_keys": ["allowlist (9 members)", "core (5 live)", "recovery_denylist (5 names)"],
+    "python_non_command_exclusion_set": "_ENGINE_NON_COMMAND = _INSTRUMENTATION | {open_report, path, config} (drain, counters, set_profiling, set_slow_threshold_ms, attach_logging_subscriber, open_report, path, config)",
+    "ts_non_command_exclusion_set": "ENGINE_NON_COMMAND = INSTRUMENTATION + {openReport, config} (drain, counters, setProfiling, setSlowThresholdMs, attachSubscriber, openReport, config); the _native getter is _-prefixed and excluded by the dunder/private filter",
+    "reverted_out_of_scope": "src/ts/package-lock.json was touched by `npm install` (a stale 0.6.1 -> 0.7.2 version sync unrelated to this slice) and was reverted via git checkout before commit; not committed.",
+    "prettier_formatting": "prettier --write applied to surface.test.ts and the new JSON fixture to satisfy the formatting gate; content semantics unchanged."
+  },
+  "agent_verify_result": {
+    "python_surface_suite": "17 passed (test_surface.py + test_no_recovery_surface.py)",
+    "ts_surface_suite": "surface.test.ts + no-recovery-surface.test.ts: 14 pass / 0 fail; full `npm test` 61 pass / 0 fail",
+    "cargo_no_recovery_surface": "1 passed",
+    "pyright_src_python": "0 errors, 0 warnings, 0 informations (native ext was built by the editable install, so no reportMissingModuleSource here)",
+    "ruff": "clean (pre-commit ran ruff: All checks passed)",
+    "prettier_check": "surface.test.ts and governed-surface-allowlist.json both pass --check",
+    "tsc": "tsc -p tsconfig.json clean",
+    "byte_freeze": "three recovery suites + bindings.md zero-line diff vs baseline",
+    "scope": "only src/python/tests/test_surface.py, src/ts/tests/surface.test.ts, and new src/conformance/governed-surface-allowlist.json changed; no spec/runtime/Rust change; canonical clean throughout (only pre-existing orchestrator review artifacts untracked under dev/plans/runs/)"
+  },
+  "next_step_for_orchestrator": "Run the codex §9 re-review on local main b86ef63 to confirm both [P1]s are resolved: (1) Fix A introspects the real public surface in both bindings (Engine.delete would fail the subset check — demonstrated), (2) Fix B has a single shared allowlist both suites read (cross-binding drift fails a suite — demonstrated). Honest-green preserved (live surface = five core, read.* not asserted live). Byte-freeze held. No push/PR was performed. NOTE: src/ts/package-lock.json carries a pre-existing version-sync drift (lock 0.6.1 vs package.json 0.7.2) unrelated to this slice — flagged here, not touched."
+}

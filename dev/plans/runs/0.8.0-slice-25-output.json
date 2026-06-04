@@ -1,0 +1,44 @@
+{
+  "phase": "0.8.0-slice-25",
+  "baseline_sha": "a736106efb92c9da71ad013ddaf791b300133b89",
+  "branch": "slice-25-20260604T174057Z",
+  "head_sha": "5fdff85ff50b64fdfa22bbe399a59670b0837ba0",
+  "merged_to_main_sha": "d8665fe1786963ff911026f513e219f1df216be3",
+  "commits": [
+    "00748bb: docs(0.8.0): Slice 25 design memo — governed-surface allowlist + 4 falsifiable properties + honest-green plan",
+    "6c8bb83: test(0.8.0): Slice 25 RED — surface suites → governed allowlist + parity (P1/P2/P3); old cap/presence assertions retired; bind AC-074",
+    "8fd49bb: docs(0.8.0): Slice 25 GREEN — AC-074 governed surface (supersedes AC-057a); REQ-053 amended; bindings §1/§13/§14 rewritten; trace + rust.md repointed (Rust pin → Slice 27)",
+    "c213c6b: docs(0.8.0): Slice 25 X3 — DOC-INDEX rows refreshed (AC-074/REQ-053 governance, bindings §1, ADR signed Q5=BIND-RUST, slice-25 design memo)",
+    "5fdff85: style(0.8.0): Slice 25 — prettier-format surface.test.ts INSTRUMENTATION const (lint clean)"
+  ],
+  "findings_addressed": [
+    "AC-057a superseded by AC-074 (governed SDK surface — allowlist + parity + recovery-denylist + typed/no-raw-SQL); kept as forward pointer, not deleted",
+    "AC-074 added with a MEASURABLE allowlist-membership + cross-binding parity + denylist empty-intersection + no-raw-SQL assertion; records Q5=BIND-RUST (Rust pin → Slice 27)",
+    "REQ-053 amended in place (Q3) — 'exactly five verbs' → governed, parity-locked allowlist + denylist + typed boundary; id kept",
+    "bindings.md §1 rewritten to the governed-surface invariant; §13 trace + §14 invariant-1 repointed to AC-074; §10 byte-frozen",
+    "acceptance.md REQ-053↔AC trace row (:1183) repointed AC-057a→AC-074; AC-035d parenthetical + measurement repointed to AC-074",
+    "rust.md support-posture repointed AC-057a→AC-074 with a Q5=BIND-RUST + Slice-27 forward note (no substantive Rust governed-surface docs — that is Slice 27)"
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "6c8bb83",
+    "test_files": ["src/python/tests/test_surface.py", "src/ts/tests/surface.test.ts"],
+    "note": "Per the prompt + memory: the old suites used .issubset/hasattr/typeof PRESENCE checks (the 'exactly five' cap lived in the SPEC, not literally in these tests), so RED here is rename + re-document + tighten to an explicit GOVERNED_SURFACE_ALLOWLIST constant + membership (P1) + parity (P2) + denylist-intersection (P3); old cap/presence assertions removed. New tests are honestly green now (read.* documented-allowlist members, not live until Slice 30). pytest 17 passed; node --test surface 10 passed (full TS suite 61 passed)."
+  },
+  "byte_freeze_verified": "zero-line diff on test_no_recovery_surface.py / no-recovery-surface.test.ts / no_recovery_surface.rs (git diff --exit-code vs baseline a736106 PASSED); bindings.md §10 (## 10. Recovery surface unreachability, ~line 234) untouched — every diff hunk is in §1 (27-47) / §13 (266,283) / §14 (291), none in §10",
+  "allowlist_parity": "Py GOVERNED_SURFACE_ALLOWLIST ≡ TS GOVERNED_SURFACE_ALLOWLIST (membership-identical, 9 members: Engine.open, admin.configure, write, search, close, read.get, read.get_many, read.collection, read.mutations); test_surface_parity_py_matches_ts (Py) + 'surface parity: TS allowlist matches Python' (TS) each assert equality against the mirrored constant; read.* members documented-allowlist-only (live at Slice 30). Constants are trivially diff-able (same names/order) for the 25.b byte-compare.",
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "Anchor drift vs the prompt's 06d5c59 line numbers (baseline was a736106, one commit newer) — all anchors re-grepped by content before editing; no behavioral drift.",
+    "acceptance.md AC-035d (~:620): repointed BOTH the assertion parenthetical 'five-verb application surface (REQ-053 / AC-057a)' and the measurement's 'per AC-057a's surface definition' to AC-074/governed-surface — phrase-level repoints only (flagged here per §3.2 since it touched the measurement line too, still well within a phrase repoint).",
+    "interfaces/python.md + typescript.md: grepped — NO 'five-verb'/'AC-057a' phrase present → NO EDIT NEEDED (confirmed).",
+    "interfaces/cli.md:21 ('does not mirror the SDK five-verb application surface'): kept as-is — accurate CLI-scope contrast (CLI still does not mirror the SDK), per §3.4.",
+    "dev/traceability.md: checked — has only NEED-level aggregate rows listing AC-057a in ranges (e.g. 'AC-057a..AC-060b'), NO per-line REQ-053↔AC-057a trace row → NO EDIT (the live trace row is acceptance.md:1183, which was repointed). AC-057a still exists (superseded, not deleted) so range references remain valid.",
+    "docs/ (public): grepped — 8 'five-verb'/'five verb' hits across docs/{index,concepts,reference,compatibility,release-notes,install,getting-started}. NO docs/ EDIT: these DESCRIBE the still-live 0.6.0 surface (accurate today — read.* not live until Slice 30) and do NOT assert the cap as an enforceable invariant. Public governed-surface/read.* docs land at Slice 30 when the verbs ship; editing now would document non-shipped symbols. Recorded per §3.5.",
+    "DOC-INDEX has no interfaces/* rows (interfaces are not indexed there) → no rust.md row to refresh; recorded rather than inventing a new index convention.",
+    "bindings.md §1 CLI paragraph retains the verbatim architecture.md § 1 quote 'Does NOT mirror full SDK 5-verb surface' — kept as a faithful quotation (editing it would misquote the source doc); it is in bindings.md, not a rewritten test suite, so outside the leakage-grep surface.",
+    "ADR left byte-unchanged (verified it records Q1=A1/Q2=B1/Q3=amend/Q4=confirm/Q5=BIND-RUST in frontmatter + sign-off block); declined the optional breadcrumb to keep the signed ADR untouched.",
+    "Pre-classified OUT-OF-SCOPE source-comment cosmetics (src/python/fathomdb/__init__.py:3, engine.py:3, admin.py:1-8, src/rust/.../fathomdb-py/src/lib.rs:736) left untouched per §2 — these carry stale 'five-verb' docstring prose but the governed-surface AC requires no source-comment edits."
+  ],
+  "agent_verify_result": "PASS for the slice's surface (docs+test, no Rust/runtime change). Ran targeted steps rather than full agent-verify.sh because (a) full verify runs agent-security STRICT=1 which HARD-FAILS on AC-037 netns-deny-egress on this host (apparmor_restrict_unprivileged_userns=1; CI-covered at Slice 40 — the one documented-acceptable non-green), and (b) it would compile the whole Rust workspace for a slice with zero Rust changes. Green: pytest test_surface.py+test_no_recovery_surface.py = 17 passed; node --test full TS suite = 61 passed (surface = 10); pyright -p src/python = 0 ERRORS (canonical baseline 0/0/0 confirmed; the 25 warnings seen in the WORKTREE are reportMissingModuleSource on _fathomdb because the native ext isn't editable-installed in the throwaway worktree — NOT a regression, test_surface.py has zero diagnostics, merged canonical tree is 0/0/0); ruff = clean; prettier --check = clean; mkdocs build --strict = clean.",
+  "next_step_for_orchestrator": "Slice 25 merged to local main at d8665fe. ADR already SIGNED 2026-06-03 so the HITL Q1–Q5 gate is PRE-SATISFIED — only the codex §9 PASS + the 25.b adversarial set-equality/parity leakage audit remain. 25.b focus: (1) recovery suites + bindings.md §10 byte-unchanged (verified zero-diff here); (2) FIVE-name denylist ∩ allowlist = ∅; (3) Py GOVERNED_SURFACE_ALLOWLIST byte-identical to TS; (4) no residual 'exactly five'/'five-verb'/'canonical_set'/.issubset in the rewritten suites (verified clean here); (5) AC-074 keeps a MEASURABLE (not prose-only) assertion + REQ-053↔AC-074 trace resolves; (6) no raw-SQL entrypoint. On PASS: CLOSE Slice 25 + advance pointer to Slice 30 (G2/G3 read verbs go live). Slice 27 (Rust positive-allowlist pin, Q5=BIND-RUST) remains a reserved-gap to prompt separately; it does NOT block Slice 30. Clean up worktree /tmp/fdb-slice-25-20260604T174057Z per §11 after the family closes."
+}
