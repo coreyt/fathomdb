@@ -15,24 +15,31 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-03 (Slice 10 **CLOSED** — PASS after codex CONCERN→fix-1→BLOCK→fix-2;
-pointer → Slice 20 (G8) ∥ Slice 25 after Slice 15 **CLOSED** — KEYSTONE G0 substrate, schema 11→12;
-PASS via codex override (single [P2] = HITL-pre-signed reserved Slice-16 shadow gap)).
+Last updated: 2026-06-04 (Slice 20 **CLOSED** — G8 dangling-edge flag-and-count; PASS after codex
+[P1] BLOCK → fix-1 (O(N²) same-batch scan → O(N) last-index precompute, byte-identical count) →
+clean re-review PASS; pointer → **Slice 25** (supersession sign-off + conformance rewrite — the
+Q1–Q5 gate is already SIGNED, so Slice 25 is clear to prompt)).
 
 ---
 
 ## 1. Current slice
 
-**Next: Slice 20 — G8 Dangling-Edge Integrity `[implementation]` ∥ Slice 25 — Supersession Surface**
-— ▶️ **READY** (no HITL gate for Slice 20; Slice 25 carries the supersession Q1–Q5 finalize, a hard
-gate that unblocks Slice 30). Slice 15 (G0 keystone substrate) is **CLOSED** on `main` @ `5fa0e9e`, so
-the canonical `logical_id`/`superseded_at` columns + tombstone-then-insert supersession + `row_cursors`
-are now available to all downstream slices.
-- **Slice 20 ✅ PROMPTED 2026-06-03** — `dev/plans/prompts/0.8.0-slice-20.md` written (baseline `5fa0e9e`;
-  anchors re-verified at `5fa0e9e`; probe predicate SETTLED-by-construction = logical_id-alone against
-  step-12 `canonical_nodes_logical_active_idx`, legacy-NULL-endpoint consequence documented; G8 adds NO
-  SDK verb, AC-057a-clean, NO new HITL gate). Human pastes it into a fresh slice agent (owns worktree +
-  merges to `main`).
+**Next: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️ **READY
+to prompt** (the supersession Q1–Q5 gate is already SIGNED — see below; the Slice 25 prompt carries the
+as-signed bundle + the Rust-binding note: Py+TS allowlist+parity rewrite lands at 25, Rust pin at the
+activated reserved-gap Slice 27). Slice 25's signature is the HARD gate unblocking Slice 30. Slice 25
+is `[design-adr]` (no worktree, no `output.json`; falsifiable acceptance bar + artifact-on-disk review).
+- **Slice 20 ✅ CLOSED 2026-06-04** — G8 dangling-edge flag-and-count merged to `main` @ `307aeac`
+  (slice), **fix-1 @ `54e3e93`** (final HEAD). Additive `WriteReceipt.dangling_edge_endpoints: u64`,
+  post-row-insert EXISTS pass inside `commit_batch`'s open tx, `logical_id`-alone probe hitting the
+  step-12 partial index (EXPLAIN gate, no SCAN), full Py+TS parity. **§9 codex review (base `57c023c`):
+  1 × [P1]** — same-batch supersession check was O(N²) (`batch[i+1..]` scan per edge) in the
+  single-writer tx → **BLOCK → fix-1** (substantive, slice's own code; not override-eligible). **fix-1**
+  replaced it with an O(N) `HashMap<(logical_id,kind), last_index>` precompute (**byte-identical count**;
+  +guard case (g)); **fix-1 re-review (base `307aeac`): clean PASS.** Verdicts:
+  `0.8.0-slice-20-review-20260604T123922Z.md` + `…-review-fix1-20260604T124904Z.md`. Strict-mode →
+  reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended,
+  informational). Both Slice-20 worktrees removed at close (§11). Recovery suites byte-unchanged.
 - **Slice 25 — pre-Slice-30 supersession gate ✅ SIGNED 2026-06-03** (governed-surface Q1–Q5 bundle from
   `ADR-0.8.0-supersede-five-verb-surface-cap.md`): **Q1=A1, Q2=B1, Q3=amend, Q4=confirm, Q5=BIND-RUST**.
   Q5 deviated from the recommended SDK-only — HITL bound the Rust facade too, **activating reserved-gap
@@ -135,7 +142,7 @@ applicable to this slice's work-type.
 | **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
-| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ⏳ PROMPTED | 15 | ⏳ extend | ⏳ | ⏳ |
+| **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | design-adr | ❌ not started | 0, 15 | ❌ (surface shape) | ❌ | ❌ |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ❌ not started | 15, 25 | ❌ extend (retrieve+admin) | ❌ | ❌ |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
@@ -159,7 +166,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G10** metadata-filtered KNN (`Option<SearchFilter>`) | **10** | ✅ **DONE** — `Option<SearchFilter>{source_type,kind,created_after,status}` in the single phase-1 KNN; **`filter=None` byte-identical to 0.7.2** (pin green); 3-way shape-sentinel fixes `embedding_bin` no-op; FFI filter strings validated (fix-1). `status` empty-string-sentinel plumbing only — population = reserved-gap 13 |
 | **G12-recency** (`write_cursor`-derived reweight after bit-KNN, gated) | **10** | ✅ **DONE** — `write_cursor`-derived reweight after bit-KNN, dedicated off-by-default flag + latency gate; G12-importance / F9 deferred (reserved-gap) |
 | **G0** canonical identity substrate (`logical_id`+`superseded_at`, schema 11→12, partial-unique-active) | **15** (KEYSTONE) | ✅ **DONE** (closed 2026-06-03, `main`@`5fa0e9e`) — `logical_id`+`superseded_at` on both canonical tables, per-table partial UNIQUE-active index, folded G4/G5 indexes, `step_id 12`/`SCHEMA_VERSION 11→12` accretion-exempt; tombstone-then-insert supersession in `commit_batch` (idempotent, `logical_id=None` byte-identical to 0.7.x); `WriteReceipt.row_cursors` Py+TS parity; `pr_g0_identity.rs` 6 green. **Read-visibility (superseded shadows) deferred to reserved Slice 16 / G2-Slice 30 — codex [P2] overridden per HITL gate.** `write_cursor`-as-row-id accepted+flagged |
-| **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ❌ not started |
+| **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ✅ **DONE** (closed 2026-06-04, `main`@`54e3e93`) — additive `WriteReceipt.dangling_edge_endpoints: u64`, post-row-insert EXISTS pass inside `commit_batch`'s open tx; `logical_id`-alone probe (missing OR superseded both count, `from`/`to` independent) hits step-12 partial index `canonical_nodes_logical_active_idx` (EXPLAIN gate, no SCAN); Py+TS parity. codex [P1] (O(N²) same-batch scan) → **fix-1** O(N) last-index precompute (byte-identical count) → clean PASS. `pr_g8_dangling_edges.rs` 8/8. Strict-mode = reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended/informational). No new AC (gap-tracked; `acceptance.md` locked) |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
 | Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 (1.000→1.000), Slice 10 (Δ 0.0000) **and Slice 15** (G0 additive; `logical_id=None` path byte-identical; unfiltered byte-identity pin green; real-embedder anchor 0.937 eu7/eu8-gated); **40** gates |
@@ -257,12 +264,54 @@ the worktree at slice close.
 | `/tmp/fdb-slice-10-20260603T014621Z` | 10 | `slice-10-20260603T014621Z` | `e4ea932`→`c5d625e` | ✅ REMOVED at close (2026-06-03; merged → `main`@`b4865f6`; dir already gone, admin entry pruned) |
 | `/tmp/fdb-slice-10-fix1-20260603T123527Z` | 10 (fix-1/fix-2) | `slice-10-fix1-20260603T123527Z` | `b823f65` | ✅ REMOVED at close (2026-06-03; fix-1 `46ce583` + fix-2 `e9f833a` merged → `main`, branch deleted) |
 | `/tmp/fdb-slice-15-20260603T155709Z` | 15 | `slice-15-20260603T155709Z` | `d51b1b3` | ✅ REMOVED at close (2026-06-03; merged → `main`@`5fa0e9e`, branch deleted; built `_fathomdb.abi3.so` inside it removed with the dir) |
+| `/tmp/fdb-slice-20-20260603T183744Z` | 20 | `slice-20-20260603T183744Z` | `57c023c` (rebased onto `1a7b75f`) | ✅ REMOVED at close (2026-06-04; merged → `main`@`307aeac`, branch deleted) |
+| `/tmp/fdb-slice-20-fix1-20260604T124047Z` | 20 (fix-1) | `slice-20-fix1-20260604T124047Z` | `307aeac` | ✅ REMOVED at close (2026-06-04; fix-1 `54e3e93` merged → `main`, branch deleted) |
 
-**No 0.8.0 slice-managed worktree outstanding** after Slice 15 close.
+**No 0.8.0 slice-managed worktree outstanding** after Slice 20 close.
 
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-04 — Slice 20 CLOSED (G8 dangling-edge; PASS after codex [P1] BLOCK → fix-1; pointer → Slice 25)
+
+- **Resumed on a stale continuation prompt** (`0.8.0-ORCHESTRATOR-CONTINUE.md` still said "Next up:
+  Slice 5"); verified from git (trap 2): the Slice 20 agent had already TDD'd **and merged** G8 to local
+  `main` (merge `307aeac` of slice tip `8f43613`, baseline `57c023c` rebased onto the prompt-only
+  `1a7b75f`). Transition gate (§1.5 inv. 2) PASSED: `0.8.0-slice-20-output.json` present + thorough,
+  `merged_to_main_sha` reachable, main advanced past baseline, worktree tip an ancestor of main.
+- **§9 review = codex (primary, base `57c023c`): 1 × [P1], no [P0].** The G8 behavior is correct in all
+  7 covered cases, but the same-batch supersession check scanned `batch[i+1..]` once per logical edge →
+  **O(N²)** over a bulk logical-edge write while holding the single-writer tx (`lib.rs:5878-5879`).
+  Substantive, in the slice's own new code, **not** a designed reserved gap (contrast Slice 15's [P2]
+  pre-signed shadow gap → override). Campaign convention: [P1] = BLOCK → fix-N (Slice 5, Slice 10). §9
+  forbids overriding a BLOCK → **BLOCK → fix-1.** Verdict: `0.8.0-slice-20-review-20260604T123922Z.md`.
+- **fix-1 (fresh implementer, own worktree off `main` HEAD, merge `54e3e93`):** replaced the per-edge
+  scan with a single-pass `HashMap<(logical_id,kind), last_index>` precompute — an edge is
+  in-batch-superseded iff its index < the last index for its key. **Byte-identical count** for every
+  batch (max-index ⇔ ∃-later-same-key), O(N). +1 guard test case (g)
+  `s20_on_supersession_skips_earlier_keeps_final_active` (RED on a first-index regression, GREEN on the
+  fix). clippy `-D warnings` + fmt + `cargo test --workspace` clean. **fix-1 re-review (codex, base
+  `307aeac`): clean PASS, no findings** — *"behaviorally equivalent to the prior scan while reducing
+  complexity to O(N)."* Verdict: `0.8.0-slice-20-review-fix1-20260604T124904Z.md`.
+- **20.b confirmations:** `pr_g8_dangling_edges.rs` 8/8 (incl. (b) same-batch-later-inserted NOT flagged,
+  (c) edge→superseded counts, (f) EXPLAIN index gate, (g) last-index equivalence); Py+TS dangling-edge
+  cross-binding parity green (clean batch → 0, both-endpoints-missing → 2 in both); `mkdocs --strict`
+  clean; recovery-surface suites byte-unchanged (`restore_validated_edges` stays CLI-only).
+- **Flagged (recorded, not bugs):** (1) strict-mode rollback deferred to **reserved-gap band 22** — no
+  public write-options surface invented (scope §6 / AC-057a-clean). (2) **legacy-NULL-`logical_id`
+  endpoints count as dangling** — intended/informational: only non-NULL active nodes are valid
+  endpoints; flag-and-count is non-rejecting and no consumer sets `logical_id`, so NO existing behavior
+  changes (only a signal is added). Documented in the design memo + Py/TS API refs.
+- **Process note (HITL correction mid-slice):** the orchestrator initially ran the 20.b rebuild/test
+  pass itself; corrected to **delegate** verification — the authoritative fix + re-verify ran as
+  subagents (fresh implementer for fix-1; codex for review). The orchestrator gates, reviews, decides,
+  records.
+- **Carried (not gating):** pre-existing baseline pyright (≈11–12 errors, zero new; touched production
+  files clean after the `_fathomdb.pyi` field add); AC-037 userns blocker (Slice 40 CI gate (n)).
+- **Both Slice-20 worktrees removed at close** (§11); ledger empty. **No new AC** (gap-tracked G8/F10;
+  `acceptance.md` LOCKED at AC-073, untouched). **Pointer → Slice 25** (supersession sign-off +
+  conformance rewrite; the Q1–Q5 gate is already SIGNED 2026-06-03, so Slice 25 is clear to prompt).
 
 ### 2026-06-03 — pre-Slice-30 supersession gate SIGNED + Slice 20 PROMPTED
 

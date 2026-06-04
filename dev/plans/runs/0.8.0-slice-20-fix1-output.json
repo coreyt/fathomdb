@@ -1,0 +1,38 @@
+{
+  "slice": "20-fix1",
+  "kind": "section-6-fix-N",
+  "finding_addressed": "codex §9 review [P1] BLOCK — G8 dangling-edge pass used a per-edge batch[i+1..].any(..) in-batch-supersession scan, O(N²) under the single-writer txn (bulk-write ingestion-stall risk).",
+  "baseline_sha": "307aeac5b2318c527b2a51f5e8d5b47bd4a0794b",
+  "branch": "slice-20-fix1-20260604T124047Z",
+  "worktree": "/tmp/fdb-slice-20-fix1-20260604T124047Z",
+  "head_sha": "bd612ba355075662605dd2a18cfa870762220750",
+  "merged_to_main_sha": "54e3e93ececda12a63553fa99d2616ef42ef446b",
+  "merge_type": "--no-ff (local main only, NOT pushed)",
+  "fix_summary": "Added `HashMap` to the std::collections import. Replaced the per-edge O(N²) `batch[i+1..].iter().any(..)` supersession scan in commit_batch's G8 block with a single O(N) pre-pass building `last_index: HashMap<(&str,&str), usize>` keyed by (logical_id.as_str(), kind.as_str()), inserting front-to-back so the stored value is the LAST (highest) index per key. In the counting loop an edge at index i with Some(lid)/kind is in-batch-superseded iff `last_index[(lid,kind)] > i` (via `.is_some_and(|&last| last > i)`). Edges with logical_id None never matched. Probe stmt, independent from/to EXISTS probe, saturating_add, flag-and-count never-rollback semantics all unchanged. Explanatory comment extended to describe the precompute + equivalence.",
+  "byte_identical_proof": "Old code skipped edge i iff ∃ j>i with same (Some(lid),kind). New code skips edge i iff last_index[(lid,kind)] > i. last_index[(lid,kind)] is by construction the max index j with that key; max_j > i ⇔ ∃ j>i with that key. So the skip-set — and therefore the per-endpoint EXISTS probe set and the dangling_edge_endpoints count — is identical for every possible batch.",
+  "red_green_evidence": {
+    "new_test": "s20_on_supersession_skips_earlier_keeps_final_active (case (g)) in tests/pr_g8_dangling_edges.rs",
+    "scenario": "batch = [node A; edge(rel, A->GHOST, lid=E); edge(rel, A->A, lid=F); edge(rel, A->A, lid=E)]; the later (E,rel) edge tombstones the earlier dangling-GHOST one; expects count 0.",
+    "RED": "Temporarily replaced `last_index.insert(..)` with `last_index.entry(..).or_insert(i)` (first-index bug): case (g) FAILED with left=1 right=0 (it probed the superseded GHOST endpoint). Other 7 cases stayed green — confirms (g) specifically guards the last-index ordering. RED was demonstrated transiently and reverted; not committed.",
+    "GREEN": "With the correct last-index `insert(..)`, all 8 pr_g8 cases pass.",
+    "fix_commit_sha": "bd612ba355075662605dd2a18cfa870762220750"
+  },
+  "pr_g8_cases": "8/8 PASS (7 pre-existing: (a) one-missing=1, (b) same-batch-later-node=0, (c) edge→superseded=2, (d) flag-and-count commits, (e) sum-over-both=2, (f) EXPLAIN-QUERY-PLAN uses canonical_nodes_logical_active_idx + no SCAN, legacy NULL-logical_id=2; + new (g) last-index precompute guard).",
+  "gates": {
+    "cargo test -p fathomdb-engine --test pr_g8_dangling_edges": "ok. 8 passed; 0 failed",
+    "cargo test --workspace --no-fail-fast": "PASS — 0 FAILED across workspace (TEST_EXIT=0)",
+    "cargo fmt --all --check": "PASS (FMT_EXIT=0)",
+    "cargo clippy --workspace --all-targets -- -D warnings": "PASS (CLIPPY_EXIT=0)"
+  },
+  "scope_discipline": {
+    "rust_only": true,
+    "py_ts_source_touched": false,
+    "native_artifacts_rebuilt_into_canonical": false,
+    "public_surface_change": false,
+    "canonical_tree_clean_assert": "git -C /home/coreyt/projects/fathomdb status --porcelain -- src/ → empty throughout (all edits isolated to worktree).",
+    "pushed_or_pr": false,
+    "other_branches_touched": false
+  },
+  "flagged_out_of_scope": [],
+  "notes": "Per-fix scope held to the perf refactor only. agent-test.sh not run (Py/TS unchanged); the standing pyright-baseline short-circuit + AC-037 userns blocker are pre-existing and not in scope. Worktree left in place for orchestrator cleanup."
+}
