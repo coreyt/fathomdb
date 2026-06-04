@@ -135,7 +135,7 @@ class MeanVecPinnedEvent(TypedDict):
     doc_count: int
 
 
-class UnknownEmbedderEvent(TypedDict, total=False):
+class UnknownEmbedderEvent(TypedDict):
     """Forward-compat fallback. Any `kind` not recognised by this build
     surfaces at runtime under this shape. Part of the public
     `EmbedderEvent` union for soundness (a future or replaced native
@@ -143,7 +143,12 @@ class UnknownEmbedderEvent(TypedDict, total=False):
     its `kind` field is the open type ``str``, pyright cannot exclude
     this member purely from a literal ``event["kind"] == "..."`` check
     — wrap such checks in :func:`is_known_embedder_event` first to
-    recover precise narrowing on the three known variants."""
+    recover precise narrowing on the three known variants.
+
+    ``kind`` is **required** (the TypedDict is total): every event the
+    native extension emits carries a ``kind`` discriminant, so accessing
+    ``event["kind"]`` on the bare union is sound. Without totality pyright
+    flags the access under ``reportTypedDictNotRequiredAccess``."""
 
     kind: str
 
