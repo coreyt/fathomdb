@@ -92,6 +92,29 @@ interface NativeEmbedderIdentity {
   dimension: number;
 }
 
+// Slice 30 (G2/G3) — native row shapes for the governed read.* namespace.
+export interface NativeNodeRecord {
+  logicalId: string;
+  kind: string;
+  body: string;
+  writeCursor: number;
+}
+
+export interface NativeOpStoreRow {
+  id: number;
+  collection: string;
+  recordKey: string;
+  opKind: string;
+  payload: string;
+  schemaId: string | null;
+  writeCursor: number;
+}
+
+export interface NativeReadCollectionOptions {
+  afterId?: number;
+  limit: number;
+}
+
 // EU-6 FIX-2: Wide native shape emitted by the napi-rs binding. napi-rs
 // has no first-class tagged-union support, so every variant payload
 // field is modelled here as `Option<T>` (collapsed to `T | null |
@@ -182,6 +205,22 @@ export interface NativeModule {
     engine: NativeEngine,
     options: NativeAdminConfigureOptions,
   ): Promise<NativeWriteReceipt>;
+  // Slice 30 — governed read.* native fns (G2/G3).
+  readGet(engine: NativeEngine, logicalId: string): Promise<NativeNodeRecord | null>;
+  readGetMany(
+    engine: NativeEngine,
+    logicalIds: string[],
+  ): Promise<(NativeNodeRecord | null)[]>;
+  readCollection(
+    engine: NativeEngine,
+    collection: string,
+    options: NativeReadCollectionOptions,
+  ): Promise<NativeOpStoreRow[]>;
+  readMutations(
+    engine: NativeEngine,
+    collection: string,
+    options: NativeReadCollectionOptions,
+  ): Promise<NativeOpStoreRow[]>;
   forcePanicForTest?: () => void;
   forcePanicInAccessorForTest?: () => void;
 }

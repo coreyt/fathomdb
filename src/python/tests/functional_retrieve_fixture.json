@@ -1,0 +1,16 @@
+{
+  "nodes": [
+    { "kind": "fact", "body": "the sky is blue", "logical_id": "F1" },
+    { "kind": "fact", "body": "water boils at 100C", "logical_id": "F2" },
+    { "kind": "note", "body": "remember to hydrate", "logical_id": "N1" }
+  ],
+  "superseded": { "logical_id": "F1", "kind": "fact", "old_body": "the sky is green", "new_body": "the sky is blue" },
+  "collection": "events",
+  "op_rows": [
+    { "record_key": "e0", "body": "{\"event\":\"open\"}" },
+    { "record_key": "e1", "body": "{\"event\":\"write\"}" },
+    { "record_key": "e2", "body": "{\"event\":\"search\"}" },
+    { "record_key": "e3", "body": "{\"event\":\"read\"}" },
+    { "record_key": "e4", "body": "{\"event\":\"close\"}" }
+  ]
+}

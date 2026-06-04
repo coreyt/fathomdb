@@ -60,6 +60,42 @@ class SearchHit:
 
 
 @dataclass(frozen=True)
+class NodeRecord:
+    """Slice 30 (G2) — an ACTIVE canonical node returned by `read.get` /
+    `read.get_many`.
+
+    `logical_id` is the queried stable identity (echoed). `write_cursor` is the
+    interim id carrier (the same column `SearchHit.id` carries). Only active rows
+    (`superseded_at IS NULL`) are ever materialised into this shape. Mirrors the
+    TypeScript `NodeRecord` (cross-binding parity).
+    """
+
+    logical_id: str
+    kind: str
+    body: str
+    write_cursor: int
+
+
+@dataclass(frozen=True)
+class OpStoreRow:
+    """Slice 30 (G3) — one `operational_mutations` row returned by
+    `read.collection` / `read.mutations`.
+
+    `id` is the autoincrement PK and the after-id cursor key. `payload` is the
+    stored `payload_json`. Mirrors the TypeScript `OpStoreRow` (cross-binding
+    parity).
+    """
+
+    id: int
+    collection: str
+    record_key: str
+    op_kind: str
+    payload: str
+    schema_id: str | None
+    write_cursor: int
+
+
+@dataclass(frozen=True)
 class SearchFilter:
     """G10 — closed metadata filter for `engine.search(query, filter=...)`.
 
@@ -268,6 +304,8 @@ __all__ = [
     "EmbedderIdentity",
     "MeanVecPinnedEvent",
     "MigrationStepReport",
+    "NodeRecord",
+    "OpStoreRow",
     "OpenReport",
     "SearchFilter",
     "SearchHit",
