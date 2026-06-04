@@ -15,30 +15,40 @@ pointer**; they record the contracts/shape.
 § "Immediate Next Slice" → this board's § "Next action" → the current slice's
 prompt in `dev/plans/prompts/`.
 
-Last updated: 2026-06-04 (Slice 20 **CLOSED** — G8 dangling-edge flag-and-count; PASS after codex
-[P1] BLOCK → fix-1 (O(N²) same-batch scan → O(N) last-index precompute, byte-identical count) →
-clean re-review PASS; pointer → **Slice 25** (supersession sign-off + conformance rewrite — the
-Q1–Q5 gate is already SIGNED, so Slice 25 is clear to prompt)).
+Last updated: 2026-06-04 (Slice 21 **CLOSED** — pyright-zero cleanup; merged to `main`@`7aaf6f1`;
+**codex §9 clean PASS, no findings**. Pyright over `src/python` now **0/0/0** so `agent-verify` no
+longer short-circuits at typecheck; only the environmental **AC-037 userns** blocker remains. Item D
+was amended (relocate negative-error fixture outside pyright `include` + repoint test) after the prompt's
+premise proved false vs the on-disk subprocess test — both gates verified green. Pointer → **Slice 25**
+(supersession sign-off + conformance rewrite — the Q1–Q5 gate is already SIGNED, so Slice 25 is clear
+to prompt)).
 
 ---
 
 ## 1. Current slice
 
-**Next: Slice 21 — Pyright-Zero Cleanup `[implementation]` (reserved-gap, interim)** — ✅ **PROMPTED
-2026-06-04**, `dev/plans/prompts/0.8.0-slice-21.md` (baseline `6ff37a8`). HITL inserted an interim
-cleanup slice (2026-06-04) to retire the carried Python **pyright baseline** that has short-circuited
-`agent-verify`'s typecheck step across Slices 10/15/20. **Scope (HITL-confirmed):** drive pyright to
-**zero** via pyright-config excludes + code fallbacks (NO CI change); fix the one real production defect
-(`types.py` `UnknownEmbedderEvent.kind` not-required), the latent py3.10 `tomllib` bug, and targeted
-ignores for test-only FFI hooks / optional-dep imports / the intentional-error narrowing fixture. Adds
-no feature, no engine/SDK behavior. Human pastes it into a fresh slice agent (owns worktree + merges to
-`main`); orchestrator gates → codex review → close → **pointer returns to Slice 25**.
-
-**After Slice 21: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️
+**Next: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️
 **gate-clear** (the supersession Q1–Q5 gate is already SIGNED — see below; the Slice 25 prompt carries
 the as-signed bundle + the Rust-binding note: Py+TS allowlist+parity rewrite lands at 25, Rust pin at
 the activated reserved-gap Slice 27). Slice 25's signature is the HARD gate unblocking Slice 30. Slice
 25 is `[design-adr]` (no worktree, no `output.json`; falsifiable acceptance bar + artifact-on-disk review).
+- **Slice 21 ✅ CLOSED 2026-06-04** (reserved-gap, interim) — pyright-zero cleanup merged to `main` @
+  `7aaf6f1` (slice tip `0a90ea1`, baseline `802527e`). Pyright over `src/python` now **0 errors / 0
+  warnings / 0 informations**, so `agent-verify` no longer short-circuits at typecheck; the ONLY standing
+  `agent-verify` blocker is the environmental **AC-037 userns** step. Inventory A–F resolved the honest/
+  narrow way: **A** `UnknownEmbedderEvent.kind` made required (drop `total=False`; clears A+B real defect);
+  **C** line-scoped `# type: ignore[attr-defined]` for test-only FFI hooks; **E** targeted
+  `# pyright: ignore[reportMissingImports]` for optional `hypothesis`; **F** version-guarded `tomllib`/
+  `tomli` fallback (fixes a **latent py3.10 crash**). **Item D amended by the orchestrator:** the prompt's
+  premise (subprocess test does not assert the line-30 negative) was **false** vs on-disk
+  `test_pyright_flags_unnarrowed_variant_key_access`, so the prescribed ignore/exclude would break a green;
+  resolved by relocating the negative-error fixture `tests/ → src/python/_typecheck_fixtures/` (outside
+  pyright `include`, content byte-unchanged) + repointing the test's `_FIXTURE` path — decoupling the
+  project run (0/0) from the explicitly-passed subprocess run (error still fires). **Both gates verified
+  green** by orchestrator + codex. **§9 codex review (base `802527e`): clean PASS, no findings.** Verdict:
+  `0.8.0-slice-21-review-20260604T152244Z.md`. No AC (acceptance.md locked at AC-073), no feature, no
+  engine/SDK/schema change; does **not** affect the SIGNED Slice 25 gate. TS parity holds (TS `kind`
+  already required); no doc asserted the old `total=False`. Worktree removed at close (§11).
 - **Slice 20 ✅ CLOSED 2026-06-04** — G8 dangling-edge flag-and-count merged to `main` @ `307aeac`
   (slice), **fix-1 @ `54e3e93`** (final HEAD). Additive `WriteReceipt.dangling_edge_endpoints: u64`,
   post-row-insert EXISTS pass inside `commit_batch`'s open tx, `logical_id`-alone probe hitting the
@@ -309,6 +319,41 @@ the worktree at slice close.
   HITL gate, no SDK verb, no schema/engine change.**
 - **Process note:** Slice 25 prompt authoring is **paused** behind Slice 21; the supersession gate stays
   SIGNED and waiting. Pointer returns to Slice 25 once Slice 21 closes.
+
+### 2026-06-04 — Slice 21 CLOSED (pyright-zero cleanup; item-D premise corrected; codex clean PASS; pointer → Slice 25)
+
+- **Dispatched** the self-contained implementer prompt to an `implementer` subagent (owns worktree, merges
+  to local `main`). The first implementer landed A/B/C/E/F (branch `af3d57b`) but **correctly STOPPED at
+  item D** on a genuine guardrail conflict rather than weakening a green — the right call.
+- **Orchestrator verified the blocker against on-disk state** (`tests/test_pyright_narrowing.py` +
+  `_pyright_narrowing_fixture.py`): the prompt's item-D premise (*"the subprocess test does NOT assert the
+  line-30 negative error"*) was **false**. `test_pyright_flags_unnarrowed_variant_key_access` (lines
+  121–146) asserts `errors_on_unsafe` is non-empty, whose sole source is fixture line 30
+  (`event["bytes"]`). Both prompt-prescribed mechanisms break a green: a `# pyright: ignore` suppresses the
+  asserted error; `[tool.pyright] exclude` drops explicitly-passed paths (proven: 0 diagnostics). This is a
+  **forced deviation = under-specified prompt** case (see memory `oob-creep-vs-justified-deviation`), not
+  agent creep.
+- **Amended item D** to its own enumerated fallback: `git mv` the fixture `tests/ →
+  src/python/_typecheck_fixtures/` (outside pyright `include = ["fathomdb","tests"]`), content byte-for-byte
+  unchanged, repoint only the test's `_FIXTURE` path constant. This decouples the two runs: agent-verify's
+  `pyright -p src/python` (no file args → analyzes only `include`) is now clean, while the subprocess test
+  passes the path **explicitly** with `--project` (pyright analyzes explicitly-passed files regardless of
+  `include`) so the reveals AND the `bytes` error still fire. This is a config-scope mechanism within the
+  HITL constraint (no CI/script change, no extras, no `typeCheckingMode`/`pythonVersion` downgrade, no
+  behavioral assertion change) — an orchestrator tactical amendment, **not a new HITL gate**. SendMessage
+  was unavailable, so a fresh `implementer` resumed the existing on-disk worktree to finish D + self-check
+  + merge.
+- **Gates independently re-verified by the orchestrator on `main`@`7aaf6f1`:** GATE 1 `pyright -p
+  src/python` = **0/0/0**; GATE 2 `pytest tests/test_pyright_narrowing.py` = **2 passed** (with `.venv/bin`
+  on PATH so it runs rather than self-skips). Full self-check green: `pytest src/python` 90p/2s, `npm test`
+  58/58, `cargo test --workspace` 0 failed, clippy `-D warnings` + fmt clean, `agent-verify` typecheck now
+  **rc=0** (only AC-037 userns remains).
+- **§9 review = codex (primary, base `802527e`): clean PASS, no findings.** codex re-ran the gates and
+  confirmed the explicitly-passed relocated fixture still reports its 5 diagnostics (3× `bytes`-not-a-key +
+  2× `# pyright: error` directive-noise) — i.e. the asserted error genuinely still fires; **honest zero,
+  not a dodge.** Verdict: `0.8.0-slice-21-review-20260604T152244Z.md`.
+- **Closed in ONE docs commit** advancing the pointer → **Slice 25** (gate already SIGNED). slice-21
+  worktree removed. Process note: Slice 25 prompt authoring (paused behind 21) is now unblocked.
 
 ### 2026-06-04 — Slice 20 CLOSED (G8 dangling-edge; PASS after codex [P1] BLOCK → fix-1; pointer → Slice 25)
 

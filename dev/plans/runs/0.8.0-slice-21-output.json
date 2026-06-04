@@ -1,0 +1,141 @@
+{
+  "slice": 21,
+  "title": "Pyright-Zero Cleanup (latent type-defect sweep) — reserved-gap (HITL 2026-06-04)",
+  "phase": "MERGED — pyright 0/0; all six items A–F resolved; merged to local main",
+  "ac_ids": "none — reserved-gap cleanup; no AC (acceptance.md locked at AC-073)",
+  "baseline_sha": "802527ec4c1eff7b9f0ca624197eead21217dd0c",
+  "branch": "slice-21-20260604T145249Z",
+  "worktree": "/tmp/fdb-slice-21-20260604T145249Z",
+  "head_sha": "0a90ea1196c1e0baac82594a59329e8f93609ee4",
+  "merged_to_main_sha": "7aaf6f1af9231a10ebb3dae20fe777435c5e2883",
+  "commits": [
+    {
+      "sha": "e267962",
+      "subject": "fix(types): require kind on UnknownEmbedderEvent (clears A+B)",
+      "items": ["A", "B"]
+    },
+    {
+      "sha": "af3d57b",
+      "subject": "test: targeted pyright ignores for test-only hooks + optional deps; py3.10 tomllib fallback (C/E/F)",
+      "items": ["C", "E", "F"]
+    },
+    {
+      "sha": "0a90ea1",
+      "subject": "fix(test): relocate pyright negative-error fixture outside include + repoint test (item D)",
+      "items": ["D"]
+    }
+  ],
+  "findings_addressed": [
+    {
+      "item": "A",
+      "location": "src/python/fathomdb/types.py:138 (class def) / :186 (event[\"kind\"] access)",
+      "rule": "reportTypedDictNotRequiredAccess",
+      "class": "Real defect (production)",
+      "mechanism": "Dropped `total=False` from `class UnknownEmbedderEvent(TypedDict)` so `kind` is REQUIRED (total TypedDict). Every native-emitted event carries a `kind` discriminant, so `event[\"kind\"]` on the bare union is sound. Runtime shape unchanged (still a plain dict; key was always present; no Required[] import needed). Added a docstring line stating kind is required. Keystone fix; also cleared B.",
+      "status": "resolved"
+    },
+    {
+      "item": "B",
+      "location": "src/python/tests/test_use_default_embedder.py:61,74 (event[\"kind\"])",
+      "rule": "reportTypedDictNotRequiredAccess",
+      "class": "Real defect (test variant of A)",
+      "mechanism": "AUTO-CLEARED by A (no separate edit, no ignore added — exactly as §2 anticipated). Verified: pyright reports 0 errors at :61/:74 after the types.py totality fix, with those lines untouched.",
+      "status": "resolved (auto via A)"
+    },
+    {
+      "item": "C",
+      "location": "src/python/tests/test_use_default_embedder.py:132,137,139 (_native, _configure_vector_kind_for_test, _write_vector_for_test)",
+      "rule": "reportAttributeAccessIssue / attr-defined",
+      "class": "Test-only FFI hooks (absent on the release binding)",
+      "mechanism": "Extended the existing :132-style targeted suppression: line-scoped `# type: ignore[attr-defined]` on the test-hooks-gated native seam calls, matching the file's existing style. These methods are deliberately absent from the release binding's `_fathomdb.pyi` stub.",
+      "status": "resolved"
+    },
+    {
+      "item": "D",
+      "location": "fixture relocated: src/python/tests/_pyright_narrowing_fixture.py -> src/python/_typecheck_fixtures/_pyright_narrowing_fixture.py ; test repointed: src/python/tests/test_pyright_narrowing.py:27 (_FIXTURE constant)",
+      "rule": "3x reportGeneralTypeIssues (intended negative, line 30) + 2x malformed-directive errors",
+      "class": "Intentional-error fixture, analyzed only by the subprocess test",
+      "mechanism": "CORRECTED mechanism (item D's enumerated fallback: fixture-outside-include + repoint-test). The original prompt premise was FALSE vs on-disk state: test_pyright_flags_unnarrowed_variant_key_access (lines 121-146) asserts errors_on_unsafe is NON-EMPTY, whose ONLY source is fixture line 30's `_unsafe = event[\"bytes\"]` — so a `# pyright: ignore` there suppresses the error and BREAKS that test; and `[tool.pyright] exclude` drops explicitly-passed paths (prior implementer proved 0 diagnostics, breaks both subprocess tests). Fix: `git mv` the fixture to a NEW dir src/python/_typecheck_fixtures/ (directly under src/python, OUTSIDE include=[\"fathomdb\",\"tests\"] and outside fathomdb/). agent-verify typecheck runs `pyright -p src/python` with NO file args -> analyzes only `include` -> the fixture leaves the project lint surface (project pyright now 0/0). The subprocess test passes the fixture path EXPLICITLY with `--project pyproject.toml`; pyright analyzes explicitly-passed files regardless of `include` (file is not in `exclude`) -> both the reveal_type narrowing AND the line-30 bytes-error assertion still fire. Fixture content byte-for-byte unchanged (100% rename; line 30 and its `# pyright: error` comment untouched). Only the test's _FIXTURE path constant repointed: `Path(__file__).resolve().parents[1] / \"_typecheck_fixtures\" / \"_pyright_narrowing_fixture.py\"`. No behavioral assertion touched (_EXPECTED_REVEALS and the errors_on_unsafe assertion both intact).",
+      "proof": "GATE1 `cd src/python && python -m pyright` = 0 errors, 0 warnings, 0 informations. GATE2 `pytest src/python/tests/test_pyright_narrowing.py -v` = 2 passed (test_pyright_narrows_embedder_event_variants AND test_pyright_flags_unnarrowed_variant_key_access — the bytes-error assertion still fires from the explicitly-passed relocated fixture). Fixture NOT collected by pytest (leading underscore + outside tests/; `pytest src/python/_typecheck_fixtures --collect-only` = 0 items). Not packaged by maturin build (python-source='.', module-name fathomdb._fathomdb; the wheel packages the `fathomdb` module — _typecheck_fixtures is a sibling top-level dir, not under fathomdb/).",
+      "status": "resolved"
+    },
+    {
+      "item": "E",
+      "location": "src/python/tests/test_property_template.py:15 (`from hypothesis import ...`)",
+      "rule": "reportMissingImports",
+      "class": "Env-only (optional dep, try/except-guarded)",
+      "mechanism": "Targeted `# pyright: ignore[reportMissingImports]` on the already-try/except-guarded import so the result is env-independent (0 whether or not the optional [dev]/[test] dep is installed). In this env [dev] installs hypothesis so E did not appear in the RED 11, but the ignore is kept for CI/agent-verify runs without the extra. Did NOT install the dep as the fix.",
+      "status": "resolved"
+    },
+    {
+      "item": "F",
+      "location": "src/python/tests/test_workflow_yaml.py:28 (`import tomllib`)",
+      "rule": "reportMissingImports (also a latent real bug)",
+      "class": "Env-only AND latent real bug (tomllib stdlib only on 3.11+, repo targets >=3.10)",
+      "mechanism": "Replaced bare `import tomllib` with a version-guarded fallback (`import sys` added): `if sys.version_info >= (3, 11): import tomllib` / `else:  # pragma: no cover` / `    import tomli as tomllib  # pyright: ignore[reportMissingImports]`. tomllib is stdlib only on 3.11+ but the repo targets >=3.10 and pyright is pinned to 3.10, so the bare import would raise ModuleNotFoundError at collection on 3.10. tomli is not a declared dep, so the else-branch targeted ignore is honest (branch never taken on 3.11+ runtime; type surface identical across branches).",
+      "status": "resolved"
+    }
+  ],
+  "tdd_evidence": {
+    "red_pyright_count": 11,
+    "red_count_note": "Original RED baseline (full inventory) = 11 errors. After A/B/C/E/F landed (af3d57b), residual RED was exactly 5 errors, ALL from item D's fixture: 3x reportGeneralTypeIssues (line 30 `event[\"bytes\"]` not a key in DefaultEmbedderCacheHitEvent / MeanVecPinnedEvent / UnknownEmbedderEvent) + 2x malformed-directive (`# pyright: error` not on its own line; `error` unknown directive). After D relocation: 0 errors, 0 warnings, 0 informations.",
+    "red_errors": [
+      "fathomdb/types.py:186:12 reportTypedDictNotRequiredAccess (A)",
+      "tests/_pyright_narrowing_fixture.py:30:19 reportGeneralTypeIssues x3 (D)",
+      "tests/_pyright_narrowing_fixture.py:30:37 'pyright comments must appear on their own line' (D, malformed-directive)",
+      "tests/_pyright_narrowing_fixture.py:30:46 '\"error\" is an unknown directive' (D, malformed-directive)",
+      "tests/test_use_default_embedder.py:61:20, :74:20 reportTypedDictNotRequiredAccess (B)",
+      "tests/test_use_default_embedder.py:133:16, :135:20 reportAttributeAccessIssue (C)",
+      "tests/test_workflow_yaml.py:28:8 reportMissingImports tomllib (F)"
+    ],
+    "note_on_E": "E (hypothesis reportMissingImports) was NOT in the RED 11 because this worktree env has [dev] installed (hypothesis resolves). The targeted ignore is added anyway for env-independence per §3.0.",
+    "pyright_after_ACEF": "5 errors, 0 warnings — entire residual was item D's fixture cluster.",
+    "final_pyright": "0 errors, 0 warnings, 0 informations",
+    "test_files": [
+      "src/python/tests/test_pyright_narrowing.py (D repointed _FIXTURE constant only; both functions pass, 2/2)",
+      "src/python/_typecheck_fixtures/_pyright_narrowing_fixture.py (relocated; byte-unchanged; not pytest-collected; not packaged)",
+      "src/python/tests/test_use_default_embedder.py (C touched; 6 passed)",
+      "src/python/tests/test_property_template.py (E touched; 1 passed)",
+      "src/python/tests/test_workflow_yaml.py (F touched; 5 passed)"
+    ]
+  },
+  "blockers_encountered": [
+    {
+      "item": "D",
+      "severity": "bigger-than-this-slice (§7) — RESOLVED via orchestrator-amended mechanism",
+      "status": "RESOLVED",
+      "summary": "Prior implementer correctly STOPPED at item D: the prompt's item-D premise (the subprocess test 'does NOT assert the line-30 negative error') was FALSE against on-disk state. test_pyright_flags_unnarrowed_variant_key_access (lines 121-146) asserts errors_on_unsafe is non-empty, whose sole source is fixture line 30. Both prompt-prescribed mechanisms (targeted ignore on line 30; `[tool.pyright] exclude` the fixture) break a green: the ignore suppresses the asserted error; exclude drops explicitly-passed paths (0 diagnostics).",
+      "resolution": "Orchestrator verified the blocker against on-disk state and amended item D to its own enumerated fallback (the prior implementer's recommended Option 1): relocate the fixture to a NEW dir src/python/_typecheck_fixtures/ OUTSIDE include, and repoint the test's _FIXTURE path constant. This decouples the project-wide run (which no longer analyzes the fixture -> 0/0) from the subprocess run (which passes the path explicitly -> still sees reveals AND the bytes error). Both gates verified green. The original prompt-D premise being false vs on-disk test is recorded as the root cause of the escalation.",
+      "retry_note": "Prior implementer respected the §7 retry budget (proved both mechanisms fail, STOPPED, did not weaken a guardrail). This resumed run implemented only the amended mechanism."
+    }
+  ],
+  "additional_changes_made_in_scope": {
+    "fixture_relocated_to": "src/python/_typecheck_fixtures/_pyright_narrowing_fixture.py (NEW dir directly under src/python, outside include=[fathomdb,tests] and outside fathomdb/). Pure 100% rename — content byte-for-byte unchanged including line 30 and its `# pyright: error` comment.",
+    "test_repointed": "test_pyright_narrowing.py _FIXTURE -> Path(__file__).resolve().parents[1] / \"_typecheck_fixtures\" / \"_pyright_narrowing_fixture.py\". PATH-CONSTANT change only; no assertion touched.",
+    "B_auto_cleared_from_A": true,
+    "D_mechanism_chosen": "relocate-outside-include + repoint-test (item D's enumerated fallback). Original prompt-D premise (subprocess test does not assert the line-30 negative) was false vs the on-disk test; recorded.",
+    "tomllib_fallback_shape": "import sys; `if sys.version_info >= (3, 11): import tomllib` else `# pragma: no cover` -> `import tomli as tomllib  # pyright: ignore[reportMissingImports]`",
+    "subprocess_test_proof": "test_pyright_narrowing.py 2/2 pass post-relocation: reveals still resolve AND the bytes-error assertion (test_pyright_flags_unnarrowed_variant_key_access) still fires from the explicitly-passed relocated fixture. Project pyright independently 0/0.",
+    "items_beyond_A_to_F": "none surfaced beyond the catalogued table (RED was 11, all mapped; E env-absent here as anticipated).",
+    "fixture_not_collected_not_packaged": "pytest collects 0 from _typecheck_fixtures (leading underscore + outside tests/). maturin (python-source='.', module fathomdb._fathomdb) packages the fathomdb module; _typecheck_fixtures is a sibling top-level dir, not shipped.",
+    "docs_touched": "none — X3 grep found NO interface-contract doc asserting UnknownEmbedderEvent is total=False / kind optional. dev/interfaces/python.md describes UnknownEmbedderEvent.kind as `str` (present/required, consistent with the fix); dev/design/0.7.1-EU-6-FIX-2-design.md shows `readonly kind: string` (required) and treats all three known variants as fully-required. The only `total=False` prose hits were this slice's own prompt + historical run-logs/STATUS-0.8.0.md (not contract docs) — left untouched per 'do not manufacture docs'. mkdocs NOT run (no docs/ or nav touched).",
+    "ts_touched": "none — TS parity confirmed: src/ts/src/index.ts UnknownEmbedderEvent declares `readonly kind: string` (required, no `?`) matching the now-required Python kind. src/ts/tests/embedder-event-narrowing.test.ts unchanged; npm test 58/58 pass. No divergence introduced (A is additive-safe; a kind was always emitted).",
+    "out_of_scope_churn_excluded": "Reverted an unrelated src/ts/package-lock.json version-drift (0.6.1 -> 0.7.2) that `npm install` produced, to keep item D clean and stay in-slice; not committed.",
+    "stray_edits": "none — canonical tripwire empty throughout (only the deliberate output.json write under dev/plans/runs/); all edits confined to the worktree."
+  },
+  "agent_verify_result": {
+    "ran_full_agent_verify": true,
+    "pyright": "0 errors 0 warnings",
+    "typecheck_step": "PASS — `.venv/bin/pyright -p src/python` rc=0 (no file args => analyzes only include=[fathomdb,tests]; relocated fixture no longer contributes). agent-lint rc=0, agent-typecheck rc=0; run proceeds to agent-security.",
+    "remaining_failure": "AC-037 netns-deny-egress BLOCKER — `unshare -rUn` fails (rootless userns+netns unavailable on this host; apparmor_restrict_unprivileged_userns=1). Environmental, NOT introduced by this slice and the ONLY acceptable remaining agent-verify failure.",
+    "security_summary": "agent-security: 0 violation(s), 1 blocker(s) [the AC-037 userns blocker]",
+    "pytest_python": "90 passed, 2 skipped (release_surface skips expected)",
+    "npm_test": "58 passed, 0 failed",
+    "cargo_test": "workspace --no-fail-fast: all green (0 failed across all crates incl. doc-tests)",
+    "cargo_clippy": "--workspace --all-targets -- -D warnings: clean",
+    "cargo_fmt": "--check: clean",
+    "canonical_tripwire": "src/ docs/ dev/ (except deliberate output.json) mkdocs.yml clean throughout"
+  },
+  "next_step_for_orchestrator": "Slice 21 MERGED to LOCAL main at 7aaf6f1 (no push). pyright now 0/0 so agent-verify's typecheck step no longer short-circuits — the ONLY standing agent-verify blocker is the environmental AC-037 userns step (not this slice). Run codex review on 7aaf6f1 (reserved-gap cleanup; no AC, no feature, no engine/SDK/schema change; does not affect the SIGNED Slice 25 supersession gate). When reviewing item D, note the premise correction: the prompt's claim that the subprocess test does not assert the line-30 negative error was false vs on-disk state, so the mechanism was amended to relocate-outside-include + repoint-test (verified: project pyright 0/0 AND the bytes-error assertion still fires). After close, advance the pointer back to Slice 25.",
+  "ac_ids_note": "none — reserved-gap cleanup; no AC (acceptance.md locked at AC-073)"
+}
