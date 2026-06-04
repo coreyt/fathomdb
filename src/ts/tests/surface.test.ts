@@ -41,7 +41,13 @@ const GOVERNED_SURFACE_ALLOWLIST: ReadonlySet<string> = new Set([
 // Engine-attached instrumentation/control methods are observability, NOT
 // application commands — excluded from the allowlist (preserved from AC-057a's
 // measurement boundary).
-const INSTRUMENTATION = ["drain", "counters", "setProfiling", "setSlowThresholdMs", "attachSubscriber"] as const;
+const INSTRUMENTATION = [
+  "drain",
+  "counters",
+  "setProfiling",
+  "setSlowThresholdMs",
+  "attachSubscriber",
+] as const;
 
 // The permanent recovery-name denylist (the FIVE names). `doctor` is SDK-absent
 // by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
