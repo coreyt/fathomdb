@@ -24,11 +24,21 @@ Q1–Q5 gate is already SIGNED, so Slice 25 is clear to prompt)).
 
 ## 1. Current slice
 
-**Next: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️ **READY
-to prompt** (the supersession Q1–Q5 gate is already SIGNED — see below; the Slice 25 prompt carries the
-as-signed bundle + the Rust-binding note: Py+TS allowlist+parity rewrite lands at 25, Rust pin at the
-activated reserved-gap Slice 27). Slice 25's signature is the HARD gate unblocking Slice 30. Slice 25
-is `[design-adr]` (no worktree, no `output.json`; falsifiable acceptance bar + artifact-on-disk review).
+**Next: Slice 21 — Pyright-Zero Cleanup `[implementation]` (reserved-gap, interim)** — ✅ **PROMPTED
+2026-06-04**, `dev/plans/prompts/0.8.0-slice-21.md` (baseline `6ff37a8`). HITL inserted an interim
+cleanup slice (2026-06-04) to retire the carried Python **pyright baseline** that has short-circuited
+`agent-verify`'s typecheck step across Slices 10/15/20. **Scope (HITL-confirmed):** drive pyright to
+**zero** via pyright-config excludes + code fallbacks (NO CI change); fix the one real production defect
+(`types.py` `UnknownEmbedderEvent.kind` not-required), the latent py3.10 `tomllib` bug, and targeted
+ignores for test-only FFI hooks / optional-dep imports / the intentional-error narrowing fixture. Adds
+no feature, no engine/SDK behavior. Human pastes it into a fresh slice agent (owns worktree + merges to
+`main`); orchestrator gates → codex review → close → **pointer returns to Slice 25**.
+
+**After Slice 21: Slice 25 — ADR-Supersede Sign-off + Conformance-Test Rewrite `[design-adr]`** — ▶️
+**gate-clear** (the supersession Q1–Q5 gate is already SIGNED — see below; the Slice 25 prompt carries
+the as-signed bundle + the Rust-binding note: Py+TS allowlist+parity rewrite lands at 25, Rust pin at
+the activated reserved-gap Slice 27). Slice 25's signature is the HARD gate unblocking Slice 30. Slice
+25 is `[design-adr]` (no worktree, no `output.json`; falsifiable acceptance bar + artifact-on-disk review).
 - **Slice 20 ✅ CLOSED 2026-06-04** — G8 dangling-edge flag-and-count merged to `main` @ `307aeac`
   (slice), **fix-1 @ `54e3e93`** (final HEAD). Additive `WriteReceipt.dangling_edge_endpoints: u64`,
   post-row-insert EXISTS pass inside `commit_batch`'s open tx, `logical_id`-alone probe hitting the
@@ -272,6 +282,33 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-04 — Interim Slice 21 (pyright-zero cleanup) inserted + PROMPTED (HITL direction)
+
+- **HITL inserted a reserved-gap cleanup slice** (2026-06-04): "an interim slice, Slice 21, that
+  cleans up latent defects, type errors, etc." Slot **21** of Slice 20's reserved band (21–24) is
+  **repurposed** for this — the originally-pencilled "21 = shadow vec0/FTS5 reconciliation" was already
+  anchored as the **Slice 16** candidate, so no collision (shadow reconciliation stays tracked at 16).
+- **Read-only audit first (orchestration, not the fix):** an Explore agent enumerated the full
+  latent-defect surface. Finding: the codebase is **clean except the Python pyright baseline** — Rust
+  clippy/fmt green, TS strict green, the 3 `TODO(EU-5b)` markers are deferred-features (not defects),
+  and every test skip / `#[ignore]` / `#[allow]` / suppression is justified/load-bearing. The carried
+  "≈11–12 pyright errors" decompose to: **1 real production defect** (`types.py` `UnknownEmbedderEvent`
+  is `total=False` → `kind` reads as not-required, `reportTypedDictNotRequiredAccess`), **1 latent real
+  bug** (`test_workflow_yaml.py` imports stdlib `tomllib` (3.11+) while the repo targets `>=3.10`),
+  **env-only** optional-dep imports (`hypothesis`), and **test-scaffold noise** (the intentional-error
+  narrowing fixture's malformed `# pyright: error` directive; test-only FFI-hook attribute access).
+- **HITL scope decisions (AskUserQuestion 2026-06-04):** (Q1) **drive pyright to zero** (not
+  fix-real-defects-only, not a broader hygiene sweep); (Q2) neutralize env-only items via **pyright
+  config excludes + code fallbacks — NO CI change** (do not install `[test]` extras as the mechanism).
+- **Slice 21 PROMPTED** — `dev/plans/prompts/0.8.0-slice-21.md` (baseline `6ff37a8`, the Slice 20 close
+  commit). The prompt carries the catalogued inventory A–F with the required honest/narrow mechanism per
+  item + hard guardrails (no `typeCheckingMode`/`pythonVersion` downgrade, no whole-file ignores, no
+  behavioral test changes, keep `test_pyright_narrowing.py` green). Falsifiable bar: `python -m pyright`
+  over `src/python` = **0 errors / 0 warnings** and `agent-verify` passes the typecheck step. **No new
+  HITL gate, no SDK verb, no schema/engine change.**
+- **Process note:** Slice 25 prompt authoring is **paused** behind Slice 21; the supersession gate stays
+  SIGNED and waiting. Pointer returns to Slice 25 once Slice 21 closes.
 
 ### 2026-06-04 — Slice 20 CLOSED (G8 dangling-edge; PASS after codex [P1] BLOCK → fix-1; pointer → Slice 25)
 
