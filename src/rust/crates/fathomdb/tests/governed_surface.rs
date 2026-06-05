@@ -61,9 +61,6 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "SoftFallbackBranch",
     "CounterSnapshot",
     "Subscription",
-    // RED-DEMO (Slice 27): a deliberate recovery-verb injection so the P3
-    // assertion below fails — demonstrates the catch in RED. Removed in GREEN.
-    "rebuild",
 ];
 
 /// The permanent five-name recovery denylist. Identical to the single shared
