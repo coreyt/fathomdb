@@ -31,25 +31,40 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Current: Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
-`[implementation — substrate; HITL SIGNED]` — 📝 PROMPTED 2026-06-05** (`dev/plans/prompts/0.8.0-slice-31.md`).
-Reserved-gap slice in Slice 30's band, **HITL-directed** (sign-off 2026-06-05; see §7). Reverses the
-compound `(logical_id, kind)` key from Slice 15 (a silent v0.5.x regression → identity-fork bug + the
-Slice 30 read.get [P2]) → `logical_id`-alone on both `canonical_nodes` + `canonical_edges`. **Migration =
-amend step-12 in place** (no `SCHEMA_VERSION` bump; local v12 DBs disposable). Anchors re-verified:
-indexes `fathomdb-schema/src/lib.rs:300-303`; supersession predicates `fathomdb-engine/src/lib.rs:~5998`
-(node) / `~6031` (edge); G8 in-batch key `:6111`; invert-test `pr_g0_identity.rs:177-182`; migrations-DDL
-test `migrations.rs:243-255`. **The implementation is an AGENT's job (own worktree), not the
-orchestrator's** (HITL direction). On return: codex §9 (HITL gate already signed → PASS is the only
-remaining gate); on PASS, close Slice 31 **and** Slice 30 (its [P2] resolves with zero read-API change) →
-pointer → Slice 40. Reserved-gaps 32 (cursor hardening) / 33 (CLI op-store read-back) remain.
+**Current: NONE active — Slices 30 + 31 both CLOSED 2026-06-05. Next action: HITL decides whether to
+spawn the USER-spawned Slice 32 (graph-lens identity evaluation) before treating the identity model as
+fully settled, or proceed toward Slice 40 (final verification).**
 
-- **Slice 30 — ⏳ MERGED, review-pending (root-caused) 2026-06-04** — G2/G3 read verbs merged to `main`
-  @ `52ceab3`; functionally green (g2/g3/Search-pin/parity/reader-isolation all clean). codex §9 flagged a
-  single **[P2]**: `read.get`/`get_many` lossy+nondeterministic when one `logical_id` has multiple active
-  kinds. Root-caused to the G0 identity scope (NOT a read-API defect) → resolved by **Slice 31**; Slice 30
-  closes after 31 lands, needing no read-code change. (Prompt: `dev/plans/prompts/0.8.0-slice-30.md`,
-  baseline `67d3980`,
+**Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
+`[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
+Merged to local `main` @ `b4e90c8` (`--no-ff` of `slice-31-20260605T023836Z`, tip `52210b2`, baseline
+`5e2367a`). Reversed the compound `(logical_id, kind)` key from Slice 15 (a silent v0.5.x regression →
+identity-fork bug + the Slice 30 read.get [P2]) → **`logical_id`-alone on both `canonical_nodes` +
+`canonical_edges`**, **amending step-12 in place** (no `SCHEMA_VERSION` bump — stays 12; local v12 DBs
+disposable). Landed: both unique indexes `ON canonical_<table>(logical_id) WHERE superseded_at IS NULL`;
+node+edge supersession `UPDATE`s drop `AND kind`; Slice-20/G8 in-batch precompute re-keyed to `logical_id`
+alone; **ADR Decision 5** added (HITL-SIGNED 2026-06-05) + `(logical_id,kind)`→`logical_id` propagated
+across parent ADR Q2 / roadmap / slice-15 design / impl-plan / architecture / Py+TS API docs; parent-ADR
+Q4 edge-supersession wording corrected (edges DO supersede). **TDD RED→GREEN:** `s31_node/edge_kind_change_
+reingest_supersedes` + inverted `s15` unique-collision FAILED under the compound key (RED `c3bc688`), GREEN
+`5c1f45a`. **Zero read-API/binding/SDK change** (Slice 30 `read.*` byte-unchanged); recovery suites
+byte-frozen; pyright 0/0; pins green (Slice 10 Search byte-identity, Slice 20 G8 `pr_g8` 8/0, Slice 30
+`pr_g2` 6/0 / `pr_g3` 6/0). Review: `runs/0.8.0-slice-31-review-20260605T030242Z.md`.
+**⚠️ Open (deliberately reserved):** the re-scope was reasoned through the node/point-lookup lens and
+applied uniformly; the **edge half is flagged for graph-lens review in Slice 32** (a multigraph may make
+multiple active `kind`s between one endpoint pair legitimate — see §7 + `dev/plans/prompts/0.8.0-slice-32.md`).
+**Pointer:** reserved-gap band — **Slice 32 (graph-eval, HITL-directed, USER-spawned)** recommended next;
+**Slice 27** (Rust pin) · **33** (cursor hardening) · **34** (CLI op-store read-back) reserved; **Slice 40**
+(final verification + release readiness) is the mainline terminus.
+
+- **Slice 30 — ✅ CLOSED 2026-06-05 (PASS; the single codex [P2] resolved by Slice 31, zero read-API
+  change)** — G2/G3 read verbs merged to `main` @ `52ceab3`; functionally green (g2/g3/Search-pin/parity/
+  reader-isolation all clean). codex §9 flagged a single **[P2]**: `read.get`/`get_many` lossy+
+  nondeterministic when one `logical_id` has multiple active kinds. Root-caused to the G0 identity scope
+  (NOT a read-API defect) → **resolved by Slice 31** (`logical_id`-alone ⇒ ≤1 active row per id ⇒ the
+  `logical_id`-keyed collapse is lossless+deterministic; Slice 30's design-memo invariant now true). Slice
+  30 needed **no read-code change**. Reviews: `runs/0.8.0-slice-30-review-20260604T231734Z.md` (verdict +
+  [P2] resolution). (Prompt: `dev/plans/prompts/0.8.0-slice-30.md`, baseline `67d3980`,
 all engine/binding anchors **re-verified at `67d3980`** by a thorough Explore sweep). Both hard gates are
 satisfied: G0 keystone (Slice 15) CLOSED **and** the supersession sign-off + conformance rewrite (Slice
 25) CLOSED → **gate-clear, no HITL gate of its own.** Slice 30 lands the first governed SDK read verbs
@@ -213,8 +228,8 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ⏳ MERGED, review-pending (codex [P2] root-caused to Slice 31) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
-| **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ⏳ PROMPTED (2026-06-05) | 15, 30 | n/a (no SDK change) | ⏳ | ⏳ (ADR Decision 5 + propagated docs) |
+| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
+| **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Graph-context evaluation of the logical_id identity model (multigraph / edge identity / G4-5-7) | design-adr / evaluation | ⏳ PLACEHOLDER PROMPTED (2026-06-05) | 31 | n/a | ⏳ | ⏳ (eval ADR/memo) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |

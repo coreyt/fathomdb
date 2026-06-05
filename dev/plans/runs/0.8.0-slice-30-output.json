@@ -1,0 +1,50 @@
+{
+  "phase": "0.8.0-slice-30",
+  "baseline_sha": "1c6b83b454f5674f6c8898a16449d78c2e795097",
+  "branch": "slice-30-20260604T224208Z",
+  "head_sha": "b01ad17124ea7852649181ed523d5efe019bece9",
+  "merged_to_main_sha": "52ceab3049d9693a831d578ef2c0fe0c7cacaefd",
+  "commits": [
+    "2f77bcc: design(0.8.0): Slice 30 memo — read.* (G2 get/get_many + G3 collection/mutations); per-request typed reader channels (no Search reshape)",
+    "748dfca: test(0.8.0): Slice 30 RED — engine pr_g2/pr_g3 + conformance flip read.* live (failing)",
+    "0862ecb: feat(0.8.0): Slice 30 GREEN engine — read_get/get_many + read_collection/mutations via ReaderWorkerPool DEFERRED-tx (per-request typed channels; Search untouched)",
+    "b7e5821: feat(0.8.0): Slice 30 GREEN bindings+SDK — read.* in PyO3+napi, Python read.py/types + TS read.ts, conformance live; Python X1 retrieve harness",
+    "e01b68c: test(0.8.0): Slice 30 X1 — TS functional-retrieve harness (read.* round trip + Py≡TS cross-binding equivalence)",
+    "b01ad17: docs(0.8.0): Slice 30 X3 — read.* in Py/TS API refs + retrieve-by-id guide + op-store read-back + architecture read-path; DOC-INDEX refreshed; mkdocs strict green"
+  ],
+  "findings_addressed": [
+    "G2 read.get/get_many (active-only superseded_at IS NULL, order-preserved, missing=None, get delegates to get_many)",
+    "G3 read.collection/mutations (mandatory limit clamped to ~1M cap + after-id cursor, ORDER BY id, read.mutations alias)",
+    "read.* namespace live in Py+TS (lockstep, identical arg shapes, single-source allowlist)",
+    "F2 + F4-READ subset delivered via the four governed read verbs",
+    "AC-074 governed surface: read.* now introspected-live (not vacuous); REQ-053 read.* surface bound by gap label + test names (no new ids)"
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "748dfca76cc4654ec5f17afc1bd16cfc25a76040",
+    "test_files": [
+      "src/rust/crates/fathomdb-engine/tests/pr_g2_get_by_id.rs",
+      "src/rust/crates/fathomdb-engine/tests/pr_g3_read_collection.rs",
+      "src/python/tests/test_surface.py",
+      "src/ts/tests/surface.test.ts",
+      "src/python/tests/test_functional_retrieve.py",
+      "src/ts/tests/functional-retrieve.test.ts"
+    ],
+    "red_proof": "At 748dfca, `cargo test -p fathomdb-engine --test pr_g2_get_by_id --no-run` failed to compile with E0599 (no method `read_get`/etc on Engine); the conformance flip referenced a non-existent `read` namespace. Conformance non-vacuity demonstrated post-GREEN: injecting a stray live `read.delete` into the TS `read` object made surface.test.ts FAIL with `live command read.delete is outside the governed allowlist` (then reverted)."
+  },
+  "reader_isolation": "reads dispatch through ReaderWorkerPool DEFERRED-tx: new ReaderRequest::GetById -> read_get_by_id_in_tx (SELECT ... canonical_nodes WHERE logical_id IN (...) AND superseded_at IS NULL, BEGIN DEFERRED) and ReaderRequest::ReadCollection -> read_collection_in_tx (operational_mutations WHERE collection_name=? AND id>? ORDER BY id LIMIT ?clamped, BEGIN DEFERRED). Never self.connection.lock(). Each new variant carries its OWN typed respond channel (SyncSender<rusqlite::Result<Vec<Option<NodeRecord>>>> / Vec<OpStoreRow>>), so the Search ReaderResponse type alias and read_search_in_tx are byte-unchanged -> Slice 10 byte-identical-unfiltered Search pin (pr_g10_filtered_knn.rs::unfiltered_phase1_sql_byte_identical_to_0_7_2) green.",
+  "parity": "read.get/get_many/collection/mutations identical signatures in Py (snake_case, read.py __all__) + TS (camelCase read object); allowlist single-source (src/conformance/governed-surface-allowlist.json, 9 members unchanged); both surface suites introspect the live `read` namespace (Py read.__all__ loop; TS Object.keys(read) with camelCase->snake_case normalization) and assert the four read.* verbs are present-in-live (removal fails) + subset-of-allowlist; recovery suites byte-unchanged. NodeRecord/OpStoreRow shapes mirror across bindings.",
+  "byte_freeze_verified": "zero-line diff vs baseline 1c6b83b on the three recovery suites (src/python/tests/test_no_recovery_surface.py, src/ts/tests/no-recovery-surface.test.ts, src/rust/crates/fathomdb/tests/no_recovery_surface.rs); all three green (Python suite passes; cargo test -p fathomdb --test no_recovery_surface ok; TS no-recovery-surface.test.ts passes).",
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "Anchor drift: ReaderRequest enum at lib.rs:375 (matched), ReaderResponse alias :423 (already Vec<SearchHit>, NOT Vec<String> — confirmed banner correction), search_inner :2067 (contract said 2122-2135 for the dispatch block, matched), read_search_in_tx :3648 / DEFERRED :3657 (matched). canonical_nodes G2 projection mirrors the :4170 ProjectionJob columns + logical_id.",
+    "Contract reference to TS `binding.d.ts` is stale — the TS native contract lives in `src/ts/src/binding.ts` (NativeEngine/NativeModule interfaces); updated there. PyO3 read fns are #[pyfunction]s (not PyEngine methods), mirroring admin_configure.",
+    "get_many partiality decision: partial + order-preserved, not-found = None slot (NOT all-or-nothing); read.get delegates to read_get_many.",
+    "not-found = None/null decision: normal absence, NO NotFound exception class (reserved-gap Slice 31).",
+    "read.mutations implemented as an alias surface over the same op-store read-back as read.collection (both are distinct governed allowlist verbs).",
+    "Reserved-gap candidates flagged (NOT built): 31 (typed NotFound class identical in both bindings), 32 (read.mutations cursor/limit hardening under ~1M load), 33 (CLI op-store read-back), 27 (Rust-facade allowlist pin, Q5=BIND-RUST).",
+    "Did NOT mint AC-075/AC-076 or new REQ/NEED ids (acceptance.md locked); did NOT add read.list/neighbors/history; did NOT add raw-SQL/filter-DSL; no release/CI/version actions.",
+    "Reverted an incidental `npm install` bump to src/ts/package-lock.json (version 0.6.1->0.7.2) to keep the slice scoped."
+  ],
+  "agent_verify_result": "pass (targeted steps, per prompt §4 allowance to run targeted instead of full agent-verify.sh). Ran: cargo test -p fathomdb-engine (ALL green incl. pr_g2_get_by_id 6/6, pr_g3_read_collection 6/6, Slice 10 unfiltered pin); cargo test -p fathomdb --test no_recovery_surface (green); cargo clippy --workspace -- -D warnings (clean); cargo fmt --check (clean); pyright -p src/python = 0 errors (1 pre-existing unrelated yaml warning in test_workflow_yaml.py, untouched at baseline); ruff (clean); pytest test_surface.py + test_no_recovery_surface.py + test_functional_retrieve.py (24 passed); cd src/ts && npm test (67 passed incl. surface read.* live + functional-retrieve + no-recovery + release-surface); tsc typecheck clean; prettier --check clean; mkdocs build --strict (clean, no orphan/broken links). AC-037 netns-deny-egress not exercised (host apparmor; CI-covered at Slice 40) — the only acceptable non-green agent-verify step.",
+  "next_step_for_orchestrator": "Slice 30 merged to local main at 52ceab3. Run 30.b parity-matrix + reader-isolation verify + codex §9 (focus: reads use ReaderWorkerPool not connection.lock(); limit truly mandatory/no unbounded SELECT; active-only default on G2; Py≡TS parity exact; no recovery-denylisted name; no raw-SQL/DSL leak; Search unregressed; conformance genuinely-enforced not vacuous). On PASS → close, advance pointer to Slice 40 (final verification + release readiness). Reserved-gaps 27 (Rust pin) / 31 (NotFound class) / 32 (cursor hardening) / 33 (CLI op-store read-back) remain to prompt separately. Do NOT push/origin — HITL-only."
+}
