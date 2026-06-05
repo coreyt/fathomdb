@@ -31,8 +31,25 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Current: Slice 30 — G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` (`read.*`)
-`[implementation]` — 📝 PROMPTED 2026-06-04** (`dev/plans/prompts/0.8.0-slice-30.md`, baseline `67d3980`,
+**Current: Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
+`[implementation — substrate; HITL SIGNED]` — 📝 PROMPTED 2026-06-05** (`dev/plans/prompts/0.8.0-slice-31.md`).
+Reserved-gap slice in Slice 30's band, **HITL-directed** (sign-off 2026-06-05; see §7). Reverses the
+compound `(logical_id, kind)` key from Slice 15 (a silent v0.5.x regression → identity-fork bug + the
+Slice 30 read.get [P2]) → `logical_id`-alone on both `canonical_nodes` + `canonical_edges`. **Migration =
+amend step-12 in place** (no `SCHEMA_VERSION` bump; local v12 DBs disposable). Anchors re-verified:
+indexes `fathomdb-schema/src/lib.rs:300-303`; supersession predicates `fathomdb-engine/src/lib.rs:~5998`
+(node) / `~6031` (edge); G8 in-batch key `:6111`; invert-test `pr_g0_identity.rs:177-182`; migrations-DDL
+test `migrations.rs:243-255`. **The implementation is an AGENT's job (own worktree), not the
+orchestrator's** (HITL direction). On return: codex §9 (HITL gate already signed → PASS is the only
+remaining gate); on PASS, close Slice 31 **and** Slice 30 (its [P2] resolves with zero read-API change) →
+pointer → Slice 40. Reserved-gaps 32 (cursor hardening) / 33 (CLI op-store read-back) remain.
+
+- **Slice 30 — ⏳ MERGED, review-pending (root-caused) 2026-06-04** — G2/G3 read verbs merged to `main`
+  @ `52ceab3`; functionally green (g2/g3/Search-pin/parity/reader-isolation all clean). codex §9 flagged a
+  single **[P2]**: `read.get`/`get_many` lossy+nondeterministic when one `logical_id` has multiple active
+  kinds. Root-caused to the G0 identity scope (NOT a read-API defect) → resolved by **Slice 31**; Slice 30
+  closes after 31 lands, needing no read-code change. (Prompt: `dev/plans/prompts/0.8.0-slice-30.md`,
+  baseline `67d3980`,
 all engine/binding anchors **re-verified at `67d3980`** by a thorough Explore sweep). Both hard gates are
 satisfied: G0 keystone (Slice 15) CLOSED **and** the supersession sign-off + conformance rewrite (Slice
 25) CLOSED → **gate-clear, no HITL gate of its own.** Slice 30 lands the first governed SDK read verbs
@@ -196,7 +213,8 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ⏳ PROMPTED (2026-06-04) | 15, 25 | ⏳ extend (retrieve+admin functional + cross-binding equiv) | ⏳ | ⏳ |
+| **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ⏳ MERGED, review-pending (codex [P2] root-caused to Slice 31) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
+| **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ⏳ PROMPTED (2026-06-05) | 15, 30 | n/a (no SDK change) | ⏳ | ⏳ (ADR Decision 5 + propagated docs) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -326,6 +344,38 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-05 — G0 identity-scope re-scope SIGNED (active-uniqueness = `logical_id` alone) → reserved-gap Slice 31
+
+- **Trigger:** Slice 30 codex §9 flagged a **[P2]** — `read.get`/`get_many` (logical_id-alone lookup) are
+  lossy + nondeterministic when one `logical_id` has multiple active kinds. The Slice 30 agent escalated
+  it as the symptom of a deeper question: is the landed compound `(logical_id, kind)` active-uniqueness
+  scope right, or should it be `logical_id` alone? (Slice 30 itself merged green — `52ceab3` — apart from
+  this [P2].)
+- **Independent high-effort codex consult** (`-c model_reasoning_effort=high`, adversarial design review;
+  verdict `dev/plans/runs/0.8.0-identity-scope-codex-consult-20260605T021802Z.md`) **converged with the
+  Slice 30 agent**: scope active-uniqueness to **`logical_id` alone on BOTH `canonical_nodes` AND
+  `canonical_edges` — uniform, not asymmetric.** codex read the writer and found edge `logical_id` is
+  opaque/caller-provided (not derived from `(from,to)`), so the compound key buys edges **no** real
+  multi-relationship-type capability — it only permits identity-forking. Confirmed: v0.5.x regression
+  (v0.5.6 indexed `logical_id` alone), a **silent identity-fork bug** (re-ingest same `logical_id` with a
+  changed `kind` → supersession `WHERE …AND kind=?` matches nothing → second active row), and the G8 vs
+  `commit_batch` inconsistency (G8 probes by `logical_id` alone). codex added two findings the agent
+  missed: (1) **migration hazard** — step 12 already landed, so amend-in-place won't re-run on local v12
+  DBs; (2) a parent-ADR↔code drift (retrieval ADR Q4 says edge supersession is "schema-only/nodes-only,"
+  but code supersedes edges).
+- **HITL sign-off 2026-06-05 (substrate gate, AskUserQuestion):** **Q1 = APPROVE `logical_id`-alone, both
+  tables (uniform)**; **Q2 (migration) = AMEND step-12 in place** (no `SCHEMA_VERSION` bump; HITL accepts
+  local v12 DBs are disposable — they keep the old compound index until rebuilt). This amends the
+  **signed G0 keystone ADR** (adds the now-argued **"Decision 5 — identity scope = `logical_id`"**) + the
+  landed schema → recorded as a SIGNED substrate gate.
+- **Disposition:** HITL-directed adjacent work amending the keystone → a **new fully-orchestrated
+  reserved-gap Slice 31** (NOT a fix-N — it spans schema + `commit_batch` + G8 + ADR, beyond `read.get`'s
+  own scope). The tentative pencil "31 = binding error-class gap" is moot (Slice 30 chose not-found =
+  `None`/`null`, no NotFound class) → no collision; cursor-hardening/CLI-read-back stay at 32/33. Slice 30
+  stays **merged, review-pending (root-caused)** — its [P2] **resolves with zero read-API change** once
+  Slice 31 lands `logical_id`-scoping; Slice 30 closes after Slice 31. **The implementation is an agent's
+  job (own worktree), not the orchestrator's** (HITL direction 2026-06-05).
 
 ### 2026-06-04 — Slice 30 PROMPTED (governed SDK read verbs; anchors re-verified; two contract corrections; no new AC ids)
 
