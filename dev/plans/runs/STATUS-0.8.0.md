@@ -409,6 +409,19 @@ the worktree at slice close.
   fact-as-edge vs GraphRAG fact-as-node vs hyperedge) + pro/con/tradeoff + a reconciled recommendation
   with a rigorous substrate-now-vs-0.8.x split + explicit HITL product-decision points. Output feeds the
   eventual Slice 32 ADR / the HITL call.
+- **RESOLVED 2026-06-05** (`0.8.0-graph-model-resolution-20260605T140000Z.md`; orchestrator-reviewed,
+  sound). **Verdict (B)+(C).** Corrected the codex conflation with primary sources: **Graphiti = fact-as-
+  EDGE** (fact is an edge property + 4 timestamps; only its provenance/episodes are nodes); fact-as-NODE
+  is the GraphRAG-claims/HyperGraphRAG lineage for n-ary. Recommended **Stance β**: intended end-state =
+  **temporal fact-EDGES on the unchanged binary substrate**; **opaque-id addressing for 0.8.0**, **Hybrid
+  `(from,to,kind)` upsert** as a future write-ergonomics ADR; fact-as-node + traversable provenance =
+  documented escape-hatch/ontology (representable today, no DDL). **Headline: 0.8.0 ships the binary
+  substrate UNCHANGED; the entire richer end-state is additive-later; the ONLY substrate-now action is a
+  zero-cost PROSE reservation** (declare edge-enrichment columns `t_valid`/`t_invalid`/`body`/`confidence`
+  reserved-additive — Option 2A already implies it). New supporting fact: v0.5.6 already carried
+  `confidence REAL` + `properties BLOB` on edges (fact-as-edge enrichment was present, stripped in 0.8.0).
+  Six HITL decision points **H1–H6** tabled with recommended defaults; signed Slice 31 untouched.
+  **AWAITING HITL** sign-off on H1–H6 → then the Slice 32 ADR is authored to record it.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
