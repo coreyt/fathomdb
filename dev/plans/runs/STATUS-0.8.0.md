@@ -246,7 +246,7 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ **MERGED `485f498` but BLOCKED — codex §9 1×[P1]** (test audits types not Engine methods → `rebuild_*` recovery-name + raw-SQL reachable; AC-074 Rust falsely green). **HALTED to HITL** (governance scoping (A)/(B)/(C)) before fix-N | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ✅ rust.md + AC-074 Rust clause filled + DOC-INDEX |
+| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ MERGED `485f498`, codex §9 1×[P1] BLOCK → **fix-1 PROMPTED (Option B; HITL 2026-06-05)** — feature-gate operator/recovery seam off the default facade + method-level enforcement + AC-050c green (single slice). USER to spawn | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ⏳ (fix-1: rust.md/AC-074 method-level + CHANGELOG) |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
@@ -380,6 +380,28 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-05 — Slice 27 [P1] → HITL chose Option B; fix-1 PROMPTED (single slice, also closes AC-050c)
+
+- **HITL decision (2026-06-05): Option B** for the Slice 27 [P1] — **feature-gate the recovery/operator seam
+  off the default Rust facade** (not the (A) carve-out-by-doc or (C) re-scope-Q5). The default `fathomdb::
+  Engine` runtime surface becomes recovery-name-free + raw-SQL-free at the **method** level; the operator
+  seam (`rebuild_*`, `excise_source`, `dump_*`, `trace_source_ref`, `truncate_wal`, `verify_embedder`, the 20
+  operator-seam re-exports) moves behind a cargo **`operator`** feature the **`fathomdb-cli`** crate enables.
+  Methods are gated, **not deleted** (engine behavior unchanged with the feature on).
+- **Single slice (B + AC-050c) — determined, not bundled-blindly.** B's fix-1 **intrinsically works inside
+  the CHANGELOG `### Removed` + AC-050c removal-detect machinery** (`scripts/security/check_removal_changelog.py`)
+  — feature-gating methods off the default public surface is a removal the AC-050c gate requires CHANGELOG
+  entries for. So folding the trivial **pre-existing Slice-25 AC-050c residue** (2 renamed `test_surface.py`
+  fns; add `### Removed` entries OR scope `tests/` out of the scanner) into the SAME pass is "while
+  legitimately in this file+gate," not unrelated scope creep — and makes AC-050c fully green in one review
+  vs a separate slice for ~2 lines. (Separate would only be right if B didn't touch the AC-050c gate; it must.)
+- **fix-1 PROMPTED:** `dev/plans/prompts/0.8.0-slice-27-fix-1.md` (anchors verified: methods at
+  `fathomdb-engine/src/lib.rs:2974/2982/2422`; facade re-exports `fathomdb/src/lib.rs:1-5`; Cargo features
+  `fathomdb-engine:21`/`fathomdb`(none-add)/`fathomdb-cli:31`; the 17-vs-20 partition in
+  `dev/design/slice-27-rust-allowlist-design.md §2a/2b`; AC-050c scanner + CHANGELOG `### Removed [Unreleased]`).
+  Method-level enforcement via a `compile_fail` doctest / `trybuild` (Rust has no runtime reflection).
+  **USER spawns the fix-1 agent**; orchestrator re-reviews with codex (base `485f498`) → on PASS closes Slice 27.
 
 ### 2026-06-05 — Slice 33 CLOSED · Slice 27 MERGED-but-BLOCKED (codex [P1] → HALT to HITL) · AC-050c residue
 
