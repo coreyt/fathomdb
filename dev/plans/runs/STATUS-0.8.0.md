@@ -215,6 +215,7 @@ applicable to this slice's work-type.
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ⏳ MERGED, review-pending (codex [P2] root-caused to Slice 31) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ⏳ PROMPTED (2026-06-05) | 15, 30 | n/a (no SDK change) | ⏳ | ⏳ (ADR Decision 5 + propagated docs) |
+| **32** | Graph-context evaluation of the logical_id identity model (multigraph / edge identity / G4-5-7) | design-adr / evaluation | ⏳ PLACEHOLDER PROMPTED (2026-06-05) | 31 | n/a | ⏳ | ⏳ (eval ADR/memo) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -345,6 +346,25 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
+
+- **HITL-directed (2026-06-05):** create a placeholder Slice 32 to evaluate the Slice 31 `logical_id`-alone
+  identity change **in the context of FathomDB's graph / graph-database aspect.** Rationale: the identity
+  re-scope was reasoned through the point-lookup/node lens; the codex consult evaluated edges as opaque
+  write-receipts, **not as a graph.** The graph lens is exactly where "one `logical_id`, multiple active
+  `kind`s" could be a *legitimate multigraph capability* (multiple relationship types between one
+  endpoint pair) rather than a fork bug — so it deserves a dedicated evaluation.
+- **Scope (placeholder prompt `dev/plans/prompts/0.8.0-slice-32.md`):** a `[design-adr/evaluation]` slice
+  answering — multigraph/edge-identity ( `(from,to,kind)` natural key vs opaque `logical_id`), the deferred
+  graph read verbs (G4 `read.list` / G5 `read.neighbors`-traversal / G7 `read.history`), the v0.5.x graph
+  lineage precedent, real consumer graph needs (Memex/Hermes/OpenClaw), and temporal/graph consistency
+  (edge supersession-as-relationship-change + G8). **Verdict required:** (a) uniform `logical_id`-alone
+  holds for graphs / (b) edges need a graph-native identity refinement → future ADR/reserved-gap / (c) a
+  genuine defect in the signed edge decision → escalate to HITL.
+- **Does NOT block Slice 31** (signed, uniform); forward-looking, best run **after Slice 31 lands** so it
+  evaluates the actual landed model. **The USER spawns the slice agent** when scheduled; the orchestrator
+  finalizes anchors + the falsifiable bar first. Placeholder is a solid draft, marked for finalize.
+
 ### 2026-06-05 — G0 identity-scope re-scope SIGNED (active-uniqueness = `logical_id` alone) → reserved-gap Slice 31
 
 - **Trigger:** Slice 30 codex §9 flagged a **[P2]** — `read.get`/`get_many` (logical_id-alone lookup) are
@@ -372,7 +392,10 @@ the worktree at slice close.
 - **Disposition:** HITL-directed adjacent work amending the keystone → a **new fully-orchestrated
   reserved-gap Slice 31** (NOT a fix-N — it spans schema + `commit_batch` + G8 + ADR, beyond `read.get`'s
   own scope). The tentative pencil "31 = binding error-class gap" is moot (Slice 30 chose not-found =
-  `None`/`null`, no NotFound class) → no collision; cursor-hardening/CLI-read-back stay at 32/33. Slice 30
+  `None`/`null`, no NotFound class) → no collision. **Reserved band (31–34) now:** 31 = identity re-scope;
+  **32 = graph-context evaluation of the identity model** (HITL-directed 2026-06-05, placeholder); the
+  conditional cursor-hardening / CLI-op-store-read-back pencils move to 33 / 34 (materialize only if
+  triggered). Band is at capacity — further reserved work here ⇒ mis-scoped ⇒ HALT to HITL. Slice 30
   stays **merged, review-pending (root-caused)** — its [P2] **resolves with zero read-API change** once
   Slice 31 lands `logical_id`-scoping; Slice 30 closes after Slice 31. **The implementation is an agent's
   job (own worktree), not the orchestrator's** (HITL direction 2026-06-05).
