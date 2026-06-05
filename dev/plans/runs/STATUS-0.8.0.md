@@ -387,6 +387,17 @@ the worktree at slice close.
 - All anchors re-verified at `bf3ecdd`; prompt placed at `dev/plans/prompts/0.8.0-slice-32.md`
   (replaces the narrow placeholder). **The USER spawns the slice agent** when ready. Likely outcome is
   an HITL product call on edge addressing — the orchestrator flagged it so HITL can pre-steer if desired.
+- **BROADENED 2026-06-05 after a codex high-effort review** (`0.8.0-slice-32-codex-prompt-review-…md`):
+  codex (fed a graph-for-LLM-agent research note + GraphRAG/Graphiti/Neo4j/reified-facts knowledge) ruled
+  "do NOT spawn as-is — too narrow for its title." Added **Q0 model-shape** (binary fact edges vs reified
+  **Fact-as-node** + provenance/source graph vs generic-substrate+ontology), the reified-fact option, and
+  acceptance criteria (Fact-as-node representable without schema change? scalar `source_id` vs
+  graph-traversable provenance edges? does G7 history cover edges/fact-nodes/both?). **Key finding:
+  reified Fact-as-node is representable on the current substrate TODAY (`canonical_nodes(kind="fact")` +
+  typed edges) → NOT a substrate blocker**, so 0.8.0 isn't gated; the slice's output is a *documented
+  intended model* (dual-graph: reified facts + provenance on the binary substrate) + a *future HITL
+  product decision* on natural-key upsert, with codex's pro/con/tradeoff table (4 edge-model options) as
+  the decision basis. Prompt now resolves the FULL intended graph model, not just addressing.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
