@@ -422,6 +422,18 @@ the worktree at slice close.
   `confidence REAL` + `properties BLOB` on edges (fact-as-edge enrichment was present, stripped in 0.8.0).
   Six HITL decision points **H1–H6** tabled with recommended defaults; signed Slice 31 untouched.
   **AWAITING HITL** sign-off on H1–H6 → then the Slice 32 ADR is authored to record it.
+- **REFINED 2026-06-05 (dual-ontology + performance analysis; addendum in the resolution doc).** HITL
+  probed "leverage both GraphRAG+Graphiti?" / "does a dual-graph consumer FORCE native dual-engines?"
+  Answer: **NO** — the dual-system router is a *consumer/application* pattern; both ontologies reduce to
+  the same substrate primitives (the claim cracks only on fact-on-edge ENRICHMENT — edges lack body/
+  valid-time/confidence + per-fact embeddability); and at FathomDB's embedded single-writer ≤100k–1M
+  envelope no workload reaches a regime where two engines beat one well-indexed SQLite substrate. **The
+  load-bearing property is ontology-NEUTRALITY** (engine commits to neither shape; exposes mechanisms,
+  consumer writes policy). Refinements: H1 → "ontology-neutral substrate first-classing BOTH the Graphiti
+  (memory, fact-on-edge) and GraphRAG (corpus) ontologies"; **NEW edge-projectability** (projection seam
+  designed to admit an edge source); **H5 sharpens → G7 edge-inclusive**; fact-on-node = n-ary escape
+  hatch. **Still no 0.8.0 schema/code change** — reserve-now set is prose/design intent (edge-enrichment
+  columns + projection-seam + edge-inclusive-G7 intent), all additive. Verdict unchanged; sharpened.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
