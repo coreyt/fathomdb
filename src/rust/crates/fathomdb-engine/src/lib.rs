@@ -5990,13 +5990,15 @@ fn commit_batch(
                 // G0 — supersession is tombstone-then-insert in this same txn:
                 // mark the prior active version superseded BEFORE inserting the
                 // new active row, so the partial-unique-active index never sees
-                // two active rows for one (logical_id, kind). No-op when logical_id
+                // two active rows for one logical_id. Scoped to logical_id ALONE
+                // (Decision 5, HITL-SIGNED 2026-06-05): a kind-change re-ingest of
+                // the same logical_id SUPERSEDES, never forks. No-op when logical_id
                 // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
                 if let Some(logical_id) = logical_id {
                     tx.execute(
                         "UPDATE canonical_nodes SET superseded_at = ?1
-                         WHERE logical_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
-                        params![cursor, logical_id, kind],
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
                     )?;
                 }
                 tx.execute(
@@ -6024,12 +6026,15 @@ fn commit_batch(
             }
             (PreparedWrite::Edge { kind, from, to, source_id, logical_id }, WritePlan::Edge) => {
                 // G0 — identical tombstone-then-insert supersession on edges,
-                // keyed by (logical_id, kind). No-op when logical_id is None.
+                // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
+                // edge `kind` is relationship-type, not identity — a kind-change
+                // re-ingest of the same edge logical_id SUPERSEDES, never forks).
+                // No-op when logical_id is None.
                 if let Some(logical_id) = logical_id {
                     tx.execute(
                         "UPDATE canonical_edges SET superseded_at = ?1
-                         WHERE logical_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
-                        params![cursor, logical_id, kind],
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
                     )?;
                 }
                 tx.execute(
@@ -6095,23 +6100,26 @@ fn commit_batch(
     // reserved-gap band 22 — adding a write-options surface is out of scope).
     //
     // Probe is `logical_id`-alone against the step-12 partial index
-    // `canonical_nodes_logical_active_idx ON canonical_nodes(logical_id, kind)
+    // `canonical_nodes_logical_active_idx ON canonical_nodes(logical_id)
     // WHERE superseded_at IS NULL` (its leading column + partial predicate), so
     // it SEARCHes the index with no SCAN (see `tests/pr_g8_dangling_edges.rs`
     // case (f)). There is no node-kind to match: `canonical_edges` stores only
     // the edge's own kind, not the endpoint node's kind.
     let dangling_edge_endpoints = {
-        // O(N) pre-pass: record, per (logical_id, kind), the LAST (highest) index
-        // at which an `Edge { logical_id: Some(_), .. }` with that key appears.
+        // O(N) pre-pass: record, per `logical_id`, the LAST (highest) index at
+        // which an `Edge { logical_id: Some(_), .. }` with that id appears. Keyed
+        // by `logical_id` ALONE (Decision 5, HITL-SIGNED 2026-06-05) to match the
+        // supersession UPDATE, which keys by logical_id alone: a kind-change
+        // re-ingest of the same edge logical_id SUPERSEDES the earlier one.
         // Iterating front-to-back and overwriting means the stored value ends up
-        // as the final index for each key. An edge at index `i` with that key is
-        // then in-batch-superseded iff `last_index[(lid, kind)] > i`. This is
+        // as the final index for each id. An edge at index `i` with that id is
+        // then in-batch-superseded iff `last_index[lid] > i`. This is
         // behavior-identical to the prior per-edge `batch[i+1..]` `.any(..)` scan
         // (which was O(N²) under the single-writer txn) — same skip-set, same count.
-        let mut last_index: HashMap<(&str, &str), usize> = HashMap::new();
+        let mut last_index: HashMap<&str, usize> = HashMap::new();
         for (i, write) in batch.iter().enumerate() {
-            if let PreparedWrite::Edge { kind, logical_id: Some(lid), .. } = write {
-                last_index.insert((lid.as_str(), kind.as_str()), i);
+            if let PreparedWrite::Edge { logical_id: Some(lid), .. } = write {
+                last_index.insert(lid.as_str(), i);
             }
         }
 
@@ -6120,16 +6128,15 @@ fn commit_batch(
         )?;
         let mut count: u64 = 0;
         for (i, write) in batch.iter().enumerate() {
-            if let PreparedWrite::Edge { kind, from, to, logical_id, .. } = write {
+            if let PreparedWrite::Edge { from, to, logical_id, .. } = write {
                 // Honor `edge.superseded_at IS NULL`: an edge inserted in this
                 // batch is active unless a LATER same-batch edge with the same
-                // (Some(logical_id), kind) tombstoned it (the loop's supersession
+                // `Some(logical_id)` tombstoned it (the loop's supersession
                 // UPDATE). Skip such an in-batch-superseded edge. Edges with
                 // `logical_id: None` are never superseded-in-batch.
                 if let Some(lid) = logical_id {
-                    let superseded_in_batch = last_index
-                        .get(&(lid.as_str(), kind.as_str()))
-                        .is_some_and(|&last| last > i);
+                    let superseded_in_batch =
+                        last_index.get(lid.as_str()).is_some_and(|&last| last > i);
                     if superseded_in_batch {
                         continue;
                     }
