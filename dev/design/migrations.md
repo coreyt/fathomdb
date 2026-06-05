@@ -138,6 +138,16 @@ REQ-045's migration accretion guard is a semantic rule on migration authorship:
 
 This file owns the meaning of that rule.
 
+The guard keys on `CREATE TABLE` / `ADD COLUMN` only. A purely **index-only**
+additive step (`CREATE INDEX` with no table or column add) adds no schema
+surface to offset, so it is **not** flagged and needs **no** exemption marker —
+e.g. step-13 (`SCHEMA_VERSION 13`, Slice 33) adds
+`operational_mutations(collection_name, id)`
+(`operational_mutations_collection_id_idx`) to make the op-store paginated
+read-back index-driven (see `design/op-store.md` § Read-back contract), with no
+table reshape and no marker. (Contrast step-12, whose `ADD COLUMN`s require the
+marker.)
+
 The release/CI gate that enforces the rule is owned by `design/release.md`.
 Both docs should cross-reference each other rather than duplicate the same
 linter description.

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -311,6 +311,26 @@ pub const MIGRATIONS: &[Migration] = &[
                   ON canonical_edges(from_id);
               CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
                   ON canonical_edges(to_id);",
+    },
+    // 0.8.0 Slice 33 (G3 / F4-READ) — op-store paginated read-back hardening.
+    // Per `dev/design/slice-33-cursor-hardening-design.md`. The governed
+    // `read.collection` / `read.mutations` SELECT is
+    // `WHERE collection_name = ?1 AND id > ?2 ORDER BY id LIMIT ?3`. Without an
+    // index on `collection_name`, SQLite rides the `id` PRIMARY KEY (EXPLAIN:
+    // `SEARCH … USING INTEGER PRIMARY KEY (rowid>?)`), scanning the id-ordered
+    // log and filtering `collection_name` row-by-row — O(rows-scanned) for a
+    // small collection inside a large multi-collection log. The composite
+    // `(collection_name, id)` index makes the plan index-driven (EXPLAIN:
+    // `SEARCH … USING INDEX operational_mutations_collection_id_idx
+    // (collection_name=? AND id>?)`): the leading equality on `collection_name`
+    // fixes the prefix, the trailing `id` serves BOTH the after-id cursor range
+    // and `ORDER BY id` with no temp B-tree — O(page). Pure additive
+    // `CREATE INDEX` (no table/column add, no DROP, no table reshape), so the
+    // accretion guard does not flag it and no exemption marker is required.
+    Migration {
+        step_id: 13,
+        sql: "CREATE INDEX IF NOT EXISTS operational_mutations_collection_id_idx
+                  ON operational_mutations(collection_name, id);",
     },
 ];
 

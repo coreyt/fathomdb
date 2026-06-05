@@ -353,10 +353,14 @@ fn s15_legacy_pre_step12_db_upgrades_in_place_with_null_backfill() {
     )
     .expect("seed legacy row");
 
-    // Upgrade: step 12 lands in place, no re-open, no data migration.
-    let report = migrate(&conn).expect("upgrade to v12");
+    // Upgrade: the step-12 G0 substrate lands in place (plus any later additive
+    // steps, e.g. step-13's op-store index), no re-open, no data migration.
+    let report = migrate(&conn).expect("upgrade to head");
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
-    assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0)).unwrap(), 12);
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0)).unwrap(),
+        SCHEMA_VERSION
+    );
 
     // The legacy row back-fills NULL logical_id and stays queryable.
     let logical_id: Option<String> = conn

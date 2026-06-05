@@ -20,10 +20,12 @@ use tempfile::TempDir;
 /// 11). Slicing the canonical registry keeps this in lockstep with the real
 /// steps 1..=10 rather than re-transcribing them.
 const V10_MIGRATIONS: &[Migration] = {
-    // 10 steps with ids 1..=10 occupy the first 10 entries. Step 11 (the Slice-5
-    // tokenizer upgrade) and step 12 (the Slice-15 G0 substrate) are the last
-    // two. Drop both so phase A opens at the pre-tokenizer v10.
-    let (head, _tail) = MIGRATIONS.split_at(MIGRATIONS.len() - 2);
+    // Steps with ids 1..=10 occupy the first 10 entries of MIGRATIONS. Keep
+    // exactly those so phase A opens at the pre-tokenizer v10 (before step 11).
+    // Slice by an ABSOLUTE prefix length (10), not a tail offset, so later
+    // additive steps (step 12 G0 substrate, step 13 op-store index, …) do not
+    // shift the boundary.
+    let (head, _tail) = MIGRATIONS.split_at(10);
     head
 };
 
@@ -130,20 +132,20 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
     );
 
     // --- Phase B: re-open with the FULL migration set so step 11 (tokenizer)
-    // runs — step 12 (G0 substrate) also runs but is additive-only and does not
-    // touch the FTS shadow. Measure the AFTER floor on the SAME on-disk corpus.
-    // If re-tokenization is not wired, search_index was dropped+recreated empty
-    // and recall is 0. ---
+    // runs — step 12 (G0 substrate) and step 13 (op-store index) also run but are
+    // additive-only and do not touch the FTS shadow. Measure the AFTER floor on
+    // the SAME on-disk corpus. If re-tokenization is not wired, search_index was
+    // dropped+recreated empty and recall is 0. ---
     let after_recall = {
         let opened =
             Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {}).expect("open head");
         assert_eq!(
-            opened.report.schema_version_after, 12,
-            "phase B must migrate to head SCHEMA_VERSION 12 (runs the step-11 tokenizer upgrade)"
+            opened.report.schema_version_after, 13,
+            "phase B must migrate to head SCHEMA_VERSION 13 (runs the step-11 tokenizer upgrade)"
         );
         assert!(
             opened.report.schema_version_before == 10,
-            "phase B must observe a 10 -> 12 migration, saw before={}",
+            "phase B must observe a 10 -> 13 migration, saw before={}",
             opened.report.schema_version_before
         );
         let r = measure_recall(&opened.engine);
