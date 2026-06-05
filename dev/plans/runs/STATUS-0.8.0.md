@@ -246,9 +246,11 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
+| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⏳ PROMPTED (2026-06-05) — USER to spawn; ∥-safe with 33 | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ⏳ (rust.md + AC-074 Rust clause) |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
+| **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ⏳ PROMPTED (2026-06-05) — USER to spawn; ∥-safe with 27 | 30 | ✅ no SDK change (functional-retrieve unchanged) | ⏳ | ⏳ (op-store.md + migrations) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -378,6 +380,33 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-05 — Slices 27 + 33 PROMPTED (reserved-gap band) — parallel-safe
+
+- **Slice 27 (Rust-facade allowlist pin, Q5=BIND-RUST)** — `dev/plans/prompts/0.8.0-slice-27.md`. Executes
+  the deferred Rust half of AC-074's governed-surface AC: a positive-allowlist/parity conformance pin on
+  the `fathomdb` **facade** crate (mirrors the best-effort `no_recovery_surface.rs`/`reexports.rs` style —
+  Rust has no runtime symbol introspection) + **fills AC-074's pre-authorized "Rust-facade measurement is
+  defined at Slice 27" clause** (`acceptance.md:906`; no new AC) + rewrites `rust.md`'s governed-surface
+  posture. Recovery suites byte-frozen; Rust = a *different consumer contract* (its allowlist is the
+  `rust.md`-owned typed surface, NOT the Py/TS 5-verb+`read.*` set). No engine/schema change.
+- **Slice 33 (op-store cursor hardening)** — `dev/plans/prompts/0.8.0-slice-33.md`. Hardens
+  `read.collection`/`read.mutations` pagination under a genuine ~1M-row `operational_mutations` log. **Recon
+  finding: the table has NO index beyond its `id` PK** → `WHERE collection_name=? ORDER BY id LIMIT n` scans
+  the whole id-ordered log to page a small collection. Core fix = a forward-only additive **step-13 index
+  `operational_mutations(collection_name, id)` (`SCHEMA_VERSION 12→13`)** so pagination is index-driven
+  (EXPLAIN: no SCAN / no temp-B-tree) + clamp/cursor edge-case robustness. **No SDK signature change**;
+  Search byte-identity pin + recovery suites stay green. (Design memo must EXPLAIN-first; if already
+  index-driven, STOP + report rather than add a redundant index.)
+- **PARALLEL-SAFE (analysis):** disjoint code — 27 = `fathomdb` facade crate + `rust.md` + `acceptance.md`
+  (AC-074 Rust clause); 33 = `fathomdb-engine` + `fathomdb-schema` (step-13) + `op-store.md`. No shared code
+  file; neither touches `commit_batch`/the keystone carrier (no serialize-through-keystone rule). Only
+  overlap = the shared close docs (STATUS / DOC-INDEX / impl-plan): both branch from `main`@`e1827c4`;
+  **whichever merges second rebases onto the new main first**, and a STATUS/DOC-INDEX row conflict is
+  resolved by **keeping BOTH rows** (Slice 20∥25 precedent; [[orchestration-execution-traps]] item 4).
+  Slice 33's `SCHEMA_VERSION 12→13` bump is in its diff alone (27 touches no schema) → not a rebase
+  conflict. **The USER spawns both slice agents** (concurrently or sequentially); orchestrator gates +
+  reviews (codex §9 each) + closes.
 
 ### 2026-06-05 — Slice 32 prompt REBUILT + FINALIZED (resolve the intended graph model, not just logical_id)
 
