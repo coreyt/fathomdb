@@ -195,6 +195,14 @@ Concretely, that ADR should settle:
 This ADR does **not** ask 0.8.0 to implement valid-time, graph traversal (G5), or
 edge invalidation (G11 full) — only to not foreclose them.
 
+> **Cross-ref (Slice 32):** the *intended graph model* that this Option 2A reserves
+> — fact-on-edge enrichment (valid-time/body/confidence on edges), edge
+> projectability, and edge-inclusive history — is resolved in
+> [`ADR-0.8.0-graph-model-and-edge-addressing.md`](./ADR-0.8.0-graph-model-and-edge-addressing.md),
+> which concludes a **single ontology-neutral substrate** serves both the corpus
+> (GraphRAG) and memory (Graphiti) ontologies and that these columns are
+> **reserved-additive**, never a reshape.
+
 ## Relationship to the five-verb invariant (AC-057a)
 
 - **G9 (fusion+rerank)** is internal to `search()`; **no surface change**.
