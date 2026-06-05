@@ -15,7 +15,8 @@
 //! `dev/design/slice-30-design.md`. Binds gaps G3/F2/F4-READ + AC-074/REQ-053.
 
 use fathomdb_engine::{Engine, PreparedWrite};
-use fathomdb_schema::SQLITE_SUFFIX;
+use fathomdb_schema::{migrate, SQLITE_SUFFIX};
+use rusqlite::Connection;
 use tempfile::TempDir;
 
 fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
@@ -151,6 +152,168 @@ fn read_collection_clamps_limit_to_the_one_million_cap() {
         .read_collection("events", None, 5_000_000)
         .expect("a huge limit clamps, never an unbounded scan");
     assert_eq!(rows.len(), 3);
+
+    opened.engine.close().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Slice 33 (G3 / F4-READ) — cursor + limit hardening under a genuine large
+// multi-collection `operational_mutations` log. The step-13 additive index
+// `operational_mutations(collection_name, id)` makes the read_collection SELECT
+// index-driven (O(page), not O(rows-scanned)) and the clamp/cursor are robust at
+// the edges. See `dev/design/slice-33-cursor-hardening-design.md`. No SDK
+// signature change.
+// ---------------------------------------------------------------------------
+
+/// EXPLAIN gate (mirrors the `pr_g8` plan gate): the read_collection SELECT must
+/// ride `operational_mutations_collection_id_idx` (the step-13 `(collection_name,
+/// id)` index) — **no `SCAN`, no `USE TEMP B-TREE FOR ORDER BY`, no `USING
+/// INTEGER PRIMARY KEY`**. This is the structural proxy for O(page) per-page work
+/// when a small collection lives inside a large multi-collection log.
+#[test]
+fn read_collection_plan_is_index_driven_no_scan_no_temp_btree() {
+    let dir = TempDir::new().unwrap();
+    let conn = Connection::open(db_path(&dir, "plan")).expect("open sqlite");
+    migrate(&conn).expect("migrate to head");
+
+    // Seed a multi-collection log: a tiny `small` collection interleaved inside
+    // a much larger `bulk` log, so the planner has a real reason to pick the
+    // composite index over the id PK walk.
+    for i in 0..2000i64 {
+        let coll = if i % 100 == 0 { "small" } else { "bulk" };
+        conn.execute(
+            "INSERT INTO operational_mutations(collection_name, record_key, op_kind, payload_json, write_cursor)
+             VALUES (?1, ?2, 'append', '{}', ?3)",
+            rusqlite::params![coll, format!("k{i}"), i],
+        )
+        .unwrap();
+    }
+
+    let plan: Vec<String> = {
+        let mut stmt = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT id, collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                 FROM operational_mutations
+                 WHERE collection_name = ?1 AND id > ?2
+                 ORDER BY id
+                 LIMIT ?3",
+            )
+            .expect("prepare EXPLAIN");
+        stmt.query_map(rusqlite::params!["small", 0i64, 50i64], |row| row.get::<_, String>(3))
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect plan")
+    };
+    let detail = plan.join(" | ");
+
+    assert!(
+        detail.contains("operational_mutations_collection_id_idx"),
+        "read_collection must use the (collection_name, id) index; plan: {detail}"
+    );
+    assert!(
+        !detail.contains("SCAN"),
+        "read_collection must not full-scan operational_mutations; plan: {detail}"
+    );
+    assert!(
+        !detail.contains("USE TEMP B-TREE FOR ORDER BY"),
+        "the composite index must satisfy ORDER BY id without a temp B-tree; plan: {detail}"
+    );
+    assert!(
+        !detail.contains("USING INTEGER PRIMARY KEY"),
+        "read_collection must not ride the id PK walk (the pre-step-13 pathology); plan: {detail}"
+    );
+}
+
+/// Bounded large-log pagination: a small collection paginated via `after_id`
+/// inside a much larger interleaved log returns the correct ordered,
+/// non-overlapping pages whose union is exactly the small collection. (The
+/// EXPLAIN gate above is the per-page O(page) structural proof; this asserts
+/// row-level correctness across the page boundary under the large-log shape.)
+#[test]
+fn read_collection_paginates_small_collection_inside_large_log() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "large_log")).expect("open");
+    opened.engine.write(&[register_log("small"), register_log("bulk")]).expect("register");
+
+    // 30 `small` rows interleaved with 9x as many `bulk` rows.
+    let mut small_keys = Vec::new();
+    for i in 0..300usize {
+        if i % 10 == 0 {
+            let key = format!("s{i}");
+            opened
+                .engine
+                .write(&[append("small", &key, &format!("{{\"i\":{i}}}"))])
+                .expect("small");
+            small_keys.push(key);
+        } else {
+            opened.engine.write(&[append("bulk", &format!("b{i}"), "{}")]).expect("bulk");
+        }
+    }
+    assert_eq!(small_keys.len(), 30);
+
+    // Paginate `small` in pages of 7 via after_id.
+    let mut collected: Vec<String> = Vec::new();
+    let mut cursor: Option<i64> = None;
+    let mut last_id = i64::MIN;
+    loop {
+        let page = opened.engine.read_collection("small", cursor, 7).expect("page");
+        if page.is_empty() {
+            break;
+        }
+        for row in &page {
+            assert_eq!(row.collection, "small", "pagination must stay scoped to the collection");
+            assert!(row.id > last_id, "ids strictly increasing across pages (no overlap)");
+            last_id = row.id;
+            collected.push(row.record_key.clone());
+        }
+        cursor = Some(page.last().unwrap().id);
+    }
+
+    assert_eq!(
+        collected, small_keys,
+        "the union of pages is exactly the small collection, in order"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// Clamp + cursor edge cases: `limit == 0` empty (no SELECT); over-MAX limit
+/// clamps (no error / no unbounded scan); `after_id` past the end is an empty
+/// page; a negative `after_id` reads from the start of the log; an unknown
+/// collection is empty; order is stable across pages.
+#[test]
+fn read_collection_clamp_and_cursor_edge_cases() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "edges")).expect("open");
+    seed(&opened.engine, "events", 6);
+
+    // limit == 0 -> empty page, no rows.
+    let zero = opened.engine.read_collection("events", None, 0).expect("limit 0");
+    assert!(zero.is_empty(), "limit == 0 returns an empty page");
+
+    // limit > READ_COLLECTION_MAX_LIMIT -> clamped, never an unbounded scan / panic.
+    let over =
+        opened.engine.read_collection("events", None, usize::MAX).expect("over-MAX limit clamps");
+    assert_eq!(over.len(), 6, "all rows returned; the clamp is internal");
+
+    // after_id past the end -> empty page.
+    let all = opened.engine.read_collection("events", None, 100).expect("all");
+    let max_id = all.last().unwrap().id;
+    let past = opened.engine.read_collection("events", Some(max_id + 1000), 100).expect("past end");
+    assert!(past.is_empty(), "after_id past the last id is an empty page");
+
+    // Negative after_id -> reads from the start of the log (normalized to 0).
+    let neg = opened.engine.read_collection("events", Some(-42), 100).expect("negative cursor");
+    assert_eq!(
+        neg.iter().map(|r| r.id).collect::<Vec<_>>(),
+        all.iter().map(|r| r.id).collect::<Vec<_>>(),
+        "a negative after_id reads from the start of the log (same as None)"
+    );
+
+    // Unknown collection -> empty.
+    let unknown = opened.engine.read_collection("does_not_exist", None, 100).expect("unknown");
+    assert!(unknown.is_empty(), "an unknown / unregistered collection is empty");
 
     opened.engine.close().unwrap();
 }

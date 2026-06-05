@@ -39,7 +39,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 11);
+    assert_eq!(report.migration_steps.len(), 12);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
@@ -52,7 +52,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
@@ -69,7 +69,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }
@@ -275,7 +275,71 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
     }
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 12);
+    assert_eq!(SCHEMA_VERSION, 13);
+}
+
+// Slice 33 (G3 / F4-READ) — the step-13 additive index makes the op-store
+// paginated read-back (`read.collection` / `read.mutations`) index-driven on a
+// large multi-collection log. Pure `CREATE INDEX` (no table/column add, no DROP),
+// so the accretion guard does not flag it and no exemption marker is required.
+#[test]
+fn s13_op_store_collection_index_present_after_migrate() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let idx_count: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["operational_mutations_collection_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(idx_count, 1, "step-13 must create operational_mutations_collection_id_idx");
+
+    // The index is shaped (collection_name, id): leading column collection_name
+    // serves the equality predicate, trailing id serves both the after-id cursor
+    // range and ORDER BY id (no temp B-tree).
+    let idx_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name=?1",
+            ["operational_mutations_collection_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        idx_sql.contains("operational_mutations"),
+        "index must be on operational_mutations, got: {idx_sql}"
+    );
+    assert!(
+        idx_sql.contains("collection_name") && idx_sql.contains("id"),
+        "index must be (collection_name, id), got: {idx_sql}"
+    );
+    let cn = idx_sql.find("collection_name").unwrap();
+    let id_pos = idx_sql.rfind("id").unwrap();
+    assert!(cn < id_pos, "collection_name must lead id in the composite index, got: {idx_sql}");
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 13);
+}
+
+// Slice 33 — the step-13 SQL is a pure `CREATE INDEX` (additive index, no table
+// or column add). The accretion guard fires only on CREATE TABLE / ADD COLUMN,
+// so step-13 passes WITHOUT an exemption marker (contrast step-12's ADD COLUMN,
+// which requires the marker).
+#[test]
+fn s13_op_store_index_passes_accretion_guard_without_marker() {
+    let step13 = fathomdb_schema::MIGRATIONS
+        .iter()
+        .find(|m| m.step_id == 13)
+        .expect("step 13 (op-store collection index) must exist");
+    assert!(
+        !step13.sql.contains("MIGRATION-ACCRETION-EXEMPTION"),
+        "an index-only additive step needs no exemption marker"
+    );
+    check_migration_accretion("013_op_store_collection_index.sql", step13.sql)
+        .expect("step 13 (CREATE INDEX only) must pass the accretion guard with no marker");
 }
 
 #[test]
