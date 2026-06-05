@@ -434,6 +434,16 @@ the worktree at slice close.
   designed to admit an edge source); **H5 sharpens → G7 edge-inclusive**; fact-on-node = n-ary escape
   hatch. **Still no 0.8.0 schema/code change** — reserve-now set is prose/design intent (edge-enrichment
   columns + projection-seam + edge-inclusive-G7 intent), all additive. Verdict unchanged; sharpened.
+- **ADR DRAFTED 2026-06-05 → Slice 32 in CLOSEOUT.** The (user-driven) research agent wrote
+  `dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md` (**status: PROPOSED**, 381 lines) directly — a
+  user-directed deliverable ([[dont-dismiss-user-directed-subagents]]); orchestrator verified it from disk
+  (faithful to the resolution + all 3 refinement passes; read-only/no-substrate-change; doesn't touch
+  signed Slice 31; H1–H6 left HITL-open). Orchestrator committed it + added the DOC-INDEX row. **Remaining
+  closeout (orchestrator's job, NOT the research agent's): codex §9 adversarial review of the ADR vs the
+  slice's falsifiable bar + HITL sign-off on H1–H6 → ADR ACCEPTED + (if H3 signed) a one-line prose
+  reservation into the signed substrate ADR + close Slice 32.** Process note: the formal Slice 32 was
+  resolved by research-agent drafting + orchestrator review in lieu of a user-spawned worktree slice
+  (HITL drove it this way); recorded for the audit trail.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
