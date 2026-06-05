@@ -19,9 +19,54 @@ ground-truth source for engine-side type names. The Python/TypeScript governed
 SDK surface parity set is tested by AC-074 (which supersedes AC-057a's
 five-verb cap). Under the signed Q5 = BIND-RUST
 (`ADR-0.8.0-supersede-five-verb-surface-cap`) the Rust facade is **also** bound
-by AC-074; its positive-allowlist/parity pin lands at reserved-gap **Slice 27**
-(not yet executed here). Rust keeps the facade shape below unless a successor
-ADR expands it.
+by AC-074; its positive-allowlist/parity pin **landed at reserved-gap Slice 27**
+(see § Governed-surface contract below). Rust keeps the facade shape below
+unless a successor ADR expands it.
+
+## Governed-surface contract (AC-074, Q5 = BIND-RUST — landed Slice 27)
+
+This file **owns** the governed Rust-facade surface. The `fathomdb` facade is a
+**different consumer contract** than the Python/TypeScript 5-verb + `read.*`
+SDK: the Rust application verbs are methods on `Engine` (`open`/`write`/
+`search`/`close`), and the facade's public surface is a set of re-exported
+*types*, not free verbs. So the Rust allowlist is **not** the Py/TS verb set; it
+is the **typed governed application surface** this file owns. Three load-bearing
+properties hold (asserted by `src/rust/crates/fathomdb/tests/governed_surface.rs`,
+which binds AC-074 — not a new AC id):
+
+- **P1 — positive allowlist (`GOVERNED_SURFACE_ALLOWLIST`, 17 types):** the
+  facade re-exports exactly the curated governed application surface — `Engine`,
+  `OpenedEngine`, `OpenReport`, `WriteReceipt`, `SearchResult`, `PreparedWrite`,
+  `EngineError`, `EngineOpenError`, the open-path diagnostics (`CorruptionDetail`,
+  `CorruptionKind`, `CorruptionLocator`, `OpenStage`, `RecoveryHint`), the
+  retrieval soft-fallback shapes (`SoftFallback`, `SoftFallbackBranch`), and the
+  instrumentation handles (`CounterSnapshot`, `Subscription`). Each resolves
+  through the facade at compile time (`type_name::<…>()`). The recovery /
+  integrity / dump operator-seam report types in § "Recovery / operator seam
+  re-exports" are deliberately **excluded** from this allowlist — they are
+  CLI-only ergonomic symbols (the Rust analogue of "recovery is CLI-only, not an
+  SDK verb"), not governed application surface.
+
+- **P2 — parity-in-intent (NOT membership-identity):** the Rust governed surface
+  is posture-consistent with the Py/TS governed surface (a governed allowlist,
+  recovery-denylist-absent, typed / no-raw-SQL) but is a different consumer
+  contract — a type set, not a verb set — so it is **not** asserted
+  membership-equal to the Py/TS verb allowlist. The one genuinely shared element
+  is the recovery denylist, declared once in
+  `src/conformance/governed-surface-allowlist.json` (`recovery_denylist`); the
+  Rust test pins the same five names.
+
+- **P3 — recovery-denylist absence:** no governed-surface symbol *is* a recovery
+  verb in `{recover, restore, repair, fix, rebuild}` (exact, case-insensitive —
+  not substring, so the typed `RecoveryHint` hint is correctly not flagged). The
+  **canonical** denylist enforcement remains the **byte-frozen**
+  `tests/no_recovery_surface.rs`; `governed_surface.rs` adds the *positive*
+  allowlist half + an allowlist-scope denylist check.
+
+Rust has no runtime symbol-table introspection (no `dir(module)`), so — exactly
+like `no_recovery_surface.rs` / `reexports.rs` — the pin is a compile-time
+resolves-check plus this source-inspection-documented contract. See
+`dev/design/slice-27-rust-allowlist-design.md`.
 
 ## Public surface
 

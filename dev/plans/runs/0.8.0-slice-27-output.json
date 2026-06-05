@@ -1,0 +1,85 @@
+{
+  "slice": "0.8.0-slice-27",
+  "title": "Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST); fill AC-074 Rust measurement",
+  "phase": "complete",
+  "baseline_sha": "e1827c4af32b7207feaa8712160c0f4948ba5a7c",
+  "branch": "slice-27-20260605T210356Z",
+  "head_sha": "04e5e92f238dba2471a794879880751d3abf01ff",
+  "merged_to_main_sha": "PENDING_SEE_MERGE_STEP",
+  "commits": [
+    {"sha": "8db2d33", "kind": "design", "summary": "Slice 27 design memo — governed Rust allowlist (17 app-surface types) vs 20 operator-seam re-exports; P1/P2/P3; AC-074 Rust measurement"},
+    {"sha": "a0fceec", "kind": "red", "summary": "RED — governed_surface.rs with a deliberate 'rebuild' verb injected into the allowlist; cargo test -p fathomdb fails P3 + length assertion (catch demonstrated)"},
+    {"sha": "159cc41", "kind": "green", "summary": "GREEN — remove injection (test green); rewrite rust.md governed-surface contract; fill AC-074 :906 Rust measurement (no new AC id)"},
+    {"sha": "04e5e92", "kind": "docs", "summary": "DOC-INDEX — add interfaces/rust.md + slice-27 design-memo rows; refresh acceptance.md row"}
+  ],
+  "findings_addressed": [
+    "Q5=BIND-RUST: the deferred Rust half of AC-074 governance is now landed (Slice 25 landed Py+TS).",
+    "rust.md no longer forward-refs 'pin lands at reserved-gap Slice 27 (not yet executed)'; it states the landed governed-surface contract and remains the OWNER of the Rust facade surface.",
+    "AC-074 :906 'Rust-facade measurement is defined at Slice 27' replaced with the actual measurement; Py/TS clauses untouched; no new AC id minted."
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "a0fceec9f8b575ce20130cfc8a8ce7cd75f2e3d2",
+    "red_evidence": "cargo test -p fathomdb --test governed_surface: t_074_recovery_denylist_absent_from_governed_surface FAILED (found ['rebuild']) + t_074_rust_governed_surface_resolves FAILED (len 18 != 17); t_074_denylist_detector_is_not_vacuous passed.",
+    "green_commit_sha": "159cc41a2d997109beac3908c3685a8041f569f7",
+    "green_evidence": "cargo test -p fathomdb: governed_surface 3/3 pass; reexports 1/1; no_recovery_surface 1/1; all green.",
+    "test_files": ["src/rust/crates/fathomdb/tests/governed_surface.rs"]
+  },
+  "byte_freeze_verified": {
+    "method": "git diff --exit-code e1827c4 -- <three recovery suites>",
+    "result": "byte-unchanged",
+    "files": [
+      "src/rust/crates/fathomdb/tests/no_recovery_surface.rs",
+      "src/python/tests/test_no_recovery_surface.py",
+      "src/ts/tests/no-recovery-surface.test.ts"
+    ]
+  },
+  "rust_allowlist": {
+    "name": "GOVERNED_SURFACE_ALLOWLIST",
+    "count": 17,
+    "members": [
+      "Engine", "OpenedEngine", "OpenReport", "WriteReceipt", "SearchResult",
+      "PreparedWrite", "EngineError", "EngineOpenError", "CorruptionDetail",
+      "CorruptionKind", "CorruptionLocator", "OpenStage", "RecoveryHint",
+      "SoftFallback", "SoftFallbackBranch", "CounterSnapshot", "Subscription"
+    ],
+    "operator_seam_excluded_count": 20,
+    "operator_seam_excluded": [
+      "CheckIntegrityOpts", "IntegrityReport", "SafeExportArtifact", "TraceReport",
+      "TraceEvent", "RebuildReport", "RebuildKind", "ExciseReport",
+      "VerifyEmbedderReport", "VerifyEmbedderStatus", "DumpSchemaReport",
+      "SchemaObject", "DumpRowCountsReport", "TableRowCount", "DumpProfileReport",
+      "TruncateWalReport", "TruncateWalStatus", "Finding", "MeanRecomputeReport",
+      "Section"
+    ],
+    "partition_note": "17 governed + 20 operator-seam = 37 = the full lib.rs re-export set; nothing unaccounted for.",
+    "recovery_denylist": ["recover", "restore", "repair", "fix", "rebuild"],
+    "parity_intent": "P2 is parity-IN-INTENT, not membership-identity: Rust is a different consumer contract (type set, verbs are Engine methods) so it is NOT asserted membership-equal to the Py/TS verb allowlist; the shared element is the recovery denylist (single source: src/conformance/governed-surface-allowlist.json)."
+  },
+  "self_check": {
+    "cargo_test_p_fathomdb": "PASS (governed_surface 3/3, reexports 1/1, no_recovery_surface 1/1)",
+    "cargo_clippy_p_fathomdb_Dwarnings": "PASS",
+    "cargo_fmt_check": "PASS",
+    "pyright_src_python": "0 errors (31 warnings = environmental reportMissingModuleSource on the unbuilt native ext; baseline-identical, no Python changed)",
+    "mkdocs_build": "PASS",
+    "agent_verify_lint": "PASS",
+    "agent_verify_typecheck": "PASS (cargo check --workspace ok; pyright/ts skipped in worktree — pyright run manually = 0 errors)"
+  },
+  "byte_freeze_proof": "recovery suites byte-unchanged",
+  "blockers_encountered": [],
+  "agent_verify_result": {
+    "overall": "no Slice-27-introduced regression",
+    "AC-037_netns": "BLOCKER (toolchain missing: rootless userns+netns unavailable) — environmental, explicitly acknowledged in slice prompt §4, CI-covered at Slice 40.",
+    "AC-050c_removal_detect": "FAIL — PRE-EXISTING, NOT caused by Slice 27. Flags two removed test functions in src/python/tests/test_surface.py (test_engine_exposes_five_verbs_plus_instrumentation, test_top_level_exports_match_canonical_set) missing from CHANGELOG Removed. Verified byte-identical at BASE e1827c4 (Slice 25 conformance-rewrite residue; base=v0.6.1..HEAD). Slice 27 changed ZERO Python. Out of scope per §6 (Py/TS surface-suite + CHANGELOG = not this slice).",
+    "AC-036_no_listen": "PASS",
+    "AC-038_fts5_injection": "PASS",
+    "AC-050a_ast_scan_rust_python_ts": "PASS"
+  },
+  "additional_changes_made_in_scope": [
+    "DOC-INDEX: dev/interfaces/ was previously unindexed; added the dev/interfaces/rust.md row (the doc Slice 27 makes the landed-contract owner) per §3.3. The slice prompt said 'refresh the rust.md row' but no such row existed — recorded as a justified, minimal add. python/typescript/cli interface docs remain unindexed = a pre-existing X3 gap, deliberately NOT expanded here (out of scope)."
+  ],
+  "next_step_for_orchestrator": [
+    "Slice 27 is GREEN + merged to local main. The byte-frozen recovery suites are unchanged; cargo/clippy/fmt/mkdocs green; AC-074 Rust clause filled; no engine/schema change.",
+    "ESCALATION (pre-existing, NOT a Slice-27 blocker): AC-050c removal-detect has been FAILING since Slice 25 — test_surface.py's rewrite removed two public test symbols without a CHANGELOG 'Removed' entry (or the AC-050c scanner should exclude tests/). Verified identical at BASE. Recommend a small follow-up (CHANGELOG entry or AC-050c test-file exclusion) — owner: Slice 25 residue / a reserved gap, not Slice 27.",
+    "AC-037 netns remains environmental; wire into CI at Slice 40 gate n (AC-037) as already planned."
+  ]
+}
