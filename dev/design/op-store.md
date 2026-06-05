@@ -129,12 +129,29 @@ The contract:
   is the append order;
 - a **mandatory `limit`** caps each page — there is no public path that issues an
   unbounded SELECT — and the engine clamps the effective SQL `LIMIT` to a ~1M cap
-  (`READ_COLLECTION_MAX_LIMIT`; cursor/limit hardening under a genuine ~1M-row log
-  is a reserved follow-on);
+  (`READ_COLLECTION_MAX_LIMIT`). `limit == 0` returns an empty page without
+  issuing a SELECT; a `limit` above the cap is clamped, never an unbounded scan;
 - an optional **`after_id` cursor** (`WHERE id > ?`) paginates: each next page
-  resumes strictly after the previous page's last `id`, with no boundary overlap;
+  resumes strictly after the previous page's last `id`, with no boundary overlap.
+  A negative `after_id` is normalized to the start of the log; an `after_id` past
+  the last id (and an unknown / unregistered collection) yields an empty page;
 - each returned `OpStoreRow` carries `{ id, collection, record_key, op_kind,
   payload (the stored payload_json), schema_id, write_cursor }`.
+
+**Index-driven pagination (Slice 33 / G3 / F4-READ).** The read-back SELECT is
+`WHERE collection_name = ?1 AND id > ?2 ORDER BY id LIMIT ?3`. The step-13
+additive index `operational_mutations(collection_name, id)`
+(`operational_mutations_collection_id_idx`, `SCHEMA_VERSION 13`) makes this
+**index-driven**: `EXPLAIN QUERY PLAN` reports `SEARCH operational_mutations USING
+INDEX operational_mutations_collection_id_idx (collection_name=? AND id>?)` — no
+`SCAN`, no `USE TEMP B-TREE FOR ORDER BY`, and not the pre-step-13 id-PK walk
+(`SEARCH … USING INTEGER PRIMARY KEY (rowid>?)`). The leading `collection_name`
+equality fixes the index prefix and the trailing `id` serves **both** the
+`after_id` cursor range and `ORDER BY id`, so paginating one collection inside a
+genuine ~1M-row multi-collection log is **O(page)**, not O(rows-scanned). The
+EXPLAIN gate is pinned in `tests/pr_g3_read_collection.rs`. (This retires the
+earlier "cursor/limit hardening under a genuine ~1M-row log is a reserved
+follow-on" note.)
 
 `read.mutations` is a mutation-log-oriented alias surface over the identical
 read-back. Both verbs land in **lockstep** across the Python and TypeScript SDKs.
