@@ -230,7 +230,7 @@ applicable to this slice's work-type.
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
-| **32** | Graph-context evaluation of the logical_id identity model (multigraph / edge identity / G4-5-7) | design-adr / evaluation | ⏳ PLACEHOLDER PROMPTED (2026-06-05) | 31 | n/a | ⏳ | ⏳ (eval ADR/memo) |
+| **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ⏳ FINALIZED PROMPT (2026-06-05) — ready for USER to spawn | 31 | n/a | ⏳ | ⏳ (eval ADR/memo) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -360,6 +360,33 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-05 — Slice 32 prompt REBUILT + FINALIZED (resolve the intended graph model, not just logical_id)
+
+- **HITL-directed:** a design (Plan) agent rebuilt the Slice 32 prompt so it resolves FathomDB's
+  **open graph capabilities / intended graph model**, not merely re-validate the `logical_id`-alone
+  identity decision. Orchestrator review of the placeholder found two real weaknesses, both fixed:
+  (1) it **under-pointed the docs** (missed the bitemporal world-model `retrieval-ADR:126-196`, the G5
+  seam `impl-strategy:326-330`, the v05 triage F1, `v05-lineage:14-48`, the roadmap, Decision-5's
+  rationale); (2) it **conflated two distinct questions** — **(a) multigraph representability** (already
+  YES under `logical_id`-alone: each typed edge has its own id) vs **(b) natural-key addressing /
+  upsert ergonomics** (THE crux: must a consumer mint+track an opaque `logical_id` to supersede "the
+  friend edge A→B," or should the engine address/upsert by the natural `(from,to,kind)` tuple?).
+- **Key sharpenings now in the prompt:** edge *identity* is already decided (Decision 5) — only edge
+  *addressing* is open; the central trade-off is **opaque-`logical_id`-only vs natural-`(from,to,kind)`
+  vs HYBRID** (engine dedups/upserts on `(from,to,kind)` but stores a `logical_id`); Decision 5's "kind
+  buys no real capability" is to be **tested, not accepted**, against the bitemporal world-model
+  (invalidate-not-delete, valid-time on fact edges) + the **v0.5.6 precedent** (verified via git: edge
+  identity = `logical_id` alone YET a `(source_logical_id, kind, superseded_at)` index for kind-scoped
+  traversal — proving multigraph + typed traversal without kind-in-identity) + property-graph norms.
+- **Verdict options** now include a first-class **(B) "intent under-specified → HITL PRODUCT/DESIGN
+  decision (present the 3 options + recommendation)"** — likely, since graph is deferred to 0.8.x and
+  **no named 0.8.0 consumer needs it** (OpenClaw "none/markdown" + an explicit "don't let it create
+  graph sequencing pressure" warning; Hermes = LLM not KG; Memex has edges but no multi-typed-edge
+  addressing need). Plus (A) uniform holds / (C) refinement→future slice / (D) defect→escalate.
+- All anchors re-verified at `bf3ecdd`; prompt placed at `dev/plans/prompts/0.8.0-slice-32.md`
+  (replaces the narrow placeholder). **The USER spawns the slice agent** when ready. Likely outcome is
+  an HITL product call on edge addressing — the orchestrator flagged it so HITL can pre-steer if desired.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
