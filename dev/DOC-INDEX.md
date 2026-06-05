@@ -26,7 +26,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface) | 25 (AC-057a→AC-074); 40 scoreboard | 2026-06-04 |
-| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch) | 2026-06-04 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch); 31 re-scopes G0 active identity to `logical_id` alone | 2026-06-05 |
 | `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
@@ -45,7 +45,8 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/0.8.0-v05-feature-triage.md` | v0.5.x feature triage (ship/defer/drop) | scope source of truth | 2026-06-02 |
 | `dev/design/0.8.0-slice-5-G1-design.md` | Slice 5 design memo — structured `SearchHit` shape, per-branch score, dedup/order, step-11 tokenizer migration + re-tokenization, X1/X2/X3 plan | 5 (G1) | 2026-06-02 |
 | `dev/design/slice-10-design.md` | Slice 10 design memo — G9 RRF fusion (formula/tiebreak, dropped-knob note) + rerank seam, G10 `SearchFilter` + 3-way shape-sentinel, G12-recency flag, score-comparability note, test plan | 10 (G9/G10/G12-recency) | 2026-06-03 |
-| `dev/design/slice-15-g0-design.md` | Slice 15 design memo — G0 canonical-identity substrate: step-12 additive `ALTER` (exemption-marker rationale), tombstone-then-insert supersession + same-txn atomicity, NULL-on-legacy-rows rule, `row_cursors` semantics, op-store cascade, reserved Slice-16 shadow reconciliation, test plan | 15 (G0 keystone) | 2026-06-03 |
+| `dev/design/slice-15-g0-design.md` | Slice 15 design memo — G0 canonical-identity substrate: step-12 additive `ALTER` (exemption-marker rationale), tombstone-then-insert supersession + same-txn atomicity, NULL-on-legacy-rows rule, `row_cursors` semantics, op-store cascade, reserved Slice-16 shadow reconciliation, test plan (active-identity re-scoped to `logical_id` alone by Slice 31) | 15 (G0 keystone); amended by 31 | 2026-06-05 |
+| `dev/design/slice-31-identity-rescope-design.md` | Slice 31 design memo — re-scope active-row uniqueness to `logical_id` ALONE on both tables (Decision 5, HITL-SIGNED 2026-06-05): fixes the kind-change identity-fork, resolves Slice 30 read.get [P2], re-keys G8; amend step-12 in place (no SCHEMA_VERSION bump) | 31 (G0 re-scope) | 2026-06-05 |
 | `dev/design/slice-20-g8-design.md` | Slice 20 design memo — G8 dangling-edge flag-and-count: cross-row post-row-insert EXISTS pass inside `commit_batch`'s open tx (why not `validate_write`), logical_id-alone probe + step-12 partial-index hit argument, legacy-NULL endpoint consequence, flag-and-count default (strict-mode deferred to band 22), test plan | 20 (G8/F10) | 2026-06-03 |
 | `dev/design/slice-25-conformance-design.md` | Slice 25 design memo — governed-surface conformance rewrite: the allowlist (core 5 + `read.*` 4), the four falsifiable properties (P1 allowlist-membership · P2 cross-binding parity · P3 recovery-denylist empty-intersection · P4 no-raw-SQL), the honest-green plan for not-yet-live `read.*`, touch-points | 25 (AC-057a→AC-074) | 2026-06-04 |
 | `dev/design/slice-30-design.md` | Slice 30 design memo — governed `read.*` (G2 `read.get`/`read.get_many` active-only by `logical_id`; G3 `read.collection`/`read.mutations` op-store read-back with mandatory limit + after-id cursor): per-request typed reader channels (no `ReaderResponse`/Search reshape), `NodeRecord`/`OpStoreRow` shapes, get_many partial-order-preserved, not-found=`None`/`null` (NotFound→gap 31), conformance-genuinely-enforced plan, test plan | 30 (G2/G3) | 2026-06-04 |
@@ -63,8 +64,8 @@ refresh in the closing commit when you touch a doc).
 |------|---------|-------------------|--------------|
 | `dev/adr/README.md`, `ADR-0.6.0-decision-index.md` | ADR index | — | (tree) |
 | `dev/adr/ADR-0.8.0-supersede-five-verb-surface-cap.md` | Supersede AC-057a's five-verb cap → governed surface; **status: SIGNED/accepted** (Q1–Q5 = A1/B1/amend/confirm/**BIND-RUST**; Rust pin → Slice 27) | advanced 0.b; signed 2026-06-03; executed at 25; gates 30 | 2026-06-03 |
-| `dev/adr/ADR-0.8.0-canonical-identity-substrate.md` | NEW (0.a) — canonical identity substrate (logical_id+superseded_at, Option 2A) | authored at 0.a; gates 15 | 2026-06-02 |
-| `dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md` | Retrieval+identity ADR (Q1 table-stakes, Q3 RRF compat); gates Slice 10 | gates 10 | 2026-06-02 |
+| `dev/adr/ADR-0.8.0-canonical-identity-substrate.md` | NEW (0.a) — canonical identity substrate (logical_id+superseded_at, Option 2A); Decision 5 (Slice 31) re-scopes active uniqueness to `logical_id` alone | authored at 0.a; gates 15; amended by 31 | 2026-06-05 |
+| `dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md` | Retrieval+identity ADR (Q1 table-stakes, Q3 RRF compat); gates Slice 10; Q2/Q4 amended by Slice 31 (`logical_id`-alone identity; edges DO supersede) | gates 10; amended by 31 | 2026-06-05 |
 | `dev/adr/ADR-0.8.0-embedder-identity-change-workflow.md` | Embedder-identity change workflow | — | (tree) |
 | `dev/adr/ADR-0.8.0-graph-traversal-scope.md` *(planned)* | F1/G5/G6 graph traversal scope | **35** produces | n/a (Slice 35) |
 | `dev/adr/ADR-0.8.0-filter-grammar.md` *(planned)* | G4/F3 closed typed filter enum (shared with G10) | **35** produces | n/a (Slice 35) |
@@ -76,7 +77,7 @@ refresh in the closing commit when you touch a doc).
 
 | Path | Purpose | Owning slice / AC | Last-touched |
 |------|---------|-------------------|--------------|
-| `dev/plans/0.8.0-implementation.md` | **Authoritative slice contracts** (objective/subagents/lifecycle/success per slice 0–40) | the plan itself | 2026-06-03 |
+| `dev/plans/0.8.0-implementation.md` | **Authoritative slice contracts** (objective/subagents/lifecycle/success per slice 0–40); Slice 15/20 active-identity language re-scoped to `logical_id` alone by Slice 31 | the plan itself | 2026-06-05 |
 | `dev/plans/0.8.0-plan.md` | **Mod-5 ladder + reserved-gap policy + Immediate-Next-Slice pointer + Slice-0/5/10 CLOSED blocks** | 0 authors; every slice advances the pointer | 2026-06-03 |
 | `dev/plans/runs/STATUS-0.8.0.md` | **Live state board** (nine §12.5 sections + X1/X2/X3 column + witness + harness contract) | 0 authors; every slice updates at close | 2026-06-03 |
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
@@ -96,8 +97,8 @@ refresh in the closing commit when you touch a doc).
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
 | `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
-| `docs/reference/python-api.md` | Python API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-04 |
-| `docs/reference/typescript-api.md` | TypeScript API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`) | 2026-06-04 |
+| `docs/reference/python-api.md` | Python API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logical_id`-alone supersession) | 2026-06-05 |
+| `docs/reference/typescript-api.md` | TypeScript API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logicalId`-alone supersession) | 2026-06-05 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only) | preserved | 2026-05-17 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |

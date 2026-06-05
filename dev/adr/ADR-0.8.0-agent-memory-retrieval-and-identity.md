@@ -126,10 +126,11 @@ Two guardrails if 1A is accepted:
 ## Question 2 — design G0 (identity substrate) bi-temporal-aware
 
 `dev/roadmap/0.8.0.md:84-92` already scopes the canonical-identity substrate:
-additive `logical_id`, `superseded_at`, partial unique index on
-`(logical_id, kind)` excluding superseded rows, writer takes `logical_id`,
-supersession writes `superseded_at` on the prior row in-txn. A separate
-`ADR-0.8.0-canonical-identity-substrate` is to be drafted.
+additive `logical_id`, `superseded_at`, partial unique index on `logical_id`
+(scoped to `logical_id` ALONE — see substrate ADR **Decision 5**, HITL-SIGNED
+2026-06-05; `kind` is payload/classification, not identity) excluding superseded
+rows, writer takes `logical_id`, supersession writes `superseded_at` on the prior
+row in-txn. A separate `ADR-0.8.0-canonical-identity-substrate` is to be drafted.
 
 The research (`0.8.0-agent-memory-fit.md` §8b, Pillar 3) shows the **world-class
 longitudinal-understanding mechanism is a bi-temporal model**: facts/edges carry
@@ -254,8 +255,14 @@ differs from the Options/Recommendation prose above.
    contract in `dev/plans/0.8.0-implementation.md` has been reconciled to drop the knob.)
 4. **Q4 = edges too.** Both `canonical_nodes` **and** `canonical_edges` carry
    `logical_id` + `superseded_at` in the 0.8.0 substrate (matches the substrate ADR's
-   authorized delta). **Schema-only** — 0.8.0 implements only *node* supersession
-   behavior; reserving the edge columns keeps later edge-temporal additive.
+   authorized delta). 0.8.0 implements **transaction-time supersession on edges as
+   well as nodes** (tombstone-then-insert in `commit_batch`, keyed by `logical_id`
+   alone — substrate ADR Decisions 3 + 5, pinned by `pr_g0_identity.rs`
+   `s15_edge_supersession_*` + `s31_edge_kind_change_reingest_supersedes`). What is
+   **reserved** (not done in 0.8.0) is edge *valid-time* invalidation (G11 full) —
+   the `t_valid`/`t_invalid` column pair. (Corrected 2026-06-05: the earlier
+   "schema-only / node-only behavior" wording understated the code, which DOES
+   supersede edges.)
 5. **Q5 = advisory.** §8d remains research-backed **advisory input**; the implementation
    plan + ADRs stay the authoritative scope (no second source of truth to keep in lockstep).
 

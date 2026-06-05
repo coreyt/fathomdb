@@ -130,12 +130,14 @@ Caller (Rust / Python / TS)
     - Allocate one write-commit cursor per row (monotonic); c_w is the
       batch high-water cursor
     - G0 identity (ADR-0.8.0-canonical-identity-substrate): a Node/Edge
-      carrying logical_id=Some supersedes the prior active version of
-      (logical_id, kind) — tombstone-then-insert in THIS SAME TX
-      (UPDATE …superseded_at=c_row WHERE logical_id=? AND kind=? AND
+      carrying logical_id=Some supersedes the prior active version of that
+      logical_id (scoped to logical_id ALONE — Decision 5, HITL-SIGNED
+      2026-06-05; kind is payload/relationship-type, not identity, so a
+      kind-change re-ingest SUPERSEDES, never forks) — tombstone-then-insert
+      in THIS SAME TX (UPDATE …superseded_at=c_row WHERE logical_id=? AND
       superseded_at IS NULL; THEN INSERT the new active row). A reader
       never sees two active rows nor zero mid-supersession (the partial
-      UNIQUE INDEX (logical_id, kind) WHERE superseded_at IS NULL enforces
+      UNIQUE INDEX (logical_id) WHERE superseded_at IS NULL enforces
       it). logical_id=None is a plain insert (NULL, NULL-safe) — behavior
       identical to 0.7.x. Invalidate-not-delete: the superseded row is
       retained with a non-NULL superseded_at tombstone.

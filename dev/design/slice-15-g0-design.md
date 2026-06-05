@@ -3,6 +3,13 @@
 > KEYSTONE. Schema `step_id 12` / `SCHEMA_VERSION 11→12`. Consumes
 > `dev/adr/ADR-0.8.0-canonical-identity-substrate.md` (✅ SIGNED 2026-06-03).
 > Transaction-time only (Option 2A): valid-time / G11 / G5 are reserved, additive-later.
+>
+> **Amended by Slice 31 (2026-06-05):** active-row uniqueness is scoped to
+> `logical_id` ALONE (substrate ADR **Decision 5**, HITL-SIGNED), not the compound
+> `(logical_id, kind)` this memo originally described. `kind` is payload/
+> classification (nodes) / relationship-type (edges), never identity. Step-12 was
+> amended in place (no `SCHEMA_VERSION` bump). The `(logical_id, kind)` references
+> below read as `logical_id` alone.
 
 ## 1. What lands
 
@@ -13,7 +20,8 @@ Two additive nullable columns on **both** `canonical_nodes` and `canonical_edges
 - `superseded_at INTEGER` — the transaction-time supersession tombstone. NULL =
   currently-active row; non-NULL = the cursor at which a newer version superseded it.
 
-Plus, per table, a partial UNIQUE INDEX `(logical_id, kind) WHERE superseded_at IS NULL`
+Plus, per table, a partial UNIQUE INDEX `(logical_id) WHERE superseded_at IS NULL`
+(scoped to `logical_id` alone — Decision 5; amended in place by Slice 31)
 and the folded G4/G5 read indexes (`canonical_nodes(kind)`, `canonical_edges(from_id)`,
 `canonical_edges(to_id)`). All in one migration step (one accretion offset budget).
 
@@ -34,16 +42,16 @@ Supersession happens inside `commit_batch`, in the single `BEGIN IMMEDIATE … C
 that carries the whole write batch. When a Node/Edge write carries `logical_id = Some(lid)`:
 
 ```sql
--- 1. tombstone the prior active version (no-op if none):
+-- 1. tombstone the prior active version (no-op if none) — keyed by logical_id alone (Decision 5):
 UPDATE <canonical_table>
    SET superseded_at = :cursor
- WHERE logical_id = :lid AND kind = :kind AND superseded_at IS NULL;
+ WHERE logical_id = :lid AND superseded_at IS NULL;
 -- 2. insert the new active row (logical_id set, superseded_at implicitly NULL):
 INSERT INTO <canonical_table>(write_cursor, kind, …, logical_id) VALUES(:cursor, :kind, …, :lid);
 ```
 
 Because both statements run in the same transaction, a reader **never** observes two
-active rows for one `(logical_id, kind)` (the partial-unique index would reject that
+active rows for one `logical_id` (the partial-unique index would reject that
 structurally) nor zero rows mid-supersession. The ordering is tombstone-**then**-insert:
 if it were insert-then-tombstone, the insert would momentarily create a second active row
 and trip the partial-unique index. Idempotent: re-writing the same `logical_id` supersedes
@@ -117,7 +125,9 @@ Engine (`fathomdb-engine/tests/pr_g0_identity.rs`, NEW):
 - (a) idempotent supersession upsert — re-writing the same `logical_id` leaves exactly one
   active row;
 - (b) **partial-unique NULL-safety** — many NULL-`logical_id` rows coexist active;
-- (c) two active rows with the same non-NULL `(logical_id, kind)` collide (constraint fires);
+- (c) two active rows with the same non-NULL `logical_id` collide (constraint fires);
+  Slice 31 inverts the tail: a different `kind` for the same active `logical_id` is now
+  REJECTED too (Decision 5 — `logical_id`-alone), and adds `s31_*_kind_change_reingest_supersedes`;
 - (d) a superseded row + a new active row for the same `logical_id` coexist;
 - (e) `row_cursors` is 1:1 with the batch (Rust; X1 mirrors Py/TS);
 - (f) Pack-1/legacy upgrade — open a pre-step-12 DB, confirm columns + indexes land and old

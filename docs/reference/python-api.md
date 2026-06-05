@@ -55,10 +55,12 @@ writer thread has accepted the batch.
   Defaults to `[]`. A node/edge item may carry an optional
   `logical_id` (`str`): supplying it makes the write a
   transaction-time **supersession** of the prior active version of
-  that `(logical_id, kind)` — the prior version is tombstoned and the
-  new version becomes active (invalidate-not-delete). Omitting it (the
-  default) is a plain insert with a NULL `logical_id` and never
-  collides with other NULL rows.
+  that `logical_id` — the prior version is tombstoned and the
+  new version becomes active (invalidate-not-delete). Active-row
+  identity is scoped to `logical_id` alone, so re-ingesting the same
+  `logical_id` with a different `kind` supersedes (it does not create a
+  second active row). Omitting it (the default) is a plain insert with a
+  NULL `logical_id` and never collides with other NULL rows.
 - Returns: `WriteReceipt(cursor: int, row_cursors: tuple[int, ...],
   dangling_edge_endpoints: int)`. `cursor` advances monotonically across
   writes (the batch high-water cursor); `row_cursors` are the per-row
