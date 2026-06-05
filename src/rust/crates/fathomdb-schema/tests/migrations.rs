@@ -249,18 +249,30 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
         assert_eq!(index_present(idx), 1, "index {idx} must exist after step 12");
     }
 
-    // The active-row uniqueness index must be partial (WHERE superseded_at IS NULL).
-    let partial_sql: String = conn
-        .query_row(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND name='canonical_nodes_logical_active_idx'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(
-        partial_sql.contains("superseded_at IS NULL"),
-        "the active index must be partial on superseded_at IS NULL, got: {partial_sql}"
-    );
+    // The active-row uniqueness index must be partial (WHERE superseded_at IS NULL)
+    // and — per Decision 5 (HITL-SIGNED 2026-06-05) — scoped to `logical_id` ALONE
+    // (NOT the pre-Slice-31 compound `(logical_id, kind)`), on BOTH tables.
+    for idx_name in ["canonical_nodes_logical_active_idx", "canonical_edges_logical_active_idx"] {
+        let active_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name=?1",
+                [idx_name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            active_sql.contains("superseded_at IS NULL"),
+            "{idx_name} must be partial on superseded_at IS NULL, got: {active_sql}"
+        );
+        assert!(
+            active_sql.contains("(logical_id)"),
+            "{idx_name} must be scoped to logical_id alone (Decision 5), got: {active_sql}"
+        );
+        assert!(
+            !active_sql.contains("kind"),
+            "{idx_name} must NOT include kind in its active-uniqueness scope, got: {active_sql}"
+        );
+    }
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(SCHEMA_VERSION, 12);

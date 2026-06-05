@@ -151,3 +151,29 @@ fn read_get_rides_the_reader_pool_under_concurrency() {
     let _ = Duration::from_millis(0);
     engine.close().unwrap();
 }
+
+/// Slice 30 [P2] resolved by the Slice 31 substrate (Decision 5, HITL-SIGNED
+/// 2026-06-05): after a `kind`-change re-ingest of one `logical_id`, `read.get`
+/// returns the SINGLE active record DETERMINISTICALLY — with ZERO read-API change.
+/// Pre-Slice-31 the compound `(logical_id, kind)` key let the kind-change fork a
+/// second active row, so the `logical_id`-keyed collapse map returned an arbitrary
+/// one (lossy + nondeterministic). With `logical_id`-alone active uniqueness, the
+/// `WHERE logical_id = ? AND superseded_at IS NULL` query yields ≤1 row.
+#[test]
+fn read_get_is_deterministic_after_a_kind_change_reingest() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "get_kind_change")).expect("open");
+    opened.engine.write(&[node("fact", "v1", Some("L1"))]).expect("write kind=fact");
+    opened.engine.write(&[node("note", "v2", Some("L1"))]).expect("re-ingest kind=note");
+
+    // Repeated reads must all return the SAME single active record (the latest,
+    // kind=note), with no ambiguity from a forked second active row.
+    for _ in 0..8 {
+        let got = opened.engine.read_get("L1").expect("read_get").expect("present");
+        assert_eq!(got.logical_id, "L1");
+        assert_eq!(got.kind, "note", "read.get returns the single active (kind-changed) version");
+        assert_eq!(got.body, "v2");
+    }
+
+    opened.engine.close().unwrap();
+}
