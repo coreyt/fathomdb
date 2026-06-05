@@ -398,6 +398,17 @@ the worktree at slice close.
   intended model* (dual-graph: reified facts + provenance on the binary substrate) + a *future HITL
   product decision* on natural-key upsert, with codex's pro/con/tradeoff table (4 edge-model options) as
   the decision basis. Prompt now resolves the FULL intended graph model, not just addressing.
+- **CORRECTED + research cycle launched 2026-06-05.** A doc-verification pass found codex conflated two
+  reification strategies: FathomDB's OWN docs model facts as **EDGES** (Graphiti: "the superseded edge's
+  `t_invalid`" — `retrieval-ADR:135-159`; `agent-memory-fit:360`), NOT as reified **nodes** ("reified"/
+  "fact node" appear nowhere). So model-shape is a genuine **THREE-way** choice — (1) binary edges,
+  (2) **temporal fact-EDGES (Graphiti — doc-aligned)**, (3) reified fact-NODES (GraphRAG/research-note) —
+  not the two-way codex framed. Slice 32 prompt Q0 + framing updated to the three-way (doc-cited); don't
+  let it default to fact-as-node. **Launched a `claude` xhigh (max-depth) research cycle** to resolve the
+  model-shape + addressing decisions coherently — precise characterization of each reification (Graphiti
+  fact-as-edge vs GraphRAG fact-as-node vs hyperedge) + pro/con/tradeoff + a reconciled recommendation
+  with a rigorous substrate-now-vs-0.8.x split + explicit HITL product-decision points. Output feeds the
+  eventual Slice 32 ADR / the HITL call.
 
 ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `logical_id` identity model)
 
