@@ -1,11 +1,12 @@
 # ADR-0.8.0 — Graph model & edge addressing: one neutral substrate for corpus + memory
 
-> **Status:** PROPOSED (design-ADR; Slice 32 deliverable). Read-only evaluation —
-> no engine/schema change is proposed for 0.8.0. Resolves the *intended graph
-> model* (model shape + edge addressing) so the deferred G4–G7 graph verbs build
-> on a decided foundation. Does **not** re-open or re-edit the HITL-signed Slice 31
-> identity decision (`logical_id`-alone); any recommended change is a future
-> HITL-gated follow-up.
+> **Status:** ✅ **ACCEPTED** (design-ADR; Slice 32 deliverable). **H1 + H3
+> HITL-SIGNED 2026-06-05**; H2/H4/H5/H6 and all graph verbs/columns/code deferred
+> to 0.8.x (decided when each is built). Read-only evaluation — **no engine/schema
+> change in 0.8.0**. Resolves the *intended graph model* (model shape + edge
+> addressing) so the deferred G4–G7 graph verbs build on a decided foundation.
+> Does **not** re-open or re-edit the HITL-signed Slice 31 identity decision
+> (`logical_id`-alone); any future change is a separate HITL-gated follow-up.
 >
 > **Decides:** the intended graph model is a **single ontology-neutral binary
 > property-graph substrate** that first-classes **both** a corpus ontology
@@ -302,7 +303,10 @@ release is the expensive, hard-to-reverse mistake, the world-class move is to
 1. **Reserve edge-enrichment columns** (`body`/`text`, `valid_at`/`invalid_at`,
    `confidence`) as additive-now in the substrate ADR's data model — a **prose
    reservation**, not a column. Option 2A already certifies additivity; v0.5.6
-   proves portability.
+   proves portability. *(Naming: the valid-time pair `valid_at`/`invalid_at` used
+   here for Graphiti alignment is the **same** reserved bi-temporal pair the
+   substrate ADR names canonically as `t_valid`/`t_invalid` (Decision 1); the
+   substrate ADR is the schema-contract authority for the column names.)*
 2. **First-class edge-projectability as an intended capability** — fact-edges must
    be embeddable/FTS-able for per-fact semantic recall (R8). Design the projection
    seam to admit an edge source even if 0.8.0 ships node-only projection.
@@ -328,19 +332,24 @@ v0.5.6's `(source_logical_id, kind, superseded_at)` did); opaque-id addressing
 (hybrid may add MERGE ergonomics later without changing these verbs); and G7
 covers edges for the memory ontology.
 
-### HITL product-decision points (the human's call; recommended defaults in bold)
+### HITL product-decision points — RULING (2026-06-05)
 
-| # | Decision | Options | Default |
+| # | Decision | Options | Ruling |
 |---|---|---|---|
-| H1 | Intended model | binary / **ontology-neutral substrate first-classing BOTH corpus + memory, fact-on-edge recommended for memory** / fact-node | **neutral-both** |
-| H2 | Addressing for 0.8.0 | **opaque-id** / natural-key / hybrid-later | **opaque-id now; hybrid future ADR** |
-| H3 | Reserve edge-enrichment now? | **prose-reserve** / say nothing | **prose-reserve** (zero-cost, prevents reshape) |
-| H4 | Provenance | **scalar now; traversable later** / traversable now | **scalar now** |
-| H5 | G7 history scope | nodes-only / **nodes + edges** | **nodes + edges** (dual-graph needs it) |
-| H6 | Adopt fact-nodes now? | adopt / **escape hatch** | **escape hatch** |
+| H1 | Intended model | binary / **ontology-neutral substrate first-classing BOTH corpus + memory, fact-on-edge recommended for memory** / fact-node | ✅ **SIGNED: neutral-both** |
+| H3 | Reserve edge-enrichment now? | **prose-reserve** / say nothing | ✅ **SIGNED: reserve now** (`valid_at`/`invalid_at`/`body`/`confidence` on edges are reserved-additive) |
+| H2 | Addressing for 0.8.0 | **opaque-id** / natural-key / hybrid-later | **DEFERRED 0.8.x:** opaque-id stands for 0.8.0; hybrid is a future write-API ADR |
+| H4 | Provenance | **scalar now; traversable later** / traversable now | **DEFERRED 0.8.x:** scalar `source_id` stands; traversable provenance edges later |
+| H5 | G7 history scope | nodes-only / **nodes + edges** | **DEFERRED 0.8.x:** decided when G7 is built (intent: edge-inclusive) |
+| H6 | Adopt fact-nodes now? | adopt / **escape hatch** | **DEFERRED 0.8.x:** fact-node stays a representable escape hatch, adopt on n-ary demand |
 
-None of H1–H6 changes signed Slice 31; only H3 has a (prose-only) substrate-now
-footprint.
+**H1 + H3 are HITL-SIGNED (2026-06-05).** Neither changes signed Slice 31. H1 is a
+documentation/intent ruling (engine is already ontology-neutral — zero code). H3 is
+a **prose reservation** (the only substrate-now item) and is consistent with — and
+re-affirms — the signed retrieval-ADR Option 2A
+(`ADR-0.8.0-agent-memory-retrieval-and-identity.md:151-159`), which already certifies
+the bi-temporal edge-column shape as additive. **No 0.8.0 code or schema change
+follows from this ruling.** The deferred items are ruled on when their slice is built.
 
 ---
 

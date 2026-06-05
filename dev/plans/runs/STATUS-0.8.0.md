@@ -31,9 +31,11 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Current: NONE active — Slices 30 + 31 both CLOSED 2026-06-05. Next action: HITL decides whether to
-spawn the USER-spawned Slice 32 (graph-lens identity evaluation) before treating the identity model as
-fully settled, or proceed toward Slice 40 (final verification).**
+**Current: NONE active — Slices 30 + 31 + 32 all CLOSED 2026-06-05. Identity model is now settled
+through BOTH the point-lookup lens (Slice 31, `logical_id`-alone) AND the graph lens (Slice 32: the
+graph-model ADR confirms `logical_id`-alone holds for 0.8.0 with opaque-id edge addressing; the
+fact-on-edge enrichment is reserved-additive, not built). Next action: HITL picks from the reserved-gap
+band (27 Rust pin · 33 cursor harden · 34 CLI readback) or proceeds to Slice 40 (final verification).**
 
 **Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
 `[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
@@ -50,12 +52,28 @@ reingest_supersedes` + inverted `s15` unique-collision FAILED under the compound
 `5c1f45a`. **Zero read-API/binding/SDK change** (Slice 30 `read.*` byte-unchanged); recovery suites
 byte-frozen; pyright 0/0; pins green (Slice 10 Search byte-identity, Slice 20 G8 `pr_g8` 8/0, Slice 30
 `pr_g2` 6/0 / `pr_g3` 6/0). Review: `runs/0.8.0-slice-31-review-20260605T030242Z.md`.
-**⚠️ Open (deliberately reserved):** the re-scope was reasoned through the node/point-lookup lens and
-applied uniformly; the **edge half is flagged for graph-lens review in Slice 32** (a multigraph may make
-multiple active `kind`s between one endpoint pair legitimate — see §7 + `dev/plans/prompts/0.8.0-slice-32.md`).
-**Pointer:** reserved-gap band — **Slice 32 (graph-eval, HITL-directed, USER-spawned)** recommended next;
-**Slice 27** (Rust pin) · **33** (cursor hardening) · **34** (CLI op-store read-back) reserved; **Slice 40**
-(final verification + release readiness) is the mainline terminus.
+**Edge-half graph-lens review — RESOLVED by Slice 32 (below):** the multigraph concern was evaluated and
+the verdict is that `logical_id`-alone holds for 0.8.0 (active multigraph is already representable;
+edge addressing stays opaque-id), with fact-on-edge enrichment reserved-additive. No change to signed
+Slice 31. **Pointer:** reserved-gap band — **Slice 27** (Rust pin) · **33** (cursor hardening) · **34**
+(CLI op-store read-back) reserved; **Slice 40** (final verification + release readiness) is the mainline terminus.
+
+- **Slice 32 — ✅ CLOSED 2026-06-05 (design-ADR; ADR ACCEPTED, H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed).**
+  Deliverable `dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md` resolves FathomDB's intended graph
+  model: **one ontology-neutral binary property-graph substrate** first-classing BOTH corpus (GraphRAG)
+  and memory (Graphiti fact-on-edge) ontologies; **opaque-id edge addressing** for 0.8.0 (hybrid/natural-key
+  a future write-API ADR); **fact-on-edge** as the memory end-state with a fact-on-node escape hatch;
+  edge-enrichment (`body`/`confidence` + valid-time `t_valid`/`t_invalid`) + edge-projectability +
+  edge-inclusive G7 **reserved-additive**. **Read-only — no 0.8.0 engine/schema change**; does NOT re-open
+  signed Slice 31. HITL ruling 2026-06-05: **H1 (neutral-both) + H3 (reserve edge-enrichment) SIGNED**;
+  H2/H4/H5/H6 deferred to 0.8.x (decided when each is built). codex §9 (base `bf3ecdd`): 2×[P2] — (1)
+  valid-time column-name clash (`valid_at`/`invalid_at` vs Decision-1 `t_valid`/`t_invalid`) → harmonized
+  to `t_valid`/`t_invalid` (Graphiti name noted as alias); (2) Slice-32 status row stale → this closeout
+  fixes it. No [P1]; the substantive resolution (model shape, verdict, Slice-31 consistency) passed clean.
+  Process: drafted by a user-directed research agent + orchestrator-reviewed (in lieu of a worktree slice;
+  [[dont-dismiss-user-directed-subagents]]). Reviews: `runs/0.8.0-slice-32-review-20260605T203816Z.md` +
+  prompt-review `runs/0.8.0-slice-32-codex-prompt-review-20260605T130928Z.md`. Foundation for the Slice 35
+  graph ADRs.
 
 - **Slice 30 — ✅ CLOSED 2026-06-05 (PASS; the single codex [P2] resolved by Slice 31, zero read-API
   change)** — G2/G3 read verbs merged to `main` @ `52ceab3`; functionally green (g2/g3/Search-pin/parity/
@@ -230,7 +248,7 @@ applicable to this slice's work-type.
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
-| **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ⏳ FINALIZED PROMPT (2026-06-05) — ready for USER to spawn | 31 | n/a | ⏳ | ⏳ (eval ADR/memo) |
+| **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 

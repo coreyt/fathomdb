@@ -238,6 +238,18 @@ disposable** (pre-release substrate correction, no production data). A new step-
 drop/recreate would additionally FAIL the UNIQUE index creation on any DB that
 already has identity-forked duplicate active rows — explicitly out of scope.
 
+> **Reserved-additive edge enrichment (Slice 32 H3, HITL-SIGNED 2026-06-05).** Per
+> [`ADR-0.8.0-graph-model-and-edge-addressing.md`](./ADR-0.8.0-graph-model-and-edge-addressing.md)
+> and consistent with retrieval-ADR Option 2A, the fact-on-edge / temporal-memory
+> enrichment columns on `canonical_edges` — `body`/`confidence` plus the valid-time
+> pair **`t_valid`/`t_invalid`** (the *same* bi-temporal columns Decision 1 reserves
+> above; the graph-model ADR refers to them by their Graphiti name
+> `valid_at`/`invalid_at` — identical reserved columns, named canonically here as the
+> schema-contract authority) — are **reserved-additive**: any future schema-touching slice MUST keep
+> them addable as a pure additive `ALTER` (accretion-exemption ADD COLUMN), never a
+> reshape of `canonical_edges`. No column is added in 0.8.0; this is a design
+> commitment for the load-bearing edge table, not a migration.
+
 ---
 
 ## AUTHORIZED Slice-15 schema delta (verbatim — Slice 15 executes this exactly)
