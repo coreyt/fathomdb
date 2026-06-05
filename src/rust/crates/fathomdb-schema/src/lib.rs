@@ -282,14 +282,18 @@ pub const MIGRATIONS: &[Migration] = &[
     // nullable columns on BOTH canonical tables: `logical_id TEXT` (stable
     // cross-re-ingestion identity; NULL = legacy/own-identity row) and
     // `superseded_at INTEGER` (transaction-time tombstone; NULL = active row).
-    // A partial UNIQUE INDEX `(logical_id, kind) WHERE superseded_at IS NULL`
-    // per table enforces one active version per logical id — NULL-safe, so the
-    // many legacy NULL-logical_id rows never collide (SQLite treats each NULL as
-    // distinct; load-bearing). The folded G4/G5 read indexes
+    // A partial UNIQUE INDEX `(logical_id) WHERE superseded_at IS NULL` per table
+    // enforces one active version per logical id — scoped to `logical_id` ALONE
+    // (Decision 5, HITL-SIGNED 2026-06-05; `kind` is payload/classification on
+    // nodes and relationship-type on edges, NEVER an identity-scope component).
+    // NULL-safe, so the many legacy NULL-logical_id rows never collide (SQLite
+    // treats each NULL as distinct; load-bearing). The folded G4/G5 read indexes
     // (`canonical_nodes(kind)`, `canonical_edges(from_id)/(to_id)`) ride this one
     // accretion offset budget. Pure additive ALTER (no DROP) → the exemption
     // marker is REQUIRED (the accretion guard rejects ADD COLUMN without it);
     // legacy rows read NULL with no data migration / re-open (in-place ALTER).
+    // Step-12 amended IN PLACE (Slice 31, no SCHEMA_VERSION bump): already-migrated
+    // local v12 DBs keep the old compound index until rebuilt (HITL: disposable).
     Migration {
         step_id: 12,
         sql: "-- MIGRATION-ACCRETION-EXEMPTION: G0 transaction-time identity substrate
@@ -298,9 +302,9 @@ pub const MIGRATIONS: &[Migration] = &[
               ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
               ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
               CREATE UNIQUE INDEX IF NOT EXISTS canonical_nodes_logical_active_idx
-                  ON canonical_nodes(logical_id, kind) WHERE superseded_at IS NULL;
+                  ON canonical_nodes(logical_id) WHERE superseded_at IS NULL;
               CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
-                  ON canonical_edges(logical_id, kind) WHERE superseded_at IS NULL;
+                  ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
               CREATE INDEX IF NOT EXISTS canonical_nodes_kind_idx
                   ON canonical_nodes(kind);
               CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx

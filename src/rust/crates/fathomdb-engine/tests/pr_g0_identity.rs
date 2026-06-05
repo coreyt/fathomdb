@@ -88,7 +88,7 @@ fn s15_supersession_is_idempotent_one_active_version() {
 /// (a-edges) — supersession works identically on `canonical_edges` (Decision 3 /
 /// Q4: edges carry the temporal columns, not nodes only). Re-writing the same
 /// edge `logical_id` tombstones the prior active edge and leaves exactly one
-/// active, keyed by `(logical_id, kind)`.
+/// active, keyed by `logical_id` alone (Decision 5, HITL-SIGNED 2026-06-05).
 #[test]
 fn s15_edge_supersession_is_idempotent_one_active_version() {
     let dir = TempDir::new().unwrap();
@@ -142,9 +142,12 @@ fn s15_null_logical_id_rows_never_collide() {
     assert_eq!(active_null, 8, "all NULL-logical_id rows must coexist active (NULL-safety)");
 }
 
-/// (c) — two active rows with the same non-NULL `(logical_id, kind)` collide: the
+/// (c) — two active rows with the same non-NULL `logical_id` collide: the
 /// partial-unique-active index fires structurally. (The engine's
 /// tombstone-then-insert never produces this; we exercise the index directly.)
+/// Decision 5 (HITL-SIGNED 2026-06-05): active uniqueness is scoped to
+/// `logical_id` ALONE — a *different* `kind` for the same active `logical_id` is
+/// NO LONGER a distinct active row; it collides too.
 #[test]
 fn s15_partial_unique_active_index_rejects_two_active_versions() {
     let dir = TempDir::new().unwrap();
@@ -152,34 +155,157 @@ fn s15_partial_unique_active_index_rejects_two_active_versions() {
     let conn = Connection::open(&path).expect("open sqlite");
     migrate(&conn).expect("migrate to head");
 
-    // First active row for (DUP, doc): accepted.
+    // First active row for logical_id DUP: accepted.
     conn.execute(
         "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) VALUES(1, 'doc', 'a', 'DUP')",
         [],
     )
     .expect("first active row");
 
-    // Second active row for the SAME (logical_id, kind): rejected by the index.
+    // Second active row for the SAME logical_id: rejected by the index.
     let err = conn.execute(
         "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) VALUES(2, 'doc', 'b', 'DUP')",
         [],
     );
-    assert!(err.is_err(), "two active rows for one (logical_id, kind) must be rejected");
+    assert!(err.is_err(), "two active rows for one logical_id must be rejected");
 
-    // But a tombstoned (superseded_at NOT NULL) row for the same key is allowed.
+    // But a tombstoned (superseded_at NOT NULL) row for the same logical_id is allowed.
     conn.execute(
         "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id, superseded_at)
          VALUES(3, 'doc', 'c', 'DUP', 2)",
         [],
     )
-    .expect("a superseded row for the same key must be allowed alongside the active one");
+    .expect("a superseded row for the same logical_id must be allowed alongside the active one");
 
-    // A different kind for the same logical_id is a distinct active row.
-    conn.execute(
+    // Decision 5 (2026-06-05): a DIFFERENT kind for the same active logical_id is
+    // now ALSO rejected — `kind` is no longer an identity-scope component, so the
+    // `logical_id`-alone partial-unique-active index fires. (Inverted from the
+    // pre-Slice-31 behavior, which treated it as a distinct active key.)
+    let err_diff_kind = conn.execute(
         "INSERT INTO canonical_nodes(write_cursor, kind, body, logical_id) VALUES(4, 'note', 'd', 'DUP')",
         [],
-    )
-    .expect("a different kind is a distinct active key");
+    );
+    assert!(
+        err_diff_kind.is_err(),
+        "a different kind for the same active logical_id must now be rejected (logical_id-alone)"
+    );
+}
+
+/// (s31-node) — a `kind`-change re-ingest of the same `logical_id` is a true
+/// SUPERSESSION, not a fork (Decision 5, HITL-SIGNED 2026-06-05). Writing
+/// `logical_id="L1"` first as `kind="fact"` then as `kind="note"` must leave
+/// EXACTLY ONE active row (the second, `note`), with the first (`fact`) retained
+/// but tombstoned. Under the pre-Slice-31 compound `(logical_id, kind)` key this
+/// FAILS (two active rows) — that failure is the fork bug this slice fixes.
+#[test]
+fn s31_node_kind_change_reingest_supersedes() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "node_kind_change");
+    {
+        let opened = Engine::open(&path).expect("open");
+        opened.engine.write(&[node("fact", "v1", Some("L1"))]).expect("write kind=fact");
+        opened.engine.write(&[node("note", "v2", Some("L1"))]).expect("re-ingest kind=note");
+        opened.engine.close().unwrap();
+    }
+
+    let conn = Connection::open(&path).expect("open sqlite");
+
+    // Invalidate-not-delete: both versions retained.
+    let total: u64 = conn
+        .query_row("SELECT COUNT(*) FROM canonical_nodes WHERE logical_id = 'L1'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(total, 2, "both kind versions retained (invalidate-not-delete)");
+
+    // EXACTLY ONE active row for L1 — the kind-change re-ingest SUPERSEDED (no fork).
+    let active: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_nodes WHERE logical_id = 'L1' AND superseded_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(active, 1, "a kind-change re-ingest must SUPERSEDE (one active row), not fork");
+
+    // The single active row is the second write (kind=note, body=v2).
+    let (active_kind, active_body): (String, String) = conn
+        .query_row(
+            "SELECT kind, body FROM canonical_nodes WHERE logical_id = 'L1' AND superseded_at IS NULL",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(active_kind, "note", "the active row is the most-recent (kind-changed) version");
+    assert_eq!(active_body, "v2");
+
+    // The first version (kind=fact) is retained but tombstoned (superseded_at set).
+    let first_tombstoned: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_nodes
+             WHERE logical_id = 'L1' AND kind = 'fact' AND superseded_at IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(first_tombstoned, 1, "the prior (kind=fact) version must be tombstoned, not active");
+}
+
+/// (s31-edge) — identical to (s31-node) but on `canonical_edges`: a `kind`-change
+/// re-ingest of the same edge `logical_id` SUPERSEDES rather than forks
+/// (Decision 5). One active edge after the re-ingest; the prior is tombstoned.
+#[test]
+fn s31_edge_kind_change_reingest_supersedes() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "edge_kind_change");
+    {
+        let opened = Engine::open(&path).expect("open");
+        opened.engine.write(&[edge("rel", "a", "b", Some("E1"))]).expect("write kind=rel");
+        opened
+            .engine
+            .write(&[edge("mentions", "a", "b", Some("E1"))])
+            .expect("re-ingest kind=mentions");
+        opened.engine.close().unwrap();
+    }
+
+    let conn = Connection::open(&path).expect("open sqlite");
+
+    let total: u64 = conn
+        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE logical_id = 'E1'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(total, 2, "both edge kind versions retained (invalidate-not-delete)");
+
+    let active: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_edges WHERE logical_id = 'E1' AND superseded_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        active, 1,
+        "an edge kind-change re-ingest must SUPERSEDE (one active row), not fork"
+    );
+
+    let active_kind: String = conn
+        .query_row(
+            "SELECT kind FROM canonical_edges WHERE logical_id = 'E1' AND superseded_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        active_kind, "mentions",
+        "the active edge is the most-recent (kind-changed) version"
+    );
+
+    let first_tombstoned: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_edges
+             WHERE logical_id = 'E1' AND kind = 'rel' AND superseded_at IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(first_tombstoned, 1, "the prior (kind=rel) edge must be tombstoned, not active");
 }
 
 /// (e) — `WriteReceipt.row_cursors` is 1:1 with the batch in input order, and the

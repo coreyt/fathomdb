@@ -88,8 +88,8 @@ mechanism. Because:
   arrives; valid-time filtering is a **further `AND`** on the read path, not a
   redefinition of the active row;
 - `logical_id` is the identity key under both the transaction-time-only and the
-  full bi-temporal model — its uniqueness scope (active rows per `(logical_id,
-  kind)`) is unchanged by adding valid-time;
+  full bi-temporal model — its uniqueness scope (one active row per `logical_id`;
+  see **Decision 5**) is unchanged by adding valid-time;
 - nullable additive columns never force a back-fill of, or a type change to, the
   columns landed here,
 
@@ -124,10 +124,10 @@ The mechanism in `commit_batch` is **tombstone-then-insert in a single
 transaction** (see "Op-store cascade contract" below for atomicity):
 
 ```sql
--- when logical_id is Some:
+-- when logical_id is Some (scoped to logical_id alone — Decision 5):
 UPDATE <canonical_table>
    SET superseded_at = :cursor
- WHERE logical_id = :logical_id AND kind = :kind AND superseded_at IS NULL;
+ WHERE logical_id = :logical_id AND superseded_at IS NULL;
 -- THEN
 INSERT INTO <canonical_table> (..., logical_id, superseded_at) VALUES (..., :logical_id, NULL);
 ```
@@ -154,8 +154,9 @@ exactly the second schema migration Option 2A exists to avoid. This ADR therefor
 answers the parent ADR's **Q4 = edges carry `logical_id` + `superseded_at`**.
 
 0.8.0 **implements** transaction-time supersession on edges (tombstone-then-insert
-keyed by `(logical_id, kind)`); it does **not** implement edge *valid-time*
-invalidation (G11 full) — that is the reserved column pair from Decision 1.
+keyed by `logical_id` alone — see **Decision 5**); it does **not** implement edge
+*valid-time* invalidation (G11 full) — that is the reserved column pair from
+Decision 1.
 
 ### Decision 4 — Op-store cascade contract under supersession (extended to invalidate-not-delete)
 
@@ -167,9 +168,9 @@ invalidate-not-delete semantics:
 - **Atomicity.** The `UPDATE …superseded_at` (tombstone) and the `INSERT` (new
   active row) for a given `logical_id` commit atomically with the rest of the
   write batch in `commit_batch` (single `BEGIN IMMEDIATE … COMMIT`). A reader
-  never observes two active rows for one `(logical_id, kind)`, nor zero rows
-  mid-supersession. (This is what the partial-unique-active index in Decision 1
-  enforces structurally.)
+  never observes two active rows for one `logical_id` (see **Decision 5**), nor
+  zero rows mid-supersession. (This is what the partial-unique-active index in
+  Decision 1 enforces structurally.)
 - **`latest_state` op collections** track the **current** canonical version: a
   supersession updates the latest-state projection to the new active row's
   payload in the same txn. The superseded canonical row is retained (Decision 2)
@@ -183,6 +184,59 @@ invalidate-not-delete semantics:
   reconciliation" below (reserved Slice 16). G0 leaves the active-vs-superseded
   distinction in canonical state; the read path is responsible for not surfacing
   superseded rows until the shadow tables are reconciled.
+
+### Decision 5 — active-identity scope = `logical_id` ALONE (both tables) — added by Slice 31
+
+> **Status:** ✅ **HITL-SIGNED 2026-06-05** (substrate gate). Added retroactively
+> by **Slice 31**, which amends step-12 **in place** (no `SCHEMA_VERSION` bump).
+> This corrects an **un-argued silent regression**: Slice 15 landed the active
+> uniqueness as compound `(logical_id, kind)` (Decisions 1–4 above still carry the
+> compound parentheticals in their prose — read them now as `logical_id` alone).
+
+**DECISION.** The canonical active-row uniqueness is scoped to **`logical_id`
+ALONE**, uniformly on **BOTH `canonical_nodes` AND `canonical_edges`** (uniform,
+not asymmetric). The partial-unique-active index is `ON canonical_<table>(logical_id)
+WHERE superseded_at IS NULL`; the `commit_batch` supersession `UPDATE` matches
+`WHERE logical_id = ? AND superseded_at IS NULL` (no `AND kind = ?`); the Slice
+20/G8 in-batch supersession precompute is keyed by `logical_id` alone. `kind`
+remains a **payload/classification** attribute on nodes and a **relationship-type**
+attribute on edges — it is **never** an identity-scope component again.
+
+**Why (the now-argued rationale this ADR previously lacked):**
+
+- **It fixes a silent identity-fork bug (high severity).** Under the compound key,
+  re-ingesting one `logical_id` with a *changed* `kind` matched no prior active row
+  in the supersession `UPDATE`, and the compound unique index *permitted* the
+  insert → a **second active row** for the same `logical_id` (a fork, not a
+  supersession). `logical_id`-alone makes the kind-change re-ingest a **true
+  supersession**. (Pinned by `s31_node_kind_change_reingest_supersedes` +
+  `s31_edge_kind_change_reingest_supersedes`.)
+- **It makes Slice 30 `read.get`/`get_many` deterministic with ZERO read-API
+  change** (resolves the Slice 30 codex §9 **[P2]**). The read collapse map is
+  keyed by `logical_id`; with at most one active row per `logical_id`, the
+  `WHERE logical_id = ? AND superseded_at IS NULL` query yields ≤1 row, so the
+  read is no longer lossy/nondeterministic. No read code changes.
+- **It restores internal consistency with Slice 20/G8**, which already probes
+  endpoints by `logical_id` alone (`WHERE logical_id = ? AND superseded_at IS
+  NULL`) — `canonical_edges` stores only the edge's own kind, not the endpoint
+  node's kind, so the compound write key never matched the G8 read.
+- **Edge `kind` buys no real edge capability.** Edge `logical_id` is
+  caller-provided and opaque (not derived from `(from,to)` or `kind`); an edge
+  needing multiple active relationship facts between the same endpoints uses
+  **distinct edge `logical_id`s**. Reusing one edge `logical_id` with a different
+  `kind` should supersede, not fork.
+- **v0.5.x precedent + no consumer need.** v0.5.6 keyed active uniqueness on
+  `logical_id` alone for both tables; the compound scope was the unargued drift.
+  The only "different kind allowed" case was a self-referential G0 test, not a use
+  case.
+
+**Migration mechanism (HITL): amend step-12 IN PLACE — NO `SCHEMA_VERSION` bump
+(stays 12), NO new step 13.** Consequence (recorded): an already-migrated local DB
+at `user_version = 12` will **not** re-run the edited step-12 SQL, so it keeps the
+old compound index until rebuilt. **HITL accepts that local v12 DBs are
+disposable** (pre-release substrate correction, no production data). A new step-13
+drop/recreate would additionally FAIL the UNIQUE index creation on any DB that
+already has identity-forked duplicate active rows — explicitly out of scope.
 
 ---
 
@@ -210,9 +264,9 @@ Migration {
           ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
           ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
           CREATE UNIQUE INDEX IF NOT EXISTS canonical_nodes_logical_active_idx
-              ON canonical_nodes(logical_id, kind) WHERE superseded_at IS NULL;
+              ON canonical_nodes(logical_id) WHERE superseded_at IS NULL;
           CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
-              ON canonical_edges(logical_id, kind) WHERE superseded_at IS NULL;
+              ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
           CREATE INDEX IF NOT EXISTS canonical_nodes_kind_idx
               ON canonical_nodes(kind);
           CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
@@ -234,12 +288,13 @@ pub const SCHEMA_VERSION: u32 = 12; // was 11 (fathomdb-schema/src/lib.rs:6)
    canonical_edges`, each `ADD COLUMN logical_id TEXT` + `ADD COLUMN
    superseded_at INTEGER`. Nullable; legacy rows back-fill to NULL (an active
    row with NULL `logical_id`).
-2. **Partial UNIQUE INDEX (NULL-safe), one per table.** `(logical_id, kind)
-   WHERE superseded_at IS NULL`. **NULL-safety is load-bearing:** SQLite treats
-   each NULL `logical_id` as distinct, so legacy back-filled rows (NULL
-   `logical_id`) **never collide** with one another; only rows that opt into a
-   non-NULL `logical_id` are constrained to one active version per
-   `(logical_id, kind)`.
+2. **Partial UNIQUE INDEX (NULL-safe), one per table.** `(logical_id)
+   WHERE superseded_at IS NULL` — scoped to `logical_id` ALONE (**Decision 5**,
+   HITL-SIGNED 2026-06-05; amended in place by Slice 31 from the original
+   `(logical_id, kind)`). **NULL-safety is load-bearing:** SQLite treats each
+   NULL `logical_id` as distinct, so legacy back-filled rows (NULL `logical_id`)
+   **never collide** with one another; only rows that opt into a non-NULL
+   `logical_id` are constrained to one active version per `logical_id`.
 3. **Folded indexes (one offset budget):** `canonical_nodes(kind)` (G4 list),
    `canonical_edges(from_id)`, `canonical_edges(to_id)` (G5 traversal). Folded
    into this migration because the accretion regime spends one offset budget per

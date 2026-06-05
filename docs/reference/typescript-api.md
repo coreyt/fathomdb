@@ -65,9 +65,12 @@ Enqueue a batch of canonical rows.
   to `[]`. A node/edge item may carry an optional `logicalId`
   (`string`): supplying it makes the write a transaction-time
   **supersession** of the prior active version of that
-  `(logicalId, kind)` (the prior version is tombstoned and the new one
-  becomes active — invalidate-not-delete). Omitting it is a plain
-  insert with a NULL `logicalId` that never collides with other NULLs.
+  `logicalId` (the prior version is tombstoned and the new one
+  becomes active — invalidate-not-delete). Active-row identity is scoped
+  to `logicalId` alone, so re-ingesting the same `logicalId` with a
+  different `kind` supersedes (it does not create a second active row).
+  Omitting it is a plain insert with a NULL `logicalId` that never
+  collides with other NULLs.
 - Returns: `WriteReceipt { cursor, rowCursors, danglingEdgeEndpoints }` —
   `cursor` is the batch high-water `write_cursor`; `rowCursors` are the
   per-row `write_cursor`s, 1:1 with the input batch order;
