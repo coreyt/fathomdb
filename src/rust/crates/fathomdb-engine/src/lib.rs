@@ -3995,6 +3995,16 @@ fn read_get_by_id_in_tx(
 /// returns an empty `Vec` without a SELECT. The after-id cursor (`id > ?`,
 /// default 0) excludes the boundary row. The `_for_test` SELECTs
 /// (`lib.rs` op-store probes) are a shape oracle only — this is a new statement.
+///
+/// Slice 33 (G3 / F4-READ) — hardened under a genuine large multi-collection log:
+/// the SELECT rides the step-13 `operational_mutations(collection_name, id)`
+/// index (`SEARCH … USING INDEX …(collection_name=? AND id>?)`), so the per-page
+/// cost is O(page) — the leading `collection_name` equality fixes the prefix and
+/// the trailing `id` serves both the cursor range and `ORDER BY id` with no temp
+/// B-tree. The cursor is normalized with `.max(0)` so a negative `after_id` is
+/// explicitly clamped to the start of the log (ids are ≥ 1) and is never confused
+/// with a row id; `after_id` past the end and unknown collections yield empty
+/// pages.
 fn read_collection_in_tx(
     reader: &mut Connection,
     collection: &str,
@@ -4005,7 +4015,11 @@ fn read_collection_in_tx(
         return Ok(Vec::new());
     }
     let clamped = limit.min(READ_COLLECTION_MAX_LIMIT) as i64;
-    let after = after_id.unwrap_or(0);
+    // Normalize the cursor: a negative after_id is clamped to the start of the
+    // log. `operational_mutations.id` is autoincrement (≥ 1), so `id > 0` is the
+    // full log; clamping removes the "is a negative cursor a sentinel or a row
+    // id?" ambiguity without changing happy-path semantics.
+    let after = after_id.unwrap_or(0).max(0);
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let mut statement = tx.prepare(
         "SELECT id, collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
