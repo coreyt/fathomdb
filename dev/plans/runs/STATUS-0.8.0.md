@@ -246,11 +246,11 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⏳ PROMPTED (2026-06-05) — USER to spawn; ∥-safe with 33 | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ⏳ (rust.md + AC-074 Rust clause) |
+| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ **MERGED `485f498` but BLOCKED — codex §9 1×[P1]** (test audits types not Engine methods → `rebuild_*` recovery-name + raw-SQL reachable; AC-074 Rust falsely green). **HALTED to HITL** (governance scoping (A)/(B)/(C)) before fix-N | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ✅ rust.md + AC-074 Rust clause filled + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
-| **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ⏳ PROMPTED (2026-06-05) — USER to spawn; ∥-safe with 27 | 30 | ✅ no SDK change (functional-retrieve unchanged) | ⏳ | ⏳ (op-store.md + migrations) |
+| **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ✅ CLOSED 2026-06-05 (codex §9 clean PASS; EXPLAIN PK-walk→index-driven; `SCHEMA_VERSION 12→13`) | 30 | ✅ no SDK change (functional-retrieve unchanged) | ✅ | ✅ op-store.md + migrations + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -380,6 +380,31 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-05 — Slice 33 CLOSED · Slice 27 MERGED-but-BLOCKED (codex [P1] → HALT to HITL) · AC-050c residue
+
+- **Slice 33 ✅ CLOSED** (codex §9 clean PASS, 0 findings; verdict `0.8.0-slice-33-codex-review-20260605T213820Z.md`).
+  Step-13 additive index `operational_mutations(collection_name, id)` (`SCHEMA_VERSION 12→13`); EXPLAIN
+  PK-walk→index-driven confirmed RED→GREEN; clamp/cursor edges pinned; no SDK change; Search/recovery pins
+  green. Merge `58664d9`, closure `761ed68`. (Agent ran its own codex review + close; orchestrator
+  gate-verified + fixed the stale §2 row.)
+- **Slice 27 ⚠️ MERGED `485f498` but BLOCKED — the agent SKIPPED its codex §9 review.** Orchestrator ran the
+  missing §9 (`codex exec review --commit 485f498`): **1 × [P1]** — `governed_surface.rs` audits only the 17
+  re-exported **types**, NOT the inherent **methods** on the re-exported `fathomdb::Engine`. The facade
+  re-exports the engine `Engine` wholesale, so `Engine::rebuild_projections()`/`rebuild_vec0()` (ungated,
+  shipped-public, names contain "**rebuild**" — a recovery-denylist name) and `execute_for_test(sql)`
+  (raw-SQL, but `#[cfg(debug_assertions)]` → release-absent) are reachable. So **AC-074's recovery-denylist
+  + no-raw-SQL guarantees are FALSELY GREEN for Rust** — the slice's whole purpose (Q5=BIND-RUST) undermined.
+  Pre-existing (`rebuild_*` predate Slice 27; the CLI `recover --rebuild-*` wraps them). [P1] = BLOCK; not
+  closeable. Verdict: `0.8.0-slice-27-review-20260605T215557Z.md`. **HALTED to HITL** because the fix raises a
+  governance-scoping decision: the Rust facade is BOTH the runtime-SDK contract AND the CLI's substrate, so
+  it legitimately needs `rebuild_*`. Options: (A) carve out a non-governed operator/recovery seam + audit the
+  *governed app method surface* (recommended — matches the agent's 17-vs-20 intent, no engine change);
+  (B) feature-gate recovery methods off the default facade; (C) re-scope Q5. fix-N scope depends on the call.
+- **AC-050c residue (both agents flagged; pre-existing, NOT 27/33):** `agent-verify` AC-050c removal-detect
+  FAILs on baseline `e1827c4` — Slice 25's `test_surface.py` rewrite renamed/removed two test fns without a
+  CHANGELOG "Removed" entry. Small Slice-25 residue; would trip a Slice 40 gate. Fix = a CHANGELOG Removed
+  entry or scope `tests/` out of the AC-050c scanner. Tracked; do at Slice 40 or a tiny follow-up.
 
 ### 2026-06-05 — Slices 27 + 33 PROMPTED (reserved-gap band) — parallel-safe
 
