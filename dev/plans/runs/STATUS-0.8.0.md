@@ -246,7 +246,7 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ MERGED; [P1]→fix-1 (Option B, merged `f07aa01`) → **fix-1 codex re-review 1×[P1]** (engine default test build broken by the gate; masked by workspace feature-unification) → **fix-2 PROMPTED**. USER to spawn | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ✅ fix-1: operator-gate + method-level AC-074 + AC-050c green |
+| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ✅ CLOSED 2026-06-06 ([P1]→fix-1 Option B `f07aa01` →[P1]→fix-2 `427bebd`; **codex §9 clean PASS**) — operator-feature gate; method-level recovery/raw-SQL absence; AC-074 Rust filled; AC-050c green | 25 | n/a (Rust facade; recovery suites byte-frozen) | ✅ | ✅ rust.md + AC-074 method-level + operator-gate design memos + DOC-INDEX |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
@@ -380,6 +380,26 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 27 CLOSED (fix-2 codex §9 clean PASS; [P1]→fix-1→[P1]→fix-2 chain resolved)
+
+- **fix-2 merged `427bebd`** — 13 pure-operator engine test targets get `required-features = ["operator"]`
+  (the pattern fix-1 used for the `ingest_corpus` example); the mixed `pr2b_mean_recompute.rs` keeps its
+  non-operator carve-out test via per-fn `#[cfg(feature="operator")]` (no coverage lost); `corpus_graph.rs`
+  untouched (doc-mention only). No method un-gated; the operator gate unchanged.
+- **codex §9 re-review (base `03492e5`): clean PASS, no findings** — "both default and operator engine test
+  builds compile successfully." **Orchestrator independently confirmed** `cargo test -p fathomdb-engine
+  --no-run` (default) compiles (exit 0) — the exact [P1] failure gone. Verdict:
+  `0.8.0-slice-27-review-fix2-20260606T021421Z.md`.
+- **Slice 27 CLOSED.** Q5=BIND-RUST satisfied: the **default** `fathomdb` facade is recovery-name-free +
+  raw-SQL-free at the **method** level (compile_fail doctests); the operator/recovery seam is feature-gated
+  (`operator`) for the CLI; AC-074's Rust clause filled + tightened to method-level/feature-gated; AC-050c
+  removal-detect green (scanner scopes `tests/` out — also cleared the Slice-25 residue); `no_recovery_surface.rs`
+  byte-frozen throughout. Chain: orig [P1] (type-only test) → HITL Option B → fix-1 `f07aa01` → fix-1 [P1]
+  (engine default build) → fix-2 `427bebd` → PASS (within the fix-N bound; fix-3 would have HALTed). Both
+  fix worktrees removed; ledger clean (only the unrelated locked orphan).
+- **Reserved-gap band now: 34** (CLI op-store readback) remains; **35** (deferred-feature ADRs, founded on
+  the graph-model ADR) and **40** (final verification + AC-037 CI gate) are the path to GA. None dispatched.
 
 ### 2026-06-06 — Slice 27 fix-1 MERGED (Option B) but codex re-review = 1×[P1] → fix-2 PROMPTED
 
