@@ -5,7 +5,7 @@
   "baseline_sha": "e4dcdd158bac7a4039e9c06185087b565dfce0c2",
   "branch": "slice-34-20260606T133655Z",
   "head_sha": "a3a79864abe87013809a336d142028762e2b6b86",
-  "merged_to_main_sha": "PENDING_MERGE",
+  "merged_to_main_sha": "11bfd168ef76d261e544be2df9bb3b98302adb82",
   "commits": [
     {"sha": "3600432d018dc82dda85fbb678ee3fae5941d989", "msg": "docs(0.8.0): Slice 34 design memo — CLI op-store read-back (doctor dump-mutations); scope call = doctor diagnostic, not application query"},
     {"sha": "f1aa95c1b6c5ffcaaf39969362aaa144518b0a06", "msg": "test(0.8.0): Slice 34 RED — doctor dump-mutations parser + binary op-store read-back tests (F4-READ / reserved-gap-34)"},
