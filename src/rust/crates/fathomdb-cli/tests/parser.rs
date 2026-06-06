@@ -7,7 +7,7 @@
 
 use clap::Parser;
 
-use fathomdb_cli::{exit_code, Cli, Command, DoctorCommand};
+use fathomdb_cli::{effective_dump_limit, exit_code, Cli, Command, DoctorCommand};
 
 fn parse(args: &[&str]) -> Cli {
     let mut argv = vec!["fathomdb"];
@@ -241,4 +241,21 @@ fn exit_code_constants_match_design() {
     assert_eq!(exit_code::EXPORT_FAILURE, 66);
     assert_eq!(exit_code::UNRECOVERABLE, 70);
     assert_eq!(exit_code::LOCK_HELD, 71);
+}
+
+#[test]
+fn dump_mutations_limit_is_clamped_to_the_engine_cap() {
+    // The CLI clamps `--limit` to the same ~1M cap the engine applies, so the
+    // `next_after_id` "full page" decision compares `rows.len()` against the
+    // EFFECTIVE limit. Without the clamp, a `--limit` above the cap makes a full
+    // capped page (`rows.len() == cap < requested`) look exhausted →
+    // `next_after_id: null` → pagination stops while rows remain in the log.
+    assert_eq!(effective_dump_limit(None), 1000, "omitted --limit -> default page");
+    assert_eq!(effective_dump_limit(Some(10)), 10, "below cap -> unchanged");
+    assert_eq!(effective_dump_limit(Some(0)), 0, "zero -> zero (engine returns an empty page)");
+    assert_eq!(
+        effective_dump_limit(Some(5_000_000)),
+        1_000_000,
+        "above the ~1M engine cap -> clamped"
+    );
 }
