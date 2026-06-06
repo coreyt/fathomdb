@@ -246,7 +246,7 @@ applicable to this slice's work-type.
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
 | **25** | ADR-Supersede Sign-off + Conformance Rewrite | conformance-rewrite (ADR signed; TDD-bar) | ✅ CLOSED (fix-1) | 0, 15 | ✅ Py≡TS via single shared `governed-surface-allowlist.json` (cross-binding parity) | ✅ n/a (no nav change; `mkdocs --strict` clean) | ✅ AC-074/REQ-053/bindings §1/§13/§14 + design memo + DOC-INDEX |
-| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ MERGED `485f498`, codex §9 1×[P1] BLOCK → **fix-1 PROMPTED (Option B; HITL 2026-06-05)** — feature-gate operator/recovery seam off the default facade + method-level enforcement + AC-050c green (single slice). USER to spawn | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ⏳ (fix-1: rust.md/AC-074 method-level + CHANGELOG) |
+| **27** | Rust-facade governed-surface positive-allowlist/parity pin (Q5=BIND-RUST) | implementation (conformance pin) | ⚠️ MERGED; [P1]→fix-1 (Option B, merged `f07aa01`) → **fix-1 codex re-review 1×[P1]** (engine default test build broken by the gate; masked by workspace feature-unification) → **fix-2 PROMPTED**. USER to spawn | 25 | n/a (Rust facade; recovery suites byte-frozen) | ⏳ | ✅ fix-1: operator-gate + method-level AC-074 + AC-050c green |
 | **30** | G2 read.get/get_many + G3 read.collection/mutations | implementation | ✅ CLOSED 2026-06-05 (codex [P2] resolved by Slice 31; zero read-API change) | 15, 25 | ✅ retrieve+admin functional + Py≡TS equiv | ✅ | ✅ |
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
@@ -380,6 +380,33 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 27 fix-1 MERGED (Option B) but codex re-review = 1×[P1] → fix-2 PROMPTED
+
+- **fix-1 merged `f07aa01`** (Option B): `operator` cargo feature gates the recovery/operator seam (12
+  methods + the 20 facade re-exports) off the default `fathomdb` facade; `fathomdb-cli` enables it; method-
+  absence pinned by `#[cfg(not(feature="operator"))]` compile_fail doctests; AC-074 Rust clause tightened to
+  method-level; AC-050c rc=0 via the principled scanner-scope fix (scope `tests/` out — also cleared the
+  Slice-25 residue). `no_recovery_surface.rs` byte-frozen. Orchestrator gate-verified all of this from git.
+- **Orchestrator ran the §9 re-review (`codex exec review --base 1c0d1b4`) — fix-1 had SKIPPED... no, the
+  agent ran `--workspace` only.** codex returned **1 × [P1]:** gating the methods at the **engine** level
+  breaks **`cargo test -p fathomdb-engine` in its DEFAULT config** — the engine's own integration tests call
+  the now-hidden methods (`dump_schema`/`dump_row_counts`/`dump_profile`/`rebuild_*`/`trace_source_ref`/
+  `excise_source`/`verify_embedder`/`truncate_wal` across ~11 `tests/*.rs`). fix-1's `cargo test --workspace`
+  passed **only because** `fathomdb-cli` enables `operator` and cargo **feature-unifies** it ON across the
+  workspace — masking the per-crate breakage. **Orchestrator confirmed** with `cargo test -p fathomdb-engine
+  --no-run` (errors `no method named dump_schema…`). [P1] = BLOCK → fix-2. Verdict:
+  `0.8.0-slice-27-review-fix1-20260606T010212Z.md`.
+- **fix-2 PROMPTED** (`dev/plans/prompts/0.8.0-slice-27-fix-2.md`): keep the methods gated (the only way to
+  hide them from the re-exporting facade), and mark the engine's **operator-method test targets**
+  `required-features = ["operator"]` (the pattern fix-1 already used for the `ingest_corpus` example,
+  `fathomdb-engine/Cargo.toml:40-41`) — so `cargo test -p fathomdb-engine` (default) compiles (operator tests
+  skipped) and `--features operator` runs them. Watch mixed files (`corpus_graph.rs`) → cfg/split, don't drop
+  non-operator coverage. **Self-check gap to close:** run BOTH engine configs STANDALONE (not just
+  `--workspace`, which masked it). This is **fix-2** (orig [P1]→fix-1→fix-1 [P1]→fix-2) — within the small
+  fix-N bound; a fix-2 [P1] would HALT to HITL. The raw-SQL release-pin caveat the agent flagged was NOT
+  raised by codex (`#[cfg(debug_assertions)]` on `execute_for_test` accepted as canonical). **USER spawns
+  fix-2**; orchestrator re-reviews (codex base = fix-2 baseline) → on PASS closes Slice 27.
 
 ### 2026-06-05 — Slice 27 [P1] → HITL chose Option B; fix-1 PROMPTED (single slice, also closes AC-050c)
 
