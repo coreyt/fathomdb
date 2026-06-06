@@ -1,0 +1,75 @@
+{
+  "phase": "CLOSED",
+  "slice": 34,
+  "title": "CLI op-store read-back (fathomdb doctor dump-mutations); reserved-gap-34",
+  "baseline_sha": "e4dcdd158bac7a4039e9c06185087b565dfce0c2",
+  "branch": "slice-34-20260606T133655Z",
+  "head_sha": "a3a79864abe87013809a336d142028762e2b6b86",
+  "merged_to_main_sha": "PENDING_MERGE",
+  "commits": [
+    {"sha": "3600432d018dc82dda85fbb678ee3fae5941d989", "msg": "docs(0.8.0): Slice 34 design memo — CLI op-store read-back (doctor dump-mutations); scope call = doctor diagnostic, not application query"},
+    {"sha": "f1aa95c1b6c5ffcaaf39969362aaa144518b0a06", "msg": "test(0.8.0): Slice 34 RED — doctor dump-mutations parser + binary op-store read-back tests (F4-READ / reserved-gap-34)"},
+    {"sha": "ebb508b8919f2cc3685c34c73df26c0e21102f9d", "msg": "feat(0.8.0): Slice 34 GREEN — wire doctor dump-mutations through run_doctor_verb to Engine::read_mutations; rows serialized inline (F4-READ / reserved-gap-34)"},
+    {"sha": "a3a79864abe87013809a336d142028762e2b6b86", "msg": "docs(0.8.0): Slice 34 — document doctor dump-mutations; ADR-0.6.0-cli-scope amendment; cli.md/op-store.md/published-cli/DOC-INDEX"}
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "f1aa95c1b6c5ffcaaf39969362aaa144518b0a06",
+    "red_proof": "cargo test -p fathomdb-cli --no-run failed: E0599 no variant `DumpMutations` on DoctorCommand (parser.rs:182,193) before the GREEN commit",
+    "test_files": ["tests/parser.rs", "tests/operator_cli.rs"],
+    "new_tests": [
+      "parser::doctor_dump_mutations_parses_collection_db_path_and_flags",
+      "parser::doctor_dump_mutations_rejects_accept_data_loss",
+      "operator_cli::t_s34_dump_mutations_json_emits_rows_ordered_by_id",
+      "operator_cli::t_s34_dump_mutations_limit_and_after_id_paginate_without_overlap",
+      "operator_cli::t_s34_dump_mutations_unknown_collection_is_empty_page_exit_zero",
+      "operator_cli::t_s34_dump_mutations_lock_held_exits_71",
+      "operator_cli: dump-mutations added to DOCTOR_VERBS so t_040a/t_040b cover --help exit-0 + Usage, and t_036/t_037 cover the --json single-object shape on the empty-collection path"
+    ]
+  },
+  "scope_decision": {
+    "call": "diagnostic-dump, NOT an application-query verb",
+    "rationale": "doctor dump-mutations reads back operational_mutations (the operator mutation log) over the EXISTING Engine::read_mutations seam; same dump-* family as dump-row-counts/dump-schema/trace. No query language (only collection + opaque id cursor + page limit), no surface over canonical_nodes. It does NOT re-open ADR-0.6.0-cli-scope Option B (search/get/list application query), which stays rejected.",
+    "pre_signed_by_operator": true,
+    "adr_amendment": "ADR-0.6.0-cli-scope.md amended in place (Status line + Consequences bullet, dated 2026-06-06): the 0.8.0 op-store diagnostic read-back is scoped IN under the doctor root as a dump-* diagnostic; application query verbs still require a re-open."
+  },
+  "verb": {
+    "synopsis": "fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>",
+    "default_limit": 1000,
+    "engine_clamp_cap": 1000000,
+    "json_envelope": "{ verb:\"dump-mutations\", collection, after_id|null, limit, count, rows:[{id,collection,record_key,op_kind,payload,schema_id,write_cursor} ordered by id], next_after_id }",
+    "next_after_id_semantics": "last row id iff a full page (rows.len()==limit) was returned; else null (log exhausted at this exclusive cursor — no overlap on resume)",
+    "exit_classes": [0, 70, 71],
+    "empty_page_is_exit_0": true
+  },
+  "cli_only_no_sdk_parity": true,
+  "facade_surface_unchanged": true,
+  "facade_surface_proof": "rows serialized INLINE in run_doctor; OpStoreRow never named/re-exported. fathomdb facade crate src byte-unchanged vs baseline; tests/governed_surface.rs (3) + tests/reexports.rs (1) green.",
+  "byte_freeze_verified": {
+    "recovery_suites": "git diff --exit-code BASE -- test_no_recovery_surface.py no-recovery-surface.test.ts no_recovery_surface.rs => byte-unchanged",
+    "py_ts_sdk_engine_facade": "git diff --stat BASE -- src/python src/ts fathomdb-py fathomdb-engine fathomdb (facade) => EMPTY (zero changes). Slice is CLI-only Rust + docs."
+  },
+  "governed_surface_pins_green": {
+    "rust_facade_slice27": "tests/governed_surface.rs PASS (3), tests/reexports.rs PASS (1), tests/no_recovery_surface.rs PASS (1)",
+    "py_ts_conformance_slice25": "NOT RE-RUN locally (toolchain absent: no built py extension, no pyright, no ts node_modules). Byte-freeze proof shows zero Py/TS/SDK source change vs baseline => conformance preserved by construction; CI re-runs full cross-language at the per-PR gate / Slice 40."
+  },
+  "self_check_results": {
+    "cargo_test_p_fathomdb_cli": "PASS (parser 13, operator_cli 25, recovery_cli 11/7-ignored, perf-regression 12, lib unit 3+1)",
+    "cargo_test_p_fathomdb_engine_standalone": "PASS (all targets green; per-crate, not --workspace, per Slice-27 lesson)",
+    "regression_pins": "pr_g8_dangling_edges 8, pr_g2_get_by_id 7, pr_g3_read_collection 9 (Slice 33 extended), pr_g10_filtered_knn 6, pr_g1_search_hits 4, search_result_shape 2 — all PASS",
+    "cargo_clippy_workspace_D_warnings": "PASS (exit 0)",
+    "cargo_fmt_check": "PASS (cargo fmt --all -- --check exit 0)",
+    "mkdocs_build_strict": "PASS (built in venv; 0 warnings/errors, no broken links/orphaned nav)",
+    "pyright": "NOT RE-RUN locally (no pyright on PATH); no Python source changed => stays 0/0 by construction; CI-covered.",
+    "py_ts_functional_suites": "NOT RE-RUN locally (toolchain absent); byte-unchanged vs baseline."
+  },
+  "agent_verify_result": "0 violations, 1 blocker — AC-037 netns-deny-egress (unshare -rUn unavailable in this env; environmental, CI-covered at Slice 40, explicitly tolerated by the slice prompt §4). AC-050c removal-detect PASS (only added tests, removed none). All other ACs PASS.",
+  "blockers_encountered": [
+    "RED commit initially blocked by pre-commit `cargo fmt --check`; ran `cargo fmt -p fathomdb-cli` and re-committed (resolved).",
+    "Local toolchain lacks pyright / built python extension / ts node_modules and mkdocs (installed mkdocs in a throwaway venv to verify --strict). Py/TS/pyright suites not re-run locally; justified by zero Py/TS/SDK source diff vs baseline + CI coverage."
+  ],
+  "additional_changes_made_in_scope": [
+    "Added `dump-mutations` to operator_cli.rs DOCTOR_VERBS + a doctor_invocation arm (collection positional) so the existing --help / --json loop pins (t_040a/b, t_036/037) automatically cover the new verb."
+  ],
+  "next_step_for_orchestrator": "Slice 34 CLOSED on local main (after merge). Reserved-gap-34 (CLI op-store read-back) closed. Remaining 0.8.0 ladder: Slice 35 (deferred-feature ADRs), Slice 40 (final verification — wires agent-security/AC-037 into CI, full cross-language conformance + pyright + Py/TS functional suites). No push/PR performed (local-main only)."
+}
