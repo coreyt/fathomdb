@@ -10,14 +10,23 @@
 //! engine behavior is identical with the feature on. See AC-074
 //! (`dev/acceptance.md`) + `dev/design/slice-27-fix1-operator-gate-design.md`.
 
+// The 17 governed application-surface types (`dev/interfaces/rust.md` § 2a) —
+// always present on the default facade.
 pub use fathomdb_engine::{
-    CheckIntegrityOpts, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot,
-    DumpProfileReport, DumpRowCountsReport, DumpSchemaReport, Engine, EngineError, EngineOpenError,
-    ExciseReport, Finding, IntegrityReport, MeanRecomputeReport, OpenReport, OpenStage,
-    OpenedEngine, PreparedWrite, RebuildKind, RebuildReport, RecoveryHint, SafeExportArtifact,
-    SchemaObject, SearchResult, Section, SoftFallback, SoftFallbackBranch, Subscription,
-    TableRowCount, TraceEvent, TraceReport, TruncateWalReport, TruncateWalStatus,
-    VerifyEmbedderReport, VerifyEmbedderStatus, WriteReceipt,
+    CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine, EngineError,
+    EngineOpenError, OpenReport, OpenStage, OpenedEngine, PreparedWrite, RecoveryHint,
+    SearchResult, SoftFallback, SoftFallbackBranch, Subscription, WriteReceipt,
+};
+
+// The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,
+// gated behind `operator`. The backing `Engine` methods are operator-gated in
+// `fathomdb-engine`, so the default facade is recovery-clean at the method level.
+#[cfg(feature = "operator")]
+pub use fathomdb_engine::{
+    CheckIntegrityOpts, DumpProfileReport, DumpRowCountsReport, DumpSchemaReport, ExciseReport,
+    Finding, IntegrityReport, MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact,
+    SchemaObject, Section, TableRowCount, TraceEvent, TraceReport, TruncateWalReport,
+    TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 
 /// AC-074 method-level pin (Q5=BIND-RUST, Slice 27 fix-1): in a **default**

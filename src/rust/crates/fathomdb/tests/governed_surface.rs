@@ -35,6 +35,18 @@
 //!   is a typed open-error hint). The CANONICAL denylist enforcement remains the
 //!   byte-frozen `no_recovery_surface.rs`; this file adds the *positive*
 //!   allowlist half + an allowlist-scope denylist check.
+//!
+//! **Slice 27 fix-1 (method level).** The codex [P1] found the type-only audit
+//! missed the inherent **methods** on the re-exported `fathomdb::Engine`
+//! (`rebuild_projections`/`rebuild_vec0` carried a recovery-denylist name;
+//! `execute_for_test` was raw SQL). Per HITL Option B the operator/recovery seam
+//! is now feature-gated (`operator`), so the **default** facade `Engine` exposes
+//! no recovery-name method and no raw-SQL method. Method **absence** is pinned by
+//! the `compile_fail` doctests in `fathomdb/src/lib.rs`
+//! (`governed_surface_method_absence_proof` / `release_surface_raw_sql_absence_proof`)
+//! — the only mechanism that can assert a method does *not* resolve. This file's
+//! `t_074_operator_seam_resolves_with_feature` is the positive counterpart:
+//! the seam DOES resolve with `--features operator` (the CLI substrate).
 
 use std::any::type_name;
 
@@ -135,4 +147,49 @@ fn t_074_denylist_detector_is_not_vacuous() {
         denylist_hits(&["Engine", "WriteReceipt", "RecoveryHint"], RECOVERY_DENYLIST).is_empty(),
         "the denylist detector must NOT flag typed names like RecoveryHint (exact-match, not substring)"
     );
+}
+
+/// Slice 27 fix-1 positive counterpart: WITH `--features operator` the operator
+/// seam (20 report types + the operator/recovery methods) resolves through the
+/// facade — proving the gate hides the seam from the *default* build without
+/// deleting it (the `fathomdb-cli` substrate). The default-build **absence** of
+/// these methods is pinned by the `compile_fail` doctests in `src/lib.rs`.
+#[cfg(feature = "operator")]
+#[test]
+fn t_074_operator_seam_resolves_with_feature() {
+    // The 20 operator-seam re-export TYPES resolve.
+    let _ = type_name::<fathomdb::CheckIntegrityOpts>();
+    let _ = type_name::<fathomdb::IntegrityReport>();
+    let _ = type_name::<fathomdb::SafeExportArtifact>();
+    let _ = type_name::<fathomdb::TraceReport>();
+    let _ = type_name::<fathomdb::TraceEvent>();
+    let _ = type_name::<fathomdb::RebuildReport>();
+    let _ = type_name::<fathomdb::RebuildKind>();
+    let _ = type_name::<fathomdb::ExciseReport>();
+    let _ = type_name::<fathomdb::VerifyEmbedderReport>();
+    let _ = type_name::<fathomdb::VerifyEmbedderStatus>();
+    let _ = type_name::<fathomdb::DumpSchemaReport>();
+    let _ = type_name::<fathomdb::SchemaObject>();
+    let _ = type_name::<fathomdb::DumpRowCountsReport>();
+    let _ = type_name::<fathomdb::TableRowCount>();
+    let _ = type_name::<fathomdb::DumpProfileReport>();
+    let _ = type_name::<fathomdb::TruncateWalReport>();
+    let _ = type_name::<fathomdb::TruncateWalStatus>();
+    let _ = type_name::<fathomdb::Finding>();
+    let _ = type_name::<fathomdb::MeanRecomputeReport>();
+    let _ = type_name::<fathomdb::Section>();
+
+    // The operator/recovery METHODS resolve (as fn-item paths; not called).
+    let _ = fathomdb::Engine::rebuild_projections;
+    let _ = fathomdb::Engine::rebuild_vec0;
+    let _ = fathomdb::Engine::excise_source;
+    let _ = fathomdb::Engine::check_integrity;
+    let _ = fathomdb::Engine::safe_export;
+    let _ = fathomdb::Engine::trace_source_ref;
+    let _ = fathomdb::Engine::verify_embedder;
+    let _ = fathomdb::Engine::dump_schema;
+    let _ = fathomdb::Engine::dump_row_counts;
+    let _ = fathomdb::Engine::dump_profile;
+    let _ = fathomdb::Engine::truncate_wal;
+    let _ = fathomdb::Engine::recompute_mean;
 }
