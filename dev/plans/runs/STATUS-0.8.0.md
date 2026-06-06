@@ -251,7 +251,8 @@ applicable to this slice's work-type.
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
 | **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ✅ CLOSED 2026-06-05 (codex §9 clean PASS; EXPLAIN PK-walk→index-driven; `SCHEMA_VERSION 12→13`) | 30 | ✅ no SDK change (functional-retrieve unchanged) | ✅ | ✅ op-store.md + migrations + DOC-INDEX |
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
-| **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
+| **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ❌ PROMPTED (not started) | 15, 25, 32 | n/a (docs-only) | ❌ | ❌ |
+| **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
 Status values: ❌ not started / ⏳ in flight / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N.
@@ -381,24 +382,37 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
-### 2026-06-06 — Slice 35 PROMPTED (four deferred-feature design-ADRs)
+### 2026-06-06 — Slice 35 SPLIT (HITL) + PROMPTED; F9/F5 deferred to post-0.8.0 Slice 46
 
-- **Slice 35 prompt authored** — `dev/plans/prompts/0.8.0-slice-35.md` (self-contained, single design-adr
-  agent; the USER spawns it). Authors **four ADRs** in `dev/adr/`, each `Status: proposed` (HITL signs to
-  accept at close): (1) `ADR-0.8.0-graph-traversal-scope` (F1/G5/G6 — depth ≤3 SDK / cap 50 engine, G6 =
-  G1+G4+G5+G9, port the v0.5.6 `WITH RECURSIVE` BFS to G0 `from_id`/`to_id`); (2) `ADR-0.8.0-filter-grammar`
-  (G4/F3 — revive the v0.5.6 `Predicate` core, EXCLUDE the fused/`*_unchecked` builders, share the enum with
-  G10 `SearchFilter`, parameterized `json_extract` only); (3) `ADR-0.8.0-confidence-vs-importance` (F9 vs
-  G12 — one-or-two verdict, storage locus/decay, reweight-after-bit-KNN behind a dedicated flag NOT
-  `fusion_mode`); (4) `ADR-0.8.0-fielded-fts-bm25f` (F5/G9 — RECOMMEND `{name/title,tags,body}`+bm25 weights,
-  REJECT per-kind, `admin.configure` declaration + CLI-only REBUILD).
-- **Execution-model adaptation recorded in the prompt:** the impl-plan's "design-adr = no worktree" wording
-  assumed the old orchestrator-owns-worktree model; the prompt has the agent **own its worktree + merge the
-  drafts itself** (consistent with 27/30/33/34, no stray-canonical hazard). **Zero production code, no
-  `acceptance.md` change, no new AC, no re-opening G0 / `read.*` / the Slice-32 graph model.**
-- **Orchestrator (post-merge):** one codex adversarial pass per ADR → fix-N to PASS → route the four
-  decisions to **HITL sign-off** → flip `proposed→accepted` → close + advance pointer to **Slice 40**.
-  Reserved follow-on 36–39 (index-coverage / G4↔G10 reshape / vec0 two-signal spike / reserved).
+- **HITL split (2026-06-06).** The impl-plan's four-ADR Slice 35 was split on the readiness/data-dependence
+  axis (HITL Q: "do any not need deciding now / need experiments / should it be multiple slices?"). The
+  triage's own "how" column confirmed it: F3 = v05-ready+design-ADR (no experiment); F1 = design-ADR +
+  profiling (scope decision is data-independent); **F9 = design-ADR + experiment; F5 = design-ADR +
+  profiling**. So:
+  - **Slice 35 (now) — `dev/plans/prompts/0.8.0-slice-35.md`** — authors **two** fully-settleable ADRs
+    (`Status: proposed`, "no TBD" bar): (1) `ADR-0.8.0-graph-traversal-scope` (F1/G5/G6 — depth ≤3 SDK /
+    cap 50 engine, G6 = G1+G4+G5+G9, port the v0.5.6 `WITH RECURSIVE` BFS to G0 `from_id`/`to_id`); (2)
+    `ADR-0.8.0-filter-grammar` (G4/F3 — revive the v0.5.6 `Predicate` core, EXCLUDE the fused/`*_unchecked`
+    builders, share the enum with G10 `SearchFilter`, parameterized `json_extract` only). USER spawns it.
+  - **Slice 46 (DEFERRED post-0.8.0 / early 0.8.x) — `dev/plans/prompts/0.8.0-slice-46.md`** — the two
+    experiment-gated **framing** ADRs: (3) `ADR-0.8.0-confidence-vs-importance` (F9 — settle the
+    confidence-vs-importance shape, recommend the 0.8.x default signal, **name the consumer-validation
+    experiment** for one-vs-two; edge-resident confidence + bitemporal RESERVED per graph-model H3); (4)
+    `ADR-0.8.0-fielded-fts-bm25f` (F5 — recommend `{name/title,tags,body}`+bm25 shape, REJECT per-kind,
+    **name the corpus profiling experiment** for go/no-go + weights). Bar = settle shape, experiment-gate
+    the empirical; **no fabricated parameters**. **DO NOT spawn during the 0.8.0 campaign** (waits on
+    consumer-usage signal + the corpus/eval pipeline + the deferred edge-enrichment decision).
+- **Why split (not all-now):** forcing a "no TBD" decision on F9's one-or-two verdict or F5's bm25 weights
+  would be premature commitment / vacuous-green (a confident-but-ungrounded guess). Those conclusions are
+  *better determined after 0.8.0*; their *framing* ADRs are cheap now but belong in the parked slice with an
+  experiment-gated bar. F1+F3 are proven-prior-art → decide now while G0/G10/graph-model context is fresh.
+- **Execution-model adaptation (both prompts):** design-adr agent **owns its worktree + merges drafts
+  itself** (the impl-plan's "no worktree" assumed the old orchestrator-owned model; superseded by the
+  27/30/33/34 model). Zero production code, no `acceptance.md`/AC, no re-opening G0 / `read.*` / graph-model.
+- **Orchestrator (post-Slice-35-merge):** one codex adversarial pass per ADR → fix-N to PASS → route the
+  **two** decisions to HITL sign-off → flip `proposed→accepted` → close + advance pointer to **Slice 40**
+  (the 0.8.0 terminus). Slice 46 runs in 0.8.x. Reserved follow-on 36–39 unchanged (index-coverage /
+  G4↔G10 reshape / vec0 two-signal spike / reserved).
 
 ### 2026-06-06 — Slice 34 CLOSED (fix-1; orchestrator-run §9 caught [P2], fix-1 → PASS) — reserved-gap band exhausted
 
