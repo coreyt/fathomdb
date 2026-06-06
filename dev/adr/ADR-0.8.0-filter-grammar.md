@@ -4,17 +4,20 @@ date: 2026-06-06
 target_release: 0.8.x
 desc: Settle the deferred G4 filtered-list grammar (F3) as a small CLOSED typed enum revived from the v0.5.6 Predicate core — {JsonPathEq, JsonPathCompare{Gt/Gte/Lt/Lte}, ScalarValue{Text/Integer/Bool}} — surfaced under read.list(kind, filter?, limit). Explicitly EXCLUDES the fused predicates (JsonPathFusedEq/JsonPathFusedTimestampCmp/JsonPathFusedBoolEq/JsonPathFusedIn) and all *_unchecked builders (planner internals that bypass the schema gate). Coordinates with — but does not collapse into — the shipped G10 SearchFilter (shared value vocabulary; full single-enum unification needs a Slice 10 reshape → reserved-gap 37). Compiles to parameterized json_extract(body,'$.field') <op> ? over allowlisted paths against the G0-folded canonical_nodes(kind) index — no DSL, no string interpolation, never raw SQL. Zero 0.8.0 code/schema change.
 blast_radius: dev/plans/0.8.0-implementation.md (G4 read.list contract); dev/design/agent-memory-impl-strategy.md (G4 seam + injection-safety test); dev/design/slice-10-design.md (G10 SearchFilter coordination); future 0.8.x G4 slice (Predicate enum + json_extract compilation); NO 0.8.0 production code or schema change
-status: proposed (awaiting HITL sign-off; the orchestrator routes the decision and flips proposed→accepted at close)
+status: accepted (HITL-signed 2026-06-06). NOTE: G4↔G10 unification is NEEDED (not optional) future work and WILL affect both G4 and G10 (requires touching the shipped G10 SearchFilter) — tracked as reserved-gap 37 / dev/roadmap/0.8.1.md, NOT merely "if needed".
 origin: dev/design/0.8.0-v05-feature-triage.md F3 (DEFER 0.8.x; revive CORE as small grammar, drop DSL+fused); dev/plans/0.8.0-implementation.md Slice 35 (HITL-split 2026-06-06); fit-doc §7 Q3 (G4 grammar shape)
 inherits: ADR-0.8.0-canonical-identity-substrate (G0 — folded canonical_nodes(kind) index), ADR-0.8.0-supersede-five-verb-surface-cap (read.* namespace), dev/design/slice-10-design.md (G10 SearchFilter, shipped Slice 10)
 ---
 
 # ADR-0.8.0 — Filter grammar (G4 / F3)
 
-**Status:** 🟡 **proposed** (Slice 35 deliverable, HITL-split 2026-06-06). Awaiting
-HITL sign-off; the orchestrator runs the codex adversarial pass, routes this
-decision to sign-off, and flips `proposed → accepted` at close. **No 0.8.0 code or
-schema change follows from this ADR** — it scopes the *deferred* 0.8.x G4 verb.
+**Status:** ✅ **ACCEPTED** (Slice 35 deliverable; HITL-signed 2026-06-06). **No 0.8.0
+code or schema change follows from this ADR** — it scopes the *deferred* 0.8.x G4 verb.
+> **HITL note (2026-06-06):** the G4↔G10 **unification is NEEDED, not optional**, future
+> work — the vocabulary-only sharing below is an interim. Full single-grammar unification
+> **will be done** and **will affect both G4 and G10** (it requires touching the shipped
+> G10 `SearchFilter` struct + its compilation). Tracked as **reserved-gap 37** /
+> `dev/roadmap/0.8.1.md` — not an "if needed" item.
 
 > **Decides:** the shape of the deferred G4 filtered-list grammar — F3's
 > `read.list(kind, filter?, limit)`. The decision is **data-independent** (proven
@@ -143,11 +146,14 @@ into one enum**, because the two surfaces compile against **different targets**:
 Collapsing them into one enum would force G10 onto `json_extract` (losing its
 indexed pre-KNN filter — a perf regression) or G4 onto only the four metadata
 fields (losing arbitrary JSON-path). Per the triage, **G10 sharing is "coordination,
-not a hard blocker"** — G4 and G10 ship independently. **Full single-enum
-unification requires a Slice 10 reshape and is therefore named as
-reserved-gap 37** (the "coordination slice if the filter grammar and G10 can't
-share", `0.8.0-implementation.md:1320`) — **not** done here, **not** a 0.8.x G4
-blocker.
+not a hard blocker"** — G4 and G10 ship independently *for the initial G4 landing*.
+But **full single-enum unification IS needed** (HITL 2026-06-06: not an "if needed"
+item) — it requires a Slice 10 reshape and **will affect both G4 and G10** (touching the
+shipped `SearchFilter` struct + its compilation) — and is therefore named as
+**reserved-gap 37** (the "coordination slice if the filter grammar and G10 can't share",
+`0.8.0-implementation.md:1320`; tracked in `dev/roadmap/0.8.1.md`). It is **not** done
+here and **not** a blocker on the *initial* G4 verb, but it is committed future work, not
+optional.
 
 > **Falsifiable 0.8.x criterion.** G4 introduces `ScalarValue`/`ComparisonOp` as a
 > **standalone shared vocabulary** (one definition a future G10 adoption *can*

@@ -1,36 +1,38 @@
 ---
 title: ADR-0.8.0-graph-traversal-scope
 date: 2026-06-06
-target_release: 0.8.x
-desc: Settle the SCOPE of the deferred graph-traversal verbs (F1 / G5 neighbors / G6 search-with-expand) so the 0.8.x graph slices build on a decided foundation. Pins the SDK depth ceiling (≤3) and the engine hard cap (50, ported from v0.5.6 MAX_TRAVERSAL_DEPTH); fixes the 0.8.x traversal filter at superseded_at IS NULL (edge valid-time G11 deferred); confirms the canonical_edges(from_id)/(to_id) indexes are already folded into G0 (no new migration); defines G6 = G1 + G4 + G5 + G9 and recommends building G6 before standalone G5; records the impl-time depth/perf profiling as part of the 0.8.x acceptance criterion (not run here). Zero 0.8.0 code/schema change. Inherits — does not re-open — the G0 substrate (Slice 15/31), the read.* namespace (Slice 25), and the graph model (Slice 32).
-blast_radius: dev/plans/0.8.0-implementation.md (Slice H / G5+G6 contracts); dev/design/agent-memory-impl-strategy.md (G5/G6 seam); future 0.8.x graph slices (read.neighbors / search expand= compilation); NO 0.8.0 production code or schema change
-status: proposed (awaiting HITL sign-off; the orchestrator routes the decision and flips proposed→accepted at close)
-origin: dev/design/0.8.0-v05-feature-triage.md F1 (DEFER 0.8.x; v05-ready + design-ADR + profiling); dev/plans/0.8.0-implementation.md Slice 35 (HITL-split 2026-06-06: graph-traversal-scope decided now, F9/F5 deferred to Slice 46); dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md (Slice 32 foundation)
+target_release: 0.8.1
+desc: Settle the SCOPE of the deferred graph-traversal verbs (F1 / G5 neighbors / G6 search-with-expand) so the 0.8.1 graph slices build on a decided foundation. Pins the SDK depth ceiling (≤3) and the engine hard cap (50, ported from v0.5.6 MAX_TRAVERSAL_DEPTH); fixes the 0.8.1 traversal filter at superseded_at IS NULL (edge valid-time G11 deferred); confirms the canonical_edges(from_id)/(to_id) indexes are already folded into G0 (no new migration); defines G6 = G1 + G4 + G5 + G9 and recommends building G6 before standalone G5; records the impl-time depth/perf profiling as part of the 0.8.1 acceptance criterion (not run here). Zero 0.8.0 code/schema change. Inherits — does not re-open — the G0 substrate (Slice 15/31), the read.* namespace (Slice 25), and the graph model (Slice 32).
+blast_radius: dev/plans/0.8.0-implementation.md (Slice H / G5+G6 contracts); dev/design/agent-memory-impl-strategy.md (G5/G6 seam); future 0.8.1 graph slices (read.neighbors / search expand= compilation); NO 0.8.0 production code or schema change
+status: accepted as 0.8.1 ROADMAP DIRECTION (HITL-signed 2026-06-06; recorded in dev/roadmap/0.8.1.md; REVISABLE when the 0.8.1 graph work opens — these G5/G6/G11 scope choices are roadmap direction, not a frozen G-gap contract, so the 0.8.1 graph slices may revise depth ceiling / traversal filter / G6 shape with implementation evidence WITHOUT a formal ADR re-open)
+origin: dev/design/0.8.0-v05-feature-triage.md F1 (DEFER 0.8.1; v05-ready + design-ADR + profiling); dev/plans/0.8.0-implementation.md Slice 35 (HITL-split 2026-06-06: graph-traversal-scope decided now, F9/F5 deferred to Slice 46); dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md (Slice 32 foundation)
 inherits: ADR-0.8.0-canonical-identity-substrate (G0 — logical_id-alone, folded edge indexes), ADR-0.8.0-supersede-five-verb-surface-cap (read.* namespace), ADR-0.8.0-graph-model-and-edge-addressing (Slice 32 — neutral substrate, opaque-id addressing, reserved-additive edge enrichment)
 ---
 
 # ADR-0.8.0 — Graph-traversal scope (F1 / G5 / G6)
 
-**Status:** 🟡 **proposed** (Slice 35 deliverable, HITL-split 2026-06-06). Awaiting
-HITL sign-off; the orchestrator runs the codex adversarial pass, routes this
-decision to sign-off, and flips `proposed → accepted` at close. **No 0.8.0 code or
-schema change follows from this ADR** — it scopes the *deferred* 0.8.x graph verbs
-so they build on a decided foundation.
+**Status:** ✅ **ACCEPTED as 0.8.1 ROADMAP DIRECTION** (Slice 35 deliverable; HITL-signed
+2026-06-06). Recorded in `dev/roadmap/0.8.1.md`. **Revisable when the 0.8.1 graph work
+opens** — HITL signed these G5/G6/G11 scope choices as *roadmap direction*, **not** a
+frozen G-gap contract: the 0.8.1 graph slices may revise the depth ceiling, the traversal
+filter, or the G6 shape with their implementation evidence **without a formal ADR
+re-open**. **No 0.8.0 code or schema change follows from this ADR** — it scopes the
+*deferred* 0.8.1 graph verbs so they build on a decided (but revisable) foundation.
 
 > **Decides:** the *scope* of the deferred graph-traversal surface — F1's G5
 > `read.neighbors(id, edge_type?, depth=1)` and the G6 `expand=` parameter on
 > `search()`. The scope decision is **data-independent** (proven v0.5.6 prior art
 > over the shipped G0 substrate), so every question below is settled with a
-> concrete decision + a falsifiable 0.8.x acceptance criterion — **no "TBD"**. The
+> concrete decision + a falsifiable 0.8.1 acceptance criterion — **no "TBD"**. The
 > impl-time depth/perf *profiling* the triage flags for F1 is **tuning for the
-> eventual 0.8.x build, not a blocker on this scope decision**; it is recorded as
+> eventual 0.8.1 build, not a blocker on this scope decision**; it is recorded as
 > part of the acceptance criterion, not run here.
 
 ---
 
 ## 1. Context — what gap, what is inherited
 
-F1 (`dev/design/0.8.0-v05-feature-triage.md` §F1) is a **DEFER-0.8.x** feature
+F1 (`dev/design/0.8.0-v05-feature-triage.md` §F1) is a **DEFER-0.8.1** feature
 dispositioned **v05-ready + design-ADR + profiling**: v0.5.x already shipped a
 production-grade depth-bounded `WITH RECURSIVE` BFS, so no web research is needed —
 the reference is directly portable once re-targeted to the G0-folded endpoint
@@ -67,7 +69,7 @@ grammar (**no raw SQL**).
 ## 2. Open questions (the "RED" — each must be settled below, no "TBD")
 
 - **Q-G1 — Depth ceiling.** What SDK-facing depth limit, and what engine hard cap?
-- **Q-G2 — Traversal filter at 0.8.x.** Which active-row predicate does the walk
+- **Q-G2 — Traversal filter at 0.8.1.** Which active-row predicate does the walk
   apply — only `superseded_at IS NULL`, or also edge valid-time?
 - **Q-G3 — Index sufficiency.** Are the chosen indexes already present, or is a new
   migration required?
@@ -96,26 +98,26 @@ traversal; `agent-memory-fit` warns OpenClaw must not pressure graph depth); the
 engine cap is the structural backstop that closed the v0.5.x "unbounded
 `usize::MAX` → effectively-infinite CTE" defect (`compile.rs:249` FIX(review)).
 
-> **Falsifiable 0.8.x criterion.** A `read.neighbors(id, depth=4)` (and
+> **Falsifiable 0.8.1 criterion.** A `read.neighbors(id, depth=4)` (and
 > `search(expand=4)`) call is **rejected at the SDK boundary** with a typed
 > argument error (not silently clamped to a surprising value), in Py **and** TS
 > lockstep. A unit test asserts the engine raises `TraversalTooDeep(51)` for a
 > depth-51 request constructed below the SDK. The compiled CTE for any accepted
 > depth `N (≤3)` contains the literal depth-bound guard `WHERE t.depth < N`.
 
-### D-G2 — Traversal filter at 0.8.x: **`superseded_at IS NULL` only**
+### D-G2 — Traversal filter at 0.8.1: **`superseded_at IS NULL` only**
 
-The 0.8.x walk filters active rows by **`superseded_at IS NULL` on both the edge
+The 0.8.1 walk filters active rows by **`superseded_at IS NULL` on both the edge
 and the joined node** — the transaction-time predicate G0 landed. **Edge
 valid-time (G11) is deferred**: the graph-model ADR (Slice 32) keeps the valid-time
 pair **`t_valid`/`t_invalid`** (Graphiti name `valid_at`/`invalid_at` — identical
 reserved columns; the substrate ADR is the canonical naming authority)
 **reserved-additive**, so a later release adds a valid-time `AND` to the walk as a
-pure read-path addition with **no reshape** of the traversal CTE landed at 0.8.x.
+pure read-path addition with **no reshape** of the traversal CTE landed at 0.8.1.
 
-> **Falsifiable 0.8.x criterion.** The compiled neighbors/expand SQL contains
+> **Falsifiable 0.8.1 criterion.** The compiled neighbors/expand SQL contains
 > `superseded_at IS NULL` on **both** the edge join and the node join, and contains
-> **no** reference to `t_valid`/`t_invalid` (valid-time is out of 0.8.x scope). A
+> **no** reference to `t_valid`/`t_invalid` (valid-time is out of 0.8.1 scope). A
 > test ingests a node, supersedes it, and asserts the superseded version never
 > appears in a neighbor set.
 
@@ -132,7 +134,7 @@ these and `canonical_nodes(logical_id)` (the active-row resolution from the seed
 **reserved-gap 36** (the "migration-fix slice if `from_id`/`to_id` coverage is
 insufficient", `0.8.0-implementation.md:1319`) **is NOT triggered** by this scope.
 
-> **Falsifiable 0.8.x criterion.** `EXPLAIN QUERY PLAN` of the depth-1 neighbors
+> **Falsifiable 0.8.1 criterion.** `EXPLAIN QUERY PLAN` of the depth-1 neighbors
 > SELECT (both the `from_id` out-direction and `to_id` in-direction probes) shows
 > an **index-driven** lookup using `canonical_edges_from_id_idx` /
 > `canonical_edges_to_id_idx` — **no full-table `SCAN canonical_edges`**. The G5/G6
@@ -155,7 +157,7 @@ Building G6 first delivers consumer value first and exercises the G5 walk on the
 way; standalone G5 then falls out as the already-built expand step promoted to a
 public verb.
 
-> **Falsifiable 0.8.x criterion.** When the G6 slice lands, `search(expand=1)`
+> **Falsifiable 0.8.1 criterion.** When the G6 slice lands, `search(expand=1)`
 > returns, for each hit, its 1-hop neighbors (body/kind/logical_id) sourced from
 > the **same** compiled G5 walk that backs `read.neighbors` — verified by a test
 > asserting the two surfaces return the identical neighbor set for the same seed +
@@ -187,7 +189,7 @@ For the **depth-1** case, the engine already has the shape: `trace_source_ref`
 independently — the model for a single-SELECT depth-1 walk (impl-strategy
 `:326-327`); depth>1 escalates to the bounded recursive CTE.
 
-> **Falsifiable 0.8.x criterion.** The ported CTE test mirrors v0.5.6's
+> **Falsifiable 0.8.1 criterion.** The ported CTE test mirrors v0.5.6's
 > `traversal_query_is_depth_bounded` (`compile.rs:1223`): the compiled SQL contains
 > `WITH RECURSIVE`, the visited-set `instr(...)` cycle guard, and `WHERE t.depth <
 > N`; a cyclic-graph fixture (A→B→A) terminates and visits each node once. The
@@ -199,11 +201,11 @@ independently — the model for a single-SELECT depth-1 walk (impl-strategy
 The triage flags F1 as design-ADR **+ profiling**. The profiling — measuring walk
 latency at the depth ceiling against the read-latency budget (impl-strategy
 `:413`: "read-latency ceiling for G5's recursive-CTE walk at `MAX_WALK_DEPTH`") —
-is **0.8.x build-time tuning of the chosen scope**, not an input to the scope
+is **0.8.1 build-time tuning of the chosen scope**, not an input to the scope
 decision. The scope is settled here; the profiling validates the implementation
 meets the tiered latency budget once built.
 
-> **Falsifiable 0.8.x acceptance criterion (records the profiling).** The G5/G6
+> **Falsifiable 0.8.1 acceptance criterion (records the profiling).** The G5/G6
 > slice ships a profiling result demonstrating the depth-≤3 walk over the binding
 > ≤10k-record envelope (`memory/pr3-tiered-latency-budget.md`) meets the
 > retrieval-side read-latency gate; the result is recorded (not merely asserted) so
@@ -211,7 +213,7 @@ meets the tiered latency budget once built.
 
 ---
 
-## 4. EXCLUDE list (explicitly out of scope — named so the 0.8.x slice does not drift)
+## 4. EXCLUDE list (explicitly out of scope — named so the 0.8.1 slice does not drift)
 
 - **Unbounded / `usize::MAX` depth** — the v0.5.x pre-fix defect; the hard cap 50 +
   SDK ceiling 3 exist to make this unrepresentable.
@@ -220,7 +222,7 @@ meets the tiered latency budget once built.
   named consumer has it. The cap is deliberately well below where a native graph
   engine would earn its keep.
 - **Edge valid-time traversal (G11)** — `t_valid`/`t_invalid` stay reserved-additive
-  (graph-model ADR); 0.8.x filters `superseded_at IS NULL` only (D-G2).
+  (graph-model ADR); 0.8.1 filters `superseded_at IS NULL` only (D-G2).
 - **Hybrid `(from,to,kind)` MERGE addressing** — opaque-`logical_id` addressing is
   the inherited 0.8.0 decision (graph-model ADR H2 deferred); the walk addresses
   endpoints by `from_id`/`to_id` only.
@@ -260,9 +262,9 @@ meets the tiered latency budget once built.
 
 ## 7. Consequences / reserved follow-on
 
-- **For 0.8.0:** nothing ships — this ADR scopes deferred 0.8.x work. Zero code,
+- **For 0.8.0:** nothing ships — this ADR scopes deferred 0.8.1 work. Zero code,
   zero schema, zero `acceptance.md` change.
-- **For 0.8.x:** the G5/G6 slice (impl-strategy "Slice H") builds the ported BFS
+- **For 0.8.1:** the G5/G6 slice (impl-strategy "Slice H") builds the ported BFS
   against the already-present indexes, behind the governed `read.*` surface, with no
   migration; G6 first, standalone G5 promoted from G6's expand step.
 - **Reserved-additive (decided when built):** edge valid-time traversal (G11) adds a
