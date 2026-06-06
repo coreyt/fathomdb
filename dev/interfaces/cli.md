@@ -18,8 +18,16 @@ flag spelling, root command paths, and exit-code classes.
 - `fathomdb recover --accept-data-loss <sub-flag>...`
 - `fathomdb doctor <verb> ...`
 
-The CLI is **operator-only** in 0.6.0. It does not mirror the SDK five-verb
-application surface and does not ship `search` / `get` / `list` query verbs.
+The CLI is **operator-only**. It does not mirror the SDK five-verb application
+surface and does not ship `search` / `get` / `list` query verbs.
+
+The 0.8.0 `doctor dump-mutations` verb is **not** an exception to this: it is a
+read-only operator **diagnostic over the mutation log** (`operational_mutations`),
+in the same `dump-*` family as `dump-row-counts` / `dump-schema` / `trace`, reading
+op-store rows back over the existing engine read seam. It is distinct from — and
+does not introduce — the still-absent `search` / `get` / `list` application query
+surface over `canonical_nodes` (Option B in `ADR-0.6.0-cli-scope`, still rejected;
+see that ADR's 2026-06-06 amendment).
 
 ## Output posture
 
@@ -55,9 +63,19 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 | `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `doctor-check-*`                    |
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `doctor-check-*`                    |
 | `recompute-mean`  | `fathomdb doctor recompute-mean <db_path> [--json]`                            | `doctor-check-*` = 0 / 70 / 71      |
+| `dump-mutations`  | `fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>` | `0 / 70 / 71`      |
 
 `doctor-check-*` means the verb may use the exit-code class set `{0, 65, 70,
 71}` depending on clean/findings/unrecoverable/lock-held outcome.
+
+`dump-mutations` (0.8.0; gap F4-READ / reserved-gap-34) is a read-only operator
+diagnostic that pages op-store (`operational_mutations`) rows for one
+`append_only_log` collection back over the existing `read.collection` /
+`read.mutations` engine seam (Slice 30, index-driven by Slice 33). It is
+**CLI-only** (no SDK-parity obligation; the SDK `read.*` verbs are the separate
+application surface). An **empty page** — empty / unknown / unregistered
+collection, or `--after-id` past the end — is a normal absence and exits `0`
+(never `65`/Findings). Exit class set `{0, 70, 71}`.
 
 ## Recover root
 
@@ -122,6 +140,13 @@ typed report structs; the CLI serializes them under a `verb` discriminator.
 - Doctor verb wrapping pattern: `{ "verb": "<verb-name>", ...flattened_engine_report_fields... }`.
 - Non-flat reports nest naturally. For example, `IntegrityReport` serializes
   as `{ "verb": "check-integrity", "physical": {...}, "logical": {...}, "semantic": {...} }`.
+- `doctor dump-mutations` (0.8.0) serializes as `{ "verb": "dump-mutations",
+  "collection", "after_id" (or null), "limit", "count", "rows": [ { "id",
+  "collection", "record_key", "op_kind", "payload", "schema_id", "write_cursor" }
+  … ordered by `id` ], "next_after_id" }`. The CLI serializes the engine
+  `OpStoreRow` rows inline; `next_after_id` is the last row's `id` iff a full page
+  was returned (resume with `--after-id <next_after_id>`, exclusive cursor → no
+  overlap), else `null`.
 - Field name policy: serde default `snake_case`. Any divergence from engine
   field spellings lives in the CLI serialization layer; the engine report
   structs are not renamed to satisfy CLI spelling requirements.

@@ -157,6 +157,16 @@ follow-on" note.)
 read-back. Both verbs land in **lockstep** across the Python and TypeScript SDKs.
 The read-back is **read-only and typed** — no raw-SQL or filter-DSL surface.
 
+**CLI operator diagnostic (Slice 34 / F4-READ).** The operator CLI exposes the
+same read-back through `fathomdb doctor dump-mutations <collection> [--after-id n]
+[--limit n] [--json] <db_path>`, a read-only `doctor` diagnostic that calls the
+identical `Engine::read_mutations` seam over `operational_mutations` (no new engine
+path, no schema change). It serializes the `OpStoreRow` page inline under the
+doctor `--json` envelope (`{ "verb": "dump-mutations", …, "rows": […],
+"next_after_id" }`). It is **CLI-only** — the operator mirror of this seam, with no
+SDK-parity obligation (the SDK `read.*` verbs remain the separate application
+surface). See `dev/interfaces/cli.md` and `dev/design/slice-34-cli-op-store-readback-design.md`.
+
 ## Projection-failure ownership
 
 The durable `projection_failures` collection belongs to this subsystem because

@@ -164,6 +164,61 @@ fn doctor_rejects_accept_data_loss() {
 }
 
 #[test]
+fn doctor_dump_mutations_parses_collection_db_path_and_flags() {
+    // Slice 34 (F4-READ / reserved-gap-34): the CLI-only op-store read-back
+    // diagnostic `doctor dump-mutations <collection> [--after-id n]
+    // [--limit n] [--json] <db_path>`.
+    let cli = parse(&[
+        "doctor",
+        "dump-mutations",
+        "events",
+        "--after-id",
+        "42",
+        "--limit",
+        "10",
+        "--json",
+        "/tmp/db.sqlite",
+    ]);
+    let DoctorCommand::DumpMutations(args) = doctor(cli) else {
+        panic!("expected dump-mutations");
+    };
+    assert_eq!(args.collection, "events");
+    assert_eq!(args.after_id, Some(42));
+    assert_eq!(args.limit, Some(10));
+    assert!(args.json);
+    assert_eq!(args.db_path, std::path::PathBuf::from("/tmp/db.sqlite"));
+
+    // Bare form: only the positional collection + db_path, defaults elsewhere.
+    let cli = parse(&["doctor", "dump-mutations", "events", "/tmp/db.sqlite"]);
+    let DoctorCommand::DumpMutations(args) = doctor(cli) else {
+        panic!("expected dump-mutations");
+    };
+    assert_eq!(args.collection, "events");
+    assert_eq!(args.after_id, None);
+    assert_eq!(args.limit, None);
+    assert!(!args.json);
+
+    // `<collection>` is required.
+    Cli::try_parse_from(["fathomdb", "doctor", "dump-mutations"])
+        .expect_err("dump-mutations requires <collection> and <db_path>");
+}
+
+#[test]
+fn doctor_dump_mutations_rejects_accept_data_loss() {
+    // Like every doctor verb, `dump-mutations` rejects the recover-owned
+    // `--accept-data-loss` flag as unknown.
+    let res = Cli::try_parse_from([
+        "fathomdb",
+        "doctor",
+        "dump-mutations",
+        "events",
+        "--accept-data-loss",
+        "/tmp/db.sqlite",
+    ]);
+    assert!(res.is_err(), "doctor dump-mutations must reject --accept-data-loss");
+}
+
+#[test]
 fn unknown_root_command_is_rejected() {
     let res = Cli::try_parse_from(["fathomdb", "destroy-everything"]);
     assert!(res.is_err());
