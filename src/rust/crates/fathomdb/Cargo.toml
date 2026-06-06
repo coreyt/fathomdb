@@ -9,3 +9,10 @@ rust-version.workspace = true
 
 [dependencies]
 fathomdb-engine.workspace = true
+
+[features]
+default = []
+# RED baseline: the cfg name is declared so the method-absence doctests'
+# `#[cfg(not(feature = "operator"))]` is a known cfg. GREEN re-points this to
+# `["fathomdb-engine/operator"]` to forward the gate into the engine.
+operator = []
