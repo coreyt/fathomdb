@@ -128,6 +128,13 @@ pub enum DoctorCommand {
     /// vectors, re-quantizing every row in one transaction. Always allowed
     /// (exempt from the automatic-path 200k cap).
     RecomputeMean(SimpleDoctorArgs),
+    /// Slice 34 (F4-READ / reserved-gap-34) — read back op-store
+    /// (`operational_mutations`) rows for one `append_only_log` collection
+    /// over the existing `Engine::read_mutations` seam. A read-only operator
+    /// diagnostic over the mutation log (the `dump-*` family, per
+    /// `ADR-0.6.0-cli-scope`), NOT the rejected `search`/`get`/`list`
+    /// application query surface. CLI-only; no SDK parity.
+    DumpMutations(DumpMutationsArgs),
 }
 
 /// EU-5b — `fathomdb doctor warm-cache` argument set.
@@ -143,6 +150,40 @@ pub struct WarmCacheArgs {
 /// the normative machine-readable contract on every verb.
 #[derive(Debug, Args)]
 pub struct SimpleDoctorArgs {
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Default `--limit` page size for `doctor dump-mutations` when the operator
+/// omits it. A sane page that bounds output; the engine still clamps the
+/// effective SQL `LIMIT` to `READ_COLLECTION_MAX_LIMIT` (~1M), so no read is
+/// ever unbounded. See `dev/design/slice-34-cli-op-store-readback-design.md`.
+const DUMP_MUTATIONS_DEFAULT_LIMIT: usize = 1000;
+
+/// Slice 34 — argument set for `doctor dump-mutations <collection>
+/// [--after-id <n>] [--limit <n>] [--json] <db_path>`. A read-only operator
+/// diagnostic that pages the op-store mutation log over the existing
+/// `Engine::read_mutations` seam.
+#[derive(Debug, Args)]
+pub struct DumpMutationsArgs {
+    /// The `append_only_log` collection whose appended rows to read back.
+    pub collection: String,
+
+    /// Exclusive cursor: return only rows with `id` strictly greater than this
+    /// value. A negative value is normalized to the start of the log; a value
+    /// past the last id yields an empty page.
+    #[arg(long = "after-id")]
+    pub after_id: Option<i64>,
+
+    /// Maximum rows in this page (default 1000). The engine clamps the
+    /// effective SQL `LIMIT` to the ~1M cap, so the read is never unbounded.
+    #[arg(long)]
+    pub limit: Option<usize>,
+
     /// Emit machine-readable JSON output.
     #[arg(long)]
     pub json: bool,
@@ -394,6 +435,46 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
         DoctorCommand::RecomputeMean(args) => {
             run_doctor_verb(&args.db_path, "recompute-mean", |e| {
                 e.recompute_mean().map(|r| (recompute_mean_report_json(&r), CliOutcome::Clean))
+            })
+        }
+        DoctorCommand::DumpMutations(args) => {
+            let limit = args.limit.unwrap_or(DUMP_MUTATIONS_DEFAULT_LIMIT);
+            run_doctor_verb(&args.db_path, "dump-mutations", |e| {
+                // Read over the EXISTING Slice-30 seam (Slice-33 index-driven).
+                // The rows are serialized INLINE below so `OpStoreRow` is never
+                // named / re-exported — the facade public-type set is untouched.
+                e.read_mutations(&args.collection, args.after_id, limit).map(|rows| {
+                    let row_values = rows
+                        .iter()
+                        .map(|r| {
+                            json!({
+                                "id": r.id,
+                                "collection": r.collection,
+                                "record_key": r.record_key,
+                                "op_kind": r.op_kind,
+                                "payload": r.payload,
+                                "schema_id": r.schema_id,
+                                "write_cursor": r.write_cursor,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    // `next_after_id` = the last row's id iff a full page was
+                    // returned (more rows may follow); else null (the log is
+                    // exhausted at this cursor). The engine cursor is exclusive,
+                    // so resuming with `--after-id <next_after_id>` never overlaps.
+                    let next_after_id =
+                        if rows.len() == limit { rows.last().map(|r| r.id) } else { None };
+                    let body = json!({
+                        "verb": "dump-mutations",
+                        "collection": args.collection,
+                        "after_id": args.after_id,
+                        "limit": limit,
+                        "count": row_values.len(),
+                        "rows": row_values,
+                        "next_after_id": next_after_id,
+                    });
+                    (body, CliOutcome::Clean)
+                })
             })
         }
     }
