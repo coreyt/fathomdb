@@ -47,6 +47,12 @@ class Removal:
 
 
 def _classify(path: str) -> str | None:
+    # Test files are NOT public API — a renamed/removed test function is not a
+    # consumer-visible removal. Excluding any `tests/` directory keeps the
+    # removal-detect gate scoped to the shipped public surface and stops false
+    # positives on test churn (e.g. the Slice-25 `test_surface.py` rewrite).
+    if "/tests/" in path:
+        return None
     if path.startswith("src/rust/crates/") and path.endswith(".rs"):
         return "rust"
     if path.startswith("src/python/") and path.endswith(".py"):

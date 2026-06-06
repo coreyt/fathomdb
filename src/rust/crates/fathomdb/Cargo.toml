@@ -9,3 +9,11 @@ rust-version.workspace = true
 
 [dependencies]
 fathomdb-engine.workspace = true
+
+[features]
+default = []
+# Slice 27 fix-1 (Q5=BIND-RUST, AC-074): forwards the operator/recovery seam
+# gate into the engine and un-gates the 20 operator-seam re-exports below. The
+# DEFAULT facade is recovery-clean + raw-SQL-free at the method level;
+# `fathomdb-cli` enables this so `recover`/`doctor` still compile.
+operator = ["fathomdb-engine/operator"]

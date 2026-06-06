@@ -14,16 +14,24 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fathomdb_embedder::{EmbedderEvent, MeanRecomputeTrigger};
+use fathomdb_embedder::EmbedderEvent;
+// `MeanRecomputeTrigger` is used only by the operator-gated `recompute_mean`.
+#[cfg(feature = "operator")]
+use fathomdb_embedder::MeanRecomputeTrigger;
 use fathomdb_embedder_api::{Embedder, EmbedderError as RuntimeEmbedderError, EmbedderIdentity};
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
     migrate_with_event_sink, MigrationError as SchemaMigrationError, MigrationStepReport,
-    CANONICAL_TABLES, LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
+    LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
 };
+// `CANONICAL_TABLES` is used only by the operator-gated `dump_row_counts`.
+#[cfg(feature = "operator")]
+use fathomdb_schema::CANONICAL_TABLES;
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+// `sha2::Digest` is used only by the operator-gated `safe_export`.
+#[cfg(feature = "operator")]
 use sha2::Digest;
 use sqlite_vec::sqlite3_vec_init;
 
@@ -60,6 +68,7 @@ const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
 /// the only outstanding work is whatever workers were mid-flight when
 /// the call landed; 30 s is generous for normal job sizes and bounded
 /// for tests.
+#[cfg(feature = "operator")]
 const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
 /// 0.8.0 Slice 5 (G1) — schema version that introduces the global FTS5
 /// tokenizer-default upgrade (`SCHEMA_VERSION` 11, migration step 11). A DB
@@ -2811,6 +2820,7 @@ impl Engine {
     /// only after the transaction is durable. No-op-safe on a non-MC
     /// identity (returns `EmbedderNotConfigured` rather than corrupting an
     /// un-centered workspace).
+    #[cfg(feature = "operator")]
     pub fn recompute_mean(&self) -> Result<MeanRecomputeReport, EngineError> {
         self.ensure_open()?;
         let identity = self.runtime_embedder_identity.clone();
@@ -2914,6 +2924,7 @@ impl Engine {
     /// Doctor read-only integrity report. Three-section output per
     /// AC-043a/b. `opts.full` adds `PRAGMA integrity_check`. `quick` and
     /// `round_trip` are accepted but treated as default for 0.6.0.
+    #[cfg(feature = "operator")]
     pub fn check_integrity(
         &self,
         opts: CheckIntegrityOpts,
@@ -2932,6 +2943,7 @@ impl Engine {
     /// self-contained SQLite file at `out`, computes SHA-256 of the
     /// resulting bytes, and writes a JSON manifest at `manifest`. Per
     /// AC-039a/b.
+    #[cfg(feature = "operator")]
     pub fn safe_export(
         &self,
         out: &Path,
@@ -2971,6 +2983,7 @@ impl Engine {
     /// and lets the scheduler re-enqueue every canonical row. Durable
     /// `projection_failures` audit rows are preserved per design. AC-044
     /// + AC-063c.
+    #[cfg(feature = "operator")]
     pub fn rebuild_projections(&self) -> Result<RebuildReport, EngineError> {
         self.ensure_open()?;
         self.run_rebuild(true, RebuildKind::Projections)
@@ -2979,6 +2992,7 @@ impl Engine {
     /// Vec0-only variant of [`Engine::rebuild_projections`]. Leaves
     /// FTS5 shadow content untouched; per recovery design,
     /// `recover --rebuild-vec0` is the surface for vec0-only repair.
+    #[cfg(feature = "operator")]
     pub fn rebuild_vec0(&self) -> Result<RebuildReport, EngineError> {
         self.ensure_open()?;
         self.run_rebuild(false, RebuildKind::Vec0)
@@ -2988,6 +3002,7 @@ impl Engine {
     /// id set produced by `source_id`, ordered by `write_cursor`. Empty
     /// string is not a valid `source_id`; rows with NULL `source_id`
     /// are excluded from every result.
+    #[cfg(feature = "operator")]
     pub fn trace_source_ref(&self, source_id: &str) -> Result<TraceReport, EngineError> {
         self.ensure_open()?;
         if source_id.is_empty() {
@@ -3048,6 +3063,7 @@ impl Engine {
     /// Non-perturbation: rows from other sources (and rows with NULL
     /// `source_id`) are untouched; the projection cursor is NOT reset
     /// and no blanket projection rebuild is issued.
+    #[cfg(feature = "operator")]
     pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
         self.ensure_open()?;
         if source_id.is_empty() {
@@ -3070,6 +3086,7 @@ impl Engine {
     /// Doctor `verify-embedder` seam (AC-040a). Compares the
     /// `_fathomdb_embedder_profiles` row to the operator-supplied
     /// `name:revision` identity + dimension; never raises on mismatch.
+    #[cfg(feature = "operator")]
     pub fn verify_embedder(
         &self,
         supplied_identity: &str,
@@ -3101,6 +3118,7 @@ impl Engine {
     /// `PRAGMA user_version` sentinel plus the table + index inventory
     /// from `sqlite_schema`, excluding `sqlite_*` internal rows.
     /// Canonical tables appear first per [`CANONICAL_TABLES`].
+    #[cfg(feature = "operator")]
     pub fn dump_schema(&self) -> Result<DumpSchemaReport, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -3115,6 +3133,7 @@ impl Engine {
 
     /// Doctor `dump-row-counts` seam (AC-040a). Emits canonical-table
     /// counts only; projection / FTS / vec0 shadow tables are excluded.
+    #[cfg(feature = "operator")]
     pub fn dump_row_counts(&self) -> Result<DumpRowCountsReport, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -3132,6 +3151,7 @@ impl Engine {
     /// Doctor `dump-profile` seam (AC-040a). Returns the stored
     /// embedder identity + dimension plus the registered vectorized
     /// kinds from `_fathomdb_vector_kinds`.
+    #[cfg(feature = "operator")]
     pub fn dump_profile(&self) -> Result<DumpProfileReport, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -3158,6 +3178,7 @@ impl Engine {
     /// SQLite reports. `status = Busy` when SQLite signalled a blocked
     /// checkpoint (`busy != 0`); the WAL may still be partially
     /// checkpointed in that case.
+    #[cfg(feature = "operator")]
     pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -3176,6 +3197,7 @@ impl Engine {
         })
     }
 
+    #[cfg(feature = "operator")]
     fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
@@ -3268,6 +3290,7 @@ impl Engine {
         })
     }
 
+    #[cfg(feature = "operator")]
     fn run_rebuild(
         &self,
         include_fts: bool,
@@ -3286,6 +3309,7 @@ impl Engine {
         result
     }
 
+    #[cfg(feature = "operator")]
     fn rebuild_shadow_state(
         &self,
         include_fts: bool,
@@ -4559,6 +4583,7 @@ fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<Canonica
     rows.collect()
 }
 
+#[cfg(feature = "operator")]
 fn hex_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -4568,6 +4593,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[cfg(feature = "operator")]
 fn hex_nibble(value: u8) -> char {
     match value {
         0..=9 => (b'0' + value) as char,
@@ -4576,6 +4602,7 @@ fn hex_nibble(value: u8) -> char {
     }
 }
 
+#[cfg(feature = "operator")]
 fn physical_section(connection: &Connection, full: bool) -> Section {
     let mut findings = Vec::new();
     if let Err(err) = connection.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0)) {
@@ -4606,6 +4633,7 @@ fn physical_section(connection: &Connection, full: bool) -> Section {
     }
 }
 
+#[cfg(feature = "operator")]
 fn logical_section(connection: &Connection) -> Section {
     let mut findings = Vec::new();
     if let Err(err) = connection.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
@@ -4642,6 +4670,7 @@ fn logical_section(connection: &Connection) -> Section {
     }
 }
 
+#[cfg(feature = "operator")]
 fn semantic_section(connection: &Connection) -> Section {
     match load_default_profile(connection) {
         Ok(_) => Section::Clean,
@@ -4662,6 +4691,7 @@ fn semantic_section(connection: &Connection) -> Section {
     }
 }
 
+#[cfg(feature = "operator")]
 fn collect_integrity_check_findings(connection: &Connection) -> rusqlite::Result<Vec<Finding>> {
     let mut statement = connection.prepare("PRAGMA integrity_check")?;
     let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
@@ -4684,6 +4714,7 @@ fn collect_integrity_check_findings(connection: &Connection) -> rusqlite::Result
     Ok(findings)
 }
 
+#[cfg(feature = "operator")]
 fn locator_from_rusqlite_error(err: &rusqlite::Error) -> CorruptionLocator {
     let extended = err.sqlite_error().map(|inner| inner.extended_code).unwrap_or(0);
     CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: extended }
@@ -5360,6 +5391,7 @@ fn table_exists(connection: &Connection, table: &str) -> bool {
         .is_ok()
 }
 
+#[cfg(feature = "operator")]
 fn read_schema_objects(
     connection: &Connection,
     obj_type: &str,
@@ -5383,6 +5415,7 @@ fn read_schema_objects(
     Ok(out)
 }
 
+#[cfg(feature = "operator")]
 fn order_canonical_first(mut objects: Vec<SchemaObject>) -> Vec<SchemaObject> {
     let mut canonical: Vec<SchemaObject> = Vec::new();
     for name in CANONICAL_TABLES {

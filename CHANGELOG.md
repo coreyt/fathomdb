@@ -8,6 +8,25 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
+### Changed
+
+- **Rust facade: operator/recovery seam gated behind the `operator` feature
+  (0.8.0 Slice 27 fix-1, Q5=BIND-RUST / AC-074).** The default `fathomdb`
+  facade is now recovery-clean and raw-SQL-free at the method level: the 12
+  operator/recovery `Engine` methods (`rebuild_projections`, `rebuild_vec0`,
+  `excise_source`, `dump_schema`, `dump_row_counts`, `dump_profile`,
+  `trace_source_ref`, `truncate_wal`, `verify_embedder`, `check_integrity`,
+  `safe_export`, `recompute_mean`) and the 20 operator-seam re-export types
+  (`CheckIntegrityOpts`, `IntegrityReport`, `SafeExportArtifact`, `TraceReport`,
+  `TraceEvent`, `RebuildReport`, `RebuildKind`, `ExciseReport`,
+  `VerifyEmbedderReport`, `VerifyEmbedderStatus`, `DumpSchemaReport`,
+  `SchemaObject`, `DumpRowCountsReport`, `TableRowCount`, `DumpProfileReport`,
+  `TruncateWalReport`, `TruncateWalStatus`, `Finding`, `MeanRecomputeReport`,
+  `Section`) are absent from the **default** build and present only with
+  `--features operator` (which `fathomdb-cli` enables). Gating, not deletion:
+  engine behavior is identical with the feature on. The Python/TypeScript SDK
+  surface and engine behavior are unchanged.
+
 ### Removed
 
 (none yet)

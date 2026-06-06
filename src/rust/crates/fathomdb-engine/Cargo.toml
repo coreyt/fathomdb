@@ -20,12 +20,25 @@ sqlite-vec = "=0.1.7"
 
 [features]
 default = []
+# Slice 27 fix-1 (Q5=BIND-RUST, AC-074): the operator/recovery seam
+# (rebuild_*, excise_source, dump_*, trace_source_ref, truncate_wal,
+# verify_embedder, check_integrity, safe_export, recompute_mean + their
+# operator-exclusive private helpers) is gated behind this feature so the
+# DEFAULT engine surface is recovery-clean at the method level. Behavior is
+# identical with the feature on (gate, not delete). `fathomdb-cli` enables it.
+operator = []
 # EU-5b: turning on this feature causes `EmbedderChoice::Default` to
 # materialize a real `CandleBgeEmbedder` via the loader at `Engine::open`.
 # Without it, `EmbedderChoice::Default` returns a typed `EmbedderError`
 # rather than attempting a network fetch (preserves the no-network build
 # closure per ADR-0.7.1-default-embedder-weight-fetch).
 default-embedder = ["fathomdb-embedder/default-embedder"]
+
+# The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
+# only builds when the `operator` feature is enabled (skipped on default builds).
+[[example]]
+name = "ingest_corpus"
+required-features = ["operator"]
 
 [dev-dependencies]
 libc = "0.2"

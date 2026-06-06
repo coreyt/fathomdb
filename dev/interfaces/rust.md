@@ -23,7 +23,7 @@ by AC-074; its positive-allowlist/parity pin **landed at reserved-gap Slice 27**
 (see § Governed-surface contract below). Rust keeps the facade shape below
 unless a successor ADR expands it.
 
-## Governed-surface contract (AC-074, Q5 = BIND-RUST — landed Slice 27)
+## Governed-surface contract (AC-074, Q5 = BIND-RUST — landed Slice 27; method-level + feature-gated by Slice 27 fix-1)
 
 This file **owns** the governed Rust-facade surface. The `fathomdb` facade is a
 **different consumer contract** than the Python/TypeScript 5-verb + `read.*`
@@ -64,9 +64,37 @@ which binds AC-074 — not a new AC id):
   allowlist half + an allowlist-scope denylist check.
 
 Rust has no runtime symbol-table introspection (no `dir(module)`), so — exactly
-like `no_recovery_surface.rs` / `reexports.rs` — the pin is a compile-time
-resolves-check plus this source-inspection-documented contract. See
+like `no_recovery_surface.rs` / `reexports.rs` — the type-level pin is a
+compile-time resolves-check plus this source-inspection-documented contract. See
 `dev/design/slice-27-rust-allowlist-design.md`.
+
+### Method-level boundary: default surface vs the `operator` feature (Slice 27 fix-1)
+
+The Slice 27 type-only audit missed that the facade re-exports the engine's
+`Engine` **wholesale**, so its inherent **methods** — including
+`rebuild_projections`/`rebuild_vec0` (recovery-denylist names) and the
+debug-only raw-SQL `execute_for_test` — were reachable. Per the signed Option B
+(codex [P1], HITL 2026-06-05) the **operator/recovery seam is feature-gated**:
+
+- **Default `fathomdb` facade (operator OFF)** — the governed runtime surface:
+  the 17 governed types + the application methods `Engine::open`/`write`/`search`/
+  `close` (+ the engine-attached instrumentation/control methods). It exposes
+  **no method whose name is in `{recover, restore, repair, fix, rebuild}`** and
+  **no raw-SQL method**. This is enforced at the **method** level by
+  `compile_fail` doctests in `fathomdb/src/lib.rs`
+  (`governed_surface_method_absence_proof`, default build;
+  `release_surface_raw_sql_absence_proof`, release build) — the only mechanism
+  that can assert a method does *not* resolve.
+- **`operator` feature (ON — `fathomdb-cli` enables it)** — un-gates the 12
+  operator/recovery methods (`rebuild_*`, `excise_source`, `dump_*`,
+  `trace_source_ref`, `truncate_wal`, `verify_embedder`, `check_integrity`,
+  `safe_export`, `recompute_mean`) + the 20 operator-seam re-exports below. The
+  CLI (`fathomdb recover`/`doctor`) is the operator substrate. **Gating, not
+  deletion**: engine behavior is byte-identical with the feature on.
+
+So the recovery-denylist + no-raw-SQL guarantees hold at the **method** level on
+the default governed surface, while the CLI retains the seam via the feature.
+See `dev/design/slice-27-fix1-operator-gate-design.md`.
 
 ## Public surface
 
@@ -137,7 +165,10 @@ The `fathomdb` facade re-exports the following recovery and reporting types
 from `fathomdb-engine` so that `fathomdb-cli` (the only public consumer of
 these types) compiles against the public Rust surface, not engine internals.
 These are CLI-only ergonomic types; they are NOT exposed as runtime SDK
-verbs (recovery remains CLI-only — see Non-presence below).
+verbs (recovery remains CLI-only — see Non-presence below). **Since Slice 27
+fix-1 these 20 re-exports — and the `Engine` methods that produce them — are
+gated behind the `operator` cargo feature** (which `fathomdb-cli` enables), so
+they are absent from the default facade surface (see § Method-level boundary).
 
 Re-exported types (canonical spellings, locked 2026-05-12; extended
 2026-05-15):
