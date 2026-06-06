@@ -38,6 +38,10 @@ is NEEDED future work = gap 37, affects both); **graph-traversal-scope signed as
 contract). **Graph work retargeted 0.8.x → 0.8.1.** The two experiment-gated ADRs (F9 confidence + F5
 fielded-FTS) stay parked in **deferred post-0.8.0 Slice 46**. **Pointer → Slice 40** (final verification +
 release readiness) = the mainline terminus + a HITL GA gate. Reserved-gap band (27·31·32·33·34) CLOSED.
+**Slice 40 PROMPTED 2026-06-06** (`dev/plans/prompts/0.8.0-slice-40.md`, baseline `1a585a9`; §1.5
+reconciliation satisfied — all upstream CLOSED, worktrees clean) — awaiting USER spawn. **Slice 37
+(reserved-gap 37 = G4↔G10 unification) determined NOT needed in 0.8.0** → deferred to 0.8.1 (HITL-signed;
+G4 unshipped; reshapes a shipped struct) — see §7 newest entry.
 
 **Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
 `[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
@@ -384,6 +388,39 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 37 determination (DEFER, no 0.8.0 action) + Slice 40 PROMPTED (terminus, gate-clear)
+
+- **Slice 37 (reserved-gap 37 = G4↔G10 filter-grammar unification) — NOT needed in 0.8.0; correctly deferred
+  to 0.8.1.** Three independent reasons: (1) **HITL-signed as 0.8.1 work** at Slice 35 close — recorded in
+  `dev/roadmap/0.8.1.md §2` as "NEEDED (not optional) 0.8.1 work — reserved-gap 37"; pulling it in would
+  re-litigate a fresh sign-off. (2) **Structurally impossible now** — unification needs a *shipped* G4
+  `read.list(kind, filter?, limit)` to fuse with G10's `SearchFilter`; 0.8.0 ships only **G2/G3**, and G4 is
+  an unimplemented *design* ADR (Slice 35). There is no G4 code to unify. (3) **It reshapes a shipped struct**
+  (`SearchFilter`, fixed-field) — a breaking change wrong to land the slice before GA. Also: the 0.8.0
+  reserved-gap band (27·31·32·33·34) is **exhausted/CLOSED**; 36–39 are forward-looking 0.8.1 direction, not
+  0.8.0 slots; no trigger requires 37 before Slice 40. **Action: none** (board §7 + roadmap already record it).
+- **Slice 40 (Verification + Release Readiness) — needed; it is the terminus + HITL GA gate; PROMPTED.**
+  Reconciliation gate (§1.5) **satisfied** from git: every upstream slice (5,10,15,20,25,30,35 + reserved
+  27,31,32,33,34) CLOSED with a promoted verdict; `git worktree list` clean (only the unrelated locked
+  `agent-*` orphan + `main`). Prompt authored: **`dev/plans/prompts/0.8.0-slice-40.md`** (baseline `1a585a9`).
+- **Two adaptations baked into the prompt (orchestrator plan-adjust, §2 step 1):**
+  - **Gate (n) `ci.yml` wiring folded into a worktree-owning Slice 40 agent** (HITL 2026-06-06) — the contract
+    framed 40.a/40.b as read-only no-worktree leaves, but wiring `scripts/agent-security.sh` into CI on a
+    userns-permissive `ubuntu-22.04` runner is a real config edit. Adapted to the current slice-owns-worktree
+    model (27/30/33/34): Phase A verifies (read-only) → Phase B wires gate (n) + authors release notes/
+    CHANGELOG/nav + DOC-INDEX → merges to local `main`. **STATUS stays orchestrator-owned** (agent does not
+    edit it); orchestrator finalizes the scoreboard + `Phase 0.8.0 CLOSED` after the codex review + HITL GA
+    sign-off.
+  - **Anchor correction: `SCHEMA_VERSION = 13`, not 12** (verified `fathomdb-schema/src/lib.rs:6`). Migration
+    idempotence gate (h) now covers **steps 11 (Slice 5 tokenizer) + 12 (Slice 15 G0) + 13 (Slice 33 op-store
+    index)** — the contract predates Slice 33 and said "11+12". AC-050c is **green since Slice 27 fix-1**
+    (agent-security.sh's AC-050c fixture should pass). AC-037 remains the *only* env-deferred local gate
+    (AppArmor-locked box) — gate (n) is exactly what makes it continuously CI-checked.
+- **Next:** USER spawns the Slice 40 agent. On its merge, orchestrator runs the adversarial release-readiness
+  review (codex, read-only over the report/notes), assembles the **HITL GA sign-off bundle**, and on sign-off
+  writes `Phase 0.8.0 CLOSED` + advances the pointer to "0.8.0 GA / 0.8.x planning". **A RED *test* gate from
+  Phase A → routed to the owning slice's band, HALT the close (never a Slice-40 fix-N).**
 
 ### 2026-06-06 — Slice 35 CLOSED (HITL-signed; both qualifications honored)
 
