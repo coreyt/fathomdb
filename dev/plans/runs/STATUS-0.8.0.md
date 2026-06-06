@@ -38,10 +38,18 @@ is NEEDED future work = gap 37, affects both); **graph-traversal-scope signed as
 contract). **Graph work retargeted 0.8.x → 0.8.1.** The two experiment-gated ADRs (F9 confidence + F5
 fielded-FTS) stay parked in **deferred post-0.8.0 Slice 46**. **Pointer → Slice 40** (final verification +
 release readiness) = the mainline terminus + a HITL GA gate. Reserved-gap band (27·31·32·33·34) CLOSED.
-**Slice 40 PROMPTED 2026-06-06** (`dev/plans/prompts/0.8.0-slice-40.md`, baseline `1a585a9`; §1.5
-reconciliation satisfied — all upstream CLOSED, worktrees clean) — awaiting USER spawn. **Slice 37
-(reserved-gap 37 = G4↔G10 unification) determined NOT needed in 0.8.0** → deferred to 0.8.1 (HITL-signed;
-G4 unshipped; reshapes a shipped struct) — see §7 newest entry.
+**Slice 40 RAN Phase A → HALTED to HITL 2026-06-06** (NOT merged; `main` unmoved at `5e809e4`). The
+verification battery (forced `AGENT_LONG=1`, which the per-push CI never sets) surfaced **3 RED gates + 1 load
+artifact** that the default CI path had masked: **B2** — REAL 0.8.0 FTS5 latency regression (ac_012 p50 49.9ms
+> 20ms @100k; Slice-5 `porter unicode61 remove_diacritics 2` tokenizer; v0.7.2 passed at 16ms) — the one
+genuine code blocker; **B1** — recall-floor gate mis-calibrated (ac_013b ASSERTS 0.90 but runs the SYNTHETIC
+`VaryingEmbedder` → ~0.73; the real-embedder 0.937 lives in report-only `eu7`; PRE-EXISTING, v0.7.2 identical)
+— actual product quality is fine, the GATE is wrong; **B3** — ac_020 parallel-read scaling, runner-pinned
+(fails on the aarch64 dev box + v0.7.2). **The Slice-40 contract's "ac_013b observed ~0.937" was a conflation
+of eu7's number with ac_013b's fixture — propagated into the prompt; corrected.** AWAITING HITL on B1 (gate/ADR)
++ B2 (remediate vs re-ratify AC-012 budget) + B3 (confirm runner-pin). See §7 newest entry. Slice-40 worktree
++ branch `slice-40-20260606T215041Z` (@`542ea5c`) KEPT for re-run (venv points at it). **Slice 37 (gap 37 =
+G4↔G10 unification) determined NOT needed in 0.8.0** → deferred to 0.8.1 (HITL-signed; G4 unshipped).
 
 **Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
 `[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
@@ -260,7 +268,7 @@ applicable to this slice's work-type.
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ✅ CLOSED 2026-06-06 (HITL-signed; codex §9 PASS, 2×[P3] reconciled) — filter-grammar ACCEPTED; graph-scope = 0.8.1 roadmap direction (revisable) | 15, 25, 32 | n/a (docs-only) | n/a (dev/adr not in nav) | ✅ 2 ADRs + roadmap/0.8.1 + DOC-INDEX |
 | **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
-| **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
+| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A RED: B2 real FTS5-latency regression + B1 recall-gate mis-calibration + B3 runner-pin; not merged) | 5,10,15,20,25,30,35 | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
 
 Status values: ❌ not started / ⏳ in flight / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N.
 Decision values (used in § 7): PASS / CONCERN+override / BLOCK→fix-N / DEFERRED.
@@ -283,7 +291,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ✅ **DONE** (closed 2026-06-04, `main`@`54e3e93`) — additive `WriteReceipt.dangling_edge_endpoints: u64`, post-row-insert EXISTS pass inside `commit_batch`'s open tx; `logical_id`-alone probe (missing OR superseded both count, `from`/`to` independent) hits step-12 partial index `canonical_nodes_logical_active_idx` (EXPLAIN gate, no SCAN); Py+TS parity. codex [P1] (O(N²) same-batch scan) → **fix-1** O(N) last-index precompute (byte-identical count) → clean PASS. `pr_g8_dangling_edges.rs` 8/8. Strict-mode = reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended/informational). No new AC (gap-tracked; `acceptance.md` locked) |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** (`perf_gates.rs::ac_013b_recall_at_10_floor`; observed ANN ~0.937) | held by 5/10/15; **40** gates | ✅ held through Slice 5 (1.000→1.000), Slice 10 (Δ 0.0000) **and Slice 15** (G0 additive; `logical_id=None` path byte-identical; unfiltered byte-identity pin green; real-embedder anchor 0.937 eu7/eu8-gated); **40** gates |
+| Recall floor ≥ **0.90** | held by 5/10/15; **40** gates | ⚠️ **CONFLATION CORRECTED + HALTED (Slice 40, 2026-06-06).** Prior cells cited "`ac_013b_recall_at_10_floor` observed ~0.937" — **FALSE**: that test ASSERTS 0.90 but runs the **synthetic `VaryingEmbedder`** (measures ~**0.7339**, PRE-EXISTING/v0.7.2-identical, `AGENT_LONG`-gated → never asserted in per-push CI). The **0.937 is `eu7`** (REAL bge-small, report-only, NOT floor-gating). The byte-identity / Δ-0.0000 pins prior slices cited ARE valid (read path unchanged) but they are NOT the floor assert. Actual product retrieval quality (eu7) IS 0.937 > 0.90; the **GATE is mis-calibrated** (synthetic fixture vs real-embedder floor) → **B1 awaiting HITL/ADR** (elevate eu7 to gating / demote ac_013b-synthetic to fidelity-report / re-baseline). Amends `ADR-0.7.0-vector-binary-quant.md`. |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green; **byte-unchanged through Slice 25 CONFIRMED** (zero-line diff on `test_no_recovery_surface.py` / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` + `bindings.md` §10 across both the Slice 25 rewrite and fix-1; verified by orchestrator + codex). AC-074 carries the five-name denylist as a permanent clause; `doctor` SDK-absent via allowlist non-membership |
 
 ---
@@ -388,6 +396,52 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 40 Phase A RAN → HALTED to HITL (3 RED gates; recall-gate conflation exposed; NOT merged)
+
+- **The Slice 40 agent ran the full Phase A battery with `AGENT_LONG=1` (which the per-push CI `verify` job
+  never sets) and HALTED — correctly, per the routing rule + §3 (recall-floor breach → HALT, don't ship).**
+  `main` unmoved at `5e809e4`; branch `slice-40-20260606T215041Z`@`542ea5c` UNMERGED; canonical clean except
+  the (now committed) `output.json`. **Orchestrator independently verified all structural claims from test
+  source** (not re-run): `perf_gates.rs` lines 512/567/643/926/1034 (all 5 heavy gates `AGENT_LONG`-gated,
+  early-return), 649 (`ac_013b` uses `VaryingEmbedder`), 627–718 (asserts 0.90), `eu7_real_corpus_ac.rs:12–30`
+  (eu7 = real bge-small, report-only; the 0.937 anchor; documents ac_013b runs synthetic vectors),
+  `migrations/011_search_index_tokenizer.sql:15` (`tokenize='porter unicode61 remove_diacritics 2'`),
+  `perf-canonical.yml` (workflow_dispatch-only, AC-012-filtered). **The Slice-40 contract's premise
+  "`ac_013b` … observed ~0.937" is a CONFLATION** (eu7's real-embedder number attributed to ac_013b's
+  synthetic fixture); I propagated it into the prompt and have corrected it (§3 row + prompt note).
+- **B2 — REAL 0.8.0 regression (the one genuine code blocker).** `ac_012` FTS5 query latency p50 **49.9ms >
+  20ms** (p99 315 > 150) @ n=100k; v0.7.2 baseline PASSES at 16ms (~3×). Root cause = the Slice-5 step-11
+  tokenizer upgrade (`porter unicode61 remove_diacritics 2`) — zero-API-surface but **not zero-cost** at
+  query time. Routes to the **Slice-5/G1 reserved-gap band (6–9)**. **HITL fork:** remediate (cheaper
+  tokenizer config / query-path opt) vs **re-ratify the AC-012 100k budget** (accept latency for the FTS
+  quality gain). Not a pure implementer fix — it's a quality-vs-latency product tradeoff.
+- **B1 — recall-floor gate MIS-CALIBRATED (pre-existing, NOT a quality regression).** `ac_013b` asserts the
+  0.90 floor but runs the **synthetic `VaryingEmbedder`** → ~**0.7339** (v0.7.2 identical). The 0.90 floor was
+  ratified on **real-embedder** ANN fidelity (`eu7` = 0.937, report-only). **Actual product retrieval quality
+  is fine (0.937 > 0.90); the GATE is wrong** — and the codebase's own `eu7` header already documents ac_013b
+  uses synthetic/isotropic vectors (noise floor ~0.51). **HITL/ADR fork** (amends
+  `ADR-0.7.0-vector-binary-quant.md`): (a) **elevate `eu7` real-embedder recall to the gating role + demote
+  `ac_013b`-synthetic to a non-gating quantization-fidelity report** [orchestrator-recommended]; (b)
+  re-baseline the synthetic floor to its true deterministic value; (c) re-point `ac_013b` at the real embedder.
+- **B3 — runner-pinned (pre-existing).** `ac_020` parallel-read scaling 114ms > 75ms; fails idle on the
+  aarch64 dev box AND on v0.7.2. perf gates are documented canonical-x86_64-tier-1-pinned. **Confirm on the
+  canonical perf runner**; if green there → formalize as runner-pinned (not a code defect).
+- **`ac_013` vector latency = LOAD ARTIFACT** (passes isolated 38ms; `cargo test --workspace` concurrency
+  corrupts timing). Not a blocker. Harness caveat recorded: AGENT_LONG perf gates need `--test-threads=1` /
+  the dedicated runner.
+- **META (the real release-readiness gap, bigger than gate (n)):** the perf + recall-floor budget asserts run
+  in **no per-push CI** — only the manual `workflow_dispatch` `perf-canonical.yml` (and even there, AC-012-only
+  by default; `ac_013b` effectively never). The per-push guard is only the lightweight
+  `ac_013_vector_read_path_smoke`. So these gates were **vacuously green** all campaign — the trap class from
+  [[conformance-rewrite-vacuous-green-trap]] / [[background-exit-masks-real-exit]]. Genuine GA readiness =
+  decide which gates assert at GA and wire them so they actually run. Folds into the B1/B2 dispositions + the
+  Slice-40 re-scope.
+- **NOT done autonomously (correctly): NO remediation slice spawned, NO floor change, NO budget re-ratify, NO
+  tokenizer edit — all are HITL/ADR calls.** Witness preserved: `output.json` committed; slice-40 worktree +
+  branch KEPT (venv editable points at it; re-used for the Phase-A re-run). **Next:** HITL decides B1 + B2
+  (+ B3 confirm) → orchestrator opens the remediation slice(s) in-band + amends the ADR + re-scopes Slice 40
+  (incl. the perf-gate CI wiring) → re-run Slice 40 Phase A → only then Phase B + merge + GA sign-off.
 
 ### 2026-06-06 — Slice 37 determination (DEFER, no 0.8.0 action) + Slice 40 PROMPTED (terminus, gate-clear)
 

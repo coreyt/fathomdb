@@ -1,0 +1,88 @@
+{
+  "phase": "0.8.0-slice-40",
+  "status": "HALTED — Phase A RED; Phase B not entered; not merged",
+  "baseline_sha": "5e809e4 (local main; docs-only over 1a585a9 Slice-35-CLOSED — git diff 1a585a9..5e809e4 -- src/ is empty)",
+  "branch": "slice-40-20260606T215041Z",
+  "worktree": "/tmp/fdb-slice-40-20260606T215041Z",
+  "head_sha": "542ea5c (branch HEAD; verification memo + Phase A results)",
+  "merged_to_main_sha": null,
+  "commits": [
+    "19d9d0c: docs(0.8.0): Slice 40 — verification plan + gate battery + routing rule",
+    "542ea5c: docs(0.8.0): Slice 40 Phase A results — HALT (3 RED perf/recall gates; Phase B not entered)"
+  ],
+  "gates_run": [
+    "check.sh AGENT_LONG=1 (FAIL 101)",
+    "verify-release-gates.sh (seamed: workflow_dispatch + synthetic v0.7.2)",
+    "ac_013b_recall_at_10_floor (isolated + v0.7.2 baseline)",
+    "perf_gates ac_012/ac_013/ac_020 (isolated + v0.7.2 baseline)",
+    "py pytest full suite (test-hooks)",
+    "ts npm test (node --test)",
+    "pr_g9_rrf_fusion, pr_g10_filtered_knn, pr_g12_recency, pr_g8_dangling_edges, pr_g0_identity",
+    "fathomdb-schema migrations",
+    "mkdocs build --strict"
+  ],
+  "gate_results": {
+    "a": "FAIL — check.sh exit 101; perf_gates 4 failed (ac_012/ac_013/ac_013b/ac_020); all 46 other workspace test binaries green",
+    "b": "pass — checks 2-5 green; tag-presence is documented pre-tag non-reason; SEAM UNDER-SPEC: needs GITHUB_EVENT_NAME=workflow_dispatch or synthetic GITHUB_REF_NAME beyond the 3 documented seams",
+    "c": "FAIL — recall@10=0.7339 < 0.90 (deterministic; PRE-EXISTING, v0.7.2 identical). SearchHit code-shape check PASS (reads hit.body)",
+    "d": "pass — py test_surface 19 passed (allowlist+live read.* via genuine dir() introspection, shared allowlist); ts surface.test.ts green",
+    "e": "pass+byte-unchanged — py/ts recovery suites green; rust no_recovery_surface ok; git diff --exit-code 1a585a9 empty",
+    "f": "pass — pr_g10_filtered_knn 6 passed (unfiltered_phase1_sql_byte_identical_to_0_7_2)",
+    "g": "pass — pr_g9_rrf_fusion 6 passed (k=60)",
+    "h": "pass — migrations 12 passed (steps 11 via ac_046a+ac_049; 12 via s12_g0_*; 13 via s13_op_store_*); SCHEMA_VERSION=13",
+    "i": "MIXED/FAIL — G8 pr_g8_dangling_edges 8 passed, G12 pr_g12_recency 5 passed; ac_012 FAIL (real regression B2), ac_020 FAIL (pre-existing B3), ac_013 load-artifact",
+    "j": "pass — Py+TS parity (SearchHit, WriteReceipt.row_cursors/dangling_edge_endpoints, read.get/get_many/collection/mutations)",
+    "k": "pass — X1 SDK functional py 99 passed/2 skipped, ts 67 passed/0 failed (incl cross-binding)",
+    "l": "pass — mkdocs build --strict clean (pre-nav-addition; release-notes page not added, Phase B not entered)",
+    "m": "NOT ASSESSED — Phase B deliverable, halted",
+    "n": "NOT DONE — Phase B deliverable, halted; AC-037 remains env-blocked locally as expected"
+  },
+  "recall_floor_measured": "0.7339 (floor 0.90) — DETERMINISTIC, pre-existing on v0.7.2 (0.7339 identical). Synthetic VaryingEmbedder vs real-embedder-calibrated floor. eu7/eu8 (report-only, operator-gated) NOT run this session; the ~0.937 figure cited in the prompt/contract is the eu7 REAL-embedder number, not ac_013b.",
+  "behavior_compat_events_documented": [],
+  "behavior_compat_events_pending_if_unblocked": [
+    "RRF-ordering (no knob)",
+    "SearchHit reshape",
+    "AC-057a→AC-074 governed surface",
+    "FTS5 tokenizer upgrade (step 11) — NOTE: NOT zero-cost; carries a ~3x FTS5 query-latency regression (B2), so 'zero-surface' framing must NOT be shipped as 'zero-impact'"
+  ],
+  "blockers_encountered": [
+    {
+      "id": "B1",
+      "gate": "c / ac_013b_recall_at_10_floor",
+      "owning_slice_band": "G1 retrieval / reserved-gap 6-9 + HITL/ADR",
+      "severity": "HARD HALT (designated floor-gating test; contract: recall<0.90 → HALT rather than ship)",
+      "description": "recall@10=0.7339 < 0.90. DETERMINISTIC and PRE-EXISTING (v0.7.2 yields byte-identical 0.7339). NOT a 0.8.0 regression. Root cause: ac_013b hardcodes the synthetic VaryingEmbedder (random 768-d unit vectors → ~73% sign-bit-quantization fidelity); the 0.90 floor was calibrated on the REAL bge-small embedder (~0.937, measured in the report-only operator-gated eu7). Masked in normal CI because ac_013b early-returns unless AGENT_LONG=1, which the CI verify job never sets. This is a gate/floor CALIBRATION decision, not a code fix.",
+      "resolution": "UNRESOLVED — halted, routed. Orchestrator/HITL must decide: re-point ac_013b at the real embedder, re-baseline the synthetic floor, or formally elevate eu7 to the gating role and demote ac_013b to a code-shape check (ADR-level)."
+    },
+    {
+      "id": "B2",
+      "gate": "a,i / ac_012_text_query_latency_on_fts5_path",
+      "owning_slice_band": "Slice 5 (G1 FTS5 tokenizer) / reserved-gap 6-9",
+      "severity": "REAL 0.8.0 REGRESSION (hard unconditional gate) — critical shippability blocker",
+      "description": "p50=49.9ms > 20ms and p99=315ms > 150ms at n=100000. v0.7.2 baseline PASSES (p50=16ms/p99=56ms). ~3x latency, reproduced isolated on idle box and concurrently. Root cause: Slice-5 step-11 migration upgraded the FTS5 tokenizer to 'porter unicode61 remove_diacritics 2' (v0.7.2 used the lighter default); the porter stemmer + diacritics folding is materially more expensive at query time. The upgrade is zero-API-surface but NOT zero-cost.",
+      "resolution": "UNRESOLVED — halted, routed to Slice-5/G1 band. Options for that band: cheaper tokenizer config, query-path optimization, or HITL re-ratification of the AC-012 budget at the 100k tier if the tokenizer quality gain is deemed worth the latency."
+    },
+    {
+      "id": "B3",
+      "gate": "i / ac_020_reads_do_not_serialize_on_a_single_reader_connection",
+      "owning_slice_band": "G1 / reserved-gap 6-9 (or formal runner-pin)",
+      "severity": "PRE-EXISTING (not a 0.8.0 regression)",
+      "description": "8-reader concurrent=114ms > bound 75ms (~3.5x scaling vs required ~5.3x). v0.7.2 also fails (113ms > 65ms). Fails even idle. Hardware/runner parallel-scaling sensitivity (memory-bandwidth bound); perf gates are runner-pinned to canonical x86_64 tier-1 CI per the contract.",
+      "resolution": "UNRESOLVED — halted. Likely a runner-pin (confirm on canonical CI perf runner) rather than a code defect; orchestrator to characterize."
+    }
+  ],
+  "non_blocking_observations": [
+    "ac_013 vector latency is a LOAD ARTIFACT, not a real RED: fails in concurrent cargo test --workspace (p50=80.6ms) but PASSES isolated (p50=38ms). HARNESS CAVEAT: AGENT_LONG perf/parallelism gates must run with --test-threads=1 or on the dedicated perf runner; cargo test --workspace runs them concurrently and corrupts latency/parallelism measurements. ac_012/ac_020/ac_013b REDs were re-confirmed in isolation; only ac_013 was purely load.",
+    "Gate (b) seam under-spec: the 3 documented seams (RELEASE_GATES_HEAD_REF/CHANGELOG/SKIP_GIT_REACH) are insufficient pre-tag; verify-release-gates.sh also requires GITHUB_EVENT_NAME=workflow_dispatch or a synthetic GITHUB_REF_NAME=v<workspace-version>. Both verified green for checks 2-5.",
+    "Migration idempotence gate covers steps 11+12+13 (contract said 11+12 — predates Slice 33's step-13).",
+    "check.sh exit-masking: wrapping 'check.sh; echo EXIT=$?' masks the real exit; real exit was 101.",
+    "Gate battery run with the native ext built from the worktree (maturin develop --features ...,test-hooks,default-embedder); TS via build:native:debug. The canonical .venv editable fathomdb now points at this /tmp worktree — re-point to canonical src/python (pip install -e) after the worktree is reaped."
+  ],
+  "additional_changes_made_in_scope": [
+    "NONE to ci.yml / release notes / CHANGELOG / mkdocs.yml / DOC-INDEX — Phase B was not entered (Phase A RED).",
+    "Worktree-only docs commits: dev/design/slice-40-verification.md (plan + Phase A results). Branch NOT merged.",
+    "Diagnostic worktree at v0.7.2 (/tmp/fdb-baseline-v072-*) created for regression bisection — to be reaped by the orchestrator (git worktree remove)."
+  ],
+  "agent_verify_result": "fail — gate (a) check.sh AGENT_LONG=1 exited 101 (perf_gates: ac_012 real regression + ac_013b recall-floor + ac_020 pre-existing; ac_013 load-artifact). AC-037 env-deferred (would be CI gate (n), not wired — Phase B not reached).",
+  "next_step_for_orchestrator": "HALT the Slice 40 close. (1) B2 is the critical real regression: open a remediation slice in the Slice-5/G1 band (6-9) for the FTS5 'porter unicode61 remove_diacritics 2' tokenizer latency cost (or HITL re-ratify the AC-012 100k budget). (2) B1: route the recall-floor calibration to HITL/ADR — the designated floor-gating test ac_013b is structurally below 0.90 on the synthetic fixture (pre-existing, v0.7.2 identical) and the 0.937 'floor holds' claim was never substantiated by THIS test; decide whether to re-point it at the real embedder / re-baseline / elevate eu7. (3) B3: confirm on the canonical perf runner or formalize as runner-pinned. Re-run Slice 40 (Phase A) after the band re-greens; only then proceed to Phase B (ci.yml gate-(n), release notes, X2/X3) and merge. Diagnostic worktrees (slice-40-* and baseline-v072-*) await cleanup; canonical is clean and unmodified."
+}
