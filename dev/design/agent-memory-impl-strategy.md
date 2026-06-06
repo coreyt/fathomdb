@@ -346,7 +346,10 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
   conformance).
 
 ### Slice H — G6: Retrieve + expand *(capstone; governed via search args; depends on G0/G1/G4/G5)*
-- **G6 = G1 + G4 + G5 composed.** Not independently buildable.
+- **G6 = G1 + G4 + G5 + G9 composed.** Not independently buildable. (G9 = the RRF
+  fusion the G1 retrieve path already applies; made explicit here to match the
+  authoritative composition in the triage + `ADR-0.8.0-graph-traversal-scope`. The
+  earlier "G1+G4+G5" shorthand folded G9 into G1-retrieve — same capstone.)
 - **Migration:** none (prerequisite indexes belong to G4/G5, folded into G0's
   migration — **all CREATE INDEX, no exemption marker needed**, contra the first design).
 - **AC-057a:** additive optional `expand`/`filter` args on `search` (governed under

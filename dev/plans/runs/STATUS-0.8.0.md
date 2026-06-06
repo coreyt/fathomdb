@@ -31,10 +31,13 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Current: NONE active — Slice 34 CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS). The entire reserved-gap
-band (27 Rust pin · 31 identity re-scope · 32 graph ADR · 33 cursor harden · 34 CLI readback) is now CLOSED.
-Pointer → Slice 35 (deferred-feature design-ADRs), then Slice 40 (final verification + release readiness)
-= the mainline terminus. No reserved-gap work remains.**
+**Current: Slice 35 MERGED (`a6bae4f`) + codex §9 PASS (2×[P3] resolved) — ⏸ PENDING HITL SIGN-OFF on the
+two decisions (graph depth ceiling + valid-time-vs-`superseded_at`; G4 closed enum + G10 coordination
+scope). Cannot CLOSE until HITL signs (orchestrator rules §3).** Slice 35 was HITL-split 2026-06-06 to two
+ADRs (graph-traversal-scope F1 + filter-grammar G4/F3); the two experiment-gated ADRs (F9 confidence + F5
+fielded-FTS) are parked in **deferred post-0.8.0 Slice 46**. On sign-off → flip `proposed→accepted` →
+CLOSED block → pointer to **Slice 40** (final verification + release readiness) = the mainline terminus.
+Reserved-gap band (27·31·32·33·34) is CLOSED.
 
 **Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
 `[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
@@ -251,7 +254,7 @@ applicable to this slice's work-type.
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
 | **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ✅ CLOSED 2026-06-05 (codex §9 clean PASS; EXPLAIN PK-walk→index-driven; `SCHEMA_VERSION 12→13`) | 30 | ✅ no SDK change (functional-retrieve unchanged) | ✅ | ✅ op-store.md + migrations + DOC-INDEX |
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
-| **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ❌ PROMPTED (not started) | 15, 25, 32 | n/a (docs-only) | ❌ | ❌ |
+| **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ⏸️ MERGED `a6bae4f`; codex §9 PASS (2×[P3] resolved); **PENDING HITL sign-off** | 15, 25, 32 | n/a (docs-only) | n/a (dev/adr not in nav) | ✅ two ADRs + DOC-INDEX |
 | **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -381,6 +384,31 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 35 MERGED + codex §9 PASS (2×[P3] resolved) — ⏸ PENDING HITL sign-off
+
+- **Slice 35 agent merged two draft ADRs** to local `main` @ `a6bae4f` (`Status: proposed`, not accepted —
+  correct): `ADR-0.8.0-graph-traversal-scope.md` (F1/G5/G6 — SDK depth ≤3 default 1 / engine cap 50 ported
+  from v0.5.6 `MAX_TRAVERSAL_DEPTH`; `superseded_at IS NULL`-only filter, G11 valid-time deferred;
+  `from_id`/`to_id` confirmed folded into G0 step-12 → gap 36 NOT triggered; `G6 = G1+G4+G5+G9`,
+  G6-before-G5) + `ADR-0.8.0-filter-grammar.md` (G4/F3 — closed `Predicate` enum `{JsonPathEq,
+  JsonPathCompare{Gt/Gte/Lt/Lte}, ScalarValue{Text/Integer/Bool}}` on `read.list(kind,filter?,limit)`;
+  EXCLUDES the fused/`*_unchecked` schema-gate-bypass builders; G10 = shared vocabulary, full unification =
+  gap 37; parameterized `json_extract` over allowlisted paths, no DSL/raw SQL). git diff = only the two
+  `dev/adr/` files + DOC-INDEX. No code/schema/`acceptance.md` change. Agent recovered a stray canonical
+  DOC-INDEX edit cleanly (captured→checkout→re-applied in `$WT`; canonical never left dirty).
+- **Orchestrator ran codex §9** (`codex exec review --base 2b263f3`): **PASS, 2 × [P3]** (no [P0]/[P1]/[P2]),
+  both internal contradictions in ADR *acceptance criteria*: (1) graph D-G1 said "clamps/rejects" depth >3
+  but the criterion requires reject-not-clamp; (2) filter D-F3 criterion required G10 to reference the new
+  shared types AND leave `SearchFilter` unmodified (impossible). **Both reconciled in the close** (decision
+  text → "rejects with a typed error, no silent clamp"; sharing rescoped to vocabulary-only with the G10
+  retrofit = reserved-gap 37). Sub-[P2] doc-wording → no re-review needed. Verdict:
+  `runs/0.8.0-slice-35-review-20260606T204206Z.md`.
+- **Doc-drift reconciled (agent-flagged):** `agent-memory-impl-strategy.md:349` said `G6 = G1+G4+G5`; updated
+  to `G1+G4+G5+G9` (G9 = the RRF fusion G1-retrieve already applies) to match the triage + the ADR.
+- **⏸ PENDING HITL SIGN-OFF** on the two decisions (graph depth ceiling + valid-time-vs-`superseded_at`; G4
+  closed enum + G10 coordination scope) — orchestrator rules §3 HITL gate. **Slice 35 is NOT closed.** On
+  sign-off: flip both ADRs `proposed→accepted` → CLOSED block → pointer to Slice 40.
 
 ### 2026-06-06 — Slice 35 SPLIT (HITL) + PROMPTED; F9/F5 deferred to post-0.8.0 Slice 46
 

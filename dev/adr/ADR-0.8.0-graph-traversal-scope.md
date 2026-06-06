@@ -84,9 +84,10 @@ grammar (**no raw SQL**).
 
 ### D-G1 — Depth ceiling: SDK default ceiling **≤ 3**, engine hard cap **50**
 
-The **SDK** accepts a `depth` argument **defaulting to 1** and **clamps/rejects
-above 3** (`read.neighbors(id, edge_type?, depth=1)`; `search(expand=)` likewise
-caps at 3). The **engine** carries an independent **hard cap of 50** ported
+The **SDK** accepts a `depth` argument **defaulting to 1** and **rejects a `depth`
+above 3 with a typed argument error — it does NOT silently clamp**
+(`read.neighbors(id, edge_type?, depth=1)`; `search(expand=)` likewise rejects
+above 3). The **engine** carries an independent **hard cap of 50** ported
 verbatim from v0.5.6 `MAX_TRAVERSAL_DEPTH` (`compile.rs:253`) as defense-in-depth:
 a compile-time `TraversalTooDeep` for any request above 50, regardless of how the
 caller is constructed. The two limits are layered, not redundant — the SDK ceiling

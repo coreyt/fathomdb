@@ -149,11 +149,13 @@ reserved-gap 37** (the "coordination slice if the filter grammar and G10 can't
 share", `0.8.0-implementation.md:1320`) — **not** done here, **not** a 0.8.x G4
 blocker.
 
-> **Falsifiable 0.8.x criterion.** G4 and G10 reference the **same**
-> `ScalarValue`/`ComparisonOp` types (one definition, two consumers — a
-> shared-import test). G4 lands **without** modifying the shipped `SearchFilter`
-> struct or its compilation. The DOC/plan records reserved-gap 37 as the home for
-> any future single-grammar unification.
+> **Falsifiable 0.8.x criterion.** G4 introduces `ScalarValue`/`ComparisonOp` as a
+> **standalone shared vocabulary** (one definition a future G10 adoption *can*
+> import) and lands **without** modifying the shipped `SearchFilter` struct or its
+> compilation (a test asserts `SearchFilter` is unchanged). Retrofitting G10 to
+> actually reference those shared types is **reserved-gap 37** (recorded in the
+> DOC/plan), **not** required for G4 — so the two requirements do not conflict:
+> sharing is vocabulary-definition reuse now, full single-grammar unification later.
 
 ### D-F4 — Compilation: parameterized `json_extract` over allowlisted paths, never raw SQL
 
