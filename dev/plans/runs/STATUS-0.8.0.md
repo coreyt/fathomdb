@@ -381,6 +381,25 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-06 — Slice 35 PROMPTED (four deferred-feature design-ADRs)
+
+- **Slice 35 prompt authored** — `dev/plans/prompts/0.8.0-slice-35.md` (self-contained, single design-adr
+  agent; the USER spawns it). Authors **four ADRs** in `dev/adr/`, each `Status: proposed` (HITL signs to
+  accept at close): (1) `ADR-0.8.0-graph-traversal-scope` (F1/G5/G6 — depth ≤3 SDK / cap 50 engine, G6 =
+  G1+G4+G5+G9, port the v0.5.6 `WITH RECURSIVE` BFS to G0 `from_id`/`to_id`); (2) `ADR-0.8.0-filter-grammar`
+  (G4/F3 — revive the v0.5.6 `Predicate` core, EXCLUDE the fused/`*_unchecked` builders, share the enum with
+  G10 `SearchFilter`, parameterized `json_extract` only); (3) `ADR-0.8.0-confidence-vs-importance` (F9 vs
+  G12 — one-or-two verdict, storage locus/decay, reweight-after-bit-KNN behind a dedicated flag NOT
+  `fusion_mode`); (4) `ADR-0.8.0-fielded-fts-bm25f` (F5/G9 — RECOMMEND `{name/title,tags,body}`+bm25 weights,
+  REJECT per-kind, `admin.configure` declaration + CLI-only REBUILD).
+- **Execution-model adaptation recorded in the prompt:** the impl-plan's "design-adr = no worktree" wording
+  assumed the old orchestrator-owns-worktree model; the prompt has the agent **own its worktree + merge the
+  drafts itself** (consistent with 27/30/33/34, no stray-canonical hazard). **Zero production code, no
+  `acceptance.md` change, no new AC, no re-opening G0 / `read.*` / the Slice-32 graph model.**
+- **Orchestrator (post-merge):** one codex adversarial pass per ADR → fix-N to PASS → route the four
+  decisions to **HITL sign-off** → flip `proposed→accepted` → close + advance pointer to **Slice 40**.
+  Reserved follow-on 36–39 (index-coverage / G4↔G10 reshape / vec0 two-signal spike / reserved).
+
 ### 2026-06-06 — Slice 34 CLOSED (fix-1; orchestrator-run §9 caught [P2], fix-1 → PASS) — reserved-gap band exhausted
 
 - **Slice 34 (CLI op-store read-back) delivered** `fathomdb doctor dump-mutations <collection> [--after-id n]
