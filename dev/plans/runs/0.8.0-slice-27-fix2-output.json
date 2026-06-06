@@ -5,8 +5,8 @@
   "resolves": "Slice 27 fix-1 codex [P1] (dev/plans/runs/0.8.0-slice-27-review-fix1-20260606T010212Z.md): fix-1's #[cfg(feature=operator)] method gating broke `cargo test -p fathomdb-engine` (default) — engine integration tests call the now-hidden methods; masked by --workspace feature-unification.",
   "baseline_sha": "03492e5492fa1d5e081417e47f0865dc8dfd08d0",
   "branch": "slice-27-fix2-20260606T013916Z",
-  "head_sha": "c8a2864",
-  "merged_to_main_sha": "PENDING_SEE_MERGE_STEP",
+  "head_sha": "1bd5d2b",
+  "merged_to_main_sha": "427bebd0a202d2fd4d5ed16541485beb20e9d155",
   "commits": [
     {"sha": "7a165c7", "kind": "design", "summary": "design memo — 13 pure-operator test targets (required-features) + 1 mixed (pr2b per-fn cfg); corpus_graph not-operator; RED baseline; no non-test consumer affected"},
     {"sha": "2752e53", "kind": "green", "summary": "GREEN — 13 [[test]] required-features=[operator] entries in fathomdb-engine/Cargo.toml; per-fn #[cfg(feature=operator)] in pr2b_mean_recompute.rs (4 tests + exclusive helpers/struct/import)"},
@@ -55,5 +55,5 @@
     "mkdocs_build": "PASS",
     "AC_037_netns": "environmental blocker only (CI at Slice 40) — not exercised standalone here"
   },
-  "next_step_for_orchestrator": "Slice 27 fix-2 merged at <merge sha>; re-review codex base 03492e5 (or current main); on PASS close Slice 27. This is the 2nd fix on Slice 27 (orig [P1]→fix-1→fix-1 [P1]→fix-2); a fix-2 [P1] would HALT to HITL per the fix-N bound."
+  "next_step_for_orchestrator": "Slice 27 fix-2 merged at 427bebd; re-review codex base 03492e5 (or current main); on PASS close Slice 27. This is the 2nd fix on Slice 27 (orig [P1]→fix-1→fix-1 [P1]→fix-2); a fix-2 [P1] would HALT to HITL per the fix-N bound."
 }
