@@ -16,7 +16,10 @@
 
 use std::sync::Arc;
 
-use fathomdb_embedder::{EmbedderEvent, MeanRecomputeTrigger};
+use fathomdb_embedder::EmbedderEvent;
+// `MeanRecomputeTrigger` is used only by the operator-gated event-fields test.
+#[cfg(feature = "operator")]
+use fathomdb_embedder::MeanRecomputeTrigger;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite, MEAN_VEC_PIN_THRESHOLD};
 use rusqlite::Connection;
@@ -147,14 +150,17 @@ fn read_mean_vec(path: &std::path::Path) -> Option<Vec<u8>> {
     .expect("mean_vec query")
 }
 
+#[cfg(feature = "operator")]
 fn decode_f32(blob: &[u8]) -> Vec<f32> {
     blob.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 
+#[cfg(feature = "operator")]
 fn subtract(v: &[f32], mean: &[f32]) -> Vec<f32> {
     v.iter().zip(mean).map(|(a, b)| a - b).collect()
 }
 
+#[cfg(feature = "operator")]
 fn quantize_binary(conn: &Connection, vec: &[f32]) -> Vec<u8> {
     let json = serde_json::to_string(vec).expect("json");
     conn.query_row("SELECT vec_quantize_binary(vec_f32(?1))", [json], |r| r.get::<_, Vec<u8>>(0))
@@ -163,6 +169,7 @@ fn quantize_binary(conn: &Connection, vec: &[f32]) -> Vec<u8> {
 
 /// Closed-form full-corpus mean over the stored un-centered f32 BLOBs,
 /// computed independently of the engine.
+#[cfg(feature = "operator")]
 fn closed_form_mean(conn: &Connection) -> Vec<f32> {
     let mut stmt = conn.prepare("SELECT embedding FROM vector_default ORDER BY rowid").unwrap();
     let rows: Vec<Vec<u8>> =
@@ -177,6 +184,7 @@ fn closed_form_mean(conn: &Connection) -> Vec<f32> {
     sum.iter().map(|s| (s / n) as f32).collect()
 }
 
+#[cfg(feature = "operator")]
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let dot: f64 = a.iter().zip(b).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
     let na: f64 = a.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>().sqrt();
@@ -239,6 +247,7 @@ fn topic_pivot_does_not_auto_recompute_mid_ingest() {
 /// (1) Mechanical: `recompute_mean` produces the full-corpus mean (within
 /// fp tolerance of an independent closed-form mean), re-quantizes every row,
 /// and the pinned mean + stored sign-bits are mutually consistent after.
+#[cfg(feature = "operator")]
 #[test]
 fn manual_recompute_matches_closed_form_and_requantizes_all() {
     let (_dir, path) = fixture_path("pr2b_mechanical");
@@ -285,6 +294,7 @@ fn manual_recompute_matches_closed_form_and_requantizes_all() {
 
 /// (2) Crash-atomicity: a fault between the `mean_vec` UPDATE and the
 /// re-quantize completion rolls back fully — no half-recentered corpus.
+#[cfg(feature = "operator")]
 #[test]
 fn recompute_fault_rolls_back_fully() {
     let (_dir, path) = fixture_path("pr2b_atomicity");
@@ -324,6 +334,7 @@ fn recompute_fault_rolls_back_fully() {
 /// (3) Events: MeanVecRecomputed carries the correct trigger/dim/doc_count
 /// and is published only after the recompute is durable; deferred event
 /// carries a drift cos.
+#[cfg(feature = "operator")]
 #[test]
 fn recompute_event_fields_and_post_commit_publish() {
     let (_dir, path) = fixture_path("pr2b_events");
@@ -354,17 +365,20 @@ fn recompute_event_fields_and_post_commit_publish() {
 
 /// A non-mean-centering caller embedder (distinct identity name), used to
 /// drive the `recompute_mean` rejection path.
+#[cfg(feature = "operator")]
 #[derive(Clone, Debug)]
 struct NonMcEmbedder {
     identity: EmbedderIdentity,
 }
 
+#[cfg(feature = "operator")]
 impl Default for NonMcEmbedder {
     fn default() -> Self {
         Self { identity: EmbedderIdentity::new("fathomdb-noop", "0.6.0-scaffold", DIM) }
     }
 }
 
+#[cfg(feature = "operator")]
 impl Embedder for NonMcEmbedder {
     fn identity(&self) -> EmbedderIdentity {
         self.identity.clone()
@@ -376,6 +390,7 @@ impl Embedder for NonMcEmbedder {
 
 /// (7) `recompute_mean` errors cleanly on a non-MC identity rather than
 /// corrupting an un-centered workspace (drives the CLI non-clean exit path).
+#[cfg(feature = "operator")]
 #[test]
 fn recompute_rejects_non_mc_identity() {
     let (_dir, path) = fixture_path("pr2b_noop");
