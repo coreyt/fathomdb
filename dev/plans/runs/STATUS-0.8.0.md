@@ -397,6 +397,41 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-06 — HITL ruled on the Slice-40 HALT (B1/B2/Q3) + B1 precedent found (AC-072/073) → plan set
+
+- **HITL decisions (AskUserQuestion 2026-06-06):**
+  - **B1 = elevate `eu7` to gating, demote `ac_013b`-synthetic to report-only** — *with the qualification that
+    `eu7` is not itself an AC, so **AC-013b must be formally superseded by a new AC**.*
+  - **B2 = create an EXPERIMENTATION slice** (Slice-5/G1 band): investigate cheaper tokenizer configs (drop
+    porter stemming / `remove_diacritics`, lighter `unicode61`) + query-path optimization **+ the
+    accessibility/modifiability of the tokenizer (and embedder) source** — measure latency vs FTS-quality,
+    **present findings + capture an HITL decision** (remediate-and-keep-budget vs re-ratify the AC-012 budget).
+    Not a blind fix.
+  - **Q3 = YES, wire perf+recall to GA** — the chosen recall gate (`eu7`) + AC-012 latency on the canonical
+    x86_64 perf runner, alongside gate (n). Folds into the Slice 40 re-scope.
+- **B1 PRECEDENT FOUND (de-risks the AC qualification):** `acceptance.md` already did this restructure TWICE —
+  **AC-072 supersedes the AC-013 latency budget** and **AC-073 supersedes the AC-019 stress budget**, each
+  making the **real-corpus `eu7_real_corpus_ac.rs` the asserting verdict** and demoting the synthetic
+  `perf_gates` AC to **REPORT-ONLY** (HITL-locked via `ADR-0.7.0-text-query-latency-gates-revised`). Confirmed:
+  **no formal `AC-013b` row exists** (informal sub-gate, referenced only in the eu7/perf_gates headers), and
+  **`eu7` currently only REPORTS recall** ("does not gate the build on the production 0.90 floor"). So B1 =
+  mint **`AC-075` (recall verdict)** at a gated slice: `eu7` asserts recall ≥0.90 (real bge-small; CI L-bound
+  0.913), `ac_013b`-synthetic → report-only; supersede AC-013b; amend `ADR-0.7.0-vector-binary-quant.md`.
+  (`acceptance.md` max is AC-074 (Slice 25); AC-075 is next; AC changes only at gated slices —
+  [[acceptance-md-locked-no-feature-acs]].)
+- **Sequencing (reserved-gap band 6–9, off Slice 5 / G1):**
+  1. **Slice 6 `[research/experiment]` (B2)** — tokenizer/query-path investigation + source-accessibility →
+     findings doc + measured tradeoffs + HITL decision. **PROMPTED** (`dev/plans/prompts/0.8.0-slice-6.md`).
+  2. **Slice 7 (B2 outcome)** — per HITL's post-experiment call: land a cheaper tokenizer (impl, keeps AC-012
+     budget) OR amend the AC-012 budget (AC change, gated). Authored after Slice 6 findings.
+  3. **B1 + Q3 fold into the SLICE 40 RE-SCOPE (gated):** mint AC-075 recall-verdict + amend the ADR + flip
+     `eu7` recall to asserting + demote `ac_013b` to report-only + wire eu7-recall & AC-012-latency to CI on
+     the canonical runner. Then re-run Phase A → Phase B → GA sign-off.
+  4. **B3** — confirm `ac_020` on the canonical x86_64 perf runner; if green → formalize runner-pin (likely
+     within the Slice-40 canonical-runner verification, not a code fix).
+- **Pointer:** **Slice 40 stays HALTED**; the critical-path unblock is **Slice 6 (B2 experiment)** — USER
+  spawns it. Slice-40 worktree/branch KEPT (venv editable points at it). Nothing remediated autonomously.
+
 ### 2026-06-06 — Slice 40 Phase A RAN → HALTED to HITL (3 RED gates; recall-gate conflation exposed; NOT merged)
 
 - **The Slice 40 agent ran the full Phase A battery with `AGENT_LONG=1` (which the per-push CI `verify` job
