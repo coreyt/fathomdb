@@ -5,8 +5,8 @@
   "resolves": "Slice 27 codex [P1] (governed_surface.rs audited TYPES not Engine METHODS → AC-074 recovery-denylist + no-raw-SQL falsely green for Rust). Verdict: dev/plans/runs/0.8.0-slice-27-review-20260605T215557Z.md. HITL chose Option B (2026-06-05).",
   "baseline_sha": "1c0d1b46146777f176f9425b1c0e6512c8ec9766",
   "branch": "slice-27-fix1-20260606T002540Z",
-  "head_sha": "46f8c8c",
-  "merged_to_main_sha": "PENDING_SEE_MERGE_STEP",
+  "head_sha": "3681bb7",
+  "merged_to_main_sha": "f07aa01c42ea688cc2888dc6bd2f2a845203614e",
   "commits": [
     {"sha": "ba8748b", "kind": "design", "summary": "design memo — operator-seam feature gate (Option B); exact gated set; feature-unification doctest plan; AC-050c plan; no-binding-calls verification"},
     {"sha": "7b9d5f7", "kind": "red", "summary": "RED — cfg-gated compile_fail method-absence doctests; 3 operator absence doctests FAIL (methods still reachable); AC-050c baseline FAIL (Slice-25 residue)"},
@@ -78,5 +78,5 @@
     "ingest_corpus example marked required-features = [\"operator\"] (it calls the now-gated trace_source_ref).",
     "fathomdb-engine import/const splits so the default build is dead-code-free under -D warnings (MeanRecomputeTrigger, sha2::Digest, CANONICAL_TABLES, REBUILD_DRAIN_TIMEOUT_MS, hex_encode/hex_nibble, collect_integrity_check_findings, locator_from_rusqlite_error, read_schema_objects, order_canonical_first)."
   ],
-  "next_step_for_orchestrator": "Slice 27 fix-1 merged at <merge sha>; re-review with codex (base 1c0d1b4 or current main); on PASS close Slice 27. Note: AC-037 netns remains the only non-green (environmental, CI at Slice 40). The raw-SQL release doctest is a documented pin (engine #[cfg(debug_assertions)] gate is canonical; verified symbol-absent in release rlib) — flag if a stricter CI-enforced release-surface assertion is wanted (would need trybuild or a RUSTDOCFLAGS no-debug-assertions doc run)."
+  "next_step_for_orchestrator": "Slice 27 fix-1 merged at f07aa01; re-review with codex (base 1c0d1b4 or current main); on PASS close Slice 27. Note: AC-037 netns remains the only non-green (environmental, CI at Slice 40). The raw-SQL release doctest is a documented pin (engine #[cfg(debug_assertions)] gate is canonical; verified symbol-absent in release rlib) — flag if a stricter CI-enforced release-surface assertion is wanted (would need trybuild or a RUSTDOCFLAGS no-debug-assertions doc run)."
 }
