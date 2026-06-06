@@ -245,12 +245,11 @@ fn exit_code_constants_match_design() {
 
 #[test]
 fn dump_mutations_limit_is_clamped_to_the_engine_cap() {
-    // [P2] fix-1 (codex §9): the CLI must clamp `--limit` to the same ~1M cap
-    // the engine applies, so the `next_after_id` "full page" decision compares
-    // `rows.len()` against the EFFECTIVE limit. Without this, a `--limit` above
-    // the cap makes a full capped page (`rows.len() == cap < requested`) look
-    // exhausted → `next_after_id: null` → silent pagination truncation while
-    // rows remain in the log.
+    // The CLI clamps `--limit` to the same ~1M cap the engine applies, so the
+    // `next_after_id` "full page" decision compares `rows.len()` against the
+    // EFFECTIVE limit. Without the clamp, a `--limit` above the cap makes a full
+    // capped page (`rows.len() == cap < requested`) look exhausted →
+    // `next_after_id: null` → pagination stops while rows remain in the log.
     assert_eq!(effective_dump_limit(None), 1000, "omitted --limit -> default page");
     assert_eq!(effective_dump_limit(Some(10)), 10, "below cap -> unchanged");
     assert_eq!(effective_dump_limit(Some(0)), 0, "zero -> zero (engine returns an empty page)");

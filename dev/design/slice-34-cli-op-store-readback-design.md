@@ -71,6 +71,15 @@ fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--js
   clamps the effective SQL `LIMIT` to the ~1M cap (`READ_COLLECTION_MAX_LIMIT`), so
   the CLI never issues an unbounded read; the default keeps a casual invocation
   from dumping up to a million rows by surprise.
+  - **`--limit` clamp (effective limit).** The CLI also clamps `--limit` to the
+    *same* ~1M cap via `effective_dump_limit` (CLI-side mirror
+    `DUMP_MUTATIONS_MAX_LIMIT`) **before** the read and the `next_after_id` decision.
+    The engine clamps the SQL `LIMIT` but returns at most ~1M rows; if the CLI
+    compared `rows.len()` to an *un-clamped* `--limit` above the cap, a full capped
+    page (`rows.len() == cap < requested`) would look exhausted → `next_after_id:
+    null` → pagination would stop while rows remain. Clamping both sides to the same
+    effective limit avoids this; the clamp is pure + unit-pinned in `tests/parser.rs`
+    (no >1M-row seeding needed).
 - `--json` — accepted on every verb per `cli.md § Output posture`. Consistent with
   every existing doctor verb (and AC-038), the verb emits the JSON envelope on
   every invocation; `--json` is the pinned machine contract and **no second machine

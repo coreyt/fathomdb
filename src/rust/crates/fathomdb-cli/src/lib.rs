@@ -164,6 +164,26 @@ pub struct SimpleDoctorArgs {
 /// ever unbounded. See `dev/design/slice-34-cli-op-store-readback-design.md`.
 const DUMP_MUTATIONS_DEFAULT_LIMIT: usize = 1000;
 
+/// CLI-side mirror of the engine's `read_collection`/`read_mutations` page cap
+/// (`READ_COLLECTION_MAX_LIMIT`, ~1M — private to `fathomdb-engine`). The CLI
+/// clamps `--limit` to the SAME value via [`effective_dump_limit`] so the
+/// `next_after_id` "full page ⇒ maybe more" decision compares `rows.len()`
+/// against the EFFECTIVE limit the engine actually honors. Without this mirror,
+/// a `--limit` above the engine cap would make a full capped page
+/// (`rows.len() == cap < requested`) look exhausted → `next_after_id: null` →
+/// pagination would silently stop while rows remain. Keep in lockstep with
+/// `fathomdb-engine`'s `READ_COLLECTION_MAX_LIMIT`.
+const DUMP_MUTATIONS_MAX_LIMIT: usize = 1_000_000;
+
+/// Resolve the effective `doctor dump-mutations` page limit: the operator's
+/// `--limit` (or the default when omitted), clamped to the engine page cap
+/// [`DUMP_MUTATIONS_MAX_LIMIT`]. Pure + total so the clamp is unit-pinned
+/// without seeding a >1M-row log (`tests/parser.rs`).
+#[must_use]
+pub fn effective_dump_limit(requested: Option<usize>) -> usize {
+    requested.unwrap_or(DUMP_MUTATIONS_DEFAULT_LIMIT).min(DUMP_MUTATIONS_MAX_LIMIT)
+}
+
 /// Slice 34 — argument set for `doctor dump-mutations <collection>
 /// [--after-id <n>] [--limit <n>] [--json] <db_path>`. A read-only operator
 /// diagnostic that pages the op-store mutation log over the existing
@@ -438,7 +458,7 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
             })
         }
         DoctorCommand::DumpMutations(args) => {
-            let limit = args.limit.unwrap_or(DUMP_MUTATIONS_DEFAULT_LIMIT);
+            let limit = effective_dump_limit(args.limit);
             run_doctor_verb(&args.db_path, "dump-mutations", |e| {
                 // Read over the EXISTING Slice-30 seam (Slice-33 index-driven).
                 // The rows are serialized INLINE below so `OpStoreRow` is never
