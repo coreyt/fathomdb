@@ -31,11 +31,10 @@ remains reserved.).
 
 ## 1. Current slice
 
-**Current: NONE active — Slices 30 + 31 + 32 all CLOSED 2026-06-05. Identity model is now settled
-through BOTH the point-lookup lens (Slice 31, `logical_id`-alone) AND the graph lens (Slice 32: the
-graph-model ADR confirms `logical_id`-alone holds for 0.8.0 with opaque-id edge addressing; the
-fact-on-edge enrichment is reserved-additive, not built). Next action: HITL picks from the reserved-gap
-band (27 Rust pin · 33 cursor harden · 34 CLI readback) or proceeds to Slice 40 (final verification).**
+**Current: NONE active — Slice 34 CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS). The entire reserved-gap
+band (27 Rust pin · 31 identity re-scope · 32 graph ADR · 33 cursor harden · 34 CLI readback) is now CLOSED.
+Pointer → Slice 35 (deferred-feature design-ADRs), then Slice 40 (final verification + release readiness)
+= the mainline terminus. No reserved-gap work remains.**
 
 **Slice 31 — G0 identity re-scope (active-uniqueness = `logical_id` alone, both tables)
 `[implementation — substrate; HITL SIGNED]` — ✅ CLOSED 2026-06-05 (codex §9 clean PASS, 0 findings).**
@@ -251,6 +250,7 @@ applicable to this slice's work-type.
 | **31** | G0 identity re-scope — active-uniqueness = logical_id alone (both tables) | implementation (substrate; HITL SIGNED) | ✅ CLOSED 2026-06-05 (codex §9 clean PASS) | 15, 30 | n/a (no SDK change) | ✅ prose-only (no nav change) | ✅ (ADR Decision 5 + propagated docs + DOC-INDEX) |
 | **32** | Resolve FathomDB's intended graph model (edge identity / addressing; G4-7 foundation) | design-adr / evaluation | ✅ CLOSED 2026-06-05 (ADR ACCEPTED; H1+H3 HITL-SIGNED; codex §9 2×[P2]→fixed) | 31 | n/a | ✅ prose-only (no nav change) | ✅ (graph-model ADR + substrate H3 reservation + DOC-INDEX) |
 | **33** | `read.collection`/`read.mutations` cursor+limit hardening (step-13 `(collection_name,id)` index) | implementation | ✅ CLOSED 2026-06-05 (codex §9 clean PASS; EXPLAIN PK-walk→index-driven; `SCHEMA_VERSION 12→13`) | 30 | ✅ no SDK change (functional-retrieve unchanged) | ✅ | ✅ op-store.md + migrations + DOC-INDEX |
+| **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs | design-adr | ❌ not started | 15, 25 | n/a (docs-only) | ❌ | ❌ |
 | **40** | Verification + Release Readiness | verification | ❌ not started | 5,10,15,20,25,30,35 | ❌ **gate k** (harnesses green) | ❌ **gate l** | ❌ **gate m** (DOC-INDEX complete) |
 
@@ -380,6 +380,31 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-06 — Slice 34 CLOSED (fix-1; orchestrator-run §9 caught [P2], fix-1 → PASS) — reserved-gap band exhausted
+
+- **Slice 34 (CLI op-store read-back) delivered** `fathomdb doctor dump-mutations <collection> [--after-id n]
+  [--limit n] [--json] <db_path>` — a read-only operator diagnostic that pages `operational_mutations` over
+  the **existing** Slice-30 `Engine::read_mutations` seam (Slice-33 index-driven). **CLI-only, no SDK parity**
+  (by mandate). Scope call (HITL pre-signed the framing): it's a `dump-*` diagnostic over the mutation log,
+  **not** the rejected ADR-0.6.0-cli-scope Option-B application-query surface → landed as an in-place
+  `ADR-0.6.0-cli-scope` amendment (Option B stays rejected). Rows serialized **inline** → facade public-type
+  set unchanged (`OpStoreRow` never re-exported); governed-surface (Slice 25/27) + recovery suites byte-frozen.
+- **Implementer SKIPPED its codex §9** (logged as a TODO in `output.json`) — the **Slice-27 trap again**
+  ([[orchestration-execution-traps]]). Orchestrator ran the missing §9 (`codex exec review --base e4dcdd1`):
+  **1 × [P2]** — `next_after_id` compared `rows.len()` to the **un-clamped** requested `--limit`, so a
+  `--limit` above the engine ~1M cap on a >1M-row log made a full capped page look exhausted →
+  `next_after_id: null` → silent pagination truncation while rows remained. Real but bounded; trivial
+  CLI-only fix → **fix, not override.**
+- **fix-1 (orchestrator-run, TDD):** CLI-side cap mirror `DUMP_MUTATIONS_MAX_LIMIT = 1_000_000` + pure
+  `effective_dump_limit()` clamping `--limit` before both the read and the `next_after_id` decision; pinned by
+  a pure unit test (no >1M-row seeding). codex re-review (`--base 32bb3d5`): **PASS** — [P2] resolved; lone
+  **[P3]** (comment referenced the review/task, AGENTS.md §6) folded into the GREEN commit. Merge `8212f65`.
+  Verdicts: `runs/0.8.0-slice-34-codex-review-20260606T141131Z.md` + `…-review-fix1-20260606T141733Z.md`.
+- **Reserved-gap band is now EXHAUSTED** (27 · 31 · 32 · 33 · 34 all CLOSED). **Pointer → Slice 35**
+  (deferred-feature design-ADRs, founded on the Slice-32 graph-model ADR), then **Slice 40** (final
+  verification + AC-037 CI gate (n) + AC-050c) = GA path. Worktree removed; ledger clean (only the unrelated
+  locked orphan).
 
 ### 2026-06-06 — Slice 27 CLOSED (fix-2 codex §9 clean PASS; [P1]→fix-1→[P1]→fix-2 chain resolved)
 
