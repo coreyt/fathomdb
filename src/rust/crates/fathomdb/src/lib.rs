@@ -62,10 +62,15 @@ pub use fathomdb_engine::{
 pub mod governed_surface_method_absence_proof {}
 
 /// AC-074 no-raw-SQL release-surface pin: the shipped (release) facade exposes
-/// no raw-SQL method. `Engine::execute_for_test` is `#[cfg(debug_assertions)]
-/// #[doc(hidden)]`, so it is absent from release builds already; this pins that
-/// invariant. `#[cfg(not(debug_assertions))]` → exercised by
-/// `cargo test -p fathomdb --release`.
+/// no raw-SQL method. The **canonical** guarantee is the engine's
+/// `Engine::execute_for_test` gate — `#[cfg(debug_assertions)] #[doc(hidden)]`,
+/// so the symbol is absent from release builds (verified: it is not present in
+/// `target/release/libfathomdb_engine.rlib`). This `#[cfg(not(debug_assertions))]`
+/// module is the release-surface pin in the best-effort `no_recovery_surface.rs`
+/// style; it is compiled out of debug builds, and a true no-debug-assertions doc
+/// build runs the `compile_fail` below. (Plain `cargo test --release` may not
+/// re-run rustdoc with debug-assertions off, so this is a documented pin backed
+/// by the engine cfg-gate, not a load-bearing CI assertion.)
 ///
 /// `execute_for_test` (raw SQL) does not resolve in a release build:
 /// ```compile_fail
