@@ -48,6 +48,19 @@ if ! python3 "$LINT" \
 fi
 echo "OK moved-in-file"
 
+# tests/-excluded: removals under any `tests/` directory are NOT public API and
+# must NOT require a CHANGELOG entry → exit 0 even with an empty Removed section.
+# (Slice 27 fix-1: the scanner scopes `tests/` out so test-function churn — e.g.
+# the Slice-25 test_surface.py rewrite — never trips the gate.)
+if ! python3 "$LINT" \
+    --diff-file "$FIX/tests-excluded/diff.patch" \
+    --changelog "$FIX/tests-excluded/CHANGELOG.md" \
+    --repo-root "$REPO_ROOT" \
+    >/dev/null; then
+    fail "tests-excluded fixture: linter must exit 0 (tests/ removals are not public API)"
+fi
+echo "OK tests-excluded"
+
 # default-base-ref live-git path — exercises the default --base argument
 # against live git history (no --diff-file). Catches the B-001 regression
 # where the default base-ref was "0.6.0-rewrite" (a closed branch removed
