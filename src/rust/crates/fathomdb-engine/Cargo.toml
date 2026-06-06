@@ -40,6 +40,65 @@ default-embedder = ["fathomdb-embedder/default-embedder"]
 name = "ingest_corpus"
 required-features = ["operator"]
 
+# Slice 27 fix-2: these integration-test targets exercise the operator/recovery
+# `Engine` methods that fix-1 gated behind `operator`. They are PURE-operator
+# (every `#[test]` calls a gated method), so the whole target is skipped on the
+# default build and runs under `--features operator`. This makes
+# `cargo test -p fathomdb-engine` (default) compile again without un-gating any
+# method. (The mixed `pr2b_mean_recompute.rs` is NOT here — its non-operator
+# carve-out test stays default-runnable via per-fn `#[cfg(feature = "operator")]`.)
+[[test]]
+name = "check_integrity"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_profile"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_row_counts"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_schema"
+required-features = ["operator"]
+
+[[test]]
+name = "eu7_real_corpus_ac"
+required-features = ["operator"]
+
+[[test]]
+name = "excise_source"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_projections"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_report"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_vec0"
+required-features = ["operator"]
+
+[[test]]
+name = "safe_export"
+required-features = ["operator"]
+
+[[test]]
+name = "trace_source_ref"
+required-features = ["operator"]
+
+[[test]]
+name = "truncate_wal"
+required-features = ["operator"]
+
+[[test]]
+name = "verify_embedder"
+required-features = ["operator"]
+
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"

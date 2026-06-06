@@ -1,0 +1,59 @@
+{
+  "slice": "0.8.0-slice-27-fix2",
+  "title": "Gate the engine's operator-method test targets so cargo test -p fathomdb-engine (default) compiles under the operator gate",
+  "phase": "complete",
+  "resolves": "Slice 27 fix-1 codex [P1] (dev/plans/runs/0.8.0-slice-27-review-fix1-20260606T010212Z.md): fix-1's #[cfg(feature=operator)] method gating broke `cargo test -p fathomdb-engine` (default) — engine integration tests call the now-hidden methods; masked by --workspace feature-unification.",
+  "baseline_sha": "03492e5492fa1d5e081417e47f0865dc8dfd08d0",
+  "branch": "slice-27-fix2-20260606T013916Z",
+  "head_sha": "c8a2864",
+  "merged_to_main_sha": "PENDING_SEE_MERGE_STEP",
+  "commits": [
+    {"sha": "7a165c7", "kind": "design", "summary": "design memo — 13 pure-operator test targets (required-features) + 1 mixed (pr2b per-fn cfg); corpus_graph not-operator; RED baseline; no non-test consumer affected"},
+    {"sha": "2752e53", "kind": "green", "summary": "GREEN — 13 [[test]] required-features=[operator] entries in fathomdb-engine/Cargo.toml; per-fn #[cfg(feature=operator)] in pr2b_mean_recompute.rs (4 tests + exclusive helpers/struct/import)"},
+    {"sha": "c8a2864", "kind": "docs", "summary": "DOC-INDEX — add fix-2 design memo row"}
+  ],
+  "findings_addressed": [
+    "[P1] resolved: `cargo test -p fathomdb-engine` (default) compiles again (RED: no method named dump_schema/.../recompute_mean). No engine method un-gated — the operator gate (and thus the facade method-level recovery-clean guarantee) is unchanged.",
+    "Masking root cause addressed: BOTH engine configs are now exercised standalone (default + --features operator), not only via --workspace feature-unification."
+  ],
+  "tdd_evidence": {
+    "red_evidence": "cargo test -p fathomdb-engine --no-run (default) FAILED: error[E0599] no method named dump_schema/dump_row_counts/dump_profile/rebuild_projections/rebuild_vec0/trace_source_ref/excise_source/truncate_wal/verify_embedder/check_integrity/safe_export/recompute_mean.",
+    "green_commit_sha": "2752e53",
+    "green_evidence": "cargo test -p fathomdb-engine (default): 47 ok-suites, 0 failures; pr2b_mean_recompute runs ONLY topic_pivot_does_not_auto_recompute_mid_ingest (1 test). cargo test -p fathomdb-engine --features operator: 60 ok-suites (the +13 gated targets), 0 failures; pr2b runs all 5. clippy --all-targets -D warnings rc=0 (no dead-code from the per-fn split).",
+    "test_files": ["src/rust/crates/fathomdb-engine/Cargo.toml ([[test]] required-features entries)", "src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs (per-fn #[cfg])"]
+  },
+  "engine_default_test_build": "COMPILES (cargo test -p fathomdb-engine --no-run default rc=0); non-operator tests run; 47 ok-suites.",
+  "gated_test_targets": {
+    "pure_operator_required_features": ["check_integrity", "dump_profile", "dump_row_counts", "dump_schema", "eu7_real_corpus_ac", "excise_source", "rebuild_projections", "rebuild_report", "rebuild_vec0", "safe_export", "trace_source_ref", "truncate_wal", "verify_embedder"],
+    "mixed_per_fn_cfg": {
+      "file": "pr2b_mean_recompute.rs",
+      "default_runnable_non_operator_test": "topic_pivot_does_not_auto_recompute_mid_ingest",
+      "operator_gated_tests": ["manual_recompute_matches_closed_form_and_requantizes_all", "recompute_fault_rolls_back_fully", "recompute_event_fields_and_post_commit_publish", "recompute_rejects_non_mc_identity"],
+      "operator_gated_helpers": ["decode_f32", "subtract", "quantize_binary", "closed_form_mean", "cosine", "NonMcEmbedder (+ Default/Embedder impls)", "MeanRecomputeTrigger import"]
+    },
+    "not_operator_left_untouched": "corpus_graph.rs (only a //! doc-comment mention of trace_source_ref; 0 real calls; compiles on default — review false-positive from an aborted parallel compile)"
+  },
+  "byte_freeze_verified": {
+    "method": "git diff --exit-code 03492e5 -- <three recovery suites>",
+    "result": "byte-unchanged",
+    "files": ["src/rust/crates/fathomdb/tests/no_recovery_surface.rs", "src/python/tests/test_no_recovery_surface.py", "src/ts/tests/no-recovery-surface.test.ts"]
+  },
+  "unchanged_from_fix1": "facade gating, governed_surface.rs + method-absence doctests, no_recovery_surface.rs (byte-frozen), rust.md/AC-074, AC-050c rc=0 — all unchanged (no edits to those files).",
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [],
+  "agent_verify_result": {
+    "cargo_test_fathomdb_engine_default": "PASS (47 ok-suites compile+run)",
+    "cargo_test_fathomdb_engine_features_operator": "PASS (60 ok-suites)",
+    "cargo_test_fathomdb_default_and_operator": "PASS (governed_surface + method-absence doctests green; operator seam resolves)",
+    "cargo_test_fathomdb_cli": "PASS",
+    "cargo_test_workspace": "PASS (94 ok-suites, 0 failures)",
+    "cargo_clippy_workspace_all_targets_Dwarnings": "PASS (rc=0)",
+    "cargo_fmt_check": "PASS",
+    "AC_050c_removal_detect": "rc=0 (unchanged from fix-1)",
+    "recovery_byte_freeze": "byte-unchanged",
+    "pyright": "0 errors (31 env warnings; no Python changed)",
+    "mkdocs_build": "PASS",
+    "AC_037_netns": "environmental blocker only (CI at Slice 40) — not exercised standalone here"
+  },
+  "next_step_for_orchestrator": "Slice 27 fix-2 merged at <merge sha>; re-review codex base 03492e5 (or current main); on PASS close Slice 27. This is the 2nd fix on Slice 27 (orig [P1]→fix-1→fix-1 [P1]→fix-2); a fix-2 [P1] would HALT to HITL per the fix-N bound."
+}
