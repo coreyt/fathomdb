@@ -36,9 +36,45 @@ recovery semantics owned by `dev/design/recovery.md`.
 | `dump-schema`     | `fathomdb doctor dump-schema`                                                  | `0` / `65` / `70` / `71` |
 | `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `0` / `65` / `70` / `71` |
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `0` / `65` / `70` / `71` |
+| `dump-mutations`  | `fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>` | `0` / `70` / `71` |
 
 `check-integrity --full` may emit doctor-only finding codes such as
 `E_CORRUPT_INTEGRITY_CHECK`.
+
+### `dump-mutations` — op-store read-back
+
+A read-only operator diagnostic that pages the op-store mutation log
+(`operational_mutations`) for one `append_only_log` collection. It is a
+diagnostic dump over operator/log data (like `dump-row-counts` / `trace`), **not**
+an application query verb — there is no `search` / `get` / `list` surface over
+application content. `--limit` bounds the page (default `1000`; the engine clamps
+to a ~1M cap); `--after-id` is an exclusive cursor for the next page. An empty,
+unknown, or unregistered collection (or an `--after-id` past the end) is a normal
+absence and exits `0`.
+
+```bash
+fathomdb doctor dump-mutations events --limit 2 --json ./store.sqlite
+```
+
+```json
+{
+  "verb": "dump-mutations",
+  "collection": "events",
+  "after_id": null,
+  "limit": 2,
+  "count": 2,
+  "rows": [
+    { "id": 1, "collection": "events", "record_key": "k0", "op_kind": "append",
+      "payload": "{\"n\":0}", "schema_id": null, "write_cursor": 1 },
+    { "id": 2, "collection": "events", "record_key": "k1", "op_kind": "append",
+      "payload": "{\"n\":1}", "schema_id": null, "write_cursor": 2 }
+  ],
+  "next_after_id": 2
+}
+```
+
+Resume the next page with `--after-id 2`. When a page is short (fewer rows than
+`--limit`), `next_after_id` is `null` — the log is exhausted at that cursor.
 
 ## Recover root
 

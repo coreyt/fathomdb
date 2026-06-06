@@ -9,7 +9,7 @@ status: accepted
 
 # ADR-0.6.0 — CLI scope
 
-**Status:** accepted (HITL 2026-04-27); amended (HITL 2026-05-16) — `--purge-logical-id` and `--restore-logical-id` removed from 0.6.0 recover sub-flag set, originally deferred to 0.7.x (blocked on canonical identity substrate; see `design/recovery.md § Logical-id purge and restore`); further amended (HITL 2026-05-24) — deferral target moved from 0.7.x to **0.8.0** alongside Memex knowledge-store / retrieval features that consume the substrate (`dev/roadmap/0.8.0.md`). 0.7.0 is now perf-only.
+**Status:** accepted (HITL 2026-04-27); amended (HITL 2026-05-16) — `--purge-logical-id` and `--restore-logical-id` removed from 0.6.0 recover sub-flag set, originally deferred to 0.7.x (blocked on canonical identity substrate; see `design/recovery.md § Logical-id purge and restore`); further amended (HITL 2026-05-24) — deferral target moved from 0.7.x to **0.8.0** alongside Memex knowledge-store / retrieval features that consume the substrate (`dev/roadmap/0.8.0.md`). 0.7.0 is now perf-only. Further amended (2026-06-06, Slice 34 / reserved-gap-34) — the 0.8.0 op-store diagnostic read-back `fathomdb doctor dump-mutations <collection>` is scoped **IN** under the `doctor` root as a `dump-*` diagnostic over the mutation log (`operational_mutations`). This is **not** a re-opening of Option B: it adds no `search` / `get` / `list` application query surface over `canonical_nodes`; application query verbs still require this ADR to be re-opened. See the Consequences bullet below and `dev/design/slice-34-cli-op-store-readback-design.md`.
 
 Phase 2 #22 interface ADR. Decides what verbs the `fathomdb` CLI ships in 0.6.0.
 
@@ -53,6 +53,7 @@ Specific full flag spelling and exit-code numbers live in `interfaces/cli.md`; c
 - `interfaces/cli.md` enumerates concrete flag spelling and exit-code numbers for the two roots.
 - `design/recovery.md` owns the canonical verb table, bit-preserving vs lossy classification, JSON-output posture, and `check-integrity` report shape.
 - Future application query verbs are out of scope for 0.6.0; adding them requires this ADR to be re-opened.
+- **2026-06-06 (Slice 34):** the 0.8.0 op-store read-back `fathomdb doctor dump-mutations <collection> [--after-id n] [--limit n] [--json] <db_path>` is added under `doctor` as a read-only, bit-preserving **diagnostic** over the mutation log (`operational_mutations`), in the same family as `trace` / `dump-*`. It reads back op-store rows over the existing `read.collection` / `read.mutations` engine seam and is **CLI-only** (no SDK-parity obligation). It is **not** the rejected Option B: it adds no `search` / `get` / `list` application query surface over `canonical_nodes`, so Option B stays rejected and a true application query surface still requires re-opening this ADR.
 - Future write verbs are out of scope for 0.6.0; adding them also requires this ADR to be re-opened.
 - CLI is sync (per async-surface ADR); no `--async` flag, no concurrency knobs.
 
