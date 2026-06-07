@@ -400,6 +400,28 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — CONSOLIDATED: Slice-40 re-scope = the single remaining 0.8.0 work item (all HALT findings fold in)
+
+All Slice-40-HALT findings are now HITL-ruled; they consolidate into **ONE re-scoped, gated Slice 40** (the GA
+terminus) — no separate Slice 7. The re-scoped Slice 40 must:
+1. **B1 → mint AC-075 (recall verdict):** make `eu7_real_corpus_ac.rs` recall@10 the **asserting** gate
+   (≥0.90 real bge-small; CI L-bound 0.913); **demote `ac_013b`-synthetic to report-only**; supersede the
+   informal AC-013b; amend `ADR-0.7.0-vector-binary-quant.md`. (HITL-approved 2026-06-06.)
+2. **B2 → run `--release`+isolated AND mint AC-076 (tier `ac_012`):** 10k binding assert (mirror `ac_013`'s
+   `AC013_GATE_N` branch), 100k/1M tracked-report; **keep the porter tokenizer**; retain AC-012 as legacy.
+   (HITL-ruled 2026-06-07.)
+3. **B3 → confirm `ac_020` on the canonical x86_64 runner, release+isolated;** if green, formalize as
+   runner-pinned (documented canonical-tier pin), else route to its band.
+4. **Q3/META → wire the perf+recall battery + gate (n) AC-037 to CI** on a canonical x86_64 runner,
+   **`--release`+isolated** (NOT `check.sh AGENT_LONG=1` debug+concurrent — that produced the false B2 49.9ms).
+5. **Original Slice-40 scope:** re-run the full battery (in release) → all green incl. the new AC-075/AC-076
+   gates; author release notes/CHANGELOG (3 behavior-compat events); X1/X2/X3; per-AC scoreboard all-green;
+   GA sign-off request. AC changes are legitimate here (Slice 40 is a **gated** slice, like AC-074 @ Slice 25).
+- **Two new ACs minted (AC-075 recall-verdict, AC-076 ac_012-tier);** `acceptance.md` max moves 074→076.
+- **NEXT orchestrator action:** re-author `dev/plans/prompts/0.8.0-slice-40.md` to this re-scope (baseline =
+  current `main`), then USER spawns it. The slice agent owns a worktree (it now writes code: AC tests +
+  `ci.yml` + release docs). slice-40 worktree (`542ea5c`) can be reaped before the re-run or reused.
+
 ### 2026-06-07 — HITL B2 ruling: RUN THE PERF GATE IN RELEASE, not debug (no AC/tokenizer change)
 
 - **HITL chose (over the experiment's "tier AC-012" recommendation): the B2 fix is to RUN `ac_012` (and the
@@ -411,13 +433,15 @@ the worktree at slice close.
   **`--release` + isolated** (as `perf-canonical.yml` already does) — both in (a) the **Slice-40 verification
   re-run** (do NOT measure perf via `check.sh AGENT_LONG=1` debug+concurrent again) and (b) the **Q3 CI-wiring**
   (wire them release+isolated on the canonical x86_64 runner). This IS the META fix from the HALT.
-- **Honest residual (flagged, not yet ruled):** even in `--release`, `ac_012` @100k measured ~**21ms vs the
-  20ms p50** budget on this box (p99 99ms < 150 fine; **green with wide margin at 10k**, p50 <1ms). So the
-  release fix dissolves the false 49.9ms blocker but leaves a **~1ms p50 margin at the unconditional 100k
-  tier** — within run-to-run noise + box-dependent + the gate's coarse percentile bucketing. **Orchestrator
-  recommendation:** treat as noise and rely on the **10k binding tier** (the AC-013/AC-019 philosophy) — i.e.
-  the release fix is sufficient; no AC-076 needed. If HITL wants a clean 100k margin, the AC-012 tiering
-  (option i) remains available as a small gated add-on. **Awaiting HITL on the residual** (see response).
+- **Honest residual (flagged):** even in `--release`, `ac_012` @100k measured ~**21ms vs the 20ms p50** budget
+  on this box (p99 99ms < 150 fine; **green with wide margin at 10k**, p50 <1ms) — a boundary that would flap
+  a hard 100k assert.
+- **HITL RULING on the residual (2026-06-07): tier `ac_012` — 10k BINDING, 100k TRACKED** (a quick HITL accepts
+  the ~1ms at the 100k tracked tier). So B2's **complete** fix = **run in `--release` + tier to 10k-binding /
+  100k-tracked, keep the porter tokenizer.** This **DOES** mint **AC-076** (the small gated AC supersession
+  mirroring `ac_013`'s `AC013_GATE_N` branch; keep AC-012 as retained legacy) — **done IN the Slice-40
+  re-scope** (gated), NOT a separate Slice 7. (Supersedes the earlier "Slice 7 dropped / no AC change" note:
+  release alone left a flapping 100k boundary; tiering is the stable precedented complement.)
 
 ### 2026-06-07 — Slice 6 (B2 experiment) MERGED → B2 root-cause CORRECTED: tokenizer EXONERATED; tier AC-012 (codex §9 in flight)
 
