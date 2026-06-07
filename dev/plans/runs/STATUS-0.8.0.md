@@ -418,9 +418,14 @@ terminus) — no separate Slice 7. The re-scoped Slice 40 must:
    gates; author release notes/CHANGELOG (3 behavior-compat events); X1/X2/X3; per-AC scoreboard all-green;
    GA sign-off request. AC changes are legitimate here (Slice 40 is a **gated** slice, like AC-074 @ Slice 25).
 - **Two new ACs minted (AC-075 recall-verdict, AC-076 ac_012-tier);** `acceptance.md` max moves 074→076.
-- **NEXT orchestrator action:** re-author `dev/plans/prompts/0.8.0-slice-40.md` to this re-scope (baseline =
-  current `main`), then USER spawns it. The slice agent owns a worktree (it now writes code: AC tests +
-  `ci.yml` + release docs). slice-40 worktree (`542ea5c`) can be reaped before the re-run or reused.
+- **✅ Slice-40 prompt RE-AUTHORED 2026-06-07** (`dev/plans/prompts/0.8.0-slice-40.md`, baseline `0131964`) to
+  this re-scope — code-bearing (AC-075/076 + ci.yml + release docs), slice-agent-owns-worktree model.
+  **Two infeasibility/anchor corrections baked in** ([[slice-prompt-verify-test-claims]]): (1) `eu7` currently
+  REPORTS recall (only a "beats-noise-floor" sanity assert) — B1 = make it ASSERT ≥0.90; (2) the real-embedder
+  recall **cannot be a per-push CI gate** (AC-072: ~166h seed infeasible) → AC-075 mirrors AC-072/073 as a
+  **LOCAL once-per-release / perf-canonical verdict**, per-push keeps only the smoke canary. **NEXT = USER
+  spawns the re-scoped Slice 40.** The stale `/tmp/fdb-slice-40-20260606T215041Z` worktree (`542ea5c`, first
+  Phase-A run) is reapable — the agent cuts a fresh worktree.
 
 ### 2026-06-07 — HITL B2 ruling: RUN THE PERF GATE IN RELEASE, not debug (no AC/tokenizer change)
 
