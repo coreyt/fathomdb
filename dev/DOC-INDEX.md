@@ -92,6 +92,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/runs/STATUS-0.8.0.md` | **Live state board** (nine §12.5 sections + X1/X2/X3 column + witness + harness contract) | 0 authors; every slice updates at close | 2026-06-03 |
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
+| `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | **Slice 6 (B2) FTS5 tokenizer latency experiment** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral; recommends tiering AC-012 (10k binding) per the AC-072/073 precedent | Slice 6 (B2) | 2026-06-07 |
 | `dev/plans/0.6.x/0.7.x-*.md`, `ci-deferred.md`, `README.md` | Prior-release plans + CI-deferral ledger | reference | (tree) |
 
 ---
