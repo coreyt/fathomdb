@@ -1250,3 +1250,27 @@ Test-plan.md does NOT decide thresholds. If a fixture / harness
 generates a number (e.g. baseline*p99 in AC-019), that number is a
 \_measured* value, not a _threshold_ — thresholds are compared against
 measurements per the parameter table.
+
+---
+
+## PLACEHOLDER — Agentic IR / evidence-recall AC(s) (reserved; defined by the IR-eval `g8`/`g9` initiative)
+
+> **Status: PLACEHOLDER — not yet a gate; no fabricated numbers.** This reserves the
+> spot for the **product-value** recall AC(s) that FathomDB does not yet have. The
+> ACs already in this file that touch recall (REQ-011 → AC-075 on the Slice-40 branch)
+> gate **ANN/quantization FIDELITY** (eu7: quantized vs exact-f32 top-10) — a
+> *system-health* property. They do **not** measure **IR / agentic relevance** ("when
+> the agent needs a memory to act, is the required evidence retrieved"). That axis is
+> measured today only by `eu8_ir_validation.rs` (report-only; observed ceiling ≈0.571).
+>
+> **What `g8`/`g9` will mint here (numbers + the AC id(s) assigned then, after AC-075/076
+> land):** ≥1 AC for an evidence/task-recall (qrels / fact-level) measure — candidate
+> form *Evidence Recall@K* — with experiment-grounded thresholds and per-class
+> (commitment / exact-fact / semantic …) tiers. Maps to **REQ-067 (placeholder)**.
+> Every threshold is **TBD**: `g8` defines the measure (with a Claude↔codex consensus
+> step) and runs the experiments; `g9` analyzes the outputs and recommends the gate to
+> HITL. Do **not** invent thresholds here before then. Inputs:
+> `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`,
+> `dev/plans/prompts/0.8.x-g8-ir-recall-measure.md`,
+> `dev/plans/prompts/0.8.x-g9-ir-recall-gate.md`.
+> (`g8`/`g9` = the IR-eval initiative; distinct from the shipped G8/G9 gaps.)

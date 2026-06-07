@@ -400,6 +400,32 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance reframe of B-1 + IR-eval `g8`/`g9` initiative commissioned
+
+- **A retrieval-eval analyst agent assessed a proposed multi-layer recall framework against FathomDB**
+  (`dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`, cited file:line throughout). **Central
+  finding: FathomDB's GA recall gate measures ANN/quantization FIDELITY** (eu7/AC-075: bit-KNN+f32-rerank vs
+  exact-f32 top-10 of the *same* model = system-health), **NOT IR/agentic relevance** (the product-value
+  axis). `eu8_ir_validation.rs` measures relevance today but is **report-only** (ceiling ≈0.571, embedder/
+  graph-bound, deliberately un-gated). The two are different axes.
+- **Reframes B-1 (the GA halt):** 0.8710 is "the cheap index lost ~13% of exact-f32 neighbors," NOT "the
+  product is 13% wrong" — a fidelity-bookkeeping number, not a quality cliff. **Fidelity already ≫ the 0.571
+  relevance ceiling, so chasing 0.87→0.95 via engine work buys ≈0 product value** → corpus-adopt+engine-work
+  (option 2) is the *lowest-leverage* path; the assessment's qrels/pinning hygiene **supports options (1)/(3)
+  + the OLD-vs-NEW A/B**. Keep the fidelity floor un-weakened as a system-health gate. (Cross-linked into the
+  GA-recall hand-off §2.6.)
+- **The real product-value gate (evidence/task recall) does not exist yet** → commissioned as the **IR-eval
+  `g8`/`g9` initiative** (post-0.8.0-GA / 0.8.1): `g8` (`dev/plans/prompts/0.8.x-g8-ir-recall-measure.md`)
+  defines the IR/agentic-relevance measure via a **Claude↔codex consensus step** + mints AC(s) + runs
+  experiments (fact-level gold set, K-ladder on eu8, pooling, real reranker); `g9`
+  (`0.8.x-g9-ir-recall-gate.md`) analyzes g8 outputs → HITL gate recommendation. **`g8`/`g9` are the IR-eval
+  initiative — DISTINCT from the shipped G8 (dangling-edge) / G9 (RRF) gaps.**
+- **Placeholders seeded (numbers TBD by g8; no fabricated thresholds):** `architecture.md` §9 (two-axis eval
+  open question), `requirements.md` **REQ-067** (agentic IR/evidence recall, PLACEHOLDER), `acceptance.md`
+  (reserved IR-eval AC section), `DOC-INDEX` (assessment + g8/g9 rows). The fidelity gate (eu7/AC-075) is
+  unchanged. **This does NOT unblock GA by itself** — the B-1 corpus-basis ruling is still owed; the
+  reframe just clarifies the stakes + the right options.
+
 ### 2026-06-07 — Re-scoped Slice 40 RAN → GA HALTED on the RECALL FLOOR (real product shortfall on the expanded corpus; NOT merged)
 
 - **The re-scoped Slice 40 ran the gate restructure + GA battery and HALTED — correctly — at a HITL decision
