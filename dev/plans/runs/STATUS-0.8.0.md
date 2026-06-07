@@ -400,6 +400,40 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — Re-scoped Slice 40 RAN → GA HALTED on the RECALL FLOOR (real product shortfall on the expanded corpus; NOT merged)
+
+- **The re-scoped Slice 40 ran the gate restructure + GA battery and HALTED — correctly — at a HITL decision
+  point.** Branch `slice-40-20260607T145013Z` (6 commits, **NOT merged**; `main` unmoved at `76caa22`).
+  Witness: `git show slice-40-20260607T145013Z:dev/plans/runs/0.8.0-slice-40-output.json`.
+- **Landed-correct & merge-ready once blockers clear:** gate restructure (`f820cda` — `eu7` asserts real
+  recall ≥0.90; synthetic `ac_013b`→report-only; `ac_012` tiered), AC-075/076 minted + `ADR-0.7.0-vector-
+  binary-quant.md` amended (`7909486`), CI gate (n) on `ubuntu-22.04` + actionlint clean (`8302458`). No
+  engine/schema/SDK/tokenizer/migration change; recovery + allowlist byte-frozen; no merge/tag/push.
+  **10/14 bars GREEN** (`--release`, isolated): b,d,e,f,g,h,i(AC-076 — `ac_012` 10k binding p50<1/p99 5ms; 100k
+  tracked),k,l,n. Deferred by halt: a (final agent-verify), m (release docs).
+- **B-1 (SHOWSTOPPER) — recall AC-075 RED.** With the floor now *honestly asserting* (real bge-small eu7, not
+  the synthetic `ac_013b`), the product **does not clear it on the current corpus**: `recall@10 = 0.8710`
+  (CI 0.835–0.904, σ 0.018) **@N=7,667 < 0.90**; `N=1,000 = 0.9100` passes. **Root cause: the corpus grew
+  out-of-band** — the 0.937 anchor was 0.7.2 on the PRE-expansion corpus; it's now **8 datasets / 7,667 docs**
+  (`data/corpus-data/raw/`, owner-managed, integrated ~Slice-5 push post-0.7.2). **The gate is correct; the
+  product (on this corpus) doesn't clear the floor. DO NOT lower the floor / weaken the assert** (re-creates
+  the [[perf-recall-gates-masked-and-ac013b-conflation]] vacuous-green trap). NB: the eu7 run hit the
+  [[background-exit-masks-real-exit]] trap again (wrapper printed EXIT=0; real `cargo test` FAILED — caught).
+- **B-2 (secondary) — speed AC-020 (B3) RED.** `ac_020` parallel-read concurrency: ~86ms vs ~32ms bound on the
+  local idle box (~2× vs required ~5.3×). Confirm on the canonical x86_64 perf runner or route to the
+  reader-pool band.
+- **HITL steer (recorded, `694f6a6`):** recall (AC-075) = essential hard blocker (the much-more-important
+  issue); speed (AC-020) = discussable, set aside but still a GA-blocker; **priority recall → speed.**
+- **HITL corpus-basis ruling OWED** (the GA gate): (1) re-derive/pin the floor to the original 0.7.x corpus
+  (likely a doc/pinning fix → GA proceeds) / (2) adopt the expanded corpus → retrieval-quality work before GA
+  / (3) pin to a snapshot. **Orchestrator-recommended: run a controlled OLD-vs-NEW corpus A/B first** (separate
+  "harder corpus" from "regression"; [[pr2a-go-recompute-split]] precedent — a recall scare was once an
+  artifact). The A/B + eu7 re-runs are **delegated / `perf-canonical`**, not main-thread.
+- **HAND-OFF written:** `dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md` — full recall background
+  (floor/anchor history, the conflation→gate-restructure, the corpus expansion, the measurement methodology +
+  numbers) + the orchestrator responsibilities to drive the B-1 ruling → GA. Memory:
+  [[0.8.0-ga-blocked-recall-corpus]]. **NEXT = HITL rules the corpus basis; do NOT merge until then.**
+
 ### 2026-06-07 — CONSOLIDATED: Slice-40 re-scope = the single remaining 0.8.0 work item (all HALT findings fold in)
 
 All Slice-40-HALT findings are now HITL-ruled; they consolidate into **ONE re-scoped, gated Slice 40** (the GA
@@ -426,6 +460,13 @@ terminus) — no separate Slice 7. The re-scoped Slice 40 must:
   **LOCAL once-per-release / perf-canonical verdict**, per-push keeps only the smoke canary. **NEXT = USER
   spawns the re-scoped Slice 40.** The stale `/tmp/fdb-slice-40-20260606T215041Z` worktree (`542ea5c`, first
   Phase-A run) is reapable — the agent cuts a fresh worktree.
+- **⚠️ Re-scoped Slice 40 RAN → GA HALTED on the RECALL FLOOR 2026-06-07** (branch `slice-40-20260607T145013Z`,
+  NOT merged; `main` unmoved). With the floor now honestly asserting (real-embedder eu7), **product recall@10 =
+  0.8710 < 0.90 @N=7,667** (N=1,000 passes at 0.9100) — the **corpus grew out-of-band** to 8 datasets/7,667
+  docs; the 0.937 anchor predates it. Gate is correct; **DO NOT lower the floor.** + B3 `ac_020` RED (speed,
+  secondary). **HITL corpus-basis ruling owed; do NOT merge until then.** Full background + orchestrator
+  responsibilities: **`dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md`**. See §7 newest entry +
+  [[0.8.0-ga-blocked-recall-corpus]].
 
 ### 2026-06-07 — HITL B2 ruling: RUN THE PERF GATE IN RELEASE, not debug (no AC/tokenizer change)
 
