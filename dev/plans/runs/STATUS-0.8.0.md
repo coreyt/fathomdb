@@ -40,9 +40,11 @@ fielded-FTS) stay parked in **deferred post-0.8.0 Slice 46**. **Pointer → Slic
 release readiness) = the mainline terminus + a HITL GA gate. Reserved-gap band (27·31·32·33·34) CLOSED.
 **Slice 40 RAN Phase A → HALTED to HITL 2026-06-06** (NOT merged; `main` unmoved at `5e809e4`). The
 verification battery (forced `AGENT_LONG=1`, which the per-push CI never sets) surfaced **3 RED gates + 1 load
-artifact** that the default CI path had masked: **B2** — REAL 0.8.0 FTS5 latency regression (ac_012 p50 49.9ms
-> 20ms @100k; Slice-5 `porter unicode61 remove_diacritics 2` tokenizer; v0.7.2 passed at 16ms) — the one
-genuine code blocker; **B1** — recall-floor gate mis-calibrated (ac_013b ASSERTS 0.90 but runs the SYNTHETIC
+artifact** that the default CI path had masked: **B2** — ⚠️ **CORRECTED by Slice 6 (2026-06-07): tokenizer EXONERATED, NOT a
+regression.** Engine A/B (release, isolated): porter 21ms ≈ v0.7.2 `unicode61` 20ms @100k — tokenizer is
+latency-neutral. The Slice-40 49.9ms was a **debug + concurrent-workspace** artifact (`check.sh` =
+`cargo test --workspace`), same x86_64 box. Real issue: `ac_012` asserts @100k unconditionally but was never
+tiered like AC-013/AC-019 (10k binding) → **fix = tier AC-012 (mint AC-076), keep the porter tokenizer**; **B1** — recall-floor gate mis-calibrated (ac_013b ASSERTS 0.90 but runs the SYNTHETIC
 `VaryingEmbedder` → ~0.73; the real-embedder 0.937 lives in report-only `eu7`; PRE-EXISTING, v0.7.2 identical)
 — actual product quality is fine, the GATE is wrong; **B3** — ac_020 parallel-read scaling, runner-pinned
 (fails on the aarch64 dev box + v0.7.2). **The Slice-40 contract's "ac_013b observed ~0.937" was a conflation
@@ -256,6 +258,7 @@ applicable to this slice's work-type.
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED | — | contract recorded (Slice 5 instantiates) | nav reconciled + `mkdocs build --strict` green | `dev/DOC-INDEX.md` created + seeded |
 | **5** | G1 Structured Hits + FTS5 tokenizer | implementation | ✅ CLOSED (fix-1) | 0 | ✅ instantiated (Py+TS + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ Py/TS ref + guide + arch/test-plan/DOC-INDEX |
+| **6** | FTS5 tokenizer latency experiment (B2) | research/experiment | ✅ CLOSED 2026-06-07 (codex §9 PASS, 1×[P2] doc-corrected) — tokenizer EXONERATED (engine A/B porter≈unicode61); Slice-40 49.9ms = debug+concurrent-workspace artifact; rec = tier AC-012 (Slice 7 mints AC-076) | 5, 40 | n/a (no SDK) | n/a (findings in `dev/plans/runs`) | ✅ findings doc + dev/notes report + DOC-INDEX |
 | **10** | G9 RRF + G10 filtered-KNN + G12-recency | implementation | ✅ CLOSED (fix-1, fix-2) | 5 | ✅ extended (Py+TS SearchFilter + cross-binding RRF-order) | ✅ `mkdocs --strict` green | ✅ hybrid-search guide + API refs + arch/test-plan/DOC-INDEX |
 | **15** | G0 Canonical Identity Substrate (KEYSTONE) | implementation | ✅ CLOSED (override) | 0, 5 | ✅ extended (Py `row_cursors`/`logical_id` + TS `rowCursors`/`logicalId` + cross-binding equiv) | ✅ `mkdocs --strict` green | ✅ arch + test-plan + Py/TS API ref + slice-15 design memo + DOC-INDEX |
 | **20** | G8 Dangling-Edge Flag-and-Count | implementation | ✅ CLOSED (fix-1) | 15 | ✅ extended (Py `dangling_edge_endpoints` + TS `danglingEdgeEndpoints` + cross-binding count parity) | ✅ `mkdocs --strict` green | ✅ design memo + Py/TS API ref + arch/test-plan/DOC-INDEX |
@@ -268,7 +271,7 @@ applicable to this slice's work-type.
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ✅ CLOSED 2026-06-06 (HITL-signed; codex §9 PASS, 2×[P3] reconciled) — filter-grammar ACCEPTED; graph-scope = 0.8.1 roadmap direction (revisable) | 15, 25, 32 | n/a (docs-only) | n/a (dev/adr not in nav) | ✅ 2 ADRs + roadmap/0.8.1 + DOC-INDEX |
 | **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
-| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A RED: B2 real FTS5-latency regression + B1 recall-gate mis-calibration + B3 runner-pin; not merged) | 5,10,15,20,25,30,35 | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
+| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A) — B2 RESOLVED by Slice 6 (tokenizer exonerated → tier AC-012/AC-076); B1 recall-gate mis-calibration (→ AC-075, awaiting HITL) + B3 runner-pin remain; re-scope absorbs B1/Q3; not merged | 5,10,15,20,25,30,35,**6,7** | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
 
 Status values: ❌ not started / ⏳ in flight / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N.
 Decision values (used in § 7): PASS / CONCERN+override / BLOCK→fix-N / DEFERRED.
@@ -396,6 +399,51 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-07 — Slice 6 (B2 experiment) MERGED → B2 root-cause CORRECTED: tokenizer EXONERATED; tier AC-012 (codex §9 in flight)
+
+- **Slice 6 merged to local `main`** (findings `4b39a6b`, closure `29dac9e`, report `9e01f3a`; HEAD `9e01f3a`).
+  Deliverable: `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-20260607T003001Z.md` + a throwaway
+  `SLICE6_EXPERIMENT`-gated harness (`tests/slice6_tokenizer_experiment.rs`, not wired into any gate). **No
+  production tokenizer/migration/AC/perf_gates-budget change** (verified empty diff).
+- **B2 ROOT-CAUSE CORRECTED — the Slice-5 tokenizer is NOT the cause** (overturns the Slice-40 attribution
+  "porter + diacritics materially more expensive at query time", which is now measured-false). **Decisive
+  control = the engine-level A/B** (Q2b): same box, same `--release` build, same corpus, `ac_012` @100k,
+  swapping ONLY the step-11 `tokenize` string (then reverted): **`porter unicode61 remove_diacritics 2` = p50
+  21ms vs v0.7.2 `unicode61` = 20ms — identical within noise.** A 6-config sweep agrees (porter is a no-op on
+  the digit-bearing synthetic AC-012 vocab → identical posting lists/pages). **Orchestrator independently
+  verified** the harness SQL is byte-identical to the engine (`lib.rs:3925` None-branch) + that the cost is
+  O(N) result-set materialization (1-token→3212 rows→3.9ms; 2-token→2 rows→0.25ms; unbounded SELECT, no LIMIT).
+- **The Slice-40 49.9ms (vs Slice-6 21ms) was a MEASUREMENT artifact, NOT hardware** (the Slice-6 doc's
+  "aarch64 box" guess is wrong — **same x86_64/24-core box**, confirmed `uname -m`). Cause: `scripts/check.sh`
+  runs **`AGENT_LONG=1 cargo test --workspace`** = **debug build under full concurrent workspace load**
+  (HITL-confirmed "different load"); Slice 6 used `cargo test --release` **isolated**. Debug+contention ≈2.4×
+  → 49.9ms. **Lesson for the META/CI wiring: perf gates MUST build `--release` and run isolated** (as
+  `perf-canonical.yml` does) — wiring `cargo test --workspace` perf into per-push CI would reproduce this
+  artifact. (Same class as B3/ac_013-load-artifact.)
+- **Tiering finding (Q1, the clean resolution):** `ac_012` asserts 20/150ms **unconditionally @100k**
+  (`perf_gates.rs:145,553`), but its siblings AC-013/AC-019 were HITL-tiered to **10k-binding / 100k+1M
+  tracked** (AC-072/AC-073, `ADR-0.7.0-text-query-latency-gates-revised`). At the **binding 10k tier `ac_012`
+  passes by miles** (p50 <1ms, p99 4ms); it only "breaches" at the never-meant-to-bind 100k tier, by ~1ms p50.
+  So **`ac_012` was simply never tiered to match.**
+- **RECOMMENDATION (agent + orchestrator-endorsed) = HITL fork option (i): tier AC-012** (10k binding, 100k/1M
+  tracked) via the exact AC-072/AC-073 precedent — **keep the Slice-5 porter tokenizer** (it buys +3/8 morph
+  recall for 0ms; lightening it costs quality for ~0 latency). Reject (ii) lighten / (iii) custom tokenizer /
+  (iv) re-ratify-100k (off-pattern); (v) FTS result-set LIMIT = a separate retrieval-ADR call. **Mechanically
+  (Slice 7): mint AC-076** (tier `ac_012` mirroring `ac_013`'s `AC013_GATE_N` branch; keep AC-012 as retained
+  legacy) — AC change → gated slice. **Folds into the Slice-40 re-scope** alongside B1/Q3 (wire the **10k-tier**
+  ac_012 + eu7-recall to the canonical x86_64 runner, `--release`/isolated — closes the META gap).
+- **Adjudication NOT needed** (HITL asked): the A/B already controls profile+isolation+tokenizer; the 49.9-vs-21
+  gap is explained (debug+load). No re-measurement prompt spawned.
+- **codex §9 review = PASS, 1 × [P2] (no [P0]/[P1]) → resolved in-place; Slice 6 CLOSED.** The [P2]: the
+  throwaway harness built Q3 **multi-token** queries as an FTS *phrase* (`"a b"`) not the engine's `a AND b`
+  (`compile_text_query`) → the "(AND)" labels mischaracterized that secondary cost-attribution row. **Does NOT
+  touch the load-bearing evidence** (Q1/Q2a/Q2b are single-token; codex did not flag them; orchestrator had
+  verified the single-token SQL is engine-faithful), and the Q3 conclusion holds regardless (a phrase is ≥ as
+  selective as AND). Resolved by **correcting the findings doc in-place** (labels → "(phrase)" + a transparent
+  [P2] note); no re-measurement fix-N (disproportionate for a robust secondary illustration). Verdict:
+  `runs/0.8.0-slice-6-codex-review-20260607T142711Z.md`. **slice-6 worktree reaped; slice-40 worktree KEPT.**
+  **NEXT = route the HITL tiering decision (recommend option (i): tier AC-012 / mint AC-076, keep porter).**
 
 ### 2026-06-06 — HITL ruled on the Slice-40 HALT (B1/B2/Q3) + B1 precedent found (AC-072/073) → plan set
 
