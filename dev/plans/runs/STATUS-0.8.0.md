@@ -400,6 +400,20 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — Master orchestrator hand-off + session scaffold generator authored
+
+- **`dev/plans/prompts/0.8.0-MASTER-ORCHESTRATOR-HANDOFF.md`** — the campaign **entry point**: all 3 tracks,
+  the spawn sequence table (which session HITL spawns, when, which work/gating prompt, the gate after), roles
+  (HITL spawns+decides ◆ gates; orchestrator gates-from-git + codex §9 + board; corpus owner runs the corpus
+  track), and the per-gate decision packages the orchestrator assembles for HITL. Defers to the roadmap (visual
+  + sequence) and the GA-RECALL hand-off (GA depth).
+- **`dev/plans/prompts/0.8.0-SESSION-SCAFFOLD-GENERATOR.md`** — run once to write a starter scaffold per session
+  into `dev/plans/prompts/scaffolds/` (prereqs + output-to-orchestrator contract + work to-do + full-prompt
+  pointer). Real starters for the unprompted sessions (GA-1 A/B, COR-2 corpus-freeze); thin launchers for the
+  prompted ones (Slice-40, IR-A, IR-B/C/D, IR-E); decision-package stubs for the ◆ gates (B-1, GA sign-off,
+  IR-gate). **NEXT (optional bootstrap):** spawn the generator to lay down the scaffolds; then drive per the
+  master hand-off (GA-1 ∥ IR-A ∥ COR-1 now; B-1 is the highest-value HITL action).
+
 ### 2026-06-07 — IR-1 split (Phase 1 runnable now; Ph2–4 deferred) + sequenced GA→IR-eval roadmap
 
 - **IR-1 SPLIT (HITL):** **Phase 1** (define the measure + Claude↔codex consensus) carved into a runnable-now
