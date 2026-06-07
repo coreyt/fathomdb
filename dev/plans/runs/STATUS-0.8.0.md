@@ -417,12 +417,17 @@ the worktree at slice close.
     **freeze a versioned SHA-256 snapshot**.
   - **Slice 40 lands** right after **B-1** rules (corpus basis pinned ⇒ fidelity gate green) + GA-2 verify +
     codex §9 + B-3/`ac_020` resolved → merge → GA sign-off.
-  - **IR-1 Ph2–4:** Phase 2 (AC-077) after Slice-40 merge; Phases 3–4 after **B-1 + corpus freeze**; then
-    **IR-2** → HITL IR-gate (fills AC-077 thresholds).
+  - **IR-1 internal order = MEASURE → CODE → EXPERIMENTS → AC** (corrected so experiments inform the AC, not
+    vice-versa; the 0.571 ceiling makes a blind threshold a permanently-red gate): Ph1 measure (now) →
+    Ph2 code + fact-level gold set → Ph3 experiments (both need **B-1 + corpus freeze**) → **Ph4 mint AC-077
+    grounded by the data** (needs **Slice-40 merge** for the id; thresholds still TBD) → **IR-2** analysis →
+    HITL IR-gate sets the binding thresholds.
 - **Two critical paths:** GA = A/B → **B-1** → Slice-40 (apply+verify+merge) → GA sign-off. IR-gate =
-  [IR-1 Ph1 now] ∥ [corpus freeze] ∥ [Slice-40→AC-077] → **IR-1 Ph3–4** (needs B-1 + freeze) → **IR-2** →
-  HITL. **Highest-value next HITL action remains B-1** (it unblocks Slice-40 *and* the corpus basis IR-1
-  depends on). IR-1 Phase 1 can be spawned in a separate session immediately, in parallel.
+  [IR-1 Ph1 now] ∥ [corpus freeze] → **IR-1 Ph2–3 code+experiments** (needs B-1 + freeze) → **Ph4 AC-077**
+  (needs GA-merge + data) → **IR-2** → HITL. **Highest-value next HITL action remains B-1** (it unblocks
+  Slice-40 *and* the corpus basis IR-1 depends on). IR-1 Phase 1 can be spawned in a separate session
+  immediately, in parallel. **Your top-level order is a valid dependency order but over-serialized — Corpus +
+  IR-1-Ph1 run parallel to GA from the start; IR-B/C need GA-*merge*, not the GA *tag*.**
 
 ### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance reframe of B-1 + IR-eval `IR-1`/`IR-2` initiative commissioned
 
