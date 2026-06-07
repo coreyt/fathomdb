@@ -587,7 +587,7 @@ finding with a user-visible falsifiable outcome.
   `design/errors.md` `MigrationError`.
 
 - **REQ-067 — Agentic IR / evidence recall (PLACEHOLDER — target 0.8.1; measure
-  + numbers TBD by the IR-eval `g8`/`g9` initiative).** When the agent needs a
+  + numbers TBD by the IR-eval `IR-1`/`IR-2` initiative).** When the agent needs a
   stored memory to answer or act, the retrieved context contains the evidence
   required — measured on the **IR / agentic-relevance** axis (qrels / fact-level
   gold labels), NOT the ANN-fidelity axis that REQ-011 / AC-075 already gate.
@@ -596,11 +596,10 @@ finding with a user-visible falsifiable outcome.
   ceiling ≈0.571) is report-only. **This entry is a reserved placeholder:** the
   falsifiable statement, the chosen measure (Evidence/Task Recall@K vs
   alternatives), and every threshold are **TBD** — defined + experiment-grounded
-  by `g8` (with a Claude↔codex consensus step on the measure) and ruled to ≥1
-  new AC by `g9`. _Source:_
+  by IR-1 (with a Claude↔codex consensus step on the measure) and ruled to the
+  reserved **AC-077** by IR-2. _Source:_
   `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`;
-  `dev/plans/prompts/0.8.x-g8-ir-recall-measure.md`. _Note:_ `g8`/`g9` here are
-  the IR-eval initiative work items, distinct from the shipped G8/G9 gaps.
+  `dev/plans/prompts/0.8.x-IR-1-recall-measure.md`.
 
 ## Non-goals
 

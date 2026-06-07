@@ -520,7 +520,7 @@ These do not block lock; answered in named follow-on docs.
 - ~~**`fathomdb-query` disposition.**~~ Resolved 2026-04-29 (HITL): kept
   separate as pure AST-to-plan compiler. See § 1.
 - **Recall evaluation is TWO axes, and only one is gated today (PLACEHOLDER —
-  resolved by the IR-eval `g8`/`g9` initiative, post-0.8.0-GA).** FathomDB's
+  resolved by the IR-eval `IR-1`/`IR-2` initiative, post-0.8.0-GA).** FathomDB's
   current recall gate (eu7 / AC-075) measures **ANN/quantization FIDELITY**
   (does bit-KNN + f32 rerank reproduce the exact-f32 top-10 of the *same*
   model) — a *system-health* property. It does **not** measure **IR / agentic
@@ -529,9 +529,9 @@ These do not block lock; answered in named follow-on docs.
   measures IR recall today but is **report-only** (observed ceiling ≈0.571, an
   embedder/graph-bound number, deliberately un-gated). The planned
   **evidence/task-recall product gate** (new AC(s), thresholds **TBD**) is
-  specified + experiment-grounded by the IR-eval `g8` work and ruled by `g9`.
+  specified + experiment-grounded by the IR-eval `IR-1` work and ruled by `IR-2`.
   Inputs: `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`,
-  `dev/plans/prompts/0.8.x-g8-ir-recall-measure.md`. (These `g8`/`g9` labels are
+  `dev/plans/prompts/0.8.x-IR-1-recall-measure.md`. (These `IR-1`/`IR-2` labels are
   the IR-eval initiative, **distinct from the shipped G8 dangling-edge / G9 RRF
   gaps**.)
 

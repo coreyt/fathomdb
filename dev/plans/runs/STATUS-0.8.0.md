@@ -400,7 +400,7 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
-### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance reframe of B-1 + IR-eval `g8`/`g9` initiative commissioned
+### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance reframe of B-1 + IR-eval `IR-1`/`IR-2` initiative commissioned
 
 - **A retrieval-eval analyst agent assessed a proposed multi-layer recall framework against FathomDB**
   (`dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`, cited file:line throughout). **Central
@@ -415,14 +415,14 @@ the worktree at slice close.
   + the OLD-vs-NEW A/B**. Keep the fidelity floor un-weakened as a system-health gate. (Cross-linked into the
   GA-recall hand-off §2.6.)
 - **The real product-value gate (evidence/task recall) does not exist yet** → commissioned as the **IR-eval
-  `g8`/`g9` initiative** (post-0.8.0-GA / 0.8.1): `g8` (`dev/plans/prompts/0.8.x-g8-ir-recall-measure.md`)
+  `IR-1`/`IR-2` initiative** (post-0.8.0-GA / 0.8.1): `IR-1` (`dev/plans/prompts/0.8.x-IR-1-recall-measure.md`)
   defines the IR/agentic-relevance measure via a **Claude↔codex consensus step** + mints AC(s) + runs
-  experiments (fact-level gold set, K-ladder on eu8, pooling, real reranker); `g9`
-  (`0.8.x-g9-ir-recall-gate.md`) analyzes g8 outputs → HITL gate recommendation. **`g8`/`g9` are the IR-eval
+  experiments (fact-level gold set, K-ladder on eu8, pooling, real reranker); `IR-2`
+  (`0.8.x-IR-2-recall-gate.md`) analyzes IR-1 outputs → HITL gate recommendation. **`IR-1`/`IR-2` are the IR-eval
   initiative — DISTINCT from the shipped G8 (dangling-edge) / G9 (RRF) gaps.**
-- **Placeholders seeded (numbers TBD by g8; no fabricated thresholds):** `architecture.md` §9 (two-axis eval
+- **Placeholders seeded (numbers TBD by IR-1; no fabricated thresholds):** `architecture.md` §9 (two-axis eval
   open question), `requirements.md` **REQ-067** (agentic IR/evidence recall, PLACEHOLDER), `acceptance.md`
-  (reserved IR-eval AC section), `DOC-INDEX` (assessment + g8/g9 rows). The fidelity gate (eu7/AC-075) is
+  (reserved IR-eval AC section), `DOC-INDEX` (assessment + IR-1/IR-2 rows). The fidelity gate (eu7/AC-075) is
   unchanged. **This does NOT unblock GA by itself** — the B-1 corpus-basis ruling is still owed; the
   reframe just clarifies the stakes + the right options.
 
