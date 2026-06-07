@@ -400,6 +400,30 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — IR-1 split (Phase 1 runnable now; Ph2–4 deferred) + sequenced GA→IR-eval roadmap
+
+- **IR-1 SPLIT (HITL):** **Phase 1** (define the measure + Claude↔codex consensus) carved into a runnable-now
+  prompt `dev/plans/prompts/0.8.x-IR-1-phase1-measure-consensus.md` (no prerequisites — pure design; codex is
+  runnable here). **Phases 2–4** (mint AC-077 + gold set + experiments) stay in
+  `0.8.x-IR-1-recall-measure.md`, now retitled **"IR-1 Phases 2–4 (DEFERRED)"** with a hard prerequisites
+  header: gated on **Phase 1 merged · Slice-40 merged (AC-075/076 on main) · B-1 corpus-basis ruling · corpus
+  frozen (versioned snapshot)**.
+- **Sequenced roadmap authored:** `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md` — 3 parallel tracks (GA /
+  Corpus / IR-eval) joined by gates. **Key answers:**
+  - **B-1 vs consensus?** Parallel, both now — independent. **B-1 is the GA critical path** (needs the
+    OLD-vs-NEW A/B first); **IR-1 Phase 1 consensus** is the parallel design track that blocks nothing on GA.
+  - **Corpus work** runs parallel and does **NOT** gate GA (GA pins a snapshot at B-1); its hard deadline is
+    **before IR-1 Ph3–4** — finish Version B (~7.6K→~10K) → refine per the A/B/quality findings → test →
+    **freeze a versioned SHA-256 snapshot**.
+  - **Slice 40 lands** right after **B-1** rules (corpus basis pinned ⇒ fidelity gate green) + GA-2 verify +
+    codex §9 + B-3/`ac_020` resolved → merge → GA sign-off.
+  - **IR-1 Ph2–4:** Phase 2 (AC-077) after Slice-40 merge; Phases 3–4 after **B-1 + corpus freeze**; then
+    **IR-2** → HITL IR-gate (fills AC-077 thresholds).
+- **Two critical paths:** GA = A/B → **B-1** → Slice-40 (apply+verify+merge) → GA sign-off. IR-gate =
+  [IR-1 Ph1 now] ∥ [corpus freeze] ∥ [Slice-40→AC-077] → **IR-1 Ph3–4** (needs B-1 + freeze) → **IR-2** →
+  HITL. **Highest-value next HITL action remains B-1** (it unblocks Slice-40 *and* the corpus basis IR-1
+  depends on). IR-1 Phase 1 can be spawned in a separate session immediately, in parallel.
+
 ### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance reframe of B-1 + IR-eval `IR-1`/`IR-2` initiative commissioned
 
 - **A retrieval-eval analyst agent assessed a proposed multi-layer recall framework against FathomDB**
