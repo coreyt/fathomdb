@@ -271,7 +271,7 @@ applicable to this slice's work-type.
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ✅ CLOSED 2026-06-06 (HITL-signed; codex §9 PASS, 2×[P3] reconciled) — filter-grammar ACCEPTED; graph-scope = 0.8.1 roadmap direction (revisable) | 15, 25, 32 | n/a (docs-only) | n/a (dev/adr not in nav) | ✅ 2 ADRs + roadmap/0.8.1 + DOC-INDEX |
 | **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
-| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A) — B2 RESOLVED by Slice 6 (tokenizer exonerated → tier AC-012/AC-076); B1 recall-gate mis-calibration (→ AC-075, awaiting HITL) + B3 runner-pin remain; re-scope absorbs B1/Q3; not merged | 5,10,15,20,25,30,35,**6,7** | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
+| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A) — B2 RESOLVED (Slice 6: tokenizer exonerated; HITL ruling = run perf gates in `--release`+isolated, no AC change; folds into the re-scope's verification + Q3 CI-wiring); B1 recall-gate (→ AC-075, HITL-approved) + B3 runner-pin fold in; re-run Phase A in release; not merged | 5,10,15,20,25,30,35,**6** | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
 
 Status values: ❌ not started / ⏳ in flight / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N.
 Decision values (used in § 7): PASS / CONCERN+override / BLOCK→fix-N / DEFERRED.
@@ -399,6 +399,25 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-07 — HITL B2 ruling: RUN THE PERF GATE IN RELEASE, not debug (no AC/tokenizer change)
+
+- **HITL chose (over the experiment's "tier AC-012" recommendation): the B2 fix is to RUN `ac_012` (and the
+  perf battery) in `--release`, not debug.** This goes to the root: the 49.9ms was a **debug-build artifact**
+  (`check.sh` = `AGENT_LONG=1 cargo test --workspace`), not a real latency. So **B2 needs NO AC change, NO
+  tokenizer change, NO budget re-ratify** — the planned **Slice 7 (mint AC-076) is DROPPED** unless the
+  residual below warrants it.
+- **Implementation (folds into existing approved work, no new slice):** the perf/recall gates must run
+  **`--release` + isolated** (as `perf-canonical.yml` already does) — both in (a) the **Slice-40 verification
+  re-run** (do NOT measure perf via `check.sh AGENT_LONG=1` debug+concurrent again) and (b) the **Q3 CI-wiring**
+  (wire them release+isolated on the canonical x86_64 runner). This IS the META fix from the HALT.
+- **Honest residual (flagged, not yet ruled):** even in `--release`, `ac_012` @100k measured ~**21ms vs the
+  20ms p50** budget on this box (p99 99ms < 150 fine; **green with wide margin at 10k**, p50 <1ms). So the
+  release fix dissolves the false 49.9ms blocker but leaves a **~1ms p50 margin at the unconditional 100k
+  tier** — within run-to-run noise + box-dependent + the gate's coarse percentile bucketing. **Orchestrator
+  recommendation:** treat as noise and rely on the **10k binding tier** (the AC-013/AC-019 philosophy) — i.e.
+  the release fix is sufficient; no AC-076 needed. If HITL wants a clean 100k margin, the AC-012 tiering
+  (option i) remains available as a small gated add-on. **Awaiting HITL on the residual** (see response).
 
 ### 2026-06-07 — Slice 6 (B2 experiment) MERGED → B2 root-cause CORRECTED: tokenizer EXONERATED; tier AC-012 (codex §9 in flight)
 
