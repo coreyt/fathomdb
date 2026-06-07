@@ -33,6 +33,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
 | `dev/learnings.md` | Cross-phase engineering learnings | per-slice as discovered | 2026-05-31 |
+| `dev/notes/0.8.0-fts5-tokenizer-latency-experiment.md` | **B2 FTS5 tokenizer latency experiment report** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral (the cost is O(N) corpus-scaling); recommends tiering AC-012 per the AC-072/073 precedent. Run artifacts under `dev/plans/runs/0.8.0-slice-6-*` | Slice 6 (B2) | 2026-06-07 |
 | `dev/memex-note-on-0.6.0.md` | Memex consumer note on 0.6.0 | — | 2026-05-21 |
 | `dev/DOC-INDEX.md` | **This file** — agentic doc map | 0 creates; every slice updates | 2026-06-02 |
 
