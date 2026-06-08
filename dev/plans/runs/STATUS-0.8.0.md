@@ -271,7 +271,7 @@ applicable to this slice's work-type.
 | **34** | CLI op-store read-back (`fathomdb doctor dump-mutations`) | implementation | ✅ CLOSED 2026-06-06 (fix-1; codex §9 [P2]→PASS) — CLI-only diagnostic over the existing Slice-30 `read_mutations` seam; no engine/schema/SDK/facade change | 30, 33 | n/a (CLI-only; no SDK parity by mandate) | ✅ | ✅ cli.md + ADR-0.6.0-cli-scope amendment + op-store.md + published-cli + DOC-INDEX |
 | **35** | Deferred-Feature Design-ADRs — graph-traversal-scope (F1) + filter-grammar (G4/F3) **[HITL-split 2026-06-06; F9/F5 → deferred Slice 46]** | design-adr | ✅ CLOSED 2026-06-06 (HITL-signed; codex §9 PASS, 2×[P3] reconciled) — filter-grammar ACCEPTED; graph-scope = 0.8.1 roadmap direction (revisable) | 15, 25, 32 | n/a (docs-only) | n/a (dev/adr not in nav) | ✅ 2 ADRs + roadmap/0.8.1 + DOC-INDEX |
 | **46** | _(DEFERRED post-0.8.0)_ confidence-vs-importance (F9) + fielded-fts-bm25f (F5) — experiment-gated framing-ADRs | design-adr | ⏸️ PARKED (post-0.8.0 / 0.8.x; do not spawn in 0.8.0) | 35, 40, corpus/eval | n/a (docs-only) | n/a | n/a |
-| **40** | Verification + Release Readiness | verification | ⚠️ **HALTED to HITL** (Phase A) — B2 RESOLVED (Slice 6: tokenizer exonerated; HITL ruling = run perf gates in `--release`+isolated, no AC change; folds into the re-scope's verification + Q3 CI-wiring); B1 recall-gate (→ AC-075, HITL-approved) + B3 runner-pin fold in; re-run Phase A in release; not merged | 5,10,15,20,25,30,35,**6** | ✅ k (SDK functional Py 99/TS 67 + parity green) | ✅ l (`mkdocs --strict` green, pre-nav) | ⏳ m (Phase B not entered) |
+| **40** | Verification + Release Readiness (GA-2 = ◆ B-1 application) | verification + implementation | ✅ **CLOSED + MERGED** 2026-06-08 (`main`@`c1a72f2`; codex §9 PASS, 1×[P3]→fix-1 `4cffcb9`) — ◆ B-1 applied: eu7→ANN+ vector-stage recall verdict (AC-075, vector-stage 0.937 vs fused 0.871), AC-076 `ac_012` tier, `ac_013b` report-only, ADR amended, CI gate (n), release docs. B2 (tokenizer) exonerated (Slice 6); B3/`ac_020` green isolated. **Real-embedder eu7 vector-stage re-measure = perf-canonical once-per-release confirmation OWED before GA tag.** | 5,10,15,20,25,30,35,**6** | ✅ k | ✅ l | ✅ m |
 
 Status values: ❌ not started / ⏳ in flight / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N.
 Decision values (used in § 7): PASS / CONCERN+override / BLOCK→fix-N / DEFERRED.
@@ -294,7 +294,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ✅ **DONE** (closed 2026-06-04, `main`@`54e3e93`) — additive `WriteReceipt.dangling_edge_endpoints: u64`, post-row-insert EXISTS pass inside `commit_batch`'s open tx; `logical_id`-alone probe (missing OR superseded both count, `from`/`to` independent) hits step-12 partial index `canonical_nodes_logical_active_idx` (EXPLAIN gate, no SCAN); Py+TS parity. codex [P1] (O(N²) same-batch scan) → **fix-1** O(N) last-index precompute (byte-identical count) → clean PASS. `pr_g8_dangling_edges.rs` 8/8. Strict-mode = reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended/informational). No new AC (gap-tracked; `acceptance.md` locked) |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** | held by 5/10/15; **40** gates | ⚠️ **CONFLATION CORRECTED + HALTED (Slice 40, 2026-06-06).** Prior cells cited "`ac_013b_recall_at_10_floor` observed ~0.937" — **FALSE**: that test ASSERTS 0.90 but runs the **synthetic `VaryingEmbedder`** (measures ~**0.7339**, PRE-EXISTING/v0.7.2-identical, `AGENT_LONG`-gated → never asserted in per-push CI). The **0.937 is `eu7`** (REAL bge-small, report-only, NOT floor-gating). The byte-identity / Δ-0.0000 pins prior slices cited ARE valid (read path unchanged) but they are NOT the floor assert. Actual product retrieval quality (eu7) IS 0.937 > 0.90; the **GATE is mis-calibrated** (synthetic fixture vs real-embedder floor) → **B1 awaiting HITL/ADR** (elevate eu7 to gating / demote ac_013b-synthetic to fidelity-report / re-baseline). Amends `ADR-0.7.0-vector-binary-quant.md`. |
+| Recall floor ≥ **0.90** (AC-075) | **AC-075** (GA-2/Slice-40); held by 5/10/15 | ✅ **GATE RESTRUCTURED + RULED (◆ B-1, Option 1, 2026-06-08; merged `c1a72f2`).** The asserting recall gate is now the **real-embedder `eu7` measured on the ANN+ VECTOR STAGE** (1-bit sign-quant K=192 + f32 rerank vs exact-f32 vector top-10) ≥0.90 — an **ANN-quantization FIDELITY** gate. ◆ B-1 finding: the prior `eu7`-on-`search()` measured 0.8710 because Slice 10 made `search()` unconditional RRF-hybrid (vector⊕FTS5) while the GT is vector-only → it scored *fusion divergence*, not quantization fidelity, on a **byte-identical corpus** (GA-1; no corpus move, no regression). Corrected via a test-only seam (`set_vector_stage_only_for_test`); vector-stage recall = **0.937** (fused 0.871 reported as the delta). Synthetic `ac_013b` → report-only. Floor **NOT lowered**, assert **restored not weakened**. ⚠️ The 0.937 is **inferred (0.7.x anchor + byte-identity)**; the **perf-canonical eu7 vector-stage re-measure is OWED before GA tag**. |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green; **byte-unchanged through Slice 25 CONFIRMED** (zero-line diff on `test_no_recovery_surface.py` / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` + `bindings.md` §10 across both the Slice 25 rewrite and fix-1; verified by orchestrator + codex). AC-074 carries the five-name denylist as a permanent clause; `doctor` SDK-absent via allowlist non-membership |
 
 ---
@@ -399,6 +399,36 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-08 — GA-2 / Slice-40 MERGED (codex §9 PASS, 1×[P3]→fix-1) — AC-075/076 on `main`; GA halt CLEARED; ◆ GA sign-off next
+
+- **GA-2 delegated → implementer → codex §9 → MERGED** to `main`@`c1a72f2` (`--no-ff` of `slice-40-ga2-20260608T145205Z`,
+  baseline `7316746`). **AC-075 + AC-076 now on `main`** (`acceptance.md`). This **unblocks IR-D** (AC-077 = next free id).
+- **The ◆ B-1 correction landed exactly as ruled:** test-only engine seam `set_vector_stage_only_for_test`
+  (`ProjectionRuntimeShared::vector_stage_only_for_test`, off by default) makes `read_search_in_tx` return the
+  pre-fusion `vector_results` (bit-KNN K=192 + f32 rerank); `eu7::measure_recall` repointed at that ANN+ stage vs
+  the exact-f32 **vector** top-10 GT; asserts the unchanged **0.90** floor. **Production `search()` byte-unchanged;
+  no `fusion_mode` knob; `fuse_rrf`/`rerank_fused`/recency verbatim in the `else` branch.** Seam proof test
+  `ga2_vector_stage_seam.rs`. AC-075 minted with vector-stage-fidelity wording (NOT "recall on `search()`") +
+  complementarity-to-IR note; synthetic `ac_013b` → report-only; `ADR-0.7.0-vector-binary-quant.md` amended (cites
+  GA-1). AC-076: `ac_012` tiered (10k binding / 100k+1M tracked); tokenizer + migration 011 byte-unchanged. CI gate
+  (n) on `ubuntu-22.04`; release docs (CHANGELOG + user notes + internal `dev/releases/0.8.0.md`); 3 behavior-compat
+  events documented.
+- **codex §9 (base `7316746`): clean PASS** on all load-bearing checks (seam additive/test-only, `search()`
+  byte-identity, floor un-lowered, AC-075 wording, ADR-cites-GA-1, `ac_013b` demote, `ac_012` tier) — **1×[P3]
+  only:** a release-JSON field `recall_at_10_fused_search_delta` stored the fused recall (~0.871) not the delta
+  (~0.066) → **fix-1 `4cffcb9`** (emit both honest fields + matching eprintln; one-file, verified diff;
+  proportionate to [P3], no codex re-run). Verdict: `dev/plans/runs/0.8.0-slice-40-ga2-codex-review-20260608T150000Z.md`.
+- **⚠️ EVIDENCE POSTURE (carried into ◆ GA sign-off):** the **0.937 vector-stage recall is INFERRED, not freshly
+  measured** — real bge-small weights + the gitignored corpus aren't materialized locally, so the agent used the
+  on-record 0.7.x anchor (measured pre-unconditional-RRF = effectively vector-stage) + the byte-identity argument,
+  per the AC-072/073 once-per-release-perf-canonical precedent (recovered-out-loud, no fabrication). This is NOT the
+  vacuous-green trap (per-push path = smoke canary; real-embedder verdict = perf-canonical, not faked in CI), **but
+  the actual perf-canonical eu7 vector-stage re-measure is the one empirical confirmation OWED before the GA tag.**
+- **Worktree ledger CLEAN:** GA-2 worktree + the two superseded slice-40 worktrees (`542ea5c`/`694f6a6`) removed,
+  all slice-40 branches deleted (SHAs recorded here). Only `main` + the pre-existing locked orphan remain.
+- **NEXT = ◆ GA sign-off package → HITL** (all-green per-AC scoreboard incl. AC-075/076 + the 3 behavior-compat
+  events + the perf-canonical re-measure as the final gate; tag is HITL-only).
 
 ### 2026-06-08 — ◆ B-1 RULED (HITL): Option 1 — correct eu7 to measure the ANN+ vector stage (not hybrid `search()`); GA-2 delegated
 
