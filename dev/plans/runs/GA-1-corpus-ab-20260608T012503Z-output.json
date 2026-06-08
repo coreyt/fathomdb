@@ -1,0 +1,39 @@
+{
+  "_comment": "GA-1 OLD-vs-NEW corpus recall@10 A/B. STOPPED on prerequisite #1: no OLD corpus distinct from NEW exists (corpus byte-identical between the 0.937 anchor run 2026-05-31 and the slice-40 0.8710 run 2026-06-07; all raw files mtime 2026-05-27, same physical dir for both runs). Numbers below are ON-RECORD prior measurements (0.7.1 EU-7 anchor json + slice-40 output json), NOT re-measured this session. Nothing fabricated.",
+  "status": "STOPPED_PREREQUISITE_FAILED",
+  "stop_reason": "Prerequisite #1 (OLD pre-expansion corpus snapshot obtainable) FAILED: corpus is gitignored and not in git history; AND the on-disk 7,667-doc corpus is byte-identical to the basis the 0.937 anchor was measured on, so there is no distinct OLD corpus to A/B. A same-corpus 'A/B' would be a degenerate proxy (brief forbids).",
+
+  "old_recall": 0.937,
+  "old_ci": [0.913, 0.957],
+  "old_sigma": 0.0116,
+  "old_n": 7667,
+  "old_recall_provenance": "ON-RECORD anchor from dev/plans/runs/0.7.1-EU-7-measurements.json (run 2026-05-31, 0.7.x engine, real bge-small, N=7667). NOT re-run this session. Measured on the SAME corpus bytes as new_recall, by a DIFFERENT (0.7.x) engine path.",
+
+  "new_recall": 0.8710,
+  "new_ci": [0.8350, 0.9040],
+  "new_sigma": 0.0180,
+  "new_n": 7667,
+  "new_recall_provenance": "ON-RECORD from slice-40-20260607T145013Z:dev/plans/runs/0.8.0-slice-40-output.json (run 2026-06-07, slice-40 0.8.0 engine, real bge-small, N=7667, EU7_RECALL_NEW exclude-before+dedup, K=192, 100 queries, bootstrap 1000). NOT re-run this session. N=1000 tier = 0.9100 (CI 0.8820-0.9350, sigma 0.0136, passes).",
+
+  "eu7_path_identical": false,
+  "eu7_path_identical_detail": "The eu7 HARNESS measure_recall (exclude-before+dedup GT, RECALL_SEARCH_SLACK=5, set_search_limit_for_test) is BYTE-IDENTICAL between v0.7.2 and slice-40, and the dual-method+seam fixes (26b2f95, 5b69568) landed before the 0.937 json was written, so both anchors used the same harness method. BUT the production engine.search() path that eu7 measures CHANGED across 11 lib.rs commits v0.7.2..slice-40 — notably d28d204 (G9 RRF fusion made UNCONDITIONAL + rerank seam + G10 filtered-KNN + G12 recency) and 3e5ae59 (G1 SearchHit + step-11 FTS5 tokenizer upgrade). So the two anchor numbers are NOT a clean same-code comparison: 0.8.0 search() is RRF-fused hybrid, while eu7 ground truth is the pure exact-f32 VECTOR top-10.",
+
+  "old_snapshot_source": "NONE / not obtainable as a distinct corpus. Corpus is gitignored (.gitignore:9 -> /data/corpus-data/) and absent from git history (git ls-tree -r v0.7.2 -- data/corpus-data/ is empty). The on-disk 7,667-doc corpus (all 8 raw files mtime 2026-05-27, unchanged since) IS the basis the 0.937 anchor was measured on (2026-05-31) AND the basis slice-40 measured 0.8710 on (2026-06-07) — slice-40 worktree's data/corpus-data/raw resolves (readlink -f) to the main checkout's raw dir; qmsum/chain sha256 identical (717e9fb5/21777248). No OLD!=NEW corpus exists.",
+
+  "corpus_identity_evidence": {
+    "new_corpus_docs": 7667,
+    "new_corpus_datasets": ["bahmutov_dailylogs", "chain_connectives", "cnn_dailymail", "enron", "enronqa", "landes_todos", "qmsum", "synthetic_notes"],
+    "all_raw_files_mtime": "2026-05-27 (latest qmsum 16:22; never modified since)",
+    "anchor_0937_run_date": "2026-05-31 08:13 (0.7.1-EU-7-measurements.json), real_corpus_docs=7667",
+    "slice40_0871_run_date": "2026-06-07, N=7667, same physical raw dir",
+    "qmsum_on_disk_sha256": "717e9fb5ae7b172f7ac9fd559c5fad6d082204eee681f11fc1d00c3c65ebe593",
+    "qmsum_manifest_sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
+    "qmsum_note": "Manifest pin (identical at v0.7.2 and HEAD) NEVER matched the on-disk file, which predates the 0.937 run. Stale manifest checksum, not a corpus change.",
+    "qaconv_qasper_note": "Added to scripts+manifest 2026-06-02 (commit 83f5156) but NO qaconv.jsonl/qasper.jsonl exist in data/corpus-data/raw/ -> never loaded by eu7. The 'expansion' did not reach the measured corpus."
+  },
+
+  "classification": "b",
+  "classification_rationale": "By elimination on byte-identical-corpus evidence: (a) harder/larger corpus is RULED OUT (same 7,667 docs, same files, same dir, mtime 2026-05-27 for both runs) and (c) corpus-quality defect is RULED OUT (no expansion reached the measured corpus; only drift is a stale qmsum manifest checksum). The 0.937->0.8710 delta therefore lives in (b) a code/measurement-path change, NOT a corpus effect: identical corpus + byte-identical eu7 harness leaves the engine.search() path as the only variable (11 lib.rs commits v0.7.2..slice-40, notably G9 UNCONDITIONAL RRF fusion d28d204 + step-11 FTS5 tokenizer 3e5ae59). HEAVY CAVEAT: this is most likely an INTENDED 0.8.0 behavior change (hybrid RRF fusion), not necessarily a quantization-fidelity DEFECT — eu7 measures recall@10 vs a pure exact-f32 VECTOR top-10, but 0.8.0 search() now returns RRF-fused hybrid results, so the metric may be measuring fusion divergence rather than ANN fidelity loss. Confirming defect-vs-intended requires an ENGINE-VERSION (0.7.2 vs 0.8.0) A/B on the fixed corpus (out of scope here; do NOT start engine work on assumption). This OVERTURNS the B-1 'corpus moved under the floor' premise. Do NOT lower the floor / weaken the eu7 assert; corpus pinning will NOT recover 0.937 because the corpus was never the cause.",
+
+  "discipline": "PREREQUISITE FAILED -> STOP; no eu7 measurement launched (a same-corpus A/B is a degenerate proxy the brief forbids). Read-only investigation only; no tracked files modified; numbers are on-record prior measurements with provenance, none fabricated, none re-run this session."
+}

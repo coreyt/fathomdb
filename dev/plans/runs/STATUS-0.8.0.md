@@ -400,6 +400,35 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — GA-1 RETURNED → ◆ B-1 PREMISE OVERTURNED (no corpus change; eu7 metric mis-specified for 0.8.0 hybrid RRF) → reframed B-1 PRESENTED to HITL
+
+- **GA-1 STOPPED on prerequisite #1 — correctly.** There is **no OLD corpus distinct from NEW**: the corpus is
+  gitignored (`.gitignore:9 → /data/corpus-data/`) and absent from git history (`git ls-tree -r v0.7.2 --
+  data/corpus-data/` empty); the on-disk 7,667-doc set (8 datasets, all mtime 2026-05-27) is **byte-identical**
+  between the 0.937 anchor run (2026-05-31) and the slice-40 0.8710 run (2026-06-07) — same physical dir
+  (`readlink -f`), qmsum/chain sha256 identical. A same-corpus "A/B" = the degenerate proxy the brief forbids,
+  so **no eu7 run was launched**; numbers below are on-record priors (provenance-tagged, none fabricated/re-run).
+  Artifacts (now committed): `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.{md,json}`.
+- **Numbers:** OLD = **0.937** (CI [0.913,0.957], σ 0.0116, N=7667; `0.7.1-EU-7-measurements.json`, 0.7.x engine).
+  NEW = **0.8710** (CI [0.835,0.904], σ 0.018, N=7667; slice-40 output.json, 0.8.0 engine). N=1000 tier = 0.9100.
+- **Classification = (b) code/measurement-path change, NOT corpus.** (a) harder corpus RULED OUT (identical
+  bytes); (c) corpus-quality defect RULED OUT (the 2026-06-02 qaconv/qasper "expansion" never produced
+  `raw/*.jsonl` → eu7 never loaded it; the qmsum manifest-vs-disk sha mismatch is a **stale pin**, not a change).
+- **ROOT CAUSE (orchestrator-verified from disk):** eu7 `measure_recall` builds ground truth as a brute-force
+  **exact-f32 VECTOR top-10** (`eu7_real_corpus_ac.rs:400–413`) but compares it against `.search()` (`:479`),
+  which `d28d204` (Slice 10) made **UNCONDITIONAL RRF-hybrid** (vector ⊕ FTS5; + `3e5ae59` FTS5 tokenizer). So
+  recall@10 now penalizes **intended fusion divergence**, conflated with ANN-quantization fidelity — the exact
+  quantity the 0.90 floor was defined to measure ([[fathomdb-recall-fidelity-vs-relevance]]). The 0.937→0.8710
+  "drop" is dominated by the shipped hybrid-RRF change, **not** a corpus move and **not** a confirmed ANN regression.
+- **⇒ ◆ B-1 reframed:** the "corpus-basis ruling" (pin-old / adopt / snapshot) is **moot** — corpus pinning
+  cannot recover 0.937 because the corpus was never the cause. The real HITL decision = **how to restore a
+  correct fidelity gate now that `search()` is hybrid** (options: 1 restore eu7 to measure the pre-RRF vector
+  stage vs exact-f32 = its documented semantics [orch-recommended, a CORRECTION not a weakening — HITL must
+  rule that distinction]; 2 engine-version 0.7.2-vs-0.8.0 A/B on the fixed corpus to isolate defect-vs-intended;
+  3 re-baseline eu7 GT to exact-hybrid; 4 treat as a real blocker + engine work = REJECTED, lowest-leverage,
+  fidelity already ≫ the 0.571 relevance ceiling). **Floor un-lowered; eu7 assert untouched. PRESENTED to HITL,
+  awaiting ruling.** GA stays HALTED. (Supersedes the corpus-basis framing of the prior B-1 entries + §3 recall row.)
+
 ### 2026-06-07 — Campaign kickoff: scaffolds landed; GA-1 ∥ IR-A delegated (background); GA still HALTED at ◆ B-1
 
 - **Scaffold generator CLOSED** — merged to `main`@`8f6262b` (`c6457e5` + `--no-ff` `8f6262b`); tree clean; its
