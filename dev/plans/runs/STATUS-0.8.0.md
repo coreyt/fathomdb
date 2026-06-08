@@ -400,6 +400,27 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — IR-A (IR-1 Phase 1) CLOSED — measure consensus-signed; orchestrator gate-merged after agent lost at closure
+
+- **IR-A delivered + Claude↔codex CONVERGED**, but the background work agent was **lost when the prior process
+  exited** (in-process state gone) **after** committing the full work (branch tip `d1b8ac7`, 9 commits, **8 codex
+  rounds, every finding accepted+resolved, residuals-to-HITL: none**) yet **before** writing `output.json` /
+  merging. Worktree survived clean at `/tmp/fdb-IR1p1-20260608T011707Z`.
+- **Orchestrator gate-merged the converged, consensus-signed deliverable** → `main`@`c2b1cbc` (`--no-ff` of
+  `IR1-phase1-20260608T011707Z`; clean, merge-base `8f6262b`, disjoint from the GA-1 commits). Added a minimal
+  **orchestrator-authored closure `output.json`** (clearly marked; no design content altered — the codex consult
+  loop IS the defined gate for this design/consensus task, and it converged). Worktree removed, branch deleted.
+- **Landed:** `dev/design/ir-recall-measure.md` (signed measure: **Evidence Recall@K** = strict all-of headline +
+  graded diagnostic, single `required`-only denominator; evidence-unit/atomic-fact relevance with whole-doc as the
+  degenerate case reducing to eu8 doc-id recall; K-ladder @10/@20/@50; per-class structure; modes
+  FTS/vector/RRF/+reranker-stub/+graph-0.8.1; seed-then-pool qrels on a pinned versioned snapshot) +
+  `IR1-phase1-codex-consult-20260608T011707Z.md` + closure json + DOC-INDEX row.
+- **Guardrails verified:** no AC mint, no gold set, no experiments, **no fabricated thresholds**, **no corpus-snapshot
+  commitment**, **eu7/AC-075 untouched**. The doc independently restates eu7's fidelity definition (ANN-quant vs
+  exact-f32 **vector** top-10) — **corroborates the GA-1 finding** that 0.8.0's hybrid-RRF `search()` is mismatched
+  to eu7's vector-only ground truth (feeds the reframed ◆ B-1 below). **This output = the input to IR-1 Ph2–4 + IR-2;
+  blocks nothing on GA.**
+
 ### 2026-06-08 — GA-1 RETURNED → ◆ B-1 PREMISE OVERTURNED (no corpus change; eu7 metric mis-specified for 0.8.0 hybrid RRF) → reframed B-1 PRESENTED to HITL
 
 - **GA-1 STOPPED on prerequisite #1 — correctly.** There is **no OLD corpus distinct from NEW**: the corpus is
