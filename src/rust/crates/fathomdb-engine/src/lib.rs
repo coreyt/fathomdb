@@ -303,6 +303,18 @@ struct ProjectionRuntimeShared {
     /// the more recent `write_cursor` AFTER bit-KNN. Flipped by the
     /// `set_recency_reweight_enabled_for_test` seam; no production toggle yet.
     recency_reweight_enabled: AtomicBool,
+    /// GA-2 / Slice-40 (◆ B-1) measurement seam, **off by default**. When set,
+    /// `read_search_in_tx` returns the pre-fusion VECTOR-branch ranking
+    /// (bit-KNN K=192 + f32 rerank) verbatim — the ANN-quantization fidelity
+    /// signal — INSTEAD of the unconditional RRF-fused result. This changes
+    /// nothing for any production caller (the flag is never set outside the
+    /// `eu7` recall harness via `set_vector_stage_only_for_test`); it does NOT
+    /// reintroduce a `fusion_mode` knob (RRF stays unconditional) and does NOT
+    /// alter `fuse_rrf` / `rerank_fused` / recency. It only lets the AC-075
+    /// recall gate measure ANN+ vector top-10 vs the exact-f32 VECTOR top-10
+    /// ground truth in isolation (the quantization-FIDELITY axis the 0.90 floor
+    /// is defined to measure), not the hybrid `search()` output.
+    vector_stage_only_for_test: AtomicBool,
     /// 0.7.2 PR-2b — debug-only fault injection: when set, `recompute_mean_in_tx`
     /// errors AFTER writing `mean_vec` but BEFORE finishing the re-quantize
     /// pass, so the crash-atomicity test can prove the whole recompute rolls
@@ -405,6 +417,10 @@ enum ReaderRequest {
         /// G12-recency — whether the dedicated recency reweight is enabled for
         /// this request (read from `recency_reweight_enabled`, off by default).
         recency_enabled: bool,
+        /// GA-2 / Slice-40 (◆ B-1) measurement seam — when true the worker
+        /// returns the pre-fusion vector-branch ranking instead of the fused
+        /// result (read from `vector_stage_only_for_test`, off by default).
+        vector_stage_only: bool,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -620,6 +636,7 @@ fn reader_worker_loop(
                 search_limit,
                 filter,
                 recency_enabled,
+                vector_stage_only,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -630,6 +647,7 @@ fn reader_worker_loop(
                     search_limit,
                     filter.as_deref(),
                     recency_enabled,
+                    vector_stage_only,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -701,6 +719,7 @@ impl ProjectionRuntime {
             commit_gate: Mutex::new(()),
             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
             recency_reweight_enabled: AtomicBool::new(false),
+            vector_stage_only_for_test: AtomicBool::new(false),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
         });
@@ -2181,6 +2200,8 @@ impl Engine {
             .max(SEARCH_RERANK_LIMIT);
         let recency_enabled =
             self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
+        let vector_stage_only =
+            self.projection_runtime.shared.vector_stage_only_for_test.load(Ordering::SeqCst);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
         let request = ReaderRequest::Search {
             compiled,
@@ -2189,6 +2210,7 @@ impl Engine {
             search_limit,
             filter: filter.map(Box::new),
             recency_enabled,
+            vector_stage_only,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -2880,6 +2902,20 @@ impl Engine {
     #[doc(hidden)]
     pub fn set_recency_reweight_enabled_for_test(&self, enabled: bool) {
         self.projection_runtime.shared.recency_reweight_enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    /// GA-2 / Slice-40 (◆ B-1) measurement seam — make `search()` return the
+    /// pre-fusion VECTOR-branch ranking (the ANN+ bit-KNN K=192 + f32 rerank
+    /// signal) instead of the unconditional RRF-fused result, so the eu7 recall
+    /// gate (AC-075) can measure ANN-quantization FIDELITY — vector top-10 vs
+    /// the exact-f32 VECTOR top-10 ground truth — in isolation. Off by default;
+    /// never set on any production path. This is NOT a `fusion_mode` knob:
+    /// production RRF fusion stays unconditional and `fuse_rrf`/`rerank_fused`/
+    /// recency are unchanged. Mirrors `set_recency_reweight_enabled_for_test`
+    /// (release-available, since eu7 runs in `--release`).
+    #[doc(hidden)]
+    pub fn set_vector_stage_only_for_test(&self, enabled: bool) {
+        self.projection_runtime.shared.vector_stage_only_for_test.store(enabled, Ordering::SeqCst);
     }
 
     /// 0.7.2 PR-2b test seam — arm a one-shot fault inside the NEXT
@@ -3816,6 +3852,7 @@ fn read_search_in_tx(
     final_limit: usize,
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
+    vector_stage_only: bool,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -3947,16 +3984,29 @@ fn read_search_in_tx(
     }
     tx.commit()?;
 
-    // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
-    // tiebreak) into the unconditional new ranking, recency-reweight (gated,
-    // off by default), then pass through the identity rerank seam. The
-    // vector-empty `soft_fallback` signal was computed above, BEFORE this
-    // branch-collapse.
-    let fused = rerank_fused(apply_recency_reweight(
-        fuse_rrf(vector_results, text_results),
-        recency_enabled,
-    ));
-    Ok((cursor, soft_fallback, fused))
+    // GA-2 / Slice-40 (◆ B-1) measurement seam: when `vector_stage_only` is set
+    // (only ever by the eu7 recall harness via `set_vector_stage_only_for_test`,
+    // off for every production caller), return the pre-fusion VECTOR-branch
+    // ranking (bit-KNN K=192 + f32 rerank) verbatim, skipping `fuse_rrf` /
+    // recency / `rerank_fused`. This exposes the ANN-quantization FIDELITY
+    // signal — vector top-N vs the exact-f32 VECTOR top-10 ground truth — that
+    // the AC-075 0.90 floor is defined to measure. It is NOT a `fusion_mode`
+    // knob: the production branch below is byte-unchanged and RRF stays
+    // unconditional.
+    let results = if vector_stage_only {
+        vector_results
+    } else {
+        // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
+        // tiebreak) into the unconditional new ranking, recency-reweight (gated,
+        // off by default), then pass through the identity rerank seam. The
+        // vector-empty `soft_fallback` signal was computed above, BEFORE this
+        // branch-collapse.
+        rerank_fused(apply_recency_reweight(
+            fuse_rrf(vector_results, text_results),
+            recency_enabled,
+        ))
+    };
+    Ok((cursor, soft_fallback, results))
 }
 
 /// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
