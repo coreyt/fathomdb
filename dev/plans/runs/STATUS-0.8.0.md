@@ -400,6 +400,31 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-07 — Campaign kickoff: scaffolds landed; GA-1 ∥ IR-A delegated (background); GA still HALTED at ◆ B-1
+
+- **Scaffold generator CLOSED** — merged to `main`@`8f6262b` (`c6457e5` + `--no-ff` `8f6262b`); tree clean; its
+  worktree removed. Laid down `dev/plans/prompts/scaffolds/{1-GA-1-corpus-ab, 2-B-1-corpus-basis-ruling,
+  3-GA-2-slice-40, 4-GA-signoff, 5-COR-2-corpus-freeze, 6-IR-A…, 7-IR-B-C-D…, 8-IR-E…, 9-IR-gate}.md` + README.
+  Verify lines accurate to baseline; no fabricated numbers; board left to the orchestrator (this entry).
+- **State reconciled from git:** `main`@`8f6262b` = `76caa22` + docs-only (IR-eval initiative + roadmap +
+  master hand-off + scaffolds). **No slice merged. Slice 40 still UNMERGED** (`slice-40-20260607T145013Z`@
+  `694f6a6`, kept). **GA remains HALTED at ◆ B-1** (corpus-basis ruling owed; recall floor un-lowered).
+- **HITL (this session) directed two delegations; both launched as background agents:**
+  - **GA-1** (OLD-vs-NEW corpus recall@10 A/B, real bge-small, `--release`, evidence-only) — delegated
+    `perf-canonical`. Runs read-only in the main checkout, writes UNTRACKED artifacts
+    `dev/plans/runs/GA-1-corpus-ab-<ts>.{md,json}` (orchestrator commits at B-1 assembly). Instructed to
+    **verify the OLD pre-expansion snapshot is obtainable from git history FIRST and escalate if not** (no
+    fabricated OLD number), read the REAL `cargo test` exit ([[background-exit-masks-real-exit]]), classify
+    the OLD→NEW delta as (a) harder corpus / (b) regression / (c) corpus-quality defect — **no** corpus-basis
+    recommendation. Feeds **◆ B-1**.
+  - **IR-A** (IR-1 Phase 1 — define the IR/evidence-relevance MEASURE + Claude↔codex consensus) — owns its own
+    worktree, merges `dev/design/ir-recall-measure.md` to local `main` itself (instructed to rebase/retry on
+    a non-ff race vs the scaffold merge). No AC/gold-set/experiments; eu7/AC-075 untouched; no fabricated
+    thresholds. Parallel design track; blocks nothing on GA.
+- **Orchestrator stance:** orchestrate-not-do (A/B + consensus off main-thread). Next wake: GA-1 returns →
+  assemble + present **◆ B-1** package (the showstopper HITL decision); IR-A returns → gate-from-git its merge,
+  confirm the codex consensus, board it. COR-1 (corpus expansion) owner-paced, out-of-band, does not gate GA.
+
 ### 2026-06-07 — Master orchestrator hand-off + session scaffold generator authored
 
 - **`dev/plans/prompts/0.8.0-MASTER-ORCHESTRATOR-HANDOFF.md`** — the campaign **entry point**: all 3 tracks,
