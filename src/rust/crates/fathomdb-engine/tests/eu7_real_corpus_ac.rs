@@ -860,7 +860,7 @@ fn eu7_real_corpus_ac_validation() {
         eprintln!(
             "EU7_NUMBERS n={actual_n} padded={padded} seed_ms={} p50_ms={} p99_ms={} \
              recall_at_10={:.4} recall_ci_lo={:.4} recall_ci_hi={:.4} sigma={:.4} \
-             recall_fused_delta={:.4} \
+             recall_fused_search={:.4} recall_fused_delta={:.4} \
              stress_p99_ms={} stress_bound_ms={} ac013={} ac019={}",
             seed.as_millis(),
             lat.p50.as_millis(),
@@ -870,6 +870,7 @@ fn eu7_real_corpus_ac_validation() {
             rec.ci_hi,
             rec.sigma,
             rec.fused_mean,
+            rec.mean - rec.fused_mean,
             stress.stress_p99.as_millis(),
             stress.bound.as_millis(),
             ac013_passed,
@@ -893,7 +894,8 @@ fn eu7_real_corpus_ac_validation() {
             "ci_lo": round4(rec.ci_lo),
             "ci_hi": round4(rec.ci_hi),
             "sigma_bootstrap": round4(rec.sigma),
-            "recall_at_10_fused_search_delta": round4(rec.fused_mean),
+            "recall_at_10_fused_search": round4(rec.fused_mean),
+            "recall_at_10_fused_search_delta": round4(rec.mean - rec.fused_mean),
             "current_floor_0_90": CURRENT_FLOOR,
             "passes_current_floor": rec.mean >= CURRENT_FLOOR,
         }));
