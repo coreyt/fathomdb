@@ -294,7 +294,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ✅ **DONE** (closed 2026-06-04, `main`@`54e3e93`) — additive `WriteReceipt.dangling_edge_endpoints: u64`, post-row-insert EXISTS pass inside `commit_batch`'s open tx; `logical_id`-alone probe (missing OR superseded both count, `from`/`to` independent) hits step-12 partial index `canonical_nodes_logical_active_idx` (EXPLAIN gate, no SCAN); Py+TS parity. codex [P1] (O(N²) same-batch scan) → **fix-1** O(N) last-index precompute (byte-identical count) → clean PASS. `pr_g8_dangling_edges.rs` 8/8. Strict-mode = reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended/informational). No new AC (gap-tracked; `acceptance.md` locked) |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** (AC-075) | **AC-075** (GA-2/Slice-40); held by 5/10/15 | ✅ **GATE RESTRUCTURED + RULED (◆ B-1, Option 1, 2026-06-08; merged `c1a72f2`).** The asserting recall gate is now the **real-embedder `eu7` measured on the ANN+ VECTOR STAGE** (1-bit sign-quant K=192 + f32 rerank vs exact-f32 vector top-10) ≥0.90 — an **ANN-quantization FIDELITY** gate. ◆ B-1 finding: the prior `eu7`-on-`search()` measured 0.8710 because Slice 10 made `search()` unconditional RRF-hybrid (vector⊕FTS5) while the GT is vector-only → it scored *fusion divergence*, not quantization fidelity, on a **byte-identical corpus** (GA-1; no corpus move, no regression). Corrected via a test-only seam (`set_vector_stage_only_for_test`); vector-stage recall = **0.937** (fused 0.871 reported as the delta). Synthetic `ac_013b` → report-only. Floor **NOT lowered**, assert **restored not weakened**. ⛔ **RE-MEASURE RESULT (2026-06-08): the REAL 0.8.0 vector-stage recall@10 @ N=7667 = `0.8960` < 0.90 → AC-075 RED** (the inferred 0.937 was WRONG; 0.7.x anchor 0.937 vs 0.8.0 0.896 on the byte-identical corpus = a real ~4pt ANN-fidelity regression). **GA HALTED; floor un-lowered; diagnosis (engine-version A/B → bisect vector path) escalated to HITL.** See §7 top. |
+| Recall floor ≥ **0.90** (AC-075) | **AC-075** (GA-2/Slice-40); held by 5/10/15 | ✅ **GATE RESTRUCTURED + RULED (◆ B-1, Option 1, 2026-06-08; merged `c1a72f2`).** The asserting recall gate is now the **real-embedder `eu7` measured on the ANN+ VECTOR STAGE** (1-bit sign-quant K=192 + f32 rerank vs exact-f32 vector top-10) ≥0.90 — an **ANN-quantization FIDELITY** gate. ◆ B-1 finding: the prior `eu7`-on-`search()` measured 0.8710 because Slice 10 made `search()` unconditional RRF-hybrid (vector⊕FTS5) while the GT is vector-only → it scored *fusion divergence*, not quantization fidelity, on a **byte-identical corpus** (GA-1; no corpus move, no regression). Corrected via a test-only seam (`set_vector_stage_only_for_test`); vector-stage recall = **0.937** (fused 0.871 reported as the delta). Synthetic `ac_013b` → report-only. Floor **NOT lowered**, assert **restored not weakened**. ⛔ **RE-MEASURE RESULT (2026-06-08): the REAL 0.8.0 vector-stage recall@10 @ N=7667 = `0.8960` < 0.90 → AC-075 RED** (the inferred 0.937 was WRONG; 0.7.x anchor 0.937 vs 0.8.0 0.896 on the byte-identical corpus = a real ~4pt ANN-fidelity regression). **GA HALTED; floor un-lowered; diagnosis (engine-version A/B → bisect vector path) escalated to HITL.** **◆ HITL RULING 2026-06-08: 0.8960 ACCEPTED for 0.8.0 (within the 95% CI of the 0.90 floor / rounding-error; floor constant UNCHANGED; ~4pt drop recovery → 0.8.1).** Recall blocker resolved by acceptance; eu7 assert reconciliation (CI-based, not floor-lowering) still owed before the scoreboard is mechanically green. See §7 top. |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green; **byte-unchanged through Slice 25 CONFIRMED** (zero-line diff on `test_no_recovery_surface.py` / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` + `bindings.md` §10 across both the Slice 25 rewrite and fix-1; verified by orchestrator + codex). AC-074 carries the five-name denylist as a permanent clause; `doctor` SDK-absent via allowlist non-membership |
 
 ---
@@ -399,6 +399,27 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-08 — ◆ HITL RULING: 0.8960 vector-stage fidelity ACCEPTED for 0.8.0 (within-CI / rounding-error of the 0.90 floor); floor constant UNCHANGED
+
+- **HITL decision (2026-06-08):** for **0.8.0**, the measured vector-stage recall@10 = **0.8960** (CI
+  [0.8640, 0.9250], σ 0.0157) **is ACCEPTABLE** — "rounding-error territory" relative to the 0.90 fidelity
+  floor. Rationale support: the **0.90 floor lies inside the 95% bootstrap CI** (statistically consistent with
+  the floor; the 0.004 point-estimate shortfall is within measurement noise). **This resolves the GA recall
+  blocker for 0.8.0 by HITL acceptance.**
+- **Explicitly NOT a floor lowering.** The `CURRENT_FLOOR`/`AC013B_RECALL_FLOOR` constant stays **0.90**; this is
+  a **one-release HITL acceptance** of a within-CI measurement, NOT a change to the gate's target
+  ([[0.8.0-ga-blocked-recall-corpus]] still holds — the floor is not weakened). The underlying ~4-pt 0.7.x→0.8.0
+  vector-stage drop (0.937→0.896) is **acknowledged and its recovery tracked to 0.8.1** (diagnose + restore the
+  point estimate ≥0.90), not waived away.
+- **⚠️ Reconciliation REQUIRED before the scoreboard is mechanically green (open, needs HITL go-ahead):** the
+  merged eu7 test **hard-asserts the point estimate ≥ 0.90 and currently PANICS** (exit 101) at 0.896. To make
+  the gate reflect this acceptance WITHOUT lowering the floor, the assert must be reconciled — recommended:
+  assert that **0.90 lies within the recall CI** (the within-uncertainty reading that matches "rounding error"),
+  keeping the 0.90 constant; alternatively a documented one-release waiver. **This is a gate-definition + test
+  change (AC-075 / ADR-0.7.0-vector-binary-quant / eu7 assert) → delegated + codex §9, not main-thread; awaiting
+  HITL direction on which mechanism.** Until then the eu7 gate is RED-as-coded even though the measurement is
+  HITL-accepted.
 
 ### 2026-06-08 — ⛔ GA RE-HALTED: real eu7 vector-stage recall@10 = 0.8960 < 0.90 @ N=7667 — a REAL 0.7.x→0.8.0 regression (inference was wrong)
 
