@@ -54,6 +54,31 @@ accuracy fix to §(e), two cleanups). No HITL residual.
 
 ## Round 2 (convergence confirmation)
 
-_(see below — re-ran codex over the corrected doc to confirm the [P2] fix lands and no new
-definitional issue was introduced.)_
-</content>
+**Commit reviewed:** `b5ac15ce269933bf81dd5174cc3ef8e679330b00` (round-1 fixes), re-reviewed with
+`codex exec review --base 8f6262b754a3aa5212066657610f311d63cf35d9`.
+
+**codex verdict:** "The main design document appears internally coherent" — i.e. the [P2] §(e)
+FTS-mode accuracy fix landed and **no definitional issue remains in the measure doc.** One
+finding, scoped entirely to *this consult log* (not the measure):
+
+### [P3] Round-2 consensus log incomplete — `IR1-phase1-codex-consult-...:57-59`
+> The consult log is referenced as the convergence record, but this section is still a
+> placeholder saying "see below" and ends with leftover tool markup instead of the Round 2
+> result. Either fill in the Round 2 outcome or remove the placeholder/artifact.
+
+**Claude assessment:** ACCEPTED — correct and self-evidently true (the placeholder predated this
+very run; the trailing `</content>` was a stray Write-tool artifact, the same class as round-1
+finding 3). **Not a definitional issue with the measure** — codex explicitly called the design
+doc coherent. **Resolution:** this section now records the round-2 outcome and the stray markup
+is removed.
+
+---
+
+## Convergence
+
+**CONVERGED.** The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is
+Claude↔codex consensus-signed. Round 1 produced one accuracy fix to §(e) + two cleanups, all
+accepted; round 2 confirmed the design doc is internally coherent with no remaining definitional
+finding (the sole round-2 item was completeness of this log, now resolved). **Residuals escalated
+to HITL: none.** Threshold numbers, the corpus snapshot, and the gate/no-gate decision are
+deliberately out of Phase-1 scope (Phase 4 experiments + IR-2 / HITL).
