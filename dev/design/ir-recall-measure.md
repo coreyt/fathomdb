@@ -162,6 +162,17 @@ ranker buried it" from "retrieval never surfaced it"); @5 is the UX-proximal str
 diagnostic ceiling, never a UX claim. **No threshold number is assigned to any K here** — the
 pass/fail lines are Phase-4 experiment output + IR-2/HITL.
 
+> **Vector-fanout requirement for K>10 (codex round-8 [P2]).** In production the vector branch
+> reranks only `SEARCH_RERANK_LIMIT`=10 candidates. If the eval computed vector-only or
+> hybrid recall at @20/@50 with that default, those depths would see **only 10 vector hits** and
+> @50 would no longer measure "is the evidence anywhere in the candidate pool." The eval harness
+> **must raise the vector phase-2 rerank fanout to ≥ the deepest K on the ladder** for the
+> vector branch and the vector contribution to hybrid — via the existing
+> `set_search_limit_for_test` seam (`lib.rs:2873`, which stores `search_limit_override` and only
+> ever *raises* above the production floor, never shrinks). This is exactly how eu7 pulls
+> top-(K+slack) (`eu7_real_corpus_ac.rs:440-445`). The eval records the fanout it used alongside
+> each number. (This is a measurement-harness setting, **not** a production-behavior change.)
+
 ---
 
 ## (d) Per-class structure (structure, not numbers)
@@ -202,7 +213,7 @@ from retrieval-architecture effects:
 | Mode | Status today | Anchor |
 |------|--------------|--------|
 | **FTS branch** (FTS5 `MATCH` filter) | **EXISTS, but NOT bm25-ranked in production** — the text branch carries `bm25()` only as a *score*; it is `ORDER BY write_cursor` (insertion order), and RRF fuses on that insertion-order rank | `lib.rs:3905-3928` (text SQL: `ORDER BY write_cursor`, `bm25()` selected as score) |
-| **BM25-ranked FTS-only baseline** | **HARNESS-CONSTRUCTIBLE, not the production path** — a true BM25 baseline needs the eval to order by the already-carried `bm25()` score; **no engine change** (score is present), but it is NOT what production search ranks by today | `lib.rs:3918-3920` (score carried, order is write_cursor) |
+| **BM25-ranked FTS-only baseline** | **HARNESS-CONSTRUCTIBLE, not the production path** — a true BM25 baseline needs the eval to order by the already-carried `bm25()` score **ascending** (FTS5 `bm25()` is *smaller = better*, the opposite of the `SearchHit.score` larger-is-better convention — codex round-8 [P2]: use `ORDER BY bm25(search_index) ASC`, do **not** reuse a descending score sort or the ranking inverts); **no engine change** (score is present), but it is NOT what production search ranks by today | `lib.rs:3918-3920` (score carried, order is write_cursor) |
 | **vector-only** (bit-KNN K=192 → f32 rerank) | **EXISTS** | `ADR-0.7.0-vector-binary-quant.md:97-106` |
 | **RRF-hybrid** (the production fused ranking) | **EXISTS** — the unconditional ranking; fuses the vector branch and the **write-cursor-ordered** text branch on rank | `lib.rs:3955-3956,3584-3623` |
 | **+reranker** (rerank top-N → top-K) | **STUB** — `rerank_fused()` is identity | `lib.rs:3653-3660` |
@@ -366,11 +377,21 @@ disagreement):**
    (aligned with the vector-rerank depth + eu7/eu8 K=10), with an explicit note that the API does
    not enforce a top-10 and the eval applies the @K cut itself.
 
+**codex consult (round 8) — two harness-precision findings, accepted:**
+
+9. **[P2] §(c) vector fanout for K>10.** Production reranks only `SEARCH_RERANK_LIMIT`=10, so
+   @20/@50 vector depths need the rerank fanout raised. **Resolved:** §(c) requires the eval to
+   raise the vector fanout (via `set_search_limit_for_test`) to ≥ the deepest ladder K and record
+   it; a harness setting, not a production change.
+10. **[P2] §(e) BM25 ordering direction.** FTS5 `bm25()` is smaller-is-better, opposite the
+    `SearchHit.score` convention. **Resolved:** §(e) pins `ORDER BY bm25(search_index) ASC` for the
+    BM25 baseline and warns against a descending-score sort.
+
 **Convergence:** the methodology in (a)–(g) is coherent and consensus-signed. Trajectory:
 round 1 = §(e) FTS accuracy + cleanups; round 2 = doc coherent; round 3 = §(f) seed-then-pool;
 round 4 = schema/scoring consistency; round 5 = single-unit-of-relevance denominator; round 6 =
-ledger alignment; round 7 = §(c) @10 reframed as a reporting convention. Every finding accepted
-and resolved; no definitional reversal.
+ledger alignment; round 7 = §(c) @10 reframed as a reporting convention; round 8 = vector-fanout
++ BM25-ordering harness precision. Every finding accepted and resolved; no definitional reversal.
 
 **Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
 actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are

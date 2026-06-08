@@ -198,6 +198,34 @@ eval applies the @K cut itself.
 
 ---
 
+## Round 8 (re-review after the round-7 §(c) reframe)
+
+**codex verdict:** two **[P2]** harness-precision findings flowing from the round-7 fix (both
+accepted; neither definitional):
+
+### [P2] Specify vector fanout for K>10 — `ir-recall-measure.md` §(c)
+> For the @20/@50 rows, the vector branch still only reranks `SEARCH_RERANK_LIMIT` (=10) results
+> unless the hidden test seam raises `search_limit_override`… vector-only @20/@50 will be computed
+> from only 10 vector hits, so @50 no longer measures whether evidence is in the candidate pool.
+
+**Claude assessment:** ACCEPTED — verified `set_search_limit_for_test` (`lib.rs:2873`) raises
+`search_limit_override` and only ever *raises* above the floor. **Resolved:** §(c) adds a
+vector-fanout requirement — the eval raises the vector rerank fanout to ≥ the deepest ladder K
+(via the seam, as eu7 does) and records the fanout used; a measurement-harness setting, not a
+production change.
+
+### [P2] Pin BM25 ordering direction — `ir-recall-measure.md` §(e)
+> SQLite FTS5 `bm25()` ranks better matches with smaller scores, while the engine's
+> `SearchHit.score` convention sorts larger scores first… specify `ORDER BY bm25(search_index)
+> ASC` (or an explicit score negation).
+
+**Claude assessment:** ACCEPTED — correct; FTS5 `bm25()` is smaller-is-better, opposite the
+`SearchHit.score` convention. A naive descending-score sort would invert the baseline.
+**Resolved:** §(e) BM25-baseline row now specifies `ORDER BY bm25(search_index) ASC` and warns
+against reusing a descending sort.
+
+---
+
 ## Convergence
 
 The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex
