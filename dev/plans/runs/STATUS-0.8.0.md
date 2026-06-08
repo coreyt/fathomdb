@@ -400,6 +400,19 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — ◆ GA sign-off GATED on a real eu7 re-measure (HITL); perf-canonical run DELEGATED (in flight)
+
+- **Orchestrator presented the ◆ GA sign-off package** (all-green scoreboard incl. AC-075/076; 3 behavior-compat
+  events; recall verdict) flagging that the **0.937 is INFERRED, not measured** on the 0.8.0 engine.
+- **HITL ruling: require the perf-canonical eu7 vector-stage re-measure BEFORE the tag** (not post-tag). Tag
+  remains HITL-only and is withheld pending a confirmed ≥0.90.
+- **DELEGATED** (background, `perf-canonical`, off main-thread): real bge-small + materialized corpus
+  (`data/corpus-data/raw/`, present per GA-1) + `--release` + isolated, running the merged eu7 (vector-stage SUT
+  via `set_vector_stage_only_for_test`). Instructed to read the REAL `cargo test` exit
+  ([[background-exit-masks-real-exit]]), confirm ≥0.90, write `dev/plans/runs/GA-signoff-eu7-remeasure-<ts>.{md,json}`.
+  ~1–1.5 h. **On a confirmed ≥0.90 → orchestrator assembles the final green scoreboard for the HITL tag; on a
+  miss → HALT + escalate (do NOT lower the floor).** Nothing else gates GA (IR-B/C await corpus freeze; IR-D awaits IR-C).
+
 ### 2026-06-08 — GA-2 / Slice-40 MERGED (codex §9 PASS, 1×[P3]→fix-1) — AC-075/076 on `main`; GA halt CLEARED; ◆ GA sign-off next
 
 - **GA-2 delegated → implementer → codex §9 → MERGED** to `main`@`c1a72f2` (`--no-ff` of `slice-40-ga2-20260608T145205Z`,
