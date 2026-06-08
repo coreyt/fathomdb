@@ -25,7 +25,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/README.md` | Entry map for the engineering docs tree | — | 2026-05-02 |
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
-| `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade measurement filled (Q5=BIND-RUST), tightened to method-level + feature-gated by 27 fix-1 | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40 scoreboard | 2026-06-06 |
+| `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade measurement filled (Q5=BIND-RUST), tightened to method-level + feature-gated by 27 fix-1; 40/GA-2 mints AC-075 (recall verdict — real-embedder eu7 VECTOR STAGE, ◆ B-1) + AC-076 (ac_012 tier) | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
 | `dev/interfaces/rust.md` | Rust public interface (owner of the Rust-visible symbol spelling + the governed Rust-facade surface contract — AC-074 Q5=BIND-RUST positive-allowlist/parity/denylist-absence; 27 fix-1 adds the default-vs-`operator`-feature method-level boundary) | 27 (governed-surface contract); 27 fix-1 (operator feature gate); ground-truth engine type names | 2026-06-06 |
 | `dev/interfaces/cli.md` | CLI public interface (concrete flag spelling, root paths, exit-code classes, `--json` wrapping for the two-root operator CLI); 34 adds the `doctor dump-mutations` op-store read-back diagnostic ({0,70,71}; empty page = exit 0) + reconciles the operator-only prose | 34 (dump-mutations); owned-by ADR-0.6.0-cli-scope | 2026-06-06 |
 | `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch); 31 re-scopes G0 active identity to `logical_id` alone | 2026-06-05 |
@@ -49,6 +49,7 @@ refresh in the closing commit when you touch a doc).
 | Path | Purpose | Owning slice / AC | Last-touched |
 |------|---------|-------------------|--------------|
 | `dev/design/README.md` | Design-notes index | — | (tree) |
+| `dev/design/slice-40-gate-restructure-and-ga.md` | **Slice 40 / GA-2 gate-restructure + GA verification design memo** — the ◆ B-1 correction (eu7 → ANN+ vector-stage fidelity via a test-only engine seam), AC-075/076 designs, CI split, release-doc plan, the falsifiable bar | 40/GA-2 | 2026-06-08 |
 | `dev/design/ir-recall-measure.md` | **IR/agentic evidence-recall MEASURE (definition + methodology)** — Phase-1 Claude↔codex consensus-signed: primary measure = Evidence Recall@K (strict all-of + graded), unit = atomic evidence unit (gold-set schema additive over eu8 `ground_truth_queries`), K-ladder @5/@10(headline)/@20/@50, per-class structure, retrieval-mode matrix (4/5 runnable; +reranker stub, +graph 0.8.1), pooled qrels methodology + pinned-versioned-corpus PRINCIPLE. Numbers all TBD; eu7/AC-075 fidelity gate untouched. Input to IR-1 Ph2–4 + IR-2 | IR-eval (IR-1 Phase 1) | 2026-06-08 |
 | `dev/design/orchestration.md` | Orchestration rules (§1/§1.5/§6/§8/§9/§10/§11/§12) — the binding spine for the plan | binds every slice | 2026-05-31 |
 | `dev/design/bindings.md` | SDK bindings spec; §1 governed SDK surface invariant (allowlist + parity, AC-074); §10 recovery-unreachability (BYTE-FROZEN) | 25 rewrote §1/§13/§14; §10 preserved | 2026-06-04 |
@@ -90,6 +91,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/adr/ADR-0.8.0-confidence-vs-importance.md` *(planned)* | F9 confidence vs G12 importance — **deferred to post-0.8.0 Slice 46** (experiment/profiling-dependent; HITL-split out of Slice 35 2026-06-06) | **46** produces | n/a (Slice 46) |
 | `dev/adr/ADR-0.8.0-fielded-fts-bm25f.md` *(planned)* | F5 fielded FTS / BM25F column model — **deferred to post-0.8.0 Slice 46** (experiment/profiling-dependent; HITL-split out of Slice 35 2026-06-06) | **46** produces | n/a (Slice 46) |
 | `dev/adr/ADR-0.6.0-cli-scope.md` | CLI scope = two-root operator surface (`recover` lossy / `doctor` bit-preserving); Option B (`search`/`get`/`list` application query) rejected. Amended 2026-06-06 (Slice 34): scopes the 0.8.0 `doctor dump-mutations` op-store read-back IN under `doctor` as a `dump-*` diagnostic (NOT Option B; application query verbs still require a re-open) | 34 (amendment); reference | 2026-06-06 |
+| `dev/adr/ADR-0.7.0-vector-binary-quant.md` | Binary-quant + f32 rerank recall floor (0.90). **40/GA-2 amendment (AC-075, ◆ B-1):** floor now GATED on the real-embedder eu7 measured on the pre-fusion VECTOR STAGE (ANN-quantization fidelity in isolation), NOT the RRF-fused `search()`; synthetic `ac_013b` demoted to report-only; no numeric change; cites GA-1 | 40/GA-2 amends § 2 pt 4 + status | 2026-06-08 |
 | `dev/adr/ADR-0.6.0-*.md`, `ADR-0.7.0-*.md`, `ADR-0.7.1-*.md` | Prior-release ADRs (typed-write boundary, CLI scope, error taxonomy, etc.) | reference (e.g. typed-write boundary preserved by 25) | (tree) |
 
 ## `dev/plans/` — plans + live state
@@ -137,7 +139,8 @@ refresh in the closing commit when you touch a doc).
 | `docs/positions/embedder-identity.md` | Position: embedder identity | — | 2026-05-01 |
 | `docs/release-notes/0.6.0.md` | 0.6.0 release notes | — | 2026-05-17 |
 | `docs/release-notes/0.6.1.md` | 0.6.1 release notes (**added to nav at Slice 0** — was orphaned) | X2 | 2026-05-24 |
-| `docs/release-notes/0.8.0.md` | 0.8.0 release notes (**stub at Slice 0**; finalized at Slice 40) | 0 stub; 40 finalizes | 2026-06-02 |
+| `docs/release-notes/0.8.0.md` | 0.8.0 release notes — finalized at 40/GA-2 (3 behavior-compat events, governed read.*, structured hits, G0 identity, hybrid RRF, latency-neutral tokenizer, AC-075/076 gates) | 0 stub; 40/GA-2 finalizes | 2026-06-08 |
+| `dev/releases/0.8.0.md` | **0.8.0 internal release record** — engineering companion to the user notes: behavior-compat events, AC-075/076 gate restructure (◆ B-1), CI split, verification posture; every claim traces to a measured Slice-40 result or signed ADR | 40/GA-2 | 2026-06-08 |
 
 ## Corpus / eval expansion (out-of-band, owner-managed — integrated at Slice-5 push 2026-06-02)
 
