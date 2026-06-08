@@ -158,6 +158,24 @@ references an unrecorded round.
 
 ---
 
+## Round 6 (re-review after the round-5 §(f) fix)
+
+**codex verdict:** *"The design doc's authoritative methodology is mostly coherent"* — i.e. no
+remaining P1/P2 on the methodology. One **[P3]** doc-consistency item:
+
+### [P3] Align the § Consensus ledger with the final §(f) denominator — `ir-recall-measure.md` § Consensus
+> The final methodology in §(f) says legacy `expected_top_k_doc_ids` are only a fallback when
+> `required_evidence` is absent, but this consensus summary still records the resolved denominator
+> as `required_evidence` + `expected_top_k_doc_ids`… can double-count or require non-necessary
+> legacy doc IDs.
+
+**Claude assessment:** ACCEPTED — a real (P3) staleness: the round-3 ledger entry's "+" wording
+was superseded by the round-5 fix; "stale > missing" (AGENTS.md §1). **Resolution:** the round-3
+ledger entry now cross-references the round-5 single-unit-of-relevance resolution, and a round-5
+ledger entry (#7) was added. The authoritative §(f) and the ledger now agree.
+
+---
+
 ## Convergence
 
 The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex

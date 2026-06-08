@@ -328,8 +328,9 @@ disagreement):**
    *pooling-only* qrels drops required evidence that no mode surfaces, so the Recall@K denominator
    would omit the exact misses the eval exists to catch — self-confirming on hard queries,
    overstating recall. **Resolved:** §(f) rewritten to **seed-then-pool** — the denominator is the
-   **authored** `required_evidence` + `expected_top_k_doc_ids` (independent of retrieval, always
-   present); pooling **only augments** discovery and can never remove a seeded required positive.
+   **authored** required-evidence set (independent of retrieval, always present; one unit of
+   relevance per query — see finding 7 for the legacy-doc-id refinement); pooling **only augments**
+   discovery and can never remove a seeded required positive.
 
 **codex consult (round 4) — two schema/scoring consistency findings, accepted:**
 
@@ -341,9 +342,19 @@ disagreement):**
    `required` set **only** (same denominator as strict); `supporting` is removed from both recall
    numbers and reported as a separate supporting-coverage diagnostic. (a) and (b) now agree.
 
-**Convergence:** reached after round 4, confirmed at round 5 (round 1 = §(e) accuracy + cleanups;
-round 2 = doc coherent; round 3 = §(f) seed-then-pool; round 4 = schema/scoring consistency).
-Every finding accepted and resolved; no definitional reversal.
+**codex consult (round 5) — one denominator-purity finding, accepted:**
+
+7. **[P2] §(f) must seed ONE unit of relevance, not mix evidence units with legacy doc-ids.** The
+   round-3 wording "`required_evidence` + `expected_top_k_doc_ids`" would double-count / require
+   non-necessary legacy doc-ids. **Resolved:** §(f) now seeds **one** unit per query —
+   `required_evidence` is the denominator when present; `expected_top_k_doc_ids` map **exactly
+   once** to degenerate whole-document required units **only** as a fallback when evidence labels
+   are absent (the eu8 reduction), never added on top of an evidence-labelled set.
+
+**Convergence:** reached after round 5; round 6 confirmed the methodology coherent with no
+remaining P1/P2 finding (round 1 = §(e) accuracy + cleanups; round 2 = doc coherent; round 3 =
+§(f) seed-then-pool; round 4 = schema/scoring consistency; round 5 = single-unit-of-relevance
+denominator). Every finding accepted and resolved; no definitional reversal.
 
 **Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
 actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are
