@@ -31,6 +31,16 @@ remains reserved.).
 
 ## 1. Current slice
 
+**★ 0.8.0 GA SHIPPED 2026-06-08 — `v0.8.0` tagged at `5b606c5`, published live (crates.io t1→t7 · npm · PyPI ·
+GitHub release · post-publish smoke all green, zero failed steps; run 27164217292).** Phase 0.8.0 CLOSED. eu7
+AC-075 green via the one-sided CI gate (real 0.896 within-CI of the un-lowered 0.90 floor; HITL-accepted).
+**Post-GA (0.8.1) backlog, in HITL-ruled order:** (1) IR-eval track — IR-B merge (post-tag) → IR-C experiments
+(gated on the owner's COR-2 corpus freeze) → IR-D AC-077 → IR-2 → ◆ IR-gate; (2) THEN the ~4-pt 0.7.x→0.8.0
+vector-stage fidelity-regression diagnosis (engine-version A/B → bisect) + eu7 harness perf opts +
+revisit-the-CI-assert-form (`dev/roadmap/0.8.1.md`). Below is the historical 0.8.0 slice record.
+
+---
+
 **Current: NONE active — Slice 35 CLOSED 2026-06-06 (HITL-signed; codex §9 PASS, 2×[P3] reconciled).**
 Both ADRs signed: **filter-grammar ACCEPTED** (G4/F3 closed `Predicate` enum; HITL note: G4↔G10 unification
 is NEEDED future work = gap 37, affects both); **graph-traversal-scope signed as 0.8.1 ROADMAP DIRECTION**
@@ -399,6 +409,24 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-08 — ★ 0.8.0 GA SHIPPED — v0.8.0 tagged + PUBLISHED (crates.io · npm · PyPI · GitHub release); phase CLOSED
+
+- **HITL authorized full GA completion + IR completion, no further HITL gates** ("get it complete"). Executed
+  autonomously with the prescribed safety: version bump → push main → **publish DRY-RUN (clean: all gates,
+  builds, cargo t1–t7 + npm dry-runs green)** → real tag.
+- **`v0.8.0` cut at `5b606c5`** (= origin/main HEAD; bumped Axis-W 0.7.2→0.8.0, embedder-api stays 0.6.0,
+  CHANGELOG 0.8.0 dated) and pushed. **Real release run 27164217292: SUCCESS, zero failed steps** —
+  verify-release ✅, all platform builds ✅, **crates.io publish t1-embedder-api→t7-cli ✅** (tier order),
+  **npm ✅, PyPI ✅, co-tagging ✅, post-publish-smoke (npm/crates/pypi) ✅, github-release ✅.** Artifacts
+  verified live by the smoke jobs. ([[release-publish-gotchas]] honored: dry-run first, set-version.sh,
+  embedder→engine tier order.)
+- **GA shipped on the HITL-accepted recall posture:** eu7 AC-075 green via the one-sided CI gate (real
+  vector-stage 0.896, CI [0.864,0.925] ⊇ 0.90; floor constant **un-lowered** at 0.90). The point-estimate-≥0.90
+  recovery + the ~4-pt 0.7.x→0.8.0 fidelity regression are **0.8.1** (AFTER IR per HITL sequencing).
+- **NEXT (no HITL needed): IR track.** IR-B done on its branch → bring back now (codex §9 → merge). IR-C
+  experiments + final gold-set labeling + AC-077 are gated on the **owner's COR-2 corpus freeze** (out-of-band,
+  not orchestrator-producible) — drive to that boundary; flag what awaits the freeze.
 
 ### 2026-06-08 — GA-3 MERGED (codex §9 clean PASS) — eu7 AC-075 gate GENUINELY GREEN; ◆ GA sign-off READY
 
