@@ -410,6 +410,27 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — IR-B (IR-1 Phase 2) MERGED post-GA (codex §9 1×[P2]→fix-1) — IR track now at the COR-2-freeze boundary
+
+- **IR-B merged** to `main`@`6d66834` (`--no-ff`; ort, clean — only the 5 additive IR files; GA-3's `recall_gate.rs`
+  + eu7 CI assert preserved). 11/11 IR unit tests green on merged main (default features, exit 0). Worktree/branch
+  removed. Pushed pending (this commit).
+- **codex §9: 1×[P2]** — the experiment runner silently scored a failed `Engine::search` as empty results (a
+  retrieval failure would read as ordinary misses / a negative query as a correct abstention → a valid-looking
+  report from failed retrievals). **→ fix-1 `8a2b5d4`:** the runner now **propagates** the error (`Result`
+  threading); `Ok(empty)` stays distinct from `Err`; focused test added. (Same masquerading-green failure mode
+  this campaign kept catching — fixed before it can produce a number.)
+- **IR track status: Phase 1 (measure) + Phase 2 (harness/schema/measure CODE) COMPLETE & merged.** What's
+  built: gold-set schema/loader/validator (additive over eu8), Evidence Recall@K (strict + graded), retrieval-mode
+  plumbing, experiment-runner scaffold, synthetic fixtures + 11 tests.
+- **⛔ IR-C/IR-D/IR-2/◆IR-gate are BLOCKED on the owner's COR-2 corpus FREEZE — an EXTERNAL, out-of-band input,
+  NOT a HITL gate.** Removing HITL gates does not unblock it. Deferred-on-freeze (marked `TODO(COR-2-freeze)`,
+  see `dev/plans/runs/IR-B-deferred-on-corpus-freeze.md`): real fact-level gold-set labeling, IR-C experiment
+  runs (`--release`), FTS/BM25 modes, corpus_hash/qrels snapshot pinning, AC-077 mint (data-grounded). **A
+  provisional pass on the *unfrozen* corpus was deliberately NOT run** — it would violate the signed measure's
+  pinned-snapshot principle and re-introduce exactly the corpus-drift that caused the B-1 mess. **Next external
+  step: corpus owner freezes COR-2 (versioned SHA-256 snapshot); then IR-C resumes.**
+
 ### 2026-06-08 — ★ 0.8.0 GA SHIPPED — v0.8.0 tagged + PUBLISHED (crates.io · npm · PyPI · GitHub release); phase CLOSED
 
 - **HITL authorized full GA completion + IR completion, no further HITL gates** ("get it complete"). Executed
