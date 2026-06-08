@@ -400,6 +400,31 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — ◆ B-1 RULED (HITL): Option 1 — correct eu7 to measure the ANN+ vector stage (not hybrid `search()`); GA-2 delegated
+
+- **HITL SIGNED ◆ B-1 = Option 1** (this session, after the GA-1 reframe + a clarification exchange confirming
+  the fidelity-vs-relevance axis): **the recall halt is a measurement mis-specification, not a corpus move or a
+  confirmed regression.** Fix = **correct `eu7` to measure ANN-quantization FIDELITY on the vector stage in
+  isolation**, then assert the unchanged **0.90** floor. Options 2 (engine-version A/B) and 3 (re-baseline eu7
+  GT to exact-hybrid) NOT taken (3 explicitly removed by HITL). **Floor NOT lowered; eu7 NOT weakened — its
+  documented ANN-fidelity semantics are RESTORED** (a correction, ruled by HITL as such, not a weakening).
+- **The correction (orchestrator-verified anchors):** the engine already computes the pre-fusion vector ranking
+  as `vector_results` (bit-KNN K=192 + f32 rerank) at `lib.rs:3955` *before* `fuse_rrf(vector_results,
+  text_results)`. RRF fusion is **unconditional, no `fusion_mode` knob** (HITL Q3, `d28d204`), so `search()`
+  cannot return it. ⇒ add a **test-only seam** exposing `vector_results` (mirroring existing `*_for_test` seams
+  like `set_search_limit_for_test`), and repoint `eu7_real_corpus_ac.rs::measure_recall` (`~:423`, the `.search()`
+  call `~:479`) at that ANN+ ranking vs the exact-f32 **vector** top-10 GT. **Measurement seam only — NOT a
+  production behavior change, NOT a revived `fusion_mode`.** Expect ≈0.937 (corpus + ANN params unchanged) ⇒ AC-075 GREEN.
+- **Measure = `recall@10` (ANN recall) ; harness = `eu7` ; gate id = `AC-075`** (synthetic sibling `ac_013b` →
+  report-only). The AC-075 wording must define eu7 as **ANN+-vector-stage fidelity vs exact-f32 vector top-10**,
+  NOT "real recall on `search()`" — correcting the conflation that propagated into the Slice-40 prompt §3.1.
+- **GA-2 unblocked + DELEGATED** (orchestrator-prepared work package): authored
+  `dev/plans/prompts/0.8.0-slice-40-B1-application.md` (the B-1 delta — eu7 seam + repoint + re-measure;
+  OVERRIDES the stale slice-40 §3.1), to be executed alongside the existing `0.8.0-slice-40.md` (AC-076 ac_012
+  tier, B3/`ac_020`, CI gate n, release docs all still apply). Work agent owns a fresh worktree off `main`@`98cdd0c`,
+  may reuse the prior `slice-40-20260607T145013Z`@`694f6a6` gate-restructure commits. Orchestrator gates the
+  return with **codex §9** → GA-merge → prepare ◆ GA sign-off. Supersedes the "B1 awaiting HITL" status in §1/§2/§3.
+
 ### 2026-06-08 — IR-A (IR-1 Phase 1) CLOSED — measure consensus-signed; orchestrator gate-merged after agent lost at closure
 
 - **IR-A delivered + Claude↔codex CONVERGED**, but the background work agent was **lost when the prior process
