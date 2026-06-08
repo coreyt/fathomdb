@@ -49,6 +49,7 @@ refresh in the closing commit when you touch a doc).
 | Path | Purpose | Owning slice / AC | Last-touched |
 |------|---------|-------------------|--------------|
 | `dev/design/README.md` | Design-notes index | — | (tree) |
+| `dev/design/ir-recall-measure.md` | **IR/agentic evidence-recall MEASURE (definition + methodology)** — Phase-1 Claude↔codex consensus-signed: primary measure = Evidence Recall@K (strict all-of + graded), unit = atomic evidence unit (gold-set schema additive over eu8 `ground_truth_queries`), K-ladder @5/@10(headline)/@20/@50, per-class structure, retrieval-mode matrix (4/5 runnable; +reranker stub, +graph 0.8.1), pooled qrels methodology + pinned-versioned-corpus PRINCIPLE. Numbers all TBD; eu7/AC-075 fidelity gate untouched. Input to IR-1 Ph2–4 + IR-2 | IR-eval (IR-1 Phase 1) | 2026-06-08 |
 | `dev/design/orchestration.md` | Orchestration rules (§1/§1.5/§6/§8/§9/§10/§11/§12) — the binding spine for the plan | binds every slice | 2026-05-31 |
 | `dev/design/bindings.md` | SDK bindings spec; §1 governed SDK surface invariant (allowlist + parity, AC-074); §10 recovery-unreachability (BYTE-FROZEN) | 25 rewrote §1/§13/§14; §10 preserved | 2026-06-04 |
 | `dev/design/0.8.0-agent-memory-fit.md` | Agent-memory gap ladder (G0–G12) + §7 read-verb HITL questions | scope source for 0.8.0 | 2026-06-02 |
