@@ -294,7 +294,7 @@ Gap → owning-slice mapping (from `0.8.0-implementation.md` § "Slice sequence"
 | **G8** dangling-edge flag-and-count (`WriteReceipt.dangling_edge_endpoints`) | **20** | ✅ **DONE** (closed 2026-06-04, `main`@`54e3e93`) — additive `WriteReceipt.dangling_edge_endpoints: u64`, post-row-insert EXISTS pass inside `commit_batch`'s open tx; `logical_id`-alone probe (missing OR superseded both count, `from`/`to` independent) hits step-12 partial index `canonical_nodes_logical_active_idx` (EXPLAIN gate, no SCAN); Py+TS parity. codex [P1] (O(N²) same-batch scan) → **fix-1** O(N) last-index precompute (byte-identical count) → clean PASS. `pr_g8_dangling_edges.rs` 8/8. Strict-mode = reserved-gap **band 22** (flagged, not built); legacy-NULL endpoints count as dangling (intended/informational). No new AC (gap-tracked; `acceptance.md` locked) |
 | **G2** `read.get`/`read.get_many` (by-`logical_id`, active-only) | **30** | ❌ not started |
 | **G3** `read.collection`/`read.mutations` (paginated op-store read-back) | **30** | ❌ not started |
-| Recall floor ≥ **0.90** (AC-075) | **AC-075** (GA-2/Slice-40); held by 5/10/15 | ✅ **GATE RESTRUCTURED + RULED (◆ B-1, Option 1, 2026-06-08; merged `c1a72f2`).** The asserting recall gate is now the **real-embedder `eu7` measured on the ANN+ VECTOR STAGE** (1-bit sign-quant K=192 + f32 rerank vs exact-f32 vector top-10) ≥0.90 — an **ANN-quantization FIDELITY** gate. ◆ B-1 finding: the prior `eu7`-on-`search()` measured 0.8710 because Slice 10 made `search()` unconditional RRF-hybrid (vector⊕FTS5) while the GT is vector-only → it scored *fusion divergence*, not quantization fidelity, on a **byte-identical corpus** (GA-1; no corpus move, no regression). Corrected via a test-only seam (`set_vector_stage_only_for_test`); vector-stage recall = **0.937** (fused 0.871 reported as the delta). Synthetic `ac_013b` → report-only. Floor **NOT lowered**, assert **restored not weakened**. ⚠️ The 0.937 is **inferred (0.7.x anchor + byte-identity)**; the **perf-canonical eu7 vector-stage re-measure is OWED before GA tag**. |
+| Recall floor ≥ **0.90** (AC-075) | **AC-075** (GA-2/Slice-40); held by 5/10/15 | ✅ **GATE RESTRUCTURED + RULED (◆ B-1, Option 1, 2026-06-08; merged `c1a72f2`).** The asserting recall gate is now the **real-embedder `eu7` measured on the ANN+ VECTOR STAGE** (1-bit sign-quant K=192 + f32 rerank vs exact-f32 vector top-10) ≥0.90 — an **ANN-quantization FIDELITY** gate. ◆ B-1 finding: the prior `eu7`-on-`search()` measured 0.8710 because Slice 10 made `search()` unconditional RRF-hybrid (vector⊕FTS5) while the GT is vector-only → it scored *fusion divergence*, not quantization fidelity, on a **byte-identical corpus** (GA-1; no corpus move, no regression). Corrected via a test-only seam (`set_vector_stage_only_for_test`); vector-stage recall = **0.937** (fused 0.871 reported as the delta). Synthetic `ac_013b` → report-only. Floor **NOT lowered**, assert **restored not weakened**. ⛔ **RE-MEASURE RESULT (2026-06-08): the REAL 0.8.0 vector-stage recall@10 @ N=7667 = `0.8960` < 0.90 → AC-075 RED** (the inferred 0.937 was WRONG; 0.7.x anchor 0.937 vs 0.8.0 0.896 on the byte-identical corpus = a real ~4pt ANN-fidelity regression). **GA HALTED; floor un-lowered; diagnosis (engine-version A/B → bisect vector path) escalated to HITL.** See §7 top. |
 | Recovery-unreachability (`{recover,restore,repair,fix,rebuild}` SDK-absent; `doctor` CLI-only) | PRESERVED across all slices | ✅ green; **byte-unchanged through Slice 25 CONFIRMED** (zero-line diff on `test_no_recovery_surface.py` / `no-recovery-surface.test.ts` / `no_recovery_surface.rs` + `bindings.md` §10 across both the Slice 25 rewrite and fix-1; verified by orchestrator + codex). AC-074 carries the five-name denylist as a permanent clause; `doctor` SDK-absent via allowlist non-membership |
 
 ---
@@ -399,6 +399,33 @@ the worktree at slice close.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-08 — ⛔ GA RE-HALTED: real eu7 vector-stage recall@10 = 0.8960 < 0.90 @ N=7667 — a REAL 0.7.x→0.8.0 regression (inference was wrong)
+
+- **The required real re-measure came back BELOW the floor — vindicating the call to measure, not infer.** The
+  detached eu7 run completed (6630s, exit 101 = the AC-075 assert panicked, `eu7_real_corpus_ac.rs:983`):
+  - **N=7667 (VERDICT): vector-stage recall@10 = `0.8960`** (CI [0.8640, 0.9250], σ 0.0157) **< 0.90 → RED.**
+  - N=1000: vector-stage = 0.9240 (passes). fused-search N=7667 = 0.8710. ac013 latency PASS; ac019 stress
+    N=7667 MISS but harness-labeled dev-box scouting (canonical = 0.7.2 PR-3), **not** a fresh blocker.
+  - Artifact: `dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.{json,log}`.
+- **This is a REAL regression, not an artifact.** The 0.7.x anchor was **0.937 @ N=7667** on the **byte-identical
+  corpus, same N** (`0.7.1-EU-7-measurements.json`, restored — the test clobbers it via a hardcoded legacy
+  output path; harness wart to fix). 0.8.0 vector stage = 0.896 ⇒ **~4.1-point ANN-quantization-fidelity drop
+  0.7.x→0.8.0**. The earlier inferred 0.937 (from the 0.7.x anchor) was WRONG; HITL's insistence on the real run
+  caught it. It is a **marginal** miss (CI upper 0.925 > 0.90) but the point estimate is under.
+- **⇒ GA sign-off WITHHELD. AC-075 is correctly RED on the real embedder.** The merged GA-2 gate restructure +
+  seam are themselves correct (the gate is working as intended — it surfaced a real shortfall that the synthetic
+  `ac_013b` and the inference both masked). DO NOT lower the floor / weaken the assert ([[0.8.0-ga-blocked-recall-corpus]],
+  [[perf-recall-gates-masked-and-ac013b-conflation]]).
+- **Suspected cause (to be confirmed, NOT main-thread):** a 0.7.x→0.8.0 change in the vector candidate/rerank
+  path degraded ANN fidelity — prime suspect the Slice-10 (`d28d204`) phase-1 KNN work ("3-way shape-sentinel
+  fixes the `embedding_bin` no-op"; the "filter=None byte-identical" pin was a small fixture, may not cover
+  recall@N=7667). Also rule out a measurement difference (vector fanout adequacy at N=7667; the 0.937 anchor was
+  a 0.7.1 run under possibly different harness/query-set).
+- **RECOMMENDED next (HITL to direct; delegated/perf-canonical, never main-thread):** (1) **engine-version A/B**
+  — measure 0.7.2's vector stage with the *current* eu7 seam + same corpus + N=7667 to confirm 0.937-vs-0.896 is a
+  real engine delta, not an anchor/harness artifact; (2) if real → **bisect the 0.7.x→0.8.0 vector-path commits**
+  (G10 phase-1 KNN / shape-sentinel / mean-centering / K / rerank limit) and fix to recover ≥0.90. **ESCALATED to HITL.**
 
 ### 2026-06-08 — eu7 re-measure: first run REAPED at 6632/7667 → relaunched bulletproof-detached (HITL); harness opts → 0.8.1
 

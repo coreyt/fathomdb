@@ -1,0 +1,201 @@
+warning: methods `worker_count` and `live_count` are never used
+   --> src/rust/crates/fathomdb-engine/src/lib.rs:510:8
+    |
+486 | impl ReaderWorkerPool {
+    | --------------------- methods in this implementation
+...
+510 |     fn worker_count(&self) -> usize {
+    |        ^^^^^^^^^^^^
+...
+514 |     fn live_count(&self) -> usize {
+    |        ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `dispatch_stress_failure` is never used
+   --> src/rust/crates/fathomdb-engine/src/lifecycle.rs:173:19
+    |
+129 | impl SubscriberRegistry {
+    | ----------------------- method in this implementation
+...
+173 |     pub(crate) fn dispatch_stress_failure(&self, context: &StressFailureContext) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `fathomdb-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running tests/eu7_real_corpus_ac.rs (target/release/deps/eu7_real_corpus_ac-1b13a580deb5ccf5)
+
+running 1 test
+test eu7_real_corpus_ac_validation ... EU7_SETUP real_docs=7667 queries=100 n_values=[1000, 7667] bootstrap=1000 latency_samples=1000 stress_per_thread=250
+EU7_PHASE n=1000 seed_start (from 0)
+EU7_SEED_PROGRESS seeded=256/1000 elapsed_s=80 rate_docs_per_s=3.2
+EU7_SEED_PROGRESS seeded=768/1000 elapsed_s=193 rate_docs_per_s=4.0
+EU7_SEED_PROGRESS seeded=1000/1000 elapsed_s=384 rate_docs_per_s=2.6
+EU7_PHASE n=1000 GT_EMBED_START n=1000
+EU7_GT_EMBED_PROGRESS embedded=100/1000 rate_docs_per_s=3.3
+EU7_GT_EMBED_PROGRESS embedded=190/1000 rate_docs_per_s=3.1
+EU7_GT_EMBED_PROGRESS embedded=286/1000 rate_docs_per_s=3.2
+EU7_GT_EMBED_PROGRESS embedded=682/1000 rate_docs_per_s=5.6
+EU7_GT_EMBED_PROGRESS embedded=715/1000 rate_docs_per_s=4.7
+EU7_GT_EMBED_PROGRESS embedded=750/1000 rate_docs_per_s=4.1
+EU7_GT_EMBED_PROGRESS embedded=786/1000 rate_docs_per_s=3.7
+EU7_GT_EMBED_PROGRESS embedded=820/1000 rate_docs_per_s=3.4
+EU7_GT_EMBED_PROGRESS embedded=854/1000 rate_docs_per_s=3.1
+EU7_GT_EMBED_PROGRESS embedded=889/1000 rate_docs_per_s=2.9
+EU7_GT_EMBED_PROGRESS embedded=923/1000 rate_docs_per_s=2.8
+EU7_GT_EMBED_PROGRESS embedded=960/1000 rate_docs_per_s=2.6
+EU7_GT_EMBED_PROGRESS embedded=995/1000 rate_docs_per_s=2.5
+EU7_PHASE n=1000 seed_done seed_ms=384074
+EU7_PHASE n=1000 latency_done p50_ms=17 p99_ms=34
+EU7_RECALL_OLD exclude-after+setGT(fused) recall@10=0.8220 ci=[0.7950,0.8460] sigma=0.0133 target_in_top10=69/100
+EU7_RECALL_VECTOR exclude-before+dedupGT vector-stage recall@10=0.9240 ci=[0.8970,0.9490] sigma=0.0137 (AC-075 VERDICT SUT)
+EU7_RECALL_FUSED exclude-before+dedupGT fused-search recall@10=0.9100 ci=[0.8820,0.9350] sigma=0.0136 (report-only delta; NOT the floor SUT)
+EU7_RECALL_DELTA vector_stage=0.9240 fused_search=0.9100 delta=0.0140 (correction is load-bearing: the floor gates the vector stage, not the hybrid output)
+EU7_PHASE n=1000 recall_done vector_stage=0.9240 fused_search=0.9100
+EU7_PHASE n=1000 stress_done p99_ms=209
+EU7_NUMBERS n=1000 padded=false seed_ms=384074 p50_ms=17 p99_ms=34 recall_at_10=0.9240 recall_ci_lo=0.8970 recall_ci_hi=0.9490 sigma=0.0137 recall_fused_search=0.9100 recall_fused_delta=0.0140 stress_p99_ms=209 stress_bound_ms=347 ac013=true ac019=true
+EU7_PHASE n=7667 seed_start (from 1000)
+EU7_SEED_PROGRESS seeded=1256/7667 elapsed_s=218 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=1512/7667 elapsed_s=426 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=1768/7667 elapsed_s=634 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=2024/7667 elapsed_s=847 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=2280/7667 elapsed_s=1058 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=2536/7667 elapsed_s=1270 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=2792/7667 elapsed_s=1488 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=3048/7667 elapsed_s=1702 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=3304/7667 elapsed_s=1846 rate_docs_per_s=1.2
+EU7_SEED_PROGRESS seeded=3560/7667 elapsed_s=1917 rate_docs_per_s=1.3
+EU7_SEED_PROGRESS seeded=3816/7667 elapsed_s=1982 rate_docs_per_s=1.4
+EU7_SEED_PROGRESS seeded=4072/7667 elapsed_s=2059 rate_docs_per_s=1.5
+EU7_SEED_PROGRESS seeded=4328/7667 elapsed_s=2124 rate_docs_per_s=1.6
+EU7_SEED_PROGRESS seeded=4584/7667 elapsed_s=2198 rate_docs_per_s=1.6
+EU7_SEED_PROGRESS seeded=4840/7667 elapsed_s=2269 rate_docs_per_s=1.7
+EU7_SEED_PROGRESS seeded=5096/7667 elapsed_s=2343 rate_docs_per_s=1.7
+EU7_SEED_PROGRESS seeded=5352/7667 elapsed_s=2484 rate_docs_per_s=1.8
+EU7_SEED_PROGRESS seeded=6120/7667 elapsed_s=2596 rate_docs_per_s=2.0
+EU7_SEED_PROGRESS seeded=6376/7667 elapsed_s=2695 rate_docs_per_s=2.0
+EU7_SEED_PROGRESS seeded=6632/7667 elapsed_s=2734 rate_docs_per_s=2.1
+EU7_SEED_PROGRESS seeded=7400/7667 elapsed_s=2772 rate_docs_per_s=2.3
+EU7_PHASE n=7667 GT_EMBED_START n=6667
+EU7_GT_EMBED_PROGRESS embedded=35/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=73/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=115/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=157/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=197/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=238/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=280/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=322/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=365/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=404/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=446/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=484/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=524/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=563/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=603/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=639/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=674/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=709/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=745/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=781/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=818/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=855/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=890/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=928/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=963/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1000/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1035/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1071/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1112/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1154/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1193/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1229/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1267/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1304/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1339/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1373/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1411/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=1444/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1481/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1522/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1559/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1594/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1632/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1666/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1700/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1738/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1771/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1808/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1843/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1878/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1914/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1950/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=1986/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2022/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2059/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2096/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2136/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2171/6667 rate_docs_per_s=1.2
+EU7_GT_EMBED_PROGRESS embedded=2267/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=2344/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=2475/6667 rate_docs_per_s=1.3
+EU7_GT_EMBED_PROGRESS embedded=2573/6667 rate_docs_per_s=1.4
+EU7_GT_EMBED_PROGRESS embedded=2707/6667 rate_docs_per_s=1.4
+EU7_GT_EMBED_PROGRESS embedded=2808/6667 rate_docs_per_s=1.4
+EU7_GT_EMBED_PROGRESS embedded=2912/6667 rate_docs_per_s=1.5
+EU7_GT_EMBED_PROGRESS embedded=3009/6667 rate_docs_per_s=1.5
+EU7_GT_EMBED_PROGRESS embedded=3148/6667 rate_docs_per_s=1.5
+EU7_GT_EMBED_PROGRESS embedded=3249/6667 rate_docs_per_s=1.6
+EU7_GT_EMBED_PROGRESS embedded=3360/6667 rate_docs_per_s=1.6
+EU7_GT_EMBED_PROGRESS embedded=3466/6667 rate_docs_per_s=1.6
+EU7_GT_EMBED_PROGRESS embedded=3571/6667 rate_docs_per_s=1.7
+EU7_GT_EMBED_PROGRESS embedded=3671/6667 rate_docs_per_s=1.7
+EU7_GT_EMBED_PROGRESS embedded=3778/6667 rate_docs_per_s=1.7
+EU7_GT_EMBED_PROGRESS embedded=3882/6667 rate_docs_per_s=1.7
+EU7_GT_EMBED_PROGRESS embedded=3993/6667 rate_docs_per_s=1.7
+EU7_GT_EMBED_PROGRESS embedded=4097/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4185/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4228/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4273/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4319/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4365/6667 rate_docs_per_s=1.8
+EU7_GT_EMBED_PROGRESS embedded=4902/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=4998/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5084/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5182/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5259/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5321/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5421/6667 rate_docs_per_s=2.0
+EU7_GT_EMBED_PROGRESS embedded=5769/6667 rate_docs_per_s=2.1
+EU7_GT_EMBED_PROGRESS embedded=6397/6667 rate_docs_per_s=2.3
+EU7_PHASE n=7667 seed_done seed_ms=2785178
+EU7_PHASE n=7667 latency_done p50_ms=27 p99_ms=44
+EU7_RECALL_OLD exclude-after+setGT(fused) recall@10=0.8090 ci=[0.7720,0.8430] sigma=0.0178 target_in_top10=67/100
+EU7_RECALL_VECTOR exclude-before+dedupGT vector-stage recall@10=0.8960 ci=[0.8640,0.9250] sigma=0.0157 (AC-075 VERDICT SUT)
+EU7_RECALL_FUSED exclude-before+dedupGT fused-search recall@10=0.8710 ci=[0.8350,0.9040] sigma=0.0180 (report-only delta; NOT the floor SUT)
+EU7_RECALL_DELTA vector_stage=0.8960 fused_search=0.8710 delta=0.0250 (correction is load-bearing: the floor gates the vector stage, not the hybrid output)
+EU7_PHASE n=7667 recall_done vector_stage=0.8960 fused_search=0.8710
+EU7_PHASE n=7667 stress_done p99_ms=469
+EU7_NUMBERS n=7667 padded=false seed_ms=2785178 p50_ms=27 p99_ms=44 recall_at_10=0.8960 recall_ci_lo=0.8640 recall_ci_hi=0.9250 sigma=0.0157 recall_fused_search=0.8710 recall_fused_delta=0.0250 stress_p99_ms=469 stress_bound_ms=440 ac013=true ac019=false
+EU7_WROTE /home/coreyt/projects/fathomdb/dev/plans/runs/0.7.1-EU-7-measurements.json
+EU7_VERDICT n=1000 ac013_latency=PASS ac019_stress=PASS vector_stage_recall_at_10=0.9240 padded=false (latency/stress are dev-box scouting; canonical verdict is 0.7.2 PR-3)
+EU7_VERDICT n=7667 ac013_latency=PASS ac019_stress=MISS(dev-box) vector_stage_recall_at_10=0.8960 padded=false (latency/stress are dev-box scouting; canonical verdict is 0.7.2 PR-3)
+
+thread 'eu7_real_corpus_ac_validation' (1321126) panicked at src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:983:13:
+AC-075 recall verdict: vector-stage recall@10 0.8960 < floor 0.9 at n=7667 (the production recall floor is gated here on the REAL bge-small embedder's pre-fusion VECTOR STAGE — ANN-quantization fidelity vs the exact-f32 vector top-10; the synthetic perf_gates::ac_013b is report-only, and the RRF-fused search() recall is the report-only delta EU7_RECALL_FUSED, NOT this gate's SUT)
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: eu7_real_corpus_ac::eu7_real_corpus_ac_validation
+   3: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+FAILED
+
+failures:
+
+failures:
+    eu7_real_corpus_ac_validation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6630.02s
+
+error: test failed, to rerun pass `-p fathomdb-engine --test eu7_real_corpus_ac`
+REAL_CARGO_EXIT=101

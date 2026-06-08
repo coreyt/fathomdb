@@ -1,0 +1,98 @@
+{
+  "_comment": "EU-7 real-corpus AC measurements (dev-box scouting). Regenerable: AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder --test eu7_real_corpus_ac. Consumed by dev/plans/runs/0.7.1-EU-7-output.json and by 0.7.2 PR-2 (floor re-derivation).",
+  "ac_013_real_dev_box": [
+    {
+      "budget_p50_ms": 80,
+      "budget_p99_ms": 300,
+      "n": 1000,
+      "p50_ms": 17,
+      "p99_ms": 34,
+      "padded_with_synthetic_distractors": false,
+      "passed": true
+    },
+    {
+      "budget_p50_ms": 80,
+      "budget_p99_ms": 300,
+      "n": 7667,
+      "p50_ms": 27,
+      "p99_ms": 44,
+      "padded_with_synthetic_distractors": false,
+      "passed": true
+    }
+  ],
+  "ac_013b_real_dev_box": [
+    {
+      "ci_hi": 0.949,
+      "ci_lo": 0.897,
+      "current_floor_0_90": 0.9,
+      "n": 1000,
+      "padded_with_synthetic_distractors": false,
+      "passes_current_floor": true,
+      "recall_at_10": 0.924,
+      "recall_at_10_fused_search": 0.91,
+      "recall_at_10_fused_search_delta": 0.014,
+      "sigma_bootstrap": 0.0137,
+      "sut": "ann_plus_vector_stage_pre_fusion (◆ B-1; not RRF-fused search())"
+    },
+    {
+      "ci_hi": 0.925,
+      "ci_lo": 0.864,
+      "current_floor_0_90": 0.9,
+      "n": 7667,
+      "padded_with_synthetic_distractors": false,
+      "passes_current_floor": false,
+      "recall_at_10": 0.896,
+      "recall_at_10_fused_search": 0.871,
+      "recall_at_10_fused_search_delta": 0.025,
+      "sigma_bootstrap": 0.0157,
+      "sut": "ann_plus_vector_stage_pre_fusion (◆ B-1; not RRF-fused search())"
+    }
+  ],
+  "ac_019_real_dev_box": [
+    {
+      "baseline_p99_ms": 34,
+      "bound_ms": 347,
+      "n": 1000,
+      "p99_ms": 209,
+      "padded_with_synthetic_distractors": false,
+      "passed": true
+    },
+    {
+      "baseline_p99_ms": 44,
+      "bound_ms": 440,
+      "n": 7667,
+      "p99_ms": 469,
+      "padded_with_synthetic_distractors": false,
+      "passed": false
+    }
+  ],
+  "config": {
+    "ac019_stress_per_thread": 250,
+    "ac019_threads": 8,
+    "bootstrap_resamples": 1000,
+    "bootstrap_seed_hex": "0xe77b007574a9",
+    "dimension": 384,
+    "embedder": "fathomdb-bge-small-en-v1.5",
+    "ground_truth": "brute-force f32 L2 over uncentered embedding column, same model",
+    "latency_samples": 1000,
+    "mean_centering": true,
+    "n_values_requested": [
+      1000,
+      7667
+    ],
+    "query_count": 100,
+    "query_select_seed_hex": "0xe77c0125e1ec7",
+    "query_synthesis": "EU-0 §1.2: title-or-lead-sentence, target excluded from GT+prod",
+    "real_corpus_docs": 7667,
+    "rerank_k_locked": 192
+  },
+  "r_canonical_anchor": {
+    "ci_lo": 0.864,
+    "n": 7667,
+    "note": "Largest all-real-corpus haystack; recall DECREASES with N, so this dev-box anchor is an upper-ish bound on PR-3's canonical N=1M number. K=192 locked.",
+    "recall_at_10": 0.896,
+    "recommended_pr2_floor_R_minus_2sigma": 0.8645,
+    "recommended_pr2_floor_rounded_down_0_01": 0.86,
+    "sigma_bootstrap": 0.0157
+  }
+}
