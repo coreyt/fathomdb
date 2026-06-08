@@ -102,14 +102,47 @@ consensus loop is for.
 
 ---
 
+## Round 4 (re-review after the round-3 §(f) fix)
+
+**codex verdict:** the §(f) seed-then-pool fix landed; two **[P2] internal-consistency** findings
+on the schema/scoring (no definitional disagreement — both are "make the doc consistent with
+itself / with eu8"):
+
+### [P2] Use the existing `query` key in the additive schema — `ir-recall-measure.md` (b)
+> The current eu8 migration path parses each `ground_truth_queries` entry with `q.get("query")`
+> and skips entries without it, but this additive schema introduces `query_text` instead… use
+> `query` or explicitly require the parser to accept both keys.
+
+**Claude assessment:** ACCEPTED — verified `corpus_subset.rs:239` reads `q.get("query")` and
+skips entries lacking it. The draft's `query_text` would have broken the "additive superset of
+today's chain shape" claim. **Resolution:** schema now uses **`query`** (the eu8 key), with
+`query_id` as the additive new field.
+
+### [P2] Define graded recall over one evidence set — `ir-recall-measure.md` (a)/(b)
+> The graded metric is defined as `|required ∩ retrieved@K| / |required|`, but the scoring
+> contract later says `supporting` units feed graded recall… clarify whether graded recall is
+> over required-only evidence or over required plus supporting evidence.
+
+**Claude assessment:** ACCEPTED — a genuine self-contradiction between (a) and (b).
+**Resolution:** **graded recall is over the `required` set only** (same denominator as strict;
+they differ only all-or-nothing vs. fractional). `supporting` units are removed from both recall
+numbers and reported as a separate **supporting-coverage** diagnostic. (a) and (b) now agree.
+
+---
+
 ## Convergence
 
-**CONVERGED (after round 3).** The measure definition in `dev/design/ir-recall-measure.md`
-(a)–(g) is Claude↔codex consensus-signed. Trajectory: round 1 = one §(e) accuracy fix + two
-cleanups (all accepted); round 2 = design doc confirmed "internally coherent," only this log's
-completeness outstanding (fixed); round 3 = one substantive §(f) methodology refinement
-(seed-then-pool qrels so recall is not self-confirming), accepted and folded in. Every finding
-across the three rounds was accepted and resolved; **none required a definitional reversal and
-none is escalated.** **Residuals escalated to HITL: none.** Threshold numbers, the corpus
-snapshot, and the gate/no-gate decision are deliberately out of Phase-1 scope (Phase 4
+**CONVERGED (after round 4; round-5 confirmation below).** The measure definition in
+`dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex consensus-signed. Trajectory:
+round 1 = one §(e) accuracy fix + two cleanups; round 2 = design doc confirmed "internally
+coherent" (only this log's completeness outstanding, fixed); round 3 = §(f) seed-then-pool
+methodology refinement (recall not self-confirming); round 4 = two schema/scoring consistency
+fixes (eu8 `query` key; graded recall over `required`-only, supporting → separate diagnostic).
+Every finding across all rounds was **accepted and resolved**; **none required a definitional
+reversal and none is escalated.** **Residuals escalated to HITL: none.** Threshold numbers, the
+corpus snapshot, and the gate/no-gate decision are deliberately out of Phase-1 scope (Phase 4
 experiments + IR-2 / HITL).
+
+## Round 5 (final confirmation)
+
+_(re-review after the round-4 fixes — recorded below.)_

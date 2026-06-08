@@ -43,9 +43,13 @@ Two reporting forms, both required (they answer different questions):
   is present in top-K, else `0`; then averaged. This is the headline product-value number
   ("could the agent have acted?"). It is *all-or-nothing per query* because a commitment with
   the date but not the obligor is not actionable.
-- **Graded (fraction-of) evidence recall@K** — per query, `|required ∩ retrieved@K| /
-  |required|`; averaged. This is the **diagnostic** companion (how close did we get when we
-  missed?), and it degrades gracefully so it is useful below the all-of threshold.
+- **Graded (fraction-of) evidence recall@K** — per query, **over the `required` evidence set
+  only**: `|required ∩ retrieved@K| / |required|`; averaged. This is the **diagnostic** companion
+  (how close did we get when we missed?), and it degrades gracefully so it is useful below the
+  all-of threshold. *Both* strict and graded use the **same `required`-only denominator** — they
+  differ only in all-or-nothing vs. fractional — so they are directly comparable. `supporting`
+  evidence is **not** in either recall number (see (b)); it is reported as a separate
+  supporting-coverage diagnostic.
 
 **Relationship to plain retrieval Recall@K (eu8 today).** Plain Recall@K is *doc-id* recall —
 "did a labelled-relevant *document* appear?" (`eu8_ir_validation.rs:227-253`, binary relevance
@@ -97,8 +101,8 @@ strict superset:
 ```jsonc
 // per gold query (additive superset of today's ground_truth_queries entry)
 {
-  "query_id": "stable-unique-id",
-  "query_text": "...",
+  "query": "...",                        // SAME key the eu8 parser reads (corpus_subset.rs:239 q.get("query")) — additive superset, stays parseable
+  "query_id": "stable-unique-id",        // additive (new; optional for existing eu8 entries)
   "query_class": "commitment | action | exact_fact | preference | exploratory | negative",
   "required_evidence": [                 // the "all evidence required to act" set
     {
@@ -121,10 +125,14 @@ engine's top-K result bodies (body→doc_id mapping is in-harness today,
 `eu8_ir_validation.rs:189-216`). Because FathomDB returns whole bodies, **presence is at
 doc-body granularity**; the `locator` is recorded for label provenance/audit but is **not**
 load-bearing for the score in a non-chunking store (it becomes load-bearing only if/when
-FathomDB chunks — not planned for 0.8.0/0.8.1). `necessity=required` units gate the strict
-all-of recall; `supporting` units feed the graded recall only. **The label *values* (which
-facts are required for which query) are produced in Phase 3 by human/HITL labeling — this
-document defines only the slot they go in.**
+FathomDB chunks — not planned for 0.8.0/0.8.1). **Only `necessity=required` units are in the
+recall denominator** — they gate the strict all-of recall *and* form the `required`-only
+denominator of the graded recall (a). **`supporting` units are NOT in either recall number**;
+they are reported as a separate **supporting-coverage** diagnostic (how much corroborating
+context was also retrieved). This keeps strict and graded recall on one consistent denominator
+and removes any ambiguity about whether supporting evidence inflates the headline. **The label
+*values* (which facts are required for which query) are produced in Phase 3 by human/HITL
+labeling — this document defines only the slot they go in.**
 
 ---
 
@@ -318,9 +326,19 @@ disagreement):**
    **authored** `required_evidence` + `expected_top_k_doc_ids` (independent of retrieval, always
    present); pooling **only augments** discovery and can never remove a seeded required positive.
 
-**Convergence:** reached after round 3 (round 1 = §(e) accuracy + cleanups; round 2 = doc
-confirmed coherent; round 3 = §(f) seed-then-pool refinement). Every finding accepted and
-resolved; no definitional reversal.
+**codex consult (round 4) — two schema/scoring consistency findings, accepted:**
+
+5. **[P2] schema must use the eu8 `query` key (b).** The draft's `query_text` would break the
+   "additive superset" claim — the eu8 parser reads `q.get("query")` (`corpus_subset.rs:239`).
+   **Resolved:** schema now uses `query` (+ additive `query_id`).
+6. **[P2] graded recall denominator was self-contradictory (a)/(b).** (a) defined graded over
+   `required`; (b) said `supporting` feeds graded. **Resolved:** graded recall is over the
+   `required` set **only** (same denominator as strict); `supporting` is removed from both recall
+   numbers and reported as a separate supporting-coverage diagnostic. (a) and (b) now agree.
+
+**Convergence:** reached after round 4, confirmed at round 5 (round 1 = §(e) accuracy + cleanups;
+round 2 = doc coherent; round 3 = §(f) seed-then-pool; round 4 = schema/scoring consistency).
+Every finding accepted and resolved; no definitional reversal.
 
 **Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
 actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are
