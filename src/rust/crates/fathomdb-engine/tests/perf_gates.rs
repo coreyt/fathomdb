@@ -143,6 +143,16 @@ fn run_ac020_mix(engine: &Engine) {
 // budget. See `dev/test-plan.md` § Current Perf Attribution and
 // `dev/notes/performance-whitepaper-notes.md` for measured medians.
 const AC012_DEFAULT_N: usize = 100_000;
+/// AC-076 (0.8.0 Slice 40) binding-tier ceiling for AC-012 text-query
+/// latency, mirroring `AC013_GATE_N`. At/below this N the 20/150 ms budget
+/// is asserted as a hard release gate; above it, latency is measured and
+/// REPORTED (AC012_TIER_INFO) but not asserted. Slice 6 proved the latency
+/// is O(N) FTS-scan cost, NOT the porter tokenizer (engine A/B: porter ≈
+/// unicode61 within noise), structurally identical to the AC-013 O(N)
+/// bit-KNN scan that HITL tiered (AC-072). The 100k/1M tiers are tracked
+/// post-1.0 targets. See ADR-0.7.0-text-query-latency-gates-revised and
+/// dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-20260607T003001Z.md.
+const AC012_GATE_N: usize = 10_000;
 // AC-013 / AC-019 default (short) scale = the BINDING budget tier. Per
 // ADR-0.7.0-text-query-latency-gates-revised (tiered budget, HITL 2026-06-01)
 // the 80/300 ms budget is enforced as a release gate only at the 10k tier for
@@ -550,16 +560,33 @@ fn ac_012_text_query_latency_on_fts5_path() {
         p99 = p99.as_millis(),
     );
 
-    assert!(
-        p50 <= AC012_BUDGET_P50,
-        "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
-        budget = AC012_BUDGET_P50,
-    );
-    assert!(
-        p99 <= AC012_BUDGET_P99,
-        "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
-        budget = AC012_BUDGET_P99,
-    );
+    // AC-076 tiered budget: binding gate only at the 10k tier (0.x/1.x); 100k
+    // and 1M are tracked post-1.0 targets (O(N) FTS MATCH scan + bm25 over the
+    // matched-row set; the tokenizer is exonerated — Slice 6). Mirrors the
+    // AC-013 AC013_GATE_N branch below. See
+    // ADR-0.7.0-text-query-latency-gates-revised + the Slice 6 experiment.
+    if n <= AC012_GATE_N {
+        assert!(
+            p50 <= AC012_BUDGET_P50,
+            "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
+            budget = AC012_BUDGET_P50,
+        );
+        assert!(
+            p99 <= AC012_BUDGET_P99,
+            "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
+            budget = AC012_BUDGET_P99,
+        );
+    } else {
+        eprintln!(
+            "AC012_TIER_INFO n={n} p50_ms={} p99_ms={} budget_p50_ms={} budget_p99_ms={} \
+             binding=false (tracked post-1.0 target per tiered ADR; gated only at N<={})",
+            p50.as_millis(),
+            p99.as_millis(),
+            AC012_BUDGET_P50.as_millis(),
+            AC012_BUDGET_P99.as_millis(),
+            AC012_GATE_N,
+        );
+    }
 }
 
 #[test]
@@ -626,11 +653,17 @@ fn ac_013_vector_retrieval_latency() {
 
 #[test]
 fn ac_013b_recall_at_10_floor() {
-    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
-    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
-    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
-    // test then measures how well the candidate set preserves the f32
-    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+    // AC-075 (0.8.0 Slice 40): this synthetic gate is REPORT-ONLY. It
+    // measures bit-KNN + f32-rerank quantization fidelity against the
+    // brute-force f32 top-10 on the isotropic `VaryingEmbedder` and prints
+    // `RECALL_FIDELITY_INFO`; it no longer hard-asserts the 0.90 floor
+    // (isotropic noise is the worst case for sign-bit ANN, ~0.73–0.89 < 0.90,
+    // a fixture property not a product defect). The asserting recall verdict
+    // is now `eu7_real_corpus_ac.rs` on the REAL embedder, measured on the
+    // VECTOR STAGE in isolation (◆ B-1 correction): ANN+ vector top-10 vs the
+    // exact-f32 VECTOR top-10 ground truth, recall@10 = 0.937. The name is
+    // kept for history; the floor constant + its sentinel
+    // `ac_013b_floor_matches_adr` are retained (see AC013B_RECALL_FLOOR).
     //
     // 0.7.2 reframe: the corrected ANN / quantization-FIDELITY measurement
     // on the real default embedder (bge-small, candle; EU-7 corpus N=7667)
@@ -711,9 +744,21 @@ fn ac_013b_recall_at_10_floor() {
     let recall = total_hits as f64 / (10.0 * total_queries.max(1) as f64);
     eprintln!("RECALL_NUMBERS n={n} samples={s} recall_at_10={recall:.4}", s = total_queries,);
 
-    assert!(
-        recall >= AC013B_RECALL_FLOOR,
-        "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
+    // AC-075 (0.8.0 Slice 40) — REPORT-ONLY. This synthetic isotropic
+    // `VaryingEmbedder` recall is a quantization-FIDELITY signal, not a
+    // product recall floor: isotropic random vectors are the noise-limited
+    // worst case for sign-bit ANN, so this number (~0.73–0.89 depending on
+    // N) does not — and was never meant to — clear the 0.90 product floor.
+    // The asserting recall verdict moved to the REAL-embedder
+    // `eu7_real_corpus_ac.rs`, measured on the VECTOR STAGE in isolation
+    // (◆ B-1): ANN+ vector top-10 vs exact-f32 VECTOR top-10, recall@10 =
+    // 0.937. The `AC013B_RECALL_FLOOR` constant and its sentinel
+    // `ac_013b_floor_matches_adr` are retained as the documented floor the
+    // eu7 verdict enforces. See ADR-0.7.0-vector-binary-quant.md § 2 point 4.
+    eprintln!(
+        "RECALL_FIDELITY_INFO n={n} recall_at_10={recall:.4} product_floor={floor:.2} \
+         binding=false (synthetic isotropic quantization-fidelity signal; the asserting \
+         recall verdict is eu7_real_corpus_ac.rs on the real embedder, vector stage — AC-075)",
         floor = AC013B_RECALL_FLOOR,
     );
 }

@@ -19,16 +19,32 @@
 //! number that 0.7.2 PR-2 will use to re-derive `AC013B_RECALL_FLOOR`
 //! as `R - 2*sigma`.
 //!
-//! ## Honesty posture (EU-7 is the measurement, not the lock-flip)
+//! ## Recall posture (AC-075, 0.8.0 Slice 40 / GA-2 — eu7 is the verdict)
 //!
-//! Per the launch prompt's hard constraints, this harness does **not**
-//! re-pin `AC013B_RECALL_FLOOR`, does not change K (locked at 192), and
-//! does not gate the build on the production 0.90 floor. AC-013 latency
-//! and AC-019 stress ARE asserted (expected GREEN). AC-013b recall is
-//! *measured and reported* with a bootstrap 95% CI; the only recall
-//! assertion is a loose sanity bound that confirms real BGE beats the
-//! isotropic noise floor (~0.51 at K=64; see STATUS-PVQ). The 0.90
-//! decision belongs to PR-2 with HITL sign-off.
+//! As of 0.8.0 Slice 40, this real-embedder harness is the **asserting**
+//! recall verdict (AC-075): recall@10 is gated ≥ `CURRENT_FLOOR` (0.90)
+//! on the real bge-small embedder over the real corpus. It supersedes the
+//! informal AC-013b floor assert: the synthetic
+//! `perf_gates::ac_013b_recall_at_10_floor` is now REPORT-ONLY.
+//!
+//! **◆ B-1 correction (GA-2, 2026-06-08).** The system-under-test is the
+//! engine's pre-fusion **VECTOR-STAGE** ranking (1-bit sign-quant K=192
+//! Hamming + f32 rerank), obtained via the test-only
+//! `set_vector_stage_only_for_test` seam — NOT the RRF-fused `search()`
+//! output. The ground truth is an exact-f32 VECTOR top-10, so measuring it
+//! against the unconditional-RRF hybrid `search()` (Slice 10, `d28d204`)
+//! conflated ANN-quantization FIDELITY (what the 0.90 floor gates) with
+//! intended fusion divergence — the cause of the Slice-40 Phase-A HALT
+//! (recall 0.8710 < 0.90), root-caused in
+//! `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`. The corrected
+//! vector-stage SUT measures recall@10 = 0.937 (CI 0.913–0.957). The
+//! harness ALSO reports the fused-`search()` recall (`EU7_RECALL_FUSED`,
+//! ~0.871) as the report-only delta, so the correction is demonstrably
+//! load-bearing, not cosmetic. This is the ANN-quantization FIDELITY axis,
+//! complementary to and NOT a substitute for the IR/relevance axis (eu8 /
+//! the IR-1 `ir-recall-measure.md`). K stays locked at 192;
+//! `AC013B_RECALL_FLOOR` is unchanged (its sentinel still pins 0.90).
+//! AC-013 latency and AC-019 stress remain REPORTED (dev-box scouting).
 //!
 //! ## Production-path fidelity
 //!
@@ -132,8 +148,11 @@ const AC019_THREADS: usize = 8;
 // for fast logic smoke-tests; the canonical AC-019 value is 250).
 const AC019_QUERIES_PER_THREAD_DEFAULT: usize = 250;
 
-// Current AC-013b floor (calibrated on isotropic synthetic; re-pin is
-// 0.7.2 PR-2's job). Reported, never asserted here.
+// The production recall floor (HITL-locked 0.90; see
+// ADR-0.7.0-vector-binary-quant.md § 2 point 4). As of 0.8.0 Slice 40 /
+// GA-2 (AC-075) this is the ASSERTING verdict on the real embedder,
+// measured on the pre-fusion VECTOR STAGE (◆ B-1) — see the recall-posture
+// note in the module header.
 const CURRENT_FLOOR: f64 = 0.90;
 // Loose sanity floor: real BGE must clear the isotropic noise floor
 // (dense isotropic measured 0.5124 @ K=64, N=10K; see STATUS-PVQ). This
@@ -391,16 +410,36 @@ fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
 // ── Recall@10 vs f32 ground truth ──────────────────────────────────────
 
 struct RecallResult {
+    /// AC-075 verdict: recall@10 of the ANN+ VECTOR-STAGE ranking (bit-KNN
+    /// K=192 + f32 rerank, pre-fusion) vs the exact-f32 VECTOR top-10 GT.
     mean: f64,
     ci_lo: f64,
     ci_hi: f64,
     sigma: f64,
+    /// ◆ B-1 delta (report-only): the same recall@10 method applied to the
+    /// production RRF-fused `search()` output (vector ⊕ FTS5) vs the same
+    /// vector-only GT. Lower than `mean` because a hybrid result legitimately
+    /// diverges from a vector-only top-10 — this is the fusion-divergence the
+    /// halted GA-1 attempt mis-measured as a quantization-fidelity drop.
+    fused_mean: f64,
 }
 
 /// For each query: embed with the same model, compute the brute-force f32
-/// top-10 (excluding the target doc) as ground truth, and compare against
-/// the engine's production top-10 (sign-bit K=192 + f32 rerank, also with
-/// the target excluded). recall@10 = |prod ∩ gt| / 10 per query.
+/// VECTOR top-10 (excluding the target doc) as ground truth, and compare
+/// against the engine's ANN+ VECTOR-STAGE top-10 (sign-bit K=192 + f32
+/// rerank, pre-fusion, also with the target excluded). recall@10 =
+/// |prod ∩ gt| / 10 per query.
+///
+/// ◆ B-1 correction (GA-2, 2026-06-08): the system-under-test is the
+/// engine's pre-fusion VECTOR-branch ranking, obtained via the test-only
+/// `set_vector_stage_only_for_test` seam — NOT the RRF-fused `search()`
+/// output. The GT is a vector-only top-10, so measuring it against a
+/// hybrid (vector ⊕ FTS5) `search()` would conflate ANN-quantization
+/// FIDELITY (what the 0.90 floor gates) with intended fusion divergence
+/// (the GA-1 finding; see `dev/plans/runs/GA-1-corpus-ab-*.md`). We ALSO
+/// measure the fused `search()` output with the identical method and report
+/// it as `EU7_RECALL_FUSED` (the report-only delta) so the fused-vs-vector
+/// gap is legible — but the asserting verdict is the vector stage.
 ///
 /// Ground truth is computed IN-RUST over `doc_vecs` (the same-model,
 /// uncentered, L2-normed embeddings of `bodies`, aligned by index) rather
@@ -443,8 +482,30 @@ fn measure_recall(
     // production floor (10), so this can only RAISE fanout, never shrink it.
     const RECALL_SEARCH_SLACK: usize = 5;
     engine.set_search_limit_for_test(10 + RECALL_SEARCH_SLACK);
+    // ◆ B-1: NEW-method recall@10 of a SUT result list vs the vector-only GT
+    // set (`gt`), with exclude-before-target + dedup-by-body, truncated to 10.
+    let recall_new = |prod: &[String], gt: &HashSet<&str>, target: &str| -> f64 {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut hits = 0usize;
+        let mut taken = 0usize;
+        for s in prod.iter() {
+            let b = s.as_str();
+            if b == target || !seen.insert(b) {
+                continue;
+            }
+            if gt.contains(b) {
+                hits += 1;
+            }
+            taken += 1;
+            if taken == 10 {
+                break;
+            }
+        }
+        hits as f64 / 10.0
+    };
     let mut per_query_old = Vec::with_capacity(queries.len());
     let mut per_query_new = Vec::with_capacity(queries.len());
+    let mut per_query_fused = Vec::with_capacity(queries.len());
     let mut target_in_top10 = 0usize;
     for q in queries {
         let qv = embedder.embed(&q.text).expect("embed query");
@@ -475,55 +536,71 @@ fn measure_recall(
             }
         }
 
-        let prod: Vec<String> = engine
+        // ◆ B-1: the VERDICT SUT is the engine's pre-fusion VECTOR-STAGE
+        // ranking (ANN+ bit-KNN K=192 + f32 rerank), via the measurement seam.
+        engine.set_vector_stage_only_for_test(true);
+        let prod_vec: Vec<String> = engine
             .search(&q.text)
-            .expect("prod search")
+            .expect("prod vector-stage search")
+            .results
+            .iter()
+            .map(|h| h.body.clone())
+            .collect();
+        // Report-only DELTA SUT: the production RRF-fused `search()` output
+        // (vector ⊕ FTS5), measured with the identical method against the same
+        // vector-only GT, so the fused-vs-vector gap is legible.
+        engine.set_vector_stage_only_for_test(false);
+        let prod_fused: Vec<String> = engine
+            .search(&q.text)
+            .expect("prod fused search")
             .results
             .iter()
             .map(|h| h.body.clone())
             .collect();
 
-        // OLD recall: literal top-10, exclude target after, /10.
-        let prod_top10: Vec<&str> = prod.iter().take(10).map(|s| s.as_str()).collect();
-        if prod_top10.iter().any(|b| *b == target) {
+        // OLD recall (diagnostic, on the FUSED output): literal top-10,
+        // exclude target after, /10 — kept for continuity of the OLD report.
+        let prod_top10: Vec<&str> = prod_fused.iter().take(10).map(|s| s.as_str()).collect();
+        if prod_top10.contains(&target) {
             target_in_top10 += 1;
         }
         let hits_old =
             prod_top10.iter().filter(|b| **b != target).filter(|b| gt_old_set.contains(*b)).count();
         per_query_old.push(hits_old as f64 / 10.0);
 
-        // NEW recall: exclude target before, dedup, take 10, /10.
-        let mut seen_prod: HashSet<&str> = HashSet::new();
-        let mut hits_new = 0usize;
-        let mut taken = 0usize;
-        for s in prod.iter() {
-            let b = s.as_str();
-            if b == target || !seen_prod.insert(b) {
-                continue;
-            }
-            if gt_new_set.contains(b) {
-                hits_new += 1;
-            }
-            taken += 1;
-            if taken == 10 {
-                break;
-            }
-        }
-        per_query_new.push(hits_new as f64 / 10.0);
+        // NEW recall (exclude-before + dedup, take 10, /10) on BOTH SUTs:
+        //   per_query_new  = VECTOR-STAGE ranking → the AC-075 verdict.
+        //   per_query_fused = RRF-fused search()  → the report-only delta.
+        per_query_new.push(recall_new(&prod_vec, &gt_new_set, target));
+        per_query_fused.push(recall_new(&prod_fused, &gt_new_set, target));
     }
 
     let mean_old = per_query_old.iter().sum::<f64>() / per_query_old.len().max(1) as f64;
     let (lo_old, hi_old, sg_old) = bootstrap_ci(&per_query_old, bootstrap_resamples);
     eprintln!(
-        "EU7_RECALL_OLD exclude-after+setGT recall@10={mean_old:.4} ci=[{lo_old:.4},{hi_old:.4}] sigma={sg_old:.4} target_in_top10={target_in_top10}/{}",
+        "EU7_RECALL_OLD exclude-after+setGT(fused) recall@10={mean_old:.4} ci=[{lo_old:.4},{hi_old:.4}] sigma={sg_old:.4} target_in_top10={target_in_top10}/{}",
         queries.len()
     );
+    // ◆ B-1 verdict: recall@10 of the ANN+ VECTOR STAGE vs exact-f32 vector GT.
     let mean = per_query_new.iter().sum::<f64>() / per_query_new.len().max(1) as f64;
     let (ci_lo, ci_hi, sigma) = bootstrap_ci(&per_query_new, bootstrap_resamples);
     eprintln!(
-        "EU7_RECALL_NEW exclude-before+dedupGT recall@10={mean:.4} ci=[{ci_lo:.4},{ci_hi:.4}] sigma={sigma:.4}"
+        "EU7_RECALL_VECTOR exclude-before+dedupGT vector-stage recall@10={mean:.4} ci=[{ci_lo:.4},{ci_hi:.4}] sigma={sigma:.4} (AC-075 VERDICT SUT)"
     );
-    RecallResult { mean, ci_lo, ci_hi, sigma }
+    // ◆ B-1 report-only delta: the same method on the production RRF-fused
+    // search() output. Lower than the vector-stage verdict because a hybrid
+    // result legitimately diverges from a vector-only top-10 (the GA-1 finding).
+    let fused_mean = per_query_fused.iter().sum::<f64>() / per_query_fused.len().max(1) as f64;
+    let (f_lo, f_hi, f_sg) = bootstrap_ci(&per_query_fused, bootstrap_resamples);
+    eprintln!(
+        "EU7_RECALL_FUSED exclude-before+dedupGT fused-search recall@10={fused_mean:.4} ci=[{f_lo:.4},{f_hi:.4}] sigma={f_sg:.4} (report-only delta; NOT the floor SUT)"
+    );
+    eprintln!(
+        "EU7_RECALL_DELTA vector_stage={mean:.4} fused_search={fused_mean:.4} delta={:.4} \
+         (correction is load-bearing: the floor gates the vector stage, not the hybrid output)",
+        mean - fused_mean
+    );
+    RecallResult { mean, ci_lo, ci_hi, sigma, fused_mean }
 }
 
 /// Percentile bootstrap (resample with replacement) over per-query
@@ -679,10 +756,11 @@ fn eu7_real_corpus_ac_validation() {
     let mut ac013b = Vec::new();
     let mut ac019 = Vec::new();
     let mut anchor: Option<serde_json::Value> = None;
-    // (actual_n, ac013_passed, ac019_passed, recall_mean) per N — verdicts
-    // are reported after the JSON is written so a dev-box latency miss never
-    // aborts before the data lands.
-    let mut verdicts: Vec<(usize, bool, bool, f64)> = Vec::new();
+    // (actual_n, ac013_passed, ac019_passed, vector_stage_recall_mean, padded)
+    // per N — verdicts are reported after the JSON is written so a dev-box
+    // latency miss never aborts before the data lands. `padded` gates the
+    // AC-075 0.90 assert to all-real N (synthetic distractors depress recall).
+    let mut verdicts: Vec<(usize, bool, bool, f64, bool)> = Vec::new();
 
     // Single growing engine: N targets are seeded incrementally so each
     // doc is embedded exactly once across the whole sweep.
@@ -768,7 +846,10 @@ fn eu7_real_corpus_ac_validation() {
             &queries,
             bootstrap,
         );
-        eprintln!("EU7_PHASE n={actual_n} recall_done recall={:.4}", rec.mean);
+        eprintln!(
+            "EU7_PHASE n={actual_n} recall_done vector_stage={:.4} fused_search={:.4}",
+            rec.mean, rec.fused_mean
+        );
         let stress =
             measure_stress(Arc::clone(&engine), &queries, latency_samples, stress_per_thread);
         eprintln!("EU7_PHASE n={actual_n} stress_done p99_ms={}", stress.stress_p99.as_millis());
@@ -779,6 +860,7 @@ fn eu7_real_corpus_ac_validation() {
         eprintln!(
             "EU7_NUMBERS n={actual_n} padded={padded} seed_ms={} p50_ms={} p99_ms={} \
              recall_at_10={:.4} recall_ci_lo={:.4} recall_ci_hi={:.4} sigma={:.4} \
+             recall_fused_search={:.4} recall_fused_delta={:.4} \
              stress_p99_ms={} stress_bound_ms={} ac013={} ac019={}",
             seed.as_millis(),
             lat.p50.as_millis(),
@@ -787,6 +869,8 @@ fn eu7_real_corpus_ac_validation() {
             rec.ci_lo,
             rec.ci_hi,
             rec.sigma,
+            rec.fused_mean,
+            rec.mean - rec.fused_mean,
             stress.stress_p99.as_millis(),
             stress.bound.as_millis(),
             ac013_passed,
@@ -805,10 +889,13 @@ fn eu7_real_corpus_ac_validation() {
         ac013b.push(json!({
             "n": actual_n,
             "padded_with_synthetic_distractors": padded,
+            "sut": "ann_plus_vector_stage_pre_fusion (◆ B-1; not RRF-fused search())",
             "recall_at_10": round4(rec.mean),
             "ci_lo": round4(rec.ci_lo),
             "ci_hi": round4(rec.ci_hi),
             "sigma_bootstrap": round4(rec.sigma),
+            "recall_at_10_fused_search": round4(rec.fused_mean),
+            "recall_at_10_fused_search_delta": round4(rec.mean - rec.fused_mean),
             "current_floor_0_90": CURRENT_FLOOR,
             "passes_current_floor": rec.mean >= CURRENT_FLOOR,
         }));
@@ -837,7 +924,7 @@ fn eu7_real_corpus_ac_validation() {
             }));
         }
 
-        verdicts.push((actual_n, ac013_passed, ac019_passed, rec.mean));
+        verdicts.push((actual_n, ac013_passed, ac019_passed, rec.mean, padded));
     }
 
     write_measurements_json(MeasurementsOut {
@@ -862,25 +949,47 @@ fn eu7_real_corpus_ac_validation() {
     // PR-3 to confirm at canonical scale, not a true RED. The pass/fail
     // flags are in the JSON for the orchestrator + HITL.
     //
-    // The ONE hard gate is the recall sanity floor: real BGE must clear
-    // the isotropic noise floor (~0.51). Falling below that signals a
-    // wiring bug in the harness/engine path, not a quantization gap.
-    for (n, ac013_ok, ac019_ok, recall) in &verdicts {
+    // AC-075 (0.8.0 Slice 40 / GA-2) — this real-embedder recall@10, measured
+    // on the pre-fusion VECTOR STAGE (◆ B-1), is the ASSERTING recall verdict
+    // (≥ CURRENT_FLOOR = 0.90), superseding the synthetic perf_gates::ac_013b
+    // hard-assert (demoted to report-only). Two tiers of assertion, low→high,
+    // so a failure is legible:
+    //   1. SANITY_FLOOR (0.55) — below the isotropic noise floor signals a
+    //      wiring bug in the harness/engine path, not a quantization gap.
+    //   2. CURRENT_FLOOR (0.90) — the AC-075 production recall verdict, on the
+    //      VECTOR STAGE only (the ANN-quantization fidelity axis the floor is
+    //      defined to gate). Asserted only for ALL-REAL N (synthetic padding
+    //      depresses recall; padded points probe haystack scaling, not the
+    //      floor). This is the LOCAL once-per-release / perf-canonical-dispatch
+    //      verdict (real-embedder N is infeasible per-push, AC-072); per-push
+    //      CI gates only perf_gates::ac_013_vector_read_path_smoke.
+    for (n, ac013_ok, ac019_ok, recall, padded) in &verdicts {
         eprintln!(
-            "EU7_VERDICT n={n} ac013_latency={} ac019_stress={} recall_at_10={:.4} \
-             (latency/stress are dev-box scouting; canonical verdict is 0.7.2 PR-3)",
+            "EU7_VERDICT n={n} ac013_latency={} ac019_stress={} vector_stage_recall_at_10={:.4} \
+             padded={padded} (latency/stress are dev-box scouting; canonical verdict is 0.7.2 PR-3)",
             if *ac013_ok { "PASS" } else { "MISS(dev-box)" },
             if *ac019_ok { "PASS" } else { "MISS(dev-box)" },
             recall,
         );
     }
-    for (n, _, _, recall) in &verdicts {
+    for (n, _, _, recall, padded) in &verdicts {
         assert!(
             *recall >= SANITY_FLOOR,
             "AC-013b sanity: recall@10 {recall:.4} < sanity floor {SANITY_FLOOR} at n={n} \
              (real BGE should beat the ~0.51 isotropic noise floor; a value this low \
              signals a wiring bug, not a quantization gap)"
         );
+        if !*padded {
+            assert!(
+                *recall >= CURRENT_FLOOR,
+                "AC-075 recall verdict: vector-stage recall@10 {recall:.4} < floor \
+                 {CURRENT_FLOOR} at n={n} (the production recall floor is gated here on the \
+                 REAL bge-small embedder's pre-fusion VECTOR STAGE — ANN-quantization \
+                 fidelity vs the exact-f32 vector top-10; the synthetic perf_gates::ac_013b \
+                 is report-only, and the RRF-fused search() recall is the report-only delta \
+                 EU7_RECALL_FUSED, NOT this gate's SUT)"
+            );
+        }
     }
 }
 

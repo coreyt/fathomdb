@@ -8,8 +8,46 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
+(rolls into the next cut after 0.8.0 GA.)
+
+## 0.8.0 — unreleased (pre-GA; GA tag is HITL-only)
+
+Agent-memory enablement (G0–G12). See `docs/release-notes/0.8.0.md` (user) and
+`dev/releases/0.8.0.md` (internal record). Schema version 13.
+
+### Added
+
+- **Governed `read.*` surface (G2/G3).** `read.get` / `read.get_many`
+  (active-only point lookup by `logical_id`, request-order, partial) and
+  `read.collection` / `read.mutations` (paginated op-store read-back,
+  `ORDER BY id`, mandatory limit clamped to ~1M, exclusive `after_id` cursor).
+  Reads ride the reader-worker DEFERRED-tx path; never take the writer lock.
+- **Hybrid retrieval.** `search` is the unconditional RRF fusion of the vector
+  and FTS5 branches (G9); `search_filtered` adds an optional closed metadata
+  filter (G10, unfiltered phase-1 SQL byte-identical to 0.7.2); a recency
+  reweight seam (G12, off by default).
+- **Structured search hits (G1).** `SearchHit { id, kind, body, score, branch }`.
+- **Additive `WriteReceipt` fields:** `row_cursors`, `dangling_edge_endpoints`.
+- **Recall fidelity verdict (AC-075).** The asserting recall@10 gate is the
+  real-embedder `eu7_real_corpus_ac.rs`, measured on the pre-fusion vector stage
+  (ANN+ bit-KNN K=192 + f32 rerank vs exact-f32 vector top-10) ≥ 0.90
+  (measured 0.937) — an ANN-quantization-fidelity gate, NOT the RRF-fused
+  `search()` output (◆ B-1). The synthetic `perf_gates::ac_013b` is report-only.
+- **Tiered text-query latency (AC-076).** `ac_012` is binding at the 10k tier
+  (p50 ≤ 20 / p99 ≤ 150 ms); 100k/1M tracked. The FTS5 tokenizer upgrade
+  (`porter unicode61 remove_diacritics 2`) is latency-neutral (Slice 6).
+
 ### Changed
 
+- **Canonical identity substrate (G0): active-uniqueness is `logical_id` alone**
+  on `canonical_nodes` + `canonical_edges` (correcting a v0.5.x compound-key
+  regression). One active row per `logical_id`; superseded versions retained,
+  never returned by the active read path.
+- **`search` return type:** `Vec<String>` → `Vec<SearchHit>` (behavior-compat
+  event 2). `SearchHit` does not derive `Eq` (it carries an `f64` score).
+- **`search` ranking:** unconditional RRF hybrid order; no `fusion_mode` knob
+  (behavior-compat event 1). The pinned contract is determinism, not legacy
+  reproducibility.
 - **Rust facade: operator/recovery seam gated behind the `operator` feature
   (0.8.0 Slice 27 fix-1, Q5=BIND-RUST / AC-074).** The default `fathomdb`
   facade is now recovery-clean and raw-SQL-free at the method level: the 12

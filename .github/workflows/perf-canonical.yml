@@ -6,6 +6,25 @@ name: perf-canonical (AC-012 / AC-013 / AC-019 long-run gate)
 # AC_FULL_SCALE=1 on tier-1 ubuntu-latest x86_64 per
 # ADR-0.6.0-tier1-ci-platforms.
 #
+# 0.8.0 Slice 40 (Q3/META) — this workflow_dispatch run is the home of the
+# once-per-release perf+recall verdict, run in --release (NOT debug, NOT
+# check.sh AGENT_LONG=1 cargo test --workspace concurrent — that produced
+# the false B2 49.9 ms). Two tiered gates verified here at release scale:
+#   * AC-076 — ac_012 text-query latency, BINDING at the 10k tier
+#     (p50 <= 20 / p99 <= 150 ms); 100k/1M reported (AC012_TIER_INFO), per
+#     the tiered ADR. ac_012 is the legacy AC-012 budget's tiered successor.
+#   * AC-075 — recall@10 verdict (◆ B-1). The ASSERTING recall gate is the
+#     real-embedder eu7_real_corpus_ac.rs measured on the pre-fusion VECTOR
+#     STAGE (ANN+ bit-KNN K=192 + f32 rerank vs exact-f32 vector top-10),
+#     NOT the RRF-fused search() output (>= 0.90, measured 0.937; the fused
+#     delta ~0.871 is reported as EU7_RECALL_FUSED). The synthetic
+#     perf_gates::ac_013b is report-only (RECALL_FIDELITY_INFO).
+#     The real-embedder eu7 run is a LOCAL / dev-box exercise — its canonical
+#     seed is infeasible on CI (~166 h, see the PR-3 note below) — so it is
+#     NOT a CI job here; per-push CI keeps only the fast read-path smoke
+#     (perf_gates::ac_013_vector_read_path_smoke) in ci.yml. Do NOT wire a
+#     real-embedder recall run into per-push CI.
+#
 # Manually-triggered only — these are hours-of-wall-clock runs at
 # canonical scale. Default scale (corpus_n inputs) lets the user
 # downscale for diagnostic dry-runs.
