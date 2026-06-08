@@ -400,6 +400,32 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — eu7 re-measure: first run REAPED at 6632/7667 → relaunched bulletproof-detached (HITL); harness opts → 0.8.1
+
+- **Incident:** the delegated eu7 re-measure (launched by the perf agent via Bash `run_in_background`, max
+  `timeout` 600 s) was **reaped by the harness at 6632/7667 seeded** when its owning task/monitor window expired —
+  not a crash/OOM (no exit code, ~48Gi free). My own watcher died in the same reap. **Cause = launch mechanism,
+  not a settings value** (reviewed all `settings.json`: no `BASH_*_TIMEOUT`/lifecycle knob exists; settings are
+  not the lever). [[background-exit-masks-real-exit]] cousin: a long job tied to a harness task gets reaped.
+- **Existing-DB reuse ruled out (HITL ask):** the killed DB survived (72M, ~6632 docs) but the eu7 test has **no
+  resume path** (`:773` unconditional `TempDir::new()`, no `EU7_DB`/reuse env) and the GT `doc_vecs` are
+  **in-memory only** (`:789`, lost on SIGKILL); editing the test to resume = changing the certified artifact.
+  Not cleanly reusable → clean re-seed is the only valid route.
+- **HITL ruling: kill the in-flight (perf-agent-launched) run and start fresh, cleanly.** Done: killed SID
+  1316957, cleaned stale temp DBs, **relaunched directly + FULLY DETACHED** — `setsid nohup … </dev/null &
+  disown`, now **PID 1321112, PPID=1 (reparented to init), own session** ⇒ immune to task-lifecycle/monitor
+  reaping. True exit lands in BOTH the log (`REAL_CARGO_EXIT=`) and a **sentinel** `/tmp/eu7_signoff_done.txt`,
+  so a reaped watcher can't lose the result. Log: `dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.log`.
+  Watcher armed on the sentinel.
+- **Standing launch discipline (adopt):** multi-hour jobs run `setsid`-detached with a sentinel — NEVER via the
+  Bash `run_in_background` mechanism (it's task-lifecycle-bound and reaps at the window edge).
+- **Harness perf optimizations DEFERRED → 0.8.1** (`dev/roadmap/0.8.1.md` §4, HITL): (1) parallel GT re-embed
+  (per-thread embedder instances; the seed/SUT stays serial-as-shipped); (2) source GT from the engine's retained
+  f32 rerank column (eliminates the GT embed). **Measurement-harness only; each must be byte-identical-result +
+  codex §9 measurement-neutral before backing any gate number.** Not done now (would alter the certified artifact;
+  and they don't speed the dominant unparallelizable seed, so they wouldn't have helped this run anyway).
+- **Unchanged:** AC-075 still gated on this real ≥0.90 verdict before the HITL tag; GA otherwise all-green.
+
 ### 2026-06-08 — ◆ GA sign-off GATED on a real eu7 re-measure (HITL); perf-canonical run DELEGATED (in flight)
 
 - **Orchestrator presented the ◆ GA sign-off package** (all-green scoreboard incl. AC-075/076; 3 behavior-compat
