@@ -130,19 +130,42 @@ numbers and reported as a separate **supporting-coverage** diagnostic. (a) and (
 
 ---
 
+## Round 5 (re-review after the round-4 fixes)
+
+**codex verdict:** the round-4 fixes landed; one **substantive [P2]** on the measure + one
+**[P3]** on this log:
+
+### [P2] Use legacy doc-ids only as a degenerate evidence mapping, not mixed into the denominator — `ir-recall-measure.md` §(f)
+> When the harness builds qrels for records that contain both `required_evidence` and the
+> preserved `expected_top_k_doc_ids`, this `plus` wording seeds the Evidence Recall denominator
+> with two different units of relevance… clarify that `expected_top_k_doc_ids` are used as a
+> legacy fallback/degenerate evidence mapping only when evidence labels are absent, or map them
+> to evidence units exactly once.
+
+**Claude assessment:** ACCEPTED — correct; the round-3 "seed with required_evidence **plus**
+expected_top_k_doc_ids" wording would mix two units of relevance in one denominator (double-count
+a doc / require non-necessary legacy doc-ids), contradicting the (a)/(b) "Evidence Recall is over
+`required` evidence units, reducing to eu8 only in the degenerate whole-document case."
+**Resolution:** §(f) now seeds **one** unit-of-relevance per query — `required_evidence` is the
+denominator when present; `expected_top_k_doc_ids` map **exactly once** to degenerate
+whole-document required units **only** as a fallback when evidence labels are absent, never added
+on top of an evidence-labelled set.
+
+### [P3] Round-5 placeholder unrecorded — this log
+**Claude assessment:** ACCEPTED — same forward-reference artifact as before. **Resolution:** this
+section records the round-5 result directly; the convergence note below no longer forward-
+references an unrecorded round.
+
+---
+
 ## Convergence
 
-**CONVERGED (after round 4; round-5 confirmation below).** The measure definition in
-`dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex consensus-signed. Trajectory:
-round 1 = one §(e) accuracy fix + two cleanups; round 2 = design doc confirmed "internally
-coherent" (only this log's completeness outstanding, fixed); round 3 = §(f) seed-then-pool
-methodology refinement (recall not self-confirming); round 4 = two schema/scoring consistency
-fixes (eu8 `query` key; graded recall over `required`-only, supporting → separate diagnostic).
-Every finding across all rounds was **accepted and resolved**; **none required a definitional
-reversal and none is escalated.** **Residuals escalated to HITL: none.** Threshold numbers, the
-corpus snapshot, and the gate/no-gate decision are deliberately out of Phase-1 scope (Phase 4
-experiments + IR-2 / HITL).
-
-## Round 5 (final confirmation)
-
-_(re-review after the round-4 fixes — recorded below.)_
+The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex
+consensus-signed. Trajectory of accepted-and-resolved findings: round 1 = §(e) FTS-mode accuracy
++ two cleanups; round 2 = doc confirmed coherent (log completeness); round 3 = §(f) seed-then-pool
+(recall not self-confirming); round 4 = schema `query` key + graded-recall-over-`required`-only;
+round 5 = §(f) single-unit-of-relevance denominator (no mixing evidence units with legacy
+doc-ids). **Every finding was accepted and resolved; none required a definitional reversal; none
+is escalated.** **Residuals escalated to HITL: none.** Threshold numbers, the corpus snapshot,
+and the gate/no-gate decision are deliberately out of Phase-1 scope (Phase 4 experiments + IR-2 /
+HITL).

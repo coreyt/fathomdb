@@ -227,18 +227,23 @@ thrown away). Class coverage (d) is a composition constraint: every class is rep
 including a deliberate **negative/"not-found"** subset whose correct answer is empty.
 
 **qrels methodology — seed-then-pool (TREC-style pooling that does NOT define the denominator).**
-The Recall@K **denominator is the gold set's hand-authored `required_evidence` (b) plus the
-existing chain `expected_top_k_doc_ids`** — these positives are **authored independently of any
-retrieval result** and are *always* in the qrels, **whether or not any mode surfaces them.**
-This is the load-bearing rule: **pure pooling must not be the source of the required-evidence
-set.** If the denominator were only "what some mode returned in top-N," then a required fact
-that *no* mode surfaces would silently drop out of the denominator — making the metric
+The Recall@K **denominator is a single, authored required-evidence set per query** — authored
+**independently of any retrieval result** and *always* in the qrels, **whether or not any mode
+surfaces it.** This is the load-bearing rule: **pure pooling must not be the source of the
+required-evidence set.** If the denominator were only "what some mode returned in top-N," a
+required fact that *no* mode surfaces would silently drop out — making the metric
 **self-confirming on exactly the hard queries the eval exists to catch** and overstating recall
 (the codex round-3 [P2] finding). So:
 
-1. **Seed** the qrels with the authoritative known positives (gold `required_evidence` +
-   `expected_top_k_doc_ids`), independent of retrieval. These are the misses Recall@K must be
-   able to count.
+1. **Seed** the qrels with the authoritative known positives, independent of retrieval, **as one
+   consistent unit of relevance per query** (codex round-5 [P2] — do not mix units):
+   - When the gold record carries `required_evidence` (b), **that is the denominator**, full stop.
+   - For a **legacy/unlabeled** record that has only `expected_top_k_doc_ids` (today's eu8
+     chains), those doc-ids are mapped **exactly once** to the **degenerate whole-document
+     evidence units** (necessity=`required`) — this is the eu8 reduction of (a). They are a
+     **fallback** used *only when* `required_evidence` is absent; they are **never added on top
+     of** an evidence-labelled set (that would double-count and require docs that may not be
+     necessary evidence). One query → one unit-of-relevance system.
 2. **Pool to *augment*** — run **each retrieval mode (e) separately** (the production FTS branch,
    the bm25-ordered FTS baseline, vector-only, RRF-hybrid; +reranker/+graph when real), take the
    **union of their top-N candidates**, and label that pool to *discover additional* relevant
