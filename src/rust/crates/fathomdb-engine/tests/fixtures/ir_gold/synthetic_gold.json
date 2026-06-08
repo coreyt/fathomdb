@@ -1,0 +1,107 @@
+{
+  "_comment": "IR-B (IR-1 Phase 2) SYNTHETIC / ILLUSTRATIVE gold set. NOT real labels. Exists ONLY to exercise the loader/validator and pin the gold-set schema shape (dev/design/ir-recall-measure.md §(b)). The doc_ids/evidence are invented. The REAL fact-level labels are produced in Phase 3 (IR-C) by human/HITL labeling on the FROZEN corpus — see dev/plans/runs/IR-B-deferred-on-corpus-freeze.md. corpus_hash is the TODO(COR-2-freeze) placeholder ON PURPOSE: the validator flags this set as fixture-only / un-pinned.",
+  "corpus_hash": "TODO(COR-2-freeze)",
+  "qrels_version": "ir-b-synthetic-v0",
+  "note": "Schema illustration only — additive superset of eu8 ground_truth_queries.",
+  "queries": [
+    {
+      "query": "What did Alice commit to delivering and by when?",
+      "query_id": "ir-b-syn-0001",
+      "query_class": "commitment",
+      "required_evidence": [
+        {
+          "evidence_id": "ev-0001-a",
+          "doc_id": "syn-email-100",
+          "necessity": "required",
+          "locator": { "kind": "span" }
+        },
+        {
+          "evidence_id": "ev-0001-b",
+          "doc_id": "syn-email-101",
+          "necessity": "required",
+          "locator": { "kind": "span" }
+        },
+        {
+          "evidence_id": "ev-0001-c",
+          "doc_id": "syn-email-102",
+          "necessity": "supporting",
+          "locator": { "kind": "whole_body" }
+        }
+      ],
+      "expected_top_k_doc_ids": ["syn-email-100", "syn-email-101", "syn-email-102"],
+      "relation_type": "action_from",
+      "chain_shape": "linear"
+    },
+    {
+      "query": "What is the next action implied by the review thread?",
+      "query_id": "ir-b-syn-0002",
+      "query_class": "action",
+      "required_evidence": [
+        {
+          "evidence_id": "ev-0002-a",
+          "doc_id": "syn-thread-210",
+          "necessity": "required",
+          "locator": { "kind": "whole_body" }
+        }
+      ],
+      "expected_top_k_doc_ids": ["syn-thread-210"],
+      "relation_type": "action_from",
+      "chain_shape": "linear"
+    },
+    {
+      "query": "What quarter did revenue reach 4.2M?",
+      "query_id": "ir-b-syn-0003",
+      "query_class": "exact_fact",
+      "expected_top_k_doc_ids": ["syn-report-330"],
+      "relation_type": "mentions",
+      "chain_shape": "single"
+    },
+    {
+      "query": "How does the user prefer to receive status updates?",
+      "query_id": "ir-b-syn-0004",
+      "query_class": "preference",
+      "required_evidence": [
+        {
+          "evidence_id": "ev-0004-a",
+          "doc_id": "syn-note-440",
+          "necessity": "required",
+          "locator": { "kind": "span" }
+        }
+      ],
+      "expected_top_k_doc_ids": ["syn-note-440"],
+      "relation_type": "mentions",
+      "chain_shape": "single"
+    },
+    {
+      "query": "What do I know about the Q3 migration project?",
+      "query_id": "ir-b-syn-0005",
+      "query_class": "exploratory",
+      "required_evidence": [
+        {
+          "evidence_id": "ev-0005-a",
+          "doc_id": "syn-doc-550",
+          "necessity": "required",
+          "locator": { "kind": "whole_body" }
+        },
+        {
+          "evidence_id": "ev-0005-b",
+          "doc_id": "syn-doc-551",
+          "necessity": "supporting",
+          "locator": { "kind": "whole_body" }
+        }
+      ],
+      "expected_top_k_doc_ids": ["syn-doc-550", "syn-doc-551"],
+      "relation_type": "summarizes",
+      "chain_shape": "fan"
+    },
+    {
+      "query": "What is the home address of the CEO's childhood pet?",
+      "query_id": "ir-b-syn-0006",
+      "query_class": "negative",
+      "required_evidence": [],
+      "expected_top_k_doc_ids": [],
+      "relation_type": "contradicts",
+      "chain_shape": "none"
+    }
+  ]
+}

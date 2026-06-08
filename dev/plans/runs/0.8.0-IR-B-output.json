@@ -1,0 +1,71 @@
+{
+  "work_item": "IR-B = IR-1 Phase 2 (CODE) — Evidence Recall@K measure + gold-set schema (corpus-independent half)",
+  "initiative": "IR-eval",
+  "spec": "dev/design/ir-recall-measure.md (Claude<->codex consensus-signed)",
+  "branch": "ir-B-phase2-20260608T194716Z",
+  "baseline_main": "bcb58c5a953488feba36248d6a6c92dad4df7520",
+  "merged": false,
+  "pushed": false,
+  "tagged": false,
+  "note_on_merge": "NOT merged. Orchestrator brings this branch back via codex §9 + merge ONLY AFTER the 0.8.0 GA tag.",
+  "built": {
+    "gold_set_schema_loader_validator": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+    "evidence_recall_measure": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+    "retrieval_mode_plumbing": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+    "experiment_runner_scaffold": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+    "unit_tests_and_wiring_smoke": "src/rust/crates/fathomdb-engine/tests/ir_recall_eval.rs",
+    "illustrative_fixture": "src/rust/crates/fathomdb-engine/tests/fixtures/ir_gold/synthetic_gold.json",
+    "deferred_note": "dev/plans/runs/IR-B-deferred-on-corpus-freeze.md"
+  },
+  "gold_set_schema_summary": {
+    "additive_over": "eu8 ground_truth_queries (same `query` / `expected_top_k_doc_ids` / `relation_type` / `chain_shape` keys stay parseable)",
+    "set_level": ["corpus_hash", "qrels_version", "note", "queries[]"],
+    "per_query": ["query", "query_id", "query_class", "required_evidence[]", "expected_top_k_doc_ids[]", "relation_type", "chain_shape"],
+    "evidence_unit": ["evidence_id", "doc_id", "necessity(required|supporting)", "locator{kind: span|whole_body} (provenance, NOT load-bearing in a non-chunking store)"],
+    "query_classes": ["commitment", "action", "exact_fact", "preference", "exploratory", "negative"],
+    "denominator_rule": "ONE unit of relevance per query (§f seed): required_evidence(necessity=required) when present; else expected_top_k_doc_ids map exactly once to degenerate whole-body required units (eu8 reduction fallback). Never both.",
+    "measure": "Evidence Recall@K: strict all-of (headline) + graded fraction, SAME required-only denominator; supporting in NEITHER recall number (separate supporting-coverage); negative=abstention-correctness (false-positive rate), kept OUT of the recall mean.",
+    "k_ladder": [5, 10, 20, 50],
+    "headline_k": 10,
+    "vector_fanout": "raised to >= deepest K via set_search_limit_for_test (measurement-harness only)",
+    "pinning_principle": "corpus_hash + qrels_version recorded + validated; fixture carries TODO(COR-2-freeze) placeholder (flagged un-pinned)."
+  },
+  "retrieval_modes": {
+    "runnable_now": {
+      "rrf_hybrid": "Engine::search (production fused ranking; HEADLINE mode)",
+      "vector_only": "set_vector_stage_only_for_test around search",
+      "rerank_stub": "rerank_fused identity seam (aspirational/report-only until a real reranker)"
+    },
+    "deferred_TODO_COR2_freeze": {
+      "fts_write_cursor": "production FTS MATCH branch (write-cursor order) — needs harness FTS5 SQL + frozen corpus",
+      "bm25_fts": "BM25-ranked FTS-only baseline (ORDER BY bm25() ASC) — needs harness FTS5 SQL + frozen corpus"
+    }
+  },
+  "deferred_on_COR2_freeze": [
+    "real fact-level gold-set LABELING (Phase 3 / IR-C, on the frozen corpus)",
+    "IR-C experiment RUNS + any real-corpus recall numbers (all TBD)",
+    "FtsWriteCursor + Bm25Fts retrieval modes (harness FTS5 SQL)",
+    "pinning corpus_hash/qrels_version to a real frozen snapshot (B-1 ruling + freeze)",
+    "AC-077 mint (Phase 4 / IR-D)"
+  ],
+  "tests": {
+    "target": "cargo test -p fathomdb-engine --test ir_recall_eval",
+    "feature_set": "default (no operator/default-embedder; no AGENT_LONG; no corpus needed)",
+    "result": "10 passed; 0 failed; 0 ignored",
+    "green_over_total": "10/10",
+    "real_exit_code": 0,
+    "clippy": "clean (0 warnings on the new code after a doc-formatting fix)",
+    "default_test_build": "cargo test -p fathomdb-engine --no-run: BUILD_EXIT=0 (new target does not break the default build)"
+  },
+  "guardrails_honored": {
+    "eu7_AC075_fidelity_gate": "untouched",
+    "engine_vector_path": "untouched",
+    "ann_fidelity_regression": "not touched (diagnosis deferred post-IR per HITL)",
+    "schema_sdk_engine_behavior": "no change — additive NEW test files only; eu8 NOT modified",
+    "recovery_governed_surface": "byte-frozen (not touched)",
+    "ac_mint": "none (AC-077 is Phase 4 / IR-D)",
+    "fabricated_thresholds": "none — all numbers TBD (Phase 3/4)",
+    "corpus_snapshot_commitment": "none"
+  },
+  "next_step_for_orchestrator": "After the 0.8.0 GA tag: run codex §9 over this branch's harness/schema/measure diff (NO AC, NO eu7 change to review), then merge branch ir-B-phase2-20260608T194716Z to local main. IR-C (Phase 3) then labels the real gold set + runs run_experiment in --release on the FROZEN corpus once the COR-2 freeze + B-1 ruling land (see dev/plans/runs/IR-B-deferred-on-corpus-freeze.md). Do NOT merge before GA tag; no push/tag here."
+}
