@@ -561,7 +561,7 @@ fn measure_recall(
         // OLD recall (diagnostic, on the FUSED output): literal top-10,
         // exclude target after, /10 — kept for continuity of the OLD report.
         let prod_top10: Vec<&str> = prod_fused.iter().take(10).map(|s| s.as_str()).collect();
-        if prod_top10.iter().any(|b| *b == target) {
+        if prod_top10.contains(&target) {
             target_in_top10 += 1;
         }
         let hits_old =

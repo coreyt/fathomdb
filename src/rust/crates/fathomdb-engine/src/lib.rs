@@ -3844,6 +3844,11 @@ fn text_hit_passes_filter(
 }
 
 /// Read projection cursor and matching body rows inside one read tx.
+// The 8th parameter (`vector_stage_only`) is the additive GA-2 / ◆ B-1
+// measurement seam; the reader-worker call site threads each field through
+// explicitly (mirroring the existing `recency_enabled` plumbing), so a wrapper
+// struct would only obscure that 1:1 mapping for a test-only flag.
+#[allow(clippy::too_many_arguments)]
 fn read_search_in_tx(
     reader: &mut Connection,
     compiled: &fathomdb_query::CompiledQuery,
