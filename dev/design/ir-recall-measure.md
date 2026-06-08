@@ -218,15 +218,30 @@ existing chain `ground_truth_queries` (so eu8 is the doc-granularity baseline an
 thrown away). Class coverage (d) is a composition constraint: every class is represented,
 including a deliberate **negative/"not-found"** subset whose correct answer is empty.
 
-**qrels + pooling methodology (TREC-style).** To avoid scoring only what the production ranker
-happens to surface (which would make the gate self-confirming), relevance judgments are formed
-by **pooling**: run **each retrieval mode (e) separately** (FTS-only, vector-only, RRF-hybrid;
-+reranker/+graph when real), take the **union of their top-N candidates**, and label that pool.
+**qrels methodology — seed-then-pool (TREC-style pooling that does NOT define the denominator).**
+The Recall@K **denominator is the gold set's hand-authored `required_evidence` (b) plus the
+existing chain `expected_top_k_doc_ids`** — these positives are **authored independently of any
+retrieval result** and are *always* in the qrels, **whether or not any mode surfaces them.**
+This is the load-bearing rule: **pure pooling must not be the source of the required-evidence
+set.** If the denominator were only "what some mode returned in top-N," then a required fact
+that *no* mode surfaces would silently drop out of the denominator — making the metric
+**self-confirming on exactly the hard queries the eval exists to catch** and overstating recall
+(the codex round-3 [P2] finding). So:
+
+1. **Seed** the qrels with the authoritative known positives (gold `required_evidence` +
+   `expected_top_k_doc_ids`), independent of retrieval. These are the misses Recall@K must be
+   able to count.
+2. **Pool to *augment*** — run **each retrieval mode (e) separately** (the production FTS branch,
+   the bm25-ordered FTS baseline, vector-only, RRF-hybrid; +reranker/+graph when real), take the
+   **union of their top-N candidates**, and label that pool to *discover additional* relevant
+   judgments the authors missed. Pooling **adds** positives; it can never **remove** a seeded
+   required positive from the denominator.
+
 The primitives exist — `fuse_rrf` already consumes the two branch lists as separate inputs
-(`lib.rs:3584-3607`), so pooling is **harness orchestration, not an engine change**. Judgments
-are **binary** (required / supporting / not-relevant) for now; **graded** judgments (for full
-nDCG) are a labeled superset, flagged TBD. The CI is a **bootstrap** percentile interval over
-per-query recall, reusing the established method (`eu8_ir_validation.rs:283-304`).
+(`lib.rs:3584-3607`), so the pooling step is **harness orchestration, not an engine change**.
+Judgments are **binary** (required / supporting / not-relevant) for now; **graded** judgments
+(for full nDCG) are a labeled superset, flagged TBD. The CI is a **bootstrap** percentile
+interval over per-query recall, reusing the established method (`eu8_ir_validation.rs:283-304`).
 
 **The pinning PRINCIPLE (the lesson behind the GA recall halt).** The eval set MUST run against
 a **single, pinned, versioned corpus snapshot + a versioned qrels set**, and **both the corpus
@@ -294,11 +309,23 @@ disagreement):**
    now records the actual convergence (was a pre-loop placeholder).
 3. **[P3] Stray `</content>`/`</invoke>` tool-wrapper markup at EOF.** **Resolved:** removed.
 
-**Residual disagreements escalated to HITL:** **none.** All findings were accuracy/cleanup, not
-definitional; convergence was reached. (The substantive product decisions — actual threshold
-numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are deliberately out of
-this phase's scope and belong to Phase 4 experiments + the IR-2 / HITL gate, not to this
-consensus.)
+**codex consult (round 3) — one substantive methodology finding, accepted:**
+
+4. **[P2] qrels must seed known positives independent of pooling (§(f)).** Codex observed that a
+   *pooling-only* qrels drops required evidence that no mode surfaces, so the Recall@K denominator
+   would omit the exact misses the eval exists to catch — self-confirming on hard queries,
+   overstating recall. **Resolved:** §(f) rewritten to **seed-then-pool** — the denominator is the
+   **authored** `required_evidence` + `expected_top_k_doc_ids` (independent of retrieval, always
+   present); pooling **only augments** discovery and can never remove a seeded required positive.
+
+**Convergence:** reached after round 3 (round 1 = §(e) accuracy + cleanups; round 2 = doc
+confirmed coherent; round 3 = §(f) seed-then-pool refinement). Every finding accepted and
+resolved; no definitional reversal.
+
+**Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
+actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are
+deliberately out of this phase's scope and belong to Phase 4 experiments + the IR-2 / HITL gate,
+not to this consensus.)
 
 ---
 

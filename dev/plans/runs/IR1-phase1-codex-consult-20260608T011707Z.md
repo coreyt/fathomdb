@@ -74,11 +74,42 @@ is removed.
 
 ---
 
+## Round 3 (re-review after the round-2 log completion)
+
+**Commit reviewed:** `<round-2 log fix>` re-reviewed with
+`codex exec review --base 8f6262b754a3aa5212066657610f311d63cf35d9`.
+
+**codex verdict:** one **substantive [P2] methodology finding** on the measure doc (the log
+issues were gone):
+
+### [P2] Seed qrels with known positives outside pooled results — `ir-recall-measure.md:221-224` (§(f))
+> When the required evidence for a query is not returned in any compared mode's top-N, this
+> pooling-only procedure never labels that evidence as required, so the Recall@K denominator
+> omits the exact misses the eval is supposed to catch. This makes the metric self-confirming
+> for hard queries and can overstate product recall; the pool should be augmented with existing
+> `expected_top_k_doc_ids` / hand-authored `required_evidence` positives, with pooling used to
+> discover additional judgments.
+
+**Claude assessment:** ACCEPTED — a real and important methodology refinement (not a definitional
+disagreement; it sharpens, not contradicts, the measure). A pooling-only qrels would drop
+unsurfaced required evidence from the denominator and overstate recall on precisely the hard
+queries the gate must catch — the same "don't let the measurement confirm itself" hygiene that
+the GA recall halt taught. **Resolution:** §(f) rewritten to **seed-then-pool**: the Recall@K
+denominator is the **authored** `required_evidence` + `expected_top_k_doc_ids` (independent of
+retrieval, always present); pooling **only augments** discovery of additional judgments and can
+never remove a seeded required positive. This is the kind of design improvement the independent
+consensus loop is for.
+
+---
+
 ## Convergence
 
-**CONVERGED.** The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is
-Claude↔codex consensus-signed. Round 1 produced one accuracy fix to §(e) + two cleanups, all
-accepted; round 2 confirmed the design doc is internally coherent with no remaining definitional
-finding (the sole round-2 item was completeness of this log, now resolved). **Residuals escalated
-to HITL: none.** Threshold numbers, the corpus snapshot, and the gate/no-gate decision are
-deliberately out of Phase-1 scope (Phase 4 experiments + IR-2 / HITL).
+**CONVERGED (after round 3).** The measure definition in `dev/design/ir-recall-measure.md`
+(a)–(g) is Claude↔codex consensus-signed. Trajectory: round 1 = one §(e) accuracy fix + two
+cleanups (all accepted); round 2 = design doc confirmed "internally coherent," only this log's
+completeness outstanding (fixed); round 3 = one substantive §(f) methodology refinement
+(seed-then-pool qrels so recall is not self-confirming), accepted and folded in. Every finding
+across the three rounds was accepted and resolved; **none required a definitional reversal and
+none is escalated.** **Residuals escalated to HITL: none.** Threshold numbers, the corpus
+snapshot, and the gate/no-gate decision are deliberately out of Phase-1 scope (Phase 4
+experiments + IR-2 / HITL).
