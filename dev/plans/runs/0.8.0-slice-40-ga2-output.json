@@ -1,0 +1,93 @@
+{
+  "phase": "0.8.0 GA-2 / Slice-40 (◆ B-1 application)",
+  "role": "implementer",
+  "branch": "slice-40-ga2-20260608T145205Z",
+  "baseline_sha": "7316746",
+  "head_sha": "a74c12347106b38aac2f06963edd8d074d416785",
+  "merged_to_main_sha": null,
+  "merge_status": "NOT MERGED — gated slice; orchestrator runs codex §9 and merges on PASS (per the B-1 addendum, which overrides the base prompt's self-merge)",
+  "commits": [
+    "575e3d6 docs: GA-2 design memo (◆ B-1)",
+    "a3c23e4 feat: engine test-only vector-stage measurement seam (◆ B-1, additive)",
+    "13b0802 test: gate restructure — eu7 vector-stage recall verdict + ac_012 tier + ac_013b demote",
+    "27bf0d5 docs: mint AC-075 (vector-stage recall) + AC-076 (ac_012 tier); amend vector-quant ADR",
+    "8402e59 ci: gate (n) ubuntu-22.04 security + perf-canonical AC-075/076 annotation",
+    "c613e9e docs: release notes + CHANGELOG 0.8.0 + internal release record + DOC-INDEX",
+    "a74c123 chore: clippy clean (too_many_arguments allow + contains)"
+  ],
+  "findings_addressed": ["B1/AC-075 (◆ B-1 corrected to vector-stage fidelity)", "B2/AC-076", "B3/ac_020", "Q3/gate-n"],
+  "b1_correction": {
+    "ruling": "HITL ◆ B-1 Option 1 (2026-06-08): correct eu7 to measure ANN-quantization FIDELITY on the pre-fusion vector stage in isolation, then assert the unchanged 0.90 floor. A correction, NOT a weakening.",
+    "engine_seam": "Engine::set_vector_stage_only_for_test (AtomicBool ProjectionRuntimeShared::vector_stage_only_for_test, off by default) → read_search_in_tx returns the pre-fusion vector_results instead of fuse_rrf(...). Mirrors set_recency_reweight_enabled_for_test (release-available).",
+    "harness_repoint": "eu7_real_corpus_ac.rs::measure_recall: verdict SUT = vector-stage ranking (seam ON); report-only delta SUT = RRF-fused search() (seam OFF); same exclude-before+dedup method, same exact-f32 vector top-10 GT. Assert recall@10 >= 0.90 on all-real N.",
+    "seam_unit_test": "tests/ga2_vector_stage_seam.rs — seam OFF returns fused (text-only FTS hit present); seam ON returns vector branch only (text-only hit absent, every hit branch=Vector); OFF again restores byte-identical fused output. PASSES in this worktree."
+  },
+  "eu7_recall_verdict": {
+    "sut": "ANN+ vector stage (1-bit sign-quant K=192 Hamming + f32 rerank), pre-fusion",
+    "ground_truth": "exact-f32 VECTOR top-10 of the same bge-small model (in-Rust brute force)",
+    "recall_at_10": 0.937,
+    "ci": "0.913-0.957",
+    "sigma": 0.0116,
+    "n": 7667,
+    "floor": 0.90,
+    "passes_floor": true,
+    "measurement_provenance": "ON-RECORD anchor (dev/plans/runs/0.7.1-EU-7-measurements.json r_canonical_anchor, measured pre-unconditional-RRF i.e. effectively vector-stage). NOT re-measured in this worktree — see verification_posture.",
+    "complementarity": "ANN-quantization FIDELITY axis (system health); complementary to and NOT a substitute for the IR/relevance axis (eu8 ceiling ~0.571; IR-1 ir-recall-measure.md)."
+  },
+  "fused_vs_vector_delta": {
+    "vector_stage_recall_at_10": 0.937,
+    "fused_search_recall_at_10": 0.8710,
+    "delta": 0.066,
+    "interpretation": "The fused-search()@10 (~0.871) would RED the 0.90 assert; the vector-stage (~0.937) PASSES. The delta is intended RRF fusion divergence (vector ⊕ FTS5 vs a vector-only GT), NOT quantization-fidelity loss — proving the SUT repoint is load-bearing, not cosmetic. fused 0.8710 = prior slice-40 output.json; vector-stage 0.937 = the 0.7.1 anchor (pre-unconditional-RRF). GA-1 proved the corpus was byte-identical across both."
+  },
+  "ac075_status": "MINTED. eu7_real_corpus_ac.rs asserts vector-stage recall@10 >= 0.90 (◆ B-1 wording: ANN+-vector-stage fidelity vs exact-f32 vector top-10, NOT fused search()); synthetic perf_gates::ac_013b demoted to report-only (RECALL_FIDELITY_INFO); AC013B_RECALL_FLOOR=0.90 + ac_013b_floor_matches_adr sentinel retained; ADR-0.7.0-vector-binary-quant amended (§2 pt4 + status), cites GA-1 + unconditional-RRF reason.",
+  "ac076_status": "MINTED. ac_012 tiered (AC012_GATE_N=10_000 binding p50<=20/p99<=150; 100k/1M AC012_TIER_INFO) mirroring ac_013; tokenizer + migration 011 unchanged (git diff empty there).",
+  "ac013b_now": "report-only (no hard 0.90 assert; eprintln RECALL_FIDELITY_INFO)",
+  "fusion_diff_additive_seam_only": true,
+  "fusion_diff_confirmation": "git diff on read_search_in_tx shows the production fusion expression rerank_fused(apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled)) preserved verbatim inside the new `else` branch; fuse_rrf / rerank_fused / apply_recency_reweight bodies untouched; no fusion_mode knob; production search() byte-unchanged (RRF/recency/G1/G10/shape pins green). Seam = additive plumbing only.",
+  "tdd_evidence": {
+    "red_green": "RED→GREEN encoded structurally: harness measures BOTH SUTs and prints EU7_RECALL_FUSED (~0.871, would-RED) vs the asserted vector-stage (~0.937, GREEN) + EU7_RECALL_DELTA. ga2_vector_stage_seam.rs is the runnable RED→GREEN proof the seam changes the SUT (passes).",
+    "test_files": [
+      "src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs",
+      "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+      "src/rust/crates/fathomdb-engine/tests/ga2_vector_stage_seam.rs"
+    ]
+  },
+  "gate_results": {
+    "a_nonperf_suite": "engine full suite green (debug, all targets ok); release pins green",
+    "b_verify_release_gates": "NOT RUN in this worktree (release-gate script needs corpus/seams; deferred — orchestrator/perf-canonical)",
+    "c_recall_AC075": "ON-RECORD 0.937 >= 0.90 (vector stage); live re-measurement = perf-canonical once-per-release (real bge weights not cached + corpus not materialized here)",
+    "d_governed_surface": "byte-unchanged (not touched)",
+    "e_recovery_suites": "byte-unchanged vs baseline (not touched)",
+    "f_unfiltered_search_byte_identity": "production search() unchanged (seam off by default; pins green)",
+    "g_rrf_pin": "pr_g9_rrf_fusion.rs GREEN (release)",
+    "h_migration_idempotence": "fathomdb-schema migrations.rs GREEN (steps 11/12/13; release)",
+    "i_latency_AC076": "ac_012 tiered GREEN at 10k (release, isolated)",
+    "j_B3_ac_020": "ac_020_reads_do_not_serialize GREEN (release, isolated, this x86_64 box)",
+    "k_py_ts_parity": "NOT RE-RUN (no SDK change; out of scope of the seam)",
+    "l_X2_mkdocs": "mkdocs build --strict GREEN",
+    "m_X3_doc_index": "DOC-INDEX swept (AC-075/076, ADR, design memo, release notes, internal record)",
+    "n_gate_n_ci": "ci.yml security job ubuntu-22.04 added; actionlint CLEAN; AC-037 env-deferred locally (CI-proven)",
+    "battery_green_over_total": "10/10 of the gates runnable in this worktree are GREEN; 3 deferred to orchestrator/perf-canonical (b verify-release-gates, c live recall re-measure, k Py/TS re-run) — none are RED"
+  },
+  "release_battery": "10 green / 10 runnable (debug full engine suite + release pins/perf_gates/migrations/mkdocs/actionlint); 3 deferred-not-RED",
+  "behavior_compat_events_documented": [
+    "RRF ordering (no fusion_mode knob)",
+    "SearchHit reshape (Vec<String> -> Vec<SearchHit{id,kind,body,score,branch}>, Eq dropped)",
+    "AC-057a -> AC-074 governed-surface supersession (operator feature gate)"
+  ],
+  "verification_posture": "The real bge-small weights are NOT in the local HF cache and the gitignored corpus is NOT materialized in this worktree, so the ~1.5 h real-embedder eu7 run is the LOCAL/perf-canonical once-per-release verdict (as AC-072/073 already document), NOT executed here. No recall number was fabricated; the 0.937/0.8710 figures are cited on-record (the 0.7.1 anchor + the prior slice-40 output.json), and the seam's SUT-changing behavior is proven by ga2_vector_stage_seam.rs (passes). Recover-out-loud: this is a recover/report, not a silent skip.",
+  "blockers_encountered": [
+    "Real-embedder eu7 live run infeasible in this worktree (no cached bge weights; corpus gitignored + not materialized; ~1.5 h seed) — routed to perf-canonical once-per-release per AC-072/073 precedent (NOT a per-push gate).",
+    "pr_g10_filtered_knn.rs cannot compile in pure --release (uses execute_for_test, #[cfg(debug_assertions)]) — PRE-EXISTING, not caused by GA-2; ran the other search/RRF pins in release."
+  ],
+  "deviations": [
+    "RED and GREEN are one coherent commit sequence rather than a literal failing-run then passing-run, because the live numeric RED/GREEN requires the infeasible real-embedder run; the delta is encoded structurally (EU7_RECALL_FUSED vs asserted vector-stage) + proven by the seam unit test + on-record numbers.",
+    "Fixed one clippy too_many_arguments (the new 8th seam arg) via #[allow] with rationale, and one contains() lint in the eu7 block I edited; 3 pre-existing eu7 hex-literal warnings left untouched (feature-gated, not linted in default CI, encode EU-7 seed intent)."
+  ],
+  "additional_changes_made_in_scope": [
+    "ga2_vector_stage_seam.rs added (focused seam unit test — lets codex verify the seam without the real embedder)."
+  ],
+  "agent_verify_result": "engine suite + release pins/perf_gates/migrations GREEN; clippy -D warnings clean (lib+tests, no features); actionlint clean; mkdocs --strict green; markdownlint clean on changed files; canonical tripwire EMPTY throughout.",
+  "next_step_for_orchestrator": "Run codex §9 over slice-40-ga2-20260608T145205Z @ a74c123 (check: ◆ B-1 SUT repoint faithful = vector stage not search(); seam additive + test-only + no fusion_mode + production search() byte-unchanged; floor un-lowered + assert restored-not-weakened; AC-075 wording = vector-stage fidelity + complementarity note; ADR amendment cites GA-1; ac_013b report-only; ac_012 tiered; recovery+governed-surface byte-frozen). On PASS, merge to local main; the real-embedder eu7 vector-stage recall verdict (~0.937) is the perf-canonical once-per-release confirmation, NOT a per-push gate. GA tag is HITL-only."
+}
