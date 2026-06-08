@@ -45,6 +45,40 @@ jobs:
       - name: agent-verify (lint -> typecheck -> test)
         run: bash scripts/agent-verify.sh
 
+  # Gate (n) — agent-security battery (AC-036/037/038/050a/050c).
+  #
+  # 0.8.0 Slice 40 (Q3/META): the agent-verify job above already runs
+  # STRICT=1 agent-security.sh, but on ubuntu-latest (24.04) AppArmor
+  # restricts unprivileged user namespaces, so the AC-037 netns-deny-egress
+  # fixture cannot actually create its userns there. This dedicated job pins
+  # the security battery to ubuntu-22.04, which permits unprivileged userns
+  # by default, so AC-037 genuinely exercises (the home of AC-037 per
+  # acceptance.md). STRICT=1 promotes any toolchain blocker to a hard
+  # failure — a blocker here means AC-037 did NOT run, which must fail the
+  # gate rather than pass vacuously.
+  security:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling (installs strace for AC-036/AC-037)
+        run: bash scripts/bootstrap.sh
+      - name: agent-security (AC-036/037/038/050a/050c)
+        run: STRICT=1 bash scripts/agent-security.sh
+
   # EU-5c — pre-warm the BGE-small embedder weight cache (~133 MB from HF)
   # via actions/cache, then run the network-hitting EU-5b tests against the
   # warm cache. If the warm step fails (e.g. HF unreachable), the env-gate
