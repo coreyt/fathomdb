@@ -10,7 +10,7 @@ AC-050c) gates merges against this invariant.
 
 (rolls into the next cut after 0.8.0 GA.)
 
-## 0.8.0 — unreleased (pre-GA; GA tag is HITL-only)
+## 0.8.0 — 2026-06-08
 
 Agent-memory enablement (G0–G12). See `docs/release-notes/0.8.0.md` (user) and
 `dev/releases/0.8.0.md` (internal record). Schema version 13.
