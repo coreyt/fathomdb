@@ -186,17 +186,27 @@ from retrieval-architecture effects:
 
 | Mode | Status today | Anchor |
 |------|--------------|--------|
-| **FTS-only** (BM25 over FTS5) | **EXISTS** (branch runs inside `read_search_in_tx`) | `lib.rs:912-917`; charter §1 |
+| **FTS branch** (FTS5 `MATCH` filter) | **EXISTS, but NOT bm25-ranked in production** — the text branch carries `bm25()` only as a *score*; it is `ORDER BY write_cursor` (insertion order), and RRF fuses on that insertion-order rank | `lib.rs:3905-3928` (text SQL: `ORDER BY write_cursor`, `bm25()` selected as score) |
+| **BM25-ranked FTS-only baseline** | **HARNESS-CONSTRUCTIBLE, not the production path** — a true BM25 baseline needs the eval to order by the already-carried `bm25()` score; **no engine change** (score is present), but it is NOT what production search ranks by today | `lib.rs:3918-3920` (score carried, order is write_cursor) |
 | **vector-only** (bit-KNN K=192 → f32 rerank) | **EXISTS** | `ADR-0.7.0-vector-binary-quant.md:97-106` |
-| **RRF-hybrid** (the production fused ranking) | **EXISTS** — the unconditional ranking | `lib.rs:3564,3584-3623` |
+| **RRF-hybrid** (the production fused ranking) | **EXISTS** — the unconditional ranking; fuses the vector branch and the **write-cursor-ordered** text branch on rank | `lib.rs:3955-3956,3584-3623` |
 | **+reranker** (rerank top-N → top-K) | **STUB** — `rerank_fused()` is identity | `lib.rs:3653-3660` |
 | **+graph expansion** (`expand=N` / neighbors) | **0.8.1** — designed, deferred | `ADR-0.8.0-graph-traversal-scope.md`; `dev/roadmap/0.8.1.md` |
 
-So **4 of 5 modes are runnable now** (FTS / vector / RRF-hybrid as the fused production path,
-plus the two branches poolable separately); **+reranker is a no-op identity stub** and
-**+graph is 0.8.1**, so any reranker-/graph-dependent comparison is **aspirational and
-report-only until those land** — it must not be used to set or fail a gate. The headline
-mode is the **production RRF-hybrid** path (the unconditional ranking the agent actually gets).
+So the runnable-now modes are **vector-only**, the **production RRF-hybrid** path, the **FTS
+`MATCH` branch as it actually ranks** (write-cursor order), and a **BM25-ranked FTS-only
+baseline** the eval can construct by ordering on the already-carried `bm25()` score (a
+harness-level `ORDER BY`, no engine change). The eval **must not** silently equate the
+production FTS branch with a BM25-ranked baseline — they rank differently; report both and
+label which is which. **+reranker is a no-op identity stub** and **+graph is 0.8.1**, so any
+reranker-/graph-dependent comparison is **aspirational and report-only until those land** — it
+must not be used to set or fail a gate. The headline mode is the **production RRF-hybrid** path
+(the unconditional ranking the agent actually gets).
+
+> **Note (surfaced by the codex consult, [P2]):** that the production FTS branch is
+> write-cursor-ordered rather than bm25-ranked is a *measurement-relevant property*, not a
+> defect this doc fixes. The eval names both the production branch and a bm25-ordered baseline
+> explicitly so the mode comparison is honest about what FathomDB ranks by today.
 
 ---
 
@@ -258,10 +268,37 @@ eu7 / AC-075.**
 
 ## § Consensus (Claude↔codex)
 
-> Convergence record per the prompt §2.2. Consult logs:
-> `dev/plans/runs/IR1-phase1-codex-consult-<ts>.md`.
+> Convergence record per the prompt §2.2. Consult log:
+> `dev/plans/runs/IR1-phase1-codex-consult-20260608T011707Z.md`.
 
-_(to be completed after the codex consensus loop)_
+**Converged decision (Claude + codex).** The measure is **Evidence Recall@K** (strict all-of
+headline + graded diagnostic) on the **IR/agentic-relevance (product-value) axis**, with the
+atomic-evidence unit-of-relevance and gold-set schema of (b), the @5/@10(headline)/@20/@50
+K-ladder of (c), the six-class stratification of (d), the retrieval-mode matrix of (e), and the
+pooled-qrels + pinned-versioned-corpus methodology of (f). It is **complementary to and does
+not alter eu7 / AC-075**; every threshold is **TBD** (Phase 4 / IR-2). Claude and codex
+**converged** on this definition.
+
+**codex consult (round 1) — three findings, all accepted and resolved (no definitional
+disagreement):**
+
+1. **[P2] FTS-only mode mislabeled as "BM25 over FTS5."** Codex correctly observed that the
+   production text branch is `ORDER BY write_cursor` (insertion order) and carries `bm25()` only
+   as a score (`lib.rs:3905-3928`), so a harness following the original wording would wrongly
+   treat the production FTS branch as a BM25-ranked baseline. **Resolved:** §(e) now distinguishes
+   the **production FTS `MATCH` branch (write-cursor-ordered)** from a **BM25-ranked FTS-only
+   baseline** the eval constructs by ordering on the already-carried `bm25()` score (harness-level
+   `ORDER BY`, no engine change), and requires the eval to label which is which. This is a
+   genuine measurement-accuracy improvement to the definition.
+2. **[P3] Consensus record incomplete while status claimed "signed."** **Resolved:** this section
+   now records the actual convergence (was a pre-loop placeholder).
+3. **[P3] Stray `</content>`/`</invoke>` tool-wrapper markup at EOF.** **Resolved:** removed.
+
+**Residual disagreements escalated to HITL:** **none.** All findings were accuracy/cleanup, not
+definitional; convergence was reached. (The substantive product decisions — actual threshold
+numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are deliberately out of
+this phase's scope and belong to Phase 4 experiments + the IR-2 / HITL gate, not to this
+consensus.)
 
 ---
 
@@ -278,5 +315,3 @@ _(to be completed after the codex consensus loop)_
   `dev/architecture.md` §9 (the two-axis open question this resolves)
 - Sequencing: `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md`;
   prompt `dev/plans/prompts/0.8.x-IR-1-phase1-measure-consensus.md`
-</content>
-</invoke>
