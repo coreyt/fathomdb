@@ -93,13 +93,15 @@ this table to either an ADR or to an acceptance.md self-owned bullet.
 | AC          | Owning REQ | Parameters consumed                                                                     | Authoritative source(s)                                                            |
 | ----------- | ---------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | AC-011a/b   | REQ-009a/b | P-WTP-WARMUP, P-WTP-RUN                                                                 | ADR-0.6.0-write-throughput-sli (gate); acceptance.md (protocol)                    |
-| AC-012      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-text-query-latency-gates                                                 |
+| AC-012      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-text-query-latency-gates (budget superseded by AC-076)                   |
 | AC-013      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-retrieval-latency-gates (budget superseded by AC-072)                    |
 | AC-017      | REQ-015    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-projection-freshness-sli                                                 |
 | AC-019      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | acceptance.md (budget superseded by AC-073)                                        |
 | AC-020      | REQ-018    | P-PARALLEL-TOL                                                                          | acceptance.md                                                                      |
 | AC-072      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-text-query-latency-gates-revised (tiered; 10k binding, HITL 2026-06-01)  |
 | AC-073      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | ADR-0.7.0-text-query-latency-gates-revised (tiered; real-corpus verdict)           |
+| AC-075      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-vector-binary-quant (recall floor; real-embedder eu7 vector-stage, Slice 40) |
+| AC-076      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-text-query-latency-gates-revised (tiered; 10k binding, Slice 40)         |
 | AC-022b     | REQ-020a   | P-FD-TOL                                                                                | acceptance.md                                                                      |
 | AC-024a     | REQ-022a   | P-LOCK-BOUND                                                                            | acceptance.md                                                                      |
 | AC-027d     | REQ-025c   | P-TAU, P-TAU-PASS                                                                       | ADR-0.6.0-recovery-rank-correlation                                                |
@@ -282,6 +284,8 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** write-throughput-100kb (test-plan.md fixture spec — pending).
 
 ## AC-012: Text query latency on FTS5 path
+
+**Status:** budget **superseded by AC-076** (revised, tiered: 10k binding, 100k/1M tracked) per `ADR-0.7.0-text-query-latency-gates-revised`, HITL-ruled 2026-06-07 (0.8.0 Slice 40). The unconditional p50 ≤ 20 / p99 ≤ 150 ms at 100k below is the legacy 0.6.0 budget, retained for history. The latency is O(N) FTS-scan cost, not the tokenizer (Slice 6).
 
 **Requirement ref:** REQ-010
 **Test id:** T-012
@@ -1127,6 +1131,27 @@ Added 2026-05-02 as an HITL amendment to the locked corpus per
 **Measurement:** the real-corpus harness is the verdict; the synthetic `perf_gates` AC-019 is REPORT-ONLY (`AC019_REPORT_ONLY`) — its instant-embed baseline makes the baseline-relative 10× bound unmeetable by the synthetic data (a fixture property, not a regression). See `dev/plans/runs/0.7.2-PR-3-perf-data.md`.
 **Fixture:** real-corpus (`eu7_real_corpus_ac.rs`) for the verdict; synthetic mixed-retrieval-stress in `perf_gates` for scouting.
 
+## AC-075: Recall@10 verdict (real-embedder, ANN+ vector stage) — supersedes the informal AC-013b floor assert
+
+**Requirement ref:** REQ-011
+**Test id:** `eu7_real_corpus_ac.rs` (ASSERTING verdict, real bge-small, measured on the pre-fusion vector stage via `set_vector_stage_only_for_test`) + `perf_gates::ac_013b_recall_at_10_floor` (REPORT-ONLY, synthetic fidelity) + `perf_gates::ac_013b_floor_matches_adr` (fast sentinel). Conditional on AC-072.
+**Supersedes:** the informal AC-013b floor assertion (the synthetic `ac_013b_recall_at_10_floor` previously hard-asserted 0.90 on an isotropic `VaryingEmbedder` — the asserting gate ran on the wrong fixture). HITL-approved 2026-06-06; ◆ B-1 ruling (Option 1) 2026-06-08; minted at the 0.8.0 GA gated slice (Slice 40).
+**Assertion:** `eu7` real-corpus recall@10 of the **ANN+ vector stage** (1-bit sign-quant K=192 Hamming + f32 rerank) vs the **exact-f32 VECTOR top-10** of the same embedder ≥ **0.90** — an ANN-quantization **FIDELITY** gate, measured on the **vector stage in isolation** (NOT the RRF-fused `search()` output). MET: bge-small over the real corpus (N≈7,667, K=192) measures vector-stage recall@10 = **0.937** (bootstrap CI 0.913–0.957, σ 0.0116) — full CI clears 0.90. **◆ B-1 rationale:** the eu7 ground truth is a vector-only top-10, but Slice 10 (`d28d204`) made `search()` unconditional RRF-hybrid (vector ⊕ FTS5); measuring a hybrid result against a vector-only GT conflated quantization fidelity with intended fusion divergence (the Slice-40 Phase-A HALT, recall 0.8710; see `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`). The fused-`search()` recall (~0.871) is reported as the report-only delta `EU7_RECALL_FUSED`. The synthetic `ac_013b` is demoted to a REPORT-ONLY quantization-fidelity signal (`RECALL_FIDELITY_INFO`, ~0.73–0.89 on isotropic noise — the noise-limited worst case for sign-bit ANN, not a product floor); the `AC013B_RECALL_FLOOR = 0.90` constant and its sentinel are retained.
+**Complementarity:** this FIDELITY gate is **complementary to and NOT a substitute for** the IR/relevance axis (eu8 IR ceiling ≈0.571, embedder-bound; the IR-1 `dev/plans/prompts/ir-recall-measure.md` initiative). Fidelity ≫ relevance ceiling, so this gate measures system health (does the quantized index preserve the f32 vector order), not product relevance.
+**Measurement:** LOCAL once-per-release exercise (real-embedder canonical N is infeasible on CI — ~166 h bge seed at canonical scale, see AC-072); per-push CI runs only `perf_gates::ac_013_vector_read_path_smoke` (fixture-independent read-path canary). `eu7` is `AGENT_LONG` + `default-embedder`-gated. Amends `ADR-0.7.0-vector-binary-quant.md` § 2 point 4 (floor now GATED on the real-embedder eu7 vector stage, not the synthetic ac_013b).
+**Fixture:** real-corpus (`data/corpus-data`) via `eu7_real_corpus_ac.rs` for the verdict; synthetic `VaryingEmbedder` in `perf_gates` for the reported fidelity signal + smoke.
+
+## AC-076: Text-query latency (revised, tiered) — supersedes the AC-012 unconditional budget
+
+**Requirement ref:** REQ-010
+**Test id:** T-012 (`perf_gates::ac_012_text_query_latency_on_fts5_path`, tiered) + per-push canary `perf_gates::ac_013_vector_read_path_smoke`.
+**Supersedes:** the AC-012 unconditional 100k budget (legacy: p50 ≤ 20 / p99 ≤ 150 ms asserted at `AC012_DEFAULT_N = 100_000`). HITL-ruled 2026-06-07; minted at the 0.8.0 GA gated slice (Slice 40). AC-012 retained as the legacy budget basis.
+**Assertion (tiered by corpus size N; the binding release gate for the 0.x and 1.x lines is the 10k tier):**
+- **10,000-row tier — BINDING:** p50 ≤ 20 ms AND p99 ≤ 150 ms over ≥ P-PERF-SAMPLES samples.
+- **100,000 / 1,000,000 tiers — TRACKED, not gated:** same 20/150 target, deferred to post-1.0 — the FTS5 MATCH scan + `bm25()` + matched-row materialization is O(N) (the SELECT is unbounded). HITL accepts the ~1 ms-over at the tracked 100k tier.
+**Measurement:** LOCAL once-per-release / `perf-canonical.yml` dispatch (`--release`, isolated). In code the budget is asserted only at `n ≤ AC012_GATE_N` (10,000); larger N is reported (`AC012_TIER_INFO`), mirroring `ac_013`'s `AC013_GATE_N` branch. The latency is O(N) corpus-scaling, **not** the porter tokenizer — Slice 6 engine A/B showed porter ≈ unicode61 within noise, so the Slice-5 tokenizer upgrade is kept. Full data: `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-20260607T003001Z.md`.
+**Fixture:** synthetic Zipfian corpus (`seed_ac012_corpus`) in `perf_gates`.
+
 ---
 
 ## Coverage trace
@@ -1146,8 +1171,8 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-008  | AC-010                |
 | REQ-009a | AC-011a               |
 | REQ-009b | AC-011b               |
-| REQ-010  | AC-012                |
-| REQ-011  | AC-013, AC-072        |
+| REQ-010  | AC-012, AC-076        |
+| REQ-011  | AC-013, AC-072, AC-075 |
 | REQ-012  | AC-014                |
 | REQ-013  | AC-015                |
 | REQ-014  | AC-016                |

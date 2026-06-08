@@ -4,14 +4,18 @@ date: 2026-05-27
 target_release: 0.7.0
 desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
 blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323 (read_search_in_tx hot SQL; Pack 2 rewrite); src/rust/crates/fathomdb-engine/src/lib.rs:2846 (_fathomdb_vector_rows writer insert; Pack 1 double-write); src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283 (vector_default CREATE VIRTUAL TABLE; Pack 1 schema migration); src/rust/crates/fathomdb-engine/src/lib.rs:3107 (register_sqlite_vec_extension; unchanged but inspected); src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260 (_fathomdb_embedder_profiles; UNCHANGED — embedder contract preserved); src/rust/crates/fathomdb-engine/src/lib.rs:2174,2242 (writer-loop pins; unchanged); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150 (AC013_BUDGET_P50/P99 re-pin in Pack 2); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487 (ac_013_vector_retrieval_latency); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609 (ac_019_mixed_retrieval_stress_workload_tail); src/rust/crates/fathomdb-engine/tests/perf_gates.rs new ac_NNN_recall_at_10 test (Pack 2); src/rust/crates/fathomdb-engine/Cargo.toml:18 (sqlite-vec pin; stays =0.1.7); dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md (numeric lock-flip target, post Pack 2); dev/notes/pcache2-followups.md (post-0.7.0 ANN follow-ups)
-status: locked (HITL-ratified; 0.7.2 PR-2 recall reframe — ANN fidelity 0.937, floor 0.90 holds)
+status: locked (HITL-ratified; 0.7.2 PR-2 recall reframe — ANN fidelity 0.937, floor 0.90 holds; 0.8.0 Slice-40 AC-075 / ◆ B-1 — floor gated on real-embedder eu7 VECTOR STAGE, synthetic ac_013b report-only)
 ---
 
 # ADR-0.7.0 — Vector binary quantization (Pack 1 + Pack 2)
 
 **Status:** locked — HITL-ratified. The § 2 recall claim was reframed by 0.7.2
 PR-2 (the 0.828 reading was a measurement artifact; corrected ANN-fidelity is
-recall@10 = 0.937, CI 0.913–0.957, and the floor is kept at 0.90).
+recall@10 = 0.937, CI 0.913–0.957, and the floor is kept at 0.90). **0.8.0
+Slice-40 amendment (AC-075, ◆ B-1):** the floor is now GATED on the
+real-embedder `eu7_real_corpus_ac.rs` measured on the pre-fusion **VECTOR
+STAGE** (≥ 0.90, asserting); the synthetic `ac_013b` is demoted to report-only
+quantization-fidelity. No numeric change — see § 2 point 4.
 
 This ADR records the data-encoding decision that closes AC-013
 within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is
@@ -131,6 +135,40 @@ not release-boundary):
    landed RED in Pack 2 before the query rewrite. Ground truth
    is computed at test-setup via a one-pass brute-force scan
    through the retained f32 column — single corpus, two jobs.
+
+   **0.8.0 Slice-40 amendment (AC-075, ◆ B-1) — the floor is now
+   GATED on the real-embedder eu7 VECTOR STAGE, not the synthetic
+   ac_013b, and not the RRF-fused `search()` output.** The 0.90
+   floor and the `AC013B_RECALL_FLOOR` constant are unchanged (no
+   numeric change); what changes is *which test, and which
+   system-under-test, enforces it*. The asserting recall verdict
+   moved from the synthetic `perf_gates::ac_013b_recall_at_10_floor`
+   to the real-embedder `eu7_real_corpus_ac.rs`, which now
+   hard-asserts recall@10 ≥ 0.90 on real bge-small (measured 0.937).
+   **Why the vector stage, not `search()`:** Slice 10 (`d28d204`)
+   made `search()` an unconditional RRF fusion of the vector and
+   FTS5 branches. eu7's ground truth is the exact-f32 *vector*
+   top-10, so comparing it against the *hybrid* `search()` output
+   conflates ANN-quantization FIDELITY (what this floor is defined
+   to measure) with intended fusion divergence — that conflation
+   produced the Slice-40 Phase-A HALT (recall 0.8710 < 0.90), which
+   GA-1 root-caused to fusion divergence on a byte-identical corpus,
+   NOT a quantization regression (`dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`).
+   The HITL ◆ B-1 ruling (Option 1, 2026-06-08) corrected eu7 to
+   measure the pre-fusion vector branch in isolation via a test-only
+   engine seam (`set_vector_stage_only_for_test`); the fused-`search()`
+   recall (~0.871) is now a report-only delta (`EU7_RECALL_FUSED`).
+   The synthetic `ac_013b` is demoted to REPORT-ONLY: its isotropic
+   `VaryingEmbedder` measures a quantization-FIDELITY number
+   (~0.73–0.89, the noise-limited worst case for sign-bit ANN) that
+   does not — and was never meant to — clear a 0.90 *product* floor,
+   so asserting it on that fixture was a mis-calibration. The fast
+   sentinel `ac_013b_floor_matches_adr` still pins the 0.90 constant
+   to this ADR. HITL-approved 2026-06-06 / ◆ B-1 2026-06-08; AC-075
+   minted at the 0.8.0 GA gated slice (`dev/acceptance.md` § AC-075).
+   The 0.7.2 validation below remains the evidentiary basis for the
+   number. This FIDELITY gate is complementary to, not a substitute
+   for, the IR/relevance axis (eu8 / IR-1).
 
    **0.7.2 amendment — floor VALIDATED against the real default
    embedder (keep 0.90).** The 0.90 floor is retained, now backed
@@ -302,7 +340,11 @@ research doc carries the long-form analysis.
   now VALIDATED against the real embedder — corrected ANN-fidelity
   recall@10 = 0.937, full CI above 0.90; see § 2 point 4. A fast
   sentinel `ac_013b_floor_matches_adr` pins the constant to this
-  ADR.)
+  ADR. **0.8.0 Slice 40 / AC-075 (◆ B-1):** the synthetic `ac_013b`
+  RED-test is DEMOTED to report-only — the asserting recall gate is
+  now the real-embedder `eu7_real_corpus_ac.rs` measured on the
+  pre-fusion VECTOR STAGE (not the RRF-fused `search()`); see the
+  § 2 point 4 amendment.)
 
 - **AC-019 carry.** The existing 10× bound on AC-019 stays
   unchanged; the same two-phase query shape benefits AC-019
