@@ -401,17 +401,23 @@ impl KResult {
 /// retrieval closure that returns the mode's ranked doc_ids for a query (called
 /// ONCE per query; cut at each K internally). `Negative` queries are routed to
 /// the abstention bucket and kept OUT of the recall means.
+///
+/// The closure returns a `Result`: a successful **empty** retrieval (`Ok(vec![])`)
+/// is scored normally (an honest miss, or a correct abstention for a negative
+/// query), but a **failed** retrieval (`Err`) is NEVER scored — it propagates and
+/// aborts the run so a storage/retrieval failure or a malformed gold query can
+/// never be silently folded into "empty results scored as misses/abstention".
 pub fn evaluate_gold_set<F>(
     gold: &GoldSet,
     ladder: &[usize],
     mut retrieve: F,
-) -> BTreeMap<usize, KResult>
+) -> Result<BTreeMap<usize, KResult>, String>
 where
-    F: FnMut(&GoldQuery) -> Vec<String>,
+    F: FnMut(&GoldQuery) -> Result<Vec<String>, String>,
 {
     let mut out: BTreeMap<usize, KResult> = ladder.iter().map(|&k| (k, KResult::new(k))).collect();
     for q in &gold.queries {
-        let retrieved = retrieve(q);
+        let retrieved = retrieve(q)?;
         for &k in ladder {
             let r = out.get_mut(&k).expect("ladder key");
             if q.query_class == QueryClass::Negative {
@@ -426,7 +432,7 @@ where
             }
         }
     }
-    out
+    Ok(out)
 }
 
 // ── Validator (§(b)/(f)) ─────────────────────────────────────────────────────
@@ -603,13 +609,20 @@ pub struct ExperimentResult {
 /// This is the WIRED experiment scaffold. The **real** run (frozen corpus, real
 /// labels, in `--release`) is IR-C / deferred; see
 /// `dev/plans/runs/IR-B-deferred-on-corpus-freeze.md`.
+///
+/// A runnable mode's retrieval error (e.g. `Engine::search` returning `Err`) is
+/// **surfaced, never scored**: it propagates out of this fn and aborts the run
+/// with the real error, so a failed retrieval can never masquerade as an empty
+/// result set (ordinary misses, or a correct abstention for a negative query) in
+/// the measured JSON report. A genuinely empty *successful* retrieval is still
+/// scored normally — only the `Err` path aborts.
 pub fn run_experiment(
     engine: &Engine,
     gold: &GoldSet,
     body_to_doc_id: &HashMap<String, String>,
     modes: &[RetrievalMode],
     ladder: &[usize],
-) -> ExperimentResult {
+) -> Result<ExperimentResult, String> {
     let deepest = ladder.iter().copied().max().unwrap_or(HEADLINE_K);
     let fanout = deepest.max(DEFAULT_FANOUT);
     engine.set_search_limit_for_test(fanout);
@@ -621,14 +634,13 @@ pub fn run_experiment(
             deferred_modes.push(mode);
             continue;
         }
-        let result =
-            evaluate_gold_set(gold, ladder, |q| match run_mode_bodies(engine, &q.query, mode) {
-                Ok(bodies) => map_bodies_to_doc_ids(&bodies, body_to_doc_id),
-                Err(_) => Vec::new(),
-            });
+        let result = evaluate_gold_set(gold, ladder, |q| {
+            let bodies = run_mode_bodies(engine, &q.query, mode)?;
+            Ok(map_bodies_to_doc_ids(&bodies, body_to_doc_id))
+        })?;
         per_mode.insert(mode, result);
     }
-    ExperimentResult { fanout, per_mode, deferred_modes }
+    Ok(ExperimentResult { fanout, per_mode, deferred_modes })
 }
 
 /// Map retrieved bodies back to doc_ids, preserving rank; unmapped bodies are

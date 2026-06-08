@@ -149,12 +149,53 @@ fn negative_class_is_abstention_correctness() {
         queries: vec![gq("neg", QueryClass::Negative, vec![], &[])],
     };
     // Retrieval returns a result → false positive; negative is NOT in overall recall.
-    let res = evaluate_gold_set(&gold, &[HEADLINE_K], |_| ids(&["x"]));
+    let res = evaluate_gold_set(&gold, &[HEADLINE_K], |_| Ok(ids(&["x"]))).expect("no error");
     let k = &res[&HEADLINE_K];
     assert_eq!(k.overall.n, 0, "negative queries excluded from the recall mean");
     assert_eq!(k.negative.n, 1);
     assert_eq!(k.negative.abstained, 0);
     assert_eq!(k.negative.false_positive_rate(), 1.0);
+}
+
+// ── [P2] A failed retrieval is SURFACED, never scored ───────────────────────
+// codex §9 [P2]: when a runnable mode's retrieval errors, the runner used to
+// fold the `Err` into an empty result set — scoring it as ordinary misses, and a
+// NEGATIVE query as a (wrong) "correct abstention", so a real storage/retrieval
+// failure produced a valid-looking JSON report. The error must propagate
+// instead; only a successful empty retrieval (`Ok(vec![])`) is scored.
+
+#[test]
+fn failed_retrieval_is_surfaced_not_scored_as_misses_or_abstention() {
+    let gold = GoldSet {
+        corpus_hash: "deadbeef".to_string(),
+        qrels_version: "v1".to_string(),
+        note: None,
+        queries: vec![
+            gq("pos", QueryClass::Commitment, vec![ev("e1", "A", Necessity::Required)], &[]),
+            gq("neg", QueryClass::Negative, vec![], &[]),
+        ],
+    };
+
+    // A retrieval that ERRORS must abort with the real error — NOT be scored as a
+    // miss (positive query) nor a correct abstention (negative query).
+    let err = evaluate_gold_set(&gold, &K_LADDER, |_| {
+        Err("search: simulated storage failure".to_string())
+    })
+    .expect_err("a failed retrieval must surface, not score");
+    assert!(err.contains("simulated storage failure"), "real error surfaced verbatim: {err}");
+
+    // Contrast — the only path that changed is `Err`: a genuinely empty SUCCESS
+    // (`Ok(vec![])`) is still scored normally. The positive query is an honest
+    // miss; the negative query is a correct abstention.
+    let res =
+        evaluate_gold_set(&gold, &K_LADDER, |_| Ok(Vec::new())).expect("empty success scores");
+    for &k in &K_LADDER {
+        let r = &res[&k];
+        assert_eq!(r.overall.n, 1, "the positive query is scored at K={k}");
+        assert_eq!(r.overall.strict(), 0.0, "empty success = honest miss (not an error) at K={k}");
+        assert_eq!(r.negative.n, 1, "the negative query is counted at K={k}");
+        assert_eq!(r.negative.abstained, 1, "empty success = correct abstention at K={k}");
+    }
 }
 
 // ── (c)/(d) K-ladder + per-class aggregation ────────────────────────────────
@@ -172,11 +213,14 @@ fn evaluate_gold_set_aggregates_per_k_and_per_class() {
         ],
     };
     // c1 hits (A retrieved), a1 misses (C absent), n1 correctly abstains.
-    let res = evaluate_gold_set(&gold, &K_LADDER, |q| match q.query_id.as_deref() {
-        Some("c1") => ids(&["A", "z"]),
-        Some("a1") => ids(&["z"]),
-        _ => Vec::new(),
-    });
+    let res = evaluate_gold_set(&gold, &K_LADDER, |q| {
+        Ok(match q.query_id.as_deref() {
+            Some("c1") => ids(&["A", "z"]),
+            Some("a1") => ids(&["z"]),
+            _ => Vec::new(),
+        })
+    })
+    .expect("no error");
     for &k in &K_LADDER {
         let r = &res[&k];
         assert_eq!(r.overall.n, 2, "two non-negative queries at K={k}");
@@ -324,7 +368,8 @@ fn experiment_runner_mode_k_class_loop_wires_end_to_end() {
 
     let modes =
         [RetrievalMode::RrfHybrid, RetrievalMode::VectorOnly, RetrievalMode::FtsWriteCursor];
-    let result = run_experiment(&engine, &gold, &body_to_doc, &modes, &K_LADDER);
+    let result = run_experiment(&engine, &gold, &body_to_doc, &modes, &K_LADDER)
+        .expect("synthetic retrieval succeeds");
 
     // The two runnable modes ran; the FTS mode is recorded as deferred.
     assert_eq!(result.per_mode.len(), 2, "RrfHybrid + VectorOnly ran");
