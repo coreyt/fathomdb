@@ -400,6 +400,24 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-08 — ◆ HITL SEQUENCING: finish GA → IR in parallel (branch, merge post-GA) → fidelity-regression diagnosis AFTER IR
+
+- **HITL ruling on next-step sequencing:** (1) **finish 0.8.0 GA now** (GA-3 eu7 CI-assert green → codex §9 →
+  merge → ◆ GA sign-off → tag); (2) **start the IR-eval track NOW in parallel, on a branch** that is brought
+  back (merged) **only after the GA tag** (keep `main` clean for the tag); (3) **do NOT diagnose the ~4-pt
+  ANN/fidelity regression (0.937→0.896) until AFTER the IR work** — re-prioritized below IR (was the top 0.8.1
+  item; now IR goes first).
+- **In flight:** GA-3 (eu7 CI-based assert reconciliation, branch `slice-40-ga3-ci-assert-20260608T193649Z`,
+  baseline `c90213f`) — gated, no self-merge, codex §9 then merge.
+- **IR kickoff (parallel, branch, NO merge until post-GA):** IR-B = IR-1 **Phase 2 CODE** — build the eval
+  harness + fact-level **gold-set schema/scaffolding** per the signed `dev/design/ir-recall-measure.md`
+  (Evidence Recall@K, atomic-evidence units, K-ladder, per-class, pooled-qrels methodology), against the
+  current corpus as a DEV basis. **Corpus-dependent steps (final gold-set labeling + IR-C experiments) stay
+  DEFERRED to the COR-2 freeze** (owner-paced) — the branch builds the code that's ready now and parks the
+  labeling/experiments behind the freeze. Brought back after GA via codex §9 + merge.
+- **0.8.1 backlog order (revised):** IR-eval (IR-B→IR-C→IR-D→IR-2→◆IR-gate) FIRST; THEN the fidelity-regression
+  diagnosis (engine-version A/B → bisect the 0.7.x→0.8.0 vector path) + the eu7 harness perf opts (§4 roadmap).
+
 ### 2026-06-08 — ◆ HITL RULING: 0.8960 vector-stage fidelity ACCEPTED for 0.8.0 (within-CI / rounding-error of the 0.90 floor); floor constant UNCHANGED
 
 - **HITL decision (2026-06-08):** for **0.8.0**, the measured vector-stage recall@10 = **0.8960** (CI
