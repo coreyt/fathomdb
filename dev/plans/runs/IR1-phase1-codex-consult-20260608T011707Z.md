@@ -176,6 +176,28 @@ ledger entry (#7) was added. The authoritative §(f) and the ledger now agree.
 
 ---
 
+## Round 7 (re-review after the round-6 ledger alignment)
+
+**codex verdict:** one **substantive [P2]** on §(c) (no log/ledger findings this round):
+
+### [P2] Do not anchor @10 to a nonexistent search limit — `ir-recall-measure.md` §(c)
+> This states that `search()` has a production `LIMIT` of 10 and that @10 is "the number the
+> agent actually sees", but the current engine only limits the vector rerank phase to
+> `SEARCH_RERANK_LIMIT`; the text branch is unbounded by default and the fused
+> `SearchResult.results` is returned without a final truncation… reword this as the eval/headline
+> convention or add the actual final-limit contract.
+
+**Claude assessment:** ACCEPTED — verified: `SEARCH_RERANK_LIMIT`=10 caps only the **vector
+phase-2 rerank** (`lib.rs:3388`); the FTS/text branch SQL has no default `LIMIT`
+(`lib.rs:3905-3928`) and `search_inner` returns `SearchResult { results: <full fused> }` with no
+final truncation (`lib.rs:2206`). The draft's "production `LIMIT`=10 / the number the agent sees"
+was a materially inaccurate product-surface premise that would have misled Phase-3/4. **Resolved:**
+§(c) now frames @10 as the **eval/reporting convention** (aligned with the vector-rerank depth +
+eu7/eu8 K=10), with an explicit accuracy note that the API does **not** enforce a top-10 and the
+eval applies the @K cut itself.
+
+---
+
 ## Convergence
 
 The measure definition in `dev/design/ir-recall-measure.md` (a)–(g) is Claude↔codex

@@ -143,14 +143,21 @@ anchored to FathomDB's real surface:
 
 | K | Role | Anchor |
 |---|------|--------|
-| **@5** | UX-proximal (what the agent actually reads first) | — |
-| **@10** | **HEADLINE** — matches the production `search()` `LIMIT`=10 | `eu7_real_corpus_ac.rs:444-445`; eu8 `K=10` (`:70`) |
+| **@5** | UX-proximal (what the agent reads first) | — |
+| **@10** | **HEADLINE** — the eval/reporting convention; aligns with the vector-branch phase-2 rerank depth `SEARCH_RERANK_LIMIT`=10 and with eu7/eu8's K=10 | `lib.rs:3388` (`SEARCH_RERANK_LIMIT`); eu7 `:444-445`; eu8 `K=10` (`:70`) |
 | **@20** | near-UX / reranker-target band (when a real reranker lands) | charter §3 item 1 |
 | **@50** | **retriever-health** (is the evidence anywhere in the candidate pool?) | charter §5 #3 |
 | (@200) | deep diagnostic only — not a UX surface | charter §3 (chunk/fact note) |
 
-**Headline = Evidence Recall@10**, because 10 is FathomDB's production retrieval LIMIT — the
-number the agent actually sees. @50 is the **retriever-health** companion (separating "the
+**Headline = Evidence Recall@10**, as the **eval/reporting convention** — *not* an
+API-enforced result-set cap. **Accuracy note (codex round-7 [P2]):** `search()` does **not**
+truncate its final result set to 10. Only the **vector branch's phase-2 rerank** is limited to
+`SEARCH_RERANK_LIMIT`=10 (`lib.rs:3388`); the **FTS/text branch is unbounded by default** and the
+fused `SearchResult.results` is returned **without a final top-K truncation** (`lib.rs:2206`;
+`read_search_in_tx` returns the full fused list). So @10 is chosen as the headline because it is
+the natural UX-proximal depth *and* it matches the vector-rerank depth + the eu7/eu8 K=10 the rest
+of FathomDB's recall measurement already uses — the eval applies the @K cut itself; it must not
+assume the API enforces a top-10. @50 is the **retriever-health** companion (separating "the
 ranker buried it" from "retrieval never surfaced it"); @5 is the UX-proximal stress; @200 is a
 diagnostic ceiling, never a UX claim. **No threshold number is assigned to any K here** — the
 pass/fail lines are Phase-4 experiment output + IR-2/HITL.
@@ -351,10 +358,19 @@ disagreement):**
    once** to degenerate whole-document required units **only** as a fallback when evidence labels
    are absent (the eu8 reduction), never added on top of an evidence-labelled set.
 
-**Convergence:** reached after round 5; round 6 confirmed the methodology coherent with no
-remaining P1/P2 finding (round 1 = §(e) accuracy + cleanups; round 2 = doc coherent; round 3 =
-§(f) seed-then-pool; round 4 = schema/scoring consistency; round 5 = single-unit-of-relevance
-denominator). Every finding accepted and resolved; no definitional reversal.
+**codex consult (round 7) — one production-surface accuracy finding, accepted:**
+
+8. **[P2] §(c) anchored @10 to a nonexistent API `LIMIT`.** `search()` does not truncate to 10;
+   only the vector phase-2 rerank is capped at `SEARCH_RERANK_LIMIT`=10 and the fused result is
+   returned untruncated. **Resolved:** §(c) reframes @10 as the **eval/reporting convention**
+   (aligned with the vector-rerank depth + eu7/eu8 K=10), with an explicit note that the API does
+   not enforce a top-10 and the eval applies the @K cut itself.
+
+**Convergence:** the methodology in (a)–(g) is coherent and consensus-signed. Trajectory:
+round 1 = §(e) FTS accuracy + cleanups; round 2 = doc coherent; round 3 = §(f) seed-then-pool;
+round 4 = schema/scoring consistency; round 5 = single-unit-of-relevance denominator; round 6 =
+ledger alignment; round 7 = §(c) @10 reframed as a reporting convention. Every finding accepted
+and resolved; no definitional reversal.
 
 **Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
 actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are
