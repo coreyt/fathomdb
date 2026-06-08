@@ -170,6 +170,27 @@ not release-boundary):
    number. This FIDELITY gate is complementary to, not a substitute
    for, the IR/relevance axis (eu8 / IR-1).
 
+   **0.8.0 GA-3 amendment (◆ HITL ruling 2026-06-08) — the eu7
+   AC-075 assert is now a ONE-SIDED, CI-based gate; the 0.90 floor
+   CONSTANT is UNCHANGED.** The required real 0.8.0 re-measure came
+   back at vector-stage recall@10 = **0.896** (CI [0.864, 0.925],
+   σ 0.0157) @ N=7667 — the 0.937 above was a 0.7.x-inferred number,
+   so this is a real ~4pt 0.7.x→0.8.0 ANN-fidelity drop, NOT a
+   measurement artifact (`dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.json`).
+   The point-estimate hard-assert PANICKED at 0.896. HITL accepted
+   0.896 for 0.8.0 as "rounding-error territory" because the 0.90
+   floor lies INSIDE the 95% CI; the eu7 gate is reconciled to
+   reflect that: **PASS iff `recall_ci_hi >= 0.90`** (the recall 95%
+   CI is not significantly below the floor — one-sided, NOT a
+   two-sided floor-within-CI test). ci_hi 0.925 ≥ 0.90 ⇒ PASS. The
+   `CURRENT_FLOOR`/`AC013B_RECALL_FLOOR` constant stays 0.90 (NOT
+   lowered; the sentinel `ac_013b_floor_matches_adr` is unchanged).
+   The point-estimate-≥0.90 recovery (diagnose + restore the ~4pt
+   drop) is a **0.8.1** activity; this CI-form is a **0.8.0-scoped
+   reconciliation to be REVISITED after 0.8.0**. Predicate
+   `recall_ci_clears_floor` (`tests/support/recall_gate.rs`); see
+   `dev/plans/runs/STATUS-0.8.0.md` § 7.
+
    **0.7.2 amendment — floor VALIDATED against the real default
    embedder (keep 0.90).** The 0.90 floor is retained, now backed
    by the corrected real-embedder measurement rather than the

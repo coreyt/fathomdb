@@ -1,0 +1,66 @@
+{
+  "slice": "GA-3",
+  "title": "Reconcile eu7 AC-075 recall assert to a one-sided CI gate (floor constant unchanged)",
+  "branch": "slice-40-ga3-ci-assert-20260608T193649Z",
+  "baseline": "main@c90213f",
+  "worktree": "/tmp/fdb-ga3-20260608T193649Z",
+  "head_sha": "756712627ff66f4ea3107a0cbcafa952a8c315e1",
+  "status": "COMPLETE — committed, NOT merged/pushed (gated; orchestrator runs codex §9)",
+  "hitl_ruling": "2026-06-08 — 0.8960 ACCEPTED for 0.8.0 (0.90 floor inside the 95% CI); reconcile gate WITHOUT lowering the floor",
+  "assert_change": {
+    "file": "src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs",
+    "before": "assert!(*recall >= CURRENT_FLOOR, ...) — point-estimate hard-assert; PANICKED (exit 101) at the measured 0.896",
+    "after": "assert!(recall_gate::recall_ci_clears_floor(*recall_ci_hi, CURRENT_FLOOR), ...) — one-sided CI gate",
+    "threading": "verdict tuple widened (usize,bool,bool,f64,bool) -> (usize,bool,bool,f64,f64,bool) to carry rec.ci_hi (recall_ci_hi) from the same RecallResult; both verdict loops updated",
+    "sanity_floor": "SANITY_FLOOR (0.55) point-estimate check kept as-is",
+    "json_record": "ac_013b record now emits passes_current_floor_point_estimate AND passes_ci_gate_0_8_0_one_sided; point estimate + ci_lo/ci_hi/sigma still reported"
+  },
+  "gate_predicate": {
+    "file": "src/rust/crates/fathomdb-engine/tests/support/recall_gate.rs",
+    "fn": "recall_ci_clears_floor(ci_hi: f64, floor: f64) -> bool { ci_hi >= floor }",
+    "semantics": "PASS iff recall 95% bootstrap CI is NOT significantly below the floor (one-sided). Deliberately NOT a two-sided floor-within-[ci_lo,ci_hi] test.",
+    "shared": "included via #[path] in eu7_real_corpus_ac.rs and ga2_vector_stage_seam.rs"
+  },
+  "floor_constants_unchanged": {
+    "CURRENT_FLOOR_eu7": 0.90,
+    "AC013B_RECALL_FLOOR_perf_gates": 0.90,
+    "sentinel_ac_013b_floor_matches_adr": "unchanged (still pins 0.90)",
+    "confirmation": "no constant lowered; assert restored to a statistically-honest CI form, not weakened/removed"
+  },
+  "focused_test": {
+    "file": "src/rust/crates/fathomdb-engine/tests/ga2_vector_stage_seam.rs",
+    "test": "ga3_recall_ci_gate_passes_recorded_real_result_and_bites_below_floor",
+    "result": "PASS",
+    "cases": {
+      "passes_recorded_real": "mean=0.896 (< floor, guarded), ci_hi=0.925 >= 0.90 => gate PASSES",
+      "bites_below_floor": "mean=0.88, ci_hi=0.89 < 0.90 => gate FAILS (bites)",
+      "boundary": "ci_hi=0.90 PASSES (inclusive >=); ci_hi=0.8999 FAILS",
+      "not_two_sided": "ci_hi=0.957 (high recall, ci_lo>floor) PASSES — a two-sided test would wrongly fail it"
+    },
+    "run": "cargo test -p fathomdb-engine --test ga2_vector_stage_seam => 2 passed; 0 failed"
+  },
+  "compile": {
+    "ga2_vector_stage_seam": "ok (2 tests pass)",
+    "eu7_real_corpus_ac": "ok (--no-run under --features 'default-embedder operator'); not executed — real run is ~2.5h and infeasible/unnecessary here",
+    "cargo_fmt_check": "clean (pre-commit hook passed)"
+  },
+  "next_eu7_run": "The recorded perf-canonical eu7 result (N=7667 ci_hi 0.925) now satisfies the reconciled gate => the next eu7 run exits 0 (no panic). Source: dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.json.",
+  "doc_amendments": [
+    "dev/acceptance.md AC-075: added the 0.8.0 GA-3 asserting form (recall_ci_hi >= 0.90, one-sided), floor target 0.90 unchanged, cited measured point 0.896 / CI [0.864,0.925] => PASS, flagged point-estimate recovery + ~4pt drop diagnosis as 0.8.1, marked CI-form as 0.8.0-scoped reconciliation to be revisited after 0.8.0",
+    "dev/adr/ADR-0.7.0-vector-binary-quant.md §2 point 4: short amendment recording the one-sided CI gate (constant 0.90 unchanged), citing GA-signoff result + 0.8.1 recovery/revisit",
+    "eu7 module header recall-posture note + tier-2 verdict comment updated to the CI gate"
+  ],
+  "secondary_done": "eu7 JSON output repointed from dev/plans/runs/0.7.1-EU-7-measurements.json to dev/plans/runs/eu7-latest-measurements.json (one line) — stops clobbering the historical 0.937 anchor; the legacy anchor file is left intact",
+  "deviations": [
+    "Factored the gate predicate into a shared #[path] support module (tests/support/recall_gate.rs) so the SAME predicate the eu7 assert reads is the one unit-tested — avoids duplicating the gate logic in the focused test. Within the prompt's 'factor the gate predicate so it's unit-testable' instruction.",
+    "Renamed the JSON field passes_current_floor -> passes_current_floor_point_estimate and added passes_ci_gate_0_8_0_one_sided, since the asserting verdict is no longer the point estimate. Report-only data; no consumer code depends on the old field (only a comment string in eu8_ir_validation.rs references the legacy filename, unaffected)."
+  ],
+  "guardrails_confirmed": {
+    "floor_unchanged": true,
+    "engine_vector_path_untouched": true,
+    "recovery_suites_and_allowlist_byte_frozen": true,
+    "no_new_AC": true,
+    "no_schema_sdk_engine_behavior_change": true,
+    "no_push_or_tag": true
+  }
+}

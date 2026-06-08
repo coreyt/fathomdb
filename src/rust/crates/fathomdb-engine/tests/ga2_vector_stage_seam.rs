@@ -13,6 +13,9 @@
 //! This is the load-bearing demonstration that the eu7 repoint changes the SUT.
 //! No mocking of the database.
 
+#[path = "support/recall_gate.rs"]
+mod recall_gate;
+
 use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
@@ -99,4 +102,56 @@ fn vector_stage_seam_returns_pre_fusion_vector_branch() {
     );
 
     engine.close().unwrap();
+}
+
+/// GA-3 (0.8.0 Slice-40) — the reconciled AC-075 recall gate is a ONE-SIDED,
+/// CI-based test against the UNCHANGED 0.90 floor (`recall_ci_hi >= floor`),
+/// per the ◆ HITL ruling 2026-06-08. This unit-tests the gate predicate
+/// (`support/recall_gate.rs`) — the same function eu7's verdict loop asserts —
+/// WITHOUT the ~2.5 h real-embedder run.
+#[test]
+fn ga3_recall_ci_gate_passes_recorded_real_result_and_bites_below_floor() {
+    const FLOOR: f64 = 0.90;
+
+    // PASSES for the recorded perf-canonical eu7 real result: point estimate
+    // 0.8960, CI [0.8640, 0.9250]. The point estimate is BELOW 0.90 (the old
+    // point-estimate assert PANICKED here), but ci_hi 0.925 ≥ 0.90, so the
+    // recall CI is not significantly below the floor ⇒ the gate PASSES.
+    let recorded_mean = 0.896;
+    let recorded_ci_hi = 0.925;
+    assert!(
+        recorded_mean < FLOOR,
+        "guard: the recorded point estimate {recorded_mean} is below the {FLOOR} floor \
+         (this is exactly why the old point-estimate assert panicked)"
+    );
+    assert!(
+        recall_gate::recall_ci_clears_floor(recorded_ci_hi, FLOOR),
+        "GA-3 gate must PASS for the recorded real result (mean={recorded_mean}, \
+         ci_hi={recorded_ci_hi}): ci_hi >= {FLOOR} ⇒ CI not significantly below the floor"
+    );
+
+    // STILL FAILS (bites) for a CI entirely below the floor: a genuine
+    // regression where even the upper CI bound is short of 0.90.
+    let regressed_mean = 0.88;
+    let regressed_ci_hi = 0.89;
+    assert!(
+        !recall_gate::recall_ci_clears_floor(regressed_ci_hi, FLOOR),
+        "GA-3 gate must FAIL (bite) for a CI entirely below the floor \
+         (mean={regressed_mean}, ci_hi={regressed_ci_hi}): ci_hi < {FLOOR}"
+    );
+
+    // The floor boundary: ci_hi exactly at the floor PASSES (>= is inclusive).
+    assert!(recall_gate::recall_ci_clears_floor(0.90, FLOOR));
+    // ...and the smallest miss below it FAILS.
+    assert!(!recall_gate::recall_ci_clears_floor(0.8999, FLOOR));
+
+    // The one-sided gate must NOT degenerate into a two-sided "floor within
+    // [ci_lo, ci_hi]" test: a comfortably-high recall whose entire CI clears
+    // the floor (ci_lo > floor) must still PASS, not be wrongly failed.
+    let high_ci_hi = 0.957; // the 0.7.x anchor's ci_hi (ci_lo 0.913 > floor)
+    assert!(
+        recall_gate::recall_ci_clears_floor(high_ci_hi, FLOOR),
+        "one-sided gate must PASS a comfortably-high recall (ci_hi={high_ci_hi}); a \
+         two-sided floor-within-CI test would wrongly fail it"
+    );
 }
