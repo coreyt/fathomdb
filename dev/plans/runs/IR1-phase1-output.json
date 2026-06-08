@@ -1,0 +1,23 @@
+{
+  "_comment": "IR-1 Phase 1 closure record. The work agent (general-purpose, task a8c1d8801f1c374ee) completed the measure definition + the full Claude<->codex consensus loop and committed it (branch tip d1b8ac7, 9 commits, 8 codex rounds), but its in-process state was LOST when the parent Claude Code process exited before it wrote this output.json / merged. This output.json is therefore ORCHESTRATOR-AUTHORED at closure from the branch's own committed deliverables + consult log; no design content was added or altered by the orchestrator.",
+  "phase": "IR-1 Phase 1 (define the agentic IR/evidence-recall MEASURE + Claude<->codex consensus)",
+  "branch": "IR1-phase1-20260608T011707Z",
+  "branch_tip": "d1b8ac7",
+  "deliverables": {
+    "measure_doc": "dev/design/ir-recall-measure.md",
+    "consult_log": "dev/plans/runs/IR1-phase1-codex-consult-20260608T011707Z.md",
+    "doc_index_row": "added on-branch"
+  },
+  "consensus": "Claude<->codex CONVERGED over 8 codex rounds; every finding accepted and resolved; no definitional reversal required.",
+  "consensus_oneliner": "Primary measure = Evidence Recall@K (strict all-of + graded diagnostic, single required-only denominator); evidence-unit (atomic-fact) relevance with whole-doc as the degenerate case that reduces to eu8 doc-id recall; K-ladder @10/@20/@50 (@10 headline, eval convention); per-class structure (commitment/action/exact-fact/preference/exploratory/negative); modes FTS/vector/RRF/+reranker(stub)/+graph(0.8.1); seed-then-pool qrels on a pinned versioned snapshot; explicitly COMPLEMENTARY to eu7 fidelity, never a replacement.",
+  "residuals_to_hitl": "none",
+  "guardrails_honored": {
+    "no_ac_mint": true,
+    "no_gold_set_or_experiments": true,
+    "no_fabricated_thresholds": true,
+    "no_corpus_snapshot_commitment": true,
+    "eu7_ac075_untouched": true
+  },
+  "merged_to_main_by": "orchestrator (gate-and-merge at closure; work agent was lost before self-merge)",
+  "next_step_for_orchestrator": "This signed measure is the input to IR-1 Phase 2 (mint AC-077, gated on Slice-40 merge) and IR-1 Phases 3-4 (gold set + experiments, gated on B-1 corpus-basis ruling + corpus freeze), then IR-2. None block GA. Note: the measure doc independently restates the eu7 fidelity definition (ANN-quant vs exact-f32 vector top-10), which corroborates the GA-1 finding that 0.8.0's hybrid-RRF search() is mismatched to eu7's vector-only ground truth (see the reframed B-1)."
+}
