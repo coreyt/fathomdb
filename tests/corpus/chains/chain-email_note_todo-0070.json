@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "cecb453fe3dba32d"
+  ],
+  "chain_id": "chain-email_note_todo-0070",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "cecb453fe3dba32d",
+    "fa0fa84e8c004744",
+    "0b326acfdae8f723"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "cecb453fe3dba32d",
+        "fa0fa84e8c004744",
+        "0b326acfdae8f723"
+      ],
+      "query": "what was decided after the email about \"Drinks after work\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "0b326acfdae8f723",
+        "fa0fa84e8c004744"
+      ],
+      "query": "what's the follow-up action from barry.tycholiz@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "fa0fa84e8c004744",
+    "0b326acfdae8f723"
+  ]
+}

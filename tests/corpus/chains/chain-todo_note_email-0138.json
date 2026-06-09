@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "d6dd9e4eef5c0158"
+  ],
+  "chain_id": "chain-todo_note_email-0138",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "d6dd9e4eef5c0158",
+    "3417511260e1871d",
+    "b78268479a501fde"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d6dd9e4eef5c0158",
+        "3417511260e1871d",
+        "b78268479a501fde"
+      ],
+      "query": "what's the status of the tax-prep to-do about send dana email regarding insurance?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3417511260e1871d",
+    "b78268479a501fde"
+  ]
+}

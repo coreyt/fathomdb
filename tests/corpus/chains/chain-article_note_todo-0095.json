@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "293cd314a1ef31e6"
+  ],
+  "chain_id": "chain-article_note_todo-0095",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "293cd314a1ef31e6",
+    "10a77d2c3c5ff392",
+    "8f8a9e458ed25926"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "293cd314a1ef31e6",
+        "10a77d2c3c5ff392",
+        "8f8a9e458ed25926"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- Rescue teams on Friday found the wreckage of a plane that crashed Thurs\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "10a77d2c3c5ff392",
+    "8f8a9e458ed25926"
+  ]
+}

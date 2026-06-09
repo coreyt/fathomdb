@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "015f94ec55a6f944"
+  ],
+  "chain_id": "chain-article_note_email-0064",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "015f94ec55a6f944",
+    "6998f9469c37983e",
+    "0c795e3a766564e2"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "015f94ec55a6f944",
+        "6998f9469c37983e",
+        "0c795e3a766564e2"
+      ],
+      "query": "what's the context around \"TOYAKO, Japan (CNN) -- President Bush on Sunday defended his decision to attend \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "0c795e3a766564e2",
+        "6998f9469c37983e"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "6998f9469c37983e",
+    "0c795e3a766564e2"
+  ]
+}

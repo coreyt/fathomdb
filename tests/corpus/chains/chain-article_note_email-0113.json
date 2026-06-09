@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "b645826f723656b2"
+  ],
+  "chain_id": "chain-article_note_email-0113",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "b645826f723656b2",
+    "61c5796bf7a74615",
+    "25bb2687abfc8375"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b645826f723656b2",
+        "61c5796bf7a74615",
+        "25bb2687abfc8375"
+      ],
+      "query": "what's the context around \"NEW YORK (CNN) -- The venerable CBS soap opera \"Guiding Light\" will go dark in S\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "25bb2687abfc8375",
+        "61c5796bf7a74615"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "61c5796bf7a74615",
+    "25bb2687abfc8375"
+  ]
+}

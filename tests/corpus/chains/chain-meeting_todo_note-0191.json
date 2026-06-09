@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "10c0f24f2b6a4df8"
+  ],
+  "chain_id": "chain-meeting_todo_note-0191",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "10c0f24f2b6a4df8",
+    "4f4b046d828e3ff2",
+    "48c76721e52c87d1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "10c0f24f2b6a4df8",
+        "4f4b046d828e3ff2",
+        "48c76721e52c87d1"
+      ],
+      "query": "what did we decide in the meeting about \"QAConv conversation bc3-14\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "48c76721e52c87d1",
+        "10c0f24f2b6a4df8"
+      ],
+      "query": "did we end up reversing the meeting-followups decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4f4b046d828e3ff2",
+    "48c76721e52c87d1"
+  ]
+}

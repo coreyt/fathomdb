@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "6956a3766b470b4c",
+    "5595100c774e4e9b"
+  ],
+  "chain_id": "chain-email_meeting_todo-0024",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "6956a3766b470b4c",
+    "5595100c774e4e9b",
+    "9a54a1389b7d6368"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6956a3766b470b4c",
+        "5595100c774e4e9b",
+        "9a54a1389b7d6368"
+      ],
+      "query": "what's the action item from john.lavorato@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9a54a1389b7d6368"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "332d11ba7b57e50d"
+  ],
+  "chain_id": "chain-email_note_todo-0007",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "332d11ba7b57e50d",
+    "bfb360149b1e0fae",
+    "3c29d6a134a589db"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "332d11ba7b57e50d",
+        "bfb360149b1e0fae",
+        "3c29d6a134a589db"
+      ],
+      "query": "what was decided after the email about \"Re: Questia Media\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "3c29d6a134a589db",
+        "bfb360149b1e0fae"
+      ],
+      "query": "what's the follow-up action from mike.mcconnell@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "bfb360149b1e0fae",
+    "3c29d6a134a589db"
+  ]
+}

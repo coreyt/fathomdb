@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "cfa9400c6484e97f"
+  ],
+  "chain_id": "chain-email_note_todo-0077",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "cfa9400c6484e97f",
+    "2e3bedec3c0a431e",
+    "9b3a190a672a22ec"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "cfa9400c6484e97f",
+        "2e3bedec3c0a431e",
+        "9b3a190a672a22ec"
+      ],
+      "query": "what was decided after the email about \"RE: May 2002 Transmission from WALC\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "9b3a190a672a22ec",
+        "2e3bedec3c0a431e"
+      ],
+      "query": "what's the follow-up action from lisa.gang@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2e3bedec3c0a431e",
+    "9b3a190a672a22ec"
+  ]
+}

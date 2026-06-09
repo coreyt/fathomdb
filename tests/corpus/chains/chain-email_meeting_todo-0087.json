@@ -1,20 +1,20 @@
 {
   "anchor_doc_ids": [
     "ad6d18101c29e290",
-    "56eefd7a1b7c90f0"
+    "54a9db5c2c87dc32"
   ],
   "chain_id": "chain-email_meeting_todo-0087",
   "chain_shape": "EMAIL->MEETING->TODO",
   "doc_ids": [
     "ad6d18101c29e290",
-    "56eefd7a1b7c90f0",
+    "54a9db5c2c87dc32",
     "69038c5891d2afff"
   ],
   "ground_truth_queries": [
     {
       "expected_top_k_doc_ids": [
         "ad6d18101c29e290",
-        "56eefd7a1b7c90f0",
+        "54a9db5c2c87dc32",
         "69038c5891d2afff"
       ],
       "query": "what's the action item from sherri.sera@enron.com's thread that ended in a meeting?",

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8a16f529a70411a2"
+  ],
+  "chain_id": "chain-paper_note_todo-0125",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "8a16f529a70411a2",
+    "42e525da53c0d3b7",
+    "52f7e9b1ed97952c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8a16f529a70411a2",
+        "42e525da53c0d3b7",
+        "52f7e9b1ed97952c"
+      ],
+      "query": "what action came out of the paper about \"QA4IE: A Question Answering based Framework for Information Extraction\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "42e525da53c0d3b7",
+        "8a16f529a70411a2"
+      ],
+      "query": "where are my notes on the paper about \"QA4IE: A Question Answering based Framework for Information Extraction\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "42e525da53c0d3b7",
+    "52f7e9b1ed97952c"
+  ]
+}

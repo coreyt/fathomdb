@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c94d1479b8f4450d"
+  ],
+  "chain_id": "chain-article_note_todo-0158",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c94d1479b8f4450d",
+    "55b32ca170f7b077",
+    "0f47d7d51a37a4bf"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c94d1479b8f4450d",
+        "55b32ca170f7b077",
+        "0f47d7d51a37a4bf"
+      ],
+      "query": "what's on my to-do list from the article about \"GONAIVES, Haiti (CNN) -- Four major storms have raked the desperately poor count\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "55b32ca170f7b077",
+    "0f47d7d51a37a4bf"
+  ]
+}

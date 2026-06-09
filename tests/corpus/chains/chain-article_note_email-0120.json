@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4e2498c3309238d9"
+  ],
+  "chain_id": "chain-article_note_email-0120",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "4e2498c3309238d9",
+    "2495ca2f110cb789",
+    "c30b84182865e67d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4e2498c3309238d9",
+        "2495ca2f110cb789",
+        "c30b84182865e67d"
+      ],
+      "query": "what's the context around \"(CNN) -- At 51 years of age, Polish prime minister Donald Tusk has come a long w\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "c30b84182865e67d",
+        "2495ca2f110cb789"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2495ca2f110cb789",
+    "c30b84182865e67d"
+  ]
+}

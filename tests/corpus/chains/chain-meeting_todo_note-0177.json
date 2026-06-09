@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "56b9f700e20276a6"
+  ],
+  "chain_id": "chain-meeting_todo_note-0177",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "56b9f700e20276a6",
+    "333dd0387818ee56",
+    "4f631a0384cd12fe"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "56b9f700e20276a6",
+        "333dd0387818ee56",
+        "4f631a0384cd12fe"
+      ],
+      "query": "what did we decide in the meeting about \"QAConv conversation enron_wisrlab-569\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "4f631a0384cd12fe",
+        "56b9f700e20276a6"
+      ],
+      "query": "did we end up reversing the meeting-followups decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "333dd0387818ee56",
+    "4f631a0384cd12fe"
+  ]
+}

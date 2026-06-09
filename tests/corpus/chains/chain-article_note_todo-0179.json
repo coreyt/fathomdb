@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "04f69552b11c8196"
+  ],
+  "chain_id": "chain-article_note_todo-0179",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "04f69552b11c8196",
+    "21a7d577478b9d08",
+    "6d9b9855eaea0e05"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "04f69552b11c8196",
+        "21a7d577478b9d08",
+        "6d9b9855eaea0e05"
+      ],
+      "query": "what's on my to-do list from the article about \"MANILA, Philippines (CNN) -- Dramatically played out on live television, an oppo\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "21a7d577478b9d08",
+    "6d9b9855eaea0e05"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "d00ed98050f83944"
+  ],
+  "chain_id": "chain-article_note_email-0015",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "d00ed98050f83944",
+    "e6707a12349673c1",
+    "1c4584556cce33da"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d00ed98050f83944",
+        "e6707a12349673c1",
+        "1c4584556cce33da"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN)  -- The nation's largest publicly owned utility company may be \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "1c4584556cce33da",
+        "e6707a12349673c1"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "e6707a12349673c1",
+    "1c4584556cce33da"
+  ]
+}

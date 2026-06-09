@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8ae2e9c6ac096f92"
+  ],
+  "chain_id": "chain-paper_note_todo-0153",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "8ae2e9c6ac096f92",
+    "148e72bcdb3dda4e",
+    "2d759f2046a6c85b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8ae2e9c6ac096f92",
+        "148e72bcdb3dda4e",
+        "2d759f2046a6c85b"
+      ],
+      "query": "what action came out of the paper about \"Enriching BERT with Knowledge Graph Embeddings for Document Classification\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "148e72bcdb3dda4e",
+        "8ae2e9c6ac096f92"
+      ],
+      "query": "where are my notes on the paper about \"Enriching BERT with Knowledge Graph Embeddings for Document Classification\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "148e72bcdb3dda4e",
+    "2d759f2046a6c85b"
+  ]
+}

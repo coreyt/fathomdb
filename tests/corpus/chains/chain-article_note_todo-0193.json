@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c858a3fa27bdc372"
+  ],
+  "chain_id": "chain-article_note_todo-0193",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c858a3fa27bdc372",
+    "8f92ff6fb51781ab",
+    "d31c5da8cbf3ce00"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c858a3fa27bdc372",
+        "8f92ff6fb51781ab",
+        "d31c5da8cbf3ce00"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- A Philadelphia, Pennsylvania, pet store expecting a shipment of exotic \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "8f92ff6fb51781ab",
+    "d31c5da8cbf3ce00"
+  ]
+}

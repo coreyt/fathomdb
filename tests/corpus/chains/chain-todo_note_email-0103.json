@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "97bb44841441f631"
+  ],
+  "chain_id": "chain-todo_note_email-0103",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "97bb44841441f631",
+    "962ec1cbc044672a",
+    "f66fd84ed8db3c52"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "97bb44841441f631",
+        "962ec1cbc044672a",
+        "f66fd84ed8db3c52"
+      ],
+      "query": "what's the status of the anniversary to-do about Acquire objects needed to perform ceremony customs, i.e. drinking wine from a sh?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "962ec1cbc044672a",
+    "f66fd84ed8db3c52"
+  ]
+}

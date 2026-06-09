@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "125d0e61f6bec93f"
+  ],
+  "chain_id": "chain-article_note_email-0141",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "125d0e61f6bec93f",
+    "20fda759e6851eda",
+    "6682b97ac6d231cc"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "125d0e61f6bec93f",
+        "20fda759e6851eda",
+        "6682b97ac6d231cc"
+      ],
+      "query": "what's the context around \"BEIJING, China (CNN) -- The head of China's quality watchdog is reported to have\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6682b97ac6d231cc",
+        "20fda759e6851eda"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "20fda759e6851eda",
+    "6682b97ac6d231cc"
+  ]
+}

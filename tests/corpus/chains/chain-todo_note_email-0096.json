@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c7367bbd43abca3f"
+  ],
+  "chain_id": "chain-todo_note_email-0096",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "c7367bbd43abca3f",
+    "2065513127f85e40",
+    "48718a8b26b48528"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c7367bbd43abca3f",
+        "2065513127f85e40",
+        "48718a8b26b48528"
+      ],
+      "query": "what's the status of the Q1-launch to-do about Schedule appointments with caterers, if necessary?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2065513127f85e40",
+    "48718a8b26b48528"
+  ]
+}

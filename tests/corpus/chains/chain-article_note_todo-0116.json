@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "11c0d5598673fc4b"
+  ],
+  "chain_id": "chain-article_note_todo-0116",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "11c0d5598673fc4b",
+    "b0479a2e34be206e",
+    "adceded554cb74db"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "11c0d5598673fc4b",
+        "b0479a2e34be206e",
+        "adceded554cb74db"
+      ],
+      "query": "what's on my to-do list from the article about \"UNITED NATIONS (CNN) -- U.N\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b0479a2e34be206e",
+    "adceded554cb74db"
+  ]
+}

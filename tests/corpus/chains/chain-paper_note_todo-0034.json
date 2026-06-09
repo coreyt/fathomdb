@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9834b4f893b58667"
+  ],
+  "chain_id": "chain-paper_note_todo-0034",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "9834b4f893b58667",
+    "a4bd61a733348ae5",
+    "98f742cac98ec6dc"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9834b4f893b58667",
+        "a4bd61a733348ae5",
+        "98f742cac98ec6dc"
+      ],
+      "query": "what action came out of the paper about \"BERT has a Mouth, and It Must Speak: BERT as a Markov Random Field Language Mode\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a4bd61a733348ae5",
+        "9834b4f893b58667"
+      ],
+      "query": "where are my notes on the paper about \"BERT has a Mouth, and It Must Speak: BERT as a Markov Random Field Language Mode\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a4bd61a733348ae5",
+    "98f742cac98ec6dc"
+  ]
+}

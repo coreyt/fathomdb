@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "2834a05dcaf6109f"
+  ],
+  "chain_id": "chain-todo_note_email-0068",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "2834a05dcaf6109f",
+    "448f2582267d1628",
+    "da586912a9f4e1f0"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2834a05dcaf6109f",
+        "448f2582267d1628",
+        "da586912a9f4e1f0"
+      ],
+      "query": "what's the status of the tax-prep to-do about pay student loan?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "448f2582267d1628",
+    "da586912a9f4e1f0"
+  ]
+}

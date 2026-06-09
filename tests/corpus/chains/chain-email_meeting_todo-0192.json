@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "5685e089a3f422e6",
+    "07e1705b4f48fec6"
+  ],
+  "chain_id": "chain-email_meeting_todo-0192",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "5685e089a3f422e6",
+    "07e1705b4f48fec6",
+    "2b0eebf5b3c34341"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5685e089a3f422e6",
+        "07e1705b4f48fec6",
+        "2b0eebf5b3c34341"
+      ],
+      "query": "what's the action item from sandra.brawner@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2b0eebf5b3c34341"
+  ]
+}

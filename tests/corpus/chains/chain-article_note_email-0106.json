@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "2b5405b1eaef2df1"
+  ],
+  "chain_id": "chain-article_note_email-0106",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "2b5405b1eaef2df1",
+    "114c9ae3f25596aa",
+    "402d18ef1a28177e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2b5405b1eaef2df1",
+        "114c9ae3f25596aa",
+        "402d18ef1a28177e"
+      ],
+      "query": "what's the context around \"(CNN) -- Delta Air Lines and American Airlines announced Thursday the cancellati\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "402d18ef1a28177e",
+        "114c9ae3f25596aa"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "114c9ae3f25596aa",
+    "402d18ef1a28177e"
+  ]
+}

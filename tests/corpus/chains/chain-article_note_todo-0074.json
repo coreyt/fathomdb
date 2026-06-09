@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "e1c5efba860f16cd"
+  ],
+  "chain_id": "chain-article_note_todo-0074",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "e1c5efba860f16cd",
+    "b5130f8eb04de9e9",
+    "14b807f8760f8b19"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "e1c5efba860f16cd",
+        "b5130f8eb04de9e9",
+        "14b807f8760f8b19"
+      ],
+      "query": "what's on my to-do list from the article about \"CERN, Switzerland (CNN) -- Scientists Wednesday applauded as one of the most amb\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b5130f8eb04de9e9",
+    "14b807f8760f8b19"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "6b9372ceaf9cfb5e"
+  ],
+  "chain_id": "chain-article_note_email-0197",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "6b9372ceaf9cfb5e",
+    "3c30578971a147e8",
+    "5c1d8ffc0ddb4622"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6b9372ceaf9cfb5e",
+        "3c30578971a147e8",
+        "5c1d8ffc0ddb4622"
+      ],
+      "query": "what's the context around \"(CNN) -- German zookeepers in Nuremberg will bottle-feed a four-week-old polar b\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5c1d8ffc0ddb4622",
+        "3c30578971a147e8"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3c30578971a147e8",
+    "5c1d8ffc0ddb4622"
+  ]
+}

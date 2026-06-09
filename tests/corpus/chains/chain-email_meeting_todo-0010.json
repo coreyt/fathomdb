@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "6b572fc9907fad79",
+    "57e6603ff1803242"
+  ],
+  "chain_id": "chain-email_meeting_todo-0010",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "6b572fc9907fad79",
+    "57e6603ff1803242",
+    "f4b7a6fd8c19c84e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6b572fc9907fad79",
+        "57e6603ff1803242",
+        "f4b7a6fd8c19c84e"
+      ],
+      "query": "what's the action item from jeffrey.shankman@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f4b7a6fd8c19c84e"
+  ]
+}

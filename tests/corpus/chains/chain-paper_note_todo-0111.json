@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "046d046e7bbe2cc6"
+  ],
+  "chain_id": "chain-paper_note_todo-0111",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "046d046e7bbe2cc6",
+    "fc47c9ab6045a0b9",
+    "ecabefcafd303a31"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "046d046e7bbe2cc6",
+        "fc47c9ab6045a0b9",
+        "ecabefcafd303a31"
+      ],
+      "query": "what action came out of the paper about \"Reducing Gender Bias in Word-Level Language Models with a Gender-Equalizing Loss\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "fc47c9ab6045a0b9",
+        "046d046e7bbe2cc6"
+      ],
+      "query": "where are my notes on the paper about \"Reducing Gender Bias in Word-Level Language Models with a Gender-Equalizing Loss\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "fc47c9ab6045a0b9",
+    "ecabefcafd303a31"
+  ]
+}

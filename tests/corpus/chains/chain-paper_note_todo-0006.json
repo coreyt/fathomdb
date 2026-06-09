@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "35c491041416fbf8"
+  ],
+  "chain_id": "chain-paper_note_todo-0006",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "35c491041416fbf8",
+    "b8c29f9efe125512",
+    "5b4b704feb15ab31"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "35c491041416fbf8",
+        "b8c29f9efe125512",
+        "5b4b704feb15ab31"
+      ],
+      "query": "what action came out of the paper about \"Multi-modal Dense Video Captioning\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "b8c29f9efe125512",
+        "35c491041416fbf8"
+      ],
+      "query": "where are my notes on the paper about \"Multi-modal Dense Video Captioning\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b8c29f9efe125512",
+    "5b4b704feb15ab31"
+  ]
+}

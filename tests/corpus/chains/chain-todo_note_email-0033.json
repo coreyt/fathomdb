@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "b1f9337b7f782792"
+  ],
+  "chain_id": "chain-todo_note_email-0033",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "b1f9337b7f782792",
+    "2343891fc0bf873e",
+    "3a93ec810bd9bb85"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b1f9337b7f782792",
+        "2343891fc0bf873e",
+        "3a93ec810bd9bb85"
+      ],
+      "query": "what's the status of the anniversary to-do about organize closets?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2343891fc0bf873e",
+    "3a93ec810bd9bb85"
+  ]
+}

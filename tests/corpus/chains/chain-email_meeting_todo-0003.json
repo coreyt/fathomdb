@@ -1,20 +1,20 @@
 {
   "anchor_doc_ids": [
     "d336c3c031f5b0a8",
-    "7182a53081c3a2d8"
+    "6ebfaa5c7020cd0e"
   ],
   "chain_id": "chain-email_meeting_todo-0003",
   "chain_shape": "EMAIL->MEETING->TODO",
   "doc_ids": [
     "d336c3c031f5b0a8",
-    "7182a53081c3a2d8",
+    "6ebfaa5c7020cd0e",
     "92fd5c7e2924c602"
   ],
   "ground_truth_queries": [
     {
       "expected_top_k_doc_ids": [
         "d336c3c031f5b0a8",
-        "7182a53081c3a2d8",
+        "6ebfaa5c7020cd0e",
         "92fd5c7e2924c602"
       ],
       "query": "what's the action item from darron.giron@enron.com's thread that ended in a meeting?",

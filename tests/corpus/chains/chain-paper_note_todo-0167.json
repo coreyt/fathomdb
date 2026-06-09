@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5c6dcdf082b2bda0"
+  ],
+  "chain_id": "chain-paper_note_todo-0167",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "5c6dcdf082b2bda0",
+    "fb777b0a6b6b2185",
+    "31a784dd97b9688d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5c6dcdf082b2bda0",
+        "fb777b0a6b6b2185",
+        "31a784dd97b9688d"
+      ],
+      "query": "what action came out of the paper about \"Italian Event Detection Goes Deep Learning\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "fb777b0a6b6b2185",
+        "5c6dcdf082b2bda0"
+      ],
+      "query": "where are my notes on the paper about \"Italian Event Detection Goes Deep Learning\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "fb777b0a6b6b2185",
+    "31a784dd97b9688d"
+  ]
+}

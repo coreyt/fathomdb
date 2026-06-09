@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "25f330acf8c3912e"
+  ],
+  "chain_id": "chain-email_note_todo-0014",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "25f330acf8c3912e",
+    "035cac9c60ec79b1",
+    "6aff3e18f0edcb11"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "25f330acf8c3912e",
+        "035cac9c60ec79b1",
+        "6aff3e18f0edcb11"
+      ],
+      "query": "what was decided after the email about \"Tuesday\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6aff3e18f0edcb11",
+        "035cac9c60ec79b1"
+      ],
+      "query": "what's the follow-up action from darron.giron@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "035cac9c60ec79b1",
+    "6aff3e18f0edcb11"
+  ]
+}

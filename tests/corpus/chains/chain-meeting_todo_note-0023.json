@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "b9cc863c2e0eeb64"
+  ],
+  "chain_id": "chain-meeting_todo_note-0023",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "b9cc863c2e0eeb64",
+    "f39bee599198766d",
+    "e50734dfc28b414c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b9cc863c2e0eeb64",
+        "f39bee599198766d",
+        "e50734dfc28b414c"
+      ],
+      "query": "what did we decide in the meeting about \"Product meeting: ES2003b\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "e50734dfc28b414c",
+        "b9cc863c2e0eeb64"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f39bee599198766d",
+    "e50734dfc28b414c"
+  ]
+}

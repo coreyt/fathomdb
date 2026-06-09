@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "8f55ec626e576932"
+  ],
+  "chain_id": "chain-todo_note_email-0180",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "8f55ec626e576932",
+    "782ee346b457e592",
+    "acedd6deb75da71d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8f55ec626e576932",
+        "782ee346b457e592",
+        "acedd6deb75da71d"
+      ],
+      "query": "what's the status of the personal to-do about Call John McCain's team?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "782ee346b457e592",
+    "acedd6deb75da71d"
+  ]
+}

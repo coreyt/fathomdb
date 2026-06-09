@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "06efaa695739cea3"
+  ],
+  "chain_id": "chain-email_note_todo-0175",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "06efaa695739cea3",
+    "d9c787156dec1e20",
+    "a4af60c79ba1f1f4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "06efaa695739cea3",
+        "d9c787156dec1e20",
+        "a4af60c79ba1f1f4"
+      ],
+      "query": "what was decided after the email about \"Your Approval is Overdue: Access Request for steve.hall@enron.com\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a4af60c79ba1f1f4",
+        "d9c787156dec1e20"
+      ],
+      "query": "what's the follow-up action from elizabeth.sager@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d9c787156dec1e20",
+    "a4af60c79ba1f1f4"
+  ]
+}

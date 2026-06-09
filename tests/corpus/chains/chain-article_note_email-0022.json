@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "542d5c8110b3a435"
+  ],
+  "chain_id": "chain-article_note_email-0022",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "542d5c8110b3a435",
+    "14a91ffe7002a248",
+    "fa2cd61637edb28f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "542d5c8110b3a435",
+        "14a91ffe7002a248",
+        "fa2cd61637edb28f"
+      ],
+      "query": "what's the context around \"BOGOTA, Colombia (CNN) -- The commander of the Revolutionary Armed Forces of Col\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "fa2cd61637edb28f",
+        "14a91ffe7002a248"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "14a91ffe7002a248",
+    "fa2cd61637edb28f"
+  ]
+}

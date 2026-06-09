@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "2a234d7a7fa2f8b2",
+    "28c373383206f436"
+  ],
+  "chain_id": "chain-email_meeting_todo-0017",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "2a234d7a7fa2f8b2",
+    "28c373383206f436",
+    "059d7fc7bf42cd57"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2a234d7a7fa2f8b2",
+        "28c373383206f436",
+        "059d7fc7bf42cd57"
+      ],
+      "query": "what's the action item from gerald.nemec@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "059d7fc7bf42cd57"
+  ]
+}

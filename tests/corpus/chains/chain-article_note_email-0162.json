@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "91d16ed03d7cc226"
+  ],
+  "chain_id": "chain-article_note_email-0162",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "91d16ed03d7cc226",
+    "1e227403d8a14c93",
+    "8934dd013571184d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "91d16ed03d7cc226",
+        "1e227403d8a14c93",
+        "8934dd013571184d"
+      ],
+      "query": "what's the context around \"TOKYO, Japan (CNN) -- A Japanese food corporation has recalled five products aft\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "8934dd013571184d",
+        "1e227403d8a14c93"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1e227403d8a14c93",
+    "8934dd013571184d"
+  ]
+}

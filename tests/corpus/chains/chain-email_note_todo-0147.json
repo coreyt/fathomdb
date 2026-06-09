@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "f96956c2ea6cee4e"
+  ],
+  "chain_id": "chain-email_note_todo-0147",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "f96956c2ea6cee4e",
+    "d9070cfcba279522",
+    "53a5384b561efa3e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "f96956c2ea6cee4e",
+        "d9070cfcba279522",
+        "53a5384b561efa3e"
+      ],
+      "query": "what was decided after the email about \"Subject: Ryan, did you go to school with...? Sender: memories@corp.classmates.co\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "53a5384b561efa3e",
+        "d9070cfcba279522"
+      ],
+      "query": "what's the follow-up action from slinger-r?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d9070cfcba279522",
+    "53a5384b561efa3e"
+  ]
+}

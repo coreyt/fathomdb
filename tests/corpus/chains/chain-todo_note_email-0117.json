@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "57ae4f9bedb5aa85"
+  ],
+  "chain_id": "chain-todo_note_email-0117",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "57ae4f9bedb5aa85",
+    "c477c3b3a09c7118",
+    "0f7d4b7b66f65444"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "57ae4f9bedb5aa85",
+        "c477c3b3a09c7118",
+        "0f7d4b7b66f65444"
+      ],
+      "query": "what's the status of the tax-prep to-do about glue pumpkin?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c477c3b3a09c7118",
+    "0f7d4b7b66f65444"
+  ]
+}

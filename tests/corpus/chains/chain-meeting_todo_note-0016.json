@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "497e5f8321ed6cdf"
+  ],
+  "chain_id": "chain-meeting_todo_note-0016",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "497e5f8321ed6cdf",
+    "ce44da726b17c65d",
+    "7bf80312096b0d25"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "497e5f8321ed6cdf",
+        "ce44da726b17c65d",
+        "7bf80312096b0d25"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the discussion on LPC\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "7bf80312096b0d25",
+        "497e5f8321ed6cdf"
+      ],
+      "query": "did we end up reversing the academic decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ce44da726b17c65d",
+    "7bf80312096b0d25"
+  ]
+}

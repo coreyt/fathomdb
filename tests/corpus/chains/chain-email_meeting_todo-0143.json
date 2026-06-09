@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "37bef1191c8a7479",
+    "d9219282e7bb1819"
+  ],
+  "chain_id": "chain-email_meeting_todo-0143",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "37bef1191c8a7479",
+    "d9219282e7bb1819",
+    "b4237c61019598b6"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "37bef1191c8a7479",
+        "d9219282e7bb1819",
+        "b4237c61019598b6"
+      ],
+      "query": "what's the action item from phillip.love@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b4237c61019598b6"
+  ]
+}

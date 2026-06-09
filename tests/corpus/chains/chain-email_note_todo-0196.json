@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8b067f463b79011c"
+  ],
+  "chain_id": "chain-email_note_todo-0196",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "8b067f463b79011c",
+    "ebeec742fd1b7e22",
+    "5891acbe8c37c5db"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8b067f463b79011c",
+        "ebeec742fd1b7e22",
+        "5891acbe8c37c5db"
+      ],
+      "query": "what was decided after the email about \"When you get a chance call me.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5891acbe8c37c5db",
+        "ebeec742fd1b7e22"
+      ],
+      "query": "what's the follow-up action from t..lucci@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ebeec742fd1b7e22",
+    "5891acbe8c37c5db"
+  ]
+}

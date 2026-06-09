@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4f20832143b62761"
+  ],
+  "chain_id": "chain-article_note_email-0050",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "4f20832143b62761",
+    "f9429e9a3280873d",
+    "00040d40e2015166"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4f20832143b62761",
+        "f9429e9a3280873d",
+        "00040d40e2015166"
+      ],
+      "query": "what's the context around \"(GameTap.com) -- Everyone wants to be more physically fit, but the toughest thin\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "00040d40e2015166",
+        "f9429e9a3280873d"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f9429e9a3280873d",
+    "00040d40e2015166"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "0eeb701f7ea8e566"
+  ],
+  "chain_id": "chain-paper_note_todo-0118",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "0eeb701f7ea8e566",
+    "5f8b28a5b61b0fb6",
+    "0da3ba98e7710fe0"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "0eeb701f7ea8e566",
+        "5f8b28a5b61b0fb6",
+        "0da3ba98e7710fe0"
+      ],
+      "query": "what action came out of the paper about \"Linguistic Input Features Improve Neural Machine Translation\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5f8b28a5b61b0fb6",
+        "0eeb701f7ea8e566"
+      ],
+      "query": "where are my notes on the paper about \"Linguistic Input Features Improve Neural Machine Translation\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5f8b28a5b61b0fb6",
+    "0da3ba98e7710fe0"
+  ]
+}

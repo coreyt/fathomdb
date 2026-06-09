@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "6e10f7b37174729f"
+  ],
+  "chain_id": "chain-article_note_todo-0011",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "6e10f7b37174729f",
+    "2a5a657c68f0a841",
+    "7913f3567078e33d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6e10f7b37174729f",
+        "2a5a657c68f0a841",
+        "7913f3567078e33d"
+      ],
+      "query": "what's on my to-do list from the article about \"WASHINGTON (CNN)  -- Former Republican Sen\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2a5a657c68f0a841",
+    "7913f3567078e33d"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "973977b130d59be7"
+  ],
+  "chain_id": "chain-todo_note_email-0152",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "973977b130d59be7",
+    "fa8f5dfabf6fe712",
+    "edc15e9896eaea9c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "973977b130d59be7",
+        "fa8f5dfabf6fe712",
+        "edc15e9896eaea9c"
+      ],
+      "query": "what's the status of the compliance-audit to-do about paper for the upstairs desk?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "fa8f5dfabf6fe712",
+    "edc15e9896eaea9c"
+  ]
+}

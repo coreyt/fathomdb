@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5780626bf9a7bcf3"
+  ],
+  "chain_id": "chain-paper_note_todo-0090",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "5780626bf9a7bcf3",
+    "3e78d071052bdfd1",
+    "0102f1eee6a4710a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5780626bf9a7bcf3",
+        "3e78d071052bdfd1",
+        "0102f1eee6a4710a"
+      ],
+      "query": "what action came out of the paper about \"Back Attention Knowledge Transfer for Low-resource Named Entity Recognition\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "3e78d071052bdfd1",
+        "5780626bf9a7bcf3"
+      ],
+      "query": "where are my notes on the paper about \"Back Attention Knowledge Transfer for Low-resource Named Entity Recognition\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3e78d071052bdfd1",
+    "0102f1eee6a4710a"
+  ]
+}
