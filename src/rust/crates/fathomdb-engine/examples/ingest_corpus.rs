@@ -264,6 +264,26 @@ fn run(args: Args) -> Result<(), String> {
     let docs = load_all_docs(&args.jsonl_dir)?;
     eprintln!("loaded {} unique docs", docs.len());
 
+    // On the BGE path, register every source_type as a vector-indexed kind
+    // BEFORE writing nodes — the engine only embeds (via the open embedder's
+    // async projection) for kinds present in _fathomdb_vector_kinds. Without
+    // this, nodes ingest with FTS only and NO vectors are computed. Registering
+    // each kind (rather than remapping to a single "doc" kind like EU-7) keeps
+    // the corpus searchable across all six source types. `configure_vector_kind`
+    // is the same (hidden) API EU-7 uses; vector-indexing arbitrary kinds is not
+    // yet production-surfaced.
+    if args.embedder == "bge" {
+        let mut kinds: Vec<String> =
+            docs.iter().map(|d| d.source_type.clone()).collect::<HashSet<_>>().into_iter().collect();
+        kinds.sort();
+        for kind in &kinds {
+            engine
+                .configure_vector_kind_for_test(kind)
+                .map_err(|e| format!("configure_vector_kind({kind}): {e:?}"))?;
+        }
+        eprintln!("registered {} vector-indexed kinds: {kinds:?}", kinds.len());
+    }
+
     let doc_ids: HashSet<String> = docs.iter().map(|d| d.doc_id.clone()).collect();
     eprintln!("checking which docs are already in the DB (idempotency)...");
     let existing = existing_source_ids(&engine, &docs)?;
