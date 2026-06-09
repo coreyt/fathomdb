@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use fathomdb_engine::{Engine, PreparedWrite};
+use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
 use serde_json::Value;
 
 const NODE_BATCH: usize = 200;
@@ -66,28 +66,42 @@ struct Args {
     db: PathBuf,
     jsonl_dir: PathBuf,
     chains_dir: PathBuf,
+    /// "default" → `Engine::open` (identity-only, no vectors; FTS/graph
+    /// ingest, the historical behaviour). "bge" → `open_with_choice(Default)`,
+    /// materializing the pinned `CandleBgeEmbedder` so vectors are computed at
+    /// ingest. The "bge" path requires the `default-embedder` Cargo feature
+    /// (else it fails closed at open with a typed embedder error).
+    embedder: String,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut db = PathBuf::from("tests/corpus/.cache/db");
     let mut jsonl_dir = PathBuf::from("data/corpus-data/raw");
     let mut chains_dir = PathBuf::from("tests/corpus/chains");
+    let mut embedder = String::from("default");
     let mut it = env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--db" => db = it.next().ok_or("--db needs a path")?.into(),
             "--jsonl-dir" => jsonl_dir = it.next().ok_or("--jsonl-dir needs a path")?.into(),
             "--chains-dir" => chains_dir = it.next().ok_or("--chains-dir needs a path")?.into(),
+            "--embedder" => {
+                embedder = it.next().ok_or("--embedder needs a value (default|bge)")?;
+                if embedder != "default" && embedder != "bge" {
+                    return Err(format!("--embedder must be `default` or `bge`, got `{embedder}`"));
+                }
+            }
             "--help" | "-h" => {
                 eprintln!(
-                    "Usage: ingest_corpus [--db PATH] [--jsonl-dir PATH] [--chains-dir PATH]"
+                    "Usage: ingest_corpus [--db PATH] [--jsonl-dir PATH] [--chains-dir PATH] \
+                     [--embedder default|bge]"
                 );
                 std::process::exit(0);
             }
             other => return Err(format!("unknown arg: {other}")),
         }
     }
-    Ok(Args { db, jsonl_dir, chains_dir })
+    Ok(Args { db, jsonl_dir, chains_dir, embedder })
 }
 
 #[derive(Debug)]
@@ -233,8 +247,17 @@ fn run(args: Args) -> Result<(), String> {
     if let Some(parent) = db_path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create db parent: {e}"))?;
     }
-    eprintln!("opening engine at {}", db_path.display());
-    let opened = Engine::open(&db_path).map_err(|e| format!("open: {e:?}"))?;
+    eprintln!("opening engine at {} (embedder={})", db_path.display(), args.embedder);
+    let opened = match args.embedder.as_str() {
+        // Materialize the pinned BGE embedder so vectors are computed at ingest
+        // (requires --features default-embedder; downloads ~135 MB on a cold
+        // cache, then local-IO). This is the path that produces a real,
+        // vector-searchable corpus DB.
+        "bge" => Engine::open_with_choice(&db_path, EmbedderChoice::Default)
+            .map_err(|e| format!("open (bge): {e:?}"))?,
+        // Historical identity-only ingest (nodes/edges/FTS, no vectors).
+        _ => Engine::open(&db_path).map_err(|e| format!("open: {e:?}"))?,
+    };
     let engine = opened.engine;
 
     eprintln!("loading docs from {}", args.jsonl_dir.display());
@@ -337,7 +360,11 @@ fn run(args: Args) -> Result<(), String> {
         }
     }
 
-    engine.drain(60_000).map_err(|e| format!("drain: {e:?}"))?;
+    // The noop/identity ingest projects ~instantly; the BGE path must embed
+    // every node through the async projection workers, so give it a generous
+    // (but bounded) budget — drain returns as soon as the queue is empty.
+    let drain_ms: u64 = if args.embedder == "bge" { 3_600_000 } else { 60_000 };
+    engine.drain(drain_ms).map_err(|e| format!("drain: {e:?}"))?;
     let counters = engine.counters();
     engine.close().map_err(|e| format!("close: {e:?}"))?;
 
