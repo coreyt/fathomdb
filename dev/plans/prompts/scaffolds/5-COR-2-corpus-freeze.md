@@ -15,27 +15,43 @@ corpus. Owner-managed, out-of-band; **does not gate GA** (already shipped) — i
 - Rationale: the doc count was never the real gate; the real gates are **reproducibility (to freeze)** and
   **gold-set labeling (to measure)**.
 
+## ⚠️ Network requirement (why this is owner/CI work, not sandbox work)
+The acquisitions pull from **HuggingFace** (cnn_dailymail, enronqa), **CMU** (enron), and **AWS S3** (qasper).
+GitHub-only egress policies **403** on those hosts — verified 2026-06-09: 5/9 sources build in a GitHub-allowlisted
+sandbox (qmsum, qaconv, synthetic_notes, landes_todos, bahmutov — all reproduce their pins exactly), but
+cnn_dailymail/enronqa/enron/qasper cannot. **Run the freeze where network is open:** the
+`.github/workflows/corpus-freeze.yml` workflow (GitHub-hosted runner) is the turnkey path, or a local/owner box
+with open egress.
+
 ## Prerequisites (verify ALL before freezing — do not freeze if any is unmet)
-- [ ] Corpus data present on disk (this is owner-env / CI-cache work — `data/corpus-data/` is gitignored and is
-  EMPTY in a fresh checkout). — verify: `ls data/corpus-data/raw/*.jsonl`.
-- [ ] **QAConv + QASPER produced** — verify: `ls data/corpus-data/raw/{qaconv,qasper}.jsonl` exist (run
-  `acquire_qaconv.py` + `acquire_qasper.py` if not). They were added to the manifest 2026-06-02 but never loaded.
+- [ ] **Open network egress** to huggingface.co + www.cs.cmu.edu + qasper-dataset.s3 (see above), and
+  `pip install "datasets>=3.0,<4.0"` (the only non-stdlib dep; used by the two HF scripts).
+- [ ] Corpus data present on disk (`data/corpus-data/` is gitignored and EMPTY in a fresh checkout). — verify:
+  `ls data/corpus-data/raw/*.jsonl` after acquisition.
+- [ ] **QAConv + QASPER produced** — verify: `ls data/corpus-data/raw/{qaconv,qasper}.jsonl` exist. They were
+  added to the manifest 2026-06-02 but never loaded into the measured corpus.
 - [ ] Corpus **ingests cleanly + the eval harness runs** against the candidate set (green smoke).
-- [ ] GA-1 corpus-quality finding read — verify: it classified the recall drop as **(b) code/measurement-path,
-  NOT a corpus-quality defect** (`dev/plans/runs/GA-1-corpus-ab-20260608T012503Z-output.json`), so **no near-dup
-  / bad-doc refine is owed**. The only known data issue is the stale **qmsum** checksum (below).
+- [ ] GA-1 corpus-quality finding read — it classified the recall drop as **(b) code/measurement-path, NOT a
+  corpus-quality defect** (`dev/plans/runs/GA-1-corpus-ab-20260608T012503Z-output.json`), so **no near-dup /
+  bad-doc refine is owed**. (The qmsum "stale checksum" GA-1 flagged is NOT a bad pin — re-acquiring reproduces
+  the manifest pin `19a2e5b4…` exactly; the on-disk `717e9fb5…` was stale leftover data. Re-acquire fixes it.)
 
 ## Work to-do (the steps — all via `tests/corpus/scripts/freeze_corpus.py`)
 Run these where the corpus data actually lives (owner machine / CI runner), `--release`/isolated for any measure:
 
-1. **Acquire the two missing sources** (if absent):
-   `python tests/corpus/scripts/acquire_qaconv.py && python tests/corpus/scripts/acquire_qasper.py`
+0. **Easiest path: dispatch `.github/workflows/corpus-freeze.yml`** (Actions → corpus-freeze → Run). It does
+   steps 1–5 on an open-network runner and commits `snapshot.json`. The manual steps below are for a local/owner box.
+1. **Acquire every source** (all 9 must be present to freeze):
+   run `acquire_cnn_dailymail.py · acquire_enronqa.py · acquire_qmsum.py · acquire_enron.py ·
+   acquire_bahmutov_dailylogs.py · acquire_landes_todos.py · acquire_qaconv.py · acquire_qasper.py`, then
+   `generate_synthetic_notes.py` and (last, it anchors on real docs) `generate_chain_corpus.py`.
 2. **Verify** every raw source against the manifest:
    `python tests/corpus/scripts/freeze_corpus.py`
-   — expect a `MISMATCH` on **qmsum** (the known-stale pin GA-1 found) and `UNMANIFESTED` on
-   `chain_connectives` (expected — synthetic, not a manifest contract).
-3. **Reconcile** the stale pin from real bytes (NEVER hand-edit a hash):
-   `python tests/corpus/scripts/freeze_corpus.py --reconcile`  → re-run step 2 until **VERIFY OK**.
+   — sources built from a clean acquisition reproduce their pins (`MATCH`); `chain_connectives` shows
+   `UNMANIFESTED` (expected — synthetic, not a manifest contract).
+3. **Reconcile** only if a source genuinely drifted upstream (NEVER hand-edit a hash):
+   `python tests/corpus/scripts/freeze_corpus.py --reconcile`  → re-run step 2 until **VERIFY OK**. (A `MISMATCH`
+   from stale on-disk data is fixed by re-acquiring, not reconciling — reconcile is for a real upstream change.)
 4. **Freeze** the snapshot:
    `python tests/corpus/scripts/freeze_corpus.py --freeze --corpus-version 0.8.x-B`
    → writes `tests/corpus/snapshot.json` (snapshot_id + per-source SHA-256 + total_docs + corpus_hash).

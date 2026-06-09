@@ -419,16 +419,25 @@ the worktree at slice close.
 - **Reframing recorded:** the doc count was never the gate. The two real gates are **reproducibility (to freeze)**
   and **gold-set labeling (to measure)**. GA-1 already cleared "refine per quality findings" → classification (b)
   code/measurement-path, NOT a corpus-quality defect, so **no near-dup/bad-doc refine is owed**.
-- **Reproducibility blocker surfaced + tooled:** the **qmsum manifest sha256 is stale** (GA-1 observed on-disk
-  `717e9fb5…` ≠ pin `19a2e5b4…`; never matched). COR-2 step-4 bit-identical reproduction is BLOCKED until
-  reconciled. Marked in `manifest.json` (`sha256_reconcile`), cleared on reconcile.
-- **Landed (this session, tooling only — no data ops; corpus data is gitignored/absent in-container):**
-  `tests/corpus/scripts/freeze_corpus.py` (verify · `--reconcile` · `--freeze` · `--reproduce` — turns the manual
-  COR-2 checklist into one deterministic command; emits `tests/corpus/snapshot.json`); COR-2 scaffold expanded into
-  a runnable owner runbook (`dev/plans/prompts/scaffolds/5-COR-2-corpus-freeze.md`); qmsum stale-pin marker.
-- **What still needs the owner (where the real data lives — owner env / CI cache, NOT this container):** run
-  `acquire_qaconv.py` + `acquire_qasper.py` → `freeze_corpus.py --reconcile` → `--freeze` → `--reproduce` → pin
-  the gold set's `corpus_hash`. Then IR-C (gold-set labeling + experiments) resumes. See §8.
+- **qmsum "stale pin" DEBUNKED (re-acquired + verified):** `acquire_qmsum.py` (codeload.github.com, pinned rev
+  `83d7768c…`) reproduces sha256 `19a2e5b4…` = **exactly the manifest pin**. So the pin was CORRECT all along; GA-1's
+  on-disk `717e9fb5…` was **stale leftover data from an older acquisition**, not a bad pin. Fix = re-acquire (disk
+  then matches). Reproducibility is sound; the earlier `sha256_reconcile` marker was wrong and is removed.
+- **Build determinism PROVEN for the 5 GitHub/synthetic sources** (ran here, all MATCH their manifest pins):
+  qmsum `19a2e5b4`, qaconv `8c416c76`, synthetic_notes `b4d19f05`, landes_todos `74f02482`, bahmutov `bdecf3e8`.
+  `freeze_corpus.py` verify confirms MATCH.
+- **⛔ HARD BLOCKER = network policy, not the corpus.** This container's egress is GitHub+PyPI allowlisted; it
+  **403s on huggingface.co, www.cs.cmu.edu, and qasper-dataset.s3** → the 4 remaining sources **cannot be built
+  here**: `cnn_dailymail` (HF), `enronqa` (HF), `enron` (CMU), `qasper` (S3). A full freeze needs all 9 → cannot
+  complete in this environment. The corpus build itself is healthy.
+- **Landed (this session):** `tests/corpus/scripts/freeze_corpus.py` (verify · `--reconcile` · `--freeze` ·
+  `--reproduce`); COR-2 owner runbook; **`.github/workflows/corpus-freeze.yml`** — builds ALL sources on a
+  GitHub-hosted runner (open network + `pip install datasets`), reconciles, freezes, proves reproduction, commits
+  `snapshot.json` + caches the data. This is the operational way to finish the freeze.
+- **To actually finish COR-2, pick one (HITL):** (1) **run `corpus-freeze.yml`** via workflow_dispatch — needs the
+  workflow on the default branch first (merge this branch); (2) **widen this env's network policy** to allow
+  huggingface.co + www.cs.cmu.edu + qasper-dataset.s3, then re-run the freeze here; (3) owner runs the runbook
+  locally. Then: pin the gold set's `corpus_hash` → IR-C resumes. See §8.
 
 ### 2026-06-08 — IR-B (IR-1 Phase 2) MERGED post-GA (codex §9 1×[P2]→fix-1) — IR track now at the COR-2-freeze boundary
 

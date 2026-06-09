@@ -1,0 +1,114 @@
+# COR-2 corpus freeze — build every Version-B source, reconcile, freeze a
+# versioned SHA-256 snapshot, and prove it reproduces bit-identically.
+#
+# WHY THIS EXISTS: the corpus acquisition pulls from HuggingFace, CMU, and AWS
+# S3 (cnn_dailymail, enronqa, enron, qasper). Sandboxed/dev environments with a
+# GitHub-only egress policy 403 on those hosts, so the freeze cannot complete
+# there — but GitHub-hosted runners have open network. This workflow runs the
+# freeze where it CAN reach everything, then commits the small tracked artifacts
+# (tests/corpus/snapshot.json + any reconciled manifest.json). The corpus data
+# itself stays gitignored and is published via the actions/cache below.
+#
+# Freeze target (HITL 2026-06-09): the 8 current datasets + QAConv + QASPER
+# (~10.1K). PMC OA / S2ORC / ELITR stay deferred. See the COR-2 runbook
+# (dev/plans/prompts/scaffolds/5-COR-2-corpus-freeze.md) and STATUS-0.8.0.md §7.
+
+name: corpus-freeze
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus_version:
+        description: "Corpus version label baked into the snapshot id"
+        type: string
+        default: "0.8.x-B"
+      commit_snapshot:
+        description: "Commit snapshot.json + reconciled manifest.json back to this branch"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install acquisition deps
+        run: pip install "datasets>=3.0,<4.0"
+
+      - name: Acquire real sources
+        # HF datasets read HF_TOKEN if present (avoids anonymous rate limits);
+        # all sources here are public, so the token is optional.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd tests/corpus/scripts
+          python acquire_cnn_dailymail.py
+          python acquire_enronqa.py
+          python acquire_qmsum.py
+          python acquire_enron.py
+          python acquire_bahmutov_dailylogs.py
+          python acquire_landes_todos.py
+          python acquire_qaconv.py
+          python acquire_qasper.py
+
+      - name: Generate synthetic sources
+        # Chains anchor on the real docs above, so they run last.
+        run: |
+          set -euo pipefail
+          cd tests/corpus/scripts
+          python generate_synthetic_notes.py
+          python generate_chain_corpus.py
+
+      - name: Verify + reconcile against manifest
+        run: |
+          set -euo pipefail
+          python tests/corpus/scripts/freeze_corpus.py || true   # report state
+          python tests/corpus/scripts/freeze_corpus.py --reconcile
+          python tests/corpus/scripts/freeze_corpus.py           # must be VERIFY OK now
+
+      - name: Freeze + prove reproducibility
+        run: |
+          set -euo pipefail
+          python tests/corpus/scripts/freeze_corpus.py --freeze --corpus-version "${{ inputs.corpus_version }}"
+          python tests/corpus/scripts/freeze_corpus.py --reproduce tests/corpus/snapshot.json
+          echo "### COR-2 snapshot" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat tests/corpus/snapshot.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cache the frozen corpus data (distribution path)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/corpus-data
+          key: corpus-${{ hashFiles('tests/corpus/snapshot.json') }}
+
+      - name: Upload snapshot + manifest
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: corpus-snapshot
+          path: |
+            tests/corpus/snapshot.json
+            tests/corpus/scripts/manifest.json
+
+      - name: Commit snapshot + reconciled manifest
+        if: ${{ inputs.commit_snapshot }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- tests/corpus/snapshot.json tests/corpus/scripts/manifest.json; then
+            echo "no snapshot/manifest changes to commit"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/corpus/snapshot.json tests/corpus/scripts/manifest.json
+          git commit -m "corpus(COR-2): freeze snapshot ${{ inputs.corpus_version }} (CI)"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
