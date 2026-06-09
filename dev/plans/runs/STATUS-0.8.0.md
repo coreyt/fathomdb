@@ -410,6 +410,26 @@ the worktree at slice close.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-09 — ◆ HITL freeze-target ruling + COR-2 freeze TOOLING landed (unblock the IR run)
+
+- **HITL (coreyt): the ~10K corpus-doc target is WAIVED.** Freeze the **current 8 datasets + QAConv + QASPER
+  ≈ 10.1K docs**; **PMC OA · S2ORC · ELITR stay DEFERRED.** QAConv (BSD-3) + QASPER (CC-BY) **MUST be loaded
+  before the freeze** — QASPER is the only `paper`-class source, and QASPER+QAConv ship ~10,296 eval-QA pairs that
+  are the gold-set fuel; freezing without them = an empty paper class + losing the best labeling source.
+- **Reframing recorded:** the doc count was never the gate. The two real gates are **reproducibility (to freeze)**
+  and **gold-set labeling (to measure)**. GA-1 already cleared "refine per quality findings" → classification (b)
+  code/measurement-path, NOT a corpus-quality defect, so **no near-dup/bad-doc refine is owed**.
+- **Reproducibility blocker surfaced + tooled:** the **qmsum manifest sha256 is stale** (GA-1 observed on-disk
+  `717e9fb5…` ≠ pin `19a2e5b4…`; never matched). COR-2 step-4 bit-identical reproduction is BLOCKED until
+  reconciled. Marked in `manifest.json` (`sha256_reconcile`), cleared on reconcile.
+- **Landed (this session, tooling only — no data ops; corpus data is gitignored/absent in-container):**
+  `tests/corpus/scripts/freeze_corpus.py` (verify · `--reconcile` · `--freeze` · `--reproduce` — turns the manual
+  COR-2 checklist into one deterministic command; emits `tests/corpus/snapshot.json`); COR-2 scaffold expanded into
+  a runnable owner runbook (`dev/plans/prompts/scaffolds/5-COR-2-corpus-freeze.md`); qmsum stale-pin marker.
+- **What still needs the owner (where the real data lives — owner env / CI cache, NOT this container):** run
+  `acquire_qaconv.py` + `acquire_qasper.py` → `freeze_corpus.py --reconcile` → `--freeze` → `--reproduce` → pin
+  the gold set's `corpus_hash`. Then IR-C (gold-set labeling + experiments) resumes. See §8.
+
 ### 2026-06-08 — IR-B (IR-1 Phase 2) MERGED post-GA (codex §9 1×[P2]→fix-1) — IR track now at the COR-2-freeze boundary
 
 - **IR-B merged** to `main`@`6d66834` (`--no-ff`; ort, clean — only the 5 additive IR files; GA-3's `recall_gate.rs`
@@ -1903,6 +1923,28 @@ exist" note for the 0.8.0 campaign.
 
 ## 8. Next action
 
+**0.8.0 GA SHIPPED + CLOSED. Active track = IR-eval (post-GA / 0.8.1). Pointer → COR-2 corpus freeze, then
+IR-C.** Freeze tooling + runbook are landed (§7 2026-06-09); the remaining steps are **owner-run, where the
+corpus data actually lives** (gitignored / absent in a fresh checkout). The IR critical path, in order:
+
+1. **COR-2 freeze (owner, out-of-band)** — per `dev/plans/prompts/scaffolds/5-COR-2-corpus-freeze.md`:
+   `acquire_qaconv.py` + `acquire_qasper.py` → `freeze_corpus.py` (verify) → `--reconcile` (fix the stale qmsum
+   pin) → `--freeze --corpus-version 0.8.x-B` → `--reproduce` (the bit-identical gate) → commit
+   `tests/corpus/snapshot.json` + reconciled `manifest.json` → report the snapshot record to §7.
+2. **Pin the gold set** — copy the frozen `corpus_hash` into `tests/fixtures/ir_gold/*.json`, replacing
+   `TODO(COR-2-freeze)` (and `qrels_version` once labels exist).
+3. **IR-C (Phase 3)** — fact-level `required_evidence` gold-set labeling on the FROZEN corpus (human/HITL;
+   QASPER+QAConv eval-QA = source material) → `run_experiment` `--release`/isolated → structured outputs. The
+   long pole; gets its own prompt.
+4. **IR-D → IR-2 → ◆ IR-gate** — mint AC-077 grounded by the experiments; HITL sets binding thresholds.
+
+In parallel / 0.8.1 backlog (independent of IR): the ~4-pt 0.7.x→0.8.0 vector-stage fidelity-regression
+diagnosis (engine-version A/B → bisect) + eu7 harness perf opts (`dev/roadmap/0.8.1.md`).
+
+---
+
+<details><summary>Historical (0.8.0 GA-era next-action — superseded)</summary>
+
 **Slice 15 CLOSED (KEYSTONE G0, PASS via override) 2026-06-03 on `main`@`5fa0e9e`. Pointer → Slice 20
 (G8 dangling-edge) ∥ Slice 25 (supersession sign-off).** The canonical `logical_id`/`superseded_at`
 substrate + tombstone-then-insert supersession + `WriteReceipt.row_cursors` are now on `main` and
@@ -1947,6 +1989,8 @@ pre-GA) · recall floor ≥ 0.90 (`perf_gates.rs::ac_013b_recall_at_10_floor`) �
 allowlist+parity conformance green · recovery-unreachability suites green +
 byte-unchanged · **`mkdocs build` green (X2)** · X1 functional harnesses green
 (Py+TS, cross-binding equivalence) · X3 `dev/DOC-INDEX.md` complete.
+
+</details>
 
 ---
 

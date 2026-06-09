@@ -29,7 +29,10 @@ The corpus has three jobs:
 
 ## HITL locks (2026-05-27 — do not change without HITL sign-off)
 
-- **Target version: Version B** (~10K docs).
+- **Target version: Version B** (~10K docs). **Amended 2026-06-09 (HITL coreyt):**
+  the ~10K *must* is **waived** for the IR freeze — freeze the current 8 datasets
+  **+ QAConv + QASPER ≈ 10.1K**; PMC OA · S2ORC · ELITR stay deferred. See
+  `dev/plans/runs/STATUS-0.8.0.md` §7 (2026-06-09) + the COR-2 runbook.
 - **Recall floor: 0.90 @ k=10** (initial; tighten later).
 - **Partition key: `source_type`** (cardinality ~6:
   `email`, `article`, `paper`, `meeting`, `note`, `todo`).

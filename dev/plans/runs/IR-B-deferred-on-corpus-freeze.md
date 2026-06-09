@@ -1,10 +1,19 @@
 # IR-B (IR-1 Phase 2) — what is DEFERRED to the COR-2 corpus freeze · `[IR-eval]`
 
 > **Status:** IR-B (Phase 2 / CODE) built the **corpus-INDEPENDENT** measure +
-> schema + plumbing on branch `ir-B-phase2-*` (not merged — orchestrator brings
-> it back via codex §9 after the 0.8.0 GA tag). This note lists exactly what
-> still waits for the **owner-paced COR-2 corpus freeze** before it can be done.
+> schema + plumbing on branch `ir-B-phase2-*` (merged post-GA, `main`@`6d66834`).
+> This note lists exactly what still waits for the **owner-paced COR-2 corpus
+> freeze** before it can be done.
 > Spec: `dev/design/ir-recall-measure.md` (Claude↔codex consensus-signed).
+>
+> **Update 2026-06-09 (HITL + tooling):** freeze target ruled = **current 8
+> datasets + QAConv + QASPER ≈ 10.1K** (10K-must waived; PMC/S2ORC/ELITR
+> deferred). The freeze is now a one-command flow — `tests/corpus/scripts/
+> freeze_corpus.py` (verify · `--reconcile` · `--freeze` · `--reproduce`) — driven
+> by the runbook `dev/plans/prompts/scaffolds/5-COR-2-corpus-freeze.md`. Known
+> reproducibility blocker: the **stale qmsum manifest pin** (reconcile from real
+> bytes). The data ops are owner-run where the corpus persists; the items below
+> still apply, now with tooling to execute them.
 
 ## Built now (corpus-independent — landed on this branch)
 
