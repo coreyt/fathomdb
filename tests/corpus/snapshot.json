@@ -1,0 +1,62 @@
+{
+  "snapshot_id": "0.8.x-B-fe973fcd49fb",
+  "corpus_version": "0.8.x-B",
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "created_at": "2026-06-09T02:35:21Z",
+  "total_docs": 10506,
+  "source_count": 10,
+  "per_source_sha256": [
+    {
+      "source": "bahmutov_dailylogs",
+      "sha256": "bdecf3e8ffef86dc2cb136bce9912b629f91774c41d9cf34224f3f7d8e1a0e81",
+      "doc_count": 300
+    },
+    {
+      "source": "chain_connectives",
+      "sha256": "cc73bda7a85614d4c9a3aca60ea1bd698c35314e0ea0015f0f2f205b4001658b",
+      "doc_count": 371
+    },
+    {
+      "source": "cnn_dailymail",
+      "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
+      "doc_count": 2500
+    },
+    {
+      "source": "enron",
+      "sha256": "c4df0c71e2de1505c8114ae3f96ff5dac2769786eee6028ba2d46bf0e83486ab",
+      "doc_count": 2000
+    },
+    {
+      "source": "enronqa",
+      "sha256": "bc30eb0674eb72e6c762e094a514983f767e5122a6dd3a711325dd0fde5248ab",
+      "doc_count": 200
+    },
+    {
+      "source": "landes_todos",
+      "sha256": "74f0248261f701856f72f2921abb1cd004b1773c13201e7b6ae5ad93e810e812",
+      "doc_count": 500
+    },
+    {
+      "source": "qaconv",
+      "sha256": "8c416c765134d971870df451eebb3246bbb79617014484e409e7d383b2bc5d1d",
+      "doc_count": 1250
+    },
+    {
+      "source": "qasper",
+      "sha256": "e84746e1be265db1f892a5848f88411d441dd87d7cacf0cc839f2d44886d8a0a",
+      "doc_count": 1585
+    },
+    {
+      "source": "qmsum",
+      "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
+      "doc_count": 600
+    },
+    {
+      "source": "synthetic_notes",
+      "sha256": "b4d19f05a7b9c13bfe0bd303ef2aa7de44a321011700de1cfd6f47c247855eb3",
+      "doc_count": 1200
+    }
+  ],
+  "reproduced_bit_identical": true,
+  "generator": "tests/corpus/scripts/freeze_corpus.py"
+}
