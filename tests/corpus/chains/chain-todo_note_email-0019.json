@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "df6c394baccd9a36"
+  ],
+  "chain_id": "chain-todo_note_email-0019",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "df6c394baccd9a36",
+    "231642e69343ab8a",
+    "2efad571be2ad1f3"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "df6c394baccd9a36",
+        "231642e69343ab8a",
+        "2efad571be2ad1f3"
+      ],
+      "query": "what's the status of the vendor-onboarding to-do about Taxes for 2015?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "231642e69343ab8a",
+    "2efad571be2ad1f3"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "782df575b9c6abe5"
+  ],
+  "chain_id": "chain-article_note_email-0071",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "782df575b9c6abe5",
+    "9ee5480462bfb5c9",
+    "5b2e1ed7e24b65f2"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "782df575b9c6abe5",
+        "9ee5480462bfb5c9",
+        "5b2e1ed7e24b65f2"
+      ],
+      "query": "what's the context around \"(CNN) -- The company was founded in 1985 by seven communications industry vetera\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5b2e1ed7e24b65f2",
+        "9ee5480462bfb5c9"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9ee5480462bfb5c9",
+    "5b2e1ed7e24b65f2"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "b0b266166da4ea62"
+  ],
+  "chain_id": "chain-article_note_email-0155",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "b0b266166da4ea62",
+    "119d2a5dab672390",
+    "865255cb940850f1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b0b266166da4ea62",
+        "119d2a5dab672390",
+        "865255cb940850f1"
+      ],
+      "query": "what's the context around \"MOSCOW, Russia (CNN) -- Russian space officials say the crew of the Soyuz space \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "865255cb940850f1",
+        "119d2a5dab672390"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "119d2a5dab672390",
+    "865255cb940850f1"
+  ]
+}

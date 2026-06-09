@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "2348bb04a15549f8"
+  ],
+  "chain_id": "chain-email_note_todo-0112",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "2348bb04a15549f8",
+    "954c5001824ff9e6",
+    "b29f24087f14fbd2"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2348bb04a15549f8",
+        "954c5001824ff9e6",
+        "b29f24087f14fbd2"
+      ],
+      "query": "what was decided after the email about \"Daily deal summary for IPC\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "b29f24087f14fbd2",
+        "954c5001824ff9e6"
+      ],
+      "query": "what's the follow-up action from holden.salisbury@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "954c5001824ff9e6",
+    "b29f24087f14fbd2"
+  ]
+}

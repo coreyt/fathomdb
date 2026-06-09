@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8471f61f727f58bd"
+  ],
+  "chain_id": "chain-email_note_todo-0182",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "8471f61f727f58bd",
+    "a7fa081fc43c2d69",
+    "a0dfd8255cc17c74"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8471f61f727f58bd",
+        "a7fa081fc43c2d69",
+        "a0dfd8255cc17c74"
+      ],
+      "query": "what was decided after the email about \"Re: golf?\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a0dfd8255cc17c74",
+        "a7fa081fc43c2d69"
+      ],
+      "query": "what's the follow-up action from mike.maggi@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a7fa081fc43c2d69",
+    "a0dfd8255cc17c74"
+  ]
+}

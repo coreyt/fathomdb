@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "31ed9da0d26561ea"
+  ],
+  "chain_id": "chain-article_note_email-0078",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "31ed9da0d26561ea",
+    "6f87ab32b52fa010",
+    "a1b4864e84113210"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "31ed9da0d26561ea",
+        "6f87ab32b52fa010",
+        "a1b4864e84113210"
+      ],
+      "query": "what's the context around \"BAGHDAD, Iraq (CNN)  -- Coalition troops killed the al Qaeda terrorist who maste\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a1b4864e84113210",
+        "6f87ab32b52fa010"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "6f87ab32b52fa010",
+    "a1b4864e84113210"
+  ]
+}

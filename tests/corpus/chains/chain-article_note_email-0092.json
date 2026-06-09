@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4e41a3f01a319c96"
+  ],
+  "chain_id": "chain-article_note_email-0092",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "4e41a3f01a319c96",
+    "d1ec137344261bcb",
+    "6555db7e23671ce5"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4e41a3f01a319c96",
+        "d1ec137344261bcb",
+        "6555db7e23671ce5"
+      ],
+      "query": "what's the context around \"KAMPALA, Uganda (CNN) -- A fight between Ugandan and Libyan presidential guards \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6555db7e23671ce5",
+        "d1ec137344261bcb"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d1ec137344261bcb",
+    "6555db7e23671ce5"
+  ]
+}

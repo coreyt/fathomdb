@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "ce2216db90dc14f7"
+  ],
+  "chain_id": "chain-paper_note_todo-0027",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "ce2216db90dc14f7",
+    "a97fc64af247d41b",
+    "5d22a0b9642d0574"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "ce2216db90dc14f7",
+        "a97fc64af247d41b",
+        "5d22a0b9642d0574"
+      ],
+      "query": "what action came out of the paper about \"Modeling Event Background for If-Then Commonsense Reasoning Using Context-aware \"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a97fc64af247d41b",
+        "ce2216db90dc14f7"
+      ],
+      "query": "where are my notes on the paper about \"Modeling Event Background for If-Then Commonsense Reasoning Using Context-aware \"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a97fc64af247d41b",
+    "5d22a0b9642d0574"
+  ]
+}

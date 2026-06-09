@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "38405b537ed7760c"
+  ],
+  "chain_id": "chain-email_note_todo-0063",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "38405b537ed7760c",
+    "5880e501230e5f93",
+    "74204933c690e73a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "38405b537ed7760c",
+        "5880e501230e5f93",
+        "74204933c690e73a"
+      ],
+      "query": "what was decided after the email about \"RE: Big 12\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "74204933c690e73a",
+        "5880e501230e5f93"
+      ],
+      "query": "what's the follow-up action from danny.mccarty@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5880e501230e5f93",
+    "74204933c690e73a"
+  ]
+}

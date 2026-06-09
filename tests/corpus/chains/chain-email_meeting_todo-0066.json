@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "dc2a73cd880ca1c4",
+    "e20c7b8c94ee27ef"
+  ],
+  "chain_id": "chain-email_meeting_todo-0066",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "dc2a73cd880ca1c4",
+    "e20c7b8c94ee27ef",
+    "36f95264707397c7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "dc2a73cd880ca1c4",
+        "e20c7b8c94ee27ef",
+        "36f95264707397c7"
+      ],
+      "query": "what's the action item from slinger-r's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "36f95264707397c7"
+  ]
+}

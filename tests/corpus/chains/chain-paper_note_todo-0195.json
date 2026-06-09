@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "27dd0950637d819b"
+  ],
+  "chain_id": "chain-paper_note_todo-0195",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "27dd0950637d819b",
+    "e59372b43821eec3",
+    "ef512fc884550b22"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "27dd0950637d819b",
+        "e59372b43821eec3",
+        "ef512fc884550b22"
+      ],
+      "query": "what action came out of the paper about \"Stay On-Topic: Generating Context-specific Fake Restaurant Reviews\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "e59372b43821eec3",
+        "27dd0950637d819b"
+      ],
+      "query": "where are my notes on the paper about \"Stay On-Topic: Generating Context-specific Fake Restaurant Reviews\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "e59372b43821eec3",
+    "ef512fc884550b22"
+  ]
+}

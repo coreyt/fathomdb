@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9d381e80c9054115"
+  ],
+  "chain_id": "chain-meeting_todo_note-0079",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "9d381e80c9054115",
+    "e67ab97719602dc0",
+    "c032cdebdca3b879"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9d381e80c9054115",
+        "e67ab97719602dc0",
+        "c032cdebdca3b879"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the whole meeting.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "c032cdebdca3b879",
+        "9d381e80c9054115"
+      ],
+      "query": "did we end up reversing the committee decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "e67ab97719602dc0",
+    "c032cdebdca3b879"
+  ]
+}

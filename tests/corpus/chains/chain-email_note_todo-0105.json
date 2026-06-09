@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "89f9d89b496906f3"
+  ],
+  "chain_id": "chain-email_note_todo-0105",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "89f9d89b496906f3",
+    "c561596615a2bf75",
+    "821be79be94a07e2"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "89f9d89b496906f3",
+        "c561596615a2bf75",
+        "821be79be94a07e2"
+      ],
+      "query": "what was decided after the email about \"Re: Offers\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "821be79be94a07e2",
+        "c561596615a2bf75"
+      ],
+      "query": "what's the follow-up action from brad.mckay@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c561596615a2bf75",
+    "821be79be94a07e2"
+  ]
+}

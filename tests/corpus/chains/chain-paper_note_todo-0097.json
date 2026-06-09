@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "ef78e02477455de6"
+  ],
+  "chain_id": "chain-paper_note_todo-0097",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "ef78e02477455de6",
+    "de00577b49b2558d",
+    "660368490331b97f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "ef78e02477455de6",
+        "de00577b49b2558d",
+        "660368490331b97f"
+      ],
+      "query": "what action came out of the paper about \"Dialog Context Language Modeling with Recurrent Neural Networks\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "de00577b49b2558d",
+        "ef78e02477455de6"
+      ],
+      "query": "where are my notes on the paper about \"Dialog Context Language Modeling with Recurrent Neural Networks\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "de00577b49b2558d",
+    "660368490331b97f"
+  ]
+}

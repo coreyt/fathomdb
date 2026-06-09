@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "a11b5be18d09c354"
+  ],
+  "chain_id": "chain-article_note_todo-0165",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "a11b5be18d09c354",
+    "2979f20f2b07c745",
+    "b7cd51c64504f1f6"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a11b5be18d09c354",
+        "2979f20f2b07c745",
+        "b7cd51c64504f1f6"
+      ],
+      "query": "what's on my to-do list from the article about \"(AOL Autos) -- How long did it take you to get a taxi last time you tried? If it\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2979f20f2b07c745",
+    "b7cd51c64504f1f6"
+  ]
+}

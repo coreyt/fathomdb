@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "bd1383499601ded5"
+  ],
+  "chain_id": "chain-article_note_email-0148",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "bd1383499601ded5",
+    "2b5237414d543324",
+    "0d558edb805bb7bb"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "bd1383499601ded5",
+        "2b5237414d543324",
+        "0d558edb805bb7bb"
+      ],
+      "query": "what's the context around \"NEW DELHI, India (Reuters) -- India has elected its first female president, offi\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "0d558edb805bb7bb",
+        "2b5237414d543324"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2b5237414d543324",
+    "0d558edb805bb7bb"
+  ]
+}

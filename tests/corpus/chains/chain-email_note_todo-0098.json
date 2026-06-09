@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "71c21d04267c5f78"
+  ],
+  "chain_id": "chain-email_note_todo-0098",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "71c21d04267c5f78",
+    "ec212c4ce3d04dac",
+    "433eeb8d90d71051"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "71c21d04267c5f78",
+        "ec212c4ce3d04dac",
+        "433eeb8d90d71051"
+      ],
+      "query": "what was decided after the email about \"Re: Welcome back!\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "433eeb8d90d71051",
+        "ec212c4ce3d04dac"
+      ],
+      "query": "what's the follow-up action from jeffrey.shankman@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ec212c4ce3d04dac",
+    "433eeb8d90d71051"
+  ]
+}

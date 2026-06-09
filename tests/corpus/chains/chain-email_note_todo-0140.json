@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "a0733856c184029e"
+  ],
+  "chain_id": "chain-email_note_todo-0140",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "a0733856c184029e",
+    "c67ffee75c273a42",
+    "417a34cb50df44b3"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a0733856c184029e",
+        "c67ffee75c273a42",
+        "417a34cb50df44b3"
+      ],
+      "query": "what was decided after the email about \"FW: US Flag\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "417a34cb50df44b3",
+        "c67ffee75c273a42"
+      ],
+      "query": "what's the follow-up action from mark.whitt@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c67ffee75c273a42",
+    "417a34cb50df44b3"
+  ]
+}

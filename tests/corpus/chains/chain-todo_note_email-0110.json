@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "79849df15cedfa09"
+  ],
+  "chain_id": "chain-todo_note_email-0110",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "79849df15cedfa09",
+    "3ec45509ab939c10",
+    "f4dfc7c1cb58b91d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "79849df15cedfa09",
+        "3ec45509ab939c10",
+        "f4dfc7c1cb58b91d"
+      ],
+      "query": "what's the status of the anniversary to-do about Confirm with your rental company all details, times, and sites where items must?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3ec45509ab939c10",
+    "f4dfc7c1cb58b91d"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "d82e80f436d66ee4"
+  ],
+  "chain_id": "chain-article_note_email-0176",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "d82e80f436d66ee4",
+    "b15768b6f1fa9869",
+    "2b30f57649b67442"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d82e80f436d66ee4",
+        "b15768b6f1fa9869",
+        "2b30f57649b67442"
+      ],
+      "query": "what's the context around \"(CNN) -- This year's Forbes Rich List is notable for the absence of Bill Gates a\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2b30f57649b67442",
+        "b15768b6f1fa9869"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b15768b6f1fa9869",
+    "2b30f57649b67442"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5bf272389ee4458c"
+  ],
+  "chain_id": "chain-paper_note_todo-0132",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "5bf272389ee4458c",
+    "fc52ee3ea45cf908",
+    "41fd89e3a89587ae"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5bf272389ee4458c",
+        "fc52ee3ea45cf908",
+        "41fd89e3a89587ae"
+      ],
+      "query": "what action came out of the paper about \"Align, Mask and Select: A Simple Method for Incorporating Commonsense Knowledge \"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "fc52ee3ea45cf908",
+        "5bf272389ee4458c"
+      ],
+      "query": "where are my notes on the paper about \"Align, Mask and Select: A Simple Method for Incorporating Commonsense Knowledge \"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "fc52ee3ea45cf908",
+    "41fd89e3a89587ae"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "3556d7906c955b01"
+  ],
+  "chain_id": "chain-paper_note_todo-0174",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "3556d7906c955b01",
+    "4c3512cd77d16dfd",
+    "5ba9ad5aa128bad7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "3556d7906c955b01",
+        "4c3512cd77d16dfd",
+        "5ba9ad5aa128bad7"
+      ],
+      "query": "what action came out of the paper about \"Remedying BiLSTM-CNN Deficiency in Modeling Cross-Context for NER.\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "4c3512cd77d16dfd",
+        "3556d7906c955b01"
+      ],
+      "query": "where are my notes on the paper about \"Remedying BiLSTM-CNN Deficiency in Modeling Cross-Context for NER.\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4c3512cd77d16dfd",
+    "5ba9ad5aa128bad7"
+  ]
+}

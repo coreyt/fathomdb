@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "0e008d2c1274f1b2",
+    "a44318f0a8db0a25"
+  ],
+  "chain_id": "chain-email_meeting_todo-0094",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "0e008d2c1274f1b2",
+    "a44318f0a8db0a25",
+    "bfcd3c1c8794db0a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "0e008d2c1274f1b2",
+        "a44318f0a8db0a25",
+        "bfcd3c1c8794db0a"
+      ],
+      "query": "what's the action item from larry.campbell@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "bfcd3c1c8794db0a"
+  ]
+}

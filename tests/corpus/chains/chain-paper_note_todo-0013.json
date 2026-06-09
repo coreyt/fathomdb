@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "96615d25b0354cae"
+  ],
+  "chain_id": "chain-paper_note_todo-0013",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "96615d25b0354cae",
+    "4da04c5c8e4674cc",
+    "b251c99813f95e82"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "96615d25b0354cae",
+        "4da04c5c8e4674cc",
+        "b251c99813f95e82"
+      ],
+      "query": "what action came out of the paper about \"HIBERT: Document Level Pre-training of Hierarchical Bidirectional Transformers f\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "4da04c5c8e4674cc",
+        "96615d25b0354cae"
+      ],
+      "query": "where are my notes on the paper about \"HIBERT: Document Level Pre-training of Hierarchical Bidirectional Transformers f\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4da04c5c8e4674cc",
+    "b251c99813f95e82"
+  ]
+}

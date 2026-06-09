@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "25399633cad74a54"
+  ],
+  "chain_id": "chain-article_note_todo-0151",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "25399633cad74a54",
+    "3f31d168f4b0c4d9",
+    "22cb53a7d808a664"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "25399633cad74a54",
+        "3f31d168f4b0c4d9",
+        "22cb53a7d808a664"
+      ],
+      "query": "what's on my to-do list from the article about \"WASHINGTON (CNN) -- The U.S\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3f31d168f4b0c4d9",
+    "22cb53a7d808a664"
+  ]
+}

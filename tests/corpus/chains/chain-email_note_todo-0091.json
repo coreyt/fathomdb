@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "31267c7c807da4d7"
+  ],
+  "chain_id": "chain-email_note_todo-0091",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "31267c7c807da4d7",
+    "6c4e9f61640d2791",
+    "cf8d0fc9b06898a8"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "31267c7c807da4d7",
+        "6c4e9f61640d2791",
+        "cf8d0fc9b06898a8"
+      ],
+      "query": "what was decided after the email about \"RE: MESSENGER!\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "cf8d0fc9b06898a8",
+        "6c4e9f61640d2791"
+      ],
+      "query": "what's the follow-up action from dutch.quigley@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "6c4e9f61640d2791",
+    "cf8d0fc9b06898a8"
+  ]
+}

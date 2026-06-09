@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "28740d5bc9a4c07d"
+  ],
+  "chain_id": "chain-article_note_todo-0186",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "28740d5bc9a4c07d",
+    "1cf643ee2c4e3a63",
+    "c9e8b47603b265b8"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "28740d5bc9a4c07d",
+        "1cf643ee2c4e3a63",
+        "c9e8b47603b265b8"
+      ],
+      "query": "what's on my to-do list from the article about \"PARIS, France (CNN) -- The Paris suburbs were again rocked by riots after a seco\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1cf643ee2c4e3a63",
+    "c9e8b47603b265b8"
+  ]
+}

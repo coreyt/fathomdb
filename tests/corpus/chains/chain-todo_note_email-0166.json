@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "e5613b8d709b1a59"
+  ],
+  "chain_id": "chain-todo_note_email-0166",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "e5613b8d709b1a59",
+    "a230c3243aace7f8",
+    "d49b5cd50534388d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "e5613b8d709b1a59",
+        "a230c3243aace7f8",
+        "d49b5cd50534388d"
+      ],
+      "query": "what's the status of the household to-do about assemble repair kit?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a230c3243aace7f8",
+    "d49b5cd50534388d"
+  ]
+}

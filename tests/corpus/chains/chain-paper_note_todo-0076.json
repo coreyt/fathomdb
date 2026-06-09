@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "f47b3e081a61e758"
+  ],
+  "chain_id": "chain-paper_note_todo-0076",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "f47b3e081a61e758",
+    "c06ff1ab26bc3156",
+    "03b8ba08475136e7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "f47b3e081a61e758",
+        "c06ff1ab26bc3156",
+        "03b8ba08475136e7"
+      ],
+      "query": "what action came out of the paper about \"\"i have a feeling trump will win..................\": Forecasting Winners and Los\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "c06ff1ab26bc3156",
+        "f47b3e081a61e758"
+      ],
+      "query": "where are my notes on the paper about \"\"i have a feeling trump will win..................\": Forecasting Winners and Los\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c06ff1ab26bc3156",
+    "03b8ba08475136e7"
+  ]
+}

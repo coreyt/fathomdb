@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "c73b4b370e4f966a"
+  ],
+  "chain_id": "chain-email_note_todo-0035",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "c73b4b370e4f966a",
+    "2625860c6be4e63f",
+    "e263b35c89a4a23b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c73b4b370e4f966a",
+        "2625860c6be4e63f",
+        "e263b35c89a4a23b"
+      ],
+      "query": "what was decided after the email about \"Re: Houston MG Visit\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "e263b35c89a4a23b",
+        "2625860c6be4e63f"
+      ],
+      "query": "what's the follow-up action from john.lavorato@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2625860c6be4e63f",
+    "e263b35c89a4a23b"
+  ]
+}

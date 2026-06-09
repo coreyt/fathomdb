@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "27c8df8ff8d7bab6"
+  ],
+  "chain_id": "chain-email_note_todo-0154",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "27c8df8ff8d7bab6",
+    "bc5eb8be0fe50bad",
+    "eb647c5ce3d77491"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "27c8df8ff8d7bab6",
+        "bc5eb8be0fe50bad",
+        "eb647c5ce3d77491"
+      ],
+      "query": "what was decided after the email about \"Re: UK CEOs\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "eb647c5ce3d77491",
+        "bc5eb8be0fe50bad"
+      ],
+      "query": "what's the follow-up action from sherri.sera@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "bc5eb8be0fe50bad",
+    "eb647c5ce3d77491"
+  ]
+}

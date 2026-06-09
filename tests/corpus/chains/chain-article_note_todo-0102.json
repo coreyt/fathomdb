@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "1ec1e5f07e81586a"
+  ],
+  "chain_id": "chain-article_note_todo-0102",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "1ec1e5f07e81586a",
+    "5a6f25da08151ece",
+    "55efb0816a9c383c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "1ec1e5f07e81586a",
+        "5a6f25da08151ece",
+        "55efb0816a9c383c"
+      ],
+      "query": "what's on my to-do list from the article about \"BAGHDAD, Iraq (CNN) -- Five U.S\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5a6f25da08151ece",
+    "55efb0816a9c383c"
+  ]
+}

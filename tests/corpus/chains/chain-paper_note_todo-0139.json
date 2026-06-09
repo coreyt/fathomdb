@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "990449b95bbf511f"
+  ],
+  "chain_id": "chain-paper_note_todo-0139",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "990449b95bbf511f",
+    "2c7e549e3dfbc099",
+    "55c4801a50950e92"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "990449b95bbf511f",
+        "2c7e549e3dfbc099",
+        "55c4801a50950e92"
+      ],
+      "query": "what action came out of the paper about \"Trading the Twitter Sentiment with Reinforcement Learning\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2c7e549e3dfbc099",
+        "990449b95bbf511f"
+      ],
+      "query": "where are my notes on the paper about \"Trading the Twitter Sentiment with Reinforcement Learning\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2c7e549e3dfbc099",
+    "55c4801a50950e92"
+  ]
+}

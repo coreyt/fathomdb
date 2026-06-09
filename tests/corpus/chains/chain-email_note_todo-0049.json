@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "440dca49cddd95ab"
+  ],
+  "chain_id": "chain-email_note_todo-0049",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "440dca49cddd95ab",
+    "c5182051fc2e8249",
+    "1fdce0a81a2b3473"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "440dca49cddd95ab",
+        "c5182051fc2e8249",
+        "1fdce0a81a2b3473"
+      ],
+      "query": "what was decided after the email about \"Fwd: Election concession & retraction parody. Has good audio also.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "1fdce0a81a2b3473",
+        "c5182051fc2e8249"
+      ],
+      "query": "what's the follow-up action from mike.grigsby@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c5182051fc2e8249",
+    "1fdce0a81a2b3473"
+  ]
+}

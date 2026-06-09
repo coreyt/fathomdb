@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "a7918b345e8c32a9"
+  ],
+  "chain_id": "chain-article_note_todo-0123",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "a7918b345e8c32a9",
+    "6011dc09d2fdd895",
+    "b0b3d6e251d4d219"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a7918b345e8c32a9",
+        "6011dc09d2fdd895",
+        "b0b3d6e251d4d219"
+      ],
+      "query": "what's on my to-do list from the article about \"JOHANNESBURG, South Africa (CNN) -- Ten South African ministers and the deputy p\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "6011dc09d2fdd895",
+    "b0b3d6e251d4d219"
+  ]
+}

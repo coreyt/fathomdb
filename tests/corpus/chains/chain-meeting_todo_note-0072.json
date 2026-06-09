@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "b20432a3c2b75b9b"
+  ],
+  "chain_id": "chain-meeting_todo_note-0072",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "b20432a3c2b75b9b",
+    "3f517032771d1340",
+    "6476821fe1d44b11"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b20432a3c2b75b9b",
+        "3f517032771d1340",
+        "6476821fe1d44b11"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the whole meeting.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6476821fe1d44b11",
+        "b20432a3c2b75b9b"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3f517032771d1340",
+    "6476821fe1d44b11"
+  ]
+}

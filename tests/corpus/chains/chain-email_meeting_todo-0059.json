@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "ef1cd5e8bba8eb7e",
+    "7fab65e090415fd5"
+  ],
+  "chain_id": "chain-email_meeting_todo-0059",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "ef1cd5e8bba8eb7e",
+    "7fab65e090415fd5",
+    "75c34bebea2158ea"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "ef1cd5e8bba8eb7e",
+        "7fab65e090415fd5",
+        "75c34bebea2158ea"
+      ],
+      "query": "what's the action item from meyers-a's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "75c34bebea2158ea"
+  ]
+}

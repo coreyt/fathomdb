@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "95b8c5d81ba0c152"
+  ],
+  "chain_id": "chain-article_note_email-0099",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "95b8c5d81ba0c152",
+    "9785858ba0e5ba85",
+    "47e9f600447d0c44"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "95b8c5d81ba0c152",
+        "9785858ba0e5ba85",
+        "47e9f600447d0c44"
+      ],
+      "query": "what's the context around \"(CNN) -- A year ago Thursday, I-Report was born\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "47e9f600447d0c44",
+        "9785858ba0e5ba85"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9785858ba0e5ba85",
+    "47e9f600447d0c44"
+  ]
+}

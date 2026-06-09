@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "938e8e78e7fa09ad"
+  ],
+  "chain_id": "chain-paper_note_todo-0083",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "938e8e78e7fa09ad",
+    "5a273f355934723b",
+    "69ef49a8634481a4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "938e8e78e7fa09ad",
+        "5a273f355934723b",
+        "69ef49a8634481a4"
+      ],
+      "query": "what action came out of the paper about \"Local Contextual Attention with Hierarchical Structure for Dialogue Act Recognit\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5a273f355934723b",
+        "938e8e78e7fa09ad"
+      ],
+      "query": "where are my notes on the paper about \"Local Contextual Attention with Hierarchical Structure for Dialogue Act Recognit\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5a273f355934723b",
+    "69ef49a8634481a4"
+  ]
+}

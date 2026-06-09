@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "abc4f39391162d54",
+    "e2fe0363b6902a54"
+  ],
+  "chain_id": "chain-email_meeting_todo-0108",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "abc4f39391162d54",
+    "e2fe0363b6902a54",
+    "effdd58d3c0c88b9"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "abc4f39391162d54",
+        "e2fe0363b6902a54",
+        "effdd58d3c0c88b9"
+      ],
+      "query": "what's the action item from linder-e's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "effdd58d3c0c88b9"
+  ]
+}

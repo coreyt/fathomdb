@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c5aa5a9f2bc1c6d9"
+  ],
+  "chain_id": "chain-article_note_todo-0081",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c5aa5a9f2bc1c6d9",
+    "b5dc2ab52204b4f5",
+    "07f3211d8ae3c739"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c5aa5a9f2bc1c6d9",
+        "b5dc2ab52204b4f5",
+        "07f3211d8ae3c739"
+      ],
+      "query": "what's on my to-do list from the article about \"BAGHDAD, Iraq (CNN) -- A bomb attached to a car carrying an Iraqi army general e\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b5dc2ab52204b4f5",
+    "07f3211d8ae3c739"
+  ]
+}

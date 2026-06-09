@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "c22c6967dbd4eefd"
+  ],
+  "chain_id": "chain-paper_note_todo-0062",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "c22c6967dbd4eefd",
+    "d7a4dce35c4c0198",
+    "0d679f7518728b0c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c22c6967dbd4eefd",
+        "d7a4dce35c4c0198",
+        "0d679f7518728b0c"
+      ],
+      "query": "what action came out of the paper about \"Toward a Standardized and More Accurate Indonesian Part-of-Speech Tagging\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "d7a4dce35c4c0198",
+        "c22c6967dbd4eefd"
+      ],
+      "query": "where are my notes on the paper about \"Toward a Standardized and More Accurate Indonesian Part-of-Speech Tagging\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d7a4dce35c4c0198",
+    "0d679f7518728b0c"
+  ]
+}

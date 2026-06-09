@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "5c6bf1cd0273c653",
+    "a14b39de456907d2"
+  ],
+  "chain_id": "chain-email_meeting_todo-0150",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "5c6bf1cd0273c653",
+    "a14b39de456907d2",
+    "02c08c3a429e26d8"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5c6bf1cd0273c653",
+        "a14b39de456907d2",
+        "02c08c3a429e26d8"
+      ],
+      "query": "what's the action item from jim.schwieger@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "02c08c3a429e26d8"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "82219aea1629a4e7"
+  ],
+  "chain_id": "chain-paper_note_todo-0188",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "82219aea1629a4e7",
+    "3cfaa6ad403a5db0",
+    "dd8ef60b0f2ffc92"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "82219aea1629a4e7",
+        "3cfaa6ad403a5db0",
+        "dd8ef60b0f2ffc92"
+      ],
+      "query": "what action came out of the paper about \"Tie-breaker: Using language models to quantify gender bias in sports journalism\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "3cfaa6ad403a5db0",
+        "82219aea1629a4e7"
+      ],
+      "query": "where are my notes on the paper about \"Tie-breaker: Using language models to quantify gender bias in sports journalism\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3cfaa6ad403a5db0",
+    "dd8ef60b0f2ffc92"
+  ]
+}

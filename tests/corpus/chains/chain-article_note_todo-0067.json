@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "d5c898a31fefe961"
+  ],
+  "chain_id": "chain-article_note_todo-0067",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "d5c898a31fefe961",
+    "8a2b17a4a67cbf32",
+    "3084a84e2b4a7016"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d5c898a31fefe961",
+        "8a2b17a4a67cbf32",
+        "3084a84e2b4a7016"
+      ],
+      "query": "what's on my to-do list from the article about \"NEW YORK (CNN) -- It's been five years since Carrie Bradshaw journeyed to Paris \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "8a2b17a4a67cbf32",
+    "3084a84e2b4a7016"
+  ]
+}

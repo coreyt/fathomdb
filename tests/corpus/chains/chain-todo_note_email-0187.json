@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "45fc67ef3fb2dfa2"
+  ],
+  "chain_id": "chain-todo_note_email-0187",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "45fc67ef3fb2dfa2",
+    "c80dbef419df628a",
+    "32076b2ec5486b3b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "45fc67ef3fb2dfa2",
+        "c80dbef419df628a",
+        "32076b2ec5486b3b"
+      ],
+      "query": "what's the status of the personal to-do about Pack kitchen?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c80dbef419df628a",
+    "32076b2ec5486b3b"
+  ]
+}

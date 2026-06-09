@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "86e4ac79f6c1a6c4"
+  ],
+  "chain_id": "chain-article_note_email-0008",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "86e4ac79f6c1a6c4",
+    "388e67d96a9c372a",
+    "8d5fa86f343b5697"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "86e4ac79f6c1a6c4",
+        "388e67d96a9c372a",
+        "8d5fa86f343b5697"
+      ],
+      "query": "what's the context around \"(CNN) -- Seven suspected pirates rescued by a Danish warship were turned over to\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "8d5fa86f343b5697",
+        "388e67d96a9c372a"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "388e67d96a9c372a",
+    "8d5fa86f343b5697"
+  ]
+}

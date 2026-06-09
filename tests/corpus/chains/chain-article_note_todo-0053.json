@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "dcf168f8b93e403d"
+  ],
+  "chain_id": "chain-article_note_todo-0053",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "dcf168f8b93e403d",
+    "a4853129e4eb9ee3",
+    "6d122bc0e85c5c38"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "dcf168f8b93e403d",
+        "a4853129e4eb9ee3",
+        "6d122bc0e85c5c38"
+      ],
+      "query": "what's on my to-do list from the article about \"LOS ANGELES, California (CNN) -- A 24-year-old gang member was arrested Thursday\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a4853129e4eb9ee3",
+    "6d122bc0e85c5c38"
+  ]
+}

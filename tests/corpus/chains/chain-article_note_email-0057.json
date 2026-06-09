@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4c7db687f674680f"
+  ],
+  "chain_id": "chain-article_note_email-0057",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "4c7db687f674680f",
+    "2139949fef980c03",
+    "8ac4c3e4518f1eea"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4c7db687f674680f",
+        "2139949fef980c03",
+        "8ac4c3e4518f1eea"
+      ],
+      "query": "what's the context around \"JACKSONVILLE, North Carolina (CNN) -- Police believe they have found the remains\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "8ac4c3e4518f1eea",
+        "2139949fef980c03"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2139949fef980c03",
+    "8ac4c3e4518f1eea"
+  ]
+}

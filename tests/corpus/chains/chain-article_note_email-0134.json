@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "ba7cede3a8ac3909"
+  ],
+  "chain_id": "chain-article_note_email-0134",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "ba7cede3a8ac3909",
+    "be9e98cf50417f5d",
+    "803c977f8861afc7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "ba7cede3a8ac3909",
+        "be9e98cf50417f5d",
+        "803c977f8861afc7"
+      ],
+      "query": "what's the context around \"1\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "803c977f8861afc7",
+        "be9e98cf50417f5d"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "be9e98cf50417f5d",
+    "803c977f8861afc7"
+  ]
+}

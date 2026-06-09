@@ -1,30 +1,30 @@
 {
   "anchor_doc_ids": [
-    "5234896ecba866be"
+    "50f6285c2170d198"
   ],
   "chain_id": "chain-meeting_todo_note-0128",
   "chain_shape": "MEETING->TODO->NOTE(contradicts)",
   "doc_ids": [
-    "5234896ecba866be",
+    "50f6285c2170d198",
     "7c38fb2e137ce2e8",
     "2dc45dffcab53cad"
   ],
   "ground_truth_queries": [
     {
       "expected_top_k_doc_ids": [
-        "5234896ecba866be",
+        "50f6285c2170d198",
         "7c38fb2e137ce2e8",
         "2dc45dffcab53cad"
       ],
-      "query": "what did we decide in the meeting about \"Committee meeting: education_6\"?",
+      "query": "what did we decide in the meeting about \"QAConv conversation enron_wisrlab-1525\"?",
       "relation_type": "summarizes"
     },
     {
       "expected_top_k_doc_ids": [
         "2dc45dffcab53cad",
-        "5234896ecba866be"
+        "50f6285c2170d198"
       ],
-      "query": "did we end up reversing the committee decision?",
+      "query": "did we end up reversing the meeting-followups decision?",
       "relation_type": "contradicts"
     }
   ],

@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "11eb894c8ce778f0"
+  ],
+  "chain_id": "chain-article_note_todo-0137",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "11eb894c8ce778f0",
+    "8ac91a4713aee5e9",
+    "b16f9cf1bce84dbd"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "11eb894c8ce778f0",
+        "8ac91a4713aee5e9",
+        "b16f9cf1bce84dbd"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- Disgraced former NFL star Michael Vick declared that \"I am not the bad \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "8ac91a4713aee5e9",
+    "b16f9cf1bce84dbd"
+  ]
+}

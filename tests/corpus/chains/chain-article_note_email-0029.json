@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "38deea92f9c9c3b1"
+  ],
+  "chain_id": "chain-article_note_email-0029",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "38deea92f9c9c3b1",
+    "2a72ece75e141506",
+    "0c4cffc3d5791794"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "38deea92f9c9c3b1",
+        "2a72ece75e141506",
+        "0c4cffc3d5791794"
+      ],
+      "query": "what's the context around \"(CNN) -- Six of the seven college students killed in a massive house fire Sunday\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "0c4cffc3d5791794",
+        "2a72ece75e141506"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2a72ece75e141506",
+    "0c4cffc3d5791794"
+  ]
+}

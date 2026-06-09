@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "07fbae4215a06a26"
+  ],
+  "chain_id": "chain-email_note_todo-0028",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "07fbae4215a06a26",
+    "653d9b5e670756c9",
+    "ea7e3644633db5b1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "07fbae4215a06a26",
+        "653d9b5e670756c9",
+        "ea7e3644633db5b1"
+      ],
+      "query": "what was decided after the email about \"Harbor Cogen Sale for 6/01/01\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "ea7e3644633db5b1",
+        "653d9b5e670756c9"
+      ],
+      "query": "what's the follow-up action from ryan.slinger@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "653d9b5e670756c9",
+    "ea7e3644633db5b1"
+  ]
+}

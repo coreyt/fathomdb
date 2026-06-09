@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "d66f09e86b797918"
+  ],
+  "chain_id": "chain-email_note_todo-0133",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "d66f09e86b797918",
+    "2bc55a6ce7b1b1d9",
+    "8a6e3ca98201eb8e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d66f09e86b797918",
+        "2bc55a6ce7b1b1d9",
+        "8a6e3ca98201eb8e"
+      ],
+      "query": "what was decided after the email about \"Re: Re[2]: FW: Rejected Crayons\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "8a6e3ca98201eb8e",
+        "2bc55a6ce7b1b1d9"
+      ],
+      "query": "what's the follow-up action from matthew.lenhart@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2bc55a6ce7b1b1d9",
+    "8a6e3ca98201eb8e"
+  ]
+}

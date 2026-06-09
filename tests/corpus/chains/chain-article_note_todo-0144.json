@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "5c33e47e0f603872"
+  ],
+  "chain_id": "chain-article_note_todo-0144",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "5c33e47e0f603872",
+    "93e50063969c0846",
+    "ae4b8e8128e8db54"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5c33e47e0f603872",
+        "93e50063969c0846",
+        "ae4b8e8128e8db54"
+      ],
+      "query": "what's on my to-do list from the article about \"BAGHDAD, Iraq (CNN) -- The Iraqi Presidency Council approved a resolution Sunday\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "93e50063969c0846",
+    "ae4b8e8128e8db54"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "3976b20bcfba0efb"
+  ],
+  "chain_id": "chain-article_note_email-0183",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "3976b20bcfba0efb",
+    "cc6a80a3600861a2",
+    "13fc8d30438cfafd"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "3976b20bcfba0efb",
+        "cc6a80a3600861a2",
+        "13fc8d30438cfafd"
+      ],
+      "query": "what's the context around \"(Entertainment Weekly) -- Watching Iain Softley's motley, jewel-toned adaptation\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "13fc8d30438cfafd",
+        "cc6a80a3600861a2"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "cc6a80a3600861a2",
+    "13fc8d30438cfafd"
+  ]
+}

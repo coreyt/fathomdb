@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "80b013cfeaa5f745"
+  ],
+  "chain_id": "chain-email_note_todo-0119",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "80b013cfeaa5f745",
+    "c4f0d3c3f6a0f2bf",
+    "6d13c06c153895c8"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "80b013cfeaa5f745",
+        "c4f0d3c3f6a0f2bf",
+        "6d13c06c153895c8"
+      ],
+      "query": "what was decided after the email about \"Enron - PGT Payout Table\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6d13c06c153895c8",
+        "c4f0d3c3f6a0f2bf"
+      ],
+      "query": "what's the follow-up action from barry.tycholiz@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c4f0d3c3f6a0f2bf",
+    "6d13c06c153895c8"
+  ]
+}

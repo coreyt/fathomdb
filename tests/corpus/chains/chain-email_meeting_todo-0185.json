@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "29fc7261add0a35a",
+    "f8033cbead85c0fe"
+  ],
+  "chain_id": "chain-email_meeting_todo-0185",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "29fc7261add0a35a",
+    "f8033cbead85c0fe",
+    "17b22aa4ce8609a5"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "29fc7261add0a35a",
+        "f8033cbead85c0fe",
+        "17b22aa4ce8609a5"
+      ],
+      "query": "what's the action item from mike.maggi@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "17b22aa4ce8609a5"
+  ]
+}

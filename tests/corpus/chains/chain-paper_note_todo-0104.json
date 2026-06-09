@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "0b4dc00120732de2"
+  ],
+  "chain_id": "chain-paper_note_todo-0104",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "0b4dc00120732de2",
+    "ddeb9064ccf90939",
+    "db8f6eb53faf314e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "0b4dc00120732de2",
+        "ddeb9064ccf90939",
+        "db8f6eb53faf314e"
+      ],
+      "query": "what action came out of the paper about \"Joint Contextual Modeling for ASR Correction and Language Understanding\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "ddeb9064ccf90939",
+        "0b4dc00120732de2"
+      ],
+      "query": "where are my notes on the paper about \"Joint Contextual Modeling for ASR Correction and Language Understanding\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ddeb9064ccf90939",
+    "db8f6eb53faf314e"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "487345ff6ddc6d25"
+  ],
+  "chain_id": "chain-paper_note_todo-0055",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "487345ff6ddc6d25",
+    "10fb358dedcbae93",
+    "a9b5e222d88ceb4e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "487345ff6ddc6d25",
+        "10fb358dedcbae93",
+        "a9b5e222d88ceb4e"
+      ],
+      "query": "what action came out of the paper about \"Transfer Learning in Biomedical Natural Language Processing: An Evaluation of BE\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "10fb358dedcbae93",
+        "487345ff6ddc6d25"
+      ],
+      "query": "where are my notes on the paper about \"Transfer Learning in Biomedical Natural Language Processing: An Evaluation of BE\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "10fb358dedcbae93",
+    "a9b5e222d88ceb4e"
+  ]
+}

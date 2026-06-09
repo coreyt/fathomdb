@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "a8166699551019cc"
+  ],
+  "chain_id": "chain-email_note_todo-0021",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "a8166699551019cc",
+    "5889280657ab95ac",
+    "30521accba620b71"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a8166699551019cc",
+        "5889280657ab95ac",
+        "30521accba620b71"
+      ],
+      "query": "what was decided after the email about \"FASB\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "30521accba620b71",
+        "5889280657ab95ac"
+      ],
+      "query": "what's the follow-up action from kevin.hyatt@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5889280657ab95ac",
+    "30521accba620b71"
+  ]
+}

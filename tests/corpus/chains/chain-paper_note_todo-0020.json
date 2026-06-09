@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "efc7a578509b5a6e"
+  ],
+  "chain_id": "chain-paper_note_todo-0020",
+  "chain_shape": "PAPER->NOTE->TODO",
+  "doc_ids": [
+    "efc7a578509b5a6e",
+    "7f3e7eee66554148",
+    "b0fd6ade985fccff"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "efc7a578509b5a6e",
+        "7f3e7eee66554148",
+        "b0fd6ade985fccff"
+      ],
+      "query": "what action came out of the paper about \"Twitter Job/Employment Corpus: A Dataset of Job-Related Discourse Built with Hum\"?",
+      "relation_type": "action_from"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "7f3e7eee66554148",
+        "efc7a578509b5a6e"
+      ],
+      "query": "where are my notes on the paper about \"Twitter Job/Employment Corpus: A Dataset of Job-Related Discourse Built with Hum\"?",
+      "relation_type": "summarizes"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "7f3e7eee66554148",
+    "b0fd6ade985fccff"
+  ]
+}
