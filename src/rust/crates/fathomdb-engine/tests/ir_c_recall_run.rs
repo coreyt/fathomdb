@@ -129,9 +129,14 @@ fn ir_c_recall_run() {
     let issues = validate_gold_set(&full_gold);
     assert!(issues.is_empty(), "resolved gold invalid: {issues:?}");
 
-    // Deterministic sample of queries (first N) for the smoke; all for full.
+    // Deterministic STRIDED sample for the smoke; all for full. The gold is
+    // sorted by query_id, so the per-source blocks (enronqa/qaconv/qmsum) are
+    // contiguous — a strided pick spans all sources and therefore all classes
+    // (exact_fact + exploratory + negative), where `take(N)` would draw only the
+    // first block and hide the harder classes.
     let queries: Vec<GoldQuery> = if sample > 0 && sample < full_gold.queries.len() {
-        full_gold.queries.iter().take(sample).cloned().collect()
+        let total = full_gold.queries.len();
+        (0..sample).map(|i| full_gold.queries[i * total / sample].clone()).collect()
     } else {
         full_gold.queries.clone()
     };
