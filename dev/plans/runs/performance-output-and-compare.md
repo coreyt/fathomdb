@@ -159,6 +159,37 @@ negative/abstention class (more spurious matches). A guarded variant
 on the precision/abstention axis. Needs full-corpus + negative-class validation
 before a production `compile_text_query` change.
 
+## Update (2026-06-10) — guarded variant tested; OR is a clean win
+
+Re-ran with the negative/abstention class (60 negatives) + an N-of-M
+content-token coverage guard with an abstention gate (`hybrid_OR_3x_gateNN`).
+
+| Config | exact_fact R@10 | explor R@10 | negative abstain |
+|---|---:|---:|---:|
+| `hybrid_current` (production today) | 0.773 | 0.438 | **0.00** |
+| `bm25_only_AND` (today's lexical arm alone) | 0.080 | 0.362 | 0.87 |
+| `hybrid_OR_3x` (OR, ungated) | **0.940** | 0.613 | 0.00 |
+| `hybrid_OR_3x_gate50` | 0.907 | 0.675 | 0.05 |
+| `hybrid_OR_3x_gate67` | 0.687 | 0.600 | 0.50 |
+| `hybrid_OR_3x_gate100` | 0.227 | 0.338 | 0.88 |
+
+**Conclusions:**
+1. **Coverage-gating REJECTED as a precision lever** — no good knee: gate50 barely
+   abstains (0.05) while keeping recall; gate67 buys 0.50 abstention at ~25 recall
+   points; gate100 collapses to AND. Token-overlap ≠ relevance.
+2. **OR is a near-pure win for the real hybrid path** — +0.167 exact / +0.175
+   exploratory R@10, with **no abstention regression**: the production hybrid
+   *already* abstains 0.00 (the vector arm always returns neighbors), so OR doesn't
+   make abstention worse than it already is.
+3. **Abstention (FPR=1.0) is pre-existing and orthogonal** to query semantics — it
+   needs a real confidence gate (a reranker, WS3, or a calibrated score threshold),
+   not the AND-join's accidental over-strictness and not coverage-gating.
+
+**Recommendation:** ship the OR query-compilation fix (`compile_text_query`
+AND→OR, order the text arm by `bm25()`) as the WS4 recall lever — validated as a
+clean win on the hybrid path. Track abstention/precision as a separate WS3 effort.
+All directional (1,500-doc slice); confirm on a full-corpus run before landing.
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
