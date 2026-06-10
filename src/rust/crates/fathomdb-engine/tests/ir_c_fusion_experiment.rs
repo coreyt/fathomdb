@@ -109,6 +109,25 @@ fn compile_content_or(raw: &str) -> String {
     toks.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
 }
 
+/// BGE-en-v1.5 retrieval query instruction (model card). Applied to the QUERY
+/// side only; passages/documents are embedded bare. Probes whether the missing
+/// query/passage asymmetry explains the weak dense arm.
+const BGE_QUERY_INSTRUCTION: &str = "Represent this sentence for searching relevant passages: ";
+
+/// Brute-force cosine KNN over the harness-side doc vectors. Both query and doc
+/// vectors are L2-normalized by the embedder, so cosine == dot product.
+fn knn_bodies(qv: &[f32], docs: &[(String, Vec<f32>)], k: usize) -> Vec<String> {
+    let mut scored: Vec<(f32, &str)> = docs
+        .iter()
+        .map(|(body, dv)| {
+            let dot: f32 = qv.iter().zip(dv).map(|(a, b)| a * b).sum();
+            (dot, body.as_str())
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.into_iter().take(k).map(|(_, b)| b.to_string()).collect()
+}
+
 /// Local weighted RRF, faithful to `fuse_rrf`: contribution `w / (k + rank1)`,
 /// dedup keyed on body, vector-first tiebreak, deterministic sort. Returns fused
 /// bodies in rank order. An arm passed empty contributes nothing (arm-only modes).
@@ -162,6 +181,8 @@ struct Arms {
     text_wcursor: Vec<String>,  // AND-of-tokens + write_cursor order (production arm)
     text_or: Vec<String>,         // WS4 fix: OR-of-tokens (bag-of-words) + bm25() order
     text_or_content: Vec<String>, // re-visited lever: OR over content tokens only (no stopwords)
+    vec_bf_bare: Vec<String>,     // brute-force KNN, bare query embedding
+    vec_bf_pref: Vec<String>,     // brute-force KNN, BGE query-instruction-prefixed embedding
     engine_hybrid: Vec<String>,   // engine's real RrfHybrid (validation anchor)
 }
 
@@ -334,6 +355,13 @@ fn ir_c_fusion_experiment() {
     }
     eprintln!("FX_SEEDED docs={}", docs.len());
 
+    // Harness-side doc-vector index for the vector-arm probe (brute-force KNN).
+    // Re-embeds bodies with the same BGE embedder so bare-vs-prefixed queries run
+    // through an identical pipeline (no engine mean-centering / ANN quantization).
+    let doc_vecs: Vec<(String, Vec<f32>)> =
+        docs.iter().map(|d| (d.body.clone(), embedder.embed(&d.body).expect("embed doc"))).collect();
+    eprintln!("FX_DOCVECS n={}", doc_vecs.len());
+
     let body_to_doc = build_body_to_doc_id(&docs);
     let deepest = *K_LADDER.iter().max().unwrap();
     engine.set_search_limit_for_test(deepest.max(64));
@@ -366,9 +394,25 @@ fn ir_c_fusion_experiment() {
         let text_or = fts_bodies(&fts, &or_expr, "bm25(search_index)", cap);
         let text_or_content =
             fts_bodies(&fts, &compile_content_or(&q.query), "bm25(search_index)", cap);
+        // Vector-arm probe: brute-force KNN with bare vs BGE-instruction-prefixed query.
+        let qv_bare = embedder.embed(&q.query).expect("embed query");
+        let qv_pref = embedder
+            .embed(&format!("{BGE_QUERY_INSTRUCTION}{}", q.query))
+            .expect("embed prefixed query");
+        let vec_bf_bare = knn_bodies(&qv_bare, &doc_vecs, cap);
+        let vec_bf_pref = knn_bodies(&qv_pref, &doc_vecs, cap);
         cache.insert(
             key,
-            Arms { vector, text_bm25, text_wcursor, text_or, text_or_content, engine_hybrid },
+            Arms {
+                vector,
+                text_bm25,
+                text_wcursor,
+                text_or,
+                text_or_content,
+                vec_bf_bare,
+                vec_bf_pref,
+                engine_hybrid,
+            },
         );
     }
     eprintln!("FX_RETRIEVED queries={}", cache.len());
@@ -379,26 +423,19 @@ fn ir_c_fusion_experiment() {
     // query-side lever (content-OR = stopword-stripped). ord:
     // "none"(vector) | "engine"(anchor) | "bm25"(AND) | "bm25or"(raw OR) | "orc"(content OR).
     let configs: Vec<(&str, f64, f64, f64, &str)> = vec![
-        // Reference points / arm-isolation:
-        ("vector_only", 1.0, 0.0, 60.0, "none"),
-        ("hybrid_current(anchor)", 0.0, 0.0, 60.0, "engine"),
-        ("bm25_only_AND", 0.0, 1.0, 60.0, "bm25"),
-        ("text_only_OR", 0.0, 1.0, 60.0, "bm25or"),
-        // RRF weight sweep on OR (re-visited: was null under AND):
-        ("hybrid_OR_1:1", 1.0, 1.0, 60.0, "bm25or"),
-        ("hybrid_OR_1:2", 1.0, 2.0, 60.0, "bm25or"),
-        ("hybrid_OR_1:3", 1.0, 3.0, 60.0, "bm25or"),
-        ("hybrid_OR_1:5", 1.0, 5.0, 60.0, "bm25or"),
-        ("hybrid_OR_2:1", 2.0, 1.0, 60.0, "bm25or"),
-        ("hybrid_OR_3:1", 3.0, 1.0, 60.0, "bm25or"),
-        // RRF k sweep on OR at 1:2 (re-visited: was null under AND):
-        ("hybrid_OR_1:2_k10", 1.0, 2.0, 10.0, "bm25or"),
-        ("hybrid_OR_1:2_k30", 1.0, 2.0, 30.0, "bm25or"),
-        ("hybrid_OR_1:2_k100", 1.0, 2.0, 100.0, "bm25or"),
-        // New lever — content-OR (stopwords stripped):
+        // Context (best points from the prior sweeps):
+        ("vector_only(engine)", 1.0, 0.0, 60.0, "none"),
         ("text_only_ORc", 0.0, 1.0, 60.0, "orc"),
-        ("hybrid_ORc_1:2", 1.0, 2.0, 60.0, "orc"),
         ("hybrid_ORc_1:3", 1.0, 3.0, 60.0, "orc"),
+        // ── Vector-arm probe: brute-force KNN, bare vs BGE query-instruction prefix ──
+        ("vec_bf_bare", 1.0, 0.0, 60.0, "bfbare"),
+        ("vec_bf_prefixed", 1.0, 0.0, 60.0, "bfpref"),
+        // Does a (hopefully) stronger dense arm lift the hybrid? (text = content-OR)
+        ("hybrid_bfbare_1:3", 1.0, 3.0, 60.0, "hyb_bfbare_orc"),
+        ("hybrid_bfpref_1:3", 1.0, 3.0, 60.0, "hyb_bfpref_orc"),
+        ("hybrid_bfpref_1:1", 1.0, 1.0, 60.0, "hyb_bfpref_orc"),
+        ("hybrid_bfpref_2:1", 2.0, 1.0, 60.0, "hyb_bfpref_orc"),
+        ("hybrid_bfpref_3:1", 3.0, 1.0, 60.0, "hyb_bfpref_orc"),
     ];
 
     let mut report = serde_json::Map::new();
@@ -420,6 +457,14 @@ fn ir_c_fusion_experiment() {
                 "wcursor" => fuse_weighted(&arms.vector, &arms.text_wcursor, *w_vec, *w_text, *k),
                 "bm25or" => fuse_weighted(&arms.vector, &arms.text_or, *w_vec, *w_text, *k),
                 "orc" => fuse_weighted(&arms.vector, &arms.text_or_content, *w_vec, *w_text, *k),
+                "bfbare" => fuse_weighted(&arms.vec_bf_bare, &[], *w_vec, 0.0, *k),
+                "bfpref" => fuse_weighted(&arms.vec_bf_pref, &[], *w_vec, 0.0, *k),
+                "hyb_bfbare_orc" => {
+                    fuse_weighted(&arms.vec_bf_bare, &arms.text_or_content, *w_vec, *w_text, *k)
+                }
+                "hyb_bfpref_orc" => {
+                    fuse_weighted(&arms.vec_bf_pref, &arms.text_or_content, *w_vec, *w_text, *k)
+                }
                 _ => unreachable!(),
             };
             Ok(map_bodies(&fused, &body_to_doc))
