@@ -78,6 +78,7 @@ fn env_usize(key: &str, default: usize) -> usize {
 
 /// Inlined copy of `fathomdb_query::compile_text_query` (not a dev-dependency):
 /// whitespace-split, quote each token, AND-join — byte-identical to production.
+#[allow(dead_code)] // production AND-compile; kept for future probes
 fn compile_match_expression(raw: &str) -> String {
     compile_with_op(raw, " AND ")
 }
@@ -109,23 +110,14 @@ fn compile_content_or(raw: &str) -> String {
     toks.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
 }
 
-/// Brute-force cosine KNN over the harness-side doc vectors. Both query and doc
-/// vectors are L2-normalized by the embedder, so cosine == dot product.
-fn knn_bodies(qv: &[f32], docs: &[(String, Vec<f32>)], k: usize) -> Vec<String> {
-    let mut scored: Vec<(f32, &str)> = docs
-        .iter()
-        .map(|(body, dv)| {
-            let dot: f32 = qv.iter().zip(dv).map(|(a, b)| a * b).sum();
-            (dot, body.as_str())
-        })
-        .collect();
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    scored.into_iter().take(k).map(|(_, b)| b.to_string()).collect()
-}
+/// BGE-en-v1.5 retrieval query instruction (model card). Query-side only;
+/// passages stay bare. Rejected on whole-doc vectors, re-tested on passages
+/// (the granularity the instruction targets).
+const BGE_QUERY_INSTRUCTION: &str = "Represent this sentence for searching relevant passages: ";
 
-/// Split a body into overlapping word-window passages (last dense lever: long
-/// bodies exceed bge-small's ~512-token window and get mean-pool-diluted). Short
-/// bodies pass through as a single chunk, so this only changes long docs.
+/// Split a body into overlapping word-window passages (long bodies exceed
+/// bge-small's ~512-token window and get mean-pool-diluted). Short bodies pass
+/// through as a single chunk; `size = usize::MAX` ⇒ whole-doc (one passage).
 fn chunk_words(body: &str, size: usize, stride: usize, max_chunks: usize) -> Vec<String> {
     let words: Vec<&str> = body.split_whitespace().collect();
     if words.len() <= size {
@@ -144,15 +136,60 @@ fn chunk_words(body: &str, size: usize, stride: usize, max_chunks: usize) -> Vec
     chunks
 }
 
-/// KNN over passage vectors, max-pooled to doc level (a doc scores as its best
-/// passage). Returns ranked doc_ids — already in evaluation (doc_id) space.
-fn knn_docs_maxpool(qv: &[f32], passages: &[(String, Vec<f32>)], k: usize) -> Vec<String> {
-    let mut best: HashMap<&str, f32> = HashMap::new();
+/// Passage-score aggregation to doc level.
+#[derive(Clone, Copy)]
+enum Pool {
+    Max,  // doc scores as its single best passage
+    Mean, // average over all the doc's passages (rewards uniform relevance)
+    Top2, // average of the doc's two best passages (max/mean compromise)
+}
+
+/// KNN over passage vectors, pooled to ranked doc_ids — already in evaluation
+/// (doc_id) space. One pass accumulates sum/count/top-2 per doc.
+fn knn_docs_pool(
+    qv: &[f32],
+    passages: &[(String, Vec<f32>)],
+    k: usize,
+    pool: Pool,
+) -> Vec<String> {
+    struct Acc {
+        sum: f32,
+        n: u32,
+        b1: f32,
+        b2: f32,
+    }
+    let mut by_doc: HashMap<&str, Acc> = HashMap::new();
     for (doc_id, pv) in passages {
         let dot: f32 = qv.iter().zip(pv).map(|(a, b)| a * b).sum();
-        best.entry(doc_id.as_str()).and_modify(|s| *s = s.max(dot)).or_insert(dot);
+        let e = by_doc
+            .entry(doc_id.as_str())
+            .or_insert(Acc { sum: 0.0, n: 0, b1: f32::MIN, b2: f32::MIN });
+        e.sum += dot;
+        e.n += 1;
+        if dot > e.b1 {
+            e.b2 = e.b1;
+            e.b1 = dot;
+        } else if dot > e.b2 {
+            e.b2 = dot;
+        }
     }
-    let mut v: Vec<(&str, f32)> = best.into_iter().collect();
+    let mut v: Vec<(&str, f32)> = by_doc
+        .into_iter()
+        .map(|(d, a)| {
+            let s = match pool {
+                Pool::Max => a.b1,
+                Pool::Mean => a.sum / a.n as f32,
+                Pool::Top2 => {
+                    if a.n >= 2 {
+                        (a.b1 + a.b2) / 2.0
+                    } else {
+                        a.b1
+                    }
+                }
+            };
+            (d, s)
+        })
+        .collect();
     v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     v.into_iter().take(k).map(|(d, _)| d.to_string()).collect()
 }
@@ -204,15 +241,13 @@ fn fuse_weighted(
 }
 
 /// Cached per-query retrieval arms (retrieved once, re-fused many times).
-struct Arms {
-    vector: Vec<String>,        // vector-stage-only ranked bodies
-    text_bm25: Vec<String>,     // AND-of-tokens (production compile) + bm25() order
-    text_wcursor: Vec<String>,  // AND-of-tokens + write_cursor order (production arm)
-    text_or: Vec<String>,         // WS4 fix: OR-of-tokens (bag-of-words) + bm25() order
-    text_or_content: Vec<String>, // re-visited lever: OR over content tokens only (no stopwords)
-    vec_bf_bare: Vec<String>,     // brute-force KNN, whole-doc embedding (dense baseline)
-    chunk_vec_ids: Vec<String>,   // passage-chunked KNN, max-pooled to ranked doc_ids
-    engine_hybrid: Vec<String>,   // engine's real RrfHybrid (validation anchor)
+/// Per-query cache for the geometry × pooling × prefix sweep. Query embeddings
+/// (bare + prefixed) and the lexical doc_ids are geometry-independent, so they're
+/// computed once; pooling over the per-geometry passage sets is done at eval time.
+struct QCache {
+    qv_bare: Vec<f32>,      // bare query embedding
+    qv_pref: Vec<f32>,      // BGE-query-instruction-prefixed query embedding
+    text_ids: Vec<String>,  // content-OR lexical arm, mapped to ranked doc_ids
 }
 
 /// Read-only FTS query against the engine's sqlite file, ordered by `order_sql`.
@@ -384,96 +419,98 @@ fn ir_c_fusion_experiment() {
     }
     eprintln!("FX_SEEDED docs={}", docs.len());
 
-    // Harness-side doc-vector index for the vector-arm probe (brute-force KNN).
-    // Re-embeds bodies with the same BGE embedder so bare-vs-prefixed queries run
-    // through an identical pipeline (no engine mean-centering / ANN quantization).
-    let doc_vecs: Vec<(String, Vec<f32>)> =
-        docs.iter().map(|d| (d.body.clone(), embedder.embed(&d.body).expect("embed doc"))).collect();
-    eprintln!("FX_DOCVECS n={}", doc_vecs.len());
-
-    // Passage-chunked index (last dense lever). (doc_id, passage_vec); a doc may
-    // contribute several passages. Whole-doc vs chunked is the controlled A/B.
-    let (chunk_size, chunk_stride, chunk_max) = (128usize, 96usize, 8usize);
-    let mut passage_vecs: Vec<(String, Vec<f32>)> = Vec::with_capacity(doc_vecs.len() * 2);
-    for d in &docs {
-        for chunk in chunk_words(&d.body, chunk_size, chunk_stride, chunk_max) {
-            passage_vecs.push((d.doc_id.clone(), embedder.embed(&chunk).expect("embed chunk")));
-        }
-    }
-    eprintln!(
-        "FX_PASSAGES n={} (from {} docs, size={chunk_size}/stride={chunk_stride}/max={chunk_max})",
-        passage_vecs.len(),
-        docs.len()
-    );
+    // Harness-side passage indexes, one per geometry (re-embeds bodies with the
+    // same BGE embedder — no engine mean-centering / ANN quantization). "whole"
+    // (size=MAX ⇒ one passage/doc) is the whole-doc anchor under the same pooling
+    // path. (label, size, stride, max_chunks).
+    let geoms: Vec<(&str, usize, usize, usize)> = vec![
+        ("whole", usize::MAX, 1, 1),
+        ("64/48", 64, 48, 6),
+        ("128/96", 128, 96, 8),
+        ("256/192", 256, 192, 4),
+    ];
+    let passage_sets: Vec<(&str, Vec<(String, Vec<f32>)>)> = geoms
+        .iter()
+        .map(|(label, size, stride, max)| {
+            let mut pv: Vec<(String, Vec<f32>)> = Vec::with_capacity(docs.len() * 4);
+            for d in &docs {
+                for chunk in chunk_words(&d.body, *size, *stride, *max) {
+                    pv.push((d.doc_id.clone(), embedder.embed(&chunk).expect("embed chunk")));
+                }
+            }
+            eprintln!("FX_PASSAGES geom={label} n={} (size={size}/stride={stride}/max={max})", pv.len());
+            (*label, pv)
+        })
+        .collect();
 
     let body_to_doc = build_body_to_doc_id(&docs);
     let deepest = *K_LADDER.iter().max().unwrap();
     engine.set_search_limit_for_test(deepest.max(64));
 
-    // ── Retrieve each arm ONCE per query (cache for the free sweep). ──
+    // ── Query-side cache: embeddings (bare + prefixed) and the lexical arm. ──
+    // The pooled passage retrieval happens per-config at eval time (cheap
+    // re-aggregation over the precomputed passage vectors).
     let fts = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open read-only fts conn");
     let cap = 200usize;
-    let mut cache: HashMap<String, Arms> = HashMap::with_capacity(gold.queries.len());
+    let mut cache: HashMap<String, QCache> = HashMap::with_capacity(gold.queries.len());
     for q in &gold.queries {
         let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
-        // vector-stage-only arm
-        engine.set_vector_stage_only_for_test(true);
-        let vector: Vec<String> = engine
-            .search(&q.query)
-            .expect("vector search")
-            .results
-            .into_iter()
-            .map(|h| h.body)
-            .collect();
-        engine.set_vector_stage_only_for_test(false);
-        // engine's real hybrid (validation anchor)
-        let engine_hybrid: Vec<String> =
-            engine.search(&q.query).expect("hybrid search").results.into_iter().map(|h| h.body).collect();
-        // text arms (read-only FTS, two orderings)
-        let expr = compile_match_expression(&q.query);
-        let or_expr = compile_match_expression_or(&q.query);
-        let text_bm25 = fts_bodies(&fts, &expr, "bm25(search_index)", cap);
-        let text_wcursor = fts_bodies(&fts, &expr, "write_cursor", cap);
-        let text_or = fts_bodies(&fts, &or_expr, "bm25(search_index)", cap);
-        let text_or_content =
-            fts_bodies(&fts, &compile_content_or(&q.query), "bm25(search_index)", cap);
-        // Vector-arm probe: whole-doc vs passage-chunked KNN (bare query embedding).
         let qv_bare = embedder.embed(&q.query).expect("embed query");
-        let vec_bf_bare = knn_bodies(&qv_bare, &doc_vecs, cap);
-        let chunk_vec_ids = knn_docs_maxpool(&qv_bare, &passage_vecs, cap);
-        cache.insert(
-            key,
-            Arms {
-                vector,
-                text_bm25,
-                text_wcursor,
-                text_or,
-                text_or_content,
-                vec_bf_bare,
-                chunk_vec_ids,
-                engine_hybrid,
-            },
-        );
+        let qv_pref = embedder
+            .embed(&format!("{BGE_QUERY_INSTRUCTION}{}", q.query))
+            .expect("embed prefixed query");
+        let text_bodies =
+            fts_bodies(&fts, &compile_content_or(&q.query), "bm25(search_index)", cap);
+        let text_ids = map_bodies(&text_bodies, &body_to_doc);
+        cache.insert(key, QCache { qv_bare, qv_pref, text_ids });
     }
     eprintln!("FX_RETRIEVED queries={}", cache.len());
 
-    // ── Last dense lever: passage chunking. (name, w_vec, w_text, k, ord) ──
-    // Whole-doc embedding (bfbare) vs passage-chunked max-pooled (chunk_vec) is the
-    // controlled A/B; text arm is the best lexical (content-OR). ord:
-    // "orc"(content-OR hybrid) | "bfbare"(whole-doc vec) | "hyb_bfbare_orc" |
-    // "chunk_vec"(chunked vec) | "hyb_chunk_orc"(chunked vec + content-OR).
-    let configs: Vec<(&str, f64, f64, f64, &str)> = vec![
-        // Context refs:
-        ("text_only_ORc", 0.0, 1.0, 60.0, "orc"),
-        ("vec_wholedoc", 1.0, 0.0, 60.0, "bfbare"),
-        ("hybrid_wholedoc_1:3", 1.0, 3.0, 60.0, "hyb_bfbare_orc"),
-        // Passage-chunked dense arm:
-        ("vec_chunked", 1.0, 0.0, 60.0, "chunk_vec"),
-        ("hybrid_chunk_1:3", 1.0, 3.0, 60.0, "hyb_chunk_orc"),
-        ("hybrid_chunk_1:1", 1.0, 1.0, 60.0, "hyb_chunk_orc"),
-        ("hybrid_chunk_2:1", 2.0, 1.0, 60.0, "hyb_chunk_orc"),
-    ];
+    // ── Geometry × pooling × prefix sweep on the chunked dense arm. ──
+    // Chunking was the first real dense win; now sweep its knobs and re-test the
+    // BGE query-prefix (rejected on whole-doc, but it targets passage granularity).
+    struct Cfg {
+        name: String,
+        wv: f64,
+        wt: f64,
+        k: f64,
+        geom: usize, // index into passage_sets / geoms
+        pool: Pool,
+        prefix: bool,
+    }
+    let pool_label = |p: Pool| match p {
+        Pool::Max => "max",
+        Pool::Mean => "mean",
+        Pool::Top2 => "top2",
+    };
+    let mut configs: Vec<Cfg> = Vec::new();
+    // Lexical anchor (wv=0 → vector arm ignored).
+    configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: false });
+    // Whole-doc dense anchor (geom 0; pooling is a no-op at one passage/doc).
+    for pref in [false, true] {
+        let tag = if pref { "pref" } else { "bare" };
+        configs.push(Cfg { name: format!("v_whole_{tag}"), wv: 1.0, wt: 0.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: pref });
+    }
+    // Chunk geometries × pooling × prefix (vector-only).
+    for gi in 1..passage_sets.len() {
+        for pool in [Pool::Max, Pool::Mean, Pool::Top2] {
+            for pref in [false, true] {
+                let tag = if pref { "pref" } else { "bare" };
+                let name = format!("v_{}_{}_{}", geoms[gi].0, pool_label(pool), tag);
+                configs.push(Cfg { name, wv: 1.0, wt: 0.0, k: 60.0, geom: gi, pool, prefix: pref });
+            }
+        }
+    }
+    // Curated hybrids (vector pool + content-OR, max-pool) to see if the best dense
+    // geometry lifts the fused ceiling.
+    for (gi, pref) in [(2usize, false), (2, true), (3, false), (1, false)] {
+        let tag = if pref { "pref" } else { "bare" };
+        for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
+            let name = format!("h_{}_{}_{}", geoms[gi].0, tag, w);
+            configs.push(Cfg { name, wv, wt, k: 60.0, geom: gi, pool: Pool::Max, prefix: pref });
+        }
+    }
 
     let mut report = serde_json::Map::new();
     let class_recall = |by_k: &BTreeMap<usize, ir_eval::KResult>, cls: QueryClass, k: usize| -> f64 {
@@ -483,44 +520,15 @@ fn ir_c_fusion_experiment() {
     eprintln!(
         "\nFX_RESULTS config | exact_fact R@5/10/20/50 | exploratory R@5/10/20/50 | neg_abst"
     );
-    for (name, w_vec, w_text, k, ord) in &configs {
+    for cfg in &configs {
         let by_k = evaluate_gold_set(&gold, &K_LADDER, |q| {
             let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
-            let arms = cache.get(&key).expect("cached arms");
-            // Chunked arms work in doc_id space (max-pool already collapsed passages
-            // to docs); body-space arms map to doc_ids at the end. Both yield doc_ids.
-            let out_ids: Vec<String> = match *ord {
-                "chunk_vec" => fuse_weighted(&arms.chunk_vec_ids, &[], *w_vec, 0.0, *k),
-                "hyb_chunk_orc" => {
-                    let text_ids = map_bodies(&arms.text_or_content, &body_to_doc);
-                    fuse_weighted(&arms.chunk_vec_ids, &text_ids, *w_vec, *w_text, *k)
-                }
-                _ => {
-                    let fused: Vec<String> = match *ord {
-                        "engine" => arms.engine_hybrid.clone(),
-                        "none" => fuse_weighted(&arms.vector, &[], *w_vec, 0.0, *k),
-                        "bm25" => fuse_weighted(&arms.vector, &arms.text_bm25, *w_vec, *w_text, *k),
-                        "wcursor" => {
-                            fuse_weighted(&arms.vector, &arms.text_wcursor, *w_vec, *w_text, *k)
-                        }
-                        "bm25or" => fuse_weighted(&arms.vector, &arms.text_or, *w_vec, *w_text, *k),
-                        "orc" => {
-                            fuse_weighted(&arms.vector, &arms.text_or_content, *w_vec, *w_text, *k)
-                        }
-                        "bfbare" => fuse_weighted(&arms.vec_bf_bare, &[], *w_vec, 0.0, *k),
-                        "hyb_bfbare_orc" => fuse_weighted(
-                            &arms.vec_bf_bare,
-                            &arms.text_or_content,
-                            *w_vec,
-                            *w_text,
-                            *k,
-                        ),
-                        _ => unreachable!(),
-                    };
-                    map_bodies(&fused, &body_to_doc)
-                }
-            };
-            Ok(out_ids)
+            let qc = cache.get(&key).expect("cached qcache");
+            let qv = if cfg.prefix { &qc.qv_pref } else { &qc.qv_bare };
+            // Pooled passage retrieval → ranked doc_ids; fuse with the lexical arm.
+            // Both arms are doc-id space; a zero-weight arm is skipped by fuse_weighted.
+            let vec_ids = knn_docs_pool(qv, &passage_sets[cfg.geom].1, cap, cfg.pool);
+            Ok(fuse_weighted(&vec_ids, &qc.text_ids, cfg.wv, cfg.wt, cfg.k))
         })
         .expect("evaluate");
 
@@ -533,12 +541,13 @@ fn ir_c_fusion_experiment() {
         let abst_rate = if neg_n > 0 { neg_abst as f64 / neg_n as f64 } else { 0.0 };
         eprintln!(
             "FX_ROW {:22} | {:.3} {:.3} {:.3} {:.3} | {:.3} {:.3} {:.3} {:.3} | {:.2}",
-            name, ef[0], ef[1], ef[2], ef[3], ex[0], ex[1], ex[2], ex[3], abst_rate
+            cfg.name, ef[0], ef[1], ef[2], ef[3], ex[0], ex[1], ex[2], ex[3], abst_rate
         );
         report.insert(
-            (*name).to_string(),
+            cfg.name.clone(),
             json!({
-                "w_vec": w_vec, "w_text": w_text, "rrf_k": k, "text_order": ord,
+                "w_vec": cfg.wv, "w_text": cfg.wt, "rrf_k": cfg.k,
+                "geom": geoms[cfg.geom].0, "pool": pool_label(cfg.pool), "prefix": cfg.prefix,
                 "exact_fact": {"r5": ef[0], "r10": ef[1], "r20": ef[2], "r50": ef[3]},
                 "exploratory": {"r5": ex[0], "r10": ex[1], "r20": ex[2], "r50": ex[3]},
                 "negative_abstain_rate": abst_rate,
