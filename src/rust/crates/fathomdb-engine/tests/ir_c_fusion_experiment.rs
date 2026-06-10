@@ -150,7 +150,25 @@ struct Arms {
     text_bm25: Vec<String>,     // AND-of-tokens (production compile) + bm25() order
     text_wcursor: Vec<String>,  // AND-of-tokens + write_cursor order (production arm)
     text_or: Vec<String>,       // WS4 fix: OR-of-tokens (bag-of-words) + bm25() order
+    text_or_cov: Vec<usize>,    // # content query-tokens present in each text_or body
+    content_len: usize,         // # content query-tokens (the N-of-M denominator)
     engine_hybrid: Vec<String>, // engine's real RrfHybrid (validation anchor)
+}
+
+/// Guarded text arm: keep OR candidates covering ≥ `cov` of the query's content
+/// tokens (N-of-M), preserving bm25() order. `cov <= 0` = no guard (pure OR).
+/// Empty content tokens ⇒ no guard (can't measure coverage).
+fn guard_coverage(arms: &Arms, cov: f64) -> Vec<String> {
+    if cov <= 0.0 || arms.content_len == 0 {
+        return arms.text_or.clone();
+    }
+    let need = ((cov * arms.content_len as f64).ceil() as usize).max(1);
+    arms.text_or
+        .iter()
+        .zip(arms.text_or_cov.iter())
+        .filter(|(_, &c)| c >= need)
+        .map(|(b, _)| b.clone())
+        .collect()
 }
 
 /// Read-only FTS query against the engine's sqlite file, ordered by `order_sql`.
@@ -181,6 +199,31 @@ fn map_bodies(bodies: &[String], m: &HashMap<String, String>) -> Vec<String> {
     bodies.iter().filter_map(|b| m.get(b).cloned()).collect()
 }
 
+/// Minimal stopword set so content-token coverage isn't inflated by function
+/// words (the OR query still matches on them, but bm25's IDF + this coverage
+/// guard both discount them).
+const STOPWORDS: &[&str] = &[
+    "the", "and", "for", "are", "was", "were", "what", "when", "where", "who", "whom", "which",
+    "how", "why", "did", "does", "do", "is", "of", "to", "in", "on", "at", "by", "an", "a", "it",
+    "its", "this", "that", "these", "those", "with", "from", "as", "be", "or", "if", "about",
+    "into", "over", "than", "then", "they", "them", "their", "you", "your", "we", "our", "i",
+];
+
+fn tokenize_set(text: &str) -> HashSet<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .map(|t| t.to_string())
+        .collect()
+}
+
+/// Content tokens of a query: tokenized, ≥3 chars, stopwords removed. The
+/// coverage denominator (the "M" in N-of-M).
+fn content_tokens(query: &str) -> HashSet<String> {
+    let stop: HashSet<&str> = STOPWORDS.iter().copied().collect();
+    tokenize_set(query).into_iter().filter(|t| !stop.contains(t.as_str())).collect()
+}
+
 #[test]
 fn ir_c_fusion_experiment() {
     if std::env::var_os("IRC_RUN").is_none() {
@@ -193,6 +236,7 @@ fn ir_c_fusion_experiment() {
     }
     let n_exact = env_usize("IRC_FX_EXACT", 150);
     let n_explor = env_usize("IRC_FX_EXPLOR", 80);
+    let n_neg = env_usize("IRC_FX_NEG", 60);
     let max_docs = env_usize("IRC_FX_MAXDOCS", 1500);
 
     let Some(root) = repo_root() else {
@@ -218,10 +262,12 @@ fn ir_c_fusion_experiment() {
     };
     let mut queries = pick(QueryClass::ExactFact, n_exact);
     queries.extend(pick(QueryClass::Exploratory, n_explor));
+    queries.extend(pick(QueryClass::Negative, n_neg));
     eprintln!(
-        "FX_SETUP exact_fact={} exploratory={} max_docs={max_docs}",
+        "FX_SETUP exact_fact={} exploratory={} negative={} max_docs={max_docs}",
         queries.iter().filter(|q| q.query_class == QueryClass::ExactFact).count(),
         queries.iter().filter(|q| q.query_class == QueryClass::Exploratory).count(),
+        queries.iter().filter(|q| q.query_class == QueryClass::Negative).count(),
     );
 
     // Doc universe: evidence docs (always) + distractors up to the budget.
@@ -324,42 +370,53 @@ fn ir_c_fusion_experiment() {
         let text_bm25 = fts_bodies(&fts, &expr, "bm25(search_index)", cap);
         let text_wcursor = fts_bodies(&fts, &expr, "write_cursor", cap);
         let text_or = fts_bodies(&fts, &or_expr, "bm25(search_index)", cap);
-        cache.insert(key, Arms { vector, text_bm25, text_wcursor, text_or, engine_hybrid });
+        // Pre-compute content-token coverage per OR candidate (for the N-of-M guard).
+        let content = content_tokens(&q.query);
+        let content_len = content.len();
+        let text_or_cov: Vec<usize> = text_or
+            .iter()
+            .map(|b| {
+                let bt = tokenize_set(b);
+                content.iter().filter(|t| bt.contains(*t)).count()
+            })
+            .collect();
+        cache.insert(
+            key,
+            Arms { vector, text_bm25, text_wcursor, text_or, text_or_cov, content_len, engine_hybrid },
+        );
     }
     eprintln!("FX_RETRIEVED queries={}", cache.len());
 
-    // ── Fusion configs to sweep. (w_vec, w_text, k, text_ordering) ──
-    // text_ordering: "bm25" | "wcursor" | "none"(vector-only) | "engine"(anchor)
-    let configs: Vec<(&str, f64, f64, f64, &str)> = vec![
-        ("vector_only", 1.0, 0.0, 60.0, "none"),
-        ("bm25_only_wcursor", 0.0, 1.0, 60.0, "wcursor"),
-        ("bm25_only_relevance", 0.0, 1.0, 60.0, "bm25"),
-        ("hybrid_current(anchor)", 0.0, 0.0, 60.0, "engine"),
-        ("hybrid_wcursor_equal", 1.0, 1.0, 60.0, "wcursor"),
-        ("hybrid_bm25_equal", 1.0, 1.0, 60.0, "bm25"),
-        ("hybrid_bm25_2x", 1.0, 2.0, 60.0, "bm25"),
-        ("hybrid_bm25_3x", 1.0, 3.0, 60.0, "bm25"),
-        ("hybrid_bm25_5x", 1.0, 5.0, 60.0, "bm25"),
-        ("hybrid_bm25_3x_k10", 1.0, 3.0, 10.0, "bm25"),
-        ("hybrid_bm25_3x_k30", 1.0, 3.0, 30.0, "bm25"),
-        ("hybrid_vecheavy_3x", 3.0, 1.0, 60.0, "bm25"),
-        // ── WS4: OR-semantics (bag-of-words) text arm ──
-        ("bm25_only_OR", 0.0, 1.0, 60.0, "bm25or"),
-        ("hybrid_OR_equal", 1.0, 1.0, 60.0, "bm25or"),
-        ("hybrid_OR_2x", 1.0, 2.0, 60.0, "bm25or"),
-        ("hybrid_OR_3x", 1.0, 3.0, 60.0, "bm25or"),
+    // ── Configs: (name, w_vec, w_text, k, ord, cov, abstain). ──
+    // ord: "none"(vector) | "engine"(anchor) | "bm25"(AND) | "bm25or"(OR).
+    // cov: N-of-M content-token coverage guard on the OR arm (0 = none).
+    // abstain: when guarded text is empty, return NOTHING (confidence gate) so the
+    //          pipeline can abstain on no-answer (negative) queries.
+    let configs: Vec<(&str, f64, f64, f64, &str, f64, bool)> = vec![
+        ("vector_only", 1.0, 0.0, 60.0, "none", 0.0, false),
+        ("hybrid_current(anchor)", 0.0, 0.0, 60.0, "engine", 0.0, false),
+        ("bm25_only_AND", 0.0, 1.0, 60.0, "bm25", 0.0, false),
+        // OR baselines (high recall, but no abstention → high negative FPR):
+        ("bm25_only_OR", 0.0, 1.0, 60.0, "bm25or", 0.0, false),
+        ("hybrid_OR_2x", 1.0, 2.0, 60.0, "bm25or", 0.0, false),
+        ("hybrid_OR_3x", 1.0, 3.0, 60.0, "bm25or", 0.0, false),
+        // GUARDED: OR + N-of-M coverage + abstention gate:
+        ("bm25_OR_cov50", 0.0, 1.0, 60.0, "bm25or", 0.50, true),
+        ("bm25_OR_cov67", 0.0, 1.0, 60.0, "bm25or", 0.67, true),
+        ("hybrid_OR_3x_gate50", 1.0, 3.0, 60.0, "bm25or", 0.50, true),
+        ("hybrid_OR_3x_gate67", 1.0, 3.0, 60.0, "bm25or", 0.67, true),
+        ("hybrid_OR_3x_gate100", 1.0, 3.0, 60.0, "bm25or", 1.0, true),
     ];
 
     let mut report = serde_json::Map::new();
     let class_recall = |by_k: &BTreeMap<usize, ir_eval::KResult>, cls: QueryClass, k: usize| -> f64 {
-        by_k.get(&k)
-            .and_then(|r| r.per_class.get(&cls))
-            .map(|a| a.graded())
-            .unwrap_or(0.0)
+        by_k.get(&k).and_then(|r| r.per_class.get(&cls)).map(|a| a.graded()).unwrap_or(0.0)
     };
 
-    eprintln!("\nFX_RESULTS  config | exact_fact R@5/10/20/50 | exploratory R@5/10/20/50");
-    for (name, w_vec, w_text, k, ord) in &configs {
+    eprintln!(
+        "\nFX_RESULTS config | exact_fact R@5/10/20/50 | exploratory R@10 | neg_abstain(want↑ for safety)"
+    );
+    for (name, w_vec, w_text, k, ord, cov, abstain) in &configs {
         let by_k = evaluate_gold_set(&gold, &K_LADDER, |q| {
             let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
             let arms = cache.get(&key).expect("cached arms");
@@ -367,26 +424,40 @@ fn ir_c_fusion_experiment() {
                 "engine" => arms.engine_hybrid.clone(),
                 "none" => fuse_weighted(&arms.vector, &[], *w_vec, 0.0, *k),
                 "bm25" => fuse_weighted(&arms.vector, &arms.text_bm25, *w_vec, *w_text, *k),
-                "bm25or" => fuse_weighted(&arms.vector, &arms.text_or, *w_vec, *w_text, *k),
                 "wcursor" => fuse_weighted(&arms.vector, &arms.text_wcursor, *w_vec, *w_text, *k),
+                "bm25or" => {
+                    let guarded = guard_coverage(arms, *cov);
+                    if *abstain && guarded.is_empty() {
+                        Vec::new() // confidence gate → abstain
+                    } else {
+                        fuse_weighted(&arms.vector, &guarded, *w_vec, *w_text, *k)
+                    }
+                }
                 _ => unreachable!(),
             };
             Ok(map_bodies(&fused, &body_to_doc))
         })
         .expect("evaluate");
 
-        let ef: Vec<f64> = K_LADDER.iter().map(|&k| class_recall(&by_k, QueryClass::ExactFact, k)).collect();
-        let ex: Vec<f64> = K_LADDER.iter().map(|&k| class_recall(&by_k, QueryClass::Exploratory, k)).collect();
+        let ef: Vec<f64> =
+            K_LADDER.iter().map(|&k| class_recall(&by_k, QueryClass::ExactFact, k)).collect();
+        let ex10 = class_recall(&by_k, QueryClass::Exploratory, 10);
+        // Negative-class abstention at K=10 (correct = returned nothing).
+        let (neg_n, neg_abst) =
+            by_k.get(&10).map(|r| (r.negative.n, r.negative.abstained)).unwrap_or((0, 0));
+        let abst_rate = if neg_n > 0 { neg_abst as f64 / neg_n as f64 } else { 0.0 };
         eprintln!(
-            "FX_ROW {:24} | {:.3} {:.3} {:.3} {:.3} | {:.3} {:.3} {:.3} {:.3}",
-            name, ef[0], ef[1], ef[2], ef[3], ex[0], ex[1], ex[2], ex[3]
+            "FX_ROW {:22} | {:.3} {:.3} {:.3} {:.3} | {:.3} | {:.2} ({}/{})",
+            name, ef[0], ef[1], ef[2], ef[3], ex10, abst_rate, neg_abst, neg_n
         );
         report.insert(
             (*name).to_string(),
             json!({
                 "w_vec": w_vec, "w_text": w_text, "rrf_k": k, "text_order": ord,
+                "coverage_guard": cov, "abstain_gate": abstain,
                 "exact_fact": {"r5": ef[0], "r10": ef[1], "r20": ef[2], "r50": ef[3]},
-                "exploratory": {"r5": ex[0], "r10": ex[1], "r20": ex[2], "r50": ex[3]},
+                "exploratory_r10": ex10,
+                "negative_abstain_rate": abst_rate,
             }),
         );
     }
