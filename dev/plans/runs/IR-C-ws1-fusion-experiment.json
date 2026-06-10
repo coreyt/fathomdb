@@ -1,289 +1,177 @@
 {
   "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled exact_fact+exploratory slice; tests whether ordering the text arm by bm25() relevance (vs production write_cursor) and weighting it lifts recall. Small-corpus (directional).",
   "configs": {
+    "bm25_OR_cov50": {
+      "abstain_gate": true,
+      "coverage_guard": 0.5,
+      "exact_fact": {
+        "r10": 0.8733333333333333,
+        "r20": 0.8733333333333333,
+        "r5": 0.8733333333333333,
+        "r50": 0.8866666666666667
+      },
+      "exploratory_r10": 0.6875,
+      "negative_abstain_rate": 0.05,
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "bm25_OR_cov67": {
+      "abstain_gate": true,
+      "coverage_guard": 0.67,
+      "exact_fact": {
+        "r10": 0.5666666666666667,
+        "r20": 0.5666666666666667,
+        "r5": 0.5666666666666667,
+        "r50": 0.5666666666666667
+      },
+      "exploratory_r10": 0.5875,
+      "negative_abstain_rate": 0.5,
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "bm25_only_AND": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
+      "exact_fact": {
+        "r10": 0.08,
+        "r20": 0.08,
+        "r5": 0.08,
+        "r50": 0.08
+      },
+      "exploratory_r10": 0.3625,
+      "negative_abstain_rate": 0.8666666666666667,
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
     "bm25_only_OR": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
       "exact_fact": {
         "r10": 0.9333333333333333,
         "r20": 0.94,
         "r5": 0.9266666666666666,
         "r50": 0.9666666666666667
       },
-      "exploratory": {
-        "r10": 0.65,
-        "r20": 0.7375,
-        "r5": 0.5625,
-        "r50": 0.9
-      },
+      "exploratory_r10": 0.65,
+      "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "bm25or",
       "w_text": 1.0,
       "w_vec": 0.0
     },
-    "bm25_only_relevance": {
-      "exact_fact": {
-        "r10": 0.08,
-        "r20": 0.08,
-        "r5": 0.08,
-        "r50": 0.08
-      },
-      "exploratory": {
-        "r10": 0.3625,
-        "r20": 0.375,
-        "r5": 0.35,
-        "r50": 0.375
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
-      "w_text": 1.0,
-      "w_vec": 0.0
-    },
-    "bm25_only_wcursor": {
-      "exact_fact": {
-        "r10": 0.08,
-        "r20": 0.08,
-        "r5": 0.08,
-        "r50": 0.08
-      },
-      "exploratory": {
-        "r10": 0.3625,
-        "r20": 0.3625,
-        "r5": 0.2875,
-        "r50": 0.375
-      },
-      "rrf_k": 60.0,
-      "text_order": "wcursor",
-      "w_text": 1.0,
-      "w_vec": 0.0
-    },
     "hybrid_OR_2x": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
       "exact_fact": {
         "r10": 0.9333333333333333,
         "r20": 0.9533333333333334,
         "r5": 0.8533333333333334,
         "r50": 0.9666666666666667
       },
-      "exploratory": {
-        "r10": 0.575,
-        "r20": 0.775,
-        "r5": 0.4375,
-        "r50": 0.9125
-      },
+      "exploratory_r10": 0.575,
+      "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "bm25or",
       "w_text": 2.0,
       "w_vec": 1.0
     },
     "hybrid_OR_3x": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
       "exact_fact": {
         "r10": 0.94,
         "r20": 0.94,
         "r5": 0.8866666666666667,
         "r50": 0.9733333333333334
       },
-      "exploratory": {
-        "r10": 0.6125,
-        "r20": 0.775,
-        "r5": 0.4875,
-        "r50": 0.9
-      },
+      "exploratory_r10": 0.6125,
+      "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "bm25or",
       "w_text": 3.0,
       "w_vec": 1.0
     },
-    "hybrid_OR_equal": {
+    "hybrid_OR_3x_gate100": {
+      "abstain_gate": true,
+      "coverage_guard": 1.0,
       "exact_fact": {
-        "r10": 0.84,
-        "r20": 0.94,
-        "r5": 0.8,
-        "r50": 0.96
+        "r10": 0.22666666666666666,
+        "r20": 0.24,
+        "r5": 0.20666666666666667,
+        "r50": 0.24666666666666667
       },
-      "exploratory": {
-        "r10": 0.4875,
+      "exploratory_r10": 0.3375,
+      "negative_abstain_rate": 0.8833333333333333,
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_OR_3x_gate50": {
+      "abstain_gate": true,
+      "coverage_guard": 0.5,
+      "exact_fact": {
+        "r10": 0.9066666666666666,
+        "r20": 0.9133333333333333,
+        "r5": 0.8733333333333333,
+        "r50": 0.9266666666666666
+      },
+      "exploratory_r10": 0.675,
+      "negative_abstain_rate": 0.05,
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_OR_3x_gate67": {
+      "abstain_gate": true,
+      "coverage_guard": 0.67,
+      "exact_fact": {
+        "r10": 0.6866666666666666,
         "r20": 0.7,
-        "r5": 0.35,
-        "r50": 0.9
+        "r5": 0.6666666666666666,
+        "r50": 0.7133333333333334
       },
+      "exploratory_r10": 0.6,
+      "negative_abstain_rate": 0.5,
       "rrf_k": 60.0,
       "text_order": "bm25or",
-      "w_text": 1.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_2x": {
-      "exact_fact": {
-        "r10": 0.7466666666666667,
-        "r20": 0.78,
-        "r5": 0.7133333333333334,
-        "r50": 0.82
-      },
-      "exploratory": {
-        "r10": 0.475,
-        "r20": 0.6375,
-        "r5": 0.3625,
-        "r50": 0.75
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
-      "w_text": 2.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_3x": {
-      "exact_fact": {
-        "r10": 0.7466666666666667,
-        "r20": 0.78,
-        "r5": 0.7133333333333334,
-        "r50": 0.82
-      },
-      "exploratory": {
-        "r10": 0.475,
-        "r20": 0.6375,
-        "r5": 0.375,
-        "r50": 0.75
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
       "w_text": 3.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_3x_k10": {
-      "exact_fact": {
-        "r10": 0.7533333333333333,
-        "r20": 0.78,
-        "r5": 0.72,
-        "r50": 0.8266666666666667
-      },
-      "exploratory": {
-        "r10": 0.475,
-        "r20": 0.6375,
-        "r5": 0.375,
-        "r50": 0.75
-      },
-      "rrf_k": 10.0,
-      "text_order": "bm25",
-      "w_text": 3.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_3x_k30": {
-      "exact_fact": {
-        "r10": 0.7466666666666667,
-        "r20": 0.78,
-        "r5": 0.72,
-        "r50": 0.82
-      },
-      "exploratory": {
-        "r10": 0.475,
-        "r20": 0.6375,
-        "r5": 0.375,
-        "r50": 0.75
-      },
-      "rrf_k": 30.0,
-      "text_order": "bm25",
-      "w_text": 3.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_5x": {
-      "exact_fact": {
-        "r10": 0.7466666666666667,
-        "r20": 0.78,
-        "r5": 0.7133333333333334,
-        "r50": 0.82
-      },
-      "exploratory": {
-        "r10": 0.475,
-        "r20": 0.6375,
-        "r5": 0.3875,
-        "r50": 0.75
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
-      "w_text": 5.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bm25_equal": {
-      "exact_fact": {
-        "r10": 0.7733333333333333,
-        "r20": 0.7933333333333333,
-        "r5": 0.7266666666666667,
-        "r50": 0.8266666666666667
-      },
-      "exploratory": {
-        "r10": 0.4875,
-        "r20": 0.625,
-        "r5": 0.325,
-        "r50": 0.75
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
-      "w_text": 1.0,
       "w_vec": 1.0
     },
     "hybrid_current(anchor)": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
       "exact_fact": {
         "r10": 0.7733333333333333,
         "r20": 0.7933333333333333,
         "r5": 0.7266666666666667,
         "r50": 0.8266666666666667
       },
-      "exploratory": {
-        "r10": 0.4375,
-        "r20": 0.625,
-        "r5": 0.325,
-        "r50": 0.75
-      },
+      "exploratory_r10": 0.4375,
+      "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "engine",
       "w_text": 0.0,
       "w_vec": 0.0
     },
-    "hybrid_vecheavy_3x": {
-      "exact_fact": {
-        "r10": 0.7466666666666667,
-        "r20": 0.7733333333333333,
-        "r5": 0.72,
-        "r50": 0.8
-      },
-      "exploratory": {
-        "r10": 0.4125,
-        "r20": 0.5875,
-        "r5": 0.325,
-        "r50": 0.675
-      },
-      "rrf_k": 60.0,
-      "text_order": "bm25",
-      "w_text": 1.0,
-      "w_vec": 3.0
-    },
-    "hybrid_wcursor_equal": {
-      "exact_fact": {
-        "r10": 0.7733333333333333,
-        "r20": 0.7933333333333333,
-        "r5": 0.7266666666666667,
-        "r50": 0.8266666666666667
-      },
-      "exploratory": {
-        "r10": 0.4375,
-        "r20": 0.625,
-        "r5": 0.325,
-        "r50": 0.75
-      },
-      "rrf_k": 60.0,
-      "text_order": "wcursor",
-      "w_text": 1.0,
-      "w_vec": 1.0
-    },
     "vector_only": {
+      "abstain_gate": false,
+      "coverage_guard": 0.0,
       "exact_fact": {
         "r10": 0.7333333333333333,
         "r20": 0.76,
         "r5": 0.7066666666666667,
         "r50": 0.8
       },
-      "exploratory": {
-        "r10": 0.375,
-        "r20": 0.5375,
-        "r5": 0.2,
-        "r50": 0.675
-      },
+      "exploratory_r10": 0.375,
+      "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "none",
       "w_text": 0.0,
@@ -291,7 +179,7 @@
     }
   },
   "docs_seeded": 1500,
-  "eval_queries": 230,
+  "eval_queries": 290,
   "k_ladder": [
     5,
     10,
