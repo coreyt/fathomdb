@@ -1,6 +1,24 @@
 {
   "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled exact_fact+exploratory slice; tests whether ordering the text arm by bm25() relevance (vs production write_cursor) and weighting it lifts recall. Small-corpus (directional).",
   "configs": {
+    "bm25_only_OR": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.94,
+        "r5": 0.9266666666666666,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.65,
+        "r20": 0.7375,
+        "r5": 0.5625,
+        "r50": 0.9
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
     "bm25_only_relevance": {
       "exact_fact": {
         "r10": 0.08,
@@ -36,6 +54,60 @@
       "text_order": "wcursor",
       "w_text": 1.0,
       "w_vec": 0.0
+    },
+    "hybrid_OR_2x": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.9533333333333334,
+        "r5": 0.8533333333333334,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.575,
+        "r20": 0.775,
+        "r5": 0.4375,
+        "r50": 0.9125
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 2.0,
+      "w_vec": 1.0
+    },
+    "hybrid_OR_3x": {
+      "exact_fact": {
+        "r10": 0.94,
+        "r20": 0.94,
+        "r5": 0.8866666666666667,
+        "r50": 0.9733333333333334
+      },
+      "exploratory": {
+        "r10": 0.6125,
+        "r20": 0.775,
+        "r5": 0.4875,
+        "r50": 0.9
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_OR_equal": {
+      "exact_fact": {
+        "r10": 0.84,
+        "r20": 0.94,
+        "r5": 0.8,
+        "r50": 0.96
+      },
+      "exploratory": {
+        "r10": 0.4875,
+        "r20": 0.7,
+        "r5": 0.35,
+        "r50": 0.9
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25or",
+      "w_text": 1.0,
+      "w_vec": 1.0
     },
     "hybrid_bm25_2x": {
       "exact_fact": {
