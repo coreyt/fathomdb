@@ -1,26 +1,64 @@
 {
   "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled exact_fact+exploratory slice; tests whether ordering the text arm by bm25() relevance (vs production write_cursor) and weighting it lifts recall. Small-corpus (directional).",
   "configs": {
-    "hybrid_ORc_1:3": {
+    "hybrid_chunk_1:1": {
       "exact_fact": {
-        "r10": 0.9333333333333333,
-        "r20": 0.9466666666666667,
-        "r5": 0.9,
-        "r50": 0.9666666666666667
+        "r10": 0.92,
+        "r20": 0.9333333333333333,
+        "r5": 0.8933333333333333,
+        "r50": 0.9733333333333334
       },
       "exploratory": {
-        "r10": 0.6125,
-        "r20": 0.725,
-        "r5": 0.4875,
-        "r50": 0.9
+        "r10": 0.6375,
+        "r20": 0.85,
+        "r5": 0.4375,
+        "r50": 0.925
       },
       "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
-      "text_order": "orc",
+      "text_order": "hyb_chunk_orc",
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "hybrid_chunk_1:3": {
+      "exact_fact": {
+        "r10": 0.94,
+        "r20": 0.9533333333333334,
+        "r5": 0.9266666666666666,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.6875,
+        "r20": 0.7625,
+        "r5": 0.5375,
+        "r50": 0.9125
+      },
+      "negative_abstain_rate": 0.0,
+      "rrf_k": 60.0,
+      "text_order": "hyb_chunk_orc",
       "w_text": 3.0,
       "w_vec": 1.0
     },
-    "hybrid_bfbare_1:3": {
+    "hybrid_chunk_2:1": {
+      "exact_fact": {
+        "r10": 0.8866666666666667,
+        "r20": 0.9133333333333333,
+        "r5": 0.8533333333333334,
+        "r50": 0.94
+      },
+      "exploratory": {
+        "r10": 0.6,
+        "r20": 0.8125,
+        "r5": 0.4,
+        "r50": 0.925
+      },
+      "negative_abstain_rate": 0.0,
+      "rrf_k": 60.0,
+      "text_order": "hyb_chunk_orc",
+      "w_text": 1.0,
+      "w_vec": 2.0
+    },
+    "hybrid_wholedoc_1:3": {
       "exact_fact": {
         "r10": 0.9466666666666667,
         "r20": 0.9533333333333334,
@@ -38,82 +76,6 @@
       "text_order": "hyb_bfbare_orc",
       "w_text": 3.0,
       "w_vec": 1.0
-    },
-    "hybrid_bfpref_1:1": {
-      "exact_fact": {
-        "r10": 0.9,
-        "r20": 0.9333333333333333,
-        "r5": 0.8666666666666667,
-        "r50": 0.9733333333333334
-      },
-      "exploratory": {
-        "r10": 0.5375,
-        "r20": 0.775,
-        "r5": 0.375,
-        "r50": 0.9125
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "hyb_bfpref_orc",
-      "w_text": 1.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bfpref_1:3": {
-      "exact_fact": {
-        "r10": 0.9466666666666667,
-        "r20": 0.9533333333333334,
-        "r5": 0.9,
-        "r50": 0.9666666666666667
-      },
-      "exploratory": {
-        "r10": 0.625,
-        "r20": 0.75,
-        "r5": 0.5125,
-        "r50": 0.9125
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "hyb_bfpref_orc",
-      "w_text": 3.0,
-      "w_vec": 1.0
-    },
-    "hybrid_bfpref_2:1": {
-      "exact_fact": {
-        "r10": 0.8666666666666667,
-        "r20": 0.88,
-        "r5": 0.8,
-        "r50": 0.9133333333333333
-      },
-      "exploratory": {
-        "r10": 0.4625,
-        "r20": 0.6375,
-        "r5": 0.275,
-        "r50": 0.85
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "hyb_bfpref_orc",
-      "w_text": 1.0,
-      "w_vec": 2.0
-    },
-    "hybrid_bfpref_3:1": {
-      "exact_fact": {
-        "r10": 0.8266666666666667,
-        "r20": 0.8733333333333333,
-        "r5": 0.78,
-        "r50": 0.9
-      },
-      "exploratory": {
-        "r10": 0.4125,
-        "r20": 0.6125,
-        "r5": 0.2375,
-        "r50": 0.8
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "hyb_bfpref_orc",
-      "w_text": 1.0,
-      "w_vec": 3.0
     },
     "text_only_ORc": {
       "exact_fact": {
@@ -134,7 +96,26 @@
       "w_text": 1.0,
       "w_vec": 0.0
     },
-    "vec_bf_bare": {
+    "vec_chunked": {
+      "exact_fact": {
+        "r10": 0.8333333333333334,
+        "r20": 0.8466666666666667,
+        "r5": 0.7933333333333333,
+        "r50": 0.9
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6125,
+        "r5": 0.3,
+        "r50": 0.8875
+      },
+      "negative_abstain_rate": 0.0,
+      "rrf_k": 60.0,
+      "text_order": "chunk_vec",
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "vec_wholedoc": {
       "exact_fact": {
         "r10": 0.7533333333333333,
         "r20": 0.7666666666666667,
@@ -150,44 +131,6 @@
       "negative_abstain_rate": 0.0,
       "rrf_k": 60.0,
       "text_order": "bfbare",
-      "w_text": 0.0,
-      "w_vec": 1.0
-    },
-    "vec_bf_prefixed": {
-      "exact_fact": {
-        "r10": 0.74,
-        "r20": 0.78,
-        "r5": 0.6733333333333333,
-        "r50": 0.86
-      },
-      "exploratory": {
-        "r10": 0.275,
-        "r20": 0.55,
-        "r5": 0.1625,
-        "r50": 0.725
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "bfpref",
-      "w_text": 0.0,
-      "w_vec": 1.0
-    },
-    "vector_only(engine)": {
-      "exact_fact": {
-        "r10": 0.7333333333333333,
-        "r20": 0.76,
-        "r5": 0.7066666666666667,
-        "r50": 0.8
-      },
-      "exploratory": {
-        "r10": 0.375,
-        "r20": 0.5375,
-        "r5": 0.2,
-        "r50": 0.675
-      },
-      "negative_abstain_rate": 0.0,
-      "rrf_k": 60.0,
-      "text_order": "none",
       "w_text": 0.0,
       "w_vec": 1.0
     }

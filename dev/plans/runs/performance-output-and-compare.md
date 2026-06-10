@@ -273,6 +273,41 @@ over re-embedded bodies), comparing bare vs BGE query-instruction-prefixed queri
 near-term value is in the lexical/fusion stack (content-OR + text-dominant 1:3 +
 low k); the dense arm is a separate, larger investigation (chunking first).
 
+## Update (2026-06-10d) — passage chunking: the first real dense win
+
+The dense weakness WAS partly truncation/dilution. Embedding ~128-word passages
+(stride 96, ≤8/doc → 5,364 passages from 1,500 docs) and scoring each doc by its
+best passage (max-pool) lifts the dense arm materially:
+
+| Config | exact_fact R@10 | exploratory R@10 | explor R@20 / R@50 |
+|---|---:|---:|---:|
+| `vec_wholedoc` | 0.753 | 0.350 | 0.537 / 0.750 |
+| `vec_chunked` | **0.833** | **0.475** | 0.613 / 0.887 |
+| `text_only_ORc` | 0.933 | 0.688 | 0.725 / 0.887 |
+| `hybrid_wholedoc_1:3` | 0.947 | 0.637 | 0.738 / 0.912 |
+| `hybrid_chunk_1:3` | 0.940 | 0.688 | 0.762 / 0.912 |
+| `hybrid_chunk_1:1` | 0.920 | 0.637 | **0.850 / 0.925** |
+
+**Findings:**
+1. **Chunking is a real dense lever** — vector-only R@10 0.753→**0.833** exact,
+   0.350→**0.475** exploratory (R@5 +0.10, explor R@50 0.750→0.887). The whole-doc
+   mean-pool was diluting long bodies past bge-small's ~512-token window; passages
+   recover the signal. The dense arm is NOT capped at the model — granularity
+   mattered.
+2. **Earlier "vector drags exploratory" finding softens.** With chunking, the
+   hybrid holds exploratory R@10 at the text-only ceiling (0.688 at 1:3) and lifts
+   *deep* exploratory recall well above text-only: R@20 0.725→0.850, R@50
+   0.887→0.925 (at 1:1). A chunked dense arm finally *adds* to the fusion instead
+   of subtracting.
+3. **Exact_fact unchanged (~0.94)** — chunking helps exploratory (multi-evidence,
+   semantic) far more than exact_fact (already lexically saturated).
+
+**Interaction note (re-open the BGE knobs):** the query-instruction prefix was
+rejected on *whole-doc* vectors — but BGE's instruction targets short
+passage-level granularity, exactly what chunking now produces. The prefix (and
+chunk geometry + pooling) should be re-tested *on top of passages*; a rejection at
+whole-doc granularity does not transfer. Next iteration.
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
