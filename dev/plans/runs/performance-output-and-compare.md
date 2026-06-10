@@ -190,6 +190,51 @@ AND→OR, order the text arm by `bm25()`) as the WS4 recall lever — validated 
 clean win on the hybrid path. Track abstention/precision as a separate WS3 effort.
 All directional (1,500-doc slice); confirm on a full-corpus run before landing.
 
+## Update (2026-06-10b) — re-sweep: the OR fix UN-buried the "null" levers
+
+We moved sequentially (weight → root cause → OR fix). Re-running the *initial*
+levers on the now-fixed OR base shows WS1's "weighting/k are null" verdict was an
+artifact of the broken AND-join (text arm ≈ 0.08 had no signal to weight). On the
+fixed base they are real levers:
+
+| Config | exact_fact R@10 | exploratory R@10 |
+|---|---:|---:|
+| `hybrid_current` (today) | 0.773 | 0.438 |
+| `vector_only` | 0.733 | 0.375 |
+| `text_only_OR` | 0.933 | 0.650 |
+| `hybrid_OR_1:1` | 0.840 | 0.487 |
+| `hybrid_OR_1:3` | **0.940** | 0.613 |
+| `hybrid_OR_1:5` | 0.940 | 0.637 |
+| `hybrid_OR_2:1` / `3:1` (vector-heavy) | 0.80 / 0.79 | 0.388 / 0.400 |
+| `hybrid_OR_1:2_k10` | 0.940 | 0.650 |
+| `hybrid_OR_1:2_k30` | 0.940 | 0.600 |
+| `hybrid_OR_1:2_k100` | 0.900 | 0.525 |
+| `text_only_ORc` (content-OR) | 0.933 | **0.688** |
+| `hybrid_ORc_1:3` | 0.933 | 0.613 |
+
+**Levers, re-judged:**
+1. **RRF weight — now REAL (was "null").** The optimum is strongly *text-dominant*:
+   exact_fact climbs with text weight and plateaus ~0.940 by 1:3; vector-heavy
+   (2:1/3:1) collapses back toward `vector_only`. Exploratory is *monotonically hurt*
+   by vector — `text_only` (0.650) beats every hybrid ratio. The vector arm
+   (0.733/0.375) is now the weak link and a net drag when over-weighted.
+2. **RRF k — now a MILD lever (was "null").** Lower k is better: at 1:2,
+   k10 (0.940/0.650) > k60 > k100 (0.900/0.525). The gain is concentrated at low K
+   (top-of-list); the production default (k≈60) is slightly too high.
+3. **content-OR (NEW lever).** Stripping stopwords from the OR query lifts
+   exploratory R@10 0.650 → **0.688** with no exact_fact cost — the best exploratory
+   number in the sweep. Clean text-arm improvement over raw-OR.
+4. **Vector-arm quality (NEWLY the ceiling).** With the lexical arm fixed, the
+   embedding arm is the bottleneck (0.733/0.375). The highest-value *untested* lever
+   now is vector quality (embedding model/dims, query-side embedding, candidate
+   depth) — bigger than any fusion knob, and the only path past ~0.94.
+
+**Recommended operating stack (directional):** content-OR query compilation +
+text-dominant fusion (text:vector ≈ 3:1–5:1, or text-only on exploratory-heavy
+workloads) + lower RRF k (~10–30). Components individually hit exact_fact R@10
+≈ 0.94 / exploratory ≈ 0.65–0.69; not yet measured as a single combined config.
+Still a 1,500-doc slice — confirm on full corpus before landing.
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
