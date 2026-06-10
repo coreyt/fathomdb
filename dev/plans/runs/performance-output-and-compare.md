@@ -122,6 +122,43 @@ On data that demonstrably favors BM25, **FathomDB isn't capturing the BM25 advan
 
 ---
 
+---
+
+## Update (2026-06-10) — WS1/WS4 experiment: root cause found
+
+Ran the fusion experiment (`tests/ir_c_fusion_experiment.rs`, harness-side, zero
+production change; report `IR-C-ws1-fusion-experiment.json`). **Directional** —
+230-query slice over a 1,500-doc corpus, so absolute recall is optimistic; only
+**cross-config deltas** are load-bearing. Harness validated against the engine's
+real `RrfHybrid` (identical, exact_fact R@10 0.773).
+
+**The bug is query compilation, not fusion.** `compile_text_query`
+(`fathomdb-query/src/lib.rs`) ANDs every query token, so the BM25 arm almost
+never matches a natural-language question:
+
+| Config (exact_fact / exploratory R@10) | exact_fact | exploratory |
+|---|---:|---:|
+| `bm25_only` (production **AND**-join) | **0.080** | 0.362 |
+| `bm25_only_OR` (bag-of-words **OR**) | **0.933** | 0.650 |
+| current hybrid (`RrfHybrid`) | 0.773 | 0.438 |
+| `hybrid_OR_3x` (OR text, BM25-weighted 3×) | **0.940** | 0.613 |
+
+**Findings:**
+1. **RRF arm-weighting is a null lever** under AND-join (BM25-heavy *hurt* exact_fact);
+   under OR it *helps* (3× best) because the arm is finally informative.
+2. **Text-arm ordering** (`write_cursor` vs `bm25()`, `lib.rs:3968`) is second-order
+   — only matters where the arm returns docs (exploratory).
+3. **AND→OR query compilation is the dominant lever**: exact_fact R@10 0.773→0.940,
+   exploratory 0.438→0.613. `bm25_only_OR` alone (0.933) nearly matches the best
+   hybrid, recovering the literature's BM25 dominance on these datasets.
+
+**Caveat before shipping:** the metric is single-evidence *Recall@K* (precision-blind).
+Pure OR maximizes recall but likely lowers precision and would *worsen* the
+negative/abstention class (more spurious matches). A guarded variant
+(OR + `bm25()` ranking + score threshold, or N-of-M token match) may beat pure OR
+on the precision/abstention axis. Needs full-corpus + negative-class validation
+before a production `compile_text_query` change.
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
