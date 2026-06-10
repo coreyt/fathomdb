@@ -29,6 +29,9 @@
 //!
 //! Env: IRC_FX_EXACT (default 150) / IRC_FX_EXPLOR (default 80) sampled queries per
 //! class; IRC_FX_MAXDOCS (default 1500) seeded doc budget (evidence always seeded).
+//! IRC_FX_FULL=1 → full corpus + full gold pool at production k=30, restricted to
+//! the whole-vs-128/96 decision set (the Option-A deep-K exploratory question);
+//! per-class/doc-budget envs still override. Writes a separate `-full.json` report.
 
 #![cfg(feature = "default-embedder")]
 
@@ -313,10 +316,16 @@ fn ir_c_fusion_experiment() {
         eprintln!("[skip] FATHOMDB_SKIP_NETWORK_TESTS set; embedder weights unavailable");
         return;
     }
-    let n_exact = env_usize("IRC_FX_EXACT", 150);
-    let n_explor = env_usize("IRC_FX_EXPLOR", 80);
-    let n_neg = env_usize("IRC_FX_NEG", 60);
-    let max_docs = env_usize("IRC_FX_MAXDOCS", 1500);
+    // Full-corpus mode (`IRC_FX_FULL=1`): seed the entire corpus and evaluate the
+    // entire gold pool, to answer the Option-A deep-K exploratory question at scale
+    // (the small default is directional only). Defaults flip to "all" but stay
+    // overridable. The 1,500-doc / sampled path is unchanged when the flag is off.
+    let full_mode = std::env::var_os("IRC_FX_FULL").is_some();
+    let n_exact = env_usize("IRC_FX_EXACT", if full_mode { usize::MAX } else { 150 });
+    let n_explor = env_usize("IRC_FX_EXPLOR", if full_mode { usize::MAX } else { 80 });
+    let n_neg = env_usize("IRC_FX_NEG", if full_mode { usize::MAX } else { 60 });
+    let max_docs = env_usize("IRC_FX_MAXDOCS", if full_mode { usize::MAX } else { 1500 });
+    eprintln!("FX_MODE full={full_mode}");
 
     let Some(root) = repo_root() else {
         eprintln!("[skip] repo_root() not found");
@@ -398,6 +407,15 @@ fn ir_c_fusion_experiment() {
     .expect("open engine");
     let engine = opened.engine;
     engine.configure_vector_kind_for_test(VECTOR_KIND).expect("configure vector kind");
+    // The dense arm is computed entirely harness-side from re-embedded passages,
+    // so the engine's per-doc vector projection is dead weight — at full corpus it
+    // would embed ~10.5k bodies for vectors we never read. Freeze it; the FTS
+    // `search_index` (the only engine artifact the text arm queries) is written
+    // synchronously in commit, so no drain is needed (pr_g9 soft_fallback pins the
+    // synchronous-FTS contract). Small mode keeps the original write+drain path.
+    if full_mode {
+        engine.set_projection_scheduler_frozen_for_test(true);
+    }
     {
         const BATCH: usize = 256;
         let mut written = 0usize;
@@ -413,7 +431,9 @@ fn ir_c_fusion_experiment() {
                 })
                 .collect();
             engine.write(&batch).expect("seed write");
-            engine.drain(600_000).expect("seed drain");
+            if !full_mode {
+                engine.drain(600_000).expect("seed drain");
+            }
             written += take;
         }
     }
@@ -423,12 +443,21 @@ fn ir_c_fusion_experiment() {
     // same BGE embedder — no engine mean-centering / ANN quantization). "whole"
     // (size=MAX ⇒ one passage/doc) is the whole-doc anchor under the same pooling
     // path. (label, size, stride, max_chunks).
-    let geoms: Vec<(&str, usize, usize, usize)> = vec![
-        ("whole", usize::MAX, 1, 1),
-        ("64/48", 64, 48, 6),
-        ("128/96", 128, 96, 8),
-        ("256/192", 256, 192, 4),
-    ];
+    // Full mode answers the Option-A deep-K question with just two geometries: the
+    // whole-doc dense baseline (geom 0) vs 128/96 + max-pool (geom 1, the doc's best
+    // exploratory compromise). The 64/256 windows and mean/top2 pooling are already
+    // characterized as losing; dropping them keeps full-corpus passage embedding
+    // tractable. Small mode keeps the full 4-geometry sweep.
+    let geoms: Vec<(&str, usize, usize, usize)> = if full_mode {
+        vec![("whole", usize::MAX, 1, 1), ("128/96", 128, 96, 8)]
+    } else {
+        vec![
+            ("whole", usize::MAX, 1, 1),
+            ("64/48", 64, 48, 6),
+            ("128/96", 128, 96, 8),
+            ("256/192", 256, 192, 4),
+        ]
+    };
     let passage_sets: Vec<(&str, Vec<(String, Vec<f32>)>)> = geoms
         .iter()
         .map(|(label, size, stride, max)| {
@@ -457,9 +486,16 @@ fn ir_c_fusion_experiment() {
     for q in &gold.queries {
         let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
         let qv_bare = embedder.embed(&q.query).expect("embed query");
-        let qv_pref = embedder
-            .embed(&format!("{BGE_QUERY_INSTRUCTION}{}", q.query))
-            .expect("embed prefixed query");
+        // The BGE query-prefix is definitively rejected (every geometry, both
+        // classes); full mode skips the second embed per query and never builds a
+        // prefixed config. Small mode still measures it.
+        let qv_pref = if full_mode {
+            qv_bare.clone()
+        } else {
+            embedder
+                .embed(&format!("{BGE_QUERY_INSTRUCTION}{}", q.query))
+                .expect("embed prefixed query")
+        };
         let text_bodies =
             fts_bodies(&fts, &compile_content_or(&q.query), "bm25(search_index)", cap);
         let text_ids = map_bodies(&text_bodies, &body_to_doc);
@@ -485,30 +521,46 @@ fn ir_c_fusion_experiment() {
         Pool::Top2 => "top2",
     };
     let mut configs: Vec<Cfg> = Vec::new();
-    // Lexical anchor (wv=0 → vector arm ignored).
-    configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: false });
-    // Whole-doc dense anchor (geom 0; pooling is a no-op at one passage/doc).
-    for pref in [false, true] {
-        let tag = if pref { "pref" } else { "bare" };
-        configs.push(Cfg { name: format!("v_whole_{tag}"), wv: 1.0, wt: 0.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: pref });
-    }
-    // Chunk geometries × pooling × prefix (vector-only).
-    for gi in 1..passage_sets.len() {
-        for pool in [Pool::Max, Pool::Mean, Pool::Top2] {
-            for pref in [false, true] {
-                let tag = if pref { "pref" } else { "bare" };
-                let name = format!("v_{}_{}_{}", geoms[gi].0, pool_label(pool), tag);
-                configs.push(Cfg { name, wv: 1.0, wt: 0.0, k: 60.0, geom: gi, pool, prefix: pref });
+    if full_mode {
+        // Decision set at production k=30: the Option-A deep-K exploratory question.
+        // text-only lexical ceiling; whole-doc vs 128/96 dense baseline; and the
+        // whole-doc vs chunked hybrid at the shipped 3:1 and at 1:1 (where the
+        // directional run located Option-A's deep-K payoff). geom 0=whole, 1=128/96.
+        let k = 30.0; // RRF_K (production)
+        configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k, geom: 0, pool: Pool::Max, prefix: false });
+        configs.push(Cfg { name: "v_whole_max".into(), wv: 1.0, wt: 0.0, k, geom: 0, pool: Pool::Max, prefix: false });
+        configs.push(Cfg { name: "v_128/96_max".into(), wv: 1.0, wt: 0.0, k, geom: 1, pool: Pool::Max, prefix: false });
+        for (gi, label) in [(0usize, "whole"), (1usize, "128/96")] {
+            for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
+                configs.push(Cfg { name: format!("h_{label}_{w}"), wv, wt, k, geom: gi, pool: Pool::Max, prefix: false });
             }
         }
-    }
-    // Curated hybrids (vector pool + content-OR, max-pool) to see if the best dense
-    // geometry lifts the fused ceiling.
-    for (gi, pref) in [(2usize, false), (2, true), (3, false), (1, false)] {
-        let tag = if pref { "pref" } else { "bare" };
-        for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
-            let name = format!("h_{}_{}_{}", geoms[gi].0, tag, w);
-            configs.push(Cfg { name, wv, wt, k: 60.0, geom: gi, pool: Pool::Max, prefix: pref });
+    } else {
+        // Lexical anchor (wv=0 → vector arm ignored).
+        configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: false });
+        // Whole-doc dense anchor (geom 0; pooling is a no-op at one passage/doc).
+        for pref in [false, true] {
+            let tag = if pref { "pref" } else { "bare" };
+            configs.push(Cfg { name: format!("v_whole_{tag}"), wv: 1.0, wt: 0.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: pref });
+        }
+        // Chunk geometries × pooling × prefix (vector-only).
+        for gi in 1..passage_sets.len() {
+            for pool in [Pool::Max, Pool::Mean, Pool::Top2] {
+                for pref in [false, true] {
+                    let tag = if pref { "pref" } else { "bare" };
+                    let name = format!("v_{}_{}_{}", geoms[gi].0, pool_label(pool), tag);
+                    configs.push(Cfg { name, wv: 1.0, wt: 0.0, k: 60.0, geom: gi, pool, prefix: pref });
+                }
+            }
+        }
+        // Curated hybrids (vector pool + content-OR, max-pool) to see if the best
+        // dense geometry lifts the fused ceiling.
+        for (gi, pref) in [(2usize, false), (2, true), (3, false), (1, false)] {
+            let tag = if pref { "pref" } else { "bare" };
+            for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
+                let name = format!("h_{}_{}_{}", geoms[gi].0, tag, w);
+                configs.push(Cfg { name, wv, wt, k: 60.0, geom: gi, pool: Pool::Max, prefix: pref });
+            }
         }
     }
 
@@ -517,6 +569,18 @@ fn ir_c_fusion_experiment() {
         by_k.get(&k).and_then(|r| r.per_class.get(&cls)).map(|a| a.graded()).unwrap_or(0.0)
     };
 
+    // Vector retrieval depends only on (query, geometry, pool, prefix) — NOT on the
+    // fusion weights or k. Memoize the pooled passage KNN so the weight sweep
+    // re-fuses from cache instead of re-running the brute-force KNN per config (the
+    // dominant cost at full corpus). Deterministic ⇒ byte-identical results, fewer
+    // KNN passes. The 0/1 prefix and pool discriminants key the cache.
+    let pool_disc = |p: Pool| match p {
+        Pool::Max => 0u8,
+        Pool::Mean => 1,
+        Pool::Top2 => 2,
+    };
+    let vec_cache: Mutex<HashMap<(String, usize, u8, bool), Vec<String>>> = Mutex::new(HashMap::new());
+
     eprintln!(
         "\nFX_RESULTS config | exact_fact R@5/10/20/50 | exploratory R@5/10/20/50 | neg_abst"
     );
@@ -524,10 +588,21 @@ fn ir_c_fusion_experiment() {
         let by_k = evaluate_gold_set(&gold, &K_LADDER, |q| {
             let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
             let qc = cache.get(&key).expect("cached qcache");
-            let qv = if cfg.prefix { &qc.qv_pref } else { &qc.qv_bare };
-            // Pooled passage retrieval → ranked doc_ids; fuse with the lexical arm.
-            // Both arms are doc-id space; a zero-weight arm is skipped by fuse_weighted.
-            let vec_ids = knn_docs_pool(qv, &passage_sets[cfg.geom].1, cap, cfg.pool);
+            // Pooled passage retrieval → ranked doc_ids (memoized); fuse with the
+            // lexical arm. Both arms are doc-id space; a zero-weight arm is skipped
+            // by fuse_weighted.
+            let ckey = (key, cfg.geom, pool_disc(cfg.pool), cfg.prefix);
+            let vec_ids = {
+                let mut vc = vec_cache.lock().expect("vec_cache poisoned");
+                if let Some(v) = vc.get(&ckey) {
+                    v.clone()
+                } else {
+                    let qv = if cfg.prefix { &qc.qv_pref } else { &qc.qv_bare };
+                    let v = knn_docs_pool(qv, &passage_sets[cfg.geom].1, cap, cfg.pool);
+                    vc.insert(ckey, v.clone());
+                    v
+                }
+            };
             Ok(fuse_weighted(&vec_ids, &qc.text_ids, cfg.wv, cfg.wt, cfg.k))
         })
         .expect("evaluate");
@@ -555,13 +630,28 @@ fn ir_c_fusion_experiment() {
         );
     }
 
-    // ── Write report. ──
-    let out = root.join("dev/plans/runs/IR-C-ws1-fusion-experiment.json");
+    // ── Write report. ── Full mode writes a separate file so the directional
+    // small-corpus artifact is preserved.
+    let out_name = if full_mode {
+        "IR-C-ws1-fusion-experiment-full.json"
+    } else {
+        "IR-C-ws1-fusion-experiment.json"
+    };
+    let out = root.join("dev/plans/runs").join(out_name);
+    let comment = if full_mode {
+        "IR-C WS1 fusion experiment — FULL CORPUS. Harness-side weighted RRF at \
+         production k=30 over the full gold pool + full corpus; the Option-A deep-K \
+         (R@20/R@50) exploratory question: does 128/96 max-pool passage fan-out beat \
+         the whole-doc dense arm, and does it lift the hybrid at 3:1 vs 1:1."
+    } else {
+        "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled \
+         exact_fact+exploratory slice; tests whether ordering the text arm by bm25() \
+         relevance (vs production write_cursor) and weighting it lifts recall. \
+         Small-corpus (directional)."
+    };
     let doc = json!({
-        "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over \
-                     a sampled exact_fact+exploratory slice; tests whether ordering the \
-                     text arm by bm25() relevance (vs production write_cursor) and \
-                     weighting it lifts recall. Small-corpus (directional).",
+        "_comment": comment,
+        "full_corpus": full_mode,
         "docs_seeded": docs.len(),
         "eval_queries": gold.queries.len(),
         "k_ladder": K_LADDER,
