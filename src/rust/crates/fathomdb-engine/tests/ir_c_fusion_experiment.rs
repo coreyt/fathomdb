@@ -79,11 +79,23 @@ fn env_usize(key: &str, default: usize) -> usize {
 /// Inlined copy of `fathomdb_query::compile_text_query` (not a dev-dependency):
 /// whitespace-split, quote each token, AND-join — byte-identical to production.
 fn compile_match_expression(raw: &str) -> String {
+    compile_with_op(raw, " AND ")
+}
+
+/// WS4 candidate: bag-of-words OR semantics — standard BM25 query handling, where
+/// any token may match and `bm25()` ranks by overlap. This is how the same-dataset
+/// BM25 baselines (EnronQA/QAConv) are run; the production AND-join requires EVERY
+/// token present, which near-zeroes recall on natural-language questions.
+fn compile_match_expression_or(raw: &str) -> String {
+    compile_with_op(raw, " OR ")
+}
+
+fn compile_with_op(raw: &str, op: &str) -> String {
     raw.split_whitespace()
         .filter(|t| !t.is_empty())
         .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
         .collect::<Vec<_>>()
-        .join(" AND ")
+        .join(op)
 }
 
 /// Local weighted RRF, faithful to `fuse_rrf`: contribution `w / (k + rank1)`,
@@ -135,8 +147,9 @@ fn fuse_weighted(
 /// Cached per-query retrieval arms (retrieved once, re-fused many times).
 struct Arms {
     vector: Vec<String>,        // vector-stage-only ranked bodies
-    text_bm25: Vec<String>,     // FTS ordered by bm25() relevance
-    text_wcursor: Vec<String>,  // FTS ordered by write_cursor (production arm)
+    text_bm25: Vec<String>,     // AND-of-tokens (production compile) + bm25() order
+    text_wcursor: Vec<String>,  // AND-of-tokens + write_cursor order (production arm)
+    text_or: Vec<String>,       // WS4 fix: OR-of-tokens (bag-of-words) + bm25() order
     engine_hybrid: Vec<String>, // engine's real RrfHybrid (validation anchor)
 }
 
@@ -307,9 +320,11 @@ fn ir_c_fusion_experiment() {
             engine.search(&q.query).expect("hybrid search").results.into_iter().map(|h| h.body).collect();
         // text arms (read-only FTS, two orderings)
         let expr = compile_match_expression(&q.query);
+        let or_expr = compile_match_expression_or(&q.query);
         let text_bm25 = fts_bodies(&fts, &expr, "bm25(search_index)", cap);
         let text_wcursor = fts_bodies(&fts, &expr, "write_cursor", cap);
-        cache.insert(key, Arms { vector, text_bm25, text_wcursor, engine_hybrid });
+        let text_or = fts_bodies(&fts, &or_expr, "bm25(search_index)", cap);
+        cache.insert(key, Arms { vector, text_bm25, text_wcursor, text_or, engine_hybrid });
     }
     eprintln!("FX_RETRIEVED queries={}", cache.len());
 
@@ -328,6 +343,11 @@ fn ir_c_fusion_experiment() {
         ("hybrid_bm25_3x_k10", 1.0, 3.0, 10.0, "bm25"),
         ("hybrid_bm25_3x_k30", 1.0, 3.0, 30.0, "bm25"),
         ("hybrid_vecheavy_3x", 3.0, 1.0, 60.0, "bm25"),
+        // ── WS4: OR-semantics (bag-of-words) text arm ──
+        ("bm25_only_OR", 0.0, 1.0, 60.0, "bm25or"),
+        ("hybrid_OR_equal", 1.0, 1.0, 60.0, "bm25or"),
+        ("hybrid_OR_2x", 1.0, 2.0, 60.0, "bm25or"),
+        ("hybrid_OR_3x", 1.0, 3.0, 60.0, "bm25or"),
     ];
 
     let mut report = serde_json::Map::new();
@@ -347,6 +367,7 @@ fn ir_c_fusion_experiment() {
                 "engine" => arms.engine_hybrid.clone(),
                 "none" => fuse_weighted(&arms.vector, &[], *w_vec, 0.0, *k),
                 "bm25" => fuse_weighted(&arms.vector, &arms.text_bm25, *w_vec, *w_text, *k),
+                "bm25or" => fuse_weighted(&arms.vector, &arms.text_or, *w_vec, *w_text, *k),
                 "wcursor" => fuse_weighted(&arms.vector, &arms.text_wcursor, *w_vec, *w_text, *k),
                 _ => unreachable!(),
             };
