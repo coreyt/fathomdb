@@ -308,6 +308,47 @@ passage-level granularity, exactly what chunking now produces. The prefix (and
 chunk geometry + pooling) should be re-tested *on top of passages*; a rejection at
 whole-doc granularity does not transfer. Next iteration.
 
+## Update (2026-06-10e) — dense-arm lever map: geometry × pooling × prefix
+
+Swept the chunked dense arm's knobs in one run (4 geometries × 3 pooling × 2
+prefix + curated hybrids; passages: whole=1500, 64/48=5841, 128/96=5364,
+256/192=3022). Vector-only, R@10 / R@20:
+
+**Geometry (max-pool, bare) — class-dependent optimum:**
+| geom | exact R@10 | exact R@20 | explor R@10 | explor R@20 |
+|---|---:|---:|---:|---:|
+| whole | 0.760 | 0.767 | 0.412 | 0.525 |
+| 64/48 | **0.853** | **0.880** | 0.375 | 0.525 |
+| 128/96 | 0.833 | 0.847 | **0.475** | 0.613 |
+| 256/192 | 0.767 | 0.780 | 0.375 | 0.625 |
+
+**Pooling (128/96, bare):** max 0.833/0.475 ≫ top2 0.767/0.375 ≫ mean 0.707/0.275.
+**Prefix:** wash-to-negative everywhere (~+0.007 exact, −0.03 exploratory).
+
+**Findings (dense arm now fully characterized):**
+1. **Max-pool is decisively correct.** "Doc scores as its single best passage"
+   beats top-2 and crushes mean — mean re-introduces the very dilution chunking
+   fixed (averaging all passages ≈ whole-doc). Aggregation choice matters as much
+   as chunking itself.
+2. **Geometry optimum is class-dependent.** Small 64-word windows win exact_fact
+   (0.853 R@10 — localized answer spans isolated sharply); medium 128-word windows
+   win exploratory (0.475 R@10 — needs surrounding context). 256/whole lose on
+   both. 128/96 is the best single compromise; 64/48 if exact_fact is the priority.
+3. **The BGE query-prefix is rejected even at passage granularity** — the
+   "comes alive on passages" hypothesis didn't pan out (tiny exact gain, small
+   exploratory loss). Definitively closed across all geometries.
+4. **Hybrid ceiling is lexical-bound (~0.94 / ~0.69 at 1:3), geometry-invariant.**
+   At text-dominant 1:3 the content-OR arm governs the fused result, so dense
+   geometry tuning barely moves it (h_64/48 0.947/0.650, h_128/96 0.940/0.688,
+   h_256/192 0.933/0.675). Where the chunked dense arm *does* pay off is deep
+   exploratory recall at 1:1: explor R@20 0.725→**0.850**, R@50 0.887→**0.925**.
+
+**Conclusion — dense investigation closed.** The dense recipe is chunked passages
+(64–128 words) + max-pool; no prefix. But the *hybrid* ceiling is set by the
+lexical/fusion stack (OR + content-OR + text-dominant 1:3 + low k), already
+validated. Chunking is a real but secondary win (deep exploratory recall); a
+larger embedder is the only remaining dense lever and is out of scope here.
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
