@@ -1,0 +1,132 @@
+# FathomDB IR Performance — Output & External Comparison
+
+**Date:** 2026-06-10
+**Run:** IR-C full-corpus Evidence Recall@K (`dev/plans/runs/IR-C-recall-full.json`, commit `fee78ea`)
+**Embedder:** `fathomdb-bge-small-en-v1.5` (BAAI bge-small-en-v1.5, 384-dim) · **Mode:** real `Engine::search`
+**Corpus:** 10,506 docs embedded · **Queries:** 4,597 (resolved gold, pinned to frozen `corpus_hash`)
+**Wall time:** ~2h07m (seed 6,245s + scoring)
+
+---
+
+## 1. Corpus composition (what's actually ingested)
+
+| source_type | docs | sources |
+|---|---:|---|
+| article | 2,500 | CNN/DailyMail news |
+| note | 2,296 | synthetic notes, bahmutov daily-logs, qaconv, chains |
+| email | 2,257 | raw Enron, EnronQA, chains |
+| **paper** | **1,585** | **QASPER (arXiv/NLP research papers)** |
+| meeting | 1,225 | QMSum, QAConv |
+| todo | 643 | Landes to-dos, chains |
+| **TOTAL** | **10,506** | |
+
+- **arXiv / research papers: YES** — QASPER (1,585 `paper` docs) is in the ingested corpus.
+- **Web pages: NO** — no general web crawl; CNN/DailyMail news articles (2,500) are the closest. A `url_or_external_id` field exists but only as provenance metadata.
+- **Important:** QASPER (papers) and CNN/DailyMail (articles) have **no eval queries** targeting them. The 4,597 gold queries come only from **EnronQA + QAConv + QMSum**. So ~4,085 docs (papers + articles) act purely as **cross-domain retrieval distractors**, making the pool harder than any single-dataset benchmark.
+
+---
+
+## 2. FathomDB results — Evidence Recall@K
+
+**Metric note:** every resolved-gold query has exactly **one** required evidence doc, so `strict == graded` at every K. This makes "Evidence Recall@K" identical to **standard Recall@K with a single relevant document** (a.k.a. Hit-Rate@K / Success@K) — directly comparable to MS MARCO / EnronQA / QAConv recall@k.
+
+**Class → dataset map:** `exact_fact` (n=2,888) = EnronQA + QAConv factoid QA · `exploratory` (n=1,584) = QMSum meeting-summary queries · `negative` (n=125) = abstention.
+
+### rrf_hybrid (headline mode)
+| K | overall | exact_fact | exploratory |
+|---:|---:|---:|---:|
+| 5  | 0.376 | 0.489 | 0.171 |
+| **10** | **0.443** | **0.557** | **0.236** |
+| 20 | 0.492 | 0.590 | 0.314 |
+| 50 | 0.545 | 0.620 | 0.410 |
+
+### vector_only (dense-only ablation)
+| K | overall | exact_fact | exploratory |
+|---:|---:|---:|---:|
+| 5  | 0.337 | 0.497 | 0.045 |
+| 10 | 0.369 | 0.533 | 0.071 |
+| 20 | 0.409 | 0.564 | 0.127 |
+| 50 | 0.455 | 0.592 | 0.205 |
+
+### rerank_stub
+Identity passthrough → **numerically identical to rrf_hybrid** (no real reranker exists yet).
+
+### negative class
+n=125, **false-positive rate = 1.0** — `Engine::search` always returns top-k and never abstains (known property, not a regression).
+
+**Hybrid lift on the hard slice:** exploratory R@10 = **0.236 (hybrid) vs 0.071 (vector-only)** — 3.3×. BM25 fusion carries the summary-style queries; pure dense collapses there.
+
+---
+
+## 3. External rule-of-thumb picture (what's "good")
+
+| Anchor | Value | Note |
+|---|---|---|
+| bge-small-en-v1.5 (our exact model) | BEIR avg **nDCG@10 ≈ 0.52–0.54** | hugely dataset-dependent (Quora 0.89 → SCIDOCS 0.20) |
+| Dense Recall@10, MS MARCO (short passages) | **0.55 (DPR) → 0.92 (GTR-XXL)** | pre-chunked passages flatter these |
+| Hard-domain Recall@10 (e.g. TREC-COVID) | **0.21–0.50** | long/technical docs collapse recall |
+| RAG practitioner thresholds | Recall@5 **≥ 0.80** standard; **0.60–0.70** hard long-tail pre-tuning | context-recall < 0.8 → LLM fabricates |
+| nDCG@10 vs Recall@10 | Recall@10 ≥ nDCG@10 | recall ignores rank position |
+
+Bands: **≥0.80 R@5 = production-ready · 0.60–0.70 = workable pre-tuning · <0.5 = needs work / hard domain.**
+
+---
+
+## 4. Same-dataset external benchmarks (the cleanest comparison)
+
+| Dataset | Project | Retriever | Recall@k (their pool) |
+|---|---|---|---|
+| **EnronQA** | *EnronQA: Personalized RAG over Private Documents* (arXiv 2505.00263, 2025) | **BM25** | **R@5 = 0.875** |
+| | | ColBERTv2 (dense) | R@5 = 0.541 |
+| | | *pool:* ~492 emails/inbox, single relevant | |
+| **QAConv** | *QAConv* (ACL 2021, arXiv 2105.06912) | **BM25** | R@1 0.580 · R@3 0.752 · **R@5 0.800** · R@10 0.848 |
+| | | DPR-wiki (dense) | R@1 0.429 · R@3 0.601 · R@5 0.661 · R@10 0.740 |
+| | | *pool:* QAConv convs chunked ≤512 tok, single relevant | |
+| **QMSum** | *QMSum* (NAACL 2021) "Locator"; *Learning to Rank Utterances* (arXiv 2305.12753) | hierarchical ranker | **ROUGE-L span recall 72.5** (1/6 of turns) — *span metric, not recall@k; not comparable* |
+
+**Cross-cutting finding:** these datasets **reward lexical (BM25) retrieval**; dense retrievers trail badly. EnronQA's authors note this is by construction — questions embed proper nouns to "pick one email out of a batch of ten," creating high query↔doc lexical overlap.
+
+---
+
+## 5. FathomDB vs the same-dataset baselines (exact_fact = EnronQA+QAConv)
+
+| | R@5 | R@10 |
+|---|---:|---:|
+| BM25 on EnronQA (paper) | **0.875** | — |
+| BM25 on QAConv (paper) | 0.800 | **0.848** |
+| Dense (ColBERT/DPR, papers) | 0.54–0.66 | 0.74 |
+| **FathomDB exact_fact (hybrid)** | **0.489** | **0.557** |
+| FathomDB exact_fact (vector_only) | 0.497 | 0.533 |
+
+**Read:** FathomDB lands in **dense-baseline territory (≈ColBERT/DPR), well below the BM25 ceiling these datasets hand you** — even though its headline mode *includes* BM25 in RRF fusion. Its hybrid (0.557) barely beats its own vector-only (0.533) on exact_fact, whereas the literature says BM25 alone reaches 0.80–0.87 here.
+
+### Fairness caveats (explain part of the gap)
+1. **Harder pool** — papers retrieve within one dataset (~492-email inbox; QAConv-only chunks); FathomDB retrieves out of a **10,506-doc cross-domain mix** with ~4,085 paper/article distractors.
+2. **No chunking** — QAConv's baseline chunks to ≤512 tokens; FathomDB embeds whole bodies (one vector each), the worst case for long QMSum/meeting docs.
+
+### What the caveats do *not* explain
+On data that demonstrably favors BM25, **FathomDB isn't capturing the BM25 advantage.** The RRF fusion (hardcoded K=60, equal arm weights) appears to dilute the strong lexical signal with the weaker dense arm. This is a concrete, testable lever (§6).
+
+---
+
+## 6. Improvement levers (in priority order)
+
+| Lever | Current state | Expected effect |
+|---|---|---|
+| **RRF weighting** (BM25-only / BM25-heavy on exact_fact) | hardcoded equal weights, K=60 (`lib.rs:3600,3620-3659`) | if exact_fact jumps toward 0.7–0.8 → fusion-weighting is the bug, not the embedder |
+| **Chunking** | ABSENT — whole body embedded as one vector (`lib.rs:4434`) | biggest lift on QMSum/long-doc exploratory slice |
+| **Re-ranking** | STUB — identity passthrough (`lib.rs:3694`) | recall climbs to K=50 (0.545/0.620), so relevant doc is usually in the deeper pool → ranking problem, not findability |
+| **NER / augmentation** | ABSENT | entity-aware indexing could capture the proper-noun signal EnronQA rewards |
+
+**Bottom line:** by RAG production rules of thumb FathomDB is **below the workable bar in aggregate but at the embedder ceiling (~0.57) on factoid retrieval.** The same-dataset evidence says these corpora are BM25-friendly with dense trailing — and FathomDB currently performs like a dense baseline rather than the BM25-strong systems the data rewards. The highest-leverage fixes (fusion weighting + chunking + a real reranker) are all visible in the K-ladder and are engineering work, not an embedder swap.
+
+---
+
+## Sources
+- EnronQA — https://arxiv.org/html/2505.00263v1
+- QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
+- QMSum (NAACL 2021) — https://aclanthology.org/2021.naacl-main.472.pdf
+- Learning to Rank Utterances (QMSum) — https://arxiv.org/pdf/2305.12753
+- BEIR — https://arxiv.org/pdf/2104.08663 · Large Dual Encoders — https://arxiv.org/pdf/2112.07899
+- BGE MTEB eval — https://bge-model.com/tutorial/4_Evaluation/4.2.1.html
+- RAG recall@k thresholds — https://towardsdatascience.com/how-to-evaluate-retrieval-quality-in-rag-pipelines-precisionk-recallk-and-f1k/
