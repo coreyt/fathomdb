@@ -16,8 +16,13 @@
 //!      reference would also surface it. The reference (defined
 //!      in [`safe_reference_matches`]) tokenizes `q` and `b` with
 //!      FTS5 unicode61-equivalent semantics (lowercase, drop
-//!      non-alphanumerics) and asserts every literal q-token appears
-//!      in the body's token set.
+//!      non-alphanumerics) and — mirroring the IR-C **content-OR**
+//!      compiler (`fathomdb-query`) — asserts that ANY content
+//!      q-token (≥3 chars, stopwords stripped) appears in the body's
+//!      token set. The injection property is unchanged by AND→OR:
+//!      every q-token still reaches SQLite as a literal phrase, so
+//!      control syntax (`*`, `NEAR()`, `^`, `:`, quotes) never acts
+//!      as an operator — that is exactly what parity proves.
 //!
 //! Fixture: 100 queries covering FTS5 control syntax — quotes,
 //! wildcards, NEAR(), AND/OR/NOT, column filters, nested parens,
@@ -49,21 +54,46 @@ fn fts5_token_set(text: &str) -> HashSet<String> {
         .collect()
 }
 
+// Stopwords + content-token extraction, mirroring the `fathomdb-query`
+// content-OR compiler so the reference matches the engine's actual MATCH
+// semantics (the injection property holds regardless of AND vs OR).
+const STOPWORDS: &[&str] = &[
+    "the", "and", "for", "are", "was", "were", "what", "when", "where", "who", "whom", "which",
+    "how", "why", "did", "does", "do", "is", "of", "to", "in", "on", "at", "by", "an", "a", "it",
+    "its", "this", "that", "these", "those", "with", "from", "as", "be", "or", "if", "about",
+    "into", "over", "than", "then", "they", "them", "their", "you", "your", "we", "our", "i",
+];
+
+fn content_tokens(query: &str) -> Vec<String> {
+    let stop: HashSet<&str> = STOPWORDS.iter().copied().collect();
+    query
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !stop.contains(t))
+        .map(|t| t.to_string())
+        .collect()
+}
+
 fn safe_reference_matches(query: &str, body: &str) -> bool {
-    // Safe-grammar reference: strip FTS5 syntax to leave alphanumeric
-    // tokens, then require every q-token to be present (as a tokenized
-    // word, lowercased) in the body. Empty query never matches — same
-    // as Engine::search WriteValidation path.
-    let q_tokens: Vec<String> = query
+    // Safe-grammar reference, mirroring the content-OR compiler: strip FTS5
+    // syntax to leave alphanumeric content tokens (≥3 chars, stopwords removed),
+    // then surface the body iff ANY content token is present (OR). All-stopword /
+    // symbol-only queries fall back to any raw whitespace token — matching the
+    // compiler's fallback. Empty query never matches.
+    let content = content_tokens(query);
+    let body_tokens = fts5_token_set(body);
+    if !content.is_empty() {
+        return content.iter().any(|t| body_tokens.contains(t));
+    }
+    let raw_tokens: Vec<String> = query
         .split_whitespace()
         .map(|t| t.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
         .filter(|t| !t.is_empty())
         .collect();
-    if q_tokens.is_empty() {
+    if raw_tokens.is_empty() {
         return false;
     }
-    let body_tokens = fts5_token_set(body);
-    q_tokens.iter().all(|t| body_tokens.contains(t))
+    raw_tokens.iter().any(|t| body_tokens.contains(t))
 }
 
 fn fixture_queries() -> Vec<String> {

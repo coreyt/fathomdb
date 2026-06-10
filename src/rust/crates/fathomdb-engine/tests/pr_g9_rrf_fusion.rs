@@ -17,7 +17,7 @@ use std::sync::Arc;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
     fuse_rrf, rerank_fused, Engine, PreparedWrite, SearchHit, SoftFallback, SoftFallbackBranch,
-    RRF_K,
+    RRF_K, RRF_WEIGHT_TEXT, RRF_WEIGHT_VECTOR,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -28,20 +28,27 @@ fn hit(id: u64, body: &str, branch: SoftFallbackBranch) -> SearchHit {
 
 #[test]
 fn rrf_formula_single_branch_ranks() {
-    // Vector branch only: "a" rank 1, "b" rank 2. Text branch empty.
+    // Vector branch only: "a" rank 1, "b" rank 2. Text branch empty. The vector
+    // weight is 1.0, so the bare-rank formula still holds.
     let fused = fuse_rrf(
         vec![hit(1, "a", SoftFallbackBranch::Vector), hit(2, "b", SoftFallbackBranch::Vector)],
         Vec::new(),
     );
     assert_eq!(fused.iter().map(|h| h.body.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
-    assert!((fused[0].score - 1.0 / (RRF_K + 1.0)).abs() < 1e-12, "rank-1 = 1/(K+1)");
-    assert!((fused[1].score - 1.0 / (RRF_K + 2.0)).abs() < 1e-12, "rank-2 = 1/(K+2)");
+    assert!(
+        (fused[0].score - RRF_WEIGHT_VECTOR / (RRF_K + 1.0)).abs() < 1e-12,
+        "rank-1 = w_vec/(K+1)"
+    );
+    assert!(
+        (fused[1].score - RRF_WEIGHT_VECTOR / (RRF_K + 2.0)).abs() < 1e-12,
+        "rank-2 = w_vec/(K+2)"
+    );
 }
 
 #[test]
 fn rrf_agreement_outranks_single_branch() {
-    // "agree" is rank 1 in BOTH branches => 2/(K+1); single-branch hits get
-    // one term only. Agreement must win — the entire point of fusion.
+    // "agree" is rank 1 in BOTH branches => (w_vec + w_text)/(K+1); single-branch
+    // hits get one weighted term only. Agreement must win — the point of fusion.
     let vector = vec![
         hit(1, "agree", SoftFallbackBranch::Vector),
         hit(2, "vonly", SoftFallbackBranch::Vector),
@@ -51,7 +58,10 @@ fn rrf_agreement_outranks_single_branch() {
     let fused = fuse_rrf(vector, text);
 
     assert_eq!(fused[0].body, "agree", "both-branch hit ranks first");
-    assert!((fused[0].score - 2.0 / (RRF_K + 1.0)).abs() < 1e-12, "agree = 2/(K+1)");
+    assert!(
+        (fused[0].score - (RRF_WEIGHT_VECTOR + RRF_WEIGHT_TEXT) / (RRF_K + 1.0)).abs() < 1e-12,
+        "agree = (w_vec + w_text)/(K+1)"
+    );
     assert!(fused[0].score > fused[1].score, "agreement strictly outranks single-branch");
     // Representative of a both-branch body is the VECTOR hit (vector-first id).
     assert_eq!(fused[0].branch, SoftFallbackBranch::Vector);
@@ -59,9 +69,10 @@ fn rrf_agreement_outranks_single_branch() {
 }
 
 #[test]
-fn rrf_vector_first_tiebreak_and_dedup_on_body() {
-    // "vonly" (vector rank 2) and "tonly" (text rank 2) have equal RRF score
-    // 1/(K+2): vector-first tiebreak puts vonly before tonly.
+fn rrf_text_weighted_outranks_vector_at_equal_rank() {
+    // IR-C text-dominant weighting (3:1): "tonly" (text rank 2, score
+    // w_text/(K+2)) now strictly outranks "vonly" (vector rank 2, w_vec/(K+2)).
+    // Order: agree (both) > tonly (text) > vonly (vector). Also pins dedup-on-body.
     let vector = vec![
         hit(1, "agree", SoftFallbackBranch::Vector),
         hit(2, "vonly", SoftFallbackBranch::Vector),
@@ -72,10 +83,31 @@ fn rrf_vector_first_tiebreak_and_dedup_on_body() {
 
     assert_eq!(
         fused.iter().map(|h| h.body.as_str()).collect::<Vec<_>>(),
-        vec!["agree", "vonly", "tonly"],
-        "score desc, then vector-first on the equal-score tail"
+        vec!["agree", "tonly", "vonly"],
+        "score desc; text weight (3:1) lifts the rank-2 text hit above the rank-2 vector hit"
     );
     assert_eq!(fused.iter().filter(|h| h.body == "agree").count(), 1, "dedup on body");
+}
+
+#[test]
+fn rrf_vector_first_on_exact_score_tie() {
+    // The vector-first tiebreak fires only on an EXACT score tie. Under the 3:1
+    // weighting a vector rank-1 hit (w_vec/(K+1)) ties a text hit at the rank r
+    // where w_text/(K+r) == w_vec/(K+1) ⇒ r = (w_text/w_vec)*(K+1) - K. Construct
+    // that exact tie and assert the vector hit sorts first.
+    let r = ((RRF_WEIGHT_TEXT / RRF_WEIGHT_VECTOR) * (RRF_K + 1.0) - RRF_K) as usize;
+    assert!(r >= 1, "constructed tie rank must be valid");
+    let mut text: Vec<SearchHit> = (1..r)
+        .map(|i| hit(1000 + i as u64, &format!("filler{i}"), SoftFallbackBranch::Text))
+        .collect();
+    text.push(hit(2, "tie", SoftFallbackBranch::Text)); // text rank r
+    let vector = vec![hit(1, "vtie", SoftFallbackBranch::Vector)]; // vector rank 1
+    let fused = fuse_rrf(vector, text);
+
+    let vpos = fused.iter().position(|h| h.body == "vtie").expect("vtie present");
+    let tpos = fused.iter().position(|h| h.body == "tie").expect("tie present");
+    assert!((fused[vpos].score - fused[tpos].score).abs() < 1e-12, "scores are exactly tied");
+    assert!(vpos < tpos, "vector-first orders the vector hit ahead of the tied text hit");
 }
 
 #[test]

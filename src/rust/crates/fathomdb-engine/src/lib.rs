@@ -3595,9 +3595,21 @@ pub mod mean_centering_internals_for_test {
     }
 }
 
-/// G9 — Reciprocal Rank Fusion constant (`k ≈ 60`, the standard value;
-/// `0.8.0-agent-memory-fit.md` §8d). Fusion is on **rank**, never raw score.
-pub const RRF_K: f64 = 60.0;
+/// G9 — Reciprocal Rank Fusion constant. IR-C (2026-06-10b,
+/// `performance-output-and-compare.md`) found the standard `k≈60` slightly too
+/// high: the recall gain is concentrated at the top of the list, where a lower
+/// `k` sharpens rank-1/2 contributions. `k=30` is the validated operating point
+/// (`k10 > k30 > k60 > k100` on the sweep, `30` the conservative middle).
+/// Fusion is on **rank**, never raw score.
+pub const RRF_K: f64 = 30.0;
+
+/// G9 / IR-C — per-branch RRF weights. The sweep's optimum is strongly
+/// **text-dominant** (`text:vector ≈ 3:1`): the lexical (BM25) arm carries
+/// exact-fact recall and the dense arm, over-weighted, is a net drag on
+/// exploratory recall (`performance-output-and-compare.md`, 2026-06-10b/e). A
+/// branch contributes `weight / (RRF_K + rank)`.
+pub const RRF_WEIGHT_VECTOR: f64 = 1.0;
+pub const RRF_WEIGHT_TEXT: f64 = 3.0;
 
 /// G12-recency — additive recency weight, smaller than one RRF rank-step
 /// (`1/(RRF_K+1) ≈ 0.0164`) so recency breaks near-ties and nudges but never
@@ -3606,15 +3618,16 @@ pub const RECENCY_WEIGHT: f64 = 0.5 / RRF_K;
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
 ///
-/// Each branch contributes `1/(RRF_K + rank)` (1-based rank within that branch),
-/// accumulated **keyed on `SearchHit.body`**, so a body surfaced by both branches
-/// accumulates both terms (agreement boosts it). The fused value is written into
-/// `SearchHit.score`. A both-branch body surfaces **once** with the **vector**
-/// branch's identity (vector-first). Output is sorted by score descending, then
-/// vector-first, then insertion order — a pure, deterministic function of the two
-/// input lists (no `HashMap` iteration order leaks in). This is the
-/// **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no legacy
-/// path).
+/// Each branch contributes `weight / (RRF_K + rank)` (1-based rank within that
+/// branch; `weight` = [`RRF_WEIGHT_VECTOR`] / [`RRF_WEIGHT_TEXT`], text-dominant
+/// per IR-C), accumulated **keyed on `SearchHit.body`**, so a body surfaced by
+/// both branches accumulates both terms (agreement boosts it). The fused value
+/// is written into `SearchHit.score`. A both-branch body surfaces **once** with
+/// the **vector** branch's identity (vector-first). Output is sorted by score
+/// descending, then vector-first, then insertion order — a pure, deterministic
+/// function of the two input lists (no `HashMap` iteration order leaks in). This
+/// is the **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no
+/// legacy path).
 #[doc(hidden)]
 #[must_use]
 pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
@@ -3625,8 +3638,8 @@ pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
         order: usize,
     }
     let mut entries: Vec<Entry> = Vec::new();
-    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool| {
-        let contrib = 1.0 / (RRF_K + (rank0 as f64 + 1.0));
+    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool, weight: f64| {
+        let contrib = weight / (RRF_K + (rank0 as f64 + 1.0));
         if let Some(existing) = entries.iter_mut().find(|e| e.hit.body == hit.body) {
             // Dedup on body; the representative hit (vector-first) is retained.
             existing.score += contrib;
@@ -3636,10 +3649,10 @@ pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
         }
     };
     for (rank0, hit) in vector_hits.into_iter().enumerate() {
-        accumulate(hit, rank0, true);
+        accumulate(hit, rank0, true, RRF_WEIGHT_VECTOR);
     }
     for (rank0, hit) in text_hits.into_iter().enumerate() {
-        accumulate(hit, rank0, false);
+        accumulate(hit, rank0, false, RRF_WEIGHT_TEXT);
     }
     entries.sort_by(|a, b| {
         b.score
@@ -3957,16 +3970,21 @@ fn read_search_in_tx(
             None
         };
         // G1: SELECT body + kind + write_cursor (interim id) and the
-        // `bm25()` text-relevance score. Order is `write_cursor` (the per-branch
-        // rank RRF fuses on). This text SQL is unchanged from 0.7.2 — the filter
-        // is applied as a Rust post-filter so the unfiltered path is untouched.
+        // `bm25()` text-relevance score. IR-C (2026-06-10,
+        // `performance-output-and-compare.md`): the per-branch rank RRF fuses on
+        // must be **`bm25()` relevance**, not `write_cursor` (insertion order) —
+        // the prior `ORDER BY write_cursor` meant the lexical arm never ranked by
+        // relevance, the single biggest fusion bug. `bm25()` is more-negative ⇒
+        // better, so ascending puts best matches first; `write_cursor` is the
+        // deterministic tiebreak. The filter is applied as a Rust post-filter so
+        // the unfiltered path is untouched.
         let sql = match perf_limit {
             Some(k) => format!(
                 "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY write_cursor LIMIT {k}"
+                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor LIMIT {k}"
             ),
             None => "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY write_cursor"
+                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor"
                 .to_string(),
         };
         let mut statement = tx.prepare(&sql)?;
