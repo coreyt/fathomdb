@@ -235,6 +235,44 @@ workloads) + lower RRF k (~10–30). Components individually hit exact_fact R@10
 ≈ 0.94 / exploratory ≈ 0.65–0.69; not yet measured as a single combined config.
 Still a 1,500-doc slice — confirm on full corpus before landing.
 
+## Update (2026-06-10c) — vector-arm probe: weakness is the model, not a knob
+
+With the lexical arm fixed, the dense arm (0.733/0.375 R@10) is the ceiling. Probed
+the two cheapest suspects with a harness-side brute-force KNN index (exact cosine
+over re-embedded bodies), comparing bare vs BGE query-instruction-prefixed queries.
+
+| Config | exact_fact R@10 | exploratory R@10 |
+|---|---:|---:|
+| `vector_only(engine)` (ANN + mean-centering) | 0.733 | 0.375 |
+| `vec_bf_bare` (brute-force exact, bare query) | 0.753 | 0.350 |
+| `vec_bf_prefixed` (BGE retrieval instruction) | 0.740 | 0.275 |
+| `text_only_ORc` (best text arm) | 0.933 | **0.688** |
+| `hybrid_bfbare_1:3` (exact vec + content-OR) | **0.947** | 0.637 |
+| `hybrid_bfpref_1:3` | 0.947 | 0.625 |
+| `hybrid_bfpref_1:1 / 2:1 / 3:1` | 0.900 / 0.867 / 0.827 | 0.537 / 0.463 / 0.412 |
+
+**Findings (mostly negative — the cheap fixes don't exist):**
+1. **Query-instruction prefix — REJECTED.** `bge-small-en-v1.5`'s retrieval
+   instruction does *not* help here and *hurts* exploratory (0.350 → 0.275). The
+   missing query/passage asymmetry was not the cause.
+2. **Engine pipeline is faithful.** Brute-force *exact* cosine ≈ engine ANN
+   (0.753/0.350 vs 0.733/0.375) — mean-centering + binary-quantization ANN cost
+   ~nothing. No recall is being lost to the vector store; no bug to fix.
+3. **The dense weakness is intrinsic to the embedder/corpus.** Not a config or
+   quantization artifact — it's `bge-small-en-v1.5` (384-dim, ~512-token window,
+   mean-pooled) on long enterprise docs. Improving it needs a *different lever*:
+   passage **chunking** before embedding (long bodies are truncated/diluted under
+   the token cap — the most likely real cause and the next hypothesis to test), or
+   a larger embedding model (bge-base/large). Both are heavyweight, not knobs.
+4. **Best operating point unchanged.** text:vector ≈ 1:3 with content-OR text gives
+   the study-best exact_fact R@10 (0.947); exploratory still peaks at *text-only*
+   content-OR (0.688). The dense arm adds a marginal exact_fact lift (+0.01) and is
+   a net drag on exploratory — keep its weight low.
+
+**Net:** the dense arm is the ceiling, but there is no cheap dense win. The
+near-term value is in the lexical/fusion stack (content-OR + text-dominant 1:3 +
+low k); the dense arm is a separate, larger investigation (chunking first).
+
 ## Sources
 - EnronQA — https://arxiv.org/html/2505.00263v1
 - QAConv — https://ar5iv.labs.arxiv.org/html/2105.06912
