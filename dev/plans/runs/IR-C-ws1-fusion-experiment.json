@@ -1,0 +1,229 @@
+{
+  "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled exact_fact+exploratory slice; tests whether ordering the text arm by bm25() relevance (vs production write_cursor) and weighting it lifts recall. Small-corpus (directional).",
+  "configs": {
+    "bm25_only_relevance": {
+      "exact_fact": {
+        "r10": 0.08,
+        "r20": 0.08,
+        "r5": 0.08,
+        "r50": 0.08
+      },
+      "exploratory": {
+        "r10": 0.3625,
+        "r20": 0.375,
+        "r5": 0.35,
+        "r50": 0.375
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "bm25_only_wcursor": {
+      "exact_fact": {
+        "r10": 0.08,
+        "r20": 0.08,
+        "r5": 0.08,
+        "r50": 0.08
+      },
+      "exploratory": {
+        "r10": 0.3625,
+        "r20": 0.3625,
+        "r5": 0.2875,
+        "r50": 0.375
+      },
+      "rrf_k": 60.0,
+      "text_order": "wcursor",
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "hybrid_bm25_2x": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.78,
+        "r5": 0.7133333333333334,
+        "r50": 0.82
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6375,
+        "r5": 0.3625,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 2.0,
+      "w_vec": 1.0
+    },
+    "hybrid_bm25_3x": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.78,
+        "r5": 0.7133333333333334,
+        "r50": 0.82
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6375,
+        "r5": 0.375,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_bm25_3x_k10": {
+      "exact_fact": {
+        "r10": 0.7533333333333333,
+        "r20": 0.78,
+        "r5": 0.72,
+        "r50": 0.8266666666666667
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6375,
+        "r5": 0.375,
+        "r50": 0.75
+      },
+      "rrf_k": 10.0,
+      "text_order": "bm25",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_bm25_3x_k30": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.78,
+        "r5": 0.72,
+        "r50": 0.82
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6375,
+        "r5": 0.375,
+        "r50": 0.75
+      },
+      "rrf_k": 30.0,
+      "text_order": "bm25",
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "hybrid_bm25_5x": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.78,
+        "r5": 0.7133333333333334,
+        "r50": 0.82
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6375,
+        "r5": 0.3875,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 5.0,
+      "w_vec": 1.0
+    },
+    "hybrid_bm25_equal": {
+      "exact_fact": {
+        "r10": 0.7733333333333333,
+        "r20": 0.7933333333333333,
+        "r5": 0.7266666666666667,
+        "r50": 0.8266666666666667
+      },
+      "exploratory": {
+        "r10": 0.4875,
+        "r20": 0.625,
+        "r5": 0.325,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "hybrid_current(anchor)": {
+      "exact_fact": {
+        "r10": 0.7733333333333333,
+        "r20": 0.7933333333333333,
+        "r5": 0.7266666666666667,
+        "r50": 0.8266666666666667
+      },
+      "exploratory": {
+        "r10": 0.4375,
+        "r20": 0.625,
+        "r5": 0.325,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "engine",
+      "w_text": 0.0,
+      "w_vec": 0.0
+    },
+    "hybrid_vecheavy_3x": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.7733333333333333,
+        "r5": 0.72,
+        "r50": 0.8
+      },
+      "exploratory": {
+        "r10": 0.4125,
+        "r20": 0.5875,
+        "r5": 0.325,
+        "r50": 0.675
+      },
+      "rrf_k": 60.0,
+      "text_order": "bm25",
+      "w_text": 1.0,
+      "w_vec": 3.0
+    },
+    "hybrid_wcursor_equal": {
+      "exact_fact": {
+        "r10": 0.7733333333333333,
+        "r20": 0.7933333333333333,
+        "r5": 0.7266666666666667,
+        "r50": 0.8266666666666667
+      },
+      "exploratory": {
+        "r10": 0.4375,
+        "r20": 0.625,
+        "r5": 0.325,
+        "r50": 0.75
+      },
+      "rrf_k": 60.0,
+      "text_order": "wcursor",
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "vector_only": {
+      "exact_fact": {
+        "r10": 0.7333333333333333,
+        "r20": 0.76,
+        "r5": 0.7066666666666667,
+        "r50": 0.8
+      },
+      "exploratory": {
+        "r10": 0.375,
+        "r20": 0.5375,
+        "r5": 0.2,
+        "r50": 0.675
+      },
+      "rrf_k": 60.0,
+      "text_order": "none",
+      "w_text": 0.0,
+      "w_vec": 1.0
+    }
+  },
+  "docs_seeded": 1500,
+  "eval_queries": 230,
+  "k_ladder": [
+    5,
+    10,
+    20,
+    50
+  ]
+}
