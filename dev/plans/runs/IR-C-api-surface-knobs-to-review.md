@@ -198,3 +198,46 @@ The open question is whether the dense arm actually *pulls* those rank-26
 exploratory golds into the top-K (the `semantic` bucket) or not — that is the
 dense-tier (WI-1D) measure, which needs the full-corpus embed. The fusion's
 failure to help was measured on the *easy* slice; it must be re-judged here.
+
+## Full-corpus DENSE diagnostics (2026-06-11) — the question, answered
+
+`all.gold.diagnostics.json` dense tier, scope=full (10,506 docs), bge-small
+(`fathomdb-bge-small-en-v1.5`, 384-d), 128/96 max-pool, bucket_cap=50. Buckets:
+`lexical` = BM25 reaches the gold doc by rank 50; else `semantic` = the chunked
+dense arm reaches it by 50 (the stratum that would justify a vector arm); else
+`hard` = neither. (Whole-doc geometry skipped to fit the window — buckets need
+only 128/96; the box run keeps it.)
+
+| class | n | lexical | **semantic** | hard | dense-128/96 median rank | dense top-10 / top-50 |
+|---|---|---|---|---|---|---|
+| exact_fact | 2888 | 2732 (95%) | **36 (1%)** | 120 (4%) | 2 | 69% / 78% |
+| exploratory | 1584 | 846 (53%) | **142 (9%)** | 596 (38%) | **99** | 16% / 37% |
+
+**Verdict — Option A (chunking) does NOT rescue exploratory with bge-small:**
+1. **exact_fact** is a lexical task — 95% lexical, **1% semantic**. A vector arm
+   adds essentially nothing. Ship the lexical path.
+2. **exploratory: the dense arm is a *weak* retriever here, not the fix.** Its own
+   gold rank is **median 99** (top-50 just 37%) — *worse* than BM25's median 26
+   (top-50 53%). So the chunked dense arm does not seize the rank-26 rerank
+   opportunity the lexical tier exposed; it's individually worse.
+3. **Complementarity is real but small: 9%** (142 queries) are `semantic` — the
+   dense arm rescues a gold doc BM25 buried past 50. Oracle union therefore lifts
+   exploratory top-50 from **53% → 62%** (+9 pts) — bigger than the slice's +4–5,
+   but it requires a *perfect* fusion to capture, and the dense arm's median-99
+   weakness is exactly why the real fusion went *negative* on the slice (adding a
+   weak arm displaces good lexical hits).
+4. **The dominant problem is the 38% `hard` exploratory queries** — neither BM25
+   nor chunked-dense finds them by rank 50. Chunking does not touch this.
+
+**Updated decision lean:** **defer B (chunking) and the dense-arm-weighting work
+for exploratory** — at bge-small the chunked dense arm is too weak to cash even
+the 9-pt oracle headroom, and the bottleneck is the 38% hard stratum that needs a
+*stronger retriever*, not a chunk-geometry change. **The lever to test next is a
+better embedding model** (the median-99 dense rank is a model-quality signal, not
+a chunking one), not Option A/B/C. exact_fact stays lexical; #8 (locators) still
+stands on its citation merit.
+
+*Caveats:* spans absent in the source QA, so `passage_evidence_iou` had no data
+(`span_locator_queries=0`) — the metric is wired and waits on span-bearing labels
+(item 4 / future). Whole-doc dense geometry was skipped here (window fit); the
+persistent-box run can fill `dense_gold_rank_whole`.
