@@ -332,24 +332,35 @@ fn compute_dense_section(
 
     let emb = CandleBgeEmbedder::new().expect("bge embedder");
     let identity = format!("{:?}", emb.identity());
-    eprintln!("DIAG_DENSE embedding whole + 128/96 passages…");
-    let whole: Vec<(String, usize, usize, Vec<f32>)> = docs
-        .iter()
-        .map(|d| (d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&d.body).expect("embed whole")))
-        .collect();
+    let t0 = std::time::Instant::now();
+    eprintln!("DIAG_DENSE embedding whole + 128/96 passages over {} docs…", docs.len());
+    let mut whole: Vec<(String, usize, usize, Vec<f32>)> = Vec::with_capacity(docs.len());
+    for (i, d) in docs.iter().enumerate() {
+        whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&d.body).expect("embed whole")));
+        if (i + 1) % 2000 == 0 {
+            eprintln!("DIAG_DENSE whole_progress {}/{} ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
+        }
+    }
     let mut p128: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
-    for d in docs {
+    for (i, d) in docs.iter().enumerate() {
         for (t, s, e) in chunk_words_offsets(&d.body, 128, 96, 8) {
             p128.push((d.doc_id.clone(), s, e, emb.embed(&t).expect("embed chunk")));
         }
+        if (i + 1) % 2000 == 0 {
+            eprintln!("DIAG_DENSE p128_progress {}/{} docs, {} passages ({:.0}s)", i + 1, docs.len(), p128.len(), t0.elapsed().as_secs_f64());
+        }
     }
-    eprintln!("DIAG_DENSE whole={} p128={}", whole.len(), p128.len());
+    eprintln!("DIAG_DENSE embedded whole={} p128={} in {:.0}s", whole.len(), p128.len(), t0.elapsed().as_secs_f64());
 
     let present: HashSet<&str> = docs.iter().map(|d| d.doc_id.as_str()).collect();
+    eprintln!("DIAG_DENSE ranking {} queries…", gold.queries.len());
     let mut recs: Vec<DenseRecord> = Vec::new();
     for q in &gold.queries {
         if q.query_class == QueryClass::Negative {
             continue;
+        }
+        if recs.len() % 1000 == 0 && recs.len() > 0 {
+            eprintln!("DIAG_DENSE rank_progress {} queries ({:.0}s)", recs.len(), t0.elapsed().as_secs_f64());
         }
         let gold_ids = required_doc_ids(q);
         if gold_ids.is_empty() || !gold_ids.iter().any(|d| present.contains(d.as_str())) {
