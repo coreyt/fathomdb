@@ -1,0 +1,161 @@
+{
+  "_comment": "IR-C WS1 fusion experiment — REDUCED SLICE (1,200 docs / 250 sampled exploratory + 120 exact + 125 negative), full-MODE config set at production k=30. Directional only: run in an ephemeral container that could not finish the full 10,506-doc job; the true full-corpus run was handed off to a non-volatile box. The Option-A deep-K (R@20/R@50) exploratory question: does 128/96 max-pool passage fan-out beat the whole-doc dense arm, and does it lift the hybrid at 3:1 vs 1:1. NOTE: this slice has far fewer distractors than the full corpus, so the lexical arm looks stronger here than it will at full scale — interpret with that bias in mind.",
+  "configs": {
+    "h_128/96_1:1": {
+      "exact_fact": {
+        "r10": 0.9166666666666666,
+        "r20": 0.9416666666666667,
+        "r5": 0.8833333333333333,
+        "r50": 0.95
+      },
+      "exploratory": {
+        "r10": 0.528,
+        "r20": 0.704,
+        "r5": 0.384,
+        "r50": 0.86
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_128/96_1:3": {
+      "exact_fact": {
+        "r10": 0.9416666666666667,
+        "r20": 0.95,
+        "r5": 0.9333333333333333,
+        "r50": 0.9583333333333334
+      },
+      "exploratory": {
+        "r10": 0.636,
+        "r20": 0.732,
+        "r5": 0.52,
+        "r50": 0.852
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "h_whole_1:1": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.9416666666666667,
+        "r5": 0.875,
+        "r50": 0.9583333333333334
+      },
+      "exploratory": {
+        "r10": 0.504,
+        "r20": 0.672,
+        "r5": 0.348,
+        "r50": 0.832
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_whole_1:3": {
+      "exact_fact": {
+        "r10": 0.95,
+        "r20": 0.9583333333333334,
+        "r5": 0.9333333333333333,
+        "r50": 0.9583333333333334
+      },
+      "exploratory": {
+        "r10": 0.624,
+        "r20": 0.724,
+        "r5": 0.488,
+        "r50": 0.856
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "text_only_ORc": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.95,
+        "r5": 0.925,
+        "r50": 0.9583333333333334
+      },
+      "exploratory": {
+        "r10": 0.636,
+        "r20": 0.748,
+        "r5": 0.52,
+        "r50": 0.848
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.008,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "v_128/96_max": {
+      "exact_fact": {
+        "r10": 0.8416666666666667,
+        "r20": 0.8416666666666667,
+        "r5": 0.7916666666666666,
+        "r50": 0.8666666666666667
+      },
+      "exploratory": {
+        "r10": 0.328,
+        "r20": 0.42,
+        "r5": 0.244,
+        "r50": 0.652
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_whole_max": {
+      "exact_fact": {
+        "r10": 0.7583333333333333,
+        "r20": 0.775,
+        "r5": 0.7333333333333333,
+        "r50": 0.825
+      },
+      "exploratory": {
+        "r10": 0.228,
+        "r20": 0.336,
+        "r5": 0.16,
+        "r50": 0.532
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 30.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    }
+  },
+  "docs_seeded": 1200,
+  "eval_queries": 495,
+  "full_corpus": true,
+  "k_ladder": [
+    5,
+    10,
+    20,
+    50
+  ]
+}

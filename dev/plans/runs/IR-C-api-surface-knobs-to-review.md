@@ -90,3 +90,46 @@ Adding API surface is not free in this codebase:
 If (2) shows only a couple of points at deep K, the single `whole-doc + 3:1 +
 k=30` default is "good enough" and B/C can be deferred; #8 (locators) may still
 be worth it on the citation argument alone.
+
+## Reduced-slice result (2026-06-11) — directional, NOT the full-corpus answer
+
+`IR-C-ws1-fusion-experiment-slice1200.json` — 1,200 docs / 250 sampled
+exploratory + 120 exact + 125 negative, production k=30. Ran in an ephemeral
+container that could not finish the full job; the full-corpus run was handed off
+to a non-volatile box. **Caveat:** this slice has ~9× fewer distractors than the
+full corpus, so the lexical arm looks stronger here than it will at full scale —
+read the hybrid conclusions as a *lower bound* on how much the dense arm matters.
+
+Exploratory R@10 / R@20 / R@50 (the deep-K class):
+
+| config | R@10 | R@20 | R@50 |
+|---|---|---|---|
+| text_only_ORc | 0.636 | 0.748 | 0.848 |
+| v_whole_max (dense) | 0.228 | 0.336 | 0.532 |
+| v_128/96_max (dense) | **0.328** | **0.420** | **0.652** |
+| h_whole_1:3 (shipped) | 0.624 | 0.724 | 0.856 |
+| h_128/96_1:3 | 0.636 | 0.732 | 0.852 |
+| h_whole_1:1 | 0.504 | 0.672 | 0.832 |
+| h_128/96_1:1 | 0.528 | 0.704 | **0.860** |
+
+exact_fact stays ~0.92–0.95 R@10 across every hybrid (flat — gate #3 holds).
+
+**Read against the gates:**
+1. **Dense arm — chunking clearly wins** (gate #1 ✅): v_128/96 vs v_whole, explor
+   R@10 0.228→0.328, R@50 0.532→0.652; exact R@10 0.758→0.842.
+2. **Hybrid deep-K lift — did NOT reproduce at this scale** (gate #2 ✗ here):
+   the content-OR/BM25 **text arm alone (0.636/0.748/0.848) is essentially the
+   exploratory ceiling**. At the shipped 3:1 the chunked hybrid is geometry-
+   invariant (h_128/96_1:3 ≈ h_whole_1:3 ≈ text_only). At 1:1 the dense arm
+   *hurts* shallow K (explor R@10 0.636→0.528) and buys only ~+0.03 at R@20/R@50.
+   The small-corpus "1:1 deep-K win" (R@20 0.725→0.850) **did not hold** — that
+   looks like a low-distractor artifact.
+
+**Provisional lean (pending full corpus):** at modest corpus size the hybrid is
+**lexical-bound** — Option A is a real dense-arm win that the fusion does not cash
+in, so **defer B (chunking) and prefer the cheap `whole-doc + 3:1 + k=30`
+default**. #8 (positional/citation locators) survives on its own merit. **But**
+the full-corpus run is the real arbiter precisely because more distractors are
+where the dense arm was expected to earn its keep (the production full-corpus
+exploratory R@10 was only 0.236 — far below this slice's 0.636). Do not finalize
+B/C until that lands.
