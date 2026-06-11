@@ -5,7 +5,23 @@ Motivation: `dev/plans/runs/IR-C-retrieval-findings.md` (chunked dense arm weak 
 exploratory — median gold rank 99 over 10,506 docs). Question: are we at
 bge-small's limit, or misusing it, and what are the options?
 
-## TL;DR
+> ## ⚠️ UPDATE (2026-06-11) — the pooling hypothesis was REFUTED by experiment
+> The TL;DR below hypothesized the median-99 was a **mean-pooling bug**. We then
+> ran the actual A/B (full corpus, dense diagnostic, CLS pooling + query prefix vs
+> mean/no-prefix). **CLS did NOT fix exploratory — it was marginally *worse*:**
+> exploratory dense median rank **99 → 121**, top-50 **37% → 34%**, semantic bucket
+> **142 → 112**; exact_fact nudged up (top-50 78% → 80%). CLS is correctly
+> implemented (it cleared the 0.944 binary floor and helped exact_fact), so the
+> conclusion is: **the median-99 is NOT a pooling bug.** And because the dense
+> diagnostic embeds ~128-word chunks (~170 tokens), **512-truncation isn't in play
+> either** — this is **bge-small's genuine semantic-retrieval ceiling** on
+> discourse/summary queries over transcript passages. **The real lever is a stronger
+> retrieval model (Phase 2), not a pooling/usage fix.** Pooling choice is ~neutral
+> (±2-3 pts; tiny exact_fact gain, tiny exploratory loss) and not worth a migration
+> on its own. See the "A/B RESULT" section at the end. The original (now-corrected)
+> hypothesis is preserved below for the record.
+
+## TL;DR (ORIGINAL HYPOTHESIS — superseded by the UPDATE above)
 
 **We are almost certainly *misusing* bge-small, not hitting its ceiling.** The
 headline cause is a pooling bug, and it's cheap to fix and re-measure before any
@@ -205,3 +221,39 @@ jina-v3 (non-commercial license).
   pipeline (must A/B). candle `mod.rs` reflects `main` at fetch — pin & re-verify.
 - The single most valuable next action is **empirical**: A/B CLS vs mean pooling on
   the IR-C dense diagnostic (harness ready), measuring relevance *and* binary floor.
+
+## A/B RESULT (2026-06-11) — CLS pooling does not fix exploratory
+
+Ran the full-corpus dense diagnostic under `IRC_DIAG_POOLING=cls IRC_DIAG_PREFIX=1`
+(CLS pooling + BGE query instruction) vs the mean/no-prefix baseline. Same corpus,
+same 128/96 geometry, bge-small.
+
+| class | metric | mean (baseline) | CLS + prefix | Δ |
+|---|---|---|---|---|
+| exploratory | dense median rank | 99 | **121** | worse |
+| exploratory | top-10 / top-50 | 16% / 37% | 15% / **34%** | worse |
+| exploratory | buckets L/S/H | 846 / 142 / 596 | 846 / **112 / 626** | more hard |
+| exact_fact | dense median rank | 2 | 2 | = |
+| exact_fact | top-10 / top-50 | 69% / 78% | **70% / 80%** | slightly better |
+
+**Conclusions:**
+1. **Pooling hypothesis refuted.** CLS (the model-native mode, + prefix) does not
+   recover exploratory; it is marginally worse there and marginally better on
+   exact_fact — a wash. The BGE docs' "significant decrease from mean-pooling" did
+   **not** manifest as a significant *retrieval* difference on this corpus/task.
+2. **Not truncation either.** The dense diagnostic embeds ~128-word chunks, well
+   under 512 tokens, so the 512-truncation penalty is not the cause here. (It would
+   still hurt the *production* whole-doc path, which is a separate reason to chunk.)
+3. **It's the model.** median-rank-99 is bge-small's real semantic-retrieval ceiling
+   on discourse/summary queries over transcript passages. The lever is **Phase 2 —
+   a stronger retrieval model** (candle-native, binary-safe, ideally long-context +
+   MRL): `nomic-embed-text-v1.5` is the standout to test next on this exact harness
+   (swap the `Embedder`, re-run). exact_fact is a solved lexical task; leave it.
+4. **CLS adoption:** optional and minor. It clears the binary floor (0.944) and is
+   the model-native mode with a small exact_fact gain, but it's not the fix; default
+   stays Mean. Artifacts: `all.gold.diagnostics.{mean,}.json` (gitignored).
+
+**Methodological note:** this is the value of the empirical gate — a well-motivated,
+documented hypothesis (mean-pooling a CLS model) was *plausible* (config + BGE docs
+confirmed the mismatch) but turned out not to explain the symptom. Cheap to test,
+and it redirected effort from a usage fix to the actual lever (the model).
