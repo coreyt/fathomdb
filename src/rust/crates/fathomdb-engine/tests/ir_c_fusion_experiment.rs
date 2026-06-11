@@ -39,6 +39,8 @@
 mod corpus_subset;
 #[path = "support/ir_eval.rs"]
 mod ir_eval;
+#[path = "support/ir_retrieval.rs"]
+mod ir_retrieval;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -50,6 +52,9 @@ use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
 use ir_eval::{
     evaluate_gold_set, load_gold_set, required_doc_ids, validate_gold_set, GoldQuery, GoldSet,
     QueryClass, K_LADDER,
+};
+use ir_retrieval::{
+    chunk_words, compile_content_or, fts_bodies, knn_docs_pool, map_bodies, Pool,
 };
 use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
@@ -79,123 +84,13 @@ fn env_usize(key: &str, default: usize) -> usize {
     std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-/// Inlined copy of `fathomdb_query::compile_text_query` (not a dev-dependency):
-/// whitespace-split, quote each token, AND-join — byte-identical to production.
-#[allow(dead_code)] // production AND-compile; kept for future probes
-fn compile_match_expression(raw: &str) -> String {
-    compile_with_op(raw, " AND ")
-}
-
-/// WS4 candidate: bag-of-words OR semantics — standard BM25 query handling, where
-/// any token may match and `bm25()` ranks by overlap. This is how the same-dataset
-/// BM25 baselines (EnronQA/QAConv) are run; the production AND-join requires EVERY
-/// token present, which near-zeroes recall on natural-language questions.
-fn compile_match_expression_or(raw: &str) -> String {
-    compile_with_op(raw, " OR ")
-}
-
-fn compile_with_op(raw: &str, op: &str) -> String {
-    raw.split_whitespace()
-        .filter(|t| !t.is_empty())
-        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(op)
-}
-
-/// Re-visited lever (unburied by the OR fix): OR over *content* tokens only —
-/// stopwords stripped — to cut the false matches raw-OR picks up on function
-/// words. Falls back to raw-OR if the query is all stopwords.
-fn compile_content_or(raw: &str) -> String {
-    let toks = content_tokens(raw);
-    if toks.is_empty() {
-        return compile_match_expression_or(raw);
-    }
-    toks.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
-}
-
 /// BGE-en-v1.5 retrieval query instruction (model card). Query-side only;
 /// passages stay bare. Rejected on whole-doc vectors, re-tested on passages
 /// (the granularity the instruction targets).
 const BGE_QUERY_INSTRUCTION: &str = "Represent this sentence for searching relevant passages: ";
 
-/// Split a body into overlapping word-window passages (long bodies exceed
-/// bge-small's ~512-token window and get mean-pool-diluted). Short bodies pass
-/// through as a single chunk; `size = usize::MAX` ⇒ whole-doc (one passage).
-fn chunk_words(body: &str, size: usize, stride: usize, max_chunks: usize) -> Vec<String> {
-    let words: Vec<&str> = body.split_whitespace().collect();
-    if words.len() <= size {
-        return vec![body.to_string()];
-    }
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    while start < words.len() && chunks.len() < max_chunks {
-        let end = (start + size).min(words.len());
-        chunks.push(words[start..end].join(" "));
-        if end == words.len() {
-            break;
-        }
-        start += stride;
-    }
-    chunks
-}
-
-/// Passage-score aggregation to doc level.
-#[derive(Clone, Copy)]
-enum Pool {
-    Max,  // doc scores as its single best passage
-    Mean, // average over all the doc's passages (rewards uniform relevance)
-    Top2, // average of the doc's two best passages (max/mean compromise)
-}
-
-/// KNN over passage vectors, pooled to ranked doc_ids — already in evaluation
-/// (doc_id) space. One pass accumulates sum/count/top-2 per doc.
-fn knn_docs_pool(
-    qv: &[f32],
-    passages: &[(String, Vec<f32>)],
-    k: usize,
-    pool: Pool,
-) -> Vec<String> {
-    struct Acc {
-        sum: f32,
-        n: u32,
-        b1: f32,
-        b2: f32,
-    }
-    let mut by_doc: HashMap<&str, Acc> = HashMap::new();
-    for (doc_id, pv) in passages {
-        let dot: f32 = qv.iter().zip(pv).map(|(a, b)| a * b).sum();
-        let e = by_doc
-            .entry(doc_id.as_str())
-            .or_insert(Acc { sum: 0.0, n: 0, b1: f32::MIN, b2: f32::MIN });
-        e.sum += dot;
-        e.n += 1;
-        if dot > e.b1 {
-            e.b2 = e.b1;
-            e.b1 = dot;
-        } else if dot > e.b2 {
-            e.b2 = dot;
-        }
-    }
-    let mut v: Vec<(&str, f32)> = by_doc
-        .into_iter()
-        .map(|(d, a)| {
-            let s = match pool {
-                Pool::Max => a.b1,
-                Pool::Mean => a.sum / a.n as f32,
-                Pool::Top2 => {
-                    if a.n >= 2 {
-                        (a.b1 + a.b2) / 2.0
-                    } else {
-                        a.b1
-                    }
-                }
-            };
-            (d, s)
-        })
-        .collect();
-    v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    v.into_iter().take(k).map(|(d, _)| d.to_string()).collect()
-}
+// Text-arm compilation, chunking, pooling, and the FTS read seam now live in
+// `support/ir_retrieval.rs` (shared with the gold-diagnostics harness).
 
 /// Local weighted RRF, faithful to `fuse_rrf`: contribution `w / (k + rank1)`,
 /// dedup keyed on body, vector-first tiebreak, deterministic sort. Returns fused
@@ -253,57 +148,12 @@ struct QCache {
     text_ids: Vec<String>,  // content-OR lexical arm, mapped to ranked doc_ids
 }
 
-/// Read-only FTS query against the engine's sqlite file, ordered by `order_sql`.
-fn fts_bodies(conn: &Connection, match_expr: &str, order_sql: &str, cap: usize) -> Vec<String> {
-    if match_expr.is_empty() {
-        return Vec::new();
-    }
-    let sql = format!(
-        "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY {order_sql} LIMIT {cap}"
-    );
-    let Ok(mut stmt) = conn.prepare(&sql) else { return Vec::new() };
-    let rows = stmt.query_map([match_expr], |row| row.get::<_, String>(0));
-    match rows {
-        Ok(it) => it.flatten().collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
 fn build_body_to_doc_id(docs: &[Doc]) -> HashMap<String, String> {
     let mut m = HashMap::with_capacity(docs.len());
     for d in docs {
         m.entry(d.body.clone()).or_insert_with(|| d.doc_id.clone());
     }
     m
-}
-
-fn map_bodies(bodies: &[String], m: &HashMap<String, String>) -> Vec<String> {
-    bodies.iter().filter_map(|b| m.get(b).cloned()).collect()
-}
-
-/// Minimal stopword set so content-token coverage isn't inflated by function
-/// words (the OR query still matches on them, but bm25's IDF + this coverage
-/// guard both discount them).
-const STOPWORDS: &[&str] = &[
-    "the", "and", "for", "are", "was", "were", "what", "when", "where", "who", "whom", "which",
-    "how", "why", "did", "does", "do", "is", "of", "to", "in", "on", "at", "by", "an", "a", "it",
-    "its", "this", "that", "these", "those", "with", "from", "as", "be", "or", "if", "about",
-    "into", "over", "than", "then", "they", "them", "their", "you", "your", "we", "our", "i",
-];
-
-fn tokenize_set(text: &str) -> HashSet<String> {
-    text.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| t.len() >= 3)
-        .map(|t| t.to_string())
-        .collect()
-}
-
-/// Content tokens of a query: tokenized, ≥3 chars, stopwords removed. The
-/// coverage denominator (the "M" in N-of-M).
-fn content_tokens(query: &str) -> HashSet<String> {
-    let stop: HashSet<&str> = STOPWORDS.iter().copied().collect();
-    tokenize_set(query).into_iter().filter(|t| !stop.contains(t.as_str())).collect()
 }
 
 #[test]
