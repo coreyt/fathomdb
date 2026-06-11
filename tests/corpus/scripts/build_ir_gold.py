@@ -43,7 +43,7 @@ RAW_DIR = REPO / "data/corpus-data/raw"
 EVAL_DIR = REPO / "data/corpus-data/eval"
 OUT_DIR = EVAL_DIR / "ir_gold"
 
-QRELS_VERSION = "ir-c-reused-v1"
+QRELS_VERSION = "ir-c-reused-v2"  # v2: query tracers + evidence-span locators
 SOURCES = ("enronqa", "qaconv", "qmsum")
 
 # answer_type -> query_class (must be one of ir_eval.rs QueryClass labels).
@@ -96,8 +96,9 @@ def transform_row(source: str, row: dict, corpus_ids: set[str]) -> tuple[dict | 
             "required_evidence": [],
             "expected_top_k_doc_ids": [],
             "relation_type": row.get("relation_type"),
-            "_source": source,
-            "_answer_type": answer_type,
+            "source": source,
+            "answer_type": answer_type,
+            "query_origin": "human_dataset",  # reuse tier: dataset-authored question
         }, ""
 
     # Positive class: required evidence = resolving evidence_doc_ids.
@@ -107,16 +108,31 @@ def transform_row(source: str, row: dict, corpus_ids: set[str]) -> tuple[dict | 
     if not resolving:
         return None, "no evidence_doc_ids resolve to the frozen corpus"
 
-    locator_kind = "span" if spans else "whole_body"
-    required_evidence = [
-        {
-            "evidence_id": f"{query_id}#e{i}",
-            "doc_id": d,
-            "necessity": "required",
-            "locator": {"kind": locator_kind},
-        }
-        for i, d in enumerate(resolving)
-    ]
+    # WI-3a: carry the dataset evidence spans into the locator, per doc, so the
+    # span-level diagnostic (passage<->evidence overlap) can be computed later.
+    # Span offsets are emitted as-authored (relative to the source doc text); the
+    # diagnostic that consumes them is responsible for body alignment.
+    def spans_for(doc: str) -> list[dict]:
+        return [
+            {"doc_id": s["doc_id"], "start": s["start"], "end": s["end"]}
+            for s in spans
+            if s.get("doc_id") == doc
+        ]
+
+    required_evidence = []
+    for i, d in enumerate(resolving):
+        doc_spans = spans_for(d)
+        locator = {"kind": "span" if doc_spans else "whole_body"}
+        if doc_spans:
+            locator["spans"] = doc_spans
+        required_evidence.append(
+            {
+                "evidence_id": f"{query_id}#e{i}",
+                "doc_id": d,
+                "necessity": "required",
+                "locator": locator,
+            }
+        )
     return {
         "query_id": query_id,
         "query": question,
@@ -126,8 +142,9 @@ def transform_row(source: str, row: dict, corpus_ids: set[str]) -> tuple[dict | 
         # present (ir_eval.rs §(f): never added on top of an evidence set).
         "expected_top_k_doc_ids": resolving,
         "relation_type": row.get("relation_type"),
-        "_source": source,
-        "_answer_type": answer_type,
+        "source": source,
+        "answer_type": answer_type,
+        "query_origin": "human_dataset",  # reuse tier: dataset-authored question
     }, ""
 
 
