@@ -630,6 +630,75 @@ fn ir_c_fusion_experiment() {
         );
     }
 
+    // ── Complementarity diagnostic (exploratory). ──
+    // The hybrid did not beat text-only at deep K; this asks WHY. For each
+    // exploratory query take each arm's top-K doc set and compute the ORACLE UNION
+    // recall (a gold doc counts if EITHER arm has it in top-K) — the upper bound
+    // any fusion could reach. union ≈ text ⇒ the dense arm is genuinely REDUNDANT
+    // (Option A cannot help the hybrid at any weight); union ≫ text ⇒ it is
+    // COMPLEMENTARY and the gain is there to be captured by re-weighting. We report
+    // both dense geometries so we can see whether chunking adds unique coverage that
+    // the whole-doc arm does not. Binary presence, ungraded, multi-gold averaged as
+    // |G∩topK|/|G|. Reuses the dense+text caches — no new embeds. geom 0=whole,
+    // 1=128/96 (full-mode layout). `rescue` = queries with a gold doc the 128/96
+    // arm surfaces in top-K that the text arm misses.
+    let comp = if full_mode {
+        let explor: Vec<&GoldQuery> =
+            gold.queries.iter().filter(|q| q.query_class == QueryClass::Exploratory).collect();
+        let topk = |ids: &[String], k: usize| -> HashSet<String> { ids.iter().take(k).cloned().collect() };
+        let vc = vec_cache.lock().expect("vec_cache poisoned");
+        let mut rows = serde_json::Map::new();
+        eprintln!(
+            "\nFX_COMP exploratory n={} | R@K | text dense_whole dense_128/96 | union_whole union_128/96 | rescue_128/96",
+            explor.len()
+        );
+        for &k in &[10usize, 20, 50] {
+            let (mut s_text, mut s_dw, mut s_d1, mut s_uw, mut s_u1) = (0.0f64, 0.0, 0.0, 0.0, 0.0);
+            let mut rescue = 0usize;
+            let mut counted = 0.0f64;
+            for q in &explor {
+                let key = q.query_id.clone().unwrap_or_else(|| q.query.clone());
+                let g: HashSet<String> = required_doc_ids(q).into_iter().collect();
+                if g.is_empty() {
+                    continue;
+                }
+                let t = topk(&cache.get(&key).expect("qc").text_ids, k);
+                let dw = vc.get(&(key.clone(), 0usize, 0u8, false)).map(|v| topk(v, k)).unwrap_or_default();
+                let d1 = vc.get(&(key.clone(), 1usize, 0u8, false)).map(|v| topk(v, k)).unwrap_or_default();
+                let frac = |hit: &HashSet<String>| -> f64 {
+                    g.iter().filter(|id| hit.contains(*id)).count() as f64 / g.len() as f64
+                };
+                s_text += frac(&t);
+                s_dw += frac(&dw);
+                s_d1 += frac(&d1);
+                s_uw += frac(&t.union(&dw).cloned().collect());
+                s_u1 += frac(&t.union(&d1).cloned().collect());
+                if g.iter().any(|id| d1.contains(id) && !t.contains(id)) {
+                    rescue += 1;
+                }
+                counted += 1.0;
+            }
+            let n = counted.max(1.0);
+            let (text, dw, d1, uw, u1) = (s_text / n, s_dw / n, s_d1 / n, s_uw / n, s_u1 / n);
+            eprintln!(
+                "FX_COMP R@{:<2} | {:.3} {:.3} {:.3} | {:.3} {:.3} | {} ({:.0}%)",
+                k, text, dw, d1, uw, u1, rescue, 100.0 * rescue as f64 / n
+            );
+            rows.insert(
+                format!("r{k}"),
+                json!({
+                    "text_only": text, "dense_whole": dw, "dense_128_96": d1,
+                    "oracle_union_whole": uw, "oracle_union_128_96": u1,
+                    "union_headroom_128_96_over_text": u1 - text,
+                    "rescue_queries_128_96": rescue,
+                }),
+            );
+        }
+        serde_json::Value::Object(rows)
+    } else {
+        serde_json::Value::Null
+    };
+
     // ── Write report. ── Full mode writes a separate file so the directional
     // small-corpus artifact is preserved.
     let out_name = if full_mode {
@@ -656,6 +725,7 @@ fn ir_c_fusion_experiment() {
         "eval_queries": gold.queries.len(),
         "k_ladder": K_LADDER,
         "configs": serde_json::Value::Object(report),
+        "complementarity_exploratory": comp,
     });
     std::fs::write(&out, serde_json::to_string_pretty(&doc).unwrap()).expect("write report");
     eprintln!("FX_WROTE {}", out.display());
