@@ -2,13 +2,38 @@
 
 Status: **in progress** · Drafted 2026-06-11 · Branch `claude/recent-changes-state-a6wth3`
 
-**Landed:** WI-2 (query tracers) + WI-3a (evidence-span locators) — gold schema +
-build script + tests (`6f39b3a`). WI-1L (lexical diagnostics harness + shared
-`ir_retrieval.rs` seams) — model-free `bm25_gold_rank`/`idf_overlap` sidecar with
-unit tests (`72643f8`). **Pending:** gold regeneration (`ir-c-reused-v2`) + the
-real-corpus lexical run — both need the gitignored corpus, so they run where the
-data lives. **Next:** WI-1D + WI-3b (dense ranks, buckets, chunk offsets,
-passage↔span overlap).
+**Landed (code + tests):** WI-2 (query tracers) + WI-3a (evidence-span locators)
+— gold schema + build script (`6f39b3a`). WI-1L (lexical diagnostics + shared
+`ir_retrieval.rs` seams) — `bm25_gold_rank`/`idf_overlap` sidecar (`72643f8`).
+WI-1D + WI-3b (dense ranks, lexical/semantic/hard buckets, char-offset chunking,
+passage↔evidence-span IoU) (`c486e30`). All unit tests green in the default pass;
+feature-gated dense path compiles.
+
+**Pending — needs the frozen corpus (runs on the persistent box, not the
+ephemeral container):** (1) regenerate gold to `ir-c-reused-v2`; (2) run the
+diagnostics to emit the actual measures.
+
+### Producing the measures (runbook — where the corpus lives)
+Prereqs: the frozen corpus present at `data/corpus-data/` matching
+`snapshot.json`'s `corpus_hash` (else the dense/lexical run self-skips on the
+hash guard), and embedder weights for the dense pass.
+```bash
+# 1. regenerate gold with the v2 tracers + spans (needed for the IoU metric)
+python3 tests/corpus/scripts/build_ir_gold.py
+
+# 2a. LEXICAL tier — cheap, model-free (minutes): bm25_gold_rank, idf_overlap
+IRC_RUN=1 cargo test -p fathomdb-engine \
+  --test ir_c_gold_diagnostics -- --nocapture        # DIAG_SUMMARY + sidecar
+
+# 2b. DENSE tier — embeds the corpus (hours): dense ranks, buckets, span IoU
+IRC_RUN=1 IRC_DIAG_DENSE=1 cargo test --release -p fathomdb-engine \
+  --features default-embedder --test ir_c_gold_diagnostics -- --nocapture
+```
+Both write `data/corpus-data/eval/ir_gold/all.gold.diagnostics.json` (gitignored).
+Headlines print as `DIAG_SUMMARY` (lexical: `bm25_rank1_frac` per class) and
+`DIAG_DENSE_SUMMARY` (`bucket_counts` — the **semantic** count is the answer to
+"does this benchmark contain queries that need vector?"). Paste those into the
+decision doc once they land.
 
 ## Why
 
