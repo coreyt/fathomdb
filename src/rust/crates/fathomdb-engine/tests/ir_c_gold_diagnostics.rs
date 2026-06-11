@@ -333,12 +333,24 @@ fn compute_dense_section(
     let emb = CandleBgeEmbedder::new().expect("bge embedder");
     let identity = format!("{:?}", emb.identity());
     let t0 = std::time::Instant::now();
-    eprintln!("DIAG_DENSE embedding whole + 128/96 passages over {} docs…", docs.len());
-    let mut whole: Vec<(String, usize, usize, Vec<f32>)> = Vec::with_capacity(docs.len());
-    for (i, d) in docs.iter().enumerate() {
-        whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&d.body).expect("embed whole")));
-        if (i + 1) % 2000 == 0 {
-            eprintln!("DIAG_DENSE whole_progress {}/{} ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
+    // The bucket (the headline) needs only the 128/96 dense rank;
+    // dense_gold_rank_whole is a reference field. IRC_DIAG_SKIP_WHOLE drops the
+    // whole-doc geometry — by far the slowest part (full 512-token passes on the
+    // ~6k long docs) — to fit a window. The persistent-box run keeps it (default).
+    let skip_whole = std::env::var_os("IRC_DIAG_SKIP_WHOLE").is_some();
+    eprintln!(
+        "DIAG_DENSE embedding {}128/96 passages over {} docs…",
+        if skip_whole { "" } else { "whole + " },
+        docs.len()
+    );
+    let mut whole: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
+    if !skip_whole {
+        whole.reserve(docs.len());
+        for (i, d) in docs.iter().enumerate() {
+            whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&d.body).expect("embed whole")));
+            if (i + 1) % 2000 == 0 {
+                eprintln!("DIAG_DENSE whole_progress {}/{} ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
+            }
         }
     }
     let mut p128: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
