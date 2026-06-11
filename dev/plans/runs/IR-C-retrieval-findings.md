@@ -82,6 +82,18 @@ Read (exploratory):
    and re-running the dense diagnostic — see the embedder research note (in progress)
    for candidates that respect FathomDB's lightweight + dimension/quantization +
    license constraints.
+
+   **UPDATE (2026-06-11), see `dev/notes/IR-C-embedder-options-research.md`:** the
+   embedder research found a **cheaper first lever** — the median-99 is likely a
+   **usage bug, not bge-small's ceiling**. bge-small-en-v1.5 is **CLS-pooled**
+   (verified against its `1_Pooling/config.json`), but FathomDB **mean-pools** it
+   (`candle_bge.rs:178`, `design/embedder.md §0.4`); BGE docs say mean-pooling causes
+   a "significant decrease." This embedder is used by BOTH production and these
+   diagnostics, so the median-99 likely *understates* bge-small. **Fix CLS pooling +
+   add the query prefix + chunk long docs (≤512 tok), re-measure, BEFORE swapping
+   models** — gated on re-validating the 1-bit binary recall floor (pooling changes
+   quantization geometry). If a swap is still warranted, the long-context + MRL
+   (binary-safe) candle-native options are nomic-embed-text-v1.5 / modernbert-embed.
 3. **exact_fact stays lexical.** Ship the content-OR/BM25 path; vector adds ~nothing.
 4. **#8 (positional/citation locators)** still stands on its citation argument.
 
