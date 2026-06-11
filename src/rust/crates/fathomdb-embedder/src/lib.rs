@@ -77,7 +77,7 @@ impl MeanRecomputeTrigger {
 mod candle_bge;
 
 #[cfg(feature = "default-embedder")]
-pub use candle_bge::{CandleBgeEmbedder, DEFAULT_EMBEDDER_DIM, DEFAULT_EMBEDDER_NAME};
+pub use candle_bge::{CandleBgeEmbedder, Pooling, DEFAULT_EMBEDDER_DIM, DEFAULT_EMBEDDER_NAME};
 
 #[derive(Clone, Debug)]
 pub struct NoopEmbedder {
