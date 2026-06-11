@@ -1,0 +1,92 @@
+# IR-C — API-surface knobs to review (post full-corpus chunking experiment)
+
+Drafted: 2026-06-11
+Status: **PARKED — review after the full-corpus chunking experiment lands**
+Gating artifact: `dev/plans/runs/IR-C-ws1-fusion-experiment-full.json`
+(produced by `IRC_FX_FULL=1 … --test ir_c_fusion_experiment`; the Option-A
+deep-K exploratory run, ~3.5 h, in flight at draft time).
+
+This is the consolidated list of retrieval API-surface / config knobs surfaced
+during the IR-C discussion. **Do not act on B/C until the gating run lands** —
+it measures how much daylight there is between the shipped `whole-doc + 3:1 +
+k=30` default and the `chunked + 1:1` bundle at deep K (R@20/R@50) on the full
+10,506-doc corpus. If the gap is small, most of B/C is not worth the surface.
+
+Today's production stack (the defaults everything below is measured against):
+content-OR text compile (`fathomdb-query::compile_text_query`), `bm25()` text
+ordering, weighted RRF `RRF_K=30`, `RRF_WEIGHT_TEXT:RRF_WEIGHT_VECTOR = 3:1`
+(`fathomdb-engine/src/lib.rs`), whole-doc embedding — one vector per node
+(`lib.rs:4434`).
+
+---
+
+## A. Per-request (query-side) knobs — "tell us your intent"
+
+| # | Knob | Controls | Default | Lean | Notes |
+|---|------|----------|---------|------|-------|
+| 1 | **Arm weights** `w_text:w_vector` | lexical vs. dense dominance (3:1 ↔ 1:1) | 3:1 | **Candidate** | Primary exact_fact↔exploratory lever. Caller usually knows intent ("find a fact" vs "sweep a topic"). |
+| 2 | **RRF `k`** | rank-curve steepness (low = top-heavy, high = flat) | 30 | Candidate (lower priority) | Smaller effect than weights; expose only if weights are insufficient. NB: distinct from the `K` in R@K. |
+| 3 | **Search depth / result `K`** | how many ranked results returned ("how deep the caller reads") | current limit | **Candidate** | This *is* shallow-vs-deep-K as an API param. Exploratory callers read deep; factoid callers read shallow. |
+| 4 | **(meta) Caller-supplied intent** | whether 1–3 are caller-set vs. inferred | — | **For** (vs. a classifier) | Conclusion: in an agent-memory store the caller knows its intent; exposing 1–3 beats a query classifier — no added latency, no nondeterminism. |
+
+## B. Ingest / data-side (config) knobs — the Option A family
+
+| # | Knob | Controls | Default | Lean | Notes |
+|---|------|----------|---------|------|-------|
+| 5 | **Chunking on/off + geometry** (window size / stride) | passage fan-out (Option A): whole-doc vs 128/96 etc. | whole-doc | **Pending numbers** | The deep-K-exploratory lever. Cheap form is a **length-gated heuristic** ("chunk only if long"), NOT a classifier. |
+| 6 | **Pooling strategy** (max / mean / top2) | how passage scores roll up to the node | max | Bake max, don't expose | Only relevant if #5 on; sweep already says max ≫ top2 ≫ mean. |
+| 7 | **Data-type classifier at ingest** | ML routing of docs by type | — | **Against** (overkill) | A length/format heuristic (part of #5) gets ~all the benefit without a model dependency. |
+
+## C. Response-surface additions — positional metadata
+
+| # | Surface | Adds | Default | Lean | Notes |
+|---|---------|------|---------|------|-------|
+| 8 | **Passage locator on each hit** | matched passage's `(node_id, seq/offset)` — *which part* of the node matched | node-level only | **For**, if citations matter | Today only the **shared node_id** is kept (passages roll up to the node); **seq/offset is dropped**. Adding it enables snippets / highlights / **citation-grade answers** ("from minute 34 of the meeting"). |
+| 8a | — store vs. derive | persist `seq` with each passage vector vs. recompute span at query time | — | persist if #5 lands | If Option A is built, storing `(node_id, seq, offset, vector)` is a small delta over the minimum `(node_id, vector)`. |
+
+**Invariant (Option A):** the node stays the **identity/return unit**; positional
+metadata is *additive* — a locator *inside* the returned node, not a new return
+granularity. Its strongest justification is **independent of the recall
+numbers**: grounding/citations are valuable in an agent-memory system even if
+deep-K recall barely moves.
+
+## D. Deliberately rejected (on record as considered-and-declined)
+
+| # | Knob | Why rejected |
+|---|------|--------------|
+| 9 | **`fusion_mode` switch** (legacy-union vs RRF) | HITL Q3 — RRF is unconditional, no legacy path. Pinned by the determinism tests (`pr_g9_rrf_fusion.rs`). |
+| 10 | **BGE query-instruction prefix** | Swept and definitively closed (tiny exact gain, hurts exploratory, every geometry — `performance-output-and-compare.md` 2026-06-10e). |
+| 11 | **Query intent classifier** | Superseded by #4 (caller-supplied params) — avoids latency + nondeterminism. |
+
+---
+
+## Cross-cutting cost of any of A–C
+
+Adding API surface is not free in this codebase:
+- **Compatibility commitment** — each param is a long-lived contract.
+- **Governed-surface enforcement** — must respect the facade-scope discipline
+  (0.8.0 slice-27 / ADR-0.6.0-cli-scope); new query verbs/params are governed.
+- **Determinism contract** — the RRF tests pin byte-identical ordering. Params
+  are fine (deterministic given inputs); a *classifier* is not.
+
+## Recommended starting position (revisit against the gating numbers)
+
+- **Expose #1 and #3** (and maybe #2) as optional per-request params, with
+  today's values as defaults.
+- Treat **#5 + #8** as a single "build Option A with locators" decision,
+  **gated on the deep-K numbers** from the full-corpus run.
+- **Bake #6** (max-pool); **do not build #7 / #11**.
+
+## Decision gate — what the full-corpus run must show to justify B/C
+
+1. `v_128/96_max` vs `v_whole_max` — does passage fan-out beat the whole-doc
+   dense arm at full scale (expected yes on the dense arm)?
+2. `h_128/96_1:3` vs `h_whole_1:3` and `…_1:1` — does chunking lift **exploratory
+   R@20 / R@50** materially over whole-doc at production k=30, and how much of
+   that requires moving off 3:1 toward 1:1?
+3. `exact_fact` must stay ~flat (lexical-bound) — confirm chunking costs nothing
+   on the factoid class.
+
+If (2) shows only a couple of points at deep K, the single `whole-doc + 3:1 +
+k=30` default is "good enough" and B/C can be deferred; #8 (locators) may still
+be worth it on the citation argument alone.
