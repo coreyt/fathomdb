@@ -39,6 +39,17 @@ model swap.
 it cleared the binary recall floor; CLS pooling must be **A/B'd on *both* axes —
 IR relevance *and* binary-quant retention / the 0.90 ANN floor** — not assumed free.
 
+> **GATE RESULT (2026-06-11) — CLS clears the 1-bit binary floor.**
+> `tests/ir_c_pooling_floor_gate.rs`, full corpus (10,506 docs), 200 gold queries,
+> faithful vector stage (mean-center → sign-bit → Hamming K=192 → f32 rerank vs
+> exact-f32 top-10): **mean recall@10 = 0.946, CLS recall@10 = 0.944** — both PASS
+> the 0.90 floor, statistically tied. So the geometry-change risk did **not**
+> materialize; CLS is binary-quant-safe and adoptable. (Harness mean-pool 0.946 is
+> consistent with the canonical eu7 baseline 0.896–0.937, cross-checking fidelity.)
+> Artifact: `dev/plans/runs/IR-C-pooling-floor-gate.json`. **Still pending: the
+> *relevance* axis** — re-run the IR-C dense diagnostic under `Pooling::Cls` to
+> confirm CLS fixes the median-99 exploratory result (the payoff measurement).
+
 ## Constraint gate (any replacement must pass, in priority order)
 
 From `dev/adr/ADR-0.6.0-default-embedder.md`, `dev/design/embedder.md`, and the

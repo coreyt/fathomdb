@@ -1,0 +1,18 @@
+{
+  "_comment": "IR-C Phase 0 pooling × 1-bit binary recall@10 floor gate. Faithful vector stage: mean-center -> sign-bit -> Hamming K=192 -> f32 rerank vs exact-f32 top-10. CLS must clear the same 0.90 floor as mean to be adoptable.",
+  "cls_pool": {
+    "min_per_query": 0.6,
+    "pass": true,
+    "recall_at_10": 0.9440000000000006
+  },
+  "floor": 0.9,
+  "k_cand": 192,
+  "k_eval": 10,
+  "mean_pool": {
+    "min_per_query": 0.6,
+    "pass": true,
+    "recall_at_10": 0.9460000000000005
+  },
+  "n_docs": 10506,
+  "n_queries": 200
+}
