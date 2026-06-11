@@ -133,3 +133,37 @@ the full-corpus run is the real arbiter precisely because more distractors are
 where the dense arm was expected to earn its keep (the production full-corpus
 exploratory R@10 was only 0.236 — far below this slice's 0.636). Do not finalize
 B/C until that lands.
+
+## Complementarity diagnostic (2026-06-11) — is the dense arm redundant?
+
+`-slice1200` run, exploratory n=250. **Oracle-union recall** (gold found if EITHER
+arm has it in top-K) upper-bounds any fusion; `rescue` = queries with a gold doc
+the 128/96 arm surfaces that text misses.
+
+| R@K | text | dense_whole | dense_128/96 | union_whole | union_128/96 | rescue_128/96 |
+|---|---|---|---|---|---|---|
+| 10 | 0.644 | 0.228 | 0.328 | 0.668 | **0.688** | 11 (4%) |
+| 20 | 0.752 | 0.336 | 0.420 | 0.784 | **0.796** | 11 (4%) |
+| 50 | 0.844 | 0.532 | 0.652 | 0.876 | **0.892** | 12 (5%) |
+
+**Read:**
+1. **Not redundant — but barely complementary.** `union_128/96 − text` = **+0.044 /
+   +0.044 / +0.048** (R@10/20/50): the chunked dense arm rescues gold docs text
+   misses on only **~4–5% of queries** (11–12 of 250). So "redundant" was too
+   strong; the honest verdict is *mostly redundant, a thin complementary stratum*.
+2. **Chunking's incremental complementary value is ~1–2 pts** (`union_128/96 −
+   union_whole` = +0.020 / +0.012 / +0.016) — most of chunking's win is to the
+   dense arm's *solo* recall (≈ doubles R@10), not to the fused ceiling.
+3. **The fusion captures none of even this small headroom.** The best shipped-style
+   hybrid (`h_128/96_1:3`, R@20 ≈ 0.732) sits *below* text-only (0.748) and far
+   below the oracle union (0.796): the dense arm's noise currently *displaces* more
+   good text hits than its 4–5% rescues add. So a **re-weighting** (cheaper than
+   building chunking) is the prerequisite, and even a perfect fusion caps at ~+4–5
+   pts here.
+
+**Updated lean:** the realizable hybrid gain from Option A is **small (≤~5 pts,
+oracle) and currently negative**, so the cost-justified order is **(a) fix the
+fusion weighting first**, not build chunking; **(b)** re-test complementarity **at
+full corpus**, where the thin stratum may widen (text degrades from 0.644→~0.236
+R@10 with 9× the distractors). The WI-1 diagnostics sidecar will size the
+lexical/semantic bucket split that this oracle-union summarizes per-query.

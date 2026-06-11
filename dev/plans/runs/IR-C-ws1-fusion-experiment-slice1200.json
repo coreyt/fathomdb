@@ -1,5 +1,34 @@
 {
-  "_comment": "IR-C WS1 fusion experiment — REDUCED SLICE (1,200 docs / 250 sampled exploratory + 120 exact + 125 negative), full-MODE config set at production k=30. Directional only: run in an ephemeral container that could not finish the full 10,506-doc job; the true full-corpus run was handed off to a non-volatile box. The Option-A deep-K (R@20/R@50) exploratory question: does 128/96 max-pool passage fan-out beat the whole-doc dense arm, and does it lift the hybrid at 3:1 vs 1:1. NOTE: this slice has far fewer distractors than the full corpus, so the lexical arm looks stronger here than it will at full scale — interpret with that bias in mind.",
+  "_comment": "IR-C WS1 fusion experiment — REDUCED SLICE (1,200 docs / 250 sampled exploratory + 120 exact + 125 negative), full-MODE config set at production k=30, NOW WITH the exploratory complementarity diagnostic. Supersedes the earlier -slice1200 run (adds complementarity_exploratory). Directional only — far fewer distractors than the full 10,506-doc corpus, so the lexical arm looks stronger here than it will at full scale; the true full-corpus run is handed off to a non-volatile box. complementarity_exploratory reports oracle-union recall (gold found if EITHER arm has it in top-K) — the upper bound any fusion can reach: union~=text means the dense arm is redundant, union>>text means it is complementary and the gain is recoverable by re-weighting.",
+  "complementarity_exploratory": {
+    "r10": {
+      "dense_128_96": 0.328,
+      "dense_whole": 0.228,
+      "oracle_union_128_96": 0.688,
+      "oracle_union_whole": 0.668,
+      "rescue_queries_128_96": 11,
+      "text_only": 0.644,
+      "union_headroom_128_96_over_text": 0.04399999999999993
+    },
+    "r20": {
+      "dense_128_96": 0.42,
+      "dense_whole": 0.336,
+      "oracle_union_128_96": 0.796,
+      "oracle_union_whole": 0.784,
+      "rescue_queries_128_96": 11,
+      "text_only": 0.752,
+      "union_headroom_128_96_over_text": 0.04400000000000004
+    },
+    "r50": {
+      "dense_128_96": 0.652,
+      "dense_whole": 0.532,
+      "oracle_union_128_96": 0.892,
+      "oracle_union_whole": 0.876,
+      "rescue_queries_128_96": 12,
+      "text_only": 0.844,
+      "union_headroom_128_96_over_text": 0.04800000000000004
+    }
+  },
   "configs": {
     "h_128/96_1:1": {
       "exact_fact": {
