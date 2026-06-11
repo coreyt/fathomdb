@@ -326,12 +326,23 @@ fn compute_dense_section(
     bucket_cap: usize,
     scope: &str,
 ) -> Value {
-    use fathomdb_embedder::CandleBgeEmbedder;
+    use fathomdb_embedder::{CandleBgeEmbedder, Pooling};
     use fathomdb_embedder_api::Embedder;
     use ir_retrieval::chunk_words_offsets;
 
-    let emb = CandleBgeEmbedder::new().expect("bge embedder");
+    // Phase 0 A/B knobs: IRC_DIAG_POOLING=cls switches to bge's model-native CLS
+    // pooling (the floor gate cleared it); IRC_DIAG_PREFIX adds the BGE query
+    // instruction to QUERIES only (passages stay bare).
+    let pooling = if std::env::var("IRC_DIAG_POOLING").as_deref() == Ok("cls") {
+        Pooling::Cls
+    } else {
+        Pooling::Mean
+    };
+    let use_prefix = std::env::var_os("IRC_DIAG_PREFIX").is_some();
+    const BGE_QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
+    let emb = CandleBgeEmbedder::new().expect("bge embedder").with_pooling(pooling);
     let identity = format!("{:?}", emb.identity());
+    eprintln!("DIAG_DENSE pooling={pooling:?} query_prefix={use_prefix}");
     let t0 = std::time::Instant::now();
     // The bucket (the headline) needs only the 128/96 dense rank;
     // dense_gold_rank_whole is a reference field. IRC_DIAG_SKIP_WHOLE drops the
@@ -379,7 +390,12 @@ fn compute_dense_section(
             continue;
         }
         let qid = q.query_id.clone().unwrap_or_else(|| q.query.clone());
-        let qv = emb.embed(&q.query).expect("embed query");
+        let qtext = if use_prefix {
+            std::borrow::Cow::Owned(format!("{BGE_QUERY_PREFIX}{}", q.query))
+        } else {
+            std::borrow::Cow::Borrowed(q.query.as_str())
+        };
+        let qv = emb.embed(&qtext).expect("embed query");
         let rank_whole = dense_gold_rank_and_span(&maxpool_ranking(&qv, &whole), &gold_ids).0;
         let (rank_128, best_span) = dense_gold_rank_and_span(&maxpool_ranking(&qv, &p128), &gold_ids);
         let bm = bm25_rank_by_qid.get(&qid).copied().flatten();
@@ -407,7 +423,10 @@ fn compute_dense_section(
             passage_evidence_iou: iou,
         });
     }
-    build_dense_section(&identity, scope, bucket_cap, &recs)
+    let mut section = build_dense_section(&identity, scope, bucket_cap, &recs);
+    section["pooling"] = json!(format!("{pooling:?}"));
+    section["query_prefix"] = json!(use_prefix);
+    section
 }
 
 // ── Full-corpus run (IRC_RUN-gated; skips without the corpus) ────────────────
