@@ -77,25 +77,62 @@ pub fn content_tokens(query: &str) -> HashSet<String> {
 
 // ── Dense arm: passage chunking + pooled KNN ────────────────────────────────
 
-/// Split a body into overlapping word-window passages (long bodies exceed
-/// bge-small's ~512-token window and get mean-pool-diluted). Short bodies pass
-/// through as a single chunk; `size = usize::MAX` ⇒ whole-doc (one passage).
-pub fn chunk_words(body: &str, size: usize, stride: usize, max_chunks: usize) -> Vec<String> {
-    let words: Vec<&str> = body.split_whitespace().collect();
-    if words.len() <= size {
-        return vec![body.to_string()];
+/// Byte (start, end) of each whitespace-delimited word in `body`. Lets a chunk
+/// report its char span in the ORIGINAL body for the passage↔evidence-span
+/// overlap metric (WI-3b).
+pub fn word_spans(body: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut start: Option<usize> = None;
+    for (i, c) in body.char_indices() {
+        if c.is_whitespace() {
+            if let Some(s) = start.take() {
+                spans.push((s, i));
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        spans.push((s, body.len()));
+    }
+    spans
+}
+
+/// Like [`chunk_words`] but each chunk also carries its `(char_start, char_end)`
+/// byte range in the original body. The chunk TEXT is still the normalized
+/// single-space join (what gets embedded); the offsets index the source body so
+/// a passage can be compared to an evidence span. Whole-doc (`size = usize::MAX`
+/// or short body) ⇒ one chunk spanning `0..body.len()`.
+pub fn chunk_words_offsets(
+    body: &str,
+    size: usize,
+    stride: usize,
+    max_chunks: usize,
+) -> Vec<(String, usize, usize)> {
+    let spans = word_spans(body);
+    if spans.len() <= size {
+        return vec![(body.to_string(), 0, body.len())];
     }
     let mut chunks = Vec::new();
     let mut start = 0;
-    while start < words.len() && chunks.len() < max_chunks {
-        let end = (start + size).min(words.len());
-        chunks.push(words[start..end].join(" "));
-        if end == words.len() {
+    while start < spans.len() && chunks.len() < max_chunks {
+        let end = (start + size).min(spans.len());
+        let text = spans[start..end].iter().map(|&(s, e)| &body[s..e]).collect::<Vec<_>>().join(" ");
+        chunks.push((text, spans[start].0, spans[end - 1].1));
+        if end == spans.len() {
             break;
         }
         start += stride;
     }
     chunks
+}
+
+/// Split a body into overlapping word-window passages (long bodies exceed
+/// bge-small's ~512-token window and get mean-pool-diluted). Short bodies pass
+/// through as a single chunk; `size = usize::MAX` ⇒ whole-doc (one passage).
+/// Text-only view of [`chunk_words_offsets`] (byte-identical to the prior impl).
+pub fn chunk_words(body: &str, size: usize, stride: usize, max_chunks: usize) -> Vec<String> {
+    chunk_words_offsets(body, size, stride, max_chunks).into_iter().map(|(t, _, _)| t).collect()
 }
 
 /// Passage-score aggregation to doc level.
