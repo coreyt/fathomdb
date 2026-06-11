@@ -167,3 +167,34 @@ fusion weighting first**, not build chunking; **(b)** re-test complementarity **
 full corpus**, where the thin stratum may widen (text degrades from 0.644→~0.236
 R@10 with 9× the distractors). The WI-1 diagnostics sidecar will size the
 lexical/semantic bucket split that this oracle-union summarizes per-query.
+
+## Full-corpus LEXICAL diagnostics (2026-06-11) — the slice bias confirmed
+
+`all.gold.diagnostics.json` lexical tier, whole frozen corpus (10,506 docs),
+4,472 positive queries. `bm25_gold_rank` = rank of the gold doc under content-OR
++ `bm25()` over the *entire* corpus.
+
+| class | n | bm25_rank1_frac | median bm25 rank | found@1000 | mean idf_overlap |
+|---|---|---|---|---|---|
+| exact_fact | 2888 | **0.738** | **1** | 0.985 | 0.743 |
+| exploratory | 1584 | **0.102** | **26** | 0.859 | 0.704 |
+
+**This is the key correction to the slice story:**
+- **exact_fact is genuinely lexical** — 74% of gold docs at BM25 rank 1, median
+  rank 1. A vector arm cannot add much here by construction; "exact_fact is
+  lexical-bound" is real, not an artifact.
+- **exploratory is NOT lexical-bound at full corpus.** Only **10%** at rank 1,
+  **median rank 26**, 14% not found in the top 1,000. The slice's strong text
+  exploratory recall (0.64 R@10) was a **low-distractor artifact** — at full scale
+  BM25 buries the relevant transcript at rank ~26.
+- **And it's a discrimination problem, not a vocabulary problem:** mean
+  `idf_overlap ≈ 0.70` means the query's content terms *are* in the gold doc —
+  BM25 just can't separate it from the many other long transcripts that mention
+  the same terms. **That median-26 band is precisely the semantic-rerank
+  opportunity** a dense arm exists to exploit.
+
+**So the provisional "defer Option A" lean is now in question for exploratory.**
+The open question is whether the dense arm actually *pulls* those rank-26
+exploratory golds into the top-K (the `semantic` bucket) or not — that is the
+dense-tier (WI-1D) measure, which needs the full-corpus embed. The fusion's
+failure to help was measured on the *easy* slice; it must be re-judged here.

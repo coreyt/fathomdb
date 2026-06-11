@@ -31,11 +31,12 @@ mod ir_retrieval;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use corpus_subset::{ingest, load_subset_or_skip, repo_root, Doc};
+use corpus_subset::{ingest, load_subset_or_skip, repo_root, Doc, VECTOR_KIND};
 use ir_eval::{
     load_gold_set, required_doc_ids, validate_gold_set, QueryClass, UNPINNED_PLACEHOLDER,
 };
 use ir_retrieval::{compile_content_or, content_tokens, fts_bodies, map_bodies, tokenize_set};
+use fathomdb_engine::PreparedWrite;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
@@ -432,10 +433,29 @@ fn ir_c_gold_diagnostics() {
     let scope = if max_docs == usize::MAX { "full".to_string() } else { format!("slice@{}", docs.len()) };
     eprintln!("DIAG_CORPUS docs={} scope={scope} queries={}", docs.len(), gold.queries.len());
 
-    // Seed FTS only (synthetic embedder, frozen projection — no embed cost).
+    // Seed FTS only: freeze the vector projection (we never read vectors in the
+    // lexical pass) and write nodes WITHOUT draining — the FTS `search_index` is
+    // committed synchronously, and draining would block on the frozen scheduler.
     let (dir, engine) = corpus_subset::fixture_engine();
     engine.set_projection_scheduler_frozen_for_test(true);
-    ingest(&engine, &docs);
+    {
+        const BATCH: usize = 256;
+        let mut written = 0usize;
+        while written < docs.len() {
+            let take = BATCH.min(docs.len() - written);
+            let batch: Vec<PreparedWrite> = docs[written..written + take]
+                .iter()
+                .map(|d| PreparedWrite::Node {
+                    kind: VECTOR_KIND.to_string(),
+                    body: d.body.clone(),
+                    source_id: Some(d.doc_id.clone()),
+                    logical_id: None,
+                })
+                .collect();
+            engine.write(&batch).expect("seed write");
+            written += take;
+        }
+    }
     let db = dir.path().join("corpus.sqlite");
     let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open read-only fts conn");
