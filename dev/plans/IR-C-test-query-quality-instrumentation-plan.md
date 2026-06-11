@@ -1,6 +1,14 @@
 # IR-C — Test-query-quality instrumentation plan (items 1–3)
 
-Status: **draft for review** · Drafted 2026-06-11 · Branch `claude/recent-changes-state-a6wth3`
+Status: **in progress** · Drafted 2026-06-11 · Branch `claude/recent-changes-state-a6wth3`
+
+**Landed:** WI-2 (query tracers) + WI-3a (evidence-span locators) — gold schema +
+build script + tests (`6f39b3a`). WI-1L (lexical diagnostics harness + shared
+`ir_retrieval.rs` seams) — model-free `bm25_gold_rank`/`idf_overlap` sidecar with
+unit tests (`72643f8`). **Pending:** gold regeneration (`ir-c-reused-v2`) + the
+real-corpus lexical run — both need the gitignored corpus, so they run where the
+data lives. **Next:** WI-1D + WI-3b (dense ranks, buckets, chunk offsets,
+passage↔span overlap).
 
 ## Why
 
