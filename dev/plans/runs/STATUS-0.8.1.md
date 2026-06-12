@@ -29,12 +29,20 @@ the bundled CPU local-LLM extractor R3b deferred to 0.8.2). Decision ①: AC-077
 (Recall@K) is the product gate; R2's end-to-end Mem0/Zep eval is a report-only
 north-star.
 
+### Prerequisites (before any slice opens)
+1. **◆ Merge this branch to `main`** — the plan triad + IR-C infra live only on
+   `claude/recent-changes-state-a6wth3` (~54 ahead / 1 behind `main`, unmerged); slice
+   worktrees baseline off `main` (HITL-authorized merge, no tag).
+2. **Frozen corpus (COR-2)** for Slices 5 + 25 — `corpus_hash fe973fcd…`; **SATISFIED +
+   reproducible** locally (gitignored → each slice agent reproduces; qmsum stale-pin debunked).
+
 ### Next action (orchestrator)
-Prepare + spawn **Slice 0** (design-adr): board+plan scaffolding (this board live),
-the IR-measure/eval design (R0/R2) + Claude↔codex consensus, the **BYO-LLM Extraction
-Provider Protocol ADR** (ratify `fathomdb.extract.v1` from
-`../prompts/IR-C-byo-llm-extraction-harness-memex.md`), and the **graph-substrate G11
-migration ADR**. → HITL signs the three ADRs before Slice 15/25 open.
+After Prereq 1, prepare + spawn **Slice 0** (design-adr). **Scaffolding is DONE** (this
+board + plan triad + DOC-INDEX exist, 2026-06-12). **Remaining = the 3 ADRs:** the
+IR-measure/eval design (R0/R2) + Claude↔codex consensus; the **BYO-LLM Extraction Provider
+Protocol ADR** (`fathomdb.extract.v1` — **already v1-ratified with Memex 2026-06-12**,
+`~/projects/memex/dev/elps/FATHOMDB-CONSULT.md`; fold the decision record + 5 pins →
+near-ready); the **graph-substrate G11 migration ADR**. → HITL signs the 3 ADRs before 15/25.
 
 ---
 
@@ -46,7 +54,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
-| **0** | Setup + ADR Kickoff | design-adr | ❌ not started | — | n/a | ❌ | ❌ |
+| **0** | Setup + ADR Kickoff | design-adr | 🟡 PARTIAL — scaffolding (board/plan/impl/DOC-INDEX) ✅ done 2026-06-12; **3 ADRs remain** (BYO-LLM ADR near-ready, v1-ratified w/ Memex) | — | n/a | ✅ | 🟡 |
 | **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ❌ | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ❌ | 0 | ❌ | ❌ | ❌ |
@@ -77,6 +85,8 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 | **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ❌ |
 | **G4** filter grammar + **G4↔G10 unification (reserved-gap 37)** | 35 | ❌ |
 | **AC-078+** (shipped-feature ACs) + **R2 parity-metric AC** | 40 / eval gate (HITL) | ❌ (acceptance.md locked; mint only at gated slices) |
+| **~4-pt vector-stage fidelity-regression diagnosis** (0.937→0.896; engine A/B → bisect) — carried from 0.8.0, HITL-sequenced AFTER IR/graph | reserved-gap 41–44 / Slice-40-adjacent | ❌ tracked (measurement-only diagnosis first; fix slice only if bisect lands a cause) |
+| **COR-2 frozen corpus** (`corpus_hash fe973fcd…`) — prereq for Slices 5 + 25 | prereq | ✅ SATISFIED + reproducible (gitignored; agent reproduces; qmsum stale-pin debunked) |
 
 **Deferred (NOT 0.8.1):** R3b CPU local-LLM extractor → 0.8.2 · R5 vector-PRF · node-PPR.
 
@@ -119,6 +129,15 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-12 — review of the orchestrator hand-off: 4 gaps closed
+A review of `0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` found 4 valid gaps; all folded into the plan
+triad + hand-off: (1) **branch-merge prerequisite** — the plan triad lives only on this branch
+(~54 ahead / 1 behind `main`); merge to `main` before slices open (Prereq 0). (2) **COR-2 made an
+explicit dependency** on Slices 5 + 25 (state: satisfied + reproducible; qmsum stale-pin debunked).
+(3) **~4-pt fidelity-regression diagnosis** given an implementation home (tracked item / reserved-gap
+41–44, HITL-sequenced after IR/graph; Slice 40 re-measures). (4) **Slice 0 re-scoped** — scaffolding
+done, only the 3 ADRs remain (BYO-LLM ADR near-ready, v1-ratified with Memex).
 
 ### 2026-06-12 — Phase 0.8.1 opened; plan triad + orchestrator hand-off created
 - 0.8.1 scope = signed graph/filter direction + IR-C roadmap **R0–R4** (HITL option
