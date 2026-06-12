@@ -15,6 +15,7 @@
 //!     production arm in isolation);
 //!   - fusion: a local weighted RRF (faithful to `fuse_rrf`: dedup on body,
 //!     vector-first tiebreak) swept over arm weights + RRF k.
+//!
 //! Retrieval happens once per query; the weight/order sweep re-fuses from cache, so
 //! it is nearly free. Scored with the SAME `evaluate_gold_set` metric machinery as
 //! the headline runner, so numbers are directly comparable.
@@ -53,9 +54,7 @@ use ir_eval::{
     evaluate_gold_set, load_gold_set, required_doc_ids, validate_gold_set, GoldQuery, GoldSet,
     QueryClass, K_LADDER,
 };
-use ir_retrieval::{
-    chunk_words, compile_content_or, fts_bodies, knn_docs_pool, map_bodies, Pool,
-};
+use ir_retrieval::{chunk_words, compile_content_or, fts_bodies, knn_docs_pool, map_bodies, Pool};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
 use tempfile::TempDir;
@@ -143,9 +142,9 @@ fn fuse_weighted(
 /// (bare + prefixed) and the lexical doc_ids are geometry-independent, so they're
 /// computed once; pooling over the per-geometry passage sets is done at eval time.
 struct QCache {
-    qv_bare: Vec<f32>,      // bare query embedding
-    qv_pref: Vec<f32>,      // BGE-query-instruction-prefixed query embedding
-    text_ids: Vec<String>,  // content-OR lexical arm, mapped to ranked doc_ids
+    qv_bare: Vec<f32>,     // bare query embedding
+    qv_pref: Vec<f32>,     // BGE-query-instruction-prefixed query embedding
+    text_ids: Vec<String>, // content-OR lexical arm, mapped to ranked doc_ids
 }
 
 fn build_body_to_doc_id(docs: &[Doc]) -> HashMap<String, String> {
@@ -191,7 +190,8 @@ fn ir_c_fusion_experiment() {
 
     // Strided per-class sample (deterministic, spans each class's id range).
     let pick = |class: QueryClass, n: usize| -> Vec<GoldQuery> {
-        let pool: Vec<&GoldQuery> = full.queries.iter().filter(|q| q.query_class == class).collect();
+        let pool: Vec<&GoldQuery> =
+            full.queries.iter().filter(|q| q.query_class == class).collect();
         if pool.is_empty() || n == 0 {
             return Vec::new();
         }
@@ -246,8 +246,7 @@ fn ir_c_fusion_experiment() {
     };
 
     // ── Engine + seed (mirrors the headline runner). ──
-    let embedder =
-        Arc::new(SerializedBge::new(CandleBgeEmbedder::new().expect("bge embedder")));
+    let embedder = Arc::new(SerializedBge::new(CandleBgeEmbedder::new().expect("bge embedder")));
     let dir = TempDir::new().expect("tempdir");
     let db_path = dir.path().join("ir_c_fx.sqlite");
     let opened = Engine::open_with_choice(
@@ -317,7 +316,10 @@ fn ir_c_fusion_experiment() {
                     pv.push((d.doc_id.clone(), embedder.embed(&chunk).expect("embed chunk")));
                 }
             }
-            eprintln!("FX_PASSAGES geom={label} n={} (size={size}/stride={stride}/max={max})", pv.len());
+            eprintln!(
+                "FX_PASSAGES geom={label} n={} (size={size}/stride={stride}/max={max})",
+                pv.len()
+            );
             (*label, pv)
         })
         .collect();
@@ -377,21 +379,69 @@ fn ir_c_fusion_experiment() {
         // whole-doc vs chunked hybrid at the shipped 3:1 and at 1:1 (where the
         // directional run located Option-A's deep-K payoff). geom 0=whole, 1=128/96.
         let k = 30.0; // RRF_K (production)
-        configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k, geom: 0, pool: Pool::Max, prefix: false });
-        configs.push(Cfg { name: "v_whole_max".into(), wv: 1.0, wt: 0.0, k, geom: 0, pool: Pool::Max, prefix: false });
-        configs.push(Cfg { name: "v_128/96_max".into(), wv: 1.0, wt: 0.0, k, geom: 1, pool: Pool::Max, prefix: false });
+        configs.push(Cfg {
+            name: "text_only_ORc".into(),
+            wv: 0.0,
+            wt: 1.0,
+            k,
+            geom: 0,
+            pool: Pool::Max,
+            prefix: false,
+        });
+        configs.push(Cfg {
+            name: "v_whole_max".into(),
+            wv: 1.0,
+            wt: 0.0,
+            k,
+            geom: 0,
+            pool: Pool::Max,
+            prefix: false,
+        });
+        configs.push(Cfg {
+            name: "v_128/96_max".into(),
+            wv: 1.0,
+            wt: 0.0,
+            k,
+            geom: 1,
+            pool: Pool::Max,
+            prefix: false,
+        });
         for (gi, label) in [(0usize, "whole"), (1usize, "128/96")] {
             for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
-                configs.push(Cfg { name: format!("h_{label}_{w}"), wv, wt, k, geom: gi, pool: Pool::Max, prefix: false });
+                configs.push(Cfg {
+                    name: format!("h_{label}_{w}"),
+                    wv,
+                    wt,
+                    k,
+                    geom: gi,
+                    pool: Pool::Max,
+                    prefix: false,
+                });
             }
         }
     } else {
         // Lexical anchor (wv=0 → vector arm ignored).
-        configs.push(Cfg { name: "text_only_ORc".into(), wv: 0.0, wt: 1.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: false });
+        configs.push(Cfg {
+            name: "text_only_ORc".into(),
+            wv: 0.0,
+            wt: 1.0,
+            k: 60.0,
+            geom: 0,
+            pool: Pool::Max,
+            prefix: false,
+        });
         // Whole-doc dense anchor (geom 0; pooling is a no-op at one passage/doc).
         for pref in [false, true] {
             let tag = if pref { "pref" } else { "bare" };
-            configs.push(Cfg { name: format!("v_whole_{tag}"), wv: 1.0, wt: 0.0, k: 60.0, geom: 0, pool: Pool::Max, prefix: pref });
+            configs.push(Cfg {
+                name: format!("v_whole_{tag}"),
+                wv: 1.0,
+                wt: 0.0,
+                k: 60.0,
+                geom: 0,
+                pool: Pool::Max,
+                prefix: pref,
+            });
         }
         // Chunk geometries × pooling × prefix (vector-only).
         for gi in 1..passage_sets.len() {
@@ -399,7 +449,15 @@ fn ir_c_fusion_experiment() {
                 for pref in [false, true] {
                     let tag = if pref { "pref" } else { "bare" };
                     let name = format!("v_{}_{}_{}", geoms[gi].0, pool_label(pool), tag);
-                    configs.push(Cfg { name, wv: 1.0, wt: 0.0, k: 60.0, geom: gi, pool, prefix: pref });
+                    configs.push(Cfg {
+                        name,
+                        wv: 1.0,
+                        wt: 0.0,
+                        k: 60.0,
+                        geom: gi,
+                        pool,
+                        prefix: pref,
+                    });
                 }
             }
         }
@@ -409,15 +467,24 @@ fn ir_c_fusion_experiment() {
             let tag = if pref { "pref" } else { "bare" };
             for (wv, wt, w) in [(1.0, 3.0, "1:3"), (1.0, 1.0, "1:1")] {
                 let name = format!("h_{}_{}_{}", geoms[gi].0, tag, w);
-                configs.push(Cfg { name, wv, wt, k: 60.0, geom: gi, pool: Pool::Max, prefix: pref });
+                configs.push(Cfg {
+                    name,
+                    wv,
+                    wt,
+                    k: 60.0,
+                    geom: gi,
+                    pool: Pool::Max,
+                    prefix: pref,
+                });
             }
         }
     }
 
     let mut report = serde_json::Map::new();
-    let class_recall = |by_k: &BTreeMap<usize, ir_eval::KResult>, cls: QueryClass, k: usize| -> f64 {
-        by_k.get(&k).and_then(|r| r.per_class.get(&cls)).map(|a| a.graded()).unwrap_or(0.0)
-    };
+    let class_recall =
+        |by_k: &BTreeMap<usize, ir_eval::KResult>, cls: QueryClass, k: usize| -> f64 {
+            by_k.get(&k).and_then(|r| r.per_class.get(&cls)).map(|a| a.graded()).unwrap_or(0.0)
+        };
 
     // Vector retrieval depends only on (query, geometry, pool, prefix) — NOT on the
     // fusion weights or k. Memoize the pooled passage KNN so the weight sweep
@@ -429,7 +496,8 @@ fn ir_c_fusion_experiment() {
         Pool::Mean => 1,
         Pool::Top2 => 2,
     };
-    let vec_cache: Mutex<HashMap<(String, usize, u8, bool), Vec<String>>> = Mutex::new(HashMap::new());
+    let vec_cache: Mutex<HashMap<(String, usize, u8, bool), Vec<String>>> =
+        Mutex::new(HashMap::new());
 
     eprintln!(
         "\nFX_RESULTS config | exact_fact R@5/10/20/50 | exploratory R@5/10/20/50 | neg_abst"
@@ -495,7 +563,8 @@ fn ir_c_fusion_experiment() {
     let comp = if full_mode {
         let explor: Vec<&GoldQuery> =
             gold.queries.iter().filter(|q| q.query_class == QueryClass::Exploratory).collect();
-        let topk = |ids: &[String], k: usize| -> HashSet<String> { ids.iter().take(k).cloned().collect() };
+        let topk =
+            |ids: &[String], k: usize| -> HashSet<String> { ids.iter().take(k).cloned().collect() };
         let vc = vec_cache.lock().expect("vec_cache poisoned");
         let mut rows = serde_json::Map::new();
         eprintln!(
@@ -513,8 +582,14 @@ fn ir_c_fusion_experiment() {
                     continue;
                 }
                 let t = topk(&cache.get(&key).expect("qc").text_ids, k);
-                let dw = vc.get(&(key.clone(), 0usize, 0u8, false)).map(|v| topk(v, k)).unwrap_or_default();
-                let d1 = vc.get(&(key.clone(), 1usize, 0u8, false)).map(|v| topk(v, k)).unwrap_or_default();
+                let dw = vc
+                    .get(&(key.clone(), 0usize, 0u8, false))
+                    .map(|v| topk(v, k))
+                    .unwrap_or_default();
+                let d1 = vc
+                    .get(&(key.clone(), 1usize, 0u8, false))
+                    .map(|v| topk(v, k))
+                    .unwrap_or_default();
                 let frac = |hit: &HashSet<String>| -> f64 {
                     g.iter().filter(|id| hit.contains(*id)).count() as f64 / g.len() as f64
                 };
@@ -532,7 +607,14 @@ fn ir_c_fusion_experiment() {
             let (text, dw, d1, uw, u1) = (s_text / n, s_dw / n, s_d1 / n, s_uw / n, s_u1 / n);
             eprintln!(
                 "FX_COMP R@{:<2} | {:.3} {:.3} {:.3} | {:.3} {:.3} | {} ({:.0}%)",
-                k, text, dw, d1, uw, u1, rescue, 100.0 * rescue as f64 / n
+                k,
+                text,
+                dw,
+                d1,
+                uw,
+                u1,
+                rescue,
+                100.0 * rescue as f64 / n
             );
             rows.insert(
                 format!("r{k}"),

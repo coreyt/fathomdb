@@ -270,11 +270,8 @@ fn parse_query(q: &Value) -> Result<GoldQuery, String> {
     let chain_shape = q.get("chain_shape").and_then(Value::as_str).map(str::to_string);
     // Tracers (WI-2): prefer the promoted non-underscore keys, fall back to the
     // build script's legacy `_source`/`_answer_type` for older gold files.
-    let source = q
-        .get("source")
-        .or_else(|| q.get("_source"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
+    let source =
+        q.get("source").or_else(|| q.get("_source")).and_then(Value::as_str).map(str::to_string);
     let answer_type = q
         .get("answer_type")
         .or_else(|| q.get("_answer_type"))

@@ -13,6 +13,7 @@
 //!   - `idf_overlap`    — IDF-weighted query∩gold-doc content-token coverage
 //!     (raw coverage saturates on long docs; IDF-weight measures the *rare* terms).
 //!   - `gold_doc_tokens`, `gold_locator_kind` — difficulty context.
+//!
 //! Writes the `lexical` section of `…/ir_gold/all.gold.diagnostics.json`, pinned
 //! to `corpus_hash` (refuses on snapshot mismatch). The retrieval seams are the
 //! SAME ones the fusion experiment uses (`support/ir_retrieval.rs`) so ranks are
@@ -32,11 +33,11 @@ mod ir_retrieval;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use corpus_subset::{ingest, load_subset_or_skip, repo_root, Doc, VECTOR_KIND};
+use fathomdb_engine::PreparedWrite;
 use ir_eval::{
     load_gold_set, required_doc_ids, validate_gold_set, QueryClass, UNPINNED_PLACEHOLDER,
 };
 use ir_retrieval::{compile_content_or, content_tokens, fts_bodies, map_bodies, tokenize_set};
-use fathomdb_engine::PreparedWrite;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
@@ -119,11 +120,7 @@ fn median(mut v: Vec<usize>) -> Option<f64> {
     }
     v.sort_unstable();
     let n = v.len();
-    Some(if n % 2 == 1 {
-        v[n / 2] as f64
-    } else {
-        (v[n / 2 - 1] + v[n / 2]) as f64 / 2.0
-    })
+    Some(if n % 2 == 1 { v[n / 2] as f64 } else { (v[n / 2 - 1] + v[n / 2]) as f64 / 2.0 })
 }
 
 /// Per-class + overall summary over a slice of records.
@@ -273,7 +270,12 @@ struct DenseRecord {
     passage_evidence_iou: Option<f64>,
 }
 
-fn build_dense_section(identity: &str, scope: &str, bucket_cap: usize, recs: &[DenseRecord]) -> Value {
+fn build_dense_section(
+    identity: &str,
+    scope: &str,
+    bucket_cap: usize,
+    recs: &[DenseRecord],
+) -> Value {
     let per_query: serde_json::Map<String, Value> = recs
         .iter()
         .map(|r| {
@@ -334,32 +336,33 @@ fn compute_dense_section(
     // IRC_DIAG_MODEL=nomic uses nomic-embed-text-v1.5 (768-d), which REQUIRES task
     // prefixes: "search_document: " on passages, "search_query: " on queries.
     let model = std::env::var("IRC_DIAG_MODEL").unwrap_or_else(|_| "bge".to_string());
-    let (emb, passage_prefix, query_prefix): (Box<dyn Embedder>, String, String) =
-        if model == "nomic" {
-            let dir = std::path::PathBuf::from(
-                std::env::var("IRC_NOMIC_DIR")
-                    .unwrap_or_else(|_| "/root/.cache/fathomdb/embedders/nomic-v1.5".to_string()),
-            );
-            let e = NomicEmbedder::from_dir(&dir).expect("load nomic");
-            (Box::new(e), "search_document: ".to_string(), "search_query: ".to_string())
+    let (emb, passage_prefix, query_prefix): (Box<dyn Embedder>, String, String) = if model
+        == "nomic"
+    {
+        let dir = std::path::PathBuf::from(
+            std::env::var("IRC_NOMIC_DIR")
+                .unwrap_or_else(|_| "/root/.cache/fathomdb/embedders/nomic-v1.5".to_string()),
+        );
+        let e = NomicEmbedder::from_dir(&dir).expect("load nomic");
+        (Box::new(e), "search_document: ".to_string(), "search_query: ".to_string())
+    } else {
+        let pooling = if std::env::var("IRC_DIAG_POOLING").as_deref() == Ok("cls") {
+            Pooling::Cls
         } else {
-            let pooling = if std::env::var("IRC_DIAG_POOLING").as_deref() == Ok("cls") {
-                Pooling::Cls
-            } else {
-                Pooling::Mean
-            };
-            const BGE_QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
-            let qp = if std::env::var_os("IRC_DIAG_PREFIX").is_some() {
-                BGE_QUERY_PREFIX.to_string()
-            } else {
-                String::new()
-            };
-            (
-                Box::new(CandleBgeEmbedder::new().expect("bge embedder").with_pooling(pooling)),
-                String::new(),
-                qp,
-            )
+            Pooling::Mean
         };
+        const BGE_QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
+        let qp = if std::env::var_os("IRC_DIAG_PREFIX").is_some() {
+            BGE_QUERY_PREFIX.to_string()
+        } else {
+            String::new()
+        };
+        (
+            Box::new(CandleBgeEmbedder::new().expect("bge embedder").with_pooling(pooling)),
+            String::new(),
+            qp,
+        )
+    };
     let identity = format!("{:?}", emb.identity());
     // Prepend a prefix only when non-empty (avoids a useless alloc for bare bge).
     let pfx = |prefix: &str, text: &str| -> std::borrow::Cow<'static, str> {
@@ -385,22 +388,48 @@ fn compute_dense_section(
     if !skip_whole {
         whole.reserve(docs.len());
         for (i, d) in docs.iter().enumerate() {
-            whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&pfx(&passage_prefix, &d.body)).expect("embed whole")));
+            whole.push((
+                d.doc_id.clone(),
+                0usize,
+                d.body.len(),
+                emb.embed(&pfx(&passage_prefix, &d.body)).expect("embed whole"),
+            ));
             if (i + 1) % 2000 == 0 {
-                eprintln!("DIAG_DENSE whole_progress {}/{} ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
+                eprintln!(
+                    "DIAG_DENSE whole_progress {}/{} ({:.0}s)",
+                    i + 1,
+                    docs.len(),
+                    t0.elapsed().as_secs_f64()
+                );
             }
         }
     }
     let mut p128: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
     for (i, d) in docs.iter().enumerate() {
         for (t, s, e) in chunk_words_offsets(&d.body, 128, 96, 8) {
-            p128.push((d.doc_id.clone(), s, e, emb.embed(&pfx(&passage_prefix, &t)).expect("embed chunk")));
+            p128.push((
+                d.doc_id.clone(),
+                s,
+                e,
+                emb.embed(&pfx(&passage_prefix, &t)).expect("embed chunk"),
+            ));
         }
         if (i + 1) % 2000 == 0 {
-            eprintln!("DIAG_DENSE p128_progress {}/{} docs, {} passages ({:.0}s)", i + 1, docs.len(), p128.len(), t0.elapsed().as_secs_f64());
+            eprintln!(
+                "DIAG_DENSE p128_progress {}/{} docs, {} passages ({:.0}s)",
+                i + 1,
+                docs.len(),
+                p128.len(),
+                t0.elapsed().as_secs_f64()
+            );
         }
     }
-    eprintln!("DIAG_DENSE embedded whole={} p128={} in {:.0}s", whole.len(), p128.len(), t0.elapsed().as_secs_f64());
+    eprintln!(
+        "DIAG_DENSE embedded whole={} p128={} in {:.0}s",
+        whole.len(),
+        p128.len(),
+        t0.elapsed().as_secs_f64()
+    );
 
     let present: HashSet<&str> = docs.iter().map(|d| d.doc_id.as_str()).collect();
     eprintln!("DIAG_DENSE ranking {} queries…", gold.queries.len());
@@ -410,7 +439,11 @@ fn compute_dense_section(
             continue;
         }
         if recs.len() % 1000 == 0 && recs.len() > 0 {
-            eprintln!("DIAG_DENSE rank_progress {} queries ({:.0}s)", recs.len(), t0.elapsed().as_secs_f64());
+            eprintln!(
+                "DIAG_DENSE rank_progress {} queries ({:.0}s)",
+                recs.len(),
+                t0.elapsed().as_secs_f64()
+            );
         }
         let gold_ids = required_doc_ids(q);
         if gold_ids.is_empty() || !gold_ids.iter().any(|d| present.contains(d.as_str())) {
@@ -419,7 +452,8 @@ fn compute_dense_section(
         let qid = q.query_id.clone().unwrap_or_else(|| q.query.clone());
         let qv = emb.embed(&pfx(&query_prefix, &q.query)).expect("embed query");
         let rank_whole = dense_gold_rank_and_span(&maxpool_ranking(&qv, &whole), &gold_ids).0;
-        let (rank_128, best_span) = dense_gold_rank_and_span(&maxpool_ranking(&qv, &p128), &gold_ids);
+        let (rank_128, best_span) =
+            dense_gold_rank_and_span(&maxpool_ranking(&qv, &p128), &gold_ids);
         let bm = bm25_rank_by_qid.get(&qid).copied().flatten();
         let bkt = bucket(bm, rank_128, bucket_cap);
         // IoU only when the gold doc carries an evidence span (WI-3a).
@@ -496,7 +530,8 @@ fn ir_c_gold_diagnostics() {
     if docs.len() > max_docs {
         docs.truncate(max_docs);
     }
-    let scope = if max_docs == usize::MAX { "full".to_string() } else { format!("slice@{}", docs.len()) };
+    let scope =
+        if max_docs == usize::MAX { "full".to_string() } else { format!("slice@{}", docs.len()) };
     eprintln!("DIAG_CORPUS docs={} scope={scope} queries={}", docs.len(), gold.queries.len());
 
     // Seed FTS only: freeze the vector projection (we never read vectors in the
@@ -569,7 +604,8 @@ fn ir_c_gold_diagnostics() {
             .expect("a present gold doc");
         let q_tokens = content_tokens(&q.query);
         let empty = HashSet::new();
-        let overlap = idf_overlap(&q_tokens, doc_tokens.get(&gold_doc).unwrap_or(&empty), &df, n_docs);
+        let overlap =
+            idf_overlap(&q_tokens, doc_tokens.get(&gold_doc).unwrap_or(&empty), &df, n_docs);
         let loc_kind = if q
             .required_evidence
             .iter()
@@ -668,7 +704,8 @@ mod tests {
         assert!(check_corpus_hash("abc", "def").is_err()); // mismatch
         assert!(check_corpus_hash("", "abc").is_err()); // empty gold
         assert!(check_corpus_hash("abc", "").is_err()); // empty snapshot
-        assert!(check_corpus_hash(UNPINNED_PLACEHOLDER, UNPINNED_PLACEHOLDER).is_err()); // placeholder
+        assert!(check_corpus_hash(UNPINNED_PLACEHOLDER, UNPINNED_PLACEHOLDER).is_err());
+        // placeholder
     }
 
     #[test]
@@ -723,13 +760,23 @@ mod tests {
             docs.iter().map(|d| (d.body.clone(), d.doc_id.clone())).collect();
 
         let ranked = map_bodies(
-            &fts_bodies(&conn, &compile_content_or("budget review decisions"), "bm25(search_index)", 50),
+            &fts_bodies(
+                &conn,
+                &compile_content_or("budget review decisions"),
+                "bm25(search_index)",
+                50,
+            ),
             &body_to_doc,
         );
         assert_eq!(bm25_gold_rank(&ranked, &gold(&["d-A"])), Some(1), "lexical match ranks first");
 
         let none = map_bodies(
-            &fts_bodies(&conn, &compile_content_or("xylophone zeppelin quokka"), "bm25(search_index)", 50),
+            &fts_bodies(
+                &conn,
+                &compile_content_or("xylophone zeppelin quokka"),
+                "bm25(search_index)",
+                50,
+            ),
             &body_to_doc,
         );
         assert_eq!(bm25_gold_rank(&none, &gold(&["d-A"])), None, "no overlap ⇒ unranked");
@@ -752,7 +799,7 @@ mod tests {
         assert_eq!(span_iou((0, 10), (0, 10)), 1.0);
         assert_eq!(span_iou((0, 10), (20, 30)), 0.0); // disjoint
         assert_eq!(span_iou((0, 10), (10, 20)), 0.0); // touching, no overlap
-        // [0,10) ∩ [5,15) = 5; ∪ = 15 → 1/3.
+                                                      // [0,10) ∩ [5,15) = 5; ∪ = 15 → 1/3.
         assert!((span_iou((0, 10), (5, 15)) - 5.0 / 15.0).abs() < 1e-9);
     }
 
@@ -842,8 +889,8 @@ mod tests {
         let (dir, engine) = corpus_subset::fixture_engine();
         ingest(&engine, docs);
         let db = dir.path().join("corpus.sqlite"); // fixture_engine's db filename
-        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .expect("ro conn");
+        let conn =
+            Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).expect("ro conn");
         (dir, conn)
     }
 }

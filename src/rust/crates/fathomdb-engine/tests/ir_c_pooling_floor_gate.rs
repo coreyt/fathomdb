@@ -67,9 +67,7 @@ fn mean_vec(vs: &[Vec<f32>]) -> Vec<f32> {
 /// Indices of the top-`k` by `score` (descending).
 fn topk_desc(n: usize, k: usize, score: impl Fn(usize) -> f32) -> Vec<usize> {
     let mut idx: Vec<usize> = (0..n).collect();
-    idx.sort_by(|&a, &b| {
-        score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    idx.sort_by(|&a, &b| score(b).partial_cmp(&score(a)).unwrap_or(std::cmp::Ordering::Equal));
     idx.truncate(k);
     idx
 }
@@ -110,7 +108,9 @@ fn measure_floor(
         let got = {
             let mut c = cand;
             c.sort_by(|&a, &b| {
-                cosine(&cq, &cdocs[b]).partial_cmp(&cosine(&cq, &cdocs[a])).unwrap_or(std::cmp::Ordering::Equal)
+                cosine(&cq, &cdocs[b])
+                    .partial_cmp(&cosine(&cq, &cdocs[a]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             c.truncate(k_eval);
             c
@@ -159,8 +159,11 @@ fn ir_c_pooling_floor_gate() {
     let query_texts: Vec<String> = match gold_path.exists() {
         true => {
             let g = load_gold_set(&gold_path).expect("load gold");
-            let pool: Vec<&ir_eval::GoldQuery> =
-                g.queries.iter().filter(|q| q.query_class != ir_eval::QueryClass::Negative).collect();
+            let pool: Vec<&ir_eval::GoldQuery> = g
+                .queries
+                .iter()
+                .filter(|q| q.query_class != ir_eval::QueryClass::Negative)
+                .collect();
             let take = n_queries.min(pool.len());
             (0..take).map(|i| pool[i * pool.len() / take].query.clone()).collect()
         }
@@ -181,7 +184,12 @@ fn ir_c_pooling_floor_gate() {
         mean_docs.push(m);
         cls_docs.push(c);
         if (i + 1) % 2000 == 0 {
-            eprintln!("GATE_PROGRESS {}/{} docs ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
+            eprintln!(
+                "GATE_PROGRESS {}/{} docs ({:.0}s)",
+                i + 1,
+                docs.len(),
+                t0.elapsed().as_secs_f64()
+            );
         }
     }
     let (mut mean_q, mut cls_q) = (Vec::new(), Vec::new());
@@ -190,14 +198,25 @@ fn ir_c_pooling_floor_gate() {
         mean_q.push(m);
         cls_q.push(c);
     }
-    eprintln!("GATE_EMBEDDED {} docs + {} queries in {:.0}s", docs.len(), query_texts.len(), t0.elapsed().as_secs_f64());
+    eprintln!(
+        "GATE_EMBEDDED {} docs + {} queries in {:.0}s",
+        docs.len(),
+        query_texts.len(),
+        t0.elapsed().as_secs_f64()
+    );
 
     let (mean_r, mean_min) = measure_floor(&mean_docs, &mean_q, K_CAND, K_EVAL);
     let (cls_r, cls_min) = measure_floor(&cls_docs, &cls_q, K_CAND, K_EVAL);
 
     eprintln!("GATE_RESULT floor={FLOOR}");
-    eprintln!("GATE_RESULT pooling=mean recall@10={mean_r:.4} (min/query {mean_min:.3}) {}", if mean_r >= FLOOR { "PASS" } else { "BELOW" });
-    eprintln!("GATE_RESULT pooling=cls  recall@10={cls_r:.4} (min/query {cls_min:.3}) {}", if cls_r >= FLOOR { "PASS" } else { "BELOW" });
+    eprintln!(
+        "GATE_RESULT pooling=mean recall@10={mean_r:.4} (min/query {mean_min:.3}) {}",
+        if mean_r >= FLOOR { "PASS" } else { "BELOW" }
+    );
+    eprintln!(
+        "GATE_RESULT pooling=cls  recall@10={cls_r:.4} (min/query {cls_min:.3}) {}",
+        if cls_r >= FLOOR { "PASS" } else { "BELOW" }
+    );
 
     let out = root.join("dev/plans/runs/IR-C-pooling-floor-gate.json");
     let doc = serde_json::json!({

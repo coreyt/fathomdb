@@ -33,10 +33,8 @@ impl NomicEmbedder {
         let mut tokenizer = Tokenizer::from_file(dir.join("tokenizer.json"))
             .map_err(|e| EmbedderError::Failed { message: format!("nomic tokenizer: {e}") })?;
         // Chunks are short; cap generously below the 8192 ceiling.
-        let _ = tokenizer.with_truncation(Some(TruncationParams {
-            max_length: 2048,
-            ..Default::default()
-        }));
+        let _ = tokenizer
+            .with_truncation(Some(TruncationParams { max_length: 2048, ..Default::default() }));
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[dir.join("model.safetensors").as_path()],

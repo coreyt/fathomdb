@@ -273,8 +273,12 @@ fn run(args: Args) -> Result<(), String> {
     // is the same (hidden) API EU-7 uses; vector-indexing arbitrary kinds is not
     // yet production-surfaced.
     if args.embedder == "bge" {
-        let mut kinds: Vec<String> =
-            docs.iter().map(|d| d.source_type.clone()).collect::<HashSet<_>>().into_iter().collect();
+        let mut kinds: Vec<String> = docs
+            .iter()
+            .map(|d| d.source_type.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         kinds.sort();
         for kind in &kinds {
             engine

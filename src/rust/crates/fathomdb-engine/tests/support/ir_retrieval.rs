@@ -117,7 +117,8 @@ pub fn chunk_words_offsets(
     let mut start = 0;
     while start < spans.len() && chunks.len() < max_chunks {
         let end = (start + size).min(spans.len());
-        let text = spans[start..end].iter().map(|&(s, e)| &body[s..e]).collect::<Vec<_>>().join(" ");
+        let text =
+            spans[start..end].iter().map(|&(s, e)| &body[s..e]).collect::<Vec<_>>().join(" ");
         chunks.push((text, spans[start].0, spans[end - 1].1));
         if end == spans.len() {
             break;
@@ -160,9 +161,12 @@ pub fn knn_docs_pool(
     let mut by_doc: HashMap<&str, Acc> = HashMap::new();
     for (doc_id, pv) in passages {
         let dot: f32 = qv.iter().zip(pv).map(|(a, b)| a * b).sum();
-        let e = by_doc
-            .entry(doc_id.as_str())
-            .or_insert(Acc { sum: 0.0, n: 0, b1: f32::MIN, b2: f32::MIN });
+        let e = by_doc.entry(doc_id.as_str()).or_insert(Acc {
+            sum: 0.0,
+            n: 0,
+            b1: f32::MIN,
+            b2: f32::MIN,
+        });
         e.sum += dot;
         e.n += 1;
         if dot > e.b1 {

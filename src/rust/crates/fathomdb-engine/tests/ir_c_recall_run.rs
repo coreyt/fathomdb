@@ -48,8 +48,8 @@ use fathomdb_embedder::CandleBgeEmbedder;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
 use ir_eval::{
-    experiment_to_json, load_gold_set, required_doc_ids, run_experiment, validate_gold_set, GoldQuery,
-    GoldSet, QueryClass, K_LADDER, RUNNABLE_NOW_MODES,
+    experiment_to_json, load_gold_set, required_doc_ids, run_experiment, validate_gold_set,
+    GoldQuery, GoldSet, QueryClass, K_LADDER, RUNNABLE_NOW_MODES,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -149,8 +149,7 @@ fn ir_c_recall_run() {
 
     // ── Build the doc universe: evidence docs for the evaluated queries
     //    (ALWAYS seeded) + corpus distractors up to the budget. ──
-    let evidence_ids: HashSet<String> =
-        queries.iter().flat_map(|q| required_doc_ids(q)).collect();
+    let evidence_ids: HashSet<String> = queries.iter().flat_map(|q| required_doc_ids(q)).collect();
     let Some(mut docs) = load_chain_docs(&evidence_ids) else {
         eprintln!("[skip] corpus absent; cannot load evidence docs");
         return;
@@ -215,8 +214,9 @@ fn ir_c_recall_run() {
     };
 
     // ── Real BGE embedder + own engine (own TempDir/WAL). ──
-    let embedder =
-        Arc::new(SerializedBge::new(CandleBgeEmbedder::new().expect("construct real bge embedder")));
+    let embedder = Arc::new(SerializedBge::new(
+        CandleBgeEmbedder::new().expect("construct real bge embedder"),
+    ));
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("ir_c.sqlite");
     let opened = Engine::open_with_choice(
@@ -255,7 +255,10 @@ fn ir_c_recall_run() {
             written += take;
             if last.elapsed() >= Duration::from_secs(30) {
                 let rate = written as f64 / started.elapsed().as_secs_f64().max(1e-3);
-                eprintln!("IRC_SEED_PROGRESS seeded={written}/{} rate_docs_per_s={rate:.2}", docs.len());
+                eprintln!(
+                    "IRC_SEED_PROGRESS seeded={written}/{} rate_docs_per_s={rate:.2}",
+                    docs.len()
+                );
                 last = Instant::now();
             }
         }
@@ -269,10 +272,8 @@ fn ir_c_recall_run() {
         .expect("run_experiment");
 
     // Headline = RrfHybrid @ K=10.
-    let headline = result
-        .per_mode
-        .get(&ir_eval::RetrievalMode::RrfHybrid)
-        .and_then(|by_k| by_k.get(&10));
+    let headline =
+        result.per_mode.get(&ir_eval::RetrievalMode::RrfHybrid).and_then(|by_k| by_k.get(&10));
     if let Some(h) = headline {
         eprintln!(
             "IRC_HEADLINE{} rrf_hybrid@10 strict={:.4} graded={:.4} n={} \
