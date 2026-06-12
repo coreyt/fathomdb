@@ -33,10 +33,15 @@ on; (3) the one *untested* dense angle — **whole-doc long-context embedding** 
 long-context model's context is actually exercised, unlike the chunked diagnostic).
 FathomDB already runs hybrid lexical+dense fusion over a graph substrate; the open
 moves are **reranking + graph-aware retrieval** (and, as a research probe, whole-doc
-long-context dense). These are *bounded* gains — reranking is capped by candidate
-recall (~0.53–0.62), and a residual hard core of ambiguous discrimination queries is
-irreducible — but exploratory is **not blocked from improving**, only blocked from
-improving via a bigger dense embedder.
+long-context dense). These gains are bounded but **less bounded than first stated** —
+see the corrected headroom math in §6: reranking is capped by candidate recall *at the
+depth you rerank*, and that ceiling is a free (latency-bounded) knob — it rises from
+~0.53 at depth 50 toward **~0.86 at depth 1000** (lexical found@1000), so deep-candidate
+reranking can pass the depth-50 ~0.62 union. The truly reorder-proof core is **~14%**
+(lexically unreachable at depth 1000), not the ~38% measured at depth 50. So exploratory
+is **not blocked from improving** — only blocked from improving via a bigger *chunked*
+dense embedder; graph's distinct payoff is on the ~14% lexically-unreachable stratum and
+on multi-hop/temporal classes the current Recall@K instrument barely contains.
 
 ## 1. Empirical anchor — bge-small reproduces its leaderboard in our hands
 
@@ -180,14 +185,29 @@ the dense investigation is **closed under current (chunked) knobs**. The single
 remaining dense idea is whole-doc long-context (§5.3), which none of the three tests
 exercised.
 
-**Why reranking/graph are bounded (the headroom math).** Exploratory fused R@10 =
-0.33, R@50 = 0.53; the dense+lexical **oracle union** tops out at ~0.62 R@50. A
-reranker can only *reorder* the candidate pool → lifts R@10 toward ~0.53 but **cannot
-exceed it**. Raising the ceiling past ~0.62 requires an *orthogonal* candidate
-signal — i.e. the **graph** (multi-hop/temporal) or whole-doc long-context dense. A
-residual hard core (~38% of exploratory: gold in neither arm's top-50; many are
-intrinsically ambiguous discrimination) is irreducible. So: bounded gains, real but
-capped — and concentrated on the relational slice.
+**Why reranking/graph are bounded (the headroom math — CORRECTED, see note).**
+A reranker can only *reorder* the candidate pool, so its ceiling is the candidate
+recall **at the depth you rerank** — and that depth is a free, latency-bounded knob.
+At depth 50, fused R@50 ≈ 0.53 and the dense+lexical oracle union ≈ 0.62; but the
+**lexical arm's found@1000 ≈ 0.86** (`IR-C-retrieval-findings.md`), so reranking a
+deeper pool raises the reachable ceiling well past 0.62 (log-interpolating: ≈0.61 @100,
+≈0.68 @200, ≈0.78 @500 — INFERRED, must be measured). So exploratory R@10 0.307 → a
+plausible ~0.40–0.47 with a depth-100–200 cross-encoder, not capped at ~0.53.
+
+The **truly reorder-proof core is ~14%** (lexically unreachable even at depth 1000),
+**not the ~38%** — that 38% is the *depth-50* "gold in neither arm's top-50" artifact,
+and part of it is plausibly single-gold **label noise** (the exploratory qrels are
+single-doc/sparse, deflating measured R@K for every system). **Graph is therefore NOT
+"the only lever past ~0.62"** (deep reranking passes it lexically); graph is the lever
+for (a) the ~14% lexically-unreachable stratum and (b) multi-hop/temporal/knowledge-
+update classes the current Recall@K instrument barely contains — and that payoff is
+**mostly invisible to Recall@K**, so it can only be seen on an end-to-end memory eval.
+
+> **Provenance of this correction:** the original paragraph capped the ceiling at the
+> depth-50 numbers and called ~38% irreducible. The Fable-5 roadmap review (§1.2 C1–C3
+> of `dev/plans/runs/IR-C-roadmap.md`) showed the ceiling is depth-conditional, the
+> reorder-proof core is ~14%, and graph's value is largely off-instrument. The deeper-
+> depth recall figures are INFERRED and gated on measurement (roadmap R0).
 
 ## 7. Peer benchmark numbers (context — NOT comparable to our Recall@K)
 
