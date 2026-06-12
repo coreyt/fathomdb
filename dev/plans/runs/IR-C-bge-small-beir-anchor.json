@@ -1,0 +1,50 @@
+{
+  "model": "BAAI/bge-small-en-v1.5",
+  "tasks": [
+    "SciFact",
+    "NFCorpus",
+    "ArguAna"
+  ],
+  "variants": {
+    "published": {
+      "SciFact": {
+        "ndcg_at_10": 0.71271,
+        "recall_at_10": 0.83622,
+        "mrr_at_10": 0.6821931216931217,
+        "main_score": 0.71271
+      },
+      "NFCorpus": {
+        "ndcg_at_10": 0.34301,
+        "recall_at_10": 0.16195,
+        "mrr_at_10": 0.5271131259521352,
+        "main_score": 0.34301
+      },
+      "ArguAna": {
+        "ndcg_at_10": 0.60348,
+        "recall_at_10": 0.85917,
+        "mrr_at_10": 0.525643782880625,
+        "main_score": 0.60348
+      }
+    },
+    "fathomdb_meanpool_noprefix": {
+      "SciFact": {
+        "ndcg_at_10": 0.72014,
+        "recall_at_10": 0.84289,
+        "mrr_at_10": 0.686760582010582,
+        "main_score": 0.72014
+      },
+      "NFCorpus": {
+        "ndcg_at_10": 0.35021,
+        "recall_at_10": 0.16957,
+        "mrr_at_10": 0.5363629662391273,
+        "main_score": 0.35021
+      },
+      "ArguAna": {
+        "ndcg_at_10": 0.59717,
+        "recall_at_10": 0.85277,
+        "mrr_at_10": 0.5197921605816342,
+        "main_score": 0.59717
+      }
+    }
+  }
+}
