@@ -2,7 +2,7 @@
 
 > **Status:** ACCEPTED — pending HITL sign-off (Slice-0 gate).
 > **Activates:** H3 reservation from ADR-0.8.0-graph-model-and-edge-addressing.md (HITL-signed 2026-06-05).
-> **Schema:** SCHEMA_VERSION 13 → 14 (step-14 additive ALTER TABLE canonical_edges).
+> **Schema:** SCHEMA_VERSION 13 → 14 (step-14: 5 additive ALTER TABLE canonical_edges columns: body/t_valid/t_invalid/confidence/extractor_model_id).
 > **Implements at:** Slice 15 (keystone). Gates Slices 20 + 30.
 
 ---
@@ -65,7 +65,7 @@ map to `t_valid`/`t_invalid` at the ingest boundary. The BYO-LLM protocol (`fath
 uses the same `t_valid`/`t_invalid` names in the extract response `edges[]` entries, so no
 name translation is needed at the ingest mapping layer.
 
-### 2.2 The four G11 columns
+### 2.2 The five G11 columns
 
 | Column | Type | Semantics | Nullable |
 |--------|------|-----------|----------|
@@ -73,8 +73,9 @@ name translation is needed at the ingest mapping layer.
 | `t_valid` | `TEXT` | Event valid-time: ISO-8601 timestamp when the fact *became true* (event time, not ingestion time). NULL = "still valid" or "unknown" | YES |
 | `t_invalid` | `TEXT` | Event invalid-time: ISO-8601 timestamp when the fact *stopped being true*. NULL = "still valid" | YES |
 | `confidence` | `REAL` | Calibrated extraction confidence ∈ [0.0, 1.0]. NULL for pre-G11 rows and when the harness does not provide a confidence score | YES |
+| `extractor_model_id` | `TEXT` | Opaque model/provider identifier from the BYO-LLM harness `ready.model` field — provenance record showing which extractor produced this edge. NULL for edges not written via the BYO-LLM ingest path | YES |
 
-All four columns are **nullable**. Pre-G11 rows read NULL for all four columns — no existing
+All five columns are **nullable**. Pre-G11 rows read NULL for all five columns — no existing
 query breaks, no data migration is required, and no accretion marker is needed (additive
 `ALTER TABLE ADD COLUMN` is per the migration policy for additive column additions).
 
@@ -86,9 +87,10 @@ ALTER TABLE canonical_edges ADD COLUMN body TEXT;
 ALTER TABLE canonical_edges ADD COLUMN t_valid TEXT;
 ALTER TABLE canonical_edges ADD COLUMN t_invalid TEXT;
 ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+ALTER TABLE canonical_edges ADD COLUMN extractor_model_id TEXT;
 ```
 
-Four separate `ALTER TABLE` statements. `SCHEMA_VERSION` bumps **13 → 14** when step-14 is
+Five separate `ALTER TABLE` statements. `SCHEMA_VERSION` bumps **13 → 14** when step-14 is
 applied. This is an **additive-only, accretion-exempt** migration step: all columns are nullable,
 all pre-existing rows read NULL, no index changes, no data backfill required.
 
@@ -103,31 +105,43 @@ embeddable/FTS-able, not only traversable." The graph arm (R3, Slice 30) generat
 projecting edge `body` text into FTS + vector, then fusing as a third RRF arm. Without
 projectability, the graph arm cannot contribute candidates to retrieval.
 
-### 3.2 FTS5 projection
+### 3.2 Capability commitment
 
-Edge `body` text is projected into **`search_index`** (FTS5) with `source_type = 'edge_fact'`
-as the partition discriminant. This makes fact-edges semantically searchable via the existing FTS
-infrastructure, with the `source_type` column available for partition-aware queries (e.g. retrieve
-only edge facts, or combine edge facts with node bodies in a single RRF fusion).
+This ADR commits to the **capability**: edge `body` text (when non-null) SHALL be retrievable via
+both:
+1. **FTS full-text search** — an edge body is returned by a text-match query over the edge body's
+   content, distinguishable from node bodies in query results.
+2. **Vector (semantic) search** — an edge body is embeddable and returned by a KNN query, with
+   the same 1-bit quantization pipeline as node bodies.
 
-### 3.3 Vector projection
+### 3.3 Implementation mechanism (Slice 15 decides)
 
-Edge `body` text is projected into **`vector_default`** (sqlite-vec 1-bit embedding) with the
-same `source_type = 'edge_fact'` partition. This enables approximate nearest-neighbor semantic
-search over fact-edge text via the same KNN infrastructure FathomDB uses for node bodies.
+The exact indexing mechanism — which tables carry edge-body entries, how they are partitioned
+from node-body entries, and whether the projection path uses the existing `search_index`/
+`vector_default` infrastructure or an edge-specific variant — is a **Slice 15 implementation
+decision**. The key constraints:
+
+- **Partition correctness:** edge-body entries MUST be distinguishable from node-body entries in
+  both FTS and vector queries (so R3's graph arm can retrieve only edge candidates).
+- **Infrastructure fit:** the mechanism MUST respect the existing `search_index` FTS5 schema
+  (`body`, `kind UNINDEXED`, `write_cursor UNINDEXED`) and the `resolve_source_type()` vocabulary
+  (currently a closed 6-value enum for node kinds). If Slice 15 extends either — adding a
+  `source_type` column to `search_index`, adding `'edge_fact'` to `resolve_source_type()`, or
+  using a separate FTS/vector table — those changes are in-scope for Slice 15 but outside the
+  step-14 column additions specified here.
+- **Additional migration sub-steps:** if the projection mechanism requires schema changes beyond
+  the five step-14 column additions (e.g., a step-14a that adds a `source_type` column to
+  `search_index`), those steps are in-scope for Slice 15 and do not require a new ADR — they are
+  implementation sub-steps under this ADR's authority.
+- **No new SCHEMA_VERSION bump for projection sub-steps** if they are purely additive
+  (per the accretion policy); the bump to 14 covers the `canonical_edges` column additions.
 
 ### 3.4 Projection seam contract
 
-The projection seam must accept an edge source (not only a node source). Slice 15 implements
-both projections as part of the BYO-LLM ingest path: when an `edges[]` entry arrives with a
-non-null `body`, the engine writes the `canonical_edges` row **and** inserts corresponding rows
-into `search_index` and `vector_default` with `source_type = 'edge_fact'`.
-
-### 3.5 Source discriminant
-
-`source_type = 'edge_fact'` is the partition discriminant for edge-body entries in both indexes.
-This distinguishes edge-body entries from node-body entries (`source_type = 'node'`) in filtered
-KNN queries and FTS partition scans.
+The projection seam MUST accept an edge source (not only a node source). Slice 15 owns the
+design of this seam extension as part of the BYO-LLM ingest path: when an `edges[]` entry
+arrives with a non-null `body`, the engine writes the `canonical_edges` row **and** projects the
+edge body into the searchable indexes under the mechanism Slice 15 determines.
 
 ---
 
@@ -169,12 +183,12 @@ preserved on all rows (active and superseded) as provenance.
 
 ### 5.1 Slice 15 (keystone) implements
 
-- Step-14 migration (`ALTER TABLE canonical_edges ADD COLUMN …` × 4)
+- Step-14 migration (`ALTER TABLE canonical_edges ADD COLUMN …` × 5)
 - `SCHEMA_VERSION` bump 13 → 14
 - BYO-LLM ingest API: spawn + handshake + extract dispatch + entities→nodes + edges→enriched
-  `canonical_edges` + invalidate-not-accumulate bookkeeping
-- FTS5 projection of edge `body` with `source_type = 'edge_fact'`
-- Vector (1-bit) projection of edge `body` with `source_type = 'edge_fact'`
+  `canonical_edges` (incl. `extractor_model_id` from `ready.model`) + invalidate-not-accumulate bookkeeping
+- FTS5 projection of edge `body` text (mechanism per §3.3 — may include additional migration sub-steps)
+- Vector (1-bit) projection of edge `body` text (same mechanism; partition-discriminated from node bodies)
 - Conformance fixture (engine-side golden-input → expected-output)
 
 ### 5.2 Slices 20 + 30 depend on this
@@ -192,18 +206,21 @@ preserved on all rows (active and superseded) as provenance.
 ## 6. Falsifiable acceptance bar (Slice 15 tests)
 
 1. **Columns present**: `PRAGMA table_info(canonical_edges)` shows `body`, `t_valid`, `t_invalid`,
-   `confidence` after step-14
+   `confidence`, `extractor_model_id` after step-14
 2. **Legacy rows NULL-safe**: `SELECT * FROM canonical_edges WHERE superseded_at IS NULL` succeeds
-   on a pre-G11 DB after applying step-14 (all four new columns read NULL for pre-existing rows)
+   on a pre-G11 DB after applying step-14 (all five new columns read NULL for pre-existing rows)
 3. **SCHEMA_VERSION**: `PRAGMA user_version` returns 14 after step-14
 4. **Additive safety**: no existing test that reads `canonical_edges` breaks after step-14
 5. **Edge FTS searchable**: an edge with `body = "Alice owns the project"` is retrievable via
-   `search_index MATCH 'project'` with `source_type = 'edge_fact'`
-6. **Edge vector searchable**: the same edge body produces a vector entry in `vector_default`
-   with `source_type = 'edge_fact'` and is returned by a KNN query
+   full-text search on the body text and is distinguishable from node bodies in query results
+   (exact mechanism per §3.3 — test asserts the capability, not the specific table/column name)
+6. **Edge vector searchable**: the same edge body produces a vector entry and is returned by a
+   KNN query; the result is distinguishable from node-body results
 7. **Invalidate-not-accumulate**: ingesting a superseding fact-edge tombstones the prior
    active edge (`superseded_at` set, `body`/`t_valid` preserved on the prior row) and inserts
    the new enriched row as the single active row for `(from_id, to_id, kind)`
+8. **Model provenance**: `extractor_model_id` on the new enriched row matches `ready.model` from
+   the harness handshake response
 
 ---
 

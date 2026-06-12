@@ -90,6 +90,18 @@ governed-surface supersession). Listed separately because they post-date the
 | 35  | acceptance   | Supersede AC-057a's five-verb *scope cap* with a governed, open-but-curated SDK surface; preserve the three load-bearing guarantees (SDK parity, recovery-name denylist, typed boundary); unblocks gated read verbs G2/G3/G4/G5/G7                       | decision-ready, HITL-sign-off-pending | ADR-0.8.0-supersede-five-verb-surface-cap.md     |
 | 36  | design       | Embedder identity-change workflow — deferred workflow for intentional embedder identity swaps                                                                                                                                                          | draft (deferred)                      | ADR-0.8.0-embedder-identity-change-workflow.md   |
 
+## Phase 0.8.1 (campaign-specific ADRs)
+
+Decisions for the 0.8.1 graph-traversal + IR-retrieval campaign (BYO-LLM fact-edge
+ingest, IR-measure/eval design, G11 schema enrichment). Pending HITL sign-off at the
+Slice-0 gate before Slices 15 and 25 open.
+
+| #   | Category     | Candidate decision                                                                                                                                                                                       | HITL verdict                          | ADR file                                              |
+| --- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| 37  | design       | BYO-LLM Extraction Provider Protocol — `fathomdb.extract.v1` stdio NDJSON contract; 5 additive pins ratified with Memex 2026-06-12 (replay-determinism, UTF-8 byte `source_span`, `instructions`, `warnings.kind` enum, per-doc timeout); engine-side spawn+ingest+invalidate-not-accumulate; no LLM in FathomDB | decision-ready, HITL-sign-off-pending | ADR-0.8.1-byo-llm-extraction-protocol.md             |
+| 38  | acceptance   | IR-measure/eval design — R0 candidate-recall CDF spec (found@K K∈{50..1000}, per-class, all arms; gates Slice 10 rerank depth) + R2 end-to-end Mem0/Zep parity eval (identical-answerer, local Mem0-OSS baseline, per-class; Decision ①: AC-077 gate, R2 north-star; C3: gates R3 go/no-go)            | decision-ready, HITL-sign-off-pending | ADR-0.8.1-ir-measure-eval-design.md                  |
+| 39  | architecture | Graph substrate G11 migration — activates H3 reservation (HITL-signed 2026-06-05); step-14 SCHEMA_VERSION 13→14; additive `body`/`t_valid`/`t_invalid`/`confidence`/`extractor_model_id` columns on `canonical_edges`; edge projectability capability (FTS+vector; mechanism = Slice 15 impl detail); invalidate-not-accumulate contract | decision-ready, HITL-sign-off-pending | ADR-0.8.1-graph-substrate-g11-migration.md            |
+
 ## Categories
 
 acceptance | architecture | design | interface.

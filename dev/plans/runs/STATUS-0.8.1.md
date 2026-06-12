@@ -20,29 +20,23 @@ option ②-B scope + the signed graph/filter direction).
 
 ## 1. Current slice
 
-**Phase 0.8.1 OPEN — no slice active yet. Pointer → Slice 0 (Setup + ADR Kickoff).**
+**Slice 0 CLOSED 2026-06-12 (fix-1 resolved codex §9 findings). Pointer → ◆ HITL gate (3 ADRs sign-off).**
 
-0.8.1 carries two converged tracks: the signed graph-traversal + filter-grammar
-direction (Slice-35 ADRs, 2026-06-06) and the IR-C retrieval roadmap **R0–R4** (HITL
-option ②-B, 2026-06-12 — G11 edge valid-time ACTIVATED; graph construction = BYO-LLM,
-the bundled CPU local-LLM extractor R3b deferred to 0.8.2). Decision ①: AC-077
-(Recall@K) is the product gate; R2's end-to-end Mem0/Zep eval is a report-only
-north-star.
+Prereq 0 (branch merge) completed: `claude/recent-changes-state-a6wth3` merged to `main` at
+`9423143` (HITL-authorized, 65 ahead / 0 behind). Slice 0 agent merged 3 ADRs at `361fca4`;
+codex §9 found 3×[P2]; fix-1 resolved all three; fix-1 commit completes the close.
 
-### Prerequisites (before any slice opens)
-1. **◆ Merge this branch to `main`** — the plan triad + IR-C infra live only on
-   `claude/recent-changes-state-a6wth3` (~54 ahead / 1 behind `main`, unmerged); slice
-   worktrees baseline off `main` (HITL-authorized merge, no tag).
-2. **Frozen corpus (COR-2)** for Slices 5 + 25 — `corpus_hash fe973fcd…`; **SATISFIED +
-   reproducible** locally (gitignored → each slice agent reproduces; qmsum stale-pin debunked).
+**Prerequisites — all satisfied:**
+1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`; all plan triad + IR-C infra on main).
+2. **COR-2 frozen corpus** for Slices 5 + 25 — ✅ SATISFIED (`corpus_hash fe973fcd…`; gitignored; each slice agent reproduces; qmsum stale-pin debunked).
 
 ### Next action (orchestrator)
-After Prereq 1, prepare + spawn **Slice 0** (design-adr). **Scaffolding is DONE** (this
-board + plan triad + DOC-INDEX exist, 2026-06-12). **Remaining = the 3 ADRs:** the
-IR-measure/eval design (R0/R2) + Claude↔codex consensus; the **BYO-LLM Extraction Provider
-Protocol ADR** (`fathomdb.extract.v1` — **already v1-ratified with Memex 2026-06-12**,
-`~/projects/memex/dev/elps/FATHOMDB-CONSULT.md`; fold the decision record + 5 pins →
-near-ready); the **graph-substrate G11 migration ADR**. → HITL signs the 3 ADRs before 15/25.
+**Prepare and deliver the ◆ HITL gate package** (Slice-0 ADR sign-off):
+- Present the 3 ADRs + design memo + codex §9 verdict (PASS after fix-1) to HITL
+- After HITL signs, **open Slices 5, 15, and 35 in parallel** (three parallel tracks start)
+- Slice 25 is gated on Slice 10 (Slice 10 is gated on Slice 5)
+
+**Waiting for:** HITL sign-off on the 3 ADRs.
 
 ---
 
@@ -54,7 +48,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
-| **0** | Setup + ADR Kickoff | design-adr | 🟡 PARTIAL — scaffolding (board/plan/impl/DOC-INDEX) ✅ done 2026-06-12; **3 ADRs remain** (BYO-LLM ADR near-ready, v1-ratified w/ Memex) | — | n/a | ✅ | 🟡 |
+| **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
 | **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ❌ | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ❌ | 0 | ❌ | ❌ | ❌ |
@@ -129,6 +123,24 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-12 — Slice 0 CLOSED; Prereq 0 merged; codex §9 fix-1 applied
+
+**Prereq 0:** `claude/recent-changes-state-a6wth3` fast-forward merged to `main` at `9423143`
+(HITL-authorized via "read handoff and proceed"; 65 ahead / 0 behind — clean fast-forward).
+
+**Slice 0 (design-adr):** 3 ADRs authored by implementer agent at `361fca4`:
+- `ADR-0.8.1-byo-llm-extraction-protocol.md` — `fathomdb.extract.v1` engine-side contract; 5 pins
+- `ADR-0.8.1-ir-measure-eval-design.md` — R0 CDF spec + R2 parity eval design; Decision ①
+- `ADR-0.8.1-graph-substrate-g11-migration.md` — step-14, SCHEMA_VERSION 13→14, 5 new columns
+- `dev/design/slice-0-adr-plan.md` design memo; DOC-INDEX updated.
+
+**Codex §9 verdict:** 3×[P2] (CONCERN). All resolved in fix-1:
+- [P2] ADR-0.6.0-decision-index.md not updated → **FIXED**: Phase 0.8.1 section added (3 rows)
+- [P2] `ready.model` provenance had no storage column → **FIXED**: added `extractor_model_id TEXT` as 5th G11 column (step-14 SQL updated; BYO-LLM ADR §3.1 + mapping table updated)
+- [P2] `source_type='edge_fact'` claim unsupported by current closed enum + FTS schema → **FIXED**: §3 rewritten as capability commitment (edge body SHALL be FTS+vector searchable; exact mechanism = Slice 15 impl decision; additional migration sub-steps in-scope for Slice 15)
+
+**Codex final verdict post-fix-1: PASS.** Slice 0 CLOSED. Pointer → ◆ HITL gate.
 
 ### 2026-06-12 — review of the orchestrator hand-off: 4 gaps closed
 A review of `0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` found 4 valid gaps; all folded into the plan

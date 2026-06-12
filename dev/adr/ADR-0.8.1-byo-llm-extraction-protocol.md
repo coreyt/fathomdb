@@ -130,7 +130,7 @@ approximately `n_docs × per_doc`; batches are bounded (≤ `max_docs_per_reques
 - Spawn the subprocess with stdio streams attached
 - Send `{"protocol":"fathomdb.extract.v1","type":"hello"}` on startup
 - Verify the `ready` response: `protocol` must match, `schema_version` must be 1; abort otherwise
-- Record the `ready.model` value as provenance on every ingested edge
+- Record the `ready.model` value in the `extractor_model_id TEXT` column (G11, step-14) on every ingested edge as extractor provenance
 
 ### 3.2 Extract dispatch
 
@@ -163,6 +163,7 @@ enrichment columns (step-14, SCHEMA_VERSION 14 — see ADR-0.8.1-graph-substrate
 | `t_invalid` | `t_invalid` (TEXT, ISO-8601 or NULL) |
 | `confidence` | `confidence` (REAL ∈ [0,1]) |
 | `source_doc_id` | `source_id` |
+| `ready.model` (from handshake) | `extractor_model_id` (TEXT, G11 column) |
 
 ### 3.5 Invalidate-not-accumulate bookkeeping
 
