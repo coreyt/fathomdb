@@ -19,9 +19,24 @@ discourse/long-transcript retrieval — NOT underperformance.** The empirical an
 proves bge-small runs at its documented level in our pipeline; the literature shows
 this entire small-model class is weak on discourse/long-doc tasks. Separately, the
 **~0.90 factoid recall already sits at the lexical ceiling** — there is no headroom
-to chase there. The two productive levers are (1) a **stronger long-context small
-embedder** and (2) the **hybrid lexical+dense+graph architecture** that peer systems
-already rely on. FathomDB is *already* on lever 2; the open move is lever 1.
+to chase there.
+
+**The productive levers are ARCHITECTURAL, not embedder quality.** The "stronger
+dense model" lever was directly **tested and refuted** (the Nomic A/B, §6: a model at
+MTEB 62.3 vs bge's 51.7 made exploratory *worse*, median rank 99→135) — together with
+the earlier chunk-geometry and pooling A/Bs, that is three independent failures, so
+chunk-based single-vector dense quality is a **closed dead end** for exploratory. What
+*can* move it: (1) **cross-encoder reranking** to cash the existing first-stage recall
+into better top-K precision; (2) a **graph / relational retrieval path** for
+multi-hop/temporal queries — the orthogonal signal peer memory systems actually win
+on; (3) the one *untested* dense angle — **whole-doc long-context embedding** (where a
+long-context model's context is actually exercised, unlike the chunked diagnostic).
+FathomDB already runs hybrid lexical+dense fusion over a graph substrate; the open
+moves are **reranking + graph-aware retrieval** (and, as a research probe, whole-doc
+long-context dense). These are *bounded* gains — reranking is capped by candidate
+recall (~0.53–0.62), and a residual hard core of ambiguous discrimination queries is
+irreducible — but exploratory is **not blocked from improving**, only blocked from
+improving via a bigger dense embedder.
 
 ## 1. Empirical anchor — bge-small reproduces its leaderboard in our hands
 
@@ -58,10 +73,14 @@ Verified literature (strong evidence; 3 independent papers agree):
   and because FathomDB's dense diagnostic embeds ~128-word chunks (~170 tokens, well
   under 512), truncation isn't even in play on our chunked arm. The limit is model
   capacity on discourse semantics. [HIGH]
-- **Realistic upgrade: a long-context *small* embedder ≈ doubles hard-task recall in
-  the same footprint.** granite-embedding-small-r2 scores ~61.9 vs ~32.1 for the
-  short-context small baseline on the hard long-doc set (arXiv 2508.21085). Same
-  param/footprint class, long-context architecture = the lever. [HIGH]
+- **Literature claim (since SUPERSEDED for our setup): a long-context *small* embedder
+  ≈ doubles hard-task recall in the same footprint.** granite-embedding-small-r2 ~61.9
+  vs ~32.1 for a short-context small baseline on the hard long-doc set (arXiv 2508.21085).
+  [HIGH in the literature] **BUT this is a *long-document* result that assumes the long
+  context is actually used. FathomDB's Nomic A/B (§6) tested a stronger long-context
+  model in our *chunked* (128-word) setup and got *no* exploratory gain — so the claim
+  only plausibly applies to the untested whole-doc long-context angle (§5.3), not to a
+  drop-in embedder swap on the current chunked arm.**
 - **Caveat on the magnitude:** vendor/technical-report figures self-report favourable
   setups; the "~2×" is directional. Several specific upgrade claims were **refuted**
   in verification (e.g. fine-tuned-bge-small ≈ bge-base 0-3; an MLDR mGTE>BGE-M3
@@ -109,36 +128,102 @@ Verified + graded (mix of primary papers and vendor blogs — see confidence fla
 
 The stack deliberately trades *peak* retrieval quality for **on-device, CPU, no-API,
 binary-compact** operation. That is a *different point on the curve*, not a deficiency
-— and it constrains the upgrade path: the right lever is a **long-context small
-embedder that survives 1-bit quantization**, not a large API model or late-interaction
-reranker that would break the footprint.
+— and it constrains the upgrade path. The footprint-respecting levers are a **small
+CPU cross-encoder reranker** and **graph-aware retrieval** over the existing edge
+substrate (both local, both binary-compatible); a larger dense embedder is both
+footprint-costly *and* — per §6 — empirically useless on exploratory. A large API
+embedder or a late-interaction reranker (ColBERT) would break the footprint and is
+out.
 
-## 5. Recommendation — do both, in this order
+## 5. Recommendation — architecture first (the embedder lever is closed)
 
-1. **Lever 1 (model): run the Phase-2 long-context small-embedder A/B** already
-   scaffolded (`NomicEmbedder` + model-agnostic `ir_c_gold_diagnostics`). Measure
-   nomic-embed-text-v1.5 (and ideally granite-small-r2 / gte-modernbert) on our exact
-   dense diagnostic, on **both** axes: exploratory median-rank/recall **and** 1-bit
-   binary-floor retention. Expected: a material exploratory lift in-footprint; gate on
-   it actually clearing the binary floor (`ir_c_pooling_floor_gate`-style).
-2. **Lever 2 (architecture): add cross-encoder reranking + graph-aware retrieval.**
-   This is what peer memory systems use to turn a weak dense arm into good end-to-end
-   recall, and it composes with our existing hybrid fusion + graph substrate. A small
-   CPU cross-encoder reranker over the fused top-K is the highest-leverage
-   architecture add that respects the local-first constraint.
-3. **Leave factoid alone.** ~0.90 is the lexical ceiling; the content-OR/BM25 path
-   already wins it and the vector arm adds ~nothing.
-4. **Do not** chase whole-doc chunk geometry for exploratory (IR-C full-corpus result:
-   deferred) or a non-binary-safe model (ColBERT / large API) — both break either the
-   evidence or the footprint.
+Ordered by leverage, after the Nomic A/B (§6) closed the "stronger dense model" path:
+
+1. **Cross-encoder reranking over the fused top-K (highest leverage, in-footprint).**
+   A small CPU cross-encoder reorders the fused candidates to cash first-stage recall
+   into top-K precision. **Bounded:** it cannot exceed candidate recall (exploratory
+   R@50 ≈ 0.53, oracle-union ≈ 0.62), so expect exploratory R@10 ≈ 0.33 → ~0.45–0.50,
+   nothing for the ~38% hard stratum, and ~nothing for factoid (already 0.90). This is
+   what peers (Zep/Mem0/Letta) use to turn a weak dense arm into good end-to-end recall.
+2. **Graph-aware retrieval over the edge substrate (raises the ceiling on the right
+   slice).** Adds an *orthogonal* candidate path beyond lexical+dense — the only way
+   past the ~0.62 union ceiling. Biggest, most defensible win on **multi-hop /
+   relational / temporal** ("deep-exploratory") queries; limited on single-transcript
+   summary *discrimination*. This is the lever Zep's graph wins on over Mem0.
+3. **Research probe — whole-doc long-context dense (the one untested angle).** The
+   chunk-based dense A/Bs (geometry, pooling, Nomic) are exhausted, but they never
+   exercised a long-context model's actual context window. A single long-context
+   vector per doc (or late-chunking) is the remaining dense idea for the *discrimination*
+   subset; gate on the 1-bit binary floor. Treat as exploratory R&D, not a committed lever.
+4. **Leave factoid alone.** ~0.90 is the lexical ceiling; content-OR/BM25 wins it and
+   the vector arm adds ~nothing.
+5. **Do NOT** swap to a stronger chunked dense embedder (§6: refuted), chase whole-doc
+   *chunk geometry* (IR-C full-corpus: deferred), or adopt a non-binary-safe model
+   (ColBERT / large API) — closed on the evidence or the footprint.
+
+## 6. The "stronger model" lever — TESTED and REFUTED (Nomic A/B)
+
+After this benchmark, FathomDB ran the Phase-2 swap on the same dense diagnostic
+(`dev/plans/runs/IR-C-retrieval-findings.md`, commit `d4aace9`):
+
+| model (dense, 128/96 chunks) | exploratory median rank | exploratory top-50 | exact_fact |
+|---|---|---|---|
+| bge-small-en-v1.5 (33M, MTEB 51.7) | 99 | 37% | baseline |
+| **nomic-embed-text-v1.5 (137M, MTEB 62.3)** | **135 (worse)** | **32% (worse)** | +6 pts (already solved) |
+
+A model **+10.6 MTEB points and ~4× the size made exploratory *worse***, at ~2×
+compute. With the earlier chunk-geometry and CLS-pooling A/Bs, that is **three
+independent dense-quality experiments, all failing** → exploratory is a **structural**
+limit of chunk-based single-vector dense retrieval for discourse/summary queries, not
+a model-capacity problem. BM25 (median rank 26) is the stronger exploratory component;
+the dense investigation is **closed under current (chunked) knobs**. The single
+remaining dense idea is whole-doc long-context (§5.3), which none of the three tests
+exercised.
+
+**Why reranking/graph are bounded (the headroom math).** Exploratory fused R@10 =
+0.33, R@50 = 0.53; the dense+lexical **oracle union** tops out at ~0.62 R@50. A
+reranker can only *reorder* the candidate pool → lifts R@10 toward ~0.53 but **cannot
+exceed it**. Raising the ceiling past ~0.62 requires an *orthogonal* candidate
+signal — i.e. the **graph** (multi-hop/temporal) or whole-doc long-context dense. A
+residual hard core (~38% of exploratory: gold in neither arm's top-50; many are
+intrinsically ambiguous discrimination) is irreducible. So: bounded gains, real but
+capped — and concentrated on the relational slice.
+
+## 7. Peer benchmark numbers (context — NOT comparable to our Recall@K)
+
+Published agent-memory benchmark scores, for scale only. **These measure end-to-end
+answer accuracy** (an LLM reads retrieved memory and answers; an LLM judge scores the
+answer) on conversational benchmarks (LoCoMo, LongMemEval) — **a different metric and
+corpus than our first-stage Recall@K**, so they do *not* translate to "N points higher
+than FathomDB." They are also vendor-contested.
+
+| system | LoCoMo | LongMemEval | note |
+|---|---|---|---|
+| Mem0 (own claims) | 92.5 | 94.4 | self-reported |
+| Zep vs Mem0 (independent, GPT-4o) | — | **63.8% vs 49.0%** | Zep +14.8 pts |
+| LoCoMo dispute | Zep 84% → Mem0 recompute **58.44%** → Zep **75.14%** | — | methodology contested |
+
+**The load-bearing point:** peers do **not** win with bigger embedders — they use the
+same small-model class (`text-embedding-3-small` / small open) and win on
+**architecture** (hybrid + memory **graph** + reranking). Zep's edge over Mem0 is
+explicitly its graph. This *independently reinforces* §5: the lever is rerank + graph,
+not embedder scale. Sources: mem0.ai/blog/state-of-ai-agent-memory-2026 ·
+blog.getzep.com (Mem0-SOTA critique) · github.com/getzep/zep-papers/issues/5 (84%→58.44%)
+· arXiv 2504.19413 (Mem0) · atlan.com/know/zep-vs-mem0.
 
 ## Confidence & provenance
 - **HIGH:** the expected-ceiling verdict (empirical anchor reproduces leaderboard +
   NFCorpus ≈ our exploratory; 3 papers agree on the discourse-hard pattern); pooling
-  penalty ≈ 0; factoid at lexical ceiling; peers use hybrid+graph+reranking.
-- **MEDIUM / directional:** the exact "~2×" upgrade magnitude (vendor self-reports;
-  several specific deltas refuted in verification — trust direction, not the number);
-  any single peer system's precise embedder choice (Zep-BGE-M3 refuted).
+  penalty ≈ 0; factoid at lexical ceiling; peers use hybrid+graph+reranking;
+  **the "stronger dense model doesn't fix exploratory" finding (§6) is now a measured
+  FathomDB result (Nomic A/B), not an inference** — it overrides the literature's
+  in-the-abstract "long-context ~2× hard-recall" claim *for the chunked setup we use*.
+- **MEDIUM / directional / superseded:** the literature's "~2×" long-context upgrade
+  magnitude was vendor-self-reported on *long-document* benchmarks and is **superseded
+  for our case** by the Nomic A/B (no exploratory gain when chunked); it may still hold
+  for the untested whole-doc long-context angle (§5.3). Any single peer system's precise
+  embedder choice is MEDIUM (Zep-BGE-M3 refuted). Peer LoCoMo/LongMemEval figures (§7)
+  are vendor-contested and not metric-comparable to our Recall@K.
 - **Method:** BEIR anchor = `mteb 2.15`, `BAAI/bge-small-en-v1.5`, SciFact/NFCorpus/
   ArguAna, CPU, both pooling configs (`IR-C-bge-small-beir-anchor.json`). Literature =
   21 sources, claims killed on ≥2/3 refute votes; refuted claims listed above are
