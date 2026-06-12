@@ -5,6 +5,12 @@
 > prompt + output schema*; Memex's harness owns *getting that to its LLM and back*.
 > **Source of the design:** `dev/roadmap/0.8.1.md` §5.4 (R3, BYO-LLM construction) +
 > `dev/plans/runs/IR-C-roadmap.md` (C7).
+>
+> **◆ v1 RATIFIED with Memex 2026-06-12** (decision record:
+> `~/projects/memex/dev/elps/FATHOMDB-CONSULT.md`). Five additive pins folded in below (no
+> `schema_version` bump): `options.instructions` (Q1) · `source_span` = UTF-8 byte half-open
+> `[start,end)` (Q4) · **replay-determinism** (Q3) · `warnings.kind` enum (D5) · per-document
+> timeout (Q7). Memex's ELPS implements this; the golden fixture freezes against these pins.
 
 ## Background (why this exists)
 
@@ -67,9 +73,14 @@ FathomDB aborts if `protocol`/`schema_version` mismatch.
  "documents":[{"doc_id":"<id>","kind":"email|meeting|note|todo|...","body":"<text>","created_at":"<ISO-8601>"}],
  "ontology":{"entity_types":["person","org","project","artifact","event","topic"],
              "relation_hint":"freeform short relation labels; you choose"},
- "options":{"deterministic":true,"max_facts_per_doc":24,"language":"en"}}
+ "options":{"deterministic":true,"max_facts_per_doc":24,"language":"en",
+            "instructions":"<optional: authoritative extra extraction guidance from FathomDB>"}}
 ```
-FathomDB owns this shape and the extraction instructions; you fulfill it.
+FathomDB owns this shape and the extraction semantics; you fulfill it. **`options.instructions`
+(optional, ratified 2026-06-12 / Q1):** absent ⇒ the provider authors the prompt freely; when
+present ⇒ the provider **MUST incorporate it as binding guidance** (MAY adapt phrasing to its model)
+**and MUST include it in the determinism cache key**. The provider owns the concrete prompt; FathomDB
+owns the output schema + semantics + this optional steer.
 
 ### 3. Extraction response (harness → FathomDB)
 ```json
@@ -91,11 +102,19 @@ FathomDB owns this shape and the extraction instructions; you fulfill it.
 - **Temporal semantics (load-bearing):** `t_valid` = when the fact *became true* (event time, not
   ingestion time); `t_invalid` = when it stopped being true, or `null` if still valid. If a new fact
   contradicts/supersedes an older one, **emit the new fact with its `t_valid`** and, when you can
-  identify the prior fact, surface it in `warnings` as `{"supersedes_hint": "...", "prior_body":"..."}`
-  — FathomDB does the invalidate-not-accumulate bookkeeping; you only need to date facts correctly.
+  identify the prior fact, surface it in `warnings` — FathomDB does the invalidate-not-accumulate
+  bookkeeping; you only need to date facts correctly.
+- **`warnings` (typed; `kind` enum ratified 2026-06-12 / D5).** Each warning is
+  `{"kind": "...", ...}`; v1 kinds: **`supersedes`** (carries `supersedes_hint` + `prior_body`),
+  **`doc_dropped`** (carries `source_doc_id` + `detail`), **`no_facts`** (carries `source_doc_id`),
+  **`validation_failed`** (carries `source_doc_id`). Any document dropped from a `result` (no facts,
+  or a per-doc validation failure while infra is healthy — D4) **MUST** emit a warning carrying its
+  `source_doc_id`. Extra fields are additive; FathomDB ignores unknown `kind`s and keeps the `result`.
 - **`confidence`** ∈ [0,1]: your calibrated extraction confidence; FathomDB may threshold/weight on it.
-- **`source_doc_id`** required; **`source_span`** (char offsets into that doc's `body`) optional but
-  preferred (enables citation-grade provenance).
+- **`source_doc_id`** required; **`source_span`** optional but preferred (citation-grade provenance).
+  **Unit (ratified 2026-06-12 / Q4): UTF-8 byte offsets, half-open `[start_byte, end_byte)`**,
+  0-based, end-exclusive, into the `body` field **as transmitted** (do not re-encode before
+  measuring). Omit (null) rather than emit a guessed span. (FathomDB's store is Rust/byte-indexed.)
 
 ### 4. Error (harness → FathomDB, instead of a result)
 ```json
@@ -110,15 +129,25 @@ emit a `result` or `error` for every `request_id`.
 1. **FathomDB never makes a network call.** All LLM connectivity lives in the harness.
 2. **Strict, schema-valid JSON only on stdout** — one object per line, `result` or `error` per
    `request_id`, no prose, no partial lines, no stdout logging.
-3. **Determinism mode.** When `options.deterministic=true`, the same request must produce the same
-   response (fix sampling: temperature 0 / greedy, fixed seed). FathomDB uses this for reproducible
-   ingest + golden tests.
+3. **Determinism mode — "replay determinism" (REVISED 2026-06-12 / Q3).** Real LLM stacks are not
+   token-deterministic, so v1 determinism is a **cache property**: under `options.deterministic=true`
+   the provider MUST return **byte-identical bytes for any request whose canonical form is in its
+   cache, including the shipped/seeded golden-fixture cache** (canonicalize → content-address → replay;
+   greedy/temp-0 for *new* generations). It does **NOT** guarantee byte-identical *generation* across
+   cold/novel environments. Cache key = `sha256(canonical(documents, ontology, options /*incl.
+   instructions*/, ready.model, PROMPT_VERSION))`. **Conformance is asserted only over the shipped
+   fixture cache.** FathomDB pins the *extracted-graph artifact* for eval reproducibility, not live
+   re-extraction. Document the cold-cache cross-environment limit in `EXTRACTION_PROTOCOL.md`.
 4. **Idempotency by `request_id`** — re-sending the same `request_id` may return the cached prior
    result.
 5. **Batching + back-pressure.** Honor `max_docs_per_request` from your `ready` message; FathomDB
    will not exceed it. Process serially is fine; just don't drop or reorder responses without their
    `request_id`.
 6. **Timeouts/failure are first-class** — emit a `timeout`/`extraction_failed` `error`, don't hang.
+   **Timeout is PER-DOCUMENT (ratified 2026-06-12 / Q7):** `ELPS_TIMEOUT_S` (default 60 s) bounds each
+   per-doc LLM call, not the whole `extract` (a 32-doc batch must not spuriously time out). A per-doc
+   timeout is transient → **fails the whole `extract`** (D4) and the `timeout` error names the
+   offending `source_doc_id`.
 7. **Versioned** — `schema_version:1`; bump on any breaking change; keep v1 working.
 8. **No FathomDB-side ontology lock-in** — entity/relation vocab is open (FathomDB's `source_type`
    vocab is closed, but graph relations are freeform); just be internally consistent within a run.
