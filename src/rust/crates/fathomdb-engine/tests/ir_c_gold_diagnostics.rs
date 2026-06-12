@@ -326,23 +326,50 @@ fn compute_dense_section(
     bucket_cap: usize,
     scope: &str,
 ) -> Value {
-    use fathomdb_embedder::{CandleBgeEmbedder, Pooling};
+    use fathomdb_embedder::{CandleBgeEmbedder, NomicEmbedder, Pooling};
     use fathomdb_embedder_api::Embedder;
     use ir_retrieval::chunk_words_offsets;
 
-    // Phase 0 A/B knobs: IRC_DIAG_POOLING=cls switches to bge's model-native CLS
-    // pooling (the floor gate cleared it); IRC_DIAG_PREFIX adds the BGE query
-    // instruction to QUERIES only (passages stay bare).
-    let pooling = if std::env::var("IRC_DIAG_POOLING").as_deref() == Ok("cls") {
-        Pooling::Cls
-    } else {
-        Pooling::Mean
-    };
-    let use_prefix = std::env::var_os("IRC_DIAG_PREFIX").is_some();
-    const BGE_QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
-    let emb = CandleBgeEmbedder::new().expect("bge embedder").with_pooling(pooling);
+    // Model A/B. Default = bge (with IRC_DIAG_POOLING=cls / IRC_DIAG_PREFIX knobs).
+    // IRC_DIAG_MODEL=nomic uses nomic-embed-text-v1.5 (768-d), which REQUIRES task
+    // prefixes: "search_document: " on passages, "search_query: " on queries.
+    let model = std::env::var("IRC_DIAG_MODEL").unwrap_or_else(|_| "bge".to_string());
+    let (emb, passage_prefix, query_prefix): (Box<dyn Embedder>, String, String) =
+        if model == "nomic" {
+            let dir = std::path::PathBuf::from(
+                std::env::var("IRC_NOMIC_DIR")
+                    .unwrap_or_else(|_| "/root/.cache/fathomdb/embedders/nomic-v1.5".to_string()),
+            );
+            let e = NomicEmbedder::from_dir(&dir).expect("load nomic");
+            (Box::new(e), "search_document: ".to_string(), "search_query: ".to_string())
+        } else {
+            let pooling = if std::env::var("IRC_DIAG_POOLING").as_deref() == Ok("cls") {
+                Pooling::Cls
+            } else {
+                Pooling::Mean
+            };
+            const BGE_QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
+            let qp = if std::env::var_os("IRC_DIAG_PREFIX").is_some() {
+                BGE_QUERY_PREFIX.to_string()
+            } else {
+                String::new()
+            };
+            (
+                Box::new(CandleBgeEmbedder::new().expect("bge embedder").with_pooling(pooling)),
+                String::new(),
+                qp,
+            )
+        };
     let identity = format!("{:?}", emb.identity());
-    eprintln!("DIAG_DENSE pooling={pooling:?} query_prefix={use_prefix}");
+    // Prepend a prefix only when non-empty (avoids a useless alloc for bare bge).
+    let pfx = |prefix: &str, text: &str| -> std::borrow::Cow<'static, str> {
+        if prefix.is_empty() {
+            std::borrow::Cow::Owned(text.to_string())
+        } else {
+            std::borrow::Cow::Owned(format!("{prefix}{text}"))
+        }
+    };
+    eprintln!("DIAG_DENSE model={model} identity={identity} q_prefix={query_prefix:?}");
     let t0 = std::time::Instant::now();
     // The bucket (the headline) needs only the 128/96 dense rank;
     // dense_gold_rank_whole is a reference field. IRC_DIAG_SKIP_WHOLE drops the
@@ -358,7 +385,7 @@ fn compute_dense_section(
     if !skip_whole {
         whole.reserve(docs.len());
         for (i, d) in docs.iter().enumerate() {
-            whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&d.body).expect("embed whole")));
+            whole.push((d.doc_id.clone(), 0usize, d.body.len(), emb.embed(&pfx(&passage_prefix, &d.body)).expect("embed whole")));
             if (i + 1) % 2000 == 0 {
                 eprintln!("DIAG_DENSE whole_progress {}/{} ({:.0}s)", i + 1, docs.len(), t0.elapsed().as_secs_f64());
             }
@@ -367,7 +394,7 @@ fn compute_dense_section(
     let mut p128: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
     for (i, d) in docs.iter().enumerate() {
         for (t, s, e) in chunk_words_offsets(&d.body, 128, 96, 8) {
-            p128.push((d.doc_id.clone(), s, e, emb.embed(&t).expect("embed chunk")));
+            p128.push((d.doc_id.clone(), s, e, emb.embed(&pfx(&passage_prefix, &t)).expect("embed chunk")));
         }
         if (i + 1) % 2000 == 0 {
             eprintln!("DIAG_DENSE p128_progress {}/{} docs, {} passages ({:.0}s)", i + 1, docs.len(), p128.len(), t0.elapsed().as_secs_f64());
@@ -390,12 +417,7 @@ fn compute_dense_section(
             continue;
         }
         let qid = q.query_id.clone().unwrap_or_else(|| q.query.clone());
-        let qtext = if use_prefix {
-            std::borrow::Cow::Owned(format!("{BGE_QUERY_PREFIX}{}", q.query))
-        } else {
-            std::borrow::Cow::Borrowed(q.query.as_str())
-        };
-        let qv = emb.embed(&qtext).expect("embed query");
+        let qv = emb.embed(&pfx(&query_prefix, &q.query)).expect("embed query");
         let rank_whole = dense_gold_rank_and_span(&maxpool_ranking(&qv, &whole), &gold_ids).0;
         let (rank_128, best_span) = dense_gold_rank_and_span(&maxpool_ranking(&qv, &p128), &gold_ids);
         let bm = bm25_rank_by_qid.get(&qid).copied().flatten();
@@ -424,8 +446,10 @@ fn compute_dense_section(
         });
     }
     let mut section = build_dense_section(&identity, scope, bucket_cap, &recs);
-    section["pooling"] = json!(format!("{pooling:?}"));
-    section["query_prefix"] = json!(use_prefix);
+    section["model"] = json!(model);
+    section["identity"] = json!(identity);
+    section["passage_prefix"] = json!(passage_prefix);
+    section["query_prefix"] = json!(query_prefix);
     section
 }
 
