@@ -1,11 +1,54 @@
 # IR-C — Retrieval diagnostics: measured findings & conclusions
 
-Status: **findings, evidence-complete** · 2026-06-11 · Branch `claude/recent-changes-state-a6wth3`
+Status: **CLOSED — dense investigation done (in the context of current knobs)** ·
+2026-06-11 · Branch `claude/recent-changes-state-a6wth3`
 Instrument: `tests/ir_c_fusion_experiment.rs` (fusion) + `tests/ir_c_gold_diagnostics.rs`
 (gold diagnostics). Plan: `dev/plans/IR-C-test-query-quality-instrumentation-plan.md`.
 Decision context: `dev/plans/runs/IR-C-api-surface-knobs-to-review.md`.
 
-## TL;DR
+## CLOSEOUT (2026-06-11) — dense investigation done under current knobs
+
+**Decision:** the dense-retrieval line of investigation is **closed** for now. Under
+every knob we can currently turn, dense retrieval does not improve the class that
+needs it (exploratory). **Ship the current default** — bge-small / **Mean** pooling,
+whole-doc + **3:1** fusion + **k=30** — and **treat exploratory as the lexical (BM25)
+arm's domain**; the dense arm earns its keep only on exact_fact, where BM25 already
+wins, so it is a (harmless) redundancy there.
+
+**Knobs swept (all measured on the full 10,506-doc corpus) and their verdict:**
+| knob | values tried | exploratory effect |
+|---|---|---|
+| chunk geometry | whole-doc, 64/48, **128/96**, 256/192 (max/mean/top2 pool) | chunking lifts dense *solo* recall but the fused hybrid is flat/negative |
+| fusion weight × k | 3:1, 1:1 × k=30 | 1:1 hurts shallow, ~+0.03 deep; no win |
+| pooling | mean vs **CLS** (model-native) | ~neutral; CLS slightly *worse* (median 99→121) |
+| query prefix | on/off | no material effect |
+| embedding model | bge-small vs **nomic-embed-v1.5** | nomic *worse* on exploratory (99→135), better on the already-solved exact_fact |
+
+**Why it's closed (the converged finding):** chunk-based single-vector dense
+retrieval is **structurally weak** for discourse/summary ("exploratory") queries
+over long transcripts — the answer spans the whole discussion, not any 128-word
+window, so max-pool over short chunks can't represent it, *regardless of model or
+pooling*. BM25 (median gold rank 26) beats dense (median 99–135) here and is the
+right tool. Three independent levers (chunking, pooling, stronger model) all failed
+to move it; we've hit diminishing returns under these knobs.
+
+**Explicitly OUT of scope — PARKED, not refuted** (different mechanism, not a "knob"):
+- **Whole-doc long-context embedding** (nomic 8192-ctx, no 512-truncation) and
+  **late chunking** — the one dense angle with an untested mechanism for discourse
+  retrieval; expensive, unproven.
+- **Multi-vector / late-interaction (ColBERT-style)** and a **real reranker** stage.
+- **Query-side** methods (query expansion, HyDE).
+- **Test-label quality** (item 4): exact_fact is lexically aligned and exploratory
+  labels are single-doc/sparse — the benchmark may understate dense's real-world
+  value if production queries are more paraphrastic. This caveat bounds how far to
+  generalize "dense doesn't help" beyond this corpus.
+
+These are the doors to open *if/when* dense retrieval is revisited; none is refuted
+by this investigation, which was scoped to the current knobs only.
+
+---
+
+## TL;DR (measured detail below)
 
 On the **full frozen corpus** (10,506 docs; bge-small-en-v1.5, 384-d; production
 k=30):

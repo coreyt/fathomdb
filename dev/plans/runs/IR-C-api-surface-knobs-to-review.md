@@ -1,7 +1,13 @@
 # IR-C — API-surface knobs to review (post full-corpus chunking experiment)
 
 Drafted: 2026-06-11
-Status: **PARKED — review after the full-corpus chunking experiment lands**
+Status: **RESOLVED — dense investigation CLOSED under current knobs (2026-06-11).**
+Verdict: ship the current `whole-doc + 3:1 + k=30` default on bge-small/Mean;
+exploratory is the BM25 arm's domain. B/C (chunking, dense re-weighting), pooling,
+and a model swap (nomic) were all tested and **do not** lift exploratory — see the
+CLOSEOUT in `dev/plans/runs/IR-C-retrieval-findings.md`. The knob detail below is
+retained as the evidence record; parked levers (long-context whole-doc, late
+chunking, reranker, label-quality) are listed in that closeout.
 Gating artifact: `dev/plans/runs/IR-C-ws1-fusion-experiment-full.json`
 (produced by `IRC_FX_FULL=1 … --test ir_c_fusion_experiment`; the Option-A
 deep-K exploratory run, ~3.5 h, in flight at draft time).
