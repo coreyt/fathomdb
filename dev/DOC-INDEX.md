@@ -104,6 +104,14 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | **Slice 6 (B2) FTS5 tokenizer latency experiment** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral; recommends tiering AC-012 (10k binding) per the AC-072/073 precedent | Slice 6 (B2) | 2026-06-07 |
+| `dev/plans/0.8.1-plan.md` | **0.8.1 mod-5 ladder** + reserved-gap policy + X1/X2/X3 DoD + Immediate-Next-Slice pointer (graph traversal + temporal-edge graph retrieval + reranker + eval + filter; R0–R4) | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
+| `dev/plans/0.8.1-implementation.md` | **0.8.1 authoritative slice contracts** (Slices 0–40; critical path + parallelization; footprint invariant; BYO-LLM ingest) | the plan itself | 2026-06-12 |
+| `dev/plans/runs/STATUS-0.8.1.md` | **0.8.1 live state board** (§12.5 sections + X1/X2/X3 column) | 0.8.1 Slice 0 authors; every slice updates at close | 2026-06-12 |
+| `dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` | **0.8.1 orchestrator hand-off** — roles, ladder spawn order, the per-slice decision loop (TDD + codex §9 + board-in-one-commit), HITL gates, footprint invariant | orchestrator | 2026-06-12 |
+| `dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md` | **BYO-LLM extraction-harness brief** for Memex — the `fathomdb.extract.v1` Extraction Provider Protocol FathomDB proxies graph construction to (0.8.1 Slice 15 implements) | 0.8.1 Slice 15 | 2026-06-12 |
+| `dev/roadmap/0.8.2.md` | **0.8.2 roadmap** — the deferred R3b bundled CPU local-LLM fact extractor (the fully-self-contained upgrade to 0.8.1's BYO-LLM graph construction) | 0.8.2 | 2026-06-12 |
+| `dev/archive/0.8.1-roadmap-direction-20260612.md` | **Archived** 0.8.1 roadmap-direction doc (graph/filter/eu7 + R0–R4 scope) — superseded by the implementation plan triad | reference | 2026-06-12 |
+| `dev/plans/runs/IR-C-roadmap.md` (+ `-analysis-dossier`, `-deep-research`) | **IR-C retrieval roadmap** (Fable-5 review): R0–R4 + per-item P(success) + the C1–C8 ceiling corrections; the decision artifact behind 0.8.1's retrieval-quality track | reference / 0.8.1 source | 2026-06-12 |
 | `dev/plans/0.6.x/0.7.x-*.md`, `ci-deferred.md`, `README.md` | Prior-release plans + CI-deferral ledger | reference | (tree) |
 
 ---
