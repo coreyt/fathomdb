@@ -257,3 +257,52 @@ same 128/96 geometry, bge-small.
 documented hypothesis (mean-pooling a CLS model) was *plausible* (config + BGE docs
 confirmed the mismatch) but turned out not to explain the symptom. Cheap to test,
 and it redirected effort from a usage fix to the actual lever (the model).
+
+## NOMIC A/B RESULT (2026-06-11) — a stronger model does NOT fix exploratory
+
+Ran the full-corpus dense diagnostic with `nomic-embed-text-v1.5` (768-d, candle
+`nomic_bert`, `search_document:`/`search_query:` prefixes) vs the bge-mean baseline,
+same corpus + same 128/96 geometry.
+
+| class | metric | bge mean | nomic |
+|---|---|---|---|
+| exact_fact | median / top-50 | 2 / 78% | **1 / 84%** (+6) |
+| exploratory | median rank | 99 | **135** (worse) |
+| exploratory | top-50 | 37% | **32%** (worse) |
+| exploratory | semantic / hard | 142 / 596 | **76 / 662** (worse) |
+
+Speed (measured, same chunks): nomic ~310 ms/passage @ ~245% CPU vs bge ~225 ms @
+~150% — **~1.4× wall-clock, ~2.2× CPU**, ~4× weights on disk (522 MB vs 133 MB).
+
+**Conclusions:**
+1. **Stronger ≠ better here.** Nomic (MTEB retrieval 62.28 vs bge 51.68) is clearly
+   better on **exact_fact** (median rank 1, +6 pts top-50) but **worse on
+   exploratory** (median 99→135). So the exploratory weakness is **not** a
+   model-capacity problem a bigger model fixes.
+2. **The exact_fact win is moot for the hybrid:** exact_fact is already lexically
+   solved (BM25 median rank 1); a better vector arm there adds nothing the fusion
+   needs.
+3. **Most likely it's a GRANULARITY / task-structure problem, not a model one.** The
+   diagnostic embeds ~128-word chunks, which (a) **neutralizes nomic's headline
+   advantage** — its 8192-token long context is wasted on 128-word windows — and
+   (b) is hostile to discourse/summary queries, whose answer spans the *whole
+   discussion*, not a single chunk. Max-pool over short chunks can't represent
+   "what did they decide about X" over a meeting transcript. Both models hit this
+   wall; the lexical (BM25) arm remains the best exploratory component (median rank
+   26 vs dense 99–135).
+4. **Decision:** nomic is **not** worth ~2× compute / ~4× model size — it doesn't
+   move the class we care about (exploratory) and only helps an already-solved one.
+   Stay on bge-small (Mean pooling); for exploratory, lean on the lexical arm.
+
+**The one untested lever** (if dense exploratory is pursued): **WHOLE-document
+long-context embedding** — the config where nomic's 8192-ctx actually applies and
+bge's 512-truncation actually hurts. The chunked diagnostic deliberately never
+tested it (skip-whole). It's the only remaining dense angle with a real mechanism
+to help discourse retrieval, but it's expensive (embedding full transcripts) and
+unproven; possibly via *late chunking* (long-context encode → pool to chunks).
+
+**Three negatives, one shape:** Option A (chunking), pooling, and a stronger model
+all failed to lift exploratory. They converge on the same conclusion — chunk-based
+single-vector dense retrieval is structurally weak for discourse/summary queries
+over long transcripts, and BM25 is the better tool there. The remaining dense idea
+is long-context whole-doc (untested), not "a better model."

@@ -89,10 +89,19 @@ Read (exploratory):
    **REFUTED**. CLS pooling + query prefix cleared the 1-bit binary floor (0.944) but
    did **not** fix exploratory: dense median rank **99 → 121**, top-50 **37% → 34%**
    (marginally worse), while exact_fact nudged up. Since the dense diagnostic embeds
-   ~128-word chunks, 512-truncation isn't the cause either. **So the median-99 IS
-   bge-small's genuine semantic-retrieval ceiling on discourse queries — the lever is
-   a stronger model (Phase 2: `nomic-embed-text-v1.5` etc.), not a usage fix.** Pooling
-   is ~neutral and default stays Mean.
+   ~128-word chunks, 512-truncation isn't the cause either.
+
+   **FURTHER UPDATE (2026-06-11):** the "stronger model" lever was then **tested** —
+   `nomic-embed-text-v1.5` (MTEB 62.28 vs bge 51.68) ran on the same diagnostic. It
+   **also did not fix exploratory** (median rank 99→**135**, top-50 37%→**32%**) — it
+   was *better* on exact_fact (+6 pts, already lexically solved) but *worse* on
+   exploratory, at ~2× compute / ~4× model size. So exploratory is **not** a model-
+   capacity problem. Across three tries (chunking, pooling, stronger model), nothing
+   lifts it — it's a **structural** weakness of chunk-based single-vector dense
+   retrieval for discourse/summary queries; BM25 (median rank 26) is the better
+   exploratory component. Stay on bge-small/Mean; lean lexical for exploratory. The
+   one untested dense angle is **whole-doc long-context** embedding (where nomic's
+   8192-ctx would actually apply) — see `dev/notes/IR-C-embedder-options-research.md`.
 3. **exact_fact stays lexical.** Ship the content-OR/BM25 path; vector adds ~nothing.
 4. **#8 (positional/citation locators)** still stands on its citation argument.
 
