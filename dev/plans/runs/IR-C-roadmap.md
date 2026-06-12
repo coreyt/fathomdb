@@ -15,7 +15,10 @@ CLAIMED (external) / INFERRED (derived here).
 
 > **◆ TARGETING (HITL coreyt, 2026-06-12): R0–R4 are 0.8.1 scope — option ②-B accepted.**
 > R0–R4 are brought into 0.8.1 (`dev/roadmap/0.8.1.md` §5), including the **full R3 temporal
-> fact-edge mechanism with G11 edge valid-time activated** (no R3a/R3b split). **Decision ①:**
+> fact-edge mechanism with G11 edge valid-time activated**. **Construction split (2026-06-12
+> follow-up): BYO-LLM first** — FathomDB proxies extraction to a caller-supplied harness
+> (`dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md`), the 0.8.1 path; the **bundled CPU
+> local-LLM extractor (R3b) moves to 0.8.2** (`dev/roadmap/0.8.2.md`). **Decision ①:**
 > AC-077 (Evidence Recall@K) stays the IR-eval product gate; R2's end-to-end Mem0/Zep eval is a
 > report-only north-star (wired into `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md` IR-E/IR-2). R5
 > (vector-PRF) is opportunistic/post-R1, not in the committed R0–R4 set. The graph arm (R3) rides
