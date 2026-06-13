@@ -5133,7 +5133,7 @@ LIMIT {cap}"
 /// Returns 5 columns: logical_id, kind, body, write_cursor, min_depth.
 fn build_bfs_with_depth_sql() -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
-    let cte_cap = cap + 1;
+    let cte_cap = cap * cap; // same multigraph-safe headroom as build_bfs_sql
     format!(
         "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
