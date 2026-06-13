@@ -594,3 +594,54 @@ fn search_expand_anon_node_hit_does_not_crash() {
     );
     opened.engine.close().unwrap();
 }
+
+// ===== fix-21: char(30) in logical_id must be rejected at write time ===========
+
+/// A logical_id containing char(30) (ASCII RS = 0x1E, the BFS cycle-guard
+/// delimiter) must be rejected at write time. Allowing it would corrupt the
+/// instr-based visited-path substring test.
+#[test]
+fn write_rejects_logical_id_containing_record_separator() {
+    let dir = TempDir::new().unwrap();
+    let engine = Engine::open(db_path(&dir, "rs_reject")).expect("open failed").engine;
+
+    let bad_id = "A\x1eB"; // contains char(30)
+    let result = engine.write(&[PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: "body".to_string(),
+        source_id: None,
+        logical_id: Some(bad_id.to_string()),
+    }]);
+    assert!(
+        matches!(result, Err(EngineError::WriteValidation)),
+        "logical_id containing 0x1E must be rejected; got {result:?}"
+    );
+
+    engine.close().unwrap();
+}
+
+/// An edge with from/to containing char(30) must be rejected.
+#[test]
+fn write_rejects_edge_endpoint_containing_record_separator() {
+    let dir = TempDir::new().unwrap();
+    let engine = Engine::open(db_path(&dir, "rs_edge_reject")).expect("open failed").engine;
+
+    let result = engine.write(&[PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: "A".to_string(),
+        to: "B\x1eC".to_string(), // contains char(30)
+        source_id: None,
+        logical_id: None,
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    }]);
+    assert!(
+        matches!(result, Err(EngineError::WriteValidation)),
+        "edge to containing 0x1E must be rejected; got {result:?}"
+    );
+
+    engine.close().unwrap();
+}

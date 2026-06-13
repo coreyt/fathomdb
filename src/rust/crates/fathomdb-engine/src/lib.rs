@@ -1194,9 +1194,10 @@ impl Predicate {
                         "json_extract(body, '{path}') {op_str} ?{param_idx} \
                          AND json_type(body, '{path}') = 'integer'"
                     ),
-                    ScalarValue::Text(_) => {
-                        format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
-                    }
+                    ScalarValue::Text(_) => format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') = 'text'"
+                    ),
                 }
             }
         }
@@ -7267,8 +7268,10 @@ fn validate_write(
             }
             // G0 — an explicit logical_id must be non-empty (NULL/None is the
             // legacy default; an empty string is never a valid identity).
+            // Also reject char(30) = \x1e (ASCII RS), which is the BFS cycle-guard
+            // delimiter; allowing it would corrupt the visited-path substring test.
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
                 }
             }
@@ -7278,13 +7281,18 @@ fn validate_write(
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
+            // Reject char(30) in from/to: these become from_id/to_id in canonical_edges
+            // and appear in BFS visited strings — an \x1e there would corrupt the guard.
+            if from.contains('\x1e') || to.contains('\x1e') {
+                return Err(EngineError::WriteValidation);
+            }
             if let Some(source_id) = source_id {
                 if source_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
                 }
             }

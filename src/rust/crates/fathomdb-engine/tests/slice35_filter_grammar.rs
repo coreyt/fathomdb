@@ -513,3 +513,44 @@ fn read_list_bool_predicate_does_not_match_integer_field() {
         "integer-1 node must NOT match a Bool(true) predicate; got {ids:?}"
     );
 }
+
+// ===== fix-21: text comparison predicates must not cross-match integers ========
+
+/// A text `JsonPathCompare` must NOT match integer-valued JSON fields.
+/// Without `json_type = 'text'`, SQLite's type ordering (INTEGER < TEXT) means
+/// `priority < "zzz"` would match rows where priority is an integer, since
+/// SQLite considers INTEGER < any TEXT value.
+#[test]
+fn read_list_text_compare_does_not_match_integer_field() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // Two nodes: one with string status, one with integer priority.
+    // status="open" (text) should match status < "zzz"; priority=5 (integer) must NOT.
+    write_node(&engine, "STR_NODE", "task", r#"{"status":"open","priority":5}"#);
+
+    // Text comparison on $.status (a string field) — should match.
+    let pred_match = Predicate::json_path_compare(
+        "$.status",
+        ComparisonOp::Lt,
+        ScalarValue::Text("zzz".to_string()),
+    )
+    .expect("allowlisted path");
+    let rows = engine.read_list("task", &[pred_match], 100).expect("read_list");
+    let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(ids.contains(&"STR_NODE"), "string-valued field must match text compare; got {ids:?}");
+
+    // Text comparison on $.priority (an integer field in this body) — must NOT match.
+    let pred_no_match = Predicate::json_path_compare(
+        "$.priority",
+        ComparisonOp::Lt,
+        ScalarValue::Text("zzz".to_string()),
+    )
+    .expect("allowlisted path");
+    let rows2 = engine.read_list("task", &[pred_no_match], 100).expect("read_list");
+    let ids2: Vec<_> = rows2.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(
+        !ids2.contains(&"STR_NODE"),
+        "integer-priority node must NOT match text compare on that field; got {ids2:?}"
+    );
+}
