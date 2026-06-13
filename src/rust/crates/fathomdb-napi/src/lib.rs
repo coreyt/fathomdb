@@ -754,6 +754,7 @@ impl Engine {
         &self,
         query: String,
         filter: Option<SearchFilterInput>,
+        rerank_depth: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -798,8 +799,10 @@ impl Engine {
                 Some(rust)
             }
         });
+        // 0.8.1 R1: rerank_depth=None or 0 → soft-fallback (identity).
+        let depth = rerank_depth.unwrap_or(0) as usize;
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_filtered(&query, filter)).await?;
+        let result = call_engine(move || engine.search_reranked(&query, filter, depth)).await?;
         Ok(SearchResult::from_rust(result))
     }
 

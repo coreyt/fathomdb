@@ -91,8 +91,9 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
 /// (`IR-C-recall-cdf.json`, generated 2026-06-13).
 #[test]
 fn reranker_recall_gate_schema_pinned() {
+    // CARGO_MANIFEST_DIR = src/rust/crates/fathomdb-engine → 4 levels up = workspace root.
     let artifact_path =
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/plans/runs/IR-C-recall-cdf.json");
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../dev/plans/runs/IR-C-recall-cdf.json");
     let content = std::fs::read_to_string(artifact_path)
         .unwrap_or_else(|e| panic!("CDF artifact not found at {artifact_path}: {e}"));
     let json: serde_json::Value =

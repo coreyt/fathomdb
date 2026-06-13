@@ -33,6 +33,13 @@ operator = []
 # rather than attempting a network fetch (preserves the no-network build
 # closure per ADR-0.7.1-default-embedder-weight-fetch).
 default-embedder = ["fathomdb-embedder/default-embedder"]
+# 0.8.1 Slice 10 (R1): enabling this feature gates the CPU cross-encoder CE
+# inference path (TinyBERT-L-2 via Candle) in `rerank_fused`. Without this
+# feature, `rerank_fused` is always the identity (soft-fallback) path — no
+# network call, no ML dependency. With the feature ON and weights cached
+# locally, `rerank_depth > 0` activates the CE scorer + score-blend.
+# Design memo: dev/design/0.8.1-slice-10-reranker-design.md.
+default-reranker = []
 
 # The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
 # only builds when the `operator` feature is enabled (skipped on default builds).

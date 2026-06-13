@@ -629,10 +629,19 @@ impl PyEngine {
         Ok(PyWriteReceipt::from_rust(receipt))
     }
 
-    /// G10 — hybrid search with an optional closed metadata filter. Each filter
-    /// field is an optional kwarg; all-`None` is the unfiltered (byte-identical)
-    /// path. Mirrors the TS `search(query, filter?)` surface (binding parity).
-    #[pyo3(signature = (query, source_type=None, kind=None, created_after=None, status=None))]
+    /// G10 + 0.8.1 R1 — hybrid search with an optional closed metadata filter
+    /// and an optional CE rerank depth. Each filter field is an optional kwarg;
+    /// all-`None` is the unfiltered (byte-identical) path. `rerank_depth=0`
+    /// (default) keeps the identity / soft-fallback path. `rerank_depth > 0`
+    /// activates CE reranking over the top-N fused hits (when the
+    /// `default-reranker` feature is enabled and the model is loaded; otherwise
+    /// falls back to identity).
+    // 0.8.1 R1: rerank_depth adds the 7th arg (limit is 7); suppress lint.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(
+        signature = (query, source_type=None, kind=None, created_after=None,
+                     status=None, rerank_depth=0)
+    )]
     fn search(
         &self,
         py: Python<'_>,
@@ -641,6 +650,7 @@ impl PyEngine {
         kind: Option<Bound<'_, PyAny>>,
         created_after: Option<i64>,
         status: Option<Bound<'_, PyAny>>,
+        rerank_depth: usize,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -662,7 +672,9 @@ impl PyEngine {
         } else {
             None
         };
-        let result = call_engine(py, move || engine.search_filtered(&query, filter))?;
+        // 0.8.1 R1: use search_reranked so rerank_depth=0 is a no-op (identity)
+        // and rerank_depth>0 activates the CE path.
+        let result = call_engine(py, move || engine.search_reranked(&query, filter, rerank_depth))?;
         Ok(PySearchResult::from_rust(result))
     }
 

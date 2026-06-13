@@ -108,9 +108,32 @@ class Engine:
             dangling_edge_endpoints=receipt.dangling_edge_endpoints,
         )
 
-    def search(self, query: str, filter: SearchFilter | None = None) -> SearchResult:
+    def search(
+        self,
+        query: str,
+        filter: SearchFilter | None = None,
+        *,
+        rerank_depth: int = 0,
+    ) -> SearchResult:
+        """Hybrid search with optional CE reranking.
+
+        Args:
+            query: Free-text search query.
+            filter: Optional closed metadata filter (``SearchFilter``).
+            rerank_depth: 0 (default) = soft-fallback / identity (no CE).
+                N > 0 = rerank the top-N fused hits with the cross-encoder.
+                Must be a non-negative integer. Negative values raise
+                ``ValueError``.
+
+        Returns:
+            ``SearchResult`` with RRF-fused (and optionally CE-reranked) hits.
+        """
+        if rerank_depth < 0:
+            raise ValueError(
+                f"rerank_depth must be >= 0, got {rerank_depth!r}"
+            )
         if filter is None:
-            result = self._native.search(query)
+            result = self._native.search(query, rerank_depth=rerank_depth)
         else:
             result = self._native.search(
                 query,
@@ -118,6 +141,7 @@ class Engine:
                 kind=filter.kind,
                 created_after=filter.created_after,
                 status=filter.status,
+                rerank_depth=rerank_depth,
             )
         fallback = result.soft_fallback
         soft = (

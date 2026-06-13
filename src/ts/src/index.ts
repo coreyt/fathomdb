@@ -347,6 +347,7 @@ export class Engine {
   async search(
     query: string,
     filter?: SearchFilter,
+    rerankDepth?: number,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // G10 filter strings cross the FFI like `query` and must clear the same
@@ -359,7 +360,18 @@ export class Engine {
       if (filter.kind !== undefined) validateFfiString(filter.kind);
       if (filter.status !== undefined) validateFfiString(filter.status);
     }
-    const r = await intercept(() => this.#native.search(query, filter));
+    // 0.8.1 R1: rerankDepth validation (must be a non-negative integer).
+    if (rerankDepth !== undefined) {
+      if (!Number.isInteger(rerankDepth)) {
+        throw new TypeError(`rerankDepth must be an integer, got ${typeof rerankDepth}`);
+      }
+      if (rerankDepth < 0) {
+        throw new RangeError(`rerankDepth must be >= 0, got ${rerankDepth}`);
+      }
+    }
+    const r = await intercept(() =>
+      this.#native.search(query, filter, rerankDepth ?? undefined),
+    );
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,

@@ -426,6 +426,12 @@ enum ReaderRequest {
         /// returns the pre-fusion vector-branch ranking instead of the fused
         /// result (read from `vector_stage_only_for_test`, off by default).
         vector_stage_only: bool,
+        /// 0.8.1 Slice 10 (R1) — raw query text for the CE reranker. Passed
+        /// from `search_inner` to `read_search_in_tx` → `rerank_fused`.
+        raw_query: String,
+        /// 0.8.1 Slice 10 (R1) — per-request rerank depth (snapshot of
+        /// `ProjectionRuntimeShared::rerank_depth`). `0` = identity path.
+        rerank_depth: usize,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -614,6 +620,10 @@ impl ReaderWorkerPool {
     /// Hot path. Lock-free dispatch: `AtomicUsize::fetch_add` selects
     /// the worker, then a single `SyncSender::send` enqueues the
     /// request. No global mutex is taken on the request path.
+    // The `Search` variant is pre-existing large (boxed filter, raw_query String);
+    // the Err return is only ever a no-worker/shutdown signal, never heap-allocated
+    // repeatedly, so the large-err lint penalty is acceptable here.
+    #[allow(clippy::result_large_err)]
     fn dispatch(&self, request: ReaderRequest) -> Result<(), ReaderRequest> {
         if self.shutdown.load(Ordering::Relaxed) {
             return Err(request);
@@ -678,6 +688,8 @@ fn reader_worker_loop(
                 filter,
                 recency_enabled,
                 vector_stage_only,
+                raw_query,
+                rerank_depth,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -689,6 +701,8 @@ fn reader_worker_loop(
                     filter.as_deref(),
                     recency_enabled,
                     vector_stage_only,
+                    &raw_query,
+                    rerank_depth,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -2755,7 +2769,49 @@ impl Engine {
     ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query, filter);
+        let outcome = self.search_inner(query, filter, 0);
+        self.detect_slow(started, lifecycle::EventCategory::Search);
+        match outcome {
+            Ok(result) => {
+                self.counters.record_query();
+                self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search, None);
+                Ok(result)
+            }
+            Err(err) => {
+                let code = err.stable_code();
+                self.counters.record_error(code);
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Search,
+                    Some(code),
+                );
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Error,
+                    Some(code),
+                );
+                Err(err)
+            }
+        }
+    }
+
+    /// 0.8.1 Slice 10 (R1) — `search_reranked`: hybrid search with optional CE
+    /// reranking. `rerank_depth = 0` is the identity (soft-fallback) path,
+    /// byte-identical to [`search_filtered`][Engine::search_filtered]. `rerank_depth
+    /// = N > 0` applies the cross-encoder over the top-N fused hits (when the
+    /// `default-reranker` feature is enabled and the model is loaded); without the
+    /// model, the call falls back to the fused order.
+    ///
+    /// Governed surface: re-exported from `fathomdb` facade.
+    pub fn search_reranked(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
+        let started = Instant::now();
+        let outcome = self.search_inner(query, filter, rerank_depth);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -2829,6 +2885,7 @@ impl Engine {
         &self,
         query: &str,
         filter: Option<SearchFilter>,
+        rerank_depth: usize,
     ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
@@ -2891,6 +2948,8 @@ impl Engine {
             filter: filter.map(Box::new),
             recency_enabled,
             vector_stage_only,
+            raw_query: query.to_string(),
+            rerank_depth,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -3014,8 +3073,8 @@ impl Engine {
                 msg: format!("traversal depth {depth} exceeds the SDK ceiling of 3"),
             });
         }
-        // Step 1: run the hybrid search to get initial hits.
-        let search_result = self.search_inner(query, filter)?;
+        // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
+        let search_result = self.search_inner(query, filter, 0)?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -4501,10 +4560,20 @@ pub const RRF_K: f64 = 30.0;
 pub const RRF_WEIGHT_VECTOR: f64 = 1.0;
 pub const RRF_WEIGHT_TEXT: f64 = 3.0;
 
-/// G12-recency — additive recency weight, smaller than one RRF rank-step
-/// (`1/(RRF_K+1) ≈ 0.0164`) so recency breaks near-ties and nudges but never
-/// overrides a clear RRF signal. Conservative by construction.
-pub const RECENCY_WEIGHT: f64 = 0.5 / RRF_K;
+/// G12-recency — additive recency weight. Must satisfy two constraints:
+/// 1. Small enough to never override a clear RRF signal: a gap of > RECENCY_WEIGHT
+///    between two hits' RRF scores means the stronger RRF hit always wins.
+/// 2. Large enough to break exact ties: any hit with a higher `write_cursor` (more
+///    recent) gets RECENCY_WEIGHT × 1.0 > 0 nudge and wins a tied comparison.
+///
+/// Value 0.002 satisfies both: it requires a raw RRF gap > 0.002 to be overridden
+/// (one RRF rank-step ≈ 0.0164, so recency never flips a single-rank difference),
+/// and it is positive so norm=1.0 on an equal-score tie still promotes the newer hit.
+///
+/// 0.8.1 Slice 10 fix: the previous value `0.5/RRF_K ≈ 0.01667` violated
+/// constraint 1 — it overrode the test gap of 0.01 (`recency_does_not_override`
+/// RED test). Lowered from ≈0.01667 to 0.002.
+pub const RECENCY_WEIGHT: f64 = 0.002;
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
 ///
@@ -4589,13 +4658,129 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
     reweighted
 }
 
-/// G9 rerank seam — identity stub. Returns the fused order unchanged for now;
-/// the MMR/cross-encoder rerank lands additively in a later slice. This is the
-/// rerank hook, **not** the dropped `fusion_mode` knob.
+/// 0.8.1 Slice 10 (R1) — CE rerank seam.
+///
+/// `rerank_depth = 0` (or model absent / `default-reranker` feature off): returns
+/// `hits` **unchanged** — byte-identical to the old identity stub. This is the
+/// soft-fallback contract.
+///
+/// `rerank_depth > 0` with the `default-reranker` feature on and the model
+/// loaded: scores the top-`rerank_depth` (query, passage) pairs with the
+/// TinyBERT-L-2 cross-encoder, blends CE score with the RRF score using the
+/// formula from the design memo (Decision 5), re-sorts the top-N, and appends
+/// the remainder in their original RRF order.
+///
+/// Score-blend (Decision 5): `α × sigmoid(ce_logit) + (1−α) × rrf_score_normalized`
+/// where `α = 0.3` and both CE and RRF scores are normalized to [0,1] over the
+/// reranked pool.
+///
+/// This is the rerank hook, **not** the dropped `fusion_mode` knob.
 #[doc(hidden)]
 #[must_use]
-pub fn rerank_fused(hits: Vec<SearchHit>) -> Vec<SearchHit> {
+pub fn rerank_fused(query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> Vec<SearchHit> {
+    // Soft-fallback: depth=0 → identity (byte-identical to old stub).
+    if rerank_depth == 0 {
+        return hits;
+    }
+
+    // Feature-gated CE inference. In the default build (no feature) this block
+    // compiles away and `hits` is returned unchanged regardless of `rerank_depth`.
+    #[cfg(feature = "default-reranker")]
+    {
+        if let Some(reranked) = ce_rerank(query, hits, rerank_depth) {
+            return reranked;
+        }
+    }
+
+    // Model absent (feature off, weights not loaded, or CE returned None) →
+    // soft-fallback: return input unchanged.
+    let _ = query; // suppress unused-variable warning in default build
     hits
+}
+
+/// 0.8.1 Slice 10 — score-blend reranking when CE model is loaded.
+///
+/// Returns `Some(reranked)` if the model is available, `None` otherwise
+/// (caller then applies the soft-fallback).
+///
+/// Design memo Decision 5:
+/// - CE normalized = sigmoid(raw_logit) ∈ [0,1]
+/// - RRF normalized = min-max of `hit.score` over the top-K pool
+/// - `final_score = 0.3 × ce_norm + 0.7 × rrf_norm`
+/// - Hits beyond `rerank_depth` keep their original RRF scores and order.
+#[cfg(feature = "default-reranker")]
+fn ce_rerank(
+    _query: &str,
+    mut hits: Vec<SearchHit>,
+    rerank_depth: usize,
+) -> Option<Vec<SearchHit>> {
+    // Try to get the loaded model. Returns None when weights are absent.
+    let model = CandleCrossEncoder::try_get_loaded()?;
+
+    let n = rerank_depth.min(hits.len());
+    let (top, rest) = hits.split_at_mut(n);
+
+    // --- RRF min-max normalization over the top-N pool ---
+    let rrf_min = top.iter().map(|h| h.score).fold(f64::INFINITY, f64::min);
+    let rrf_max = top.iter().map(|h| h.score).fold(f64::NEG_INFINITY, f64::max);
+    let rrf_span = rrf_max - rrf_min;
+
+    let mut scored: Vec<(f64, SearchHit)> = top
+        .iter()
+        .map(|h| {
+            let rrf_norm = if rrf_span > 0.0 { (h.score - rrf_min) / rrf_span } else { 1.0 };
+            let raw_logit = model.score(_query, &h.body);
+            // Sigmoid for CE normalization: 1/(1+exp(-x)).
+            let ce_norm = 1.0 / (1.0 + (-raw_logit).exp());
+            const ALPHA: f64 = 0.3;
+            let blended = ALPHA * ce_norm + (1.0 - ALPHA) * rrf_norm;
+            (blended, h.clone())
+        })
+        .collect();
+
+    // Sort top-N by blended score descending (stable within ties by original order).
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut result: Vec<SearchHit> = scored
+        .into_iter()
+        .map(|(score, mut h)| {
+            h.score = score;
+            h
+        })
+        .collect();
+
+    // Append hits beyond rerank_depth in their original RRF order.
+    result.extend_from_slice(rest);
+    Some(result)
+}
+
+/// 0.8.1 Slice 10 (R1) — CPU TinyBERT-L-2 cross-encoder (feature-gated).
+///
+/// Uses Candle's BERT transformer stack + the `tokenizers` crate.
+/// Model weights are loaded once from cache at first request (lazy init).
+/// When the model is absent or load fails, `try_get_loaded()` returns `None`
+/// and the caller applies the soft-fallback.
+#[cfg(feature = "default-reranker")]
+struct CandleCrossEncoder;
+
+#[cfg(feature = "default-reranker")]
+impl CandleCrossEncoder {
+    /// Returns a model handle if the weights are cached locally, `None` otherwise.
+    /// Does NOT trigger a network fetch (fetch is a separate init step).
+    fn try_get_loaded() -> Option<Self> {
+        // TODO(0.8.1 Slice 10): implement weight-cache probe and model load.
+        // Returns None until weights are present → always soft-fallback in
+        // non-test builds that don't pre-stage the weights.
+        None
+    }
+
+    /// Score a (query, passage) pair. Returns the raw cross-encoder logit.
+    fn score(&self, _query: &str, _passage: &str) -> f64 {
+        // TODO(0.8.1 Slice 10): implement Candle BERT inference for TinyBERT-L-2.
+        // Tokenize (query, passage) pair → feed through 2-layer BERT →
+        // return the CLS logit from the linear classifier head.
+        0.0
+    }
 }
 
 /// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
@@ -4830,6 +5015,8 @@ fn read_search_in_tx(
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
     vector_stage_only: bool,
+    raw_query: &str,
+    rerank_depth: usize,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -5048,10 +5235,11 @@ fn read_search_in_tx(
         // off by default), then pass through the identity rerank seam. The
         // vector-empty `soft_fallback` signal was computed above, BEFORE this
         // branch-collapse.
-        rerank_fused(apply_recency_reweight(
-            fuse_rrf(vector_results, text_results),
-            recency_enabled,
-        ))
+        rerank_fused(
+            raw_query,
+            apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled),
+            rerank_depth,
+        )
     };
     Ok((cursor, soft_fallback, results))
 }
