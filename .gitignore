@@ -60,3 +60,9 @@ credentials.*
 *.swp
 *.swo
 *~
+
+# Top-level recovery shim (NOT the SDK source, which is src/python/). This is a
+# sourceless, recovered fathomdb binding (.pyc + .so, setuptools, pinned 0.1.0)
+# that Memex installs as a uv path dependency (`../fathomdb/python`). Keep it on
+# disk for Memex; ignore it here. Root-anchored so it never matches src/python/.
+/python/

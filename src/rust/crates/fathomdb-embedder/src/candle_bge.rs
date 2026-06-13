@@ -56,12 +56,50 @@ pub const DEFAULT_EMBEDDER_DIM: u32 = 384;
 /// `truncation True` / max 512.
 const MAX_SEQUENCE_TOKENS: usize = 512;
 
+/// Sentence-vector pooling strategy. `bge-small-en-v1.5` ships
+/// `1_Pooling/config.json` with `pooling_mode_cls_token: true`, i.e. it is a
+/// CLS-pooled model; BGE's docs warn that mean-pooling causes "a significant
+/// decrease in performance". `Mean` is the historical default (design §0.4);
+/// `Cls` is the model-correct mode, under evaluation behind the 1-bit binary
+/// recall-floor gate (it changes the embedding-space geometry that sign-bit
+/// quantization is sensitive to). See `dev/notes/IR-C-embedder-options-research.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pooling {
+    /// Mean over the attention mask (historical default; design §0.4).
+    Mean,
+    /// `[CLS]` token (position 0) — the mode bge-small was trained for.
+    Cls,
+}
+
+/// L2-normalize a `(1, D)` pooled tensor.
+fn l2_normalize(pooled: &Tensor) -> candle_core::Result<Tensor> {
+    let norm = pooled.sqr()?.sum_keepdim(1)?.sqrt()?;
+    let norm = norm.clamp(1e-12_f32, f32::INFINITY)?;
+    pooled.broadcast_div(&norm)
+}
+
+/// Mean-pool `(1, L, D)` hidden states over the attention mask → `(1, D)`. Pad
+/// positions contribute zero; divide by the non-pad token count, not by L.
+fn mean_pool(hidden: &Tensor, attn_mask_u32: &Tensor) -> candle_core::Result<Tensor> {
+    let mask_f = attn_mask_u32.to_dtype(DType::F32)?.unsqueeze(2)?; // (1, L, 1)
+    let mask_f = mask_f.broadcast_as(hidden.shape())?; // (1, L, D)
+    let summed = (hidden * &mask_f)?.sum(1)?; // (1, D)
+    let counts = mask_f.sum(1)?.clamp(1e-9_f32, f32::INFINITY)?; // (1, D)
+    summed / counts
+}
+
+/// CLS-pool: take the `[CLS]` token at position 0 of `(1, L, D)` → `(1, D)`.
+fn cls_pool(hidden: &Tensor) -> candle_core::Result<Tensor> {
+    hidden.narrow(1, 0, 1)?.squeeze(1)
+}
+
 /// Default embedder backed by `candle-transformers` BERT.
 pub struct CandleBgeEmbedder {
     identity: EmbedderIdentity,
     tokenizer: Tokenizer,
     model: BertModel,
     device: Device,
+    pooling: Pooling,
 }
 
 impl CandleBgeEmbedder {
@@ -143,7 +181,17 @@ impl CandleBgeEmbedder {
         let identity =
             EmbedderIdentity::new(DEFAULT_EMBEDDER_NAME, HF_REVISION, DEFAULT_EMBEDDER_DIM);
 
-        Ok(Self { identity, tokenizer, model, device })
+        Ok(Self { identity, tokenizer, model, device, pooling: Pooling::Mean })
+    }
+
+    /// Select the pooling strategy (default [`Pooling::Mean`]). Does NOT change
+    /// the embedder identity (pooling is not part of the model identity), so
+    /// stored vectors from a different pooling are incompatible — use only on a
+    /// fresh workspace / in measurement harnesses until the CLS↔binary-floor gate
+    /// is settled.
+    pub fn with_pooling(mut self, pooling: Pooling) -> Self {
+        self.pooling = pooling;
+        self
     }
 }
 
@@ -175,24 +223,45 @@ impl Embedder for CandleBgeEmbedder {
             // internally builds the additive mask. (B, L, D) f32 out.
             let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask_u32))?;
 
-            // Mean-pool over the attention mask (design §0.4). Pad
-            // positions contribute zero; we divide by the count of
-            // non-pad tokens, not by L.
-            let mask_f = attn_mask_u32.to_dtype(DType::F32)?.unsqueeze(2)?; // (1, L, 1)
-            let mask_f = mask_f.broadcast_as(hidden.shape())?; // (1, L, D)
-            let summed = (hidden * &mask_f)?.sum(1)?; // (1, D)
-            let counts = mask_f.sum(1)?.clamp(1e-9_f32, f32::INFINITY)?; // (1, D)
-            let pooled = (summed / counts)?; // (1, D)
-
-            // L2-normalize (design §0.4).
-            let norm = pooled.sqr()?.sum_keepdim(1)?.sqrt()?; // (1, 1)
-            let norm = norm.clamp(1e-12_f32, f32::INFINITY)?;
-            let normed = pooled.broadcast_div(&norm)?; // (1, D)
+            // Pool (design §0.4 = Mean; Cls is the model-native mode, gated) then
+            // L2-normalize.
+            let pooled = match self.pooling {
+                Pooling::Mean => mean_pool(&hidden, &attn_mask_u32)?,
+                Pooling::Cls => cls_pool(&hidden)?,
+            };
+            let normed = l2_normalize(&pooled)?; // (1, D)
 
             let v: Vec<f32> = normed.squeeze(0)?.to_vec1::<f32>()?;
             Ok(v)
         };
 
         embed_impl().map_err(|e| EmbedderError::Failed { message: format!("forward: {e}") })
+    }
+}
+
+impl CandleBgeEmbedder {
+    /// Measurement-only: ONE forward pass → both the mean-pooled and CLS-pooled
+    /// L2-normalized vectors, so an A/B harness can compare pooling strategies
+    /// without paying the (dominant) embedding cost twice. Returns
+    /// `(mean_pooled, cls_pooled)`. Not part of the `Embedder` trait.
+    pub fn embed_dual_for_test(&self, input: &str) -> Result<(Vector, Vector), EmbedderError> {
+        let encoding = self
+            .tokenizer
+            .encode(input, true)
+            .map_err(|e| EmbedderError::Failed { message: format!("tokenize: {e}") })?;
+        let ids: Vec<u32> = encoding.get_ids().to_vec();
+        let attn: Vec<u32> = encoding.get_attention_mask().to_vec();
+        let len = ids.len();
+
+        let dual = || -> candle_core::Result<(Vec<f32>, Vec<f32>)> {
+            let input_ids = Tensor::from_vec(ids, (1, len), &self.device)?;
+            let attn_mask_u32 = Tensor::from_vec(attn, (1, len), &self.device)?;
+            let token_type_ids = input_ids.zeros_like()?;
+            let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask_u32))?;
+            let mean = l2_normalize(&mean_pool(&hidden, &attn_mask_u32)?)?.squeeze(0)?.to_vec1()?;
+            let cls = l2_normalize(&cls_pool(&hidden)?)?.squeeze(0)?.to_vec1()?;
+            Ok((mean, cls))
+        };
+        dual().map_err(|e| EmbedderError::Failed { message: format!("forward: {e}") })
     }
 }

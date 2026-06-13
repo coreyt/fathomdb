@@ -25,8 +25,7 @@ use ir_eval::{load_gold_set, required_doc_ids, validate_gold_set, QueryClass};
 
 /// The frozen 0.8.x-B corpus hash (mirrors `tests/corpus/snapshot.json`); the
 /// resolved gold must be pinned to exactly this snapshot.
-const FROZEN_CORPUS_HASH: &str =
-    "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e";
+const FROZEN_CORPUS_HASH: &str = "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e";
 
 fn gold_path(name: &str) -> Option<PathBuf> {
     let root = corpus_subset::repo_root()?;

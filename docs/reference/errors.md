@@ -1,7 +1,7 @@
 # Errors
 
 Single-rooted exception hierarchy. Python root is `EngineError`; TS
-root is `FathomDbError`. Both bindings expose 1:1 the same 18 leaf
+root is `FathomDbError`. Both bindings expose 1:1 the same 20 leaf
 classes (idiomatic spelling: Python snake_case payload fields, TS
 camelCase). Panic carriers are deliberately outside the catch-all
 root.
@@ -57,6 +57,9 @@ try {
 | `MigrationError`                   | Migration step failed                                                         | —                                                                        | see `doctor check-integrity`; may require `recover` |
 | `EmbedderIdentityMismatchError`    | Configured embedder identity differs from stored                              | `stored_name`, `stored_revision`, `supplied_name`, `supplied_revision`   | restore prior embedder OR re-embed with new identity |
 | `EmbedderDimensionMismatchError`   | Configured embedder dimension differs from stored                             | `stored`, `supplied`                                                     | restore prior dimension OR re-embed |
+| `ExtractorError`                   | BYO-LLM extraction harness protocol error (Slice 15 / G11)                   | —                                                                        | check extractor command + stderr |
+| `InvalidArgumentError`             | Invalid argument — e.g. `depth > 3` in `graph.neighbors` (Slice 20 / G5/G6)  | —                                                                        | fix the call argument |
+| `InvalidFilterError`               | Invalid filter predicate — e.g. non-allowlisted `json_path` in `read.list` (Slice 35 / G4) | —                                                               | use an allowlisted path (`$.status`, `$.priority`, `$.tags`, `$.kind`, `$.created_at`) |
 
 ## Recovery hint codes
 

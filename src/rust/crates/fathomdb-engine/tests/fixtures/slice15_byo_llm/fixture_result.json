@@ -1,0 +1,121 @@
+{
+  "doc-simple": {
+    "entities": [
+      {
+        "name": "Alice",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-simple"
+      },
+      {
+        "name": "Project X",
+        "type": "project",
+        "aliases": [],
+        "source_doc_id": "doc-simple"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Alice",
+        "relation": "owns",
+        "to_entity": "Project X",
+        "body": "Alice owns the project",
+        "t_valid": null,
+        "t_invalid": null,
+        "confidence": 0.95,
+        "source_doc_id": "doc-simple"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-temporal": {
+    "entities": [
+      {
+        "name": "Bob",
+        "type": "person",
+        "aliases": [],
+        "source_doc_id": "doc-temporal"
+      },
+      {
+        "name": "Acme Corp",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-temporal"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Bob",
+        "relation": "works_for",
+        "to_entity": "Acme Corp",
+        "body": "Bob works for Acme Corp",
+        "t_valid": "2020-01-01T00:00:00Z",
+        "t_invalid": null,
+        "confidence": 0.88,
+        "source_doc_id": "doc-temporal"
+      }
+    ],
+    "warnings": [
+      {
+        "kind": "supersedes",
+        "supersedes_hint": "same (from_entity, relation, to_entity) tuple",
+        "prior_body": "Bob worked for Acme Corp"
+      }
+    ]
+  },
+  "doc-multi": {
+    "entities": [
+      {
+        "name": "Carol",
+        "type": "person",
+        "aliases": ["C. Smith"],
+        "source_doc_id": "doc-multi"
+      },
+      {
+        "name": "DataCo",
+        "type": "organization",
+        "aliases": [],
+        "source_doc_id": "doc-multi"
+      },
+      {
+        "name": "Platform Y",
+        "type": "product",
+        "aliases": [],
+        "source_doc_id": "doc-multi"
+      }
+    ],
+    "edges": [
+      {
+        "from_entity": "Carol",
+        "relation": "leads",
+        "to_entity": "DataCo",
+        "body": "Carol leads DataCo",
+        "t_valid": null,
+        "t_invalid": null,
+        "confidence": 0.90,
+        "source_doc_id": "doc-multi"
+      },
+      {
+        "from_entity": "DataCo",
+        "relation": "builds",
+        "to_entity": "Platform Y",
+        "body": "DataCo builds Platform Y",
+        "t_valid": null,
+        "t_invalid": null,
+        "confidence": 0.85,
+        "source_doc_id": "doc-multi"
+      }
+    ],
+    "warnings": []
+  },
+  "doc-nofacts": {
+    "entities": [],
+    "edges": [],
+    "warnings": [
+      {
+        "kind": "no_facts",
+        "source_doc_id": "doc-nofacts"
+      }
+    ]
+  }
+}

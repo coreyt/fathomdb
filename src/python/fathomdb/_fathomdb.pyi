@@ -52,6 +52,12 @@ class OpStoreRow:
     schema_id: str | None
     write_cursor: int
 
+class IngestWithExtractorReceipt:
+    """G11 (Slice 15) — BYO-LLM ingest receipt."""
+    nodes_written: int
+    edges_written: int
+    docs_processed: int
+
 class MigrationStepReport:
     step_id: int
     duration_ms: int | None
@@ -96,9 +102,23 @@ class Engine:
         kind: str | None = ...,
         created_after: int | None = ...,
         status: str | None = ...,
+        rerank_depth: int = ...,
     ) -> SearchResult: ...
     def close(self) -> None: ...
     def drain(self, timeout_s: float = ...) -> None: ...
+    def ingest_with_extractor(
+        self,
+        cmd: list[str],
+        documents: list[dict[str, str]],
+    ) -> IngestWithExtractorReceipt:
+        """G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+        speaking the fathomdb.extract.v1 protocol, extract entities + edges from
+        documents, and write them to the store.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+        ...
     def counters(self) -> CounterSnapshot: ...
     def set_profiling(self, enabled: bool) -> None: ...
     def set_slow_threshold_ms(self, value: int) -> None: ...
@@ -107,6 +127,25 @@ class Engine:
         logger: Any,
         heartbeat_interval_ms: int | None = ...,
     ) -> None: ...
+
+# Slice 20 (G5/G6) — graph traversal result types.
+
+class ExpandedNode:
+    """One node reached by BFS traversal that is NOT in the search hit set."""
+
+    node: NodeRecord
+    hop_count: int
+
+class SearchExpandResult:
+    """G6 result: original search hits + graph-expanded neighbors.
+
+    Deduplication rule: a node in ``search_hits`` will NOT appear in
+    ``expanded`` (search score takes priority).
+    """
+
+    search_hits: list[SearchHit]
+    expanded: list[ExpandedNode]
+    all_logical_ids: list[str]
 
 def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
 def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
@@ -123,6 +162,45 @@ def read_mutations(
     after_id: int | None = ...,
     limit: int = ...,
 ) -> list[OpStoreRow]: ...
+def read_list(
+    engine: Engine,
+    kind: str,
+    predicates: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
+def graph_neighbors(
+    engine: Engine,
+    logical_id: str,
+    depth: int,
+    direction: str,
+) -> list[NodeRecord]:
+    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+
+    ``depth`` must be 1–3; raises ``InvalidArgumentError`` for depth > 3.
+    ``direction`` is one of ``"outgoing"``, ``"incoming"``, or ``"both"``.
+    Returns nodes reachable within ``depth`` hops, hard-capped at 50.
+    Valid-time filter: edges with ``t_invalid`` in the past are not traversed.
+    """
+    ...
+
+def search_expand(
+    engine: Engine,
+    query: str,
+    depth: int,
+    source_type: str | None = ...,
+    kind: str | None = ...,
+    created_after: int | None = ...,
+    status: str | None = ...,
+) -> SearchExpandResult:
+    """G6 — FTS/vector search followed by bounded BFS expansion.
+
+    Runs ``search(query, ...)`` (G1), then expands each hit node via
+    ``graph_neighbors(depth, both)``. Nodes that are both search hits
+    and traversal neighbors appear only in ``search_hits`` (deduplicated).
+    """
+    ...
+
+
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...
@@ -178,3 +256,12 @@ class EmbedderDimensionMismatchError(EngineError):
     stored: int
     supplied: int
     def __init__(self, *args: Any, stored: int = ..., supplied: int = ...) -> None: ...
+
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+class ExtractorError(EngineError): ...
+
+# G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+class InvalidFilterError(EngineError): ...
+
+# Slice 20 — depth > 3 or other argument validation failure.
+class InvalidArgumentError(EngineError): ...

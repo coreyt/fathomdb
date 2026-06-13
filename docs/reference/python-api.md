@@ -69,13 +69,21 @@ writer thread has accepted the batch.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter=None) -> SearchResult`
+### `engine.search(query, filter=None, *, rerank_depth=0) -> SearchResult`
 
-Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**.
+Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**,
+with optional CPU cross-encoder reranking (0.8.1 R1).
 
 - `query` (`str`).
 - `filter` ([`SearchFilter`](#searchfilter) | `None`) — optional closed metadata
   filter. `None` (or an all-`None` filter) is the unfiltered path.
+- `rerank_depth` (`int`, default `0`) — 0.8.1 R1 opt-in. `0` (default) uses the
+  identity / soft-fallback path: byte-identical to the pre-0.8.1 fused order.
+  `N > 0` applies a CPU cross-encoder (TinyBERT-L-2, ≈4 MB, p50 ≈ 1.5 ms/pair)
+  over the top-N fused hits using score-blend (α=0.3 × CE + 0.7 × RRF-norm).
+  Must be a non-negative integer; negative values raise `ValueError`. In the
+  default build (no `default-reranker` feature), depth > 0 returns the identity
+  order (model absent → soft-fallback).
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
@@ -167,6 +175,77 @@ next page.
 
 Mutation-log-oriented alias surface over the **same** op-store read-back as
 `read.collection` (identical args + semantics).
+
+### `read.list(engine, kind, predicates=None, *, limit=100) -> list[NodeRecord]`
+
+*(G4 / Slice 35)* List **active** `canonical_nodes` of the given `kind`
+(`superseded_at IS NULL`), optionally filtered by a list of closed
+`Predicate` dicts (AND-combined), up to `limit` rows (default 100).
+
+Each predicate dict has the shape:
+
+```python
+{"type": "eq"|"gt"|"gte"|"lt"|"lte", "path": str, "value": str | int | bool}
+```
+
+`path` must be from the engine allowlist: `$.status`, `$.priority`,
+`$.tags`, `$.kind`, `$.created_at`. A non-allowlisted path raises
+`InvalidFilterError` (never a panic). Values are **always bound as
+parameterized SQL** — never interpolated (injection-safe per ADR
+D-F4). An empty `predicates` (or `None`) is the unfiltered path.
+
+```python
+from fathomdb import Engine, read
+from fathomdb.errors import InvalidFilterError
+
+engine = Engine.open("my.db")
+# All active task nodes:
+tasks = read.list(engine, "task")
+# Filtered: open tasks with priority > 5:
+open_high = read.list(engine, "task", predicates=[
+    {"type": "eq",  "path": "$.status",   "value": "open"},
+    {"type": "gt",  "path": "$.priority", "value": 5},
+])
+```
+
+## `graph.*` — graph traversal (Slice 20 / G5 + G6)
+
+```python
+from fathomdb import graph
+```
+
+The `graph.*` namespace exposes bounded BFS traversal and hybrid
+search-plus-expansion. All reads ride the same **ReaderWorkerPool
+DEFERRED-tx snapshot path** as `read.*`.
+
+### `graph.neighbors(engine, logical_id, depth, direction="both") -> list[NodeRecord]`
+
+G5 — bounded BFS from `logical_id` over `canonical_edges`.
+
+- `logical_id` (`str`) — the root node's stable identity.
+- `depth` (`int`) — hop limit; **must be 1, 2, or 3**.
+  Depth > 3 raises `InvalidArgumentError`.
+- `direction` (`str`) — edge direction to follow: `"outgoing"` (from→to),
+  `"incoming"` (to→from), or `"both"`.
+
+Returns up to **50** `NodeRecord`s reachable within `depth` hops
+(root excluded). Edges with `t_invalid` in the past are silently skipped
+(valid-time filter). Returns `[]` when the root has no reachable neighbors.
+
+Raises `InvalidArgumentError` for depth > 3 or an unrecognised direction.
+
+### `graph.search_expand(engine, query, depth, *, source_type=None, kind=None, created_after=None, status=None) -> SearchExpandResult`
+
+G6 — FTS/vector search (G1) followed by bounded BFS expansion.
+
+- `query` (`str`) — free-text or embedding query (same as `engine.search`).
+- `depth` (`int`) — BFS hop limit for expansion; 0 skips expansion.
+  Depth > 3 raises `InvalidArgumentError`.
+- Optional filter kwargs match `engine.search` semantics.
+
+Returns a `SearchExpandResult`. Nodes that appear in both the search hit set
+and the traversal reach appear **only** in `search_hits` (deduplication:
+search score takes priority).
 
 ## Data shapes
 
@@ -295,9 +374,34 @@ class CounterSnapshot:
     cache_miss: int = 0
 ```
 
+### `ExpandedNode`
+
+```python
+@dataclass(frozen=True)
+class ExpandedNode:
+    node: NodeRecord      # the reachable node
+    hop_count: int        # BFS distance from the nearest search-hit root
+```
+
+Returned in `SearchExpandResult.expanded`. Only nodes NOT already in
+`search_hits` appear here.
+
+### `SearchExpandResult`
+
+```python
+@dataclass(frozen=True)
+class SearchExpandResult:
+    search_hits: list[SearchHit]     # original RRF-scored search results
+    expanded: list[ExpandedNode]     # nodes reachable by traversal, not in search_hits
+    all_logical_ids: list[str]       # deduplicated union of both sets
+```
+
+Returned by `graph.search_expand`. `all_logical_ids` contains the
+`logical_id` strings for every node in both `search_hits` and `expanded`.
+
 ## Errors
 
-`fathomdb.errors` exports `EngineError` (the catch-all base) plus 18
+`fathomdb.errors` exports `EngineError` (the catch-all base) plus 20
 concrete leaf classes. See [errors reference](errors.md) for the full
 matrix and recovery-hint codes.
 

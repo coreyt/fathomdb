@@ -1,0 +1,149 @@
+{
+  "slice": "0.8.1-slice-5",
+  "title": "R0: candidate-recall CDF + rerank cost model",
+  "status": "MERGED",
+  "baseline_sha": "101a3b08ef944b19305eeb12472810da7b2fc20f",
+  "head_sha": "1d65ec110f630a495a1d64558cd374d060d69143",
+  "worktree": "/tmp/fdb-slice-5-20260613T041938Z",
+  "branch": "slice-5-20260613T041938Z",
+  "merged_to": "main",
+  "merge_sha": "1d65ec110f630a495a1d64558cd374d060d69143",
+
+  "deliverables": {
+    "rust_test": "src/rust/crates/fathomdb-engine/tests/ir_c_cdf_run.rs",
+    "ce_latency_script": "dev/scripts/ir_c_ce_latency.py",
+    "cdf_artifact": "dev/plans/runs/IR-C-recall-cdf.json",
+    "findings_doc": "dev/plans/runs/IR-C-r0-findings.md",
+    "design_memo": "dev/design/slice-5-design.md",
+    "doc_index_updated": true
+  },
+
+  "cdf_run": {
+    "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+    "docs_seeded": 10506,
+    "eligible_queries": 4472,
+    "seed_time_seconds": 4146,
+    "query_time_seconds": 1649,
+    "total_time_seconds": 5796,
+    "recall_cdf_rows": 40,
+    "headline": {
+      "rrf_fused_exact_fact_at_1000": 0.9844,
+      "rrf_fused_exploratory_at_1000": 0.8649,
+      "bm25_text_exact_fact_at_1000": 0.9851,
+      "bm25_text_exploratory_at_1000": 0.8592,
+      "dense_exact_fact_at_1000": 0.653,
+      "dense_exploratory_at_1000": 0.3226,
+      "oracle_union_exact_fact_at_1000": 0.9872,
+      "oracle_union_exploratory_at_1000": 0.8725
+    },
+    "depth_50_ceiling": {
+      "rrf_fused_exact_fact": 0.9501,
+      "rrf_fused_exploratory": 0.5101
+    }
+  },
+
+  "ce_latency": {
+    "tinybert_l2_p50_ms": 1.536,
+    "tinybert_l2_p95_ms": 2.85,
+    "minilm_l12_p50_ms": 16.821,
+    "minilm_l12_p95_ms": 36.969,
+    "hardware": "AMD Ryzen Threadripper PRO 5945WX (24 logical CPUs)",
+    "n_pairs": 1000
+  },
+
+  "key_findings": [
+    "Dense arm (BGE-small-en HNSW) saturates at K=200 for both classes — flat 0.653 exact_fact and 0.323 exploratory from K=200 to K=1000",
+    "BM25 (text_only) dominates for exact_fact queries; rrf_fused adds marginal value over BM25 alone for exact_fact",
+    "For exploratory, rrf_fused outperforms bm25 at K>=200 but gains are small (+0.6pp at K=1000)",
+    "Depth-50 ceiling: exact_fact=0.950 (high, K=50 sufficient), exploratory=0.510 (low, needs deeper retrieval)",
+    "Recommended Slice 10 rerank depth: K=200 (21.8pp improvement for exploratory vs K=50, fits AC-013 budget with TinyBERT-L-2)",
+    "Oracle ceiling at K=200: exact_fact=0.973, exploratory=0.764 — sets Slice 10 maximum"
+  ],
+
+  "self_check": {
+    "schema_test_passes": true,
+    "cdf_artifact_committed": true,
+    "findings_doc_written": true,
+    "doc_index_updated": true,
+    "clippy_clean": true,
+    "full_suite_status": "1 pre-existing failure (recency_does_not_override_a_clear_rrf_signal in pr_g12_recency.rs — introduced by concurrent slice work, NOT from Slice 5)",
+    "mkdocs_build": "ok",
+    "stray_edits": {
+      "canonical_lib_rs": "WARN: src/rust/crates/fathomdb-engine/src/lib.rs has unstaged modifications from concurrent slice-20+35 agent — NOT from Slice 5 (zero engine source changes)"
+    }
+  },
+
+  "commits": [
+    {
+      "sha": "434ae47",
+      "msg": "design(0.8.1/slice-5): R0 CDF runner design memo"
+    },
+    {
+      "sha": "b0d4b6c",
+      "msg": "test(0.8.1/slice-5): RED — ir_c_cdf_run schema gate + CDF runner skeleton"
+    },
+    {
+      "sha": "ab2d963",
+      "msg": "feat(0.8.1/slice-5): CE latency benchmark script (TinyBERT-L-2 + MiniLM-L6)"
+    },
+    {
+      "sha": "42e6a8c",
+      "msg": "data(0.8.1/slice-5): CDF artifact IR-C-recall-cdf.json — full-corpus R0 run"
+    },
+    {
+      "sha": "265e184",
+      "msg": "docs(0.8.1/slice-5): R0 findings doc — CDF interpretation + rerank depth recommendation"
+    },
+    {
+      "sha": "554ffe3",
+      "msg": "docs(0.8.1/slice-5): DOC-INDEX — add Slice 5 artifacts (CDF, findings, script, design)"
+    }
+  ],
+
+  "blockers_encountered": [
+    {
+      "type": "performance",
+      "description": "Full corpus seeding (10,506 docs × BGE-small-en embeddings + HNSW insertions) took 69 minutes at 2.5 docs/s peak. Queries took 27 minutes. Total run: 96.6 minutes.",
+      "resolution": "Completed — run completed successfully; results are from the full corpus"
+    },
+    {
+      "type": "model_availability",
+      "description": "ms-marco-MiniLM-L6-v2 is not available in flashrank (404 HTTP). Only L-12 and TinyBERT-L-2 are available.",
+      "resolution": "Used ms-marco-MiniLM-L-12-v2 as a substitute (12 layers vs 6 — conservative upper bound on L-6 latency). Exact L-6 measurement deferred to Slice 10 with sentence-transformers."
+    },
+    {
+      "type": "concurrent_work",
+      "description": "Canonical repo has unstaged modification to src/rust/crates/fathomdb-engine/src/lib.rs from concurrent slice-20+35 agent. NOT introduced by Slice 5.",
+      "resolution": "Reported — not my slice's responsibility. Slice 5 has zero engine source changes."
+    },
+    {
+      "type": "pre-existing_test_failure",
+      "description": "recency_does_not_override_a_clear_rrf_signal in pr_g12_recency.rs fails in both canonical and worktree — introduced by earlier Slice 10/15 RED test, not yet fixed.",
+      "resolution": "Reported — pre-existing, not from Slice 5."
+    },
+    {
+      "type": "doc_index_conflict",
+      "description": "DOC-INDEX.md had a merge conflict (slice-35 design memo entry added by concurrent slice). Resolved by keeping both entries.",
+      "resolution": "Resolved — both slice-35-design.md and slice-5-design.md entries kept"
+    }
+  ],
+
+  "deviations_from_spec": [
+    {
+      "type": "in_scope_fanout",
+      "description": "CE latency script updated: (1) MiniLM-L12 used instead of unavailable MiniLM-L6; (2) cache_dir=None → default /tmp (bugfix for flashrank API). These are corrections to the script, not functional deviations."
+    }
+  ],
+
+  "slice_10_gate": {
+    "status": "UNBLOCKED",
+    "artifact": "dev/plans/runs/IR-C-recall-cdf.json",
+    "recommended_rerank_depth": 200,
+    "recommended_model": "TinyBERT-L-2",
+    "oracle_ceiling_at_200": {
+      "exact_fact": 0.9733,
+      "exploratory": 0.7639
+    },
+    "note": "Per ADR §2.4: R0 gates R1 (Slice 10). Slice 10 may now open."
+  }
+}

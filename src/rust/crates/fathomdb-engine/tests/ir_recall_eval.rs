@@ -26,9 +26,9 @@ use std::path::PathBuf;
 use corpus_subset::Doc;
 use ir_eval::{
     evaluate_gold_set, evidence_recall_at_k, experiment_to_json, load_gold_set, negative_abstained,
-    required_doc_ids, run_experiment, run_mode_bodies, validate_gold_set, EvidenceUnit, GoldQuery,
-    GoldSet, Locator, Necessity, QueryClass, RetrievalMode, HEADLINE_K, K_LADDER,
-    RUNNABLE_NOW_MODES,
+    parse_gold_set, required_doc_ids, run_experiment, run_mode_bodies, validate_gold_set,
+    EvidenceUnit, GoldQuery, GoldSet, Locator, Necessity, QueryClass, QueryOrigin, RetrievalMode,
+    Span, HEADLINE_K, K_LADDER, RUNNABLE_NOW_MODES,
 };
 
 // ── Test constructors (keep the unit tests terse) ───────────────────────────
@@ -38,7 +38,7 @@ fn ev(id: &str, doc: &str, nec: Necessity) -> EvidenceUnit {
         evidence_id: id.to_string(),
         doc_id: doc.to_string(),
         necessity: nec,
-        locator: Some(Locator { kind: "whole_body".to_string() }),
+        locator: Some(Locator { kind: "whole_body".to_string(), spans: None }),
     }
 }
 
@@ -51,6 +51,9 @@ fn gq(id: &str, class: QueryClass, required: Vec<EvidenceUnit>, legacy: &[&str])
         expected_top_k_doc_ids: legacy.iter().map(|s| s.to_string()).collect(),
         relation_type: None,
         chain_shape: None,
+        source: None,
+        answer_type: None,
+        query_origin: QueryOrigin::HumanDataset,
     }
 }
 
@@ -255,6 +258,9 @@ fn validator_catches_schema_and_methodology_violations() {
                 expected_top_k_doc_ids: vec![],
                 relation_type: None,
                 chain_shape: None,
+                source: None,
+                answer_type: None,
+                query_origin: QueryOrigin::HumanDataset,
             },
         ],
     };
@@ -309,6 +315,125 @@ fn synthetic_fixture_loads_parses_and_is_structurally_valid_but_unpinned() {
     let issues = validate_gold_set(&gold);
     assert_eq!(issues.len(), 1, "expected only the unpinned-placeholder flag: {issues:?}");
     assert!(issues[0].contains("placeholder"), "{issues:?}");
+}
+
+// ── WI-2 / WI-3a: query tracers + evidence-span locators ────────────────────
+// (IR-C test-query-quality instrumentation — schema half.)
+
+/// Parse a single query from a minimal one-query gold set.
+fn parse_one(query_json: &str) -> Result<GoldQuery, String> {
+    let set = format!(r#"{{"corpus_hash":"h","qrels_version":"v","queries":[{query_json}]}}"#);
+    Ok(parse_gold_set(&set)?.queries.into_iter().next().expect("one query"))
+}
+
+const REQ_EV: &str =
+    r#""required_evidence":[{"evidence_id":"e","doc_id":"D","necessity":"required"}]"#;
+
+#[test]
+fn parse_promotes_source_and_answer_type() {
+    // Promoted non-underscore keys populate the struct.
+    let q = parse_one(&format!(
+        r#"{{"query":"q","query_id":"a","query_class":"exploratory",
+            "source":"qmsum","answer_type":"summary",{REQ_EV}}}"#
+    ))
+    .expect("parse");
+    assert_eq!(q.source.as_deref(), Some("qmsum"));
+    assert_eq!(q.answer_type.as_deref(), Some("summary"));
+
+    // Legacy underscore tracers still resolve via fallback (back-compat).
+    let q = parse_one(&format!(
+        r#"{{"query":"q","query_id":"b","query_class":"exact_fact",
+            "_source":"enronqa","_answer_type":"span",{REQ_EV}}}"#
+    ))
+    .expect("parse");
+    assert_eq!(q.source.as_deref(), Some("enronqa"));
+    assert_eq!(q.answer_type.as_deref(), Some("span"));
+}
+
+#[test]
+fn parse_query_origin_defaults_and_rejects_unknown() {
+    // Absent ⇒ human_dataset (the reuse-tier default).
+    let q = parse_one(&format!(
+        r#"{{"query":"q","query_id":"a","query_class":"exact_fact",{REQ_EV}}}"#
+    ))
+    .expect("parse");
+    assert_eq!(q.query_origin, QueryOrigin::HumanDataset);
+
+    // Explicit values round-trip.
+    for (s, want) in
+        [("templated", QueryOrigin::Templated), ("llm_generated", QueryOrigin::LlmGenerated)]
+    {
+        let q = parse_one(&format!(
+            r#"{{"query":"q","query_id":"a","query_class":"exact_fact","query_origin":"{s}",{REQ_EV}}}"#
+        ))
+        .expect("parse");
+        assert_eq!(q.query_origin, want);
+    }
+
+    // Unknown origin is a hard parse error (fail fast, like query_class).
+    let err = parse_one(&format!(
+        r#"{{"query":"q","query_id":"a","query_class":"exact_fact","query_origin":"made_up",{REQ_EV}}}"#
+    ))
+    .unwrap_err();
+    assert!(err.contains("query_origin"), "{err}");
+}
+
+#[test]
+fn parse_locator_spans_roundtrip() {
+    let q = parse_one(
+        r#"{"query":"q","query_id":"a","query_class":"exact_fact",
+            "required_evidence":[{"evidence_id":"e","doc_id":"D","necessity":"required",
+              "locator":{"kind":"span","spans":[{"doc_id":"D","start":10,"end":42}]}}]}"#,
+    )
+    .expect("parse");
+    let loc = q.required_evidence[0].locator.as_ref().expect("locator");
+    assert_eq!(loc.kind, "span");
+    let spans = loc.spans.as_ref().expect("spans present");
+    assert_eq!(spans.len(), 1);
+    assert_eq!((spans[0].start, spans[0].end), (10, 42));
+    assert_eq!(spans[0].doc_id, "D");
+
+    // A whole_body locator carries no spans.
+    let q = parse_one(
+        r#"{"query":"q","query_id":"a","query_class":"exact_fact",
+            "required_evidence":[{"evidence_id":"e","doc_id":"D","necessity":"required",
+              "locator":{"kind":"whole_body"}}]}"#,
+    )
+    .expect("parse");
+    assert!(q.required_evidence[0].locator.as_ref().unwrap().spans.is_none());
+}
+
+#[test]
+fn validate_flags_bad_span_bounds_and_doc_mismatch() {
+    let span = |doc: &str, start: usize, end: usize| Span { doc_id: doc.to_string(), start, end };
+    let bad = GoldSet {
+        corpus_hash: "h".to_string(),
+        qrels_version: "v".to_string(),
+        note: None,
+        queries: vec![GoldQuery {
+            query: "q".to_string(),
+            query_id: Some("a".to_string()),
+            query_class: QueryClass::ExactFact,
+            required_evidence: vec![EvidenceUnit {
+                evidence_id: "e".to_string(),
+                doc_id: "D".to_string(),
+                necessity: Necessity::Required,
+                locator: Some(Locator {
+                    kind: "span".to_string(),
+                    spans: Some(vec![span("D", 50, 10), span("OTHER", 0, 5)]),
+                }),
+            }],
+            expected_top_k_doc_ids: vec![],
+            relation_type: None,
+            chain_shape: None,
+            source: None,
+            answer_type: None,
+            query_origin: QueryOrigin::HumanDataset,
+        }],
+    };
+    let issues = validate_gold_set(&bad);
+    assert!(issues.iter().any(|i| i.contains("end<start")), "{issues:?}");
+    assert!(issues.iter().any(|i| i.contains("!= evidence doc_id")), "{issues:?}");
 }
 
 // ── (e) Retrieval-mode metadata ─────────────────────────────────────────────

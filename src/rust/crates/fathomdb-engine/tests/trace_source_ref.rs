@@ -59,6 +59,11 @@ fn ac_042_trace_source_ref_includes_edges_alongside_nodes() {
             to: "b".to_string(),
             source_id: Some("S1".to_string()),
             logical_id: None,
+            body: None,
+            t_valid: None,
+            t_invalid: None,
+            confidence: None,
+            extractor_model_id: None,
         }])
         .expect("edge write");
 

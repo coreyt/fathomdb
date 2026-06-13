@@ -1,0 +1,357 @@
+{
+  "_comment": "IR-C Evidence Recall@K over the resolved gold set. SMOKE (sampled queries + capped corpus) is directional only; the headline number requires the full-corpus run (IRC_SMOKE unset).",
+  "docs_seeded": 10506,
+  "duplicate_bodies": 420,
+  "experiment": {
+    "_comment": "IR-B (IR-1 Phase 2) Evidence Recall@K — STRUCTURE only. No thresholds, no verdict (Phase 4 / IR-2 / HITL). Real-corpus numbers are DEFERRED to the COR-2 freeze (IR-C).",
+    "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+    "deferred_modes": [],
+    "fanout": 50,
+    "headline_k": 10,
+    "k_ladder": [
+      5,
+      10,
+      20,
+      50
+    ],
+    "measure": "evidence_recall_at_k",
+    "per_mode": {
+      "rerank_stub": {
+        "10": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.443,
+            "n": 4472,
+            "strict_evidence_recall": 0.443,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5568,
+              "n": 2888,
+              "strict_evidence_recall": 0.5568,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.2355,
+              "n": 1584,
+              "strict_evidence_recall": 0.2355,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "20": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.4922,
+            "n": 4472,
+            "strict_evidence_recall": 0.4922,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5897,
+              "n": 2888,
+              "strict_evidence_recall": 0.5897,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.3144,
+              "n": 1584,
+              "strict_evidence_recall": 0.3144,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "5": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.3763,
+            "n": 4472,
+            "strict_evidence_recall": 0.3763,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.4893,
+              "n": 2888,
+              "strict_evidence_recall": 0.4893,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.1705,
+              "n": 1584,
+              "strict_evidence_recall": 0.1705,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "50": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.5454,
+            "n": 4472,
+            "strict_evidence_recall": 0.5454,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.6198,
+              "n": 2888,
+              "strict_evidence_recall": 0.6198,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.4097,
+              "n": 1584,
+              "strict_evidence_recall": 0.4097,
+              "supporting_coverage": 0.0
+            }
+          }
+        }
+      },
+      "rrf_hybrid": {
+        "10": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.443,
+            "n": 4472,
+            "strict_evidence_recall": 0.443,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5568,
+              "n": 2888,
+              "strict_evidence_recall": 0.5568,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.2355,
+              "n": 1584,
+              "strict_evidence_recall": 0.2355,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "20": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.4922,
+            "n": 4472,
+            "strict_evidence_recall": 0.4922,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5897,
+              "n": 2888,
+              "strict_evidence_recall": 0.5897,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.3144,
+              "n": 1584,
+              "strict_evidence_recall": 0.3144,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "5": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.3763,
+            "n": 4472,
+            "strict_evidence_recall": 0.3763,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.4893,
+              "n": 2888,
+              "strict_evidence_recall": 0.4893,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.1705,
+              "n": 1584,
+              "strict_evidence_recall": 0.1705,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "50": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.5454,
+            "n": 4472,
+            "strict_evidence_recall": 0.5454,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.6198,
+              "n": 2888,
+              "strict_evidence_recall": 0.6198,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.4097,
+              "n": 1584,
+              "strict_evidence_recall": 0.4097,
+              "supporting_coverage": 0.0
+            }
+          }
+        }
+      },
+      "vector_only": {
+        "10": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.3694,
+            "n": 4472,
+            "strict_evidence_recall": 0.3694,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5329,
+              "n": 2888,
+              "strict_evidence_recall": 0.5329,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.0713,
+              "n": 1584,
+              "strict_evidence_recall": 0.0713,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "20": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.4094,
+            "n": 4472,
+            "strict_evidence_recall": 0.4094,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5644,
+              "n": 2888,
+              "strict_evidence_recall": 0.5644,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.1269,
+              "n": 1584,
+              "strict_evidence_recall": 0.1269,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "5": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.337,
+            "n": 4472,
+            "strict_evidence_recall": 0.337,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.4972,
+              "n": 2888,
+              "strict_evidence_recall": 0.4972,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.0448,
+              "n": 1584,
+              "strict_evidence_recall": 0.0448,
+              "supporting_coverage": 0.0
+            }
+          }
+        },
+        "50": {
+          "negative_class": {
+            "abstained": 0,
+            "false_positive_rate": 1.0,
+            "n": 125
+          },
+          "overall": {
+            "graded_evidence_recall": 0.4548,
+            "n": 4472,
+            "strict_evidence_recall": 0.4548,
+            "supporting_coverage": 0.0
+          },
+          "per_class": {
+            "exact_fact": {
+              "graded_evidence_recall": 0.5921,
+              "n": 2888,
+              "strict_evidence_recall": 0.5921,
+              "supporting_coverage": 0.0
+            },
+            "exploratory": {
+              "graded_evidence_recall": 0.2045,
+              "n": 1584,
+              "strict_evidence_recall": 0.2045,
+              "supporting_coverage": 0.0
+            }
+          }
+        }
+      }
+    },
+    "qrels_version": "ir-c-reused-v1",
+    "query_count": 4597
+  },
+  "gold_file": "all.gold.json",
+  "queries_evaluated": 4597,
+  "queries_excluded_missing_evidence": 0,
+  "run_kind": "full_corpus"
+}

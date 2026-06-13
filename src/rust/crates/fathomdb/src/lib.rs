@@ -10,12 +10,20 @@
 //! engine behavior is identical with the feature on. See AC-074
 //! (`dev/acceptance.md`) + `dev/design/slice-27-fix1-operator-gate-design.md`.
 
-// The 17 governed application-surface types (`dev/interfaces/rust.md` § 2a) —
+// The 26 governed application-surface types (`dev/interfaces/rust.md` § 2a) —
 // always present on the default facade.
+//
+// 17 original types + 7 new types from Slices 20 (G5/G6) and 35 (G4):
+//   Slice 20: ComparisonOp, NodeRecord, Predicate, ScalarValue, SearchExpandResult,
+//             SearchFilter, TraversalDirection
+// + 2 new types from Slice 15 (G11 BYO-LLM ingest — fix-29):
+//   ExtractDocument, IngestWithExtractorReceipt
 pub use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine, EngineError,
-    EngineOpenError, OpenReport, OpenStage, OpenedEngine, PreparedWrite, RecoveryHint,
-    SearchResult, SoftFallback, SoftFallbackBranch, Subscription, WriteReceipt,
+    ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
+    EngineError, EngineOpenError, ExtractDocument, IngestWithExtractorReceipt, NodeRecord,
+    OpenReport, OpenStage, OpenedEngine, Predicate, PreparedWrite, RecoveryHint, ScalarValue,
+    SearchExpandResult, SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, Subscription,
+    TraversalDirection, WriteReceipt,
 };
 
 // The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

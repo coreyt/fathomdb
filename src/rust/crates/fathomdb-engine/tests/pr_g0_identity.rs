@@ -30,6 +30,11 @@ fn edge(kind: &str, from: &str, to: &str, logical_id: Option<&str>) -> PreparedW
         to: to.to_string(),
         source_id: None,
         logical_id: logical_id.map(str::to_string),
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
     }
 }
 

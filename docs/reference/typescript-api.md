@@ -78,13 +78,22 @@ Enqueue a batch of canonical rows.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter?) -> Promise<SearchResult>`
+### `engine.search(query, filter?, rerankDepth?) -> Promise<SearchResult>`
 
-Run hybrid retrieval, ranked by **G9 RRF fusion**.
+Run hybrid retrieval, ranked by **G9 RRF fusion**, with optional CPU
+cross-encoder reranking (0.8.1 R1).
 
 - `query` (`string`).
 - `filter` ([`SearchFilter`](#searchfilter), optional) — closed metadata filter;
   omitted (or all-`undefined`) is the unfiltered path.
+- `rerankDepth` (`number`, optional, default `undefined`/`0`) — 0.8.1 R1 opt-in.
+  `0` or omitted uses the identity / soft-fallback path: byte-identical to the
+  pre-0.8.1 fused order. `N > 0` applies a CPU cross-encoder (TinyBERT-L-2,
+  ≈4 MB, p50 ≈ 1.5 ms/pair) over the top-N fused hits with score-blend
+  (α=0.3 × CE + 0.7 × RRF-norm). Must be a non-negative integer; negative
+  values throw `RangeError`, non-integer values throw `TypeError`. In the
+  default build (no `default-reranker` feature), depth > 0 returns the identity
+  order (model absent → soft-fallback).
 - Resolves to a `SearchResult` whose `results` is a `SearchHit[]`; each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`, `body`,
   the **RRF-fused** `score`, and the `branch` that produced it.
@@ -173,6 +182,40 @@ so no call yields an unbounded read); `afterId` is the exclusive cursor.
 
 Mutation-log-oriented alias surface over the **same** op-store read-back as
 `read.collection` (identical args + semantics).
+
+### `read.list(engine, kind, predicates?, limit?): Promise<NodeRecord[]>`
+
+*(G4 / Slice 35)* List **active** `canonical_nodes` of the given `kind`
+(`superseded_at IS NULL`), optionally filtered by a `Predicate[]` array
+(AND-combined), up to `limit` rows (default 100).
+
+```ts
+interface Predicate {
+  type: "eq" | "gt" | "gte" | "lt" | "lte";
+  path: string;     // must be from the allowlist: $.status, $.priority, $.tags, $.kind, $.created_at
+  value: string | number | boolean;
+}
+```
+
+`path` must be from the engine allowlist: `$.status`, `$.priority`,
+`$.tags`, `$.kind`, `$.created_at`. A non-allowlisted path throws
+`InvalidFilterError` (never a panic). Values are **always bound as
+parameterized SQL** — never interpolated (injection-safe per ADR D-F4).
+An empty or omitted `predicates` is the unfiltered path.
+
+```ts
+import { Engine, read } from "fathomdb";
+import { InvalidFilterError } from "fathomdb";
+
+const engine = await Engine.open("my.db");
+// All active task nodes:
+const tasks = await read.list(engine, "task");
+// Filtered: open tasks with priority > 5:
+const openHigh = await read.list(engine, "task", [
+  { type: "eq",  path: "$.status",   value: "open" },
+  { type: "gt",  path: "$.priority", value: 5 },
+]);
+```
 
 ## Data shapes
 
@@ -297,9 +340,66 @@ interface CounterSnapshot {
 }
 ```
 
+## `graph.*` — graph traversal (Slice 20 / G5 + G6)
+
+```ts
+import { graph } from "fathomdb";
+```
+
+The `graph.*` namespace exposes bounded BFS traversal and hybrid
+search-plus-expansion. All reads ride the same **ReaderWorkerPool
+DEFERRED-tx snapshot path** as `read.*`.
+
+### `graph.neighbors(engine, logicalId, depth, direction?): Promise<NodeRecord[]>`
+
+G5 — bounded BFS from `logicalId` over `canonical_edges`.
+
+- `logicalId` (`string`) — the root node's stable identity.
+- `depth` (`number`) — hop limit; **must be 1, 2, or 3**.
+  Depth > 3 raises `InvalidArgumentError`.
+- `direction` (`"outgoing" | "incoming" | "both"`, default `"both"`) — edge
+  direction to follow.
+
+Returns up to **50** `NodeRecord`s reachable within `depth` hops
+(root excluded). Edges with `t_invalid` in the past are silently skipped
+(valid-time filter). Returns `[]` when the root has no reachable neighbors.
+
+### `graph.searchExpand(engine, query, depth, filter?): Promise<SearchExpandResult>`
+
+G6 — FTS/vector search (G1) followed by bounded BFS expansion.
+
+- `query` (`string`) — free-text or embedding query.
+- `depth` (`number`) — BFS hop limit; 0 skips expansion. Depth > 3 raises
+  `InvalidArgumentError`.
+- `filter` (`SearchFilter | undefined`) — optional metadata filter (same as
+  `engine.search`).
+
+Returns a `SearchExpandResult`. Nodes appearing in both the search hit set and
+the traversal reach appear **only** in `searchHits` (deduplication: search score
+takes priority).
+
+### `ExpandedNode`
+
+```ts
+interface ExpandedNode {
+  node: NodeRecord; // the reachable node
+  hopCount: number; // BFS distance from the nearest search-hit root
+}
+```
+
+### `SearchExpandResult`
+
+```ts
+interface SearchExpandResult {
+  searchHits: SearchHit[];     // original RRF-scored search results
+  expanded: ExpandedNode[];    // nodes reachable by traversal, not in searchHits
+  allLogicalIds: string[];     // deduplicated union of both sets
+}
+```
+
 ## Errors
 
-`fathomdb` exports `FathomDbError` (the catch-all base) plus 18
+`fathomdb` exports `FathomDbError` (the catch-all base) plus 20
 concrete leaf classes. See [errors reference](errors.md).
 
 Panics in the Rust runtime surface as `FathomDbPanicError` (not a

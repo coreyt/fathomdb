@@ -31,11 +31,15 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExtractDocument as RustExtractDocument,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
+    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -68,6 +72,12 @@ const CODE_CORRUPTION: &str = "FDB_CORRUPTION";
 const CODE_INCOMPATIBLE_SCHEMA_VERSION: &str = "FDB_INCOMPATIBLE_SCHEMA_VERSION";
 const CODE_MIGRATION: &str = "FDB_MIGRATION";
 const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
+// Slice 20 — depth > 3 or invalid argument (G5/G6).
+const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -161,6 +171,15 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
             typed_error(CODE_OVERLOADED, "engine overloaded", JsonValue::Null)
         }
         RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+            typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::InvalidFilter { reason } => {
+            typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
+        }
+        RustEngineError::InvalidArgument { msg } => {
+            typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
+        }
     }
 }
 
@@ -332,9 +351,27 @@ impl WriteReceipt {
     }
 }
 
+/// G11 (Slice 15) — BYO-LLM ingest receipt.
+#[napi(object)]
+pub struct IngestWithExtractorReceipt {
+    pub nodes_written: i64,
+    pub edges_written: i64,
+    pub docs_processed: i64,
+}
+
+impl IngestWithExtractorReceipt {
+    fn from_rust(r: RustIngestWithExtractorReceipt) -> Self {
+        Self {
+            nodes_written: r.nodes_written as i64,
+            edges_written: r.edges_written as i64,
+            docs_processed: r.docs_processed as i64,
+        }
+    }
+}
+
 #[napi(object)]
 pub struct SoftFallback {
-    /// "vector" | "text"
+    /// "vector" | "text" | "text_edge"
     pub branch: String,
 }
 
@@ -362,6 +399,7 @@ impl SearchHit {
             branch: match h.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -444,6 +482,7 @@ impl SearchResult {
                 branch: match s.branch {
                     SoftFallbackBranch::Vector => "vector".to_string(),
                     SoftFallbackBranch::Text => "text".to_string(),
+                    SoftFallbackBranch::TextEdge => "text_edge".to_string(),
                 },
             }),
             results: r.results.iter().map(SearchHit::from_rust).collect(),
@@ -715,6 +754,7 @@ impl Engine {
         &self,
         query: String,
         filter: Option<SearchFilterInput>,
+        rerank_depth: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -759,8 +799,10 @@ impl Engine {
                 Some(rust)
             }
         });
+        // 0.8.1 R1: rerank_depth=None or 0 → soft-fallback (identity).
+        let depth = rerank_depth.unwrap_or(0) as usize;
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_filtered(&query, filter)).await?;
+        let result = call_engine(move || engine.search_reranked(&query, filter, depth)).await?;
         Ok(SearchResult::from_rust(result))
     }
 
@@ -775,6 +817,54 @@ impl Engine {
         let engine = Arc::clone(&self.inner);
         let ms = timeout_ms as u64;
         call_engine(move || engine.drain(ms)).await
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn (first
+    /// element = program, rest = args). `documents` is an array of objects
+    /// with `sourceDocId` and `body` string properties.
+    #[napi]
+    pub async fn ingest_with_extractor(
+        &self,
+        cmd: Vec<String>,
+        documents: Vec<JsonValue>,
+    ) -> Result<IngestWithExtractorReceipt> {
+        let docs: Vec<RustExtractDocument> = documents
+            .iter()
+            .map(|item| {
+                let source_doc_id = item
+                    .get("sourceDocId")
+                    .or_else(|| item.get("source_doc_id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "document must have sourceDocId",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                let body = item
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "document must have body",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                Ok(RustExtractDocument { source_doc_id, body })
+            })
+            .collect::<Result<_>>()?;
+
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(move || {
+            let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+            engine.ingest_with_extractor(&cmd_refs, &docs)
+        })
+        .await?;
+        Ok(IngestWithExtractorReceipt::from_rust(receipt))
     }
 
     #[napi]
@@ -924,6 +1014,182 @@ async fn read_collection_impl(
     let inner = Arc::clone(&engine.inner);
     let rows = call_engine(move || inner.read_collection(&collection, after_id, limit)).await?;
     Ok(rows.iter().map(OpStoreRow::from_rust).collect())
+}
+
+// ===== read.list (G4 / Slice 35) ======================================
+
+/// G4 (Slice 35) — predicate input for `readList`. Shape mirrors the TS
+/// `Predicate` interface: `type` ∈ `{"eq","gt","gte","lt","lte"}`, `path`,
+/// `value` (JS `string | number | boolean` — carried as `f64` for numbers).
+#[napi(object)]
+pub struct PredicateInput {
+    /// Comparison type: "eq" | "gt" | "gte" | "lt" | "lte".
+    pub r#type: String,
+    /// JSON path from the allowlist (e.g. "$.status", "$.priority").
+    pub path: String,
+    /// String value for eq/gt/gte/lt/lte string comparisons.
+    pub value_str: Option<String>,
+    /// Integer value for numeric comparisons.
+    pub value_int: Option<i64>,
+    /// Boolean value for bool comparisons.
+    pub value_bool: Option<bool>,
+}
+
+fn napi_predicate_to_rust(pred: PredicateInput) -> Result<RustPredicate> {
+    // Determine the scalar value: bool > int > str (bool is also "truthy" int in JS).
+    let scalar = if let Some(b) = pred.value_bool {
+        RustScalarValue::Bool(b)
+    } else if let Some(i) = pred.value_int {
+        RustScalarValue::Integer(i)
+    } else if let Some(s) = pred.value_str {
+        RustScalarValue::Text(s)
+    } else {
+        return Err(typed_error(
+            CODE_INVALID_FILTER,
+            "predicate must have one of value_str, value_int, or value_bool",
+            JsonValue::Null,
+        ));
+    };
+    match pred.r#type.as_str() {
+        "eq" => RustPredicate::json_path_eq(pred.path, scalar).map_err(engine_error_to_napi),
+        "gt" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Gt, scalar)
+            .map_err(engine_error_to_napi),
+        "gte" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Gte, scalar)
+            .map_err(engine_error_to_napi),
+        "lt" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Lt, scalar)
+            .map_err(engine_error_to_napi),
+        "lte" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Lte, scalar)
+            .map_err(engine_error_to_napi),
+        other => Err(typed_error(
+            CODE_INVALID_FILTER,
+            format!("unknown predicate type '{other}'; expected eq/gt/gte/lt/lte"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+#[napi(js_name = "readList")]
+pub async fn read_list(
+    engine: &Engine,
+    kind: String,
+    predicates: Option<Vec<PredicateInput>>,
+    limit: Option<i64>,
+) -> Result<Vec<NodeRecord>> {
+    validate_ffi_string_napi(&kind)?;
+    let mut rust_predicates: Vec<RustPredicate> = Vec::new();
+    if let Some(plist) = predicates {
+        for pred in plist {
+            rust_predicates.push(napi_predicate_to_rust(pred)?);
+        }
+    }
+    let limit = limit.unwrap_or(100).max(0) as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.read_list(&kind, &rust_predicates, limit)).await?;
+    Ok(rows.iter().map(NodeRecord::from_rust).collect())
+}
+
+// ===== Slice 20 (G5/G6) — graph traversal ==============================
+//
+// `graphNeighbors` (G5) — bounded BFS from a root node, returning the
+// reachable `NodeRecord`s within `depth` hops. `searchExpand` (G6)
+// composes G1 search + G5 expansion with deduplication.
+
+/// Slice 20 — one expanded node entry in `SearchExpandResult.expanded`.
+/// `hopCount` is the BFS distance from the nearest search-hit root.
+#[napi(object)]
+pub struct ExpandedNode {
+    pub node: NodeRecord,
+    pub hop_count: u32,
+}
+
+/// Slice 20 (G6) — result of `searchExpand`.
+///
+/// `searchHits` — original RRF-scored results from the search step.
+/// `expanded`   — nodes reachable from any hit within `depth` hops that are
+///                NOT in `searchHits` (deduplication: search score wins).
+/// `allLogicalIds` — deduplicated union of both sets.
+#[napi(object)]
+pub struct SearchExpandResult {
+    pub search_hits: Vec<SearchHit>,
+    pub expanded: Vec<ExpandedNode>,
+    pub all_logical_ids: Vec<String>,
+}
+
+impl SearchExpandResult {
+    fn from_rust(r: RustSearchExpandResult) -> Self {
+        Self {
+            search_hits: r.search_hits.iter().map(SearchHit::from_rust).collect(),
+            expanded: r
+                .expanded
+                .into_iter()
+                .map(|(node, hop_count)| ExpandedNode {
+                    node: NodeRecord::from_rust(&node),
+                    hop_count,
+                })
+                .collect(),
+            all_logical_ids: r.all_logical_ids,
+        }
+    }
+}
+
+fn parse_direction_napi(direction: &str) -> Result<RustTraversalDirection> {
+    match direction {
+        "outgoing" => Ok(RustTraversalDirection::Outgoing),
+        "incoming" => Ok(RustTraversalDirection::Incoming),
+        "both" => Ok(RustTraversalDirection::Both),
+        other => Err(typed_error(
+            CODE_INVALID_ARGUMENT,
+            format!("direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+/// Slice 20 (G5) — bounded BFS from `logicalId` over `canonical_edges`.
+///
+/// `depth` must be 1–3; rejects depth > 3 with `InvalidArgumentError`.
+/// `direction` is `"outgoing"`, `"incoming"`, or `"both"`.
+/// Returns up to 50 `NodeRecord`s reachable within `depth` hops.
+/// Edges with `t_invalid` in the past are not traversed.
+#[napi(js_name = "graphNeighbors")]
+pub async fn graph_neighbors(
+    engine: &Engine,
+    logical_id: String,
+    depth: u32,
+    direction: String,
+) -> Result<Vec<NodeRecord>> {
+    validate_ffi_string_napi(&logical_id)?;
+    let dir = parse_direction_napi(&direction)?;
+    let inner = Arc::clone(&engine.inner);
+    let nodes = call_engine(move || inner.graph_neighbors(&logical_id, depth, dir)).await?;
+    Ok(nodes.iter().map(NodeRecord::from_rust).collect())
+}
+
+/// Slice 20 (G6) — FTS/vector search followed by bounded BFS expansion.
+///
+/// Runs `search(query, filter)` (G1), then expands each hit via
+/// `graph_neighbors(depth, both)`. Nodes appearing in both sets appear
+/// only in `searchHits` (deduplication: search score takes priority).
+#[napi(js_name = "searchExpand")]
+pub async fn search_expand(
+    engine: &Engine,
+    query: String,
+    depth: u32,
+    source_type: Option<String>,
+    kind: Option<String>,
+    created_after: Option<i64>,
+    status: Option<String>,
+) -> Result<SearchExpandResult> {
+    validate_ffi_string_napi(&query)?;
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            Some(RustSearchFilter { source_type, kind, created_after, status })
+        } else {
+            None
+        };
+    let inner = Arc::clone(&engine.inner);
+    let result = call_engine(move || inner.search_expand(&query, filter, depth)).await?;
+    Ok(SearchExpandResult::from_rust(result))
 }
 
 // ===== Batch translation ==============================================
@@ -1078,7 +1344,18 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let to = json_str_required(item, "to")?;
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
+    Ok(PreparedWrite::Edge {
+        kind,
+        from,
+        to,
+        source_id,
+        logical_id,
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    })
 }
 
 fn translate_op_store(item: &JsonValue) -> Result<PreparedWrite> {

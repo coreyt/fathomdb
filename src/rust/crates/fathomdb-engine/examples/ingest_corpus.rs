@@ -273,8 +273,12 @@ fn run(args: Args) -> Result<(), String> {
     // is the same (hidden) API EU-7 uses; vector-indexing arbitrary kinds is not
     // yet production-surfaced.
     if args.embedder == "bge" {
-        let mut kinds: Vec<String> =
-            docs.iter().map(|d| d.source_type.clone()).collect::<HashSet<_>>().into_iter().collect();
+        let mut kinds: Vec<String> = docs
+            .iter()
+            .map(|d| d.source_type.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         kinds.sort();
         for kind in &kinds {
             engine
@@ -339,6 +343,11 @@ fn run(args: Args) -> Result<(), String> {
             to: doc.doc_id.clone(),
             source_id: Some(doc.doc_id.clone()),
             logical_id: None,
+            body: None,
+            t_valid: None,
+            t_invalid: None,
+            confidence: None,
+            extractor_model_id: None,
         });
         if edge_batch.len() >= EDGE_BATCH {
             edges_written += flush_edges(&engine, &mut edge_batch)?;

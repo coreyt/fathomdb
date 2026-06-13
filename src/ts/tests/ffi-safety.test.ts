@@ -1,8 +1,9 @@
 // FFI safety-contract tests for the napi-rs binding.
 //
 // Covers AC-067 (panic catch), AC-068a (embedded NUL rejected), and
-// AC-068b (unpaired UTF-16 surrogate rejected). Mirrors
-// `src/python/tests/test_ffi_safety.py` from Phase 11a.
+// AC-068b (unpaired UTF-16 surrogate rejected). Also covers fix-28 [P2]:
+// ingestWithExtractor validates cmd/sourceDocId/body strings before the
+// native call. Mirrors `src/python/tests/test_ffi_safety.py` from Phase 11a.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -194,3 +195,49 @@ for (const field of FILTER_STRING_FIELDS) {
     }
   });
 }
+
+// fix-28 [P2]: ingestWithExtractor validates cmd/sourceDocId/body at the FFI boundary.
+test("fix-28 NUL in ingestWithExtractor sourceDocId rejected", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await assert.rejects(
+      () => engine.ingestWithExtractor(["echo"], [{ sourceDocId: `id${NUL}x`, body: "text" }]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
+test("fix-28 NUL in ingestWithExtractor body rejected", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await assert.rejects(
+      () => engine.ingestWithExtractor(["echo"], [{ sourceDocId: "id", body: `te${NUL}xt` }]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
+test("fix-28 NUL in ingestWithExtractor cmd arg rejected", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await assert.rejects(
+      () => engine.ingestWithExtractor([`ec${NUL}ho`], [{ sourceDocId: "id", body: "text" }]),
+      (err: unknown) => {
+        assert.ok(err instanceof WriteValidationError, "must be WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
+});

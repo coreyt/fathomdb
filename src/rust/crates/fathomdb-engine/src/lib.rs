@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Once;
@@ -30,9 +31,13 @@ use fathomdb_schema::CANONICAL_TABLES;
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-// `sha2::Digest` is used only by the operator-gated `safe_export`.
+// `sha2::Digest` + `sha2::Sha256` — used by `safe_export` (operator-gated)
+// and unconditionally by `ingest_with_extractor` (G11 logical_id derivation).
 #[cfg(feature = "operator")]
 use sha2::Digest;
+#[cfg(not(feature = "operator"))]
+use sha2::Digest as _;
+use sha2::Sha256;
 use sqlite_vec::sqlite3_vec_init;
 
 #[cfg(unix)]
@@ -421,6 +426,12 @@ enum ReaderRequest {
         /// returns the pre-fusion vector-branch ranking instead of the fused
         /// result (read from `vector_stage_only_for_test`, off by default).
         vector_stage_only: bool,
+        /// 0.8.1 Slice 10 (R1) — raw query text for the CE reranker. Passed
+        /// from `search_inner` to `read_search_in_tx` → `rerank_fused`.
+        raw_query: String,
+        /// 0.8.1 Slice 10 (R1) — per-request rerank depth (snapshot of
+        /// `ProjectionRuntimeShared::rerank_depth`). `0` = identity path.
+        rerank_depth: usize,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -439,6 +450,42 @@ enum ReaderRequest {
         after_id: Option<i64>,
         limit: usize,
         respond: SyncSender<rusqlite::Result<Vec<OpStoreRow>>>,
+    },
+    /// Slice 35 (G4) — list active canonical nodes of a `kind`, filtered by
+    /// zero or more `Predicate`s (AND-combined), up to `limit` rows.
+    /// Path validation already happened at `Predicate` construction time;
+    /// the worker only compiles + executes parameterized SQL.
+    ReadList {
+        kind: String,
+        predicates: Vec<Predicate>,
+        limit: usize,
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// Slice 20 (G5) — bounded BFS from a single root node over
+    /// `canonical_edges`. Returns the set of reachable nodes (excluding the
+    /// root) within `depth` hops, limited to the hard cap 50.
+    GraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// Slice 20 (G6) — compose the previous search result with BFS expansion.
+    /// Resolves search hit `write_cursor`s to `logical_id`s, runs G5 traversal
+    /// for each root, deduplicates, and returns a `SearchExpandResult`.
+    SearchExpand {
+        search_hits: Vec<SearchHit>,
+        depth: u32,
+        respond: SyncSender<rusqlite::Result<SearchExpandResult>>,
+    },
+    /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL for
+    /// the given root/depth/direction and return the plan detail lines.
+    #[doc(hidden)]
+    ExplainGraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<String>>>,
     },
     Shutdown,
     /// Pack 6.G G.1 — debug-only request that asks a worker to read its
@@ -573,6 +620,10 @@ impl ReaderWorkerPool {
     /// Hot path. Lock-free dispatch: `AtomicUsize::fetch_add` selects
     /// the worker, then a single `SyncSender::send` enqueues the
     /// request. No global mutex is taken on the request path.
+    // The `Search` variant is pre-existing large (boxed filter, raw_query String);
+    // the Err return is only ever a no-worker/shutdown signal, never heap-allocated
+    // repeatedly, so the large-err lint penalty is acceptable here.
+    #[allow(clippy::result_large_err)]
     fn dispatch(&self, request: ReaderRequest) -> Result<(), ReaderRequest> {
         if self.shutdown.load(Ordering::Relaxed) {
             return Err(request);
@@ -637,6 +688,8 @@ fn reader_worker_loop(
                 filter,
                 recency_enabled,
                 vector_stage_only,
+                raw_query,
+                rerank_depth,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -648,6 +701,8 @@ fn reader_worker_loop(
                     filter.as_deref(),
                     recency_enabled,
                     vector_stage_only,
+                    &raw_query,
+                    rerank_depth,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -659,6 +714,28 @@ fn reader_worker_loop(
             }
             ReaderRequest::ReadCollection { collection, after_id, limit, respond } => {
                 let result = read_collection_in_tx(&mut connection, &collection, after_id, limit);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::ReadList { kind, predicates, limit, respond } => {
+                let result = read_list_in_tx(&mut connection, &kind, &predicates, limit);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::GraphNeighbors { root_logical_id, depth, direction, respond } => {
+                let result =
+                    graph_neighbors_in_tx(&mut connection, &root_logical_id, depth, direction);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::SearchExpand { search_hits, depth, respond } => {
+                let result = search_expand_in_tx(&mut connection, &search_hits, depth);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::ExplainGraphNeighbors { root_logical_id, depth, direction, respond } => {
+                let result = explain_graph_neighbors_in_tx(
+                    &mut connection,
+                    &root_logical_id,
+                    depth,
+                    direction,
+                );
                 let _ = respond.send(result);
             }
             #[cfg(debug_assertions)]
@@ -911,15 +988,21 @@ pub struct SoftFallback {
     pub branch: SoftFallbackBranch,
 }
 
-/// Which retrieval branch could not contribute to a hybrid search.
+/// Which retrieval branch produced a hit (or could not contribute).
 ///
-/// `Vector` means the vector branch could not contribute; `Text` means the
-/// text branch could not contribute. Owned by `dev/design/retrieval.md`;
-/// the 0.6.0 enum is exactly these two members.
+/// `Vector` = ANN vector branch (node bodies); `Text` = node-body FTS branch;
+/// `TextEdge` = edge-body hit (FTS via `search_index_edges` OR vector-projected
+/// edge facts — both produce the same kind="edge_fact" row shape and share the
+/// same downstream handling in `search_expand_in_tx`). `Vector`/`Text` also
+/// used as soft-fallback signal when the respective branch is empty. Owned by
+/// `dev/design/retrieval.md`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SoftFallbackBranch {
     Vector,
     Text,
+    /// G11 (Slice 15) — edge-body hit from `search_index_edges` FTS or from
+    /// `vector_default` edge-fact projection. `kind = "edge_fact"` in both cases.
+    TextEdge,
 }
 
 /// A single structured search hit (G1 / AC-057a-clean).
@@ -984,6 +1067,203 @@ pub struct SearchResult {
     pub results: Vec<SearchHit>,
 }
 
+// ===== G4 filter grammar types (Slice 35) ===============================
+
+/// G4 (Slice 35) — scalar value for [`Predicate`] comparisons.
+///
+/// Shared vocabulary with G10 — defined once at the `fathomdb-engine` crate
+/// root so reserved-gap 37 (full G4↔G10 unification) can import it without a
+/// path change. Derives `Clone, Debug, PartialEq` per the ADR contract
+/// (D-F1 exhaustiveness: exactly `{Text, Integer, Bool}`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScalarValue {
+    Text(String),
+    Integer(i64),
+    Bool(bool),
+}
+
+/// G4 (Slice 35) — comparison operator for [`Predicate::JsonPathCompare`].
+///
+/// Shared vocabulary (same crate-root export as `ScalarValue`). Closed
+/// enum: `{Gt, Gte, Lt, Lte}` per D-F1. Derives `Clone, Debug, PartialEq`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ComparisonOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+/// Allowed JSON paths for [`Predicate`] constructors. The SQL compilation in
+/// [`Engine::read_list`] uses the **allowlist constant** (a server-side literal),
+/// never the caller-supplied string, so only paths in this set reach
+/// `json_extract`. Callers receive [`EngineError::InvalidFilter`] for any
+/// non-allowlisted path — no passthrough, no panic.
+///
+/// To extend: add an entry here. No API change is needed; the constructor
+/// accepts the new path string once it appears in this array.
+const PREDICATE_PATH_ALLOWLIST: &[&str] =
+    &["$.status", "$.priority", "$.tags", "$.kind", "$.created_at"];
+
+/// G4 (Slice 35) — closed typed predicate for [`Engine::read_list`] filter.
+///
+/// Exactly two variants per ADR D-F1 (`{JsonPathEq, JsonPathCompare}`).
+/// The fused variants (`JsonPathFused*`) and all `*_unchecked` builders are
+/// explicitly EXCLUDED (ADR D-F2). Use the validated constructors
+/// [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`]; they
+/// enforce the path allowlist at construction time.
+///
+/// Multiple predicates in [`Engine::read_list`] are combined by implicit AND
+/// (D-F5). Compilation target: `json_extract(body, '$.field') <op> ?` with
+/// a bound parameter (never interpolated — injection-safe per D-F4).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Predicate {
+    /// `json_extract(body, path) = ?` (equality).
+    JsonPathEq { path: String, value: ScalarValue },
+    /// `json_extract(body, path) <op> ?` (inequality).
+    JsonPathCompare { path: String, op: ComparisonOp, value: ScalarValue },
+}
+
+impl Predicate {
+    /// Construct a `JsonPathEq` predicate with allowlist validation.
+    ///
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+    /// [`PREDICATE_PATH_ALLOWLIST`]; never panics on bad input.
+    pub fn json_path_eq(path: impl Into<String>, value: ScalarValue) -> Result<Self, EngineError> {
+        let path = path.into();
+        if !PREDICATE_PATH_ALLOWLIST.contains(&path.as_str()) {
+            return Err(EngineError::InvalidFilter {
+                reason: format!("path '{path}' is not in the predicate path allowlist"),
+            });
+        }
+        Ok(Self::JsonPathEq { path, value })
+    }
+
+    /// Construct a `JsonPathCompare` predicate with allowlist validation.
+    ///
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+    /// [`PREDICATE_PATH_ALLOWLIST`]; never panics on bad input.
+    pub fn json_path_compare(
+        path: impl Into<String>,
+        op: ComparisonOp,
+        value: ScalarValue,
+    ) -> Result<Self, EngineError> {
+        let path = path.into();
+        if !PREDICATE_PATH_ALLOWLIST.contains(&path.as_str()) {
+            return Err(EngineError::InvalidFilter {
+                reason: format!("path '{path}' is not in the predicate path allowlist"),
+            });
+        }
+        Ok(Self::JsonPathCompare { path, op, value })
+    }
+
+    /// Return the validated path string for use in SQL compilation.
+    /// This always returns a path that is in `PREDICATE_PATH_ALLOWLIST`.
+    fn path(&self) -> &str {
+        match self {
+            Self::JsonPathEq { path, .. } => path.as_str(),
+            Self::JsonPathCompare { path, .. } => path.as_str(),
+        }
+    }
+
+    /// Compile this predicate to a SQL WHERE clause fragment.
+    /// The path is validated at construction time and is always an allowlist
+    /// constant — never the raw caller-supplied string.
+    fn to_sql_clause(&self, param_idx: usize) -> String {
+        // The path is already validated against the allowlist at construction.
+        // We use the allowlist entry (the stored path) directly as a SQL literal.
+        // The VALUE is always a bound `?` parameter (injection-safe).
+        //
+        // Type guards prevent cross-type matches caused by SQLite's json_extract
+        // coercing JSON booleans to integer 1/0:
+        //   - Bool predicates: AND json_type IN ('true', 'false') — exclude integers
+        //   - Integer predicates: AND json_type = 'integer' — exclude booleans
+        // Text predicates need no guard: json_extract returns TEXT for strings and
+        // the coercion never conflates TEXT with integer/bool.
+        let path = self.path();
+        match self {
+            Self::JsonPathEq { value, .. } => match value {
+                ScalarValue::Bool(_) => format!(
+                    "json_extract(body, '{path}') = ?{param_idx} \
+                     AND json_type(body, '{path}') IN ('true', 'false')"
+                ),
+                ScalarValue::Integer(_) => format!(
+                    "json_extract(body, '{path}') = ?{param_idx} \
+                     AND json_type(body, '{path}') = 'integer'"
+                ),
+                ScalarValue::Text(_) => {
+                    format!("json_extract(body, '{path}') = ?{param_idx}")
+                }
+            },
+            Self::JsonPathCompare { op, value, .. } => {
+                let op_str = match op {
+                    ComparisonOp::Gt => ">",
+                    ComparisonOp::Gte => ">=",
+                    ComparisonOp::Lt => "<",
+                    ComparisonOp::Lte => "<=",
+                };
+                match value {
+                    ScalarValue::Bool(_) => format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') IN ('true', 'false')"
+                    ),
+                    ScalarValue::Integer(_) => format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') = 'integer'"
+                    ),
+                    ScalarValue::Text(_) => format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') = 'text'"
+                    ),
+                }
+            }
+        }
+    }
+
+    /// Bind the value of this predicate as a rusqlite parameter.
+    fn bind_value(&self) -> rusqlite::types::Value {
+        let value = match self {
+            Self::JsonPathEq { value, .. } => value,
+            Self::JsonPathCompare { value, .. } => value,
+        };
+        match value {
+            ScalarValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
+            ScalarValue::Integer(i) => rusqlite::types::Value::Integer(*i),
+            ScalarValue::Bool(b) => rusqlite::types::Value::Integer(i64::from(*b)),
+        }
+    }
+}
+
+// ===== Slice 20 (G5/G6) — graph traversal types =========================
+
+/// Slice 20 (G5) — direction of graph traversal for
+/// [`Engine::graph_neighbors`] / [`Engine::search_expand`].
+///
+/// `Outgoing` follows edges where the root is the `from_id` (source).
+/// `Incoming` follows edges where the root is the `to_id` (target).
+/// `Both` follows edges in either direction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TraversalDirection {
+    Outgoing,
+    Incoming,
+    Both,
+}
+
+/// Slice 20 (G6) — result of [`Engine::search_expand`]: initial search hits
+/// plus nodes reached by bounded BFS expansion that are not already in the
+/// search hit set.
+#[derive(Clone, Debug)]
+pub struct SearchExpandResult {
+    /// Original RRF-scored search results (G1+G9 hybrid).
+    pub search_hits: Vec<SearchHit>,
+    /// Nodes reached by graph traversal but NOT already in `search_hits`.
+    /// Each entry is `(node, hop_count)` where `hop_count` is the BFS depth
+    /// from the nearest search hit that reached this node.
+    pub expanded: Vec<(NodeRecord, u32)>,
+    /// Deduplicated union of all logical_ids (search hits first, then expanded).
+    pub all_logical_ids: Vec<String>,
+}
+
 /// G10 — closed metadata filter for [`Engine::search_filtered`] (Slice 10).
 ///
 /// All fields are optional; a `None` field imposes no constraint, and an
@@ -1019,13 +1299,37 @@ impl SearchFilter {
     }
 }
 
+/// G11 (Slice 15) — a document sent to a BYO-LLM extraction harness via
+/// [`Engine::ingest_with_extractor`].
+#[derive(Clone, Debug)]
+pub struct ExtractDocument {
+    /// Stable opaque identifier for this document. Used as `source_id` on
+    /// ingested edges and for provenance tracking.
+    pub source_doc_id: String,
+    /// Full text body of the document to extract entities and relationships from.
+    pub body: String,
+}
+
+/// G11 (Slice 15) — receipt returned by [`Engine::ingest_with_extractor`].
+#[derive(Clone, Debug, Default)]
+pub struct IngestWithExtractorReceipt {
+    /// Number of `canonical_nodes` rows written (new entity insertions; skipped
+    /// for entities that already have a matching active logical_id).
+    pub nodes_written: u64,
+    /// Number of `canonical_edges` rows written (new fact-edge insertions;
+    /// superseded prior edges are ALSO counted as rows written).
+    pub edges_written: u64,
+    /// Number of documents processed (including no-facts documents).
+    pub docs_processed: u64,
+}
+
 /// Batch input shape for [`Engine::write`].
 ///
 /// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
 /// entity variants land in 0.6.x without a major bump. Adding fields to
 /// existing variants remains a binding-coordination change.
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PreparedWrite {
     Node {
         kind: String,
@@ -1051,6 +1355,21 @@ pub enum PreparedWrite {
         /// G0 (Slice 15) — see Node. Supersession semantics are identical on
         /// edges (keyed by `(logical_id, kind)`).
         logical_id: Option<String>,
+        /// G11 (Slice 15) — the fact/relationship text. When `Some`, triggers
+        /// FTS projection into `search_index_edges` and vector projection via
+        /// the projection scheduler (kind `"edge_fact"`). Also triggers
+        /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
+        body: Option<String>,
+        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
+        t_valid: Option<String>,
+        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
+        t_invalid: Option<String>,
+        /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
+        /// non-BYO-LLM-ingested edges.
+        confidence: Option<f64>,
+        /// G11 (Slice 15) — opaque model/provider id from the BYO-LLM harness
+        /// `ready.model` field. NULL for non-BYO-LLM edges.
+        extractor_model_id: Option<String>,
     },
     OpStore {
         collection: String,
@@ -1256,13 +1575,32 @@ pub enum EngineError {
     Embedder,
     EmbedderNotConfigured,
     KindNotVectorIndexed,
-    EmbedderDimensionMismatch { expected: u32, actual: u32 },
+    EmbedderDimensionMismatch {
+        expected: u32,
+        actual: u32,
+    },
     Scheduler,
     OpStore,
     WriteValidation,
     SchemaValidation,
     Overloaded,
     Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+    InvalidArgument {
+        msg: String,
+    },
 }
 
 impl Display for EngineError {
@@ -1283,6 +1621,9 @@ impl Display for EngineError {
             Self::SchemaValidation => write!(f, "schema validation error"),
             Self::Overloaded => write!(f, "engine overloaded"),
             Self::Closing => write!(f, "engine is closing"),
+            Self::Extractor => write!(f, "extractor error"),
+            Self::InvalidFilter { reason } => write!(f, "invalid filter: {reason}"),
+            Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
         }
     }
 }
@@ -1307,6 +1648,9 @@ impl EngineError {
             Self::SchemaValidation => "SchemaValidationError",
             Self::Overloaded => "OverloadedError",
             Self::Closing => "ClosingError",
+            Self::Extractor => "ExtractorError",
+            Self::InvalidFilter { .. } => "InvalidFilterError",
+            Self::InvalidArgument { .. } => "InvalidArgumentError",
         }
     }
 }
@@ -2031,7 +2375,13 @@ impl Engine {
         let base_cursor = self.next_cursor.load(Ordering::SeqCst);
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         let last_cursor = base_cursor.saturating_add(increment);
-        let pending_projection = !projection_jobs.is_empty();
+        // G11 (Slice 15) — edge bodies also need projection-runtime notification.
+        // `collect_projection_jobs` only tracks Node items (pre-fetched for
+        // cursor assignment); edge bodies update `_fathomdb_projection_state` in
+        // `commit_batch` but need the scanner to wake up via `notify_new_work`.
+        let has_edge_body_work =
+            batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work;
 
         let dangling_edge_endpoints = match commit_batch(
             connection,
@@ -2059,6 +2409,350 @@ impl Engine {
         Ok(WriteReceipt { cursor: last_cursor, row_cursors, dangling_edge_endpoints })
     }
 
+    /// G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+    /// speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, send
+    /// documents for extraction, and write the resulting entities
+    /// (→ `canonical_nodes`) and fact-edges (→ `canonical_edges` with G11
+    /// enrichment columns) to the store.
+    ///
+    /// `cmd` is argv (first element = program, rest = args). Documents are
+    /// batched per the harness's `max_docs_per_request`. Entity `logical_id`
+    /// is derived as `sha256("<type>:<name>")` (lowercase, hex-encoded) for
+    /// stable cross-re-ingestion identity. Edge `logical_id` is derived as
+    /// `sha256("<from_lid>:<to_lid>:<relation>")`. Both are consistent with
+    /// G0 supersession: re-ingesting the same document yields the same ids,
+    /// triggering tombstone-then-insert rather than accumulation.
+    ///
+    /// Returns [`EngineError::Extractor`] on protocol errors (bad handshake,
+    /// subprocess spawn failure, JSON decode error). `no_facts` warnings from
+    /// the harness are not errors and do not affect the receipt counts.
+    pub fn ingest_with_extractor(
+        &self,
+        cmd: &[&str],
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        let (program, args) = cmd.split_first().ok_or(EngineError::Extractor)?;
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|_| EngineError::Extractor)?;
+
+        let child_stdin = child.stdin.take().ok_or_else(|| {
+            let _ = child.kill();
+            let _ = child.wait();
+            EngineError::Extractor
+        })?;
+        let child_stdout = child.stdout.take().ok_or_else(|| {
+            let _ = child.kill();
+            let _ = child.wait();
+            EngineError::Extractor
+        })?;
+
+        // Delegate to inner; always reap the child regardless of outcome.
+        // drop(writer) inside inner sends EOF → child exits; child.wait() here reaps.
+        // On error paths, inner's writer is dropped by Rust's auto-drop → EOF sent;
+        // child.kill() is a no-op if already exited.
+        let result = self.ingest_with_extractor_inner(child_stdin, child_stdout, documents);
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+
+    fn ingest_with_extractor_inner(
+        &self,
+        child_stdin: std::process::ChildStdin,
+        child_stdout: std::process::ChildStdout,
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        // --- handshake: hello → ready ---
+        let hello = serde_json::json!({
+            "protocol": "fathomdb.extract.v1",
+            "type": "hello",
+            "schema_version": 1,
+        });
+        let mut writer = std::io::BufWriter::new(child_stdin);
+
+        // fix-35 [P1/P2]: drain stdout on a dedicated thread so (a) every read can
+        // be bounded with a timeout — a hung harness can no longer block ingest
+        // forever — and (b) the child's stdout pipe is drained continuously,
+        // preventing a large-request deadlock (parent blocked writing stdin while
+        // the child blocks writing a full stdout pipe). The handle is detached:
+        // joining could hang if a misbehaving child holds stdout open past its
+        // stdin EOF, so the outer `child.kill()` is what guarantees thread exit.
+        let io_timeout = extractor_io_timeout();
+        let (line_tx, line_rx) = mpsc::channel::<std::io::Result<String>>();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(child_stdout);
+            loop {
+                let mut buf = String::new();
+                match reader.read_line(&mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if line_tx.send(Ok(buf)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = line_tx.send(Err(e));
+                        break;
+                    }
+                }
+            }
+        });
+
+        let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
+        writeln!(writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
+        writer.flush().map_err(|_| EngineError::Extractor)?;
+
+        let line = recv_extractor_line(&line_rx, io_timeout)?;
+        let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
+        // fix-23 [P2]: validate protocol + schema_version in the ready message per ADR.
+        if ready.get("type").and_then(|v| v.as_str()) != Some("ready")
+            || ready.get("protocol").and_then(|v| v.as_str()) != Some("fathomdb.extract.v1")
+            || ready.get("schema_version").and_then(|v| v.as_u64()) != Some(1)
+        {
+            return Err(EngineError::Extractor);
+        }
+        let extractor_model_id = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let max_docs =
+            ready.get("max_docs_per_request").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+        // fix-1 [P2]: reject zero max_docs_per_request to prevent chunks(0) panic.
+        if max_docs == 0 {
+            return Err(EngineError::Extractor);
+        }
+
+        // --- per-batch extract → write loop ---
+        let mut nodes_written: u64 = 0;
+        let mut edges_written: u64 = 0;
+        let docs_processed = documents.len() as u64;
+
+        for (batch_idx, batch) in documents.chunks(max_docs).enumerate() {
+            let request_id = format!("req-{batch_idx}");
+            let docs_json: Vec<Value> = batch
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "source_doc_id": d.source_doc_id,
+                        "body": d.body,
+                    })
+                })
+                .collect();
+
+            let extract = serde_json::json!({
+                "protocol": "fathomdb.extract.v1",
+                "type": "extract",
+                "request_id": request_id,
+                "documents": docs_json,
+            });
+            let extract_line =
+                serde_json::to_string(&extract).map_err(|_| EngineError::Extractor)?;
+            writeln!(writer, "{extract_line}").map_err(|_| EngineError::Extractor)?;
+            writer.flush().map_err(|_| EngineError::Extractor)?;
+
+            let result_line = recv_extractor_line(&line_rx, io_timeout)?;
+            let result: Value =
+                serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
+
+            // fix-24 [P2]: require type=="result" AND matching request_id; any
+            // other envelope (error, wrong id, missing type) is a protocol fault.
+            let resp_type = result.get("type").and_then(|v| v.as_str());
+            let resp_id = result.get("request_id").and_then(|v| v.as_str());
+            if resp_type != Some("result") || resp_id != Some(request_id.as_str()) {
+                return Err(EngineError::Extractor);
+            }
+
+            // --- map entities → PreparedWrite::Node with stable logical_id ---
+            let entities =
+                result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let raw_edges =
+                result.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            if !entities.is_empty() {
+                let node_batch: Vec<PreparedWrite> = entities
+                    .iter()
+                    .map(|entity| -> Result<PreparedWrite, EngineError> {
+                        let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        let source_doc_id = entity
+                            .get("source_doc_id")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        // fix-34 [P1]: derive_logical_id now rejects an empty name
+                        // or a ':' in kind — inputs that would collide distinct
+                        // entities onto one identity and silently drop one.
+                        let logical_id = derive_logical_id(kind, name)?;
+                        Ok(PreparedWrite::Node {
+                            kind: kind.to_string(),
+                            body: name.to_string(),
+                            source_id: source_doc_id,
+                            logical_id: Some(logical_id),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // fix-29/fix-34 [P2]: deduplicate within the batch by logical_id so
+                // a harness that returns the same entity twice does not write a row
+                // that immediately supersedes its sibling (shared with the edge arm).
+                let node_batch = dedup_prepared_by_logical_id(node_batch);
+
+                // fix-23 [P2]: skip entities whose logical_id is already active
+                // to avoid needless supersede churn on re-ingest.
+                let ids: Vec<String> = node_batch
+                    .iter()
+                    .filter_map(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            Some(id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let existing: std::collections::HashSet<String> = self
+                    .read_get_many(&ids)?
+                    .into_iter()
+                    .zip(ids)
+                    .filter_map(|(opt, id)| opt.map(|_| id))
+                    .collect();
+                let new_nodes: Vec<PreparedWrite> = node_batch
+                    .into_iter()
+                    .filter(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            !existing.contains(id)
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+                if !new_nodes.is_empty() {
+                    let n = new_nodes.len() as u64;
+                    self.write(&new_nodes)?;
+                    nodes_written = nodes_written.saturating_add(n);
+                }
+            }
+
+            // --- map edges → PreparedWrite::Edge with G11 columns ---
+            if !raw_edges.is_empty() {
+                // fix-33 [P1]: the protocol gives edges NO endpoint types —
+                // `from_entity`/`to_entity` reference entities BY NAME (or alias).
+                // Build a name+alias → (canonical name, type) index from the same
+                // result's `entities[]` so each endpoint's logical_id matches the
+                // node's. (Nodes derive id from the entity's real type; defaulting
+                // the edge endpoint kind to "entity" orphaned every contract-faithful
+                // edge from its nodes and tripped the G8 dangling probe.)
+                //
+                // Two passes so a canonical NAME always wins over a (different
+                // entity's) ALIAS regardless of `entities[]` order: pass 1 inserts
+                // all canonical names, pass 2 fills aliases only where no name
+                // already claims that key. (Name↔name clashes remain first-wins —
+                // contradictory input; no principled resolution exists.)
+                let mut entity_index: std::collections::HashMap<String, (String, String)> =
+                    std::collections::HashMap::new();
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    entity_index
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| (name.to_string(), kind));
+                }
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
+                        for alias in aliases.iter().filter_map(|a| a.as_str()) {
+                            if !alias.is_empty() {
+                                entity_index
+                                    .entry(alias.to_lowercase())
+                                    .or_insert_with(|| (name.to_string(), kind.clone()));
+                            }
+                        }
+                    }
+                }
+
+                let edge_batch: Vec<PreparedWrite> = raw_edges
+                    .iter()
+                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                        let from_entity =
+                            edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let to_entity =
+                            edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let relation =
+                            edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
+                        let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_valid =
+                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_invalid =
+                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+                        // protocol boundary; reject out-of-range values.
+                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+                            Some(c) if !(0.0..=1.0).contains(&c) => {
+                                return Err(EngineError::Extractor);
+                            }
+                            c => c,
+                        };
+                        let source_doc_id =
+                            edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
+
+                        // fix-33 [P1]: resolve each endpoint via the entities[]
+                        // index (by name or alias) → the entity's canonical
+                        // (name, type); fall back to kind "entity" only for a truly
+                        // unlisted name (synthesized dangling endpoints ARE listed,
+                        // so this is the defensive path). derive_logical_id (fix-34)
+                        // still rejects an empty name / ':' in kind.
+                        let (from_name, from_kind) = entity_index
+                            .get(&from_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (from_entity.to_string(), "entity".to_string()));
+                        let (to_name, to_kind) = entity_index
+                            .get(&to_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (to_entity.to_string(), "entity".to_string()));
+                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
+                        let edge_key = format!("{from_lid}:{to_lid}:{relation}");
+                        let edge_lid = derive_logical_id("edge", &edge_key)?;
+
+                        Ok(PreparedWrite::Edge {
+                            kind: relation.to_string(),
+                            from: from_lid,
+                            to: to_lid,
+                            source_id: source_doc_id,
+                            logical_id: Some(edge_lid),
+                            body,
+                            t_valid,
+                            t_invalid,
+                            confidence,
+                            extractor_model_id: extractor_model_id.clone(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                // fix-34 [P2]: dedup edges by logical_id, mirroring the node arm
+                // (fix-29) — a duplicate edge in one harness response would
+                // otherwise write a row that immediately supersedes its sibling.
+                let edge_batch = dedup_prepared_by_logical_id(edge_batch);
+                let n = edge_batch.len() as u64;
+                self.write(&edge_batch)?;
+                edges_written = edges_written.saturating_add(n);
+            }
+        }
+
+        // Drop stdin → signal EOF to subprocess; outer shell waits for it.
+        drop(writer);
+
+        Ok(IngestWithExtractorReceipt { nodes_written, edges_written, docs_processed })
+    }
+
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
         self.search_filtered(query, None)
     }
@@ -2075,7 +2769,49 @@ impl Engine {
     ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query, filter);
+        let outcome = self.search_inner(query, filter, 0);
+        self.detect_slow(started, lifecycle::EventCategory::Search);
+        match outcome {
+            Ok(result) => {
+                self.counters.record_query();
+                self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search, None);
+                Ok(result)
+            }
+            Err(err) => {
+                let code = err.stable_code();
+                self.counters.record_error(code);
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Search,
+                    Some(code),
+                );
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Error,
+                    Some(code),
+                );
+                Err(err)
+            }
+        }
+    }
+
+    /// 0.8.1 Slice 10 (R1) — `search_reranked`: hybrid search with optional CE
+    /// reranking. `rerank_depth = 0` is the identity (soft-fallback) path,
+    /// byte-identical to [`search_filtered`][Engine::search_filtered]. `rerank_depth
+    /// = N > 0` applies the cross-encoder over the top-N fused hits (when the
+    /// `default-reranker` feature is enabled and the model is loaded); without the
+    /// model, the call falls back to the fused order.
+    ///
+    /// Governed surface: re-exported from `fathomdb` facade.
+    pub fn search_reranked(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
+        let started = Instant::now();
+        let outcome = self.search_inner(query, filter, rerank_depth);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -2149,6 +2885,7 @@ impl Engine {
         &self,
         query: &str,
         filter: Option<SearchFilter>,
+        rerank_depth: usize,
     ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
@@ -2211,6 +2948,8 @@ impl Engine {
             filter: filter.map(Box::new),
             recency_enabled,
             vector_stage_only,
+            raw_query: query.to_string(),
+            rerank_depth,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -2264,6 +3003,135 @@ impl Engine {
         }
     }
 
+    /// Slice 20 (G5) — `read.neighbors`: bounded BFS from `root_logical_id`
+    /// over `canonical_edges`. Returns nodes reachable within `depth` hops
+    /// (`1..=3`) in the given `direction`, excluding the root itself.
+    ///
+    /// Hard cap: 50 results (engine-enforced `LIMIT 50`).
+    /// Traversal filter: `superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > now)`.
+    ///
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+    /// Returns `Ok(vec![])` for an unknown/superseded root.
+    /// Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    pub fn graph_neighbors(
+        &self,
+        root_logical_id: &str,
+        depth: u32,
+        direction: TraversalDirection,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        if depth == 0 || depth > 3 {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("traversal depth {depth} is out of range; must be 1, 2, or 3"),
+            });
+        }
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::GraphNeighbors {
+            root_logical_id: root_logical_id.to_string(),
+            depth,
+            direction,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(nodes) => Ok(nodes),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 20 (G6) — `search_expand`: hybrid search (`G1+G9`) followed by
+    /// bounded BFS expansion (`G5`) of each search hit. Returns the original
+    /// search hits (with RRF scores) plus nodes reachable from any hit via
+    /// up to `depth` hops that are NOT already in the search hit set.
+    ///
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+    /// A `depth = 0` call returns search hits with their logical_ids resolved
+    /// but no BFS expansion. Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    ///
+    /// **Snapshot note:** the search phase (`search_inner`) and the expansion
+    /// phase (`SearchExpand` reader request) run in separate DEFERRED reader
+    /// transactions; a write that lands between them is visible to expansion
+    /// but not search (or vice-versa). In practice the window is negligible for
+    /// single-process embedded use. The expansion phase mitigates drift by
+    /// filtering `search_hits` to only include hits whose `write_cursor` is
+    /// still active in the expansion snapshot (superseded hits are dropped from
+    /// the result rather than surfaced with stale data).
+    pub fn search_expand(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        depth: u32,
+    ) -> Result<SearchExpandResult, EngineError> {
+        self.ensure_open()?;
+        if depth > 3 {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("traversal depth {depth} exceeds the SDK ceiling of 3"),
+            });
+        }
+        // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
+        let search_result = self.search_inner(query, filter, 0)?;
+        if search_result.results.is_empty() {
+            return Ok(SearchExpandResult {
+                search_hits: Vec::new(),
+                expanded: Vec::new(),
+                all_logical_ids: Vec::new(),
+            });
+        }
+        // Step 2: dispatch to the reader pool to resolve logical_ids and run BFS.
+        // depth=0 is forwarded to the reader so it can populate all_logical_ids
+        // (the union of search-hit logical_ids), even with no expansion.
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::SearchExpand {
+            search_hits: search_result.results,
+            depth,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL and
+    /// return the plan detail lines. Used by `explain_plan_uses_indexes`.
+    #[doc(hidden)]
+    pub fn explain_graph_neighbors_for_test(
+        &self,
+        root_logical_id: &str,
+        depth: u32,
+        direction: TraversalDirection,
+    ) -> Result<Vec<String>, EngineError> {
+        self.ensure_open()?;
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::ExplainGraphNeighbors {
+            root_logical_id: root_logical_id.to_string(),
+            depth,
+            direction,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(plan) => Ok(plan),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
     /// Slice 30 (G3) — `read.collection`: paginated op-store read-back over
     /// `operational_mutations` for `collection`, `ORDER BY id`. `limit` is
     /// MANDATORY (clamped to the ~1M cap); `after_id` is the exclusive cursor.
@@ -2299,6 +3167,54 @@ impl Engine {
         let request = ReaderRequest::ReadCollection {
             collection: collection.to_string(),
             after_id,
+            limit,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 35 (G4) — `read.list`: list active `canonical_nodes` of a given
+    /// `kind`, optionally filtered by a closed [`Predicate`] set, up to `limit`
+    /// rows. Returns `Vec<NodeRecord>` (active only; `superseded_at IS NULL`).
+    ///
+    /// Multiple predicates are combined as AND (D-F5). An empty predicate slice
+    /// returns all active nodes of the given kind up to `limit` (unfiltered path).
+    /// Compilation target: `json_extract(body, '$.field') <op> ?` with bound
+    /// parameters (injection-safe per D-F4). See `dev/adr/ADR-0.8.0-filter-grammar.md`.
+    ///
+    /// Path validation happens at [`Predicate`] construction time; `read_list`
+    /// revalidates as defense-in-depth (enum variants are `pub`, so direct
+    /// struct-literal construction could bypass the constructors).
+    pub fn read_list(
+        &self,
+        kind: &str,
+        predicates: &[Predicate],
+        limit: usize,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        // Defense-in-depth: revalidate paths even if the caller bypassed the
+        // validated constructors by constructing enum variants directly.
+        for pred in predicates {
+            let path = pred.path();
+            if !PREDICATE_PATH_ALLOWLIST.contains(&path) {
+                return Err(EngineError::InvalidFilter {
+                    reason: format!("path '{path}' is not in the predicate path allowlist"),
+                });
+            }
+        }
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::ReadList {
+            kind: kind.to_string(),
+            predicates: predicates.to_vec(),
             limit,
             respond: response_tx,
         };
@@ -3266,6 +4182,11 @@ impl Engine {
                 tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
                     .map_err(|_| EngineError::Storage)? as u64,
             );
+            // fix-26 [P2]: also excise edge FTS rows (G11 search_index_edges).
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
+                    .map_err(|_| EngineError::Storage)? as u64,
+            );
             // vec0 rowid is the canonical row's write_cursor (see
             // `_fathomdb_vector_rows.write_cursor UNIQUE`).
             shadow_invalidated = shadow_invalidated.saturating_add(
@@ -3358,6 +4279,11 @@ impl Engine {
         if include_fts {
             let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
             rows_invalidated = rows_invalidated.saturating_add(n as u64);
+            // fix-26 [P2]: also truncate edge FTS shadow (G11 search_index_edges).
+            let n = tx
+                .execute("DELETE FROM search_index_edges", [])
+                .map_err(|_| EngineError::Storage)?;
+            rows_invalidated = rows_invalidated.saturating_add(n as u64);
         }
         let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
         rows_invalidated = rows_invalidated.saturating_add(n as u64);
@@ -3376,6 +4302,29 @@ impl Engine {
                 tx.execute(
                     "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
                     params![row.body, row.kind, row.cursor],
+                )
+                .map_err(|_| EngineError::Storage)?;
+                rows_rebuilt = rows_rebuilt.saturating_add(1);
+            }
+            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
+            // with non-null bodies (G11 search_index_edges).
+            let mut edge_stmt = tx
+                .prepare(
+                    "SELECT write_cursor, kind, body FROM canonical_edges \
+                     WHERE superseded_at IS NULL AND body IS NOT NULL",
+                )
+                .map_err(|_| EngineError::Storage)?;
+            let edge_rows: Vec<(i64, String, String)> = edge_stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                })
+                .map_err(|_| EngineError::Storage)?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(|_| EngineError::Storage)?;
+            for (cursor, kind, body) in edge_rows {
+                tx.execute(
+                    "INSERT INTO search_index_edges(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![body, kind, cursor],
                 )
                 .map_err(|_| EngineError::Storage)?;
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
@@ -3595,26 +4544,49 @@ pub mod mean_centering_internals_for_test {
     }
 }
 
-/// G9 — Reciprocal Rank Fusion constant (`k ≈ 60`, the standard value;
-/// `0.8.0-agent-memory-fit.md` §8d). Fusion is on **rank**, never raw score.
-pub const RRF_K: f64 = 60.0;
+/// G9 — Reciprocal Rank Fusion constant. IR-C (2026-06-10b,
+/// `performance-output-and-compare.md`) found the standard `k≈60` slightly too
+/// high: the recall gain is concentrated at the top of the list, where a lower
+/// `k` sharpens rank-1/2 contributions. `k=30` is the validated operating point
+/// (`k10 > k30 > k60 > k100` on the sweep, `30` the conservative middle).
+/// Fusion is on **rank**, never raw score.
+pub const RRF_K: f64 = 30.0;
 
-/// G12-recency — additive recency weight, smaller than one RRF rank-step
-/// (`1/(RRF_K+1) ≈ 0.0164`) so recency breaks near-ties and nudges but never
-/// overrides a clear RRF signal. Conservative by construction.
-pub const RECENCY_WEIGHT: f64 = 0.5 / RRF_K;
+/// G9 / IR-C — per-branch RRF weights. The sweep's optimum is strongly
+/// **text-dominant** (`text:vector ≈ 3:1`): the lexical (BM25) arm carries
+/// exact-fact recall and the dense arm, over-weighted, is a net drag on
+/// exploratory recall (`performance-output-and-compare.md`, 2026-06-10b/e). A
+/// branch contributes `weight / (RRF_K + rank)`.
+pub const RRF_WEIGHT_VECTOR: f64 = 1.0;
+pub const RRF_WEIGHT_TEXT: f64 = 3.0;
+
+/// G12-recency — additive recency weight. Must satisfy two constraints:
+/// 1. Small enough to never override a clear RRF signal: a gap of > RECENCY_WEIGHT
+///    between two hits' RRF scores means the stronger RRF hit always wins.
+/// 2. Large enough to break exact ties: any hit with a higher `write_cursor` (more
+///    recent) gets RECENCY_WEIGHT × 1.0 > 0 nudge and wins a tied comparison.
+///
+/// Value 0.002 satisfies both: it requires a raw RRF gap > 0.002 to be overridden
+/// (one RRF rank-step ≈ 0.0164, so recency never flips a single-rank difference),
+/// and it is positive so norm=1.0 on an equal-score tie still promotes the newer hit.
+///
+/// 0.8.1 Slice 10 fix: the previous value `0.5/RRF_K ≈ 0.01667` violated
+/// constraint 1 — it overrode the test gap of 0.01 (`recency_does_not_override`
+/// RED test). Lowered from ≈0.01667 to 0.002.
+pub const RECENCY_WEIGHT: f64 = 0.002;
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
 ///
-/// Each branch contributes `1/(RRF_K + rank)` (1-based rank within that branch),
-/// accumulated **keyed on `SearchHit.body`**, so a body surfaced by both branches
-/// accumulates both terms (agreement boosts it). The fused value is written into
-/// `SearchHit.score`. A both-branch body surfaces **once** with the **vector**
-/// branch's identity (vector-first). Output is sorted by score descending, then
-/// vector-first, then insertion order — a pure, deterministic function of the two
-/// input lists (no `HashMap` iteration order leaks in). This is the
-/// **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no legacy
-/// path).
+/// Each branch contributes `weight / (RRF_K + rank)` (1-based rank within that
+/// branch; `weight` = [`RRF_WEIGHT_VECTOR`] / [`RRF_WEIGHT_TEXT`], text-dominant
+/// per IR-C), accumulated **keyed on `SearchHit.body`**, so a body surfaced by
+/// both branches accumulates both terms (agreement boosts it). The fused value
+/// is written into `SearchHit.score`. A both-branch body surfaces **once** with
+/// the **vector** branch's identity (vector-first). Output is sorted by score
+/// descending, then vector-first, then insertion order — a pure, deterministic
+/// function of the two input lists (no `HashMap` iteration order leaks in). This
+/// is the **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no
+/// legacy path).
 #[doc(hidden)]
 #[must_use]
 pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
@@ -3625,8 +4597,8 @@ pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
         order: usize,
     }
     let mut entries: Vec<Entry> = Vec::new();
-    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool| {
-        let contrib = 1.0 / (RRF_K + (rank0 as f64 + 1.0));
+    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool, weight: f64| {
+        let contrib = weight / (RRF_K + (rank0 as f64 + 1.0));
         if let Some(existing) = entries.iter_mut().find(|e| e.hit.body == hit.body) {
             // Dedup on body; the representative hit (vector-first) is retained.
             existing.score += contrib;
@@ -3636,10 +4608,10 @@ pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
         }
     };
     for (rank0, hit) in vector_hits.into_iter().enumerate() {
-        accumulate(hit, rank0, true);
+        accumulate(hit, rank0, true, RRF_WEIGHT_VECTOR);
     }
     for (rank0, hit) in text_hits.into_iter().enumerate() {
-        accumulate(hit, rank0, false);
+        accumulate(hit, rank0, false, RRF_WEIGHT_TEXT);
     }
     entries.sort_by(|a, b| {
         b.score
@@ -3686,13 +4658,129 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
     reweighted
 }
 
-/// G9 rerank seam — identity stub. Returns the fused order unchanged for now;
-/// the MMR/cross-encoder rerank lands additively in a later slice. This is the
-/// rerank hook, **not** the dropped `fusion_mode` knob.
+/// 0.8.1 Slice 10 (R1) — CE rerank seam.
+///
+/// `rerank_depth = 0` (or model absent / `default-reranker` feature off): returns
+/// `hits` **unchanged** — byte-identical to the old identity stub. This is the
+/// soft-fallback contract.
+///
+/// `rerank_depth > 0` with the `default-reranker` feature on and the model
+/// loaded: scores the top-`rerank_depth` (query, passage) pairs with the
+/// TinyBERT-L-2 cross-encoder, blends CE score with the RRF score using the
+/// formula from the design memo (Decision 5), re-sorts the top-N, and appends
+/// the remainder in their original RRF order.
+///
+/// Score-blend (Decision 5): `α × sigmoid(ce_logit) + (1−α) × rrf_score_normalized`
+/// where `α = 0.3` and both CE and RRF scores are normalized to [0,1] over the
+/// reranked pool.
+///
+/// This is the rerank hook, **not** the dropped `fusion_mode` knob.
 #[doc(hidden)]
 #[must_use]
-pub fn rerank_fused(hits: Vec<SearchHit>) -> Vec<SearchHit> {
+pub fn rerank_fused(query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> Vec<SearchHit> {
+    // Soft-fallback: depth=0 → identity (byte-identical to old stub).
+    if rerank_depth == 0 {
+        return hits;
+    }
+
+    // Feature-gated CE inference. In the default build (no feature) this block
+    // compiles away and `hits` is returned unchanged regardless of `rerank_depth`.
+    #[cfg(feature = "default-reranker")]
+    {
+        if let Some(reranked) = ce_rerank(query, hits, rerank_depth) {
+            return reranked;
+        }
+    }
+
+    // Model absent (feature off, weights not loaded, or CE returned None) →
+    // soft-fallback: return input unchanged.
+    let _ = query; // suppress unused-variable warning in default build
     hits
+}
+
+/// 0.8.1 Slice 10 — score-blend reranking when CE model is loaded.
+///
+/// Returns `Some(reranked)` if the model is available, `None` otherwise
+/// (caller then applies the soft-fallback).
+///
+/// Design memo Decision 5:
+/// - CE normalized = sigmoid(raw_logit) ∈ [0,1]
+/// - RRF normalized = min-max of `hit.score` over the top-K pool
+/// - `final_score = 0.3 × ce_norm + 0.7 × rrf_norm`
+/// - Hits beyond `rerank_depth` keep their original RRF scores and order.
+#[cfg(feature = "default-reranker")]
+fn ce_rerank(
+    _query: &str,
+    mut hits: Vec<SearchHit>,
+    rerank_depth: usize,
+) -> Option<Vec<SearchHit>> {
+    // Try to get the loaded model. Returns None when weights are absent.
+    let model = CandleCrossEncoder::try_get_loaded()?;
+
+    let n = rerank_depth.min(hits.len());
+    let (top, rest) = hits.split_at_mut(n);
+
+    // --- RRF min-max normalization over the top-N pool ---
+    let rrf_min = top.iter().map(|h| h.score).fold(f64::INFINITY, f64::min);
+    let rrf_max = top.iter().map(|h| h.score).fold(f64::NEG_INFINITY, f64::max);
+    let rrf_span = rrf_max - rrf_min;
+
+    let mut scored: Vec<(f64, SearchHit)> = top
+        .iter()
+        .map(|h| {
+            let rrf_norm = if rrf_span > 0.0 { (h.score - rrf_min) / rrf_span } else { 1.0 };
+            let raw_logit = model.score(_query, &h.body);
+            // Sigmoid for CE normalization: 1/(1+exp(-x)).
+            let ce_norm = 1.0 / (1.0 + (-raw_logit).exp());
+            const ALPHA: f64 = 0.3;
+            let blended = ALPHA * ce_norm + (1.0 - ALPHA) * rrf_norm;
+            (blended, h.clone())
+        })
+        .collect();
+
+    // Sort top-N by blended score descending (stable within ties by original order).
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut result: Vec<SearchHit> = scored
+        .into_iter()
+        .map(|(score, mut h)| {
+            h.score = score;
+            h
+        })
+        .collect();
+
+    // Append hits beyond rerank_depth in their original RRF order.
+    result.extend_from_slice(rest);
+    Some(result)
+}
+
+/// 0.8.1 Slice 10 (R1) — CPU TinyBERT-L-2 cross-encoder (feature-gated).
+///
+/// Uses Candle's BERT transformer stack + the `tokenizers` crate.
+/// Model weights are loaded once from cache at first request (lazy init).
+/// When the model is absent or load fails, `try_get_loaded()` returns `None`
+/// and the caller applies the soft-fallback.
+#[cfg(feature = "default-reranker")]
+struct CandleCrossEncoder;
+
+#[cfg(feature = "default-reranker")]
+impl CandleCrossEncoder {
+    /// Returns a model handle if the weights are cached locally, `None` otherwise.
+    /// Does NOT trigger a network fetch (fetch is a separate init step).
+    fn try_get_loaded() -> Option<Self> {
+        // TODO(0.8.1 Slice 10): implement weight-cache probe and model load.
+        // Returns None until weights are present → always soft-fallback in
+        // non-test builds that don't pre-stage the weights.
+        None
+    }
+
+    /// Score a (query, passage) pair. Returns the raw cross-encoder logit.
+    fn score(&self, _query: &str, _passage: &str) -> f64 {
+        // TODO(0.8.1 Slice 10): implement Candle BERT inference for TinyBERT-L-2.
+        // Tokenize (query, passage) pair → feed through 2-layer BERT →
+        // return the CLS logit from the linear classifier head.
+        0.0
+    }
 }
 
 /// G10 — the `AND col=?n` predicate fragment appended to the phase-1 candidates
@@ -3843,6 +4931,75 @@ fn text_hit_passes_filter(
     Ok(true)
 }
 
+/// G11 (Slice 15) — does an edge FTS hit satisfy the filter?
+///
+/// Edge FTS hits always have `source_type = "edge_fact"` (the partition
+/// discriminant). Their `row.kind` is the **relation** kind (e.g. `"owns"`,
+/// `"works_for"`), not a node kind, so [`text_hit_passes_filter`] MUST NOT be
+/// used for edge hits: `resolve_source_type(relation_kind)` returns `Err` for
+/// unknown kinds, causing every edge hit to be silently rejected when a
+/// `source_type` filter is set — the exact inverse of correct behaviour.
+///
+/// Edge bodies ARE projected into `vector_default` (rowid = `write_cursor`),
+/// so `created_after` / `status` are satisfied by querying `vector_default`
+/// exactly as [`text_hit_passes_filter`] does for node hits.
+///
+/// Rules:
+/// - `source_type`: pass iff `None` **or** `== "edge_fact"`.
+/// - `kind`: filter on the relation kind (`row.kind`) if specified.
+/// - `created_after` / `status`: query `vector_default WHERE rowid = write_cursor`;
+///   if absent from the vector partition the hit cannot satisfy a vec-metadata
+///   predicate and is excluded.
+fn edge_fts_hit_passes_filter(
+    tx: &rusqlite::Transaction<'_>,
+    write_cursor: u64,
+    row_kind: &str,
+    filter: Option<&SearchFilter>,
+) -> rusqlite::Result<bool> {
+    let Some(filter) = filter else {
+        return Ok(true);
+    };
+    if filter.is_unfiltered() {
+        return Ok(true);
+    }
+    if let Some(ref st) = filter.source_type {
+        if st != "edge_fact" {
+            return Ok(false); // filter targets a specific non-edge source_type
+        }
+    }
+    if let Some(ref k) = filter.kind {
+        if k != row_kind {
+            return Ok(false); // kind filter applies to the relation kind
+        }
+    }
+    // Edge bodies are projected into vector_default; check created_after/status
+    // there, the same way text_hit_passes_filter does for node hits.
+    if filter.created_after.is_some() || filter.status.is_some() {
+        let meta: Option<(i64, Option<String>)> = tx
+            .query_row(
+                "SELECT created_at, status FROM vector_default WHERE rowid = ?1 LIMIT 1",
+                [write_cursor as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?;
+        let Some((created_at, status)) = meta else {
+            // No vector-partition row: cannot satisfy a vec-metadata predicate.
+            return Ok(false);
+        };
+        if let Some(bound) = filter.created_after {
+            if created_at < bound {
+                return Ok(false);
+            }
+        }
+        if let Some(want) = &filter.status {
+            if status.as_deref() != Some(want.as_str()) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Read projection cursor and matching body rows inside one read tx.
 // The 8th parameter (`vector_stage_only`) is the additive GA-2 / ◆ B-1
 // measurement seam; the reader-worker call site threads each field through
@@ -3858,6 +5015,8 @@ fn read_search_in_tx(
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
     vector_stage_only: bool,
+    raw_query: &str,
+    rerank_depth: usize,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -3902,11 +5061,20 @@ fn read_search_in_tx(
         // `body`, and the `vec_distance_l2` rerank score per hit. The
         // `_fathomdb_vector_rows.rowid` equals the canonical `write_cursor`,
         // so the candidate rowid IS the hit id.
+        //
+        // G11 (Slice 15) fix: edge bodies are projected into vector_default under
+        // kind = "edge_fact"; their write_cursor is in canonical_edges, not
+        // canonical_nodes. Try canonical_nodes first; fall back to canonical_edges
+        // for edge-fact hits so they are not silently dropped.
         let mut results = Vec::new();
-        let mut statement =
+        let mut node_stmt =
             tx.prepare("SELECT kind, body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        let mut edge_stmt = tx.prepare(
+            "SELECT body FROM canonical_edges \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
+        )?;
         for (rowid, score) in rowids {
-            if let Ok((kind, body)) = statement
+            if let Ok((kind, body)) = node_stmt
                 .query_row([rowid], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
             {
                 results.push(SearchHit {
@@ -3915,6 +5083,14 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::Vector,
+                });
+            } else if let Ok(body) = edge_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+                results.push(SearchHit {
+                    id: rowid as u64,
+                    kind: "edge_fact".to_string(),
+                    body,
+                    score,
+                    branch: SoftFallbackBranch::TextEdge,
                 });
             }
         }
@@ -3957,16 +5133,21 @@ fn read_search_in_tx(
             None
         };
         // G1: SELECT body + kind + write_cursor (interim id) and the
-        // `bm25()` text-relevance score. Order is `write_cursor` (the per-branch
-        // rank RRF fuses on). This text SQL is unchanged from 0.7.2 — the filter
-        // is applied as a Rust post-filter so the unfiltered path is untouched.
+        // `bm25()` text-relevance score. IR-C (2026-06-10,
+        // `performance-output-and-compare.md`): the per-branch rank RRF fuses on
+        // must be **`bm25()` relevance**, not `write_cursor` (insertion order) —
+        // the prior `ORDER BY write_cursor` meant the lexical arm never ranked by
+        // relevance, the single biggest fusion bug. `bm25()` is more-negative ⇒
+        // better, so ascending puts best matches first; `write_cursor` is the
+        // deterministic tiebreak. The filter is applied as a Rust post-filter so
+        // the unfiltered path is untouched.
         let sql = match perf_limit {
             Some(k) => format!(
                 "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY write_cursor LIMIT {k}"
+                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor LIMIT {k}"
             ),
             None => "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY write_cursor"
+                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor"
                 .to_string(),
         };
         let mut statement = tx.prepare(&sql)?;
@@ -3985,6 +5166,54 @@ fn read_search_in_tx(
     for hit in text_candidates {
         if text_hit_passes_filter(&tx, hit.id, &hit.kind, filter)? {
             text_results.push(hit);
+        }
+    }
+
+    // G11 (Slice 15) — edge-body FTS branch from `search_index_edges`.
+    // Appended to text_results; tagged with SoftFallbackBranch::TextEdge so
+    // callers can distinguish edge hits from node hits.
+    //
+    // fix-1 [P2]: JOIN canonical_edges to exclude superseded edge rows
+    // (invalidate-not-accumulate can leave a superseded body in the FTS index).
+    // fix-2 [P2]: use edge_fts_hit_passes_filter (NOT text_hit_passes_filter).
+    // Edge hits always have source_type="edge_fact"; text_hit_passes_filter
+    // calls resolve_source_type(relation_kind) which returns Err for unknown
+    // relation kinds, silently rejecting every edge hit when a source_type
+    // filter is set — the exact inverse of correct behaviour.
+    // fix-3 [P2]: edge_fts_hit_passes_filter now queries vector_default for
+    // created_after/status (mirroring text_hit_passes_filter). Collect edge
+    // candidates into a Vec first (drops stmt borrow on tx) so we can pass
+    // &tx to edge_fts_hit_passes_filter without a borrow conflict.
+    let edge_candidates: Vec<SearchHit> = {
+        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges) \
+             FROM search_index_edges sei \
+             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+             WHERE search_index_edges MATCH ?1 \
+               AND ce.superseded_at IS NULL \
+             ORDER BY bm25(search_index_edges), sei.write_cursor";
+        // search_index_edges may not exist on very old DBs not yet at step-14;
+        // ignore the error gracefully (returns empty slice).
+        if let Ok(mut stmt) = tx.prepare(edge_sql) {
+            if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
+                Ok(SearchHit {
+                    body: row.get::<_, String>(0)?,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::TextEdge,
+                })
+            }) {
+                rows.flatten().collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    };
+    for row in edge_candidates {
+        if edge_fts_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+            text_results.push(row);
         }
     }
     tx.commit()?;
@@ -4006,10 +5235,11 @@ fn read_search_in_tx(
         // off by default), then pass through the identity rerank seam. The
         // vector-empty `soft_fallback` signal was computed above, BEFORE this
         // branch-collapse.
-        rerank_fused(apply_recency_reweight(
-            fuse_rrf(vector_results, text_results),
-            recency_enabled,
-        ))
+        rerank_fused(
+            raw_query,
+            apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled),
+            rerank_depth,
+        )
     };
     Ok((cursor, soft_fallback, results))
 }
@@ -4118,6 +5348,416 @@ fn read_collection_in_tx(
             write_cursor: row.get::<_, i64>(6)? as u64,
         })
     })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Slice 35 (G4) — execute `read.list` inside a DEFERRED reader transaction.
+///
+/// Builds parameterized SQL: `kind = ?1 AND superseded_at IS NULL [AND
+/// json_extract(body, '$.field') <op> ?N ...]` — injection-safe because:
+///   (a) `kind` is `?1` (bound parameter);
+///   (b) each predicate value is a bound `?N` parameter;
+///   (c) the json_extract path is the ALLOWLIST ENTRY (a server-side constant
+///       validated at `Predicate` construction time), never the raw caller string;
+///   (d) `ComparisonOp` compiles to a server-side literal operator string from a
+///       closed enum, not a caller-supplied string.
+fn read_list_in_tx(
+    reader: &mut Connection,
+    kind: &str,
+    predicates: &[Predicate],
+    limit: usize,
+) -> rusqlite::Result<Vec<NodeRecord>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    // Build the SQL WHERE clauses for each predicate.
+    // Parameters: ?1 = kind; ?2..?N = predicate values; limit is inlined.
+    // `logical_id IS NOT NULL` is a SQL-level predicate so that LIMIT counts
+    // only rows that can be represented as NodeRecord (which requires a non-null
+    // String logical_id). Anonymous nodes (PreparedWrite::Node { logical_id: None })
+    // cannot be included in NodeRecord results and are excluded before LIMIT.
+    // When predicates are present we add `json_valid(body)` so rows with
+    // non-JSON bodies are skipped rather than causing a `malformed JSON` error.
+    let json_valid_guard = if predicates.is_empty() { "" } else { " AND json_valid(body)" };
+    let mut sql = format!(
+        "SELECT logical_id, kind, body, write_cursor \
+         FROM canonical_nodes \
+         WHERE kind = ?1 \
+         AND superseded_at IS NULL \
+         AND logical_id IS NOT NULL{json_valid_guard}"
+    );
+
+    // Predicate params start at ?2.
+    for (i, pred) in predicates.iter().enumerate() {
+        let param_idx = i + 2; // ?1 is kind
+        sql.push_str(" AND ");
+        sql.push_str(&pred.to_sql_clause(param_idx));
+    }
+    sql.push_str(&format!(" LIMIT {limit}"));
+
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let mut statement = tx.prepare(&sql)?;
+
+    // Bind all parameters: [kind, predicate_values...]
+    let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(1 + predicates.len());
+    params.push(rusqlite::types::Value::Text(kind.to_string()));
+    for pred in predicates {
+        params.push(pred.bind_value());
+    }
+
+    let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+        Ok(NodeRecord {
+            logical_id: row.get(0)?,
+            kind: row.get(1)?,
+            body: row.get(2)?,
+            write_cursor: row.get::<_, i64>(3)? as u64,
+        })
+    })?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Slice 20 (G5/G6) — BFS graph-traversal helpers
+// ---------------------------------------------------------------------------
+
+/// Hard cap on the number of nodes returned by a single `graph_neighbors` call.
+/// Ported from v0.5.6 `MAX_TRAVERSAL_DEPTH` (applied as a LIMIT on the CTE and
+/// the final SELECT). Defense-in-depth against unbounded traversal.
+const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
+
+/// Build the BFS CTE SQL for the given `direction`.
+///
+/// Parameters (positional):
+///   `?1` — root `logical_id`
+///   `?2` — max_depth (`u32`, SDK-facing depth ceiling ≤ 3)
+///
+/// `datetime('now')` is inlined for the valid-time filter (no extra parameter).
+/// `LIMIT {GRAPH_NEIGHBORS_HARD_CAP}` appears on both the CTE and the final SELECT.
+fn build_bfs_sql(direction: TraversalDirection) -> String {
+    let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    // cte_cap: the SQLite CTE LIMIT counts path-rows, not distinct nodes. In a
+    // multigraph (multiple parallel edges between the same pair of nodes), the CTE
+    // can contain duplicate-target rows before the final SELECT DISTINCT. A cap of
+    // cap+1 would be exhausted by ~50 parallel edges to the same node, preventing
+    // other neighbors from being discovered. Use cap*cap as a generous safety
+    // ceiling that still bounds CTE growth for any realistic graph while allowing
+    // the final SELECT LIMIT cap to be the authoritative distinct-node cap.
+    let cte_cap = cap * cap;
+    // Cycle guard uses char(30) (ASCII Record Separator, 0x1E) as delimiter instead
+    // of comma, so logical_ids containing commas are handled correctly. char(30) is
+    // a non-printable control character that callers cannot place in logical_id values
+    // via normal text input.
+    match direction {
+        TraversalDirection::Outgoing => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT e.to_id, t.depth + 1, t.visited || e.to_id || char(30)
+    FROM traversal t
+    JOIN canonical_edges e ON e.from_id = t.logical_id
+    JOIN canonical_nodes next_n ON next_n.logical_id = e.to_id
+      AND next_n.superseded_at IS NULL
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND instr(t.visited, char(30) || e.to_id || char(30)) = 0
+    LIMIT {cte_cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+        TraversalDirection::Incoming => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT e.from_id, t.depth + 1, t.visited || e.from_id || char(30)
+    FROM traversal t
+    JOIN canonical_edges e ON e.to_id = t.logical_id
+    JOIN canonical_nodes next_n ON next_n.logical_id = e.from_id
+      AND next_n.superseded_at IS NULL
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND instr(t.visited, char(30) || e.from_id || char(30)) = 0
+    LIMIT {cte_cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+        TraversalDirection::Both => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT
+      CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
+      t.depth + 1,
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)
+    FROM traversal t
+    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    JOIN canonical_nodes next_n
+      ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
+      AND next_n.superseded_at IS NULL
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND instr(t.visited,
+            char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
+    LIMIT {cte_cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+    }
+}
+
+/// Build the BFS CTE SQL for `search_expand` — identical to `build_bfs_sql`
+/// but the final SELECT uses `GROUP BY` + `MIN(tr.depth)` so that each
+/// expanded node carries its actual BFS distance from the root.
+///
+/// Returns 5 columns: logical_id, kind, body, write_cursor, min_depth.
+fn build_bfs_with_depth_sql() -> String {
+    let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    let cte_cap = cap * cap; // same multigraph-safe headroom as build_bfs_sql
+    format!(
+        "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT
+      CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
+      t.depth + 1,
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)
+    FROM traversal t
+    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    JOIN canonical_nodes next_n
+      ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
+      AND next_n.superseded_at IS NULL
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND instr(t.visited,
+            char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
+    LIMIT {cte_cap}
+  )
+SELECT n.logical_id, n.kind, n.body, n.write_cursor, MIN(tr.depth) AS min_depth
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+GROUP BY n.logical_id
+LIMIT {cap}"
+    )
+}
+
+/// Slice 20 (G5) — execute a bounded BFS on the DEFERRED reader transaction.
+/// Called inside the reader worker loop.
+fn graph_neighbors_in_tx(
+    reader: &mut Connection,
+    root_logical_id: &str,
+    depth: u32,
+    direction: TraversalDirection,
+) -> rusqlite::Result<Vec<NodeRecord>> {
+    let sql = build_bfs_sql(direction);
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let depth_i64 = depth as i64;
+    let mut statement = tx.prepare(&sql)?;
+    let rows = statement.query_map(params![root_logical_id, depth_i64], |row| {
+        Ok(NodeRecord {
+            logical_id: row.get(0)?,
+            kind: row.get(1)?,
+            body: row.get(2)?,
+            write_cursor: row.get::<_, i64>(3)? as u64,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Slice 20 (G6) — resolve search hit `write_cursor`s to `logical_id`s, run
+/// BFS for each root, and merge into a [`SearchExpandResult`]. Called inside
+/// the reader worker loop on the DEFERRED reader transaction.
+fn search_expand_in_tx(
+    reader: &mut Connection,
+    search_hits: &[SearchHit],
+    depth: u32,
+) -> rusqlite::Result<SearchExpandResult> {
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+
+    // Step 1: resolve write_cursor → logical_id for each search hit.
+    // Possible outcomes per hit:
+    //   - None: no matching write_cursor in canonical_nodes (superseded) → drop.
+    //   - Some(""):  row exists but logical_id IS NULL (anonymous node) or TextEdge hit
+    //                → keep as valid search result, skip BFS expansion (empty sentinel).
+    //   - Some(lid): active named node → keep; use as BFS root.
+    let mut hit_logical_ids: Vec<Option<String>> = Vec::with_capacity(search_hits.len());
+    {
+        let mut node_stmt = tx.prepare(
+            "SELECT logical_id FROM canonical_nodes
+             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             LIMIT 1",
+        )?;
+        let mut edge_stmt = tx.prepare(
+            "SELECT 1 FROM canonical_edges
+             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             LIMIT 1",
+        )?;
+        for hit in search_hits {
+            if hit.branch == SoftFallbackBranch::TextEdge {
+                // Edge-body hit: verify the edge row is still active in THIS snapshot.
+                // Stale edge hits (superseded between search and expansion) are dropped.
+                let cursor_i64 = hit.id as i64;
+                let active: Option<i32> =
+                    edge_stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
+                if active.is_some() {
+                    hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS
+                } else {
+                    hit_logical_ids.push(None); // superseded edge: drop
+                }
+            } else {
+                let cursor_i64 = hit.id as i64;
+                // Returns Option<Option<String>>:
+                //   None         → no row → superseded
+                //   Some(None)   → row with NULL logical_id → anonymous node
+                //   Some(Some(s)) → active named node
+                let resolved = node_stmt
+                    .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
+                    .optional()?;
+                match resolved {
+                    None => hit_logical_ids.push(None), // superseded: drop
+                    Some(None) => hit_logical_ids.push(Some(String::new())), // anon: keep, skip BFS
+                    Some(Some(lid)) => hit_logical_ids.push(Some(lid)), // named: keep + BFS root
+                }
+            }
+        }
+    }
+
+    // Build a set of logical_ids present in the search hits (for deduplication).
+    // Empty-string sentinels (TextEdge hits) are excluded — they are not real node ids.
+    let hit_id_set: std::collections::HashSet<String> =
+        hit_logical_ids.iter().filter_map(|id| id.clone()).filter(|s| !s.is_empty()).collect();
+
+    // Step 2: for each root logical_id, run the BFS and collect expanded nodes.
+    // A node already in `hit_id_set` is NOT added to `expanded`.
+    // Use the depth-aware variant so each node reports its actual BFS distance.
+    let bfs_sql = build_bfs_with_depth_sql();
+    let depth_i64 = depth as i64;
+    // nearest_hop: for each expanded logical_id track the minimum hop count
+    // seen across ALL search-hit roots. A node reachable from multiple roots
+    // at different depths must report the shortest distance (nearest root).
+    let mut nearest_hop: std::collections::HashMap<String, (NodeRecord, u32)> =
+        std::collections::HashMap::new();
+
+    if depth > 0 {
+        let mut bfs_stmt = tx.prepare(&bfs_sql)?;
+        for root_id in hit_logical_ids.iter().flatten().filter(|s| !s.is_empty()) {
+            let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
+                let node = NodeRecord {
+                    logical_id: row.get(0)?,
+                    kind: row.get(1)?,
+                    body: row.get(2)?,
+                    write_cursor: row.get::<_, i64>(3)? as u64,
+                };
+                let min_depth: i64 = row.get(4)?;
+                Ok((node, min_depth as u32))
+            })?;
+            for row_result in neighbor_rows {
+                let (node, hop_count) = row_result?;
+                if hit_id_set.contains(&node.logical_id) {
+                    // Already a search hit — skip (search score takes priority).
+                    continue;
+                }
+                nearest_hop
+                    .entry(node.logical_id.clone())
+                    .and_modify(|(_, prev_hop)| {
+                        if hop_count < *prev_hop {
+                            *prev_hop = hop_count;
+                        }
+                    })
+                    .or_insert((node, hop_count));
+            }
+        }
+    }
+
+    // Materialize expanded in insertion order (deterministic for tests).
+    let mut expanded: Vec<(NodeRecord, u32)> = nearest_hop.into_values().collect();
+    expanded.sort_by(|(a, _), (b, _)| a.logical_id.cmp(&b.logical_id));
+
+    // Filter search_hits to only include those whose write_cursor resolved to an
+    // active logical_id in THIS snapshot. Hits that were superseded between the
+    // search phase and the expansion phase (the two-snapshot window) are dropped
+    // rather than returned with stale data.
+    let resolved_hits: Vec<SearchHit> = search_hits
+        .iter()
+        .zip(hit_logical_ids.iter())
+        .filter_map(|(hit, lid)| lid.as_ref().map(|_| hit.clone()))
+        .collect();
+
+    // Build `all_logical_ids` = resolved search-hit logical_ids + expanded node ids.
+    // Empty-string sentinels (TextEdge hits) are excluded — they are not real node ids.
+    let mut all_logical_ids: Vec<String> =
+        hit_logical_ids.into_iter().flatten().filter(|s| !s.is_empty()).collect();
+    for (node, _) in &expanded {
+        if !all_logical_ids.contains(&node.logical_id) {
+            all_logical_ids.push(node.logical_id.clone());
+        }
+    }
+
+    Ok(SearchExpandResult { search_hits: resolved_hits, expanded, all_logical_ids })
+}
+
+/// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL and return
+/// the plan `detail` column (column index 3) for each row. Used by
+/// `explain_plan_uses_indexes` to assert index usage.
+fn explain_graph_neighbors_in_tx(
+    reader: &mut Connection,
+    root_logical_id: &str,
+    depth: u32,
+    direction: TraversalDirection,
+) -> rusqlite::Result<Vec<String>> {
+    let bfs_sql = build_bfs_sql(direction);
+    let explain_sql = format!("EXPLAIN QUERY PLAN {bfs_sql}");
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let depth_i64 = depth as i64;
+    let mut statement = tx.prepare(&explain_sql)?;
+    // EXPLAIN QUERY PLAN returns rows: (id, parent, notused, detail).
+    // We collect the `detail` column (index 3).
+    let rows =
+        statement.query_map(params![root_logical_id, depth_i64], |row| row.get::<_, String>(3))?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -4495,15 +6135,35 @@ fn next_pending_projection_jobs(
     // Over-fetch by `in_flight.len()` so the post-filter still returns
     // up to `max_jobs` after skipping cursors already in-flight.
     let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+    // G11 (Slice 15) — UNION extends the projection queue to include edge bodies.
+    // Edge bodies use kind `'edge_fact'` so `resolve_source_type` maps them to
+    // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
+    // The UNION is ordered by write_cursor so projection proceeds in
+    // insertion order across nodes and edges.
     let sql = format!(
-        "SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
-         FROM canonical_nodes
-         JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
-         LEFT JOIN _fathomdb_projection_terminal
-           ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
-         WHERE canonical_nodes.write_cursor > ?1
-           AND _fathomdb_projection_terminal.write_cursor IS NULL
-         ORDER BY canonical_nodes.write_cursor
+        "SELECT write_cursor, kind, body FROM (
+             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+
+             UNION ALL
+
+             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+             FROM canonical_edges
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+             WHERE canonical_edges.write_cursor > ?1
+               AND canonical_edges.body IS NOT NULL
+               AND canonical_edges.superseded_at IS NULL
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+         ) ORDER BY write_cursor
          LIMIT {sql_limit}"
     );
     let mut statement = connection.prepare_cached(&sql)?;
@@ -4527,7 +6187,8 @@ fn next_pending_projection_jobs(
 fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     let connection = open_runtime_connection(path)?;
     let cursor = load_projection_cursor(&connection)?;
-    connection
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
         .query_row(
             "SELECT 1
              FROM canonical_nodes
@@ -4538,6 +6199,31 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
                AND _fathomdb_projection_terminal.write_cursor IS NULL
              LIMIT 1",
             [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
+    connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+            [],
             |_row| Ok(true),
         )
         .or_else(|err| match err {
@@ -5766,8 +7452,76 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
         "todo" => "todo",
         // Synthetic AC-013 test fixture; coerced so the 6-value HITL lock holds.
         "doc" => "article",
+        // G11 (Slice 15) — edge-body projection; separate `source_type` partition
+        // key distinguishes edge vectors from node vectors in `vector_default`.
+        "edge_fact" => "edge_fact",
         _ => return Err(EngineError::Storage),
     })
+}
+
+/// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
+/// `(kind, name)` pair. Both inputs are lowercased before hashing so that
+/// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
+/// canonical form is `sha256("<kind>:<name>")` — identical to the
+/// ADR-0.8.1-byo-llm derivation rule.
+///
+/// fix-34 [P1]: because `:` is the delimiter, a `:` in `kind` would let the
+/// split point move and collide two distinct `(kind, name)` pairs onto one
+/// identity (e.g. `("a:b","c")` and `("a","b:c")` both hash `"a:b:c"`),
+/// silently dropping one entity via batch dedup / G0 supersession. An empty
+/// `name` collapses every name-less entity of a kind onto `sha256("<kind>:")`.
+/// We reject both at the boundary; this preserves the ADR derivation rule
+/// (a colon-free `kind` makes the first `:` an unambiguous delimiter, so a `:`
+/// in `name` stays safe — edge keys deliberately rely on that).
+fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
+    if kind.contains(':') || name.is_empty() {
+        return Err(EngineError::Extractor);
+    }
+    let input = format!("{}:{}", kind.to_lowercase(), name.to_lowercase());
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// fix-34 [P2]: dedup a batch of [`PreparedWrite`]s by `logical_id`, keeping the
+/// first occurrence. Shared by the entity and edge arms of the BYO-LLM ingest
+/// path so a harness that returns the same node/edge twice in one response does
+/// not write a row that immediately supersedes its sibling.
+fn dedup_prepared_by_logical_id(batch: Vec<PreparedWrite>) -> Vec<PreparedWrite> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    batch
+        .into_iter()
+        .filter(|w| match w {
+            PreparedWrite::Node { logical_id: Some(id), .. }
+            | PreparedWrite::Edge { logical_id: Some(id), .. } => seen.insert(id.clone()),
+            _ => true,
+        })
+        .collect()
+}
+
+/// fix-35 [P2]: BYO-LLM extractor I/O timeout. Defaults to 300s to accommodate
+/// slow LLM harnesses; override (in milliseconds) via
+/// `FATHOMDB_EXTRACTOR_TIMEOUT_MS` (tests use this to exercise the hung-harness
+/// path quickly).
+fn extractor_io_timeout() -> Duration {
+    std::env::var("FATHOMDB_EXTRACTOR_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| Duration::from_secs(300))
+}
+
+/// fix-35 [P1/P2]: receive one line from the stdout reader thread, bounded by
+/// `timeout`. A timeout, a closed channel (reader thread ended / child EOF), or
+/// an underlying io error all map to [`EngineError::Extractor`].
+fn recv_extractor_line(
+    rx: &Receiver<std::io::Result<String>>,
+    timeout: Duration,
+) -> Result<String, EngineError> {
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(line)) => Ok(line),
+        _ => Err(EngineError::Extractor),
+    }
 }
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
@@ -5973,15 +7727,22 @@ fn validate_write(
             }
             // G0 — an explicit logical_id must be non-empty (NULL/None is the
             // legacy default; an empty string is never a valid identity).
+            // Also reject char(30) = \x1e (ASCII RS), which is the BFS cycle-guard
+            // delimiter; allowing it would corrupt the visited-path substring test.
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
                 }
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, source_id, logical_id } => {
+        PreparedWrite::Edge { kind, from, to, source_id, logical_id, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
+                return Err(EngineError::WriteValidation);
+            }
+            // Reject char(30) in from/to: these become from_id/to_id in canonical_edges
+            // and appear in BFS visited strings — an \x1e there would corrupt the guard.
+            if from.contains('\x1e') || to.contains('\x1e') {
                 return Err(EngineError::WriteValidation);
             }
             if let Some(source_id) = source_id {
@@ -5990,7 +7751,7 @@ fn validate_write(
                 }
             }
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
                 }
             }
@@ -6074,6 +7835,34 @@ fn value_contains_external_ref(value: &Value) -> bool {
     }
 }
 
+// fix-30 [P2]: helpers to collect active edge write_cursors BEFORE a supersession
+// UPDATE so the callers can prune stale vector_default rows.
+fn prior_edge_cursors_by_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_edges \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+    rows.collect()
+}
+
+fn prior_edge_cursors_by_triple(
+    tx: &rusqlite::Transaction<'_>,
+    from: &str,
+    to: &str,
+    kind: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_edges \
+         WHERE from_id = ?1 AND to_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![from, to, kind], |r| r.get(0))?;
+    rows.collect()
+}
+
 fn commit_batch(
     connection: &mut Connection,
     batch: &[PreparedWrite],
@@ -6126,25 +7915,123 @@ fn commit_batch(
                     record_projection_terminal(&tx, cursor, "up_to_date")?;
                 }
             }
-            (PreparedWrite::Edge { kind, from, to, source_id, logical_id }, WritePlan::Edge) => {
+            (
+                PreparedWrite::Edge {
+                    kind,
+                    from,
+                    to,
+                    source_id,
+                    logical_id,
+                    body,
+                    t_valid,
+                    t_invalid,
+                    confidence,
+                    extractor_model_id,
+                },
+                WritePlan::Edge,
+            ) => {
                 // G0 — identical tombstone-then-insert supersession on edges,
                 // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
                 // edge `kind` is relationship-type, not identity — a kind-change
                 // re-ingest of the same edge logical_id SUPERSEDES, never forks).
                 // No-op when logical_id is None.
                 if let Some(logical_id) = logical_id {
+                    // fix-30 [P2]: collect prior active cursors BEFORE tombstoning
+                    // so stale vector_default rows can be pruned.
+                    let prior_g0 = prior_edge_cursors_by_logical_id(&tx, logical_id)?;
                     tx.execute(
                         "UPDATE canonical_edges SET superseded_at = ?1
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
                         params![cursor, logical_id],
                     )?;
+                    for sc in &prior_g0 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: record terminal so advance_projection_cursor
+                        // can walk past this now-superseded cursor.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
+                }
+                // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
+                // tombstone any prior active edge on the same (from_id, to_id, kind)
+                // BEFORE inserting the new row. This is DIFFERENT from the G0
+                // logical_id tombstone: it is keyed on the triple, not the identity.
+                // Regular edges (body=None) skip this path — they retain G0 semantics.
+                if body.is_some() {
+                    // fix-30 [P2]: collect and prune vector shadow for the superseded edge.
+                    let prior_g11 = prior_edge_cursors_by_triple(&tx, from, to, kind)?;
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
+                        params![cursor, from, to, kind],
+                    )?;
+                    for sc in &prior_g11 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: mark terminal so projection cursor can advance.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
                 }
                 tx.execute(
-                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id, logical_id)
-                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![cursor, kind, from, to, source_id, logical_id],
+                    "INSERT INTO canonical_edges(
+                         write_cursor, kind, from_id, to_id, source_id, logical_id,
+                         body, t_valid, t_invalid, confidence, extractor_model_id
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        cursor,
+                        kind,
+                        from,
+                        to,
+                        source_id,
+                        logical_id,
+                        body,
+                        t_valid,
+                        t_invalid,
+                        confidence,
+                        extractor_model_id
+                    ],
                 )?;
-                record_projection_terminal(&tx, cursor, "up_to_date")?;
+                // G11 — edge FTS projection into `search_index_edges` (separate
+                // table from node-body `search_index` — Option B partition).
+                if let Some(edge_body) = body.as_ref() {
+                    tx.execute(
+                        "INSERT INTO search_index_edges(body, kind, write_cursor)
+                         VALUES(?1, ?2, ?3)",
+                        params![edge_body, kind, cursor],
+                    )?;
+                }
+                // G11 — edge vector projection: enqueue for projection scheduler
+                // under a fixed kind `"edge_fact"` (so resolve_source_type maps it
+                // to `source_type = "edge_fact"` in vector_default). Auto-register
+                // "edge_fact" in _fathomdb_vector_kinds (idempotent).
+                if body.is_some() {
+                    let now_unix =
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                            as i64;
+                    tx.execute(
+                        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                         VALUES('edge_fact', 'default', ?1)",
+                        params![now_unix],
+                    )?;
+                    tx.execute(
+                        "INSERT INTO _fathomdb_projection_state(
+                             kind, last_enqueued_cursor, updated_at
+                         ) VALUES('edge_fact', ?1, 0)
+                         ON CONFLICT(kind) DO UPDATE
+                             SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                        params![cursor],
+                    )?;
+                    // Do NOT call record_projection_terminal — let the scheduler
+                    // embed the body and mark it terminal after projection.
+                } else {
+                    record_projection_terminal(&tx, cursor, "up_to_date")?;
+                }
             }
             (
                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },

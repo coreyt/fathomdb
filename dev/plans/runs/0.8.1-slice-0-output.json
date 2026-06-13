@@ -1,0 +1,22 @@
+{
+  "phase": "0.8.1-slice-0",
+  "baseline_sha": "942314317fa8f503b5b6ce908d00a56c5cdec463",
+  "branch": "slice-0-20260612T201514Z",
+  "head_sha": "9973cdb6387de7098065b4d198c5366ab137df33",
+  "merged_to_main_sha": "361fca46103d0cd47ca933f6d3dbb06a8ff7e1e9",
+  "commits": [
+    "128698e: design(0.8.1): Slice 0 design memo — one-paragraph per ADR (BYO-LLM, IR-measure/eval, G11)",
+    "dd02921: adr(0.8.1): ADR-0.8.1 BYO-LLM Extraction Provider Protocol (fathomdb.extract.v1)",
+    "114c5d7: adr(0.8.1): ADR-0.8.1 IR-measure/eval design (R0 CDF spec + R2 end-to-end parity eval)",
+    "594ff6a: adr(0.8.1): ADR-0.8.1 graph substrate G11 migration (step-14, SCHEMA_VERSION 13→14)",
+    "9973cdb: docs(0.8.1): Slice 0 — update DOC-INDEX for 3 new ADRs + design memo"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": "n/a (design-adr — falsifiable acceptance bar, not TDD)",
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "mkdocs binary discovered at .venv/bin/mkdocs (not on PATH); used absolute path for build check — no nav changes needed, ADRs are in dev/adr/ not docs/"
+  ],
+  "agent_verify_result": "pass — 3 ADRs authored (BYO-LLM extraction protocol fathomdb.extract.v1, IR-measure/eval design R0+R2, G11 graph substrate migration step-14); design memo committed; DOC-INDEX updated with 4 new rows; mkdocs build clean (no errors/warnings); no src/ changes; CANON stray-edit tripwire clean (pre-existing untracked prompt file only)",
+  "next_step_for_orchestrator": "Slice 0 merged to main at 361fca46103d0cd47ca933f6d3dbb06a8ff7e1e9; orchestrator to run codex §9 review on the ADR diff (5 files, 807 insertions), then prepare HITL gate package (3 ADRs + design memo + this output + codex verdict) for sign-off before Slices 5, 15, and 25 open"
+}

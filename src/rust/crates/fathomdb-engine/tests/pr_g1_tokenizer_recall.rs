@@ -140,12 +140,12 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
         let opened =
             Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {}).expect("open head");
         assert_eq!(
-            opened.report.schema_version_after, 13,
-            "phase B must migrate to head SCHEMA_VERSION 13 (runs the step-11 tokenizer upgrade)"
+            opened.report.schema_version_after, 14,
+            "phase B must migrate to head SCHEMA_VERSION 14 (runs the step-11 tokenizer upgrade)"
         );
         assert!(
             opened.report.schema_version_before == 10,
-            "phase B must observe a 10 -> 13 migration, saw before={}",
+            "phase B must observe a 10 -> 14 migration, saw before={}",
             opened.report.schema_version_before
         );
         let r = measure_recall(&opened.engine);

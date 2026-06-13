@@ -167,6 +167,32 @@ interface NativeEngineConfig {
   slowThresholdMs?: number;
 }
 
+// Slice 20 (G5/G6) — graph traversal result shapes.
+
+export interface NativeExpandedNode {
+  node: NativeNodeRecord;
+  hopCount: number;
+}
+
+export interface NativeSearchExpandResult {
+  searchHits: NativeSearchHit[];
+  expanded: NativeExpandedNode[];
+  allLogicalIds: string[];
+}
+
+// G11 (Slice 15) — BYO-LLM ingest receipt.
+export interface NativeIngestWithExtractorReceipt {
+  nodesWritten: number;
+  edgesWritten: number;
+  docsProcessed: number;
+}
+
+// G11 (Slice 15) — a document sent to the BYO-LLM extraction harness.
+export interface NativeExtractDocument {
+  sourceDocId: string;
+  body: string;
+}
+
 interface NativeEngineOpenOptions {
   engineConfig?: NativeEngineConfig;
   useDefaultEmbedder?: boolean;
@@ -182,6 +208,7 @@ export interface NativeEngine {
   search(
     query: string,
     filter?: NativeSearchFilter,
+    rerankDepth?: number,
   ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;
@@ -190,6 +217,11 @@ export interface NativeEngine {
   setProfiling(enabled: boolean): void;
   setSlowThresholdMs(value: number): void;
   attachSubscriber(callback: unknown, options?: NativeAttachSubscriberOptions): void;
+  // G11 (Slice 15) — BYO-LLM ingest.
+  ingestWithExtractor(
+    cmd: string[],
+    documents: NativeExtractDocument[],
+  ): Promise<NativeIngestWithExtractorReceipt>;
   // EU-6 test-hooks-gated seam. Present only when the napi binding is
   // built with `--features test-hooks`; the TS surface forwards calls
   // unconditionally and the runtime fails fast if absent.
@@ -221,8 +253,42 @@ export interface NativeModule {
     collection: string,
     options: NativeReadCollectionOptions,
   ): Promise<NativeOpStoreRow[]>;
+  // Slice 35 (G4) — read.list with Predicate filter.
+  readList(
+    engine: NativeEngine,
+    kind: string,
+    predicates?: NativePredicateInput[],
+    limit?: number,
+  ): Promise<NativeNodeRecord[]>;
+  // Slice 20 — G5/G6 graph traversal fns.
+  graphNeighbors(
+    engine: NativeEngine,
+    logicalId: string,
+    depth: number,
+    direction: string,
+  ): Promise<NativeNodeRecord[]>;
+  searchExpand(
+    engine: NativeEngine,
+    query: string,
+    depth: number,
+    sourceType?: string,
+    kind?: string,
+    createdAfter?: number,
+    status?: string,
+  ): Promise<NativeSearchExpandResult>;
   forcePanicForTest?: () => void;
   forcePanicInAccessorForTest?: () => void;
+}
+
+/// G4 (Slice 35) — predicate input for `readList`. Mirrors `PredicateInput`
+/// on the Rust side. The value is split into three optional fields to match
+/// the napi `#[napi(object)]` struct with optional fields.
+export interface NativePredicateInput {
+  type: string;
+  path: string;
+  valueStr?: string | null;
+  valueInt?: number | null;
+  valueBool?: boolean | null;
 }
 
 export const native = loadNative() as NativeModule;

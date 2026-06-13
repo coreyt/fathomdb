@@ -105,6 +105,48 @@ impl QueryClass {
     }
 }
 
+/// Where the query text came from — *leakage provenance*. `human_dataset` is a
+/// human/benchmark-authored question (no doc-text leakage); `templated` is
+/// derived from the evidence doc (HIGH lexical-leakage risk — must be held to a
+/// higher validation bar); `llm_generated` is model-synthesized (needs the
+/// label-audit caveats in `dev/notes/IR-C-fact-level-gold-labels-research.md`).
+/// Locked now so any synthetic query is flagged the moment it appears.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QueryOrigin {
+    HumanDataset,
+    LlmGenerated,
+    Templated,
+}
+
+impl QueryOrigin {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::HumanDataset => "human_dataset",
+            Self::LlmGenerated => "llm_generated",
+            Self::Templated => "templated",
+        }
+    }
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "human_dataset" => Self::HumanDataset,
+            "llm_generated" => Self::LlmGenerated,
+            "templated" => Self::Templated,
+            _ => return None,
+        })
+    }
+}
+
+/// A character span within a doc body, carried through from the source QA
+/// `evidence_spans`. NOT load-bearing for the doc-body-granularity score; it
+/// powers the passage↔evidence-span overlap diagnostic (IR-C instrumentation
+/// plan WI-3 — `dev/plans/IR-C-test-query-quality-instrumentation-plan.md`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub doc_id: String,
+    pub start: usize,
+    pub end: usize,
+}
+
 /// Provenance of an evidence unit. In a non-chunking store this is recorded for
 /// label audit but is **NOT load-bearing for the score** (presence is at
 /// doc-body granularity, measure doc §(b)).
@@ -112,6 +154,10 @@ impl QueryClass {
 pub struct Locator {
     /// "span" | "whole_body".
     pub kind: String,
+    /// Char spans within the doc body (present when `kind == "span"`); `None` for
+    /// `whole_body`. Carried from the dataset `evidence_spans` for span-level
+    /// diagnostics — never affects the recall score.
+    pub spans: Option<Vec<Span>>,
 }
 
 /// One atomic evidence unit — the unit of relevance (measure doc §(b)).
@@ -141,6 +187,17 @@ pub struct GoldQuery {
     pub expected_top_k_doc_ids: Vec<String>,
     pub relation_type: Option<String>,
     pub chain_shape: Option<String>,
+    /// Source dataset of the query (e.g. `qmsum`/`enronqa`/`qaconv`) — promoted
+    /// from the build script's `_source` tracer (legacy `_source` still parses).
+    /// `None` for legacy/synthetic sets. Enables per-source stratified reporting.
+    pub source: Option<String>,
+    /// Dataset answer type (e.g. `span`/`free_form`/`summary`/`abstain`),
+    /// promoted from `_answer_type`. A difficulty signal — a `summary` over a
+    /// long doc is lexically easy at whole-doc granularity.
+    pub answer_type: Option<String>,
+    /// Leakage provenance of the query text; defaults to `human_dataset` when the
+    /// field is absent (the reuse tier). See [`QueryOrigin`].
+    pub query_origin: QueryOrigin,
 }
 
 /// A versioned, corpus-pinned gold set. The pinning PRINCIPLE (measure doc §(f),
@@ -211,6 +268,21 @@ fn parse_query(q: &Value) -> Result<GoldQuery, String> {
         .unwrap_or_default();
     let relation_type = q.get("relation_type").and_then(Value::as_str).map(str::to_string);
     let chain_shape = q.get("chain_shape").and_then(Value::as_str).map(str::to_string);
+    // Tracers (WI-2): prefer the promoted non-underscore keys, fall back to the
+    // build script's legacy `_source`/`_answer_type` for older gold files.
+    let source =
+        q.get("source").or_else(|| q.get("_source")).and_then(Value::as_str).map(str::to_string);
+    let answer_type = q
+        .get("answer_type")
+        .or_else(|| q.get("_answer_type"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    // Unknown origin is a hard error (fail fast, like query_class); absent ⇒
+    // human_dataset (the reuse tier — back-compat for pre-WI-2 gold).
+    let query_origin = match q.get("query_origin").and_then(Value::as_str) {
+        Some(s) => QueryOrigin::parse(s).ok_or_else(|| format!("unknown query_origin `{s}`"))?,
+        None => QueryOrigin::HumanDataset,
+    };
 
     Ok(GoldQuery {
         query,
@@ -220,6 +292,9 @@ fn parse_query(q: &Value) -> Result<GoldQuery, String> {
         expected_top_k_doc_ids,
         relation_type,
         chain_shape,
+        source,
+        answer_type,
+        query_origin,
     })
 }
 
@@ -230,13 +305,29 @@ fn parse_evidence(u: &Value) -> Result<EvidenceUnit, String> {
     let nec_str = u.get("necessity").and_then(Value::as_str).ok_or("missing `necessity`")?;
     let necessity =
         Necessity::parse(nec_str).ok_or_else(|| format!("unknown necessity `{nec_str}`"))?;
-    let locator = u
-        .get("locator")
-        .and_then(Value::as_object)
-        .and_then(|m| m.get("kind"))
-        .and_then(Value::as_str)
-        .map(|k| Locator { kind: k.to_string() });
+    let locator = u.get("locator").and_then(parse_locator);
     Ok(EvidenceUnit { evidence_id, doc_id, necessity, locator })
+}
+
+/// Parse a `locator` object: required `kind`, optional `spans` (WI-3a). A
+/// malformed span entry is skipped (lenient, like the rest of the loader); span
+/// *bounds* are checked by [`validate_gold_set`], not here.
+fn parse_locator(v: &Value) -> Option<Locator> {
+    let m = v.as_object()?;
+    let kind = m.get("kind").and_then(Value::as_str)?.to_string();
+    let spans = m
+        .get("spans")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(parse_span).collect::<Vec<Span>>());
+    Some(Locator { kind, spans })
+}
+
+fn parse_span(v: &Value) -> Option<Span> {
+    let m = v.as_object()?;
+    let doc_id = m.get("doc_id").and_then(Value::as_str)?.to_string();
+    let start = m.get("start").and_then(Value::as_u64)? as usize;
+    let end = m.get("end").and_then(Value::as_u64)? as usize;
+    Some(Span { doc_id, start, end })
 }
 
 // ── Denominator derivation — the single seed unit-of-relevance (§(f)) ───────
@@ -478,6 +569,21 @@ pub fn validate_gold_set(gold: &GoldSet) -> Vec<String> {
             if !seen_ev.insert(&e.evidence_id) {
                 issues.push(format!("{where_}: duplicate evidence_id `{}`", e.evidence_id));
             }
+            // WI-3a: span bounds + the span's doc_id must match its evidence unit.
+            for s in e.locator.iter().flat_map(|l| l.spans.iter().flatten()) {
+                if s.end < s.start {
+                    issues.push(format!(
+                        "{where_}: evidence `{}` span has end<start ({}..{})",
+                        e.evidence_id, s.start, s.end
+                    ));
+                }
+                if s.doc_id != e.doc_id {
+                    issues.push(format!(
+                        "{where_}: evidence `{}` span doc_id `{}` != evidence doc_id `{}`",
+                        e.evidence_id, s.doc_id, e.doc_id
+                    ));
+                }
+            }
         }
         let req = required_doc_ids(q);
         match q.query_class {
@@ -570,9 +676,11 @@ pub fn run_mode_bodies(
         }
         RetrievalMode::RerankStub => {
             let res = engine.search(query).map_err(|e| format!("search: {e:?}"))?;
-            // rerank_fused is an identity stub today (lib.rs) — documents the
-            // seam; produces the same order as RrfHybrid until a real reranker.
-            Ok(rerank_fused(res.results).into_iter().map(|h| h.body).collect())
+            // 0.8.1 Slice 10: rerank_fused now takes (query, hits, depth).
+            // depth=0 → soft-fallback (identity). The RerankStub mode documents
+            // the seam; produces the same order as RrfHybrid in the default build
+            // (no default-reranker feature or model absent).
+            Ok(rerank_fused(query, res.results, 0).into_iter().map(|h| h.body).collect())
         }
         RetrievalMode::FtsWriteCursor | RetrievalMode::Bm25Fts => Err(format!(
             "mode `{}` deferred: TODO(COR-2-freeze) — needs harness FTS5 SQL + frozen corpus",

@@ -1,0 +1,126 @@
+{
+  "phase": "0.8.1-slice-15",
+  "title": "G11 BYO-LLM Ingest Keystone — schema step-14, engine, bindings, conformance",
+  "state": "MERGED_TO_LOCAL_MAIN",
+  "baseline_sha": "101a3b08ef944b19305eeb12472810da7b2fc20f",
+  "branch": "slice-15-20260613T042247Z",
+  "merged_to_main_sha": "0da572c7f9095f9585a5ceb291f03ee7881f0f96",
+  "commits": [
+    {
+      "sha": "e85e969",
+      "kind": "DESIGN",
+      "subject": "design(slice-15): G11 edge enrichment + BYO-LLM ingest design memo"
+    },
+    {
+      "sha": "fef1a98",
+      "kind": "RED",
+      "subject": "test(slice-15): RED — step-14 migration + BYO-LLM ingest conformance tests"
+    },
+    {
+      "sha": "0da572c",
+      "kind": "GREEN",
+      "subject": "feat(slice-15): G11 BYO-LLM ingest — schema step-14, engine, bindings, conformance (GREEN)"
+    }
+  ],
+  "findings_addressed": [
+    "Schema step_id 14 / SCHEMA_VERSION 13→14: 5 additive nullable columns on canonical_edges (body TEXT, t_valid TEXT, t_invalid TEXT, confidence REAL, extractor_model_id TEXT) via MIGRATION-ACCRETION-EXEMPTION; search_index_edges FTS5 table for edge body full-text search (Option B — additive, no changes to existing search_index); accretion-exemption marker (required, pinned).",
+    "Engine: Engine::ingest_with_extractor(cmd, documents) — spawns BYO-LLM harness, speaks fathomdb.extract.v1 NDJSON-over-stdio protocol (hello→ready→extract→result/error), maps entities→PreparedWrite::Node (derive_logical_id sha256), maps fact-edges→PreparedWrite::Edge with G11 body/t_valid/t_invalid/confidence/extractor_model_id fields, calls self.write(), drops stdin, waits for child exit.",
+    "derive_logical_id(kind, name) = sha256('<kind>:<name>'.to_lowercase()) hex-encoded — stable cross-ingest entity identity, deterministic deduplication.",
+    "Edge logical_id = sha256('edge:<from_lid>:<to_lid>:<relation>') — keyed on directed relation, not on body content.",
+    "Invalidate-not-accumulate: G11 fact-edges (body IS NOT NULL) use tombstone-then-insert supersession keyed on (from_id, to_id, kind) — a repeated identical fact overwrites rather than accumulates.",
+    "Projection notification fix: edge-only write batches now trigger notify_new_work() when any PreparedWrite::Edge has body IS NOT NULL (previously edge-body writes were never scheduled for projection).",
+    "SoftFallbackBranch::TextEdge distinguishes edge FTS5 results from node FTS5 results in all match arms (engine, Python binding, NAPI binding, TypeScript SDK).",
+    "EngineError::Extractor leaf variant for harness protocol errors; FDB_EXTRACTOR error code in NAPI; ExtractorError(EngineError) in Python; ExtractorError extends FathomDbError in TypeScript.",
+    "ExtractDocument {source_doc_id, body} and IngestWithExtractorReceipt {nodes_written, edges_written, docs_processed} exposed in all three bindings.",
+    "Governed surface allowlist updated: ingest_with_extractor (Python snake_case) + ingestWithExtractor (TypeScript camelCase) added to governed-surface-allowlist.json.",
+    "Type stubs (_fathomdb.pyi) updated for Python; NativeEngine interface updated for TypeScript.",
+    "Surface parity tests: test_slice15_byo_llm_surface.py (Python) + slice15-byo-llm-surface.test.ts (TypeScript).",
+    "DOC-INDEX entry added for dev/design/slice-15-design.md (G11 BYO-LLM design memo).",
+    "Constructor churn: 8 existing PreparedWrite::Edge construction sites updated with 5 new None G11 fields (engine tests, examples, corpus support)."
+  ],
+  "tdd_evidence": {
+    "red_sha": "fef1a98",
+    "test_files": [
+      "src/rust/crates/fathomdb-schema/tests/step14_migration.rs",
+      "src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs",
+      "src/python/tests/test_slice15_byo_llm_surface.py",
+      "src/ts/tests/slice15-byo-llm-surface.test.ts"
+    ],
+    "new_engine_tests": [
+      "handshake_hello_ready",
+      "extract_dispatch_and_entity_node_mapping",
+      "edge_canonical_edges_mapping",
+      "invalidate_not_accumulate",
+      "edge_fts_searchable",
+      "edge_vector_searchable",
+      "model_provenance",
+      "no_facts_warning_no_error",
+      "footprint_no_network_egress",
+      "golden_fixture_reproducibility"
+    ],
+    "new_schema_tests": [
+      "s14_g11_passes_accretion_guard_only_with_marker",
+      "s14_g11_adds_five_nullable_columns_to_canonical_edges",
+      "s14_g11_creates_search_index_edges_fts5_table",
+      "s14_g11_search_index_edges_is_empty_after_migration",
+      "s14_g11_columns_are_nullable_by_default"
+    ],
+    "x1_binding_tests": [
+      "test_extractor_error_is_engine_error_subclass (Python)",
+      "test_engine_has_ingest_with_extractor_method (Python)",
+      "test_ingest_with_extractor_receipt_has_correct_attributes (Python)",
+      "test_extractor_error_exported_from_native (Python)",
+      "ExtractorError is a FathomDbError subclass (TypeScript)",
+      "Engine.ingestWithExtractor is a callable method (TypeScript)",
+      "IngestWithExtractorReceipt shape is correct (TypeScript)",
+      "ExtractDocument shape is correct (TypeScript)"
+    ]
+  },
+  "self_check_results": {
+    "cargo_test_slice15_byo_llm_ingest": "PASS (10/10)",
+    "cargo_test_step14_migration": "PASS (5/5)",
+    "cargo_test_compatibility": "PASS (8/8, step 14 covered)",
+    "cargo_clippy_modified_crates": "PASS (clean, -D warnings)",
+    "cargo_fmt_check": "PASS",
+    "ruff_check": "PASS (via pre-commit hook)"
+  },
+  "blockers_encountered": [
+    {
+      "id": "PROJECTION-NOTIFICATION-BUG",
+      "type": "bug-found-and-fixed",
+      "description": "Edge-only write batches never triggered notify_new_work() because collect_projection_jobs only processes Node variants. An edge body write would be committed to canonical_edges.body but the projection scheduler would never wake to build the search_index_edges FTS5 entry. Discovered by the edge_vector_searchable and edge_fts_searchable tests failing RED.",
+      "resolution": "Fixed in write_inner: added has_edge_body_work check (any PreparedWrite::Edge with body: Some(_)) and ORed it into the pending_projection guard. Tests GREEN."
+    },
+    {
+      "id": "PREPAREDWRITE-EQ-FLOAT",
+      "type": "compile-error-fixed",
+      "description": "PreparedWrite had #[derive(Eq)] but Option<f64> does not implement Eq (f64 is not Eq due to NaN). Adding confidence: Option<f64> to the Edge variant broke the derive.",
+      "resolution": "Removed Eq from the derive; kept PartialEq. Not a semantic regression — Eq was unused in any assert_eq! on PreparedWrite values."
+    },
+    {
+      "id": "SOFTFALLBACKBRANCH-TEXTEDGE-MISSING",
+      "type": "compile-error-fixed",
+      "description": "SoftFallbackBranch::TextEdge was added to the Rust enum but not covered in the Python (fathomdb-py) and NAPI (fathomdb-napi) match arms converting branch to string.",
+      "resolution": "Added TextEdge => 'text_edge'.to_string() to all match arms in both bindings (3 arms total in NAPI, 2 in Python)."
+    },
+    {
+      "id": "PREEXISTING-RECENCY-TEST-FAILURE",
+      "type": "pre-existing-not-owned",
+      "description": "recency_does_not_override_a_clear_rrf_signal fails on the baseline main branch too. Not caused by our changes.",
+      "resolution": "Left as-is; pre-existing on main."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "stub_harness.py fixture: executable Python harness implementing fathomdb.extract.v1 with 5 entities + 3 edges, used by all conformance tests; golden fixture_result.json anchors reproducibility.",
+    "Constructor churn: 8 existing PreparedWrite::Edge construction sites updated with body:None, t_valid:None, t_invalid:None, confidence:None, extractor_model_id:None (mechanical, required by new non-defaulted enum fields).",
+    "SoftFallbackBranch::TextEdge also threaded into TypeScript binding (search result mapping in index.ts) for round-trip consistency.",
+    "package-lock.json regenerated (ts/package-lock.json updated as a side-effect of ts/ dependency resolution)."
+  ],
+  "deviations_for_orchestrator_awareness": [
+    "Edge FTS5 projection path: search_index_edges is populated by the projection scheduler, NOT in the same transaction as canonical_edges. A window exists between the write commit and projection completion where edge bodies are in canonical_edges but not yet searchable. This is identical to the existing node FTS5 behavior (search_index is also projection-scheduled). Marked in the design memo.",
+    "ingest_with_extractor does not validate cmd[0] against any allowlist; the caller is trusted. Security model is caller-controlled subprocess (same trust level as calling Engine::open with a user-supplied path).",
+    "derive_logical_id uses sha256 hex (64-char) for entity logical_ids — this is a string, not a UUID4. Consistent with the G0 substrate design (logical_id TEXT, no format constraint in schema)."
+  ],
+  "latent_errors_assessment": "No unresolved code-level errors introduced by this slice. The pre-existing recency test failure is unchanged. All 10 BYO-LLM ingest tests pass GREEN. Clippy and fmt clean. DoD met.",
+  "next_step_for_orchestrator": "Codex §9 adversarial review of: (1) step-14 migration SQL + accretion guard marker; (2) ingest_with_extractor protocol implementation (hello→ready→extract→result/error parsing, entity/edge mapping, derive_logical_id formula); (3) invalidate-not-accumulate supersession logic; (4) projection notification fix; (5) binding parity (Python ExtractorError hierarchy, TypeScript ExtractorError + SoftFallbackBranch). On PASS: advance the 0.8.1 board pointer from Slice 15 to the next slice (Slice 20 graph-traversal or Slice 5 R0 recall-CDF per the plan). Remove worktree /tmp/fdb-slice-15-20260613T042247Z."
+}

@@ -35,11 +35,16 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExtractDocument as RustExtractDocument,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
+    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -73,6 +78,12 @@ create_exception!(_fathomdb, IncompatibleSchemaVersionError, EngineError);
 create_exception!(_fathomdb, MigrationError, EngineError);
 create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
 create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+create_exception!(_fathomdb, ExtractorError, EngineError);
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+create_exception!(_fathomdb, InvalidFilterError, EngineError);
+// Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
+create_exception!(_fathomdb, InvalidArgumentError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -164,6 +175,11 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         }
         RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
         RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::InvalidFilter { reason } => {
+            InvalidFilterError::new_err(format!("invalid filter: {reason}"))
+        }
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
     }
 }
 
@@ -303,6 +319,25 @@ impl PyWriteReceipt {
     }
 }
 
+/// G11 (Slice 15) — BYO-LLM ingest receipt.
+#[pyclass(module = "fathomdb._fathomdb", name = "IngestWithExtractorReceipt", frozen, get_all)]
+#[derive(Clone)]
+struct PyIngestWithExtractorReceipt {
+    nodes_written: u64,
+    edges_written: u64,
+    docs_processed: u64,
+}
+
+impl PyIngestWithExtractorReceipt {
+    fn from_rust(r: RustIngestWithExtractorReceipt) -> Self {
+        Self {
+            nodes_written: r.nodes_written,
+            edges_written: r.edges_written,
+            docs_processed: r.docs_processed,
+        }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "SoftFallback", frozen, get_all)]
 #[derive(Clone)]
 struct PySoftFallback {
@@ -315,6 +350,7 @@ impl PySoftFallback {
             branch: match s.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -340,6 +376,7 @@ impl PySearchHit {
             branch: match h.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -592,10 +629,19 @@ impl PyEngine {
         Ok(PyWriteReceipt::from_rust(receipt))
     }
 
-    /// G10 — hybrid search with an optional closed metadata filter. Each filter
-    /// field is an optional kwarg; all-`None` is the unfiltered (byte-identical)
-    /// path. Mirrors the TS `search(query, filter?)` surface (binding parity).
-    #[pyo3(signature = (query, source_type=None, kind=None, created_after=None, status=None))]
+    /// G10 + 0.8.1 R1 — hybrid search with an optional closed metadata filter
+    /// and an optional CE rerank depth. Each filter field is an optional kwarg;
+    /// all-`None` is the unfiltered (byte-identical) path. `rerank_depth=0`
+    /// (default) keeps the identity / soft-fallback path. `rerank_depth > 0`
+    /// activates CE reranking over the top-N fused hits (when the
+    /// `default-reranker` feature is enabled and the model is loaded; otherwise
+    /// falls back to identity).
+    // 0.8.1 R1: rerank_depth adds the 7th arg (limit is 7); suppress lint.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(
+        signature = (query, source_type=None, kind=None, created_after=None,
+                     status=None, rerank_depth=0)
+    )]
     fn search(
         &self,
         py: Python<'_>,
@@ -604,6 +650,7 @@ impl PyEngine {
         kind: Option<Bound<'_, PyAny>>,
         created_after: Option<i64>,
         status: Option<Bound<'_, PyAny>>,
+        rerank_depth: usize,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -625,7 +672,9 @@ impl PyEngine {
         } else {
             None
         };
-        let result = call_engine(py, move || engine.search_filtered(&query, filter))?;
+        // 0.8.1 R1: use search_reranked so rerank_depth=0 is a no-op (identity)
+        // and rerank_depth>0 activates the CE path.
+        let result = call_engine(py, move || engine.search_reranked(&query, filter, rerank_depth))?;
         Ok(PySearchResult::from_rust(result))
     }
 
@@ -640,6 +689,43 @@ impl PyEngine {
             if timeout_s.is_finite() && timeout_s > 0.0 { (timeout_s * 1000.0) as u64 } else { 0 };
         let engine = Arc::clone(&self.inner);
         call_engine(py, move || engine.drain(ms))
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn
+    /// (first element = program, rest = args). `documents` is a list of
+    /// dicts with `source_doc_id` and `body` keys.
+    fn ingest_with_extractor(
+        &self,
+        py: Python<'_>,
+        cmd: Bound<'_, PyList>,
+        documents: Bound<'_, PyList>,
+    ) -> PyResult<PyIngestWithExtractorReceipt> {
+        // Translate cmd list to Vec<String>.
+        let cmd_strings: Vec<String> = cmd
+            .iter()
+            .map(|item| {
+                item.extract::<String>()
+                    .map_err(|_| WriteValidationError::new_err("cmd elements must be strings"))
+            })
+            .collect::<PyResult<_>>()?;
+
+        // Translate documents list of dicts to Vec<ExtractDocument>.
+        let docs: Vec<RustExtractDocument> = documents
+            .iter()
+            .map(|item| {
+                let dict = item
+                    .downcast::<PyDict>()
+                    .map_err(|_| WriteValidationError::new_err("document must be a dict"))?;
+                let source_doc_id = dict_str_required(dict, "source_doc_id")?;
+                let body = dict_str_required(dict, "body")?;
+                Ok(RustExtractDocument { source_doc_id, body })
+            })
+            .collect::<PyResult<_>>()?;
+
+        let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(py, move || engine.ingest_with_extractor(&cmd_refs, &docs))?;
+        Ok(PyIngestWithExtractorReceipt::from_rust(receipt))
     }
 
     fn counters(&self) -> PyCounterSnapshot {
@@ -809,6 +895,70 @@ fn read_collection_impl(
     Ok(rows.iter().map(PyOpStoreRow::from_rust).collect())
 }
 
+// ===== read.list (G4 / Slice 35) ======================================
+//
+// `read.list(engine, kind, predicates?, limit)` — list active canonical nodes
+// of a given `kind`, optionally filtered by a list of `Predicate` dicts.
+// Each predicate dict has the shape:
+//   { "type": "eq"|"gt"|"gte"|"lt"|"lte", "path": str, "value": str|int|bool }
+// Path validation happens in Rust (InvalidFilterError on non-allowlisted path).
+
+fn py_predicate_to_rust(pred: &Bound<'_, PyAny>) -> PyResult<RustPredicate> {
+    let type_item = pred.get_item("type")?;
+    let type_str = extract_validated_str(&type_item)?;
+    let path_item = pred.get_item("path")?;
+    let path = extract_validated_str(&path_item)?;
+    let value_obj = pred.get_item("value")?;
+
+    // Extract the value — try bool first (Python bool is a subclass of int, so
+    // bool must be checked before int to avoid misclassifying True/False).
+    // String values are validated through extract_validated_str for FFI safety.
+    let scalar: RustScalarValue = if let Ok(b) = value_obj.extract::<bool>() {
+        RustScalarValue::Bool(b)
+    } else if let Ok(i) = value_obj.extract::<i64>() {
+        RustScalarValue::Integer(i)
+    } else {
+        RustScalarValue::Text(extract_validated_str(&value_obj)?)
+    };
+
+    match type_str.as_str() {
+        "eq" => RustPredicate::json_path_eq(path, scalar).map_err(engine_error_to_py),
+        "gt" => RustPredicate::json_path_compare(path, RustComparisonOp::Gt, scalar)
+            .map_err(engine_error_to_py),
+        "gte" => RustPredicate::json_path_compare(path, RustComparisonOp::Gte, scalar)
+            .map_err(engine_error_to_py),
+        "lt" => RustPredicate::json_path_compare(path, RustComparisonOp::Lt, scalar)
+            .map_err(engine_error_to_py),
+        "lte" => RustPredicate::json_path_compare(path, RustComparisonOp::Lte, scalar)
+            .map_err(engine_error_to_py),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown predicate type '{other}'; expected 'eq', 'gt', 'gte', 'lt', or 'lte'"
+        ))),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, kind, predicates=None, limit=100))]
+fn read_list(
+    py: Python<'_>,
+    engine: &PyEngine,
+    kind: &Bound<'_, PyAny>,
+    predicates: Option<&Bound<'_, PyList>>,
+    limit: u64,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let kind = extract_validated_str(kind)?;
+    let mut rust_predicates: Vec<RustPredicate> = Vec::new();
+    if let Some(plist) = predicates {
+        for item in plist.iter() {
+            rust_predicates.push(py_predicate_to_rust(&item)?);
+        }
+    }
+    let limit = limit as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_list(&kind, &rust_predicates, limit))?;
+    Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
+}
+
 // ===== Batch translation ==============================================
 
 fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
@@ -879,7 +1029,18 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let to = dict_str_required(dict, "to")?;
     let source_id = dict_str(dict, "source_id")?;
     let logical_id = dict_str(dict, "logical_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
+    Ok(PreparedWrite::Edge {
+        kind,
+        from,
+        to,
+        source_id,
+        logical_id,
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    })
 }
 
 fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
@@ -904,6 +1065,123 @@ fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     Ok(PreparedWrite::AdminSchema { name, kind, schema_json, retention_json })
 }
 
+// ===== Slice 20 (G5/G6) — graph_neighbors + search_expand ============
+
+/// Slice 20 — one expanded node entry in [`PySearchExpandResult`].
+#[pyclass(name = "ExpandedNode")]
+#[derive(Clone)]
+struct PyExpandedNode {
+    #[pyo3(get)]
+    node: PyNodeRecord,
+    #[pyo3(get)]
+    hop_count: u32,
+}
+
+/// Slice 20 (G6) — result of `search_expand`. `search_hits` carries the
+/// original RRF-scored hits; `expanded` is the list of nodes reachable by
+/// graph traversal that are NOT in `search_hits`. `all_logical_ids` is the
+/// deduplicated union.
+#[pyclass(name = "SearchExpandResult")]
+#[derive(Clone)]
+struct PySearchExpandResult {
+    #[pyo3(get)]
+    search_hits: Vec<PySearchHit>,
+    #[pyo3(get)]
+    expanded: Vec<PyExpandedNode>,
+    #[pyo3(get)]
+    all_logical_ids: Vec<String>,
+}
+
+impl PySearchExpandResult {
+    fn from_rust(r: RustSearchExpandResult) -> Self {
+        Self {
+            search_hits: r.search_hits.iter().map(PySearchHit::from_rust).collect(),
+            expanded: r
+                .expanded
+                .into_iter()
+                .map(|(node, hop_count)| PyExpandedNode {
+                    node: PyNodeRecord::from_rust(&node),
+                    hop_count,
+                })
+                .collect(),
+            all_logical_ids: r.all_logical_ids,
+        }
+    }
+}
+
+/// Parse a direction string ("outgoing" | "incoming" | "both") into the engine
+/// enum. Returns `InvalidArgumentError` for unrecognized values (matches public
+/// Python contract which raises `InvalidArgumentError` for invalid graph args).
+fn parse_direction(s: &str) -> PyResult<RustTraversalDirection> {
+    match s {
+        "outgoing" => Ok(RustTraversalDirection::Outgoing),
+        "incoming" => Ok(RustTraversalDirection::Incoming),
+        "both" => Ok(RustTraversalDirection::Both),
+        other => Err(InvalidArgumentError::new_err(format!(
+            "direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"
+        ))),
+    }
+}
+
+/// Slice 20 (G5) — bounded BFS from `logical_id` over `canonical_edges`.
+///
+/// `depth` must be 1..=3; raises `InvalidArgumentError` for depth > 3.
+/// `direction` accepts `"outgoing"`, `"incoming"`, or `"both"`.
+/// Returns the set of reachable nodes (excluding the root) within `depth` hops,
+/// hard-capped at 50.
+#[pyfunction]
+#[pyo3(signature = (engine, logical_id, depth, direction))]
+fn graph_neighbors(
+    py: Python<'_>,
+    engine: &PyEngine,
+    logical_id: &Bound<'_, PyAny>,
+    depth: u32,
+    direction: &str,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let logical_id = extract_validated_str(logical_id)?;
+    let dir = parse_direction(direction)?;
+    let inner = Arc::clone(&engine.inner);
+    let nodes = call_engine(py, move || inner.graph_neighbors(&logical_id, depth, dir))?;
+    Ok(nodes.iter().map(PyNodeRecord::from_rust).collect())
+}
+
+/// Slice 20 (G6) — hybrid search followed by bounded BFS expansion.
+///
+/// `depth` must be 0..=3; raises `InvalidArgumentError` for depth > 3.
+/// Returns a `SearchExpandResult` with the original search hits (RRF-scored)
+/// plus expanded nodes reachable by traversal that are not already in the hit set.
+#[pyfunction]
+#[pyo3(
+    signature = (engine, query, depth, source_type=None, kind=None, created_after=None, status=None)
+)]
+#[allow(clippy::too_many_arguments)]
+fn search_expand(
+    py: Python<'_>,
+    engine: &PyEngine,
+    query: &Bound<'_, PyAny>,
+    depth: u32,
+    source_type: Option<Bound<'_, PyAny>>,
+    kind: Option<Bound<'_, PyAny>>,
+    created_after: Option<i64>,
+    status: Option<Bound<'_, PyAny>>,
+) -> PyResult<PySearchExpandResult> {
+    let query = extract_validated_str(query)?;
+    // Use extract_opt_validated_str (same path as Engine.search) so lone UTF-16
+    // surrogates are caught by the FFI guard before reaching the engine.
+    let source_type = extract_opt_validated_str(source_type.as_ref())?;
+    let kind = extract_opt_validated_str(kind.as_ref())?;
+    let status = extract_opt_validated_str(status.as_ref())?;
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            Some(RustSearchFilter { source_type, kind, created_after, status })
+        } else {
+            None
+        };
+    let inner = Arc::clone(&engine.inner);
+    let result = call_engine(py, move || inner.search_expand(&query, filter, depth))?;
+    Ok(PySearchExpandResult::from_rust(result))
+}
+
 // ===== Test hooks =====================================================
 
 /// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
@@ -921,6 +1199,7 @@ fn force_panic_for_test() -> PyResult<()> {
 fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
+    m.add_class::<PyIngestWithExtractorReceipt>()?;
     m.add_class::<PySoftFallback>()?;
     m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
@@ -930,12 +1209,20 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOpenReport>()?;
     m.add_class::<PyNodeRecord>()?;
     m.add_class::<PyOpStoreRow>()?;
+    // Slice 20 — graph traversal result types.
+    m.add_class::<PyExpandedNode>()?;
+    m.add_class::<PySearchExpandResult>()?;
     m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
     m.add_function(wrap_pyfunction!(read_collection, &m)?)?;
     m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
+    // Slice 35 — G4 read.list with Predicate filter.
+    m.add_function(wrap_pyfunction!(read_list, &m)?)?;
+    // Slice 20 — G5/G6 graph traversal fns.
+    m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
+    m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
@@ -959,6 +1246,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MigrationError", py.get_type::<MigrationError>())?;
     m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
     m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
+    m.add("ExtractorError", py.get_type::<ExtractorError>())?;
+    m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
+    m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
     Ok(())
 }
 

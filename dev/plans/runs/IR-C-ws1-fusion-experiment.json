@@ -1,0 +1,622 @@
+{
+  "_comment": "IR-C WS1 fusion experiment. Harness-side weighted RRF sweep over a sampled exact_fact+exploratory slice; tests whether ordering the text arm by bm25() relevance (vs production write_cursor) and weighting it lifts recall. Small-corpus (directional).",
+  "configs": {
+    "h_128/96_bare_1:1": {
+      "exact_fact": {
+        "r10": 0.92,
+        "r20": 0.9333333333333333,
+        "r5": 0.8933333333333333,
+        "r50": 0.9733333333333334
+      },
+      "exploratory": {
+        "r10": 0.6375,
+        "r20": 0.85,
+        "r5": 0.4375,
+        "r50": 0.925
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_128/96_bare_1:3": {
+      "exact_fact": {
+        "r10": 0.94,
+        "r20": 0.9533333333333334,
+        "r5": 0.9266666666666666,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.6875,
+        "r20": 0.7625,
+        "r5": 0.5375,
+        "r50": 0.9125
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "h_128/96_pref_1:1": {
+      "exact_fact": {
+        "r10": 0.92,
+        "r20": 0.9333333333333333,
+        "r5": 0.88,
+        "r50": 0.9733333333333334
+      },
+      "exploratory": {
+        "r10": 0.6375,
+        "r20": 0.85,
+        "r5": 0.45,
+        "r50": 0.925
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_128/96_pref_1:3": {
+      "exact_fact": {
+        "r10": 0.94,
+        "r20": 0.9533333333333334,
+        "r5": 0.9266666666666666,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.6875,
+        "r20": 0.775,
+        "r5": 0.5375,
+        "r50": 0.9125
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "h_256/192_bare_1:1": {
+      "exact_fact": {
+        "r10": 0.9,
+        "r20": 0.9133333333333333,
+        "r5": 0.8466666666666667,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.5875,
+        "r20": 0.8,
+        "r5": 0.425,
+        "r50": 0.9125
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_256/192_bare_1:3": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.9533333333333334,
+        "r5": 0.8866666666666667,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.675,
+        "r20": 0.75,
+        "r5": 0.55,
+        "r50": 0.9125
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "h_64/48_bare_1:1": {
+      "exact_fact": {
+        "r10": 0.9266666666666666,
+        "r20": 0.94,
+        "r5": 0.8933333333333333,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.5625,
+        "r20": 0.8,
+        "r5": 0.4,
+        "r50": 0.9125
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 1.0,
+      "w_vec": 1.0
+    },
+    "h_64/48_bare_1:3": {
+      "exact_fact": {
+        "r10": 0.9466666666666667,
+        "r20": 0.9533333333333334,
+        "r5": 0.92,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.65,
+        "r20": 0.7625,
+        "r5": 0.525,
+        "r50": 0.925
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 3.0,
+      "w_vec": 1.0
+    },
+    "text_only_ORc": {
+      "exact_fact": {
+        "r10": 0.9333333333333333,
+        "r20": 0.9466666666666667,
+        "r5": 0.92,
+        "r50": 0.9666666666666667
+      },
+      "exploratory": {
+        "r10": 0.6875,
+        "r20": 0.725,
+        "r5": 0.5875,
+        "r50": 0.8875
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 1.0,
+      "w_vec": 0.0
+    },
+    "v_128/96_max_bare": {
+      "exact_fact": {
+        "r10": 0.8333333333333334,
+        "r20": 0.8466666666666667,
+        "r5": 0.7933333333333333,
+        "r50": 0.9
+      },
+      "exploratory": {
+        "r10": 0.475,
+        "r20": 0.6125,
+        "r5": 0.3,
+        "r50": 0.8875
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_128/96_max_pref": {
+      "exact_fact": {
+        "r10": 0.84,
+        "r20": 0.8466666666666667,
+        "r5": 0.8,
+        "r50": 0.8866666666666667
+      },
+      "exploratory": {
+        "r10": 0.45,
+        "r20": 0.6125,
+        "r5": 0.2875,
+        "r50": 0.8375
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_128/96_mean_bare": {
+      "exact_fact": {
+        "r10": 0.7066666666666667,
+        "r20": 0.76,
+        "r5": 0.6733333333333333,
+        "r50": 0.8333333333333334
+      },
+      "exploratory": {
+        "r10": 0.275,
+        "r20": 0.4125,
+        "r5": 0.175,
+        "r50": 0.6125
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_128/96_mean_pref": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.7866666666666666,
+        "r5": 0.6733333333333333,
+        "r50": 0.8333333333333334
+      },
+      "exploratory": {
+        "r10": 0.2875,
+        "r20": 0.3875,
+        "r5": 0.175,
+        "r50": 0.5625
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_128/96_top2_bare": {
+      "exact_fact": {
+        "r10": 0.7666666666666667,
+        "r20": 0.82,
+        "r5": 0.7266666666666667,
+        "r50": 0.8666666666666667
+      },
+      "exploratory": {
+        "r10": 0.375,
+        "r20": 0.55,
+        "r5": 0.275,
+        "r50": 0.875
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_128/96_top2_pref": {
+      "exact_fact": {
+        "r10": 0.7866666666666666,
+        "r20": 0.82,
+        "r5": 0.74,
+        "r50": 0.86
+      },
+      "exploratory": {
+        "r10": 0.3625,
+        "r20": 0.5375,
+        "r5": 0.2375,
+        "r50": 0.8375
+      },
+      "geom": "128/96",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_max_bare": {
+      "exact_fact": {
+        "r10": 0.7666666666666667,
+        "r20": 0.78,
+        "r5": 0.7266666666666667,
+        "r50": 0.8466666666666667
+      },
+      "exploratory": {
+        "r10": 0.375,
+        "r20": 0.625,
+        "r5": 0.275,
+        "r50": 0.8625
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_max_pref": {
+      "exact_fact": {
+        "r10": 0.7666666666666667,
+        "r20": 0.8,
+        "r5": 0.7333333333333333,
+        "r50": 0.8666666666666667
+      },
+      "exploratory": {
+        "r10": 0.325,
+        "r20": 0.575,
+        "r5": 0.25,
+        "r50": 0.825
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_mean_bare": {
+      "exact_fact": {
+        "r10": 0.74,
+        "r20": 0.76,
+        "r5": 0.6866666666666666,
+        "r50": 0.8133333333333334
+      },
+      "exploratory": {
+        "r10": 0.2875,
+        "r20": 0.425,
+        "r5": 0.2,
+        "r50": 0.65
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_mean_pref": {
+      "exact_fact": {
+        "r10": 0.7333333333333333,
+        "r20": 0.7533333333333333,
+        "r5": 0.6933333333333334,
+        "r50": 0.8333333333333334
+      },
+      "exploratory": {
+        "r10": 0.275,
+        "r20": 0.4,
+        "r5": 0.1875,
+        "r50": 0.6
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_top2_bare": {
+      "exact_fact": {
+        "r10": 0.7266666666666667,
+        "r20": 0.7533333333333333,
+        "r5": 0.6933333333333334,
+        "r50": 0.8133333333333334
+      },
+      "exploratory": {
+        "r10": 0.3375,
+        "r20": 0.5,
+        "r5": 0.225,
+        "r50": 0.8125
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_256/192_top2_pref": {
+      "exact_fact": {
+        "r10": 0.72,
+        "r20": 0.7533333333333333,
+        "r5": 0.6866666666666666,
+        "r50": 0.8133333333333334
+      },
+      "exploratory": {
+        "r10": 0.3125,
+        "r20": 0.5,
+        "r5": 0.1875,
+        "r50": 0.7875
+      },
+      "geom": "256/192",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_max_bare": {
+      "exact_fact": {
+        "r10": 0.8533333333333334,
+        "r20": 0.88,
+        "r5": 0.8066666666666666,
+        "r50": 0.9133333333333333
+      },
+      "exploratory": {
+        "r10": 0.375,
+        "r20": 0.525,
+        "r5": 0.175,
+        "r50": 0.775
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_max_pref": {
+      "exact_fact": {
+        "r10": 0.86,
+        "r20": 0.8733333333333333,
+        "r5": 0.8333333333333334,
+        "r50": 0.9066666666666666
+      },
+      "exploratory": {
+        "r10": 0.325,
+        "r20": 0.525,
+        "r5": 0.2125,
+        "r50": 0.75
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_mean_bare": {
+      "exact_fact": {
+        "r10": 0.6533333333333333,
+        "r20": 0.7066666666666667,
+        "r5": 0.5933333333333334,
+        "r50": 0.76
+      },
+      "exploratory": {
+        "r10": 0.2375,
+        "r20": 0.325,
+        "r5": 0.1625,
+        "r50": 0.5375
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_mean_pref": {
+      "exact_fact": {
+        "r10": 0.6733333333333333,
+        "r20": 0.72,
+        "r5": 0.6133333333333333,
+        "r50": 0.8
+      },
+      "exploratory": {
+        "r10": 0.225,
+        "r20": 0.3,
+        "r5": 0.15,
+        "r50": 0.5375
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "mean",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_top2_bare": {
+      "exact_fact": {
+        "r10": 0.86,
+        "r20": 0.88,
+        "r5": 0.7933333333333333,
+        "r50": 0.9
+      },
+      "exploratory": {
+        "r10": 0.3625,
+        "r20": 0.5125,
+        "r5": 0.1625,
+        "r50": 0.7
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_64/48_top2_pref": {
+      "exact_fact": {
+        "r10": 0.8333333333333334,
+        "r20": 0.8666666666666667,
+        "r5": 0.8133333333333334,
+        "r50": 0.9066666666666666
+      },
+      "exploratory": {
+        "r10": 0.3125,
+        "r20": 0.4625,
+        "r5": 0.2125,
+        "r50": 0.7125
+      },
+      "geom": "64/48",
+      "negative_abstain_rate": 0.0,
+      "pool": "top2",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_whole_bare": {
+      "exact_fact": {
+        "r10": 0.76,
+        "r20": 0.7666666666666667,
+        "r5": 0.7266666666666667,
+        "r50": 0.84
+      },
+      "exploratory": {
+        "r10": 0.4125,
+        "r20": 0.525,
+        "r5": 0.225,
+        "r50": 0.75
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": false,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    },
+    "v_whole_pref": {
+      "exact_fact": {
+        "r10": 0.7466666666666667,
+        "r20": 0.78,
+        "r5": 0.7133333333333334,
+        "r50": 0.86
+      },
+      "exploratory": {
+        "r10": 0.3625,
+        "r20": 0.5,
+        "r5": 0.175,
+        "r50": 0.725
+      },
+      "geom": "whole",
+      "negative_abstain_rate": 0.0,
+      "pool": "max",
+      "prefix": true,
+      "rrf_k": 60.0,
+      "w_text": 0.0,
+      "w_vec": 1.0
+    }
+  },
+  "docs_seeded": 1500,
+  "eval_queries": 290,
+  "k_ladder": [
+    5,
+    10,
+    20,
+    50
+  ]
+}

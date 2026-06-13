@@ -74,6 +74,15 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     WriteValidationError as _WriteValidationError,
 )
+from fathomdb._fathomdb import (
+    ExtractorError as _ExtractorError,
+)
+from fathomdb._fathomdb import (
+    InvalidFilterError as _InvalidFilterError,
+)
+from fathomdb._fathomdb import (
+    InvalidArgumentError as _InvalidArgumentError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -94,6 +103,11 @@ IncompatibleSchemaVersionError = _IncompatibleSchemaVersionError
 MigrationError = _MigrationError
 EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
 EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+ExtractorError = _ExtractorError
+# G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+InvalidFilterError = _InvalidFilterError
+InvalidArgumentError = _InvalidArgumentError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -130,7 +144,10 @@ __all__ = [
     "EmbedderIdentityMismatchError",
     "EmbedderNotConfiguredError",
     "EngineError",
+    "ExtractorError",
     "IncompatibleSchemaVersionError",
+    "InvalidArgumentError",
+    "InvalidFilterError",
     "KindNotVectorIndexedError",
     "MigrationError",
     "OpStoreError",

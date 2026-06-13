@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -331,6 +331,33 @@ pub const MIGRATIONS: &[Migration] = &[
         step_id: 13,
         sql: "CREATE INDEX IF NOT EXISTS operational_mutations_collection_id_idx
                   ON operational_mutations(collection_name, id);",
+    },
+    // 0.8.1 Slice 15 (G11) — fact-on-edge enrichment + edge projectability.
+    // Per `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` (HITL-SIGNED
+    // 2026-06-13). Five additive nullable columns on `canonical_edges`:
+    //   `body`              — the fact/relationship text for FTS + vector projection
+    //   `t_valid`           — event valid-time (ISO-8601); NULL = "still valid"
+    //   `t_invalid`         — event invalid-time (ISO-8601); NULL = "still valid"
+    //   `confidence`        — extraction confidence ∈ [0.0, 1.0] from the harness
+    //   `extractor_model_id`— opaque model id from BYO-LLM harness `ready.model`
+    // All five are nullable; pre-G11 rows read NULL (no data migration required).
+    // Also creates `search_index_edges` FTS5 virtual table for edge-body FTS
+    // projection (Option B: separate table, no modification to the existing
+    // `search_index` path). MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 14,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G11 edge enrichment (5 additive nullable columns + edge FTS table)
+              ALTER TABLE canonical_edges ADD COLUMN body TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_valid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_invalid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+              ALTER TABLE canonical_edges ADD COLUMN extractor_model_id TEXT;
+              CREATE VIRTUAL TABLE IF NOT EXISTS search_index_edges USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
     },
 ];
 

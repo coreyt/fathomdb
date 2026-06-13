@@ -9,13 +9,16 @@ to the native PyO3 extension `fathomdb._fathomdb` which binds to
 from __future__ import annotations
 
 from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
-from fathomdb import admin, errors, read
+from fathomdb import admin, errors, graph, read
+from fathomdb._fathomdb import IngestWithExtractorReceipt
 from fathomdb.config import EngineConfig
 from fathomdb.engine import Engine
 from fathomdb.types import (
     CounterSnapshot,
+    ExpandedNode,
     NodeRecord,
     OpStoreRow,
+    SearchExpandResult,
     SearchFilter,
     SearchHit,
     SearchResult,
@@ -28,8 +31,11 @@ __all__ = [
     "CounterSnapshot",
     "Engine",
     "EngineConfig",
+    "IngestWithExtractorReceipt",
+    "ExpandedNode",
     "NodeRecord",
     "OpStoreRow",
+    "SearchExpandResult",
     "SearchFilter",
     "SearchHit",
     "SearchResult",
@@ -39,6 +45,7 @@ __all__ = [
     "__version__",
     "admin",
     "errors",
+    "graph",
     "read",
 ]
 __version__ = "0.6.0"

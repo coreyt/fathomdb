@@ -9,12 +9,13 @@
 // `rethrowTyped`.
 
 import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
-import { rethrowTyped } from "./errors.js";
+import { InvalidArgumentError, rethrowTyped } from "./errors.js";
+import type { NodeRecord } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
 export { read } from "./read.js";
-export type { NodeRecord, OpStoreRow, ReadCollectionOptions } from "./read.js";
+export type { NodeRecord, OpStoreRow, Predicate, ReadCollectionOptions } from "./read.js";
 
 export interface EngineConfig {
   embedderPoolSize?: number;
@@ -56,7 +57,25 @@ export interface WriteReceipt {
   danglingEdgeEndpoints: number;
 }
 
-export type SoftFallbackBranch = "vector" | "text";
+/** G11 (Slice 15) — BYO-LLM ingest receipt. */
+export interface IngestWithExtractorReceipt {
+  /** Number of `canonical_nodes` rows written (new insertions only). */
+  nodesWritten: number;
+  /** Number of `canonical_edges` rows written (new fact-edge insertions). */
+  edgesWritten: number;
+  /** Number of documents processed (including no-facts documents). */
+  docsProcessed: number;
+}
+
+/** G11 (Slice 15) — a document sent to a BYO-LLM extraction harness. */
+export interface ExtractDocument {
+  /** Stable opaque identifier for this document. */
+  sourceDocId: string;
+  /** Full text body to extract entities and relationships from. */
+  body: string;
+}
+
+export type SoftFallbackBranch = "vector" | "text" | "text_edge";
 
 export interface SoftFallback {
   branch: SoftFallbackBranch;
@@ -328,6 +347,7 @@ export class Engine {
   async search(
     query: string,
     filter?: SearchFilter,
+    rerankDepth?: number,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // G10 filter strings cross the FFI like `query` and must clear the same
@@ -340,18 +360,33 @@ export class Engine {
       if (filter.kind !== undefined) validateFfiString(filter.kind);
       if (filter.status !== undefined) validateFfiString(filter.status);
     }
-    const r = await intercept(() => this.#native.search(query, filter));
+    // 0.8.1 R1: rerankDepth validation (must be a non-negative integer).
+    if (rerankDepth !== undefined) {
+      if (!Number.isInteger(rerankDepth)) {
+        throw new TypeError(`rerankDepth must be an integer, got ${typeof rerankDepth}`);
+      }
+      if (rerankDepth < 0) {
+        throw new RangeError(`rerankDepth must be >= 0, got ${rerankDepth}`);
+      }
+    }
+    const r = await intercept(() =>
+      this.#native.search(query, filter, rerankDepth ?? undefined),
+    );
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,
       softFallback:
-        branch === "vector" || branch === "text" ? { branch } : null,
+        branch === "vector" || branch === "text" || branch === "text_edge"
+          ? { branch: branch as SoftFallbackBranch }
+          : null,
       results: r.results.map((h) => ({
         id: h.id,
         kind: h.kind,
         body: h.body,
         score: h.score,
-        branch: h.branch === "vector" ? "vector" : "text",
+        branch: (h.branch === "vector" || h.branch === "text_edge")
+          ? (h.branch as SoftFallbackBranch)
+          : "text",
       })),
     };
   }
@@ -362,6 +397,33 @@ export class Engine {
 
   async drain(timeoutMs: number): Promise<void> {
     await intercept(() => this.#native.drain(timeoutMs));
+  }
+
+  /**
+   * G11 (Slice 15) — BYO-LLM ingest. Spawns an external extraction harness
+   * speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, sends
+   * documents for extraction, and writes the resulting entities and fact-edges.
+   *
+   * @param cmd - argv to spawn (first element = program, rest = args).
+   * @param documents - array of `{ sourceDocId, body }` objects to extract from.
+   */
+  async ingestWithExtractor(
+    cmd: string[],
+    documents: ExtractDocument[],
+  ): Promise<IngestWithExtractorReceipt> {
+    // fix-28 [P2]: validate all user-controlled strings at the FFI boundary.
+    for (const arg of cmd) validateFfiString(arg);
+    for (const doc of documents) {
+      validateFfiString(doc.sourceDocId);
+      validateFfiString(doc.body);
+    }
+    const nativeDocs = documents.map((d) => ({ sourceDocId: d.sourceDocId, body: d.body }));
+    const r = await intercept(() => this.#native.ingestWithExtractor(cmd, nativeDocs));
+    return {
+      nodesWritten: r.nodesWritten,
+      edgesWritten: r.edgesWritten,
+      docsProcessed: r.docsProcessed,
+    };
   }
 
   counters(): CounterSnapshot {
@@ -409,5 +471,114 @@ export const admin = {
     validateFfiString(options.name);
     validateFfiString(options.body);
     return intercept(() => native.adminConfigure(engine._native, options));
+  },
+};
+
+// ===== Slice 20 (G5/G6) — graph traversal ================================
+
+/**
+ * Slice 20 (G6) — one node reached by BFS traversal in `graph.searchExpand`.
+ *
+ * `hopCount` is the BFS distance from the nearest search-hit root. Only nodes
+ * NOT already in the search-hit set appear in `SearchExpandResult.expanded`
+ * (deduplication: search score takes priority).
+ */
+export interface ExpandedNode {
+  node: NodeRecord;
+  hopCount: number;
+}
+
+/**
+ * Slice 20 (G6) — result of `graph.searchExpand`.
+ *
+ * `searchHits` — original RRF-scored results from the search step.
+ * `expanded`   — nodes reachable from any search hit within `depth` hops
+ *                that are NOT in `searchHits`.
+ * `allLogicalIds` — deduplicated union of both sets.
+ */
+export interface SearchExpandResult {
+  searchHits: SearchHit[];
+  expanded: ExpandedNode[];
+  allLogicalIds: string[];
+}
+
+/** Direction to follow when traversing `canonical_edges`. */
+export type TraversalDirection = "outgoing" | "incoming" | "both";
+
+export const graph = {
+  /**
+   * G5 — bounded BFS from `logicalId` over `canonical_edges`.
+   *
+   * `depth` must be 1–3; rejects depth > 3 with `InvalidArgumentError`.
+   * `direction` is `"outgoing"`, `"incoming"`, or `"both"`.
+   * Returns up to 50 `NodeRecord`s reachable within `depth` hops (root excluded).
+   * Edges with `t_invalid` in the past are not traversed (valid-time filter).
+   */
+  async neighbors(
+    engine: Engine,
+    logicalId: string,
+    depth: number,
+    direction: TraversalDirection = "both",
+  ): Promise<NodeRecord[]> {
+    validateFfiString(logicalId);
+    if (!Number.isInteger(depth) || depth < 1 || depth > 3) {
+      throw new InvalidArgumentError(
+        `graph.neighbors depth must be an integer between 1 and 3; got ${depth}`,
+      );
+    }
+    return intercept(() => native.graphNeighbors(engine._native, logicalId, depth, direction));
+  },
+
+  /**
+   * G6 — FTS/vector search followed by bounded BFS expansion.
+   *
+   * Runs `engine.search(query, filter)` (G1), then expands each hit via
+   * `graph.neighbors(depth, "both")`. Nodes appearing in both the search hit
+   * set and the traversal reach appear only in `searchHits` (deduplication).
+   *
+   * `depth` must be 0–3; 0 skips expansion. Raises `InvalidArgumentError` for depth > 3.
+   */
+  async searchExpand(
+    engine: Engine,
+    query: string,
+    depth: number,
+    filter?: SearchFilter,
+  ): Promise<SearchExpandResult> {
+    validateFfiString(query);
+    if (!Number.isInteger(depth) || depth < 0 || depth > 3) {
+      throw new InvalidArgumentError(
+        `graph.searchExpand depth must be an integer between 0 and 3; got ${depth}`,
+      );
+    }
+    if (filter?.sourceType !== undefined) validateFfiString(filter.sourceType);
+    if (filter?.kind !== undefined) validateFfiString(filter.kind);
+    if (filter?.status !== undefined) validateFfiString(filter.status);
+    const r = await intercept(() =>
+      native.searchExpand(
+        engine._native,
+        query,
+        depth,
+        filter?.sourceType,
+        filter?.kind,
+        filter?.createdAfter,
+        filter?.status,
+      ),
+    );
+    return {
+      searchHits: r.searchHits.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: (h.branch === "vector" || h.branch === "text_edge")
+          ? (h.branch as SoftFallbackBranch)
+          : "text",
+      })),
+      expanded: r.expanded.map((e) => ({
+        node: e.node,
+        hopCount: e.hopCount,
+      })),
+      allLogicalIds: r.allLogicalIds,
+    };
   },
 };
