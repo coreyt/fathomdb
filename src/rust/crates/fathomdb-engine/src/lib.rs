@@ -4100,6 +4100,46 @@ fn text_hit_passes_filter(
     Ok(true)
 }
 
+/// G11 (Slice 15) — does an edge FTS hit satisfy the filter?
+///
+/// Edge FTS hits always have `source_type = "edge_fact"` (the partition
+/// discriminant). Their `row.kind` is the **relation** kind (e.g. `"owns"`,
+/// `"works_for"`), not a node kind, so [`text_hit_passes_filter`] MUST NOT be
+/// used for edge hits: `resolve_source_type(relation_kind)` returns `Err` for
+/// unknown kinds, causing every edge hit to be silently rejected when a
+/// `source_type` filter is set — the exact inverse of correct behaviour.
+///
+/// Rules:
+/// - `source_type`: pass iff `None` **or** `== "edge_fact"`.
+/// - `kind`: filter on the relation kind (`row.kind`) if specified.
+/// - `status` / `created_after`: edges carry neither metadata field; exclude
+///   edge hits when either predicate is set.
+fn edge_fts_hit_passes_filter(row_kind: &str, filter: Option<&SearchFilter>) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    if filter.is_unfiltered() {
+        return true;
+    }
+    if let Some(ref st) = filter.source_type {
+        if st != "edge_fact" {
+            return false; // filter targets a specific non-edge source_type
+        }
+    }
+    if let Some(ref k) = filter.kind {
+        if k != row_kind {
+            return false; // kind filter applies to the relation kind
+        }
+    }
+    if filter.status.is_some() {
+        return false; // edges have no status column
+    }
+    if filter.created_after.is_some() {
+        return false; // edges have no created_at in this slice
+    }
+    true
+}
+
 /// Read projection cursor and matching body rows inside one read tx.
 // The 8th parameter (`vector_stage_only`) is the additive GA-2 / ◆ B-1
 // measurement seam; the reader-worker call site threads each field through
@@ -4256,8 +4296,11 @@ fn read_search_in_tx(
     //
     // fix-1 [P2]: JOIN canonical_edges to exclude superseded edge rows
     // (invalidate-not-accumulate can leave a superseded body in the FTS index).
-    // fix-1 [P2]: apply text_hit_passes_filter to edge hits (kind/source_type/
-    // created_after/status filters must apply to the edge branch as well).
+    // fix-2 [P2]: use edge_fts_hit_passes_filter (NOT text_hit_passes_filter).
+    // Edge hits always have source_type="edge_fact"; text_hit_passes_filter
+    // calls resolve_source_type(relation_kind) which returns Err for unknown
+    // relation kinds, silently rejecting every edge hit when a source_type
+    // filter is set — the exact inverse of correct behaviour.
     {
         let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges) \
              FROM search_index_edges sei \
@@ -4278,7 +4321,7 @@ fn read_search_in_tx(
                 })
             }) {
                 for row in rows.flatten() {
-                    if text_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+                    if edge_fts_hit_passes_filter(&row.kind, filter) {
                         text_results.push(row);
                     }
                 }
