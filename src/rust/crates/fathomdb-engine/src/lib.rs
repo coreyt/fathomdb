@@ -5015,19 +5015,19 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
     // cte_cap = cap + 1: the SQLite CTE LIMIT includes the seed/root row (depth 0).
     // Without the +1, a root with exactly `cap` direct neighbors returns cap-1 results.
     let cte_cap = cap + 1;
-    // The visited-string cycle guard: for each candidate next node, check
-    // that it is not already in the per-path visited set.
-    // Format: `','||logical_id||','` is the initial visited string for root;
-    // append: `t.visited || next_id || ','`.
+    // Cycle guard uses char(30) (ASCII Record Separator, 0x1E) as delimiter instead
+    // of comma, so logical_ids containing commas are handled correctly. char(30) is
+    // a non-printable control character that callers cannot place in logical_id values
+    // via normal text input.
     match direction {
         TraversalDirection::Outgoing => format!(
             "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
     WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
     UNION ALL
-    SELECT e.to_id, t.depth + 1, t.visited || e.to_id || ','
+    SELECT e.to_id, t.depth + 1, t.visited || e.to_id || char(30)
     FROM traversal t
     JOIN canonical_edges e ON e.from_id = t.logical_id
     JOIN canonical_nodes next_n ON next_n.logical_id = e.to_id
@@ -5035,7 +5035,7 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
-      AND instr(t.visited, printf(',%s,', e.to_id)) = 0
+      AND instr(t.visited, char(30) || e.to_id || char(30)) = 0
     LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
@@ -5048,11 +5048,11 @@ LIMIT {cap}"
         TraversalDirection::Incoming => format!(
             "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
     WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
     UNION ALL
-    SELECT e.from_id, t.depth + 1, t.visited || e.from_id || ','
+    SELECT e.from_id, t.depth + 1, t.visited || e.from_id || char(30)
     FROM traversal t
     JOIN canonical_edges e ON e.to_id = t.logical_id
     JOIN canonical_nodes next_n ON next_n.logical_id = e.from_id
@@ -5060,7 +5060,7 @@ LIMIT {cap}"
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
-      AND instr(t.visited, printf(',%s,', e.from_id)) = 0
+      AND instr(t.visited, char(30) || e.from_id || char(30)) = 0
     LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
@@ -5073,14 +5073,14 @@ LIMIT {cap}"
         TraversalDirection::Both => format!(
             "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
     WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
     UNION ALL
     SELECT
       CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
       t.depth + 1,
-      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)
     FROM traversal t
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
     JOIN canonical_nodes next_n
@@ -5090,8 +5090,7 @@ LIMIT {cap}"
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited,
-            printf(',%s,',
-              CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
+            char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
     LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
@@ -5115,14 +5114,14 @@ fn build_bfs_with_depth_sql() -> String {
     format!(
         "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
     WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
     UNION ALL
     SELECT
       CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
       t.depth + 1,
-      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)
     FROM traversal t
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
     JOIN canonical_nodes next_n
@@ -5132,8 +5131,7 @@ fn build_bfs_with_depth_sql() -> String {
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited,
-            printf(',%s,',
-              CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
+            char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
     LIMIT {cte_cap}
   )
 SELECT n.logical_id, n.kind, n.body, n.write_cursor, MIN(tr.depth) AS min_depth
@@ -7220,11 +7218,10 @@ fn validate_write(
                     return Err(EngineError::WriteValidation);
                 }
             }
-            // G0 — an explicit logical_id must be non-empty and must not contain
-            // commas (the BFS cycle guard uses comma as a delimiter; a comma in an
-            // id would falsely mark unvisited nodes as already seen).
+            // G0 — an explicit logical_id must be non-empty (NULL/None is the
+            // legacy default; an empty string is never a valid identity).
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() || logical_id.contains(',') {
+                if logical_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }
@@ -7234,16 +7231,13 @@ fn validate_write(
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
-            if from.contains(',') || to.contains(',') {
-                return Err(EngineError::WriteValidation);
-            }
             if let Some(source_id) = source_id {
                 if source_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() || logical_id.contains(',') {
+                if logical_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }

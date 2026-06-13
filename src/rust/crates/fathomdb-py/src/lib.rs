@@ -1098,13 +1098,14 @@ impl PySearchExpandResult {
 }
 
 /// Parse a direction string ("outgoing" | "incoming" | "both") into the engine
-/// enum. Returns `WriteValidationError` for unrecognized values.
+/// enum. Returns `InvalidArgumentError` for unrecognized values (matches public
+/// Python contract which raises `InvalidArgumentError` for invalid graph args).
 fn parse_direction(s: &str) -> PyResult<RustTraversalDirection> {
     match s {
         "outgoing" => Ok(RustTraversalDirection::Outgoing),
         "incoming" => Ok(RustTraversalDirection::Incoming),
         "both" => Ok(RustTraversalDirection::Both),
-        other => Err(WriteValidationError::new_err(format!(
+        other => Err(InvalidArgumentError::new_err(format!(
             "direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"
         ))),
     }
