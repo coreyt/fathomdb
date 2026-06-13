@@ -185,6 +185,7 @@ export const read = {
     limit = 100,
   ): Promise<NodeRecord[]> {
     validateFfiString(kind);
+    validateLimit(limit);
     const nativePredicates = predicates?.map(toNativePredicate);
     const rows = await intercept(() =>
       native.readList(engine._native, kind, nativePredicates, limit),
