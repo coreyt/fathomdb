@@ -12,7 +12,10 @@
     "read.mutations",
     "read.list",
     "ingest_with_extractor",
-    "ingestWithExtractor"
+    "ingestWithExtractor",
+    "graph.neighbors",
+    "graph.search_expand",
+    "graph.searchExpand"
   ],
   "core": ["Engine.open", "admin.configure", "write", "search", "close"],
   "recovery_denylist": ["recover", "restore", "repair", "fix", "rebuild"]
