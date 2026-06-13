@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from typing import Literal, TypedDict, TypeGuard, Union
 
 #: Typed soft-fallback branch values per `dev/design/retrieval.md`.
-SoftFallbackBranch = Literal["vector", "text"]
+#: ``"text_edge"`` added in Slice 15 (G11) for edge-body hits from
+#: ``search_index_edges`` FTS or vector-projected edge facts.
+SoftFallbackBranch = Literal["vector", "text", "text_edge"]
 
 
 @dataclass(frozen=True)

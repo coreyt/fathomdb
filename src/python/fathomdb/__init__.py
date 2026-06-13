@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
 from fathomdb import admin, errors, graph, read
+from fathomdb._fathomdb import IngestWithExtractorReceipt
 from fathomdb.config import EngineConfig
 from fathomdb.engine import Engine
 from fathomdb.types import (
@@ -30,6 +31,7 @@ __all__ = [
     "CounterSnapshot",
     "Engine",
     "EngineConfig",
+    "IngestWithExtractorReceipt",
     "ExpandedNode",
     "NodeRecord",
     "OpStoreRow",

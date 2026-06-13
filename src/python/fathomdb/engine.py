@@ -14,6 +14,7 @@ import logging
 from typing import Any, cast
 
 from fathomdb._fathomdb import Engine as _NativeEngine
+from fathomdb._fathomdb import IngestWithExtractorReceipt
 from fathomdb.config import EngineConfig
 from fathomdb.types import (
     CounterSnapshot,
@@ -146,6 +147,19 @@ class Engine:
         """Block until in-flight writes drain or `timeout_s` elapses."""
 
         self._native.drain(timeout_s=float(timeout_s))
+
+    def ingest_with_extractor(
+        self,
+        cmd: list[str],
+        documents: list[dict[str, str]],
+    ) -> IngestWithExtractorReceipt:
+        """G11 (Slice 15) — BYO-LLM ingest via the fathomdb.extract.v1 protocol.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+
+        return self._native.ingest_with_extractor(cmd, documents)
 
     def open_report(self) -> OpenReport:
         """Return the structured open-time report captured at `Engine.open`.
