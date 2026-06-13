@@ -2426,9 +2426,33 @@ impl Engine {
             .spawn()
             .map_err(|_| EngineError::Extractor)?;
 
-        let child_stdin = child.stdin.take().ok_or(EngineError::Extractor)?;
-        let child_stdout = child.stdout.take().ok_or(EngineError::Extractor)?;
+        let child_stdin = child.stdin.take().ok_or_else(|| {
+            let _ = child.kill();
+            let _ = child.wait();
+            EngineError::Extractor
+        })?;
+        let child_stdout = child.stdout.take().ok_or_else(|| {
+            let _ = child.kill();
+            let _ = child.wait();
+            EngineError::Extractor
+        })?;
 
+        // Delegate to inner; always reap the child regardless of outcome.
+        // drop(writer) inside inner sends EOF → child exits; child.wait() here reaps.
+        // On error paths, inner's writer is dropped by Rust's auto-drop → EOF sent;
+        // child.kill() is a no-op if already exited.
+        let result = self.ingest_with_extractor_inner(child_stdin, child_stdout, documents);
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+
+    fn ingest_with_extractor_inner(
+        &self,
+        child_stdin: std::process::ChildStdin,
+        child_stdout: std::process::ChildStdout,
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
         // --- handshake: hello → ready ---
         let hello = serde_json::json!({
             "protocol": "fathomdb.extract.v1",
@@ -2444,7 +2468,11 @@ impl Engine {
         let mut line = String::new();
         reader.read_line(&mut line).map_err(|_| EngineError::Extractor)?;
         let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
-        if ready.get("type").and_then(|v| v.as_str()) != Some("ready") {
+        // fix-23 [P2]: validate protocol + schema_version in the ready message per ADR.
+        if ready.get("type").and_then(|v| v.as_str()) != Some("ready")
+            || ready.get("protocol").and_then(|v| v.as_str()) != Some("fathomdb.extract.v1")
+            || ready.get("schema_version").and_then(|v| v.as_u64()) != Some(1)
+        {
             return Err(EngineError::Extractor);
         }
         let extractor_model_id = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -2517,9 +2545,40 @@ impl Engine {
                         }
                     })
                     .collect();
-                let n = node_batch.len() as u64;
-                self.write(&node_batch)?;
-                nodes_written = nodes_written.saturating_add(n);
+
+                // fix-23 [P2]: skip entities whose logical_id is already active
+                // to avoid needless supersede churn on re-ingest.
+                let ids: Vec<String> = node_batch
+                    .iter()
+                    .filter_map(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            Some(id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let existing: std::collections::HashSet<String> = self
+                    .read_get_many(&ids)?
+                    .into_iter()
+                    .zip(ids)
+                    .filter_map(|(opt, id)| opt.map(|_| id))
+                    .collect();
+                let new_nodes: Vec<PreparedWrite> = node_batch
+                    .into_iter()
+                    .filter(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            !existing.contains(id)
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+                if !new_nodes.is_empty() {
+                    let n = new_nodes.len() as u64;
+                    self.write(&new_nodes)?;
+                    nodes_written = nodes_written.saturating_add(n);
+                }
             }
 
             // --- map edges → PreparedWrite::Edge with G11 columns ---
@@ -2571,9 +2630,8 @@ impl Engine {
             }
         }
 
-        // Drop stdin → signal EOF to subprocess.
+        // Drop stdin → signal EOF to subprocess; outer shell waits for it.
         drop(writer);
-        let _ = child.wait();
 
         Ok(IngestWithExtractorReceipt { nodes_written, edges_written, docs_processed })
     }
