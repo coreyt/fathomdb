@@ -13,13 +13,40 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 5 CLOSED @ `5e109a6` — Opus §9 PASS, fix-22..35; Slice 10 OPEN. **HITL 2026-06-13: codex confirmation pass WAIVED — the Opus-high §9 PASS is accepted as authoritative.** Remaining deferred-to-GA: #5-#7 binding findings — see § "Deferred follow-ups").
+Last updated: 2026-06-13 (Slice 10 CLOSED @ `3555a7f` — Opus-xhigh §9 (codex rate-limited): 1×BLOCK+6×CONCERN → fix-10-1 all GREEN; X1 7/7 Py + 7/7 TS; Slice 25 OPEN. **HITL 2026-06-13: codex confirmation pass WAIVED (Slice 5/fix-22..35 batch) — the Opus-high §9 PASS is accepted as authoritative.** Remaining deferred-to-GA: #5-#7 binding findings — see § "Deferred follow-ups").
 
 ---
 
 ## 1. Current slice
 
-**Slice 5 CLOSED @ `5e109a6` (2026-06-13) — Opus §9 PASS (fix-22..35). Slice 10 (R1 reranker, K=200) OPEN.**
+**Slice 10 CLOSED @ `3555a7f` (2026-06-13) — Opus-xhigh §9 PASS (post fix-10-1). Slice 25 (R2 parity eval) OPEN.**
+
+Close basis: codex rate-limited → §9 ran via sanctioned **Opus-xhigh `/code-review ultra`** fallback
+(9-angle parallel workflow → 1-vote verify → sweep); noted on board per standing rule. Review on
+base `754239d`..`b0a67a8` surfaced 15 CONFIRMED findings: 1×BLOCK (E0382 compile error with
+`--features default-reranker`) + 6×CONCERN + 8×cleanup. All resolved in fix-10-1 (`f5b708b`,
+HEAD `3555a7f`) — verified: `cargo check -p fathomdb-engine --features default-reranker` exits 0.
+
+Slice 10 Opus-xhigh §9 review findings + fixes:
+- **BLOCK [FIX-1]**: `ce_rerank` took `hits: Vec<SearchHit>` by value, moved into the function,
+  then the soft-fallback path returned `hits` after the move → E0382. Fix: borrow `hits: &[SearchHit]`.
+- **CONCERN [FIX-2]**: RECENCY_WEIGHT comment claimed "rank-step ≈ 0.0164 so recency never flips
+  a single-rank difference" — false at deep ranks (~0.00101 minimum). Comment corrected.
+- **CONCERN [FIX-3]**: Python accepted float/bool for `rerank_depth` (X1 parity gap). Added
+  `isinstance(int)/bool` guard raising `TypeError`.
+- **CONCERN [FIX-4]**: `raw_query: String` (24 B) added inline despite "keep variant small" policy;
+  changed to `Box<str>` (16 B).
+- **CONCERN [FIX-5]**: TS non-integer check threw `TypeError` (inconsistent with `RangeError`
+  codebase pattern); changed + added u32::MAX upper-bound guard.
+- **CONCERN [FIX-6]**: `search_filtered` was byte-identical duplicate of `search_reranked`; now
+  delegates to `search_reranked(query, filter, 0)`.
+- **CLEANUP [FIX-7]**: `rerankDepth ?? undefined` no-op in TS removed.
+
+**Slice 10 X1/X2/X3:** X1 Py 7/7 + TS 7/7 GREEN; X2 mkdocs CLEAN; X3 docs updated.
+
+---
+
+**Slice 5 context (closed 2026-06-13, prior current slice):**
 
 Close basis (HITL-approved 2026-06-13): codex was rate-limited on both §9 attempts, so the
 review ran via the sanctioned **Opus-high `/code-review`** fallback. fix-22..32 cleared round 1;
@@ -73,7 +100,7 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**OPEN Slice 10 (R1 — CPU cross-encoder reranker `rerank_fused`, K=200 from Slice 5 CDF). Contract: `dev/plans/0.8.1-implementation.md`.** Carry forward the § "Deferred follow-ups" obligations — REQUIRED before 0.8.1 GA (Slice 40 gate): #5/#6/#7 binding fixes. (Codex confirmation pass WAIVED by HITL 2026-06-13 — Opus §9 PASS is authoritative.)
+**OPEN Slice 25 (R2 — end-to-end Mem0/Zep parity eval). Contract: `dev/plans/0.8.1-implementation.md`.** Gated on ELPS golden freeze (ELPS Slice 25 awaiting HITL sign-off — the golden is frozen, 264 tests pass). Carry forward the § "Deferred follow-ups" obligations — REQUIRED before 0.8.1 GA (Slice 40 gate): #5/#6/#7 binding fixes. (Codex confirmation pass WAIVED by HITL 2026-06-13 — Opus §9 PASS is authoritative.)
 
 ---
 
@@ -87,7 +114,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
 | **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ✅ CLOSED 2026-06-13 — Opus §9 PASS (fix-22..35, base `101a3b0`; codex rate-limited → sanctioned Opus fallback, **codex confirm WAIVED by HITL**); K=200 recommended. ⚠️ deferred-to-GA: #5/#6/#7 (see §1) | 0 | n/a | ❌ | ❌ |
-| **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ⏳ OPEN 2026-06-13 (K=200) | 5 | ❌ | ❌ | ❌ |
+| **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ✅ CLOSED 2026-06-13 — Opus-xhigh §9 (codex rate-limited): 1×BLOCK+6×CONCERN → fix-10-1 (`f5b708b`) GREEN; HEAD `3555a7f`. | 5 | ✅ | ✅ | ✅ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
@@ -108,7 +135,7 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 | Feature / gap | Owning slice | Status |
 |---------------|-------------|--------|
 | **R0** candidate-recall CDF + rerank cost model (resets ceiling math, C1/C2) | 5 | ✅ CLOSED 2026-06-13 (Opus §9 PASS, fix-22..35; K=200) |
-| **R1** CPU cross-encoder reranker in `rerank_fused`; factoid R@10 ≥ 0.90 no-regress | 10 | ❌ |
+| **R1** CPU cross-encoder reranker in `rerank_fused`; soft-fallback seam + `default-reranker` feature gate; R2 loads real weights | 10 | ✅ CLOSED 2026-06-13 |
 | **G11** edge enrichment (`body`/`t_valid`/`t_invalid`/`confidence`) + edge projectability (schema bump) | 15 (KEYSTONE) | ✅ CLOSED |
 | **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
 | **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ✅ CLOSED |
@@ -160,6 +187,36 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slice 10 CLOSED (Opus-xhigh §9 PASS, post fix-10-1); Slice 25 OPEN
+
+**Slice 10 (R1 reranker):** implementer agent merged at `b0a67a8`. Codex rate-limited →
+§9 ran via sanctioned **Opus-xhigh `/code-review ultra`** fallback (9-angle parallel workflow,
+1-vote verify, gap sweep). Reviewer noted on board per standing rule.
+
+Review on base `754239d`..`b0a67a8` surfaced 15 CONFIRMED findings; key outcomes:
+- **BLOCK resolved in fix-10-1:** `rerank_fused` called `ce_rerank(query, hits, depth)` with
+  `hits: Vec<SearchHit>` moved by value, then returned `hits` in the soft-fallback arm — E0382
+  use-of-moved-value. The default (no-feature) build always compiled green, masking it. Fix: borrow
+  `hits: &[SearchHit]` in `ce_rerank`; caller retains ownership. Verified:
+  `cargo check -p fathomdb-engine --features default-reranker` exits 0.
+- **6 CONCERNs resolved in fix-10-1:** RECENCY_WEIGHT comment corrected; Python rerank_depth
+  isinstance/bool guard added (X1 parity); `raw_query: String` → `Box<str>` (design intent);
+  TS TypeError → RangeError + u32::MAX guard (X1 parity); `search_filtered` deduped → delegates
+  to `search_reranked(..., 0)`; `rerankDepth ?? undefined` no-op removed.
+- **8 cleanup findings** also resolved in fix-10-1 as part of the above (split_at_mut →
+  slice indexing; let _ = query hack removed).
+
+fix-10-1 RED sha `020b88e`, GREEN sha `3e013ad`, merge `f5b708b`, HEAD `3555a7f`.
+All gates GREEN: cargo test ALL PASS, clippy CLEAN, pyright 0 errors, mkdocs CLEAN.
+X1 Python 7/7 + TS 7/7 (5 original + 2 new validation parity tests each).
+
+**CandleCrossEncoder placeholder** (always returns None) remains — the real TinyBERT-L-2 weight
+load is **R2 (Slice 25 follow-up)**. Soft-fallback is the correct behavior for the default build.
+
+**Next:** Slice 25 (R2 parity eval). Blocked on ELPS golden freeze: ELPS Slice 25 is IN-REVIEW
+awaiting coreyt HITL sign-off (golden frozen, 264 tests pass). Also: wire the FathomDB-side
+conformance gate (reserved-gap 16–19) once the golden lands.
 
 ### 2026-06-13 — HITL: codex confirmation pass WAIVED; Opus §9 PASS accepted as authoritative
 

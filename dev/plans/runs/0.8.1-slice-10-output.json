@@ -1,0 +1,82 @@
+{
+  "slice": "0.8.1-slice-10",
+  "status": "MERGED",
+  "head_sha": "b0a67a82a6cccb9f025e0fc4e60d598bb463ec9c",
+  "branch": "slice-10-20260613T161729Z",
+  "worktree": "/tmp/fdb-slice-10-20260613T161729Z",
+  "merged_to": "main",
+  "commits": [
+    {
+      "sha": "773c26f",
+      "subject": "design(0.8.1/slice-10): R1 cross-encoder design memo"
+    },
+    {
+      "sha": "3d4be82",
+      "subject": "test(0.8.1/slice-10): RED — reranker soft-fallback, determinism, identity-stub replacement, recall gate schema pin"
+    },
+    {
+      "sha": "95cb6bd",
+      "subject": "feat(0.8.1/slice-10): GREEN — R1 reranker soft-fallback + RECENCY_WEIGHT fix"
+    }
+  ],
+  "deliverables": {
+    "rust_engine": {
+      "rerank_fused_3_arg": true,
+      "search_reranked_method": true,
+      "default_reranker_feature": true,
+      "candle_cross_encoder_placeholder": true,
+      "recency_weight_fix": "0.002 (was 0.5/RRF_K ~= 0.01667)"
+    },
+    "python_sdk": {
+      "engine_py_search_rerank_depth": true,
+      "pyi_stub_updated": true,
+      "negative_value_error": true
+    },
+    "typescript_sdk": {
+      "index_ts_rerank_depth": true,
+      "binding_ts_interface_updated": true,
+      "type_error_non_integer": true,
+      "range_error_negative": true
+    },
+    "x1_cross_binding_tests": {
+      "python_tests": "src/python/tests/test_functional_reranker.py (5 tests, all GREEN)",
+      "typescript_tests": "src/ts/tests/functional-reranker.test.ts (6 tests, all GREEN)"
+    },
+    "docs_x3": {
+      "python_api_md": "docs/reference/python-api.md (search verb section updated with rerank_depth)",
+      "typescript_api_md": "docs/reference/typescript-api.md (search verb section updated with rerankDepth)",
+      "doc_index": "dev/DOC-INDEX.md (new 0.8.1-slice-10 design memo row; api ref rows updated)"
+    }
+  },
+  "test_results": {
+    "cargo_test_engine": "ALL PASS (no failures)",
+    "cargo_clippy_workspace": "CLEAN (0 warnings)",
+    "pyright": "0 errors, 0 warnings (project mode -p src/python)",
+    "mkdocs_build": "CLEAN (built in 0.16s)",
+    "python_functional_reranker": "5/5 PASS",
+    "typescript_functional_reranker": "6/6 PASS",
+    "python_full_suite": "124 passed, 4 skipped",
+    "typescript_full_suite": "98+6 = 104 tests passing (6 new reranker tests added)",
+    "agent_lint": "EXIT=0 (clean)",
+    "agent_typecheck": "EXIT=0 (clean)",
+    "agent_security": "0 violations, 1 toolchain blocker (AC-037: netns; pre-existing host env limitation, identical on canonical main)"
+  },
+  "scope_notes": {
+    "in_scope": [
+      "R1: rerank_fused seam with soft-fallback (depth=0 = identity)",
+      "RECENCY_WEIGHT fix",
+      "default-reranker Cargo feature",
+      "Python + TypeScript SDK rerank_depth opt-in",
+      "X1 cross-binding equivalence tests",
+      "X3 docs updates (search verb sections + DOC-INDEX)",
+      "X2 mkdocs build verified clean"
+    ],
+    "out_of_scope_deferred": [
+      "R2: real TinyBERT-L-2 ONNX weight download (model absent = soft-fallback in current build)",
+      "R3: score-blend calibration experiments",
+      "R3b: CE latency benchmarks",
+      "R4: graph-aware reranking"
+    ]
+  },
+  "next_step_notes": "Codex §9 review can proceed against the merge commit (b0a67a82). The CandleCrossEncoder placeholder at src/rust/crates/fathomdb-engine/src/lib.rs try_get_loaded() always returns None — the real weight-loading implementation (R2) is deferred to a follow-up slice. Soft-fallback is the correct behavior for the default build."
+}
