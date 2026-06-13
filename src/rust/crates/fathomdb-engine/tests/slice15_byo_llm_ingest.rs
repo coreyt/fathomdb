@@ -757,3 +757,85 @@ fn edge_fts_kind_filter_applied() {
         edge_hits_filtered.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// fix-2 [P2] — source_type="edge_fact" filter must PASS edge FTS hits
+// ---------------------------------------------------------------------------
+
+/// Regression guard for the fix-2 [P2] edge FTS source_type filter semantics.
+///
+/// Before fix-2, `text_hit_passes_filter` was called on edge hits. It called
+/// `resolve_source_type(relation_kind)` (e.g. "owns"), which returns `Err` for
+/// unknown kinds, causing the match arm `_ => return Ok(false)` to fire and
+/// silently reject every edge hit when a `source_type` filter was set.
+///
+/// After fix-2, `edge_fts_hit_passes_filter` is used instead: edge hits always
+/// have `source_type = "edge_fact"`, so filtering on `source_type =
+/// "edge_fact"` must PASS them, and filtering on any other source_type must
+/// EXCLUDE them.
+#[test]
+fn edge_fts_source_type_filter_passes_edge_hits() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "edge_fts_source_type");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let cmd_strings = stub_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    // doc-simple produces an edge (kind='owns') with body "Alice owns the project".
+    // The word "owns" is only in the edge body (not in node bodies).
+    let docs = vec![ExtractDocument {
+        source_doc_id: "doc-simple".to_string(),
+        body: "Alice owns the project".to_string(),
+    }];
+
+    opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("ingest must succeed");
+
+    // 1. Unfiltered: edge hit is present.
+    let results_unfiltered = opened.engine.search("owns").expect("unfiltered search");
+    let edge_hits_unfiltered: Vec<_> = results_unfiltered
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(
+        !edge_hits_unfiltered.is_empty(),
+        "unfiltered search must return edge FTS hits (baseline check)"
+    );
+
+    // 2. source_type="edge_fact": must PASS edge hits (the bug case — was
+    //    silently rejecting them before fix-2).
+    let filter_edge =
+        SearchFilter { source_type: Some("edge_fact".to_string()), ..Default::default() };
+    let results_edge_fact = opened
+        .engine
+        .search_filtered("owns", Some(filter_edge))
+        .expect("search_filtered edge_fact");
+    let edge_hits_edge_fact: Vec<_> = results_edge_fact
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(
+        !edge_hits_edge_fact.is_empty(),
+        "source_type='edge_fact' filter must PASS edge FTS hits (was broken in fix-1); got 0"
+    );
+
+    // 3. source_type="node_body" (or any non-edge_fact value): must EXCLUDE
+    //    edge hits (edge hits are not node_body).
+    let filter_node =
+        SearchFilter { source_type: Some("node_body".to_string()), ..Default::default() };
+    let results_node_body = opened
+        .engine
+        .search_filtered("owns", Some(filter_node))
+        .expect("search_filtered node_body");
+    let edge_hits_node_body: Vec<_> = results_node_body
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(
+        edge_hits_node_body.is_empty(),
+        "source_type='node_body' filter must EXCLUDE edge FTS hits; got {}",
+        edge_hits_node_body.len()
+    );
+}
