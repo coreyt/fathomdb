@@ -720,6 +720,7 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         EngineError::Overloaded => "OverloadedError",
         EngineError::Closing => "ClosingError",
         EngineError::Extractor => "ExtractorError",
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
     }
 }
 

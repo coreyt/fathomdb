@@ -1070,6 +1070,7 @@ fn graph_neighbors(
 #[pyo3(
     signature = (engine, query, depth, source_type=None, kind=None, created_after=None, status=None)
 )]
+#[allow(clippy::too_many_arguments)]
 fn search_expand(
     py: Python<'_>,
     engine: &PyEngine,
