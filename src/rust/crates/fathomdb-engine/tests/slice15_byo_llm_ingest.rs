@@ -839,3 +839,89 @@ fn edge_fts_source_type_filter_passes_edge_hits() {
         edge_hits_node_body.len()
     );
 }
+
+// fix-3 [P2] — created_after filter must check vector_default for edge hits
+// ---------------------------------------------------------------------------
+
+/// Regression guard for the fix-3 [P2] edge FTS `created_after` filter semantics.
+///
+/// Before fix-3, `edge_fts_hit_passes_filter` blanket-rejected any edge hit when
+/// `created_after` was set (comment: "edges have no created_at in this slice").
+/// But edge bodies ARE projected into `vector_default` (rowid = write_cursor), so
+/// their `created_at` is available there.
+///
+/// This test uses a FixedEmbedder + `configure_vector_kind_for_test` + `drain` so
+/// that the edge body is actually projected into `vector_default` before the filter
+/// is exercised.  (Without projection the row is absent from `vector_default` and
+/// the filter behaviour — exclude the unprojected hit — is the same as for
+/// unembedded node text hits, not the regression we are guarding.)
+///
+/// - `created_after = 0` must PASS all projected edges (every unix timestamp > 0).
+/// - `created_after = i64::MAX` must EXCLUDE all edges (no row can have
+///   created_at ≥ i64::MAX).
+#[test]
+fn edge_fts_created_after_filter_checks_vector_default() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "edge_fts_created_after");
+    let embedder = FixedEmbedder::new_dim8();
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+
+    // Register "edge_fact" as a vector-indexed kind so the projection worker
+    // actually writes the edge row into vector_default.
+    opened
+        .engine
+        .configure_vector_kind_for_test("edge_fact")
+        .expect("configure edge_fact vector kind");
+
+    let cmd_strings = stub_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    // doc-simple produces an edge (kind='owns') with body "Alice owns the project".
+    let docs = vec![ExtractDocument {
+        source_doc_id: "doc-simple".to_string(),
+        body: "Alice owns the project".to_string(),
+    }];
+    opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("ingest must succeed");
+
+    // Drain so the projection scheduler embeds the edge body into vector_default.
+    opened.engine.drain(5_000).expect("drain must complete within 5s");
+
+    // 1. created_after=0: every projected edge has created_at > 0 (unix seconds),
+    //    so this filter must PASS all edge hits.
+    let filter_pass = SearchFilter {
+        source_type: Some("edge_fact".to_string()),
+        created_after: Some(0),
+        ..Default::default()
+    };
+    let results_pass = opened
+        .engine
+        .search_filtered("owns", Some(filter_pass))
+        .expect("search_filtered created_after=0");
+    let edge_hits_pass: Vec<_> =
+        results_pass.results.iter().filter(|h| h.branch == SoftFallbackBranch::TextEdge).collect();
+    assert!(
+        !edge_hits_pass.is_empty(),
+        "source_type='edge_fact', created_after=0 must PASS projected edge hits (fix-3 regression)"
+    );
+
+    // 2. created_after=i64::MAX: no row can satisfy created_at >= i64::MAX,
+    //    so this filter must EXCLUDE all edge hits.
+    let filter_exclude = SearchFilter {
+        source_type: Some("edge_fact".to_string()),
+        created_after: Some(i64::MAX),
+        ..Default::default()
+    };
+    let results_exclude = opened
+        .engine
+        .search_filtered("owns", Some(filter_exclude))
+        .expect("search_filtered created_after=i64::MAX");
+    let edge_hits_exclude: Vec<_> = results_exclude
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(
+        edge_hits_exclude.is_empty(),
+        "source_type='edge_fact', created_after=i64::MAX must EXCLUDE edge hits; got {}",
+        edge_hits_exclude.len()
+    );
+}

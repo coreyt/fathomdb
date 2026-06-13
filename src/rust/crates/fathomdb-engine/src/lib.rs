@@ -4109,35 +4109,64 @@ fn text_hit_passes_filter(
 /// unknown kinds, causing every edge hit to be silently rejected when a
 /// `source_type` filter is set — the exact inverse of correct behaviour.
 ///
+/// Edge bodies ARE projected into `vector_default` (rowid = `write_cursor`),
+/// so `created_after` / `status` are satisfied by querying `vector_default`
+/// exactly as [`text_hit_passes_filter`] does for node hits.
+///
 /// Rules:
 /// - `source_type`: pass iff `None` **or** `== "edge_fact"`.
 /// - `kind`: filter on the relation kind (`row.kind`) if specified.
-/// - `status` / `created_after`: edges carry neither metadata field; exclude
-///   edge hits when either predicate is set.
-fn edge_fts_hit_passes_filter(row_kind: &str, filter: Option<&SearchFilter>) -> bool {
+/// - `created_after` / `status`: query `vector_default WHERE rowid = write_cursor`;
+///   if absent from the vector partition the hit cannot satisfy a vec-metadata
+///   predicate and is excluded.
+fn edge_fts_hit_passes_filter(
+    tx: &rusqlite::Transaction<'_>,
+    write_cursor: u64,
+    row_kind: &str,
+    filter: Option<&SearchFilter>,
+) -> rusqlite::Result<bool> {
     let Some(filter) = filter else {
-        return true;
+        return Ok(true);
     };
     if filter.is_unfiltered() {
-        return true;
+        return Ok(true);
     }
     if let Some(ref st) = filter.source_type {
         if st != "edge_fact" {
-            return false; // filter targets a specific non-edge source_type
+            return Ok(false); // filter targets a specific non-edge source_type
         }
     }
     if let Some(ref k) = filter.kind {
         if k != row_kind {
-            return false; // kind filter applies to the relation kind
+            return Ok(false); // kind filter applies to the relation kind
         }
     }
-    if filter.status.is_some() {
-        return false; // edges have no status column
+    // Edge bodies are projected into vector_default; check created_after/status
+    // there, the same way text_hit_passes_filter does for node hits.
+    if filter.created_after.is_some() || filter.status.is_some() {
+        let meta: Option<(i64, Option<String>)> = tx
+            .query_row(
+                "SELECT created_at, status FROM vector_default WHERE rowid = ?1 LIMIT 1",
+                [write_cursor as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?;
+        let Some((created_at, status)) = meta else {
+            // No vector-partition row: cannot satisfy a vec-metadata predicate.
+            return Ok(false);
+        };
+        if let Some(bound) = filter.created_after {
+            if created_at < bound {
+                return Ok(false);
+            }
+        }
+        if let Some(want) = &filter.status {
+            if status.as_deref() != Some(want.as_str()) {
+                return Ok(false);
+            }
+        }
     }
-    if filter.created_after.is_some() {
-        return false; // edges have no created_at in this slice
-    }
-    true
+    Ok(true)
 }
 
 /// Read projection cursor and matching body rows inside one read tx.
@@ -4301,7 +4330,11 @@ fn read_search_in_tx(
     // calls resolve_source_type(relation_kind) which returns Err for unknown
     // relation kinds, silently rejecting every edge hit when a source_type
     // filter is set — the exact inverse of correct behaviour.
-    {
+    // fix-3 [P2]: edge_fts_hit_passes_filter now queries vector_default for
+    // created_after/status (mirroring text_hit_passes_filter). Collect edge
+    // candidates into a Vec first (drops stmt borrow on tx) so we can pass
+    // &tx to edge_fts_hit_passes_filter without a borrow conflict.
+    let edge_candidates: Vec<SearchHit> = {
         let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges) \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
@@ -4320,12 +4353,17 @@ fn read_search_in_tx(
                     branch: SoftFallbackBranch::TextEdge,
                 })
             }) {
-                for row in rows.flatten() {
-                    if edge_fts_hit_passes_filter(&row.kind, filter) {
-                        text_results.push(row);
-                    }
-                }
+                rows.flatten().collect()
+            } else {
+                Vec::new()
             }
+        } else {
+            Vec::new()
+        }
+    };
+    for row in edge_candidates {
+        if edge_fts_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+            text_results.push(row);
         }
     }
     tx.commit()?;
