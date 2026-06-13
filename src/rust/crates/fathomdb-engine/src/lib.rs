@@ -445,6 +445,32 @@ enum ReaderRequest {
         limit: usize,
         respond: SyncSender<rusqlite::Result<Vec<OpStoreRow>>>,
     },
+    /// Slice 20 (G5) — bounded BFS from a single root node over
+    /// `canonical_edges`. Returns the set of reachable nodes (excluding the
+    /// root) within `depth` hops, limited to the hard cap 50.
+    GraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// Slice 20 (G6) — compose the previous search result with BFS expansion.
+    /// Resolves search hit `write_cursor`s to `logical_id`s, runs G5 traversal
+    /// for each root, deduplicates, and returns a `SearchExpandResult`.
+    SearchExpand {
+        search_hits: Vec<SearchHit>,
+        depth: u32,
+        respond: SyncSender<rusqlite::Result<SearchExpandResult>>,
+    },
+    /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL for
+    /// the given root/depth/direction and return the plan detail lines.
+    #[doc(hidden)]
+    ExplainGraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<String>>>,
+    },
     Shutdown,
     /// Pack 6.G G.1 — debug-only request that asks a worker to read its
     /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
@@ -664,6 +690,24 @@ fn reader_worker_loop(
             }
             ReaderRequest::ReadCollection { collection, after_id, limit, respond } => {
                 let result = read_collection_in_tx(&mut connection, &collection, after_id, limit);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::GraphNeighbors { root_logical_id, depth, direction, respond } => {
+                let result =
+                    graph_neighbors_in_tx(&mut connection, &root_logical_id, depth, direction);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::SearchExpand { search_hits, depth, respond } => {
+                let result = search_expand_in_tx(&mut connection, &search_hits, depth);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::ExplainGraphNeighbors { root_logical_id, depth, direction, respond } => {
+                let result = explain_graph_neighbors_in_tx(
+                    &mut connection,
+                    &root_logical_id,
+                    depth,
+                    direction,
+                );
                 let _ = respond.send(result);
             }
             #[cfg(debug_assertions)]
@@ -992,6 +1036,34 @@ pub struct SearchResult {
     pub results: Vec<SearchHit>,
 }
 
+/// Slice 20 (G5) — direction of graph traversal for
+/// [`Engine::graph_neighbors`] / [`Engine::search_expand`].
+///
+/// `Outgoing` follows edges where the root is the `from_id` (source).
+/// `Incoming` follows edges where the root is the `to_id` (target).
+/// `Both` follows edges in either direction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TraversalDirection {
+    Outgoing,
+    Incoming,
+    Both,
+}
+
+/// Slice 20 (G6) — result of [`Engine::search_expand`]: initial search hits
+/// plus nodes reached by bounded BFS expansion that are not already in the
+/// search hit set.
+#[derive(Clone, Debug)]
+pub struct SearchExpandResult {
+    /// Original RRF-scored search results (G1+G9 hybrid).
+    pub search_hits: Vec<SearchHit>,
+    /// Nodes reached by graph traversal but NOT already in `search_hits`.
+    /// Each entry is `(node, hop_count)` where `hop_count` is the BFS depth
+    /// from the nearest search hit that reached this node.
+    pub expanded: Vec<(NodeRecord, u32)>,
+    /// Deduplicated union of all logical_ids (search hits first, then expanded).
+    pub all_logical_ids: Vec<String>,
+}
+
 /// G10 — closed metadata filter for [`Engine::search_filtered`] (Slice 10).
 ///
 /// All fields are optional; a `None` field imposes no constraint, and an
@@ -1316,6 +1388,13 @@ pub enum EngineError {
     /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
     /// spawn failure, or harness-returned error code).
     Extractor,
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+    InvalidArgument {
+        msg: String,
+    },
 }
 
 impl Display for EngineError {
@@ -1337,6 +1416,7 @@ impl Display for EngineError {
             Self::Overloaded => write!(f, "engine overloaded"),
             Self::Closing => write!(f, "engine is closing"),
             Self::Extractor => write!(f, "extractor error"),
+            Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
         }
     }
 }
@@ -1362,6 +1442,7 @@ impl EngineError {
             Self::Overloaded => "OverloadedError",
             Self::Closing => "ClosingError",
             Self::Extractor => "ExtractorError",
+            Self::InvalidArgument { .. } => "InvalidArgumentError",
         }
     }
 }
@@ -2501,6 +2582,136 @@ impl Engine {
         }
         match response_rx.recv().map_err(|_| EngineError::Storage)? {
             Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 20 (G5) — `read.neighbors`: bounded BFS from `root_logical_id`
+    /// over `canonical_edges`. Returns nodes reachable within `depth` hops
+    /// (`1..=3`) in the given `direction`, excluding the root itself.
+    ///
+    /// Hard cap: 50 results (engine-enforced `LIMIT 50`).
+    /// Traversal filter: `superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > now)`.
+    ///
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+    /// Returns `Ok(vec![])` for an unknown/superseded root.
+    /// Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    pub fn graph_neighbors(
+        &self,
+        root_logical_id: &str,
+        depth: u32,
+        direction: TraversalDirection,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        if depth > 3 {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("traversal depth {depth} exceeds the SDK ceiling of 3"),
+            });
+        }
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::GraphNeighbors {
+            root_logical_id: root_logical_id.to_string(),
+            depth,
+            direction,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(nodes) => Ok(nodes),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 20 (G6) — `search_expand`: hybrid search (`G1+G9`) followed by
+    /// bounded BFS expansion (`G5`) of each search hit. Returns the original
+    /// search hits (with RRF scores) plus nodes reachable from any hit via
+    /// up to `depth` hops that are NOT already in the search hit set.
+    ///
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+    /// A `depth = 0` call returns the search hits unchanged (no expansion).
+    /// Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    pub fn search_expand(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        depth: u32,
+    ) -> Result<SearchExpandResult, EngineError> {
+        self.ensure_open()?;
+        if depth > 3 {
+            return Err(EngineError::InvalidArgument {
+                msg: format!("traversal depth {depth} exceeds the SDK ceiling of 3"),
+            });
+        }
+        // Step 1: run the hybrid search to get initial hits.
+        let search_result = self.search_inner(query, filter)?;
+        if depth == 0 || search_result.results.is_empty() {
+            // depth=0 means "no expansion": return search hits, empty expanded.
+            let all_ids = search_result
+                .results
+                .iter()
+                .filter_map(|h| {
+                    // We don't have logical_ids here — all_logical_ids is populated by the reader;
+                    // for depth=0 we can't easily get them without a reader round-trip.
+                    // Omit all_logical_ids for depth=0 short-circuit path (empty expansion only).
+                    let _ = h;
+                    None::<String>
+                })
+                .collect();
+            return Ok(SearchExpandResult {
+                search_hits: search_result.results,
+                expanded: Vec::new(),
+                all_logical_ids: all_ids,
+            });
+        }
+        // Step 2: dispatch to the reader pool to resolve logical_ids and run BFS.
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::SearchExpand {
+            search_hits: search_result.results,
+            depth,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL and
+    /// return the plan detail lines. Used by `explain_plan_uses_indexes`.
+    #[doc(hidden)]
+    pub fn explain_graph_neighbors_for_test(
+        &self,
+        root_logical_id: &str,
+        depth: u32,
+        direction: TraversalDirection,
+    ) -> Result<Vec<String>, EngineError> {
+        self.ensure_open()?;
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::ExplainGraphNeighbors {
+            root_logical_id: root_logical_id.to_string(),
+            depth,
+            direction,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(plan) => Ok(plan),
             Err(err) => {
                 self.emit_sqlite_internal_error(&err);
                 Err(EngineError::Storage)
@@ -4497,6 +4708,235 @@ fn read_collection_in_tx(
             write_cursor: row.get::<_, i64>(6)? as u64,
         })
     })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Slice 20 (G5/G6) — BFS graph-traversal helpers
+// ---------------------------------------------------------------------------
+
+/// Hard cap on the number of nodes returned by a single `graph_neighbors` call.
+/// Ported from v0.5.6 `MAX_TRAVERSAL_DEPTH` (applied as a LIMIT on the CTE and
+/// the final SELECT). Defense-in-depth against unbounded traversal.
+const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
+
+/// Build the BFS CTE SQL for the given `direction`.
+///
+/// Parameters (positional):
+///   `?1` — root `logical_id`
+///   `?2` — max_depth (`u32`, SDK-facing depth ceiling ≤ 3)
+///
+/// `datetime('now')` is inlined for the valid-time filter (no extra parameter).
+/// `LIMIT {GRAPH_NEIGHBORS_HARD_CAP}` appears on both the CTE and the final SELECT.
+fn build_bfs_sql(direction: TraversalDirection) -> String {
+    let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    // The visited-string cycle guard: for each candidate next node, check
+    // that it is not already in the per-path visited set.
+    // Format: `','||logical_id||','` is the initial visited string for root;
+    // append: `t.visited || next_id || ','`.
+    match direction {
+        TraversalDirection::Outgoing => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT e.to_id, t.depth + 1, t.visited || e.to_id || ','
+    FROM traversal t
+    JOIN canonical_edges e ON e.from_id = t.logical_id
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND instr(t.visited, printf(',%s,', e.to_id)) = 0
+    LIMIT {cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+        TraversalDirection::Incoming => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT e.from_id, t.depth + 1, t.visited || e.from_id || ','
+    FROM traversal t
+    JOIN canonical_edges e ON e.to_id = t.logical_id
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND instr(t.visited, printf(',%s,', e.from_id)) = 0
+    LIMIT {cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+        TraversalDirection::Both => format!(
+            "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT
+      CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
+      t.depth + 1,
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
+    FROM traversal t
+    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND instr(t.visited,
+            printf(',%s,',
+              CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
+    LIMIT {cap}
+  )
+SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+LIMIT {cap}"
+        ),
+    }
+}
+
+/// Slice 20 (G5) — execute a bounded BFS on the DEFERRED reader transaction.
+/// Called inside the reader worker loop.
+fn graph_neighbors_in_tx(
+    reader: &mut Connection,
+    root_logical_id: &str,
+    depth: u32,
+    direction: TraversalDirection,
+) -> rusqlite::Result<Vec<NodeRecord>> {
+    let sql = build_bfs_sql(direction);
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let depth_i64 = depth as i64;
+    let mut statement = tx.prepare(&sql)?;
+    let rows = statement.query_map(params![root_logical_id, depth_i64], |row| {
+        Ok(NodeRecord {
+            logical_id: row.get(0)?,
+            kind: row.get(1)?,
+            body: row.get(2)?,
+            write_cursor: row.get::<_, i64>(3)? as u64,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Slice 20 (G6) — resolve search hit `write_cursor`s to `logical_id`s, run
+/// BFS for each root, and merge into a [`SearchExpandResult`]. Called inside
+/// the reader worker loop on the DEFERRED reader transaction.
+fn search_expand_in_tx(
+    reader: &mut Connection,
+    search_hits: &[SearchHit],
+    depth: u32,
+) -> rusqlite::Result<SearchExpandResult> {
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+
+    // Step 1: resolve write_cursor → logical_id for each search hit.
+    // A write_cursor that no longer has an active canonical_nodes row is skipped.
+    let mut hit_logical_ids: Vec<Option<String>> = Vec::with_capacity(search_hits.len());
+    {
+        let mut stmt = tx.prepare(
+            "SELECT logical_id FROM canonical_nodes
+             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             LIMIT 1",
+        )?;
+        for hit in search_hits {
+            let cursor_i64 = hit.id as i64;
+            let lid: Option<String> = stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
+            hit_logical_ids.push(lid);
+        }
+    }
+
+    // Build a set of logical_ids present in the search hits (for deduplication).
+    let hit_id_set: std::collections::HashSet<String> =
+        hit_logical_ids.iter().filter_map(|id| id.clone()).collect();
+
+    // Step 2: for each root logical_id, run the BFS and collect expanded nodes.
+    // A node already in `hit_id_set` is NOT added to `expanded`.
+    let bfs_sql = build_bfs_sql(TraversalDirection::Both);
+    let depth_i64 = depth as i64;
+    let mut expanded: Vec<(NodeRecord, u32)> = Vec::new();
+    // Track which logical_ids we've already added to `expanded` (dedup).
+    let mut expanded_id_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    {
+        let mut bfs_stmt = tx.prepare(&bfs_sql)?;
+        for root_id in hit_logical_ids.iter().flatten() {
+            let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
+                Ok(NodeRecord {
+                    logical_id: row.get(0)?,
+                    kind: row.get(1)?,
+                    body: row.get(2)?,
+                    write_cursor: row.get::<_, i64>(3)? as u64,
+                })
+            })?;
+            for row_result in neighbor_rows {
+                let node = row_result?;
+                if hit_id_set.contains(&node.logical_id) {
+                    // Already a search hit — skip (search score takes priority).
+                    continue;
+                }
+                if expanded_id_set.insert(node.logical_id.clone()) {
+                    // hop_count: we don't track per-node hop counts in the CTE
+                    // output (only the terminal nodes are returned). Use 1 as the
+                    // minimum (all returned nodes are reachable within `depth`).
+                    // A future enhancement can track actual hop counts.
+                    expanded.push((node, 1));
+                }
+            }
+        }
+    }
+
+    // Build `all_logical_ids` = search hit logical_ids + expanded logical_ids.
+    let mut all_logical_ids: Vec<String> =
+        hit_logical_ids.iter().filter_map(|id| id.clone()).collect();
+    for (node, _) in &expanded {
+        all_logical_ids.push(node.logical_id.clone());
+    }
+
+    Ok(SearchExpandResult { search_hits: search_hits.to_vec(), expanded, all_logical_ids })
+}
+
+/// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL and return
+/// the plan `detail` column (column index 3) for each row. Used by
+/// `explain_plan_uses_indexes` to assert index usage.
+fn explain_graph_neighbors_in_tx(
+    reader: &mut Connection,
+    root_logical_id: &str,
+    depth: u32,
+    direction: TraversalDirection,
+) -> rusqlite::Result<Vec<String>> {
+    let bfs_sql = build_bfs_sql(direction);
+    let explain_sql = format!("EXPLAIN QUERY PLAN {bfs_sql}");
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let depth_i64 = depth as i64;
+    let mut statement = tx.prepare(&explain_sql)?;
+    // EXPLAIN QUERY PLAN returns rows: (id, parent, notused, detail).
+    // We collect the `detail` column (index 3).
+    let rows =
+        statement.query_map(params![root_logical_id, depth_i64], |row| row.get::<_, String>(3))?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);

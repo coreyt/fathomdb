@@ -15,7 +15,7 @@
 //! ADR refs: `ADR-0.8.0-graph-traversal-scope.md` (D-G1..D-G5),
 //! `ADR-0.8.1-graph-substrate-g11-migration.md` §5.2.
 
-use fathomdb_engine::{Engine, EngineError, PreparedWrite, SearchFilter, TraversalDirection};
+use fathomdb_engine::{Engine, EngineError, PreparedWrite, TraversalDirection};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
