@@ -13,30 +13,34 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-12 (board created; 0.8.1 phase opened from the IR-C roadmap
-option ②-B scope + the signed graph/filter direction).
+Last updated: 2026-06-13 (Slice 15 CLOSED; pointer → Slices 20 + 35 in parallel).
 
 ---
 
 ## 1. Current slice
 
-**Slice 0 CLOSED 2026-06-12 (fix-1 resolved codex §9 findings). Pointer → ◆ HITL gate (3 ADRs sign-off).**
+**Slice 15 CLOSED 2026-06-13 (fix-1/2/3 resolved codex §9 findings). Pointer → Slices 20 + 35 in parallel.**
 
-Prereq 0 (branch merge) completed: `claude/recent-changes-state-a6wth3` merged to `main` at
-`9423143` (HITL-authorized, 65 ahead / 0 behind). Slice 0 agent merged 3 ADRs at `361fca4`;
-codex §9 found 3×[P2]; fix-1 resolved all three; fix-1 commit completes the close.
+Slice 15 agent merged at `0da572c`; codex §9 found 1×[P1] + 4×[P2] → fix-1 (5 findings);
+re-run found 1×[P2] → fix-2; re-run found 1×[P2] → fix-3; re-run: **PASS** (`316c582`).
+`SCHEMA_VERSION` 13 → 14. BYO-LLM ingest API live. Edge FTS + vector projection live.
+
+**Slice 5 (R0 recall-CDF)** remains ⏳ in flight (independent track; no cross-dependency with 15).
 
 **Prerequisites — all satisfied:**
 1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`; all plan triad + IR-C infra on main).
 2. **COR-2 frozen corpus** for Slices 5 + 25 — ✅ SATISFIED (`corpus_hash fe973fcd…`; gitignored; each slice agent reproduces; qmsum stale-pin debunked).
+3. **Slice 15 CLOSED** — ✅ DONE (`316c582`); gates Slices 20 + 35.
+
+### ◆ HITL gate — SIGNED 2026-06-13
+
+All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Prepare and deliver the ◆ HITL gate package** (Slice-0 ADR sign-off):
-- Present the 3 ADRs + design memo + codex §9 verdict (PASS after fix-1) to HITL
-- After HITL signs, **open Slices 5, 15, and 35 in parallel** (three parallel tracks start)
-- Slice 25 is gated on Slice 10 (Slice 10 is gated on Slice 5)
-
-**Waiting for:** HITL sign-off on the 3 ADRs.
+**Slices 20 and 35 now open in parallel** (both gated on Slice 15, now closed):
+- Slice 20 (G5/G6 graph traversal) — unblocked by Slice 15 CLOSED
+- Slice 35 (G4 filter grammar + G4↔G10 unification) — unblocked by Slice 15 CLOSED
+- Slice 10 (R1 reranker) — gated on Slice 5; opens after Slice 5 closes + CDF reviewed
 
 ---
 
@@ -49,13 +53,13 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
-| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ❌ | 0 | n/a | ❌ | ❌ |
+| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ⏳ in flight | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
-| **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ❌ | 0 | ❌ | ❌ | ❌ |
-| **20** | G5/G6 graph traversal | implementation | ❌ | 15 | ❌ | ❌ | ❌ |
+| **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
+| **20** | G5/G6 graph traversal | implementation | ⏳ in flight | 15 | ❌ | ❌ | ❌ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
 | **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ❌ | 15,20,25 | ❌ | ❌ | ❌ |
-| **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ❌ | 15 | ❌ | ❌ | ❌ |
+| **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ⏳ in flight | 15 | ❌ | ❌ | ❌ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
 Status values: ❌ / ⏳ / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N. Decision values (§7):
@@ -72,8 +76,8 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 |---------------|-------------|--------|
 | **R0** candidate-recall CDF + rerank cost model (resets ceiling math, C1/C2) | 5 | ❌ not started |
 | **R1** CPU cross-encoder reranker in `rerank_fused`; factoid R@10 ≥ 0.90 no-regress | 10 | ❌ |
-| **G11** edge enrichment (`body`/`t_valid`/`t_invalid`/`confidence`) + edge projectability (schema bump) | 15 (KEYSTONE) | ❌ |
-| **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ❌ |
+| **G11** edge enrichment (`body`/`t_valid`/`t_invalid`/`confidence`) + edge projectability (schema bump) | 15 (KEYSTONE) | ✅ CLOSED |
+| **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
 | **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ❌ |
 | **R2** end-to-end Mem0/Zep parity eval (report-only north-star; Decision ①) | 25 | ❌ |
 | **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ❌ |
@@ -101,7 +105,7 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 
 | Package | Questions | Gates | Status |
 |---------|-----------|-------|--------|
-| **Slice-0 ADRs** | (a) eval-measure design (R0/R2, identical-answerer, baseline); (b) BYO-LLM `fathomdb.extract.v1` protocol ratification; (c) graph-substrate G11 migration shape + schema bump | 15, 25 | ❌ to author + sign (Slice 0) |
+| **Slice-0 ADRs** | (a) eval-measure design (R0/R2, identical-answerer, baseline); (b) BYO-LLM `fathomdb.extract.v1` protocol ratification; (c) graph-substrate G11 migration shape + schema bump | 15, 25 | ✅ SIGNED 2026-06-13 |
 | **R2 parity-metric AC** | the end-to-end Mem0/Zep metric + threshold (gated/tracked) | eval gate / 40 | ❌ (after R2 data) |
 | **0.8.1 GA sign-off** | scoreboard all-green + behavior-compat + the footprint invariant held | 40 | ❌ |
 
@@ -123,6 +127,32 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slice 15 CLOSED; codex §9 fix-1/2/3 applied; Slices 20 + 35 opened
+
+**Slice 15 (G11 KEYSTONE):** implementer agent merged at `0da572c`. Codex §9 required three fix rounds:
+- **fix-1** (`dd55c9e`): 1×[P1] + 4×[P2] — `EngineError::Extractor` missing from CLI match (compile
+  failure); superseded edges not excluded from FTS results; `search_filtered` not applying filter
+  to edge FTS hits; reopen pending-work detector missed edge body work; `max_docs_per_request=0`
+  panicked instead of erroring.
+- **fix-2** (`49c972e`): 1×[P2] — edge FTS hits under `source_type=edge_fact` filter were
+  incorrectly rejected because `text_hit_passes_filter` treated relation kinds as node kinds.
+  Introduced `edge_fts_hit_passes_filter`.
+- **fix-3** (`316c582`): 1×[P2] — `created_after`/`status` blanket-rejected edge hits instead
+  of checking `vector_default`. Rewrote helper to accept a DB transaction and query `vector_default`.
+- **Codex final verdict post-fix-3: PASS.**
+
+**What landed on main:**
+- `SCHEMA_VERSION 13 → 14` (step-14: 5 additive nullable columns on `canonical_edges`).
+- `search_index_edges` FTS5 table (Option B edge partition) + `SoftFallbackBranch::TextEdge`.
+- `Engine::ingest_with_extractor` (Rust + Python + TypeScript bindings).
+- Conformance fixture + stub harness (`tests/fixtures/slice15_byo_llm/`).
+- `derive_logical_id` = sha256(`<kind>:<name>`.to_lowercase()) for entity identity.
+- Projection notification fix for edge-only batches.
+- `EngineError::Extractor` + Python `ExtractorError` + TypeScript `ExtractorError`.
+- Governed-surface allowlist updated; DOC-INDEX updated.
+
+**Slices 20 + 35 now open in parallel** (both gated on Slice 15, which is now merged).
 
 ### 2026-06-12 — Slice 0 CLOSED; Prereq 0 merged; codex §9 fix-1 applied
 
