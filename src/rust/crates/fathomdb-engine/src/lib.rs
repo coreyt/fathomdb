@@ -976,15 +976,18 @@ pub struct SoftFallback {
 
 /// Which retrieval branch produced a hit (or could not contribute).
 ///
-/// `Vector` = ANN vector branch; `Text` = node-body FTS branch; `TextEdge` =
-/// edge-body FTS branch (G11, Slice 15). `Vector`/`Text` also used as
-/// soft-fallback signal when the respective branch is empty. Owned by
+/// `Vector` = ANN vector branch (node bodies); `Text` = node-body FTS branch;
+/// `TextEdge` = edge-body hit (FTS via `search_index_edges` OR vector-projected
+/// edge facts — both produce the same kind="edge_fact" row shape and share the
+/// same downstream handling in `search_expand_in_tx`). `Vector`/`Text` also
+/// used as soft-fallback signal when the respective branch is empty. Owned by
 /// `dev/design/retrieval.md`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SoftFallbackBranch {
     Vector,
     Text,
-    /// G11 (Slice 15) — edge-body full-text search branch (`search_index_edges`).
+    /// G11 (Slice 15) — edge-body hit from `search_index_edges` FTS or from
+    /// `vector_default` edge-fact projection. `kind = "edge_fact"` in both cases.
     TextEdge,
 }
 
@@ -4677,11 +4680,20 @@ fn read_search_in_tx(
         // `body`, and the `vec_distance_l2` rerank score per hit. The
         // `_fathomdb_vector_rows.rowid` equals the canonical `write_cursor`,
         // so the candidate rowid IS the hit id.
+        //
+        // G11 (Slice 15) fix: edge bodies are projected into vector_default under
+        // kind = "edge_fact"; their write_cursor is in canonical_edges, not
+        // canonical_nodes. Try canonical_nodes first; fall back to canonical_edges
+        // for edge-fact hits so they are not silently dropped.
         let mut results = Vec::new();
-        let mut statement =
+        let mut node_stmt =
             tx.prepare("SELECT kind, body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        let mut edge_stmt = tx.prepare(
+            "SELECT body FROM canonical_edges \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
+        )?;
         for (rowid, score) in rowids {
-            if let Ok((kind, body)) = statement
+            if let Ok((kind, body)) = node_stmt
                 .query_row([rowid], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
             {
                 results.push(SearchHit {
@@ -4690,6 +4702,14 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::Vector,
+                });
+            } else if let Ok(body) = edge_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+                results.push(SearchHit {
+                    id: rowid as u64,
+                    kind: "edge_fact".to_string(),
+                    body,
+                    score,
+                    branch: SoftFallbackBranch::TextEdge,
                 });
             }
         }
