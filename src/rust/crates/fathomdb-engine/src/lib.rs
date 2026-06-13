@@ -7632,6 +7632,9 @@ fn commit_batch(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],
                         )?;
+                        // fix-32 [P2]: record terminal so advance_projection_cursor
+                        // can walk past this now-superseded cursor.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
                     }
                 }
                 // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
@@ -7653,6 +7656,8 @@ fn commit_batch(
                             "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
                             [sc],
                         )?;
+                        // fix-32 [P2]: mark terminal so projection cursor can advance.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
                     }
                 }
                 tx.execute(
