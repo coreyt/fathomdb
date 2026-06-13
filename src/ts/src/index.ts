@@ -399,6 +399,12 @@ export class Engine {
     cmd: string[],
     documents: ExtractDocument[],
   ): Promise<IngestWithExtractorReceipt> {
+    // fix-28 [P2]: validate all user-controlled strings at the FFI boundary.
+    for (const arg of cmd) validateFfiString(arg);
+    for (const doc of documents) {
+      validateFfiString(doc.sourceDocId);
+      validateFfiString(doc.body);
+    }
     const nativeDocs = documents.map((d) => ({ sourceDocId: d.sourceDocId, body: d.body }));
     const r = await intercept(() => this.#native.ingestWithExtractor(cmd, nativeDocs));
     return {
