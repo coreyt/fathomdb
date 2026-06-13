@@ -2727,7 +2727,8 @@ impl Engine {
     /// parameters (injection-safe per D-F4). See `dev/adr/ADR-0.8.0-filter-grammar.md`.
     ///
     /// Path validation happens at [`Predicate`] construction time; `read_list`
-    /// itself never receives non-allowlisted paths.
+    /// revalidates as defense-in-depth (enum variants are `pub`, so direct
+    /// struct-literal construction could bypass the constructors).
     pub fn read_list(
         &self,
         kind: &str,
@@ -2735,6 +2736,16 @@ impl Engine {
         limit: usize,
     ) -> Result<Vec<NodeRecord>, EngineError> {
         self.ensure_open()?;
+        // Defense-in-depth: revalidate paths even if the caller bypassed the
+        // validated constructors by constructing enum variants directly.
+        for pred in predicates {
+            let path = pred.path();
+            if !PREDICATE_PATH_ALLOWLIST.contains(&path) {
+                return Err(EngineError::InvalidFilter {
+                    reason: format!("path '{path}' is not in the predicate path allowlist"),
+                });
+            }
+        }
         let (response_tx, response_rx) = mpsc::sync_channel(1);
         let request = ReaderRequest::ReadList {
             kind: kind.to_string(),
@@ -4724,7 +4735,8 @@ fn read_list_in_tx(
     let mut sql = "SELECT logical_id, kind, body, write_cursor \
                    FROM canonical_nodes \
                    WHERE kind = ?1 \
-                   AND superseded_at IS NULL"
+                   AND superseded_at IS NULL \
+                   AND logical_id IS NOT NULL"
         .to_string();
 
     // Predicate params start at ?2.

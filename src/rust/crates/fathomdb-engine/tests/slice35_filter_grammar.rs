@@ -372,3 +372,25 @@ fn scalar_value_and_comparison_op_are_shared_types() {
     assert_eq!(op2.clone(), ComparisonOp::Lt);
     assert_ne!(ComparisonOp::Gt, ComparisonOp::Lte);
 }
+
+// ===== Defense-in-depth: direct enum construction bypass ================
+
+/// Callers can bypass the validated constructors by constructing `Predicate`
+/// enum variants directly (enum fields are `pub`). `Engine::read_list` must
+/// catch non-allowlisted paths even if the constructor was not used.
+#[test]
+fn direct_construction_bypass_caught_by_read_list() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // Construct a Predicate directly, bypassing the validated constructors.
+    let bad_pred = Predicate::JsonPathEq {
+        path: "$.not_in_allowlist".to_string(),
+        value: ScalarValue::Text("x".to_string()),
+    };
+    let result = engine.read_list("note", &[bad_pred], 10);
+    assert!(
+        matches!(result, Err(EngineError::InvalidFilter { .. })),
+        "read_list must reject a directly-constructed Predicate with a non-allowlisted path; got {result:?}"
+    );
+}
