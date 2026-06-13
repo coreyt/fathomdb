@@ -249,13 +249,15 @@ fn rrf_three_arm_determinism() {
     );
 }
 
-/// RED-2b: Passing an empty graph arm to `fuse_three_arms` produces
-/// byte-identical output to `fuse_rrf` on the same vector+text inputs.
+/// RED-2b: `fuse_rrf(v, t)` accumulates `Σ weight/(RRF_K + rank)` correctly
+/// for each arm — verified against manually-computed expected scores so this
+/// test catches formula regressions in fuse_three_arms independent of the
+/// delegation path.
 ///
-/// This is the backward-compatibility identity:
-/// `fuse_three_arms(v, t, vec![]) == fuse_rrf(v, t)`.
+/// Inputs: "agree" appears at rank-0 in both arms; "vonly" rank-1 vector only;
+/// "tonly" rank-1 text only.
 #[test]
-fn rrf_graph_arm_empty_is_byte_identical_to_two_arm() {
+fn rrf_two_arm_formula_matches_manual_accumulation() {
     let vector = vec![
         hit(1, "agree", SoftFallbackBranch::Vector),
         hit(2, "vonly", SoftFallbackBranch::Vector),
@@ -263,12 +265,33 @@ fn rrf_graph_arm_empty_is_byte_identical_to_two_arm() {
     let text =
         vec![hit(1, "agree", SoftFallbackBranch::Text), hit(3, "tonly", SoftFallbackBranch::Text)];
 
-    let two_arm = fuse_rrf(vector.clone(), text.clone());
-    let three_arm_empty = fuse_three_arms(vector.clone(), text.clone(), vec![]);
+    let fused = fuse_rrf(vector, text);
 
-    assert_eq!(
-        two_arm, three_arm_empty,
-        "fuse_three_arms(v, t, vec![]) must be byte-identical to fuse_rrf(v, t)"
+    // Manual accumulation using the published constants.
+    let agree_expected = RRF_WEIGHT_VECTOR / (RRF_K + 1.0) + RRF_WEIGHT_TEXT / (RRF_K + 1.0);
+    let vonly_expected = RRF_WEIGHT_VECTOR / (RRF_K + 2.0);
+    let tonly_expected = RRF_WEIGHT_TEXT / (RRF_K + 2.0);
+
+    // "agree" has the highest combined score → must rank first.
+    assert_eq!(fused[0].body, "agree", "agree must rank first (highest combined score)");
+    assert!(
+        (fused[0].score - agree_expected).abs() < 1e-12,
+        "agree score: expected {agree_expected:.12}, got {:.12}",
+        fused[0].score
+    );
+
+    // "tonly" outranks "vonly" because RRF_WEIGHT_TEXT > RRF_WEIGHT_VECTOR.
+    assert_eq!(fused[1].body, "tonly", "tonly must rank second (heavier text weight)");
+    assert!(
+        (fused[1].score - tonly_expected).abs() < 1e-12,
+        "tonly score: expected {tonly_expected:.12}, got {:.12}",
+        fused[1].score
+    );
+    assert_eq!(fused[2].body, "vonly");
+    assert!(
+        (fused[2].score - vonly_expected).abs() < 1e-12,
+        "vonly score: expected {vonly_expected:.12}, got {:.12}",
+        fused[2].score
     );
 }
 

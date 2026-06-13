@@ -5314,7 +5314,7 @@ fn read_search_in_tx(
 /// Seeds BFS from the top-`SEED_N` (10) bodies in `fused_hits`, resolves each
 /// seed body to a `logical_id` in `canonical_nodes`, then performs a
 /// breadth-first traversal over `canonical_edges` with temporal filter:
-///   `superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > datetime('now'))`
+///   `superseded_at IS NULL AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))`
 ///
 /// Collects reachable node bodies (up to `cap`) as [`SearchHit`]s tagged
 /// `SoftFallbackBranch::GraphArm`. Score = `1.0 / (1.0 + hop_count)` with a
@@ -5338,6 +5338,9 @@ fn bfs_graph_arm_candidates(
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
 
     // Phase 1: resolve write_cursor → logical_id for the top-SEED_N seeds.
+    // TextEdge hits reference canonical_edges cursors, not canonical_nodes —
+    // the node_stmt lookup would return None for them anyway, but skip
+    // explicitly to make the intent clear and avoid the spurious query.
     let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
     {
@@ -5347,6 +5350,9 @@ fn bfs_graph_arm_candidates(
              LIMIT 1",
         )?;
         for hit in fused_hits.iter().take(SEED_N) {
+            if matches!(hit.branch, SoftFallbackBranch::TextEdge) {
+                continue;
+            }
             let cursor_i64 = hit.id as i64;
             let resolved = node_stmt
                 .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
@@ -5360,10 +5366,25 @@ fn bfs_graph_arm_candidates(
     }
 
     // Phase 2: BFS over canonical_edges (temporal filter).
-    // Collect edge neighbors into a temporary Vec on each iteration, then
-    // resolve node bodies — this avoids holding a `query_map` MappedRows
-    // and a separate statement borrow simultaneously.
+    // Both statements are prepared ONCE outside the loops — re-preparing inside
+    // would issue O(frontier_size × neighbors) sqlite3_prepare_v2 calls.
     let mut candidates: Vec<SearchHit> = Vec::new();
+
+    let mut edge_stmt = tx.prepare(
+        "SELECT e.from_id, e.to_id \
+         FROM canonical_edges e \
+         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+           AND e.superseded_at IS NULL \
+           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
+         LIMIT 64",
+    )?;
+    // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
+    // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
+    let mut body_stmt = tx.prepare(
+        "SELECT kind, body, write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL \
+         LIMIT 1",
+    )?;
 
     while let Some((lid, depth)) = frontier.pop_front() {
         if candidates.len() >= cap {
@@ -5375,14 +5396,6 @@ fn bfs_graph_arm_candidates(
 
         // Fetch temporal-live neighbors via edges.
         let neighbor_lids: Vec<String> = {
-            let mut edge_stmt = tx.prepare(
-                "SELECT e.from_id, e.to_id \
-                 FROM canonical_edges e \
-                 WHERE (e.from_id = ?1 OR e.to_id = ?1) \
-                   AND e.superseded_at IS NULL \
-                   AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now')) \
-                 LIMIT 64",
-            )?;
             let rows = edge_stmt.query_map([&lid], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -5397,28 +5410,21 @@ fn bfs_graph_arm_candidates(
             }
             visited.insert(neighbor.clone());
 
-            // Fetch neighbor body from canonical_nodes.
-            let row: Option<(String, String)> = {
-                let mut body_stmt = tx.prepare(
-                    "SELECT kind, body FROM canonical_nodes \
-                     WHERE logical_id = ?1 AND superseded_at IS NULL \
-                     LIMIT 1",
-                )?;
-                body_stmt
-                    .query_row([&neighbor], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })
-                    .optional()?
-            };
+            // Fetch neighbor body + write_cursor from canonical_nodes.
+            let row: Option<(String, String, i64)> = body_stmt
+                .query_row([&neighbor], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                })
+                .optional()?;
 
-            if let Some((kind, body)) = row {
+            if let Some((kind, body, write_cursor)) = row {
                 // Skip bodies already covered by the two-arm result.
                 if !seed_bodies.contains(body.as_str()) {
                     let hop_score = 1.0 / (1.0 + (depth + 1) as f64);
                     let score =
                         if kind == "unknown" { hop_score * SYNTHESIZED_PENALTY } else { hop_score };
                     candidates.push(SearchHit {
-                        id: 0, // no write_cursor for newly-reached graph-arm nodes
+                        id: write_cursor as u64,
                         kind,
                         body,
                         score,
@@ -5434,6 +5440,8 @@ fn bfs_graph_arm_candidates(
         }
     }
 
+    drop(edge_stmt);
+    drop(body_stmt);
     tx.commit()?;
     Ok(candidates)
 }
