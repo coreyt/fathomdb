@@ -1,6 +1,6 @@
 # ADR-0.8.1 — IR-measure/Eval Design: R0 candidate-recall CDF + R2 end-to-end parity eval
 
-> **Status:** ACCEPTED — pending HITL sign-off (Slice-0 gate).
+> **Status:** ACCEPTED — HITL-SIGNED 2026-06-13.
 > **Decision:** R0 measurement spec binds Slice 5; R2 eval design binds Slice 25.
 > **Decision ①:** AC-077 (Evidence Recall@K) is the product gate; R2 is report-only north-star.
 > **C3 gate:** R3 (Slice 30) go/no-go MUST NOT start before R2 data exists.

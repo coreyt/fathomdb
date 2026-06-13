@@ -1,6 +1,6 @@
 # ADR-0.8.1 — BYO-LLM Extraction Provider Protocol (`fathomdb.extract.v1`)
 
-> **Status:** ACCEPTED — pending HITL sign-off (Slice-0 gate).
+> **Status:** ACCEPTED — HITL-SIGNED 2026-06-13.
 > **Ratified operationally:** 2026-06-12 (Memex ELPS consult + FathomDB decision record).
 > **Implements at:** Slice 15 (engine-side spawn + ingest surface).
 > **Footprint invariant:** FathomDB makes NO network call; all LLM access lives in the caller's harness.

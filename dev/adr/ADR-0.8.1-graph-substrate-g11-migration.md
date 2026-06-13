@@ -1,6 +1,6 @@
 # ADR-0.8.1 — Graph Substrate G11 Migration: edge enrichment + projectability
 
-> **Status:** ACCEPTED — pending HITL sign-off (Slice-0 gate).
+> **Status:** ACCEPTED — HITL-SIGNED 2026-06-13.
 > **Activates:** H3 reservation from ADR-0.8.0-graph-model-and-edge-addressing.md (HITL-signed 2026-06-05).
 > **Schema:** SCHEMA_VERSION 13 → 14 (step-14: 5 additive ALTER TABLE canonical_edges columns: body/t_valid/t_invalid/confidence/extractor_model_id).
 > **Implements at:** Slice 15 (keystone). Gates Slices 20 + 30.
