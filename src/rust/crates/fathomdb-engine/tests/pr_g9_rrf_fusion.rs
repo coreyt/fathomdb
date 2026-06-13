@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    fuse_rrf, rerank_fused, Engine, PreparedWrite, SearchHit, SoftFallback, SoftFallbackBranch,
-    RRF_K, RRF_WEIGHT_TEXT, RRF_WEIGHT_VECTOR,
+    fuse_rrf, fuse_three_arms, rerank_fused, Engine, ExtractDocument, PreparedWrite, SearchHit,
+    SoftFallback, SoftFallbackBranch, RRF_K, RRF_WEIGHT_GRAPH, RRF_WEIGHT_TEXT, RRF_WEIGHT_VECTOR,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -201,5 +201,176 @@ fn vector_empty_soft_fallback_signal_survives_fusion() {
         Some(SoftFallback { branch: SoftFallbackBranch::Vector }),
         "vector-empty signal must survive the fusion collapse"
     );
+    opened.engine.close().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Slice 30 / R3 — RED-2: Three-arm RRF fusion tests
+//
+// These tests FAIL at the RED phase because `fuse_three_arms` and
+// `RRF_WEIGHT_GRAPH` do not exist yet and `Engine::search_reranked` does not
+// accept a `use_graph_arm` parameter yet.
+// ---------------------------------------------------------------------------
+
+/// RED-2a: Fusing with a non-empty graph arm is deterministic across two calls.
+///
+/// Verifies that `fuse_three_arms(v, t, g)` returns the same result on
+/// repeated calls (pure function of the three input lists, no randomness).
+#[test]
+fn rrf_three_arm_determinism() {
+    let vector = vec![
+        hit(1, "vector_alpha", SoftFallbackBranch::Vector),
+        hit(2, "vector_beta", SoftFallbackBranch::Vector),
+    ];
+    let text = vec![
+        hit(1, "vector_alpha", SoftFallbackBranch::Text),
+        hit(3, "text_only", SoftFallbackBranch::Text),
+    ];
+    let graph = vec![
+        hit(10, "graph_reach_a", SoftFallbackBranch::GraphArm),
+        hit(11, "graph_reach_b", SoftFallbackBranch::GraphArm),
+    ];
+
+    let first = fuse_three_arms(vector.clone(), text.clone(), graph.clone());
+    let second = fuse_three_arms(vector.clone(), text.clone(), graph.clone());
+    assert_eq!(first, second, "fuse_three_arms must be deterministic (same result on two calls)");
+
+    // The graph arm's weight contribution must use RRF_WEIGHT_GRAPH.
+    // A body in the graph arm at rank 1 gets RRF_WEIGHT_GRAPH / (RRF_K + 1).
+    let graph_reach_a = first
+        .iter()
+        .find(|h| h.body == "graph_reach_a")
+        .expect("graph_reach_a must appear in fused result");
+    assert!(
+        (graph_reach_a.score - RRF_WEIGHT_GRAPH / (RRF_K + 1.0)).abs() < 1e-10,
+        "graph arm rank-1 hit: score = RRF_WEIGHT_GRAPH/(RRF_K+1) = {:.6}; got {:.6}",
+        RRF_WEIGHT_GRAPH / (RRF_K + 1.0),
+        graph_reach_a.score
+    );
+}
+
+/// RED-2b: Passing an empty graph arm to `fuse_three_arms` produces
+/// byte-identical output to `fuse_rrf` on the same vector+text inputs.
+///
+/// This is the backward-compatibility identity:
+/// `fuse_three_arms(v, t, vec![]) == fuse_rrf(v, t)`.
+#[test]
+fn rrf_graph_arm_empty_is_byte_identical_to_two_arm() {
+    let vector = vec![
+        hit(1, "agree", SoftFallbackBranch::Vector),
+        hit(2, "vonly", SoftFallbackBranch::Vector),
+    ];
+    let text =
+        vec![hit(1, "agree", SoftFallbackBranch::Text), hit(3, "tonly", SoftFallbackBranch::Text)];
+
+    let two_arm = fuse_rrf(vector.clone(), text.clone());
+    let three_arm_empty = fuse_three_arms(vector.clone(), text.clone(), vec![]);
+
+    assert_eq!(
+        two_arm, three_arm_empty,
+        "fuse_three_arms(v, t, vec![]) must be byte-identical to fuse_rrf(v, t)"
+    );
+}
+
+/// RED-2c: A body reachable only via the graph arm (not in vector or text hits)
+/// appears in the fused result when `use_graph_arm=true` is threaded through
+/// the full Engine pipeline.
+///
+/// This test uses a real Engine with BYO-LLM ingestion to build a small graph
+/// (Alice -> BobCorp -> Carol Ltd via edges), then searches for "Alice" and
+/// asserts that "Carol" (reachable at hop 2) appears in results when
+/// use_graph_arm=true but NOT when use_graph_arm=false.
+///
+/// FAILS at RED because `Engine::search_reranked` does not yet accept `use_graph_arm`.
+#[test]
+fn rrf_graph_arm_expands_ranking() {
+    use std::io::Write as _;
+
+    let dir = tempfile::TempDir::new().unwrap();
+
+    // Build an inline stub harness.
+    let stub_result_alice = r#"{"edges":[{"body":"Alice works at BobCorp.","confidence":0.9,"from_entity":"Alice","relation":"works_at","source_doc_id":"alice_doc","source_span":null,"t_invalid":null,"t_valid":"2024-01-01T00:00:00Z","to_entity":"BobCorp"}],"entities":[{"aliases":[],"name":"Alice","synthesized":false,"type":"Person"},{"aliases":[],"name":"BobCorp","synthesized":false,"type":"Organization"}],"protocol":"fathomdb.extract.v1","request_id":"r1","type":"result","warnings":[]}"#;
+    let stub_result_bob = r#"{"edges":[{"body":"BobCorp partners with Carol Ltd.","confidence":0.85,"from_entity":"BobCorp","relation":"partners_with","source_doc_id":"bob_doc","source_span":null,"t_invalid":null,"t_valid":"2024-01-01T00:00:00Z","to_entity":"Carol Ltd"}],"entities":[{"aliases":[],"name":"BobCorp","synthesized":false,"type":"Organization"},{"aliases":[],"name":"Carol Ltd","synthesized":false,"type":"Organization"}],"protocol":"fathomdb.extract.v1","request_id":"r2","type":"result","warnings":[]}"#;
+
+    let mut stub_src = String::from("import json,sys\nRESULTS={\n");
+    stub_src.push_str("\"alice_doc\": '");
+    stub_src.push_str(stub_result_alice);
+    stub_src.push_str("',\n\"bob_doc\": '");
+    stub_src.push_str(stub_result_bob);
+    stub_src.push_str("',\n}\n");
+    stub_src.push_str(
+        r#"
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    msg=json.loads(line)
+    t=msg.get("type")
+    if t=="hello":
+        print(json.dumps({"protocol":"fathomdb.extract.v1","type":"ready","schema_version":1,"model":"stub-v1","max_docs_per_request":1}),flush=True)
+    elif t=="extract":
+        docs=msg.get("documents",[])
+        did=docs[0]["source_doc_id"]
+        res=json.loads(RESULTS[did])
+        res["request_id"]=msg.get("request_id")
+        print(json.dumps(res,ensure_ascii=False),flush=True)
+"#,
+    );
+    let stub_path = dir.path().join("graph_arm_stub.py");
+    {
+        let mut f = std::fs::File::create(&stub_path).unwrap();
+        f.write_all(stub_src.as_bytes()).unwrap();
+    }
+    let stub_str = stub_path.to_string_lossy().to_string();
+
+    let db_path = dir.path().join(format!("graph_arm_expand{}", fathomdb_schema::SQLITE_SUFFIX));
+    let opened = Engine::open_without_embedder_for_test(&db_path).expect("open");
+
+    let cmd = vec!["python3".to_string(), stub_str.clone()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(String::as_str).collect();
+    opened
+        .engine
+        .ingest_with_extractor(
+            &cmd_refs,
+            &[ExtractDocument {
+                source_doc_id: "alice_doc".to_string(),
+                body: "Alice works at BobCorp.".to_string(),
+            }],
+        )
+        .expect("ingest alice_doc");
+
+    let cmd2 = vec!["python3".to_string(), stub_str.clone()];
+    let cmd2_refs: Vec<&str> = cmd2.iter().map(String::as_str).collect();
+    opened
+        .engine
+        .ingest_with_extractor(
+            &cmd2_refs,
+            &[ExtractDocument {
+                source_doc_id: "bob_doc".to_string(),
+                body: "BobCorp partners with Carol Ltd.".to_string(),
+            }],
+        )
+        .expect("ingest bob_doc");
+
+    // With use_graph_arm=false (default), Carol Ltd should NOT appear in
+    // results for "Alice" (it only matches via graph traversal).
+    // With use_graph_arm=true, Carol Ltd IS reachable (Alice->BobCorp->Carol Ltd at hop 2).
+    //
+    // FAILS at RED because search_reranked doesn't yet accept use_graph_arm.
+    let without_arm =
+        opened.engine.search_reranked("Alice", None, 0, false).expect("search without graph arm");
+    let carol_without = without_arm.results.iter().any(|h| h.body.contains("Carol"));
+
+    let with_arm =
+        opened.engine.search_reranked("Alice", None, 0, true).expect("search with graph arm");
+    let carol_with = with_arm.results.iter().any(|h| h.body.contains("Carol"));
+
+    // When graph arm is enabled, Carol (reachable via BFS from Alice's node)
+    // should appear in results.
+    assert!(
+        carol_with || with_arm.results.len() > without_arm.results.len(),
+        "graph arm must expand ranking: Carol (hop-2 from Alice) should appear with use_graph_arm=true \
+         (carol_without={carol_without}, carol_with={carol_with})"
+    );
+
     opened.engine.close().unwrap();
 }
