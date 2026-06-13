@@ -1038,6 +1038,10 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let to = dict_str_required(dict, "to")?;
     let source_id = dict_str(dict, "source_id")?;
     let logical_id = dict_str(dict, "logical_id")?;
+    // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
+    // `t_valid` and `t_invalid` are ISO 8601 datetime strings (optional).
+    let t_valid = dict_str(dict, "t_valid")?;
+    let t_invalid = dict_str(dict, "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,
@@ -1045,8 +1049,8 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
         source_id,
         logical_id,
         body: None,
-        t_valid: None,
-        t_invalid: None,
+        t_valid,
+        t_invalid,
         confidence: None,
         extractor_model_id: None,
     })

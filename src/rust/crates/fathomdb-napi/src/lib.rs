@@ -1353,6 +1353,10 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let to = json_str_required(item, "to")?;
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
+    // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
+    // `t_valid`/`tValid` and `t_invalid`/`tInvalid` are ISO 8601 datetime strings (optional).
+    let t_valid = json_str_alt(item, "tValid", "t_valid")?;
+    let t_invalid = json_str_alt(item, "tInvalid", "t_invalid")?;
     Ok(PreparedWrite::Edge {
         kind,
         from,
@@ -1360,8 +1364,8 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
         source_id,
         logical_id,
         body: None,
-        t_valid: None,
-        t_invalid: None,
+        t_valid,
+        t_invalid,
         confidence: None,
         extractor_model_id: None,
     })
