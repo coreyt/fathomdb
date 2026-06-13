@@ -78,13 +78,22 @@ Enqueue a batch of canonical rows.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter?) -> Promise<SearchResult>`
+### `engine.search(query, filter?, rerankDepth?) -> Promise<SearchResult>`
 
-Run hybrid retrieval, ranked by **G9 RRF fusion**.
+Run hybrid retrieval, ranked by **G9 RRF fusion**, with optional CPU
+cross-encoder reranking (0.8.1 R1).
 
 - `query` (`string`).
 - `filter` ([`SearchFilter`](#searchfilter), optional) — closed metadata filter;
   omitted (or all-`undefined`) is the unfiltered path.
+- `rerankDepth` (`number`, optional, default `undefined`/`0`) — 0.8.1 R1 opt-in.
+  `0` or omitted uses the identity / soft-fallback path: byte-identical to the
+  pre-0.8.1 fused order. `N > 0` applies a CPU cross-encoder (TinyBERT-L-2,
+  ≈4 MB, p50 ≈ 1.5 ms/pair) over the top-N fused hits with score-blend
+  (α=0.3 × CE + 0.7 × RRF-norm). Must be a non-negative integer; negative
+  values throw `RangeError`, non-integer values throw `TypeError`. In the
+  default build (no `default-reranker` feature), depth > 0 returns the identity
+  order (model absent → soft-fallback).
 - Resolves to a `SearchResult` whose `results` is a `SearchHit[]`; each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`, `body`,
   the **RRF-fused** `score`, and the `branch` that produced it.

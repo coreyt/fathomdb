@@ -69,13 +69,21 @@ writer thread has accepted the batch.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter=None) -> SearchResult`
+### `engine.search(query, filter=None, *, rerank_depth=0) -> SearchResult`
 
-Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**.
+Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**,
+with optional CPU cross-encoder reranking (0.8.1 R1).
 
 - `query` (`str`).
 - `filter` ([`SearchFilter`](#searchfilter) | `None`) — optional closed metadata
   filter. `None` (or an all-`None` filter) is the unfiltered path.
+- `rerank_depth` (`int`, default `0`) — 0.8.1 R1 opt-in. `0` (default) uses the
+  identity / soft-fallback path: byte-identical to the pre-0.8.1 fused order.
+  `N > 0` applies a CPU cross-encoder (TinyBERT-L-2, ≈4 MB, p50 ≈ 1.5 ms/pair)
+  over the top-N fused hits using score-blend (α=0.3 × CE + 0.7 × RRF-norm).
+  Must be a non-negative integer; negative values raise `ValueError`. In the
+  default build (no `default-reranker` feature), depth > 0 returns the identity
+  order (model absent → soft-fallback).
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,

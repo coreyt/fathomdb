@@ -208,6 +208,7 @@ export interface NativeEngine {
   search(
     query: string,
     filter?: NativeSearchFilter,
+    rerankDepth?: number,
   ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;

@@ -676,9 +676,11 @@ pub fn run_mode_bodies(
         }
         RetrievalMode::RerankStub => {
             let res = engine.search(query).map_err(|e| format!("search: {e:?}"))?;
-            // rerank_fused is an identity stub today (lib.rs) — documents the
-            // seam; produces the same order as RrfHybrid until a real reranker.
-            Ok(rerank_fused(res.results).into_iter().map(|h| h.body).collect())
+            // 0.8.1 Slice 10: rerank_fused now takes (query, hits, depth).
+            // depth=0 → soft-fallback (identity). The RerankStub mode documents
+            // the seam; produces the same order as RrfHybrid in the default build
+            // (no default-reranker feature or model absent).
+            Ok(rerank_fused(query, res.results, 0).into_iter().map(|h| h.body).collect())
         }
         RetrievalMode::FtsWriteCursor | RetrievalMode::Bm25Fts => Err(format!(
             "mode `{}` deferred: TODO(COR-2-freeze) — needs harness FTS5 SQL + frozen corpus",

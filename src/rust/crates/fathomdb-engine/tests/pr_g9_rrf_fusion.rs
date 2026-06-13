@@ -112,9 +112,11 @@ fn rrf_vector_first_on_exact_score_tie() {
 
 #[test]
 fn rerank_fused_is_identity_stub() {
-    // The G9 rerank seam is present but returns its input unchanged for now.
+    // 0.8.1 Slice 10 (R1): the signature changed to `rerank_fused(query, hits, depth)`.
+    // At depth=0 the soft-fallback path must return the input unchanged —
+    // byte-identical to the old identity stub. Spirit of the original test preserved.
     let hits = vec![hit(1, "a", SoftFallbackBranch::Vector), hit(2, "b", SoftFallbackBranch::Text)];
-    assert_eq!(rerank_fused(hits.clone()), hits);
+    assert_eq!(rerank_fused("", hits.clone(), 0), hits);
 }
 
 /// Deterministic embedder so the e2e ordering is a pure function of the corpus.
