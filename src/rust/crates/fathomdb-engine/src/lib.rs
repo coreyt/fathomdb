@@ -445,6 +445,16 @@ enum ReaderRequest {
         limit: usize,
         respond: SyncSender<rusqlite::Result<Vec<OpStoreRow>>>,
     },
+    /// Slice 35 (G4) — list active canonical nodes of a `kind`, filtered by
+    /// zero or more `Predicate`s (AND-combined), up to `limit` rows.
+    /// Path validation already happened at `Predicate` construction time;
+    /// the worker only compiles + executes parameterized SQL.
+    ReadList {
+        kind: String,
+        predicates: Vec<Predicate>,
+        limit: usize,
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
     Shutdown,
     /// Pack 6.G G.1 — debug-only request that asks a worker to read its
     /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
@@ -664,6 +674,10 @@ fn reader_worker_loop(
             }
             ReaderRequest::ReadCollection { collection, after_id, limit, respond } => {
                 let result = read_collection_in_tx(&mut connection, &collection, after_id, limit);
+                let _ = respond.send(result);
+            }
+            ReaderRequest::ReadList { kind, predicates, limit, respond } => {
+                let result = read_list_in_tx(&mut connection, &kind, &predicates, limit);
                 let _ = respond.send(result);
             }
             #[cfg(debug_assertions)]
@@ -992,6 +1006,143 @@ pub struct SearchResult {
     pub results: Vec<SearchHit>,
 }
 
+// ===== G4 filter grammar types (Slice 35) ===============================
+
+/// G4 (Slice 35) — scalar value for [`Predicate`] comparisons.
+///
+/// Shared vocabulary with G10 — defined once at the `fathomdb-engine` crate
+/// root so reserved-gap 37 (full G4↔G10 unification) can import it without a
+/// path change. Derives `Clone, Debug, PartialEq` per the ADR contract
+/// (D-F1 exhaustiveness: exactly `{Text, Integer, Bool}`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScalarValue {
+    Text(String),
+    Integer(i64),
+    Bool(bool),
+}
+
+/// G4 (Slice 35) — comparison operator for [`Predicate::JsonPathCompare`].
+///
+/// Shared vocabulary (same crate-root export as `ScalarValue`). Closed
+/// enum: `{Gt, Gte, Lt, Lte}` per D-F1. Derives `Clone, Debug, PartialEq`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ComparisonOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+/// Allowed JSON paths for [`Predicate`] constructors. The SQL compilation in
+/// [`Engine::read_list`] uses the **allowlist constant** (a server-side literal),
+/// never the caller-supplied string, so only paths in this set reach
+/// `json_extract`. Callers receive [`EngineError::InvalidFilter`] for any
+/// non-allowlisted path — no passthrough, no panic.
+///
+/// To extend: add an entry here. No API change is needed; the constructor
+/// accepts the new path string once it appears in this array.
+const PREDICATE_PATH_ALLOWLIST: &[&str] =
+    &["$.status", "$.priority", "$.tags", "$.kind", "$.created_at"];
+
+/// G4 (Slice 35) — closed typed predicate for [`Engine::read_list`] filter.
+///
+/// Exactly two variants per ADR D-F1 (`{JsonPathEq, JsonPathCompare}`).
+/// The fused variants (`JsonPathFused*`) and all `*_unchecked` builders are
+/// explicitly EXCLUDED (ADR D-F2). Use the validated constructors
+/// [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`]; they
+/// enforce the path allowlist at construction time.
+///
+/// Multiple predicates in [`Engine::read_list`] are combined by implicit AND
+/// (D-F5). Compilation target: `json_extract(body, '$.field') <op> ?` with
+/// a bound parameter (never interpolated — injection-safe per D-F4).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Predicate {
+    /// `json_extract(body, path) = ?` (equality).
+    JsonPathEq { path: String, value: ScalarValue },
+    /// `json_extract(body, path) <op> ?` (inequality).
+    JsonPathCompare { path: String, op: ComparisonOp, value: ScalarValue },
+}
+
+impl Predicate {
+    /// Construct a `JsonPathEq` predicate with allowlist validation.
+    ///
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+    /// [`PREDICATE_PATH_ALLOWLIST`]; never panics on bad input.
+    pub fn json_path_eq(path: impl Into<String>, value: ScalarValue) -> Result<Self, EngineError> {
+        let path = path.into();
+        if !PREDICATE_PATH_ALLOWLIST.contains(&path.as_str()) {
+            return Err(EngineError::InvalidFilter {
+                reason: format!("path '{path}' is not in the predicate path allowlist"),
+            });
+        }
+        Ok(Self::JsonPathEq { path, value })
+    }
+
+    /// Construct a `JsonPathCompare` predicate with allowlist validation.
+    ///
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+    /// [`PREDICATE_PATH_ALLOWLIST`]; never panics on bad input.
+    pub fn json_path_compare(
+        path: impl Into<String>,
+        op: ComparisonOp,
+        value: ScalarValue,
+    ) -> Result<Self, EngineError> {
+        let path = path.into();
+        if !PREDICATE_PATH_ALLOWLIST.contains(&path.as_str()) {
+            return Err(EngineError::InvalidFilter {
+                reason: format!("path '{path}' is not in the predicate path allowlist"),
+            });
+        }
+        Ok(Self::JsonPathCompare { path, op, value })
+    }
+
+    /// Return the validated path string for use in SQL compilation.
+    /// This always returns a path that is in `PREDICATE_PATH_ALLOWLIST`.
+    fn path(&self) -> &str {
+        match self {
+            Self::JsonPathEq { path, .. } => path.as_str(),
+            Self::JsonPathCompare { path, .. } => path.as_str(),
+        }
+    }
+
+    /// Compile this predicate to a SQL WHERE clause fragment.
+    /// The path is validated at construction time and is always an allowlist
+    /// constant — never the raw caller-supplied string.
+    fn to_sql_clause(&self, param_idx: usize) -> String {
+        // The path is already validated against the allowlist at construction.
+        // We use the allowlist entry (the stored path) directly as a SQL literal.
+        // The VALUE is always a bound `?` parameter (injection-safe).
+        let path = self.path();
+        match self {
+            Self::JsonPathEq { .. } => {
+                format!("json_extract(body, '{path}') = ?{param_idx}")
+            }
+            Self::JsonPathCompare { op, .. } => {
+                let op_str = match op {
+                    ComparisonOp::Gt => ">",
+                    ComparisonOp::Gte => ">=",
+                    ComparisonOp::Lt => "<",
+                    ComparisonOp::Lte => "<=",
+                };
+                format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
+            }
+        }
+    }
+
+    /// Bind the value of this predicate as a rusqlite parameter.
+    fn bind_value(&self) -> rusqlite::types::Value {
+        let value = match self {
+            Self::JsonPathEq { value, .. } => value,
+            Self::JsonPathCompare { value, .. } => value,
+        };
+        match value {
+            ScalarValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
+            ScalarValue::Integer(i) => rusqlite::types::Value::Integer(*i),
+            ScalarValue::Bool(b) => rusqlite::types::Value::Integer(i64::from(*b)),
+        }
+    }
+}
+
 /// G10 — closed metadata filter for [`Engine::search_filtered`] (Slice 10).
 ///
 /// All fields are optional; a `None` field imposes no constraint, and an
@@ -1316,6 +1467,12 @@ pub enum EngineError {
     /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
     /// spawn failure, or harness-returned error code).
     Extractor,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
 }
 
 impl Display for EngineError {
@@ -1337,6 +1494,7 @@ impl Display for EngineError {
             Self::Overloaded => write!(f, "engine overloaded"),
             Self::Closing => write!(f, "engine is closing"),
             Self::Extractor => write!(f, "extractor error"),
+            Self::InvalidFilter { reason } => write!(f, "invalid filter: {reason}"),
         }
     }
 }
@@ -1362,6 +1520,7 @@ impl EngineError {
             Self::Overloaded => "OverloadedError",
             Self::Closing => "ClosingError",
             Self::Extractor => "ExtractorError",
+            Self::InvalidFilter { .. } => "InvalidFilterError",
         }
     }
 }
@@ -2543,6 +2702,43 @@ impl Engine {
         let request = ReaderRequest::ReadCollection {
             collection: collection.to_string(),
             after_id,
+            limit,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
+    }
+
+    /// Slice 35 (G4) — `read.list`: list active `canonical_nodes` of a given
+    /// `kind`, optionally filtered by a closed [`Predicate`] set, up to `limit`
+    /// rows. Returns `Vec<NodeRecord>` (active only; `superseded_at IS NULL`).
+    ///
+    /// Multiple predicates are combined as AND (D-F5). An empty predicate slice
+    /// returns all active nodes of the given kind up to `limit` (unfiltered path).
+    /// Compilation target: `json_extract(body, '$.field') <op> ?` with bound
+    /// parameters (injection-safe per D-F4). See `dev/adr/ADR-0.8.0-filter-grammar.md`.
+    ///
+    /// Path validation happens at [`Predicate`] construction time; `read_list`
+    /// itself never receives non-allowlisted paths.
+    pub fn read_list(
+        &self,
+        kind: &str,
+        predicates: &[Predicate],
+        limit: usize,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::ReadList {
+            kind: kind.to_string(),
+            predicates: predicates.to_vec(),
             limit,
             respond: response_tx,
         };
@@ -4497,6 +4693,67 @@ fn read_collection_in_tx(
             write_cursor: row.get::<_, i64>(6)? as u64,
         })
     })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Slice 35 (G4) — execute `read.list` inside a DEFERRED reader transaction.
+///
+/// Builds parameterized SQL: `kind = ?1 AND superseded_at IS NULL [AND
+/// json_extract(body, '$.field') <op> ?N ...]` — injection-safe because:
+///   (a) `kind` is `?1` (bound parameter);
+///   (b) each predicate value is a bound `?N` parameter;
+///   (c) the json_extract path is the ALLOWLIST ENTRY (a server-side constant
+///       validated at `Predicate` construction time), never the raw caller string;
+///   (d) `ComparisonOp` compiles to a server-side literal operator string from a
+///       closed enum, not a caller-supplied string.
+fn read_list_in_tx(
+    reader: &mut Connection,
+    kind: &str,
+    predicates: &[Predicate],
+    limit: usize,
+) -> rusqlite::Result<Vec<NodeRecord>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    // Build the SQL WHERE clauses for each predicate.
+    // Parameters: ?1 = kind; ?2..?N = predicate values; limit is inlined.
+    let mut sql = "SELECT logical_id, kind, body, write_cursor \
+                   FROM canonical_nodes \
+                   WHERE kind = ?1 \
+                   AND superseded_at IS NULL"
+        .to_string();
+
+    // Predicate params start at ?2.
+    for (i, pred) in predicates.iter().enumerate() {
+        let param_idx = i + 2; // ?1 is kind
+        sql.push_str(" AND ");
+        sql.push_str(&pred.to_sql_clause(param_idx));
+    }
+    sql.push_str(&format!(" LIMIT {limit}"));
+
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let mut statement = tx.prepare(&sql)?;
+
+    // Bind all parameters: [kind, predicate_values...]
+    let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(1 + predicates.len());
+    params.push(rusqlite::types::Value::Text(kind.to_string()));
+    for pred in predicates {
+        params.push(pred.bind_value());
+    }
+
+    let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+        Ok(NodeRecord {
+            logical_id: row.get(0)?,
+            kind: row.get(1)?,
+            body: row.get(2)?,
+            write_cursor: row.get::<_, i64>(3)? as u64,
+        })
+    })?;
+
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);

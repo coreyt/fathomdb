@@ -11,12 +11,15 @@
 use fathomdb_engine::{
     ComparisonOp, Engine, EngineError, Predicate, PreparedWrite, ScalarValue, SearchFilter,
 };
+use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
 // ===== Helper =========================================================
 
 fn fresh_engine(dir: &TempDir) -> Engine {
-    Engine::open(dir.path().join("test.db"), None).expect("engine open failed")
+    Engine::open(dir.path().join(format!("test{SQLITE_SUFFIX}")))
+        .expect("engine open failed")
+        .engine
 }
 
 fn write_node(engine: &Engine, logical_id: &str, kind: &str, body: &str) {
@@ -130,7 +133,7 @@ fn fused_and_unchecked_absent_from_surface() {
 #[test]
 fn allowlisted_path_accepted() {
     let allowed_paths = ["$.status", "$.priority", "$.tags", "$.kind", "$.created_at"];
-    for path in &allowed_paths {
+    for path in allowed_paths {
         let result = Predicate::json_path_eq(path, ScalarValue::Text("test".to_string()));
         assert!(result.is_ok(), "Expected allowlisted path {path} to be accepted, got {result:?}");
     }
