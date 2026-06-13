@@ -1,0 +1,303 @@
+{
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "generated_at": "2026-06-13T07:23:02Z",
+  "gold_set_path": "data/corpus-data/eval/ir_gold/all.gold.json",
+  "latency": [
+    {
+      "model": "TinyBERT-L-2",
+      "ms_per_pair_p50": 1.536,
+      "ms_per_pair_p95": 2.85,
+      "n_pairs_sampled": 1000,
+      "hardware_note": "x86_64 (24 logical CPUs)"
+    },
+    {
+      "model": "MiniLM-L12",
+      "ms_per_pair_p50": 16.821,
+      "ms_per_pair_p95": 36.969,
+      "n_pairs_sampled": 1000,
+      "hardware_note": "x86_64 (24 logical CPUs)"
+    }
+  ],
+  "recall_cdf": [
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.946,
+      "k": 50,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.9581,
+      "k": 100,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.9678,
+      "k": 200,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.9799,
+      "k": 500,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.9851,
+      "k": 1000,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.6319,
+      "k": 50,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.6454,
+      "k": 100,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.653,
+      "k": 200,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.653,
+      "k": 500,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.653,
+      "k": 1000,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.9557,
+      "k": 50,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.965,
+      "k": 100,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.9733,
+      "k": 200,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.9823,
+      "k": 500,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.9872,
+      "k": 1000,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.9501,
+      "k": 50,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.9612,
+      "k": 100,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.9695,
+      "k": 200,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.9778,
+      "k": 500,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.9844,
+      "k": 1000,
+      "n_queries": 2888,
+      "query_class": "exact_fact"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.5341,
+      "k": 50,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.6263,
+      "k": 100,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.7222,
+      "k": 200,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.8131,
+      "k": 500,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "bm25_text",
+      "found_at_k": 0.8592,
+      "k": 1000,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.1932,
+      "k": 50,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.267,
+      "k": 100,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.3226,
+      "k": 200,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.3226,
+      "k": 500,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "dense",
+      "found_at_k": 0.3226,
+      "k": 1000,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.5701,
+      "k": 50,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.6787,
+      "k": 100,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.7639,
+      "k": 200,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.834,
+      "k": 500,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "oracle_union",
+      "found_at_k": 0.8725,
+      "k": 1000,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.5101,
+      "k": 50,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.6143,
+      "k": 100,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.7279,
+      "k": 200,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.8239,
+      "k": 500,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    },
+    {
+      "arm": "rrf_fused",
+      "found_at_k": 0.8649,
+      "k": 1000,
+      "n_queries": 1584,
+      "query_class": "exploratory"
+    }
+  ]
+}

@@ -42,10 +42,14 @@ MODELS = [
         "approx_mb": 4,
     },
     {
-        "name": "MiniLM-L6",
-        "flashrank_id": "ms-marco-MiniLM-L6-v2",
+        # NOTE: ms-marco-MiniLM-L6-v2 is not available in flashrank (404 on HuggingFace).
+        # Using MiniLM-L-12-v2 as the closest available substitute (~33 MB, 12 layers
+        # vs 6 layers — latency upper-bound for the L-6 design point).
+        # The sbert fallback uses the correct L-6 model if sentence-transformers is installed.
+        "name": "MiniLM-L12",
+        "flashrank_id": "ms-marco-MiniLM-L-12-v2",
         "sbert_id": "cross-encoder/ms-marco-MiniLM-L6-v2",
-        "approx_mb": 23,
+        "approx_mb": 33,
     },
 ]
 
@@ -122,7 +126,7 @@ def benchmark_with_flashrank(model_id: str, pairs: list[tuple[str, str]]) -> lis
     """Return per-pair latencies (ms) using FlashRank."""
     from flashrank import Ranker, RerankRequest  # type: ignore[import]
 
-    ranker = Ranker(model_name=model_id, cache_dir=None)
+    ranker = Ranker(model_name=model_id)  # uses default cache_dir (/tmp)
     latencies_ms = []
     for query, passage in pairs:
         req = RerankRequest(query=query, passages=[{"id": "0", "text": passage}])
