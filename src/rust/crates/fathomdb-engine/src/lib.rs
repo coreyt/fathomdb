@@ -5012,6 +5012,9 @@ const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
 /// `LIMIT {GRAPH_NEIGHBORS_HARD_CAP}` appears on both the CTE and the final SELECT.
 fn build_bfs_sql(direction: TraversalDirection) -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    // cte_cap = cap + 1: the SQLite CTE LIMIT includes the seed/root row (depth 0).
+    // Without the +1, a root with exactly `cap` direct neighbors returns cap-1 results.
+    let cte_cap = cap + 1;
     // The visited-string cycle guard: for each candidate next node, check
     // that it is not already in the per-path visited set.
     // Format: `','||logical_id||','` is the initial visited string for root;
@@ -5033,7 +5036,7 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited, printf(',%s,', e.to_id)) = 0
-    LIMIT {cap}
+    LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
@@ -5058,7 +5061,7 @@ LIMIT {cap}"
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited, printf(',%s,', e.from_id)) = 0
-    LIMIT {cap}
+    LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
@@ -5089,7 +5092,7 @@ LIMIT {cap}"
       AND instr(t.visited,
             printf(',%s,',
               CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
-    LIMIT {cap}
+    LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
@@ -5108,6 +5111,7 @@ LIMIT {cap}"
 /// Returns 5 columns: logical_id, kind, body, write_cursor, min_depth.
 fn build_bfs_with_depth_sql() -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    let cte_cap = cap + 1;
     format!(
         "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
@@ -5130,7 +5134,7 @@ fn build_bfs_with_depth_sql() -> String {
       AND instr(t.visited,
             printf(',%s,',
               CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
-    LIMIT {cap}
+    LIMIT {cte_cap}
   )
 SELECT n.logical_id, n.kind, n.body, n.write_cursor, MIN(tr.depth) AS min_depth
 FROM traversal tr
@@ -5190,7 +5194,7 @@ fn search_expand_in_tx(
     {
         let mut stmt = tx.prepare(
             "SELECT logical_id FROM canonical_nodes
-             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND logical_id IS NOT NULL
              LIMIT 1",
         )?;
         for hit in search_hits {

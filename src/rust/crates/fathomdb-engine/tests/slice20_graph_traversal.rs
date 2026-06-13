@@ -554,3 +554,43 @@ fn graph_neighbors_inactive_intermediate_not_traversed() {
     );
     opened.engine.close().unwrap();
 }
+
+/// Regression: a search hit on an anonymous node (logical_id: None) must not
+/// cause search_expand to return a Storage error.  Anonymous nodes are valid
+/// write targets; they have no traversal root but should be silently skipped
+/// rather than crashing the whole call.
+#[test]
+fn search_expand_anon_node_hit_does_not_crash() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "anon_hit")).expect("open");
+
+    // Write a named node and an anonymous node (logical_id: None).
+    opened
+        .engine
+        .write(&[
+            PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "anon shimmer unique probe alpha node".to_string(),
+                source_id: None,
+                logical_id: None, // anonymous — no logical_id
+            },
+            node("doc", "named shimmer unique probe beta node", "NAMED"),
+        ])
+        .expect("write");
+
+    // search_expand must succeed (no Storage panic on the NULL logical_id row).
+    let result = opened
+        .engine
+        .search_expand("shimmer unique probe", None, 1)
+        .expect("search_expand must not crash on anonymous hit");
+
+    // At minimum NAMED appears somewhere (in hits or expanded).
+    let all_ids = &result.all_logical_ids;
+    assert!(
+        all_ids.contains(&"NAMED".to_string()) || result.search_hits.len() >= 1,
+        "expected at least one result; got hits={}, expanded={}",
+        result.search_hits.len(),
+        result.expanded.len()
+    );
+    opened.engine.close().unwrap();
+}
