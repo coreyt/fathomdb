@@ -351,6 +351,7 @@ impl PySoftFallback {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
                 SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
         }
     }
@@ -377,6 +378,7 @@ impl PySearchHit {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
                 SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
         }
     }
@@ -636,11 +638,11 @@ impl PyEngine {
     /// activates CE reranking over the top-N fused hits (when the
     /// `default-reranker` feature is enabled and the model is loaded; otherwise
     /// falls back to identity).
-    // 0.8.1 R1: rerank_depth adds the 7th arg (limit is 7); suppress lint.
+    // 0.8.1 R1/R3: rerank_depth and use_graph_arm add 8th arg; suppress lint.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
-                     status=None, rerank_depth=0)
+                     status=None, rerank_depth=0, use_graph_arm=false)
     )]
     fn search(
         &self,
@@ -651,6 +653,10 @@ impl PyEngine {
         created_after: Option<i64>,
         status: Option<Bound<'_, PyAny>>,
         rerank_depth: usize,
+        // 0.8.1 R3 (Slice 30) — when True, seed BFS over temporal fact-edges
+        // from the top-10 fused hits and fuse reachable nodes as a third RRF arm.
+        // Default False → byte-identical to the pre-Slice-30 two-arm pipeline.
+        use_graph_arm: bool,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -674,7 +680,10 @@ impl PyEngine {
         };
         // 0.8.1 R1: use search_reranked so rerank_depth=0 is a no-op (identity)
         // and rerank_depth>0 activates the CE path.
-        let result = call_engine(py, move || engine.search_reranked(&query, filter, rerank_depth))?;
+        // 0.8.1 R3: use_graph_arm=True activates the graph-BFS third arm.
+        let result = call_engine(py, move || {
+            engine.search_reranked(&query, filter, rerank_depth, use_graph_arm)
+        })?;
         Ok(PySearchResult::from_rust(result))
     }
 

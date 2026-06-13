@@ -114,8 +114,9 @@ class Engine:
         filter: SearchFilter | None = None,
         *,
         rerank_depth: int = 0,
+        use_graph_arm: bool = False,
     ) -> SearchResult:
-        """Hybrid search with optional CE reranking.
+        """Hybrid search with optional CE reranking and optional graph-BFS arm.
 
         Args:
             query: Free-text search query.
@@ -124,6 +125,10 @@ class Engine:
                 N > 0 = rerank the top-N fused hits with the cross-encoder.
                 Must be a non-negative integer. Negative values raise
                 ``ValueError``.
+            use_graph_arm: When ``True``, seed a BFS over temporal fact-edges
+                from the top-10 fused hits and fuse reachable nodes as a third
+                RRF arm (Slice 30 R3). Default ``False`` → byte-identical to
+                the pre-Slice-30 two-arm pipeline.
 
         Returns:
             ``SearchResult`` with RRF-fused (and optionally CE-reranked) hits.
@@ -139,8 +144,14 @@ class Engine:
             raise ValueError(
                 f"rerank_depth must be >= 0, got {rerank_depth!r}"
             )
+        if not isinstance(use_graph_arm, bool):
+            raise TypeError(
+                f"use_graph_arm must be a bool, got {type(use_graph_arm).__name__!r}"
+            )
         if filter is None:
-            result = self._native.search(query, rerank_depth=rerank_depth)
+            result = self._native.search(
+                query, rerank_depth=rerank_depth, use_graph_arm=use_graph_arm
+            )
         else:
             result = self._native.search(
                 query,
@@ -149,6 +160,7 @@ class Engine:
                 created_after=filter.created_after,
                 status=filter.status,
                 rerank_depth=rerank_depth,
+                use_graph_arm=use_graph_arm,
             )
         fallback = result.soft_fallback
         soft = (

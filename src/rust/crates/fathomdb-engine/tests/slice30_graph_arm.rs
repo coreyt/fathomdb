@@ -13,7 +13,7 @@
 //!
 //! All RED-3 tests FAIL before `use_graph_arm` is wired into `Engine::search_reranked`.
 
-use fathomdb_engine::{Engine, ExtractDocument, PreparedWrite, SoftFallbackBranch};
+use fathomdb_engine::{Engine, PreparedWrite};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
@@ -65,6 +65,7 @@ fn live_edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
 }
 
 /// Build a simple BYO-LLM stub harness inline that returns a single edge.
+#[allow(dead_code)]
 fn write_inline_stub(dir: &TempDir, doc_id: &str, result_json: &str) -> String {
     use std::io::Write as _;
     let src = format!(
@@ -80,7 +81,6 @@ fn write_inline_stub(dir: &TempDir, doc_id: &str, result_json: &str) -> String {
              r['request_id']=msg.get('request_id')\n    \
              print(json.dumps(r),flush=True)\n",
         result_json.replace('\'', "\\'"),
-        doc_id = doc_id,
     );
     let path = dir.path().join(format!("stub_{doc_id}.py"));
     let mut f = std::fs::File::create(&path).unwrap();
@@ -251,7 +251,7 @@ fn graph_arm_disabled_is_byte_identical_to_baseline() {
 #[test]
 fn graph_arm_factoid_recall_cdf_artifact_pinned() {
     let cdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../../dev/plans/runs/IR-C-recall-cdf.json");
+        .join("../../../../dev/plans/runs/IR-C-recall-cdf.json");
 
     assert!(
         cdf_path.exists(),

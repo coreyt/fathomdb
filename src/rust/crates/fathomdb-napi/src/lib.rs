@@ -400,6 +400,7 @@ impl SearchHit {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
                 SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
         }
     }
@@ -483,6 +484,7 @@ impl SearchResult {
                     SoftFallbackBranch::Vector => "vector".to_string(),
                     SoftFallbackBranch::Text => "text".to_string(),
                     SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                    SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
                 },
             }),
             results: r.results.iter().map(SearchHit::from_rust).collect(),
@@ -755,6 +757,10 @@ impl Engine {
         query: String,
         filter: Option<SearchFilterInput>,
         rerank_depth: Option<u32>,
+        // 0.8.1 R3 (Slice 30) — when true, seed a BFS over temporal fact-edges
+        // from the top-10 fused hits and fuse the reachable nodes as a third RRF arm.
+        // Default false → byte-identical to the pre-Slice-30 two-arm pipeline.
+        use_graph_arm: Option<bool>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -801,8 +807,11 @@ impl Engine {
         });
         // 0.8.1 R1: rerank_depth=None or 0 → soft-fallback (identity).
         let depth = rerank_depth.unwrap_or(0) as usize;
+        // 0.8.1 R3: use_graph_arm=None or false → two-arm byte-identical path.
+        let graph_arm = use_graph_arm.unwrap_or(false);
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_reranked(&query, filter, depth)).await?;
+        let result =
+            call_engine(move || engine.search_reranked(&query, filter, depth, graph_arm)).await?;
         Ok(SearchResult::from_rust(result))
     }
 

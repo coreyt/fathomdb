@@ -434,6 +434,12 @@ enum ReaderRequest {
         /// 0.8.1 Slice 10 (R1) — per-request rerank depth (snapshot of
         /// `ProjectionRuntimeShared::rerank_depth`). `0` = identity path.
         rerank_depth: usize,
+        /// 0.8.1 Slice 30 (R3) — when `true`, run the graph-BFS arm (seeded
+        /// from top-10 fused hits, depth ≤ 3, cap 50, temporal filter) and
+        /// fuse its candidates into the final ranking via `fuse_three_arms`.
+        /// When `false` (the default), the graph arm pool is `vec![]` and
+        /// results are byte-identical to the pre-Slice-30 two-arm pipeline.
+        use_graph_arm: bool,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -694,6 +700,7 @@ fn reader_worker_loop(
                 vector_stage_only,
                 raw_query,
                 rerank_depth,
+                use_graph_arm,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -707,6 +714,7 @@ fn reader_worker_loop(
                     vector_stage_only,
                     &raw_query,
                     rerank_depth,
+                    use_graph_arm,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -998,8 +1006,9 @@ pub struct SoftFallback {
 /// `TextEdge` = edge-body hit (FTS via `search_index_edges` OR vector-projected
 /// edge facts — both produce the same kind="edge_fact" row shape and share the
 /// same downstream handling in `search_expand_in_tx`). `Vector`/`Text` also
-/// used as soft-fallback signal when the respective branch is empty. Owned by
-/// `dev/design/retrieval.md`.
+/// used as soft-fallback signal when the respective branch is empty.
+/// `GraphArm` = R3 (Slice 30) BFS-reachable node from the temporal fact-edge
+/// graph arm. Owned by `dev/design/retrieval.md`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SoftFallbackBranch {
     Vector,
@@ -1007,6 +1016,10 @@ pub enum SoftFallbackBranch {
     /// G11 (Slice 15) — edge-body hit from `search_index_edges` FTS or from
     /// `vector_default` edge-fact projection. `kind = "edge_fact"` in both cases.
     TextEdge,
+    /// R3 (Slice 30) — BFS-reachable node from the temporal fact-edge graph arm.
+    /// Only present when `use_graph_arm = true`. Nodes in the graph arm were NOT
+    /// in the initial vector/text fused result (newly-reached nodes only).
+    GraphArm,
 }
 
 /// A single structured search hit (G1 / AC-057a-clean).
@@ -2771,17 +2784,23 @@ impl Engine {
         query: &str,
         filter: Option<SearchFilter>,
     ) -> Result<SearchResult, EngineError> {
-        // FIX-6: delegate to search_reranked(depth=0) to eliminate the
+        // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
-        self.search_reranked(query, filter, 0)
+        self.search_reranked(query, filter, 0, false)
     }
 
-    /// 0.8.1 Slice 10 (R1) — `search_reranked`: hybrid search with optional CE
-    /// reranking. `rerank_depth = 0` is the identity (soft-fallback) path,
-    /// byte-identical to [`search_filtered`][Engine::search_filtered]. `rerank_depth
-    /// = N > 0` applies the cross-encoder over the top-N fused hits (when the
+    /// 0.8.1 Slice 10 (R1) / Slice 30 (R3) — `search_reranked`: hybrid search
+    /// with optional CE reranking and optional graph-BFS third arm. `rerank_depth
+    /// = 0` is the identity (soft-fallback) path, byte-identical to
+    /// [`search_filtered`][Engine::search_filtered]. `rerank_depth = N > 0`
+    /// applies the cross-encoder over the top-N fused hits (when the
     /// `default-reranker` feature is enabled and the model is loaded); without the
     /// model, the call falls back to the fused order.
+    ///
+    /// `use_graph_arm = false` (the default) produces byte-identical results to
+    /// the pre-Slice-30 two-arm pipeline. `use_graph_arm = true` seeds a BFS over
+    /// temporal fact-edges from the top-10 fused hits and fuses the reachable
+    /// nodes as a third RRF arm.
     ///
     /// Governed surface: re-exported from `fathomdb` facade.
     pub fn search_reranked(
@@ -2789,10 +2808,11 @@ impl Engine {
         query: &str,
         filter: Option<SearchFilter>,
         rerank_depth: usize,
+        use_graph_arm: bool,
     ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query, filter, rerank_depth);
+        let outcome = self.search_inner(query, filter, rerank_depth, use_graph_arm);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -2867,6 +2887,7 @@ impl Engine {
         query: &str,
         filter: Option<SearchFilter>,
         rerank_depth: usize,
+        use_graph_arm: bool,
     ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
@@ -2931,6 +2952,7 @@ impl Engine {
             vector_stage_only,
             raw_query: Box::from(query), // FIX-4: Box<str> (16B) not String (24B)
             rerank_depth,
+            use_graph_arm,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -3055,7 +3077,7 @@ impl Engine {
             });
         }
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
-        let search_result = self.search_inner(query, filter, 0)?;
+        let search_result = self.search_inner(query, filter, 0, false)?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -4540,6 +4562,13 @@ pub const RRF_K: f64 = 30.0;
 /// branch contributes `weight / (RRF_K + rank)`.
 pub const RRF_WEIGHT_VECTOR: f64 = 1.0;
 pub const RRF_WEIGHT_TEXT: f64 = 3.0;
+/// R3 (Slice 30) — graph arm RRF weight. Conservative starting value (equal to
+/// `RRF_WEIGHT_VECTOR`). Without R2 per-class delta data the graph arm weight
+/// cannot be calibrated; 1.0 is the minimum non-zero contribution. The graph
+/// arm surfaces newly-reachable nodes from BFS traversal; it is not meant to
+/// override the primary text/vector signals. Revisable after R2 data arrives.
+/// See `dev/design/slice-30-design.md` §Q2.
+pub const RRF_WEIGHT_GRAPH: f64 = 1.0;
 
 /// G12-recency — additive recency weight. Must satisfy two constraints:
 /// 1. Small enough to never override a clear RRF signal: a gap of > RECENCY_WEIGHT
@@ -4562,19 +4591,41 @@ pub const RECENCY_WEIGHT: f64 = 0.002;
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
 ///
-/// Each branch contributes `weight / (RRF_K + rank)` (1-based rank within that
-/// branch; `weight` = [`RRF_WEIGHT_VECTOR`] / [`RRF_WEIGHT_TEXT`], text-dominant
-/// per IR-C), accumulated **keyed on `SearchHit.body`**, so a body surfaced by
-/// both branches accumulates both terms (agreement boosts it). The fused value
-/// is written into `SearchHit.score`. A both-branch body surfaces **once** with
-/// the **vector** branch's identity (vector-first). Output is sorted by score
-/// descending, then vector-first, then insertion order — a pure, deterministic
-/// function of the two input lists (no `HashMap` iteration order leaks in). This
-/// is the **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob, no
-/// legacy path).
+/// Delegates to [`fuse_three_arms`] with an empty graph arm. The two-arm
+/// contract is preserved: `fuse_rrf(v, t)` == `fuse_three_arms(v, t, vec![])`.
+/// All existing callers are unaffected.
+///
+/// See [`fuse_three_arms`] for the full RRF formula documentation.
 #[doc(hidden)]
 #[must_use]
 pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    fuse_three_arms(vector_hits, text_hits, vec![])
+}
+
+/// R3 (Slice 30) — fuse vector, text, and graph arms with Reciprocal Rank Fusion.
+///
+/// Each branch contributes `weight / (RRF_K + rank)` (1-based rank within that
+/// branch; `weight` = [`RRF_WEIGHT_VECTOR`] / [`RRF_WEIGHT_TEXT`] /
+/// [`RRF_WEIGHT_GRAPH`], text-dominant per IR-C), accumulated **keyed on
+/// `SearchHit.body`**, so a body surfaced by multiple branches accumulates all
+/// terms (agreement boosts it). The fused value is written into `SearchHit.score`.
+/// A body in multiple branches surfaces **once** with the **vector** branch's
+/// identity (vector-first), then graph arm identity for non-vector hits, then
+/// text. Output is sorted by score descending, then vector-first, then insertion
+/// order — a pure, deterministic function of the three input lists.
+///
+/// With an empty `graph_hits` (`vec![]`), the output is byte-identical to the
+/// pre-Slice-30 two-arm `fuse_rrf`. This is the backward-compatibility contract.
+///
+/// This is the **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob,
+/// no legacy path). Graph arm is opt-in via `use_graph_arm=true`.
+#[doc(hidden)]
+#[must_use]
+pub fn fuse_three_arms(
+    vector_hits: Vec<SearchHit>,
+    text_hits: Vec<SearchHit>,
+    graph_hits: Vec<SearchHit>,
+) -> Vec<SearchHit> {
     struct Entry {
         hit: SearchHit,
         score: f64,
@@ -4597,6 +4648,13 @@ pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
     }
     for (rank0, hit) in text_hits.into_iter().enumerate() {
         accumulate(hit, rank0, false, RRF_WEIGHT_TEXT);
+    }
+    for (rank0, hit) in graph_hits.into_iter().enumerate() {
+        // Graph arm: vector-first=false (never overrides an existing vector hit's
+        // representative identity; only new bodies from the graph arm get GraphArm
+        // as their branch identity). The in_vector=false ensures graph arm hits
+        // never sort ahead of vector hits on exact score ties.
+        accumulate(hit, rank0, false, RRF_WEIGHT_GRAPH);
     }
     entries.sort_by(|a, b| {
         b.score
@@ -5003,6 +5061,7 @@ fn read_search_in_tx(
     vector_stage_only: bool,
     raw_query: &str,
     rerank_depth: usize,
+    use_graph_arm: bool,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -5215,6 +5274,26 @@ fn read_search_in_tx(
     // unconditional.
     let results = if vector_stage_only {
         vector_results
+    } else if use_graph_arm {
+        // R3 (Slice 30) — graph arm: BFS over temporal fact-edges seeded from
+        // the top-10 two-arm fused candidates, depth ≤ 3, cap 50.
+        // Temporal filter: superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > now).
+        // Synthesized-node penalty: kind = 'unknown' → score *= 0.3.
+        //
+        // Approach: compute the two-arm fused result first (for BFS seeding),
+        // then fuse three arms: the two-arm result (as "vector" arm), an empty
+        // text arm, and the graph candidates. The two-arm result preserves all
+        // existing ranking semantics; the graph arm contributes new candidates.
+        let two_arm_fused = fuse_rrf(vector_results, text_results);
+        let graph_candidates = bfs_graph_arm_candidates(reader, &two_arm_fused, 3, 50)?;
+        rerank_fused(
+            raw_query,
+            apply_recency_reweight(
+                fuse_three_arms(two_arm_fused, vec![], graph_candidates),
+                recency_enabled,
+            ),
+            rerank_depth,
+        )
     } else {
         // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
         // tiebreak) into the unconditional new ranking, recency-reweight (gated,
@@ -5228,6 +5307,135 @@ fn read_search_in_tx(
         )
     };
     Ok((cursor, soft_fallback, results))
+}
+
+/// R3 (Slice 30) — graph-arm BFS candidate generation.
+///
+/// Seeds BFS from the top-`SEED_N` (10) bodies in `fused_hits`, resolves each
+/// seed body to a `logical_id` in `canonical_nodes`, then performs a
+/// breadth-first traversal over `canonical_edges` with temporal filter:
+///   `superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > datetime('now'))`
+///
+/// Collects reachable node bodies (up to `cap`) as [`SearchHit`]s tagged
+/// `SoftFallbackBranch::GraphArm`. Score = `1.0 / (1.0 + hop_count)` with a
+/// synthesized-node penalty (`kind = 'unknown'` → score *= 0.3).
+///
+/// Nodes whose bodies are already present in `fused_hits` are excluded from the
+/// returned candidates (they are already covered by the two-arm result).
+fn bfs_graph_arm_candidates(
+    reader: &mut Connection,
+    fused_hits: &[SearchHit],
+    max_depth: u32,
+    cap: usize,
+) -> rusqlite::Result<Vec<SearchHit>> {
+    const SEED_N: usize = 10;
+    const SYNTHESIZED_PENALTY: f64 = 0.3;
+
+    // Bodies already in the fused result — exclude these from graph arm output.
+    let seed_bodies: std::collections::HashSet<&str> =
+        fused_hits.iter().map(|h| h.body.as_str()).collect();
+
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+
+    // Phase 1: resolve write_cursor → logical_id for the top-SEED_N seeds.
+    let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    {
+        let mut node_stmt = tx.prepare(
+            "SELECT logical_id FROM canonical_nodes \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL \
+             LIMIT 1",
+        )?;
+        for hit in fused_hits.iter().take(SEED_N) {
+            let cursor_i64 = hit.id as i64;
+            let resolved = node_stmt
+                .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
+                .optional()?;
+            if let Some(Some(lid)) = resolved {
+                if visited.insert(lid.clone()) {
+                    frontier.push_back((lid, 0));
+                }
+            }
+        }
+    }
+
+    // Phase 2: BFS over canonical_edges (temporal filter).
+    // Collect edge neighbors into a temporary Vec on each iteration, then
+    // resolve node bodies — this avoids holding a `query_map` MappedRows
+    // and a separate statement borrow simultaneously.
+    let mut candidates: Vec<SearchHit> = Vec::new();
+
+    while let Some((lid, depth)) = frontier.pop_front() {
+        if candidates.len() >= cap {
+            break;
+        }
+        if depth >= max_depth {
+            continue;
+        }
+
+        // Fetch temporal-live neighbors via edges.
+        let neighbor_lids: Vec<String> = {
+            let mut edge_stmt = tx.prepare(
+                "SELECT e.from_id, e.to_id \
+                 FROM canonical_edges e \
+                 WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+                   AND e.superseded_at IS NULL \
+                   AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now')) \
+                 LIMIT 64",
+            )?;
+            let rows = edge_stmt.query_map([&lid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.flatten()
+                .map(|(from_id, to_id)| if from_id == lid { to_id } else { from_id })
+                .collect()
+        };
+
+        for neighbor in neighbor_lids {
+            if visited.contains(&neighbor) {
+                continue;
+            }
+            visited.insert(neighbor.clone());
+
+            // Fetch neighbor body from canonical_nodes.
+            let row: Option<(String, String)> = {
+                let mut body_stmt = tx.prepare(
+                    "SELECT kind, body FROM canonical_nodes \
+                     WHERE logical_id = ?1 AND superseded_at IS NULL \
+                     LIMIT 1",
+                )?;
+                body_stmt
+                    .query_row([&neighbor], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .optional()?
+            };
+
+            if let Some((kind, body)) = row {
+                // Skip bodies already covered by the two-arm result.
+                if !seed_bodies.contains(body.as_str()) {
+                    let hop_score = 1.0 / (1.0 + (depth + 1) as f64);
+                    let score =
+                        if kind == "unknown" { hop_score * SYNTHESIZED_PENALTY } else { hop_score };
+                    candidates.push(SearchHit {
+                        id: 0, // no write_cursor for newly-reached graph-arm nodes
+                        kind,
+                        body,
+                        score,
+                        branch: SoftFallbackBranch::GraphArm,
+                    });
+                    if candidates.len() >= cap {
+                        break;
+                    }
+                }
+                // Always push neighbor to frontier for further BFS expansion.
+                frontier.push_back((neighbor, depth + 1));
+            }
+        }
+    }
+
+    tx.commit()?;
+    Ok(candidates)
 }
 
 /// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
