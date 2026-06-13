@@ -13,28 +13,26 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slices 20 + 35 CLOSED; codex §9 PASS; pointer → Slice 5 post-process + Slice 10 open).
+Last updated: 2026-06-13 (fix-22/23/24 committed; codex §9 rate-limited → re-run after 5:11 AM).
 
 ---
 
 ## 1. Current slice
 
-**Slices 20 + 35 CLOSED 2026-06-13 (codex §9 PASS at `94ddf13`). Pointer → Slice 5 post-process then Slice 10.**
+**Slice 5 post-process: fix-22/23/24 committed; awaiting codex §9 re-run (rate-limited; reset 5:11 AM).**
 
-Slices 20 + 35 ran in parallel (21 fix commits, fixes 5–21):
-- fix-5 through fix-14: TextEdge sentinel, cycle-guard delimiter, depth validation, error types, bool type guard, string FFI validation.
-- fix-15 through fix-17: stale TextEdge hits, anonymous-node crash, cap² CTE headroom.
-- fix-18: facade re-export 7 new governed-surface types (17→24).
-- fix-19: integer json_type guard (Bool↔Integer cross-match).
-- fix-20: Python predicate string FFI validation (`extract_validated_str`).
-- fix-21: text-compare type guard + char(30) write rejection.
-- Codex final verdict post-fix-21: **PASS.**
-
-**Slice 5 (R0 recall-CDF)** completed ✅ (output at `dev/plans/runs/0.8.1-slice-5-output.json`). Needs post-process (codex §9 review on Slice 5 artifacts + close).
+Slice 5 codex §9 review cycle so far (base `101a3b0`, includes Slices 15/20/35 + Slice 5 diffs):
+- fix-22 (`9423143`): stale schema-version 13→14 assertions in pr_g1_tokenizer_* tests; edge vector
+  hits silently dropped in `read_search_in_tx` (node lookup only; added `edge_stmt` fallback).
+- fix-23 (`6f0c897`): `ingest_with_extractor` child-reap on error paths (outer/inner split); ready
+  message validates `protocol` + `schema_version`; pre-filter existing entities via `read_get_many`.
+- fix-24 (`2809e7a`): result envelope must carry `type=="result"` AND matching `request_id`; two
+  regression tests added (`ingest_rejects_wrong_result_type` / `ingest_rejects_mismatched_request_id`).
+- **Next codex run: rate-limited; retry after 5:11 AM.**
 
 **Prerequisites for Slice 10 — all satisfied:**
 1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`).
-2. **Slice 5 complete** — ✅ output present; needs post-process + close.
+2. **Slice 5 complete** — ✅ output present; needs codex §9 PASS + close.
 3. **CDF review** — K=200 recommended from Slice 5 findings.
 
 ### ◆ HITL gate — SIGNED 2026-06-13
@@ -42,9 +40,7 @@ Slices 20 + 35 ran in parallel (21 fix commits, fixes 5–21):
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Slice 5 post-process + codex §9 review → CLOSE Slice 5, then OPEN Slice 10 (R1 reranker):**
-- Slice 5 artifacts: `dev/plans/runs/0.8.1-slice-5-output.json` + `dev/plans/runs/IR-C-r0-findings.md` + `dev/design/slice-5-design.md`
-- Slice 10 (R1 reranker) — gated on Slice 5 + CDF review; K=200 recommended
+**Re-run codex §9 (base `101a3b0`) after rate-limit reset → if PASS: CLOSE Slice 5, OPEN Slice 10 (R1 reranker, K=200).**
 
 ---
 
@@ -57,7 +53,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
-| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ⏳ in flight | 0 | n/a | ❌ | ❌ |
+| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | 🔁 fix-22/23/24 committed; codex §9 re-run pending (rate-limited; reset 5:11 AM) | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
@@ -131,6 +127,16 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slice 5 codex §9 fix cycle (fix-22..24); rate-limited; resume after 5:11 AM
+
+Codex §9 run on base `101a3b0` (covers Slices 15+20+35+5 diffs) surfaced four [P2] findings:
+
+1. **fix-22** — stale `SCHEMA_VERSION 13` literals in `pr_g1_tokenizer_recall.rs` / `pr_g1_tokenizer_crash_recovery.rs` (Slice 15 bumped to 14); edge body hits from `vector_default` were silently dropped in `read_search_in_tx` (only `canonical_nodes` was queried; added `canonical_edges` fallback with `SoftFallbackBranch::TextEdge`).
+2. **fix-23** — `ingest_with_extractor` child process not reaped on error paths (split into outer reap + inner logic); ready message only validated `type=="ready"`, not `protocol`/`schema_version`; entity re-ingest caused spurious supersession (added `read_get_many` pre-filter).
+3. **fix-24** — result envelope only checked for `type=="error"` (fail) but not `type=="result"` + matching `request_id` (accept); any other envelope was silently treated as an empty result. Added strict accept-only-result-with-matching-id validation and two regression tests.
+
+Final codex run interrupted by rate-limit. Resume after 5:11 AM.
 
 ### 2026-06-13 — Slices 20 + 35 CLOSED; codex §9 PASS (fix-5..21); Slice 5 complete → Slice 10 open
 
