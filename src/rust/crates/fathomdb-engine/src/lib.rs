@@ -1157,21 +1157,27 @@ impl Predicate {
         // We use the allowlist entry (the stored path) directly as a SQL literal.
         // The VALUE is always a bound `?` parameter (injection-safe).
         //
-        // Boolean values require an extra json_type guard: json_extract returns
-        // integer 1/0 for BOTH json `true`/`false` and json `1`/`0`, so without
-        // the guard a bool predicate would incorrectly match numeric fields.
+        // Type guards prevent cross-type matches caused by SQLite's json_extract
+        // coercing JSON booleans to integer 1/0:
+        //   - Bool predicates: AND json_type IN ('true', 'false') — exclude integers
+        //   - Integer predicates: AND json_type = 'integer' — exclude booleans
+        // Text predicates need no guard: json_extract returns TEXT for strings and
+        // the coercion never conflates TEXT with integer/bool.
         let path = self.path();
         match self {
-            Self::JsonPathEq { value, .. } => {
-                if matches!(value, ScalarValue::Bool(_)) {
-                    format!(
-                        "json_extract(body, '{path}') = ?{param_idx} \
-                         AND json_type(body, '{path}') IN ('true', 'false')"
-                    )
-                } else {
+            Self::JsonPathEq { value, .. } => match value {
+                ScalarValue::Bool(_) => format!(
+                    "json_extract(body, '{path}') = ?{param_idx} \
+                     AND json_type(body, '{path}') IN ('true', 'false')"
+                ),
+                ScalarValue::Integer(_) => format!(
+                    "json_extract(body, '{path}') = ?{param_idx} \
+                     AND json_type(body, '{path}') = 'integer'"
+                ),
+                ScalarValue::Text(_) => {
                     format!("json_extract(body, '{path}') = ?{param_idx}")
                 }
-            }
+            },
             Self::JsonPathCompare { op, value, .. } => {
                 let op_str = match op {
                     ComparisonOp::Gt => ">",
@@ -1179,13 +1185,18 @@ impl Predicate {
                     ComparisonOp::Lt => "<",
                     ComparisonOp::Lte => "<=",
                 };
-                if matches!(value, ScalarValue::Bool(_)) {
-                    format!(
+                match value {
+                    ScalarValue::Bool(_) => format!(
                         "json_extract(body, '{path}') {op_str} ?{param_idx} \
                          AND json_type(body, '{path}') IN ('true', 'false')"
-                    )
-                } else {
-                    format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
+                    ),
+                    ScalarValue::Integer(_) => format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') = 'integer'"
+                    ),
+                    ScalarValue::Text(_) => {
+                        format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
+                    }
                 }
             }
         }

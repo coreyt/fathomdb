@@ -457,3 +457,59 @@ fn read_list_includes_nodes_written_without_logical_id_type_check() {
     assert!(ids.contains(&"has-lid"), "node with logical_id must appear; got {ids:?}");
     // No decode error occurred — the test itself passing proves the fix.
 }
+
+// ===== fix-19: integer predicates must not match boolean JSON fields ===========
+
+/// An integer predicate on a field that holds a JSON boolean must NOT match.
+/// SQLite's json_extract returns integer 1/0 for JSON true/false, so without a
+/// `json_type = 'integer'` guard an `Integer(1)` predicate would erroneously
+/// match `{"priority": true}`.
+#[test]
+fn read_list_integer_predicate_does_not_match_boolean_field() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // One node where priority is a JSON integer 1 (should match).
+    write_node(&engine, "INT1", "task", r#"{"status":"open","priority":1}"#);
+    // One node where priority is a JSON boolean true (json_extract also returns 1 — must NOT match).
+    write_node(&engine, "BOOL1", "task", r#"{"status":"open","priority":true}"#);
+
+    let pred =
+        Predicate::json_path_eq("$.priority", ScalarValue::Integer(1)).expect("allowlisted path");
+    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+
+    let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(ids.contains(&"INT1"), "integer node must be returned; got {ids:?}");
+    assert!(
+        !ids.contains(&"BOOL1"),
+        "boolean node must NOT match an integer predicate; got {ids:?}"
+    );
+}
+
+/// Symmetric guard: a bool predicate on a field holding a JSON integer must NOT match.
+/// Without `json_type IN ('true', 'false')`, `Bool(true)` would match `{"priority": 1}`
+/// because json_extract also returns 1 for that integer.
+#[test]
+fn read_list_bool_predicate_does_not_match_integer_field() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // priority=true (JSON boolean) — should match Bool(true)
+    write_node(&engine, "BOOL_TRUE", "task", r#"{"status":"open","priority":true}"#);
+    // priority=1 (JSON integer) — must NOT match Bool(true)
+    write_node(&engine, "INT_ONE", "task", r#"{"status":"open","priority":1}"#);
+
+    let pred =
+        Predicate::json_path_eq("$.priority", ScalarValue::Bool(true)).expect("allowlisted path");
+    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+
+    let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(
+        ids.contains(&"BOOL_TRUE"),
+        "boolean-true node must be returned by Bool(true) predicate; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"INT_ONE"),
+        "integer-1 node must NOT match a Bool(true) predicate; got {ids:?}"
+    );
+}
