@@ -1,0 +1,291 @@
+//! Slice 30 (R3) — graph-retrieval arm tests.
+//!
+//! RED-3: temporal filter tests for the graph arm.
+//!   - `graph_arm_drops_invalidated_edges`: edges with `t_invalid` in the past
+//!     must NOT contribute their reachable nodes to the graph arm.
+//!   - `graph_arm_temporal_fallback_excluded_or_downweighted`: IGNORED (schema gate).
+//!   - `graph_arm_disabled_is_byte_identical_to_baseline`: `use_graph_arm=false` must
+//!     produce byte-identical results to the two-arm baseline.
+//!
+//! RED-4: factoid Recall@K no-regress schema pin.
+//!   - `graph_arm_factoid_recall_cdf_artifact_pinned`: asserts the CDF artifact
+//!     exists and contains the expected rrf_fused exact_fact K=200 entry.
+//!
+//! All RED-3 tests FAIL before `use_graph_arm` is wired into `Engine::search_reranked`.
+
+use fathomdb_engine::{Engine, PreparedWrite};
+use fathomdb_schema::SQLITE_SUFFIX;
+use tempfile::TempDir;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
+}
+
+fn node_write(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
+    PreparedWrite::Node {
+        kind: kind.to_string(),
+        body: body.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+    }
+}
+
+fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+        body: Some(format!("{from} links to {to}")),
+        t_valid: None,
+        t_invalid: Some(t_invalid.to_string()),
+        confidence: None,
+        extractor_model_id: None,
+    }
+}
+
+fn live_edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+        body: Some(format!("{from} links to {to}")),
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    }
+}
+
+/// Build a simple BYO-LLM stub harness inline that returns a single edge.
+#[allow(dead_code)]
+fn write_inline_stub(dir: &TempDir, doc_id: &str, result_json: &str) -> String {
+    use std::io::Write as _;
+    let src = format!(
+        "import json,sys\nRES='{}'\n\
+         for line in sys.stdin:\n  \
+           line=line.strip()\n  \
+           if not line: continue\n  \
+           msg=json.loads(line)\n  \
+           t=msg.get('type')\n  \
+           if t=='hello': print(json.dumps({{'protocol':'fathomdb.extract.v1','type':'ready','schema_version':1,'model':'stub','max_docs_per_request':1}}),flush=True)\n  \
+           elif t=='extract':\n    \
+             r=json.loads(RES)\n    \
+             r['request_id']=msg.get('request_id')\n    \
+             print(json.dumps(r),flush=True)\n",
+        result_json.replace('\'', "\\'"),
+    );
+    let path = dir.path().join(format!("stub_{doc_id}.py"));
+    let mut f = std::fs::File::create(&path).unwrap();
+    f.write_all(src.as_bytes()).unwrap();
+    path.to_string_lossy().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// RED-3a: Invalidated edge must not contribute graph arm candidates
+// ---------------------------------------------------------------------------
+
+/// An edge whose `t_invalid` is in the past (year 2000) must NOT yield
+/// reachable nodes in the graph arm.
+///
+/// Setup:
+///   - Node A ("alice anchor text for search")
+///   - Node B ("bob target node unreachable via dead edge")
+///   - Edge A->B with t_invalid = "2000-01-01T00:00:00Z" (expired in the past)
+///
+/// With use_graph_arm=true, searching for "alice anchor" should find node A
+/// (via text/vector) but should NOT produce B in the graph arm (the edge is
+/// invalidated at t_invalid = 2000, which is in the past).
+///
+/// FAILS at RED because `Engine::search_reranked` does not yet accept `use_graph_arm`.
+#[test]
+fn graph_arm_drops_invalidated_edges() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "invalidated_edge")).expect("open");
+
+    opened
+        .engine
+        .write(&[
+            node_write("doc", "alice anchor text for search", "alice"),
+            node_write("doc", "bob target node unreachable via dead edge", "bob"),
+            // Edge expired 25 years ago — must be excluded from graph arm traversal.
+            edge_with_t_invalid("alice", "bob", "edge-ab", "2000-01-01T00:00:00Z"),
+        ])
+        .expect("write");
+
+    // Search "alice anchor" — finds alice via text/vector.
+    // Graph arm: alice is seed; the only edge (alice->bob) has t_invalid in the
+    // past, so BFS should NOT traverse it, so bob should NOT appear in graph arm.
+    //
+    // FAILS at RED because use_graph_arm param doesn't exist yet.
+    let result = opened
+        .engine
+        .search_reranked("alice anchor", None, 0, true)
+        .expect("search with graph arm");
+
+    let bob_in_results = result.results.iter().any(|h| h.body.contains("bob target"));
+    assert!(
+        !bob_in_results,
+        "graph arm must NOT surface bob via an expired edge (t_invalid=2000); \
+         got results: {:?}",
+        result.results.iter().map(|h| &h.body).collect::<Vec<_>>()
+    );
+
+    opened.engine.close().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// RED-3b: temporal_fallback — SCHEMA GATE (test is #[ignore])
+// ---------------------------------------------------------------------------
+
+/// SCHEMA GATE: Tests the intended behavior for temporal_fallback exclusion.
+///
+/// This test is #[ignore] because detecting temporal_fallback edges at BFS
+/// traversal time requires a new `temporal_fallback BOOLEAN` column on
+/// `canonical_edges` (SCHEMA_VERSION 14 -> 15), which requires HITL approval
+/// per the schema gate in §3.0.R.
+///
+/// Once the schema gate is resolved and the column is added, this test should:
+/// 1. Ingest a document with a temporal_fallback warning edge
+/// 2. Assert that the edge's reachable endpoint appears with ZERO contribution
+///    OR with a reduced score relative to a temporally-grounded edge
+///
+/// For now, this test is recorded as documentation of the intended behavior.
+#[test]
+#[ignore = "SCHEMA-GATE: temporal_fallback detection requires SCHEMA_VERSION 15 \
+             (canonical_edges.temporal_fallback column) — awaiting HITL approval. \
+             See output.json blockers_encountered."]
+fn graph_arm_temporal_fallback_excluded_or_downweighted() {
+    // INTENDED TEST (cannot run until schema gate resolved):
+    //
+    // 1. Ingest a document whose extracted edge carries a temporal_fallback warning
+    //    (t_valid was defaulted to created_at, not text-grounded).
+    // 2. Ingest a control document with a temporally-grounded edge.
+    // 3. Search with use_graph_arm=true.
+    // 4. Assert that the temporal_fallback edge's reachable endpoint either:
+    //    (a) does NOT appear in graph arm candidates (exclude policy), OR
+    //    (b) appears with a score reduced by the temporal_fallback_penalty factor.
+    //
+    // The detection path: at BFS time, query
+    //   `SELECT temporal_fallback FROM canonical_edges WHERE write_cursor = ?`
+    // If the column doesn't exist (schema < 15), this test cannot run.
+    //
+    // Policy (from design memo Q6): EXCLUDE (treat as if t_invalid = now).
+    panic!("temporal_fallback test: schema gate not yet resolved");
+}
+
+// ---------------------------------------------------------------------------
+// RED-3c: use_graph_arm=false must be byte-identical to baseline
+// ---------------------------------------------------------------------------
+
+/// With `use_graph_arm=false` (the default), `Engine::search_reranked`
+/// must return results byte-identical to the pre-Slice-30 two-arm fused order.
+///
+/// FAILS at RED because `Engine::search_reranked` does not yet accept `use_graph_arm`.
+#[test]
+fn graph_arm_disabled_is_byte_identical_to_baseline() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "baseline_parity")).expect("open");
+
+    // Ingest a small set of nodes so there are search results to compare.
+    opened
+        .engine
+        .write(&[
+            node_write("doc", "baseline search doc alpha", "n1"),
+            node_write("doc", "baseline search doc beta", "n2"),
+            node_write("doc", "baseline search doc gamma", "n3"),
+            // Add a live edge so the graph arm would have candidates if enabled.
+            live_edge("n1", "n2", "e12"),
+            live_edge("n2", "n3", "e23"),
+        ])
+        .expect("write");
+
+    // With use_graph_arm=false, must match the baseline (no-graph-arm) search.
+    // We test this by calling search_reranked twice: once with use_graph_arm=false,
+    // once with use_graph_arm=true, and asserting false==baseline.
+    //
+    // The baseline is the search with no graph arm (pre-Slice-30 behavior).
+    // FAILS at RED because use_graph_arm param doesn't exist yet.
+    let without_arm = opened
+        .engine
+        .search_reranked("baseline search", None, 0, false)
+        .expect("search without graph arm");
+    let with_arm = opened
+        .engine
+        .search_reranked("baseline search", None, 0, true)
+        .expect("search with graph arm");
+
+    // The two-arm result (use_graph_arm=false) must match the pre-Slice-30 output.
+    // We verify by calling search() (which uses the old path) and comparing.
+    let classic = opened.engine.search("baseline search").expect("classic search");
+
+    assert_eq!(
+        without_arm.results, classic.results,
+        "use_graph_arm=false must produce byte-identical results to Engine::search()"
+    );
+
+    // The with_arm result may differ (graph arm can add candidates) — we just
+    // verify it compiles and runs. The important assertion is the false==baseline check.
+    let _ = with_arm;
+
+    opened.engine.close().unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// RED-4: Factoid Recall@K no-regress schema pin
+// ---------------------------------------------------------------------------
+
+/// Asserts that `dev/plans/runs/IR-C-recall-cdf.json` exists and contains the
+/// required factoid no-regress anchor:
+///   arm="rrf_fused", query_class="exact_fact", k=200, found_at_k >= 0.9695.
+///
+/// This test GREENs immediately (the artifact exists from Slice 5/10).
+/// It is included here to anchor the factoid no-regress requirement.
+#[test]
+fn graph_arm_factoid_recall_cdf_artifact_pinned() {
+    let cdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../dev/plans/runs/IR-C-recall-cdf.json");
+
+    assert!(
+        cdf_path.exists(),
+        "IR-C-recall-cdf.json must exist at {}: run Slice 5 to generate it",
+        cdf_path.display()
+    );
+
+    let content = std::fs::read_to_string(&cdf_path).expect("read IR-C-recall-cdf.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&content).expect("IR-C-recall-cdf.json must be valid JSON");
+
+    let recall_cdf =
+        json["recall_cdf"].as_array().expect("IR-C-recall-cdf.json must have a 'recall_cdf' array");
+
+    let entry = recall_cdf.iter().find(|e| {
+        e["arm"].as_str() == Some("rrf_fused")
+            && e["query_class"].as_str() == Some("exact_fact")
+            && e["k"].as_u64() == Some(200)
+    });
+
+    let entry = entry.expect(
+        "IR-C-recall-cdf.json must contain an entry with \
+         arm='rrf_fused', query_class='exact_fact', k=200",
+    );
+
+    let found_at_k = entry["found_at_k"].as_f64().expect("found_at_k must be a number");
+
+    assert!(
+        found_at_k >= 0.9695,
+        "factoid Recall@K=200 rrf_fused must be >= 0.9695 (got {found_at_k:.4}); \
+         this is the no-regress floor from Slice 5"
+    );
+
+    println!(
+        "graph_arm_factoid_recall_cdf_artifact_pinned: found_at_k={found_at_k:.4} >= 0.9695 OK"
+    );
+}

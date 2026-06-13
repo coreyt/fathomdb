@@ -75,7 +75,7 @@ export interface ExtractDocument {
   body: string;
 }
 
-export type SoftFallbackBranch = "vector" | "text" | "text_edge";
+export type SoftFallbackBranch = "vector" | "text" | "text_edge" | "graph_arm";
 
 export interface SoftFallback {
   branch: SoftFallbackBranch;
@@ -348,6 +348,7 @@ export class Engine {
     query: string,
     filter?: SearchFilter,
     rerankDepth?: number,
+    useGraphArm?: boolean,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // G10 filter strings cross the FFI like `query` and must clear the same
@@ -380,14 +381,20 @@ export class Engine {
         );
       }
     }
+    // 0.8.1 R3 (Slice 30): useGraphArm validation.
+    if (useGraphArm !== undefined && typeof useGraphArm !== "boolean") {
+      throw new TypeError(
+        `useGraphArm must be a boolean, got ${typeof useGraphArm}`,
+      );
+    }
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth),
+      this.#native.search(query, filter, rerankDepth, useGraphArm),
     );
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,
       softFallback:
-        branch === "vector" || branch === "text" || branch === "text_edge"
+        branch === "vector" || branch === "text" || branch === "text_edge" || branch === "graph_arm"
           ? { branch: branch as SoftFallbackBranch }
           : null,
       results: r.results.map((h) => ({
@@ -395,7 +402,7 @@ export class Engine {
         kind: h.kind,
         body: h.body,
         score: h.score,
-        branch: (h.branch === "vector" || h.branch === "text_edge")
+        branch: (h.branch === "vector" || h.branch === "text_edge" || h.branch === "graph_arm")
           ? (h.branch as SoftFallbackBranch)
           : "text",
       })),

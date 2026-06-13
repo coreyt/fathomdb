@@ -69,10 +69,11 @@ writer thread has accepted the batch.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter=None, *, rerank_depth=0) -> SearchResult`
+### `engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False) -> SearchResult`
 
 Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**,
-with optional CPU cross-encoder reranking (0.8.1 R1).
+with optional CPU cross-encoder reranking (0.8.1 R1) and optional graph-BFS
+third arm (0.8.1 R3).
 
 - `query` (`str`).
 - `filter` ([`SearchFilter`](#searchfilter) | `None`) — optional closed metadata
@@ -84,10 +85,17 @@ with optional CPU cross-encoder reranking (0.8.1 R1).
   Must be a non-negative integer; negative values raise `ValueError`. In the
   default build (no `default-reranker` feature), depth > 0 returns the identity
   order (model absent → soft-fallback).
+- `use_graph_arm` (`bool`, default `False`) — 0.8.1 R3 opt-in. When `True`,
+  seeds a BFS over temporal fact-edges from the top-10 fused hits (depth ≤ 3,
+  cap 50). Edges with `t_invalid` in the past are excluded. Newly-reachable
+  nodes are fused as a third RRF arm (`RRF_WEIGHT_GRAPH = 1.0`). Default
+  `False` produces byte-identical results to the pre-R3 two-arm pipeline.
+  Must be a `bool`; non-bool raises `TypeError`.
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
-  `body`, the **RRF-fused** `score`, and the `branch` that produced it.
+  `body`, the **RRF-fused** `score`, and the `branch` that produced it
+  (`"graph_arm"` for nodes surfaced only via graph traversal).
 
 > **Ranking is RRF (behavior-compat event).** Results are ordered by Reciprocal
 > Rank Fusion (`Σ 1/(60 + rank)`) of the vector and text branches — a body the
@@ -323,7 +331,7 @@ class SearchHit:
     kind: str
     body: str
     score: float     # G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
-    branch: SoftFallbackBranch  # Literal["vector", "text"]
+    branch: SoftFallbackBranch  # Literal["vector", "text", "text_edge", "graph_arm"]
 ```
 
 `score` is the **G9 RRF-fused** relevance (higher = more relevant), optionally
@@ -355,7 +363,7 @@ population source yet — vec0 TEXT metadata is not NULL-able), so a
 ```python
 @dataclass(frozen=True)
 class SoftFallback:
-    branch: SoftFallbackBranch  # Literal["vector", "text"]
+    branch: SoftFallbackBranch  # Literal["vector", "text", "text_edge", "graph_arm"]
 ```
 
 `branch` indicates which non-essential branch could not contribute.
