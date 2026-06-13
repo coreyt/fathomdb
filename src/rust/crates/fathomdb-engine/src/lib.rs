@@ -2628,6 +2628,12 @@ impl Engine {
                 // node's. (Nodes derive id from the entity's real type; defaulting
                 // the edge endpoint kind to "entity" orphaned every contract-faithful
                 // edge from its nodes and tripped the G8 dangling probe.)
+                //
+                // Two passes so a canonical NAME always wins over a (different
+                // entity's) ALIAS regardless of `entities[]` order: pass 1 inserts
+                // all canonical names, pass 2 fills aliases only where no name
+                // already claims that key. (Name↔name clashes remain first-wins —
+                // contradictory input; no principled resolution exists.)
                 let mut entity_index: std::collections::HashMap<String, (String, String)> =
                     std::collections::HashMap::new();
                 for entity in &entities {
@@ -2637,14 +2643,23 @@ impl Engine {
                     }
                     let kind =
                         entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
-                    let value = (name.to_string(), kind);
-                    entity_index.entry(name.to_lowercase()).or_insert_with(|| value.clone());
+                    entity_index
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| (name.to_string(), kind));
+                }
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
                     if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
                         for alias in aliases.iter().filter_map(|a| a.as_str()) {
                             if !alias.is_empty() {
                                 entity_index
                                     .entry(alias.to_lowercase())
-                                    .or_insert_with(|| value.clone());
+                                    .or_insert_with(|| (name.to_string(), kind.clone()));
                             }
                         }
                     }
