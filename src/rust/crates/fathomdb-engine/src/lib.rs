@@ -2516,7 +2516,11 @@ impl Engine {
             let result: Value =
                 serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
 
-            if result.get("type").and_then(|v| v.as_str()) == Some("error") {
+            // fix-24 [P2]: require type=="result" AND matching request_id; any
+            // other envelope (error, wrong id, missing type) is a protocol fault.
+            let resp_type = result.get("type").and_then(|v| v.as_str());
+            let resp_id = result.get("request_id").and_then(|v| v.as_str());
+            if resp_type != Some("result") || resp_id != Some(request_id.as_str()) {
                 return Err(EngineError::Extractor);
             }
 

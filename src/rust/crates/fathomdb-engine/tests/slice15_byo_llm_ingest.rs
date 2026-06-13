@@ -925,3 +925,79 @@ fn edge_fts_created_after_filter_checks_vector_default() {
         edge_hits_exclude.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// fix-24 [P2] — result envelope must have type=="result" AND matching request_id
+// ---------------------------------------------------------------------------
+
+/// Regression guard for fix-24 [P2]: a harness that returns type="unknown" is
+/// rejected (not silently treated as an empty result).
+#[test]
+fn ingest_rejects_wrong_result_type() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "bad_result_type");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let bad_harness = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "bad", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        # returns type="unknown" instead of "result"
+        print(json.dumps({"type": "unknown",
+                          "request_id": msg.get("request_id"),
+                          "entities": [], "edges": []}), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs =
+        vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "hello world".to_string() }];
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "type='unknown' envelope must return Err(EngineError::Extractor), got {result:?}"
+    );
+}
+
+/// Regression guard for fix-24 [P2]: a harness that returns a mismatched
+/// request_id is rejected even when type=="result".
+#[test]
+fn ingest_rejects_mismatched_request_id() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "bad_request_id");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let bad_harness = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "bad", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        # returns wrong request_id
+        print(json.dumps({"type": "result",
+                          "request_id": "wrong-id",
+                          "entities": [], "edges": []}), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs =
+        vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "hello world".to_string() }];
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "mismatched request_id must return Err(EngineError::Extractor), got {result:?}"
+    );
+}
