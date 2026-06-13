@@ -1135,7 +1135,7 @@ fn parse_direction_napi(direction: &str) -> Result<RustTraversalDirection> {
         "incoming" => Ok(RustTraversalDirection::Incoming),
         "both" => Ok(RustTraversalDirection::Both),
         other => Err(typed_error(
-            CODE_WRITE_VALIDATION,
+            CODE_INVALID_ARGUMENT,
             format!("direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"),
             JsonValue::Null,
         )),

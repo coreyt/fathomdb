@@ -69,6 +69,12 @@ def neighbors(
     """
     if not logical_id:
         raise ValueError("graph.neighbors requires a non-empty logical_id")
+    from fathomdb.errors import InvalidArgumentError
+
+    if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
+        raise InvalidArgumentError(
+            f"graph.neighbors depth must be a non-negative integer; got {depth!r}"
+        )
     native_nodes = _native_graph_neighbors(engine._native, logical_id, depth, direction)
     return [_to_node_record(n) for n in native_nodes]
 
@@ -115,6 +121,12 @@ def search_expand(
     """
     if not query:
         raise ValueError("graph.search_expand requires a non-empty query")
+    from fathomdb.errors import InvalidArgumentError
+
+    if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
+        raise InvalidArgumentError(
+            f"graph.search_expand depth must be a non-negative integer; got {depth!r}"
+        )
     native_result = _native_search_expand(
         engine._native,
         query,
