@@ -9,7 +9,7 @@
 // `rethrowTyped`.
 
 import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
-import { rethrowTyped } from "./errors.js";
+import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import type { NodeRecord } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
@@ -503,6 +503,11 @@ export const graph = {
     direction: TraversalDirection = "both",
   ): Promise<NodeRecord[]> {
     validateFfiString(logicalId);
+    if (!Number.isInteger(depth) || depth < 1 || depth > 3) {
+      throw new InvalidArgumentError(
+        `graph.neighbors depth must be an integer between 1 and 3; got ${depth}`,
+      );
+    }
     return intercept(() => native.graphNeighbors(engine._native, logicalId, depth, direction));
   },
 
@@ -522,6 +527,11 @@ export const graph = {
     filter?: SearchFilter,
   ): Promise<SearchExpandResult> {
     validateFfiString(query);
+    if (!Number.isInteger(depth) || depth < 0 || depth > 3) {
+      throw new InvalidArgumentError(
+        `graph.searchExpand depth must be an integer between 0 and 3; got ${depth}`,
+      );
+    }
     if (filter?.sourceType !== undefined) validateFfiString(filter.sourceType);
     if (filter?.kind !== undefined) validateFfiString(filter.kind);
     if (filter?.status !== undefined) validateFfiString(filter.status);

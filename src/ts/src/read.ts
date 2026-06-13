@@ -23,7 +23,7 @@ import {
   type NativeOpStoreRow,
   type NativePredicateInput,
 } from "./binding.js";
-import { rethrowTyped } from "./errors.js";
+import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import { validateFfiString } from "./validation.js";
 import type { Engine } from "./index.js";
 
@@ -107,6 +107,11 @@ function toNativePredicate(pred: Predicate): NativePredicateInput {
   if (typeof pred.value === "boolean") {
     native.valueBool = pred.value;
   } else if (typeof pred.value === "number") {
+    if (!Number.isInteger(pred.value)) {
+      throw new InvalidArgumentError(
+        `predicate numeric value must be an integer; got ${pred.value}`,
+      );
+    }
     native.valueInt = pred.value;
   } else {
     native.valueStr = pred.value;
