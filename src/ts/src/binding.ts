@@ -209,6 +209,7 @@ export interface NativeEngine {
     query: string,
     filter?: NativeSearchFilter,
     rerankDepth?: number,
+    useGraphArm?: boolean,
   ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;

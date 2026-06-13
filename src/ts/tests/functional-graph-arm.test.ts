@@ -19,10 +19,6 @@ import { freshDbPath } from "./helpers.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function openEngine(path: string): Engine {
-  return Engine.open(path, { useDefaultEmbedder: false });
-}
-
 function node(logicalId: string, body: string, kind = "doc") {
   return { kind, body, logicalId };
 }
@@ -43,7 +39,7 @@ function edge(
 // ---------------------------------------------------------------------------
 
 test("useGraphArm default is false — results match explicit false", async () => {
-  const engine = openEngine(freshDbPath());
+  const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     await engine.write([
       node("n1", "alpha bravo delta"),
@@ -64,7 +60,7 @@ test("useGraphArm default is false — results match explicit false", async () =
 });
 
 test("useGraphArm type validation — non-boolean raises TypeError", async () => {
-  const engine = openEngine(freshDbPath());
+  const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     await engine.write([node("n1", "test body")]);
     // @ts-expect-error: intentional wrong type
@@ -83,7 +79,7 @@ test("useGraphArm type validation — non-boolean raises TypeError", async () =>
 });
 
 test("useGraphArm=true runs without error with live edges", async () => {
-  const engine = openEngine(freshDbPath());
+  const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     await engine.write([
       node("n1", "alice anchor search text"),
@@ -101,7 +97,7 @@ test("useGraphArm=true runs without error with live edges", async () => {
 });
 
 test("useGraphArm=true excludes nodes reachable only via expired edges", async () => {
-  const engine = openEngine(freshDbPath());
+  const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     await engine.write([
       node("n1", "sentinel query anchor ts"),
