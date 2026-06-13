@@ -1,221 +1,252 @@
-# Slice 30 design memo — G2 `read.get`/`read.get_many` + G3 `read.collection`/`read.mutations` (`read.*`)
+# Slice 30 (0.8.1) — R3 Graph-Retrieval Arm Design Memo
 
-Status: design-first (consumed by the TDD RED→GREEN→refactor implementation).
-Gates: G0 (Slice 15) + Slice 25 supersession sign-off both CLOSED on `main`.
-Authoritative contract: `dev/plans/0.8.0-implementation.md` § "Slice 30";
-governance: `dev/adr/ADR-0.8.0-supersede-five-verb-surface-cap.md` (read-verb
-allowlist, `read.*` namespace B1, recovery denylist, typed/no-raw-SQL boundary);
-substrate: `dev/adr/ADR-0.8.0-canonical-identity-substrate.md` (active =
-`superseded_at IS NULL`, legacy rows carry `logical_id = NULL`).
+> NOTE: The previous `slice-30-design.md` covered the 0.8.0 Slice 30 (G2/G3 read.get/read.collection).
+> That work is CLOSED and on main. This file now covers the 0.8.1 Slice 30 (R3 graph-retrieval arm).
+> The 0.8.0 G2/G3 design is preserved in git history.
 
-This memo binds **gap labels G2/G3 + F2 + F4-READ + AC-074 + REQ-053** by the
-TDD test names below. It does **not** mint a new AC/REQ/NEED id (acceptance.md is
-`status: locked`).
+**Author:** Slice 30 implementer agent
+**Date:** 2026-06-13
+**Status:** self-reviewed, approved for implementation
+**References:** `dev/plans/0.8.1-implementation.md` §Slice 30; `dev/plans/prompts/0.8.1-SLICE-30-PREP.md`;
+`dev/plans/runs/IR-C-roadmap.md` §R3/C3/C7
 
-## (a) ReaderResponse widening strategy — per-request typed channels (NO Search reshape)
+---
 
-The banner correction holds against disk: `ReaderResponse` (`lib.rs:423`) is
-already `type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>,
-Vec<SearchHit>)>` and carries `Vec<SearchHit>`. The contract's "widen from
-`Vec<String>`" framing is stale.
+## Design Questions (§3.0) — Answers
 
-**Decision: do NOT reshape `ReaderResponse` or the `Search` arm.** Each new
-reader request variant carries its OWN typed `respond: SyncSender<…>`, mirroring
-the debug-only `LookasideStatus { respond: SyncSender<i32> }` /
-`CacheStatus { respond: SyncSender<(String,i32,i32,i32)> }` precedent already in
-the enum. This leaves the `Search` path byte-identical → the Slice 10
-byte-identical-unfiltered Search pin (`pr_g10_filtered_knn.rs`) stays green by
-construction (no edit to `read_search_in_tx`, `search_inner`, or the `Search`
-variant).
+### Q1 — Third-arm integration into `fuse_rrf`
 
-New variants on `ReaderRequest` (`lib.rs:375`):
+**Decision: Approach B** — new function `fuse_three_arms` with `fuse_rrf` delegating.
 
 ```rust
-GetById {
-    logical_ids: Vec<String>,
-    respond: SyncSender<rusqlite::Result<Vec<Option<NodeRecord>>>>,
-},
-ReadCollection {
-    collection: String,
-    after_id: Option<i64>,
-    limit: usize,
-    respond: SyncSender<rusqlite::Result<Vec<OpStoreRow>>>,
-},
-```
-
-- `GetById` returns `Vec<Option<NodeRecord>>` — one slot per requested
-  `logical_id`, **request order preserved**, `None` where no active row carries
-  that `logical_id` (not-found is a normal absence, see (d)).
-- `ReadCollection` returns `Vec<OpStoreRow>` in `ORDER BY id`.
-
-Both reader arms open the **DEFERRED reader tx** (`reader.transaction_with_behavior(
-TransactionBehavior::Deferred)`), mirroring `read_search_in_tx` (`lib.rs:3657`).
-They are dispatched through `reader_pool.dispatch(...)` exactly like
-`search_inner` (`lib.rs:2122-2135`): a per-call `mpsc::sync_channel(1)`, send the
-request, `recv()` the typed response. **Never `self.connection.lock()`** (the
-writer path) on these reads.
-
-## (b) read.* SDK signatures (identical structure across Py + TS)
-
-Native row carriers (new public engine types):
-
-```rust
-pub struct NodeRecord {     // G2 active node row
-    pub logical_id: String, // the queried id (echoed; always Some on a hit)
-    pub kind: String,
-    pub body: String,
-    pub write_cursor: u64,  // interim id carrier (parity with SearchHit.id)
+pub fn fuse_three_arms(
+    vector_hits: Vec<SearchHit>,
+    text_hits: Vec<SearchHit>,
+    graph_hits: Vec<SearchHit>,
+) -> Vec<SearchHit> {
+    // full 3-arm RRF implementation
 }
-pub struct OpStoreRow {     // G3 op-store mutation row
-    pub id: i64,
-    pub collection: String,
-    pub record_key: String,
-    pub op_kind: String,
-    pub payload: String,    // payload_json
-    pub schema_id: Option<String>,
-    pub write_cursor: u64,
+
+pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    // delegate to fuse_three_arms with empty graph arm
+    fuse_three_arms(vector_hits, text_hits, vec![])
 }
 ```
 
-Engine public methods (dispatch through `reader_pool`):
+**Rationale:** All existing `pr_g9_rrf_fusion.rs` unit tests call `fuse_rrf(v, t)` — they remain GREEN with zero modification since `fuse_rrf` is unchanged at the call site. `fuse_three_arms` is the new function that the production path calls when `use_graph_arm=true`. When `use_graph_arm=false`, the production path continues calling `fuse_rrf(v, t)` -> `fuse_three_arms(v, t, vec![])` -> byte-identical output.
+
+**Backward compatibility:** with `use_graph_arm=false` (default), the production pipeline calls `fuse_rrf(vector_results, text_results)` unchanged, producing byte-identical output. The only change is `fuse_rrf` now delegates internally; the output contract is preserved by the identity `fuse_three_arms(v, t, vec![]) == fuse_rrf(v, t)`.
+
+### Q2 — Graph-arm weight constant
 
 ```rust
-pub fn read_get(&self, logical_id: &str) -> Result<Option<NodeRecord>, EngineError>;            // delegates to read_get_many
-pub fn read_get_many(&self, logical_ids: &[String]) -> Result<Vec<Option<NodeRecord>>, EngineError>;
-pub fn read_collection(&self, collection: &str, after_id: Option<i64>, limit: usize)
-    -> Result<Vec<OpStoreRow>, EngineError>;   // `read.collection`
-pub fn read_mutations(&self, collection: &str, after_id: Option<i64>, limit: usize)
-    -> Result<Vec<OpStoreRow>, EngineError>;   // `read.mutations` — alias surface over the same op-store read-back
+pub const RRF_WEIGHT_GRAPH: f64 = 1.0;
 ```
 
-`read.collection` and `read.mutations` are the two G3 verbs the allowlist names.
-Both read `operational_mutations` for a `collection_name` with the SAME mandatory
-limit + after-id cursor; they are distinct allowlist verbs (collection-oriented
-vs mutation-log-oriented naming) over one in-tx reader fn `read_collection_in_tx`.
-`limit` is a **required** parameter on every public path — there is no overload
-that omits it, so no API path can yield an unbounded SELECT. The engine clamps
-the effective SQL `LIMIT` to `min(limit, READ_COLLECTION_MAX_LIMIT)` where
-`READ_COLLECTION_MAX_LIMIT = 1_000_000` (~1M cap). A caller-supplied `limit == 0`
-returns an empty `Vec` without issuing a SELECT (no scan). The SQL is always
-`... WHERE collection_name = ?1 AND id > ?after ORDER BY id LIMIT ?clamped`.
+**Justification:** Conservative starting value, equal to `RRF_WEIGHT_VECTOR`. Without R2 per-class delta data we cannot calibrate the graph arm weight. 1.0 is the minimum non-zero contribution; text already dominates at 3.0. The graph arm's purpose is to surface additional *reachable* nodes, not to override the primary signals. A value of 1.0 means the best graph-arm hit (position 0 in the sorted candidate list) gets `1.0/(30+1) = 0.032` — comparable to a rank-1 vector hit.
 
-SDK arg shapes (structurally identical; house casing preserved):
+### Q3 — Graph arm candidate generation
 
-| verb | Python | TypeScript |
-| --- | --- | --- |
-| `read.get` | `read.get(engine, logical_id: str) -> NodeRecord \| None` | `read.get(engine, logicalId: string): Promise<NodeRecord \| null>` |
-| `read.get_many` | `read.get_many(engine, logical_ids: list[str]) -> list[NodeRecord \| None]` | `read.getMany(engine, logicalIds: string[]): Promise<(NodeRecord \| null)[]>` |
-| `read.collection` | `read.collection(engine, collection: str, *, after_id: int \| None = None, limit: int) -> list[OpStoreRow]` | `read.collection(engine, collection: string, options: { afterId?: number; limit: number }): Promise<OpStoreRow[]>` |
-| `read.mutations` | `read.mutations(engine, collection: str, *, after_id: int \| None = None, limit: int) -> list[OpStoreRow]` | `read.mutations(engine, collection: string, options: { afterId?: number; limit: number }): Promise<OpStoreRow[]>` |
+**Seed count N = 10**: BFS is seeded from the top-min(10, len) hits of the initial 2-arm fused result
+(before the graph arm is added). Nodes with `branch == SoftFallbackBranch::TextEdge` are filtered out
+before seeding (edge-body hits do not have a node write_cursor in `canonical_nodes`).
 
-`limit` is required in both bindings (Python: keyword-only **without** a default;
-TS: a required `limit` field on the options object). The Python wrappers validate
-`limit` is a positive int and raise `ValueError` on a missing/negative value
-(client-side typed boundary; mirrors `admin.configure`'s `ValueError` guards).
+**Seed filter:** Only hits whose `write_cursor` resolves to an active node in `canonical_nodes`
+(verified via SQL) are used as BFS roots. TextEdge hits are skipped.
 
-## (c) get_many partial-vs-all-or-nothing
+**Graph arm pool:** Only NEWLY-reached nodes (NOT in the seed set) are added to the graph arm
+candidate pool. Seed nodes are already ranked in the vector/text arms — adding them would create
+double-counting without new signal.
 
-**Partial, order-preserved** (per the Slice 25 ADR non-goal note + this memo).
-`read.get_many([a, b, c])` returns a 3-element list aligned to the request; a
-missing/superseded id is `None`/`null` in its slot. No all-or-nothing failure.
-`read.get` delegates to `read_get_many(&[id])` and returns slot 0.
+**Temporal filter:** The BFS excludes:
+- Edges with `t_invalid IS NOT NULL AND datetime(t_invalid) <= datetime('now')` (invalidated)
+- Edges with `superseded_at IS NOT NULL` (superseded)
 
-## (d) not-found = None/null (NotFound class → reserved-gap 31)
+The existing `build_bfs_with_depth_sql()` CTE already applies this filter. The graph arm reuses
+this SQL directly.
 
-A missing or superseded `logical_id` is a **normal result**, never an exception:
-`read.get` → `None`/`null`; `read.get_many` → the `None` slot. No new typed
-error class is introduced (a `NotFound` class would have to land identically in
-BOTH bindings — that is reserved-gap Slice 31). Genuine read failures (storage,
-closing) surface through the EXISTING typed hierarchy (`engine_error_to_py` /
-`engine_error_to_napi`), unchanged.
+**BFS parameters:** depth <= 3, cap 50 (same as `graph_neighbors`).
 
-## (e) op-store read mapping
+### Q4 — Scoring formula for graph-arm candidates
 
-`operational_mutations(id PK AUTOINCREMENT, collection_name, record_key,
-op_kind CHECK('append'), payload_json, schema_id, write_cursor)` (migration 004).
-`read_collection_in_tx`:
+**Formula:** `decay = 1.0 / (1.0 + hop_count as f64)`
 
-```sql
-SELECT id, collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
-FROM operational_mutations
-WHERE collection_name = ?1 AND id > ?2   -- ?2 = after_id (or 0 when None)
-ORDER BY id
-LIMIT ?3                                  -- ?3 = clamped mandatory limit
+| hop_count | decay score |
+|-----------|-------------|
+| 1         | 0.5         |
+| 2         | 0.333       |
+| 3         | 0.25        |
+
+**Synthesized penalty applied before sorting** (see Q7): multiply decay by 0.3 for `kind="unknown"`.
+
+**Sorted order:** Candidates are sorted by decay score DESC, then by body ASC (deterministic tiebreak).
+This sorted order is passed as `graph_hits: Vec<SearchHit>` to `fuse_three_arms`.
+
+**RRF compatibility:** In `fuse_three_arms`, the graph arm uses position-based RRF (same as
+vector/text arms):
+- Position 0 -> `RRF_WEIGHT_GRAPH / (RRF_K + 1) = 0.032`
+- Position 1 -> `RRF_WEIGHT_GRAPH / (RRF_K + 2) = 0.031`
+
+These scores are in the same range as vector/text RRF contributions. The decay-based sorting ensures
+close-hop nodes rank higher within the arm.
+
+**Why not raw hop count as score?** Hop counts (1, 2, 3) are not in the same range as RRF scores
+(~0.01-0.10). The decay function maps them to [0.25, 0.5] which is used to determine ORDER within
+the arm, not the final accumulated score.
+
+### Q5 — `SoftFallbackBranch` for graph-arm hits
+
+**Decision:** Add `SoftFallbackBranch::GraphArm` (new variant).
+
+```rust
+pub enum SoftFallbackBranch {
+    Vector,
+    Text,
+    TextEdge,   // G11 Slice 15
+    GraphArm,   // R3 Slice 30
+}
 ```
 
-→ `OpStoreRow { id, collection, record_key, op_kind, payload, schema_id, write_cursor }`.
-The `_for_test` SELECTs (`lib.rs:2436/2456/2470`) are a **shape oracle only**;
-this is a new statement, not a promotion of those.
+**Match arms to update:**
+1. `fathomdb-napi/src/lib.rs` — two match arms converting to string: add
+   `SoftFallbackBranch::GraphArm => "graph_arm"` (x2)
+2. `fathomdb-py/src/lib.rs` — two match arms: add
+   `SoftFallbackBranch::GraphArm => "graph_arm"` (x2)
+3. `fathomdb-engine/src/lib.rs` — the `search_expand_in_tx` match on `hit.branch`
 
-G2 `read_get_by_id_in_tx` mirrors the `:4170` canonical projection columns plus
-`logical_id`, active-only:
+**Facade re-export:** `SoftFallbackBranch` is already re-exported in `fathomdb/src/lib.rs` via
+`pub use fathomdb_engine::{..., SoftFallbackBranch, ...}`. Adding the new variant is automatically
+included.
 
-```sql
-SELECT logical_id, kind, body, write_cursor
-FROM canonical_nodes
-WHERE logical_id IN (...placeholders...) AND superseded_at IS NULL
+**TS SDK:** `SoftFallbackBranch = "vector" | "text" | "text_edge"` -> add `"graph_arm"`. Update
+the branch check in `search()`.
+
+**Python SDK:** The `SoftFallbackBranch` literal type in `fathomdb/types.py`; add `"graph_arm"`.
+
+### Q6 — `temporal_fallback` handling
+
+**Decision: DEFERRED — SCHEMA GATE FIRED.**
+
+At BFS traversal time, `canonical_edges` rows do not carry a `temporal_fallback` flag. The flag
+exists only in the ELPS extraction result as `warnings[].kind = "temporal_fallback"` and is not
+persisted to any DB column by the current ingest pipeline (Slice 15).
+
+**Detection options evaluated:**
+- **Sentinel `t_valid` detection**: The fallback `t_valid` equals the document's `created_at`. We
+  do not store `created_at` in `canonical_edges`, so there is no sentinel to compare against.
+- **Schema change**: Add `temporal_fallback BOOLEAN NOT NULL DEFAULT 0` to `canonical_edges`. This
+  requires a `SCHEMA_VERSION` bump (14 -> 15) and HITL approval. BLOCKED per §3.0.R schema gate.
+- **Auxiliary table**: A `canonical_edge_metadata(rowid, temporal_fallback)` table could hold the
+  flag. However, this would require schema migration machinery equivalent to a schema bump.
+
+**Test `graph_arm_temporal_fallback_excluded_or_downweighted`:** Written as an `#[ignore]` test
+documenting the intended behavior. It becomes a real RED/GREEN test once the schema gate is
+resolved.
+
+### Q7 — `synthesized` node penalty
+
+**Decision: Option (b) — `kind = "unknown"` heuristic.**
+
+In the ELPS protocol, synthesized dangling-endpoint nodes always have `type: "unknown"` (see QD
+case d6: `Grace{type:"unknown", synthesized:true}`). The ingest pipeline stores this type as the
+node's `kind` in `canonical_nodes`. Therefore, `kind = "unknown"` is a reliable proxy for
+`synthesized = true` in the current schema.
+
+**Penalty:** Multiply BFS-decay score by **0.3** (<=0.5 per spec, conservative).
+
+```
+decay_final = decay_base * (if kind == "unknown" { 0.3 } else { 1.0 })
 ```
 
-Returned rows are re-ordered into request order by a `logical_id → NodeRecord`
-map (a `logical_id` may appear once active; duplicates in the request echo the
-same hit). `superseded_at IS NULL` is the active-only default → superseded
-versions are never returned.
+A synthesized node at hop 1 gets `0.5 * 0.3 = 0.15`, while a regular node at hop 3 gets `0.25`.
+The synthesized node still appears but ranks BELOW non-synthesized hop-3 nodes.
 
-## Conformance — genuinely enforced (NOT vacuous; §3.4)
+**No schema change required.**
 
-The two surface suites already introspect REAL symbols (`dir(Engine)` minus an
-exclusion set; `admin.__all__`). The `read.*` flip mirrors that exactly:
+### Q8 — `capped` warning surface
 
-- Python `read.py` exposes `__all__ = ["get","get_many","collection","mutations"]`.
-  `_live_python_command_surface()` iterates `read.__all__` and emits
-  `read.<verb>` for each callable — identical mechanism to the `admin.__all__`
-  loop. Snake_case verbs match the dotted allowlist names verbatim.
-- TS `read.ts` exports a `read` object with `get/getMany/collection/mutations`.
-  `liveTsCommandSurface()` introspects the `read` object's own function keys and
-  normalizes camelCase → snake_case (`getMany` → `get_many`) to emit
-  `read.<snake>`, matching the single shared allowlist. The normalization is a
-  small documented transform; it is the ONLY place TS verb identity maps to the
-  canonical allowlist name, so a one-sided extra/missing verb still fails parity.
+**Decision: DEFERRED.**
 
-Falsifiability demonstrated in RED:
+The `capped` warning (edge truncation at extraction time) is per-document and is not persisted to
+the DB by the current ingest pipeline. Without a schema change (adding `source_capped BOOLEAN` to
+`canonical_edges` or an auxiliary table), the graph arm cannot know at query time which edges came
+from capped documents.
 
-- A hypothetical extra live `read.delete` (or `Engine.delete`) enters `live` and
-  fails the subset-of-allowlist check (P1).
-- A `read.*` verb present in one binding but missing from the other fails the
-  now-live presence assertion (each of the four must be live in both suites).
-- The allowlist stays single-source (`governed-surface-allowlist.json`); the 9
-  members are unchanged — the verbs move from documented-only to **live-asserted**.
+Status: The cap information is currently discarded at ingest time. Deferred to reserved-gap
+31-34.
 
-The honest-green "not live until Slice 30" comments in `test_surface.py`,
-`surface.test.ts`, and the JSON `_comment` are corrected to "live as of Slice 30".
+### Q9 — `use_graph_arm` flag wiring
 
-## Test plan (TDD)
+**Call path:**
 
-RED (engine + conformance), committed first:
+```
+Engine::search_reranked(query, filter, rerank_depth, use_graph_arm: bool)
+  -> Engine::search_inner(query, filter, rerank_depth, use_graph_arm: bool)
+       -> ReaderRequest::Search { ..., use_graph_arm: bool, ... }
+            -> reader worker: read_search_in_tx(..., use_graph_arm: bool, ...)
+                 -> if use_graph_arm { build_graph_arm_candidates(&tx, &initial_hits) }
+                 -> fuse_three_arms(vector_results, text_results, graph_hits)
+```
 
-- `tests/pr_g2_get_by_id.rs` — active-only by `logical_id`; superseded NOT
-  returned; request order preserved; missing id → `None` slot (not an error);
-  reads ride the reader pool (concurrent read while a writer tx is open).
-- `tests/pr_g3_read_collection.rs` — rows for a `collection_name` ORDER BY id;
-  mandatory limit (no unbounded path); after-id cursor paginates across the
-  boundary; ~1M clamp.
-- Conformance flip: `test_surface.py` + `surface.test.ts` introspect `read.*`
-  live; add the now-live presence assertions.
+**Struct changes:**
+- `ReaderRequest::Search`: add `use_graph_arm: bool` field
+- `read_search_in_tx`: add `use_graph_arm: bool` parameter (11th parameter total)
 
-GREEN: engine (variants + reader arms + in-tx fns + public methods) → PyO3 +
-napi bindings (four verbs each + `.pyi`/`binding.ts` types) → SDK wrappers
-(`read.py` / `read.ts` + exports) → conformance introspection.
+**Default behavior:** `Engine::search()` -> `Engine::search_filtered()` ->
+`Engine::search_reranked(query, filter, 0, false)`. Default is always `false` -> graph arm is
+empty -> `fuse_rrf(v, t)` path (byte-identical to pre-Slice-30).
 
-X1: `test_functional_retrieve.py` + `functional-retrieve.test.ts` (shared
-`functional_retrieve_fixture.json`): write nodes (with logical_ids) + register an
-append_only_log collection + append op-store rows → `read.get`/`read.get_many`
-return by id → `read.collection`/`read.mutations` honor cursor/limit →
-`admin.configure` exercised → cross-binding equivalence (Py ≡ TS per verb).
+**Bindings:**
+- PyO3 (`fathomdb-py`): add `use_graph_arm: bool = false` to `search` signature
+- NAPI (`fathomdb-napi`): add `use_graph_arm: Option<bool>` to `search` signature
+- Python wrapper: add `use_graph_arm: bool = False` as keyword-only arg; validate
+  `isinstance(use_graph_arm, bool)`; raise `TypeError` if not bool
+- TypeScript wrapper: add `useGraphArm?: boolean`; validate `typeof useGraphArm !== 'boolean'`;
+  throw `TypeError`
 
-X3: docs (`python-api.md`, `typescript-api.md`, `op-store.md`, a retrieve guide,
-`architecture.md`, `requirements.md`/`traceability.md` referencing existing ids,
-`DOC-INDEX.md`). X2: `mkdocs build`.
+---
 
-Reserved-gap candidates surfaced (not built): 31 (typed `NotFound` class),
-32 (cursor/limit hardening under ~1M load), 33 (CLI op-store read-back),
-27 (Rust-facade allowlist pin — Q5=BIND-RUST).
+## Self-Review (§3.0.R)
+
+- **Footprint**: No network call, no subprocess, no GPU runtime in any code path (graph arm is
+  pure SQLite BFS). PASS.
+
+- **Backward compatibility**: With `use_graph_arm=false` (default), `read_search_in_tx` skips
+  graph arm generation entirely. `fuse_rrf(v, t)` is called unchanged. PASS.
+
+- **Temporal filter correctness**: The BFS SQL uses `build_bfs_with_depth_sql()` which already
+  contains `e.superseded_at IS NULL AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))`.
+  Invalidated and superseded edges are excluded. PASS.
+
+- **RRF determinism**: Graph arm candidates are sorted by (decay_score DESC, body ASC) before
+  being passed to `fuse_three_arms`. Sort is stable and deterministic. `fuse_three_arms` uses the
+  same accumulation and sort as `fuse_rrf`. PASS.
+
+- **`temporal_fallback` coverage**: SCHEMA GATE FIRED. Test `graph_arm_temporal_fallback_excluded_or_downweighted`
+  is `#[ignore]`. This is explicitly deferred per §7.
+
+- **Governed surface**: `SoftFallbackBranch::GraphArm` added; `SoftFallbackBranch` is already in
+  facade re-export; all match arms updated. PASS.
+
+- **Schema changes gated on HITL**: `temporal_fallback` storage requires schema bump (14 -> 15).
+  SCHEMA GATE FIRED — escalated to orchestrator in `output.json.blockers_encountered`. `synthesized`
+  detection uses `kind = "unknown"` (no schema change). `capped` warning deferred. No schema bump
+  in this slice.
+
+---
+
+## Summary
+
+| Item | Decision | Status |
+|------|----------|--------|
+| `fuse_rrf` extension | Approach B (new `fuse_three_arms`, `fuse_rrf` delegates) | IMPLEMENT |
+| `RRF_WEIGHT_GRAPH` | 1.0 (conservative, no R2 data) | IMPLEMENT |
+| Seed count | N = 10 | IMPLEMENT |
+| BFS depth/cap | <=3 hops, cap 50 (existing constraint) | IMPLEMENT |
+| Scoring formula | `decay = 1.0 / (1.0 + hop_count)`, sorted for position-RRF | IMPLEMENT |
+| `SoftFallbackBranch::GraphArm` | New variant | IMPLEMENT |
+| temporal_fallback | DEFERRED — schema gate (needs new column on `canonical_edges`) | BLOCKED |
+| synthesized detection | `kind = "unknown"` heuristic, penalty 0.3 | IMPLEMENT |
+| capped warning | DEFERRED — not persisted at ingest time | DEFERRED |
+| `use_graph_arm` wiring | Full call-stack threading | IMPLEMENT |
+| Schema version bump | NO (no schema change in this slice) | N/A |
