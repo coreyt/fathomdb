@@ -100,7 +100,10 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**OPEN Slice 25 (R2 — end-to-end Mem0/Zep parity eval). Contract: `dev/plans/0.8.1-implementation.md`.** Gated on ELPS golden freeze (ELPS Slice 25 awaiting HITL sign-off — the golden is frozen, 264 tests pass). Carry forward the § "Deferred follow-ups" obligations — REQUIRED before 0.8.1 GA (Slice 40 gate): #5/#6/#7 binding fixes. (Codex confirmation pass WAIVED by HITL 2026-06-13 — Opus §9 PASS is authoritative.)
+**Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
+**◆ HITL 2026-06-13: ELPS Slice 25 (golden) SIGNED OFF** (`~/projects/memex/dev/elps/FATHOMDB-ELPS-SLICE25-SIGNOFF.md`) — the golden-freeze prerequisite is satisfied; FathomDB Slice 25 is greenlit (this is *authorization to proceed*, NOT closure — the R2 parity-metric AC remains a HITL gate within the slice). **First step:** open the **conformance gate (reserved-gap 16–19)** — vendor the *actual frozen ELPS golden bytes* (`serialization_golden`) into the tree, ingest via `ingest_with_extractor`, assert `dangling_edge_endpoints == 0` (upgrades today's QD-sample pin to the real cross-repo artifact). R2 eval runs on the **frozen artifact (replay-determinism)** — no live-binding rebuild needed for R2 (that's an R3/Slice-30 prereq).
+**Slice 30 (R3) prep written:** `dev/plans/prompts/0.8.1-SLICE-30-PREP.md` (authoring gated on R2 existing).
+Carry forward the § "Deferred follow-ups" obligations — REQUIRED before 0.8.1 GA (Slice 40 gate): #5/#6/#7 binding fixes. (Codex confirmation pass WAIVED by HITL 2026-06-13 — Opus §9 PASS is authoritative.)
 
 ---
 
@@ -187,6 +190,25 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — ◆ HITL: ELPS Slice 25 (golden) SIGNED OFF; FathomDB Slice 25 (R2) authorized; Slice 30 prep written
+
+HITL (coreyt) signed off **ELPS Slice 25** — the frozen golden conformance fixture (memex
+`main=52c1498`). Independently verified FathomDB-side: 8 golden cases cover v1 + every round-2 pin;
+the **endpoint-listed invariant holds** (the one the fix-33 resolver depends on); the **false-green
+selftest was caught + fixed** (`00676ca` adds a real-`run_extract` replay oracle, so the golden pins
+behavior not itself); 60/60 conformance + `--selftest` 8/8. Sign-off recorded at
+`~/projects/memex/dev/elps/FATHOMDB-ELPS-SLICE25-SIGNOFF.md`.
+
+**Consequences:** (1) ELPS Slice 30 (their docs/delivery) unblocked. (2) **FathomDB conformance gate
+(reserved-gap 16–19) greenlit** — vendor the *real* frozen golden bytes and assert
+`dangling_edge_endpoints == 0` (upgrades the byte-equivalent QD-sample pin). (3) **FathomDB Slice 25
+(R2) authorized to proceed** — *authorization, not closure*; the R2 parity-metric AC stays a HITL gate.
+**Clarification:** R2 runs on the **frozen extracted-graph artifact (replay-determinism)** → it does NOT
+need a live-binding rebuild; the 0.1.0→0.8.x maturin-wheel rebuild is an **R3 (Slice 30) live-extraction
+prereq**, not an R2 blocker. **Slice 30 prep doc** authored (`dev/plans/prompts/0.8.1-SLICE-30-PREP.md`),
+with the round-2 ELPS field-consumption decisions (synthesized down-weight / temporal_fallback gating /
+capped surfacing) staged for the R3 design + go/no-go; the slice prompt is authored once R2 exists.
 
 ### 2026-06-13 — Slice 10 CLOSED (Opus-xhigh §9 PASS, post fix-10-1); Slice 25 OPEN
 
