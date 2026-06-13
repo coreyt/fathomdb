@@ -31,10 +31,12 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, ExtractDocument as RustExtractDocument,
+    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
     SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
     SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
@@ -71,6 +73,8 @@ const CODE_MIGRATION: &str = "FDB_MIGRATION";
 const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -166,6 +170,9 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
         RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
         RustEngineError::Extractor => {
             typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::InvalidFilter { reason } => {
+            typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
         }
     }
 }
@@ -998,6 +1005,78 @@ async fn read_collection_impl(
     let inner = Arc::clone(&engine.inner);
     let rows = call_engine(move || inner.read_collection(&collection, after_id, limit)).await?;
     Ok(rows.iter().map(OpStoreRow::from_rust).collect())
+}
+
+// ===== read.list (G4 / Slice 35) ======================================
+
+/// G4 (Slice 35) — predicate input for `readList`. Shape mirrors the TS
+/// `Predicate` interface: `type` ∈ `{"eq","gt","gte","lt","lte"}`, `path`,
+/// `value` (JS `string | number | boolean` — carried as `f64` for numbers).
+#[napi(object)]
+pub struct PredicateInput {
+    /// Comparison type: "eq" | "gt" | "gte" | "lt" | "lte".
+    pub r#type: String,
+    /// JSON path from the allowlist (e.g. "$.status", "$.priority").
+    pub path: String,
+    /// String value for eq/gt/gte/lt/lte string comparisons.
+    pub value_str: Option<String>,
+    /// Integer value for numeric comparisons.
+    pub value_int: Option<i64>,
+    /// Boolean value for bool comparisons.
+    pub value_bool: Option<bool>,
+}
+
+fn napi_predicate_to_rust(pred: PredicateInput) -> Result<RustPredicate> {
+    // Determine the scalar value: bool > int > str (bool is also "truthy" int in JS).
+    let scalar = if let Some(b) = pred.value_bool {
+        RustScalarValue::Bool(b)
+    } else if let Some(i) = pred.value_int {
+        RustScalarValue::Integer(i)
+    } else if let Some(s) = pred.value_str {
+        RustScalarValue::Text(s)
+    } else {
+        return Err(typed_error(
+            CODE_INVALID_FILTER,
+            "predicate must have one of value_str, value_int, or value_bool",
+            JsonValue::Null,
+        ));
+    };
+    match pred.r#type.as_str() {
+        "eq" => RustPredicate::json_path_eq(pred.path, scalar).map_err(engine_error_to_napi),
+        "gt" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Gt, scalar)
+            .map_err(engine_error_to_napi),
+        "gte" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Gte, scalar)
+            .map_err(engine_error_to_napi),
+        "lt" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Lt, scalar)
+            .map_err(engine_error_to_napi),
+        "lte" => RustPredicate::json_path_compare(pred.path, RustComparisonOp::Lte, scalar)
+            .map_err(engine_error_to_napi),
+        other => Err(typed_error(
+            CODE_INVALID_FILTER,
+            format!("unknown predicate type '{other}'; expected eq/gt/gte/lt/lte"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+#[napi(js_name = "readList")]
+pub async fn read_list(
+    engine: &Engine,
+    kind: String,
+    predicates: Option<Vec<PredicateInput>>,
+    limit: Option<i64>,
+) -> Result<Vec<NodeRecord>> {
+    validate_ffi_string_napi(&kind)?;
+    let mut rust_predicates: Vec<RustPredicate> = Vec::new();
+    if let Some(plist) = predicates {
+        for pred in plist {
+            rust_predicates.push(napi_predicate_to_rust(pred)?);
+        }
+    }
+    let limit = limit.unwrap_or(100).max(0) as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.read_list(&kind, &rust_predicates, limit)).await?;
+    Ok(rows.iter().map(NodeRecord::from_rust).collect())
 }
 
 // ===== Batch translation ==============================================

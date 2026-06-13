@@ -142,6 +142,12 @@ def read_mutations(
     after_id: int | None = ...,
     limit: int = ...,
 ) -> list[OpStoreRow]: ...
+def read_list(
+    engine: Engine,
+    kind: str,
+    predicates: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...
@@ -200,3 +206,6 @@ class EmbedderDimensionMismatchError(EngineError):
 
 # G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 class ExtractorError(EngineError): ...
+
+# G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+class InvalidFilterError(EngineError): ...

@@ -239,8 +239,26 @@ export interface NativeModule {
     collection: string,
     options: NativeReadCollectionOptions,
   ): Promise<NativeOpStoreRow[]>;
+  // Slice 35 (G4) — read.list with Predicate filter.
+  readList(
+    engine: NativeEngine,
+    kind: string,
+    predicates?: NativePredicateInput[],
+    limit?: number,
+  ): Promise<NativeNodeRecord[]>;
   forcePanicForTest?: () => void;
   forcePanicInAccessorForTest?: () => void;
+}
+
+/// G4 (Slice 35) — predicate input for `readList`. Mirrors `PredicateInput`
+/// on the Rust side. The value is split into three optional fields to match
+/// the napi `#[napi(object)]` struct with optional fields.
+export interface NativePredicateInput {
+  type: string;
+  path: string;
+  valueStr?: string | null;
+  valueInt?: number | null;
+  valueBool?: boolean | null;
 }
 
 export const native = loadNative() as NativeModule;

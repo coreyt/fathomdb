@@ -10,6 +10,7 @@
     "read.get_many",
     "read.collection",
     "read.mutations",
+    "read.list",
     "ingest_with_extractor",
     "ingestWithExtractor"
   ],

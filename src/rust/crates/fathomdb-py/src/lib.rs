@@ -35,10 +35,12 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, ExtractDocument as RustExtractDocument,
+    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
     SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
     SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
@@ -76,6 +78,8 @@ create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
 create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 create_exception!(_fathomdb, ExtractorError, EngineError);
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+create_exception!(_fathomdb, InvalidFilterError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -168,6 +172,9 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
         RustEngineError::Closing => ClosingError::new_err("engine is closing"),
         RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::InvalidFilter { reason } => {
+            InvalidFilterError::new_err(format!("invalid filter: {reason}"))
+        }
     }
 }
 
@@ -871,6 +878,70 @@ fn read_collection_impl(
     Ok(rows.iter().map(PyOpStoreRow::from_rust).collect())
 }
 
+// ===== read.list (G4 / Slice 35) ======================================
+//
+// `read.list(engine, kind, predicates?, limit)` — list active canonical nodes
+// of a given `kind`, optionally filtered by a list of `Predicate` dicts.
+// Each predicate dict has the shape:
+//   { "type": "eq"|"gt"|"gte"|"lt"|"lte", "path": str, "value": str|int|bool }
+// Path validation happens in Rust (InvalidFilterError on non-allowlisted path).
+
+fn py_predicate_to_rust(pred: &Bound<'_, PyAny>) -> PyResult<RustPredicate> {
+    let type_str: String = pred.get_item("type")?.extract()?;
+    let path: String = pred.get_item("path")?.extract()?;
+    let value_obj = pred.get_item("value")?;
+
+    // Extract the value — try str first, then int, then bool.
+    let scalar: RustScalarValue = if let Ok(b) = value_obj.extract::<bool>() {
+        RustScalarValue::Bool(b)
+    } else if let Ok(i) = value_obj.extract::<i64>() {
+        RustScalarValue::Integer(i)
+    } else if let Ok(s) = value_obj.extract::<String>() {
+        RustScalarValue::Text(s)
+    } else {
+        return Err(pyo3::exceptions::PyTypeError::new_err(
+            "predicate value must be str, int, or bool",
+        ));
+    };
+
+    match type_str.as_str() {
+        "eq" => RustPredicate::json_path_eq(path, scalar).map_err(engine_error_to_py),
+        "gt" => RustPredicate::json_path_compare(path, RustComparisonOp::Gt, scalar)
+            .map_err(engine_error_to_py),
+        "gte" => RustPredicate::json_path_compare(path, RustComparisonOp::Gte, scalar)
+            .map_err(engine_error_to_py),
+        "lt" => RustPredicate::json_path_compare(path, RustComparisonOp::Lt, scalar)
+            .map_err(engine_error_to_py),
+        "lte" => RustPredicate::json_path_compare(path, RustComparisonOp::Lte, scalar)
+            .map_err(engine_error_to_py),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown predicate type '{other}'; expected 'eq', 'gt', 'gte', 'lt', or 'lte'"
+        ))),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, kind, predicates=None, limit=100))]
+fn read_list(
+    py: Python<'_>,
+    engine: &PyEngine,
+    kind: &Bound<'_, PyAny>,
+    predicates: Option<&Bound<'_, PyList>>,
+    limit: u64,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let kind = extract_validated_str(kind)?;
+    let mut rust_predicates: Vec<RustPredicate> = Vec::new();
+    if let Some(plist) = predicates {
+        for item in plist.iter() {
+            rust_predicates.push(py_predicate_to_rust(&item)?);
+        }
+    }
+    let limit = limit as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_list(&kind, &rust_predicates, limit))?;
+    Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
+}
+
 // ===== Batch translation ==============================================
 
 fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
@@ -1010,6 +1081,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
     m.add_function(wrap_pyfunction!(read_collection, &m)?)?;
     m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
+    // Slice 35 — G4 read.list with Predicate filter.
+    m.add_function(wrap_pyfunction!(read_list, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
@@ -1034,6 +1107,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
     m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
     m.add("ExtractorError", py.get_type::<ExtractorError>())?;
+    m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
     Ok(())
 }
 

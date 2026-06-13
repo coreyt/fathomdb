@@ -111,6 +111,9 @@ export class EmbedderDimensionMismatchError extends FathomDbError {
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 export class ExtractorError extends FathomDbError {}
 
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+export class InvalidFilterError extends FathomDbError {}
+
 // Panic is a contract bug, not a typed engine outcome — intentionally
 // NOT a FathomDbError subclass so callers that catch FathomDbError do
 // not silently swallow it. Mirrors PyO3 PanicException in 11a.
@@ -144,6 +147,8 @@ type ErrorCode =
   | "FDB_EMBEDDER_IDENTITY_MISMATCH"
   // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
   | "FDB_EXTRACTOR"
+  // G4 (Slice 35) — filter predicate construction error.
+  | "FDB_INVALID_FILTER"
   | "FDB_PANIC";
 
 interface Envelope {
@@ -232,6 +237,8 @@ function build(envelope: Envelope): Error {
       });
     case "FDB_EXTRACTOR":
       return new ExtractorError(envelope.message);
+    case "FDB_INVALID_FILTER":
+      return new InvalidFilterError(envelope.message);
     case "FDB_PANIC":
       return new FathomDbPanicError(envelope.message);
     default: {

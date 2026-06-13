@@ -174,6 +174,40 @@ so no call yields an unbounded read); `afterId` is the exclusive cursor.
 Mutation-log-oriented alias surface over the **same** op-store read-back as
 `read.collection` (identical args + semantics).
 
+### `read.list(engine, kind, predicates?, limit?): Promise<NodeRecord[]>`
+
+*(G4 / Slice 35)* List **active** `canonical_nodes` of the given `kind`
+(`superseded_at IS NULL`), optionally filtered by a `Predicate[]` array
+(AND-combined), up to `limit` rows (default 100).
+
+```ts
+interface Predicate {
+  type: "eq" | "gt" | "gte" | "lt" | "lte";
+  path: string;     // must be from the allowlist: $.status, $.priority, $.tags, $.kind, $.created_at
+  value: string | number | boolean;
+}
+```
+
+`path` must be from the engine allowlist: `$.status`, `$.priority`,
+`$.tags`, `$.kind`, `$.created_at`. A non-allowlisted path throws
+`InvalidFilterError` (never a panic). Values are **always bound as
+parameterized SQL** — never interpolated (injection-safe per ADR D-F4).
+An empty or omitted `predicates` is the unfiltered path.
+
+```ts
+import { Engine, read } from "fathomdb";
+import { InvalidFilterError } from "fathomdb";
+
+const engine = await Engine.open("my.db");
+// All active task nodes:
+const tasks = await read.list(engine, "task");
+// Filtered: open tasks with priority > 5:
+const openHigh = await read.list(engine, "task", [
+  { type: "eq",  path: "$.status",   value: "open" },
+  { type: "gt",  path: "$.priority", value: 5 },
+]);
+```
+
 ## Data shapes
 
 ### `WriteReceipt`

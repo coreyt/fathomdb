@@ -168,6 +168,38 @@ next page.
 Mutation-log-oriented alias surface over the **same** op-store read-back as
 `read.collection` (identical args + semantics).
 
+### `read.list(engine, kind, predicates=None, *, limit=100) -> list[NodeRecord]`
+
+*(G4 / Slice 35)* List **active** `canonical_nodes` of the given `kind`
+(`superseded_at IS NULL`), optionally filtered by a list of closed
+`Predicate` dicts (AND-combined), up to `limit` rows (default 100).
+
+Each predicate dict has the shape:
+
+```python
+{"type": "eq"|"gt"|"gte"|"lt"|"lte", "path": str, "value": str | int | bool}
+```
+
+`path` must be from the engine allowlist: `$.status`, `$.priority`,
+`$.tags`, `$.kind`, `$.created_at`. A non-allowlisted path raises
+`InvalidFilterError` (never a panic). Values are **always bound as
+parameterized SQL** — never interpolated (injection-safe per ADR
+D-F4). An empty `predicates` (or `None`) is the unfiltered path.
+
+```python
+from fathomdb import Engine, read
+from fathomdb.errors import InvalidFilterError
+
+engine = Engine.open("my.db")
+# All active task nodes:
+tasks = read.list(engine, "task")
+# Filtered: open tasks with priority > 5:
+open_high = read.list(engine, "task", predicates=[
+    {"type": "eq",  "path": "$.status",   "value": "open"},
+    {"type": "gt",  "path": "$.priority", "value": 5},
+])
+```
+
 ## Data shapes
 
 ### `WriteReceipt`
