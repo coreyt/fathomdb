@@ -1001,3 +1001,47 @@ for line in sys.stdin:
         "mismatched request_id must return Err(EngineError::Extractor), got {result:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// fix-26 [P2] — extractor confidence must be in [0.0, 1.0]
+// ---------------------------------------------------------------------------
+
+/// Regression guard for fix-26 [P2]: a harness that returns confidence outside
+/// [0.0, 1.0] is rejected as a protocol fault.
+#[test]
+fn ingest_rejects_out_of_range_confidence() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "bad_confidence");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    // Harness returns confidence=1.5 (> 1.0) on the edge.
+    let bad_harness = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "bad", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        print(json.dumps({"type": "result",
+                          "request_id": msg.get("request_id"),
+                          "entities": [{"name": "A", "type": "person"}],
+                          "edges": [{"from_entity": "A", "from_type": "person",
+                                     "to_entity": "B", "to_type": "project",
+                                     "relation": "owns", "confidence": 1.5}]}),
+              flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs =
+        vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "A owns B".to_string() }];
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "confidence=1.5 must return Err(EngineError::Extractor), got {result:?}"
+    );
+}

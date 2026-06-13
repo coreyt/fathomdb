@@ -2589,7 +2589,7 @@ impl Engine {
             if !raw_edges.is_empty() {
                 let edge_batch: Vec<PreparedWrite> = raw_edges
                     .iter()
-                    .map(|edge| {
+                    .map(|edge| -> Result<PreparedWrite, EngineError> {
                         let from_entity =
                             edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
                         let from_type =
@@ -2605,7 +2605,14 @@ impl Engine {
                             edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
                         let t_invalid =
                             edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
-                        let confidence = edge.get("confidence").and_then(|v| v.as_f64());
+                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+                        // protocol boundary; reject out-of-range values.
+                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+                            Some(c) if !(0.0..=1.0).contains(&c) => {
+                                return Err(EngineError::Extractor);
+                            }
+                            c => c,
+                        };
                         let source_doc_id =
                             edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
 
@@ -2614,7 +2621,7 @@ impl Engine {
                         let edge_key = format!("{from_lid}:{to_lid}:{relation}");
                         let edge_lid = derive_logical_id("edge", &edge_key);
 
-                        PreparedWrite::Edge {
+                        Ok(PreparedWrite::Edge {
                             kind: relation.to_string(),
                             from: from_lid,
                             to: to_lid,
@@ -2625,9 +2632,9 @@ impl Engine {
                             t_invalid,
                             confidence,
                             extractor_model_id: extractor_model_id.clone(),
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, _>>()?;
                 let n = edge_batch.len() as u64;
                 self.write(&edge_batch)?;
                 edges_written = edges_written.saturating_add(n);
@@ -4024,6 +4031,11 @@ impl Engine {
                 tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
                     .map_err(|_| EngineError::Storage)? as u64,
             );
+            // fix-26 [P2]: also excise edge FTS rows (G11 search_index_edges).
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
+                    .map_err(|_| EngineError::Storage)? as u64,
+            );
             // vec0 rowid is the canonical row's write_cursor (see
             // `_fathomdb_vector_rows.write_cursor UNIQUE`).
             shadow_invalidated = shadow_invalidated.saturating_add(
@@ -4116,6 +4128,11 @@ impl Engine {
         if include_fts {
             let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
             rows_invalidated = rows_invalidated.saturating_add(n as u64);
+            // fix-26 [P2]: also truncate edge FTS shadow (G11 search_index_edges).
+            let n = tx
+                .execute("DELETE FROM search_index_edges", [])
+                .map_err(|_| EngineError::Storage)?;
+            rows_invalidated = rows_invalidated.saturating_add(n as u64);
         }
         let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
         rows_invalidated = rows_invalidated.saturating_add(n as u64);
@@ -4134,6 +4151,29 @@ impl Engine {
                 tx.execute(
                     "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
                     params![row.body, row.kind, row.cursor],
+                )
+                .map_err(|_| EngineError::Storage)?;
+                rows_rebuilt = rows_rebuilt.saturating_add(1);
+            }
+            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
+            // with non-null bodies (G11 search_index_edges).
+            let mut edge_stmt = tx
+                .prepare(
+                    "SELECT write_cursor, kind, body FROM canonical_edges \
+                     WHERE superseded_at IS NULL AND body IS NOT NULL",
+                )
+                .map_err(|_| EngineError::Storage)?;
+            let edge_rows: Vec<(i64, String, String)> = edge_stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                })
+                .map_err(|_| EngineError::Storage)?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(|_| EngineError::Storage)?;
+            for (cursor, kind, body) in edge_rows {
+                tx.execute(
+                    "INSERT INTO search_index_edges(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![body, kind, cursor],
                 )
                 .map_err(|_| EngineError::Storage)?;
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
