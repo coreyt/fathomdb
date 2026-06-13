@@ -5896,6 +5896,7 @@ fn next_pending_projection_jobs(
                ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
              WHERE canonical_edges.write_cursor > ?1
                AND canonical_edges.body IS NOT NULL
+               AND canonical_edges.superseded_at IS NULL
                AND _fathomdb_projection_terminal.write_cursor IS NULL
          ) ORDER BY write_cursor
          LIMIT {sql_limit}"
@@ -5945,6 +5946,8 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
     // that were not projected before the engine closed. Without this check,
     // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
     connection
         .query_row(
             "SELECT 1
@@ -5952,6 +5955,7 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
              LEFT JOIN _fathomdb_projection_terminal pt
                ON pt.write_cursor = ce.write_cursor
              WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL
                AND pt.write_cursor IS NULL
              LIMIT 1",
             [],
