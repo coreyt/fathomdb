@@ -280,6 +280,35 @@ class OpenReport:
 
 
 @dataclass(frozen=True)
+class ExpandedNode:
+    """Slice 20 (G6) — one node reached by BFS traversal in `search_expand`.
+
+    Carries the reachable `NodeRecord` and the hop distance from the nearest
+    search-hit root.  Only nodes NOT already in the search-hit set appear here
+    (deduplication: search-score takes priority).
+    """
+
+    node: NodeRecord
+    hop_count: int
+
+
+@dataclass(frozen=True)
+class SearchExpandResult:
+    """Slice 20 (G6) — result of `graph.search_expand`.
+
+    `search_hits` — original RRF-scored results (same shape as `engine.search`).
+    `expanded`    — nodes reachable from any search hit within `depth` hops
+                    that are NOT in `search_hits`.
+    `all_logical_ids` — deduplicated union of both sets (search hit `logical_id`s
+                        resolved via `write_cursor` look-up + expanded `logical_id`s).
+    """
+
+    search_hits: list[SearchHit]
+    expanded: list[ExpandedNode]
+    all_logical_ids: list[str]
+
+
+@dataclass(frozen=True)
 class CounterSnapshot:
     """Snapshot of engine-internal counters returned by `engine.counters`.
 
@@ -302,11 +331,13 @@ __all__ = [
     "DefaultEmbedderDownloadEvent",
     "EmbedderEvent",
     "EmbedderIdentity",
+    "ExpandedNode",
     "MeanVecPinnedEvent",
     "MigrationStepReport",
     "NodeRecord",
     "OpStoreRow",
     "OpenReport",
+    "SearchExpandResult",
     "SearchFilter",
     "SearchHit",
     "SearchResult",

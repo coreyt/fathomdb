@@ -167,6 +167,19 @@ interface NativeEngineConfig {
   slowThresholdMs?: number;
 }
 
+// Slice 20 (G5/G6) — graph traversal result shapes.
+
+export interface NativeExpandedNode {
+  node: NativeNodeRecord;
+  hopCount: number;
+}
+
+export interface NativeSearchExpandResult {
+  searchHits: NativeSearchHit[];
+  expanded: NativeExpandedNode[];
+  allLogicalIds: string[];
+}
+
 // G11 (Slice 15) — BYO-LLM ingest receipt.
 export interface NativeIngestWithExtractorReceipt {
   nodesWritten: number;
@@ -239,6 +252,22 @@ export interface NativeModule {
     collection: string,
     options: NativeReadCollectionOptions,
   ): Promise<NativeOpStoreRow[]>;
+  // Slice 20 — G5/G6 graph traversal fns.
+  graphNeighbors(
+    engine: NativeEngine,
+    logicalId: string,
+    depth: number,
+    direction: string,
+  ): Promise<NativeNodeRecord[]>;
+  searchExpand(
+    engine: NativeEngine,
+    query: string,
+    depth: number,
+    sourceType?: string,
+    kind?: string,
+    createdAfter?: number,
+    status?: string,
+  ): Promise<NativeSearchExpandResult>;
   forcePanicForTest?: () => void;
   forcePanicInAccessorForTest?: () => void;
 }

@@ -74,6 +74,12 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     WriteValidationError as _WriteValidationError,
 )
+from fathomdb._fathomdb import (
+    ExtractorError as _ExtractorError,
+)
+from fathomdb._fathomdb import (
+    InvalidArgumentError as _InvalidArgumentError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -94,6 +100,8 @@ IncompatibleSchemaVersionError = _IncompatibleSchemaVersionError
 MigrationError = _MigrationError
 EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
 EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
+ExtractorError = _ExtractorError
+InvalidArgumentError = _InvalidArgumentError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -141,4 +149,6 @@ __all__ = [
     "StorageError",
     "VectorError",
     "WriteValidationError",
+    "ExtractorError",
+    "InvalidArgumentError",
 ]

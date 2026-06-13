@@ -35,8 +35,9 @@ use fathomdb_engine::{
     EngineError as RustEngineError, EngineOpenError, ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
+    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -71,6 +72,8 @@ const CODE_MIGRATION: &str = "FDB_MIGRATION";
 const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+// Slice 20 — depth > 3 or invalid argument (G5/G6).
+const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -166,6 +169,9 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
         RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
         RustEngineError::Extractor => {
             typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::InvalidArgument { msg } => {
+            typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
         }
     }
 }
@@ -998,6 +1004,110 @@ async fn read_collection_impl(
     let inner = Arc::clone(&engine.inner);
     let rows = call_engine(move || inner.read_collection(&collection, after_id, limit)).await?;
     Ok(rows.iter().map(OpStoreRow::from_rust).collect())
+}
+
+// ===== Slice 20 (G5/G6) — graph traversal ==============================
+//
+// `graphNeighbors` (G5) — bounded BFS from a root node, returning the
+// reachable `NodeRecord`s within `depth` hops. `searchExpand` (G6)
+// composes G1 search + G5 expansion with deduplication.
+
+/// Slice 20 — one expanded node entry in `SearchExpandResult.expanded`.
+/// `hopCount` is the BFS distance from the nearest search-hit root.
+#[napi(object)]
+pub struct ExpandedNode {
+    pub node: NodeRecord,
+    pub hop_count: u32,
+}
+
+/// Slice 20 (G6) — result of `searchExpand`.
+///
+/// `searchHits` — original RRF-scored results from the search step.
+/// `expanded`   — nodes reachable from any hit within `depth` hops that are
+///                NOT in `searchHits` (deduplication: search score wins).
+/// `allLogicalIds` — deduplicated union of both sets.
+#[napi(object)]
+pub struct SearchExpandResult {
+    pub search_hits: Vec<SearchHit>,
+    pub expanded: Vec<ExpandedNode>,
+    pub all_logical_ids: Vec<String>,
+}
+
+impl SearchExpandResult {
+    fn from_rust(r: RustSearchExpandResult) -> Self {
+        Self {
+            search_hits: r.search_hits.iter().map(SearchHit::from_rust).collect(),
+            expanded: r
+                .expanded
+                .into_iter()
+                .map(|(node, hop_count)| ExpandedNode {
+                    node: NodeRecord::from_rust(&node),
+                    hop_count,
+                })
+                .collect(),
+            all_logical_ids: r.all_logical_ids,
+        }
+    }
+}
+
+fn parse_direction_napi(direction: &str) -> Result<RustTraversalDirection> {
+    match direction {
+        "outgoing" => Ok(RustTraversalDirection::Outgoing),
+        "incoming" => Ok(RustTraversalDirection::Incoming),
+        "both" => Ok(RustTraversalDirection::Both),
+        other => Err(typed_error(
+            CODE_WRITE_VALIDATION,
+            format!("direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+/// Slice 20 (G5) — bounded BFS from `logicalId` over `canonical_edges`.
+///
+/// `depth` must be 1–3; rejects depth > 3 with `InvalidArgumentError`.
+/// `direction` is `"outgoing"`, `"incoming"`, or `"both"`.
+/// Returns up to 50 `NodeRecord`s reachable within `depth` hops.
+/// Edges with `t_invalid` in the past are not traversed.
+#[napi(js_name = "graphNeighbors")]
+pub async fn graph_neighbors(
+    engine: &Engine,
+    logical_id: String,
+    depth: u32,
+    direction: String,
+) -> Result<Vec<NodeRecord>> {
+    validate_ffi_string_napi(&logical_id)?;
+    let dir = parse_direction_napi(&direction)?;
+    let inner = Arc::clone(&engine.inner);
+    let nodes = call_engine(move || inner.graph_neighbors(&logical_id, depth, dir)).await?;
+    Ok(nodes.iter().map(NodeRecord::from_rust).collect())
+}
+
+/// Slice 20 (G6) — FTS/vector search followed by bounded BFS expansion.
+///
+/// Runs `search(query, filter)` (G1), then expands each hit via
+/// `graph_neighbors(depth, both)`. Nodes appearing in both sets appear
+/// only in `searchHits` (deduplication: search score takes priority).
+#[napi(js_name = "searchExpand")]
+pub async fn search_expand(
+    engine: &Engine,
+    query: String,
+    depth: u32,
+    source_type: Option<String>,
+    kind: Option<String>,
+    created_after: Option<i64>,
+    status: Option<String>,
+) -> Result<SearchExpandResult> {
+    validate_ffi_string_napi(&query)?;
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            Some(RustSearchFilter { source_type, kind, created_after, status })
+        } else {
+            None
+        };
+    let inner = Arc::clone(&engine.inner);
+    let result = call_engine(move || inner.search_expand(&query, filter, depth)).await?;
+    Ok(SearchExpandResult::from_rust(result))
 }
 
 // ===== Batch translation ==============================================

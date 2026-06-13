@@ -127,6 +127,25 @@ class Engine:
         heartbeat_interval_ms: int | None = ...,
     ) -> None: ...
 
+# Slice 20 (G5/G6) — graph traversal result types.
+
+class ExpandedNode:
+    """One node reached by BFS traversal that is NOT in the search hit set."""
+
+    node: NodeRecord
+    hop_count: int
+
+class SearchExpandResult:
+    """G6 result: original search hits + graph-expanded neighbors.
+
+    Deduplication rule: a node in ``search_hits`` will NOT appear in
+    ``expanded`` (search score takes priority).
+    """
+
+    search_hits: list[SearchHit]
+    expanded: list[ExpandedNode]
+    all_logical_ids: list[str]
+
 def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
 def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
 def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
@@ -142,6 +161,38 @@ def read_mutations(
     after_id: int | None = ...,
     limit: int = ...,
 ) -> list[OpStoreRow]: ...
+def graph_neighbors(
+    engine: Engine,
+    logical_id: str,
+    depth: int,
+    direction: str,
+) -> list[NodeRecord]:
+    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+
+    ``depth`` must be 1–3; raises ``InvalidArgumentError`` for depth > 3.
+    ``direction`` is one of ``"outgoing"``, ``"incoming"``, or ``"both"``.
+    Returns nodes reachable within ``depth`` hops, hard-capped at 50.
+    Valid-time filter: edges with ``t_invalid`` in the past are not traversed.
+    """
+    ...
+
+def search_expand(
+    engine: Engine,
+    query: str,
+    depth: int,
+    source_type: str | None = ...,
+    kind: str | None = ...,
+    created_after: int | None = ...,
+    status: str | None = ...,
+) -> SearchExpandResult:
+    """G6 — FTS/vector search followed by bounded BFS expansion.
+
+    Runs ``search(query, ...)`` (G1), then expands each hit node via
+    ``graph_neighbors(depth, both)``. Nodes that are both search hits
+    and traversal neighbors appear only in ``search_hits`` (deduplicated).
+    """
+    ...
+
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...
@@ -200,3 +251,6 @@ class EmbedderDimensionMismatchError(EngineError):
 
 # G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 class ExtractorError(EngineError): ...
+
+# Slice 20 — depth > 3 or other argument validation failure.
+class InvalidArgumentError(EngineError): ...
