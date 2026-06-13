@@ -394,3 +394,31 @@ fn direct_construction_bypass_caught_by_read_list() {
         "read_list must reject a directly-constructed Predicate with a non-allowlisted path; got {result:?}"
     );
 }
+
+// ===== fix-2: non-JSON body rows skipped, not errored ==========================
+
+/// If a node of the requested kind has a plain-text (non-JSON) body, `read_list`
+/// with a predicate must SKIP that row rather than surfacing a "malformed JSON"
+/// storage error. The json_valid(body) guard in the WHERE clause ensures this.
+#[test]
+fn read_list_predicate_skips_non_json_body() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // Seed: one node with a valid JSON body matching the predicate, one with
+    // a plain-text body (non-JSON).
+    write_node(&engine, "json-node", "widget", r#"{"status":"open"}"#);
+    write_node(&engine, "text-node", "widget", "plain text body, not JSON");
+
+    let pred = Predicate::json_path_eq("$.status", ScalarValue::Text("open".to_string()))
+        .expect("allowlisted path");
+
+    let result = engine
+        .read_list("widget", &[pred], 10)
+        .expect("read_list must not error on non-JSON body rows; should skip them silently");
+
+    // Only the JSON-body node (which matches the predicate) should be returned.
+    let ids: Vec<_> = result.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(ids.contains(&"json-node"), "json-node with status=open must be returned");
+    assert!(!ids.contains(&"text-node"), "text-node with non-JSON body must be skipped");
+}

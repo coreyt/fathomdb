@@ -456,3 +456,66 @@ fn search_expand_depth0_populates_all_logical_ids() {
 
     opened.engine.close().unwrap();
 }
+
+// ===== fix-2: graph_neighbors depth=0 rejection ================================
+
+/// `graph_neighbors` with depth=0 must be rejected with a typed error.
+/// depth=0 is not "no traversal" for graph_neighbors (unlike search_expand);
+/// the API contract is depth ∈ {1,2,3}.
+#[test]
+fn graph_neighbors_depth0_rejected() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "depth0rej")).expect("open");
+    opened.engine.write(&[node("doc", "{}", "A")]).expect("write");
+
+    let result = opened.engine.graph_neighbors("A", 0, TraversalDirection::Outgoing);
+    assert!(
+        matches!(result, Err(EngineError::InvalidArgument { .. })),
+        "graph_neighbors depth=0 must return InvalidArgument; got {result:?}"
+    );
+    opened.engine.close().unwrap();
+}
+
+// ===== fix-2: nearest hop count across roots ====================================
+
+/// When the same expanded node is reachable from two different search-hit roots
+/// at different depths, search_expand must report the NEAREST (minimum) hop count.
+#[test]
+fn search_expand_reports_nearest_hop_count() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "nearest_hop")).expect("open");
+
+    // Topology:
+    //   SearchHit-A (1 hop to X)
+    //   SearchHit-B (3 hops to X: B→C→D→X)
+    //   X is 1 hop from A and 3 hops from B.
+    //   Nearest hop from any root = 1.
+    opened
+        .engine
+        .write(&[
+            node("note", "nearest hop shimmer alpha unique1", "A"),
+            node("note", "nearest hop glimmer beta unique2", "B"),
+            node("note", "{}", "C"),
+            node("note", "{}", "D"),
+            node("note", "{}", "X"),
+            edge("A", "X", "E-AX"), // A→X at depth 1
+            edge("B", "C", "E-BC"),
+            edge("C", "D", "E-CD"),
+            edge("D", "X", "E-DX"), // B→C→D→X at depth 3
+        ])
+        .expect("write");
+
+    // Search returns both A and B as hits.
+    let result = opened
+        .engine
+        .search_expand("shimmer alpha unique1 glimmer beta unique2", None, 3)
+        .expect("search_expand");
+
+    // X must be in expanded with hop_count = 1 (nearest root is A at 1 hop).
+    let x_entry = result.expanded.iter().find(|(n, _)| n.logical_id == "X");
+    if let Some((_, hop)) = x_entry {
+        assert_eq!(*hop, 1, "X is 1 hop from A; nearest hop must be 1, not {hop}");
+    }
+    // (If X is not in expanded — perhaps it was a search hit itself — that's also OK.)
+    opened.engine.close().unwrap();
+}

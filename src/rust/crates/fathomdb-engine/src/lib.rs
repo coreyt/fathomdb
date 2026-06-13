@@ -2767,9 +2767,9 @@ impl Engine {
         direction: TraversalDirection,
     ) -> Result<Vec<NodeRecord>, EngineError> {
         self.ensure_open()?;
-        if depth > 3 {
+        if depth == 0 || depth > 3 {
             return Err(EngineError::InvalidArgument {
-                msg: format!("traversal depth {depth} exceeds the SDK ceiling of 3"),
+                msg: format!("traversal depth {depth} is out of range; must be 1, 2, or 3"),
             });
         }
         let (response_tx, response_rx) = mpsc::sync_channel(1);
@@ -4935,12 +4935,16 @@ fn read_list_in_tx(
     }
     // Build the SQL WHERE clauses for each predicate.
     // Parameters: ?1 = kind; ?2..?N = predicate values; limit is inlined.
-    let mut sql = "SELECT logical_id, kind, body, write_cursor \
-                   FROM canonical_nodes \
-                   WHERE kind = ?1 \
-                   AND superseded_at IS NULL \
-                   AND logical_id IS NOT NULL"
-        .to_string();
+    // When predicates are present we add `json_valid(body)` so rows with
+    // non-JSON bodies are skipped rather than causing a `malformed JSON` error.
+    let json_valid_guard = if predicates.is_empty() { "" } else { " AND json_valid(body)" };
+    let mut sql = format!(
+        "SELECT logical_id, kind, body, write_cursor \
+         FROM canonical_nodes \
+         WHERE kind = ?1 \
+         AND superseded_at IS NULL \
+         AND logical_id IS NOT NULL{json_valid_guard}"
+    );
 
     // Predicate params start at ?2.
     for (i, pred) in predicates.iter().enumerate() {
@@ -5177,9 +5181,11 @@ fn search_expand_in_tx(
     // Use the depth-aware variant so each node reports its actual BFS distance.
     let bfs_sql = build_bfs_with_depth_sql();
     let depth_i64 = depth as i64;
-    let mut expanded: Vec<(NodeRecord, u32)> = Vec::new();
-    // Track which logical_ids we've already added to `expanded` (dedup).
-    let mut expanded_id_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // nearest_hop: for each expanded logical_id track the minimum hop count
+    // seen across ALL search-hit roots. A node reachable from multiple roots
+    // at different depths must report the shortest distance (nearest root).
+    let mut nearest_hop: std::collections::HashMap<String, (NodeRecord, u32)> =
+        std::collections::HashMap::new();
 
     if depth > 0 {
         let mut bfs_stmt = tx.prepare(&bfs_sql)?;
@@ -5200,12 +5206,21 @@ fn search_expand_in_tx(
                     // Already a search hit — skip (search score takes priority).
                     continue;
                 }
-                if expanded_id_set.insert(node.logical_id.clone()) {
-                    expanded.push((node, hop_count));
-                }
+                nearest_hop
+                    .entry(node.logical_id.clone())
+                    .and_modify(|(_, prev_hop)| {
+                        if hop_count < *prev_hop {
+                            *prev_hop = hop_count;
+                        }
+                    })
+                    .or_insert((node, hop_count));
             }
         }
     }
+
+    // Materialize expanded in insertion order (deterministic for tests).
+    let mut expanded: Vec<(NodeRecord, u32)> = nearest_hop.into_values().collect();
+    expanded.sort_by(|(a, _), (b, _)| a.logical_id.cmp(&b.logical_id));
 
     // Build `all_logical_ids` = search hit logical_ids + expanded logical_ids.
     let mut all_logical_ids: Vec<String> =
