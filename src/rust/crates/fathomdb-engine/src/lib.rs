@@ -7513,6 +7513,34 @@ fn value_contains_external_ref(value: &Value) -> bool {
     }
 }
 
+// fix-30 [P2]: helpers to collect active edge write_cursors BEFORE a supersession
+// UPDATE so the callers can prune stale vector_default rows.
+fn prior_edge_cursors_by_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_edges \
+         WHERE logical_id = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![logical_id], |r| r.get(0))?;
+    rows.collect()
+}
+
+fn prior_edge_cursors_by_triple(
+    tx: &rusqlite::Transaction<'_>,
+    from: &str,
+    to: &str,
+    kind: &str,
+) -> rusqlite::Result<Vec<i64>> {
+    let mut s = tx.prepare_cached(
+        "SELECT write_cursor FROM canonical_edges \
+         WHERE from_id = ?1 AND to_id = ?2 AND kind = ?3 AND superseded_at IS NULL",
+    )?;
+    let rows = s.query_map(params![from, to, kind], |r| r.get(0))?;
+    rows.collect()
+}
+
 fn commit_batch(
     connection: &mut Connection,
     batch: &[PreparedWrite],
@@ -7586,11 +7614,21 @@ fn commit_batch(
                 // re-ingest of the same edge logical_id SUPERSEDES, never forks).
                 // No-op when logical_id is None.
                 if let Some(logical_id) = logical_id {
+                    // fix-30 [P2]: collect prior active cursors BEFORE tombstoning
+                    // so stale vector_default rows can be pruned.
+                    let prior_g0 = prior_edge_cursors_by_logical_id(&tx, logical_id)?;
                     tx.execute(
                         "UPDATE canonical_edges SET superseded_at = ?1
                          WHERE logical_id = ?2 AND superseded_at IS NULL",
                         params![cursor, logical_id],
                     )?;
+                    for sc in &prior_g0 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                    }
                 }
                 // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
                 // tombstone any prior active edge on the same (from_id, to_id, kind)
@@ -7598,11 +7636,20 @@ fn commit_batch(
                 // logical_id tombstone: it is keyed on the triple, not the identity.
                 // Regular edges (body=None) skip this path — they retain G0 semantics.
                 if body.is_some() {
+                    // fix-30 [P2]: collect and prune vector shadow for the superseded edge.
+                    let prior_g11 = prior_edge_cursors_by_triple(&tx, from, to, kind)?;
                     tx.execute(
                         "UPDATE canonical_edges SET superseded_at = ?1
                          WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
                         params![cursor, from, to, kind],
                     )?;
+                    for sc in &prior_g11 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                    }
                 }
                 tx.execute(
                     "INSERT INTO canonical_edges(
