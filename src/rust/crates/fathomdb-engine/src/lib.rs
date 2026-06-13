@@ -5027,6 +5027,8 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
     SELECT e.to_id, t.depth + 1, t.visited || e.to_id || ','
     FROM traversal t
     JOIN canonical_edges e ON e.from_id = t.logical_id
+    JOIN canonical_nodes next_n ON next_n.logical_id = e.to_id
+      AND next_n.superseded_at IS NULL
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -5050,6 +5052,8 @@ LIMIT {cap}"
     SELECT e.from_id, t.depth + 1, t.visited || e.from_id || ','
     FROM traversal t
     JOIN canonical_edges e ON e.to_id = t.logical_id
+    JOIN canonical_nodes next_n ON next_n.logical_id = e.from_id
+      AND next_n.superseded_at IS NULL
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -5076,6 +5080,9 @@ LIMIT {cap}"
       t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
     FROM traversal t
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    JOIN canonical_nodes next_n
+      ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
+      AND next_n.superseded_at IS NULL
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -5114,6 +5121,9 @@ fn build_bfs_with_depth_sql() -> String {
       t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
     FROM traversal t
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    JOIN canonical_nodes next_n
+      ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
+      AND next_n.superseded_at IS NULL
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))

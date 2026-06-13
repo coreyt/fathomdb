@@ -519,3 +519,38 @@ fn search_expand_reports_nearest_hop_count() {
     // (If X is not in expanded — perhaps it was a search hit itself — that's also OK.)
     opened.engine.close().unwrap();
 }
+
+/// Regression: dangling intermediate nodes must not extend traversal.
+/// Graph: A → MISSING (no active node) → C
+/// With depth=2, graph_neighbors("A", 2, Outgoing) must NOT return C because
+/// the intermediate node "MISSING" has no active canonical_nodes row.
+/// (Fix-6: recursive CTE JOIN canonical_nodes on next hop.)
+#[test]
+fn graph_neighbors_inactive_intermediate_not_traversed() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "dangling")).expect("open");
+    opened
+        .engine
+        .write(&[
+            node("doc", "Root A", "A"),
+            // MISSING is intentionally never written as a node.
+            node("doc", "Node C", "C"),
+            // Edge from A to a node that doesn't exist in canonical_nodes.
+            edge("A", "MISSING", "E-AM"),
+            // Edge from that missing node onward to C.
+            edge("MISSING", "C", "E-MC"),
+        ])
+        .expect("write");
+
+    let results = opened
+        .engine
+        .graph_neighbors("A", 2, fathomdb_engine::TraversalDirection::Outgoing)
+        .expect("graph_neighbors");
+
+    let ids: Vec<&str> = results.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(
+        !ids.contains(&"C"),
+        "C is reachable only through MISSING (inactive) — must not appear; got {ids:?}"
+    );
+    opened.engine.close().unwrap();
+}
