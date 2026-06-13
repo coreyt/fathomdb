@@ -13,26 +13,38 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (fix-22/23/24 committed; codex §9 rate-limited → re-run after 5:11 AM).
+Last updated: 2026-06-13 (fix-22..35 committed @ `9b69b67`; §9 re-review of the fix-33/34/35 batch pending — codex rate-limited, Opus-high /code-review used for the round that surfaced them).
 
 ---
 
 ## 1. Current slice
 
-**Slice 5 post-process: fix-22/23/24 committed; awaiting codex §9 re-run (rate-limited; reset 5:11 AM).**
+**Slice 5 post-process: fix-22..35 committed @ `9b69b67`; §9 re-review of the fix-33/34/35 batch pending before close.**
 
-Slice 5 codex §9 review cycle so far (base `101a3b0`, includes Slices 15/20/35 + Slice 5 diffs):
-- fix-22 (`9423143`): stale schema-version 13→14 assertions in pr_g1_tokenizer_* tests; edge vector
-  hits silently dropped in `read_search_in_tx` (node lookup only; added `edge_stmt` fallback).
-- fix-23 (`6f0c897`): `ingest_with_extractor` child-reap on error paths (outer/inner split); ready
-  message validates `protocol` + `schema_version`; pre-filter existing entities via `read_get_many`.
-- fix-24 (`2809e7a`): result envelope must carry `type=="result"` AND matching `request_id`; two
-  regression tests added (`ingest_rejects_wrong_result_type` / `ingest_rejects_mismatched_request_id`).
-- **Next codex run: rate-limited; retry after 5:11 AM.**
+Slice 5 codex §9 review cycle (base `101a3b0`, includes Slices 15/20/35 + Slice 5 diffs).
+fix-22..32 cleared the first codex round (see prior entries). The latest §9 round (codex
+rate-limited → run via Opus-high `/code-review`) found surviving keystone gaps; fix-33/34/35
+landed in response (`9b69b67`):
+- fix-22 (`9423143`) … fix-32 (`6a82c16`): see §7 + git log (schema/version, child-reap,
+  result-envelope, edge supersession/projection-terminal, FFI string validation, etc.).
+- **fix-33 [P1]** (`9b69b67`): BYO-LLM extracted edges were orphaned — endpoints derived with a
+  default kind `"entity"` while nodes used the entity's real type (the protocol has no edge types;
+  edges reference entities by name). Resolve endpoints via an `entities[]` name+alias →
+  (canonical name, type) index. Un-masked slice15 fixtures; promoted QD-envelope test to a
+  committed linkage regression (RED at fix-32: orphaned=1).
+- **fix-34 [P1/P2]** (`9b69b67`): `derive_logical_id` collision guard — reject `:` in kind / empty
+  name (sha256 delimiter ambiguity → silent entity loss); added edge-batch dedup (shared helper).
+- **fix-35 [P1]** (`9b69b67`): subprocess stdout drained on a reader thread + `recv_timeout`
+  (`FATHOMDB_EXTRACTOR_TIMEOUT_MS`, default 300s) — bounds a hung harness, prevents large-request
+  pipe deadlock.
+- **Next: re-run §9 on the fix-33/34/35 diff** (codex when off rate-limit, else Opus-high). The
+  watch-item caveat applies: fix-33/34/35 are *new-scope keystone gaps*, not the fix-22..32 set —
+  if the next round surfaces *yet more* new Slice-15 protocol gaps, escalate to HITL (structural
+  under-review of the keystone) rather than absorbing further into Slice 5's cycle.
 
-**Prerequisites for Slice 10 — all satisfied:**
-1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`).
-2. **Slice 5 complete** — ✅ output present; needs codex §9 PASS + close.
+**Prerequisites for Slice 10 — pending §9 PASS:**
+1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9b69b67`).
+2. **Slice 5 complete** — ✅ output present; needs §9 PASS on fix-33/34/35 + close.
 3. **CDF review** — K=200 recommended from Slice 5 findings.
 
 ### ◆ HITL gate — SIGNED 2026-06-13
@@ -40,7 +52,7 @@ Slice 5 codex §9 review cycle so far (base `101a3b0`, includes Slices 15/20/35 
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Re-run codex §9 (base `101a3b0`) after rate-limit reset → if PASS: CLOSE Slice 5, OPEN Slice 10 (R1 reranker, K=200).**
+**Re-run §9 on the fix-33/34/35 diff (base `101a3b0`) — codex when off rate-limit, else Opus-high `/code-review` → if PASS: CLOSE Slice 5, OPEN Slice 10 (R1 reranker, K=200). If it surfaces new Slice-15 protocol gaps: escalate to HITL (keystone under-review), do not absorb into Slice 5.**
 
 ---
 
@@ -53,7 +65,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
-| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | 🔁 fix-22/23/24 committed; codex §9 re-run pending (rate-limited; reset 5:11 AM) | 0 | n/a | ❌ | ❌ |
+| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | 🔁 fix-22..35 committed (`9b69b67`); §9 re-review of fix-33/34/35 pending | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
@@ -127,6 +139,37 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — §9 round 2 (Opus-high fallback): fix-33/34/35 land; QD-sample validation surfaced an orphaned-edge [P1]
+
+Codex was rate-limited, so the §9 adversarial review of the fix-22..32 cycle was run via **Opus-high
+`/code-review`** (7 finder angles → 1-vote verify) against base `101a3b0`. It REFUTED the headline
+claims that would have meant a regression (confidence NaN is rejected; the deferred edge
+projection-terminal is intended + symmetric with nodes; fix-24's request_id check covers error
+envelopes), confirming fix-22..32 hold. It CONFIRMED three surviving keystone gaps, fixed as
+fix-34/35 (`9b69b67`). Separately, **Memex's QD `result`-envelope validation** (round 2) surfaced an
+orphaned-edge **[P1]** (`dev/plans/runs/FIX-33-byo-llm-edge-linkage.md`), fixed FathomDB-side as
+fix-33 — protocol unchanged, Slice-25 golden unaffected.
+
+1. **fix-33 [P1]** — BYO-LLM edge endpoints derived `logical_id` with a default kind `"entity"` while
+   nodes used the entity's real type, so every contract-faithful edge (the protocol has no edge types;
+   edges reference entities by name) pointed at a `logical_id` no node had — orphaning edges and
+   tripping the G8 dangling probe. Resolve endpoints via a name+alias → (canonical name, type) index
+   built from the result's `entities[]`. Un-masked slice15 fixtures that carried `from_type`/`to_type`;
+   promoted the QD-envelope test to a committed linkage regression (`orphaned == 0`; RED at fix-32: 1).
+2. **fix-34 [P1/P2]** — `derive_logical_id` used an unescaped `:` delimiter + `unwrap_or("")` names, so
+   `("a:b","c")`/`("a","b:c")` collided and name-less entities collapsed onto `sha256("kind:")` (silent
+   loss). Now returns `Result` and rejects `:` in kind / empty name at the boundary; added edge-batch
+   dedup (shared helper) the node arm already had (fix-29).
+3. **fix-35 [P1]** — no timeout/deadlock guard on the extractor subprocess: a hung harness blocked
+   ingest forever and a >64KB request could pipe-deadlock. Stdout is now drained on a reader thread fed
+   to `recv_timeout` (`FATHOMDB_EXTRACTOR_TIMEOUT_MS`, default 300s).
+
+Deferred (minor, re-review may reopen): TS `SoftFallbackBranch` silently coerces unknowns to `"text"`;
+Python `graph.neighbors`/`search_expand` don't validate the depth upper bound (TS does); Python
+`read_list` predicate `value=None` reaches native with an opaque error. Full engine suite green except
+the pre-existing **Slice-10 RED** `recency_does_not_override_a_clear_rrf_signal` (committed RED in
+`560ef78`; out of scope — Slice 10 not yet implemented). **Next:** re-run §9 on the fix-33/34/35 diff.
 
 ### 2026-06-13 — Slice 5 codex §9 fix cycle (fix-22..24); rate-limited; resume after 5:11 AM
 
