@@ -13,34 +13,38 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 15 CLOSED; pointer → Slices 20 + 35 in parallel).
+Last updated: 2026-06-13 (Slices 20 + 35 CLOSED; codex §9 PASS; pointer → Slice 5 post-process + Slice 10 open).
 
 ---
 
 ## 1. Current slice
 
-**Slice 15 CLOSED 2026-06-13 (fix-1/2/3 resolved codex §9 findings). Pointer → Slices 20 + 35 in parallel.**
+**Slices 20 + 35 CLOSED 2026-06-13 (codex §9 PASS at `94ddf13`). Pointer → Slice 5 post-process then Slice 10.**
 
-Slice 15 agent merged at `0da572c`; codex §9 found 1×[P1] + 4×[P2] → fix-1 (5 findings);
-re-run found 1×[P2] → fix-2; re-run found 1×[P2] → fix-3; re-run: **PASS** (`316c582`).
-`SCHEMA_VERSION` 13 → 14. BYO-LLM ingest API live. Edge FTS + vector projection live.
+Slices 20 + 35 ran in parallel (21 fix commits, fixes 5–21):
+- fix-5 through fix-14: TextEdge sentinel, cycle-guard delimiter, depth validation, error types, bool type guard, string FFI validation.
+- fix-15 through fix-17: stale TextEdge hits, anonymous-node crash, cap² CTE headroom.
+- fix-18: facade re-export 7 new governed-surface types (17→24).
+- fix-19: integer json_type guard (Bool↔Integer cross-match).
+- fix-20: Python predicate string FFI validation (`extract_validated_str`).
+- fix-21: text-compare type guard + char(30) write rejection.
+- Codex final verdict post-fix-21: **PASS.**
 
-**Slice 5 (R0 recall-CDF)** remains ⏳ in flight (independent track; no cross-dependency with 15).
+**Slice 5 (R0 recall-CDF)** completed ✅ (output at `dev/plans/runs/0.8.1-slice-5-output.json`). Needs post-process (codex §9 review on Slice 5 artifacts + close).
 
-**Prerequisites — all satisfied:**
-1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`; all plan triad + IR-C infra on main).
-2. **COR-2 frozen corpus** for Slices 5 + 25 — ✅ SATISFIED (`corpus_hash fe973fcd…`; gitignored; each slice agent reproduces; qmsum stale-pin debunked).
-3. **Slice 15 CLOSED** — ✅ DONE (`316c582`); gates Slices 20 + 35.
+**Prerequisites for Slice 10 — all satisfied:**
+1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9423143`).
+2. **Slice 5 complete** — ✅ output present; needs post-process + close.
+3. **CDF review** — K=200 recommended from Slice 5 findings.
 
 ### ◆ HITL gate — SIGNED 2026-06-13
 
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Slices 20 and 35 now open in parallel** (both gated on Slice 15, now closed):
-- Slice 20 (G5/G6 graph traversal) — unblocked by Slice 15 CLOSED
-- Slice 35 (G4 filter grammar + G4↔G10 unification) — unblocked by Slice 15 CLOSED
-- Slice 10 (R1 reranker) — gated on Slice 5; opens after Slice 5 closes + CDF reviewed
+**Slice 5 post-process + codex §9 review → CLOSE Slice 5, then OPEN Slice 10 (R1 reranker):**
+- Slice 5 artifacts: `dev/plans/runs/0.8.1-slice-5-output.json` + `dev/plans/runs/IR-C-r0-findings.md` + `dev/design/slice-5-design.md`
+- Slice 10 (R1 reranker) — gated on Slice 5 + CDF review; K=200 recommended
 
 ---
 
@@ -56,10 +60,10 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ⏳ in flight | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
-| **20** | G5/G6 graph traversal | implementation | ⏳ in flight | 15 | ❌ | ❌ | ❌ |
+| **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
 | **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ❌ | 15,20,25 | ❌ | ❌ | ❌ |
-| **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ⏳ in flight | 15 | ❌ | ❌ | ❌ |
+| **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
 Status values: ❌ / ⏳ / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N. Decision values (§7):
@@ -78,10 +82,10 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 | **R1** CPU cross-encoder reranker in `rerank_fused`; factoid R@10 ≥ 0.90 no-regress | 10 | ❌ |
 | **G11** edge enrichment (`body`/`t_valid`/`t_invalid`/`confidence`) + edge projectability (schema bump) | 15 (KEYSTONE) | ✅ CLOSED |
 | **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
-| **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ❌ |
+| **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ✅ CLOSED |
 | **R2** end-to-end Mem0/Zep parity eval (report-only north-star; Decision ①) | 25 | ❌ |
 | **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ❌ |
-| **G4** filter grammar + **G4↔G10 unification (reserved-gap 37)** | 35 | ❌ |
+| **G4** filter grammar + **G4↔G10 unification (reserved-gap 37)** | 35 | ✅ CLOSED |
 | **AC-078+** (shipped-feature ACs) + **R2 parity-metric AC** | 40 / eval gate (HITL) | ❌ (acceptance.md locked; mint only at gated slices) |
 | **~4-pt vector-stage fidelity-regression diagnosis** (0.937→0.896; engine A/B → bisect) — carried from 0.8.0, HITL-sequenced AFTER IR/graph | reserved-gap 41–44 / Slice-40-adjacent | ❌ tracked (measurement-only diagnosis first; fix slice only if bisect lands a cause) |
 | **COR-2 frozen corpus** (`corpus_hash fe973fcd…`) — prereq for Slices 5 + 25 | prereq | ✅ SATISFIED + reproducible (gitignored; agent reproduces; qmsum stale-pin debunked) |
@@ -127,6 +131,29 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slices 20 + 35 CLOSED; codex §9 PASS (fix-5..21); Slice 5 complete → Slice 10 open
+
+**Slices 20 + 35 (G5/G6 graph traversal + G4 filter grammar):** 21-commit fix cycle.
+Key issues resolved: TextEdge sentinel leaking into BFS/hit_id_set; char(30) delimiter safety (write
+rejection of 0x1E in logical_ids + edge endpoints); anonymous-node crash; cap² CTE headroom;
+bool/integer/text json_type cross-match guards; facade governed-surface re-exports (17→24 types);
+Python predicate FFI string validation. Codex §9 **PASS** at `94ddf13`.
+
+What landed:
+- `Engine::graph_neighbors` (depth 1–3, direction outgoing/incoming/both, cap 50, valid-time filter)
+- `Engine::search_expand` (G1 search + BFS expansion, deduplication, nearest-hop-count)
+- `Engine::read_list` (kind + `&[Predicate]` filter, limit)
+- `Predicate`/`ScalarValue`/`ComparisonOp` (closed filter grammar, 5-path allowlist)
+- `TraversalDirection`/`NodeRecord`/`SearchExpandResult`/`SearchFilter` added to facade governed surface
+- Python `fathomdb.graph.neighbors` / `fathomdb.graph.search_expand` + `fathomdb.read.list`
+- TypeScript `graph.neighbors` / `graph.searchExpand` + `read.list`
+- 18 Rust (slice20) + 18 Rust (slice35) + 6 Python + 8 TS functional tests
+
+**Slice 5 (R0 recall-CDF):** completed. Output at `dev/plans/runs/0.8.1-slice-5-output.json`.
+Post-process: codex §9 on Slice 5 artifacts → close → open Slice 10 (R1 reranker, K=200 recommended).
+
+---
 
 ### 2026-06-13 — Slice 15 CLOSED; codex §9 fix-1/2/3 applied; Slices 20 + 35 opened
 
