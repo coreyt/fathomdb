@@ -13,18 +13,22 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (fix-22..35 committed @ `9b69b67`; §9 re-review of the fix-33/34/35 batch pending — codex rate-limited, Opus-high /code-review used for the round that surfaced them).
+Last updated: 2026-06-13 (Slice 5 CLOSED @ `5e109a6` — Opus §9 PASS, fix-22..35; Slice 10 OPEN. Deferred: #5-#7 binding findings + a codex confirmation pass — see § "Deferred follow-ups").
 
 ---
 
 ## 1. Current slice
 
-**Slice 5 post-process: fix-22..35 committed @ `9b69b67`; §9 re-review of the fix-33/34/35 batch pending before close.**
+**Slice 5 CLOSED @ `5e109a6` (2026-06-13) — Opus §9 PASS (fix-22..35). Slice 10 (R1 reranker, K=200) OPEN.**
 
-Slice 5 codex §9 review cycle (base `101a3b0`, includes Slices 15/20/35 + Slice 5 diffs).
-fix-22..32 cleared the first codex round (see prior entries). The latest §9 round (codex
-rate-limited → run via Opus-high `/code-review`) found surviving keystone gaps; fix-33/34/35
-landed in response (`9b69b67`):
+Close basis (HITL-approved 2026-06-13): codex was rate-limited on both §9 attempts, so the
+review ran via the sanctioned **Opus-high `/code-review`** fallback. fix-22..32 cleared round 1;
+round 2 surfaced surviving keystone gaps → fix-33/34/35 (`9b69b67`); the re-review of that batch
+was clean (fix-34/35 zero findings; fix-33 hardened by `5e109a6`). The watch-item did NOT fire —
+no new structural keystone protocol gaps. **Two follow-ups deferred (HITL-approved): the #5-#7
+binding findings and a codex confirmation pass — see § "Deferred follow-ups" below.**
+
+Slice 5 codex §9 review cycle (base `101a3b0`, includes Slices 15/20/35 + Slice 5 diffs):
 - fix-22 (`9423143`) … fix-32 (`6a82c16`): see §7 + git log (schema/version, child-reap,
   result-envelope, edge supersession/projection-terminal, FFI string validation, etc.).
 - **fix-33 [P1]** (`9b69b67`): BYO-LLM extracted edges were orphaned — endpoints derived with a
@@ -37,22 +41,39 @@ landed in response (`9b69b67`):
 - **fix-35 [P1]** (`9b69b67`): subprocess stdout drained on a reader thread + `recv_timeout`
   (`FATHOMDB_EXTRACTOR_TIMEOUT_MS`, default 300s) — bounds a hung harness, prevents large-request
   pipe deadlock.
-- **Next: re-run §9 on the fix-33/34/35 diff** (codex when off rate-limit, else Opus-high). The
-  watch-item caveat applies: fix-33/34/35 are *new-scope keystone gaps*, not the fix-22..32 set —
-  if the next round surfaces *yet more* new Slice-15 protocol gaps, escalate to HITL (structural
-  under-review of the keystone) rather than absorbing further into Slice 5's cycle.
+- **fix-33 refinement** (`5e109a6`): two-pass `entity_index` so a canonical name always wins over a
+  colliding alias (re-review note); fix-34/35 re-reviewed clean.
 
-**Prerequisites for Slice 10 — pending §9 PASS:**
-1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `9b69b67`).
-2. **Slice 5 complete** — ✅ output present; needs §9 PASS on fix-33/34/35 + close.
+**Prerequisites for Slice 10 — all satisfied:**
+1. **Prereq 0 (branch merge)** — ✅ DONE (`main` = `5e109a6`).
+2. **Slice 5 complete** — ✅ CLOSED (Opus §9 PASS).
 3. **CDF review** — K=200 recommended from Slice 5 findings.
+
+### ⚠️ Deferred follow-ups — REQUIRED before 0.8.1 GA (gated at Slice 40)
+
+HITL-approved 2026-06-13 to close Slice 5 now and address these later, but they **MUST be fixed
+before 0.8.1 GA** (they are Slice-40 release-readiness gate items, not optional). Do not close 0.8.1
+with any of these open:
+
+1. **Codex confirmation pass** — re-run `codex exec review --base 101a3b08ef944b19305eeb12472810da7b2fc20f`
+   once off rate-limit, as the authoritative confirmation of the Opus-high §9 PASS on fix-22..35.
+   If codex surfaces anything the Opus pass missed, fix it before GA.
+2. **#5 — TS `SoftFallbackBranch` coercion** (`src/ts/src/index.ts`, search + searchExpand mapping):
+   an unknown native branch silently coerces to `"text"`; make unknowns throw so a protocol/binding
+   mismatch can't be masked.
+3. **#6 — Python depth upper-bound** (`src/python/fathomdb/graph.py` `neighbors`, `read.py`
+   `search_expand`): validate `1..=3` upfront like the TS binding does (currently only `depth < 0`),
+   so `depth>3` doesn't defer to a worse engine-side error.
+4. **#7 — Python null-predicate ergonomics** (`src/python/fathomdb/read.py` `read_list`): a predicate
+   `value=None` reaches native with an opaque "must have one of value_str/int/bool" error; validate
+   in the wrapper (TS is type-guarded).
 
 ### ◆ HITL gate — SIGNED 2026-06-13
 
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Re-run §9 on the fix-33/34/35 diff (base `101a3b0`) — codex when off rate-limit, else Opus-high `/code-review` → if PASS: CLOSE Slice 5, OPEN Slice 10 (R1 reranker, K=200). If it surfaces new Slice-15 protocol gaps: escalate to HITL (keystone under-review), do not absorb into Slice 5.**
+**OPEN Slice 10 (R1 — CPU cross-encoder reranker `rerank_fused`, K=200 from Slice 5 CDF). Contract: `dev/plans/0.8.1-implementation.md`.** Carry forward the § "Deferred follow-ups" obligations — they are REQUIRED before 0.8.1 GA (Slice 40 gate): codex confirmation pass + #5/#6/#7 binding fixes.
 
 ---
 
@@ -65,14 +86,14 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
-| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | 🔁 fix-22..35 committed (`9b69b67`); §9 re-review of fix-33/34/35 pending | 0 | n/a | ❌ | ❌ |
-| **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ❌ | 5 | ❌ | ❌ | ❌ |
+| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ✅ CLOSED 2026-06-13 — Opus §9 PASS (fix-22..35, base `101a3b0`; codex rate-limited → sanctioned Opus fallback); K=200 recommended. ⚠️ deferred-to-GA: codex confirm + #5/#6/#7 (see §1) | 0 | n/a | ❌ | ❌ |
+| **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ⏳ OPEN 2026-06-13 (K=200) | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
 | **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ❌ | 15,20,25 | ❌ | ❌ | ❌ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
-| **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
+| **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
 Status values: ❌ / ⏳ / ✅ CLOSED / ⚠️ BLOCKED / 🔁 fix-N. Decision values (§7):
 PASS / CONCERN+override / BLOCK→fix-N / DEFERRED.
@@ -86,7 +107,7 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 
 | Feature / gap | Owning slice | Status |
 |---------------|-------------|--------|
-| **R0** candidate-recall CDF + rerank cost model (resets ceiling math, C1/C2) | 5 | ❌ not started |
+| **R0** candidate-recall CDF + rerank cost model (resets ceiling math, C1/C2) | 5 | ✅ CLOSED 2026-06-13 (Opus §9 PASS, fix-22..35; K=200) |
 | **R1** CPU cross-encoder reranker in `rerank_fused`; factoid R@10 ≥ 0.90 no-regress | 10 | ❌ |
 | **G11** edge enrichment (`body`/`t_valid`/`t_invalid`/`confidence`) + edge projectability (schema bump) | 15 (KEYSTONE) | ✅ CLOSED |
 | **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
@@ -139,6 +160,21 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slice 5 CLOSED on Opus §9 PASS (fix-22..35); Slice 10 OPEN; 4 follow-ups deferred to GA
+
+HITL-approved close. codex was rate-limited on both §9 attempts (resets 1:29 PM), so per the
+hand-off the §9 ran via the sanctioned **Opus-high `/code-review`** fallback. Re-review of the
+fix-33/34/35 batch: **fix-34/35 zero findings; fix-33 two P2 notes** — one is the write-up's
+deliberate defensive fallback (contract requires every endpoint listed/synthesized in-result), the
+other (alias↔name order-dependence) hardened by `5e109a6` (two-pass index). Watch-item did NOT fire
+(no new structural keystone gaps). Full engine suite green except the pre-existing Slice-10 RED
+`recency_does_not_override_a_clear_rrf_signal` (committed RED `560ef78`; Slice 10 will turn it).
+
+**Deferred — REQUIRED before 0.8.1 GA (Slice-40 gate; see §1 "Deferred follow-ups"):** (1) codex
+confirmation pass on base `101a3b0`; (2) #5 TS unknown-branch coercion; (3) #6 Python depth
+upper-bound validation; (4) #7 Python null-predicate ergonomics. "Defer" here = fix later but before
+GA, not drop.
 
 ### 2026-06-13 — §9 round 2 (Opus-high fallback): fix-33/34/35 land; QD-sample validation surfaced an orphaned-edge [P1]
 
