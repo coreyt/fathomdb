@@ -55,6 +55,10 @@ use std::any::type_name;
 /// report types the facade also re-exports for `fathomdb-cli` are deliberately
 /// NOT here (they are CLI-only ergonomic symbols, not runtime SDK surface — the
 /// Rust analogue of "recovery is CLI-only, not an SDK verb").
+///
+/// 17 original + 7 added by Slices 20 (G5/G6) + 35 (G4):
+///   Slice 20/35: ComparisonOp, NodeRecord, Predicate, ScalarValue,
+///                SearchExpandResult, SearchFilter, TraversalDirection
 const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "Engine",
     "OpenedEngine",
@@ -73,6 +77,15 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "SoftFallbackBranch",
     "CounterSnapshot",
     "Subscription",
+    // Slice 20 (G5/G6) — graph traversal types
+    "TraversalDirection",
+    "NodeRecord",
+    "SearchExpandResult",
+    "SearchFilter",
+    // Slice 35 (G4) — filter grammar types
+    "Predicate",
+    "ScalarValue",
+    "ComparisonOp",
 ];
 
 /// The permanent five-name recovery denylist. Identical to the single shared
@@ -114,11 +127,20 @@ fn t_074_rust_governed_surface_resolves() {
     let _ = type_name::<fathomdb::SoftFallbackBranch>();
     let _ = type_name::<fathomdb::CounterSnapshot>();
     let _ = type_name::<fathomdb::Subscription>();
+    // Slice 20 (G5/G6)
+    let _ = type_name::<fathomdb::TraversalDirection>();
+    let _ = type_name::<fathomdb::NodeRecord>();
+    let _ = type_name::<fathomdb::SearchExpandResult>();
+    let _ = type_name::<fathomdb::SearchFilter>();
+    // Slice 35 (G4)
+    let _ = type_name::<fathomdb::Predicate>();
+    let _ = type_name::<fathomdb::ScalarValue>();
+    let _ = type_name::<fathomdb::ComparisonOp>();
 
     assert_eq!(
         GOVERNED_SURFACE_ALLOWLIST.len(),
-        17,
-        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 17 resolved governed types"
+        24,
+        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 24 resolved governed types"
     );
 }
 
