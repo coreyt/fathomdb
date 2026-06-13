@@ -13,7 +13,7 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 5 CLOSED @ `5e109a6` — Opus §9 PASS, fix-22..35; Slice 10 OPEN. Deferred: #5-#7 binding findings + a codex confirmation pass — see § "Deferred follow-ups").
+Last updated: 2026-06-13 (Slice 5 CLOSED @ `5e109a6` — Opus §9 PASS, fix-22..35; Slice 10 OPEN. **HITL 2026-06-13: codex confirmation pass WAIVED — the Opus-high §9 PASS is accepted as authoritative.** Remaining deferred-to-GA: #5-#7 binding findings — see § "Deferred follow-ups").
 
 ---
 
@@ -55,9 +55,9 @@ HITL-approved 2026-06-13 to close Slice 5 now and address these later, but they 
 before 0.8.1 GA** (they are Slice-40 release-readiness gate items, not optional). Do not close 0.8.1
 with any of these open:
 
-1. **Codex confirmation pass** — re-run `codex exec review --base 101a3b08ef944b19305eeb12472810da7b2fc20f`
-   once off rate-limit, as the authoritative confirmation of the Opus-high §9 PASS on fix-22..35.
-   If codex surfaces anything the Opus pass missed, fix it before GA.
+1. **Codex confirmation pass — ✅ WAIVED by HITL 2026-06-13.** The Opus-high `/code-review` §9 PASS
+   on fix-22..35 is accepted as the authoritative review; no codex re-run on base `101a3b0` is
+   required before GA. (Was: re-run codex once off rate-limit as confirmation of the Opus pass.)
 2. **#5 — TS `SoftFallbackBranch` coercion** (`src/ts/src/index.ts`, search + searchExpand mapping):
    an unknown native branch silently coerces to `"text"`; make unknowns throw so a protocol/binding
    mismatch can't be masked.
@@ -73,7 +73,7 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**OPEN Slice 10 (R1 — CPU cross-encoder reranker `rerank_fused`, K=200 from Slice 5 CDF). Contract: `dev/plans/0.8.1-implementation.md`.** Carry forward the § "Deferred follow-ups" obligations — they are REQUIRED before 0.8.1 GA (Slice 40 gate): codex confirmation pass + #5/#6/#7 binding fixes.
+**OPEN Slice 10 (R1 — CPU cross-encoder reranker `rerank_fused`, K=200 from Slice 5 CDF). Contract: `dev/plans/0.8.1-implementation.md`.** Carry forward the § "Deferred follow-ups" obligations — REQUIRED before 0.8.1 GA (Slice 40 gate): #5/#6/#7 binding fixes. (Codex confirmation pass WAIVED by HITL 2026-06-13 — Opus §9 PASS is authoritative.)
 
 ---
 
@@ -86,7 +86,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | Slice | Title | Work-type | Status | Depends-on | X1 | X2 | X3 |
 |------:|-------|-----------|--------|-----------|----|----|----|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ CLOSED 2026-06-12 — 3 ADRs merged (361fca4) + fix-1 (codex §9 3×[P2] resolved) | — | n/a | ✅ | ✅ |
-| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ✅ CLOSED 2026-06-13 — Opus §9 PASS (fix-22..35, base `101a3b0`; codex rate-limited → sanctioned Opus fallback); K=200 recommended. ⚠️ deferred-to-GA: codex confirm + #5/#6/#7 (see §1) | 0 | n/a | ❌ | ❌ |
+| **5** | R0 — recall-CDF + rerank cost model | implementation (measurement) | ✅ CLOSED 2026-06-13 — Opus §9 PASS (fix-22..35, base `101a3b0`; codex rate-limited → sanctioned Opus fallback, **codex confirm WAIVED by HITL**); K=200 recommended. ⚠️ deferred-to-GA: #5/#6/#7 (see §1) | 0 | n/a | ❌ | ❌ |
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ⏳ OPEN 2026-06-13 (K=200) | 5 | ❌ | ❌ | ❌ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
@@ -160,6 +160,17 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — HITL: codex confirmation pass WAIVED; Opus §9 PASS accepted as authoritative
+
+HITL approved the **Opus-high `/code-review` §9 review** of the Slice 15+20+35+5 combined diff
+(fix-22..35, base `101a3b0`) as the **authoritative** review. Deferred item (1) — a codex
+confirmation pass once off rate-limit — is **WAIVED**: no codex re-run is required before GA. Basis:
+the Opus fallback is the sanctioned reviewer when codex is rate-limited, the fix-33/34/35 re-review
+was clean, and the keystone watch-item did not fire. **Remaining GA-gated obligations: #5/#6/#7
+binding fixes only** (§1 "Deferred follow-ups"). This unblocks the rerank/eval ladder from any
+codex-availability dependency. (Decision relayed via the continuation hand-off
+`prompts/0.8.1-CONTINUATION-HANDOFF.md`.)
 
 ### 2026-06-13 — Slice 5 CLOSED on Opus §9 PASS (fix-22..35); Slice 10 OPEN; 4 follow-ups deferred to GA
 
