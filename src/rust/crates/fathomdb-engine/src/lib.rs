@@ -5030,9 +5030,14 @@ const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
 /// `LIMIT {GRAPH_NEIGHBORS_HARD_CAP}` appears on both the CTE and the final SELECT.
 fn build_bfs_sql(direction: TraversalDirection) -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
-    // cte_cap = cap + 1: the SQLite CTE LIMIT includes the seed/root row (depth 0).
-    // Without the +1, a root with exactly `cap` direct neighbors returns cap-1 results.
-    let cte_cap = cap + 1;
+    // cte_cap: the SQLite CTE LIMIT counts path-rows, not distinct nodes. In a
+    // multigraph (multiple parallel edges between the same pair of nodes), the CTE
+    // can contain duplicate-target rows before the final SELECT DISTINCT. A cap of
+    // cap+1 would be exhausted by ~50 parallel edges to the same node, preventing
+    // other neighbors from being discovered. Use cap*cap as a generous safety
+    // ceiling that still bounds CTE growth for any realistic graph while allowing
+    // the final SELECT LIMIT cap to be the authoritative distinct-node cap.
+    let cte_cap = cap * cap;
     // Cycle guard uses char(30) (ASCII Record Separator, 0x1E) as delimiter instead
     // of comma, so logical_ids containing commas are handled correctly. char(30) is
     // a non-printable control character that callers cannot place in logical_id values
