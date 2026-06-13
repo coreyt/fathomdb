@@ -13,19 +13,42 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 10 CLOSED @ `3555a7f` — Opus-xhigh §9 (codex rate-limited): 1×BLOCK+6×CONCERN → fix-10-1 all GREEN; X1 7/7 Py + 7/7 TS; Slice 25 OPEN. **HITL 2026-06-13: codex confirmation pass WAIVED (Slice 5/fix-22..35 batch) — the Opus-high §9 PASS is accepted as authoritative.** Remaining deferred-to-GA: #5-#7 binding findings — see § "Deferred follow-ups").
+Last updated: 2026-06-13 (Slice 30 MERGED @ `84b7a5b`; §9 fix-30-1 COMMITTED @ `2a78300` — 5 fixes (2×BLOCK+2×CONCERN+1×CLEANUP) all GREEN; SCHEMA-GATE-1 pending HITL; go/no-go pending Slice 25 R2 data).
 
 ---
 
 ## 1. Current slice
 
-**Slice 10 CLOSED @ `3555a7f` (2026-06-13) — Opus-xhigh §9 PASS (post fix-10-1). Slice 25 (R2 parity eval) OPEN.**
+**Slice 30 MERGED @ `84b7a5b` (2026-06-13) — §9 fix-30-1 committed @ `2a78300`. Go/no-go pending Slice 25 R2 data. SCHEMA-GATE-1 pending HITL.**
 
-Close basis: codex rate-limited → §9 ran via sanctioned **Opus-xhigh `/code-review ultra`** fallback
-(9-angle parallel workflow → 1-vote verify → sweep); noted on board per standing rule. Review on
-base `754239d`..`b0a67a8` surfaced 15 CONFIRMED findings: 1×BLOCK (E0382 compile error with
-`--features default-reranker`) + 6×CONCERN + 8×cleanup. All resolved in fix-10-1 (`f5b708b`,
-HEAD `3555a7f`) — verified: `cargo check -p fathomdb-engine --features default-reranker` exits 0.
+R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
+§9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
+
+- **BLOCK [FIX-1]**: `e.t_invalid > datetime('now')` used raw string comparison; ISO 'T' separator
+  (0x54) > space (0x20) makes same-day expired edges appear live. Fixed:
+  `datetime(e.t_invalid) > datetime('now')` (consistent with lines 5668–5763).
+- **BLOCK [FIX-2]**: `tx.prepare()` called inside BFS while-loop (edge_stmt) and inner for-loop
+  (body_stmt) → O(frontier × neighbors) `sqlite3_prepare_v2` calls per search. Both moved outside
+  loops; explicit `drop()` before `tx.commit()` per borrow checker.
+- **CONCERN [FIX-3]**: graph-arm `SearchHit.id = 0` forced `min_id = 0` in `apply_recency_reweight`,
+  distorting the recency span for all two-arm hits. Fixed: `body_stmt` now fetches `write_cursor`
+  alongside `kind+body`; graph-arm hits carry a real id. Latent (recency off by default) but principled.
+- **CONCERN [FIX-4]**: TextEdge seed guard missing in Phase 1 loop. Added explicit `continue` on
+  `SoftFallbackBranch::TextEdge` (behaviour was already correct via write_cursor uniqueness, but
+  relying on that implicitly is fragile).
+- **CLEANUP [FIX-6]**: `rrf_graph_arm_empty_is_byte_identical_to_two_arm` was a tautology (both sides
+  called `fuse_three_arms` after the `fuse_rrf` delegation refactor). Replaced with
+  `rrf_two_arm_formula_matches_manual_accumulation` which verifies the actual RRF score formula.
+
+All gates GREEN post fix-30-1: cargo test ALL PASS (0 failures, 1 ignored per SCHEMA-GATE-1), clippy 0 warnings.
+
+**SCHEMA-GATE-1 (open):** `graph_arm_temporal_fallback_excluded_or_downweighted` is `#[ignore]` —
+temporal_fallback detection at BFS time requires `canonical_edges.temporal_fallback BOOLEAN` column
+(SCHEMA_VERSION 14→15). This is a HITL-required schema gate. Awaiting HITL ruling.
+
+**Go/no-go (open):** Slice 30 is on `main` but CLOSE requires R2 per-class deltas (Slice 25) showing
+the graph arm lifts temporal/multi-hop/knowledge-update classes without regressing factoid/exploratory
+Recall@K. Slice 25 is still OPEN.
 
 Slice 10 Opus-xhigh §9 review findings + fixes:
 - **BLOCK [FIX-1]**: `ce_rerank` took `hits: Vec<SearchHit>` by value, moved into the function,
@@ -100,6 +123,8 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
+**Slice 25 (R2) OPEN — required for Slice 30 go/no-go.** Slice 30 is on `main` but cannot CLOSE until R2 per-class deltas arrive. SCHEMA-GATE-1 (`canonical_edges.temporal_fallback` column) needs HITL ruling for SCHEMA_VERSION 15.
+**Former pointer (Slice 25 authorization):**
 **Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
 **◆ HITL 2026-06-13: ELPS Slice 25 (golden) SIGNED OFF** (`~/projects/memex/dev/elps/FATHOMDB-ELPS-SLICE25-SIGNOFF.md`) — the golden-freeze prerequisite is satisfied; FathomDB Slice 25 is greenlit (this is *authorization to proceed*, NOT closure — the R2 parity-metric AC remains a HITL gate within the slice). **First step:** open the **conformance gate (reserved-gap 16–19)** — vendor the *actual frozen ELPS golden bytes* (`serialization_golden`) into the tree, ingest via `ingest_with_extractor`, assert `dangling_edge_endpoints == 0` (upgrades today's QD-sample pin to the real cross-repo artifact). R2 eval runs on the **frozen artifact (replay-determinism)** — no live-binding rebuild needed for R2 (that's an R3/Slice-30 prereq).
 **Slice 30 (R3) prep written:** `dev/plans/prompts/0.8.1-SLICE-30-PREP.md` (authoring gated on R2 existing).
@@ -121,7 +146,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ❌ | 15,20,25 | ❌ | ❌ | ❌ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 fix-30-1 `2a78300` — ⚠️ SCHEMA-GATE-1 (HITL); ⚠️ go/no-go pending Slice 25 | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
@@ -143,7 +168,7 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 | **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
 | **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ✅ CLOSED |
 | **R2** end-to-end Mem0/Zep parity eval (report-only north-star; Decision ①) | 25 | ❌ |
-| **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ❌ |
+| **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ⏳ MERGED `84b7a5b`, §9 clean `2a78300`; go/no-go pending Slice 25 |
 | **G4** filter grammar + **G4↔G10 unification (reserved-gap 37)** | 35 | ✅ CLOSED |
 | **AC-078+** (shipped-feature ACs) + **R2 parity-metric AC** | 40 / eval gate (HITL) | ❌ (acceptance.md locked; mint only at gated slices) |
 | **~4-pt vector-stage fidelity-regression diagnosis** (0.937→0.896; engine A/B → bisect) — carried from 0.8.0, HITL-sequenced AFTER IR/graph | reserved-gap 41–44 / Slice-40-adjacent | ❌ tracked (measurement-only diagnosis first; fix slice only if bisect lands a cause) |
@@ -190,6 +215,41 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-13 — Slice 30 MERGED (`84b7a5b`); §9 fix-30-1 committed (`2a78300`); go/no-go pending Slice 25
+
+**R3 graph-retrieval arm** (third RRF arm via BFS over `canonical_edges`) merged to `main` at `84b7a5b`
+by the implementer agent. All deliverables GREEN except SCHEMA-GATE-1 (see below).
+
+§9 local max-effort review (codex rate-limited → sanctioned local fallback per PREP doc) on base
+`b06c6fd`..`84b7a5b` surfaced 2×BLOCK + 2×CONCERN + 1×CLEANUP. All resolved in fix-30-1 (`2a78300`):
+
+1. **BLOCK [FIX-1]** `datetime(e.t_invalid)` wrapper missing in BFS temporal filter SQL —
+   raw ISO string comparison let same-day expired edges appear live.
+2. **BLOCK [FIX-2]** `tx.prepare()` inside BFS loops → O(frontier × neighbors) prepare calls per search;
+   both statements hoisted outside the loops.
+3. **CONCERN [FIX-3]** Graph-arm hits had `id=0` → distorted `apply_recency_reweight` min/max span;
+   fixed by fetching `write_cursor` from the body query.
+4. **CONCERN [FIX-4]** No explicit TextEdge guard in Phase 1 seed loop; added `continue` on
+   `SoftFallbackBranch::TextEdge`.
+5. **CLEANUP [FIX-6]** `rrf_graph_arm_empty_is_byte_identical_to_two_arm` was a tautology after the
+   `fuse_rrf` delegation refactor; replaced with `rrf_two_arm_formula_matches_manual_accumulation`.
+
+All engine tests GREEN (0 failures, 1 ignored per SCHEMA-GATE-1).
+
+**SCHEMA-GATE-1 (HITL decision required):** `graph_arm_temporal_fallback_excluded_or_downweighted` is
+`#[ignore]`. Implementing this test requires `canonical_edges.temporal_fallback BOOLEAN` column
+(SCHEMA_VERSION 14→15). This is a schema migration requiring HITL approval per the schema gate in §3.0.R.
+Deferred to SCHEMA_VERSION 15 (separate HITL gate). Do NOT un-ignore the test without HITL sign-off.
+
+**Go/no-go (pending Slice 25):** Slice 30 CLOSE requires R2 per-class deltas showing graph arm lifts
+temporal/multi-hop/knowledge-update without regressing factoid/exploratory Recall@K (PREP doc hard gate).
+Slice 25 is still OPEN. Do NOT close Slice 30 on the status board without R2 data.
+
+**Noted architectural concern (FIX-5, not a bug):** The cascade fusion path
+`fuse_three_arms(two_arm_fused, vec![], graph_candidates)` passes already-fused two-arm results as the
+"vector" arm at `RRF_WEIGHT_VECTOR=1.0` rather than `RRF_WEIGHT_TEXT=3.0`. Text hits lose their 3× weight
+in the second pass. Documented in `output.json`; to be calibrated when R2 class deltas arrive.
 
 ### 2026-06-13 — ◆ HITL: ELPS Slice 25 (golden) SIGNED OFF; FathomDB Slice 25 (R2) authorized; Slice 30 prep written
 
