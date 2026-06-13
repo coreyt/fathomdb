@@ -5207,22 +5207,35 @@ fn search_expand_in_tx(
     //   - Some(lid): active named node → keep; use as BFS root.
     let mut hit_logical_ids: Vec<Option<String>> = Vec::with_capacity(search_hits.len());
     {
-        let mut stmt = tx.prepare(
+        let mut node_stmt = tx.prepare(
             "SELECT logical_id FROM canonical_nodes
+             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             LIMIT 1",
+        )?;
+        let mut edge_stmt = tx.prepare(
+            "SELECT 1 FROM canonical_edges
              WHERE write_cursor = ?1 AND superseded_at IS NULL
              LIMIT 1",
         )?;
         for hit in search_hits {
             if hit.branch == SoftFallbackBranch::TextEdge {
-                // Edge-body hit: no canonical_nodes row; use a sentinel to pass through.
-                hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS
+                // Edge-body hit: verify the edge row is still active in THIS snapshot.
+                // Stale edge hits (superseded between search and expansion) are dropped.
+                let cursor_i64 = hit.id as i64;
+                let active: Option<i32> =
+                    edge_stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
+                if active.is_some() {
+                    hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS
+                } else {
+                    hit_logical_ids.push(None); // superseded edge: drop
+                }
             } else {
                 let cursor_i64 = hit.id as i64;
                 // Returns Option<Option<String>>:
                 //   None         → no row → superseded
                 //   Some(None)   → row with NULL logical_id → anonymous node
                 //   Some(Some(s)) → active named node
-                let resolved = stmt
+                let resolved = node_stmt
                     .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
                     .optional()?;
                 match resolved {

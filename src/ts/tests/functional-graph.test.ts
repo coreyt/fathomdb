@@ -112,14 +112,14 @@ test("graph.neighbors returns empty array for isolated node", async () => {
   await engine.close();
 });
 
-test("graph.neighbors unknown direction raises WriteValidationError", async () => {
+test("graph.neighbors unknown direction raises InvalidArgumentError", async () => {
   const engine = await openEngine(freshDbPath());
   await engine.write([nodeItem("ROOT", "root body")]);
 
   await assert.rejects(
     () => graph.neighbors(engine, "ROOT", 1, "sideways" as "outgoing"),
-    WriteValidationError,
-    "unrecognised direction must raise WriteValidationError",
+    InvalidArgumentError,
+    "unrecognised direction must raise InvalidArgumentError",
   );
 
   await engine.close();

@@ -127,13 +127,13 @@ def test_graph_neighbors_empty_result_for_isolated_node(db_path: str) -> None:
 
 
 def test_graph_neighbors_unknown_direction_raises(db_path: str) -> None:
-    """An unrecognised direction string raises a WriteValidationError."""
+    """An unrecognised direction string raises an InvalidArgumentError."""
     engine = open_engine(db_path)
     engine.write([_node("ROOT", "root body")])
 
-    from fathomdb.errors import WriteValidationError
+    from fathomdb.errors import InvalidArgumentError
 
-    with pytest.raises(WriteValidationError):
+    with pytest.raises(InvalidArgumentError):
         # cast to Any to suppress pyright's Literal type check on an intentionally
         # invalid direction string (we're testing the runtime validation path).
         fathomdb.graph.neighbors(engine, "ROOT", depth=1, direction=cast(Any, "sideways"))

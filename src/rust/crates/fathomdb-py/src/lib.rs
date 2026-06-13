@@ -1148,31 +1148,20 @@ fn search_expand(
     engine: &PyEngine,
     query: &Bound<'_, PyAny>,
     depth: u32,
-    source_type: Option<&str>,
-    kind: Option<&str>,
+    source_type: Option<Bound<'_, PyAny>>,
+    kind: Option<Bound<'_, PyAny>>,
     created_after: Option<i64>,
-    status: Option<&str>,
+    status: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PySearchExpandResult> {
     let query = extract_validated_str(query)?;
-    // Validate optional filter strings before constructing SearchFilter — same
-    // guard as Engine.search uses via extract_opt_validated_str.
-    if let Some(s) = source_type {
-        validate_ffi_string_py(s)?;
-    }
-    if let Some(s) = kind {
-        validate_ffi_string_py(s)?;
-    }
-    if let Some(s) = status {
-        validate_ffi_string_py(s)?;
-    }
+    // Use extract_opt_validated_str (same path as Engine.search) so lone UTF-16
+    // surrogates are caught by the FFI guard before reaching the engine.
+    let source_type = extract_opt_validated_str(source_type.as_ref())?;
+    let kind = extract_opt_validated_str(kind.as_ref())?;
+    let status = extract_opt_validated_str(status.as_ref())?;
     let filter =
         if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
-            Some(RustSearchFilter {
-                source_type: source_type.map(str::to_string),
-                kind: kind.map(str::to_string),
-                created_after,
-                status: status.map(str::to_string),
-            })
+            Some(RustSearchFilter { source_type, kind, created_after, status })
         } else {
             None
         };
