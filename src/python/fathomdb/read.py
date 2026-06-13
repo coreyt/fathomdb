@@ -21,6 +21,7 @@ the writer lock.
 
 from __future__ import annotations
 
+import builtins
 from typing import TYPE_CHECKING, Any
 
 from fathomdb._fathomdb import NodeRecord as _NativeNodeRecord
@@ -70,14 +71,14 @@ def get(engine: "Engine", logical_id: str) -> NodeRecord | None:
     return _to_node_record(native) if native is not None else None
 
 
-def get_many(engine: "Engine", logical_ids: list[str]) -> list[NodeRecord | None]:
+def get_many(engine: "Engine", logical_ids: builtins.list[str]) -> builtins.list[NodeRecord | None]:
     """Return one slot per requested id, in REQUEST ORDER.
 
     A missing/superseded id yields ``None`` in its slot (partial result, never
     all-or-nothing). Order is preserved 1:1 with ``logical_ids``.
     """
 
-    natives = _native_get_many(engine._native, list(logical_ids))
+    natives = _native_get_many(engine._native, builtins.list(logical_ids))
     return [_to_node_record(n) if n is not None else None for n in natives]
 
 
@@ -87,7 +88,7 @@ def collection(
     *,
     after_id: int | None = None,
     limit: int,
-) -> list[OpStoreRow]:
+) -> builtins.list[OpStoreRow]:
     """Paginated op-store read-back over ``operational_mutations``, ``ORDER BY id``.
 
     ``limit`` is MANDATORY (the engine clamps it to a ~1M cap, so no call yields
@@ -107,7 +108,7 @@ def mutations(
     *,
     after_id: int | None = None,
     limit: int,
-) -> list[OpStoreRow]:
+) -> builtins.list[OpStoreRow]:
     """Mutation-log-oriented alias surface over the same op-store read-back as
     :func:`collection` (identical args + semantics)."""
 
@@ -118,13 +119,13 @@ def mutations(
     ]
 
 
-def list(
+def list(  # noqa: A001 — shadows builtin; public API requires this name
     engine: "Engine",
     kind: str,
-    predicates: list[dict[str, Any]] | None = None,
+    predicates: builtins.list[builtins.dict[str, Any]] | None = None,
     *,
     limit: int = 100,
-) -> list[NodeRecord]:
+) -> builtins.list[NodeRecord]:
     """G4 (Slice 35) — list active ``canonical_nodes`` of the given ``kind``.
 
     ``predicates`` is an optional list of filter dicts (AND-combined). Each dict:
