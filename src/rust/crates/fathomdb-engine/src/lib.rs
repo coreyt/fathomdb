@@ -2175,6 +2175,10 @@ impl Engine {
         let extractor_model_id = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
         let max_docs =
             ready.get("max_docs_per_request").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+        // fix-1 [P2]: reject zero max_docs_per_request to prevent chunks(0) panic.
+        if max_docs == 0 {
+            return Err(EngineError::Extractor);
+        }
 
         // --- per-batch extract → write loop ---
         let mut nodes_written: u64 = 0;
@@ -4249,10 +4253,18 @@ fn read_search_in_tx(
     // G11 (Slice 15) — edge-body FTS branch from `search_index_edges`.
     // Appended to text_results; tagged with SoftFallbackBranch::TextEdge so
     // callers can distinguish edge hits from node hits.
+    //
+    // fix-1 [P2]: JOIN canonical_edges to exclude superseded edge rows
+    // (invalidate-not-accumulate can leave a superseded body in the FTS index).
+    // fix-1 [P2]: apply text_hit_passes_filter to edge hits (kind/source_type/
+    // created_after/status filters must apply to the edge branch as well).
     {
-        let edge_sql =
-            "SELECT body, kind, write_cursor, bm25(search_index_edges) FROM search_index_edges \
-             WHERE search_index_edges MATCH ?1 ORDER BY bm25(search_index_edges), write_cursor";
+        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges) \
+             FROM search_index_edges sei \
+             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+             WHERE search_index_edges MATCH ?1 \
+               AND ce.superseded_at IS NULL \
+             ORDER BY bm25(search_index_edges), sei.write_cursor";
         // search_index_edges may not exist on very old DBs not yet at step-14;
         // ignore the error gracefully (returns empty slice).
         if let Ok(mut stmt) = tx.prepare(edge_sql) {
@@ -4266,7 +4278,9 @@ fn read_search_in_tx(
                 })
             }) {
                 for row in rows.flatten() {
-                    text_results.push(row);
+                    if text_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+                        text_results.push(row);
+                    }
                 }
             }
         }
@@ -4830,7 +4844,8 @@ fn next_pending_projection_jobs(
 fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     let connection = open_runtime_connection(path)?;
     let cursor = load_projection_cursor(&connection)?;
-    connection
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
         .query_row(
             "SELECT 1
              FROM canonical_nodes
@@ -4841,6 +4856,28 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
                AND _fathomdb_projection_terminal.write_cursor IS NULL
              LIMIT 1",
             [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+            [],
             |_row| Ok(true),
         )
         .or_else(|err| match err {

@@ -87,6 +87,7 @@ fn s14_legacy_rows_null_safe_for_g11_columns() {
     }
 
     // Legacy row must read NULL for all five G11 columns.
+    #[allow(clippy::type_complexity)]
     let row: (Option<String>, Option<String>, Option<String>, Option<f64>, Option<String>) = conn
         .query_row(
             "SELECT body, t_valid, t_invalid, confidence, extractor_model_id
