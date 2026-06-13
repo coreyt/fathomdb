@@ -2550,6 +2550,21 @@ impl Engine {
                     })
                     .collect();
 
+                // fix-29 [P2]: deduplicate within the batch by logical_id so
+                // harness-returned duplicate entities do not cause churn.
+                let mut seen_lids: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let node_batch: Vec<PreparedWrite> = node_batch
+                    .into_iter()
+                    .filter(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            seen_lids.insert(id.clone())
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+
                 // fix-23 [P2]: skip entities whose logical_id is already active
                 // to avoid needless supersede churn on re-ingest.
                 let ids: Vec<String> = node_batch
