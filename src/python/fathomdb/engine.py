@@ -128,6 +128,13 @@ class Engine:
         Returns:
             ``SearchResult`` with RRF-fused (and optionally CE-reranked) hits.
         """
+        # FIX-3: reject bool and non-int before the negative check.
+        # bool is a subclass of int in Python so it passes isinstance(x, int);
+        # we reject it explicitly for X1 parity with TypeScript.
+        if not isinstance(rerank_depth, int) or isinstance(rerank_depth, bool):
+            raise TypeError(
+                f"rerank_depth must be a non-negative integer, got {type(rerank_depth).__name__!r}"
+            )
         if rerank_depth < 0:
             raise ValueError(
                 f"rerank_depth must be >= 0, got {rerank_depth!r}"

@@ -20,6 +20,19 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
     }
 }
 
+/// FIX-1 regression: `--features default-reranker` must compile. This test
+/// is always in scope (default build) and calls rerank_fused with depth>0,
+/// which exercises the feature-gated branch's signature even without the feature.
+/// The real RED gate is `cargo check -p fathomdb-engine --features default-reranker`
+/// exiting non-zero before the borrow-fix; after the fix it must exit 0.
+#[test]
+fn rerank_fused_depth_gt0_soft_fallbacks_in_default_build() {
+    let hits = vec![hit(1, "a", 0.05), hit(2, "b", 0.04)];
+    let out = rerank_fused("query", hits.clone(), 5);
+    // In the default build, depth>0 but model absent → soft-fallback (identity).
+    assert_eq!(out, hits, "depth>0 without model must soft-fallback to identity");
+}
+
 /// Soft-fallback: `rerank_depth=0` must return hits in exactly the same order
 /// with the same scores — byte-identical to the pre-Slice-10 identity stub.
 #[test]

@@ -360,17 +360,28 @@ export class Engine {
       if (filter.kind !== undefined) validateFfiString(filter.kind);
       if (filter.status !== undefined) validateFfiString(filter.status);
     }
-    // 0.8.1 R1: rerankDepth validation (must be a non-negative integer).
+    // 0.8.1 R1: rerankDepth validation (must be a non-negative integer <= u32::MAX).
+    // FIX-5: changed TypeError → RangeError for non-integer (consistency with
+    //   validateLimit and graph depth checks).
+    // FIX-5: added u32::MAX upper-bound guard (napi_get_value_uint32 wraps mod 2^32).
+    // FIX-7: removed `?? undefined` no-op (rerankDepth is already `number | undefined`).
     if (rerankDepth !== undefined) {
       if (!Number.isInteger(rerankDepth)) {
-        throw new TypeError(`rerankDepth must be an integer, got ${typeof rerankDepth}`);
+        throw new RangeError(
+          `rerankDepth must be an integer, got ${typeof rerankDepth}`,
+        );
       }
       if (rerankDepth < 0) {
         throw new RangeError(`rerankDepth must be >= 0, got ${rerankDepth}`);
       }
+      if (rerankDepth > 0xFFFFFFFF) {
+        throw new RangeError(
+          `rerankDepth must be <= 4294967295 (u32 max), got ${rerankDepth}`,
+        );
+      }
     }
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth ?? undefined),
+      this.#native.search(query, filter, rerankDepth),
     );
     const branch = r.softFallback?.branch;
     return {
