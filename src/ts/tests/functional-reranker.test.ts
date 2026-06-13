@@ -7,9 +7,10 @@
 // 1. engine.search(q, undefined, 0) returns the same body order as
 //    engine.search(q) (no-rerank default).
 // 2. Negative rerankDepth raises RangeError.
-// 3. Non-integer rerankDepth raises TypeError.
+// 3. Non-integer rerankDepth raises RangeError (FIX-5: was TypeError).
 // 4. The soft-fallback contract: rerankDepth=0 is byte-identical to
 //    the pre-Slice-10 fused order.
+// 5. rerankDepth > u32::MAX raises RangeError (FIX-5: u32 overflow guard).
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -113,13 +114,15 @@ test("reranker: negative rerankDepth raises RangeError", async () => {
   }
 });
 
-test("reranker: non-integer rerankDepth raises TypeError", async () => {
+test("reranker: non-integer rerankDepth raises RangeError (not TypeError)", async () => {
+  // FIX-5: changed from TypeError to RangeError for consistency with validateLimit
+  // and graph depth checks in the rest of the codebase.
   const engine = await openEngineWithDocs();
   try {
     await assert.rejects(
       () => engine.search("cross encoder", undefined, 1.5 as unknown as number),
       (err: unknown) => {
-        assert.ok(err instanceof TypeError, `expected TypeError, got ${err}`);
+        assert.ok(err instanceof RangeError, `expected RangeError, got ${err}`);
         return true;
       },
     );
@@ -161,6 +164,25 @@ test("reranker: positive rerankDepth returns results (soft-fallback in default b
     // returns the identity order (model absent → soft-fallback).
     const result = await engine.search("cross encoder reranker", undefined, 200);
     assert.ok(result.results.length >= 0, "must not error; may be empty if no hits");
+  } finally {
+    await engine.close();
+  }
+});
+
+// --- FIX-5 RED tests: u32 overflow guard + consistent RangeError ---
+
+test("reranker: huge rerankDepth raises RangeError (u32 overflow guard)", async () => {
+  // FIX-5: rerankDepth > 0xFFFFFFFF (u32::MAX) must raise RangeError.
+  // Without the guard, 2**32 + 5 silently wraps mod 2^32 to 5 at the NAPI layer.
+  const engine = await openEngineWithDocs();
+  try {
+    await assert.rejects(
+      () => engine.search("cross encoder", undefined, 2**32 + 5),
+      (err: unknown) => {
+        assert.ok(err instanceof RangeError, `expected RangeError, got ${err}`);
+        return true;
+      },
+    );
   } finally {
     await engine.close();
   }

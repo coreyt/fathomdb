@@ -94,3 +94,20 @@ def test_rerank_depth_positive_returns_results(engine_with_docs):
     # returns the identity order (model absent → soft-fallback).
     result = eng.search("cross encoder reranker", rerank_depth=200)
     assert len(result.results) >= 0  # must not error; may be empty if no hits
+
+
+# --- FIX-3 RED tests (X1 parity with TS) ---
+
+def test_float_rerank_depth_raises_type_error(engine_with_docs):
+    """Non-integer rerank_depth must raise TypeError (X1 parity with TS)."""
+    eng = engine_with_docs
+    with pytest.raises(TypeError, match="non-negative integer"):
+        eng.search("cross encoder", rerank_depth=2.5)
+
+
+def test_bool_rerank_depth_raises_type_error(engine_with_docs):
+    """bool rerank_depth must raise TypeError — bool is a subclass of int in Python
+    but semantically wrong; TS rejects it; Python must too for X1 parity."""
+    eng = engine_with_docs
+    with pytest.raises(TypeError, match="non-negative integer"):
+        eng.search("cross encoder", rerank_depth=True)
