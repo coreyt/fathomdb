@@ -892,21 +892,21 @@ fn read_collection_impl(
 // Path validation happens in Rust (InvalidFilterError on non-allowlisted path).
 
 fn py_predicate_to_rust(pred: &Bound<'_, PyAny>) -> PyResult<RustPredicate> {
-    let type_str: String = pred.get_item("type")?.extract()?;
-    let path: String = pred.get_item("path")?.extract()?;
+    let type_item = pred.get_item("type")?;
+    let type_str = extract_validated_str(&type_item)?;
+    let path_item = pred.get_item("path")?;
+    let path = extract_validated_str(&path_item)?;
     let value_obj = pred.get_item("value")?;
 
-    // Extract the value — try str first, then int, then bool.
+    // Extract the value — try bool first (Python bool is a subclass of int, so
+    // bool must be checked before int to avoid misclassifying True/False).
+    // String values are validated through extract_validated_str for FFI safety.
     let scalar: RustScalarValue = if let Ok(b) = value_obj.extract::<bool>() {
         RustScalarValue::Bool(b)
     } else if let Ok(i) = value_obj.extract::<i64>() {
         RustScalarValue::Integer(i)
-    } else if let Ok(s) = value_obj.extract::<String>() {
-        RustScalarValue::Text(s)
     } else {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "predicate value must be str, int, or bool",
-        ));
+        RustScalarValue::Text(extract_validated_str(&value_obj)?)
     };
 
     match type_str.as_str() {
