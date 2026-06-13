@@ -114,6 +114,7 @@ function toNativePredicate(pred: Predicate): NativePredicateInput {
     }
     native.valueInt = pred.value;
   } else {
+    validateFfiString(pred.value);
     native.valueStr = pred.value;
   }
   return native;

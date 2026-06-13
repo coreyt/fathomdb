@@ -1154,6 +1154,17 @@ fn search_expand(
     status: Option<&str>,
 ) -> PyResult<PySearchExpandResult> {
     let query = extract_validated_str(query)?;
+    // Validate optional filter strings before constructing SearchFilter — same
+    // guard as Engine.search uses via extract_opt_validated_str.
+    if let Some(s) = source_type {
+        validate_ffi_string_py(s)?;
+    }
+    if let Some(s) = kind {
+        validate_ffi_string_py(s)?;
+    }
+    if let Some(s) = status {
+        validate_ffi_string_py(s)?;
+    }
     let filter =
         if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
             Some(RustSearchFilter {

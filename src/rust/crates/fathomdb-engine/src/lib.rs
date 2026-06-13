@@ -1156,19 +1156,37 @@ impl Predicate {
         // The path is already validated against the allowlist at construction.
         // We use the allowlist entry (the stored path) directly as a SQL literal.
         // The VALUE is always a bound `?` parameter (injection-safe).
+        //
+        // Boolean values require an extra json_type guard: json_extract returns
+        // integer 1/0 for BOTH json `true`/`false` and json `1`/`0`, so without
+        // the guard a bool predicate would incorrectly match numeric fields.
         let path = self.path();
         match self {
-            Self::JsonPathEq { .. } => {
-                format!("json_extract(body, '{path}') = ?{param_idx}")
+            Self::JsonPathEq { value, .. } => {
+                if matches!(value, ScalarValue::Bool(_)) {
+                    format!(
+                        "json_extract(body, '{path}') = ?{param_idx} \
+                         AND json_type(body, '{path}') IN ('true', 'false')"
+                    )
+                } else {
+                    format!("json_extract(body, '{path}') = ?{param_idx}")
+                }
             }
-            Self::JsonPathCompare { op, .. } => {
+            Self::JsonPathCompare { op, value, .. } => {
                 let op_str = match op {
                     ComparisonOp::Gt => ">",
                     ComparisonOp::Gte => ">=",
                     ComparisonOp::Lt => "<",
                     ComparisonOp::Lte => "<=",
                 };
-                format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
+                if matches!(value, ScalarValue::Bool(_)) {
+                    format!(
+                        "json_extract(body, '{path}') {op_str} ?{param_idx} \
+                         AND json_type(body, '{path}') IN ('true', 'false')"
+                    )
+                } else {
+                    format!("json_extract(body, '{path}') {op_str} ?{param_idx}")
+                }
             }
         }
     }
