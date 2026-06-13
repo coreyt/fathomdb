@@ -41,8 +41,10 @@ use fathomdb_engine::{
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
+    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -80,6 +82,8 @@ create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
 create_exception!(_fathomdb, ExtractorError, EngineError);
 // G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 create_exception!(_fathomdb, InvalidFilterError, EngineError);
+// Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
+create_exception!(_fathomdb, InvalidArgumentError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -175,6 +179,7 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         RustEngineError::InvalidFilter { reason } => {
             InvalidFilterError::new_err(format!("invalid filter: {reason}"))
         }
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
     }
 }
 
@@ -1048,6 +1053,122 @@ fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     Ok(PreparedWrite::AdminSchema { name, kind, schema_json, retention_json })
 }
 
+// ===== Slice 20 (G5/G6) — graph_neighbors + search_expand ============
+
+/// Slice 20 — one expanded node entry in [`PySearchExpandResult`].
+#[pyclass(name = "ExpandedNode")]
+#[derive(Clone)]
+struct PyExpandedNode {
+    #[pyo3(get)]
+    node: PyNodeRecord,
+    #[pyo3(get)]
+    hop_count: u32,
+}
+
+/// Slice 20 (G6) — result of `search_expand`. `search_hits` carries the
+/// original RRF-scored hits; `expanded` is the list of nodes reachable by
+/// graph traversal that are NOT in `search_hits`. `all_logical_ids` is the
+/// deduplicated union.
+#[pyclass(name = "SearchExpandResult")]
+#[derive(Clone)]
+struct PySearchExpandResult {
+    #[pyo3(get)]
+    search_hits: Vec<PySearchHit>,
+    #[pyo3(get)]
+    expanded: Vec<PyExpandedNode>,
+    #[pyo3(get)]
+    all_logical_ids: Vec<String>,
+}
+
+impl PySearchExpandResult {
+    fn from_rust(r: RustSearchExpandResult) -> Self {
+        Self {
+            search_hits: r.search_hits.iter().map(PySearchHit::from_rust).collect(),
+            expanded: r
+                .expanded
+                .into_iter()
+                .map(|(node, hop_count)| PyExpandedNode {
+                    node: PyNodeRecord::from_rust(&node),
+                    hop_count,
+                })
+                .collect(),
+            all_logical_ids: r.all_logical_ids,
+        }
+    }
+}
+
+/// Parse a direction string ("outgoing" | "incoming" | "both") into the engine
+/// enum. Returns `WriteValidationError` for unrecognized values.
+fn parse_direction(s: &str) -> PyResult<RustTraversalDirection> {
+    match s {
+        "outgoing" => Ok(RustTraversalDirection::Outgoing),
+        "incoming" => Ok(RustTraversalDirection::Incoming),
+        "both" => Ok(RustTraversalDirection::Both),
+        other => Err(WriteValidationError::new_err(format!(
+            "direction must be 'outgoing', 'incoming', or 'both'; got '{other}'"
+        ))),
+    }
+}
+
+/// Slice 20 (G5) — bounded BFS from `logical_id` over `canonical_edges`.
+///
+/// `depth` must be 1..=3; raises `InvalidArgumentError` for depth > 3.
+/// `direction` accepts `"outgoing"`, `"incoming"`, or `"both"`.
+/// Returns the set of reachable nodes (excluding the root) within `depth` hops,
+/// hard-capped at 50.
+#[pyfunction]
+#[pyo3(signature = (engine, logical_id, depth, direction))]
+fn graph_neighbors(
+    py: Python<'_>,
+    engine: &PyEngine,
+    logical_id: &Bound<'_, PyAny>,
+    depth: u32,
+    direction: &str,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let logical_id = extract_validated_str(logical_id)?;
+    let dir = parse_direction(direction)?;
+    let inner = Arc::clone(&engine.inner);
+    let nodes = call_engine(py, move || inner.graph_neighbors(&logical_id, depth, dir))?;
+    Ok(nodes.iter().map(PyNodeRecord::from_rust).collect())
+}
+
+/// Slice 20 (G6) — hybrid search followed by bounded BFS expansion.
+///
+/// `depth` must be 0..=3; raises `InvalidArgumentError` for depth > 3.
+/// Returns a `SearchExpandResult` with the original search hits (RRF-scored)
+/// plus expanded nodes reachable by traversal that are not already in the hit set.
+#[pyfunction]
+#[pyo3(
+    signature = (engine, query, depth, source_type=None, kind=None, created_after=None, status=None)
+)]
+#[allow(clippy::too_many_arguments)]
+fn search_expand(
+    py: Python<'_>,
+    engine: &PyEngine,
+    query: &Bound<'_, PyAny>,
+    depth: u32,
+    source_type: Option<&str>,
+    kind: Option<&str>,
+    created_after: Option<i64>,
+    status: Option<&str>,
+) -> PyResult<PySearchExpandResult> {
+    let query = extract_validated_str(query)?;
+    let filter =
+        if source_type.is_some() || kind.is_some() || created_after.is_some() || status.is_some() {
+            Some(RustSearchFilter {
+                source_type: source_type.map(str::to_string),
+                kind: kind.map(str::to_string),
+                created_after,
+                status: status.map(str::to_string),
+            })
+        } else {
+            None
+        };
+    let inner = Arc::clone(&engine.inner);
+    let result = call_engine(py, move || inner.search_expand(&query, filter, depth))?;
+    Ok(PySearchExpandResult::from_rust(result))
+}
+
 // ===== Test hooks =====================================================
 
 /// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
@@ -1075,6 +1196,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOpenReport>()?;
     m.add_class::<PyNodeRecord>()?;
     m.add_class::<PyOpStoreRow>()?;
+    // Slice 20 — graph traversal result types.
+    m.add_class::<PyExpandedNode>()?;
+    m.add_class::<PySearchExpandResult>()?;
     m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
@@ -1083,6 +1207,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
     // Slice 35 — G4 read.list with Predicate filter.
     m.add_function(wrap_pyfunction!(read_list, &m)?)?;
+    // Slice 20 — G5/G6 graph traversal fns.
+    m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
+    m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
@@ -1108,6 +1235,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
     m.add("ExtractorError", py.get_type::<ExtractorError>())?;
     m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
+    m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
     Ok(())
 }
 

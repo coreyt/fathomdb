@@ -331,9 +331,66 @@ interface CounterSnapshot {
 }
 ```
 
+## `graph.*` — graph traversal (Slice 20 / G5 + G6)
+
+```ts
+import { graph } from "fathomdb";
+```
+
+The `graph.*` namespace exposes bounded BFS traversal and hybrid
+search-plus-expansion. All reads ride the same **ReaderWorkerPool
+DEFERRED-tx snapshot path** as `read.*`.
+
+### `graph.neighbors(engine, logicalId, depth, direction?): Promise<NodeRecord[]>`
+
+G5 — bounded BFS from `logicalId` over `canonical_edges`.
+
+- `logicalId` (`string`) — the root node's stable identity.
+- `depth` (`number`) — hop limit; **must be 1, 2, or 3**.
+  Depth > 3 raises `InvalidArgumentError`.
+- `direction` (`"outgoing" | "incoming" | "both"`, default `"both"`) — edge
+  direction to follow.
+
+Returns up to **50** `NodeRecord`s reachable within `depth` hops
+(root excluded). Edges with `t_invalid` in the past are silently skipped
+(valid-time filter). Returns `[]` when the root has no reachable neighbors.
+
+### `graph.searchExpand(engine, query, depth, filter?): Promise<SearchExpandResult>`
+
+G6 — FTS/vector search (G1) followed by bounded BFS expansion.
+
+- `query` (`string`) — free-text or embedding query.
+- `depth` (`number`) — BFS hop limit; 0 skips expansion. Depth > 3 raises
+  `InvalidArgumentError`.
+- `filter` (`SearchFilter | undefined`) — optional metadata filter (same as
+  `engine.search`).
+
+Returns a `SearchExpandResult`. Nodes appearing in both the search hit set and
+the traversal reach appear **only** in `searchHits` (deduplication: search score
+takes priority).
+
+### `ExpandedNode`
+
+```ts
+interface ExpandedNode {
+  node: NodeRecord; // the reachable node
+  hopCount: number; // BFS distance from the nearest search-hit root
+}
+```
+
+### `SearchExpandResult`
+
+```ts
+interface SearchExpandResult {
+  searchHits: SearchHit[];     // original RRF-scored search results
+  expanded: ExpandedNode[];    // nodes reachable by traversal, not in searchHits
+  allLogicalIds: string[];     // deduplicated union of both sets
+}
+```
+
 ## Errors
 
-`fathomdb` exports `FathomDbError` (the catch-all base) plus 18
+`fathomdb` exports `FathomDbError` (the catch-all base) plus 20
 concrete leaf classes. See [errors reference](errors.md).
 
 Panics in the Rust runtime surface as `FathomDbPanicError` (not a

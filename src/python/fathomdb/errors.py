@@ -80,6 +80,9 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     InvalidFilterError as _InvalidFilterError,
 )
+from fathomdb._fathomdb import (
+    InvalidArgumentError as _InvalidArgumentError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -104,6 +107,7 @@ EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
 ExtractorError = _ExtractorError
 # G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 InvalidFilterError = _InvalidFilterError
+InvalidArgumentError = _InvalidArgumentError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -142,6 +146,7 @@ __all__ = [
     "EngineError",
     "ExtractorError",
     "IncompatibleSchemaVersionError",
+    "InvalidArgumentError",
     "InvalidFilterError",
     "KindNotVectorIndexedError",
     "MigrationError",

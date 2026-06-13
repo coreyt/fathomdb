@@ -10,6 +10,7 @@
 
 import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
 import { rethrowTyped } from "./errors.js";
+import type { NodeRecord } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
@@ -452,5 +453,104 @@ export const admin = {
     validateFfiString(options.name);
     validateFfiString(options.body);
     return intercept(() => native.adminConfigure(engine._native, options));
+  },
+};
+
+// ===== Slice 20 (G5/G6) — graph traversal ================================
+
+/**
+ * Slice 20 (G6) — one node reached by BFS traversal in `graph.searchExpand`.
+ *
+ * `hopCount` is the BFS distance from the nearest search-hit root. Only nodes
+ * NOT already in the search-hit set appear in `SearchExpandResult.expanded`
+ * (deduplication: search score takes priority).
+ */
+export interface ExpandedNode {
+  node: NodeRecord;
+  hopCount: number;
+}
+
+/**
+ * Slice 20 (G6) — result of `graph.searchExpand`.
+ *
+ * `searchHits` — original RRF-scored results from the search step.
+ * `expanded`   — nodes reachable from any search hit within `depth` hops
+ *                that are NOT in `searchHits`.
+ * `allLogicalIds` — deduplicated union of both sets.
+ */
+export interface SearchExpandResult {
+  searchHits: SearchHit[];
+  expanded: ExpandedNode[];
+  allLogicalIds: string[];
+}
+
+/** Direction to follow when traversing `canonical_edges`. */
+export type TraversalDirection = "outgoing" | "incoming" | "both";
+
+export const graph = {
+  /**
+   * G5 — bounded BFS from `logicalId` over `canonical_edges`.
+   *
+   * `depth` must be 1–3; rejects depth > 3 with `InvalidArgumentError`.
+   * `direction` is `"outgoing"`, `"incoming"`, or `"both"`.
+   * Returns up to 50 `NodeRecord`s reachable within `depth` hops (root excluded).
+   * Edges with `t_invalid` in the past are not traversed (valid-time filter).
+   */
+  async neighbors(
+    engine: Engine,
+    logicalId: string,
+    depth: number,
+    direction: TraversalDirection = "both",
+  ): Promise<NodeRecord[]> {
+    validateFfiString(logicalId);
+    return intercept(() => native.graphNeighbors(engine._native, logicalId, depth, direction));
+  },
+
+  /**
+   * G6 — FTS/vector search followed by bounded BFS expansion.
+   *
+   * Runs `engine.search(query, filter)` (G1), then expands each hit via
+   * `graph.neighbors(depth, "both")`. Nodes appearing in both the search hit
+   * set and the traversal reach appear only in `searchHits` (deduplication).
+   *
+   * `depth` must be 0–3; 0 skips expansion. Raises `InvalidArgumentError` for depth > 3.
+   */
+  async searchExpand(
+    engine: Engine,
+    query: string,
+    depth: number,
+    filter?: SearchFilter,
+  ): Promise<SearchExpandResult> {
+    validateFfiString(query);
+    if (filter?.sourceType !== undefined) validateFfiString(filter.sourceType);
+    if (filter?.kind !== undefined) validateFfiString(filter.kind);
+    if (filter?.status !== undefined) validateFfiString(filter.status);
+    const r = await intercept(() =>
+      native.searchExpand(
+        engine._native,
+        query,
+        depth,
+        filter?.sourceType,
+        filter?.kind,
+        filter?.createdAfter,
+        filter?.status,
+      ),
+    );
+    return {
+      searchHits: r.searchHits.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: (h.branch === "vector" || h.branch === "text_edge")
+          ? (h.branch as SoftFallbackBranch)
+          : "text",
+      })),
+      expanded: r.expanded.map((e) => ({
+        node: e.node,
+        hopCount: e.hopCount,
+      })),
+      allLogicalIds: r.allLogicalIds,
+    };
   },
 };

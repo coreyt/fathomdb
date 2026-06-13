@@ -200,6 +200,45 @@ open_high = read.list(engine, "task", predicates=[
 ])
 ```
 
+## `graph.*` — graph traversal (Slice 20 / G5 + G6)
+
+```python
+from fathomdb import graph
+```
+
+The `graph.*` namespace exposes bounded BFS traversal and hybrid
+search-plus-expansion. All reads ride the same **ReaderWorkerPool
+DEFERRED-tx snapshot path** as `read.*`.
+
+### `graph.neighbors(engine, logical_id, depth, direction="both") -> list[NodeRecord]`
+
+G5 — bounded BFS from `logical_id` over `canonical_edges`.
+
+- `logical_id` (`str`) — the root node's stable identity.
+- `depth` (`int`) — hop limit; **must be 1, 2, or 3**.
+  Depth > 3 raises `InvalidArgumentError`.
+- `direction` (`str`) — edge direction to follow: `"outgoing"` (from→to),
+  `"incoming"` (to→from), or `"both"`.
+
+Returns up to **50** `NodeRecord`s reachable within `depth` hops
+(root excluded). Edges with `t_invalid` in the past are silently skipped
+(valid-time filter). Returns `[]` when the root has no reachable neighbors.
+
+Raises `InvalidArgumentError` for depth > 3 or an unrecognised direction.
+
+### `graph.search_expand(engine, query, depth, *, source_type=None, kind=None, created_after=None, status=None) -> SearchExpandResult`
+
+G6 — FTS/vector search (G1) followed by bounded BFS expansion.
+
+- `query` (`str`) — free-text or embedding query (same as `engine.search`).
+- `depth` (`int`) — BFS hop limit for expansion; 0 skips expansion.
+  Depth > 3 raises `InvalidArgumentError`.
+- Optional filter kwargs match `engine.search` semantics.
+
+Returns a `SearchExpandResult`. Nodes that appear in both the search hit set
+and the traversal reach appear **only** in `search_hits` (deduplication:
+search score takes priority).
+
 ## Data shapes
 
 ### `WriteReceipt`
@@ -327,9 +366,34 @@ class CounterSnapshot:
     cache_miss: int = 0
 ```
 
+### `ExpandedNode`
+
+```python
+@dataclass(frozen=True)
+class ExpandedNode:
+    node: NodeRecord      # the reachable node
+    hop_count: int        # BFS distance from the nearest search-hit root
+```
+
+Returned in `SearchExpandResult.expanded`. Only nodes NOT already in
+`search_hits` appear here.
+
+### `SearchExpandResult`
+
+```python
+@dataclass(frozen=True)
+class SearchExpandResult:
+    search_hits: list[SearchHit]     # original RRF-scored search results
+    expanded: list[ExpandedNode]     # nodes reachable by traversal, not in search_hits
+    all_logical_ids: list[str]       # deduplicated union of both sets
+```
+
+Returned by `graph.search_expand`. `all_logical_ids` contains the
+`logical_id` strings for every node in both `search_hits` and `expanded`.
+
 ## Errors
 
-`fathomdb.errors` exports `EngineError` (the catch-all base) plus 18
+`fathomdb.errors` exports `EngineError` (the catch-all base) plus 20
 concrete leaf classes. See [errors reference](errors.md) for the full
 matrix and recovery-hint codes.
 
