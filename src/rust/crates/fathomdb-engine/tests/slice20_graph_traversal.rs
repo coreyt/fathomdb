@@ -587,7 +587,7 @@ fn search_expand_anon_node_hit_does_not_crash() {
     // At minimum NAMED appears somewhere (in hits or expanded).
     let all_ids = &result.all_logical_ids;
     assert!(
-        all_ids.contains(&"NAMED".to_string()) || result.search_hits.len() >= 1,
+        all_ids.contains(&"NAMED".to_string()) || !result.search_hits.is_empty(),
         "expected at least one result; got hits={}, expanded={}",
         result.search_hits.len(),
         result.expanded.len()
