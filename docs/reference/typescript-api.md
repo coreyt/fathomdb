@@ -78,10 +78,10 @@ Enqueue a batch of canonical rows.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter?, rerankDepth?) -> Promise<SearchResult>`
+### `engine.search(query, filter?, rerankDepth?, useGraphArm?) -> Promise<SearchResult>`
 
 Run hybrid retrieval, ranked by **G9 RRF fusion**, with optional CPU
-cross-encoder reranking (0.8.1 R1).
+cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
 
 - `query` (`string`).
 - `filter` ([`SearchFilter`](#searchfilter), optional) — closed metadata filter;
@@ -94,9 +94,16 @@ cross-encoder reranking (0.8.1 R1).
   values throw `RangeError`, non-integer values throw `TypeError`. In the
   default build (no `default-reranker` feature), depth > 0 returns the identity
   order (model absent → soft-fallback).
+- `useGraphArm` (`boolean`, optional, default `undefined`/`false`) — 0.8.1 R3
+  opt-in. When `true`, seeds a BFS over temporal fact-edges from the top-10 fused
+  hits (depth ≤ 3, cap 50). Edges with `tInvalid` in the past are excluded.
+  Newly-reachable nodes are fused as a third RRF arm (`RRF_WEIGHT_GRAPH = 1.0`).
+  Omitted or `false` produces byte-identical results to the pre-R3 two-arm
+  pipeline. Non-boolean values throw `TypeError`.
 - Resolves to a `SearchResult` whose `results` is a `SearchHit[]`; each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`, `body`,
-  the **RRF-fused** `score`, and the `branch` that produced it.
+  the **RRF-fused** `score`, and the `branch` that produced it (`"graph_arm"`
+  for nodes surfaced only via graph traversal).
 
 > **Ranking is RRF (behavior-compat event).** Results are ordered by Reciprocal
 > Rank Fusion (`Σ 1/(60 + rank)`) of the vector and text branches — the
@@ -291,7 +298,7 @@ interface SearchHit {
   kind: string;
   body: string;
   score: number; // G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
-  branch: SoftFallbackBranch; // "vector" | "text"
+  branch: SoftFallbackBranch; // "vector" | "text" | "text_edge" | "graph_arm"
 }
 ```
 
@@ -323,7 +330,7 @@ population source yet — vec0 TEXT metadata is not NULL-able), so a
 
 ```ts
 interface SoftFallback {
-  branch: SoftFallbackBranch; // "vector" | "text"
+  branch: SoftFallbackBranch; // "vector" | "text" | "text_edge" | "graph_arm"
 }
 ```
 
