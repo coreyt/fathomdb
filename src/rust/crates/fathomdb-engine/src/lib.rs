@@ -5184,29 +5184,36 @@ fn search_expand_in_tx(
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
 
     // Step 1: resolve write_cursor → logical_id for each search hit.
-    // - Node hits (Vector/Text branch): look up canonical_nodes by write_cursor.
-    //   A write_cursor that no longer has an active canonical_nodes row is treated
-    //   as superseded (None) and dropped from resolved_hits.
-    // - Edge hits (TextEdge branch): the write_cursor points to canonical_edges,
-    //   NOT canonical_nodes. These hits have no graph-traversal root but MUST
-    //   pass through to search_hits unchanged (they are valid search results).
+    // Possible outcomes per hit:
+    //   - None: no matching write_cursor in canonical_nodes (superseded) → drop.
+    //   - Some(""):  row exists but logical_id IS NULL (anonymous node) or TextEdge hit
+    //                → keep as valid search result, skip BFS expansion (empty sentinel).
+    //   - Some(lid): active named node → keep; use as BFS root.
     let mut hit_logical_ids: Vec<Option<String>> = Vec::with_capacity(search_hits.len());
     {
         let mut stmt = tx.prepare(
             "SELECT logical_id FROM canonical_nodes
-             WHERE write_cursor = ?1 AND superseded_at IS NULL AND logical_id IS NOT NULL
+             WHERE write_cursor = ?1 AND superseded_at IS NULL
              LIMIT 1",
         )?;
         for hit in search_hits {
             if hit.branch == SoftFallbackBranch::TextEdge {
                 // Edge-body hit: no canonical_nodes row; use a sentinel to pass through.
-                // The BFS loop skips None roots, so edge hits contribute no traversal roots.
-                hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS root
+                hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS
             } else {
                 let cursor_i64 = hit.id as i64;
-                let lid: Option<String> =
-                    stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
-                hit_logical_ids.push(lid);
+                // Returns Option<Option<String>>:
+                //   None         → no row → superseded
+                //   Some(None)   → row with NULL logical_id → anonymous node
+                //   Some(Some(s)) → active named node
+                let resolved = stmt
+                    .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
+                    .optional()?;
+                match resolved {
+                    None => hit_logical_ids.push(None), // superseded: drop
+                    Some(None) => hit_logical_ids.push(Some(String::new())), // anon: keep, skip BFS
+                    Some(Some(lid)) => hit_logical_ids.push(Some(lid)), // named: keep + BFS root
+                }
             }
         }
     }
@@ -7213,10 +7220,11 @@ fn validate_write(
                     return Err(EngineError::WriteValidation);
                 }
             }
-            // G0 — an explicit logical_id must be non-empty (NULL/None is the
-            // legacy default; an empty string is never a valid identity).
+            // G0 — an explicit logical_id must be non-empty and must not contain
+            // commas (the BFS cycle guard uses comma as a delimiter; a comma in an
+            // id would falsely mark unvisited nodes as already seen).
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains(',') {
                     return Err(EngineError::WriteValidation);
                 }
             }
@@ -7226,13 +7234,16 @@ fn validate_write(
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
+            if from.contains(',') || to.contains(',') {
+                return Err(EngineError::WriteValidation);
+            }
             if let Some(source_id) = source_id {
                 if source_id.is_empty() {
                     return Err(EngineError::WriteValidation);
                 }
             }
             if let Some(logical_id) = logical_id {
-                if logical_id.is_empty() {
+                if logical_id.is_empty() || logical_id.contains(',') {
                     return Err(EngineError::WriteValidation);
                 }
             }
