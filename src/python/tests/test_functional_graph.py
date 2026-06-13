@@ -10,6 +10,8 @@ All test databases are isolated per-test via the ``db_path`` fixture.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 import fathomdb
@@ -132,7 +134,9 @@ def test_graph_neighbors_unknown_direction_raises(db_path: str) -> None:
     from fathomdb.errors import WriteValidationError
 
     with pytest.raises(WriteValidationError):
-        fathomdb.graph.neighbors(engine, "ROOT", depth=1, direction="sideways")
+        # cast to Any to suppress pyright's Literal type check on an intentionally
+        # invalid direction string (we're testing the runtime validation path).
+        fathomdb.graph.neighbors(engine, "ROOT", depth=1, direction=cast(Any, "sideways"))
 
     engine.close()
 
