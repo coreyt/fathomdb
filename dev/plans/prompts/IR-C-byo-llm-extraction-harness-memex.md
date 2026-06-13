@@ -11,6 +11,16 @@
 > `schema_version` bump): `options.instructions` (Q1) · `source_span` = UTF-8 byte half-open
 > `[start,end)` (Q4) · **replay-determinism** (Q3) · `warnings.kind` enum (D5) · per-document
 > timeout (Q7). Memex's ELPS implements this; the golden fixture freezes against these pins.
+>
+> **◆ Round 2 ratified 2026-06-13** (decision record: `~/projects/memex/dev/elps/FATHOMDB-CONSULT-2.md`).
+> Three more additive fields (still no `schema_version` bump): `entities[].synthesized` (QA — boolean,
+> marks an endpoint FathomDB-synthesized because the model under-listed it; resolve as low-confidence
+> identity) · `warnings.kind:"temporal_fallback"` (QB — `t_valid` defaulted to `created_at`; carries
+> `substituted_t_valid` + `raw_t_valid`) · `warnings.kind:"capped"` (DI-3 — `max_facts_per_doc`
+> truncation; carries `kept`+`dropped`). Post-round-2 `warnings.kind` enum = {`supersedes`,
+> `doc_dropped`, `no_facts`, `validation_failed`, `temporal_fallback`, `capped`}. DI-1/DI-2/DI-4 +
+> QA(A)/QC accepted; QD sample requested. These fold into the **Slice-0 BYO-LLM ADR** (HITL signs;
+> shapes won't reopen).
 
 ## Background (why this exists)
 
@@ -96,7 +106,11 @@ owns the output schema + semantics + this optional steer.
  "warnings":[]}
 ```
 - **`entities`** → FathomDB nodes, deduped to a stable `logical_id` (you provide `name`+`type`+`aliases`;
-  FathomDB owns the id assignment). `from_entity`/`to_entity` reference entities by `name`.
+  FathomDB owns the id assignment). `from_entity`/`to_entity` reference entities by `name`. **Dangling
+  endpoints (ratified 2026-06-13 / QA):** if an edge references a `name` the model didn't list, the
+  provider **synthesizes** a minimal entity `{"name":..,"type":"unknown","aliases":[],"synthesized":true}`
+  rather than dropping the edge (preserve the fact). `synthesized:true` (additive; absent/false ⇒
+  model-listed) lets FathomDB treat it as a low-confidence identity. Do **not** overload `type` for this.
 - **`edges`** → rows in `canonical_edges` with the enrichment columns `body`, `t_valid`, `t_invalid`,
   `confidence` (the G11 additive set). `relation` is your short label (becomes the edge `kind`/relation).
 - **Temporal semantics (load-bearing):** `t_valid` = when the fact *became true* (event time, not
@@ -104,12 +118,15 @@ owns the output schema + semantics + this optional steer.
   contradicts/supersedes an older one, **emit the new fact with its `t_valid`** and, when you can
   identify the prior fact, surface it in `warnings` — FathomDB does the invalidate-not-accumulate
   bookkeeping; you only need to date facts correctly.
-- **`warnings` (typed; `kind` enum ratified 2026-06-12 / D5).** Each warning is
-  `{"kind": "...", ...}`; v1 kinds: **`supersedes`** (carries `supersedes_hint` + `prior_body`),
+- **`warnings` (typed; `kind` enum ratified 2026-06-12 / D5, extended 2026-06-13).** Each warning is
+  `{"kind": "...", ...}`; kinds: **`supersedes`** (carries `supersedes_hint` + `prior_body`),
   **`doc_dropped`** (carries `source_doc_id` + `detail`), **`no_facts`** (carries `source_doc_id`),
-  **`validation_failed`** (carries `source_doc_id`). Any document dropped from a `result` (no facts,
-  or a per-doc validation failure while infra is healthy — D4) **MUST** emit a warning carrying its
-  `source_doc_id`. Extra fields are additive; FathomDB ignores unknown `kind`s and keeps the `result`.
+  **`validation_failed`** (carries `source_doc_id`), **`temporal_fallback`** (QB — `t_valid` defaulted
+  to `created_at`; carries `source_doc_id` + `substituted_t_valid` + `raw_t_valid` [null ⇒ omitted,
+  string ⇒ unparseable]), **`capped`** (DI-3 — `max_facts_per_doc` truncation; carries `source_doc_id`
+  + `kept` + `dropped`). Any document dropped from a `result` (no facts, or a per-doc validation
+  failure while infra is healthy — D4) **MUST** emit a warning carrying its `source_doc_id`. Extra
+  fields are additive; FathomDB ignores unknown `kind`s and keeps the `result`.
 - **`confidence`** ∈ [0,1]: your calibrated extraction confidence; FathomDB may threshold/weight on it.
 - **`source_doc_id`** required; **`source_span`** optional but preferred (citation-grade provenance).
   **Unit (ratified 2026-06-12 / Q4): UTF-8 byte offsets, half-open `[start_byte, end_byte)`**,
@@ -159,7 +176,10 @@ emit a `result` or `error` for every `request_id`.
 2. **A conformance test + golden fixture** — a small set of input documents and the expected
    `result` JSON (under `deterministic=true`), so FathomDB can pin the contract and catch drift.
    Cover: a simple fact, a temporal/superseding fact (emit `t_valid` + a `supersedes_hint` warning),
-   a multi-entity sentence, and a "no extractable facts" doc (empty `edges`, valid response).
+   a multi-entity sentence, and a "no extractable facts" doc (empty `edges`, valid response). **Also
+   cover the round-2 additions** (so FathomDB pins them): a synthesized dangling endpoint
+   (`synthesized:true`), a `temporal_fallback` warning, a `capped` warning, and a **multibyte body** to
+   pin the UTF-8 byte `source_span`.
 3. **Protocol doc** — `EXTRACTION_PROTOCOL.md` restating v1 (messages, fields, semantics, errors)
    so a non-Memex consumer can implement the same provider.
 4. **README** — how FathomDB launches it (the subprocess command + any env the harness needs for
