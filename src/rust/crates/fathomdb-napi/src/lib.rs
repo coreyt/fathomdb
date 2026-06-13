@@ -32,7 +32,8 @@ use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
+    EngineError as RustEngineError, EngineOpenError, ExtractDocument as RustExtractDocument,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
     SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
     SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
@@ -68,6 +69,8 @@ const CODE_CORRUPTION: &str = "FDB_CORRUPTION";
 const CODE_INCOMPATIBLE_SCHEMA_VERSION: &str = "FDB_INCOMPATIBLE_SCHEMA_VERSION";
 const CODE_MIGRATION: &str = "FDB_MIGRATION";
 const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -161,6 +164,9 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
             typed_error(CODE_OVERLOADED, "engine overloaded", JsonValue::Null)
         }
         RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+            typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
     }
 }
 
@@ -332,9 +338,27 @@ impl WriteReceipt {
     }
 }
 
+/// G11 (Slice 15) — BYO-LLM ingest receipt.
+#[napi(object)]
+pub struct IngestWithExtractorReceipt {
+    pub nodes_written: i64,
+    pub edges_written: i64,
+    pub docs_processed: i64,
+}
+
+impl IngestWithExtractorReceipt {
+    fn from_rust(r: RustIngestWithExtractorReceipt) -> Self {
+        Self {
+            nodes_written: r.nodes_written as i64,
+            edges_written: r.edges_written as i64,
+            docs_processed: r.docs_processed as i64,
+        }
+    }
+}
+
 #[napi(object)]
 pub struct SoftFallback {
-    /// "vector" | "text"
+    /// "vector" | "text" | "text_edge"
     pub branch: String,
 }
 
@@ -362,6 +386,7 @@ impl SearchHit {
             branch: match h.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -444,6 +469,7 @@ impl SearchResult {
                 branch: match s.branch {
                     SoftFallbackBranch::Vector => "vector".to_string(),
                     SoftFallbackBranch::Text => "text".to_string(),
+                    SoftFallbackBranch::TextEdge => "text_edge".to_string(),
                 },
             }),
             results: r.results.iter().map(SearchHit::from_rust).collect(),
@@ -777,6 +803,54 @@ impl Engine {
         call_engine(move || engine.drain(ms)).await
     }
 
+    /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn (first
+    /// element = program, rest = args). `documents` is an array of objects
+    /// with `sourceDocId` and `body` string properties.
+    #[napi]
+    pub async fn ingest_with_extractor(
+        &self,
+        cmd: Vec<String>,
+        documents: Vec<JsonValue>,
+    ) -> Result<IngestWithExtractorReceipt> {
+        let docs: Vec<RustExtractDocument> = documents
+            .iter()
+            .map(|item| {
+                let source_doc_id = item
+                    .get("sourceDocId")
+                    .or_else(|| item.get("source_doc_id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "document must have sourceDocId",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                let body = item
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "document must have body",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                Ok(RustExtractDocument { source_doc_id, body })
+            })
+            .collect::<Result<_>>()?;
+
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(move || {
+            let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+            engine.ingest_with_extractor(&cmd_refs, &docs)
+        })
+        .await?;
+        Ok(IngestWithExtractorReceipt::from_rust(receipt))
+    }
+
     #[napi]
     pub fn counters(&self) -> Result<CounterSnapshot> {
         let engine = Arc::clone(&self.inner);
@@ -1078,7 +1152,18 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let to = json_str_required(item, "to")?;
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
+    Ok(PreparedWrite::Edge {
+        kind,
+        from,
+        to,
+        source_id,
+        logical_id,
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    })
 }
 
 fn translate_op_store(item: &JsonValue) -> Result<PreparedWrite> {

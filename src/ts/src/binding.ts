@@ -167,6 +167,19 @@ interface NativeEngineConfig {
   slowThresholdMs?: number;
 }
 
+// G11 (Slice 15) — BYO-LLM ingest receipt.
+export interface NativeIngestWithExtractorReceipt {
+  nodesWritten: number;
+  edgesWritten: number;
+  docsProcessed: number;
+}
+
+// G11 (Slice 15) — a document sent to the BYO-LLM extraction harness.
+export interface NativeExtractDocument {
+  sourceDocId: string;
+  body: string;
+}
+
 interface NativeEngineOpenOptions {
   engineConfig?: NativeEngineConfig;
   useDefaultEmbedder?: boolean;
@@ -190,6 +203,11 @@ export interface NativeEngine {
   setProfiling(enabled: boolean): void;
   setSlowThresholdMs(value: number): void;
   attachSubscriber(callback: unknown, options?: NativeAttachSubscriberOptions): void;
+  // G11 (Slice 15) — BYO-LLM ingest.
+  ingestWithExtractor(
+    cmd: string[],
+    documents: NativeExtractDocument[],
+  ): Promise<NativeIngestWithExtractorReceipt>;
   // EU-6 test-hooks-gated seam. Present only when the napi binding is
   // built with `--features test-hooks`; the TS surface forwards calls
   // unconditionally and the runtime fails fast if absent.

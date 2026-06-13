@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Once;
@@ -30,9 +31,13 @@ use fathomdb_schema::CANONICAL_TABLES;
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-// `sha2::Digest` is used only by the operator-gated `safe_export`.
+// `sha2::Digest` + `sha2::Sha256` — used by `safe_export` (operator-gated)
+// and unconditionally by `ingest_with_extractor` (G11 logical_id derivation).
 #[cfg(feature = "operator")]
 use sha2::Digest;
+#[cfg(not(feature = "operator"))]
+use sha2::Digest as _;
+use sha2::Sha256;
 use sqlite_vec::sqlite3_vec_init;
 
 #[cfg(unix)]
@@ -911,15 +916,18 @@ pub struct SoftFallback {
     pub branch: SoftFallbackBranch,
 }
 
-/// Which retrieval branch could not contribute to a hybrid search.
+/// Which retrieval branch produced a hit (or could not contribute).
 ///
-/// `Vector` means the vector branch could not contribute; `Text` means the
-/// text branch could not contribute. Owned by `dev/design/retrieval.md`;
-/// the 0.6.0 enum is exactly these two members.
+/// `Vector` = ANN vector branch; `Text` = node-body FTS branch; `TextEdge` =
+/// edge-body FTS branch (G11, Slice 15). `Vector`/`Text` also used as
+/// soft-fallback signal when the respective branch is empty. Owned by
+/// `dev/design/retrieval.md`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SoftFallbackBranch {
     Vector,
     Text,
+    /// G11 (Slice 15) — edge-body full-text search branch (`search_index_edges`).
+    TextEdge,
 }
 
 /// A single structured search hit (G1 / AC-057a-clean).
@@ -1019,13 +1027,37 @@ impl SearchFilter {
     }
 }
 
+/// G11 (Slice 15) — a document sent to a BYO-LLM extraction harness via
+/// [`Engine::ingest_with_extractor`].
+#[derive(Clone, Debug)]
+pub struct ExtractDocument {
+    /// Stable opaque identifier for this document. Used as `source_id` on
+    /// ingested edges and for provenance tracking.
+    pub source_doc_id: String,
+    /// Full text body of the document to extract entities and relationships from.
+    pub body: String,
+}
+
+/// G11 (Slice 15) — receipt returned by [`Engine::ingest_with_extractor`].
+#[derive(Clone, Debug, Default)]
+pub struct IngestWithExtractorReceipt {
+    /// Number of `canonical_nodes` rows written (new entity insertions; skipped
+    /// for entities that already have a matching active logical_id).
+    pub nodes_written: u64,
+    /// Number of `canonical_edges` rows written (new fact-edge insertions;
+    /// superseded prior edges are ALSO counted as rows written).
+    pub edges_written: u64,
+    /// Number of documents processed (including no-facts documents).
+    pub docs_processed: u64,
+}
+
 /// Batch input shape for [`Engine::write`].
 ///
 /// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
 /// entity variants land in 0.6.x without a major bump. Adding fields to
 /// existing variants remains a binding-coordination change.
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PreparedWrite {
     Node {
         kind: String,
@@ -1051,6 +1083,21 @@ pub enum PreparedWrite {
         /// G0 (Slice 15) — see Node. Supersession semantics are identical on
         /// edges (keyed by `(logical_id, kind)`).
         logical_id: Option<String>,
+        /// G11 (Slice 15) — the fact/relationship text. When `Some`, triggers
+        /// FTS projection into `search_index_edges` and vector projection via
+        /// the projection scheduler (kind `"edge_fact"`). Also triggers
+        /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
+        body: Option<String>,
+        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
+        t_valid: Option<String>,
+        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
+        t_invalid: Option<String>,
+        /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
+        /// non-BYO-LLM-ingested edges.
+        confidence: Option<f64>,
+        /// G11 (Slice 15) — opaque model/provider id from the BYO-LLM harness
+        /// `ready.model` field. NULL for non-BYO-LLM edges.
+        extractor_model_id: Option<String>,
     },
     OpStore {
         collection: String,
@@ -1256,13 +1303,19 @@ pub enum EngineError {
     Embedder,
     EmbedderNotConfigured,
     KindNotVectorIndexed,
-    EmbedderDimensionMismatch { expected: u32, actual: u32 },
+    EmbedderDimensionMismatch {
+        expected: u32,
+        actual: u32,
+    },
     Scheduler,
     OpStore,
     WriteValidation,
     SchemaValidation,
     Overloaded,
     Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
 }
 
 impl Display for EngineError {
@@ -1283,6 +1336,7 @@ impl Display for EngineError {
             Self::SchemaValidation => write!(f, "schema validation error"),
             Self::Overloaded => write!(f, "engine overloaded"),
             Self::Closing => write!(f, "engine is closing"),
+            Self::Extractor => write!(f, "extractor error"),
         }
     }
 }
@@ -1307,6 +1361,7 @@ impl EngineError {
             Self::SchemaValidation => "SchemaValidationError",
             Self::Overloaded => "OverloadedError",
             Self::Closing => "ClosingError",
+            Self::Extractor => "ExtractorError",
         }
     }
 }
@@ -2031,7 +2086,13 @@ impl Engine {
         let base_cursor = self.next_cursor.load(Ordering::SeqCst);
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         let last_cursor = base_cursor.saturating_add(increment);
-        let pending_projection = !projection_jobs.is_empty();
+        // G11 (Slice 15) — edge bodies also need projection-runtime notification.
+        // `collect_projection_jobs` only tracks Node items (pre-fetched for
+        // cursor assignment); edge bodies update `_fathomdb_projection_state` in
+        // `commit_batch` but need the scanner to wake up via `notify_new_work`.
+        let has_edge_body_work =
+            batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work;
 
         let dangling_edge_endpoints = match commit_batch(
             connection,
@@ -2057,6 +2118,185 @@ impl Engine {
             .map(|i| base_cursor.saturating_add((i as u64).saturating_add(1)))
             .collect();
         Ok(WriteReceipt { cursor: last_cursor, row_cursors, dangling_edge_endpoints })
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+    /// speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, send
+    /// documents for extraction, and write the resulting entities
+    /// (→ `canonical_nodes`) and fact-edges (→ `canonical_edges` with G11
+    /// enrichment columns) to the store.
+    ///
+    /// `cmd` is argv (first element = program, rest = args). Documents are
+    /// batched per the harness's `max_docs_per_request`. Entity `logical_id`
+    /// is derived as `sha256("<type>:<name>")` (lowercase, hex-encoded) for
+    /// stable cross-re-ingestion identity. Edge `logical_id` is derived as
+    /// `sha256("<from_lid>:<to_lid>:<relation>")`. Both are consistent with
+    /// G0 supersession: re-ingesting the same document yields the same ids,
+    /// triggering tombstone-then-insert rather than accumulation.
+    ///
+    /// Returns [`EngineError::Extractor`] on protocol errors (bad handshake,
+    /// subprocess spawn failure, JSON decode error). `no_facts` warnings from
+    /// the harness are not errors and do not affect the receipt counts.
+    pub fn ingest_with_extractor(
+        &self,
+        cmd: &[&str],
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        let (program, args) = cmd.split_first().ok_or(EngineError::Extractor)?;
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|_| EngineError::Extractor)?;
+
+        let child_stdin = child.stdin.take().ok_or(EngineError::Extractor)?;
+        let child_stdout = child.stdout.take().ok_or(EngineError::Extractor)?;
+
+        // --- handshake: hello → ready ---
+        let hello = serde_json::json!({
+            "protocol": "fathomdb.extract.v1",
+            "type": "hello",
+            "schema_version": 1,
+        });
+        let mut writer = std::io::BufWriter::new(child_stdin);
+        let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
+        writeln!(writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
+        writer.flush().map_err(|_| EngineError::Extractor)?;
+
+        let mut reader = BufReader::new(child_stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).map_err(|_| EngineError::Extractor)?;
+        let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
+        if ready.get("type").and_then(|v| v.as_str()) != Some("ready") {
+            return Err(EngineError::Extractor);
+        }
+        let extractor_model_id = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let max_docs =
+            ready.get("max_docs_per_request").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+
+        // --- per-batch extract → write loop ---
+        let mut nodes_written: u64 = 0;
+        let mut edges_written: u64 = 0;
+        let docs_processed = documents.len() as u64;
+
+        for (batch_idx, batch) in documents.chunks(max_docs).enumerate() {
+            let request_id = format!("req-{batch_idx}");
+            let docs_json: Vec<Value> = batch
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "source_doc_id": d.source_doc_id,
+                        "body": d.body,
+                    })
+                })
+                .collect();
+
+            let extract = serde_json::json!({
+                "protocol": "fathomdb.extract.v1",
+                "type": "extract",
+                "request_id": request_id,
+                "documents": docs_json,
+            });
+            let extract_line =
+                serde_json::to_string(&extract).map_err(|_| EngineError::Extractor)?;
+            writeln!(writer, "{extract_line}").map_err(|_| EngineError::Extractor)?;
+            writer.flush().map_err(|_| EngineError::Extractor)?;
+
+            let mut result_line = String::new();
+            reader.read_line(&mut result_line).map_err(|_| EngineError::Extractor)?;
+            let result: Value =
+                serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
+
+            if result.get("type").and_then(|v| v.as_str()) == Some("error") {
+                return Err(EngineError::Extractor);
+            }
+
+            // --- map entities → PreparedWrite::Node with stable logical_id ---
+            let entities =
+                result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let raw_edges =
+                result.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            if !entities.is_empty() {
+                let node_batch: Vec<PreparedWrite> = entities
+                    .iter()
+                    .map(|entity| {
+                        let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        let source_doc_id = entity
+                            .get("source_doc_id")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        let logical_id = derive_logical_id(kind, name);
+                        PreparedWrite::Node {
+                            kind: kind.to_string(),
+                            body: name.to_string(),
+                            source_id: source_doc_id,
+                            logical_id: Some(logical_id),
+                        }
+                    })
+                    .collect();
+                let n = node_batch.len() as u64;
+                self.write(&node_batch)?;
+                nodes_written = nodes_written.saturating_add(n);
+            }
+
+            // --- map edges → PreparedWrite::Edge with G11 columns ---
+            if !raw_edges.is_empty() {
+                let edge_batch: Vec<PreparedWrite> = raw_edges
+                    .iter()
+                    .map(|edge| {
+                        let from_entity =
+                            edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let from_type =
+                            edge.get("from_type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        let to_entity =
+                            edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let to_type =
+                            edge.get("to_type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        let relation =
+                            edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
+                        let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_valid =
+                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_invalid =
+                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        let confidence = edge.get("confidence").and_then(|v| v.as_f64());
+                        let source_doc_id =
+                            edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
+
+                        let from_lid = derive_logical_id(from_type, from_entity);
+                        let to_lid = derive_logical_id(to_type, to_entity);
+                        let edge_key = format!("{from_lid}:{to_lid}:{relation}");
+                        let edge_lid = derive_logical_id("edge", &edge_key);
+
+                        PreparedWrite::Edge {
+                            kind: relation.to_string(),
+                            from: from_lid,
+                            to: to_lid,
+                            source_id: source_doc_id,
+                            logical_id: Some(edge_lid),
+                            body,
+                            t_valid,
+                            t_invalid,
+                            confidence,
+                            extractor_model_id: extractor_model_id.clone(),
+                        }
+                    })
+                    .collect();
+                let n = edge_batch.len() as u64;
+                self.write(&edge_batch)?;
+                edges_written = edges_written.saturating_add(n);
+            }
+        }
+
+        // Drop stdin → signal EOF to subprocess.
+        drop(writer);
+        let _ = child.wait();
+
+        Ok(IngestWithExtractorReceipt { nodes_written, edges_written, docs_processed })
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -4005,6 +4245,32 @@ fn read_search_in_tx(
             text_results.push(hit);
         }
     }
+
+    // G11 (Slice 15) — edge-body FTS branch from `search_index_edges`.
+    // Appended to text_results; tagged with SoftFallbackBranch::TextEdge so
+    // callers can distinguish edge hits from node hits.
+    {
+        let edge_sql =
+            "SELECT body, kind, write_cursor, bm25(search_index_edges) FROM search_index_edges \
+             WHERE search_index_edges MATCH ?1 ORDER BY bm25(search_index_edges), write_cursor";
+        // search_index_edges may not exist on very old DBs not yet at step-14;
+        // ignore the error gracefully (returns empty slice).
+        if let Ok(mut stmt) = tx.prepare(edge_sql) {
+            if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
+                Ok(SearchHit {
+                    body: row.get::<_, String>(0)?,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::TextEdge,
+                })
+            }) {
+                for row in rows.flatten() {
+                    text_results.push(row);
+                }
+            }
+        }
+    }
     tx.commit()?;
 
     // GA-2 / Slice-40 (◆ B-1) measurement seam: when `vector_stage_only` is set
@@ -4513,15 +4779,34 @@ fn next_pending_projection_jobs(
     // Over-fetch by `in_flight.len()` so the post-filter still returns
     // up to `max_jobs` after skipping cursors already in-flight.
     let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+    // G11 (Slice 15) — UNION extends the projection queue to include edge bodies.
+    // Edge bodies use kind `'edge_fact'` so `resolve_source_type` maps them to
+    // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
+    // The UNION is ordered by write_cursor so projection proceeds in
+    // insertion order across nodes and edges.
     let sql = format!(
-        "SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
-         FROM canonical_nodes
-         JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
-         LEFT JOIN _fathomdb_projection_terminal
-           ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
-         WHERE canonical_nodes.write_cursor > ?1
-           AND _fathomdb_projection_terminal.write_cursor IS NULL
-         ORDER BY canonical_nodes.write_cursor
+        "SELECT write_cursor, kind, body FROM (
+             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+
+             UNION ALL
+
+             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+             FROM canonical_edges
+             JOIN _fathomdb_vector_kinds
+               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+             WHERE canonical_edges.write_cursor > ?1
+               AND canonical_edges.body IS NOT NULL
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+         ) ORDER BY write_cursor
          LIMIT {sql_limit}"
     );
     let mut statement = connection.prepare_cached(&sql)?;
@@ -5784,8 +6069,23 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
         "todo" => "todo",
         // Synthetic AC-013 test fixture; coerced so the 6-value HITL lock holds.
         "doc" => "article",
+        // G11 (Slice 15) — edge-body projection; separate `source_type` partition
+        // key distinguishes edge vectors from node vectors in `vector_default`.
+        "edge_fact" => "edge_fact",
         _ => return Err(EngineError::Storage),
     })
+}
+
+/// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
+/// `(kind, name)` pair. Both inputs are lowercased before hashing so that
+/// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
+/// canonical form is `sha256("<kind>:<name>")` — identical to the
+/// ADR-0.8.1-byo-llm derivation rule.
+fn derive_logical_id(kind: &str, name: &str) -> String {
+    let input = format!("{}:{}", kind.to_lowercase(), name.to_lowercase());
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
@@ -5998,7 +6298,7 @@ fn validate_write(
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, source_id, logical_id } => {
+        PreparedWrite::Edge { kind, from, to, source_id, logical_id, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -6144,7 +6444,21 @@ fn commit_batch(
                     record_projection_terminal(&tx, cursor, "up_to_date")?;
                 }
             }
-            (PreparedWrite::Edge { kind, from, to, source_id, logical_id }, WritePlan::Edge) => {
+            (
+                PreparedWrite::Edge {
+                    kind,
+                    from,
+                    to,
+                    source_id,
+                    logical_id,
+                    body,
+                    t_valid,
+                    t_invalid,
+                    confidence,
+                    extractor_model_id,
+                },
+                WritePlan::Edge,
+            ) => {
                 // G0 — identical tombstone-then-insert supersession on edges,
                 // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
                 // edge `kind` is relationship-type, not identity — a kind-change
@@ -6157,12 +6471,72 @@ fn commit_batch(
                         params![cursor, logical_id],
                     )?;
                 }
+                // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
+                // tombstone any prior active edge on the same (from_id, to_id, kind)
+                // BEFORE inserting the new row. This is DIFFERENT from the G0
+                // logical_id tombstone: it is keyed on the triple, not the identity.
+                // Regular edges (body=None) skip this path — they retain G0 semantics.
+                if body.is_some() {
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
+                        params![cursor, from, to, kind],
+                    )?;
+                }
                 tx.execute(
-                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id, logical_id)
-                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![cursor, kind, from, to, source_id, logical_id],
+                    "INSERT INTO canonical_edges(
+                         write_cursor, kind, from_id, to_id, source_id, logical_id,
+                         body, t_valid, t_invalid, confidence, extractor_model_id
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        cursor,
+                        kind,
+                        from,
+                        to,
+                        source_id,
+                        logical_id,
+                        body,
+                        t_valid,
+                        t_invalid,
+                        confidence,
+                        extractor_model_id
+                    ],
                 )?;
-                record_projection_terminal(&tx, cursor, "up_to_date")?;
+                // G11 — edge FTS projection into `search_index_edges` (separate
+                // table from node-body `search_index` — Option B partition).
+                if let Some(edge_body) = body.as_ref() {
+                    tx.execute(
+                        "INSERT INTO search_index_edges(body, kind, write_cursor)
+                         VALUES(?1, ?2, ?3)",
+                        params![edge_body, kind, cursor],
+                    )?;
+                }
+                // G11 — edge vector projection: enqueue for projection scheduler
+                // under a fixed kind `"edge_fact"` (so resolve_source_type maps it
+                // to `source_type = "edge_fact"` in vector_default). Auto-register
+                // "edge_fact" in _fathomdb_vector_kinds (idempotent).
+                if body.is_some() {
+                    let now_unix =
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                            as i64;
+                    tx.execute(
+                        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                         VALUES('edge_fact', 'default', ?1)",
+                        params![now_unix],
+                    )?;
+                    tx.execute(
+                        "INSERT INTO _fathomdb_projection_state(
+                             kind, last_enqueued_cursor, updated_at
+                         ) VALUES('edge_fact', ?1, 0)
+                         ON CONFLICT(kind) DO UPDATE
+                             SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                        params![cursor],
+                    )?;
+                    // Do NOT call record_projection_terminal — let the scheduler
+                    // embed the body and mark it terminal after projection.
+                } else {
+                    record_projection_terminal(&tx, cursor, "up_to_date")?;
+                }
             }
             (
                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },

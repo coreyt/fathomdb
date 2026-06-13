@@ -48,6 +48,11 @@ fn phase9_pack_b_source_id_round_trips_through_canonical_edges() {
                 to: "b".to_string(),
                 source_id: Some("S2".to_string()),
                 logical_id: None,
+                body: None,
+                t_valid: None,
+                t_invalid: None,
+                confidence: None,
+                extractor_model_id: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();

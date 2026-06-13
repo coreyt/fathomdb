@@ -56,7 +56,25 @@ export interface WriteReceipt {
   danglingEdgeEndpoints: number;
 }
 
-export type SoftFallbackBranch = "vector" | "text";
+/** G11 (Slice 15) — BYO-LLM ingest receipt. */
+export interface IngestWithExtractorReceipt {
+  /** Number of `canonical_nodes` rows written (new insertions only). */
+  nodesWritten: number;
+  /** Number of `canonical_edges` rows written (new fact-edge insertions). */
+  edgesWritten: number;
+  /** Number of documents processed (including no-facts documents). */
+  docsProcessed: number;
+}
+
+/** G11 (Slice 15) — a document sent to a BYO-LLM extraction harness. */
+export interface ExtractDocument {
+  /** Stable opaque identifier for this document. */
+  sourceDocId: string;
+  /** Full text body to extract entities and relationships from. */
+  body: string;
+}
+
+export type SoftFallbackBranch = "vector" | "text" | "text_edge";
 
 export interface SoftFallback {
   branch: SoftFallbackBranch;
@@ -345,13 +363,17 @@ export class Engine {
     return {
       projectionCursor: r.projectionCursor,
       softFallback:
-        branch === "vector" || branch === "text" ? { branch } : null,
+        branch === "vector" || branch === "text" || branch === "text_edge"
+          ? { branch: branch as SoftFallbackBranch }
+          : null,
       results: r.results.map((h) => ({
         id: h.id,
         kind: h.kind,
         body: h.body,
         score: h.score,
-        branch: h.branch === "vector" ? "vector" : "text",
+        branch: (h.branch === "vector" || h.branch === "text_edge")
+          ? (h.branch as SoftFallbackBranch)
+          : "text",
       })),
     };
   }
@@ -362,6 +384,27 @@ export class Engine {
 
   async drain(timeoutMs: number): Promise<void> {
     await intercept(() => this.#native.drain(timeoutMs));
+  }
+
+  /**
+   * G11 (Slice 15) — BYO-LLM ingest. Spawns an external extraction harness
+   * speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, sends
+   * documents for extraction, and writes the resulting entities and fact-edges.
+   *
+   * @param cmd - argv to spawn (first element = program, rest = args).
+   * @param documents - array of `{ sourceDocId, body }` objects to extract from.
+   */
+  async ingestWithExtractor(
+    cmd: string[],
+    documents: ExtractDocument[],
+  ): Promise<IngestWithExtractorReceipt> {
+    const nativeDocs = documents.map((d) => ({ sourceDocId: d.sourceDocId, body: d.body }));
+    const r = await intercept(() => this.#native.ingestWithExtractor(cmd, nativeDocs));
+    return {
+      nodesWritten: r.nodesWritten,
+      edgesWritten: r.edgesWritten,
+      docsProcessed: r.docsProcessed,
+    };
   }
 
   counters(): CounterSnapshot {

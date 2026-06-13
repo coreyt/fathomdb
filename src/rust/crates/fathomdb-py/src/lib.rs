@@ -36,7 +36,8 @@ use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, NodeRecord as RustNodeRecord,
+    EngineError as RustEngineError, EngineOpenError, ExtractDocument as RustExtractDocument,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
     SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
     SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
@@ -73,6 +74,8 @@ create_exception!(_fathomdb, IncompatibleSchemaVersionError, EngineError);
 create_exception!(_fathomdb, MigrationError, EngineError);
 create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
 create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+create_exception!(_fathomdb, ExtractorError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -164,6 +167,7 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         }
         RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
         RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
     }
 }
 
@@ -303,6 +307,25 @@ impl PyWriteReceipt {
     }
 }
 
+/// G11 (Slice 15) — BYO-LLM ingest receipt.
+#[pyclass(module = "fathomdb._fathomdb", name = "IngestWithExtractorReceipt", frozen, get_all)]
+#[derive(Clone)]
+struct PyIngestWithExtractorReceipt {
+    nodes_written: u64,
+    edges_written: u64,
+    docs_processed: u64,
+}
+
+impl PyIngestWithExtractorReceipt {
+    fn from_rust(r: RustIngestWithExtractorReceipt) -> Self {
+        Self {
+            nodes_written: r.nodes_written,
+            edges_written: r.edges_written,
+            docs_processed: r.docs_processed,
+        }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "SoftFallback", frozen, get_all)]
 #[derive(Clone)]
 struct PySoftFallback {
@@ -315,6 +338,7 @@ impl PySoftFallback {
             branch: match s.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -340,6 +364,7 @@ impl PySearchHit {
             branch: match h.branch {
                 SoftFallbackBranch::Vector => "vector".to_string(),
                 SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
             },
         }
     }
@@ -642,6 +667,43 @@ impl PyEngine {
         call_engine(py, move || engine.drain(ms))
     }
 
+    /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn
+    /// (first element = program, rest = args). `documents` is a list of
+    /// dicts with `source_doc_id` and `body` keys.
+    fn ingest_with_extractor(
+        &self,
+        py: Python<'_>,
+        cmd: Bound<'_, PyList>,
+        documents: Bound<'_, PyList>,
+    ) -> PyResult<PyIngestWithExtractorReceipt> {
+        // Translate cmd list to Vec<String>.
+        let cmd_strings: Vec<String> = cmd
+            .iter()
+            .map(|item| {
+                item.extract::<String>()
+                    .map_err(|_| WriteValidationError::new_err("cmd elements must be strings"))
+            })
+            .collect::<PyResult<_>>()?;
+
+        // Translate documents list of dicts to Vec<ExtractDocument>.
+        let docs: Vec<RustExtractDocument> = documents
+            .iter()
+            .map(|item| {
+                let dict = item
+                    .downcast::<PyDict>()
+                    .map_err(|_| WriteValidationError::new_err("document must be a dict"))?;
+                let source_doc_id = dict_str_required(dict, "source_doc_id")?;
+                let body = dict_str_required(dict, "body")?;
+                Ok(RustExtractDocument { source_doc_id, body })
+            })
+            .collect::<PyResult<_>>()?;
+
+        let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(py, move || engine.ingest_with_extractor(&cmd_refs, &docs))?;
+        Ok(PyIngestWithExtractorReceipt::from_rust(receipt))
+    }
+
     fn counters(&self) -> PyCounterSnapshot {
         let snap = self.inner.counters();
         PyCounterSnapshot {
@@ -879,7 +941,18 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let to = dict_str_required(dict, "to")?;
     let source_id = dict_str(dict, "source_id")?;
     let logical_id = dict_str(dict, "logical_id")?;
-    Ok(PreparedWrite::Edge { kind, from, to, source_id, logical_id })
+    Ok(PreparedWrite::Edge {
+        kind,
+        from,
+        to,
+        source_id,
+        logical_id,
+        body: None,
+        t_valid: None,
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+    })
 }
 
 fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
@@ -921,6 +994,7 @@ fn force_panic_for_test() -> PyResult<()> {
 fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
+    m.add_class::<PyIngestWithExtractorReceipt>()?;
     m.add_class::<PySoftFallback>()?;
     m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
@@ -959,6 +1033,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MigrationError", py.get_type::<MigrationError>())?;
     m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
     m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
+    m.add("ExtractorError", py.get_type::<ExtractorError>())?;
     Ok(())
 }
 

@@ -6,7 +6,7 @@
 //! Uses a stub harness (Python script at `fixtures/slice15_byo_llm/stub_harness.py`)
 //! instead of a real LLM. No network egress.
 
-use fathomdb_engine::{Engine, ExtractDocument, PreparedWrite};
+use fathomdb_engine::{Engine, ExtractDocument, SoftFallbackBranch};
 use rusqlite::Connection;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -364,7 +364,8 @@ fn edge_fts_searchable() {
 
     // Engine::search must include edge FTS hits, tagged with branch = "text_edge".
     let results = opened.engine.search("owns").expect("search must work");
-    let edge_hits: Vec<_> = results.results.iter().filter(|h| h.branch == "text_edge").collect();
+    let edge_hits: Vec<_> =
+        results.results.iter().filter(|h| h.branch == SoftFallbackBranch::TextEdge).collect();
     assert!(!edge_hits.is_empty(), "search must return edge FTS hits tagged 'text_edge'");
 }
 
@@ -399,7 +400,7 @@ fn edge_vector_searchable() {
     opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("ingest must succeed");
 
     // Drain to let the projection scheduler embed the edge body.
-    opened.engine.drain(5.0).expect("drain must complete within 5s");
+    opened.engine.drain(5_000).expect("drain must complete within 5s");
 
     // Edge vector must be in vector_default with source_type = "edge_fact".
     let conn = Connection::open(&path).unwrap();
@@ -491,7 +492,7 @@ fn golden_fixture_reproducibility() {
     opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("first run");
 
     let conn = Connection::open(&path).unwrap();
-    let edge_count1: u64 =
+    let _edge_count1: u64 =
         conn.query_row("SELECT COUNT(*) FROM canonical_edges", [], |r| r.get(0)).unwrap();
     let node_count1: u64 =
         conn.query_row("SELECT COUNT(*) FROM canonical_nodes", [], |r| r.get(0)).unwrap();

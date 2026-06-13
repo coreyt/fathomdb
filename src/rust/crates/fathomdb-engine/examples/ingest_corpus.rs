@@ -343,6 +343,11 @@ fn run(args: Args) -> Result<(), String> {
             to: doc.doc_id.clone(),
             source_id: Some(doc.doc_id.clone()),
             logical_id: None,
+            body: None,
+            t_valid: None,
+            t_invalid: None,
+            confidence: None,
+            extractor_model_id: None,
         });
         if edge_batch.len() >= EDGE_BATCH {
             edges_written += flush_edges(&engine, &mut edge_batch)?;

@@ -52,6 +52,12 @@ class OpStoreRow:
     schema_id: str | None
     write_cursor: int
 
+class IngestWithExtractorReceipt:
+    """G11 (Slice 15) — BYO-LLM ingest receipt."""
+    nodes_written: int
+    edges_written: int
+    docs_processed: int
+
 class MigrationStepReport:
     step_id: int
     duration_ms: int | None
@@ -99,6 +105,19 @@ class Engine:
     ) -> SearchResult: ...
     def close(self) -> None: ...
     def drain(self, timeout_s: float = ...) -> None: ...
+    def ingest_with_extractor(
+        self,
+        cmd: list[str],
+        documents: list[dict[str, str]],
+    ) -> IngestWithExtractorReceipt:
+        """G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+        speaking the fathomdb.extract.v1 protocol, extract entities + edges from
+        documents, and write them to the store.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+        ...
     def counters(self) -> CounterSnapshot: ...
     def set_profiling(self, enabled: bool) -> None: ...
     def set_slow_threshold_ms(self, value: int) -> None: ...
@@ -178,3 +197,6 @@ class EmbedderDimensionMismatchError(EngineError):
     stored: int
     supplied: int
     def __init__(self, *args: Any, stored: int = ..., supplied: int = ...) -> None: ...
+
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+class ExtractorError(EngineError): ...
