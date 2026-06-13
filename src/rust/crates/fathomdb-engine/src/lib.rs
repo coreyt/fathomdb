@@ -4944,16 +4944,19 @@ fn read_list_in_tx(
     }
     // Build the SQL WHERE clauses for each predicate.
     // Parameters: ?1 = kind; ?2..?N = predicate values; limit is inlined.
+    // `logical_id IS NOT NULL` is a SQL-level predicate so that LIMIT counts
+    // only rows that can be represented as NodeRecord (which requires a non-null
+    // String logical_id). Anonymous nodes (PreparedWrite::Node { logical_id: None })
+    // cannot be included in NodeRecord results and are excluded before LIMIT.
     // When predicates are present we add `json_valid(body)` so rows with
     // non-JSON bodies are skipped rather than causing a `malformed JSON` error.
-    // NOTE: rows with NULL logical_id are fetched but skipped in the row mapper
-    // (they can't be represented in NodeRecord which requires a non-null String).
     let json_valid_guard = if predicates.is_empty() { "" } else { " AND json_valid(body)" };
     let mut sql = format!(
         "SELECT logical_id, kind, body, write_cursor \
          FROM canonical_nodes \
          WHERE kind = ?1 \
-         AND superseded_at IS NULL{json_valid_guard}"
+         AND superseded_at IS NULL \
+         AND logical_id IS NOT NULL{json_valid_guard}"
     );
 
     // Predicate params start at ?2.
@@ -4975,22 +4978,17 @@ fn read_list_in_tx(
     }
 
     let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-        // Use Option<String> for logical_id — rows written without a logical_id
-        // (PreparedWrite::Node { logical_id: None }) have NULL here. They are
-        // skipped below rather than causing a decode error.
-        let logical_id: Option<String> = row.get(0)?;
-        let kind: String = row.get(1)?;
-        let body: String = row.get(2)?;
-        let write_cursor = row.get::<_, i64>(3)? as u64;
-        Ok(logical_id.map(|lid| NodeRecord { logical_id: lid, kind, body, write_cursor }))
+        Ok(NodeRecord {
+            logical_id: row.get(0)?,
+            kind: row.get(1)?,
+            body: row.get(2)?,
+            write_cursor: row.get::<_, i64>(3)? as u64,
+        })
     })?;
 
     let mut out = Vec::new();
     for row in rows {
-        if let Some(record) = row? {
-            out.push(record);
-        }
-        // None = row had NULL logical_id; skip silently (can't be represented as NodeRecord)
+        out.push(row?);
     }
     Ok(out)
 }
@@ -5172,7 +5170,12 @@ fn search_expand_in_tx(
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
 
     // Step 1: resolve write_cursor → logical_id for each search hit.
-    // A write_cursor that no longer has an active canonical_nodes row is skipped.
+    // - Node hits (Vector/Text branch): look up canonical_nodes by write_cursor.
+    //   A write_cursor that no longer has an active canonical_nodes row is treated
+    //   as superseded (None) and dropped from resolved_hits.
+    // - Edge hits (TextEdge branch): the write_cursor points to canonical_edges,
+    //   NOT canonical_nodes. These hits have no graph-traversal root but MUST
+    //   pass through to search_hits unchanged (they are valid search results).
     let mut hit_logical_ids: Vec<Option<String>> = Vec::with_capacity(search_hits.len());
     {
         let mut stmt = tx.prepare(
@@ -5181,15 +5184,23 @@ fn search_expand_in_tx(
              LIMIT 1",
         )?;
         for hit in search_hits {
-            let cursor_i64 = hit.id as i64;
-            let lid: Option<String> = stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
-            hit_logical_ids.push(lid);
+            if hit.branch == SoftFallbackBranch::TextEdge {
+                // Edge-body hit: no canonical_nodes row; use a sentinel to pass through.
+                // The BFS loop skips None roots, so edge hits contribute no traversal roots.
+                hit_logical_ids.push(Some(String::new())); // sentinel: keep hit, skip BFS root
+            } else {
+                let cursor_i64 = hit.id as i64;
+                let lid: Option<String> =
+                    stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
+                hit_logical_ids.push(lid);
+            }
         }
     }
 
     // Build a set of logical_ids present in the search hits (for deduplication).
+    // Empty-string sentinels (TextEdge hits) are excluded — they are not real node ids.
     let hit_id_set: std::collections::HashSet<String> =
-        hit_logical_ids.iter().filter_map(|id| id.clone()).collect();
+        hit_logical_ids.iter().filter_map(|id| id.clone()).filter(|s| !s.is_empty()).collect();
 
     // Step 2: for each root logical_id, run the BFS and collect expanded nodes.
     // A node already in `hit_id_set` is NOT added to `expanded`.
@@ -5204,7 +5215,7 @@ fn search_expand_in_tx(
 
     if depth > 0 {
         let mut bfs_stmt = tx.prepare(&bfs_sql)?;
-        for root_id in hit_logical_ids.iter().flatten() {
+        for root_id in hit_logical_ids.iter().flatten().filter(|s| !s.is_empty()) {
             let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
                 let node = NodeRecord {
                     logical_id: row.get(0)?,
@@ -5248,7 +5259,9 @@ fn search_expand_in_tx(
         .collect();
 
     // Build `all_logical_ids` = resolved search-hit logical_ids + expanded node ids.
-    let mut all_logical_ids: Vec<String> = hit_logical_ids.into_iter().flatten().collect();
+    // Empty-string sentinels (TextEdge hits) are excluded — they are not real node ids.
+    let mut all_logical_ids: Vec<String> =
+        hit_logical_ids.into_iter().flatten().filter(|s| !s.is_empty()).collect();
     for (node, _) in &expanded {
         if !all_logical_ids.contains(&node.logical_id) {
             all_logical_ids.push(node.logical_id.clone());
