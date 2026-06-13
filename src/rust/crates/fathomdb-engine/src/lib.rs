@@ -2813,26 +2813,16 @@ impl Engine {
         }
         // Step 1: run the hybrid search to get initial hits.
         let search_result = self.search_inner(query, filter)?;
-        if depth == 0 || search_result.results.is_empty() {
-            // depth=0 means "no expansion": return search hits, empty expanded.
-            let all_ids = search_result
-                .results
-                .iter()
-                .filter_map(|h| {
-                    // We don't have logical_ids here — all_logical_ids is populated by the reader;
-                    // for depth=0 we can't easily get them without a reader round-trip.
-                    // Omit all_logical_ids for depth=0 short-circuit path (empty expansion only).
-                    let _ = h;
-                    None::<String>
-                })
-                .collect();
+        if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
-                search_hits: search_result.results,
+                search_hits: Vec::new(),
                 expanded: Vec::new(),
-                all_logical_ids: all_ids,
+                all_logical_ids: Vec::new(),
             });
         }
         // Step 2: dispatch to the reader pool to resolve logical_ids and run BFS.
+        // depth=0 is forwarded to the reader so it can populate all_logical_ids
+        // (the union of search-hit logical_ids), even with no expansion.
         let (response_tx, response_rx) = mpsc::sync_channel(1);
         let request = ReaderRequest::SearchExpand {
             search_hits: search_result.results,
@@ -5022,7 +5012,7 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
     JOIN canonical_edges e ON e.from_id = t.logical_id
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited, printf(',%s,', e.to_id)) = 0
     LIMIT {cap}
   )
@@ -5045,7 +5035,7 @@ LIMIT {cap}"
     JOIN canonical_edges e ON e.to_id = t.logical_id
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited, printf(',%s,', e.from_id)) = 0
     LIMIT {cap}
   )
@@ -5071,7 +5061,7 @@ LIMIT {cap}"
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR e.t_invalid > datetime('now'))
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
       AND instr(t.visited,
             printf(',%s,',
               CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
@@ -5085,6 +5075,44 @@ WHERE n.superseded_at IS NULL
 LIMIT {cap}"
         ),
     }
+}
+
+/// Build the BFS CTE SQL for `search_expand` — identical to `build_bfs_sql`
+/// but the final SELECT uses `GROUP BY` + `MIN(tr.depth)` so that each
+/// expanded node carries its actual BFS distance from the root.
+///
+/// Returns 5 columns: logical_id, kind, body, write_cursor, min_depth.
+fn build_bfs_with_depth_sql() -> String {
+    let cap = GRAPH_NEIGHBORS_HARD_CAP;
+    format!(
+        "WITH RECURSIVE
+  traversal(logical_id, depth, visited) AS (
+    SELECT n.logical_id, 0, printf(',%s,', n.logical_id)
+    FROM canonical_nodes n
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    UNION ALL
+    SELECT
+      CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
+      t.depth + 1,
+      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || ','
+    FROM traversal t
+    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+    WHERE t.depth < ?2
+      AND e.superseded_at IS NULL
+      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
+      AND instr(t.visited,
+            printf(',%s,',
+              CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END)) = 0
+    LIMIT {cap}
+  )
+SELECT n.logical_id, n.kind, n.body, n.write_cursor, MIN(tr.depth) AS min_depth
+FROM traversal tr
+JOIN canonical_nodes n ON n.logical_id = tr.logical_id
+WHERE n.superseded_at IS NULL
+  AND tr.logical_id != ?1
+GROUP BY n.logical_id
+LIMIT {cap}"
+    )
 }
 
 /// Slice 20 (G5) — execute a bounded BFS on the DEFERRED reader transaction.
@@ -5146,35 +5174,34 @@ fn search_expand_in_tx(
 
     // Step 2: for each root logical_id, run the BFS and collect expanded nodes.
     // A node already in `hit_id_set` is NOT added to `expanded`.
-    let bfs_sql = build_bfs_sql(TraversalDirection::Both);
+    // Use the depth-aware variant so each node reports its actual BFS distance.
+    let bfs_sql = build_bfs_with_depth_sql();
     let depth_i64 = depth as i64;
     let mut expanded: Vec<(NodeRecord, u32)> = Vec::new();
     // Track which logical_ids we've already added to `expanded` (dedup).
     let mut expanded_id_set: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    {
+    if depth > 0 {
         let mut bfs_stmt = tx.prepare(&bfs_sql)?;
         for root_id in hit_logical_ids.iter().flatten() {
             let neighbor_rows = bfs_stmt.query_map(params![root_id, depth_i64], |row| {
-                Ok(NodeRecord {
+                let node = NodeRecord {
                     logical_id: row.get(0)?,
                     kind: row.get(1)?,
                     body: row.get(2)?,
                     write_cursor: row.get::<_, i64>(3)? as u64,
-                })
+                };
+                let min_depth: i64 = row.get(4)?;
+                Ok((node, min_depth as u32))
             })?;
             for row_result in neighbor_rows {
-                let node = row_result?;
+                let (node, hop_count) = row_result?;
                 if hit_id_set.contains(&node.logical_id) {
                     // Already a search hit — skip (search score takes priority).
                     continue;
                 }
                 if expanded_id_set.insert(node.logical_id.clone()) {
-                    // hop_count: we don't track per-node hop counts in the CTE
-                    // output (only the terminal nodes are returned). Use 1 as the
-                    // minimum (all returned nodes are reachable within `depth`).
-                    // A future enhancement can track actual hop counts.
-                    expanded.push((node, 1));
+                    expanded.push((node, hop_count));
                 }
             }
         }

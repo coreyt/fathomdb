@@ -382,3 +382,77 @@ fn search_expand_deduplicates() {
 
     opened.engine.close().unwrap();
 }
+
+// ===== fix-1: t_invalid datetime normalization =================================
+
+/// An edge stored with `t_invalid` in ISO-8601 `T`-format (e.g. `2026-06-13T00:00:01Z`)
+/// must NOT be traversed once it has expired. Previously the lexicographic comparison
+/// `e.t_invalid > datetime('now')` could fail when the `T` separator vs. the space
+/// separator in `datetime('now')` caused a same-day expired edge to appear valid.
+#[test]
+fn t_invalid_tformat_edge_correctly_excluded() {
+    let dir = TempDir::new().unwrap();
+    let opened =
+        Engine::open(dir.path().join(format!("fix1{SQLITE_SUFFIX}"))).expect("engine open");
+
+    // Two nodes; edge expires in the past using T-format timestamp.
+    let a_id = "fix1-A";
+    let b_id = "fix1-B";
+    opened
+        .engine
+        .write(&[
+            node("test", "{}", a_id),
+            node("test", "{}", b_id),
+            PreparedWrite::Edge {
+                logical_id: None,
+                from: a_id.to_string(),
+                to: b_id.to_string(),
+                source_id: None,
+                kind: "expired_link".to_string(),
+                // t_invalid in the past using ISO-8601 T-format
+                t_invalid: Some("2020-01-01T00:00:00Z".to_string()),
+                body: None,
+                t_valid: None,
+                confidence: None,
+                extractor_model_id: None,
+            },
+        ])
+        .expect("write");
+
+    let result = opened
+        .engine
+        .graph_neighbors(a_id, 1, TraversalDirection::Outgoing)
+        .expect("graph_neighbors");
+    assert!(result.is_empty(), "expired T-format edge must be excluded; got {result:?}");
+
+    opened.engine.close().unwrap();
+}
+
+// ===== fix-1: search_expand depth=0 all_logical_ids ============================
+
+/// `search_expand` with depth=0 must return search hits in `all_logical_ids`.
+/// Previously the depth=0 short-circuit returned an empty `all_logical_ids`.
+#[test]
+fn search_expand_depth0_populates_all_logical_ids() {
+    let dir = TempDir::new().unwrap();
+    let opened =
+        Engine::open(dir.path().join(format!("depth0{SQLITE_SUFFIX}"))).expect("engine open");
+
+    opened
+        .engine
+        .write(&[node("note", r#"{"text":"quilted vermillion zephyr unique depth0"}"#, "depth0-X")])
+        .expect("write");
+
+    let result = opened
+        .engine
+        .search_expand("quilted vermillion zephyr unique depth0", None, 0)
+        .expect("search_expand depth=0");
+
+    assert!(
+        !result.all_logical_ids.is_empty(),
+        "depth=0 search_expand must populate all_logical_ids from search hits; got empty"
+    );
+    assert!(result.expanded.is_empty(), "depth=0 must produce no expanded nodes");
+
+    opened.engine.close().unwrap();
+}
