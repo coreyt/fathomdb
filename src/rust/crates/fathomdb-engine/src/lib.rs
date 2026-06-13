@@ -2797,8 +2797,17 @@ impl Engine {
     /// up to `depth` hops that are NOT already in the search hit set.
     ///
     /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
-    /// A `depth = 0` call returns the search hits unchanged (no expansion).
-    /// Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    /// A `depth = 0` call returns search hits with their logical_ids resolved
+    /// but no BFS expansion. Reads ride the `ReaderWorkerPool` DEFERRED-tx path.
+    ///
+    /// **Snapshot note:** the search phase (`search_inner`) and the expansion
+    /// phase (`SearchExpand` reader request) run in separate DEFERRED reader
+    /// transactions; a write that lands between them is visible to expansion
+    /// but not search (or vice-versa). In practice the window is negligible for
+    /// single-process embedded use. The expansion phase mitigates drift by
+    /// filtering `search_hits` to only include hits whose `write_cursor` is
+    /// still active in the expansion snapshot (superseded hits are dropped from
+    /// the result rather than surfaced with stale data).
     pub fn search_expand(
         &self,
         query: &str,
@@ -4937,13 +4946,14 @@ fn read_list_in_tx(
     // Parameters: ?1 = kind; ?2..?N = predicate values; limit is inlined.
     // When predicates are present we add `json_valid(body)` so rows with
     // non-JSON bodies are skipped rather than causing a `malformed JSON` error.
+    // NOTE: rows with NULL logical_id are fetched but skipped in the row mapper
+    // (they can't be represented in NodeRecord which requires a non-null String).
     let json_valid_guard = if predicates.is_empty() { "" } else { " AND json_valid(body)" };
     let mut sql = format!(
         "SELECT logical_id, kind, body, write_cursor \
          FROM canonical_nodes \
          WHERE kind = ?1 \
-         AND superseded_at IS NULL \
-         AND logical_id IS NOT NULL{json_valid_guard}"
+         AND superseded_at IS NULL{json_valid_guard}"
     );
 
     // Predicate params start at ?2.
@@ -4965,17 +4975,22 @@ fn read_list_in_tx(
     }
 
     let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-        Ok(NodeRecord {
-            logical_id: row.get(0)?,
-            kind: row.get(1)?,
-            body: row.get(2)?,
-            write_cursor: row.get::<_, i64>(3)? as u64,
-        })
+        // Use Option<String> for logical_id — rows written without a logical_id
+        // (PreparedWrite::Node { logical_id: None }) have NULL here. They are
+        // skipped below rather than causing a decode error.
+        let logical_id: Option<String> = row.get(0)?;
+        let kind: String = row.get(1)?;
+        let body: String = row.get(2)?;
+        let write_cursor = row.get::<_, i64>(3)? as u64;
+        Ok(logical_id.map(|lid| NodeRecord { logical_id: lid, kind, body, write_cursor }))
     })?;
 
     let mut out = Vec::new();
     for row in rows {
-        out.push(row?);
+        if let Some(record) = row? {
+            out.push(record);
+        }
+        // None = row had NULL logical_id; skip silently (can't be represented as NodeRecord)
     }
     Ok(out)
 }
@@ -5222,14 +5237,25 @@ fn search_expand_in_tx(
     let mut expanded: Vec<(NodeRecord, u32)> = nearest_hop.into_values().collect();
     expanded.sort_by(|(a, _), (b, _)| a.logical_id.cmp(&b.logical_id));
 
-    // Build `all_logical_ids` = search hit logical_ids + expanded logical_ids.
-    let mut all_logical_ids: Vec<String> =
-        hit_logical_ids.iter().filter_map(|id| id.clone()).collect();
+    // Filter search_hits to only include those whose write_cursor resolved to an
+    // active logical_id in THIS snapshot. Hits that were superseded between the
+    // search phase and the expansion phase (the two-snapshot window) are dropped
+    // rather than returned with stale data.
+    let resolved_hits: Vec<SearchHit> = search_hits
+        .iter()
+        .zip(hit_logical_ids.iter())
+        .filter_map(|(hit, lid)| lid.as_ref().map(|_| hit.clone()))
+        .collect();
+
+    // Build `all_logical_ids` = resolved search-hit logical_ids + expanded node ids.
+    let mut all_logical_ids: Vec<String> = hit_logical_ids.into_iter().flatten().collect();
     for (node, _) in &expanded {
-        all_logical_ids.push(node.logical_id.clone());
+        if !all_logical_ids.contains(&node.logical_id) {
+            all_logical_ids.push(node.logical_id.clone());
+        }
     }
 
-    Ok(SearchExpandResult { search_hits: search_hits.to_vec(), expanded, all_logical_ids })
+    Ok(SearchExpandResult { search_hits: resolved_hits, expanded, all_logical_ids })
 }
 
 /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL and return

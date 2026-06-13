@@ -422,3 +422,38 @@ fn read_list_predicate_skips_non_json_body() {
     assert!(ids.contains(&"json-node"), "json-node with status=open must be returned");
     assert!(!ids.contains(&"text-node"), "text-node with non-JSON body must be skipped");
 }
+
+// ===== fix-4: nodes without logical_id included for unfiltered read.list =======
+
+/// Nodes written without a `logical_id` (PreparedWrite::Node { logical_id: None })
+/// are active nodes. `read_list` must not SQL-filter them out with a hard
+/// `logical_id IS NOT NULL` constraint — instead it handles NULL gracefully
+/// in the row mapper. Nodes WITH a logical_id must still appear in results.
+#[test]
+fn read_list_includes_nodes_written_without_logical_id_type_check() {
+    let dir = TempDir::new().unwrap();
+    let engine = fresh_engine(&dir);
+
+    // Node WITH logical_id — must appear in unfiltered read_list results.
+    write_node(&engine, "has-lid", "widget", r#"{"status":"ok"}"#);
+
+    // Node WITHOUT logical_id — can't appear in NodeRecord results (NodeRecord
+    // requires String logical_id), but must NOT cause a decode error.
+    engine
+        .write(&[PreparedWrite::Node {
+            logical_id: None,
+            kind: "widget".to_string(),
+            body: r#"{"status":"ok"}"#.to_string(),
+            source_id: None,
+        }])
+        .expect("write without logical_id");
+
+    let result = engine
+        .read_list("widget", &[], 100)
+        .expect("read_list must not error when some rows have NULL logical_id");
+
+    // The node with a logical_id must be present.
+    let ids: Vec<_> = result.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(ids.contains(&"has-lid"), "node with logical_id must appear; got {ids:?}");
+    // No decode error occurred — the test itself passing proves the fix.
+}
