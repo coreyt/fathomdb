@@ -2460,13 +2460,40 @@ impl Engine {
             "schema_version": 1,
         });
         let mut writer = std::io::BufWriter::new(child_stdin);
+
+        // fix-35 [P1/P2]: drain stdout on a dedicated thread so (a) every read can
+        // be bounded with a timeout — a hung harness can no longer block ingest
+        // forever — and (b) the child's stdout pipe is drained continuously,
+        // preventing a large-request deadlock (parent blocked writing stdin while
+        // the child blocks writing a full stdout pipe). The handle is detached:
+        // joining could hang if a misbehaving child holds stdout open past its
+        // stdin EOF, so the outer `child.kill()` is what guarantees thread exit.
+        let io_timeout = extractor_io_timeout();
+        let (line_tx, line_rx) = mpsc::channel::<std::io::Result<String>>();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(child_stdout);
+            loop {
+                let mut buf = String::new();
+                match reader.read_line(&mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if line_tx.send(Ok(buf)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = line_tx.send(Err(e));
+                        break;
+                    }
+                }
+            }
+        });
+
         let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
         writeln!(writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
         writer.flush().map_err(|_| EngineError::Extractor)?;
 
-        let mut reader = BufReader::new(child_stdout);
-        let mut line = String::new();
-        reader.read_line(&mut line).map_err(|_| EngineError::Extractor)?;
+        let line = recv_extractor_line(&line_rx, io_timeout)?;
         let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
         // fix-23 [P2]: validate protocol + schema_version in the ready message per ADR.
         if ready.get("type").and_then(|v| v.as_str()) != Some("ready")
@@ -2511,8 +2538,7 @@ impl Engine {
             writeln!(writer, "{extract_line}").map_err(|_| EngineError::Extractor)?;
             writer.flush().map_err(|_| EngineError::Extractor)?;
 
-            let mut result_line = String::new();
-            reader.read_line(&mut result_line).map_err(|_| EngineError::Extractor)?;
+            let result_line = recv_extractor_line(&line_rx, io_timeout)?;
             let result: Value =
                 serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
 
@@ -2533,37 +2559,30 @@ impl Engine {
             if !entities.is_empty() {
                 let node_batch: Vec<PreparedWrite> = entities
                     .iter()
-                    .map(|entity| {
+                    .map(|entity| -> Result<PreparedWrite, EngineError> {
                         let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
                         let source_doc_id = entity
                             .get("source_doc_id")
                             .and_then(|v| v.as_str())
                             .map(str::to_string);
-                        let logical_id = derive_logical_id(kind, name);
-                        PreparedWrite::Node {
+                        // fix-34 [P1]: derive_logical_id now rejects an empty name
+                        // or a ':' in kind — inputs that would collide distinct
+                        // entities onto one identity and silently drop one.
+                        let logical_id = derive_logical_id(kind, name)?;
+                        Ok(PreparedWrite::Node {
                             kind: kind.to_string(),
                             body: name.to_string(),
                             source_id: source_doc_id,
                             logical_id: Some(logical_id),
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                // fix-29 [P2]: deduplicate within the batch by logical_id so
-                // harness-returned duplicate entities do not cause churn.
-                let mut seen_lids: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                let node_batch: Vec<PreparedWrite> = node_batch
-                    .into_iter()
-                    .filter(|w| {
-                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
-                            seen_lids.insert(id.clone())
-                        } else {
-                            true
-                        }
-                    })
-                    .collect();
+                // fix-29/fix-34 [P2]: deduplicate within the batch by logical_id so
+                // a harness that returns the same entity twice does not write a row
+                // that immediately supersedes its sibling (shared with the edge arm).
+                let node_batch = dedup_prepared_by_logical_id(node_batch);
 
                 // fix-23 [P2]: skip entities whose logical_id is already active
                 // to avoid needless supersede churn on re-ingest.
@@ -2602,17 +2621,42 @@ impl Engine {
 
             // --- map edges → PreparedWrite::Edge with G11 columns ---
             if !raw_edges.is_empty() {
+                // fix-33 [P1]: the protocol gives edges NO endpoint types —
+                // `from_entity`/`to_entity` reference entities BY NAME (or alias).
+                // Build a name+alias → (canonical name, type) index from the same
+                // result's `entities[]` so each endpoint's logical_id matches the
+                // node's. (Nodes derive id from the entity's real type; defaulting
+                // the edge endpoint kind to "entity" orphaned every contract-faithful
+                // edge from its nodes and tripped the G8 dangling probe.)
+                let mut entity_index: std::collections::HashMap<String, (String, String)> =
+                    std::collections::HashMap::new();
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    let value = (name.to_string(), kind);
+                    entity_index.entry(name.to_lowercase()).or_insert_with(|| value.clone());
+                    if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
+                        for alias in aliases.iter().filter_map(|a| a.as_str()) {
+                            if !alias.is_empty() {
+                                entity_index
+                                    .entry(alias.to_lowercase())
+                                    .or_insert_with(|| value.clone());
+                            }
+                        }
+                    }
+                }
+
                 let edge_batch: Vec<PreparedWrite> = raw_edges
                     .iter()
                     .map(|edge| -> Result<PreparedWrite, EngineError> {
                         let from_entity =
                             edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
-                        let from_type =
-                            edge.get("from_type").and_then(|v| v.as_str()).unwrap_or("entity");
                         let to_entity =
                             edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
-                        let to_type =
-                            edge.get("to_type").and_then(|v| v.as_str()).unwrap_or("entity");
                         let relation =
                             edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
                         let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
@@ -2631,10 +2675,24 @@ impl Engine {
                         let source_doc_id =
                             edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
 
-                        let from_lid = derive_logical_id(from_type, from_entity);
-                        let to_lid = derive_logical_id(to_type, to_entity);
+                        // fix-33 [P1]: resolve each endpoint via the entities[]
+                        // index (by name or alias) → the entity's canonical
+                        // (name, type); fall back to kind "entity" only for a truly
+                        // unlisted name (synthesized dangling endpoints ARE listed,
+                        // so this is the defensive path). derive_logical_id (fix-34)
+                        // still rejects an empty name / ':' in kind.
+                        let (from_name, from_kind) = entity_index
+                            .get(&from_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (from_entity.to_string(), "entity".to_string()));
+                        let (to_name, to_kind) = entity_index
+                            .get(&to_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (to_entity.to_string(), "entity".to_string()));
+                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
                         let edge_key = format!("{from_lid}:{to_lid}:{relation}");
-                        let edge_lid = derive_logical_id("edge", &edge_key);
+                        let edge_lid = derive_logical_id("edge", &edge_key)?;
 
                         Ok(PreparedWrite::Edge {
                             kind: relation.to_string(),
@@ -2650,6 +2708,10 @@ impl Engine {
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                // fix-34 [P2]: dedup edges by logical_id, mirroring the node arm
+                // (fix-29) — a duplicate edge in one harness response would
+                // otherwise write a row that immediately supersedes its sibling.
+                let edge_batch = dedup_prepared_by_logical_id(edge_batch);
                 let n = edge_batch.len() as u64;
                 self.write(&edge_batch)?;
                 edges_written = edges_written.saturating_add(n);
@@ -7199,11 +7261,64 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
 /// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
 /// canonical form is `sha256("<kind>:<name>")` — identical to the
 /// ADR-0.8.1-byo-llm derivation rule.
-fn derive_logical_id(kind: &str, name: &str) -> String {
+///
+/// fix-34 [P1]: because `:` is the delimiter, a `:` in `kind` would let the
+/// split point move and collide two distinct `(kind, name)` pairs onto one
+/// identity (e.g. `("a:b","c")` and `("a","b:c")` both hash `"a:b:c"`),
+/// silently dropping one entity via batch dedup / G0 supersession. An empty
+/// `name` collapses every name-less entity of a kind onto `sha256("<kind>:")`.
+/// We reject both at the boundary; this preserves the ADR derivation rule
+/// (a colon-free `kind` makes the first `:` an unambiguous delimiter, so a `:`
+/// in `name` stays safe — edge keys deliberately rely on that).
+fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
+    if kind.contains(':') || name.is_empty() {
+        return Err(EngineError::Extractor);
+    }
     let input = format!("{}:{}", kind.to_lowercase(), name.to_lowercase());
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// fix-34 [P2]: dedup a batch of [`PreparedWrite`]s by `logical_id`, keeping the
+/// first occurrence. Shared by the entity and edge arms of the BYO-LLM ingest
+/// path so a harness that returns the same node/edge twice in one response does
+/// not write a row that immediately supersedes its sibling.
+fn dedup_prepared_by_logical_id(batch: Vec<PreparedWrite>) -> Vec<PreparedWrite> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    batch
+        .into_iter()
+        .filter(|w| match w {
+            PreparedWrite::Node { logical_id: Some(id), .. }
+            | PreparedWrite::Edge { logical_id: Some(id), .. } => seen.insert(id.clone()),
+            _ => true,
+        })
+        .collect()
+}
+
+/// fix-35 [P2]: BYO-LLM extractor I/O timeout. Defaults to 300s to accommodate
+/// slow LLM harnesses; override (in milliseconds) via
+/// `FATHOMDB_EXTRACTOR_TIMEOUT_MS` (tests use this to exercise the hung-harness
+/// path quickly).
+fn extractor_io_timeout() -> Duration {
+    std::env::var("FATHOMDB_EXTRACTOR_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| Duration::from_secs(300))
+}
+
+/// fix-35 [P1/P2]: receive one line from the stdout reader thread, bounded by
+/// `timeout`. A timeout, a closed channel (reader thread ended / child EOF), or
+/// an underlying io error all map to [`EngineError::Extractor`].
+fn recv_extractor_line(
+    rx: &Receiver<std::io::Result<String>>,
+    timeout: Duration,
+) -> Result<String, EngineError> {
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(line)) => Ok(line),
+        _ => Err(EngineError::Extractor),
+    }
 }
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {

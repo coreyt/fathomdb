@@ -1029,9 +1029,10 @@ for line in sys.stdin:
     elif msg.get("type") == "extract":
         print(json.dumps({"type": "result",
                           "request_id": msg.get("request_id"),
-                          "entities": [{"name": "A", "type": "person"}],
-                          "edges": [{"from_entity": "A", "from_type": "person",
-                                     "to_entity": "B", "to_type": "project",
+                          "entities": [{"name": "A", "type": "person"},
+                                       {"name": "B", "type": "project"}],
+                          "edges": [{"from_entity": "A",
+                                     "to_entity": "B",
                                      "relation": "owns", "confidence": 1.5}]}),
               flush=True)
 "#;
@@ -1043,5 +1044,142 @@ for line in sys.stdin:
     assert!(
         matches!(result, Err(EngineError::Extractor)),
         "confidence=1.5 must return Err(EngineError::Extractor), got {result:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fix-34 [P1] — derive_logical_id rejects identity-ambiguous inputs
+// ---------------------------------------------------------------------------
+
+/// fix-34 [P1]: a ':' in an entity `type` would let the `sha256("<type>:<name>")`
+/// split point move and collide two distinct entities onto one identity (silent
+/// entity loss). The boundary rejects it as a protocol fault.
+#[test]
+fn ingest_rejects_colon_in_entity_type() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "colon_type");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let bad_harness = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "stub-v1", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "result",
+                          "request_id": msg.get("request_id"),
+                          "entities": [{"name": "Acme", "type": "company:public", "aliases": []}],
+                          "edges": []}), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs = vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "Acme".to_string() }];
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "a ':' in entity type must return Err(EngineError::Extractor), got {result:?}"
+    );
+}
+
+/// fix-34 [P2]: a harness that returns the same edge twice in one result must not
+/// write a row that immediately supersedes its sibling — the batch is deduped by
+/// logical_id (mirroring the entity arm).
+#[test]
+fn ingest_dedups_duplicate_edges_within_batch() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "dup_edges");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let dup_harness = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "stub-v1", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        edge = {"from_entity": "A", "to_entity": "B", "relation": "owns",
+                "body": "A owns B", "confidence": 0.9}
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "result",
+                          "request_id": msg.get("request_id"),
+                          "entities": [{"name": "A", "type": "person", "aliases": []},
+                                       {"name": "B", "type": "project", "aliases": []}],
+                          "edges": [edge, edge]}), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), dup_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs =
+        vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "A owns B".to_string() }];
+    let receipt =
+        opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("ingest must succeed");
+    assert_eq!(receipt.edges_written, 1, "duplicate edges must dedup to one write");
+
+    let conn = Connection::open(&path).unwrap();
+    let active_edges: u64 = conn
+        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE superseded_at IS NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(active_edges, 1, "exactly one active edge row, no self-supersession churn");
+}
+
+// ---------------------------------------------------------------------------
+// fix-35 [P1] — a hung harness cannot block ingest forever
+// ---------------------------------------------------------------------------
+
+/// fix-35 [P1]: a harness that completes the handshake but never answers an
+/// extract request must not hang ingest. With a short
+/// `FATHOMDB_EXTRACTOR_TIMEOUT_MS` the read is bounded and ingest returns
+/// `Err(EngineError::Extractor)` promptly.
+#[test]
+fn ingest_times_out_on_hung_harness() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "hung");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    // Replies to hello, then blocks forever instead of answering extract.
+    let hung_harness = r#"
+import json, sys, time
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": "fathomdb.extract.v1", "type": "ready",
+                          "schema_version": 1, "model": "stub-v1", "max_docs_per_request": 10}),
+              flush=True)
+    elif msg.get("type") == "extract":
+        time.sleep(3600)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), hung_harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs = vec![ExtractDocument { source_doc_id: "d1".to_string(), body: "hello".to_string() }];
+
+    // SAFETY: this test mutates a process-global env var. It is the only test
+    // that reads FATHOMDB_EXTRACTOR_TIMEOUT_MS, so there is no cross-test race.
+    std::env::set_var("FATHOMDB_EXTRACTOR_TIMEOUT_MS", "300");
+    let started = std::time::Instant::now();
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    let elapsed = started.elapsed();
+    std::env::remove_var("FATHOMDB_EXTRACTOR_TIMEOUT_MS");
+
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "a hung harness must return Err(EngineError::Extractor), got {result:?}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "ingest must abort near the timeout, not hang; took {elapsed:?}"
     );
 }

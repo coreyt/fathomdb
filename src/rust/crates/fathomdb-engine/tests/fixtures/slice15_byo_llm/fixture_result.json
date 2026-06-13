@@ -17,10 +17,8 @@
     "edges": [
       {
         "from_entity": "Alice",
-        "from_type": "person",
         "relation": "owns",
         "to_entity": "Project X",
-        "to_type": "project",
         "body": "Alice owns the project",
         "t_valid": null,
         "t_invalid": null,
@@ -48,10 +46,8 @@
     "edges": [
       {
         "from_entity": "Bob",
-        "from_type": "person",
         "relation": "works_for",
         "to_entity": "Acme Corp",
-        "to_type": "organization",
         "body": "Bob works for Acme Corp",
         "t_valid": "2020-01-01T00:00:00Z",
         "t_invalid": null,
@@ -91,10 +87,8 @@
     "edges": [
       {
         "from_entity": "Carol",
-        "from_type": "person",
         "relation": "leads",
         "to_entity": "DataCo",
-        "to_type": "organization",
         "body": "Carol leads DataCo",
         "t_valid": null,
         "t_invalid": null,
@@ -103,10 +97,8 @@
       },
       {
         "from_entity": "DataCo",
-        "from_type": "organization",
         "relation": "builds",
         "to_entity": "Platform Y",
-        "to_type": "product",
         "body": "DataCo builds Platform Y",
         "t_valid": null,
         "t_invalid": null,
