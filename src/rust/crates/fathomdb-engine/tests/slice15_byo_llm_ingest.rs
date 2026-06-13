@@ -6,7 +6,7 @@
 //! Uses a stub harness (Python script at `fixtures/slice15_byo_llm/stub_harness.py`)
 //! instead of a real LLM. No network egress.
 
-use fathomdb_engine::{Engine, ExtractDocument, SoftFallbackBranch};
+use fathomdb_engine::{Engine, EngineError, ExtractDocument, SearchFilter, SoftFallbackBranch};
 use rusqlite::Connection;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -203,8 +203,15 @@ fn edge_canonical_edges_mapping() {
     let conn = Connection::open(&path).unwrap();
 
     // Check edge "Alice owns Project X" — no temporal, confidence 0.95.
-    let owns_row: (Option<String>, Option<String>, Option<String>, Option<f64>, Option<String>) =
-        conn.query_row(
+    #[allow(clippy::type_complexity)]
+    let owns_row: (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<f64>,
+        Option<String>,
+    ) = conn
+        .query_row(
             "SELECT body, t_valid, t_invalid, confidence, extractor_model_id
              FROM canonical_edges
              WHERE kind = 'owns' AND superseded_at IS NULL",
@@ -584,4 +591,169 @@ fn model_provenance() {
         )
         .unwrap();
     assert_eq!(bad_provenance, 0, "all active edges must have extractor_model_id = 'stub-v1'");
+}
+
+// ---------------------------------------------------------------------------
+// fix-1 [P2] — superseded edge excluded from FTS results
+// ---------------------------------------------------------------------------
+
+/// Regression guard for the fix-1 [P2] superseded-edge FTS exclusion.
+/// After a re-ingest that supersedes an edge (invalidate-not-accumulate),
+/// the superseded body must NOT appear in Engine::search results.
+/// Before fix-1 the edge FTS query lacked the `superseded_at IS NULL` JOIN,
+/// so both rows (superseded + active) were returned.
+#[test]
+fn superseded_edge_excluded_from_fts() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "superseded_fts");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let cmd_strings = stub_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    // doc-temporal → "Bob works_for Acme Corp" edge with body containing "works".
+    let docs = vec![ExtractDocument {
+        source_doc_id: "doc-temporal".to_string(),
+        body: "Bob works for Acme Corp since 2020".to_string(),
+    }];
+
+    // First ingest.
+    opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("first ingest");
+    // Second ingest of the same doc — supersedes the first edge.
+    opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("second ingest (superseding)");
+
+    // Verify the DB state: 2 total rows, 1 active.
+    let conn = Connection::open(&path).unwrap();
+    let total: u64 = conn
+        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let active: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(total, 2, "two total rows after re-ingest");
+    assert_eq!(active, 1, "exactly one active works_for edge");
+
+    // search_index_edges should have 2 rows (one per write_cursor).
+    let fts_rows: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM search_index_edges WHERE search_index_edges MATCH 'works'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(fts_rows, 2, "both rows present in FTS index");
+
+    // Engine::search must return exactly 1 edge hit (active only, not the superseded row).
+    let results = opened.engine.search("works").expect("search must succeed");
+    let edge_hits: Vec<_> =
+        results.results.iter().filter(|h| h.branch == SoftFallbackBranch::TextEdge).collect();
+    assert_eq!(
+        edge_hits.len(),
+        1,
+        "search must return exactly 1 edge hit (superseded row excluded); got {}",
+        edge_hits.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fix-1 [P2] — max_docs_per_request=0 rejected with Extractor error
+// ---------------------------------------------------------------------------
+
+/// Regression guard for the fix-1 [P2] max_docs_per_request=0 validation.
+/// A harness that sends max_docs_per_request=0 in its `ready` message would
+/// cause `documents.chunks(0)` to panic before fix-1.
+/// After fix-1 the engine returns Err(EngineError::Extractor) immediately.
+#[test]
+fn max_docs_per_request_zero_rejected() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "zero_docs");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    // Inline bad harness: responds to hello with max_docs_per_request=0.
+    let bad_harness_script = r#"
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({
+            "protocol": "fathomdb.extract.v1",
+            "type": "ready",
+            "schema_version": 1,
+            "model": "bad-stub",
+            "max_docs_per_request": 0
+        }), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness_script.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let docs = vec![ExtractDocument {
+        source_doc_id: "doc-simple".to_string(),
+        body: "Alice owns the project".to_string(),
+    }];
+
+    let result = opened.engine.ingest_with_extractor(&cmd_refs, &docs);
+    assert!(
+        matches!(result, Err(EngineError::Extractor)),
+        "max_docs_per_request=0 must return Err(EngineError::Extractor), got {:?}",
+        result
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fix-1 [P2] — search_filtered applies kind filter to edge FTS hits
+// ---------------------------------------------------------------------------
+
+/// Regression guard for the fix-1 [P2] edge FTS filter application.
+/// Before fix-1, edge FTS hits were appended unconditionally (no filter),
+/// so a kind filter that excluded the edge kind would still return edge hits.
+/// After fix-1, `text_hit_passes_filter` is applied to edge hits.
+#[test]
+fn edge_fts_kind_filter_applied() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "edge_fts_filter");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+
+    let cmd_strings = stub_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    // doc-simple produces "Alice owns the project" edge (kind='owns') and
+    // node bodies like "Alice", "Project X". The word "owns" only appears in
+    // the edge body (not in node bodies — confirmed by edge_fts_searchable test).
+    let docs = vec![ExtractDocument {
+        source_doc_id: "doc-simple".to_string(),
+        body: "Alice owns the project".to_string(),
+    }];
+
+    opened.engine.ingest_with_extractor(&cmd_refs, &docs).expect("ingest must succeed");
+
+    // Unfiltered search must return edge hits.
+    let results_unfiltered = opened.engine.search("owns").expect("search");
+    let edge_hits_unfiltered: Vec<_> = results_unfiltered
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(!edge_hits_unfiltered.is_empty(), "unfiltered search must include edge hits");
+
+    // Filtered search with a kind that does NOT match any edge kind must return
+    // zero edge hits (filter is applied to edge branch).
+    let filter = SearchFilter { kind: Some("person".to_string()), ..Default::default() };
+    let results_filtered =
+        opened.engine.search_filtered("owns", Some(filter)).expect("search_filtered");
+    let edge_hits_filtered: Vec<_> = results_filtered
+        .results
+        .iter()
+        .filter(|h| h.branch == SoftFallbackBranch::TextEdge)
+        .collect();
+    assert!(
+        edge_hits_filtered.is_empty(),
+        "kind='person' filter must exclude edge FTS hits (kind='owns'); got {} edge hits",
+        edge_hits_filtered.len()
+    );
 }

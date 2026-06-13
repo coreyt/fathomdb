@@ -719,6 +719,7 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         EngineError::SchemaValidation => "SchemaValidationError",
         EngineError::Overloaded => "OverloadedError",
         EngineError::Closing => "ClosingError",
+        EngineError::Extractor => "ExtractorError",
     }
 }
 
