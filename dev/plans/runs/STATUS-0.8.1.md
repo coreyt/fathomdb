@@ -42,13 +42,16 @@ R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemente
 
 All gates GREEN post fix-30-1: cargo test ALL PASS (0 failures, 1 ignored per SCHEMA-GATE-1), clippy 0 warnings.
 
-**SCHEMA-GATE-1 (open):** `graph_arm_temporal_fallback_excluded_or_downweighted` is `#[ignore]` —
-temporal_fallback detection at BFS time requires `canonical_edges.temporal_fallback BOOLEAN` column
-(SCHEMA_VERSION 14→15). This is a HITL-required schema gate. Awaiting HITL ruling.
+**SCHEMA-GATE-1 resolved (HITL-SIGNED 2026-06-13, committed `07a2aa2`):**
+`canonical_edges.temporal_fallback INTEGER` column landed as step-15 (SCHEMA_VERSION 14→15).
+BFS SQL now filters `AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0)`.
+`ingest_with_extractor` detects temporal_fallback warnings and sets the flag on matching edges.
+`graph_arm_temporal_fallback_excluded_or_downweighted` is now un-ignored and GREEN.
+All 4 Slice 30 tests pass; 0 ignored.
 
 **Go/no-go (open):** Slice 30 is on `main` but CLOSE requires R2 per-class deltas (Slice 25) showing
 the graph arm lifts temporal/multi-hop/knowledge-update classes without regressing factoid/exploratory
-Recall@K. Slice 25 is still OPEN.
+Recall@K. Slice 25 is still OPEN. This is the only remaining gate on Slice 30 CLOSE.
 
 Slice 10 Opus-xhigh §9 review findings + fixes:
 - **BLOCK [FIX-1]**: `ce_rerank` took `hits: Vec<SearchHit>` by value, moved into the function,
@@ -146,7 +149,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 fix-30-1 `2a78300` — ⚠️ SCHEMA-GATE-1 (HITL); ⚠️ go/no-go pending Slice 25 | 15,20,25 | ✅ | ✅ | ✅ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go pending Slice 25 | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
