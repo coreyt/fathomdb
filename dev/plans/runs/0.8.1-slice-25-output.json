@@ -1,0 +1,202 @@
+{
+  "phase": "0.8.1-slice-25",
+  "baseline_sha": "59e746b552c72676f133897832addd2c49123006",
+  "branch": "slice-25-20260614T002011Z",
+  "head_sha": "b45effa58f8f4607425eef15eb6c6b6edececc4d",
+  "merged_to_main_sha": "a1cd7d9bf15bb030a7539cd1f69b4234494c095f",
+  "commits": [
+    "a869c1e: design(0.8.1/slice-25): R2 harness design memo",
+    "dd5a5c1: test(0.8.1/slice-25): RED \u2014 harness contract, per-class scorer, corpus pin, output schema",
+    "dedca93: feat(0.8.1/slice-25): R2 parity eval harness \u2014 identical-answerer, Mem0-OSS + naive-RAG adapters, per-class scorer",
+    "e13d8ec: docs(0.8.1/slice-25): X3 \u2014 R2 results doc, run artifact, DOC-INDEX",
+    "b45effa: perf(0.8.1/slice-25): NaiveRAGAdapter uses an inverted index"
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "dd5a5c1f1e9b863f1ba41b6435f52faf53458292",
+    "test_files": [
+      "src/python/tests/test_r2_harness.py"
+    ]
+  },
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "qrels_version": "ir-c-reused-v1",
+  "answerer_model": "unavailable \u2014 see blockers_encountered",
+  "answerer_available": false,
+  "n_queries_per_class": {
+    "factoid": 2888,
+    "temporal": 0,
+    "multi_hop": 0,
+    "knowledge_update": 0,
+    "multi_session": 0
+  },
+  "n_queries_report_only": {
+    "exploratory": 1584,
+    "negative": 125
+  },
+  "k": 10,
+  "r2_results": {
+    "fathomdb": {
+      "factoid": {
+        "recall_at_k": 0.8999,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "temporal": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_hop": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "knowledge_update": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_session": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      }
+    },
+    "mem0_oss": {
+      "factoid": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "temporal": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_hop": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "knowledge_update": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_session": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      }
+    },
+    "naive_rag": {
+      "factoid": {
+        "recall_at_k": 0.8982,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "temporal": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_hop": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "knowledge_update": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_session": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      }
+    }
+  },
+  "r2_results_report_only": {
+    "exploratory": {
+      "fathomdb": 0.327,
+      "naive_rag": 0.3561
+    }
+  },
+  "r2_per_class_deltas": {
+    "factoid": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": 0.0017
+    },
+    "temporal": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "multi_hop": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "knowledge_update": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "multi_session": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    }
+  },
+  "fathomdb_arm_note": "FathomDB ran lexical/FTS-only (use_default_embedder=False); the dense+RRF-fused production arm needs the BGE embedder (not available here). The FathomDB-vs-naive comparison is lexical-vs-lexical. See dev/plans/runs/IR-C-r2-eval-results.md \u00a73.",
+  "blockers_encountered": [
+    {
+      "id": "answerer-llm-unavailable",
+      "description": "no answerer LLM in env (no OPENAI/ANTHROPIC key, no ollama/local server); the frozen gold also has no answer strings. Per-class answerer_accuracy + abstention left null (not 0.0).",
+      "resolution": "UNRESOLVED \u2014 set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1 (BYO local OpenAI-compatible shim). LLMAnswerer path implemented + gated."
+    },
+    {
+      "id": "mem0-oss-unavailable",
+      "description": "mem0ai not installed and its add()/search() require a local LLM + embedding backend that is absent; cloud Mem0 forbidden (ADR \u00a73.6). Mem0 arm skipped; comparison is FathomDB vs naive-RAG.",
+      "resolution": "UNRESOLVED \u2014 pip install mem0ai + configure a local backend; Mem0OSSAdapter (lazy) is implemented."
+    },
+    {
+      "id": "memory-class-gold-absent",
+      "description": "the frozen FathomDB gold (qrels ir-c-reused-v1) carries only exact_fact/exploratory/negative; temporal/multi_hop/knowledge_update/multi_session have N=0. These are the Slice 30 go/no-go classes.",
+      "resolution": "UNRESOLVED \u2014 needs LongMemEval (own haystack + answerer; not locally cloneable) or memory-class QA pairs generated from the corpus with an offline LLM. R2Harness consumes either with no code change."
+    },
+    {
+      "id": "embedder-weights-absent",
+      "description": "BGE embedder weights unavailable, so FathomDB ran FTS-only; the dense + RRF-fused + R1 reranker + R3 graph arm were not exercised.",
+      "resolution": "UNRESOLVED \u2014 run with use_default_embedder=True (BGE cached) to exercise the fused arm; no harness change."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "pyproject.toml: added [tool.pytest.ini_options] pythonpath=['.'] + pyright include 'eval' so the test-infra eval/ package resolves (not shipped in the wheel).",
+    "NaiveRAGAdapter uses an inverted index (postings) \u2014 identical BM25 scores, tractable over the full 4597-query corpus (perf commit b45effa).",
+    "COR-2 verified via freeze_corpus.py --reproduce: corpus_hash MATCH fe973fcd\u2026, bit-identical.",
+    "FathomDB arm ran lexical/FTS-only (embedder absent) \u2014 documented caveat (results doc \u00a73)."
+  ],
+  "reserved_gap_candidates": [
+    "Zep-OSS adapter (reserved follow-on 26\u201329) \u2014 not built; needs Zep-OSS infra + LLM, out of this slice's feasible scope.",
+    "R2 parity-metric AC (minted at the eval gate, HITL) \u2014 threshold determined from R2 data; not minted (acceptance.md locked; mint only at gated slices).",
+    "Memory-class gold acquisition (LongMemEval clone or offline-LLM QA generation) to populate temporal/multi_hop/knowledge_update/multi_session.",
+    "Embedder-enabled fused run (use_default_embedder=True) to exercise FathomDB's dense + R1 + R3 arms.",
+    "Answerer-accuracy column once a local answerer LLM is available."
+  ],
+  "self_check": {
+    "harness_unit_tests": "8 passed (stubs, no R2_RUN)",
+    "full_python_suite": "140 passed, 2 skipped (no regression; test_r2_harness.py included)",
+    "pyright": "0 errors, 0 warnings",
+    "mkdocs_build_strict": "clean (docs under dev/, no nav change)",
+    "canonical_clean_throughout": true
+  },
+  "agent_verify_result": "pass",
+  "next_step_for_orchestrator": "Slice 25 merged at a1cd7d9. r2_per_class_deltas populated for factoid (+0.0017 recall vs naive) + exploratory (-0.0291); temporal/multi_hop/knowledge_update/multi_session are null (N=0, no gold) and answerer_accuracy is null (no LLM). The Slice 30 (R3) go/no-go is DATA-LIMITED \u2192 per prompt \u00a711 escalate to HITL; do NOT flip use_graph_arm=true on absent data. Run codex \u00a79 measurement-neutrality review next."
+}
