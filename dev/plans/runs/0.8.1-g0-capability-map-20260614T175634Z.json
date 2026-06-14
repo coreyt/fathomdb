@@ -1,0 +1,197 @@
+{
+  "slice": "0.8.1/G0",
+  "mode": "capability_tracer",
+  "purpose": "GATE G0 \u2014 prove the signal path before any sized/expensive run (plan \u00a72/\u00a78.1)",
+  "dataset": "xiaowu0162/longmemeval-cleaned",
+  "split": "longmemeval_s_cleaned",
+  "seed": 20260614,
+  "checks": {
+    "T1": {
+      "check": "T1_dense_fused_reachable",
+      "status": "ok",
+      "fused_hit_returned": true,
+      "dense_branch_present": true,
+      "branches_seen": [
+        "vector"
+      ],
+      "soft_fallback_branch": null,
+      "n_hits": 2,
+      "production_vector_kind_surface": [],
+      "test_hook_present": true,
+      "path_used": "test-hook:_configure_vector_kind_for_test",
+      "pre1_finding": "No production Python/SDK surface registers a node vector kind; the fused/dense arm covers doc nodes ONLY via the test-hook _configure_vector_kind_for_test. PRE-1 must add a minimal production binding OR sanction the test-hook seam for eval."
+    },
+    "T2": {
+      "check": "T2_airlock_readers_reachable",
+      "base_url": "http://localhost:4000/v1",
+      "probes": {
+        "claude-haiku": {
+          "requested_model": "claude-haiku",
+          "http_status": 200,
+          "latency_ms": 792,
+          "resolved_model": "claude-haiku",
+          "content_present": true,
+          "parseable": true
+        },
+        "claude-sonnet": {
+          "requested_model": "claude-sonnet",
+          "http_status": 200,
+          "latency_ms": 853,
+          "resolved_model": "claude-sonnet",
+          "content_present": true,
+          "parseable": true
+        },
+        "claude-opus": {
+          "requested_model": "claude-opus",
+          "http_status": 200,
+          "latency_ms": 1358,
+          "resolved_model": "claude-opus",
+          "content_present": true,
+          "parseable": true
+        },
+        "gpt-5": {
+          "requested_model": "gpt-5",
+          "http_status": 429,
+          "latency_ms": 188,
+          "parseable": false,
+          "error_snippet": "{\"error\":{\"message\":\"litellm.RateLimitError: RateLimitError: OpenAIException - You exceeded your current quota, please check your plan and billing details. For more information on this error, read the"
+        },
+        "gpt-5-mini": {
+          "requested_model": "gpt-5-mini",
+          "http_status": 429,
+          "latency_ms": 8,
+          "parseable": false,
+          "error_snippet": "{\"error\":{\"message\":\"litellm.RateLimitError: Airlock temporarily blocked client key:b35cf679 from provider openai for model gpt-5-mini to protect upstream standing. Retry after 299 seconds. reason=lit"
+        },
+        "gemini-3.1-pro": {
+          "requested_model": "gemini-3.1-pro",
+          "http_status": 200,
+          "latency_ms": 1989,
+          "resolved_model": "gemini-3.1-pro",
+          "content_present": true,
+          "parseable": true
+        },
+        "gemini-3-pro": {
+          "requested_model": "gemini-3-pro",
+          "http_status": 404,
+          "latency_ms": 205,
+          "parseable": false,
+          "error_snippet": "{\"error\":{\"message\":\"litellm.NotFoundError: GeminiException - {\\n  \\\"error\\\": {\\n    \\\"code\\\": 404,\\n    \\\"message\\\": \\\"This model models/gemini-3-pro-preview is no longer available. Please update you"
+        }
+      },
+      "status": "ok",
+      "usable_reader_ids": [
+        "claude-haiku",
+        "claude-sonnet",
+        "claude-opus",
+        "gemini-3.1-pro"
+      ],
+      "rate_limited_ids": [
+        "gpt-5",
+        "gpt-5-mini"
+      ],
+      "alias_to_resolved_model": {
+        "claude-haiku": "claude-haiku",
+        "claude-sonnet": "claude-sonnet",
+        "claude-opus": "claude-opus",
+        "gemini-3.1-pro": "gemini-3.1-pro"
+      },
+      "pre2_finding": "ELPS/answerer have ZERO resilience today (no retry/backoff/concurrency cap). 429s observed: gpt-5, gpt-5-mini. PRE-2 must add exponential backoff + retry-on-429 + bounded concurrency to BOTH the answerer and the ELPS extractor before any at-scale (E1) run.",
+      "pre3_finding": "response.model (resolved) is recoverable from the airlock response and differs from the requested alias \u2014 this is the PRE-3 provenance source (capture response.model, not the ELPS_LLM_MODEL alias)."
+    },
+    "T3": {
+      "check": "T3_data_and_scorer",
+      "status": "ok",
+      "n_questions": 4,
+      "classes_seen": [
+        "factoid",
+        "knowledge_update",
+        "multi_session",
+        "temporal"
+      ],
+      "gold_ids_parsed": 4,
+      "multi_session_present": true,
+      "abstention_path_excluded": true,
+      "scorer_per_class": {
+        "factoid": {
+          "n_total": 1,
+          "n_scored": 1,
+          "n_abstention": 0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "knowledge_update": {
+          "n_total": 1,
+          "n_scored": 1,
+          "n_abstention": 0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 1,
+          "n_scored": 1,
+          "n_abstention": 0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "temporal": {
+          "n_total": 1,
+          "n_scored": 1,
+          "n_abstention": 0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "abstention": {
+          "n_total": 1,
+          "n_scored": 0,
+          "n_abstention": 1,
+          "mrr": null,
+          "ndcg_at_10": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "recall_at_20": null
+        }
+      },
+      "abstention_total": 1,
+      "note": "stub retriever (gold-first) on real LME data \u2014 proves gold ids parse + per-class / multi_session-full-set / abstention scoring all run."
+    },
+    "T4": {
+      "check": "T4_embedding_throughput",
+      "n_sessions_target": 20,
+      "status": "ok",
+      "source": "lme_real_sessions",
+      "n_sessions": 20,
+      "avg_body_chars": 9453,
+      "elapsed_s": 256.73,
+      "sessions_per_min": 4.7,
+      "forecast_iteration_7200_hours": 25.53,
+      "forecast_full_19195_hours": 68.07
+    }
+  },
+  "gate_g0": {
+    "T1_dense_path_decided": true,
+    "T2_usable_readers": [
+      "claude-haiku",
+      "claude-sonnet",
+      "claude-opus",
+      "gemini-3.1-pro"
+    ],
+    "T3_scorer_on_real_data": true,
+    "T4_sessions_per_min": 4.7,
+    "all_green": true
+  },
+  "blockers_encountered": [],
+  "elapsed_s": 344.7
+}

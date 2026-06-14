@@ -127,7 +127,20 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 
 ### Next action (orchestrator)
 
-**Slice 30 Option 2 COMPLETE** (`f7bb724`, 2026-06-14). ELPS pipeline end-to-end validated:
+**▶ 0.8.1 GRAPH/IR EXPERIMENT PROGRAM is now the live graph track. Entry point:
+`dev/plans/prompts/0.8.1-graph-track-HANDOFF.md`** (read it first). Authoritative plan:
+`dev/design/0.8.1-graph-experiment-plan.md`. Diagnosis:
+`dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md`. State (2026-06-14):
+G0 instrument-hardening Phase 1 DONE (tracer + memo, branch `g0-20260614T174004Z`,
+not merged) + design-reviewed (`dev/plans/runs/0.8.1-g0-design-review.md` — **BLOCK-1:
+graph-arm seeding is the real recall blocker, not `source_id`; needs a separate seeding
+slice**). Open HITL decisions + the step-16 schema-gate are in the hand-off §4. P0-A
+base-retrieval scaffold landed (`ef1e363`). ELPS `ready.provenance` CONFIRMED at v1
+(`dev/notes/elps-consult-3-provenance.md`).
+
+---
+
+**(prior)** **Slice 30 Option 2 COMPLETE** (`f7bb724`, 2026-06-14). ELPS pipeline end-to-end validated:
 - ELPS harness spoke `fathomdb.extract.v1` protocol correctly (claude-haiku via airlock)
 - `gold_gen.py` produced 141 memory-class queries (32 temporal, 48 multi_hop, 27 knowledge_update, 34 multi_session) from 100-doc sample
 - `ingest_with_extractor` + two-pass ingest + inter-pass drain ran without error
