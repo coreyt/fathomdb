@@ -635,10 +635,24 @@ def _load_documents(raw_dir: Path) -> dict[str, str]:
 
 
 def _build_fathomdb(
-    documents: dict[str, str], db_path: Path, *, batch: int = 500
+    documents: dict[str, str],
+    db_path: Path,
+    *,
+    batch: int = 500,
+    elps_harness_cmd: Optional[list[str]] = None,
+    elps_limit: int = 100,
+    use_graph_arm: bool = False,
 ) -> tuple[Optional["FathomDBAdapter"], Optional[dict[str, str]]]:
-    """Best-effort: ingest the corpus (FTS-only, no embedder) and return a live
-    adapter. Returns ``(None, blocker)`` on any failure so the runner degrades."""
+    """Best-effort: ingest the corpus and return a live adapter.
+
+    When ``elps_harness_cmd`` is supplied the first ``elps_limit`` documents
+    are ingested via ``ingest_with_extractor`` (ELPS path; builds the graph
+    arm).  Remaining documents fall back to plain ``write()``.  When
+    ``elps_harness_cmd`` is None the original FTS-only path is used.
+
+    Returns ``(adapter, None)`` on success or ``(None, blocker_dict)`` on
+    any failure so the runner can degrade gracefully.
+    """
     try:
         from fathomdb.engine import Engine
     except Exception as exc:  # noqa: BLE001 - report, don't crash the eval
@@ -652,14 +666,55 @@ def _build_fathomdb(
     try:
         engine = Engine.open(str(db_path), use_default_embedder=False)
         cursor_to_doc: dict[int, str] = {}
-        items = list(documents.items())
-        for start in range(0, len(items), batch):
-            chunk = items[start : start + batch]
-            receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
-            for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
-                cursor_to_doc[int(cursor)] = doc_id
-        engine.drain(timeout_s=120)
-        adapter = FathomDBAdapter(engine, doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)))
+
+        if elps_harness_cmd is not None:
+            # ELPS path -------------------------------------------------------
+            # Split: first elps_limit docs via ingest_with_extractor; rest via write()
+            items = list(documents.items())
+            elps_sample = items[:elps_limit]
+            remainder = items[elps_limit:]
+
+            # Build body→doc_id reverse map (IngestWithExtractorReceipt has no row_cursors)
+            body_to_doc_id: dict[str, str] = {body: doc_id for doc_id, body in elps_sample}
+
+            # Ingest ELPS sample
+            elps_docs = [
+                {"source_doc_id": doc_id, "body": body} for doc_id, body in elps_sample
+            ]
+            engine.ingest_with_extractor(elps_harness_cmd, elps_docs)
+
+            # Ingest remainder via plain write()
+            for start in range(0, len(remainder), batch):
+                chunk = remainder[start : start + batch]
+                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
+                    cursor_to_doc[int(cursor)] = doc_id
+
+            engine.drain(timeout_s=120)
+
+            def doc_id_of(sh: Any) -> str:  # noqa: ANN401
+                if int(sh.id) in cursor_to_doc:
+                    return cursor_to_doc[int(sh.id)]
+                return body_to_doc_id.get(sh.body, str(sh.id))
+
+            adapter = FathomDBAdapter(
+                engine, doc_id_of=doc_id_of, use_graph_arm=use_graph_arm
+            )
+        else:
+            # Original FTS-only path ------------------------------------------
+            items = list(documents.items())
+            for start in range(0, len(items), batch):
+                chunk = items[start : start + batch]
+                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
+                    cursor_to_doc[int(cursor)] = doc_id
+            engine.drain(timeout_s=120)
+            adapter = FathomDBAdapter(
+                engine,
+                doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)),
+                use_graph_arm=use_graph_arm,
+            )
+
         return adapter, None
     except Exception as exc:  # noqa: BLE001
         return None, {
@@ -681,6 +736,29 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--limit", type=int, default=None, help="cap queries (debug)")
     parser.add_argument("--no-fathomdb", action="store_true")
+    # Option 2 arguments
+    parser.add_argument(
+        "--elps-harness",
+        default=None,
+        help="Path to elps_live_harness.py; if set, ingest sample via ingest_with_extractor",
+    )
+    parser.add_argument(
+        "--elps-limit",
+        type=int,
+        default=100,
+        help="Max docs to ingest via ELPS (Option 2 sample size)",
+    )
+    parser.add_argument(
+        "--use-graph-arm",
+        action="store_true",
+        default=False,
+        help="Set use_graph_arm=True in FathomDBAdapter",
+    )
+    parser.add_argument(
+        "--extra-gold",
+        default=None,
+        help="Path to an additional gold file to merge with --gold (for memory-class QA)",
+    )
     args = parser.parse_args(argv)
 
     if not args.corpus_hash.startswith(CORPUS_HASH_PREFIX):
@@ -695,15 +773,29 @@ def main(argv: Optional[list[str]] = None) -> int:
     documents = _load_documents(raw_dir)
     print(f"[runner] loaded {len(documents)} documents")
 
+    # Change 3: restrict to ELPS sample when --elps-harness is active (fair comparison)
+    if args.elps_harness:
+        items = list(documents.items())[: args.elps_limit]
+        documents = dict(items)
+        print(f"[runner] ELPS mode: restricted to {len(documents)} documents (--elps-limit)")
+
     systems: dict[str, RetrievalAdapter] = {}
 
     # naive-RAG (always; pure-Python BM25, no deps, no LLM)
     systems["naive_rag"] = NaiveRAGAdapter(documents)
     print("[runner] naive_rag adapter ready")
 
-    # FathomDB (best-effort FTS arm; needs the built SDK)
+    # FathomDB (best-effort; ELPS path or FTS-only path)
     if not args.no_fathomdb:
-        fdb, blk = _build_fathomdb(documents, Path(args.db_path))
+        # Change 4: wire new args through to _build_fathomdb
+        elps_cmd = ["python", args.elps_harness] if args.elps_harness else None
+        fdb, blk = _build_fathomdb(
+            documents,
+            Path(args.db_path),
+            elps_harness_cmd=elps_cmd,
+            elps_limit=args.elps_limit,
+            use_graph_arm=args.use_graph_arm,
+        )
         if fdb is not None:
             systems["fathomdb"] = fdb
             print("[runner] fathomdb adapter ready")
@@ -758,6 +850,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("[runner] answerer BLOCKED — retrieval-only run")
 
     harness = R2Harness(gold_path=gold_path, answerer=answerer)
+
+    # Change 1: merge extra gold if provided
+    if args.extra_gold:
+        extra_gold_path = Path(args.extra_gold)
+        extra_raw = json.loads(extra_gold_path.read_text(encoding="utf-8"))
+        extra_queries = _parse_gold(extra_raw)
+        harness.queries = list(harness.queries) + extra_queries  # type: ignore[assignment]
+        print(f"[runner] merged {len(extra_queries)} extra queries from {extra_gold_path}")
+
     out = harness.run(systems, k=args.k, limit=args.limit)
     out["blockers_encountered"] = blockers
     out["systems_run"] = sorted(systems.keys())

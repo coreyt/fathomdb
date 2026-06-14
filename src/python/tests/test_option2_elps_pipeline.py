@@ -22,8 +22,8 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 
-_WT = Path(__file__).resolve().parents[2]  # src/python
-_HARNESS = _WT / "eval" / "elps_live_harness.py"
+_SRC_PYTHON = Path(__file__).resolve().parents[1]  # src/python
+_HARNESS = _SRC_PYTHON / "eval" / "elps_live_harness.py"
 
 
 # ---------------------------------------------------------------------------
