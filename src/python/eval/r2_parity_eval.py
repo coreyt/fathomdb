@@ -301,45 +301,41 @@ class NaiveRAGAdapter:
     name = "naive_rag"
 
     def __init__(self, documents: dict[str, str], *, k1: float = 1.5, b: float = 0.75) -> None:
-        self._doc_ids: list[str] = list(documents.keys())
         self._k1 = k1
         self._b = b
-        tokenized = {doc_id: _tokenize(body) for doc_id, body in documents.items()}
-        self._doc_len = {doc_id: len(toks) for doc_id, toks in tokenized.items()}
-        n_docs = max(len(self._doc_ids), 1)
-        self._avgdl = sum(self._doc_len.values()) / n_docs
-        # term frequencies + document frequencies
-        self._tf: dict[str, dict[str, int]] = {}
+        n_docs = max(len(documents), 1)
+        self._doc_len: dict[str, int] = {}
+        # Inverted index: term -> [(doc_id, term_freq)]. Scoring touches only docs
+        # that contain a query term (standard BM25 structure) — identical scores
+        # to a dense per-doc scan, but O(matching postings) not O(corpus) per query.
+        self._postings: dict[str, list[tuple[str, int]]] = defaultdict(list)
         df: dict[str, int] = defaultdict(int)
-        for doc_id, toks in tokenized.items():
+        for doc_id, body in documents.items():
+            toks = _tokenize(body)
+            self._doc_len[doc_id] = len(toks)
             counts: dict[str, int] = defaultdict(int)
             for t in toks:
                 counts[t] += 1
-            self._tf[doc_id] = dict(counts)
-            for t in counts:
+            for t, f in counts.items():
+                self._postings[t].append((doc_id, f))
                 df[t] += 1
-        self._idf = {
-            t: math.log(1 + (n_docs - n + 0.5) / (n + 0.5)) for t, n in df.items()
-        }
+        self._avgdl = max(sum(self._doc_len.values()) / n_docs, 1e-9)
+        self._idf = {t: math.log(1 + (n_docs - n + 0.5) / (n + 0.5)) for t, n in df.items()}
 
     def retrieve(self, question: str, k: int) -> list[Hit]:
         q_terms = set(_tokenize(question))
-        scored: list[Hit] = []
-        for doc_id in self._doc_ids:
-            tf = self._tf[doc_id]
-            dl = self._doc_len[doc_id]
-            score = 0.0
-            for t in q_terms:
-                f = tf.get(t, 0)
-                if f == 0:
-                    continue
-                idf = self._idf.get(t, 0.0)
-                denom = f + self._k1 * (1 - self._b + self._b * dl / max(self._avgdl, 1e-9))
-                score += idf * (f * (self._k1 + 1)) / denom
-            if score > 0.0:
-                scored.append(Hit(doc_id=doc_id, body="", score=score))
-        scored.sort(key=lambda h: h.score, reverse=True)
-        return scored[:k]
+        scores: dict[str, float] = defaultdict(float)
+        for t in q_terms:
+            idf = self._idf.get(t)
+            if not idf:
+                continue
+            coeff = self._k1 + 1
+            for doc_id, f in self._postings.get(t, ()):
+                dl = self._doc_len[doc_id]
+                denom = f + self._k1 * (1 - self._b + self._b * dl / self._avgdl)
+                scores[doc_id] += idf * (f * coeff) / denom
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
+        return [Hit(doc_id=doc_id, body="", score=score) for doc_id, score in ranked]
 
 
 class Mem0OSSAdapter:
