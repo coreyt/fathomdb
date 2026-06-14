@@ -13,13 +13,13 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-14 (Slice 30 Option 2 pipeline validated `f7bb724` — ELPS→graph→R2 confirmed end-to-end; go/no-go pending Option 3 LongMemEval numbers).
+Last updated: 2026-06-14 (Slice 30 Option 3 LongMemEval benchmark COMPLETE — go/no-go data in hand; ⚠️ HITL ruling required before Slice 30 CLOSE).
 
 ---
 
 ## 1. Current slice
 
-**Slice 30 Option 2 COMPLETE @ `f7bb724` (2026-06-14) — ELPS→graph→R2 pipeline validated end-to-end. go/no-go pending Option 3 (LongMemEval) numbers (see §"Next action").**
+**Slice 30 Option 3 COMPLETE (2026-06-14) — LongMemEval benchmark numbers in hand. ⚠️ HITL go/no-go ruling required before Slice 30 CLOSE (see §"Next action" + §7).**
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -135,8 +135,16 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 - Numbers (FathomDB temporal=0.25, multi_hop=0.1458, knowledge_update=0.037, multi_session=0.0294) are **NOT benchmark-significant** (N=100 sample, LLM-generated gold)
 - Artifact: `dev/plans/runs/0.8.1-slice-30-option2-output.json`
 
-**⚠️ NEXT: Option 3 — LongMemEval + ELPS (go/no-go benchmark numbers)**
-Clone `github.com/xiaowu0162/longmemeval` (500 public questions, pre-labeled temporal/multi_hop/knowledge_update/multi_session). Add LME data loader to R2 harness. Run three-way comparison (FathomDB vs naive_rag; Mem0-OSS and answerer LLM if available). These are the publicly-comparable go/no-go numbers for Slice 30 closure.
+**⚠️ NEXT: HITL go/no-go ruling on Slice 30 — data in hand (see §7 Option 3 entry).**
+
+Summary for HITL:
+- **LME s_cleaned (19,195 sessions, 500 questions, publicly-comparable)**:
+  - FathomDB FTS+dense vs NaiveRAG BM25: temporal=-6pp, knowledge_update=-5pp, **multi_session=+1.5pp**, factoid=-10pp
+  - FathomDB beats BM25 on multi_session (+1.5pp); trails on temporal/knowledge_update/factoid
+- **Graph arm effect (ELPS+graph vs FTS+dense baseline)**: temporal=0, knowledge_update=-1.3pp, multi_session=0, factoid=0 — graph arm provides **zero positive recall benefit**
+- **Root cause of zero graph benefit**: entity node `SearchHit.id` resolves to integer row ID, not source session ID; entity hits never match gold `answer_session_ids`
+- **ELPS pipeline**: validated end-to-end; 174/200 sessions extracted successfully; protocol + harness robust
+- Artifact: `dev/plans/runs/0.8.1-slice-30-option3-output.json` (verdict: `HITL_REQUIRED`)
 
 **Do NOT mark Slice 30 CLOSED until HITL reviews Option 3 R2 per-class deltas.**
 
@@ -162,7 +170,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ✅ CLOSED 2026-06-14 — harness `a1cd7d9`, fix-25-1 `078b882`; codex §9 1×P1+4×P2→PASS; factoid Δ+0.0017; memory-class null → HITL go/no-go escalation | 10 | n/a | n/a | ✅ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go DATA-LIMITED → HITL escalation (memory-class gold absent) | 15,20,25 | ✅ | ✅ | ✅ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go **HITL_REQUIRED** (Option 3 LME data in hand; multi_session +1.5pp vs BM25; graph arm zero lift; entity-node doc_id gap identified) | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
@@ -231,6 +239,42 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-14 — Slice 30 Option 3 COMPLETE — LongMemEval benchmark; go/no-go HITL_REQUIRED
+
+**Option 3 (LongMemEval + ELPS benchmark)** COMPLETE. Artifact: `dev/plans/runs/0.8.1-slice-30-option3-output.json`.
+
+**Dataset:** `xiaowu0162/longmemeval-cleaned` (s_cleaned split): 19,195 unique sessions, 500 questions (133 temporal, 78 knowledge_update, 133 multi_session, 156 factoid). All questions have pre-labeled gold `answer_session_ids`.
+
+**Three runs completed:**
+1. `oracle-v2` — oracle split (940 sessions, no distractors). High recall for both; BM25 wins easily when all sessions are evidence-only. Not benchmark-significant.
+2. `s-nograph` — s_cleaned FTS+dense baseline (19,195 sessions, no ELPS/graph). FathomDB multi_session beats BM25 (+1.5pp); trails temporal (-6pp), knowledge_update (-5pp), factoid (-10pp).
+3. `s-elps-v1` — s_cleaned with ELPS+graph (200 sessions extracted, `use_graph_arm=True`). Same numbers as baseline — graph arm zero lift.
+
+**R2 per-class deltas (FathomDB vs NaiveRAG, s_cleaned):**
+| Class | FathomDB | NaiveRAG | Δ |
+|---|---|---|---|
+| temporal | 0.0902 | 0.1504 | **-0.0602** |
+| knowledge_update | 0.3590 | 0.4231 | **-0.0641** |
+| multi_session | 0.1278 | 0.1128 | **+0.0150** |
+| factoid | 0.4423 | 0.5385 | **-0.0962** |
+
+**Graph arm effect vs FTS+dense baseline:**
+temporal=0.0, knowledge_update=-0.0128, multi_session=0.0, factoid=0.0
+
+**Root cause of zero graph benefit:** Entity nodes from graph arm retrieval carry `SearchHit.id = str(row_id)`, NOT the source session ID. `doc_id_of` lambda falls back to `str(sh.id)` (integer row ID) which never matches gold `answer_session_ids`. Entity node hits inject noise into RRF ranking without contributing matching doc_ids.
+
+**ELPS pipeline state:** 174/200 sessions extracted successfully; 26/200 failures (LLM truncated JSON on long sessions; all caught per-doc, empty result returned, no abort). All four harness fixes effective (confidence clamping, entity/edge filtering, NaN guard).
+
+**Blocker findings (not bugs — known limitations):**
+- `mem0-oss-unavailable`: Mem0 arm skipped (no local backend). Resolution: UNRESOLVED.
+- `answerer-llm-unavailable`: retrieval-only run. To enable: set `R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1`.
+
+**Fix required before graph arm can contribute recall:** expose `source_doc_id` in `SearchHit` for entity node hits (or filter entity-node hits in `FathomDBAdapter` before RRF).
+
+**TDD state:** 147 passed, 2 skipped (T1-T7 all GREEN).
+
+**Verdict: HITL_REQUIRED** — Do NOT mark Slice 30 CLOSED without HITL ruling on this data.
 
 ### 2026-06-14 — Slice 30 Option 2 COMPLETE — ELPS→graph→R2 pipeline validated
 
