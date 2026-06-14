@@ -195,11 +195,18 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
         result = _call_llm_httpx(doc)
         entities = result.get("entities", [])
         edges = result.get("edges", [])
+        # Rust derive_logical_id rejects empty names or kinds containing ':'.
+        # Filter those out here rather than aborting the whole extraction.
+        entities = [
+            e for e in entities
+            if isinstance(e, dict)
+            and str(e.get("name", "")).strip()
+            and ":" not in str(e.get("type", ""))
+        ]
         for edge in edges:
             if not edge.get("source_doc_id"):
                 edge["source_doc_id"] = doc_id
             # Rust rejects confidence outside [0.0, 1.0] with EngineError::Extractor.
-            # Clamp here so a slightly-off LLM value doesn't abort the whole extraction.
             c = edge.get("confidence")
             if isinstance(c, (int, float)):
                 edge["confidence"] = max(0.0, min(1.0, float(c)))
