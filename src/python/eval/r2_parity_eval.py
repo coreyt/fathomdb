@@ -688,6 +688,12 @@ def _build_fathomdb(
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
                     cursor_to_doc[int(cursor)] = doc_id
 
+            # Drain after pass 1: wait for BGE embedder to finish doc embeddings
+            # before spawning the ELPS harness. Without this the CPU-intensive
+            # embedder competes with harness LLM calls and trips the 60s httpx
+            # timeout, then the Rust 300s IO timeout → EngineError::Extractor.
+            engine.drain(timeout_s=300)
+
             # Pass 2: ELPS extraction adds entity nodes + edges (graph arm population)
             elps_docs = [
                 {"source_doc_id": doc_id, "body": body} for doc_id, body in elps_sample
