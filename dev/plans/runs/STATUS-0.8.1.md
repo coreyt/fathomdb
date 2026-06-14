@@ -13,7 +13,7 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 30 MERGED @ `84b7a5b`; §9 fix-30-1 COMMITTED @ `2a78300` — 5 fixes (2×BLOCK+2×CONCERN+1×CLEANUP) all GREEN; SCHEMA-GATE-1 pending HITL; go/no-go pending Slice 25 R2 data).
+Last updated: 2026-06-13 (Slice 30: SCHEMA-GATE-1 RESOLVED @ `07a2aa2` — `temporal_fallback INTEGER` column, SCHEMA_VERSION 15, 4/4 tests GREEN; go/no-go pending Slice 25 R2 data). Slice 25 prompt authored: `dev/plans/prompts/0.8.1-slice-25-r2-parity-eval.md`.
 
 ---
 
@@ -126,7 +126,7 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Slice 25 (R2) OPEN — required for Slice 30 go/no-go.** Slice 30 is on `main` but cannot CLOSE until R2 per-class deltas arrive. SCHEMA-GATE-1 (`canonical_edges.temporal_fallback` column) needs HITL ruling for SCHEMA_VERSION 15.
+**Slice 25 (R2) OPEN — required for Slice 30 go/no-go.** Slice 30 is on `main` (including SCHEMA-GATE-1 resolved @ `07a2aa2`, SCHEMA_VERSION 15) but cannot CLOSE until R2 per-class deltas arrive. **Slice 25 prompt authored: `dev/plans/prompts/0.8.1-slice-25-r2-parity-eval.md` — ready to execute.**
 **Former pointer (Slice 25 authorization):**
 **Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
 **◆ HITL 2026-06-13: ELPS Slice 25 (golden) SIGNED OFF** (`~/projects/memex/dev/elps/FATHOMDB-ELPS-SLICE25-SIGNOFF.md`) — the golden-freeze prerequisite is satisfied; FathomDB Slice 25 is greenlit (this is *authorization to proceed*, NOT closure — the R2 parity-metric AC remains a HITL gate within the slice). **First step:** open the **conformance gate (reserved-gap 16–19)** — vendor the *actual frozen ELPS golden bytes* (`serialization_golden`) into the tree, ingest via `ingest_with_extractor`, assert `dangling_edge_endpoints == 0` (upgrades today's QD-sample pin to the real cross-repo artifact). R2 eval runs on the **frozen artifact (replay-determinism)** — no live-binding rebuild needed for R2 (that's an R3/Slice-30 prereq).
