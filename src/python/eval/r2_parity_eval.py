@@ -305,12 +305,14 @@ class NaiveRAGAdapter:
         self._b = b
         n_docs = max(len(documents), 1)
         self._doc_len: dict[str, int] = {}
+        self._bodies: dict[str, str] = {}
         # Inverted index: term -> [(doc_id, term_freq)]. Scoring touches only docs
         # that contain a query term (standard BM25 structure) — identical scores
         # to a dense per-doc scan, but O(matching postings) not O(corpus) per query.
         self._postings: dict[str, list[tuple[str, int]]] = defaultdict(list)
         df: dict[str, int] = defaultdict(int)
         for doc_id, body in documents.items():
+            self._bodies[doc_id] = body
             toks = _tokenize(body)
             self._doc_len[doc_id] = len(toks)
             counts: dict[str, int] = defaultdict(int)
@@ -335,7 +337,7 @@ class NaiveRAGAdapter:
                 denom = f + self._k1 * (1 - self._b + self._b * dl / self._avgdl)
                 scores[doc_id] += idf * (f * coeff) / denom
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
-        return [Hit(doc_id=doc_id, body="", score=score) for doc_id, score in ranked]
+        return [Hit(doc_id=doc_id, body=self._bodies.get(doc_id, ""), score=score) for doc_id, score in ranked]
 
 
 class Mem0OSSAdapter:
@@ -525,12 +527,13 @@ class R2Harness:
                 if q.gold_doc_ids:
                     retrieved = {h.doc_id for h in hits}
                     bucket["recall"].append(
-                        1.0 if any(g in retrieved for g in q.gold_doc_ids) else 0.0
+                        1.0 if all(g in retrieved for g in q.gold_doc_ids) else 0.0
                     )
                 if answerer_available:
                     answer = self.answerer.answer(q.question, [h.body for h in hits if h.body])
                     bucket["abst"].append(1.0 if answer is None else 0.0)
-                    bucket["acc"].append(scorer.score_answer(list(q.answers), answer))
+                    if q.answers:  # only score accuracy when answer strings exist
+                        bucket["acc"].append(scorer.score_answer(list(q.answers), answer))
 
         results: dict[str, dict[str, dict[str, Optional[float]]]] = {}
         for sys_name in systems:
@@ -644,6 +647,8 @@ def _build_fathomdb(
             "description": f"could not import fathomdb SDK ({exc}); run `pip install -e src/python`",
             "resolution": "UNRESOLVED — FathomDB arm skipped; naive-RAG retrieval reported",
         }
+    if db_path.exists():
+        db_path.unlink()
     try:
         engine = Engine.open(str(db_path), use_default_embedder=False)
         cursor_to_doc: dict[int, str] = {}
@@ -709,9 +714,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Mem0-OSS (best-effort local; needs mem0ai + a configured backend)
     mem0 = Mem0OSSAdapter.try_build()
     if mem0 is not None and mem0.available:
-        mem0.ingest(documents)
-        systems["mem0_oss"] = mem0
-        print("[runner] mem0_oss adapter ready")
+        try:
+            mem0.ingest(documents)
+            systems["mem0_oss"] = mem0
+            print("[runner] mem0_oss adapter ready")
+        except Exception as exc:  # noqa: BLE001
+            blockers.append(
+                {
+                    "id": "mem0-oss-unavailable",
+                    "description": f"mem0.ingest() failed: {exc}",
+                    "resolution": "UNRESOLVED — mem0 arm skipped; check backend config",
+                }
+            )
+            print(f"[runner] mem0_oss BLOCKED (ingest failed): {exc}")
     else:
         blockers.append(
             {
