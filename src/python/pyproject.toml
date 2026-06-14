@@ -42,12 +42,19 @@ python-source = "."
 # feature list, so this file never gates the shipped artifact.
 features = ["pyo3/extension-module", "default-embedder"]
 
+[tool.pytest.ini_options]
+# Slice 25: the R2 eval harness lives at `eval/` (sibling of `fathomdb/`); it is
+# test-infra, NOT part of the shipped wheel (maturin only packages `fathomdb`).
+# Prepend the python-source root so `import eval.r2_parity_eval` resolves under
+# pytest's prepend import mode without an editable install of the harness.
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 
 [tool.pyright]
-include = ["fathomdb", "tests"]
+include = ["fathomdb", "tests", "eval"]
 typeCheckingMode = "standard"
 pythonVersion = "3.10"
 venvPath = "../.."
