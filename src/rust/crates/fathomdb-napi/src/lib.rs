@@ -1368,6 +1368,7 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
         t_invalid,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     })
 }
 

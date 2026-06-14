@@ -1053,6 +1053,7 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
         t_invalid,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     })
 }
 

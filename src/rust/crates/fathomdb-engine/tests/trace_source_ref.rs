@@ -64,6 +64,7 @@ fn ac_042_trace_source_ref_includes_edges_alongside_nodes() {
             t_invalid: None,
             confidence: None,
             extractor_model_id: None,
+            temporal_fallback: None,
         }])
         .expect("edge write");
 

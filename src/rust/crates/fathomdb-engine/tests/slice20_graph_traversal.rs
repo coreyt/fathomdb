@@ -48,6 +48,7 @@ fn edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
         t_invalid: None,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) 
         t_invalid: Some(t_invalid.to_string()),
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     }
 }
 
@@ -415,6 +417,7 @@ fn t_invalid_tformat_edge_correctly_excluded() {
                 t_valid: None,
                 confidence: None,
                 extractor_model_id: None,
+                temporal_fallback: None,
             },
         ])
         .expect("write");
@@ -637,6 +640,7 @@ fn write_rejects_edge_endpoint_containing_record_separator() {
         t_invalid: None,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     }]);
     assert!(
         matches!(result, Err(EngineError::WriteValidation)),

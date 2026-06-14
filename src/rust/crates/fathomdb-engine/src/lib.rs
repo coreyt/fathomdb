@@ -1387,6 +1387,12 @@ pub enum PreparedWrite {
         /// G11 (Slice 15) — opaque model/provider id from the BYO-LLM harness
         /// `ready.model` field. NULL for non-BYO-LLM edges.
         extractor_model_id: Option<String>,
+        /// R3 (Slice 30, SCHEMA-GATE-1, HITL-SIGNED 2026-06-13) — set when the
+        /// ELPS extractor defaulted this edge's `t_valid` to `created_at` rather
+        /// than deriving it from the document text. Such edges have untrustworthy
+        /// event times and are excluded from graph-arm BFS temporal queries.
+        /// `None`/`false` = not a fallback; `Some(true)` = fallback.
+        temporal_fallback: Option<bool>,
     },
     OpStore {
         collection: String,
@@ -2587,6 +2593,27 @@ impl Engine {
             let raw_edges =
                 result.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
+            // R3 (SCHEMA-GATE-1): collect substituted_t_valid values from
+            // temporal_fallback warnings. An edge whose t_valid matches one of
+            // these values had its event time defaulted to created_at (not
+            // text-grounded) and must be flagged so BFS can exclude it.
+            let fallback_dates: std::collections::HashSet<String> = result
+                .get("warnings")
+                .and_then(|v| v.as_array())
+                .map(|ws| {
+                    ws.iter()
+                        .filter(|w| {
+                            w.get("kind").and_then(|k| k.as_str()) == Some("temporal_fallback")
+                        })
+                        .filter_map(|w| {
+                            w.get("substituted_t_valid")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             if !entities.is_empty() {
                 let node_batch: Vec<PreparedWrite> = entities
                     .iter()
@@ -2740,6 +2767,10 @@ impl Engine {
                         let edge_key = format!("{from_lid}:{to_lid}:{relation}");
                         let edge_lid = derive_logical_id("edge", &edge_key)?;
 
+                        let is_temporal_fallback = t_valid
+                            .as_deref()
+                            .map(|tv| fallback_dates.contains(tv))
+                            .unwrap_or(false);
                         Ok(PreparedWrite::Edge {
                             kind: relation.to_string(),
                             from: from_lid,
@@ -2751,6 +2782,7 @@ impl Engine {
                             t_invalid,
                             confidence,
                             extractor_model_id: extractor_model_id.clone(),
+                            temporal_fallback: if is_temporal_fallback { Some(true) } else { None },
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -5376,6 +5408,7 @@ fn bfs_graph_arm_candidates(
          WHERE (e.from_id = ?1 OR e.to_id = ?1) \
            AND e.superseded_at IS NULL \
            AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
+           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
          LIMIT 64",
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
@@ -8129,6 +8162,7 @@ fn commit_batch(
                     t_invalid,
                     confidence,
                     extractor_model_id,
+                    temporal_fallback,
                 },
                 WritePlan::Edge,
             ) => {
@@ -8180,11 +8214,14 @@ fn commit_batch(
                         record_projection_terminal(&tx, *sc as u64, "superseded")?;
                     }
                 }
+                let temporal_fallback_i: Option<i64> =
+                    temporal_fallback.and_then(|f| if f { Some(1) } else { None });
                 tx.execute(
                     "INSERT INTO canonical_edges(
                          write_cursor, kind, from_id, to_id, source_id, logical_id,
-                         body, t_valid, t_invalid, confidence, extractor_model_id
-                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                         body, t_valid, t_invalid, confidence, extractor_model_id,
+                         temporal_fallback
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         cursor,
                         kind,
@@ -8196,7 +8233,8 @@ fn commit_batch(
                         t_valid,
                         t_invalid,
                         confidence,
-                        extractor_model_id
+                        extractor_model_id,
+                        temporal_fallback_i
                     ],
                 )?;
                 // G11 — edge FTS projection into `search_index_edges` (separate

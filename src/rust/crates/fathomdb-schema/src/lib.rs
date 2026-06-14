@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -358,6 +358,20 @@ pub const MIGRATIONS: &[Migration] = &[
                   write_cursor UNINDEXED,
                   tokenize = 'porter unicode61 remove_diacritics 2'
               );",
+    },
+    // 0.8.1 Slice 30 (R3) SCHEMA-GATE-1 — temporal_fallback provenance flag.
+    // HITL-SIGNED 2026-06-13: approved additive schema bump.
+    // Edges whose `t_valid` was defaulted to `created_at` by the ELPS extractor
+    // (not text-grounded) carry this flag so the graph-arm BFS can exclude them
+    // from temporal queries. NULL = not a fallback (pre-column rows and edges
+    // written without the flag are treated as NOT temporal_fallback — safe default
+    // since they were written before provenance tracking existed or via a direct
+    // write where the caller owns the t_valid).
+    // MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 15,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R3 temporal_fallback provenance flag (additive nullable BOOLEAN column)
+              ALTER TABLE canonical_edges ADD COLUMN temporal_fallback INTEGER;",
     },
 ];
 

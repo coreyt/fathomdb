@@ -53,6 +53,7 @@ fn phase9_pack_b_source_id_round_trips_through_canonical_edges() {
                 t_invalid: None,
                 confidence: None,
                 extractor_model_id: None,
+                temporal_fallback: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();

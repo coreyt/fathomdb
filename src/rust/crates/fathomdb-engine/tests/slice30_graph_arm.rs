@@ -46,6 +46,7 @@ fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: &str) 
         t_invalid: Some(t_invalid.to_string()),
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     }
 }
 
@@ -61,6 +62,23 @@ fn live_edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
         t_invalid: None,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
+    }
+}
+
+fn temporal_fallback_edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+        body: Some(format!("{from} links to {to}")),
+        t_valid: Some("2024-01-01T00:00:00Z".to_string()),
+        t_invalid: None,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: Some(true),
     }
 }
 
@@ -145,40 +163,57 @@ fn graph_arm_drops_invalidated_edges() {
 // RED-3b: temporal_fallback — SCHEMA GATE (test is #[ignore])
 // ---------------------------------------------------------------------------
 
-/// SCHEMA GATE: Tests the intended behavior for temporal_fallback exclusion.
+/// SCHEMA-GATE-1 resolved (HITL-SIGNED 2026-06-13): SCHEMA_VERSION 15 adds
+/// `canonical_edges.temporal_fallback INTEGER`. BFS now filters
+/// `AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0)`.
 ///
-/// This test is #[ignore] because detecting temporal_fallback edges at BFS
-/// traversal time requires a new `temporal_fallback BOOLEAN` column on
-/// `canonical_edges` (SCHEMA_VERSION 14 -> 15), which requires HITL approval
-/// per the schema gate in §3.0.R.
+/// Setup:
+///   - Node A ("carol anchor text for search")
+///   - Node B ("dave reachable via live edge") — reachable via a live edge
+///   - Node C ("eve unreachable via fallback edge") — only edge A->C has temporal_fallback=true
 ///
-/// Once the schema gate is resolved and the column is added, this test should:
-/// 1. Ingest a document with a temporal_fallback warning edge
-/// 2. Assert that the edge's reachable endpoint appears with ZERO contribution
-///    OR with a reduced score relative to a temporally-grounded edge
-///
-/// For now, this test is recorded as documentation of the intended behavior.
+/// With use_graph_arm=true:
+///   - B must appear (live edge A->B traversable)
+///   - C must NOT appear (edge A->C has temporal_fallback=true → excluded from BFS)
 #[test]
-#[ignore = "SCHEMA-GATE: temporal_fallback detection requires SCHEMA_VERSION 15 \
-             (canonical_edges.temporal_fallback column) — awaiting HITL approval. \
-             See output.json blockers_encountered."]
 fn graph_arm_temporal_fallback_excluded_or_downweighted() {
-    // INTENDED TEST (cannot run until schema gate resolved):
-    //
-    // 1. Ingest a document whose extracted edge carries a temporal_fallback warning
-    //    (t_valid was defaulted to created_at, not text-grounded).
-    // 2. Ingest a control document with a temporally-grounded edge.
-    // 3. Search with use_graph_arm=true.
-    // 4. Assert that the temporal_fallback edge's reachable endpoint either:
-    //    (a) does NOT appear in graph arm candidates (exclude policy), OR
-    //    (b) appears with a score reduced by the temporal_fallback_penalty factor.
-    //
-    // The detection path: at BFS time, query
-    //   `SELECT temporal_fallback FROM canonical_edges WHERE write_cursor = ?`
-    // If the column doesn't exist (schema < 15), this test cannot run.
-    //
-    // Policy (from design memo Q6): EXCLUDE (treat as if t_invalid = now).
-    panic!("temporal_fallback test: schema gate not yet resolved");
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "temporal_fallback_edge")).expect("open");
+
+    opened
+        .engine
+        .write(&[
+            node_write("doc", "carol anchor text for search", "carol"),
+            node_write("doc", "dave reachable via live edge", "dave"),
+            node_write("doc", "eve unreachable via fallback edge", "eve"),
+            // Live edge — BFS must traverse this.
+            live_edge("carol", "dave", "edge-carol-dave"),
+            // temporal_fallback edge — BFS must NOT traverse this.
+            temporal_fallback_edge("carol", "eve", "edge-carol-eve"),
+        ])
+        .expect("write");
+
+    let result = opened
+        .engine
+        .search_reranked("carol anchor", None, 0, true)
+        .expect("search with graph arm");
+
+    let bodies: Vec<&str> = result.results.iter().map(|h| h.body.as_str()).collect();
+
+    // Dave is reachable via the live edge.
+    assert!(
+        result.results.iter().any(|h| h.body.contains("dave reachable")),
+        "dave (reachable via live edge) must appear in graph arm results; got: {bodies:?}"
+    );
+
+    // Eve is NOT reachable — her only path is through a temporal_fallback edge.
+    assert!(
+        !result.results.iter().any(|h| h.body.contains("eve unreachable")),
+        "eve must NOT appear (only edge has temporal_fallback=true → excluded from BFS); \
+         got: {bodies:?}"
+    );
+
+    opened.engine.close().unwrap();
 }
 
 // ---------------------------------------------------------------------------

@@ -410,6 +410,7 @@ pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, 
             t_invalid: None,
             confidence: None,
             extractor_model_id: None,
+            temporal_fallback: None,
         });
     }
     let edges_written = edge_batch.len();

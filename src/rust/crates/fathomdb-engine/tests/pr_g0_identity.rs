@@ -35,6 +35,7 @@ fn edge(kind: &str, from: &str, to: &str, logical_id: Option<&str>) -> PreparedW
         t_invalid: None,
         confidence: None,
         extractor_model_id: None,
+        temporal_fallback: None,
     }
 }
 
