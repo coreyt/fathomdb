@@ -203,13 +203,23 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
             and str(e.get("name", "")).strip()
             and ":" not in str(e.get("type", ""))
         ]
+        edges = [
+            e for e in edges
+            if isinstance(e, dict)
+            and str(e.get("from_entity", "")).strip()
+            and str(e.get("to_entity", "")).strip()
+        ]
         for edge in edges:
             if not edge.get("source_doc_id"):
                 edge["source_doc_id"] = doc_id
             # Rust rejects confidence outside [0.0, 1.0] with EngineError::Extractor.
             c = edge.get("confidence")
-            if isinstance(c, (int, float)):
+            if c is None:
+                pass
+            elif isinstance(c, (int, float)) and c == c:  # c == c is False for NaN
                 edge["confidence"] = max(0.0, min(1.0, float(c)))
+            else:
+                edge["confidence"] = 0.5
         warnings = result.get("warnings", [])
         return entities, edges, warnings
     except Exception as exc:  # noqa: BLE001
