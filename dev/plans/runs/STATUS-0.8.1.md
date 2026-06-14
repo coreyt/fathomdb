@@ -13,13 +13,13 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-13 (Slice 30: SCHEMA-GATE-1 RESOLVED @ `07a2aa2` — `temporal_fallback INTEGER` column, SCHEMA_VERSION 15, 4/4 tests GREEN; go/no-go pending Slice 25 R2 data). Slice 25 prompt authored: `dev/plans/prompts/0.8.1-slice-25-r2-parity-eval.md`.
+Last updated: 2026-06-14 (Slice 25 CLOSED @ `078b882` — codex §9 1×P1+4×P2 → fix-25-1 → PASS; go/no-go DATA-LIMITED → ⚠️ HITL escalation pending).
 
 ---
 
 ## 1. Current slice
 
-**Slice 30 MERGED @ `84b7a5b` (2026-06-13) — §9 fix-30-1 committed @ `2a78300`. Go/no-go pending Slice 25 R2 data. SCHEMA-GATE-1 pending HITL.**
+**Slice 25 CLOSED @ `078b882` (2026-06-14) — codex §9 → fix-25-1 → PASS. Slice 30 go/no-go DATA-LIMITED → ⚠️ HITL escalation required (see §"Next action").**
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -49,9 +49,9 @@ BFS SQL now filters `AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0
 `graph_arm_temporal_fallback_excluded_or_downweighted` is now un-ignored and GREEN.
 All 4 Slice 30 tests pass; 0 ignored.
 
-**Go/no-go (open):** Slice 30 is on `main` but CLOSE requires R2 per-class deltas (Slice 25) showing
-the graph arm lifts temporal/multi-hop/knowledge-update classes without regressing factoid/exploratory
-Recall@K. Slice 25 is still OPEN. This is the only remaining gate on Slice 30 CLOSE.
+**Slice 25 CLOSED (2026-06-14):** R2 harness merged @ `a1cd7d9`, fix-25-1 @ `078b882`. Codex §9 PASS (5 findings fixed). See §7 for details.
+
+**Go/no-go (DATA-LIMITED → ⚠️ HITL escalation):** R2 ran on the frozen corpus. Factoid R@10 FathomDB 0.8999 vs naive-RAG 0.8982 (Δ +0.0017, FTS-only). Memory classes (temporal/multi_hop/knowledge_update/multi_session): N=0, all null — no gold in frozen corpus for these classes. Answerer LLM and Mem0-OSS also unavailable. The three R3 go/no-go classes are all null → **cannot flip `use_graph_arm=true` on absent data. HITL must rule on go/no-go path** (see §7 decision entry).
 
 Slice 10 Opus-xhigh §9 review findings + fixes:
 - **BLOCK [FIX-1]**: `ce_rerank` took `hits: Vec<SearchHit>` by value, moved into the function,
@@ -126,7 +126,12 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**Slice 25 (R2) OPEN — required for Slice 30 go/no-go.** Slice 30 is on `main` (including SCHEMA-GATE-1 resolved @ `07a2aa2`, SCHEMA_VERSION 15) but cannot CLOSE until R2 per-class deltas arrive. **Slice 25 prompt authored: `dev/plans/prompts/0.8.1-slice-25-r2-parity-eval.md` — ready to execute.**
+**⚠️ HITL escalation — Slice 30 go/no-go DATA-LIMITED.** Slice 25 is CLOSED but the R2 memory-class deltas are all null (no gold in the frozen corpus for temporal/multi_hop/knowledge_update/multi_session; answerer LLM and Mem0-OSS also unavailable). HITL must choose one of:
+
+1. **Accept data-limited:** Ship `use_graph_arm=false` as permanent default; record the inability to measure as a known gap; treat R3 as infrastructure-ready but unvalidated on memory classes. Park the go/no-go as a reserved follow-on requiring memory-class gold acquisition.
+2. **Generate memory-class gold:** Use an offline LLM to generate temporal/multi_hop/knowledge_update QA pairs from the frozen corpus, add to gold set, re-run the R2 harness (no harness code change needed). Then re-evaluate go/no-go with real data.
+3. **Use LongMemEval:** Clone `github.com/xiaowu0162/longmemeval` (500 public questions, pre-labeled by class including temporal/multi-hop/knowledge-update) and run the harness against it. Requires a local answerer LLM + network access for the clone.
+
 **Former pointer (Slice 25 authorization):**
 **Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
 **◆ HITL 2026-06-13: ELPS Slice 25 (golden) SIGNED OFF** (`~/projects/memex/dev/elps/FATHOMDB-ELPS-SLICE25-SIGNOFF.md`) — the golden-freeze prerequisite is satisfied; FathomDB Slice 25 is greenlit (this is *authorization to proceed*, NOT closure — the R2 parity-metric AC remains a HITL gate within the slice). **First step:** open the **conformance gate (reserved-gap 16–19)** — vendor the *actual frozen ELPS golden bytes* (`serialization_golden`) into the tree, ingest via `ingest_with_extractor`, assert `dangling_edge_endpoints == 0` (upgrades today's QD-sample pin to the real cross-repo artifact). R2 eval runs on the **frozen artifact (replay-determinism)** — no live-binding rebuild needed for R2 (that's an R3/Slice-30 prereq).
@@ -148,8 +153,8 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **10** | R1 — CPU cross-encoder reranker (`rerank_fused`) | implementation | ✅ CLOSED 2026-06-13 — Opus-xhigh §9 (codex rate-limited): 1×BLOCK+6×CONCERN → fix-10-1 (`f5b708b`) GREEN; HEAD `3555a7f`. | 5 | ✅ | ✅ | ✅ |
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
-| **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ❌ | 10 | n/a | ❌ | ❌ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go pending Slice 25 | 15,20,25 | ✅ | ✅ | ✅ |
+| **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ✅ CLOSED 2026-06-14 — harness `a1cd7d9`, fix-25-1 `078b882`; codex §9 1×P1+4×P2→PASS; factoid Δ+0.0017; memory-class null → HITL go/no-go escalation | 10 | n/a | n/a | ✅ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go DATA-LIMITED → HITL escalation (memory-class gold absent) | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
@@ -218,6 +223,34 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-14 — Slice 25 CLOSED; codex §9 fix-25-1; go/no-go DATA-LIMITED → ⚠️ HITL escalation
+
+**Slice 25 (R2 parity eval) CLOSED** at `078b882`.
+
+Implementer agent (second run) delivered:
+- R2 eval harness (`src/python/eval/r2_parity_eval.py`) with identical-answerer protocol, FathomDBAdapter, NaiveRAGAdapter (BM25 inverted index), Mem0OSSAdapter (lazy), PerClassScorer (5 classes + abstention), R2Harness (COR-2 pin).
+- COR-2 verified: `corpus_hash = fe973fcd…` (bit-identical).
+- Retrieval-only run on 4,597 queries: factoid R@10 FathomDB 0.8999 vs naive-RAG 0.8982 (Δ +0.0017, FTS-only; BGE embedder absent so dense+fused arm not exercised).
+- Memory classes (temporal/multi_hop/knowledge_update/multi_session): N=0, all null (no gold in frozen corpus for these classes).
+- Harness unit tests 8/8; full Python suite 140 passed; pyright 0/0; mkdocs clean.
+
+Codex §9 (measurement-neutrality review on base `59e746b`) found 1×[P1] + 4×[P2]:
+- **[P1]** Evidence-only positives scored as negatives (`q.answers=[]` → accuracy inverted with LLM).
+- **[P2]** NaiveRAGAdapter returned empty body (context-less answerer → artificially poor naive baseline).
+- **[P2]** any-of recall instead of strict all-of (overstates recall for multi-evidence queries).
+- **[P2]** Mem0 `ingest()` abort instead of blocker record.
+- **[P2]** Stale DB on CLI re-run (appends corpus, corrupts qrels join).
+
+**fix-25-1** (`c98c9fd`, merged `078b882`): all 5 fixed; harness 8/8 GREEN; pyright 0/0. §9 PASS.
+
+**Go/no-go DATA-LIMITED (Slice 30 gate):**
+The three R3 go/no-go classes (temporal/multi_hop/knowledge_update) are all null — no gold in the frozen corpus; answerer LLM and Mem0-OSS also unavailable. Per prompt §11, this is a HITL escalation. Options:
+1. **Accept data-limited** — keep `use_graph_arm=false` default; park go/no-go; treat R3 as infra-ready.
+2. **Generate memory-class gold** — offline LLM generates temporal/multi_hop/knowledge_update QA pairs from the frozen corpus; re-run harness (no code change); re-evaluate.
+3. **Use LongMemEval** — clone public benchmark (500 questions, labeled by class); needs local answerer LLM.
+
+**Do NOT update Slice 30 status to CLOSED until HITL rules on the go/no-go path.**
 
 ### 2026-06-13 — Slice 30 MERGED (`84b7a5b`); §9 fix-30-1 committed (`2a78300`); go/no-go pending Slice 25
 

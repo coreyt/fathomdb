@@ -1,0 +1,59 @@
+{
+  "slice": "0.8.1/slice-25/fix-25-1",
+  "merge_sha": "078b882",
+  "fix_commit_sha": "c98c9fd",
+  "findings_addressed": [
+    {
+      "id": "P1-evidence-only-acc-inversion",
+      "severity": "P1",
+      "description": "Skip acc scoring for evidence-only queries (q.answers empty) — avoids inverting answerer_accuracy when an LLM is configured.",
+      "line_before": "~533",
+      "fix": "Added `if q.answers:` guard around bucket['acc'].append()"
+    },
+    {
+      "id": "P2-naive-rag-empty-body",
+      "severity": "P2",
+      "description": "NaiveRAGAdapter: store and return document bodies so answerer gets real context.",
+      "fix": "Added self._bodies dict in __init__, populated alongside tokenization loop, returned in retrieve() hits"
+    },
+    {
+      "id": "P2-any-of-recall",
+      "severity": "P2",
+      "description": "Strict all-of recall (any→all) — ADR spec; multi-hop questions need all evidence docs.",
+      "line_before": "~528",
+      "fix": "Changed `any(g in retrieved for g in q.gold_doc_ids)` to `all(...)`"
+    },
+    {
+      "id": "P2-mem0-ingest-aborts-cli",
+      "severity": "P2",
+      "description": "Wrap Mem0 ingest() in try/except — record blocker instead of aborting CLI.",
+      "line_before": "~720",
+      "fix": "Wrapped mem0.ingest(documents) in try/except; on failure appends mem0-oss-unavailable blocker and skips adding to systems"
+    },
+    {
+      "id": "P2-stale-fathomdb-db",
+      "severity": "P2",
+      "description": "Delete stale DB file before opening — reruns always start from clean ingest.",
+      "line_before": "~648",
+      "fix": "Added `if db_path.exists(): db_path.unlink()` before Engine.open() in _build_fathomdb()"
+    }
+  ],
+  "self_check": {
+    "pytest_r2_harness": {
+      "command": "pytest src/python/tests/test_r2_harness.py -v",
+      "result": "8 passed",
+      "exit_code": 0
+    },
+    "pytest_full_suite": {
+      "command": "pytest src/python/tests/ -v -m 'not AGENT_LONG'",
+      "result": "140 passed, 2 skipped",
+      "exit_code": 0
+    },
+    "pyright": {
+      "command": "pyright -p src/python",
+      "result": "0 errors, 0 warnings, 0 informations",
+      "exit_code": 0
+    }
+  },
+  "file_changed": "src/python/eval/r2_parity_eval.py"
+}
