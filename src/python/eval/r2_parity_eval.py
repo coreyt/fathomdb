@@ -664,7 +664,10 @@ def _build_fathomdb(
     if db_path.exists():
         db_path.unlink()
     try:
-        engine = Engine.open(str(db_path), use_default_embedder=False)
+        # ELPS path uses the embedder so projection scheduler can drain the
+        # edge_fact queue. Plain-write path stays FTS-only (no embedder needed).
+        use_embedder = elps_harness_cmd is not None
+        engine = Engine.open(str(db_path), use_default_embedder=use_embedder)
         cursor_to_doc: dict[int, str] = {}
 
         if elps_harness_cmd is not None:
