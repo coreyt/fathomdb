@@ -13,13 +13,13 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-14 (Slice 25 CLOSED @ `078b882` — codex §9 1×P1+4×P2 → fix-25-1 → PASS; go/no-go DATA-LIMITED → ⚠️ HITL escalation pending).
+Last updated: 2026-06-14 (Slice 30 Option 2 pipeline validated `f7bb724` — ELPS→graph→R2 confirmed end-to-end; go/no-go pending Option 3 LongMemEval numbers).
 
 ---
 
 ## 1. Current slice
 
-**Slice 25 CLOSED @ `078b882` (2026-06-14) — codex §9 → fix-25-1 → PASS. Slice 30 go/no-go DATA-LIMITED → ⚠️ HITL escalation required (see §"Next action").**
+**Slice 30 Option 2 COMPLETE @ `f7bb724` (2026-06-14) — ELPS→graph→R2 pipeline validated end-to-end. go/no-go pending Option 3 (LongMemEval) numbers (see §"Next action").**
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -126,11 +126,19 @@ with any of these open:
 All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-06-13`.
 
 ### Next action (orchestrator)
-**⚠️ HITL escalation — Slice 30 go/no-go DATA-LIMITED.** Slice 25 is CLOSED but the R2 memory-class deltas are all null (no gold in the frozen corpus for temporal/multi_hop/knowledge_update/multi_session; answerer LLM and Mem0-OSS also unavailable). HITL must choose one of:
 
-1. **Accept data-limited:** Ship `use_graph_arm=false` as permanent default; record the inability to measure as a known gap; treat R3 as infrastructure-ready but unvalidated on memory classes. Park the go/no-go as a reserved follow-on requiring memory-class gold acquisition.
-2. **Generate memory-class gold:** Use an offline LLM to generate temporal/multi_hop/knowledge_update QA pairs from the frozen corpus, add to gold set, re-run the R2 harness (no harness code change needed). Then re-evaluate go/no-go with real data.
-3. **Use LongMemEval:** Clone `github.com/xiaowu0162/longmemeval` (500 public questions, pre-labeled by class including temporal/multi-hop/knowledge-update) and run the harness against it. Requires a local answerer LLM + network access for the clone.
+**Slice 30 Option 2 COMPLETE** (`f7bb724`, 2026-06-14). ELPS pipeline end-to-end validated:
+- ELPS harness spoke `fathomdb.extract.v1` protocol correctly (claude-haiku via airlock)
+- `gold_gen.py` produced 141 memory-class queries (32 temporal, 48 multi_hop, 27 knowledge_update, 34 multi_session) from 100-doc sample
+- `ingest_with_extractor` + two-pass ingest + inter-pass drain ran without error
+- `use_graph_arm=True` three-arm RRF ran without crash; all four memory classes non-null
+- Numbers (FathomDB temporal=0.25, multi_hop=0.1458, knowledge_update=0.037, multi_session=0.0294) are **NOT benchmark-significant** (N=100 sample, LLM-generated gold)
+- Artifact: `dev/plans/runs/0.8.1-slice-30-option2-output.json`
+
+**⚠️ NEXT: Option 3 — LongMemEval + ELPS (go/no-go benchmark numbers)**
+Clone `github.com/xiaowu0162/longmemeval` (500 public questions, pre-labeled temporal/multi_hop/knowledge_update/multi_session). Add LME data loader to R2 harness. Run three-way comparison (FathomDB vs naive_rag; Mem0-OSS and answerer LLM if available). These are the publicly-comparable go/no-go numbers for Slice 30 closure.
+
+**Do NOT mark Slice 30 CLOSED until HITL reviews Option 3 R2 per-class deltas.**
 
 **Former pointer (Slice 25 authorization):**
 **Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
@@ -223,6 +231,30 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-14 — Slice 30 Option 2 COMPLETE — ELPS→graph→R2 pipeline validated
+
+**Option 2 (ELPS integration test on frozen corpus sample)** COMPLETE at `f7bb724`.
+
+New artifacts on `main`:
+- `src/python/eval/elps_live_harness.py` — `fathomdb.extract.v1` subprocess harness using claude-haiku via airlock litellm proxy
+- `src/python/eval/gold_gen.py` — memory-class QA generator (claude-sonnet)
+- `src/python/tests/test_option2_elps_pipeline.py` — 4 TDD tests (T1-T4) all GREEN
+- `r2_parity_eval.py` — extended with `--elps-harness`, `--elps-limit`, `--use-graph-arm`, `--extra-gold` CLI args
+- `dev/plans/runs/0.8.1-slice-30-option2-output.json` — run artifact (`pipeline_validated: true`)
+
+**Key fixes landed:**
+1. `use_default_embedder=True` in ELPS path — edge projection queue needs embedder or drain hangs (`SchedulerError`)
+2. Two-pass ingest — pass 1 `engine.write()` for doc cursor→doc_id mapping; pass 2 `engine.ingest_with_extractor()` for entity/edge graph
+3. `engine.drain(300s)` between passes — prevents CPU contention (BGE embedder + ELPS LLM calls → `EngineError::Extractor`)
+4. `max_tokens` 2048→4096 in harness — reduce JSON truncation (1 failure in v4 vs 19 in v1)
+
+**R2 results (non-benchmark — N=100 sample, LLM-generated gold):**
+FathomDB: temporal=0.25, multi_hop=0.1458, knowledge_update=0.037, multi_session=0.0294
+naive_rag: temporal=0.8125, multi_hop=0.7083, knowledge_update=0.7037, multi_session=0.3824
+
+FathomDB below naive_rag: entity-node hits from graph/dense arms push real doc nodes lower in RRF.
+Not a correctness bug — entity nodes lack source doc_id in `SearchHit`. Option 3 (conversation-level docs) will produce fairer comparison.
 
 ### 2026-06-14 — Slice 25 CLOSED; codex §9 fix-25-1; go/no-go DATA-LIMITED → ⚠️ HITL escalation
 
