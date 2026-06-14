@@ -1,51 +1,62 @@
 {
   "slice": "0.8.1/slice-30/option-3",
-  "head_sha": "8c75c3ac7bb2503270b1330b566288240cd670b9",
+  "head_sha": "d949a10",
   "lme_dataset": "xiaowu0162/longmemeval-cleaned",
-  "lme_split": "oracle",
-  "n_questions_loaded": 500,
-  "n_sessions_loaded": 940,
-  "elps_sessions_indexed": 100,
-  "elps_harness": "src/python/eval/elps_live_harness.py",
-  "extractor_model": "claude-haiku",
-  "graph_arm_enabled": true,
-  "r2_results": {
-    "fathomdb": null,
-    "naive_rag": {
-      "temporal":         {"recall_at_k": 0.2857},
-      "multi_session":    {"recall_at_k": 0.0},
-      "knowledge_update": {"recall_at_k": 0.0},
-      "factoid":          {"recall_at_k": 0.0}
-    }
-  },
-  "r2_per_class_deltas": {
-    "temporal":         {"fathomdb_minus_naive_rag_recall_at_k": null},
-    "multi_session":    {"fathomdb_minus_naive_rag_recall_at_k": null},
-    "knowledge_update": {"fathomdb_minus_naive_rag_recall_at_k": null},
-    "factoid":          {"fathomdb_minus_naive_rag_recall_at_k": null}
-  },
-  "blockers_encountered": [
+  "runs": [
     {
-      "id": "fathomdb-ingest-failed",
-      "description": "FathomDB open/ingest failed: extractor error. ELPS harness returned malformed JSON for ~10 of 100 sessions (unterminated strings / empty responses from claude-haiku LLM). The Rust ingest_with_extractor call raised EngineError::Extractor. Per spec §11: escalate if extractor error recurs after drain increase.",
-      "resolution": "UNRESOLVED — FathomDB arm skipped; increase drain timeout or retry with a more reliable LLM backend"
-    },
-    {
-      "id": "mem0-oss-unavailable",
-      "description": "mem0ai not available; Mem0 arm skipped.",
-      "resolution": "UNRESOLVED — install mem0ai + configure a local backend"
-    },
-    {
-      "id": "answerer-llm-unavailable",
-      "description": "no answerer LLM available (R2_ANSWERER_* env unset); retrieval-only metrics reported.",
-      "resolution": "UNRESOLVED — set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1"
-    },
-    {
-      "id": "sessions-restricted-to-elps-limit",
-      "description": "ELPS limit of 100 sessions out of 940 total oracle sessions. Most question gold_doc_ids fall outside the indexed 100 sessions, yielding near-zero naive_rag recall on factoid/knowledge_update/multi_session classes. Temporal recall 0.2857 reflects sessions that happened to fall within the first 100.",
-      "resolution": "Run without --elps-harness flag or with --no-fathomdb to index all 940 sessions; OR remove the ELPS session restriction when FathomDB extractor is stable"
+      "run_id": "oracle-v2",
+      "lme_split": "oracle",
+      "n_questions_loaded": 500,
+      "n_sessions_loaded": 940,
+      "n_queries_per_class": {
+        "factoid": 156,
+        "temporal": 133,
+        "knowledge_update": 78,
+        "multi_session": 133
+      },
+      "elps_sessions_extracted": 100,
+      "elps_body_truncation_chars": 2000,
+      "elps_harness": "src/python/eval/elps_live_harness.py",
+      "extractor_model": "claude-haiku",
+      "graph_arm_enabled": true,
+      "r2_results": {
+        "fathomdb": {
+          "temporal":         {"recall_at_k": 0.4211},
+          "multi_session":    {"recall_at_k": 0.3534},
+          "knowledge_update": {"recall_at_k": 0.7179},
+          "factoid":          {"recall_at_k": 0.7372}
+        },
+        "naive_rag": {
+          "temporal":         {"recall_at_k": 0.5188},
+          "multi_session":    {"recall_at_k": 0.4586},
+          "knowledge_update": {"recall_at_k": 0.8974},
+          "factoid":          {"recall_at_k": 0.7821}
+        }
+      },
+      "r2_per_class_deltas": {
+        "temporal":         {"fathomdb_minus_naive_rag_recall_at_k": -0.0977},
+        "multi_session":    {"fathomdb_minus_naive_rag_recall_at_k": -0.1052},
+        "knowledge_update": {"fathomdb_minus_naive_rag_recall_at_k": -0.1795},
+        "factoid":          {"fathomdb_minus_naive_rag_recall_at_k": -0.0449}
+      },
+      "blockers_encountered": [
+        {
+          "id": "mem0-oss-unavailable",
+          "description": "mem0ai not available; Mem0 arm skipped.",
+          "resolution": "UNRESOLVED — install mem0ai + configure a local backend"
+        },
+        {
+          "id": "answerer-llm-unavailable",
+          "description": "no answerer LLM available; retrieval-only metrics reported.",
+          "resolution": "Set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1"
+        }
+      ],
+      "note": "Oracle split (no distractors — evidence sessions only). FathomDB trailing NaiveRAG expected: (1) oracle has no distractors so BM25 finds evidence sessions easily by exact match; (2) ELPS graph is sparse (100 sessions extracted, ~15 failed due to LLM empty response on some sessions). The go/no-go benchmark numbers require the s_cleaned split (with ~40 sessions/question including distractors). s_cleaned run pending."
     }
   ],
   "pipeline_validated": true,
-  "note": "Option 3 oracle benchmark run (no distractors). FathomDB blocked by extractor error: claude-haiku returned malformed JSON for ~10% of the 100 ELPS-sampled oracle sessions, causing Rust ingest_with_extractor to raise EngineError::Extractor. naive_rag only arm: temporal=0.2857 (38/133 questions had gold sessions in the indexed 100). factoid/knowledge_update/multi_session = 0.0 due to sessions-restricted-to-elps-limit blocker. Pipeline code (T5/T6/T7) validated GREEN; go/no-go numbers require a full FathomDB run with stable extractor. Escalation: extractor error is the primary unblock needed."
+  "elps_harness": "src/python/eval/elps_live_harness.py",
+  "graph_arm_enabled": true,
+  "go_no_go_status": "PENDING — s_cleaned run required for benchmark numbers",
+  "note": "Option 3 pipeline code is GREEN (T5/T6/T7 pass, 147 total). Oracle v2 run shows FathomDB functional (no extractor error after body truncation fix). go/no-go numbers require s_cleaned split run with distractors."
 }
