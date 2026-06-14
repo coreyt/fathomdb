@@ -13,13 +13,13 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-14 (Slice 30 Option 3 LongMemEval benchmark COMPLETE — go/no-go data in hand; ⚠️ HITL ruling required before Slice 30 CLOSE).
+Last updated: 2026-06-14 (Slice 30 HITL-BLOCKED — HITL ruled Option 2 = block; entity-node source_doc_id fix required before Slice 30 CLOSE; Slice 30b scoped as unblock).
 
 ---
 
 ## 1. Current slice
 
-**Slice 30 Option 3 COMPLETE (2026-06-14) — LongMemEval benchmark numbers in hand. ⚠️ HITL go/no-go ruling required before Slice 30 CLOSE (see §"Next action" + §7).**
+**Slice 30 HITL-BLOCKED (2026-06-14) — HITL ruled Option 2 (block closure): entity-node source_doc_id fix required before Slice 30 can CLOSE. Unblock = Slice 30b (see §"Next action" + §7).**
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -135,18 +135,17 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 - Numbers (FathomDB temporal=0.25, multi_hop=0.1458, knowledge_update=0.037, multi_session=0.0294) are **NOT benchmark-significant** (N=100 sample, LLM-generated gold)
 - Artifact: `dev/plans/runs/0.8.1-slice-30-option2-output.json`
 
-**⚠️ NEXT: HITL go/no-go ruling on Slice 30 — data in hand (see §7 Option 3 entry).**
+**⚠️ NEXT: Slice 30b — entity-node source_doc_id fix (Slice 30 unblock).**
 
-Summary for HITL:
-- **LME s_cleaned (19,195 sessions, 500 questions, publicly-comparable)**:
-  - FathomDB FTS+dense vs NaiveRAG BM25: temporal=-6pp, knowledge_update=-5pp, **multi_session=+1.5pp**, factoid=-10pp
-  - FathomDB beats BM25 on multi_session (+1.5pp); trails on temporal/knowledge_update/factoid
-- **Graph arm effect (ELPS+graph vs FTS+dense baseline)**: temporal=0, knowledge_update=-1.3pp, multi_session=0, factoid=0 — graph arm provides **zero positive recall benefit**
-- **Root cause of zero graph benefit**: entity node `SearchHit.id` resolves to integer row ID, not source session ID; entity hits never match gold `answer_session_ids`
-- **ELPS pipeline**: validated end-to-end; 174/200 sessions extracted successfully; protocol + harness robust
-- Artifact: `dev/plans/runs/0.8.1-slice-30-option3-output.json` (verdict: `HITL_REQUIRED`)
+**HITL ruling (2026-06-14, Option 2 = BLOCK):** Slice 30 cannot CLOSE until graph arm entity-node hits resolve to source session IDs and produce measurable recall lift on LME multi_session.
 
-**Do NOT mark Slice 30 CLOSED until HITL reviews Option 3 R2 per-class deltas.**
+**Slice 30b scope (Rust engine fix):**
+- **Problem:** In the graph arm BFS, entity node `SearchHit.id` = `canonical_nodes` integer row ID. `doc_id_of` in FathomDBAdapter looks up `cursor_to_doc` which only contains document write cursors, not entity node row IDs → entity hits never match gold `answer_session_ids`.
+- **Fix:** When BFS returns an entity node hit, resolve the source document(s) via the edges that created/reference this entity. In the Rust graph BFS path, after finding an entity node, join through `canonical_edges` to find `source_doc_id` values and emit one `SearchHit` per source doc (or set `write_cursor` = the source doc cursor). Python adapter `doc_id_of` then resolves correctly.
+- **Gate:** Re-run LME s_cleaned with the fix applied; confirm multi_session Δ vs NaiveRAG improves from +1.5pp toward a meaningful lift (or document that the gap remains architectural and accept).
+- **Do NOT close Slice 30 without confirming the fix produces recall improvement.**
+
+**Do NOT mark Slice 30 CLOSED until Slice 30b lands and LME multi_session improves.**
 
 **Former pointer (Slice 25 authorization):**
 **Slice 25 (R2 — end-to-end Mem0/Zep parity eval) AUTHORIZED to proceed. Contract: `dev/plans/0.8.1-implementation.md`.**
@@ -170,7 +169,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ✅ CLOSED 2026-06-14 — harness `a1cd7d9`, fix-25-1 `078b882`; codex §9 1×P1+4×P2→PASS; factoid Δ+0.0017; memory-class null → HITL go/no-go escalation | 10 | n/a | n/a | ✅ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⏳ MERGED `84b7a5b`, §9 `2a78300`, SCHEMA-GATE-1 `07a2aa2` — ⚠️ go/no-go **HITL_REQUIRED** (Option 3 LME data in hand; multi_session +1.5pp vs BM25; graph arm zero lift; entity-node doc_id gap identified) | 15,20,25 | ✅ | ✅ | ✅ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⚠️ BLOCKED (HITL 2026-06-14) — merged `84b7a5b`, §9 clean, SCHEMA-GATE-1 resolved; graph arm zero recall lift (entity-node source_doc_id gap); unblock = **Slice 30b** (entity-node → source_doc_id fix + LME re-run) | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
@@ -239,6 +238,16 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-14 — ◆ HITL: Slice 30 BLOCKED (Option 2) — entity-node source_doc_id fix required; Slice 30b scoped as unblock
+
+**HITL ruling (coreyt, 2026-06-14):** Option 2 = **BLOCK**. Slice 30 cannot CLOSE until the graph arm entity-node source_doc_id gap is fixed and LME multi_session improves.
+
+**Problem statement (per Option 3 data):** Graph arm entity-node hits carry `SearchHit.id = canonical_nodes` integer row ID. The `doc_id_of` lambda in `FathomDBAdapter` resolves via `cursor_to_doc` (document write cursors only), so entity node hits fall through to `str(sh.id)` and never match gold `answer_session_ids`. Graph arm effect on all recall classes is ≤ 0 (temporal=0, multi_session=0, knowledge_update=-0.013, factoid=0).
+
+**Unblock: Slice 30b** — Rust engine fix: when BFS returns an entity node hit, resolve source document(s) via `canonical_edges.source_doc_id` and emit `SearchHit` with the source doc's write_cursor (so `doc_id_of` resolves correctly). Python adapter requires no change if the engine sets the correct cursor. Re-run LME s_cleaned post-fix to confirm multi_session improvement.
+
+**What this does NOT change:** all current Slice 30 deliverables (BFS, RRF 3-arm, §9 fixes, SCHEMA-GATE-1) are correct and stay merged. Slice 30b is additive — engine-side source_doc_id propagation in the graph arm read path only.
 
 ### 2026-06-14 — Slice 30 Option 3 COMPLETE — LongMemEval benchmark; go/no-go HITL_REQUIRED
 
