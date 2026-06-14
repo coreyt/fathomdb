@@ -1,0 +1,152 @@
+{
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "qrels_version": "ir-c-reused-v1",
+  "answerer_model": "unavailable \u2014 see blockers_encountered",
+  "answerer_available": false,
+  "k": 10,
+  "n_queries_per_class": {
+    "exploratory": 1584,
+    "factoid": 2888,
+    "knowledge_update": 0,
+    "multi_hop": 0,
+    "multi_session": 0,
+    "negative": 125,
+    "temporal": 0
+  },
+  "r2_results": {
+    "naive_rag": {
+      "exploratory": {
+        "recall_at_k": 0.3561,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "factoid": {
+        "recall_at_k": 0.8982,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "knowledge_update": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_hop": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_session": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "negative": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "temporal": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      }
+    },
+    "fathomdb": {
+      "exploratory": {
+        "recall_at_k": 0.327,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "factoid": {
+        "recall_at_k": 0.8999,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "knowledge_update": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_hop": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "multi_session": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "negative": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      },
+      "temporal": {
+        "recall_at_k": null,
+        "answerer_accuracy": null,
+        "abstention_rate": null
+      }
+    }
+  },
+  "r2_per_class_deltas": {
+    "exploratory": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": -0.0291
+    },
+    "factoid": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": 0.0017
+    },
+    "knowledge_update": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "multi_hop": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "multi_session": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "negative": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    },
+    "temporal": {
+      "fathomdb_minus_mem0": null,
+      "fathomdb_minus_naive_rag": null,
+      "fathomdb_minus_mem0_recall_at_k": null,
+      "fathomdb_minus_naive_rag_recall_at_k": null
+    }
+  },
+  "blockers_encountered": [
+    {
+      "id": "mem0-oss-unavailable",
+      "description": "mem0ai (or its LLM+embedding backend) is not available locally; Memory.add() extraction requires a model. Mem0 arm skipped.",
+      "resolution": "UNRESOLVED \u2014 install mem0ai + configure a local backend"
+    },
+    {
+      "id": "answerer-llm-unavailable",
+      "description": "no answerer LLM available (R2_RUN/R2_ANSWERER_* unset, no local model). Retrieval-only metrics (Evidence Recall@K) reported; answerer_accuracy is null.",
+      "resolution": "UNRESOLVED \u2014 set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1"
+    }
+  ],
+  "systems_run": [
+    "fathomdb",
+    "naive_rag"
+  ]
+}
