@@ -672,36 +672,42 @@ def _build_fathomdb(
 
         if elps_harness_cmd is not None:
             # ELPS path -------------------------------------------------------
-            # Split: first elps_limit docs via ingest_with_extractor; rest via write()
+            # Two-pass ingest for the ELPS sample:
+            #   Pass 1 — write() for doc nodes: gives FTS searchability + cursor→doc_id
+            #   Pass 2 — ingest_with_extractor: adds entity nodes + edges for graph arm
+            # ingest_with_extractor creates entity/edge nodes but NOT source doc nodes,
+            # so pass 1 is required for correct doc_id resolution in R2 eval.
             items = list(documents.items())
             elps_sample = items[:elps_limit]
             remainder = items[elps_limit:]
 
-            # Build body→doc_id reverse map (IngestWithExtractorReceipt has no row_cursors)
-            body_to_doc_id: dict[str, str] = {body: doc_id for doc_id, body in elps_sample}
+            # Pass 1: write doc nodes for all ELPS-sample docs
+            for start in range(0, len(elps_sample), batch):
+                chunk = elps_sample[start : start + batch]
+                receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
+                for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
+                    cursor_to_doc[int(cursor)] = doc_id
 
-            # Ingest ELPS sample
+            # Pass 2: ELPS extraction adds entity nodes + edges (graph arm population)
             elps_docs = [
                 {"source_doc_id": doc_id, "body": body} for doc_id, body in elps_sample
             ]
             engine.ingest_with_extractor(elps_harness_cmd, elps_docs)
 
-            # Ingest remainder via plain write()
+            # Remainder docs: plain write only (no ELPS extraction)
             for start in range(0, len(remainder), batch):
                 chunk = remainder[start : start + batch]
                 receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
                     cursor_to_doc[int(cursor)] = doc_id
 
-            engine.drain(timeout_s=120)
-
-            def doc_id_of(sh: Any) -> str:  # noqa: ANN401
-                if int(sh.id) in cursor_to_doc:
-                    return cursor_to_doc[int(sh.id)]
-                return body_to_doc_id.get(sh.body, str(sh.id))
+            # Longer drain: embedder processes entity nodes from ELPS extraction
+            engine.drain(timeout_s=600)
 
             adapter = FathomDBAdapter(
-                engine, doc_id_of=doc_id_of, use_graph_arm=use_graph_arm
+                engine,
+                doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)),
+                use_graph_arm=use_graph_arm,
             )
         else:
             # Original FTS-only path ------------------------------------------
