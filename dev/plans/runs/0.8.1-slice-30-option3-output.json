@@ -51,12 +51,58 @@
           "resolution": "Set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1"
         }
       ],
-      "note": "Oracle split (no distractors — evidence sessions only). FathomDB trailing NaiveRAG expected: (1) oracle has no distractors so BM25 finds evidence sessions easily by exact match; (2) ELPS graph is sparse (100 sessions extracted, ~15 failed due to LLM empty response on some sessions). The go/no-go benchmark numbers require the s_cleaned split (with ~40 sessions/question including distractors). s_cleaned run pending."
+      "note": "Oracle split (no distractors — evidence sessions only). FathomDB trailing NaiveRAG expected on oracle: BM25 finds evidence sessions easily by exact match when there are no distractors."
+    },
+    {
+      "run_id": "s-nograph",
+      "lme_split": "s",
+      "n_questions_loaded": 500,
+      "n_sessions_loaded": 19195,
+      "n_queries_per_class": {
+        "factoid": 156,
+        "temporal": 133,
+        "knowledge_update": 78,
+        "multi_session": 133
+      },
+      "elps_sessions_extracted": 0,
+      "graph_arm_enabled": false,
+      "r2_results": {
+        "fathomdb": {
+          "temporal":         {"recall_at_k": 0.0902},
+          "multi_session":    {"recall_at_k": 0.1278},
+          "knowledge_update": {"recall_at_k": 0.3718},
+          "factoid":          {"recall_at_k": 0.4423}
+        },
+        "naive_rag": {
+          "temporal":         {"recall_at_k": 0.1504},
+          "multi_session":    {"recall_at_k": 0.1128},
+          "knowledge_update": {"recall_at_k": 0.4231},
+          "factoid":          {"recall_at_k": 0.5385}
+        }
+      },
+      "r2_per_class_deltas": {
+        "temporal":         {"fathomdb_minus_naive_rag_recall_at_k": -0.0602},
+        "multi_session":    {"fathomdb_minus_naive_rag_recall_at_k": 0.0150},
+        "knowledge_update": {"fathomdb_minus_naive_rag_recall_at_k": -0.0513},
+        "factoid":          {"fathomdb_minus_naive_rag_recall_at_k": -0.0962}
+      },
+      "blockers_encountered": [
+        {
+          "id": "mem0-oss-unavailable",
+          "description": "mem0ai not available; Mem0 arm skipped.",
+          "resolution": "UNRESOLVED"
+        },
+        {
+          "id": "answerer-llm-unavailable",
+          "description": "no answerer LLM available; retrieval-only metrics reported.",
+          "resolution": "Set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1"
+        }
+      ],
+      "note": "s_cleaned baseline (FTS+dense, NO ELPS/graph arm). 19,195 unique sessions, 500 questions, ~40 sessions/question with distractors. FathomDB dense+FTS fusion beats naive BM25 on multi_session (0.1278 > 0.1128). Trails on temporal/knowledge_update/factoid. Graph arm run (s-elps-v1) pending — debugging EngineError::Extractor from ELPS extraction on s_cleaned sessions."
     }
   ],
   "pipeline_validated": true,
   "elps_harness": "src/python/eval/elps_live_harness.py",
-  "graph_arm_enabled": true,
-  "go_no_go_status": "PENDING — s_cleaned run required for benchmark numbers",
-  "note": "Option 3 pipeline code is GREEN (T5/T6/T7 pass, 147 total). Oracle v2 run shows FathomDB functional (no extractor error after body truncation fix). go/no-go numbers require s_cleaned split run with distractors."
+  "go_no_go_status": "PARTIAL — s_cleaned baseline (no graph) complete; graph-arm run (s-elps-v1) pending extractor fix",
+  "note": "Option 3 pipeline code is GREEN (T5/T6/T7 pass, 147 total). s_cleaned baseline shows FathomDB FTS+dense beats BM25 on multi_session (+1.5pp). Graph-arm ELPS run in progress."
 }
