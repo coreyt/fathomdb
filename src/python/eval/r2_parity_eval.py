@@ -59,6 +59,36 @@ GOLD_CLASS_MAP: dict[str, str] = {
     "multi_hop": "multi_hop",
     "knowledge_update": "knowledge_update",
     "multi_session": "multi_session",
+    # LME entries (so _parse_gold works on LME-formatted gold files too):
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
+}
+
+#: LME question_type → R2 reporting class.
+LME_CLASS_MAP: dict[str, str] = {
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    # abstention variants
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
 }
 
 _R2_RUN_ENV = "R2_RUN"
@@ -499,6 +529,26 @@ class R2Harness:
         self.queries = _parse_gold(raw)
         self.answerer = answerer
 
+    @classmethod
+    def from_queries(
+        cls,
+        queries: list[GoldQuery],
+        answerer: BaseAnswerer,
+        *,
+        corpus_hash: str = "lme-eval-v1",
+        qrels_version: str = "lme-loaded-v1",
+    ) -> "R2Harness":
+        """Construct an R2Harness from in-memory queries (no gold file, no COR-2 pin).
+
+        Used for LME mode where the corpus is different from the frozen FathomDB corpus.
+        """
+        obj = object.__new__(cls)
+        obj.corpus_hash = corpus_hash
+        obj.qrels_version = qrels_version
+        obj.queries = queries
+        obj.answerer = answerer
+        return obj
+
     def run(
         self,
         systems: Mapping[str, RetrievalAdapter],
@@ -632,6 +682,124 @@ def _load_documents(raw_dir: Path) -> dict[str, str]:
                     continue
                 docs[str(doc_id)] = str(rec.get("body", ""))
     return docs
+
+
+def _format_lme_session(turns: list[dict]) -> str:
+    parts = []
+    for turn in turns:
+        role = str(turn.get("role", "unknown")).capitalize()
+        content = str(turn.get("content", "")).strip()
+        parts.append(f"[{role}]: {content}")
+    return "\n".join(parts)
+
+
+def load_longmemeval(
+    dataset_name: str,
+    split: str,
+    *,
+    question_limit: Optional[int] = None,
+) -> tuple[dict[str, str], list[GoldQuery]]:
+    """Load LongMemEval from HuggingFace.
+
+    Returns (documents, queries) where documents is {session_id: body}
+    (unique sessions pooled from all instances) and queries is the R2 gold list.
+    Uses streaming to avoid materializing the full 3 GB dataset.
+    """
+    try:
+        from datasets import load_dataset  # type: ignore[import]
+    except ImportError as exc:
+        raise ImportError(
+            "Install the 'datasets' library: pip install datasets"
+        ) from exc
+
+    # Map HF split name: "s" → "longmemeval_s_cleaned", "oracle" → "longmemeval_oracle"
+    split_map = {
+        "oracle": "longmemeval_oracle",
+        "s": "longmemeval_s_cleaned",
+        "m": "longmemeval_m_cleaned",
+        # accept full names too
+        "longmemeval_oracle": "longmemeval_oracle",
+        "longmemeval_s_cleaned": "longmemeval_s_cleaned",
+        "longmemeval_m_cleaned": "longmemeval_m_cleaned",
+    }
+    hf_split = split_map.get(split, split)
+
+    ds = load_dataset(dataset_name, split=hf_split, streaming=True)
+
+    documents: dict[str, str] = {}
+    queries: list[GoldQuery] = []
+
+    for i, instance in enumerate(ds):
+        if question_limit is not None and i >= question_limit:
+            break
+
+        session_ids: list[str] = instance.get("haystack_session_ids") or []
+        sessions: list[list[dict]] = instance.get("haystack_sessions") or []
+        for sid, turns in zip(session_ids, sessions):
+            if sid not in documents:
+                documents[sid] = _format_lme_session(turns)
+
+        q_type: str = str(instance.get("question_type") or "unknown")
+        reporting = LME_CLASS_MAP.get(q_type, "unknown")
+        answer_sids: list[str] = instance.get("answer_session_ids") or []
+        answer_text: str = str(instance.get("answer") or "")
+        question_text: str = str(instance.get("question") or "")
+        q_id: str = str(instance.get("question_id") or f"lme-{i}")
+
+        queries.append(
+            GoldQuery(
+                query_id=q_id,
+                question=question_text,
+                reporting_class=reporting,
+                answers=(answer_text,) if answer_text else (),
+                gold_doc_ids=tuple(answer_sids),
+            )
+        )
+
+    return documents, queries
+
+
+def load_longmemeval_from_file(
+    path: Path,
+    *,
+    question_limit: Optional[int] = None,
+) -> tuple[dict[str, str], list[GoldQuery]]:
+    """Load LongMemEval from a local JSON file (list of instances).
+
+    Same schema as the HF dataset; used by tests and offline mode.
+    """
+    raw: list[dict] = json.loads(Path(path).read_text(encoding="utf-8"))
+    if question_limit is not None:
+        raw = raw[:question_limit]
+
+    documents: dict[str, str] = {}
+    queries: list[GoldQuery] = []
+
+    for i, instance in enumerate(raw):
+        session_ids: list[str] = instance.get("haystack_session_ids") or []
+        sessions: list[list[dict]] = instance.get("haystack_sessions") or []
+        for sid, turns in zip(session_ids, sessions):
+            if sid not in documents:
+                documents[sid] = _format_lme_session(turns)
+
+        q_type: str = str(instance.get("question_type") or "unknown")
+        reporting = LME_CLASS_MAP.get(q_type, "unknown")
+        answer_sids: list[str] = instance.get("answer_session_ids") or []
+        answer_text: str = str(instance.get("answer") or "")
+        question_text: str = str(instance.get("question") or "")
+        q_id: str = str(instance.get("question_id") or f"lme-{i}")
+
+        queries.append(
+            GoldQuery(
+                query_id=q_id,
+                question=question_text,
+                reporting_class=reporting,
+                answers=(answer_text,) if answer_text else (),
+                gold_doc_ids=tuple(answer_sids),
+            )
+        )
+
+    return documents, queries
 
 
 def _build_fathomdb(
@@ -774,7 +942,35 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=None,
         help="Path to an additional gold file to merge with --gold (for memory-class QA)",
     )
+    # Option 3 arguments
+    parser.add_argument(
+        "--lme-dataset",
+        default=None,
+        help="HuggingFace dataset name for LongMemEval (e.g. xiaowu0162/longmemeval-cleaned). "
+             "When set, bypasses --corpus-dir/--gold and uses LME as the corpus.",
+    )
+    parser.add_argument(
+        "--lme-split",
+        default="oracle",
+        choices=["oracle", "s", "m"],
+        help="LongMemEval split: oracle (no distractors, fast), s (~40 sessions, benchmark), m (~500 sessions)",
+    )
+    parser.add_argument(
+        "--lme-question-limit",
+        type=int,
+        default=None,
+        help="Cap number of LME questions loaded (debug/fast-iteration mode)",
+    )
+    parser.add_argument(
+        "--lme-file",
+        default=None,
+        help="Path to a local LME JSON file (list of instances) — for tests/offline use instead of --lme-dataset",
+    )
     args = parser.parse_args(argv)
+
+    # LME mode (Option 3): bypass COR-2 corpus pin, use LME as corpus
+    if args.lme_dataset or args.lme_file:
+        return _main_lme(args)
 
     if not args.corpus_hash.startswith(CORPUS_HASH_PREFIX):
         raise SystemExit(f"--corpus-hash must start with {CORPUS_HASH_PREFIX} (COR-2)")
@@ -875,6 +1071,106 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"[runner] merged {len(extra_queries)} extra queries from {extra_gold_path}")
 
     out = harness.run(systems, k=args.k, limit=args.limit)
+    out["blockers_encountered"] = blockers
+    out["systems_run"] = sorted(systems.keys())
+
+    Path(args.output).write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(f"[runner] wrote {args.output}")
+    return 0
+
+
+def _main_lme(args: Any) -> int:
+    blockers: list[dict[str, str]] = []
+
+    # Load LME documents + queries
+    if args.lme_file:
+        print(f"[runner] LME mode: loading from file {args.lme_file}")
+        documents, lme_queries = load_longmemeval_from_file(
+            Path(args.lme_file),
+            question_limit=args.lme_question_limit,
+        )
+    else:
+        print(f"[runner] LME mode: loading {args.lme_dataset} split={args.lme_split}")
+        documents, lme_queries = load_longmemeval(
+            args.lme_dataset,
+            args.lme_split,
+            question_limit=args.lme_question_limit,
+        )
+
+    print(f"[runner] LME: {len(documents)} unique sessions, {len(lme_queries)} questions")
+
+    # Restrict to ELPS limit for fair comparison (same as Option 2)
+    if args.elps_harness:
+        session_ids = list(documents.keys())[: args.elps_limit]
+        documents = {sid: documents[sid] for sid in session_ids}
+        print(f"[runner] LME ELPS mode: restricted to {len(documents)} sessions (--elps-limit)")
+
+    systems: dict[str, RetrievalAdapter] = {}
+
+    # naive_rag
+    systems["naive_rag"] = NaiveRAGAdapter(documents)
+    print("[runner] naive_rag adapter ready")
+
+    # FathomDB
+    if not args.no_fathomdb:
+        elps_cmd = ["python", args.elps_harness] if args.elps_harness else None
+        fdb, blk = _build_fathomdb(
+            documents,
+            Path(args.db_path),
+            elps_harness_cmd=elps_cmd,
+            elps_limit=args.elps_limit,
+            use_graph_arm=args.use_graph_arm,
+        )
+        if fdb is not None:
+            systems["fathomdb"] = fdb
+            print("[runner] fathomdb adapter ready")
+        if blk is not None:
+            blockers.append(blk)
+            print(f"[runner] fathomdb BLOCKED: {blk['description']}")
+
+    # Mem0-OSS (best-effort)
+    mem0 = Mem0OSSAdapter.try_build()
+    if mem0 is not None and mem0.available:
+        try:
+            mem0.ingest(documents)
+            systems["mem0_oss"] = mem0
+            print("[runner] mem0_oss adapter ready")
+        except Exception as exc:  # noqa: BLE001
+            blockers.append({
+                "id": "mem0-oss-unavailable",
+                "description": f"mem0.ingest() failed: {exc}",
+                "resolution": "UNRESOLVED — mem0 arm skipped",
+            })
+            print(f"[runner] mem0_oss BLOCKED (ingest failed): {exc}")
+    else:
+        blockers.append({
+            "id": "mem0-oss-unavailable",
+            "description": "mem0ai not available; Mem0 arm skipped.",
+            "resolution": "UNRESOLVED — install mem0ai + configure a local backend",
+        })
+        print("[runner] mem0_oss BLOCKED (no local mem0 backend)")
+
+    # answerer
+    answerer: BaseAnswerer = LLMAnswerer()
+    if not answerer.available:
+        answerer = NullAnswerer()
+        blockers.append({
+            "id": "answerer-llm-unavailable",
+            "description": "no answerer LLM available; retrieval-only run.",
+            "resolution": "Set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1",
+        })
+        print("[runner] answerer BLOCKED — retrieval-only run")
+
+    harness = R2Harness.from_queries(
+        lme_queries,
+        answerer,
+        corpus_hash=f"lme-{args.lme_split}-v1",
+        qrels_version=f"lme-{args.lme_split}-loaded-v1",
+    )
+
+    out = harness.run(systems, k=args.k, limit=args.limit)
+    out["lme_dataset"] = args.lme_dataset or args.lme_file
+    out["lme_split"] = args.lme_split
     out["blockers_encountered"] = blockers
     out["systems_run"] = sorted(systems.keys())
 
