@@ -243,12 +243,30 @@ before Slice 15 opens.
   not in v1.
 - **Cache/PII purge-by-doc hook** — Memex owns this on their data plane; not a v1 blocker.
 
+### 7.1 Sanctioned additive `ready.provenance` (PRE-3 — consult #3, 2026-06-14)
+
+An **additive, OPTIONAL `ready.provenance` object** (resolved model, effort,
+temperature, `prompt_version`, …) is **within `fathomdb.extract.v1` at
+`schema_version 1` — no bump, no re-ratification** (Memex consult `FATHOMDB-CONSULT-3`;
+FathomDB-side record `dev/notes/elps-consult-3-provenance.md`). It is non-breaking by
+construction (absent ⇒ ignored), touches none of the 5 pins / `result` schema /
+determinism cache key / golden, and follows the round-2 additive precedent. **`ready.model`
+remains the authoritative determinism cache-key (FR-H3)**; `provenance` is an
+informational superset. Production ELPS does not emit it yet (adoption optional,
+Memex's timing); FathomDB reads it absent-safe. **0.8.1 Slice G0 (PRE-3)** adds it
+FathomDB-side (engine stamps `extractor_provenance` on nodes + edges). **Deferred:**
+passing **grounding context as a protocol *input* field** (experiment E4) WOULD touch
+`extract.v1` and warrants a real re-ratify — flag when it firms up.
+
 ---
 
 ## 8. References
 
 - v1 brief (harness side): `dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md`
 - Memex decision record (5 pins): `~/projects/memex/dev/elps/FATHOMDB-CONSULT.md`
+- Consult #2 (round-2 additive fields): `~/projects/memex/dev/elps/FATHOMDB-CONSULT-2.md`
+- Consult #3 (`ready.provenance` additive @ v1): `~/projects/memex/dev/elps/FATHOMDB-CONSULT-3.md`
+  → FathomDB record `dev/notes/elps-consult-3-provenance.md`
 - G11 schema migration: `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md`
 - Graph model substrate: `dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md` (H3 reservation)
 - 0.8.1 slice contracts: `dev/plans/0.8.1-implementation.md` (Slice 15)
