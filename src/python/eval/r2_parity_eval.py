@@ -93,6 +93,12 @@ LME_CLASS_MAP: dict[str, str] = {
 
 _R2_RUN_ENV = "R2_RUN"
 
+#: Maximum characters of a session body fed to the ELPS extractor.  LME sessions
+#: can be ~12 k chars; with max_tokens=4096 the LLM truncates mid-JSON and the
+#: extractor parse fails, eventually exhausting the Rust 300 s IO timeout and
+#: raising EngineError::Extractor.  FTS indexing uses the full body (pass 1).
+_ELPS_MAX_CHARS = 2000
+
 
 # --------------------------------------------------------------------------- #
 # Data model
@@ -864,7 +870,7 @@ def _build_fathomdb(
 
             # Pass 2: ELPS extraction adds entity nodes + edges (graph arm population)
             elps_docs = [
-                {"source_doc_id": doc_id, "body": body} for doc_id, body in elps_sample
+                {"source_doc_id": doc_id, "body": body[:_ELPS_MAX_CHARS]} for doc_id, body in elps_sample
             ]
             engine.ingest_with_extractor(elps_harness_cmd, elps_docs)
 
@@ -1098,12 +1104,6 @@ def _main_lme(args: Any) -> int:
         )
 
     print(f"[runner] LME: {len(documents)} unique sessions, {len(lme_queries)} questions")
-
-    # Restrict to ELPS limit for fair comparison (same as Option 2)
-    if args.elps_harness:
-        session_ids = list(documents.keys())[: args.elps_limit]
-        documents = {sid: documents[sid] for sid in session_ids}
-        print(f"[runner] LME ELPS mode: restricted to {len(documents)} sessions (--elps-limit)")
 
     systems: dict[str, RetrievalAdapter] = {}
 
