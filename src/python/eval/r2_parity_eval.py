@@ -690,9 +690,15 @@ def _load_documents(raw_dir: Path) -> dict[str, str]:
     return docs
 
 
-def _format_lme_session(turns: list[dict]) -> str:
+def _format_lme_session(turns: list) -> str:
     parts = []
     for turn in turns:
+        if isinstance(turn, str):
+            try:
+                turn = json.loads(turn)
+            except (json.JSONDecodeError, ValueError):
+                parts.append(turn)
+                continue
         role = str(turn.get("role", "unknown")).capitalize()
         content = str(turn.get("content", "")).strip()
         parts.append(f"[{role}]: {content}")
