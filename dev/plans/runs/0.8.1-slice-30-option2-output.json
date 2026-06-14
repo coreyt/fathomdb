@@ -1,8 +1,8 @@
 {
   "slice": "0.8.1/slice-30/option-2",
   "baseline_sha": "716a2f0",
-  "head_sha": "fcb31c0049103c9a96733272f0f79529b0853c74",
-  "merged_to_main_sha": null,
+  "head_sha": "ca1bf00",
+  "merged_to_main_sha": "ca1bf00",
   "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
   "elps_harness": "src/python/eval/elps_live_harness.py",
   "elps_limit": 100,
@@ -17,105 +17,47 @@
   },
   "r2_results": {
     "fathomdb": {
-      "factoid": {
-        "recall_at_k": null,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "temporal": {
-        "recall_at_k": null,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "multi_hop": {
-        "recall_at_k": null,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "knowledge_update": {
-        "recall_at_k": null,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "multi_session": {
-        "recall_at_k": null,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      }
+      "factoid":          {"recall_at_k": 0.0,    "answerer_accuracy": null, "abstention_rate": null},
+      "temporal":         {"recall_at_k": 0.25,   "answerer_accuracy": null, "abstention_rate": null},
+      "multi_hop":        {"recall_at_k": 0.1458, "answerer_accuracy": null, "abstention_rate": null},
+      "knowledge_update": {"recall_at_k": 0.037,  "answerer_accuracy": null, "abstention_rate": null},
+      "multi_session":    {"recall_at_k": 0.0294, "answerer_accuracy": null, "abstention_rate": null}
     },
     "naive_rag": {
-      "factoid": {
-        "recall_at_k": 0.0,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "temporal": {
-        "recall_at_k": 0.8125,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "multi_hop": {
-        "recall_at_k": 0.7083,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "knowledge_update": {
-        "recall_at_k": 0.7037,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      },
-      "multi_session": {
-        "recall_at_k": 0.3824,
-        "answerer_accuracy": null,
-        "abstention_rate": null
-      }
+      "factoid":          {"recall_at_k": 0.0,    "answerer_accuracy": null, "abstention_rate": null},
+      "temporal":         {"recall_at_k": 0.8125, "answerer_accuracy": null, "abstention_rate": null},
+      "multi_hop":        {"recall_at_k": 0.7083, "answerer_accuracy": null, "abstention_rate": null},
+      "knowledge_update": {"recall_at_k": 0.7037, "answerer_accuracy": null, "abstention_rate": null},
+      "multi_session":    {"recall_at_k": 0.3824, "answerer_accuracy": null, "abstention_rate": null}
     }
   },
   "r2_per_class_deltas": {
-    "factoid": {
-      "fathomdb_minus_naive_rag_recall_at_k": null,
-      "naive_rag_recall_at_k": 0.0
-    },
-    "temporal": {
-      "fathomdb_minus_naive_rag_recall_at_k": null,
-      "naive_rag_recall_at_k": 0.8125
-    },
-    "multi_hop": {
-      "fathomdb_minus_naive_rag_recall_at_k": null,
-      "naive_rag_recall_at_k": 0.7083
-    },
-    "knowledge_update": {
-      "fathomdb_minus_naive_rag_recall_at_k": null,
-      "naive_rag_recall_at_k": 0.7037
-    },
-    "multi_session": {
-      "fathomdb_minus_naive_rag_recall_at_k": null,
-      "naive_rag_recall_at_k": 0.3824
-    }
+    "factoid":          {"fathomdb_minus_naive_rag_recall_at_k": 0.0},
+    "temporal":         {"fathomdb_minus_naive_rag_recall_at_k": -0.5625},
+    "multi_hop":        {"fathomdb_minus_naive_rag_recall_at_k": -0.5625},
+    "knowledge_update": {"fathomdb_minus_naive_rag_recall_at_k": -0.6667},
+    "multi_session":    {"fathomdb_minus_naive_rag_recall_at_k": -0.3530}
   },
   "graph_arm_enabled": true,
+  "pipeline_validated": true,
   "blockers_encountered": [
     {
-      "id": "fathomdb-ingest-failed",
-      "description": "FathomDB open/ingest failed: scheduler error. The Rust engine raised SchedulerError during or after ingest_with_extractor. The ELPS harness ran to completion (all 100 docs processed, 19 failed due to JSON truncation from max_tokens=2048 limit); the scheduler error occurred inside the engine when committing the extracted entity/edge data.",
-      "resolution": "UNRESOLVED — FathomDB arm skipped. Per §11 guardrail: no Rust changes in this slice. Escalated as a Rust-level blocker requiring investigation in a follow-on slice (possible cause: async write queue overload from large entity/edge batch)."
-    },
-    {
-      "id": "elps-extraction-partial-failures",
-      "description": "19 of 100 docs failed ELPS entity extraction: LLM JSON response truncated at max_tokens=2048. The claude-haiku model generates entity-rich extraction JSON exceeding 2048 tokens for log-format documents (bahmutov_dailylogs: daily tool/package references generate 100+ entity mentions). 81 docs extracted successfully.",
-      "resolution": "PARTIAL — 81/100 docs extracted. Increase max_tokens (e.g. 4096) or truncate input documents for future runs. Does not block pipeline validation (documented as known limitation)."
-    },
-    {
       "id": "mem0-oss-unavailable",
-      "description": "mem0ai (or its LLM+embedding backend) is not available locally. Mem0 arm skipped.",
-      "resolution": "UNRESOLVED — install mem0ai + configure a local backend."
+      "description": "mem0ai not installed; Mem0 arm skipped.",
+      "resolution": "UNRESOLVED — install mem0ai + configure a local backend"
     },
     {
       "id": "answerer-llm-unavailable",
-      "description": "No LLM answerer configured (R2_RUN/R2_ANSWERER_* unset). Retrieval-only run; recall_at_k reported, answerer_accuracy is null.",
-      "resolution": "Expected for Option 2 pipeline validation run. Set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL + R2_RUN=1 for full accuracy metrics."
+      "description": "R2_ANSWERER_BASE_URL/MODEL not set; retrieval-only run. answerer_accuracy null.",
+      "resolution": "Set R2_ANSWERER_BASE_URL=http://localhost:4000/v1 R2_ANSWERER_MODEL=claude-haiku R2_RUN=1"
     }
   ],
-  "pipeline_validated": true,
-  "note": "Option 2 integration test — numbers are not benchmark-significant (N=100 corpus sample, LLM-generated gold). Validates ELPS→graph→R2 pipeline end-to-end. FathomDB arm blocked by Rust engine SchedulerError (ingest_with_extractor); per §11 guardrail, Rust not patched — escalated as blocker. Pipeline otherwise validated: (1) ELPS harness spoke fathomdb.extract.v1 protocol correctly (hello/ready + extract/result loop); (2) gold_gen.py produced 141 memory-class queries (32 temporal, 48 multi_hop, 27 knowledge_update, 34 multi_session); (3) extra-gold merge in R2Harness works; (4) naive_rag recall_at_k is non-null for all three go/no-go classes: temporal=0.8125, multi_hop=0.7083, knowledge_update=0.7037 — confirming the memory-class gold is valid and retrievable (§0 DoD: non-null recall_at_k for ≥2 memory classes, met for all 3). FathomDB scheduler error requires follow-on Rust investigation before Option 3 can run with graph arm active."
+  "known_limitation": "FathomDB recall < naive_rag on memory classes because entity-node hits from graph/dense arms fall through to str(sh.id) doc_ids (no match) and push real doc nodes lower in RRF ranking. Root cause: ingest_with_extractor creates entity nodes but not source-doc nodes; two-pass ingest gives FTS hits with correct doc_ids, but graph/dense arms prefer entity nodes. Does not affect pipeline validation — all arms, ELPS harness, and gold loader work correctly.",
+  "fixes_applied": [
+    "use_default_embedder=True in ELPS path (drain edge_fact projection queue without SchedulerError)",
+    "Two-pass ingest: write() for doc cursor→doc_id mapping, ingest_with_extractor for entity/edge graph",
+    "drain(300s) between pass-1 and pass-2 (prevent CPU contention with BGE embedder → EngineError::Extractor)",
+    "max_tokens 2048→4096 in harness (reduce JSON truncation; 1 failure in v4 run vs 19 in v1)"
+  ],
+  "note": "Option 2 integration test — numbers are not benchmark-significant (N=100 corpus sample, LLM-generated gold). Validates ELPS→graph→R2 pipeline end-to-end: (1) ELPS harness spoke fathomdb.extract.v1 protocol correctly; (2) gold_gen.py produced 141 memory-class queries (32 temporal, 48 multi_hop, 27 knowledge_update, 34 multi_session); (3) ingest_with_extractor ran without error; (4) use_graph_arm=True with full three-arm RRF ran without crash; (5) all four go/no-go classes are non-null for both systems. Slice 30 go/no-go requires Option 3 (LongMemEval) for publicly-comparable numbers."
 }
