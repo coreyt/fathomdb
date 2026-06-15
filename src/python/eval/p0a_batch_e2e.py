@@ -417,6 +417,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     # A sized batch (e.g. 320 answerer reqs) can take ~30m server-side; 160x15s=40m
     # headroom so the poller doesn't give up on an in-flight batch (the n=160 op lesson).
     ap.add_argument("--max-polls", type=int, default=160)
+    ap.add_argument("--no-fused", action="store_true",
+                    help="skip the dense+FTS fused variant (default: include it). "
+                         "The fused build re-embeds from scratch — run with "
+                         "FATHOMDB_EMBED_DEVICE=cuda or it is CPU-bound (~hours).")
+    ap.add_argument("--variants", default=None,
+                    help="comma-separated subset of built variants to SUBMIT to the "
+                         "answerer/judge batch (e.g. 'fathomdb_fused'). All variants are "
+                         "still built; only the named ones cost LLM $. Default: all.")
     args = ap.parse_args(argv)
 
     t0 = time.time()
@@ -425,7 +433,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         classes=SMOKE_CLASSES,
     )
     g1 = measure_haystack(smoke)
-    systems, build_blk = build_variants(smoke.documents, Path(args.db_dir), include_fused=False)
+    systems, build_blk = build_variants(
+        smoke.documents, Path(args.db_dir), include_fused=not args.no_fused,
+    )
+    if args.variants:
+        built = set(systems)
+        keep = {v.strip() for v in args.variants.split(",") if v.strip()}
+        unknown = keep - built
+        if unknown:
+            print(f"[batch-e2e] WARNING: --variants names not built: {sorted(unknown)}")
+        systems = {k: v for k, v in systems.items() if k in keep}
+        if not systems:
+            raise SystemExit(
+                f"--variants {sorted(keep)} selected no built variant "
+                f"(built: {sorted(built)}); nothing to submit."
+            )
+        print(f"[batch-e2e] --variants filter -> submitting only: {sorted(systems)}")
     retrieval = run_retrieval_loop(smoke, systems)
 
     jsonl, sidecar = build_batch_jsonl(

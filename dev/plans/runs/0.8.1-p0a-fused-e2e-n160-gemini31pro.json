@@ -1,0 +1,103 @@
+{
+  "slice": "0.8.1/p0-a-batch-e2e",
+  "mode": "smoke-batch",
+  "provider": "aistudio",
+  "reader_model": "gemini-3.1-pro-aistudio",
+  "scoring": "llm_judge",
+  "judge": {
+    "judge_model": "gemini-3.5-flash-aistudio",
+    "judge_batch_id": "batch-9d02895b981845c18346355310c65a72",
+    "judge_batch_status": "completed",
+    "n_judged": 95,
+    "n_verdicts": 95,
+    "judge_parse_errors": 0
+  },
+  "batch_id": "batch-5a9944c9ed134c4e9dc90be382327335",
+  "batch_status": "completed",
+  "n_questions": 160,
+  "n_requests": 160,
+  "variants": [
+    "fathomdb_fused"
+  ],
+  "g1_haystack_measurement": {
+    "n_questions": 160,
+    "per_question_h_min": 39,
+    "per_question_h_max": 57,
+    "per_question_h_mean": 47.88,
+    "smoke_union_size": 7154,
+    "union_over_count": 44.71,
+    "projected_union_at_150q_if_disjoint": 7182,
+    "plan_estimate_at_150q": 5760,
+    "note": "If union_over_count << per_question_h_mean the haystacks overlap (distractor pools shared); if ~equal they are near-disjoint and the ~5,760 estimate (38.4*150) is an undercount at the measured mean H."
+  },
+  "retrieval_loop": {
+    "fathomdb_fused": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4941,
+          "ndcg_at_10": 0.5237,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.65,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4833,
+          "ndcg_at_10": 0.4954,
+          "recall_at_5": 0.675,
+          "recall_at_10": 0.825,
+          "recall_at_20": 0.875
+        },
+        "multi_session": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4224,
+          "ndcg_at_10": 0.377,
+          "recall_at_5": 0.15,
+          "recall_at_10": 0.325,
+          "recall_at_20": 0.325
+        },
+        "temporal": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.289,
+          "ndcg_at_10": 0.2675,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.625,
+          "recall_at_20": 0.75
+        }
+      },
+      "abstention_total": 0
+    }
+  },
+  "e2e_loop": {
+    "gemini-3.1-pro-aistudio (batch)": {
+      "fathomdb_fused": {
+        "per_class_accuracy": {
+          "factoid": 0.675,
+          "knowledge_update": 0.5,
+          "multi_session": 0.2,
+          "temporal": 0.175
+        },
+        "overall_accuracy": 0.3875,
+        "n_answered": 95
+      }
+    }
+  },
+  "blockers_encountered": [],
+  "parse_errors": 0,
+  "elapsed_s": 391.7
+}

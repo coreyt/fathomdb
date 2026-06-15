@@ -1,0 +1,165 @@
+{
+  "slice": "0.8.1/p0-a-batch-e2e",
+  "mode": "smoke-batch",
+  "provider": "aistudio",
+  "reader_model": "gemini-3.1-pro-aistudio",
+  "scoring": "llm_judge",
+  "judge": {
+    "judge_model": "gemini-3.5-flash-aistudio",
+    "judge_batch_id": "batch-48e1e4b7ce6a4fadafbf7e5e7221ab3b",
+    "judge_batch_status": "completed",
+    "n_judged": 183,
+    "n_verdicts": 183,
+    "judge_parse_errors": 0
+  },
+  "batch_id": "batch-329f5ac550594cf3bc956cac06413604",
+  "batch_status": "completed",
+  "n_questions": 160,
+  "n_requests": 320,
+  "variants": [
+    "fathomdb_fts_only",
+    "naive_bm25"
+  ],
+  "g1_haystack_measurement": {
+    "n_questions": 160,
+    "per_question_h_min": 39,
+    "per_question_h_max": 57,
+    "per_question_h_mean": 47.88,
+    "smoke_union_size": 7154,
+    "union_over_count": 44.71,
+    "projected_union_at_150q_if_disjoint": 7182,
+    "plan_estimate_at_150q": 5760,
+    "note": "If union_over_count << per_question_h_mean the haystacks overlap (distractor pools shared); if ~equal they are near-disjoint and the ~5,760 estimate (38.4*150) is an undercount at the measured mean H."
+  },
+  "retrieval_loop": {
+    "naive_bm25": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4945,
+          "ndcg_at_10": 0.5426,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.725
+        },
+        "knowledge_update": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.7078,
+          "ndcg_at_10": 0.635,
+          "recall_at_5": 0.775,
+          "recall_at_10": 0.875,
+          "recall_at_20": 0.9
+        },
+        "multi_session": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4706,
+          "ndcg_at_10": 0.3839,
+          "recall_at_5": 0.125,
+          "recall_at_10": 0.275,
+          "recall_at_20": 0.375
+        },
+        "temporal": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.3664,
+          "ndcg_at_10": 0.3554,
+          "recall_at_5": 0.525,
+          "recall_at_10": 0.65,
+          "recall_at_20": 0.775
+        }
+      },
+      "abstention_total": 0
+    },
+    "fathomdb_fts_only": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4036,
+          "ndcg_at_10": 0.4573,
+          "recall_at_5": 0.525,
+          "recall_at_10": 0.65,
+          "recall_at_20": 0.75
+        },
+        "knowledge_update": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.5199,
+          "ndcg_at_10": 0.5392,
+          "recall_at_5": 0.8,
+          "recall_at_10": 0.8,
+          "recall_at_20": 0.875
+        },
+        "multi_session": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.4171,
+          "ndcg_at_10": 0.3334,
+          "recall_at_5": 0.175,
+          "recall_at_10": 0.2,
+          "recall_at_20": 0.325
+        },
+        "temporal": {
+          "n_total": 40,
+          "n_scored": 40,
+          "n_abstention": 0,
+          "mrr": 0.281,
+          "ndcg_at_10": 0.2771,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.6,
+          "recall_at_20": 0.7
+        }
+      },
+      "abstention_total": 0
+    }
+  },
+  "e2e_loop": {
+    "gemini-3.1-pro-aistudio (batch)": {
+      "naive_bm25": {
+        "per_class_accuracy": {
+          "factoid": 0.675,
+          "knowledge_update": 0.475,
+          "multi_session": 0.25,
+          "temporal": 0.225
+        },
+        "overall_accuracy": 0.4062,
+        "n_answered": 94
+      },
+      "fathomdb_fts_only": {
+        "per_class_accuracy": {
+          "factoid": 0.7,
+          "knowledge_update": 0.35,
+          "multi_session": 0.15,
+          "temporal": 0.2
+        },
+        "overall_accuracy": 0.35,
+        "n_answered": 89
+      }
+    }
+  },
+  "blockers_encountered": [],
+  "parse_errors": 0,
+  "elapsed_s": 381.2
+}

@@ -194,6 +194,9 @@ end-to-end gate runs spend $. Forecast lives in plan §4; this records **actuals
 | 2026-06-15 | §5.4 base e2e n=160 JUDGE (salvage) — judge batch STUCK 0/27 @40m (airlock anomaly) → substring fallback, no completions | gpt-5.4-nano (batch) | ~$0.00 | **~$2.09** |
 
 | 2026-06-15 | §5.4 strong-reader gate n=160 — gemini-3.1-pro answerer (320) + gemini-3.5-flash judge (183) via **aistudio batch**, 0 failures | gemini-3.1-pro/3.5-flash (aistudio batch) | ~$7 (est) | **~$9** |
+| 2026-06-15 | §3 FUSED/dense recall@K n=160 — GPU per-job embed (7154 docs, ~3 min, coverage 1.0) + recall@K (LLM-free) | local CUDA / — | $0.00 | **~$9** |
+| 2026-06-15 | §3.2 fused e2e TRACER (per-class 2, fused-only) — validate the new `--variants`+include_fused path; 8 answerer + 6 judge, 0 fail, acc 0.5 | gemini-3.1-pro/3.5-flash (aistudio batch) | ~$0.18 | **~$9.2** |
+| 2026-06-15 | §3.2 fused STRONG-READER e2e gate n=160 (fused-only) — 160 answerer + 95 judge, 0 fail, 391.7s; acc 0.388 | gemini-3.1-pro/3.5-flash (aistudio batch) | ~$3.7 | **~$12.9** |
 
 **§5.4 e2e answer-accuracy — nano vs strong reader (paired, n=160, judged):**
 - `gpt-5.4-nano`: ABSTAINS ~91% (27/320 answered); acc bm25 0.081 / fts 0.069.
@@ -385,6 +388,64 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-15 (cont.) — ⭐ FUSED/DENSE ARM recall@K LANDED (HANDOFF-3 §3) — dense ties BM25 on recall, still trails on ranking
+
+Ran the fused/dense experiment (the §3 lever, finally cheap on GPU). **$0** (recall@K
+LLM-free; embedding $0-token). Embed: **GPU per-job CUDA** on a single 3090 — deliberately
+NOT the batched path (`PROJECTION_BATCH` dropped) because the two 3090s are pinned by a
+9-day vLLM serving job (~22 GB each, ~2.1 GB free); per-job fits the free mem and embedded
+the 7,154-doc haystack in ~3 min (~2,400 docs/min ⇒ CUDA confirmed, CPU would be ~25 h).
+Coverage **1.0 (7154/7154)** independently verified (`verify_embed_db`, dim 384,
+embedder `fathomdb-bge-small-en-v1.5`). Data: `/tmp/p0a_fused_n160.json`,
+DBs `/tmp/p0a_n160_fused/p0a_{fts_only,fused}.sqlite` (no overwrite of prior FTS-only runs).
+
+**Result — n=160, per-class 40, paired, seed 20260614 (POOLED; MDE ~11 pp pooled / ~21 pp per-class):**
+
+| Variant | R@5 | R@10 | R@20 | MRR | nDCG@10 |
+|---|---|---|---|---|---|
+| naive_bm25 | 0.506 | **0.625** | **0.694** | **0.510** | **0.479** |
+| fathomdb_fts_only | 0.500 | 0.562 | 0.662 | 0.405 | 0.402 |
+| **fathomdb_fused** | 0.481 | 0.606 | 0.688 | 0.422 | 0.416 |
+
+- **Recall axis:** fused R@10 Δ vs BM25 = **−0.019** (was FTS-only −0.062) → dense recovers
+  ~⅔ of the deficit ⇒ **fused is within the pooled MDE of BM25 on recall (a tie)**, where
+  FTS-only clearly lost. Fused − FTS-only R@10 **+0.044** pooled ⇒ dense genuinely adds.
+- **`multi_session`** (weakest class, graph-arm target) is the **one class where fused beats
+  BM25**: R@10 0.325 vs 0.275 (**+0.050**; +0.125 over FTS-only). Within per-class MDE
+  (direction-suggestive), but the cleanest dense win.
+- **Ranking axis:** fused **still trails BM25** (pooled MRR −0.088, nDCG −0.064) and barely
+  improves on FTS-only ⇒ dense lifts coverage more than top-of-list order. **`knowledge_update`
+  ranking regresses** with dense (MRR 0.483 fused vs 0.520 FTS vs 0.708 BM25).
+- **Verdict (§3 question):** dense **neutralizes the recall gap to BM25 (tie) but not the
+  ranking gap**; cause C not overturned. Next levers: (a) strong-reader e2e gate on fused
+  — DONE below; (b) the C1 graph arm, where multi_session is weakest and dense already helps.
+
+**§3.2 STRONG-READER e2e GATE on fused — DONE (HITL go 2026-06-15, ~$3.7, total ~$12.9 of $20).**
+Ran fused-only e2e answer-accuracy (gemini-3.1-pro answerer + gemini-3.5-flash judge, aistudio
+batch, n=160, 0 failures). Tracer-first ($0.18) validated the new `--variants`+`include_fused`
+batch path before the sized spend. NEW output `/tmp/p0a_fused_n160_gemini31pro.json` (no
+overwrite of the prior FTS-only gemini `/tmp/p0a_base_n160_gemini31pro.json`); bm25/fts taken
+from that prior run (identical model/defaults/seed/questions ⇒ paired). Runner change:
+`p0a_batch_e2e.py` gained `--no-fused` (default include) + `--variants` subset filter (build all,
+submit only named ⇒ fused-only cost control); 20/20 unit tests green.
+
+| Variant | factoid | KU | multi_session | temporal | **overall** | n_ans |
+|---|---|---|---|---|---|---|
+| naive_bm25 | 0.675 | 0.475 | 0.250 | 0.225 | **0.406** | 94 |
+| fathomdb_fts_only | 0.700 | 0.350 | 0.150 | 0.200 | **0.350** | 89 |
+| **fathomdb_fused** | 0.675 | 0.500 | 0.200 | 0.175 | **0.388** | 95 |
+
+- **Answer-accuracy mirrors recall@K almost exactly:** Δ fused vs BM25 = **−0.019** (recall@K
+  −0.019); Δ fused vs FTS = **+0.038** (recall@K +0.044). The retrieval signal passes straight
+  through the reader.
+- **Verdict (same as recall@K):** dense **ties BM25** (−0.019, within the ~11 pp overall MDE)
+  and **adds ~4 pp over FTS-only**; does NOT beat BM25 → cause C stands on the accuracy axis too.
+- **Nuance:** `knowledge_update` is the biggest dense *accuracy* win (fused 0.500 vs FTS 0.350,
+  +0.15; beats BM25 0.475) even though dense slightly *hurt* KU ranking in recall@K ⇒ top-K
+  coverage helps the reader more than rank-order. Per-class within ~21 pp MDE (direction-only).
+- **Implication:** engine retrieval work (dense) buys a tie-with-BM25, not a win. The product
+  lever is the **C1 graph arm** (multi_session — weakest class, where dense already lifts).
 
 ### 2026-06-15 (cont.) — GPU embed enablement + drain fix + embed_batch API LANDED + verified
 
