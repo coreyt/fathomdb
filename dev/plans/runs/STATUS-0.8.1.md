@@ -127,8 +127,9 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 
 ### Next action (orchestrator)
 
-**▶ 0.8.1 GRAPH/IR EXPERIMENT PROGRAM is now the live graph track. Entry point:
-`dev/plans/prompts/0.8.1-graph-track-HANDOFF.md`** (read it first). Authoritative plan:
+**▶ 0.8.1 GRAPH/IR EXPERIMENT PROGRAM is the live graph track. CURRENT entry point:
+`dev/plans/prompts/0.8.1-graph-track-HANDOFF-2.md`** (goal + tracking-file map + the
+outstanding-work backlog #5.1–5.7; continues the deep-reference `…-HANDOFF.md`). Authoritative plan:
 `dev/design/0.8.1-graph-experiment-plan.md`. Diagnosis:
 `dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md`. State (2026-06-14):
 G0 instrument-hardening Phase 1 DONE (tracer + memo, branch `g0-20260614T174004Z`,
