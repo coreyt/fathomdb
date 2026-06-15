@@ -13,7 +13,7 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-14 (Slice 30 HITL-BLOCKED — HITL ruled Option 2 = block; entity-node source_doc_id fix required before Slice 30 CLOSE; Slice 30b scoped as unblock).
+Last updated: 2026-06-15 (orchestrator session: G0 Phase-2 DESIGNED [TDD-ready, PRE-3 schema-gate pending]; §5.4 judge + §5.6 scorer-unification LANDED on branch `eval-scorer-unify-judge-20260615`, all gates green; judge-path tracer PASSED ~$0.06; readiness cap $20. STOP for HITL on the 4 open decisions in §7). Prior: Slice 30 HITL-BLOCKED (Slice 30b = entity-node source_doc_id fix; folds into G0 E0a).
 
 ---
 
@@ -189,10 +189,54 @@ end-to-end gate runs spend $. Forecast lives in plan §4; this records **actuals
 | 2026-06-14 | airlock batch e2e probe (2 req, proof) | gpt-5.4-nano (batch) | ~$0.00 | ~$0.01 |
 | 2026-06-14 | P0-A base retrieval smoke (recall@K, LLM-free) | — | $0.00 | ~$0.01 |
 | 2026-06-14 | P0-A base e2e via batch (16 req, 8Q×2 variants) | gpt-5.4-nano (batch) | ~$0.10 | **~$0.11** |
+| 2026-06-15 | §5.4 judge-path tracer (8 answerer + 1 judge req; 0 parse errors both legs) | gpt-5.4-nano (batch) | ~$0.06 | **~$0.17** |
+| 2026-06-15 | §5.4 base e2e n=160 ANSWERER (320 req, 320/320 ok) — recall@K complete; e2e leg salvaged (poll budget 25m < ~30m batch) | gpt-5.4-nano (batch) | ~$1.92 | **~$2.09** |
+| 2026-06-15 | §5.4 base e2e n=160 JUDGE (salvage) — judge batch STUCK 0/27 @40m (airlock anomaly) → substring fallback, no completions | gpt-5.4-nano (batch) | ~$0.00 | **~$2.09** |
+
+| 2026-06-15 | §5.4 strong-reader gate n=160 — gemini-3.1-pro answerer (320) + gemini-3.5-flash judge (183) via **aistudio batch**, 0 failures | gemini-3.1-pro/3.5-flash (aistudio batch) | ~$7 (est) | **~$9** |
+
+**§5.4 e2e answer-accuracy — nano vs strong reader (paired, n=160, judged):**
+- `gpt-5.4-nano`: ABSTAINS ~91% (27/320 answered); acc bm25 0.081 / fts 0.069.
+- **`gemini-3.1-pro` (aistudio batch):** answers ~58% (183/320); **acc bm25 0.406 / fts
+  0.350** → **~5× the nano accuracy on IDENTICAL retrieval** ⇒ answer accuracy is
+  **reader-bottlenecked** (plan's reader-confound CONFIRMED; nano unusable as headline).
+  Per-class (bm25 vs fts): factoid 0.675/0.70 (fts +.025), KU 0.475/0.35, multi_session
+  0.25/0.15, temporal 0.225/0.20; overall 0.406/0.35. **BM25 ≥ FathomDB-FTS overall +
+  3/4 classes** — answer-accuracy mirrors recall@K (cause C); per-class within ~21pp MDE
+  (noise individually, consistent direction). FTS-only; dense/fused (now cheap via
+  GPU+batch embed) is the next lever. Data preserved: nano `p0a_base_n160*.json`, gemini
+  `p0a_base_n160_gemini31pro.json` (no overwrite, per HITL).
+
+**§5.4 base recall@K baseline (n=40/class, LLM-free, COMPLETE):** R@10 —
+`naive_bm25` factoid 0.70 / temporal 0.65 / KU 0.875 / multi_session 0.275;
+`fathomdb_fts_only` 0.65 / 0.60 / 0.80 / 0.20. **BM25 ≥ FathomDB-FTS on all 4
+classes (5–7.5pp); within per-class MDE (~21pp @n=40) individually but consistent in
+direction → confirms cause C** (base trails BM25). Both arms lexical; dense/fused gap
+needs the GPU embed. `multi_session` weakest (graph-arm target). Result:
+`/tmp/p0a_base_n160.json` (+ `_salvaged.json` for e2e accuracy).
+
+**Op lesson:** a 320-req airlock batch takes ~30m, not 25m — raise `--max-polls`
+(or add a resume-by-batch-id fetch) for sized runs; the answerer spend was salvaged
+server-side (`finalizing` after the poller gave up), not lost.
+
+**Readiness budget (HITL 2026-06-15): hard cap $20** for testing mechanical/quality
+readiness before the larger extraction runs. Translation: $20 ≈ **~29k flash-lite
+extracted sessions** OR **~3,300 gpt-5.4-nano batch answerer+judge requests** OR
+**~1.6 strong-reader (gemini-3.1-pro) 500-Q gates**. Planned session spend ≈ $5–6
+(tracer done ~$0.06; sized §5.4 ~$6.48 awaits HITL go). LLM use stays marginal —
+readiness only; NO graph-experiment (E1/E3/E4) extraction.
 
 **Wall-clock meter (embedding, not $):** measured **4.7 sess/min** (T4) → iteration
 (~7,200 sess) ≈ 25.5 h, full (19,195) ≈ 68 h. Treat full-corpus fused embeds as
 scheduled batches.
+
+**No pre-embedded DB to reuse (verified 2026-06-15).** Checked the large Slice-30
+DBs: `/tmp/r2-lme-s-nograph.sqlite` (19,195 nodes) has **0 dense vectors**
+(`_fathomdb_vector_kinds=0`, `vector_default_rowids=0` — FTS-only; the ~475 MB is FTS
+content); `/tmp/r2-lme-s-v2.sqlite` has only **1,408 vectors (~7%, partial/aborted)`.
+So `fathomdb_fused` still needs a from-scratch embed (~27 h for the n=160 haystack of
+~7,680 near-disjoint sessions). No shortcut. The p0a runner reuses
+`{db_dir}/p0a_fused.sqlite` if present (`p0a_base_retrieval.py:367`) — none exists.
 
 **Batchability — RESOLVED + PROVEN e2e (2026-06-14).** The airlock exposes the
 OpenAI-compatible Batch API (`/v1/files` + `/v1/batches`, ~50% off, async). A live
@@ -205,11 +249,24 @@ failed (batch `batch_6a2f5cfc…`). Source of truth: airlock repo `docs/guide/ba
   **upstream** id `gpt-5.4-nano` (NOT an airlock alias); multipart JSONL upload
   (`purpose=batch`). Needed `files_settings` in airlock `config.yaml` (committed
   `95b9bd8`) + a **proxy restart** (done — PID 534987→576781).
-- **What can batch:** **OpenAI** (`gpt-5.4-nano`) ✅ working. **Vertex Gemini** only
-  for **regional** models — the configured `-vertex` deployments are 3.x/**global-only
-  → cannot batch**; `gemini-2.5-flash/pro` resolve regionally and *could* batch but are
-  **not configured** today. **AI-Studio Gemini** (our `gemini-flash-lite`/`gemini-3.1-pro`)
-  **cannot batch** (LiteLLM doesn't wire the `gemini/` provider).
+- **What can batch (UPDATED 2026-06-15):** **OpenAI** (`gpt-5.4-nano`, `gpt-5.4`) ✅ via
+  litellm. **AI-Studio Gemini** ✅ **NOW WORKS** via the **Airlock Batch Gateway**
+  (`?custom_llm_provider=aistudio`) — `gemini-3.1-pro-aistudio` + `gemini-3.5-flash-aistudio`
+  aliases (config `airlock_batch: {backend: aistudio, provider_model: …}`). Proven e2e
+  2026-06-15 (gemini-3.1-pro answerer 8/8 + gemini-3.5-flash judge 7/7, 0 parse errors).
+  **Vertex Gemini** still regional-only (3.x global → no batch). **The earlier
+  "AI-Studio cannot batch" finding is SUPERSEDED.**
+- **aistudio gateway request-shape quirks (differ from openai):** pass
+  `custom_llm_provider=aistudio` as a **QUERY param** on `/v1/files`, `/v1/batches`, AND
+  the `/v1/files/{id}/content` **download** (the gateway only intercepts when the query
+  param is present; else it falls through to litellm → 400/404). The create body carries
+  the **airlock alias** as `model` (gateway resolves → `provider_model`); use the alias
+  (not an upstream id) as the JSONL `model` too. The `p0a_batch_e2e` runner handles both
+  paths by `--provider` (openai|aistudio). Thinking models (gemini 3.x) need generous
+  `max_tokens` (reasoning eats the budget → empty content otherwise).
+- ⚠️ Airlock bug found+fixed 2026-06-15 enabling this: the gateway middleware was added
+  post-startup (`Cannot add middleware after an application has started`) → crash-loop;
+  HITL resolved + restarted.
 - **⚠️ Batch bypasses airlock guardrails** (PII/keyword) — pre-redact client-side.
 - **Use:** `gpt-5.4-nano` batch = the cheap e2e **answerer** for base testing + a
   ~50%-off lever for the one-time Tier-C extraction. NOT for the iterate loop (LLM-free,
@@ -328,6 +385,115 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-15 (cont.) — GPU embed enablement + drain fix + embed_batch API LANDED + verified
+
+HITL-approved (2026-06-15) the GPU route + queued 3 items; all done on branch
+`eval-scorer-unify-judge-20260615` (uncommitted; commits HITL-only). Hardware: 2× RTX
+3090 (compute-idle) + 24 cores; CUDA 12.6 toolkit present.
+
+- **GPU-now-abstraction-ready (Rust + rebuild) — ✅ VERIFIED.** `resolve_device()` seam
+  (env `FATHOMDB_EMBED_DEVICE=cpu|cuda|metal`, default CPU; **loud stderr** on
+  requested-GPU-but-failed → no silent CPU fallback) + `embed-cuda`/`embed-metal`
+  feature chain (embedder→engine→py). Default build stays CPU (cargo check + full
+  suite **192 passed / 2 skipped** on the CUDA wheel). **Measured: 3,127 docs/min on a
+  3090 vs 4.7/min CPU = ~665× → the ~7,680-session embed drops 27h → minutes.** Verifier
+  confirmed coverage 1.0 on the GPU embed. Build: `maturin develop --release --features
+  pyo3/extension-module,test-hooks,embed-cuda` (MAIN tree; LD_LIBRARY_PATH=/usr/local/
+  cuda/lib64 for the cuda env). ⚠️ first build attempt failed silently (`--interpreter`
+  rejected; `tee` masked the exit — [[background-exit-masks-real-exit]]); caught by
+  reading the log. Also re-added `test-hooks` (first rebuild dropped it).
+- **Drain timeout fix → resumable poll + verifier gate — ✅.** `_drain_until_embedded`
+  replaces the single `drain(3600)` (1h ≪ a multi-hour embed → would falsely fail):
+  drains in slices, uses `verify_embed_db` WAL-visible coverage as the completion
+  oracle, stops on stall/idle-incomplete, resumes from persisted state on restart.
+  Batch `--max-polls` default 80→160 (a 320-req batch takes ~30m).
+- **embed_batch API + projection wiring — ✅ delivered, wired, verified.**
+  `Embedder::embed_batch(&[&str])` (default loops `embed`; CandleBge overrides with one
+  padded (B,L) forward — pooling helpers batch-generic, mask zeros padding). Rust parity
+  test: batch ≡ per-item within 1e-4. **Wired into projection** via `embed_projection_batch`
+  + `embed_batch_with_watchdog` (mirrors the PR-9 watchdog: same Invariant-5 cancel,
+  panic-transparency, live-thread accounting). **OPT-IN** (`FATHOMDB_PROJECTION_BATCH=1`)
+  so the DEFAULT per-job path is unchanged → PR-9 watchdog (1/1) + serialization (5/5)
+  tests pass unperturbed. On ANY anomaly (no embedder, breaker open, single job, batch
+  timeout/fail/panic, row-count/dim mismatch) it falls back to the proven per-job path.
+  **GPU verified, coverage 1.0 both paths:** per-job 15,736 docs/min vs **batched 118,591
+  docs/min (~7.5×; ~25,000× over CPU 4.7/min)** → full ~7,680-session embed in seconds.
+  Eval GPU embed should set `FATHOMDB_EMBED_DEVICE=cuda FATHOMDB_PROJECTION_BATCH=1`
+  (+ `LD_LIBRARY_PATH=/usr/local/cuda/lib64`).
+- **Embed-completeness verifier + post-drain GATE — ✅** (`eval/verify_embed_db.py`,
+  `test_verify_embed_db.py`). Coverage via per-kind `_fathomdb_vector_rows.kind` (drain/
+  terminal lie). **Caught a real bug:** `immutable=1` ignores the WAL → would have
+  falsely rejected every live fused embed; fixed to `mode=ro`. Validated vs 2 real
+  partial DBs + a real complete embed.
+- **Docs (B.2.a/B.2.b)** — `dev/design/0.8.1-embedder-gpu-and-portability.md`
+  (cross-vendor AMD/Intel via `EmbedderChoice::Caller`+ONNX, candle has no ROCm/Vulkan)
+  + **vector-equivalence probe-set requirement** (0.8.x TODO in `dev/roadmap/0.8.2.md`):
+  store canonical probe vectors in the DB; re-embed + compare on cross-machine/backend
+  move so a CUDA-built index can't be silently served by a divergent backend.
+
+**Follow-ups:** (1) vector-equivalence guard (0.8.x, `dev/roadmap/0.8.2.md`);
+(2) strong-reader gate run — HITL approved BATCH-ONLY, but `gemini-3.1-pro` can't batch
+(AI-Studio not wired) → use `gpt-5.4` (full) via openai batch as the batchable strong
+reader, OR wire Vertex-regional Gemini first; write a NEW versioned output file so the
+nano e2e data (`p0a_base_n160*.json`) is preserved for comparison (HITL ruling).
+AWAITING HITL reader choice. (3) commit the branch (HITL-only) once reviewed.
+
+### 2026-06-15 — Orchestrator session: G0 Phase-2 designed; §5.4/§5.6 LANDED (branch); judge-path tracer PASSED
+
+**HITL directive (coreyt, 2026-06-15):** plan + design via agents, then do the
+unblocked work; LLM use marginal, readiness-only; **hard cap $20** (ledger above).
+
+**Planning/design (3 parallel agents):**
+- **G0 Phase-2 (§5.3)** — full TDD-first reframe per the design review (BLOCK-1/2/3 +
+  CONCERN-4/5/6 + NIT-7/8). Deliverable = **frontier instrumentation proving
+  `resolved-seed-rate≈0`** (NOT a graph-recall fix) + **traversed-edge `source_id`**
+  (deterministic, replaces the `LIMIT 1` lookup) + `GraphFrontierStats` test-hook seam +
+  `session_id_of` chunk canonicalization + binding-parity assertions (Py/TS/dataclass).
+  **Mergeable** after Phase-2 TDD + codex §9 **EXCEPT PRE-3** (SCHEMA_VERSION 15→16,
+  `extractor_provenance` on nodes+edges) = **HITL SCHEMA-GATE**. Seeding slice (#5.1)
+  CONFIRMED out of G0 scope (separate slice, gated on open HITL decision). Design ready
+  to hand to an implementer (worktree) once schema-gate signed. Stays FathomDB-local.
+- **§5.5 (fused) — NON-ISSUE:** the `worktree-agent-ac2e700d` "fused drain budget" branch
+  is **already on main** (drain 600→3600s); `fathomdb_fused` already runs via the
+  sanctioned `_configure_vector_kind_for_test` seam (`register_doc_vector_kind=True`).
+  PRE-1 (production vector-kind binding) stays a roadmap gate but does NOT block
+  measurement. No code work needed.
+
+**Code LANDED (branch `eval-scorer-unify-judge-20260615`, UNCOMMITTED — commits HITL-only):**
+- **§5.6 scorer unification + abstention back-port** — shared apostrophe-safe
+  `normalize_answer`/`_ABSTAIN` (r2_parity_eval) + shared `AnswerRecord`/`score_answer`/
+  `score_answers` (p0a_base_retrieval); batch `score_e2e` and sync `run_e2e_loop` now both
+  call the single scorer (cannot drift); abstention fix back-ported to **both** sync
+  answerers (`AirlockAnswerer._complete`, `LLMAnswerer._complete`) which previously
+  mis-scored the exact "I don't know" they request. +8 tests incl. the path-agreement
+  drift-lock + answerer back-port (monkeypatched).
+- **§5.4 LLM-judge batch path** — `build_judge_jsonl`/`parse_judge_output` (fence/prose
+  tolerant; missing verdict → graceful per-cid fallback to `_match`) + `--judge-model`
+  second batch wired into `main()`; `score_e2e(verdicts=…)`. +7 tests.
+- **Gates:** ruff clean, pyright 0/0, 39 P0-A tests + full suite **186 passed / 2 skipped**.
+
+**Readiness tracer (§5.4) PASSED — ~$0.06:** `--per-class 1` (8 answerer + 1 judge req)
+via `gpt-5.4-nano` batch; both legs `parse_errors=0`, `scoring=llm_judge` end-to-end
+(`/tmp/p0a_tracer.json`). n=4 → plumbing proof only (n_answered 0/1; reader abstains
+heavily on FTS-only context — exactly why §5.4 needs n≈160). **STOP here for HITL.**
+
+**HITL rulings (2026-06-15):**
+1. **§5.4 sized base run — PENDING (cost clarified).** HITL paused to confirm the
+   cost↔wall-clock decoupling: the **~$6.48 is LLM tokens** (answer+judge 200 Q,
+   independent of corpus size); the **~25h is local BGE embedding = $0 tokens** (CPU
+   only), needed ONLY for the `fathomdb_fused` dense arm. Recommended path: run
+   **FTS+BM25 only now** (~$4.32, minutes, no embed) for the base baseline +
+   pipeline-at-scale proof; schedule the fused embed separately if the dense-vs-BM25
+   answer is wanted. **Spend held for explicit go.**
+2. **C1 graph-arm SEEDING slice (#5.1) — ✅ GREENLIT to scope (HITL 2026-06-15).**
+   Design in progress (`dev/plans/runs/0.8.1-c1-seeding-slice-design.md` when written);
+   cheap-validation ladder Tier-A $0 → Tier-B <$1. Gates E1/E3/E4 (vacuous until it lands).
+3. **Step-16 SCHEMA-GATE (15→16 `extractor_provenance`) — ◆ HITL-SIGNED 2026-06-15.**
+   G0 Phase-2 (incl. PRE-3 plumbing) may merge after Phase-2 TDD + codex §9. Same
+   governance as SCHEMA-GATE-1.
+4. **Extraction model for the iteration set** (#1, plan §7) — still open (Haiku
+   local-class default suggested); not yet on the critical path.
 
 ### 2026-06-14 — P0-A base-testing via airlock Batch API (proven; runner UNCOMMITTED, TDD in progress)
 - **Plan reviewed adversarially** (hand-off §1): methodology + stats sound; 3 budget-critical
