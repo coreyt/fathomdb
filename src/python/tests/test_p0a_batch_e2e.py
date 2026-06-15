@@ -26,7 +26,9 @@ from dataclasses import dataclass
 from eval.p0a_base_retrieval import SmokeQuestion
 from eval.p0a_batch_e2e import (
     build_batch_jsonl,
+    build_judge_jsonl,
     parse_batch_output,
+    parse_judge_output,
     run_batch,
     score_e2e,
 )
@@ -219,8 +221,9 @@ class _FakeClient:
         self.provider_seen.append(("upload", provider))
         return "file-x"
 
-    def create(self, file_id, provider):
+    def create(self, file_id, provider, model=None):
         self.provider_seen.append(("create", provider))
+        self.create_model = model
         return "batch-y"
 
     def status(self, batch_id, provider):
@@ -228,7 +231,7 @@ class _FakeClient:
         return {"status": self._statuses.pop(0), "output_file_id": self._ofid,
                 "request_counts": {}}
 
-    def download(self, file_id):
+    def download(self, file_id, provider="openai"):
         self.downloaded.append(file_id)
         return self._output
 
@@ -265,3 +268,99 @@ def test_run_batch_completed_without_output_file_id_does_not_call_download():
     bid, status, out = run_batch(fake, "j", "openai", poll_secs=0, max_polls=3)
     assert status == "completed" and out is None
     assert fake.downloaded == []
+
+
+# --------------------------------------------------------------------------- #
+# 5. LLM judge — build_judge_jsonl / parse_judge_output / verdict plumbing
+# --------------------------------------------------------------------------- #
+
+
+def _jmeta(variant, cls, question, answer, *, abstain=False):
+    return {"variant": variant, "qid": "x", "class": cls, "question": question,
+            "answer": answer, "is_abstention": abstain}
+
+
+def test_build_judge_jsonl_only_judges_positive_answered():
+    sidecar = {
+        "v||p": _jmeta("v", "factoid", "When?", "1985"),       # positive, answered -> judged
+        "v||a": _jmeta("v", "factoid", "When?", "", abstain=True),  # abstention -> skipped
+        "v||u": _jmeta("v", "factoid", "Who?", "x"),           # positive, unanswered -> skipped
+    }
+    answers = {"v||p": "nineteen eighty five", "v||u": None}
+    jsonl, judged = build_judge_jsonl(sidecar, answers, judge_model="gpt-5.4-nano")
+    reqs = [json.loads(ln) for ln in jsonl.splitlines() if ln.strip()]
+
+    assert {r["custom_id"] for r in reqs} == {"v||p"}  # only the answered positive
+    assert set(judged.keys()) == {"v||p"}
+    body = reqs[0]["body"]
+    assert body["model"] == "gpt-5.4-nano"
+    assert body["temperature"] == 0
+    content = body["messages"][0]["content"]
+    # the prompt carries question, reference (gold) and candidate
+    assert "When?" in content and "1985" in content and "nineteen eighty five" in content
+
+
+def test_build_judge_jsonl_empty_when_nothing_to_judge():
+    sidecar = {"v||a": _jmeta("v", "factoid", "Q", "", abstain=True)}
+    jsonl, judged = build_judge_jsonl(sidecar, {}, judge_model="m")
+    assert jsonl == "" and judged == {}
+
+
+def _jrow(cid, content):
+    body = {"choices": [{"message": {"content": content}}]}
+    return json.dumps({"custom_id": cid, "response": {"body": body}})
+
+
+def test_parse_judge_output_true_false():
+    text = "\n".join([
+        _jrow("a", '{"correct": true}'),
+        _jrow("b", '{"correct": false}'),
+    ]) + "\n"
+    verdicts, errs = parse_judge_output(text)
+    assert verdicts == {"a": True, "b": False}
+    assert errs == 0
+
+
+def test_parse_judge_output_tolerates_fences_and_prose():
+    text = "\n".join([
+        _jrow("a", '```json\n{"correct": true}\n```'),
+        _jrow("b", 'Verdict: {"correct": false}.'),
+        _jrow("c", '{"correct": "yes"}'),  # stringy boolean
+    ]) + "\n"
+    verdicts, errs = parse_judge_output(text)
+    assert verdicts == {"a": True, "b": False, "c": True}
+    assert errs == 0
+
+
+def test_parse_judge_output_malformed_counts_error_and_omits():
+    text = "\n".join([
+        _jrow("a", '{"correct": true}'),
+        _jrow("b", "maybe?"),       # no parseable verdict -> omitted + error
+        _jrow("c", None),           # no content -> omitted + error
+    ]) + "\n"
+    verdicts, errs = parse_judge_output(text)
+    assert verdicts == {"a": True}   # b, c omitted (NOT defaulted)
+    assert errs == 2
+
+
+def test_score_e2e_judge_overrides_substring():
+    # candidate omits the gold token: _match=0, but a True verdict -> 1.0
+    sidecar = {"v||q": _jmeta("v", "temporal", "When?", "1985")}
+    answers = {"v||q": "nineteen eighty five"}
+    assert score_e2e(sidecar, answers)["v"]["per_class_accuracy"]["temporal"] == 0.0
+    assert score_e2e(sidecar, answers, verdicts={"v||q": True})[
+        "v"]["per_class_accuracy"]["temporal"] == 1.0
+    # a substring-true candidate the judge rejects -> 0.0
+    sidecar2 = {"v||q": _jmeta("v", "factoid", "X?", "42")}
+    answers2 = {"v||q": "it is 42"}
+    assert score_e2e(sidecar2, answers2)["v"]["per_class_accuracy"]["factoid"] == 1.0
+    assert score_e2e(sidecar2, answers2, verdicts={"v||q": False})[
+        "v"]["per_class_accuracy"]["factoid"] == 0.0
+
+
+def test_score_e2e_missing_verdict_falls_back_to_match():
+    # verdicts present but this cid absent -> graceful fallback to _match (substring)
+    sidecar = {"v||q": _jmeta("v", "factoid", "X?", "42")}
+    answers = {"v||q": "the answer is 42"}
+    out = score_e2e(sidecar, answers, verdicts={"other||z": True})
+    assert out["v"]["per_class_accuracy"]["factoid"] == 1.0

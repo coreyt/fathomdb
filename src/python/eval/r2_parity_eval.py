@@ -265,10 +265,7 @@ class LLMAnswerer(BaseAnswerer):
         )
         with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310 (BYO local endpoint)
             body = json.loads(resp.read().decode("utf-8"))
-        text = body["choices"][0]["message"]["content"].strip()
-        if not text or _normalize(text) in {"i dont know", "idk", ""}:
-            return None
-        return text
+        return normalize_answer(body["choices"][0]["message"]["content"])
 
 
 # --------------------------------------------------------------------------- #
@@ -435,6 +432,27 @@ class Mem0OSSAdapter:
 
 def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+
+
+# Abstention strings treated as "no answer", computed THROUGH `_normalize` so the
+# comparison is self-consistent: `_normalize` turns "I don't know" into
+# "i don t know" (apostrophe -> space). A raw literal set like {"i dont know"}
+# silently misses the exact phrase the answerer prompt instructs the model to emit.
+_ABSTAIN: frozenset[str] = frozenset(
+    _normalize(s) for s in ("I don't know", "I dont know", "idk")
+) | {""}
+
+
+def normalize_answer(text: Optional[str]) -> Optional[str]:
+    """Raw reader answer -> ``None`` when empty or an abstention (apostrophe-safe).
+
+    The single normalizer both the sync answerers (``*Answerer._complete``) and the
+    batch path (``p0a_batch_e2e.parse_batch_output``) call, so abstention detection
+    cannot drift between them."""
+    t = (text or "").strip()
+    if not t or _normalize(t) in _ABSTAIN:
+        return None
+    return t
 
 
 def _match(ground_truth: list[str], system_answer: str) -> bool:

@@ -43,7 +43,7 @@ from eval.r2_parity_eval import (
     RetrievalAdapter,
     _format_lme_session,
     _match,
-    _normalize,
+    normalize_answer,
 )
 
 # --------------------------------------------------------------------------- #
@@ -337,6 +337,56 @@ def load_lme_smoke(
 # --------------------------------------------------------------------------- #
 
 
+def _drain_until_embedded(
+    db_path: Path,
+    engine: Any,
+    *,
+    expected_docs: int,
+    kind: str = "doc",
+    chunk_s: float = 300.0,
+    stall_chunks: int = 3,
+    log: Any = print,
+) -> Any:
+    """Resumably drain the projection queue until every doc carries a vector.
+
+    Polls in ``chunk_s`` slices: ``drain()`` returns when the queue goes idle, or
+    raises on timeout (still working). After each slice the verifier reports true,
+    WAL-visible coverage. Returns the final ``VerifyReport`` — complete (``rep.ok``),
+    or the best snapshot if the embed goes idle-but-incomplete (stuck: kind
+    unregistered / failed projections) or stalls (no progress for ``stall_chunks``).
+    Resumable: on a fresh process, reopen + call this again → it continues from the
+    persisted projection state. Fixes the prior single ``drain(3600)`` which would
+    raise after 1 h while a multi-hour embed kept running in the background."""
+    from eval.verify_embed_db import inspect_embed_db
+
+    last_embedded = -1
+    stalls = 0
+    while True:
+        idle = False
+        try:
+            engine.drain(timeout_s=chunk_s)
+            idle = True
+        except Exception as exc:  # noqa: BLE001 - drain timeout == "still working"; verify below
+            log(f"[embed] drain slice not idle ({type(exc).__name__}); checking progress")
+        rep = inspect_embed_db(str(db_path), expected_docs=expected_docs, kind=kind)
+        log(f"[embed] coverage={rep.coverage:.4f} ({rep.n_docs_embedded}/{rep.n_docs}) idle={idle}")
+        if rep.ok:
+            return rep
+        if idle:
+            # Queue idle but coverage<1.0 -> stuck (kind unregistered / failed
+            # projections). Waiting won't help; return the snapshot (caller -> blocker).
+            log("[embed] queue idle but coverage<1.0 -> stopping (not resolvable by waiting)")
+            return rep
+        if rep.n_docs_embedded > last_embedded:
+            last_embedded = rep.n_docs_embedded
+            stalls = 0
+        else:
+            stalls += 1
+            if stalls >= stall_chunks:
+                log(f"[embed] no progress for {stall_chunks} slices -> stopping")
+                return rep
+
+
 def _build_fathomdb_variant(
     documents: dict[str, str],
     db_path: Path,
@@ -383,7 +433,27 @@ def _build_fathomdb_variant(
         # embedded before retrieval, else fused recall is measured over a
         # partially-projected corpus (a background scheduler keeps embedding
         # after a too-short drain returns).
-        engine.drain(timeout_s=3600)
+        if register_doc_vector_kind:
+            # Resumable drain-to-complete + completeness GATE: a single drain() with a
+            # huge timeout is wrong for a multi-hour embed (it would raise after the
+            # timeout while embedding continues), and drain-returns-idle != embedded
+            # (docs can be `projection_terminal` WITHOUT a vector). Poll in chunks,
+            # use the verifier's coverage as the completion oracle, watch for stalls,
+            # and only serve fused recall at coverage==1.0. Resumable: the embed state
+            # is persisted, so on a process restart reopen + this loop continues.
+            rep = _drain_until_embedded(db_path, engine, expected_docs=len(documents))
+            if not rep.ok:
+                failed = "; ".join(f"{c.name}[{c.detail}]" for c in rep.checks if not c.ok)
+                return None, {
+                    "id": "fused-embed-incomplete",
+                    "description": (
+                        f"dense embed incomplete: coverage={rep.coverage:.4f} "
+                        f"({rep.n_docs_embedded}/{rep.n_docs} docs); {failed}"
+                    ),
+                    "resolution": "re-embed (resumable: reopen + drain) until coverage==1.0",
+                }
+        else:
+            engine.drain(timeout_s=600)  # FTS-only: no vector work, returns promptly
 
         adapter = FathomDBAdapter(
             engine,
@@ -483,10 +553,7 @@ class AirlockAnswerer(BaseAnswerer):
         )
         with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
             body = json.loads(resp.read().decode("utf-8"))
-        text = body["choices"][0]["message"]["content"].strip()
-        if not text or _normalize(text) in {"i dont know", "idk", ""}:
-            return None
-        return text
+        return normalize_answer(body["choices"][0]["message"]["content"])
 
 
 # --------------------------------------------------------------------------- #
@@ -519,6 +586,62 @@ def run_retrieval_loop(
     return out
 
 
+@dataclass(frozen=True)
+class AnswerRecord:
+    """One (variant, question) outcome, normalized for scoring.
+
+    ``answer`` is already passed through :func:`normalize_answer` — ``None`` means
+    the reader abstained (or produced no usable content). ``cid`` keys the optional
+    LLM-judge ``verdicts`` map (``"{variant}||{qid}"``)."""
+
+    cid: str
+    variant: str
+    reporting_class: str
+    is_abstention: bool
+    gold_answer: str
+    answer: Optional[str]
+
+
+def score_answer(rec: AnswerRecord, *, verdict: Optional[bool] = None) -> float:
+    """Score one record. Abstention query: correct iff the reader abstained.
+    Positive query: correct iff a non-abstaining answer matches gold — by the LLM
+    ``verdict`` when supplied, else the strict :func:`_match` substring check (a
+    correct-but-rephrased answer omitting the gold string scores 0)."""
+    if rec.is_abstention:
+        return 1.0 if rec.answer is None else 0.0
+    if rec.answer is None:
+        return 0.0  # abstention miss on a positive query — counted, never skipped
+    if verdict is not None:
+        return 1.0 if verdict else 0.0
+    return 1.0 if _match([rec.gold_answer], rec.answer) else 0.0
+
+
+def score_answers(
+    records: Sequence[AnswerRecord],
+    *,
+    verdicts: Optional[dict[str, bool]] = None,
+) -> dict[str, Any]:
+    """Per-variant per-class accuracy + overall + ``n_answered`` — the single readout
+    both the batch (:func:`p0a_batch_e2e.score_e2e`) and sync (:func:`run_e2e_loop`)
+    e2e paths share, so they cannot drift. ``verdicts`` (cid -> bool) plugs in the
+    LLM judge; a cid missing from it falls back to :func:`_match`."""
+    per_variant: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    answered: dict[str, int] = defaultdict(int)
+    for r in records:
+        if r.answer is not None:
+            answered[r.variant] += 1
+        v = None if verdicts is None else verdicts.get(r.cid)
+        per_variant[r.variant][r.reporting_class].append(score_answer(r, verdict=v))
+    out: dict[str, Any] = {}
+    for name, pc in per_variant.items():
+        out[name] = {
+            "per_class_accuracy": {c: _mean(v) for c, v in pc.items()},
+            "overall_accuracy": _mean([s for vv in pc.values() for s in vv]),
+            "n_answered": answered[name],
+        }
+    return out
+
+
 def run_e2e_loop(
     smoke: SmokeSet,
     systems: dict[str, RetrievalAdapter],
@@ -545,7 +668,7 @@ def run_e2e_loop(
             continue
         reader_block: dict[str, Any] = {}
         for name, adapter in systems.items():
-            per_class_acc: dict[str, list[float]] = defaultdict(list)
+            records: list[AnswerRecord] = []
             n_calls = 0
             errors = 0
             for q in smoke.questions:
@@ -565,17 +688,22 @@ def run_e2e_loop(
                             }
                         )
                     continue
-                if q.is_abstention:
-                    score = 1.0 if ans is None else 0.0
-                else:
-                    score = 1.0 if (ans is not None and _match([q.answer], ans)) else 0.0
-                per_class_acc[q.reporting_class].append(score)
-            reader_block[name] = {
-                "per_class_accuracy": {c: _mean(v) for c, v in per_class_acc.items()},
-                "overall_accuracy": _mean([s for v in per_class_acc.values() for s in v]),
-                "n_calls": n_calls,
-                "n_errors": errors,
-            }
+                records.append(
+                    AnswerRecord(
+                        cid=f"{name}||{q.qid}",
+                        variant=name,
+                        reporting_class=q.reporting_class,
+                        is_abstention=q.is_abstention,
+                        gold_answer=q.answer,
+                        answer=ans,
+                    )
+                )
+            scored = score_answers(records).get(
+                name, {"per_class_accuracy": {}, "overall_accuracy": None, "n_answered": 0}
+            )
+            # n_calls/n_errors are sync-only network bookkeeping (batch has no
+            # per-call exception); the scoring block is shared, so it cannot drift.
+            reader_block[name] = {**scored, "n_calls": n_calls, "n_errors": errors}
         e2e[reader_id] = reader_block
     return e2e, blockers
 
