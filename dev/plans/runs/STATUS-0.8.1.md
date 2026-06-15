@@ -138,6 +138,82 @@ slice**). Open HITL decisions + the step-16 schema-gate are in the hand-off §4.
 base-retrieval scaffold landed (`ef1e363`). ELPS `ready.provenance` CONFIRMED at v1
 (`dev/notes/elps-consult-3-provenance.md`).
 
+**P0-A base-testing progress (2026-06-14, this session) — UNCOMMITTED:**
+- **Airlock Batch API proven e2e** (`gpt-5.4-nano`, 18/18 reqs, 0 failed) — see the
+  batchability block below for the recipe + provider matrix.
+- **P0-A base retrieval smoke GREEN** (LLM-free recall@K for `naive_bm25` +
+  `fathomdb_fts_only`; data+binding+retrieval validated via `.venv/bin/python -m
+  eval.p0a_base_retrieval --no-e2e --no-fused`).
+- **P0-A base e2e via batch RUNS** — new runner `src/python/eval/p0a_batch_e2e.py`
+  (provider+model parameterized: `--provider`/`--reader-model`; reuses tested p0a
+  loaders/variants + `BaseAnswerer`/`_match`). Tiny smoke (8 Q × 2 variants) completed
+  clean. ⚠️ **n=8 = plumbing proof, NOT a measurement**; recall-high/accuracy-low is the
+  crude substring `_match` scorer, not reader quality → a real base baseline needs more
+  Q + an LLM-judge.
+- **`p0a_batch_e2e.py` brought ONTO the gated workflow — AWAITING HITL sign-off to commit.**
+  Refactored into pure, testable fns (`build_batch_jsonl` / `parse_batch_output` /
+  `score_e2e`) + a mockable `run_batch`. **TDD: 14 no-network tests GREEN** (24 incl. the
+  existing p0a scorer), ruff clean; tests lock custom_id round-trip, identical-answerer
+  prompt, abstention→None, scoring + the substring-scorer-strictness caveat, and the
+  mock-client poll loop. **TDD caught a latent bug**: the legacy abstention set never
+  matched "I don't know" (`_normalize` turns the apostrophe into a space) — fixed here via
+  `_ABSTAIN` computed through `_normalize`. **Code review done (SHIP-WITH-FIXES): 3 P2s
+  applied** (wrap `json.loads`; `raise_for_status` on poll/download; guard missing
+  `output_file_id`). **Follow-up (tracked, out of scope):** unify this scorer with
+  `run_e2e_loop` + back-port the abstention fix to `AirlockAnswerer._complete`. Uncommitted:
+  this file + `0.8.1-graph-experiment-plan.md` + `eval/p0a_batch_e2e.py` +
+  `tests/test_p0a_batch_e2e.py`. Nothing committed (HEAD `674f2c2`).
+
+**Model decisions (HITL 2026-06-14; ids VERIFIED against the live airlock `/v1/models`):**
+- **`gemini-flash-lite`** = the **cheap validation/smoke model + extractor + weak-reader
+  control** (in 0.1 / out 0.4 $/Mtok — cheapest Gemini; AI-Studio provider). Use it to
+  confirm the pipeline runs and **fields populate correctly** before any priced run.
+- **`gemini-3.1-pro`** = the **strong-reader headline anchor** (in 2.0 / out 12.0;
+  replaces the dead `gpt-5`/`gemini-3-pro`). ⚠️ **Reasoning model** — set a generous
+  `max_tokens` (a probe with `max_tokens:10` returned `content:null`, all 10 spent on
+  reasoning) and note reasoning tokens bill as output. Reserve for the few gate runs.
+- **Airlock uses BARE aliases** (no `gemini/` prefix, no `-preview`/`2.5` suffix); the
+  earlier `gemini/gemini-2.5-flash-lite`/`gemini-3.1-pro-preview` ids were WRONG and are
+  corrected here. The harness passes `ELPS_LLM_MODEL` raw (`elps_live_harness.py:27`).
+
+### Experiment budget ledger — running $ spent (HITL 2026-06-14)
+
+Keep this current at every priced step. Recall@K loop is **$0 tokens** (LLM-free);
+embedding is **$0 tokens** but real wall-clock (track separately). Only extraction +
+end-to-end gate runs spend $. Forecast lives in plan §4; this records **actuals**.
+
+| Date | Activity | Model | Est. $ | Running total |
+|---|---|---|---:|---:|
+| 2026-06-14 | G0 Phase-1 tracer (reader probes T2 + 20-sess embed T4) | mixed / local | ~$0.01 | ~$0.01 |
+| 2026-06-14 | airlock batch e2e probe (2 req, proof) | gpt-5.4-nano (batch) | ~$0.00 | ~$0.01 |
+| 2026-06-14 | P0-A base retrieval smoke (recall@K, LLM-free) | — | $0.00 | ~$0.01 |
+| 2026-06-14 | P0-A base e2e via batch (16 req, 8Q×2 variants) | gpt-5.4-nano (batch) | ~$0.10 | **~$0.11** |
+
+**Wall-clock meter (embedding, not $):** measured **4.7 sess/min** (T4) → iteration
+(~7,200 sess) ≈ 25.5 h, full (19,195) ≈ 68 h. Treat full-corpus fused embeds as
+scheduled batches.
+
+**Batchability — RESOLVED + PROVEN e2e (2026-06-14).** The airlock exposes the
+OpenAI-compatible Batch API (`/v1/files` + `/v1/batches`, ~50% off, async). A live
+1-item→2-item probe through the proxy **completed in ~100s** (not 24h): upload→create→
+poll→download, `gpt-5.4-nano` returned correct answers, `custom_id` round-trips, 0
+failed (batch `batch_6a2f5cfc…`). Source of truth: airlock repo `docs/guide/batch.md`,
+`docs/guide/vertex-batch.md`, `dev/fathomdb-batch-resolution.md`.
+- **Interface quirks (different from a naive OpenAI call):** pass
+  `custom_llm_provider=openai` on **both** `/v1/files` and `/v1/batches`; use the
+  **upstream** id `gpt-5.4-nano` (NOT an airlock alias); multipart JSONL upload
+  (`purpose=batch`). Needed `files_settings` in airlock `config.yaml` (committed
+  `95b9bd8`) + a **proxy restart** (done — PID 534987→576781).
+- **What can batch:** **OpenAI** (`gpt-5.4-nano`) ✅ working. **Vertex Gemini** only
+  for **regional** models — the configured `-vertex` deployments are 3.x/**global-only
+  → cannot batch**; `gemini-2.5-flash/pro` resolve regionally and *could* batch but are
+  **not configured** today. **AI-Studio Gemini** (our `gemini-flash-lite`/`gemini-3.1-pro`)
+  **cannot batch** (LiteLLM doesn't wire the `gemini/` provider).
+- **⚠️ Batch bypasses airlock guardrails** (PII/keyword) — pre-redact client-side.
+- **Use:** `gpt-5.4-nano` batch = the cheap e2e **answerer** for base testing + a
+  ~50%-off lever for the one-time Tier-C extraction. NOT for the iterate loop (LLM-free,
+  $0) and does nothing for the embedding wall-clock bottleneck.
+
 ---
 
 **(prior)** **Slice 30 Option 2 COMPLETE** (`f7bb724`, 2026-06-14). ELPS pipeline end-to-end validated:
@@ -251,6 +327,28 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-14 — P0-A base-testing via airlock Batch API (proven; runner UNCOMMITTED, TDD in progress)
+- **Plan reviewed adversarially** (hand-off §1): methodology + stats sound; 3 budget-critical
+  findings — (C1) graph-arm **seeding** slice missing from the critical path (E1/E3/E4 are
+  vacuous without it — the real recall blocker per the G0 design review), (C2) the resolved
+  GPT-5.4/gemini-3-pro reader anchor is **dead**, (C3) G1 doesn't gate on real-corpus
+  seed-rate. C1/C3 remain OPEN HITL decisions.
+- **Reader RE-ANCHORED** (tracer + live `/v1/models`): cheap = `gemini-flash-lite`
+  (0.1/0.4), strong = `gemini-3.1-pro` (2.0/12.0, reasoning model). Prior
+  `gemini/...-preview`/`2.5` ids were WRONG (airlock uses bare aliases).
+- **Batch (50% off, async) RESOLVED + PROVEN e2e**: airlock OpenAI-compatible
+  `/v1/files`+`/v1/batches`, `custom_llm_provider=openai`, upstream `gpt-5.4-nano`, multipart
+  JSONL; needed `files_settings` (airlock commit `95b9bd8`) + proxy restart (done). OpenAI ✅;
+  AI-Studio Gemini ✗ (provider not wired); Vertex Gemini only **regional** (3.x global-only ✗,
+  2.5 ✓ but not configured). Airlock docs: `docs/guide/{batch,vertex-batch}.md`,
+  `dev/fathomdb-batch-resolution.md`.
+- **P0-A**: base retrieval smoke GREEN; base e2e wired through batch via new runner
+  `src/python/eval/p0a_batch_e2e.py` (provider+model parameterized per HITL "different
+  providers/models"). Tiny smoke clean (8 Q); n=8 = plumbing proof only.
+- **Governance**: runner is OFF the gated workflow (untracked, no tests). NEXT = refactor pure
+  logic + no-network TDD → design-review → codex §9 → commit on HITL sign-off. Running $ ≈ $0.11
+  (see ledger). Nothing committed (HEAD `674f2c2`).
 
 ### 2026-06-14 — ◆ HITL: Slice 30 BLOCKED (Option 2) — entity-node source_doc_id fix required; Slice 30b scoped as unblock
 
