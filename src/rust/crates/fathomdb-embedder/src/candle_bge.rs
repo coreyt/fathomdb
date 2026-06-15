@@ -102,6 +102,48 @@ pub struct CandleBgeEmbedder {
     pooling: Pooling,
 }
 
+/// Resolve the candle device from `FATHOMDB_EMBED_DEVICE` (default CPU).
+///
+/// Accepts `cpu` | `cuda` | `cuda:N` | `metal`. GPU variants are only honored when
+/// the corresponding feature (`embed-cuda` / `embed-metal`) is compiled in; otherwise
+/// (or on init failure) it falls back to CPU and emits a LOUD stderr warning rather
+/// than silently running 100x slower on CPU when GPU was requested (the
+/// silent-slow-fallback trap). Device is NOT part of `EmbedderIdentity` — see
+/// `dev/design/0.8.1-embedder-gpu-and-portability.md` §3 on cross-backend vector
+/// equivalence (a 0.8.x guard).
+#[allow(clippy::print_stderr)] // construction-time error path only (not in `embed()`)
+fn resolve_device() -> Device {
+    let requested = std::env::var("FATHOMDB_EMBED_DEVICE").unwrap_or_default();
+    let requested = requested.trim().to_ascii_lowercase();
+    if requested.is_empty() || requested == "cpu" {
+        return Device::Cpu;
+    }
+    #[cfg(feature = "embed-cuda")]
+    if requested == "cuda" || requested.starts_with("cuda:") {
+        let idx =
+            requested.strip_prefix("cuda:").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+        match Device::new_cuda(idx) {
+            Ok(d) => return d,
+            Err(e) => eprintln!(
+                "fathomdb-embedder: FATHOMDB_EMBED_DEVICE={requested} but CUDA init failed ({e}); using CPU"
+            ),
+        }
+    }
+    #[cfg(feature = "embed-metal")]
+    if requested == "metal" {
+        match Device::new_metal(0) {
+            Ok(d) => return d,
+            Err(e) => eprintln!(
+                "fathomdb-embedder: FATHOMDB_EMBED_DEVICE=metal but Metal init failed ({e}); using CPU"
+            ),
+        }
+    }
+    eprintln!(
+        "fathomdb-embedder: FATHOMDB_EMBED_DEVICE={requested} not available in this build; using CPU"
+    );
+    Device::Cpu
+}
+
 impl CandleBgeEmbedder {
     /// Fetch (or read from cache) the pinned weights and construct a ready
     /// embedder. First call on a cold cache downloads ~135 MB from
@@ -165,7 +207,10 @@ impl CandleBgeEmbedder {
             .map_err(|e| EmbedderLoadError::TokenizerLoad { source: e })?;
 
         // 3. mmap safetensors and build a BertModel via VarBuilder.
-        let device = Device::Cpu;
+        // Device is resolved from FATHOMDB_EMBED_DEVICE (default CPU); GPU backends
+        // are compiled in only under the `embed-cuda`/`embed-metal` features, so the
+        // default build is byte-identical CPU. `embed()` already runs on `self.device`.
+        let device = resolve_device();
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[weights.model_safetensors_path.as_path() as &Path],
@@ -236,6 +281,59 @@ impl Embedder for CandleBgeEmbedder {
         };
 
         embed_impl().map_err(|e| EmbedderError::Failed { message: format!("forward: {e}") })
+    }
+
+    fn embed_batch(&self, inputs: &[&str]) -> Result<Vec<Vector>, EmbedderError> {
+        // Invariant 3 (ADR-0.6.0-embedder-protocol.md): no log/tracing in this fn.
+        // One padded (B, L) forward instead of B single-row forwards. The attention
+        // mask zeros padded positions, so the mean/cls pooling + L2-norm produce the
+        // SAME per-row vectors as `embed()` (parity-locked in tests). On GPU this
+        // turns minutes into seconds; on CPU it is a modest win.
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut encodings = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            let enc = self
+                .tokenizer
+                .encode(*input, true)
+                .map_err(|e| EmbedderError::Failed { message: format!("tokenize: {e}") })?;
+            encodings.push(enc);
+        }
+        let batch = inputs.len();
+        // tokenizer truncation pins each row <= MAX_SEQUENCE_TOKENS, so max_len <= 512.
+        let max_len = encodings.iter().map(|e| e.get_ids().len()).max().unwrap_or(0).max(1);
+
+        // Right-pad ids+mask to a common length; pad ids=0, mask=0 (mean/cls pooling
+        // ignore masked positions, so padding cannot affect a row's vector).
+        let mut ids = vec![0u32; batch * max_len];
+        let mut attn = vec![0u32; batch * max_len];
+        for (row, enc) in encodings.iter().enumerate() {
+            let base = row * max_len;
+            for (col, (&id, &mask)) in
+                enc.get_ids().iter().zip(enc.get_attention_mask()).enumerate()
+            {
+                ids[base + col] = id;
+                attn[base + col] = mask;
+            }
+        }
+
+        let embed_impl = || -> candle_core::Result<Vec<Vec<f32>>> {
+            let input_ids = Tensor::from_vec(ids, (batch, max_len), &self.device)?;
+            let attn_mask_u32 = Tensor::from_vec(attn, (batch, max_len), &self.device)?;
+            let token_type_ids = input_ids.zeros_like()?;
+
+            let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask_u32))?;
+            let pooled = match self.pooling {
+                Pooling::Mean => mean_pool(&hidden, &attn_mask_u32)?,
+                Pooling::Cls => cls_pool(&hidden)?,
+            };
+            let normed = l2_normalize(&pooled)?; // (B, D)
+            normed.to_vec2::<f32>() // Vec<Vec<f32>>, one row per input
+        };
+
+        embed_impl().map_err(|e| EmbedderError::Failed { message: format!("batch forward: {e}") })
     }
 }
 

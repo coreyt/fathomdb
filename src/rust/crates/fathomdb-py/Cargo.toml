@@ -21,6 +21,11 @@ test-hooks = []
 # `True` at open time per ADR-0.7.1-default-embedder-weight-fetch (no
 # silent network in a no-feature wheel).
 default-embedder = ["fathomdb-engine/default-embedder"]
+# GPU acceleration (opt-in; forwards to the engine; default wheel stays CPU).
+# Build: `maturin develop --features pyo3/extension-module,embed-cuda`; activate via
+# FATHOMDB_EMBED_DEVICE=cuda. See dev/design/0.8.1-embedder-gpu-and-portability.md.
+embed-cuda = ["default-embedder", "fathomdb-engine/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-engine/embed-metal"]
 
 [dependencies]
 fathomdb-embedder.workspace = true

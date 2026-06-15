@@ -33,6 +33,10 @@ operator = []
 # rather than attempting a network fetch (preserves the no-network build
 # closure per ADR-0.7.1-default-embedder-weight-fetch).
 default-embedder = ["fathomdb-embedder/default-embedder"]
+# GPU acceleration (opt-in; forwards to the embedder; default stays CPU).
+# Activate at runtime via FATHOMDB_EMBED_DEVICE=cuda|metal.
+embed-cuda = ["default-embedder", "fathomdb-embedder/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-embedder/embed-metal"]
 # 0.8.1 Slice 10 (R1): enabling this feature gates the CPU cross-encoder CE
 # inference path (TinyBERT-L-2 via Candle) in `rerank_fused`. Without this
 # feature, `rerank_fused` is always the identity (soft-fallback) path — no

@@ -6160,11 +6160,103 @@ fn run_projection_jobs(
     connection: &mut Connection,
     jobs: &[ProjectionJob],
 ) {
-    let mut outcomes = Vec::with_capacity(jobs.len());
-    for job in jobs {
-        outcomes.push(run_projection_job(shared, job));
-    }
+    let outcomes = embed_projection_batch(shared, jobs);
     let _ = commit_projection_outcomes(connection, &outcomes, shared);
+}
+
+/// Embed a whole commit-batch in ONE `embed_batch` call (amortizes per-call
+/// overhead; saturates the GPU — minutes -> seconds on a full-corpus embed). The
+/// batched path is the fast HAPPY path only; on ANY anomaly — no embedder, breaker
+/// open, single job, batch timeout/failure, row-count or per-row dimension mismatch
+/// — it falls back to the proven per-job [`run_projection_job`], which carries the
+/// full retry + circuit-breaker + failure-isolation semantics. So batching can only
+/// make the common case faster, never change correctness. A panic inside the batch
+/// embed resume-unwinds exactly like the per-embed watchdog, so the worker's
+/// batch-level `catch_unwind` records `ProjectionPanic` as before.
+///
+/// Batching is **opt-in** via `FATHOMDB_PROJECTION_BATCH=1` (`true`/`on` accepted).
+/// It reshapes the PR-9 per-embed watchdog/breaker accounting into per-batch, so the
+/// conservative DEFAULT keeps the proven per-job path — leaving every PR-9 safety
+/// test (watchdog, serialization, circuit breaker) behaving exactly as before. The
+/// eval GPU-embed run sets the env to get the batched-forward speedup (minutes ->
+/// seconds), where the per-job fallback below still backs every error case.
+fn projection_batch_enabled() -> bool {
+    matches!(
+        std::env::var("FATHOMDB_PROJECTION_BATCH").ok().as_deref(),
+        Some("1") | Some("true") | Some("on")
+    )
+}
+
+fn embed_projection_batch(
+    shared: &ProjectionRuntimeShared,
+    jobs: &[ProjectionJob],
+) -> Vec<ProjectionOutcome> {
+    let per_job = || jobs.iter().map(|job| run_projection_job(shared, job)).collect();
+
+    let Some(embedder) = shared.embedder.as_ref() else {
+        return per_job();
+    };
+    if jobs.len() < 2
+        || shared.embed_circuit_open.load(Ordering::Relaxed)
+        || !projection_batch_enabled()
+    {
+        return per_job();
+    }
+
+    let bodies: Vec<String> = jobs.iter().map(|job| job.body.clone()).collect();
+    let embed_timeout = Duration::from_millis(shared.embed_timeout_ms.load(Ordering::Relaxed));
+    // Each row keeps its single-embed budget worst-case (batch <= COMMIT_BATCH=16).
+    let batch_timeout = embed_timeout.saturating_mul(jobs.len() as u32);
+
+    let vectors = {
+        // PR-9 — serialize the embedder call (ONE batched call at a time) and make
+        // the breaker decision with the guard held (race-free vs other workers),
+        // mirroring `run_projection_job`. The batch thread counts as one live embed.
+        let _embed_permit =
+            shared.embed_serialize.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let threshold = shared.embed_circuit_threshold.load(Ordering::Relaxed);
+        if shared.embed_circuit_open.load(Ordering::Relaxed)
+            || (threshold != 0 && shared.live_embed_threads.load(Ordering::Relaxed) >= threshold)
+        {
+            shared.embed_circuit_open.store(true, Ordering::Relaxed);
+            return per_job();
+        }
+        match embed_batch_with_watchdog(
+            embedder,
+            &bodies,
+            batch_timeout,
+            &shared.live_embed_threads,
+        ) {
+            Ok(vectors) => vectors,
+            // Timeout / failed / disconnected -> the per-job path retries each row
+            // and engages the breaker exactly as before.
+            Err(_) => return per_job(),
+        }
+    };
+
+    if vectors.len() != jobs.len() {
+        return per_job();
+    }
+    let mut outcomes = Vec::with_capacity(jobs.len());
+    for (job, vector) in jobs.iter().zip(vectors) {
+        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+            // A row came back wrong-dim: fall back per-job for the whole batch
+            // (rare; keeps the dimension-mismatch failure path identical).
+            return per_job();
+        }
+        // Mirror run_projection_job's post-embed step exactly: persisted f32 BLOB is
+        // un-centered; centering for the binary column is finalized in
+        // commit_projection_outcomes (so bin_blob == blob here).
+        let blob = encode_vector_blob(&vector);
+        let bin_blob = blob.clone();
+        outcomes.push(ProjectionOutcome::Success {
+            cursor: job.cursor,
+            kind: job.kind.clone(),
+            blob,
+            bin_blob,
+        });
+    }
+    outcomes
 }
 
 /// EU-5f — record every job in a panicked batch as a terminal projection
@@ -6239,6 +6331,41 @@ fn embed_with_watchdog(
         // the retry/failure path engages rather than silently succeeding.
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeEmbedderError::Failed {
             message: "embed watchdog thread dropped its result channel".to_string(),
+        }),
+    }
+}
+
+/// Batch sibling of [`embed_with_watchdog`]: run ONE `embed_batch` on a detached,
+/// timeout-bounded thread. Same Invariant-5 cancellation contract (the thread is
+/// allowed to finish + discard on timeout, never aborted mid-call), same
+/// panic-transparency (a panic is resumed on the caller so the worker's batch-level
+/// `catch_unwind` records `ProjectionPanic`), same `live` accounting (one batch
+/// thread = one live embed, bounding the abandoned-thread leak via the breaker).
+fn embed_batch_with_watchdog(
+    embedder: &Arc<dyn Embedder>,
+    bodies: &[String],
+    timeout: Duration,
+    live: &Arc<AtomicU64>,
+) -> Result<Vec<Vec<f32>>, RuntimeEmbedderError> {
+    let (tx, rx) = mpsc::channel();
+    let embedder = Arc::clone(embedder);
+    let bodies = bodies.to_vec();
+    live.fetch_add(1, Ordering::Relaxed);
+    let live_thread = Arc::clone(live);
+    thread::spawn(move || {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let refs: Vec<&str> = bodies.iter().map(String::as_str).collect();
+            embedder.embed_batch(&refs)
+        }));
+        let _ = tx.send(outcome);
+        live_thread.fetch_sub(1, Ordering::Relaxed);
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(result)) => result,
+        Ok(Err(panic_payload)) => std::panic::resume_unwind(panic_payload),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(RuntimeEmbedderError::Timeout),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeEmbedderError::Failed {
+            message: "embed batch watchdog thread dropped its result channel".to_string(),
         }),
     }
 }

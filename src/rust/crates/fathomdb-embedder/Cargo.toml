@@ -45,6 +45,13 @@ default-embedder = [
     "dep:candle-transformers",
     "dep:tokenizers",
 ]
+# GPU acceleration (opt-in; default build stays CPU so tests + byte-stability are
+# unaffected). Activate the device at runtime with FATHOMDB_EMBED_DEVICE=cuda|metal.
+# Cross-vendor (AMD ROCm / Intel) is NOT a candle backend — that path is a separate
+# `impl Embedder` (ONNX-Runtime) via EmbedderChoice::Caller; see
+# dev/design/0.8.1-embedder-gpu-and-portability.md.
+embed-cuda = ["default-embedder", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+embed-metal = ["default-embedder", "candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
 # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
 # integration tests (or downstream test harnesses) can substitute base URLs,
 # cache roots, and pinned shas. Production callers MUST NOT enable this

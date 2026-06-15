@@ -147,3 +147,38 @@ fn embed_truncates_documents_over_512_tokens() {
     let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     assert!((n - 1.0).abs() < 1e-5, "long-doc vector not unit-norm: ‖v‖ = {n}");
 }
+
+/// `embed_batch` MUST produce the SAME per-row vector as `embed` per input — else
+/// switching the projection path to batching would silently change stored vectors.
+/// Mixed lengths + an empty string exercise the right-padding + attention masking.
+#[test]
+fn embed_batch_matches_per_item_embed() {
+    let e = make_embedder();
+    let inputs = [
+        "The Eiffel Tower is a wrought-iron lattice tower in Paris, completed in 1889.",
+        "Mount Everest is Earth's highest mountain above sea level.",
+        "Photosynthesis converts sunlight into chemical energy in plants.",
+        "", // empty row must not break the batch
+    ];
+    let per_item: Vec<Vec<f32>> =
+        inputs.iter().map(|s| e.embed(s).expect("embed must succeed")).collect();
+    let batched = e.embed_batch(&inputs).expect("embed_batch must succeed");
+
+    assert_eq!(batched.len(), inputs.len(), "one row out per input");
+    for (i, (b, p)) in batched.iter().zip(&per_item).enumerate() {
+        assert_eq!(b.len(), 384, "row {i} must be dim 384");
+        assert_eq!(b.len(), p.len(), "row {i} dim mismatch vs per-item");
+        let max_abs = b.iter().zip(p).map(|(x, y)| (x - y).abs()).fold(0.0_f32, f32::max);
+        assert!(
+            max_abs <= 1e-4,
+            "row {i}: embed_batch diverges from embed (max abs diff {max_abs} > 1e-4) — \
+             batching would corrupt stored vectors"
+        );
+    }
+}
+
+#[test]
+fn embed_batch_empty_input_is_empty() {
+    let e = make_embedder();
+    assert!(e.embed_batch(&[]).expect("empty batch is Ok").is_empty());
+}
