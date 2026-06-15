@@ -389,6 +389,33 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-15 (cont.) — ⭐ C1 graph-arm SEEDING implemented + LIVE (the BLOCK-1 fix) — graph arm now produces candidates
+
+HITL: "make the graph arm beat BM25" → prioritized **C1 (the recall lever) BEFORE PRE-3**
+(provenance bookkeeping; doesn't affect recall). C1's prereqs (G0 meter + source_id carry)
+landed in part-1, so C1 went straight in. Design `0.8.1-c1-seeding-slice-design.md`.
+
+- **Seeding rewrite (`bfs_graph_arm_candidates`):** the frontier is now seeded from the
+  query's OWN matched FTS surfaces — **source A** edge-fact FTS (`search_index_edges`)
+  endpoints + **source B** entity-node FTS (`search_index` ⋈ `canonical_nodes` where
+  `logical_id IS NOT NULL`, excluding doc nodes) — threaded via `compiled.match_expression`.
+  Replaces the doc-seeding that produced an empty frontier (doc nodes have `logical_id=NULL`).
+- **Resolved seeds are EMITTED** as depth-0 graph candidates (carrying provenance source_id:
+  edge's `source_id` for source A, node's own for source B), not just used as BFS roots —
+  so an edge-only query match surfaces the connected ENTITY nodes, not just the fact body
+  (codex §9 [P2] fix). Seed filters mirror BFS (superseded/temporal_fallback/expired excluded).
+- **Meter semantics:** `seeds_considered` = distinct FTS-seed candidates; `seeds_resolved` =
+  active-resolved (dangling endpoints counted-not-resolved); `resolved_seed_rate` flips 0→>0.
+- **LIVE through the Python SDK** (verified): `search(q, use_graph_arm=True)` returns
+  `graph_arm` hits. **Tests:** `pr_c1_graph_seeding` 5/5 (edge-fact flip, edge-only emit
+  endpoints, dedup/determinism, temporal-exclusion, entity-seed→neighbor); `pr_g0_phase2_frontier`
+  6/6 + `slice30_graph_arm` 4/4 reconciled to C1 seeding; broad graph/search sweep green.
+- **codex §9: 1 [P2]** (edge endpoints seeded-but-not-emitted) — FIXED (emit resolved seeds)
+  + regression test pinning the exact scenario. Does NOT flip `use_graph_arm` (stays G2-blocked).
+- **NEXT:** measure recall@K with the graph arm vs BM25 on an existing extracted graph DB
+  (`/tmp/r2-lme-s-v2.sqlite` = 1409 edges / 1529 entities) — $0 (source_id carry resolves graph
+  hits → sessions w/o the cursor map). Then PRE-3 (schema) to complete G0 P2 for GA.
+
 ### 2026-06-15 (cont.) — ◆ HITL: full G0 Phase-2 (incl. PRE-3 SCHEMA-GATE SIGNED) → then C1; base-retrieval (§3) CLOSED + committed
 
 - **§3 base-retrieval track CLOSED** (commit `a9be9e8`, local main, unpushed): fused recall@K
@@ -429,9 +456,19 @@ TDD-first per `0.8.1-g0-phase2-design.md`. **Done + verified this session:**
   proof + entity-rate-1 + source_id carry + byte-stable + none-fallback); no regression in
   slice30_graph_arm/pr_g9/g10/g12/g1/search_result_shape/source_id_writes; pytest §E + §C-6
   field-introspection 8/8. Workspace (`cargo check -p fathomdb-py -p fathomdb-napi`) clean.
-- **REMAINING:** TS runtime surface test (needs napi build); **PRE-3 step-16 schema
-  migration + provenance plumbing (§F, tests 8-10)** — next phase; then **C1** + Tier-B.
-- Uncommitted (no codex §9 yet); commits HITL-gated.
+- **codex §9 PASS** after 2 fixes: [P1] add `source_id` to the `_fathomdb.pyi` stub
+  (pyright gate); [P2] `ORDER BY e.write_cursor` on the BFS edge query for deterministic
+  provenance when multiple edges reach a neighbor (+ regression test → 6/6).
+- **COMMITTED `017ad68`** (local main, unpushed; pre-commit cargo-fmt + ruff green).
+- **REMAINING for G0 P2 + C1 (next phase, NOT yet started):**
+  - **PRE-3 (§F) — step-16 `SCHEMA_VERSION 15→16` provenance migration + plumbing.**
+    Scope discovered: adding `extractor_provenance` (nodes+edges) + `extractor_model_id`
+    (nodes; edges have it) to `PreparedWrite::{Node,Edge}` **compiler-forces ~100
+    construction sites** repo-wide (sprawling but mechanical). Also: `step14_migration.rs`
+    hardcodes `SCHEMA_VERSION==14` (stale vs current 15) — reconcile when bumping to 16.
+    Tests 8-10 (step16-migration / node+edge-provenance / ready-provenance-resolved).
+  - TS runtime surface test (needs a napi build cycle).
+  - **C1** seeding rewrite + 6 Tier-A tests + Tier-B flash-lite extraction (~$0.4).
 
 ### 2026-06-15 (cont.) — ⭐ FUSED/DENSE ARM recall@K LANDED (HANDOFF-3 §3) — dense ties BM25 on recall, still trails on ranking
 

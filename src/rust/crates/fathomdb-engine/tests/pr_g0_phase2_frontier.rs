@@ -62,14 +62,17 @@ fn edge_with_source(
 }
 
 // ---------------------------------------------------------------------------
-// §C-1: BLOCK-1 proof — doc-seeded frontier resolves to rate 0.0
+// §C-1 / C1 §B-4: BLOCK-1 — a doc-ONLY corpus seeds nothing (no entity/edge-fact
+// FTS surfaces), so the frontier stays empty with rate 0.0 and no false positives.
+// (Pre-C1 this counted doc hits as considered-but-unresolved; C1 seeds from the
+// graph's own FTS surfaces, so doc nodes are never even candidates.)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_frontier_doc_seeded_resolved_rate_zero() {
+fn test_no_entity_or_edge_match_keeps_rate_zero_no_panic() {
     let dir = TempDir::new().unwrap();
-    let opened = Engine::open(db_path(&dir, "doc_seeded_rate_zero")).expect("open");
-    // Doc nodes only, NO logical_id — the eval-real shape.
+    let opened = Engine::open(db_path(&dir, "doc_only_rate_zero")).expect("open");
+    // Doc nodes only, NO logical_id, NO edges — the eval-real shape.
     opened
         .engine
         .write(&[
@@ -82,16 +85,13 @@ fn test_frontier_doc_seeded_resolved_rate_zero() {
     let stats =
         opened.engine._graph_frontier_stats_for_test("frontier anchor").expect("frontier stats");
 
-    assert!(
-        stats.seeds_considered > 0,
-        "doc hits must be inspected as seed candidates; got {stats:?}"
-    );
     assert_eq!(
-        stats.seeds_resolved, 0,
-        "doc nodes carry logical_id=NULL → none resolve: {stats:?}"
+        stats.seeds_considered, 0,
+        "doc-only corpus has no entity-FTS (logical_id NULL) or edge-fact seeds: {stats:?}"
     );
-    assert_eq!(stats.resolved_seed_rate(), 0.0, "doc-seeded resolved rate must be 0.0: {stats:?}");
-    assert!(!stats.frontier_nonempty, "doc-seeded frontier must be empty: {stats:?}");
+    assert_eq!(stats.seeds_resolved, 0, "{stats:?}");
+    assert_eq!(stats.resolved_seed_rate(), 0.0, "0/0 → 0.0: {stats:?}");
+    assert!(!stats.frontier_nonempty, "doc-only frontier must be empty: {stats:?}");
     assert_eq!(stats.graph_candidates_emitted, 0, "empty frontier emits nothing: {stats:?}");
 
     opened.engine.close().unwrap();
@@ -151,10 +151,11 @@ fn test_graph_arm_hit_carries_traversed_edge_source_id() {
         ])
         .expect("write");
 
-    let result = opened
-        .engine
-        .search_reranked("carol anchor", None, 0, true)
-        .expect("search with graph arm");
+    // Query matches ONLY carol's entity body ("anchor"), not the edge body
+    // ("carol links to dave") — so carol is the seed and dave is graph-REACHED
+    // (not co-seeded as an edge-fact endpoint), exercising the BLOCK-2 carry.
+    let result =
+        opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
 
     let dave = result
         .results
@@ -235,10 +236,8 @@ fn test_graph_arm_source_id_deterministic_with_multiple_edges() {
     // a coin-flip between docEarly/docLate, never lost.
     let mut seen: Vec<Option<String>> = Vec::new();
     for _ in 0..3 {
-        let result = opened
-            .engine
-            .search_reranked("grace anchor", None, 0, true)
-            .expect("search with graph arm");
+        let result =
+            opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
         let heidi = result
             .results
             .iter()
@@ -278,7 +277,7 @@ fn test_graph_hit_source_id_none_fallback() {
         .expect("write");
 
     let result =
-        opened.engine.search_reranked("eve anchor", None, 0, true).expect("search with graph arm");
+        opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
 
     let frank = result
         .results

@@ -193,10 +193,12 @@ fn graph_arm_temporal_fallback_excluded_or_downweighted() {
         ])
         .expect("write");
 
-    let result = opened
-        .engine
-        .search_reranked("carol anchor", None, 0, true)
-        .expect("search with graph arm");
+    // C1 seeding: query "anchor text" matches ONLY carol's node body, not the edge
+    // body ("carol links to dave"). So carol is the seed and dave is graph-REACHED
+    // via the live edge (not co-seeded as an edge-fact endpoint), keeping this a
+    // clean test of temporal traversal filtering: dave (live) in, eve (fallback) out.
+    let result =
+        opened.engine.search_reranked("anchor text", None, 0, true).expect("search with graph arm");
 
     let bodies: Vec<&str> = result.results.iter().map(|h| h.body.as_str()).collect();
 
