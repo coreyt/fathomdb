@@ -63,6 +63,10 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
             assert isinstance(hit.body, str) and hit.body
             assert isinstance(hit.score, float)
             assert hit.branch in ("vector", "text")
+            # G0 Phase-2 (CONCERN-4) — `source_id` is present across the FFI and
+            # is None for every two-arm hit (only graph-arm hits carry it).
+            assert hasattr(hit, "source_id")
+            assert hit.source_id is None
     finally:
         engine.close()
 

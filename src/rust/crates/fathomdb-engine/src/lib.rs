@@ -517,7 +517,12 @@ enum ReaderRequest {
     },
 }
 
-type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)>;
+// G0 Phase-2: the Search response carries a 4th element — the graph-arm frontier
+// meter (`GraphFrontierStats`). It rides the internal channel but is dropped before
+// `SearchResult` is built (kept OFF the governed surface); the
+// `_graph_frontier_stats_for_test` seam captures it. Default (all-zero) on non-graph paths.
+type ReaderResponse =
+    rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats)>;
 
 /// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
 /// the debug-only `CacheStatus` broadcast path and the test accessor;
@@ -1035,6 +1040,14 @@ pub enum SoftFallbackBranch {
 /// comparable). `branch` tags which retrieval branch produced the representative
 /// hit (vector-first when a body is surfaced by both).
 ///
+/// `source_id` (G0 Phase-2 / BLOCK-2) carries the source-document provenance of
+/// a hit. For the GraphArm branch it is the **traversed edge's** `source_id`
+/// (the session the fact-edge was extracted from), enabling `doc_id_of` to
+/// resolve a graph-reached entity back to a gold session id. For every two-arm
+/// (vector/text/edge) hit it is `None` — those resolve via the cursor map. The
+/// field is additive and nullable; `use_graph_arm=false` results are byte-stable
+/// (every hit `source_id == None`).
+///
 /// Derives `Clone, Debug, PartialEq` but **not `Eq`** — `score: f64` forbids
 /// total equality.
 #[derive(Clone, Debug, PartialEq)]
@@ -1044,6 +1057,38 @@ pub struct SearchHit {
     pub body: String,
     pub score: f64,
     pub branch: SoftFallbackBranch,
+    pub source_id: Option<String>,
+}
+
+/// G0 Phase-2 (E0a / BLOCK-1) — graph-arm frontier instrumentation. A
+/// **side-channel** meter (deliberately NOT a `SearchResult`/`SearchHit` field —
+/// byte stability) that proves whether the graph arm seeds a non-empty frontier.
+/// Under the current doc-seeded path the frontier is empty (doc nodes carry
+/// `logical_id = NULL`), so `seeds_resolved == 0` and `resolved_seed_rate == 0.0`
+/// — this meter is the measurement that proves it (and, post-C1, the 0→>0 flip).
+///
+/// `resolved_seed_rate = seeds_resolved / seeds_considered`, with `0/0 → 0.0`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GraphFrontierStats {
+    /// Hits inspected as seed candidates (the `take(SEED_N)` window, skipping TextEdge).
+    pub seeds_considered: u32,
+    /// Seed candidates that resolved to an active `logical_id` (pushed onto the frontier).
+    pub seeds_resolved: u32,
+    /// Whether the BFS frontier was non-empty after seeding.
+    pub frontier_nonempty: bool,
+    /// Number of graph-arm `SearchHit`s emitted (reachable, not already in the two-arm result).
+    pub graph_candidates_emitted: u32,
+}
+
+impl GraphFrontierStats {
+    /// `seeds_resolved / seeds_considered`, defined as `0.0` when nothing was considered.
+    pub fn resolved_seed_rate(&self) -> f64 {
+        if self.seeds_considered == 0 {
+            0.0
+        } else {
+            f64::from(self.seeds_resolved) / f64::from(self.seeds_considered)
+        }
+    }
 }
 
 /// Slice 30 (G2) — an active canonical node row returned by `read.get` /
@@ -2914,6 +2959,8 @@ impl Engine {
         }
     }
 
+    /// Thin wrapper: the production search path that discards the G0 Phase-2
+    /// frontier meter (it never reaches `SearchResult` / the governed surface).
     fn search_inner(
         &self,
         query: &str,
@@ -2921,6 +2968,20 @@ impl Engine {
         rerank_depth: usize,
         use_graph_arm: bool,
     ) -> Result<SearchResult, EngineError> {
+        self.search_inner_with_stats(query, filter, rerank_depth, use_graph_arm)
+            .map(|(result, _stats)| result)
+    }
+
+    /// G0 Phase-2: the search body, additionally returning the graph-arm frontier
+    /// meter. Only the `_graph_frontier_stats_for_test` seam consumes the stats;
+    /// `search_inner` (and thus `search_reranked` / `search`) drops them.
+    fn search_inner_with_stats(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+    ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
@@ -2991,7 +3052,7 @@ impl Engine {
             return Err(EngineError::Closing);
         }
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
-        let (cursor, soft_fallback, results) = match search_result {
+        let (cursor, soft_fallback, results, graph_stats) = match search_result {
             Ok(result) => result,
             Err(err) => {
                 self.emit_sqlite_internal_error(&err);
@@ -2999,7 +3060,21 @@ impl Engine {
             }
         };
 
-        Ok(SearchResult { projection_cursor: cursor, soft_fallback, results })
+        Ok((SearchResult { projection_cursor: cursor, soft_fallback, results }, graph_stats))
+    }
+
+    /// G0 Phase-2 (BLOCK-1) test seam — runs the graph-arm retrieval path and
+    /// returns the frontier meter (`GraphFrontierStats`) for `query`. Mirrors the
+    /// sanctioned `set_vector_stage_only_for_test` / `_configure_vector_kind_for_test`
+    /// pattern: kept OFF the governed surface (test/eval-only), so the meter never
+    /// appears on `SearchResult`. Used by the recall harness to prove the
+    /// doc-seeded frontier is empty (`resolved_seed_rate == 0.0`) and, post-C1, the
+    /// 0→>0 flip.
+    pub fn _graph_frontier_stats_for_test(
+        &self,
+        query: &str,
+    ) -> Result<GraphFrontierStats, EngineError> {
+        self.search_inner_with_stats(query, None, 0, true).map(|(_result, stats)| stats)
     }
 
     /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
@@ -5094,7 +5169,7 @@ fn read_search_in_tx(
     raw_query: &str,
     rerank_depth: usize,
     use_graph_arm: bool,
-) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>)> {
+) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
@@ -5160,6 +5235,7 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::Vector,
+                    source_id: None,
                 });
             } else if let Ok(body) = edge_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
                 results.push(SearchHit {
@@ -5168,6 +5244,7 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::TextEdge,
+                    source_id: None,
                 });
             }
         }
@@ -5235,6 +5312,7 @@ fn read_search_in_tx(
                 id: row.get::<_, i64>(2)? as u64,
                 score: row.get::<_, f64>(3)?,
                 branch: SoftFallbackBranch::Text,
+                source_id: None,
             })
         })?;
         rows.flatten().collect()
@@ -5278,6 +5356,7 @@ fn read_search_in_tx(
                     id: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::TextEdge,
+                    source_id: None,
                 })
             }) {
                 rows.flatten().collect()
@@ -5304,6 +5383,9 @@ fn read_search_in_tx(
     // the AC-075 0.90 floor is defined to measure. It is NOT a `fusion_mode`
     // knob: the production branch below is byte-unchanged and RRF stays
     // unconditional.
+    // G0 Phase-2 (BLOCK-1) side-channel meter — default (all-zero, rate 0.0) on
+    // the non-graph-arm paths; populated by the BFS seed phase when graph-arm runs.
+    let mut graph_stats = GraphFrontierStats::default();
     let results = if vector_stage_only {
         vector_results
     } else if use_graph_arm {
@@ -5317,7 +5399,8 @@ fn read_search_in_tx(
         // text arm, and the graph candidates. The two-arm result preserves all
         // existing ranking semantics; the graph arm contributes new candidates.
         let two_arm_fused = fuse_rrf(vector_results, text_results);
-        let graph_candidates = bfs_graph_arm_candidates(reader, &two_arm_fused, 3, 50)?;
+        let (graph_candidates, stats) = bfs_graph_arm_candidates(reader, &two_arm_fused, 3, 50)?;
+        graph_stats = stats;
         rerank_fused(
             raw_query,
             apply_recency_reweight(
@@ -5338,7 +5421,7 @@ fn read_search_in_tx(
             rerank_depth,
         )
     };
-    Ok((cursor, soft_fallback, results))
+    Ok((cursor, soft_fallback, results, graph_stats))
 }
 
 /// R3 (Slice 30) — graph-arm BFS candidate generation.
@@ -5359,7 +5442,7 @@ fn bfs_graph_arm_candidates(
     fused_hits: &[SearchHit],
     max_depth: u32,
     cap: usize,
-) -> rusqlite::Result<Vec<SearchHit>> {
+) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats)> {
     const SEED_N: usize = 10;
     const SYNTHESIZED_PENALTY: f64 = 0.3;
 
@@ -5375,6 +5458,9 @@ fn bfs_graph_arm_candidates(
     // explicitly to make the intent clear and avoid the spurious query.
     let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // G0 Phase-2 (BLOCK-1) frontier meter — counts seed candidates considered vs
+    // resolved so the eval can prove the doc-seeded frontier is empty (rate 0.0).
+    let mut stats = GraphFrontierStats::default();
     {
         let mut node_stmt = tx.prepare(
             "SELECT logical_id FROM canonical_nodes \
@@ -5385,17 +5471,20 @@ fn bfs_graph_arm_candidates(
             if matches!(hit.branch, SoftFallbackBranch::TextEdge) {
                 continue;
             }
+            stats.seeds_considered += 1;
             let cursor_i64 = hit.id as i64;
             let resolved = node_stmt
                 .query_row([cursor_i64], |row| row.get::<_, Option<String>>(0))
                 .optional()?;
             if let Some(Some(lid)) = resolved {
+                stats.seeds_resolved += 1;
                 if visited.insert(lid.clone()) {
                     frontier.push_back((lid, 0));
                 }
             }
         }
     }
+    stats.frontier_nonempty = !frontier.is_empty();
 
     // Phase 2: BFS over canonical_edges (temporal filter).
     // Both statements are prepared ONCE outside the loops — re-preparing inside
@@ -5403,12 +5492,21 @@ fn bfs_graph_arm_candidates(
     let mut candidates: Vec<SearchHit> = Vec::new();
 
     let mut edge_stmt = tx.prepare(
-        "SELECT e.from_id, e.to_id \
+        // G0 Phase-2 (BLOCK-2): carry the traversed edge's `source_id` so a
+        // graph-reached neighbor can resolve back to the session it was extracted
+        // from. `ORDER BY e.write_cursor` makes the traversal deterministic: when
+        // several active edges connect this node to the SAME neighbor with
+        // different `source_id`s, the earliest-written edge wins the `visited`
+        // dedup, so the carried provenance is stable (not SQLite-order-dependent).
+        // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
+        // `LIMIT 1` lookup for the same reason.)
+        "SELECT e.from_id, e.to_id, e.source_id \
          FROM canonical_edges e \
          WHERE (e.from_id = ?1 OR e.to_id = ?1) \
            AND e.superseded_at IS NULL \
            AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
            AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+         ORDER BY e.write_cursor \
          LIMIT 64",
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
@@ -5427,17 +5525,25 @@ fn bfs_graph_arm_candidates(
             continue;
         }
 
-        // Fetch temporal-live neighbors via edges.
-        let neighbor_lids: Vec<String> = {
+        // Fetch temporal-live neighbors via edges, each paired with the
+        // traversing edge's `source_id` (BLOCK-2 provenance carry).
+        let neighbors: Vec<(String, Option<String>)> = {
             let rows = edge_stmt.query_map([&lid], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             })?;
             rows.flatten()
-                .map(|(from_id, to_id)| if from_id == lid { to_id } else { from_id })
+                .map(|(from_id, to_id, source_id)| {
+                    let neighbor = if from_id == lid { to_id } else { from_id };
+                    (neighbor, source_id)
+                })
                 .collect()
         };
 
-        for neighbor in neighbor_lids {
+        for (neighbor, edge_source_id) in neighbors {
             if visited.contains(&neighbor) {
                 continue;
             }
@@ -5462,6 +5568,8 @@ fn bfs_graph_arm_candidates(
                         body,
                         score,
                         branch: SoftFallbackBranch::GraphArm,
+                        // BLOCK-2: the session this fact-edge was extracted from.
+                        source_id: edge_source_id.clone(),
                     });
                     if candidates.len() >= cap {
                         break;
@@ -5476,7 +5584,8 @@ fn bfs_graph_arm_candidates(
     drop(edge_stmt);
     drop(body_stmt);
     tx.commit()?;
-    Ok(candidates)
+    stats.graph_candidates_emitted = candidates.len() as u32;
+    Ok((candidates, stats))
 }
 
 /// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public

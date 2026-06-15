@@ -23,7 +23,14 @@ use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
 fn hit(id: u64, body: &str, branch: SoftFallbackBranch) -> SearchHit {
-    SearchHit { id, kind: "doc".to_string(), body: body.to_string(), score: 0.0, branch }
+    SearchHit {
+        id,
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        score: 0.0,
+        branch,
+        source_id: None,
+    }
 }
 
 #[test]

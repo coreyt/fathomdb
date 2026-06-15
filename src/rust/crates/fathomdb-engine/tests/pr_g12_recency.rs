@@ -23,6 +23,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         body: body.to_string(),
         score,
         branch: SoftFallbackBranch::Vector,
+        source_id: None,
     }
 }
 

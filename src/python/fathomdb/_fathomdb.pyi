@@ -23,6 +23,7 @@ class SearchHit:
     body: str
     score: float
     branch: str
+    source_id: str | None
 
 class SearchResult:
     projection_cursor: int

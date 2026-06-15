@@ -52,6 +52,9 @@ class SearchHit:
     per-branch relevance (`vec_distance_l2` for the vector branch, `bm25()` for
     the text branch); the two are not comparable raw. `branch` tags which
     retrieval branch produced the hit.
+
+    `source_id` (G0 Phase-2) carries source-document provenance: the traversed
+    edge's `source_id` for a graph-arm hit, `None` for every two-arm hit.
     """
 
     id: int
@@ -59,6 +62,7 @@ class SearchHit:
     body: str
     score: float
     branch: SoftFallbackBranch
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)

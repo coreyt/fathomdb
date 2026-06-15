@@ -65,6 +65,8 @@ interface NativeSearchHit {
   body: string;
   score: number;
   branch: string;
+  /** G0 Phase-2 — source-document provenance; set only for graph-arm hits. */
+  sourceId?: string | null;
 }
 
 interface NativeSearchResult {

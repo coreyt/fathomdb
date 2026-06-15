@@ -93,6 +93,11 @@ export interface SearchHit {
    */
   score: number;
   branch: SoftFallbackBranch;
+  /**
+   * G0 Phase-2 — source-document provenance. The traversed edge's `source_id`
+   * for a graph-arm hit; `null` for every two-arm hit.
+   */
+  sourceId: string | null;
 }
 
 /**
@@ -405,6 +410,7 @@ export class Engine {
         branch: (h.branch === "vector" || h.branch === "text_edge" || h.branch === "graph_arm")
           ? (h.branch as SoftFallbackBranch)
           : "text",
+        sourceId: h.sourceId ?? null,
       })),
     };
   }
@@ -591,6 +597,7 @@ export const graph = {
         branch: (h.branch === "vector" || h.branch === "text_edge")
           ? (h.branch as SoftFallbackBranch)
           : "text",
+        sourceId: h.sourceId ?? null,
       })),
       expanded: r.expanded.map((e) => ({
         node: e.node,

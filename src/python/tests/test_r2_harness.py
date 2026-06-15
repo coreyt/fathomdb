@@ -27,7 +27,38 @@ from eval.r2_parity_eval import (
     RecordingAnswerer,
     StubAdapter,
     StubAnswerer,
+    _make_doc_id_of,
+    session_id_of,
 )
+
+
+class _StubHit:
+    """Minimal SearchHit stand-in for doc_id_of resolution tests."""
+
+    def __init__(self, id: int, source_id=None) -> None:
+        self.id = id
+        self.source_id = source_id
+        self.body = ""
+        self.score = 0.0
+
+
+def test_chunked_session_source_resolves_to_bare_session_id() -> None:
+    """G0 Phase-2 §E — a graph-arm hit's chunked ``source_id`` (``sess#c2``)
+    resolves to the bare gold session id, and ``doc_id_of`` prefers ``source_id``
+    over the cursor map; a two-arm hit (source_id=None) falls back to the map."""
+    assert session_id_of("sess_42#c0") == "sess_42"
+    assert session_id_of("sess_42#c17") == "sess_42"
+    assert session_id_of("sess_42") == "sess_42"  # idempotent / no suffix
+
+    cursor_to_doc = {7: "cursor_session"}
+    doc_id_of = _make_doc_id_of(cursor_to_doc)
+
+    # Graph-arm hit: carries a chunked source_id → canonicalized, map ignored.
+    assert doc_id_of(_StubHit(id=7, source_id="sess_42#c2")) == "sess_42"
+    # Two-arm hit: no source_id → cursor map.
+    assert doc_id_of(_StubHit(id=7, source_id=None)) == "cursor_session"
+    # Unknown cursor, no source_id → stringified id fallback.
+    assert doc_id_of(_StubHit(id=99, source_id=None)) == "99"
 
 # ---------------------------------------------------------------------------
 # helpers

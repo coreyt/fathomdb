@@ -178,6 +178,7 @@ class Engine:
                     body=hit.body,
                     score=hit.score,
                     branch=cast(SoftFallbackBranch, hit.branch),
+                    source_id=hit.source_id,
                 )
                 for hit in result.results
             ],

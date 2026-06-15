@@ -389,6 +389,50 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-15 (cont.) — ◆ HITL: full G0 Phase-2 (incl. PRE-3 SCHEMA-GATE SIGNED) → then C1; base-retrieval (§3) CLOSED + committed
+
+- **§3 base-retrieval track CLOSED** (commit `a9be9e8`, local main, unpushed): fused recall@K
+  + strong-reader e2e gate done, committed with data + findings. Verdict: dense ties BM25,
+  doesn't beat it → product lever is the graph arm. Pivoted to the graph track.
+- **Blocker found:** C1 (graph-arm seeding) is hard-sequenced AFTER G0 Phase-2, which was
+  **NOT implemented** anywhere — main has the pre-G0 `bfs_graph_arm_candidates` (bare
+  `Vec<SearchHit>`, no meter, no `source_id`, doc-seed `Some(Some(lid))` bug); the `g0-…`
+  branch had only G0 *Phase-1* (tracer) and is 9 behind main.
+- **◆ HITL decision (2026-06-15):** build **full G0 Phase-2 incl. PRE-3**, then C1. This
+  **SIGNS the PRE-3 SCHEMA-GATE** — step-16 `SCHEMA_VERSION 15→16` (nullable
+  `extractor_provenance` on nodes+edges + `extractor_model_id` on nodes), with the
+  `-- MIGRATION-ACCRETION-EXEMPTION:` marker. Recorded in memory `g0-phase2-schema-gate-signed`.
+- **Execution:** TDD-first per `0.8.1-g0-phase2-design.md` §G (1 byte-stable → 2 none-fallback
+  → 3 carries-source → 4 doc-seeded-rate-0 → 5 entity-seeded-rate-1 → 6 Py/TS field-introspect
+  → 7 chunk-canon → 8 step16-migration → 9 node+edge-provenance → 10 ready-provenance), then C1
+  (`0.8.1-c1-seeding-slice-design.md`). MAIN tree only (maturin/.venv binding trap). Neither
+  flips `use_graph_arm` (stays G2-blocked). codex §9 before each merge. Budget: G0 P2 Tier-A
+  = $0; C1 Tier-B flash-lite ~$0.4. Running total ~$12.9 of $20.
+
+### 2026-06-15 (cont.) — G0 Phase-2 PART-1 implemented (engine meter + source_id + FFI parity + chunk-canon) — tests GREEN, uncommitted
+
+TDD-first per `0.8.1-g0-phase2-design.md`. **Done + verified this session:**
+- **E0a meter (BLOCK-1):** `GraphFrontierStats {seeds_considered, seeds_resolved,
+  frontier_nonempty, graph_candidates_emitted}` + `resolved_seed_rate()` (0/0→0.0);
+  `bfs_graph_arm_candidates` returns `(Vec<SearchHit>, GraphFrontierStats)`; threaded the
+  4th element through `ReaderResponse`/`read_search_in_tx`/`search_inner_with_stats`; kept
+  OFF `SearchResult`. Seam `Engine::_graph_frontier_stats_for_test(query)`.
+- **BLOCK-2 source_id carry:** `SearchHit.source_id: Option<String>` (additive); BFS edge
+  SELECT carries `e.source_id` onto each graph-arm hit; all 4 two-arm sites = `None`.
+- **FFI parity (CONCERN-4):** PyO3 `PySearchHit.source_id`, napi `SearchHit.source_id`
+  (`sourceId`), Python `types.py`/`engine.py`, TS `binding.ts`/`index.ts` (+2 map sites).
+  Wheel rebuilt CUDA+test-hooks (nvcc-on-PATH; the first build failed on `nvcc` not in PATH
+  — `[[background-exit-masks-real-exit]]` masked it; refixed). TS `tsc` clean.
+- **CONCERN-5 chunk-canon (§E):** `session_id_of` (strips `#c<N>`) + `_make_doc_id_of`
+  (prefers `sh.source_id`→canonicalized, else cursor map) in `r2_parity_eval`.
+- **Tests GREEN:** engine `pr_g0_phase2_frontier` 5/5 (incl. doc-seeded-rate-0 BLOCK-1
+  proof + entity-rate-1 + source_id carry + byte-stable + none-fallback); no regression in
+  slice30_graph_arm/pr_g9/g10/g12/g1/search_result_shape/source_id_writes; pytest §E + §C-6
+  field-introspection 8/8. Workspace (`cargo check -p fathomdb-py -p fathomdb-napi`) clean.
+- **REMAINING:** TS runtime surface test (needs napi build); **PRE-3 step-16 schema
+  migration + provenance plumbing (§F, tests 8-10)** — next phase; then **C1** + Tier-B.
+- Uncommitted (no codex §9 yet); commits HITL-gated.
+
 ### 2026-06-15 (cont.) — ⭐ FUSED/DENSE ARM recall@K LANDED (HANDOFF-3 §3) — dense ties BM25 on recall, still trails on ranking
 
 Ran the fused/dense experiment (the §3 lever, finally cheap on GPU). **$0** (recall@K

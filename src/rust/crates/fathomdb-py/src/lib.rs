@@ -365,6 +365,9 @@ struct PySearchHit {
     body: String,
     score: f64,
     branch: String,
+    /// G0 Phase-2 — source-document provenance. Set (to the traversed edge's
+    /// `source_id`) only for graph-arm hits; `None` for every two-arm hit.
+    source_id: Option<String>,
 }
 
 impl PySearchHit {
@@ -380,6 +383,7 @@ impl PySearchHit {
                 SoftFallbackBranch::TextEdge => "text_edge".to_string(),
                 SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
+            source_id: h.source_id.clone(),
         }
     }
 }

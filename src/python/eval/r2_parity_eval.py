@@ -291,6 +291,35 @@ class StubAdapter:
         return list(self.hits_by_query.get(question, []))[:k]
 
 
+_CHUNK_SUFFIX_RE = re.compile(r"#c\d+$")
+
+
+def session_id_of(source_doc_id: str) -> str:
+    """G0 Phase-2 §E — canonicalize a (possibly chunked) source-doc id to its
+    bare session id by stripping a trailing ``#c<N>`` chunk suffix. Gold
+    ``answer_session_ids`` are bare session ids, but a chunked ingest writes
+    ``"<session>#c0"``, ``"<session>#c1"`` … as ``source_doc_id``; both the
+    ``cursor_to_doc`` build and ``doc_id_of`` route through this so a graph-arm
+    hit's ``source_id`` resolves to the same id space as gold. Idempotent
+    (no suffix → unchanged)."""
+    return _CHUNK_SUFFIX_RE.sub("", source_doc_id)
+
+
+def _make_doc_id_of(cursor_to_doc: dict[int, str]) -> Any:
+    """G0 Phase-2 §B — resolve a hit to its corpus doc id, preferring the hit's
+    carried ``source_id`` (the traversed edge's session, canonicalized) when
+    present — this is how a graph-arm entity hit resolves to a gold session —
+    else the write-order cursor map."""
+
+    def _doc_id_of(sh: Any) -> str:
+        sid = getattr(sh, "source_id", None)
+        if sid:
+            return session_id_of(str(sid))
+        return cursor_to_doc.get(int(sh.id), str(sh.id))
+
+    return _doc_id_of
+
+
 class FathomDBAdapter:
     """Wraps the FathomDB Python SDK. Retrieval only — the engine is local SQLite
     and makes **zero** network calls (ADR §3.6). ``rerank_depth`` exercises the
@@ -884,7 +913,7 @@ def _build_fathomdb(
                 chunk = elps_sample[start : start + batch]
                 receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
-                    cursor_to_doc[int(cursor)] = doc_id
+                    cursor_to_doc[int(cursor)] = session_id_of(doc_id)
 
             # Drain after pass 1: wait for BGE embedder to finish doc embeddings
             # before spawning the ELPS harness. Without this the CPU-intensive
@@ -903,14 +932,14 @@ def _build_fathomdb(
                 chunk = remainder[start : start + batch]
                 receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
-                    cursor_to_doc[int(cursor)] = doc_id
+                    cursor_to_doc[int(cursor)] = session_id_of(doc_id)
 
             # Longer drain: embedder processes entity nodes from ELPS extraction
             engine.drain(timeout_s=600)
 
             adapter = FathomDBAdapter(
                 engine,
-                doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)),
+                doc_id_of=_make_doc_id_of(cursor_to_doc),
                 use_graph_arm=use_graph_arm,
             )
         else:
@@ -920,11 +949,11 @@ def _build_fathomdb(
                 chunk = items[start : start + batch]
                 receipt = engine.write([{"kind": "doc", "body": body} for _, body in chunk])
                 for (doc_id, _body), cursor in zip(chunk, receipt.row_cursors):
-                    cursor_to_doc[int(cursor)] = doc_id
+                    cursor_to_doc[int(cursor)] = session_id_of(doc_id)
             engine.drain(timeout_s=120)
             adapter = FathomDBAdapter(
                 engine,
-                doc_id_of=lambda sh: cursor_to_doc.get(int(sh.id), str(sh.id)),
+                doc_id_of=_make_doc_id_of(cursor_to_doc),
                 use_graph_arm=use_graph_arm,
             )
 

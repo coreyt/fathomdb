@@ -387,6 +387,9 @@ pub struct SearchHit {
     pub score: f64,
     /// "vector" | "text"
     pub branch: String,
+    /// G0 Phase-2 — source-document provenance (`sourceId` in JS). Set (to the
+    /// traversed edge's `source_id`) only for graph-arm hits; `null` otherwise.
+    pub source_id: Option<String>,
 }
 
 impl SearchHit {
@@ -402,6 +405,7 @@ impl SearchHit {
                 SoftFallbackBranch::TextEdge => "text_edge".to_string(),
                 SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
+            source_id: h.source_id.clone(),
         }
     }
 }
