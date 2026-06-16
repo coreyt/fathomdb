@@ -1,0 +1,471 @@
+{
+  "mode": "r6-bm25-b-sweep",
+  "n_questions": 40,
+  "bs": [
+    0.0,
+    0.25,
+    0.5,
+    0.75
+  ],
+  "retrieval_loop": {
+    "bm25_plain_b0.0": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4577,
+          "ndcg_at_10": 0.5118,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9402,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6667,
+          "ndcg_at_10": 0.5487,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.8053,
+          "ndcg_at_10": 0.7164,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_enriched_b0.0": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.51,
+          "ndcg_at_10": 0.5776,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.8,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.9,
+          "ndcg_at_10": 0.9176,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.5468,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7333,
+          "ndcg_at_10": 0.6777,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_plain_b0.25": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.456,
+          "ndcg_at_10": 0.5095,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6667,
+          "ndcg_at_10": 0.524,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7883,
+          "ndcg_at_10": 0.7095,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_enriched_b0.25": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.5044,
+          "ndcg_at_10": 0.5721,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.8,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.9,
+          "ndcg_at_10": 0.9176,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.5388,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7333,
+          "ndcg_at_10": 0.6777,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_plain_b0.5": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4517,
+          "ndcg_at_10": 0.5051,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.524,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7886,
+          "ndcg_at_10": 0.7095,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_enriched_b0.5": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.5024,
+          "ndcg_at_10": 0.542,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.5388,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7333,
+          "ndcg_at_10": 0.6788,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_plain_b0.75": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4508,
+          "ndcg_at_10": 0.4762,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.6,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.5259,
+          "recall_at_5": 0.3,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7383,
+          "ndcg_at_10": 0.6908,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "bm25_enriched_b0.75": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.501,
+          "ndcg_at_10": 0.542,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6625,
+          "ndcg_at_10": 0.5402,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7333,
+          "ndcg_at_10": 0.6774,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    },
+    "fathomdb_fts_only": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.535,
+          "ndcg_at_10": 0.6207,
+          "recall_at_5": 0.7,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.695,
+          "ndcg_at_10": 0.757,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.575,
+          "ndcg_at_10": 0.4835,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.3
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7533,
+          "ndcg_at_10": 0.6696,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    }
+  }
+}

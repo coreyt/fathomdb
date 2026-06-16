@@ -17,7 +17,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from eval.p0a_base_retrieval import (
     DEFAULT_DATASET,
@@ -129,6 +129,40 @@ def _pooled_r10(retrieval: dict, variant: str) -> Optional[float]:
     return round(num / den, 3) if den else None
 
 
+def run_b_sweep(smoke, graphs: dict, db_dir: Path, output: str) -> int:
+    """Follow-up implicated by the R6 placebo (length-norm penalty confirmed): sweep the
+    tunable BM25 `b` (length-normalization) over {plain, enriched} docs. Does lowering `b`
+    let enrichment's content gain net positive — and beat plain FathomDB-FTS (the FTS5 `b`
+    is fixed/un-tunable, so this also probes whether a tunable-`b` BM25 should replace it)?"""
+    enriched = {s: enrich_doc(b, graphs.get(s, {})) for s, b in smoke.documents.items()}
+    bs = [0.0, 0.25, 0.5, 0.75]
+    systems: dict[str, Any] = {}
+    for bv in bs:
+        systems[f"bm25_plain_b{bv}"] = NaiveRAGAdapter(smoke.documents, b=bv)
+        systems[f"bm25_enriched_b{bv}"] = NaiveRAGAdapter(enriched, b=bv)
+    systems["fathomdb_fts_only"] = _fts_adapter(smoke.documents, str(db_dir / "fts_plain.sqlite"))
+    retrieval = run_retrieval_loop(smoke, systems)
+    Path(output).write_text(json.dumps(
+        {"mode": "r6-bm25-b-sweep", "n_questions": len(smoke.questions),
+         "bs": bs, "retrieval_loop": retrieval}, indent=2), encoding="utf-8")
+    print(f"[r6-b-sweep] wrote {output}\n\n=== pooled R@10 (BM25 b-sweep) ===")
+    pooled = {v: _pooled_r10(retrieval, v) for v in systems}
+    for bv in bs:
+        print(f"  b={bv:<5} plain={pooled.get(f'bm25_plain_b{bv}')}  "
+              f"enriched={pooled.get(f'bm25_enriched_b{bv}')}")
+    print(f"  fathomdb_fts_only (fixed b, the bar) = {pooled.get('fathomdb_fts_only')}")
+    best_e = max(((pooled[f"bm25_enriched_b{bv}"], bv) for bv in bs
+                  if pooled.get(f"bm25_enriched_b{bv}") is not None), default=(None, None))
+    bar = pooled.get("fathomdb_fts_only")
+    print(f"\n[BEST enriched] R@10={best_e[0]} at b={best_e[1]} | FTS bar={bar} | "
+          f"{'BEATS' if (best_e[0] is not None and bar is not None and best_e[0] > bar) else 'does NOT beat'} the bar")
+    for v in systems.values():
+        eng = getattr(v, "_engine", None)
+        if eng is not None:
+            eng.close()
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="R6 index-key enrichment recall@K vs BM25")
     ap.add_argument("--per-class", type=int, default=10)
@@ -136,6 +170,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--graphs", default="/tmp/gar_dry/extractions.json")
     ap.add_argument("--db-dir", default="/tmp/r6")
     ap.add_argument("--output", required=True)
+    ap.add_argument("--tune-b", action="store_true",
+                    help="BM25 b-tuning sweep (plain vs enriched × b∈{0,.25,.5,.75}) instead of the 5-variant run")
     args = ap.parse_args(argv)
 
     db_dir = Path(args.db_dir)
@@ -147,6 +183,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     cov = sum(1 for s in smoke.documents if graphs.get(s))
     print(f"[load] {len(smoke.questions)} Q | {len(smoke.documents)} sessions | "
           f"{cov} have a cached graph ({cov / max(len(smoke.documents),1):.0%})")
+
+    if args.tune_b:
+        return run_b_sweep(smoke, graphs, db_dir, args.output)
 
     import hashlib
 

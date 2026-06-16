@@ -416,6 +416,24 @@ fts_enriched 0.775 (−0.025, PRIMARY) · fts_placebo 0.70 (−0.10).
 - Contrast: unlike the graph arm (added 0, degraded multi_session), enrichment carries real
   placebo-confirmed value — a length-norm fix could plausibly surface it.
 
+**R6 follow-up — BM25 `b`-tuning sweep (data `0.8.1-R6-bsweep-n40.json`, `--tune-b`):** sweep the
+tunable BM25 `b` × {plain, enriched}, 40q pooled R@10:
+| b | plain | enriched | — | FTS bar |
+|---|---|---|---|---|
+| 0.0 | 0.75 | **0.775** | | fts_only **0.80** |
+| 0.25 | 0.725 | **0.775** | | (FTS5 b fixed/un-tunable) |
+| 0.5 | 0.725 | 0.75 | | |
+| 0.75 | 0.70 | 0.75 | | |
+- **Length-norm CONFIRMED:** lower `b` lifts recall (plain 0.70→0.75; enriched 0.75→0.775) — matches
+  the placebo −0.10. **Enrichment helps at every b** (best 0.775 @ b=0/0.25, +0.075 vs default BM25).
+- **Still < FathomDB-FTS 0.80** — and FTS5's `b` is FIXED, so the upside config (enriched + low-b on
+  FTS5's better tokenizer) is UNTESTED. FTS5 0.80 > naive-BM25 0.70 *at the same b* = tokenizer/impl,
+  not `b`. **Actionable engine lever:** a tunable-`b`/lower-`b` FTS5 ranking + enrichment (uncertain @N=40).
+- **Whole "beat BM25" investigation:** 3 levers (graph arm, enrichment, b-tuning) — none decisively
+  beats the strong lexical baseline @N=40 (MDE ~15pp). Matches BEIR (BM25 strong OOD) + the
+  relevance-ceiling finding. The graph-arm recall bet is closed NO; enrichment + low-b carry real
+  (within-noise) value; next lever, if pursued, is engine-side tunable-`b` FTS5.
+
 ### 2026-06-16 — ◆ GRAPH ARM does NOT beat BM25 (measured, literature-corroborated) → PIVOT to index-key enrichment
 
 **The headline experiment for "make the graph arm beat BM25" — result is a clear, robust NEGATIVE.**
