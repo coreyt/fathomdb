@@ -23,6 +23,15 @@ CLAIMED (external) / INFERRED (derived here).
 > report-only north-star (wired into `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md` IR-E/IR-2). R5
 > (vector-PRF) is opportunistic/post-R1, not in the committed R0–R4 set. The graph arm (R3) rides
 > the existing 0.8.1 graph-traversal substrate (0.8.1.md §1); CLOSED levers unchanged.
+>
+> **◆ PIVOT (2026-06-16) — graph arm (R3) does NOT beat BM25; new top lever = R6 index-key
+> enrichment.** Direct measurement (real Qwen3.6-27B graph, LLM-free recall@K) + a cited
+> literature review: the BFS graph arm adds **0 net recall and degrades multi_session
+> (0.30→0.10)**; this is the normal outcome (raw BFS ~0; RRF beats it; graph pays off only when
+> seeded from the lexical top-K — which our C1 seeding is NOT). Report:
+> `dev/plans/runs/0.8.1-beat-bm25-report.md`; STATUS-0.8.1.md §7. This **validates C3**
+> (graph is not the only lever past the ceiling). **R3 (graph arm) is demoted from a recall
+> bet to substrate**; the recall lever is **R6 (index-key enrichment), added to §2 below.**
 
 ---
 
@@ -166,6 +175,25 @@ every violation is flagged. Baseline: shipped `h_whole_1:3` — exact_fact R@10
 **0.905**, exploratory R@10/R@50 **0.307/0.520** (MEASURED-json). All effect
 sizes below are derived from the corrected headroom math (§1.2 C1/C2), not from
 fixed anchors.
+
+### R6 — Index-key enrichment (NEW TOP RECALL LEVER, 2026-06-16 pivot)
+- **What & why:** append each session's extracted entities/facts to **its own doc's FTS
+  content** (keys *on the doc*, not separate entity rows / not a graph arm). Adds the
+  lexical-bridge vocabulary that lets a query match a session via its facts, **without** the
+  graph arm (adds 0 / degrades multi_session — see the PIVOT banner) and **without** the
+  document-length-normalization bias of co-mingling separate entity rows in the index.
+- **Evidence:** the LongMemEval line reports **+9.4% recall** from adding extracted facts to
+  index keys; query-routing is the complementary lever. (Caveat: the +9.4% is a single-author
+  LME preprint — weaker citation — but mechanistically sound and cheap to falsify.)
+- **Effect size:** target a measurable recall lift over BM25/FTS at K=10 on the iteration set;
+  read-only against the existing recall@K loop. Falsifiable at 40q.
+- **Cost & sequencing:** **$0 + minutes** — reuses the already-cached Qwen3.6-27B extraction
+  (`/tmp/gar_dry/extractions.json`, 1,906 graphs). Build = re-index docs with appended facts;
+  recall@K is LLM-free. **Do this FIRST** (cheapest, evidence-backed). Tooling: extend
+  `eval/graph_arm_recall.py`'s build (append entity/fact strings to doc bodies; drop the
+  separate entity rows + graph arm) or a small dedicated variant.
+- **If it underperforms:** then (and only then) revisit the graph as substrate — re-seed from
+  the lexical top-K + a separate entity FTS index + the engine `edge_fact`-at-scale fix.
 
 ### R0 — Candidate-recall CDF + rerank cost model (measurement; do first)
 
