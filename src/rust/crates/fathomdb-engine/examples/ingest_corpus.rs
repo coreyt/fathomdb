@@ -348,6 +348,7 @@ fn run(args: Args) -> Result<(), String> {
             t_invalid: None,
             confidence: None,
             extractor_model_id: None,
+            temporal_fallback: None,
         });
         if edge_batch.len() >= EDGE_BATCH {
             edges_written += flush_edges(&engine, &mut edge_batch)?;
