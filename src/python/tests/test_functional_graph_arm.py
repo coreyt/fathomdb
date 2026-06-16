@@ -37,6 +37,7 @@ def _edge(
     logical_id: str,
     *,
     t_invalid: str | None = None,
+    body: str | None = None,
 ) -> dict:
     item: dict = {
         "kind": "link",
@@ -46,6 +47,8 @@ def _edge(
     }
     if t_invalid is not None:
         item["t_invalid"] = t_invalid
+    if body is not None:
+        item["body"] = body
     return {"edge": item}
 
 
@@ -67,6 +70,32 @@ def test_graph_arm_default_is_false(db_path: str) -> None:
         r_explicit = engine.search("delta", use_graph_arm=False)
         assert r_default.projection_cursor == r_explicit.projection_cursor
         assert [h.body for h in r_default.results] == [h.body for h in r_explicit.results]
+    finally:
+        engine.close()
+
+
+def test_edge_body_enables_edge_fact_seeding(db_path: str) -> None:
+    """Binding completeness: an edge written with a ``body`` through the Python
+    write API must be projected into ``search_index_edges`` so the C1 graph arm can
+    seed from edge-fact FTS (source A). The query matches ONLY the edge body (not
+    the entity node bodies), so a graph-arm hit can only appear if the edge body
+    reached the engine. Pre-fix (edge body dropped → NULL) this returned no graph
+    hits for an edge-body query."""
+    engine = open_engine(db_path)
+    try:
+        engine.write([
+            _node("alice", "alice profile record"),
+            _node("bob", "bob profile record"),
+            # Edge body carries the distinctive query term; entity bodies do NOT.
+            _edge("alice", "bob", "e-ab", body="quarterly acquisition agreement"),
+        ])
+        engine.drain(timeout_s=30)
+        res = engine.search("acquisition agreement", use_graph_arm=True)
+        graph_bodies = {h.body for h in res.results if h.branch == "graph_arm"}
+        assert graph_bodies & {"alice profile record", "bob profile record"}, (
+            "edge-fact (source A) seeding must surface the connected entities for an "
+            f"edge-body query; got graph_arm bodies={graph_bodies}"
+        )
     finally:
         engine.close()
 

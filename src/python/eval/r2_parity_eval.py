@@ -338,15 +338,23 @@ class FathomDBAdapter:
         doc_id_of: Optional[Any] = None,
         rerank_depth: int = 0,
         use_graph_arm: bool = False,
+        search_filter: Optional[Any] = None,
     ) -> None:
         self._engine = engine
         self._doc_id_of = doc_id_of
         self._rerank_depth = rerank_depth
         self._use_graph_arm = use_graph_arm
+        # Optional SearchFilter applied to the TWO-ARM branches (e.g. kind="doc" to
+        # exclude entity nodes from doc-retrieval). Graph-arm seeding queries the FTS
+        # index directly and is NOT affected by this filter, so entities still seed.
+        self._search_filter = search_filter
 
     def retrieve(self, question: str, k: int) -> list[Hit]:
         result = self._engine.search(
-            question, rerank_depth=self._rerank_depth, use_graph_arm=self._use_graph_arm
+            question,
+            filter=self._search_filter,
+            rerank_depth=self._rerank_depth,
+            use_graph_arm=self._use_graph_arm,
         )
         hits: list[Hit] = []
         for sh in result.results[:k]:

@@ -13,13 +13,13 @@ When this board and those docs disagree, **this board records the current pointe
 **Read order on resume:** AGENTS.md → MEMORY.md → `0.8.1-plan.md` § "Immediate Next
 Slice" → this board's § "Next action" → the current slice's prompt in `../prompts/`.
 
-Last updated: 2026-06-15 (orchestrator session: G0 Phase-2 DESIGNED [TDD-ready, PRE-3 schema-gate pending]; §5.4 judge + §5.6 scorer-unification LANDED on branch `eval-scorer-unify-judge-20260615`, all gates green; judge-path tracer PASSED ~$0.06; readiness cap $20. STOP for HITL on the 4 open decisions in §7). Prior: Slice 30 HITL-BLOCKED (Slice 30b = entity-node source_doc_id fix; folds into G0 E0a).
+Last updated: 2026-06-15 (orchestrator session, cont.): **G0 Phase-2 part-1 COMMITTED `017ad68`** (frontier meter + `SearchHit.source_id` carry from the traversed edge + FFI parity + chunk-canon; codex §9 PASS) and **C1 graph-arm SEEDING COMMITTED `5da42b0`** (the BLOCK-1 fix — frontier seeds from query-matched edge-fact/entity FTS, not doc nodes; graph arm now produces candidates live via the Python SDK; codex §9 PASS). HITL §4 decisions resolved: reader re-anchored to `gemini-3.1-pro`; PRE-3 step-16 SCHEMA-GATE SIGNED; readiness cap $20 (~$12.9 spent). NEXT = $0 graph-arm-vs-BM25 recall@K measurement, then PRE-3 step-16 migration. `use_graph_arm` stays G2-blocked (not flipped to default). Prior: §3 base-retrieval CLOSED `a9be9e8` (dense ties BM25, doesn't beat it → graph arm is the lever).
 
 ---
 
 ## 1. Current slice
 
-**Slice 30 HITL-BLOCKED (2026-06-14) — HITL ruled Option 2 (block closure): entity-node source_doc_id fix required before Slice 30 can CLOSE. Unblock = Slice 30b (see §"Next action" + §7).**
+**Slice 30 — CLOSURE-GATED on a graph-arm recall measurement (updated 2026-06-15). The HITL-blocking *fix* has LANDED.** Both the Slice 30b entity-node→source resolution AND the deeper BLOCK-1 *seeding* gap (the real recall blocker) were fixed via the graph-experiment program: **G0 Phase-2 part-1 `017ad68`** (`SearchHit.source_id` carry from the traversed edge) + **C1 seeding `5da42b0`** (frontier seeds from the query's own matched edge-fact/entity FTS, not doc nodes). The graph arm now emits candidates live through the Python SDK (codex §9 PASS on both). **Slice 30 still cannot CLOSE until the $0 recall@K measurement (graph arm vs BM25) confirms a lift**, plus PRE-3 step-16 completes G0 Phase-2. `use_graph_arm` stays G2-blocked (not flipped to default). See §7 (newest) for the C1 + G0-P2 records.
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -131,13 +131,17 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 `dev/plans/prompts/0.8.1-graph-track-HANDOFF-2.md`** (goal + tracking-file map + the
 outstanding-work backlog #5.1–5.7; continues the deep-reference `…-HANDOFF.md`). Authoritative plan:
 `dev/design/0.8.1-graph-experiment-plan.md`. Diagnosis:
-`dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md`. State (2026-06-14):
-G0 instrument-hardening Phase 1 DONE (tracer + memo, branch `g0-20260614T174004Z`,
-not merged) + design-reviewed (`dev/plans/runs/0.8.1-g0-design-review.md` — **BLOCK-1:
-graph-arm seeding is the real recall blocker, not `source_id`; needs a separate seeding
-slice**). Open HITL decisions + the step-16 schema-gate are in the hand-off §4. P0-A
-base-retrieval scaffold landed (`ef1e363`). ELPS `ready.provenance` CONFIRMED at v1
-(`dev/notes/elps-consult-3-provenance.md`).
+`dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md`. State (2026-06-15):
+the BLOCK-1 seeding blocker is FIXED on main — G0 Phase-2 part-1 `017ad68` (frontier
+meter + `SearchHit.source_id` carry) + C1 seeding `5da42b0` (frontier seeds from
+query-matched edge-fact/entity FTS), both codex §9 PASS; the graph arm now emits
+candidates live via the Python SDK. HITL §4 decisions RESOLVED (reader → `gemini-3.1-pro`;
+PRE-3 step-16 SCHEMA-GATE SIGNED). §3 base-retrieval CLOSED `a9be9e8` (dense ties BM25).
+**NEXT = $0 graph-arm-vs-BM25 recall@K, then PRE-3 step-16 migration to complete G0
+Phase-2.** (Historical: G0 Phase-1 tracer+memo on branch `g0-20260614T174004Z` is now
+superseded — G0 Phase-2 landed on main directly; design-review
+`dev/plans/runs/0.8.1-g0-design-review.md`. ELPS `ready.provenance` CONFIRMED at v1,
+`dev/notes/elps-consult-3-provenance.md`.)
 
 **P0-A base-testing progress (2026-06-14, this session) — UNCOMMITTED:**
 - **Airlock Batch API proven e2e** (`gpt-5.4-nano`, 18/18 reqs, 0 failed) — see the
@@ -285,7 +289,9 @@ failed (batch `batch_6a2f5cfc…`). Source of truth: airlock repo `docs/guide/ba
 - Numbers (FathomDB temporal=0.25, multi_hop=0.1458, knowledge_update=0.037, multi_session=0.0294) are **NOT benchmark-significant** (N=100 sample, LLM-generated gold)
 - Artifact: `dev/plans/runs/0.8.1-slice-30-option2-output.json`
 
-**⚠️ NEXT: Slice 30b — entity-node source_doc_id fix (Slice 30 unblock).**
+**✅ ADDRESSED (2026-06-15) — Slice 30b's entity-node→source fix LANDED via the graph-experiment program** (G0 Phase-2 part-1 `017ad68` = `SearchHit.source_id` carry from the traversed edge; C1 `5da42b0` = the deeper BLOCK-1 *seeding* fix). The historical scope below is retained for the record; what remains for Slice 30 CLOSE is the $0 recall@K lift measurement, not this fix.
+
+**(historical) NEXT: Slice 30b — entity-node source_doc_id fix (Slice 30 unblock).**
 
 **HITL ruling (2026-06-14, Option 2 = BLOCK):** Slice 30 cannot CLOSE until graph arm entity-node hits resolve to source session IDs and produce measurable recall lift on LME multi_session.
 
@@ -319,7 +325,7 @@ started · ✅ done · 🔁 fix-N · ⚠️ blocked · n/a.
 | **15** | Graph substrate KEYSTONE — G11 enrichment + edge projectability + BYO-LLM ingest | implementation (schema) | ✅ CLOSED 2026-06-13 — step-14 (SCHEMA_VERSION 13→14) + BYO-LLM API + edge FTS/vector (316c582) + fix-1/2/3 (codex §9 PASS) | 0 | ✅ | n/a | ✅ |
 | **20** | G5/G6 graph traversal | implementation | ✅ CLOSED 2026-06-13 — graph_neighbors + search_expand; 18 Rust + 6 Py + 8 TS tests; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **25** | R2 — end-to-end Mem0/Zep parity eval | implementation (eval) | ✅ CLOSED 2026-06-14 — harness `a1cd7d9`, fix-25-1 `078b882`; codex §9 1×P1+4×P2→PASS; factoid Δ+0.0017; memory-class null → HITL go/no-go escalation | 10 | n/a | n/a | ✅ |
-| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | ⚠️ BLOCKED (HITL 2026-06-14) — merged `84b7a5b`, §9 clean, SCHEMA-GATE-1 resolved; graph arm zero recall lift (entity-node source_doc_id gap); unblock = **Slice 30b** (entity-node → source_doc_id fix + LME re-run) | 15,20,25 | ✅ | ✅ | ✅ |
+| **30** | R3 — graph-retrieval arm (temporal fact-edges, 3rd RRF arm) | implementation | 🔁 CLOSURE-GATED (2026-06-15) — merged `84b7a5b`; fix LANDED: G0 P2 part-1 `017ad68` (source_id carry) + C1 seeding `5da42b0` (BLOCK-1 frontier fix), codex §9 PASS; graph arm now emits candidates. CLOSE pending $0 recall@K (graph-arm vs BM25) lift + PRE-3 step-16. `use_graph_arm` stays G2-blocked | 15,20,25 | ✅ | ✅ | ✅ |
 | **35** | G4 filter grammar + G4↔G10 unification + deferred ADRs | design-adr + impl | ✅ CLOSED 2026-06-13 — Predicate/ScalarValue/ComparisonOp; 18 Rust tests; bool/int/text type guards; fix-5..21 → codex §9 PASS (`94ddf13`) | 15 | ✅ | n/a | ✅ |
 | **40** | Verification + Release Readiness (0.8.1 GA) | verification | ❌ — GATE must clear § "Deferred follow-ups": codex confirmation pass + #5/#6/#7 binding fixes | 5,10,15,20,25,30,35 | ❌ | ❌ | ❌ |
 
@@ -341,7 +347,7 @@ R-item / G-gap → owning-slice mapping (from `0.8.1-implementation.md`):
 | **BYO-LLM ingest API** (`fathomdb.extract.v1`; no LLM in FathomDB) | 15 | ✅ CLOSED |
 | **G5/G6** graph traversal (depth≤3, cap 50, valid-time filter) | 20 | ✅ CLOSED |
 | **R2** end-to-end Mem0/Zep parity eval (report-only north-star; Decision ①) | 25 | ❌ |
-| **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | ⏳ MERGED `84b7a5b`, §9 clean `2a78300`; go/no-go pending Slice 25 |
+| **R3** graph-retrieval arm (3rd RRF arm; invalidate-not-accumulate) | 30 | 🔁 seeding fix LANDED (G0 P2 part-1 `017ad68` + C1 `5da42b0`, codex §9 PASS); graph arm emits candidates; CLOSE pending $0 recall@K lift + PRE-3 step-16 |
 | **G4** filter grammar + **G4↔G10 unification (reserved-gap 37)** | 35 | ✅ CLOSED |
 | **AC-078+** (shipped-feature ACs) + **R2 parity-metric AC** | 40 / eval gate (HITL) | ❌ (acceptance.md locked; mint only at gated slices) |
 | **~4-pt vector-stage fidelity-regression diagnosis** (0.937→0.896; engine A/B → bisect) — carried from 0.8.0, HITL-sequenced AFTER IR/graph | reserved-gap 41–44 / Slice-40-adjacent | ❌ tracked (measurement-only diagnosis first; fix slice only if bisect lands a cause) |
@@ -388,6 +394,53 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-16 — ◆ GRAPH ARM does NOT beat BM25 (measured, literature-corroborated) → PIVOT to index-key enrichment
+
+**The headline experiment for "make the graph arm beat BM25" — result is a clear, robust NEGATIVE.**
+Built the full local pipeline: extract a real entity/edge graph with **Qwen3.6-27B via the
+Airlock vLLM batch gateway** ($0, local; `enable_thinking:false`; conc=8 compute-bound knee;
+mt=3072 → 98% clean + salvage), write docs+entities+edges into a FathomDB engine, run
+**LLM-free recall@K** vs BM25/FTS. Tooling: `eval/graph_arm_recall.py` (codex §9 PASS +
+re-review PASS). Edge-body binding gap fixed (py+napi `translate_edge` now reads `body` + test).
+
+**40-question (10/class) corpus: 1907 sessions, 28,883 entities, 38,021 edges. R@10:**
+
+| Variant | factoid | KU | multi_session | temporal | Pooled |
+|---|---|---|---|---|---|
+| naive_bm25 | 0.60 | 1.00 | 0.30 | 0.90 | **0.70** |
+| fathomdb_fts_only | 0.90 | 1.00 | 0.30 | 1.00 | **0.80** |
+| graph_OFF (anti-pollution filter) | 0.40→ | 1.00 | 0.20 | 0.80 | **0.65** |
+| graph_ON | 0.50 | 0.90 | 0.20 | 0.80 | **0.65** |
+
+- **The BFS graph arm adds ~0 recall** (`graph_ON ≈ graph_OFF`, even on multi_session — its target
+  class). Robust to the entity-FTS anti-pollution filter (same-engine A/B). Surfaces 50
+  source-resolved hits/query, but none are gold the two-arm missed in top-10.
+- **Entity co-mingling hurts** (`graph_OFF`/`graph_ON` 0.65 < `fts_only` 0.80): 28,883 entity rows
+  in the shared `search_index` distort BM25 corpus stats. Grounded name = **document-length-
+  normalization bias / corpus-heterogeneity** (Verboseness Fission), NOT "pollution". Result
+  filter helped display only (+0.05); the IDF distortion needs a SEPARATE entity index.
+- **Engine bugs found (FOLLOW-UPS):** edge-with-body auto-enqueues `edge_fact` *vector* projection
+  (lib.rs:8594) → `SchedulerError` with no embedder; `StorageError` at ~8–14k edges WITH one
+  (reproduced on trivial synthetic edges). So source-A (edge-fact FTS) seeding is currently OFF.
+
+**Sister-agent literature synthesis corroborates both findings (high confidence):** raw BFS adding
+~0 over strong lexical is the NORMAL outcome (SPRIG: graph hybrid ~ties BM25, plain RRF *beats* the
+graph arm); graph traversal only pays off **seeded from the lexical top-K** (3-0) — and **C1 seeds
+from the graph's own FTS surfaces, NOT the lexical hits** (open-Q (a) = the likely zero-lift cause).
+BM25 strong OOD (BEIR). LongMemEval wins come from **query routing + index-key enrichment (+9.4%
+recall from extracted facts as doc keys)**, not from a graph arm. ("Fusion < index-merge" and two
+LME preprint numbers were KILLED by the verifiers — don't build on them.)
+
+**◆ DECISION (HITL, 2026-06-16): PIVOT.**
+- **DROP** the planned source-A + engine `edge_fact` fix + n=160-as-designed (data + literature
+  agree: ~0 expected value).
+- **PIVOT to index-key enrichment** (append each session's extracted entities/facts to its OWN doc's
+  FTS content — keys on the doc, not separate rows): no graph arm, no length-norm pollution,
+  reuses the 1906 cached graphs → testable at 40q in minutes. Evidence-backed LME lever.
+- Secondary (only if enrichment underperforms): re-seed graph from the lexical top-K (the one graph
+  config the literature supports) + separate entity FTS index + RRF.
+- Tagged `0.8.1-beat-bm25-pivot-2`. Report: `dev/plans/runs/0.8.1-beat-bm25-report.md`.
 
 ### 2026-06-15 (cont.) — ⭐ C1 graph-arm SEEDING implemented + LIVE (the BLOCK-1 fix) — graph arm now produces candidates
 

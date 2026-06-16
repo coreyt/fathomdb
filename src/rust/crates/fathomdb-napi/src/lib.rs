@@ -1357,6 +1357,9 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let to = json_str_required(item, "to")?;
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
+    // Edge body (the relation text) — optional. Projected into `search_index_edges`
+    // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
+    let body = json_serialised(item, "body")?;
     // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
     // `t_valid`/`tValid` and `t_invalid`/`tInvalid` are ISO 8601 datetime strings (optional).
     let t_valid = json_str_alt(item, "tValid", "t_valid")?;
@@ -1367,7 +1370,7 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
         to,
         source_id,
         logical_id,
-        body: None,
+        body,
         t_valid,
         t_invalid,
         confidence: None,
