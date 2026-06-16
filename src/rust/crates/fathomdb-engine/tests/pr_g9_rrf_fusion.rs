@@ -355,7 +355,7 @@ for line in sys.stdin:
     let db_path = dir.path().join(format!("graph_arm_expand{}", fathomdb_schema::SQLITE_SUFFIX));
     let opened = Engine::open_without_embedder_for_test(&db_path).expect("open");
 
-    let cmd = vec!["python3".to_string(), stub_str.clone()];
+    let cmd = ["python3".to_string(), stub_str.clone()];
     let cmd_refs: Vec<&str> = cmd.iter().map(String::as_str).collect();
     opened
         .engine
@@ -368,7 +368,7 @@ for line in sys.stdin:
         )
         .expect("ingest alice_doc");
 
-    let cmd2 = vec!["python3".to_string(), stub_str.clone()];
+    let cmd2 = ["python3".to_string(), stub_str.clone()];
     let cmd2_refs: Vec<&str> = cmd2.iter().map(String::as_str).collect();
     opened
         .engine
