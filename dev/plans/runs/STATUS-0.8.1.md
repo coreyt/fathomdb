@@ -410,12 +410,17 @@ re-review PASS). Edge-body binding gap fixed (py+napi `translate_edge` now reads
 |---|---|---|---|---|---|
 | naive_bm25 | 0.60 | 1.00 | 0.30 | 0.90 | **0.70** |
 | fathomdb_fts_only | 0.90 | 1.00 | 0.30 | 1.00 | **0.80** |
-| graph_OFF (anti-pollution filter) | 0.40→ | 1.00 | 0.20 | 0.80 | **0.65** |
-| graph_ON | 0.50 | 0.90 | 0.20 | 0.80 | **0.65** |
+| graph_OFF | 0.50 | 1.00 | 0.30 | 0.80 | **0.65** |
+| graph_ON | 0.60 | 1.00 | 0.10 | 0.90 | **0.65** |
 
-- **The BFS graph arm adds ~0 recall** (`graph_ON ≈ graph_OFF`, even on multi_session — its target
-  class). Robust to the entity-FTS anti-pollution filter (same-engine A/B). Surfaces 50
-  source-resolved hits/query, but none are gold the two-arm missed in top-10.
+(All rows = POST anti-pollution filter, `/tmp/gar_n40_nopoll.json`. Pre-filter run
+`/tmp/gar_n40.json` had graph_OFF/ON both 0.60; the `kind="doc"` filter lifted both +0.05.)
+
+- **The BFS graph arm adds 0 *net* recall — and DEGRADES its target class.** `graph_ON − graph_OFF`
+  pooled = 0, but per-class it's +0.10 factoid, +0.10 temporal, **−0.20 multi_session** (0.30→0.10):
+  the gains cancel a real LOSS on the one class the arm was designed for. Same-engine A/B (not a
+  pollution artifact). It surfaces 50 source-resolved hits/query, but they displace/miss gold rather
+  than recover it.
 - **Entity co-mingling hurts** (`graph_OFF`/`graph_ON` 0.65 < `fts_only` 0.80): 28,883 entity rows
   in the shared `search_index` distort BM25 corpus stats. Grounded name = **document-length-
   normalization bias / corpus-heterogeneity** (Verboseness Fission), NOT "pollution". Result
