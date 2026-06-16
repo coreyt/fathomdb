@@ -176,7 +176,13 @@ every violation is flagged. Baseline: shipped `h_whole_1:3` — exact_fact R@10
 sizes below are derived from the corrected headroom math (§1.2 C1/C2), not from
 fixed anchors.
 
-### R6 — Index-key enrichment (NEW TOP RECALL LEVER, 2026-06-16 pivot)
+### R6 — Index-key enrichment (DONE 2026-06-16 — measured, does NOT beat baseline; investigation CONCLUDED)
+> **OUTCOME:** tested at 40q ($0). Real placebo-confirmed content value (+0.075 over a length-matched
+> placebo; +0.05 on BM25) but **net < plain FathomDB-FTS (0.80)** (fts_enriched 0.775). A BM25 `b`-sweep
+> confirmed a length-norm penalty (lower b helps) but enriched+low-b 0.775 still < 0.80. Combined with the
+> graph arm (adds 0) → **no cheap retrieval lever beats strong lexical @N=40; the "beat BM25" investigation
+> is CONCLUDED** (report `0.8.1-beat-bm25-report.md`; STATUS §7). Deferred lever: tunable-`b` FTS5 + enrichment
+> (engine work). The original proposal text follows (historical).
 - **What & why:** append each session's extracted entities/facts to **its own doc's FTS
   content** (keys *on the doc*, not separate entity rows / not a graph arm). Adds the
   lexical-bridge vocabulary that lets a query match a session via its facts, **without** the

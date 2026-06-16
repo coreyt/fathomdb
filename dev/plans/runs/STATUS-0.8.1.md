@@ -19,7 +19,14 @@ Last updated: 2026-06-15 (orchestrator session, cont.): **G0 Phase-2 part-1 COMM
 
 ## 1. Current slice
 
-**Slice 30 — CLOSURE-GATED on a graph-arm recall measurement (updated 2026-06-15). The HITL-blocking *fix* has LANDED.** Both the Slice 30b entity-node→source resolution AND the deeper BLOCK-1 *seeding* gap (the real recall blocker) were fixed via the graph-experiment program: **G0 Phase-2 part-1 `017ad68`** (`SearchHit.source_id` carry from the traversed edge) + **C1 seeding `5da42b0`** (frontier seeds from the query's own matched edge-fact/entity FTS, not doc nodes). The graph arm now emits candidates live through the Python SDK (codex §9 PASS on both). **Slice 30 still cannot CLOSE until the $0 recall@K measurement (graph arm vs BM25) confirms a lift**, plus PRE-3 step-16 completes G0 Phase-2. `use_graph_arm` stays G2-blocked (not flipped to default). See §7 (newest) for the C1 + G0-P2 records.
+**Slice 30 — graph arm CLOSED AS SUBSTRATE; the "beat BM25" recall investigation is CONCLUDED (2026-06-16).**
+The graph arm (R3) + G0-P2 + C1 seeding landed and work (codex §9 PASS), but the recall measurement
+(graph arm vs BM25, then index-key enrichment, then BM25 `b`-tuning — all 40q, $0) showed **no lever
+decisively beats the strong lexical baseline** (graph arm adds 0 & degrades multi_session; enrichment has
+placebo-confirmed content value but net < FTS; lower-b helps but enriched+low-b 0.775 < FTS 0.80).
+**So R3 ships as graph SUBSTRATE, NOT a recall win** — GA must not claim it improves recall. `use_graph_arm`
+stays G2-blocked (not flipped). Deferred future lever: tunable-`b` FTS5 + enrichment (engine work, uncertain).
+See §7 (newest, "BEAT BM25 INVESTIGATION CONCLUDED") for the full record + artifacts.
 
 R3 graph-retrieval arm (third RRF arm via BFS over `canonical_edges`) implemented and merged.
 §9 local max-effort review (5 angles, codex rate-limited → sanctioned local fallback per PREP doc):
@@ -127,7 +134,15 @@ All 3 ADRs HITL-signed. ADR statuses updated to `ACCEPTED — HITL-SIGNED 2026-0
 
 ### Next action (orchestrator)
 
-**▶ 0.8.1 GRAPH/IR EXPERIMENT PROGRAM is the live graph track. CURRENT entry point:
+**▶ 2026-06-16 — "beat BM25" recall investigation CONCLUDED (§7 newest).** No cheap retrieval lever
+(graph arm / index-key enrichment / BM25 b-tuning) decisively beats strong lexical @40q; literature-
+corroborated. **Redirect off recall-lever chasing.** Remaining 0.8.1 closeout candidates (HITL to
+prioritize): (a) **PRE-3 step-16 provenance schema** (SCHEMA-GATE signed; the only unbuilt G0-P2 piece —
+needed only if GA wants the provenance columns); (b) the **deferred Slice-40 GA gate** follow-ups
+(perf/recall gates wired into CI, AC-037 agent-security, removal-detect cleanup); (c) the engine
+tunable-`b` FTS5 lever ONLY if recall work resumes. The graph track below is now HISTORICAL.
+
+**▶ (HISTORICAL) 0.8.1 GRAPH/IR EXPERIMENT PROGRAM. Entry point:
 `dev/plans/prompts/0.8.1-graph-track-HANDOFF-2.md`** (goal + tracking-file map + the
 outstanding-work backlog #5.1–5.7; continues the deep-reference `…-HANDOFF.md`). Authoritative plan:
 `dev/design/0.8.1-graph-experiment-plan.md`. Diagnosis:
@@ -394,6 +409,27 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 ---
 
 ## 7. Recent decisions (newest on top)
+
+### 2026-06-16 — ◆ "BEAT BM25" INVESTIGATION CONCLUDED (HITL) — no cheap retrieval lever clears strong lexical
+
+**Decision: CONCLUDE.** Three levers were measured end-to-end (real designs, ACs, design + impl
+reviews, placebo controls, pre-registered endpoints; all $0, 40q, MDE ~15pp): **graph arm** (adds 0,
+degrades multi_session 0.30→0.10), **index-key enrichment** (placebo-confirmed content value +0.075,
+but net < FTS), **BM25 `b`-tuning** (lower b helps +0.05, enriched+low-b 0.775, still < FTS 0.80).
+**None decisively beats the strong lexical baseline.** Literature-corroborated (BEIR: BM25 strong OOD;
+SPRIG: RRF beats the graph arm; raw BFS ~0) + matches [[fathomdb-recall-fidelity-vs-relevance]].
+
+**0.8.1 recall story (final):** FathomDB-FTS ≈ BM25 (subset/noise-dependent ordering: §3 n=160 had
+BM25 ≥ FTS; R6 40q had FTS 0.80 > BM25 0.70). The graph arm + enrichment do NOT improve recall — GA
+must not claim they do; graph ships as **substrate** (lens/`read.*`/relationships), not a recall win.
+
+**Deferred future lever (NOT pursued now):** engine-side **tunable-/lower-`b` FTS5 ranking + enrichment**
+— the one config with a clean directional rationale (lower b gave +0.05; FTS5 wins on tokenizer), but
+FTS5's b is fixed → needs custom-ranking engine work; uncertain at N=40. Recorded for if recall work resumes.
+
+**Artifacts:** report `0.8.1-beat-bm25-report.md` (+ R6 addendum); data `0.8.1-{p0a-*,R6-recall,R6-bsweep}-n*.json`;
+plan triad updated (graph-experiment-plan P1/G2 PARKED; IR-C-roadmap R6 DONE; 0.8.1-plan graph=substrate).
+Commits a9be9e8→143ebd6, pushed; tag `0.8.1-beat-bm25-pivot-2`. **Redirect:** see §1/Next-action.
 
 ### 2026-06-16 (cont.) — R6 index-key enrichment: doesn't beat baseline, but content has real (placebo-confirmed) value
 
