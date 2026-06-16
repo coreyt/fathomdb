@@ -1,0 +1,270 @@
+{
+  "mode": "r6-index-key-enrichment",
+  "n_questions": 40,
+  "n_sessions": 1907,
+  "graph_coverage": 1907,
+  "variants": [
+    "fathomdb_fts_enriched",
+    "fathomdb_fts_only",
+    "fathomdb_fts_placebo",
+    "naive_bm25",
+    "naive_bm25_enriched"
+  ],
+  "retrieval_loop": {
+    "naive_bm25": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4508,
+          "ndcg_at_10": 0.4762,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.6,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6643,
+          "ndcg_at_10": 0.5259,
+          "recall_at_5": 0.3,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7383,
+          "ndcg_at_10": 0.6908,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "naive_bm25_enriched": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.501,
+          "ndcg_at_10": 0.542,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.8
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.95,
+          "ndcg_at_10": 0.9375,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.6625,
+          "ndcg_at_10": 0.5402,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.4,
+          "recall_at_20": 0.5
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7333,
+          "ndcg_at_10": 0.6774,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    },
+    "fathomdb_fts_only": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.535,
+          "ndcg_at_10": 0.6207,
+          "recall_at_5": 0.7,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.695,
+          "ndcg_at_10": 0.757,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.575,
+          "ndcg_at_10": 0.4835,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.3
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7533,
+          "ndcg_at_10": 0.6696,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "fathomdb_fts_enriched": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4917,
+          "ndcg_at_10": 0.5613,
+          "recall_at_5": 0.7,
+          "recall_at_10": 0.8,
+          "recall_at_20": 0.9
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.7583,
+          "ndcg_at_10": 0.8176,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.5792,
+          "ndcg_at_10": 0.488,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.3,
+          "recall_at_20": 0.3
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.82,
+          "ndcg_at_10": 0.6944,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        }
+      },
+      "abstention_total": 0
+    },
+    "fathomdb_fts_placebo": {
+      "ks": [
+        5,
+        10,
+        20
+      ],
+      "graded_k": 10,
+      "per_class": {
+        "factoid": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4424,
+          "ndcg_at_10": 0.4932,
+          "recall_at_5": 0.6,
+          "recall_at_10": 0.7,
+          "recall_at_20": 0.9
+        },
+        "knowledge_update": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.745,
+          "ndcg_at_10": 0.7863,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "recall_at_20": 1.0
+        },
+        "multi_session": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.4667,
+          "ndcg_at_10": 0.3826,
+          "recall_at_5": 0.2,
+          "recall_at_10": 0.2,
+          "recall_at_20": 0.3
+        },
+        "temporal": {
+          "n_total": 10,
+          "n_scored": 10,
+          "n_abstention": 0,
+          "mrr": 0.75,
+          "ndcg_at_10": 0.6499,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "recall_at_20": 0.9
+        }
+      },
+      "abstention_total": 0
+    }
+  }
+}

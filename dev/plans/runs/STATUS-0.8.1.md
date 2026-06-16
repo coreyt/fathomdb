@@ -395,6 +395,27 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-16 (cont.) — R6 index-key enrichment: doesn't beat baseline, but content has real (placebo-confirmed) value
+
+Orchestrated slice (design → design-review CONCERN→folded → TDD 7/7 ACs → codex §9 PASS after 3
+[P2] placebo fixes → run). `eval/r6_index_key_enrichment.py` + `tests/test_r6_enrichment.py`;
+design `0.8.1-R6-index-key-enrichment-design.md`; data `0.8.1-R6-recall-n40.json`. Append each
+session's extracted entities/facts to ITS OWN doc's FTS content (one row/doc, no graph arm, no
+separate entity rows). 40q, 100% graph coverage, $0 (reused cached graphs).
+
+**Pooled R@10:** bm25 0.70 (sanity ✓) · bm25_enriched 0.75 (+0.05) · fts_only **0.80** (best) ·
+fts_enriched 0.775 (−0.025, PRIMARY) · fts_placebo 0.70 (−0.10).
+- **Placebo control decomposed it:** length-matched foreign tokens hurt FTS −0.10 (real
+  length-norm penalty on longer docs); real enrichment hurt only −0.025 ⇒ **content = +0.075
+  over placebo** (genuine lexical bridge); on BM25 enrichment **nets +0.05**.
+- **But nothing beats plain FathomDB-FTS (0.80)** → R6 does not clear the bar as-is.
+- **Pre-registered rule:** FTS enriched−plain is NEGATIVE → **STOP; do not scale to N=160.**
+- **Implicated follow-up (NOT a scale-up):** tune FathomDB-FTS BM25 `b` (length-norm now
+  empirically implicated by the placebo −0.10) so the +0.075 content gain isn't eaten; +
+  entity-only vs fact-only ablation. Caveat: N=40, MDE ~15pp → all deltas directional.
+- Contrast: unlike the graph arm (added 0, degraded multi_session), enrichment carries real
+  placebo-confirmed value — a length-norm fix could plausibly surface it.
+
 ### 2026-06-16 — ◆ GRAPH ARM does NOT beat BM25 (measured, literature-corroborated) → PIVOT to index-key enrichment
 
 **The headline experiment for "make the graph arm beat BM25" — result is a clear, robust NEGATIVE.**
