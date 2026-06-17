@@ -7,10 +7,11 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0 IN-FLIGHT.** Triad committed (`b304147`); Slice 0 implementer spawned into a
-  main-thread-owned worktree off `b304147`.
-- **Next action:** await the implementer's merge-to-local-`main` + `output.json`; then gate from git,
-  run codex §9, and prepare the ◆ HITL design+pre-registration sign-off.
+- **State:** **SLICE 0 — fix-1 IN-FLIGHT.** Slice 0 merged to `main` (`753758f`), git-gated, 18 tests
+  re-run green by the orchestrator. codex §9 returned one **[P2]** (`decide()` can GO on non-finite
+  EM/F1) → fix-1 spawned into the existing worktree.
+- **Next action:** await fix-1 merge + `output.json`; re-review the fix diff (codex §9); then prepare
+  the ◆ HITL design+pre-registration sign-off (gates any priced run / Slice 20).
 - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
 
@@ -60,6 +61,12 @@ graph extraction) and may run in parallel.
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — Slice 0 codex §9: **CONCERN, one [P2]** — `decide()` returns GO on non-finite (NaN)
+  EM/F1 because `nan < 0.0` is False, contradicting its "fail loudly" contract. Substantive (not
+  structural/prompt-induced) ⇒ **FIX-1**, not override. Verdict promoted
+  (`runs/0.8.2-slice-0-review-20260617T004634Z.md`); fix-1 hardens input validation only (rule
+  unchanged). Orchestrator independently re-ran the 18 tests green before reviewing (not trusting the
+  agent's green claim — [[background-exit-masks-real-exit]]).
 - **2026-06-16** — Slice 0 gets a real **TDD** even as `[design-adr]`: the pre-registered GO/NO-GO
   rule is frozen as a pure-Python `decide()` function (+ schema lint on the design doc) at Slice 0, so
   Slice 20 imports it and cannot post-hoc switch the endpoint. Encodes the plan's anti-post-hoc stance

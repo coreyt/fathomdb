@@ -1,0 +1,29 @@
+{
+  "phase": "0.8.2-slice-0",
+  "baseline_sha": "b30414710825661bccbf6c7768ff77413f7a0fa1",
+  "branch": "slice-0.8.2-0-20260617T003233Z",
+  "head_sha": "b5666acaf39be8d0172e6ed7bcce07fc17e1dceb",
+  "merged_to_main_sha": "753758f6eb9d380f06bd509228dc5dad6184bb95",
+  "commits": [
+    "70ed44c52fc235478c2df2d87c0674de6ce05601: docs(0.8.2/M1 Slice 0): M1 multi-hop harness design + frozen pre-registration",
+    "1afa9a972369d66f835295d2f7e1984fd00669db: test(0.8.2/M1 Slice 0): RED — pin decide() truth table + pre-registration schema lint",
+    "a958ee961c26842aa28279c3eff9df38ed860087: feat(0.8.2/M1 Slice 0): GREEN — frozen decide() rule + pre-registration lint",
+    "b5666acaf39be8d0172e6ed7bcce07fc17e1dceb: docs(0.8.2/M1 Slice 0): DOC-INDEX row for M1 multi-hop harness design"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "1afa9a972369d66f835295d2f7e1984fd00669db",
+    "red_evidence": "at the RED commit `python -m pytest tests/test_m1_decision_rule.py` errored with ModuleNotFoundError: No module named 'eval.m1_decision_rule' (module absent by design); GREEN commit a958ee9 makes all 18 tests pass",
+    "test_files": ["src/python/tests/test_m1_decision_rule.py"]
+  },
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "SDK parity (Py/TS): declared n/a — no SDK surface change (pure-Python eval-harness module + design doc).",
+    "X1 cross-binding functional harness: declared n/a — eval-harness design + pure-Python decision rule, no engine behavior to cross-check across bindings.",
+    "X2 mkdocs: declared n/a — dev/design/ is not in mkdocs.yml nav (verified); the design doc is internal-only.",
+    "Out-of-scope deferrals NOT performed (per mandate §2): MuSiQue acquire script (Slice 5), any retrieval/graph/PPR code (Slices 10/15), any priced or unpriced answerer run (Slices 5/20), scipy/networkx install (Slice 15).",
+    "Rebased the slice branch onto local main (advanced +2 commits since baseline, none touching slice paths) before merge per prompt §5; rebase clean, self-check re-run green. RED sha recorded is the post-rebase value on main."
+  ],
+  "agent_verify_result": "pass — pytest: 18 passed in 0.10s (FATHOMDB_TESTS_NO_REBUILD=1, no fathomdb import); pyright eval/m1_decision_rule.py: 0 errors, 0 warnings, 0 informations; stray-edit tripwire empty (canonical src/+dev/ clean, slice files isolated to the worktree).",
+  "next_step_for_orchestrator": "Slice 0 merged to local main at 753758f6eb9d380f06bd509228dc5dad6184bb95; review (codex §9), then ◆ HITL design+pre-registration sign-off before any priced run (gates Slice 20). Slices 5 (baseline bar) and 10 (graph build) are independent off Slice 0 and may run in parallel; Slice 15 imports nothing from this slice but Slice 20 MUST import eval.m1_decision_rule.decide() and may not redefine the rule."
+}
