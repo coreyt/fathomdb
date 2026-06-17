@@ -99,13 +99,16 @@ def test_frozen_material_threshold() -> None:
 
 def test_amended_required_frozen_fields() -> None:
     # The amendment replaced per-hop-strata with comparator + baseline-arms and
-    # re-scoped mde-power-plan to the whole-rule power sim.
+    # re-scoped mde-power-plan to the whole-rule power sim.  trend-test added
+    # (codex §9 [P2] fix): it is the ONLY frozen spec for how trend.neg_significant
+    # (gate 2) is computed.
     assert set(REQUIRED_FROZEN_FIELDS) == {
         "primary-endpoint",
         "comparator",
         "decision-rule",
         "baseline-arms",
         "mde-power-plan",
+        "trend-test",
     }
 
 
