@@ -130,24 +130,46 @@ rule, ablations, bias controls; (2) the falsifiable AC list M1 tests against (Sl
 module + its test (see TDD).
 **TDD — yes, a design slice has an executable core.** Pre-registration is only credible if the
 GO/NO-GO computation is frozen as *code* now, so Slice 20 cannot post-hoc switch the endpoint
-(the plan's explicit anti-post-hoc stance). This is the design slice's analogue of RED→GREEN —
-**falsifiable, not "working against an existing ADR."** RED before GREEN:
-- **(a) Frozen decision rule as a pure function.**
-  `src/python/eval/m1_decision_rule.py::decide(deltas_by_hop, power_ok) -> "GO" | "NO_GO"` mechanically
-  encodes the frozen rule. The test pins the truth table at the boundaries: flat-or-negative ⇒ NO_GO;
-  positive-but-not-dose-responsive ⇒ NO_GO; dose-responsive (2→3→4 growing) ≥3-hop EM/F1 lift but
-  **underpowered** ⇒ NO_GO; dose-responsive **and** adequately powered ⇒ GO. Determinism: same input →
-  same verdict.
-- **(b) Pre-registration schema lint.** A test asserts `0.8.2-m1-multihop-harness.md` carries the
-  required **frozen, dated** fields (primary endpoint, per-hop(2/3/4) strata, decision rule, MDE/power
-  plan); it fails RED if any is missing or undated.
-- Pure-Python — **no `fathomdb` / `scipy` / `networkx` import** (runs anywhere, no native-extension or
-  `.venv`-binding dependency). RED sha recorded in `output.json` `tdd_evidence`. **Slice 20 imports
-  `decide()`; it may not redefine the rule.**
-**Acceptance bar.** Design `status: decision-ready` with a falsifiable spec each downstream slice can
-test; the decision-rule function + schema lint are GREEN; the primary endpoint + GO/NO-GO rule are
-frozen and dated.
-**HITL gate:** design + pre-registration signed before any priced run (Slice 20).
+(the plan's explicit anti-post-hoc stance). RED before GREEN.
+
+> **AMENDED 2026-06-16 (HITL — all 6 pre-freeze review amendments adopted;
+> `runs/0.8.2-slice-0-prereg-methodology-review.md`).** The original strict-monotonic dose-response gate +
+> per-hop-max baseline biased the rule toward the expected NO_GO. The frozen rule below replaces them.
+
+**The frozen endpoint + rule (amended):**
+- **Primary endpoint = the POOLED ≥3-hop (hops 3+4) ΔF1** of PPR-fusion vs a **single fixed comparator =
+  the `fused+cross-encoder-rerank` arm** (the strongest baseline), via **question-level paired bootstrap**
+  (point estimate + BCa CI). Per-hop (2/3/4) ΔF1/ΔEM are pre-registered **secondary** splits.
+- **Comparator is fixed, never per-hop max** (removes winner's-curse inflation + the dose-response
+  confound). Baseline arm set = {BM25, passage-dense, fused-RRF (**k=60 pinned**), **fused+rerank**}.
+- **`decide()` consumes already-computed summary statistics** (the harness runs the bootstrap; `decide()`
+  stays pure/deterministic, no RNG). Signature:
+  `decide(material, em, trend, confident_wrong, power_ok) -> "GO" | "NO_GO"` where
+  `material={"f1_delta","f1_ci_low"}`, `em={"ci_high"}`, `trend={"neg_significant": bool}`,
+  `confident_wrong={"increase_significant": bool}`.
+- **GO iff ALL:** (1) `material.f1_delta ≥ MATERIAL_F1_LIFT (0.02)` **and** `material.f1_ci_low > 0`
+  (pooled ≥3-hop lift material **and** CI excludes 0); (2) `not trend.neg_significant` (**veto only on a
+  significantly NEGATIVE** ΔF1-vs-hop slope — flat/positive passes; no strict-monotonic requirement);
+  (3) `em.ci_high ≥ 0` (EM **not significantly worse** — CI-banded, not a point-estimate veto);
+  (4) `not confident_wrong.increase_significant` (the **unanswerable-set** confident-answer-rate carries
+  the confident-wrong role, not EM); (5) `power_ok`. Else **NO_GO**. Non-finite floats **raise** (kept).
+- **0.02 is at/above the Slice-5 pooled ≥3-hop MDE** (wording fixed: material threshold ≥ MDE, not below).
+
+**TDD:**
+- **(a)** `src/python/eval/m1_decision_rule.py::decide(...)` encodes the rule above; the test pins: GO only
+  when all five hold; NO_GO on each single-gate failure (sub-material f1_delta, f1_ci_low ≤ 0, significant
+  negative trend, em.ci_high < 0, significant confident-wrong increase, underpowered); a **flat-positive**
+  (non-growing but positive, CI>0, powered) case ⇒ **GO** (the old rule wrongly returned NO_GO here — the
+  load-bearing regression test); determinism; non-finite ⇒ raise.
+- **(b)** Pre-registration schema lint: `0.8.2-m1-multihop-harness.md` carries the **frozen, dated**
+  fields (primary-endpoint = pooled-≥3-hop, comparator = fused+rerank, decision-rule, baseline-arms incl.
+  RRF k=60, mde-power-plan = **whole-rule power simulation** under flat/monotonic/inverted-U shapes); fails
+  RED if any missing/undated.
+- Pure-Python — **no `fathomdb`/`scipy`/`networkx` import**. RED sha in `output.json` `tdd_evidence`.
+  **Slice 20 imports `decide()`; may not redefine it.**
+**Acceptance bar.** Design `status: decision-ready`; `decide()` + schema lint GREEN; the amended endpoint +
+GO/NO-GO rule frozen and dated; the whole-rule power-sim spec handed to Slice 5.
+**HITL gate:** the **amended** design + pre-registration signed before any priced run (Slice 20).
 **Reserved follow-on (1–4):** a power re-estimate if Slice 5's baseline variance is wider than assumed.
 
 ### Slice 5 — MuSiQue corpus + strong baseline + answerer e2e (THE BAR) · `[implementation (measurement)]` · depends-on: 0 · gaps: 6–9
@@ -161,9 +183,12 @@ graph arm must beat.
 (b) EM/F1 + hop-stratified metrics emit a structured artifact, (c) the **same answerer/depth** is used
 across arms (a parity assertion). GREEN: the runner. Cheap-validate with flash-lite before the priced
 baseline pass. Output → `runs/0.8.2-m1-baseline-n{N}.json`.
-**DoD.** Power/MDE computed from baseline variance and recorded; N chosen so MDE < the smallest
-graph lift worth chasing (single-digit F1 per the research → N must be non-trivial; sample the dev set
-accordingly and `log()` the sampling). X1 n/a (eval harness, no SDK surface); X3 findings + DOC-INDEX.
+**DoD.** Power/MDE computed from baseline variance and recorded. **Amendment 4: run a whole-`decide()`-rule
+power simulation** — draw paired-bootstrap resamples under ≥3 effect shapes (flat-positive +0.03,
+monotonic 2<3<4, inverted-U peaking at 3-hop) at the measured baseline variance and report **P(GO)** for
+each; size N (the pooled ≥3-hop cell) so the rule attains **≥0.8 P(GO) under flat-positive +0.03** — not
+merely a marginal per-hop MDE. `power_ok=True` only if that holds. Build all four baseline arms incl.
+`fused+rerank` (the fixed comparator) and pin RRF **k=60**. `log()` all sampling. X1 n/a; X3 + DOC-INDEX.
 **Reserved follow-on (6–9):** passage-dense embedder/model-dim choice if the default underperforms (the
 baseline must be *strong* — a weak dense arm invalidates the verdict).
 
@@ -269,6 +294,7 @@ refactor.
 | Graph substrate | canonical_nodes / canonical_edges + SDK read path (0.8.1 Slice 15/20) |
 | Lexical arm | FTS5/BM25 (existing) |
 | Dense arm | passage-level embedder (existing; **not** whole-doc R4) |
+| Reranker arm | the **0.8.1 R1 CPU cross-encoder** (`rerank_fused`) — the `fused+rerank` arm is the fixed primary comparator (amendment 6) |
 | Answerer | gemini-3.1-pro-preview (0.8.1 strong reader); cheap-validate = gemini-2.5-flash-lite |
 | Harness patterns | `src/python/eval/graph_arm_recall.py`, `r6_index_key_enrichment.py`, `r2_parity_eval.py`, `verify_embed_db.py` |
 | New (small) | MuSiQue acquire+hash; PPR pass (~tens of lines); EM/F1 + **per-hop(2/3/4) strata** scorer |

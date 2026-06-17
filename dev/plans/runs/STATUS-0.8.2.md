@@ -7,9 +7,10 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0 CLOSED (code); ◆ HITL SIGN-OFF PENDING.** Slice 0 + fix-1 merged to `main`
-  (`a50953c`), git-gated, codex §9 **PASS** after fix-1 (one [P2] non-finite-input gap found + fixed,
-  re-reviewed clean). Orchestrator independently re-ran 37/37 green; worktree + branch cleaned.
+- **State:** **SLICE 0-REVISION IN-FLIGHT** (HITL adopted all 6 pre-freeze amendments). Slice 0 v1 +
+  fix-1 closed (`a50953c`, codex PASS); pre-freeze methodology review → revise before freezing. Revision
+  rewrites `decide()` (trend gate, fixed fused+rerank comparator, pooled-CI material lift, soften EM,
+  whole-rule power-sim spec) + the design doc + tests. **Slice H1 CLOSED** (`74999b3`, pyright 0/0).
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -23,12 +24,12 @@
 
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
-| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED** (code; ◆ HITL sign-off pending) | merged `a50953c`; codex §9 PASS (post fix-1); 37/37 green |
+| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | v1 closed; **REVISION IN-FLIGHT** (6 amendments) | v1 `a50953c` codex PASS; revision rewrites rule+doc+tests → re-review → ◆ HITL sign-off |
 | 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
-| H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **IN-FLIGHT** | merge to main; `pyright -p src/python` 0/0; touched pytest green |
+| H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
 
 Critical path: `0 → {5 ∥ 10} → 15 → 20`. Slices 5 and 10 are independent off 0 (baseline harness ∥
 graph extraction) and may run in parallel.
@@ -87,6 +88,15 @@ Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's pri
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — **HITL adopted all 6 amendments → Slice 0-revision spawned.** Rule rewritten: trend
+  gate (negative-slope veto only, no strict monotonic), fixed `fused+rerank` comparator (not per-hop max),
+  pooled ≥3-hop ΔF1 ≥ 0.02 with bootstrap CI > 0, CI-banded EM + unanswerable-set confident-wrong role,
+  whole-rule power-sim handed to Slice 5, RRF k=60 pinned. Plan §4 Slice-0 contract amended; revision
+  worktree off `74999b3`. `decide()` signature changed (consumes summary stats; harness owns the bootstrap).
+- **2026-06-16** — **Slice H1 CLOSED** (`74999b3`): repo-wide `pyright -p src/python` → **0/0/0** (9
+  pre-existing errors fixed, typing-only; `score_e2e`→`Mapping`, `float|None` guards, `output_file_id`
+  Optional). Orchestrator independently verified pyright + 20 tests; closed on that verification (codex
+  §9 waived for a mechanically-ground-truthed typing-only diff — documented override). Worktree cleaned.
 - **2026-06-16** — **Pre-freeze methodology review → pre-registration NOT sound to freeze as-is**
   (HITL-directed; `runs/0.8.2-slice-0-prereg-methodology-review.md`). Core flaw: the strict monotonic
   `f1[2]<f1[3]<f1[4]` GO gate encodes a literature-contradicted prior (HippoRAG: 4-hop path-finding "out
