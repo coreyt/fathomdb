@@ -7,10 +7,10 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0-REVISION IN-FLIGHT** (HITL adopted all 6 pre-freeze amendments). Slice 0 v1 +
-  fix-1 closed (`a50953c`, codex PASS); pre-freeze methodology review → revise before freezing. Revision
-  rewrites `decide()` (trend gate, fixed fused+rerank comparator, pooled-CI material lift, soften EM,
-  whole-rule power-sim spec) + the design doc + tests. **Slice H1 CLOSED** (`74999b3`, pyright 0/0).
+- **State:** **SLICE 0-REVISION — rev-fix-1 IN-FLIGHT.** Revision merged (`d4140e0`), git-gated, 31/31
+  re-run green (flat-positive now GO). codex §9 on the revision → one **[P2]** (the 6th `trend-test`
+  frozen-field isn't enforced by the lint — my 5-field under-spec) → rev-fix-1 spawned (add it to
+  `REQUIRED_FROZEN_FIELDS` + RED test). **Slice H1 CLOSED** (`74999b3`).
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4

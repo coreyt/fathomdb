@@ -1,0 +1,37 @@
+{
+  "phase": "0.8.2-slice-0-rev",
+  "baseline_sha": "74999b3af147b3fbbd0f5c9ecfd6818fa29b08b7",
+  "branch": "slice-0.8.2-0-rev-20260617T012752Z",
+  "head_sha": "095e292b31c00a0e8f4029d6afd612798c396282",
+  "merged_to_main_sha": "d4140e03e40c41964d2980d7c474da6c5a4b1958",
+  "commits": [
+    "aafdec7: docs(0.8.2/M1 Slice 0-rev): amend pre-registration design (trend gate, fixed fused+rerank comparator, pooled CI, whole-rule power, EM-soften, RRF k=60)",
+    "d7ad296: test(0.8.2/M1 Slice 0-rev): RED — amended truth table (5-gate decide signature, flat-positive=GO regression, amended frozen fields)",
+    "095e292: feat(0.8.2/M1 Slice 0-rev): GREEN — amended decide() (5-gate: material+CI, trend, EM-band, confident-wrong, power); flat-positive now GO; type-clean test helper"
+  ],
+  "findings_addressed": [
+    "Amendment 1 (trend gate replaces strict-monotonic): the old `f1[2]<f1[3]<f1[4]` gate is gone. `decide()` gate 2 is `not trend.neg_significant` — veto ONLY on a significantly negative ΔF1-vs-hop slope; flat/positive passes. Design §4 frozen-field:trend-test defines the test (sign of the OLS slope of per-question ΔF1 on hop, significance via the paired-bootstrap CI). Primary endpoint re-scoped to pooled ≥3-hop ΔF1; per-hop = secondary.",
+    "Amendment 2 (fixed comparator, never per-hop max): primary endpoint Δ = (ppr-fusion) − (fused+rerank), a single pre-registered arm. Design §3 + frozen-field:comparator. Removes winner's-curse inflation + dose-response confound.",
+    "Amendment 3 (material = pooled ≥3-hop ΔF1 ≥ 0.02 with bootstrap CI low > 0; per-hop secondary; wording fix): `decide()` gate 1 = `f1_delta >= MATERIAL_F1_LIFT and f1_ci_low > 0`. Fixed the backwards 'sized below MDE' → MATERIAL_F1_LIFT is at/above the Slice-5 pooled ≥3-hop MDE (frozen-field:mde-power-plan + the MATERIAL_F1_LIFT docstring).",
+    "Amendment 4 (whole-decide()-rule power simulation): frozen-field:mde-power-plan now specifies drawing paired-bootstrap resamples under ≥3 effect shapes (flat-positive +0.03, monotonic, inverted-U), pushing each through decide(), reporting P(GO); power_ok gated on rule-level P(GO) ≥ 0.8 under flat-positive +0.03. Handed to Slice 5 (AC-M1-5d updated).",
+    "Amendment 5 (soften EM to CI-banded; unanswerable-set carries confident-wrong): `decide()` gate 3 = `em.ci_high >= 0` (CI-banded, not point-veto); gate 4 = `not confident_wrong.increase_significant` keyed to the unanswerable-set confident-answer rate. Dropped the old EM_MIN_LIFT_3PLUS per-hop point-veto.",
+    "Amendment 6 (add fused+rerank baseline arm + pin RRF k=60): design §2 arms table adds the `fused+rerank` arm (reuse 0.8.1 R1 cross-encoder rerank_fused) as the fixed comparator; §3/§9 + frozen-field:baseline-arms pin RRF k=60 across every fused arm; §8 call-count updated to 4 baseline arms × N + ppr-fusion at Slice 20."
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "d7ad296aaf635367687e79e8e96ecad150f9e398",
+    "red_evidence": "at RED commit d7ad296 (amended test vs the still-old decide()) `FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q` reported 27 failed, 4 passed — the new 5-gate decide(material, em, trend, confident_wrong, power_ok) signature TypeErrors against the old decide(deltas_by_hop, power_ok), and the lint asserted the amended frozen-field set (comparator/baseline-arms) the old REQUIRED_FROZEN_FIELDS lacked. GREEN commit 095e292 makes all 31 tests pass, including the load-bearing test_flat_positive_non_growing_returns_go_old_rule_said_no_go (the old rule returned NO_GO; the amended rule returns GO).",
+    "test_files": ["src/python/tests/test_m1_decision_rule.py"]
+  },
+  "blockers_encountered": [],
+  "plan_conflicts": [],
+  "additional_changes_made_in_scope": [
+    "Design doc re-scoped beyond the literal frozen-field lines for internal consistency with the amended rule: §0/header purpose, §1 dataset hop-trend framing (dropped 'should grow' → trend read), §4.1 truth table (now a 5-gate table + an explicit load-bearing flat-positive=GO note), §10 ACs (AC-M1-5b adds the 4-arm build + pooled-primary report; AC-M1-5d → whole-rule power sim; AC-M1-20a/b → pooled-primary + per-hop-secondary endpoint), §11 frozen decision (5-gate prose). frozen-field:trend-test added as a 6th frozen field in the doc (NOT in REQUIRED_FROZEN_FIELDS lint set per the prompt's exact 5-field list, but carried + dated for auditability).",
+    "DOC-INDEX row updated (path/purpose/owning-slice 'Slice 0-rev'/last-touched 2026-06-16) to reflect the amended 5-arm, fixed-comparator, trend-gate pre-registration.",
+    "Test refactored to a typed `_decide(...)` keyword-default helper so the test file is pyright-clean (0/0); avoids the dict[str,object] `**kw` unpacking that pyright rejects. Behavior assertions unchanged.",
+    "SDK parity (Py/TS): n/a — pure-Python eval-harness module + design doc, no SDK surface change.",
+    "X1 cross-binding harness / X2 mkdocs: n/a — dev/design/ not in mkdocs nav; no engine behavior.",
+    "Out-of-scope NOT performed (per mandate §8): no rerank-arm build, no MuSiQue acquire, no PPR/retrieval/graph code, no priced/unpriced answerer run, no scipy/networkx install — the fused+rerank arm is only SPECIFIED in the design (building it is Slice 5)."
+  ],
+  "agent_verify_result": "pass — FATHOMDB_TESTS_NO_REBUILD=1 pytest src/python/tests/test_m1_decision_rule.py: 31 passed in 0.11s (no fathomdb/scipy/networkx import); pyright src/python/eval/m1_decision_rule.py: 0/0; pyright src/python/tests/test_m1_decision_rule.py: 0/0; flat-positive case confirmed GO on merged main; stray-edit tripwire empty (canonical clean of slice files throughout). main advanced +2 docs-only commits since baseline (none touching slice paths); merge --no-ff clean, no conflicts.",
+  "next_step_for_orchestrator": "Slice 0-rev merged to local main at d4140e03e40c41964d2980d7c474da6c5a4b1958. Re-review (codex §9) the amended decide()/test/design, then ◆ HITL sign-off of the AMENDED pre-registration before any priced run (gates Slice 20). Note for downstream: Slice 20 MUST import eval.m1_decision_rule.decide(material, em, trend, confident_wrong, power_ok) — the NEW 5-arg signature — and may not redefine it; Slice 5's AC-M1-5d now requires a whole-rule power simulation (P(GO) ≥ 0.8 under flat-positive +0.03) and must build all 4 baseline arms incl. fused+rerank with RRF k=60."
+}
