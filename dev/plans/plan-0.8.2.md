@@ -126,9 +126,27 @@ spec, the **strong-baseline definition**, the **pre-registered primary endpoint 
 the power/MDE plan. Confirms reuse seams (extractor, FTS5, passage-dense, answerer) and the $ ledger.
 **Deliverables:** (1) `dev/design/0.8.2-m1-multihop-harness.md` — datasets, arms, endpoint, decision
 rule, ablations, bias controls; (2) the falsifiable AC list M1 tests against (Slice 5/15/20 bars);
-(3) budget plan (answerer-call count × arms × N, cheap-validate gate).
-**Acceptance bar (replaces TDD).** Design `status: decision-ready` with a falsifiable spec each
-downstream slice can test; the primary endpoint + GO/NO-GO rule are frozen and dated.
+(3) budget plan (answerer-call count × arms × N, cheap-validate gate); (4) the frozen decision-rule
+module + its test (see TDD).
+**TDD — yes, a design slice has an executable core.** Pre-registration is only credible if the
+GO/NO-GO computation is frozen as *code* now, so Slice 20 cannot post-hoc switch the endpoint
+(the plan's explicit anti-post-hoc stance). This is the design slice's analogue of RED→GREEN —
+**falsifiable, not "working against an existing ADR."** RED before GREEN:
+- **(a) Frozen decision rule as a pure function.**
+  `src/python/eval/m1_decision_rule.py::decide(deltas_by_hop, power_ok) -> "GO" | "NO_GO"` mechanically
+  encodes the frozen rule. The test pins the truth table at the boundaries: flat-or-negative ⇒ NO_GO;
+  positive-but-not-dose-responsive ⇒ NO_GO; dose-responsive (2→3→4 growing) ≥3-hop EM/F1 lift but
+  **underpowered** ⇒ NO_GO; dose-responsive **and** adequately powered ⇒ GO. Determinism: same input →
+  same verdict.
+- **(b) Pre-registration schema lint.** A test asserts `0.8.2-m1-multihop-harness.md` carries the
+  required **frozen, dated** fields (primary endpoint, per-hop(2/3/4) strata, decision rule, MDE/power
+  plan); it fails RED if any is missing or undated.
+- Pure-Python — **no `fathomdb` / `scipy` / `networkx` import** (runs anywhere, no native-extension or
+  `.venv`-binding dependency). RED sha recorded in `output.json` `tdd_evidence`. **Slice 20 imports
+  `decide()`; it may not redefine the rule.**
+**Acceptance bar.** Design `status: decision-ready` with a falsifiable spec each downstream slice can
+test; the decision-rule function + schema lint are GREEN; the primary endpoint + GO/NO-GO rule are
+frozen and dated.
 **HITL gate:** design + pre-registration signed before any priced run (Slice 20).
 **Reserved follow-on (1–4):** a power re-estimate if Slice 5's baseline variance is wider than assumed.
 

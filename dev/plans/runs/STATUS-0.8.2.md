@@ -17,7 +17,7 @@
 
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
-| 0 | Design + pre-registration | `[design-adr]` | — | NOT STARTED | `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`) |
+| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | NOT STARTED | `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`) + `src/python/eval/m1_decision_rule.py` GREEN + RED sha in `output.json` |
 | 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
@@ -57,6 +57,10 @@ None.
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — Slice 0 gets a real **TDD** even as `[design-adr]`: the pre-registered GO/NO-GO
+  rule is frozen as a pure-Python `decide()` function (+ schema lint on the design doc) at Slice 0, so
+  Slice 20 imports it and cannot post-hoc switch the endpoint. Encodes the plan's anti-post-hoc stance
+  as an executable contract. Plan Slice-0 contract updated.
 - **2026-06-16** — Scoping pre-flight (orchestrator): slice boundaries + dep graph sound; applied 3
   buildability fixes to the plan (eval path `src/python/eval/`; scipy/networkx dep gap declared as
   harness-only/footprint-safe; Slice 10 body-less-edge adaptation flagged vs the reuse asset's
