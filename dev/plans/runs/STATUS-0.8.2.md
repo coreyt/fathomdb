@@ -27,7 +27,7 @@
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
-| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **IN-FLIGHT** | `runs/0.8.2-m1-corpus-manifest.json`; committed acquire script + pinned `musique_hash` |
+| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | merged `614b333`; **fix-1 IN-FLIGHT** (2×[P2] reproducibility) | corpus reproduces `musique_hash 3cff37fd…`, 6/6 tests; fix = declare datasets dep + stable manifest |
 | 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |

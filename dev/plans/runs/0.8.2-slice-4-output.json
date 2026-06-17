@@ -1,0 +1,47 @@
+{
+  "phase": "0.8.2-slice-4",
+  "baseline_sha": "809d7547aa3166e26451f635fbd6a580d1cb2873",
+  "branch": "slice-0.8.2-4-20260617T021234Z",
+  "head_sha": "9439f79c94bc8d2e8d47c7da0e7f9898b07cdb5a",
+  "merged_to_main_sha": "614b333a68a6f912361b80b13f369dcd9aebcfcf",
+  "commits": [
+    "b19e646: test(0.8.2/M1 Slice 4): RED — MuSiQue corpus materializer assertions",
+    "9439f79: feat(0.8.2/M1 Slice 4): GREEN — acquire_musique.py + pin musique_hash"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "b19e646c028d0fde41aaff1e44c24ed2c2b9b77e",
+    "red_evidence": "At the RED commit (b19e646), all 6 tests in test_acquire_musique.py FAIL with FileNotFoundError (corpus not acquired yet) + AssertionError (no manifest entry). Confirmed: `pytest tests/corpus/scripts/test_acquire_musique.py -q` → '6 failed in 0.12s'.",
+    "test_files": ["tests/corpus/scripts/test_acquire_musique.py"]
+  },
+  "blockers_encountered": [
+    "StonyBrookNLP/musique on HF Hub returns 404 (not accessible). RESOLVED: bdsaglam/musique@22873a40 re-hosts the identical CC-BY-4.0 v1.0 data files. Documented in acquire script and manifest."
+  ],
+  "additional_changes_made_in_scope": [
+    "HF token auto-loaded from ~/.cache/huggingface/token — no manual token passing needed.",
+    "bdsaglam/musique 'default' config validation split used (4834 total = 2417 answerable + 2417 unanswerable); 'answerable' flag is the source for the unanswerable contrast set (not a separate file).",
+    "Hop count parsed from ID prefix via regex `^(\\d+)hop` — verified exactly matches supporting-paragraph count for all 2417 answerable questions.",
+    "Raw data gitignored via `/data/corpus-data/` in .gitignore — confirmed not staged.",
+    "Reproduce-check: re-run of acquire_musique.py produces identical musique_hash 3cff37fd... (confirmed twice).",
+    "Stray-edit tripwire clean: `git -C CANON status --porcelain -- src/ dev/ tests/` empty after revert of a timestamp-only manifest diff from a second canonical acquire run.",
+    "X3 DOC-INDEX.md rows added for: acquire_musique.py, test_acquire_musique.py, 0.8.2-m1-corpus-manifest.json."
+  ],
+  "agent_verify_result": "pass — 6 TDD tests GREEN from both worktree and canonical repo (after running acquire). musique_hash 3cff37fd... reproducible across two independent runs. Stray-edit tripwire clean. Raw corpus gitignored (not staged). Merge --no-ff onto local main at 614b333.",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "per_hop_counts": {
+    "hop_2": 2504,
+    "hop_3": 1520,
+    "hop_4": 810
+  },
+  "answerable_counts": {
+    "answerable": 2417,
+    "unanswerable": 2417,
+    "total": 4834
+  },
+  "per_hop_answerable": {
+    "hop_2": {"answerable": 1252, "unanswerable": 1252},
+    "hop_3": {"answerable": 760, "unanswerable": 760},
+    "hop_4": {"answerable": 405, "unanswerable": 405}
+  },
+  "next_step_for_orchestrator": "corpus pinned at 3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f; fan out Slice 5 (FTS5+embeddings+baseline arms) and Slice 10 (graph build over MuSiQue), both reproduce from `tests/corpus/scripts/acquire_musique.py`. Shared M1 manifest at dev/plans/runs/0.8.2-m1-corpus-manifest.json."
+}

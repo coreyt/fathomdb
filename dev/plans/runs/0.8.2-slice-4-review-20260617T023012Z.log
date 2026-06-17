@@ -1,0 +1,2221 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019ed36a-355b-7d92-8ed1-b7f540305f3c
+--------
+user
+changes against 'bfc4f1e'
+exec
+/bin/bash -lc 'ls && cat MEMORY.md 2>/dev/null || true && for f in feedback_*.md; do echo ---$f; cat "$f"; done' in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+data
+deny.toml
+dev
+docs
+go
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+python
+rust-toolchain.toml
+rustfmt.toml
+scripts
+site
+src
+target
+test
+tests
+tools
+typescript
+---feedback_*.md
+cat: 'feedback_*.md': No such file or directory
+
+exec
+/bin/bash -lc "find .. -maxdepth 2 -name 'MEMORY.md' -o -name 'feedback_*.md' -o -name '*feedback*.md'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+../armada/claude-feedback.md
+../ado-mcp/MEMORY.md
+
+exec
+/bin/bash -lc 'git status --short && git diff --stat bfc4f1e80624902855501859097ed2dfd7ea64c4 && git diff --name-only bfc4f1e80624902855501859097ed2dfd7ea64c4' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+?? dev/plans/runs/0.8.2-slice-4-output.json
+?? dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log
+ dev/DOC-INDEX.md                             |   5 +-
+ dev/plans/runs/0.8.2-m1-corpus-manifest.json |  39 ++++
+ tests/corpus/scripts/acquire_musique.py      | 286 +++++++++++++++++++++++++++
+ tests/corpus/scripts/manifest.json           |  26 +++
+ tests/corpus/scripts/test_acquire_musique.py | 159 +++++++++++++++
+ 5 files changed, 514 insertions(+), 1 deletion(-)
+dev/DOC-INDEX.md
+dev/plans/runs/0.8.2-m1-corpus-manifest.json
+tests/corpus/scripts/acquire_musique.py
+tests/corpus/scripts/manifest.json
+tests/corpus/scripts/test_acquire_musique.py
+
+exec
+/bin/bash -lc 'git diff --find-renames --find-copies bfc4f1e80624902855501859097ed2dfd7ea64c4 -- tests/corpus/scripts/acquire_musique.py tests/corpus/scripts/test_acquire_musique.py tests/corpus/scripts/manifest.json dev/DOC-INDEX.md dev/plans/runs/0.8.2-m1-corpus-manifest.json' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/dev/DOC-INDEX.md b/dev/DOC-INDEX.md
+index bbbcf53..c0ef940 100644
+--- a/dev/DOC-INDEX.md
++++ b/dev/DOC-INDEX.md
+@@ -129,7 +129,8 @@ refresh in the closing commit when you touch a doc).
+ | `dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` | **0.8.1 orchestrator hand-off** — roles, ladder spawn order, the per-slice decision loop (TDD + codex §9 + board-in-one-commit), HITL gates, footprint invariant | orchestrator | 2026-06-12 |
+ | `dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md` | **BYO-LLM extraction-harness brief** for Memex — the `fathomdb.extract.v1` Extraction Provider Protocol FathomDB proxies graph construction to (0.8.1 Slice 15 implements) | 0.8.1 Slice 15 | 2026-06-12 |
+ | `dev/roadmap/0.8.2.md` | **0.8.2 roadmap** — RE-SEQUENCED 2026-06-16: now **M1 multi-hop answer-accuracy harness** (lexically-seeded PPR-fusion on MuSiQue, EM/F1 by hop count); step 1 of the 3-version graph adjudication. (Former R3b content → 0.8.5) | 0.8.2 | 2026-06-16 |
+-| `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan** — M1 slice contracts (0 design+pre-register → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict); reuse inventory; pre-registered endpoint + GO/NO-GO rule | 0.8.2 | 2026-06-16 |
++| `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan** — M1 slice contracts (0 design+pre-register → 4 corpus acquire → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict); reuse inventory; pre-registered endpoint + GO/NO-GO rule | 0.8.2 | 2026-06-16 |
++| `dev/plans/runs/0.8.2-m1-corpus-manifest.json` | **M1 corpus manifest artifact** — pinned `musique_hash` (sha256), per-hop counts (2/3/4), answerable vs unanswerable counts, materialized-corpus path, acquire command; consumed by Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
+ | `dev/roadmap/0.8.3.md` | **0.8.3 roadmap** — **M2 full multi-hop study** (+2Wiki +MultiHop-RAG, +IRCoT iterative arm, +R5 vector-PRF); step 2; gated on the M1 verdict | 0.8.3 | 2026-06-16 |
+ | `dev/roadmap/0.8.4.md` | **0.8.4 roadmap** — **S1 GraphRAG sensemaking** (Leiden communities + community summaries + BenchmarkQED LLM-judge); step 3; the graph-favorable bet | 0.8.4 | 2026-06-16 |
+ | `dev/roadmap/0.8.5.md` | **0.8.5 roadmap** — displaced/contingent items: R3b (GATED on the M1–S1 verdict), portable-DB vector guard, R4 whole-doc dense, tunable-b FTS5, EU7 perf | 0.8.5 | 2026-06-16 |
+@@ -193,3 +194,5 @@ refresh in the closing commit when you touch a doc).
+ | `dev/plans/prompts/0.8.x-corpus-qa-expansion-handoff.md` | Corpus QA-expansion handoff prompt | corpus-work (0.8.x) | 2026-06-02 |
+ | `dev/plans/prompts/0.8.x-corpus-source-expansion-search.md` | Corpus source-expansion search prompt | corpus-work (0.8.x) | 2026-06-02 |
+ | `tests/corpus/corpus-card.md` + `README.md` | Eval corpus card + acquisition README (scripts under `tests/corpus/scripts/`) | corpus-work (eval) | 2026-06-02 |
++| `tests/corpus/scripts/acquire_musique.py` | **MuSiQue-Ans corpus acquire script** — deterministic acquisition of `bdsaglam/musique` (re-hosts StonyBrookNLP/musique v1.0, CC-BY-4.0); downloads `default/validation` split (4 834 questions: answerable + unanswerable contrast set); materializes per-question paragraph corpus → `data/corpus-data/raw/musique_dev.jsonl`; pins `musique_hash` in `manifest.json`; shared prerequisite for Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
++| `tests/corpus/scripts/test_acquire_musique.py` | **TDD tests for MuSiQue materializer** — 6 tests: hop_count ∈ {2,3,4}; hop_count == supporting-para count (answerable); ≥1 supporting + ≥2 distractor paragraphs; unanswerable set non-empty + flagged; paragraph schema; byte-stability via manifest sha256 pin | 0.8.2 Slice 4 | 2026-06-17 |
+diff --git a/dev/plans/runs/0.8.2-m1-corpus-manifest.json b/dev/plans/runs/0.8.2-m1-corpus-manifest.json
+new file mode 100644
+index 0000000..0ccb58d
+--- /dev/null
++++ b/dev/plans/runs/0.8.2-m1-corpus-manifest.json
+@@ -0,0 +1,39 @@
++{
++  "schema": "0.8.2-m1-corpus-manifest-v1",
++  "generated_by": "tests/corpus/scripts/acquire_musique.py",
++  "generated_at": "2026-06-17T02:24:37Z",
++  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
++  "source": {
++    "hf_id": "bdsaglam/musique",
++    "revision": "22873a405dd809893b22ada0b499299fb612d2df",
++    "config": "default",
++    "split": "validation",
++    "note": "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. Both answerable (MuSiQue-Ans) and unanswerable contrast sets included via the 'answerable' field."
++  },
++  "materialized_corpus_path": "data/corpus-data/raw/musique_dev.jsonl",
++  "acquire_command": "cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py",
++  "counts": {
++    "total": 4834,
++    "answerable": 2417,
++    "unanswerable": 2417
++  },
++  "per_hop_counts": {
++    "2": 2504,
++    "3": 1520,
++    "4": 810
++  },
++  "per_hop_answerable": {
++    "2": {
++      "answerable": 1252,
++      "unanswerable": 1252
++    },
++    "3": {
++      "answerable": 760,
++      "unanswerable": 760
++    },
++    "4": {
++      "answerable": 405,
++      "unanswerable": 405
++    }
++  }
++}
+diff --git a/tests/corpus/scripts/acquire_musique.py b/tests/corpus/scripts/acquire_musique.py
+new file mode 100644
+index 0000000..18b56df
+--- /dev/null
++++ b/tests/corpus/scripts/acquire_musique.py
+@@ -0,0 +1,286 @@
++#!/usr/bin/env python3
++"""Acquire MuSiQue-Ans corpus (distractor setting) for FathomDB 0.8.2 M1.
++
++Source:  bdsaglam/musique on Hugging Face Hub (re-hosts StonyBrookNLP/musique v1.0).
++         StonyBrookNLP/musique is NOT directly accessible on the HF Hub (returns
++         "Repository not found"); bdsaglam/musique provides the canonical v1.0
++         data files (musique_ans_v1.0_dev.jsonl, musique_full_v1.0_dev.jsonl)
++         under the same CC-BY-4.0 license.
++License: CC-BY-4.0 (Trivedi et al. 2022, MuSiQue: TACL arXiv:2108.00573).
++Pinned:  bdsaglam/musique@22873a40 (last-modified 2024-10-05T06:57:44Z).
++
++Acquires the 'default' config validation split (4 834 questions total):
++  - Answerable set (MuSiQue-Ans):       2 417 questions (answerable=True)
++  - Unanswerable contrast set:          2 417 questions (answerable=False)
++  Both sets have ~20 paragraphs each in the distractor setting.
++
++Materialized output format per question:
++  {
++    "id": str,                  # e.g. "2hop__153573_109006"
++    "question": str,
++    "hop_count": int,           # 2 | 3 | 4 — parsed from ID prefix
++    "answer": str,
++    "answer_aliases": [str],
++    "answerable": bool,
++    "paragraphs": [
++      {"idx": int, "title": str, "text": str, "is_supporting": bool}
++    ]
++  }
++
++Hop count is parsed from the ID prefix (e.g. '2hop__…' → 2, '3hop1__…' → 3,
++'4hop3__…' → 4). For answerable questions hop_count equals the number of
++supporting paragraphs (MuSiQue construction property; verified on every run).
++
++Output: data/corpus-data/raw/musique_dev.jsonl  (gitignored).
++Also writes:
++  tests/corpus/scripts/manifest.json           — adds 'musique' entry
++  dev/plans/runs/0.8.2-m1-corpus-manifest.json — M1 manifest artifact
++"""
++
++from __future__ import annotations
++
++import datetime
++import hashlib
++import json
++import re
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from _corpus_lib import corpus_data_dir, repo_root  # noqa: E402
++
++# ── dataset coordinates (pinned) ──────────────────────────────────────────────
++DATASET_ID = "bdsaglam/musique"
++DATASET_REVISION = "22873a405dd809893b22ada0b499299fb612d2df"
++DATASET_CONFIG = "default"   # contains BOTH answerable + unanswerable questions
++DATASET_SPLIT = "validation"
++
++LICENSE_SPDX = "CC-BY-4.0"
++PROVENANCE = f"hf:{DATASET_ID}@{DATASET_REVISION[:8]}"
++
++# ── paths ─────────────────────────────────────────────────────────────────────
++OUT_PATH = corpus_data_dir() / "raw" / "musique_dev.jsonl"
++MANIFEST_PATH = Path(__file__).resolve().parent / "manifest.json"
++M1_MANIFEST_PATH = repo_root() / "dev" / "plans" / "runs" / "0.8.2-m1-corpus-manifest.json"
++
++
++# ── helpers ───────────────────────────────────────────────────────────────────
++
++def parse_hop_count(question_id: str) -> int:
++    """Parse hop count from MuSiQue question ID prefix.
++
++    Examples:
++      '2hop__153573_109006'  → 2
++      '3hop1__241001_568433' → 3
++      '4hop3__...'           → 4
++    """
++    m = re.match(r"^(\d+)hop", question_id)
++    if not m:
++        raise ValueError(f"Cannot parse hop count from MuSiQue ID: {question_id!r}")
++    return int(m.group(1))
++
++
++def materialize_row(raw: dict) -> dict:
++    """Convert a raw HF dataset row to the canonical materialized format."""
++    hop_count = parse_hop_count(raw["id"])
++    paragraphs = [
++        {
++            "idx": p["idx"],
++            "title": p["title"],
++            "text": p["paragraph_text"],
++            "is_supporting": bool(p["is_supporting"]),
++        }
++        for p in raw["paragraphs"]
++    ]
++    return {
++        "id": raw["id"],
++        "question": raw["question"],
++        "hop_count": hop_count,
++        "answer": raw["answer"],
++        "answer_aliases": list(raw.get("answer_aliases") or []),
++        "answerable": bool(raw["answerable"]),
++        "paragraphs": paragraphs,
++    }
++
++
++def write_corpus(path: Path, rows: list[dict]) -> tuple[int, str]:
++    """Write materialized corpus to JSONL (sort_keys for determinism); return (count, sha256)."""
++    path.parent.mkdir(parents=True, exist_ok=True)
++    hasher = hashlib.sha256()
++    count = 0
++    with path.open("w", encoding="utf-8") as f:
++        for row in rows:
++            line = json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
++            f.write(line)
++            hasher.update(line.encode("utf-8"))
++            count += 1
++    return count, hasher.hexdigest()
++
++
++# ── main ──────────────────────────────────────────────────────────────────────
++
++def main() -> int:
++    from datasets import load_dataset  # type: ignore[import-not-found]
++
++    print(f"[S4][ACQUIRE] dataset:  {DATASET_ID}")
++    print(f"[S4][ACQUIRE] revision: {DATASET_REVISION[:8]}")
++    print(f"[S4][ACQUIRE] config:   {DATASET_CONFIG}  split: {DATASET_SPLIT}")
++    print(f"[S4][ACQUIRE] output:   {OUT_PATH}")
++    print()
++
++    ds = load_dataset(
++        DATASET_ID,
++        DATASET_CONFIG,
++        split=DATASET_SPLIT,
++        revision=DATASET_REVISION,
++    )
++    print(f"[S4][ACQUIRE] {len(ds)} rows loaded; materializing…")
++
++    # Materialize in HF iteration order (stable for a pinned revision → deterministic).
++    rows = [materialize_row(dict(row)) for row in ds]
++
++    # ── validation: hop_count == supporting para count for answerable questions ──
++    mismatches = []
++    for row in rows:
++        if row["answerable"]:
++            n_supporting = sum(1 for p in row["paragraphs"] if p["is_supporting"])
++            if row["hop_count"] != n_supporting:
++                mismatches.append((row["id"], row["hop_count"], n_supporting))
++    if mismatches:
++        print(f"[S4][WARN] hop_count != supporting_count for {len(mismatches)} questions")
++        for qid, hc, sc in mismatches[:5]:
++            print(f"  {qid!r}: hop_count={hc} supporting={sc}")
++    else:
++        print("[S4][ACQUIRE] ✓ hop_count == supporting_count for all answerable questions")
++
++    # ── breakdown ─────────────────────────────────────────────────────────────
++    hop_total: dict[int, int] = {}
++    hop_ans: dict[int, int] = {}
++    hop_unans: dict[int, int] = {}
++    answerable_total = 0
++    unanswerable_total = 0
++
++    for row in rows:
++        h = row["hop_count"]
++        hop_total[h] = hop_total.get(h, 0) + 1
++        if row["answerable"]:
++            hop_ans[h] = hop_ans.get(h, 0) + 1
++            answerable_total += 1
++        else:
++            hop_unans[h] = hop_unans.get(h, 0) + 1
++            unanswerable_total += 1
++
++    print("[S4][ACQUIRE] hop breakdown:")
++    for h in sorted(hop_total):
++        print(f"  {h}-hop: total={hop_total[h]}  answerable={hop_ans.get(h, 0)}  "
++              f"unanswerable={hop_unans.get(h, 0)}")
++    print(f"[S4][ACQUIRE] answerable={answerable_total}  unanswerable={unanswerable_total}")
++    print()
++
++    # ── write corpus ──────────────────────────────────────────────────────────
++    count, musique_hash = write_corpus(OUT_PATH, rows)
++    print(f"[S4][ACQUIRE] wrote {count} questions → {OUT_PATH}")
++    print(f"[S4][ACQUIRE] musique_hash (sha256): {musique_hash}")
++    print()
++
++    # ── update manifest.json ──────────────────────────────────────────────────
++    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
++    manifest["sources"]["musique"] = {
++        "script": "acquire_musique.py",
++        "upstream": {
++            "kind": "huggingface_dataset",
++            "id": DATASET_ID,
++            "note": (
++                "re-hosts StonyBrookNLP/musique v1.0 data files; "
++                "StonyBrookNLP/musique is not accessible on HF Hub (returns 404). "
++                "Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl "
++                "directly from the bdsaglam/musique HF file store."
++            ),
++            "config": DATASET_CONFIG,
++            "split": DATASET_SPLIT,
++            "revision": DATASET_REVISION,
++            "last_modified": "2024-10-05T06:57:44Z",
++        },
++        "license": LICENSE_SPDX,
++        "license_notes": (
++            "CC-BY-4.0 (Trivedi et al. 2022, MuSiQue, TACL arXiv:2108.00573). "
++            "bdsaglam/musique re-hosts the canonical v1.0 files. "
++            "License posture: commit-clean."
++        ),
++        "distribution": "cache",
++        "output": "data/corpus-data/raw/musique_dev.jsonl",
++        "doc_count": count,
++        "doc_count_breakdown": {
++            "answerable": answerable_total,
++            "unanswerable": unanswerable_total,
++            "hop_2": hop_total.get(2, 0),
++            "hop_3": hop_total.get(3, 0),
++            "hop_4": hop_total.get(4, 0),
++        },
++        "sha256": musique_hash,
++        "acquired_at": datetime.date.today().isoformat(),
++    }
++    MANIFEST_PATH.write_text(
++        json.dumps(manifest, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
++    )
++    print(f"[S4][ACQUIRE] updated manifest.json  (musique sha256={musique_hash[:16]}…)")
++
++    # ── write M1 corpus manifest ───────────────────────────────────────────────
++    m1_manifest = {
++        "schema": "0.8.2-m1-corpus-manifest-v1",
++        "generated_by": "tests/corpus/scripts/acquire_musique.py",
++        "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
++        "musique_hash": musique_hash,
++        "source": {
++            "hf_id": DATASET_ID,
++            "revision": DATASET_REVISION,
++            "config": DATASET_CONFIG,
++            "split": DATASET_SPLIT,
++            "note": (
++                "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. "
++                "Both answerable (MuSiQue-Ans) and unanswerable contrast sets included "
++                "via the 'answerable' field."
++            ),
++        },
++        "materialized_corpus_path": "data/corpus-data/raw/musique_dev.jsonl",
++        "acquire_command": (
++            "cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py"
++        ),
++        "counts": {
++            "total": count,
++            "answerable": answerable_total,
++            "unanswerable": unanswerable_total,
++        },
++        "per_hop_counts": {
++            str(h): hop_total.get(h, 0) for h in (2, 3, 4)
++        },
++        "per_hop_answerable": {
++            str(h): {
++                "answerable": hop_ans.get(h, 0),
++                "unanswerable": hop_unans.get(h, 0),
++            }
++            for h in (2, 3, 4)
++        },
++    }
++    M1_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
++    M1_MANIFEST_PATH.write_text(
++        json.dumps(m1_manifest, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
++    )
++    print(f"[S4][ACQUIRE] wrote M1 corpus manifest → {M1_MANIFEST_PATH}")
++    print()
++    print("[S4][ACQUIRE] SUMMARY")
++    print(f"  musique_hash : {musique_hash}")
++    print(f"  total        : {count}")
++    print(f"  answerable   : {answerable_total}  unanswerable: {unanswerable_total}")
++    for h in (2, 3, 4):
++        print(f"  {h}-hop       : {hop_total.get(h, 0)} total  "
++              f"({hop_ans.get(h, 0)} ans / {hop_unans.get(h, 0)} unans)")
++    print()
++    print("[S4][ACQUIRE] DONE — corpus pinned. Run the TDD tests to verify:")
++    print("  FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest "
++          "tests/corpus/scripts/test_acquire_musique.py -q")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/corpus/scripts/manifest.json b/tests/corpus/scripts/manifest.json
+index fcd9a1a..055231e 100644
+--- a/tests/corpus/scripts/manifest.json
++++ b/tests/corpus/scripts/manifest.json
+@@ -175,6 +175,32 @@
+       "eval_qa_count": 7993,
+       "eval_sha256": "299866fc33f496adc8da78b5e7c3d6a9f5f01f9f7b774f8769a4d464409239c1",
+       "acquired_at": "2026-06-02"
++    },
++    "musique": {
++      "script": "acquire_musique.py",
++      "upstream": {
++        "kind": "huggingface_dataset",
++        "id": "bdsaglam/musique",
++        "note": "re-hosts StonyBrookNLP/musique v1.0 data files; StonyBrookNLP/musique is not accessible on HF Hub (returns 404). Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl directly from the bdsaglam/musique HF file store.",
++        "config": "default",
++        "split": "validation",
++        "revision": "22873a405dd809893b22ada0b499299fb612d2df",
++        "last_modified": "2024-10-05T06:57:44Z"
++      },
++      "license": "CC-BY-4.0",
++      "license_notes": "CC-BY-4.0 (Trivedi et al. 2022, MuSiQue, TACL arXiv:2108.00573). bdsaglam/musique re-hosts the canonical v1.0 files. License posture: commit-clean.",
++      "distribution": "cache",
++      "output": "data/corpus-data/raw/musique_dev.jsonl",
++      "doc_count": 4834,
++      "doc_count_breakdown": {
++        "answerable": 2417,
++        "unanswerable": 2417,
++        "hop_2": 2504,
++        "hop_3": 1520,
++        "hop_4": 810
++      },
++      "sha256": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
++      "acquired_at": "2026-06-16"
+     }
+   }
+ }
+diff --git a/tests/corpus/scripts/test_acquire_musique.py b/tests/corpus/scripts/test_acquire_musique.py
+new file mode 100644
+index 0000000..6e74f55
+--- /dev/null
++++ b/tests/corpus/scripts/test_acquire_musique.py
+@@ -0,0 +1,159 @@
++"""TDD tests for the MuSiQue-Ans corpus materializer (Slice 4, 0.8.2 M1).
++
++RED state: all tests fail because the corpus file and manifest entry do not exist.
++GREEN state: tests pass after `acquire_musique.py` has been run.
++
++Assertions:
++  (a) every sampled question carries hop_count ∈ {2,3,4} and — if answerable —
++      at least 1 supporting paragraph plus at least 2 distractor paragraphs;
++  (b) the unanswerable contrast set is non-empty and every such row has answerable=False;
++  (c) the sha256 of the materialized corpus file matches the pinned value in
++      manifest.json → byte-stability / deterministic ordering check.
++
++Sampling: the per-question structural tests run over the FULL corpus (4834 rows);
++any future sampling must be logged here.
++
++Run: FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest tests/corpus/scripts/test_acquire_musique.py -q
++(from the repo root with the repo .venv activated).
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import sys
++from pathlib import Path
++
++# Make _corpus_lib importable (scripts dir is a sibling of this file).
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from _corpus_lib import corpus_data_dir  # noqa: E402
++
++CORPUS_FILE = corpus_data_dir() / "raw" / "musique_dev.jsonl"
++MANIFEST_FILE = Path(__file__).resolve().parent / "manifest.json"
++
++# ── helpers ──────────────────────────────────────────────────────────────────
++
++
++def _load_corpus() -> list[dict]:
++    """Load the full materialized corpus; raises FileNotFoundError if not acquired."""
++    if not CORPUS_FILE.exists():
++        raise FileNotFoundError(
++            f"MuSiQue corpus not acquired: {CORPUS_FILE}\n"
++            "Run: ./.venv/bin/python tests/corpus/scripts/acquire_musique.py"
++        )
++    rows: list[dict] = []
++    with CORPUS_FILE.open(encoding="utf-8") as f:
++        for line in f:
++            line = line.strip()
++            if line:
++                rows.append(json.loads(line))
++    print(f"  [log] loaded {len(rows)} rows from {CORPUS_FILE.name} (full scan, no sampling)")
++    return rows
++
++
++def _sha256_file(path: Path) -> str:
++    hasher = hashlib.sha256()
++    with path.open("rb") as f:
++        for line in f:
++            hasher.update(line)
++    return hasher.hexdigest()
++
++
++# ── tests ─────────────────────────────────────────────────────────────────────
++
++
++def test_hop_counts_in_range():
++    """Every question has hop_count ∈ {2, 3, 4} (construction-defined, parsed from ID)."""
++    rows = _load_corpus()
++    bad = [r for r in rows if r.get("hop_count") not in {2, 3, 4}]
++    assert not bad, (
++        f"{len(bad)} questions have hop_count outside {{2,3,4}}; "
++        f"first offender: id={bad[0].get('id')!r} hop_count={bad[0].get('hop_count')!r}"
++    )
++
++
++def test_answerable_have_supporting_and_distractor_paragraphs():
++    """For answerable questions: ≥1 supporting paragraph AND ≥2 distractor paragraphs."""
++    rows = _load_corpus()
++    answerable = [r for r in rows if r.get("answerable")]
++    assert answerable, "No answerable rows found"
++
++    for row in answerable:
++        paras = row.get("paragraphs", [])
++        supporting = [p for p in paras if p.get("is_supporting")]
++        distractors = [p for p in paras if not p.get("is_supporting")]
++        assert len(supporting) >= 1, (
++            f"Answerable question {row['id']!r} has no supporting paragraphs"
++        )
++        assert len(distractors) >= 2, (
++            f"Answerable question {row['id']!r} has fewer than 2 distractor paragraphs "
++            f"(got {len(distractors)})"
++        )
++
++
++def test_hop_count_matches_supporting_paragraph_count():
++    """For answerable questions: hop_count == number of supporting paragraphs (construction-defined)."""
++    rows = _load_corpus()
++    answerable = [r for r in rows if r.get("answerable")]
++    mismatches = []
++    for row in answerable:
++        supporting = sum(1 for p in row.get("paragraphs", []) if p.get("is_supporting"))
++        if row["hop_count"] != supporting:
++            mismatches.append((row["id"], row["hop_count"], supporting))
++    assert not mismatches, (
++        f"{len(mismatches)} hop_count/supporting-count mismatches; "
++        f"first: id={mismatches[0][0]!r} hop_count={mismatches[0][1]} supporting={mismatches[0][2]}"
++    )
++
++
++def test_unanswerable_contrast_set_nonempty_and_flagged():
++    """Unanswerable contrast set is non-empty and every such row has answerable=False."""
++    rows = _load_corpus()
++    unanswerable = [r for r in rows if not r.get("answerable", True)]
++    assert len(unanswerable) > 0, (
++        "Unanswerable contrast set is empty — check acquire_musique.py (default config required)"
++    )
++    # All unanswerable rows must have answerable=False (not a missing/None value)
++    bad_flag = [r for r in unanswerable if r.get("answerable") is not False]
++    assert not bad_flag, (
++        f"{len(bad_flag)} 'unanswerable' rows have answerable != False: "
++        f"first={bad_flag[0].get('id')!r} value={bad_flag[0].get('answerable')!r}"
++    )
++    print(f"  [log] unanswerable contrast set: {len(unanswerable)} rows")
++
++
++def test_paragraph_schema():
++    """Every paragraph has the required keys: idx, title, text, is_supporting."""
++    rows = _load_corpus()
++    required = {"idx", "title", "text", "is_supporting"}
++    for row in rows[:100]:  # log: checking first 100 questions (fast structural probe)
++        for i, para in enumerate(row.get("paragraphs", [])):
++            missing = required - set(para.keys())
++            assert not missing, (
++                f"Paragraph {i} in question {row['id']!r} is missing keys: {missing}"
++            )
++    print("  [log] paragraph schema check: first 100 questions (sufficient structural probe)")
++
++
++def test_byte_stability_via_manifest_pin():
++    """sha256 of corpus file matches the pinned hash in manifest.json (byte-stable materializer)."""
++    if not CORPUS_FILE.exists():
++        raise FileNotFoundError(
++            f"MuSiQue corpus not acquired: {CORPUS_FILE}\n"
++            "Run: ./.venv/bin/python tests/corpus/scripts/acquire_musique.py"
++        )
++    manifest = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
++    musique_entry = manifest.get("sources", {}).get("musique")
++    assert musique_entry is not None, (
++        "No 'musique' entry in manifest.json — run acquire_musique.py to pin the hash"
++    )
++    pinned_sha = musique_entry.get("sha256")
++    assert pinned_sha, "manifest.json 'musique' entry has no sha256"
++
++    actual_sha = _sha256_file(CORPUS_FILE)
++    assert actual_sha == pinned_sha, (
++        f"Corpus sha256 mismatch (byte-stability failure):\n"
++        f"  pinned : {pinned_sha}\n"
++        f"  on-disk: {actual_sha}\n"
++        "Re-run acquire_musique.py to regenerate the corpus, or reconcile the manifest."
++    )
+
+exec
+/bin/bash -lc "ls tests/corpus/scripts && sed -n '1,240p' tests/corpus/scripts/_corpus_lib.py && sed -n '1,80p' tests/corpus/scripts/acquire_hotpotqa.py 2>/dev/null || true && sed -n '1,220p' tests/corpus/scripts/manifest.json" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+__pycache__
+_corpus_lib.py
+acquire_bahmutov_dailylogs.py
+acquire_cnn_dailymail.py
+acquire_enron.py
+acquire_enronqa.py
+acquire_landes_todos.py
+acquire_musique.py
+acquire_qaconv.py
+acquire_qasper.py
+acquire_qmsum.py
+build_ir_gold.py
+freeze_corpus.py
+generate_chain_corpus.py
+generate_synthetic_notes.py
+manifest.json
+test_acquire_musique.py
+test_build_ir_gold.py
+"""Shared helpers for FathomDB 0.7.0 corpus acquisition scripts.
+
+Provides the canonical document schema, deterministic ID hashing, and
+JSONL writers. Every acquisition script in this directory emits documents
+through `write_jsonl` so the on-disk shape is identical across sources.
+
+See tests/corpus/corpus-card.md for the authoritative schema + license
+posture.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Iterable, Literal
+
+SourceType = Literal["email", "meeting", "paper", "article", "note", "todo"]
+
+SOURCE_TYPES: tuple[SourceType, ...] = (
+    "email", "meeting", "paper", "article", "note", "todo",
+)
+
+RELATION_TYPES: tuple[str, ...] = (
+    "replies_to", "follows_up_on", "summarizes", "action_from",
+    "contradicts", "mentions", "cites",
+)
+
+
+@dataclass
+class CorpusDoc:
+    """Canonical document shape — see corpus-card.md §"Document schema"."""
+
+    doc_id: str
+    source_type: SourceType
+    title: str | None
+    body: str
+    created_at: str           # ISO-8601 UTC
+    modified_at: str | None
+    author_or_sender: str | None
+    recipients: list[str]
+    people_mentions: list[str]
+    project_mentions: list[str]
+    tags: list[str]
+    url_or_external_id: str | None
+    thread_id: str | None
+    parent_doc_id: str | None
+    license: str              # SPDX identifier
+    provenance: str           # short upstream tag
+
+    def to_jsonl(self) -> str:
+        return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+
+
+def doc_id(provenance: str, source_native_id: str) -> str:
+    """Deterministic doc_id = first 16 hex chars of SHA-256(provenance|id)."""
+    h = hashlib.sha256(f"{provenance}|{source_native_id}".encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def write_jsonl(path: Path, docs: Iterable[CorpusDoc]) -> tuple[int, str]:
+    """Write docs to JSONL deterministically; return (count, sha256)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hasher = hashlib.sha256()
+    count = 0
+    with path.open("w", encoding="utf-8") as f:
+        for d in docs:
+            line = d.to_jsonl() + "\n"
+            f.write(line)
+            hasher.update(line.encode("utf-8"))
+            count += 1
+    return count, hasher.hexdigest()
+
+
+QaAnswerType = Literal["span", "free_form", "yes_no_maybe", "summary", "abstain"]
+EvalQaSource = Literal["qaconv", "qasper", "enronqa", "qmsum", "pmc_oa"]
+
+
+@dataclass
+class EvidenceSpan:
+    doc_id: str
+    start: int
+    end: int
+    text: str | None = None
+
+
+@dataclass
+class EvalQaRow:
+    qa_id: str
+    source: EvalQaSource
+    source_type: SourceType
+    question: str
+    answers: list[str]
+    answer_type: QaAnswerType
+    evidence_doc_ids: list[str]
+    evidence_spans: list[EvidenceSpan]
+    negative_doc_ids: list[str]
+    relation_type: str | None
+    metadata: dict[str, Any]
+    license: str
+    provenance: str
+
+    def to_jsonl(self) -> str:
+        self.validate()
+        return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+
+    def validate(self) -> None:
+        if not self.qa_id:
+            raise ValueError("qa_id is required")
+        if not self.question.strip():
+            raise ValueError(f"{self.qa_id}: question is required")
+        if not self.answers and self.answer_type != "abstain":
+            raise ValueError(f"{self.qa_id}: answers are required unless answer_type=abstain")
+        if self.source_type not in SOURCE_TYPES:
+            raise ValueError(f"{self.qa_id}: unknown source_type {self.source_type}")
+        if self.relation_type is not None and self.relation_type not in RELATION_TYPES:
+            raise ValueError(f"{self.qa_id}: unknown relation_type {self.relation_type}")
+        for span in self.evidence_spans:
+            if span.start < 0 or span.end < span.start:
+                raise ValueError(f"{self.qa_id}: invalid evidence span {span.start}:{span.end}")
+            if span.doc_id not in self.evidence_doc_ids:
+                raise ValueError(f"{self.qa_id}: evidence span doc_id is not listed")
+
+
+def qa_id(source: str, *parts: str) -> str:
+    h = hashlib.sha256("|".join((source, *parts)).encode("utf-8"))
+    return h.hexdigest()[:24]
+
+
+def assert_grounded_evidence(row: EvalQaRow, available_doc_ids: set[str]) -> None:
+    missing = sorted(set(row.evidence_doc_ids) - available_doc_ids)
+    if missing:
+        raise ValueError(f"{row.qa_id}: evidence_doc_ids not present in corpus: {missing}")
+
+
+def write_eval_jsonl(path: Path, rows: Iterable[EvalQaRow]) -> tuple[int, str]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hasher = hashlib.sha256()
+    count = 0
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            line = row.to_jsonl() + "\n"
+            f.write(line)
+            hasher.update(line.encode("utf-8"))
+            count += 1
+    return count, hasher.hexdigest()
+
+
+def repo_root() -> Path:
+    """Find repo root by walking up from this file looking for .git."""
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / ".git").exists():
+            return parent
+    raise RuntimeError("could not locate repo root from " + str(here))
+
+
+def corpus_data_dir() -> Path:
+    """Root of produced corpus data (raw downloads + per-source JSONL).
+
+    Lives at <repo>/data/corpus-data/ and is .gitignored — acquisition
+    scripts here are the reproducible source of truth, the data they
+    produce is not tracked. CI fetches/restores into this directory.
+    """
+    return repo_root() / "data" / "corpus-data"
+
+
+def corpus_doc_dir() -> Path:
+    """Documentation / spec layout (corpus-card.md, chain definitions)."""
+    return repo_root() / "tests" / "corpus"
+{
+  "comment": "Upstream pins + checksums for data/corpus-data/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256. The 'distribution' field records license posture only \u2014 'commit' = license-clean enough that we could commit if policy permits, 'cache' = license-blocked. All produced JSONL currently lives under data/corpus-data/ (gitignored) regardless of license posture.",
+  "schema_version": 1,
+  "sources": {
+    "cnn_dailymail": {
+      "script": "acquire_cnn_dailymail.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "abisee/cnn_dailymail",
+        "config": "3.0.0",
+        "revision": "96df5e686bee6baa90b8bee7c28b81fa3fa6223d",
+        "last_modified": "2024-01-18T15:31:34Z"
+      },
+      "license": "Apache-2.0",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/cnn_dailymail.jsonl",
+      "doc_count": 2500,
+      "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
+      "acquired_at": "2026-05-27"
+    },
+    "enronqa": {
+      "script": "acquire_enronqa.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "MichaelR207/enron_qa_0922",
+        "revision": "c0b3a9190fd970e83cfbe7d399a08860e43e221e",
+        "last_modified": "2024-09-22T17:42:07Z"
+      },
+      "license": "LicenseRef-EnronQA-Undeclared",
+      "license_notes": "No license declared on the HF dataset card; derived from Enron base which is research-use convention. Treat as cache-only until clarified.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/enronqa.jsonl",
+      "doc_count": 200,
+      "sha256": "bc30eb0674eb72e6c762e094a514983f767e5122a6dd3a711325dd0fde5248ab",
+      "acquired_at": "2026-05-27",
+      "eval_output": "data/corpus-data/eval/enronqa_qa.jsonl",
+      "eval_qa_count": 710,
+      "eval_sha256": "756e7c483f6cfd26d1903fa7ceaaff156b3f72df2982bb1dabd985f2c40485c0"
+    },
+    "qmsum": {
+      "script": "acquire_qmsum.py",
+      "upstream": {
+        "kind": "github_archive_tarball",
+        "id": "Yale-LILY/QMSum",
+        "revision": "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e",
+        "last_modified": "2023-08-29T01:07:05Z",
+        "archive_url": "https://codeload.github.com/Yale-LILY/QMSum/tar.gz/83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e",
+        "archive_sha256": "b6970687b0f56dbd0a7f66a2ff15c501a3e57e6f60750971466c678cf5b17d7f"
+      },
+      "license": "LicenseRef-QMSum-MIT-with-upstream-chain",
+      "license_notes": "QMSum annotations MIT; underlying transcripts derive from AMI (CC-BY-4.0), ICSI (CC-BY-NC variants), Canadian Parliament transcripts (Crown copyright). Upstream chain not verified for unrestricted redistribution; cache-only until a future HITL pass flips this.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/qmsum.jsonl",
+      "doc_count": 600,
+      "doc_count_breakdown": {
+        "transcript": 200,
+        "general-summary": 200,
+        "specific-summary": 200
+      },
+      "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
+      "acquired_at": "2026-05-27",
+      "eval_output": "data/corpus-data/eval/qmsum_qa.jsonl",
+      "eval_qa_count": 1584,
+      "eval_sha256": "85eb381cf36811bf63f769ad60f65354aeada517c9fad2079561e56ed037b8a5"
+    },
+    "synthetic_notes": {
+      "script": "generate_synthetic_notes.py",
+      "upstream": {
+        "kind": "synthetic",
+        "seed": "0x53EEDFA7C012B0F1"
+      },
+      "license": "Apache-2.0",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/synthetic_notes.jsonl",
+      "doc_count": 1200,
+      "doc_count_breakdown": {
+        "fleeting": 150,
+        "project": 150,
+        "reading": 150,
+        "idea": 150,
+        "decision-log": 150,
+        "someday-maybe": 150,
+        "personal-crm": 150,
+        "meeting-follow": 150
+      },
+      "sha256": "b4d19f05a7b9c13bfe0bd303ef2aa7de44a321011700de1cfd6f47c247855eb3",
+      "acquired_at": "2026-05-27"
+    },
+    "enron": {
+      "script": "acquire_enron.py",
+      "upstream": {
+        "kind": "http_tarball",
+        "url": "https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz",
+        "etag": "\"1a6b8803-51583da2f8640\"",
+        "last_modified": "2015-05-07T20:35:29Z",
+        "tarball_sha256": "b3da1b3fe0369ec3140bb4fbce94702c33b7da810ec15d718b3fadf5cd748ca7"
+      },
+      "license": "LicenseRef-Enron-Research-Use",
+      "distribution": "commit",
+      "notes": "HITL OK (2026-05-27) with the CMU April-2026 impersonation note recorded in corpus-card.md. Tarball cached at data/corpus-data/downloads/enron_mail_20150507.tar.gz (gitignored).",
+      "output": "data/corpus-data/raw/enron.jsonl",
+      "doc_count": 2000,
+      "subsample": "round-robin across 149 users (sent-folder messages, lex-first 30/user, then RR fill)",
+      "sha256": "c4df0c71e2de1505c8114ae3f96ff5dac2769786eee6028ba2d46bf0e83486ab",
+      "acquired_at": "2026-05-27"
+    },
+    "bahmutov_dailylogs": {
+      "script": "acquire_bahmutov_dailylogs.py",
+      "upstream": {
+        "kind": "github_repo_markdown_tree",
+        "id": "bahmutov/daily-logs",
+        "revision": "521476da90da3c3f095e458c2b92e8bf379819b7",
+        "last_modified": "2020-09-01T13:48:25Z"
+      },
+      "license": "MIT",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/bahmutov_dailylogs.jsonl",
+      "doc_count": 300,
+      "sha256": "bdecf3e8ffef86dc2cb136bce9912b629f91774c41d9cf34224f3f7d8e1a0e81",
+      "acquired_at": "2026-05-27"
+    },
+    "landes_todos": {
+      "script": "acquire_landes_todos.py",
+      "upstream": {
+        "kind": "github_repo_raw_file",
+        "id": "plandes/todo-task",
+        "path": "resources/todo-dataset.json",
+        "revision": "06bcd261fe09e767282c73bf59a480a71bd8d26f",
+        "last_modified": "2018-06-29T01:38:23Z"
+      },
+      "license": "MIT",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/landes_todos.jsonl",
+      "doc_count": 500,
+      "doc_count_breakdown": {
+        "real": 253,
+        "synthesised_variants": 247
+      },
+      "sha256": "74f0248261f701856f72f2921abb1cd004b1773c13201e7b6ae5ad93e810e812",
+      "acquired_at": "2026-05-27"
+    },
+    "qaconv": {
+      "script": "acquire_qaconv.py",
+      "upstream": {
+        "kind": "github_repo_zip_file",
+        "id": "salesforce/QAConv",
+        "revision": "b1f140c39580dd4dadb4ecd35e9a247a90016407",
+        "path": "dataset/QAConv-V1.1.zip"
+      },
+      "license": "BSD-3-Clause",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/qaconv.jsonl",
+      "doc_count": 1250,
+      "sha256": "8c416c765134d971870df451eebb3246bbb79617014484e409e7d383b2bc5d1d",
+      "eval_output": "data/corpus-data/eval/qaconv_qa.jsonl",
+      "eval_qa_count": 2303,
+      "eval_sha256": "a4a3bc3307827d3c7c01af648c19534945fce6131fe0eb9f94bbf69dd660f4cf",
+      "acquired_at": "2026-06-02"
+    },
+    "qasper": {
+      "script": "acquire_qasper.py",
+      "upstream": {
+        "kind": "huggingface_dataset_static_archives",
+        "id": "allenai/qasper",
+        "revision": "fdc9d8214fbab5dd782958601db4d678e6934a54",
+        "train_dev_url": "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-train-dev-v0.3.tgz",
+        "test_url": "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-test-and-evaluator-v0.3.tgz"
+      },
+      "license": "CC-BY-4.0",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/qasper.jsonl",
+      "doc_count": 1585,
+      "sha256": "e84746e1be265db1f892a5848f88411d441dd87d7cacf0cc839f2d44886d8a0a",
+      "eval_output": "data/corpus-data/eval/qasper_qa.jsonl",
+      "eval_qa_count": 7993,
+      "eval_sha256": "299866fc33f496adc8da78b5e7c3d6a9f5f01f9f7b774f8769a4d464409239c1",
+      "acquired_at": "2026-06-02"
+    },
+    "musique": {
+      "script": "acquire_musique.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "bdsaglam/musique",
+        "note": "re-hosts StonyBrookNLP/musique v1.0 data files; StonyBrookNLP/musique is not accessible on HF Hub (returns 404). Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl directly from the bdsaglam/musique HF file store.",
+        "config": "default",
+        "split": "validation",
+        "revision": "22873a405dd809893b22ada0b499299fb612d2df",
+        "last_modified": "2024-10-05T06:57:44Z"
+      },
+      "license": "CC-BY-4.0",
+      "license_notes": "CC-BY-4.0 (Trivedi et al. 2022, MuSiQue, TACL arXiv:2108.00573). bdsaglam/musique re-hosts the canonical v1.0 files. License posture: commit-clean.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/musique_dev.jsonl",
+      "doc_count": 4834,
+      "doc_count_breakdown": {
+        "answerable": 2417,
+        "unanswerable": 2417,
+        "hop_2": 2504,
+        "hop_3": 1520,
+        "hop_4": 810
+      },
+      "sha256": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+      "acquired_at": "2026-06-16"
+    }
+  }
+}
+
+exec
+/bin/bash -lc "python - <<'PY'
+try:
+ import datasets
+ print('datasets', datasets.__version__)
+except Exception as e: print('no datasets', e)
+PY" in /home/coreyt/projects/fathomdb
+ succeeded in 860ms:
+datasets 5.0.0
+
+exec
+/bin/bash -lc "python - <<'PY'
+from datasets import load_dataset
+DATASET_ID='bdsaglam/musique'; rev='22873a405dd809893b22ada0b499299fb612d2df'
+ds=load_dataset(DATASET_ID,'default',split='validation',revision=rev)
+print(ds)
+print(ds.features)
+print(ds[0])
+PY" in /home/coreyt/projects/fathomdb
+ succeeded in 1658ms:
+Dataset({
+    features: ['id', 'paragraphs', 'question', 'question_decomposition', 'answer', 'answer_aliases', 'answerable'],
+    num_rows: 4834
+})
+{'id': Value('string'), 'paragraphs': List({'idx': Value('int64'), 'title': Value('string'), 'paragraph_text': Value('string'), 'is_supporting': Value('bool')}), 'question': Value('string'), 'question_decomposition': List({'id': Value('int64'), 'question': Value('string'), 'answer': Value('string'), 'paragraph_support_idx': Value('int64')}), 'answer': Value('string'), 'answer_aliases': List(Value('string')), 'answerable': Value('bool')}
+{'id': '2hop__153573_109006', 'paragraphs': [{'idx': 0, 'title': 'History of the Internet', 'paragraph_text': "Precursors to the web browser emerged in the form of hyperlinked applications during the mid and late 1980s (the bare concept of hyperlinking had by then existed for some decades). Following these, Tim Berners - Lee is credited with inventing the World Wide Web in 1989 and developing in 1990 both the first web server, and the first web browser, called WorldWideWeb (no spaces) and later renamed Nexus. Many others were soon developed, with Marc Andreessen's 1993 Mosaic (later Netscape), being particularly easy to use and install, and often credited with sparking the internet boom of the 1990s. Today, the major web browsers are Firefox, Internet Explorer, Google Chrome, Opera and Safari.", 'is_supporting': False}, {'idx': 1, 'title': 'Ceville', 'paragraph_text': "Ceville is a humorous graphic adventure video game developed by the German game studio Realmforge Studios and published by Kalypso Media. Despite the game's use of 3D environments and models, the gameplay is very true to the graphical point-and-click adventure tradition of gameplay, immortalized by game series like Monkey Island from LucasArts and the King's Quest series from Sierra Online.", 'is_supporting': False}, {'idx': 2, 'title': 'Zipline Safari', 'paragraph_text': "Zipline Safari is a zip-line course in Florida. It is the only zip-line course in the state, and is claimed to be the world's only zip-line created for flat land. Zipline Safari opened on 16 January 2009 in Forever Florida, a wildlife attraction near Holopaw, Florida. The zip-line cost $350,000 to build, and consists of nine platforms built up from the ground and traveled between by zip-lining. Forever Florida built the course to promote ecotourism and interaction with the natural environment of Florida.", 'is_supporting': False}, {'idx': 3, 'title': 'Parc Safari', 'paragraph_text': "Parc Safari is a zoo in Hemmingford, Quebec, Canada, and is one of the region's major tourist attractions; that has both African & Asian species of elephant.", 'is_supporting': False}, {'idx': 4, 'title': 'The Reporter (TV series)', 'paragraph_text': 'The Reporter is an American drama series that aired on CBS from September 25 to December 18, 1964. The series was created by Jerome Weidman and developed by executive producers Keefe Brasselle and John Simon.', 'is_supporting': False}, {'idx': 5, 'title': 'Earthworm Jim 4', 'paragraph_text': 'Earthworm Jim 4 is a video game in the "Earthworm Jim" series. It was originally announced by Interplay Entertainment in 2008, and referred to by Interplay as "still in development" in May 2011. Later commentary from individual developers would claim that development hadn\'t started, though desire to create a new entry in the series remained. In May 2019, it was announced that the game was to begin development exclusively for the upcoming Intellivision Amico console.', 'is_supporting': False}, {'idx': 6, 'title': 'Adobe Flash Player', 'paragraph_text': 'Availability on desktop operating systems Platform Latest version Browser support Windows XP and later Windows Server 2003 and later 27.0. 0.183 Firefox, Chrome, Chromium, Safari, Opera, Internet Explorer, Microsoft Edge Windows 2000 11.1. 102.55? Windows 98 and ME 9.0. 115.0? Windows 95 and NT 4 7.0. 14.0? Mac OS X 10.6 or later 27.0. 0.183 Firefox, Chrome, Chromium, Safari, Opera Mac OS X 10.5 10.3. 183.90? Classic Mac OS, PowerPC 7.0. 14.0? Classic Mac OS, 68k 5.0? Linux 27.0. 0.183 Firefox, Chrome, Chromium, Opera', 'is_supporting': False}, {'idx': 7, 'title': 'Apple Inc.', 'paragraph_text': "Apple Inc. is an American multinational technology company headquartered in Cupertino, California that designs, develops, and sells consumer electronics, computer software, and online services. The company's hardware products include the iPhone smartphone, the iPad tablet computer, the Mac personal computer, the iPod portable media player, the Apple Watch smartwatch, the Apple TV digital media player, and the HomePod smart speaker. Apple's consumer software includes the macOS and iOS operating systems, the iTunes media player, the Safari web browser, and the iLife and iWork creativity and productivity suites. Its online services include the iTunes Store, the iOS App Store and Mac App Store, Apple Music, and iCloud.", 'is_supporting': False}, {'idx': 8, 'title': 'Philadelphia Zoo', 'paragraph_text': 'The Philadelphia Zoo, located in the Centennial District of Philadelphia, Pennsylvania, on the west bank of the Schuylkill River, was the first true zoo in the United States. Chartered by the Commonwealth of Pennsylvania on March 21, 1859, its opening was delayed by the American Civil War until July 1, 1874. It opened with 1,000 animals and an admission price of 25 cents. For a brief time, the zoo also housed animals brought over from safari on behalf of the Smithsonian Institution, which had not yet built the National Zoo.', 'is_supporting': False}, {'idx': 9, 'title': 'Web browser', 'paragraph_text': "Apple's Safari had its first beta release in January 2003; as of April 2011, it had a dominant share of Apple-based web browsing, accounting for just over 7% of the entire browser market.", 'is_supporting': False}, {'idx': 10, 'title': 'List of The 100 episodes', 'paragraph_text': 'The 100 (pronounced The Hundred) is an American post-apocalyptic science fiction drama television series developed by Jason Rothenberg, which premiered on March 19, 2014, on The CW. It is loosely based on a 2013 book of the same name, the first in a book series by Kass Morgan. The series follows a group of teens as they become the first people from a space habitat to return to Earth after a devastating nuclear apocalypse.', 'is_supporting': False}, {'idx': 11, 'title': 'Shiira', 'paragraph_text': 'Shiira (シイラ, Japanese for the common dolphin-fish) is a discontinued open source web browser for the Mac OS X operating system. According to its lead developer Makoto Kinoshita, the goal of Shiira was "to create a browser that is better and more useful than Safari". Shiira used WebKit for rendering and scripting. The project reached version 2.3 before it was discontinued, and by December 2011 the developer\'s website had been removed.', 'is_supporting': False}, {'idx': 12, 'title': 'Traffic Department 2192', 'paragraph_text': 'Traffic Department 2192 is a top down shooter game for IBM PC, developed by P-Squared Productions and released in 1994 by Safari Software and distributed by Epic MegaGames. The full game contains three episodes (Alpha, Beta, Gamma), each with twenty missions, in which the player pilots a "hoverskid" about a war-torn city to complete certain mission objectives. The game was released as freeware under the Creative Commons License CC BY-ND 3.0 in 2007.', 'is_supporting': False}, {'idx': 13, 'title': 'Maciej Stachowiak', 'paragraph_text': "Maciej Stachowiak (; born June 6, 1976) is a Polish American software developer currently employed by Apple Inc., where he is a leader of the development team responsible for the Safari web browser and WebKit Framework. A longtime proponent of open source software, Stachowiak was involved with the SCWM, GNOME and Nautilus projects for Linux before joining Apple. He is actively involved the development of web standards, and is a co-chair of the World Wide Web Consortium's HTML 5 working group and a member of the Web Hypertext Application Technology Working Group steering committee.", 'is_supporting': False}, {'idx': 14, 'title': 'Ellery Queen (TV series)', 'paragraph_text': 'Ellery Queen is an American TV series, developed by Richard Levinson and William Link, who based it on the fictional character of the same name. The series ran on NBC from September 11, 1975, to April 4, 1976 featuring the titular fictional sleuth. The series stars Jim Hutton as the titular character, and David Wayne as his father, Inspector Richard Queen.', 'is_supporting': False}, {'idx': 15, 'title': 'Hunting', 'paragraph_text': 'In the 19th century, southern and central European sport hunters often pursued game only for a trophy, usually the head or pelt of an animal, which was then displayed as a sign of prowess. The rest of the animal was typically discarded. Some cultures, however, disapprove of such waste. In Nordic countries, hunting for trophies was—and still is—frowned upon. Hunting in North America in the 19th century was done primarily as a way to supplement food supplies, although it is now undertaken mainly for sport.[citation needed] The safari method of hunting was a development of sport hunting that saw elaborate travel in Africa, India and other places in pursuit of trophies. In modern times, trophy hunting persists and is a significant industry in some areas.[citation needed]', 'is_supporting': False}, {'idx': 16, 'title': 'Safari School', 'paragraph_text': 'Safari School is a BBC Two reality television series presented by Dr Charlotte Uhlenbroek in which eight celebrities take part in a four-week ranger training course in the Shamwari Game Reserve in South Africa.', 'is_supporting': False}, {'idx': 17, 'title': 'African Safari Wildlife Park', 'paragraph_text': 'The African Safari Wildlife Park is a drive through wildlife park in Port Clinton, Ohio, United States. Visitors can drive through the preserve and watch and feed the animals from their car. Visitors can spend as much time in the preserve as they wish, observing and feeding the animals, before proceeding to the walk through part of the park, called Safari Junction. The park is closed during the winter.', 'is_supporting': False}, {'idx': 18, 'title': 'White armored car', 'paragraph_text': 'The White armored car was a series of armored cars developed by the White Motor Company in Cleveland, Ohio from 1915.', 'is_supporting': False}, {'idx': 19, 'title': 'Blue Tea Games', 'paragraph_text': 'The 14th game of this series. The BETA game was released in September 2017. This episode will be developed by Blue Tea Games who return to the series since 2014.', 'is_supporting': False}], 'question': "Who developed the eponymous character from the series that contains Mickey's Safari in Letterland?", 'question_decomposition': [{'id': 153573, 'question': "What series is Mickey's Safari in Letterland from?", 'answer': 'Mickey Mouse', 'paragraph_support_idx': None}, {'id': 109006, 'question': 'Who developed #1 ?', 'answer': 'Walt Disney', 'paragraph_support_idx': None}], 'answer': 'Walt Disney', 'answer_aliases': [], 'answerable': False}
+
+exec
+/bin/bash -lc 'python -m pytest tests/corpus/scripts/test_acquire_musique.py -q' in /home/coreyt/projects/fathomdb
+ succeeded in 1598ms:
+......                                                                   [100%]
+6 passed in 1.44s
+
+exec
+/bin/bash -lc 'wc -l data/corpus-data/raw/musique_dev.jsonl && head -1 data/corpus-data/raw/musique_dev.jsonl | cut -c1-500' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+4834 data/corpus-data/raw/musique_dev.jsonl
+{"answer": "Walt Disney", "answer_aliases": [], "answerable": false, "hop_count": 2, "id": "2hop__153573_109006", "paragraphs": [{"idx": 0, "is_supporting": false, "text": "Precursors to the web browser emerged in the form of hyperlinked applications during the mid and late 1980s (the bare concept of hyperlinking had by then existed for some decades). Following these, Tim Berners - Lee is credited with inventing the World Wide Web in 1989 and developing in 1990 both the first web server, and the
+
+exec
+/bin/bash -lc "find data/corpus-data -maxdepth 2 -type f | head && git check-ignore -v data/corpus-data/raw/musique_dev.jsonl || true && find tests/corpus/scripts -maxdepth 1 -name 'test_*.py' -not -name 'test_acquire_musique.py' -print -exec sed -n '1,180p' {} \\;" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+data/corpus-data/eval/qaconv_qa.jsonl
+data/corpus-data/eval/qasper_qa.jsonl
+data/corpus-data/eval/enronqa_qa.jsonl
+data/corpus-data/eval/qmsum_qa.jsonl
+data/corpus-data/raw/qmsum.jsonl
+data/corpus-data/raw/bahmutov_dailylogs.jsonl
+data/corpus-data/raw/chain_connectives.jsonl
+data/corpus-data/raw/qaconv.jsonl
+data/corpus-data/raw/musique_dev.jsonl
+data/corpus-data/raw/qasper.jsonl
+.gitignore:9:/data/corpus-data/	data/corpus-data/raw/musique_dev.jsonl
+tests/corpus/scripts/test_build_ir_gold.py
+"""Unit tests for build_ir_gold.transform_row (WI-2 tracers + WI-3a spans).
+
+Pure-function tests — no corpus, no network. Run: `pytest tests/corpus/scripts/`.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+import build_ir_gold as b  # noqa: E402
+
+
+def test_qrels_version_bumped_for_schema_change():
+    assert b.QRELS_VERSION == "ir-c-reused-v2"
+
+
+def test_positive_row_emits_promoted_tracers_and_spans():
+    row = {
+        "qa_id": "1",
+        "question": "what was decided?",
+        "answer_type": "span",
+        "evidence_doc_ids": ["D"],
+        "evidence_spans": [{"doc_id": "D", "start": 5, "end": 20}],
+    }
+    gq, reason = b.transform_row("qmsum", row, {"D"})
+    assert reason == ""
+    # Promoted (non-underscore) tracers; legacy keys gone.
+    assert gq["source"] == "qmsum"
+    assert gq["answer_type"] == "span"
+    assert gq["query_origin"] == "human_dataset"
+    assert "_source" not in gq and "_answer_type" not in gq
+    # Span carried into the locator.
+    loc = gq["required_evidence"][0]["locator"]
+    assert loc["kind"] == "span"
+    assert loc["spans"] == [{"doc_id": "D", "start": 5, "end": 20}]
+
+
+def test_whole_body_locator_when_no_spans():
+    row = {
+        "qa_id": "2",
+        "question": "who attended?",
+        "answer_type": "free_form",
+        "evidence_doc_ids": ["D"],
+        "evidence_spans": [],
+    }
+    gq, reason = b.transform_row("enronqa", row, {"D"})
+    assert reason == ""
+    loc = gq["required_evidence"][0]["locator"]
+    assert loc["kind"] == "whole_body"
+    assert "spans" not in loc
+
+
+def test_spans_are_filtered_per_doc():
+    # A multi-doc evidence row: each unit only carries its own doc's spans.
+    row = {
+        "qa_id": "3",
+        "question": "q",
+        "answer_type": "span",
+        "evidence_doc_ids": ["D1", "D2"],
+        "evidence_spans": [
+            {"doc_id": "D1", "start": 0, "end": 4},
+            {"doc_id": "D2", "start": 7, "end": 9},
+        ],
+    }
+    gq, reason = b.transform_row("qaconv", row, {"D1", "D2"})
+    assert reason == ""
+    by_doc = {u["doc_id"]: u["locator"] for u in gq["required_evidence"]}
+    assert by_doc["D1"]["spans"] == [{"doc_id": "D1", "start": 0, "end": 4}]
+    assert by_doc["D2"]["spans"] == [{"doc_id": "D2", "start": 7, "end": 9}]
+
+
+def test_negative_row_keeps_tracers_and_empty_denominator():
+    row = {
+        "qa_id": "4",
+        "question": "is X mentioned?",
+        "answer_type": "abstain",
+        "evidence_doc_ids": ["D"],
+        "evidence_spans": [],
+    }
+    gq, reason = b.transform_row("qaconv", row, {"D"})
+    assert reason == ""
+    assert gq["query_class"] == "negative"
+    assert gq["required_evidence"] == []
+    assert gq["source"] == "qaconv"
+    assert gq["query_origin"] == "human_dataset"
+    assert "_source" not in gq
+
+exec
+/bin/bash -lc "sed -n '1,240p' scripts/agent-test.sh && grep -R \"pytest\" -n scripts src/python pyproject.toml setup.cfg pytest.ini . | head -50" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Run unit tests across language surfaces.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent-output.sh
+. "$SCRIPT_DIR/lib/agent-output.sh"
+cd_repo_root
+
+# Scripts (bash): set-version.sh two-axis enforcement.
+run_capped test-set-version bash scripts/tests/test_set_version.sh
+
+# Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+
+# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+# python3 -m http.server fixture; never hits crates.io.
+run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+
+# Scripts (bash): structural shape of the post-publish smoke scripts.
+# NOT integration — see test header for why behavior is exercised at tag
+# time by the release workflow, not here.
+run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+
+# actionlint binary present + rejects deliberately-broken fixture.
+run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
+# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+
+# Rust
+run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+
+# Python
+python_bin=""
+if [ -x .venv/bin/python ]; then
+  python_bin=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  python_bin="$(command -v python3)"
+fi
+
+if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
+  run_capped test-python "$python_bin" -m pytest -q src/python/tests
+else
+  skip_notice test-python "pytest not installed or no tests dir"
+fi
+
+# TypeScript
+if [ -d src/ts/node_modules ]; then
+  run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+else
+  skip_notice test-ts "src/ts/node_modules not installed"
+fi
+scripts/agent-test.sh:43:if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
+scripts/agent-test.sh:44:  run_capped test-python "$python_bin" -m pytest -q src/python/tests
+scripts/agent-test.sh:46:  skip_notice test-python "pytest not installed or no tests dir"
+scripts/bootstrap.sh:15:# Python dev tooling — pytest, hypothesis, ruff, pyright.
+scripts/bootstrap.sh:17:  echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."
+scripts/bootstrap.sh:21:  .venv/bin/python -c 'import pytest, hypothesis'
+src/python/pyproject.toml:15:test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6"]
+src/python/pyproject.toml:18:dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6"]
+src/python/pyproject.toml:38:# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
+src/python/pyproject.toml:45:[tool.pytest.ini_options]
+src/python/pyproject.toml:49:# pytest's prepend import mode without an editable install of the harness.
+src/python/tests/test_runtime_event_shape.py:20:import pytest
+src/python/tests/test_runtime_event_shape.py:78:        pytest.skip("FATHOMDB_SKIP_NETWORK_TESTS set; skipping network-hitting test")
+src/python/tests/test_property_template.py:12:import pytest
+src/python/tests/test_property_template.py:21:    pytest.skip("hypothesis not installed; install with `pip install -e src/python[test]`",
+src/python/tests/test_save_time_validation.py:11:import pytest
+src/python/tests/test_save_time_validation.py:24:        with pytest.raises(SchemaValidationError):
+src/python/tests/test_functional_graph.py:15:import pytest
+src/python/tests/test_functional_graph.py:112:    with pytest.raises(InvalidArgumentError):
+src/python/tests/test_functional_graph.py:136:    with pytest.raises(InvalidArgumentError):
+src/python/tests/test_workflow_yaml.py:5:gated on any env var; they run on every ``pytest`` invocation. See
+src/python/tests/test_workflow_yaml.py:44:import pytest
+src/python/tests/test_workflow_yaml.py:62:    pytest fixture, not via pyproject discovery."""
+src/python/tests/test_workflow_yaml.py:158:@pytest.mark.parametrize(
+src/python/tests/test_errors.py:11:import pytest
+src/python/tests/test_errors.py:58:@pytest.mark.parametrize("cls", LEAF_CLASSES)
+src/python/tests/test_errors.py:113:        with pytest.raises(WriteValidationError) as excinfo:
+src/python/tests/test_functional_graph_arm.py:16:import pytest
+src/python/tests/test_functional_graph_arm.py:108:        with pytest.raises(TypeError, match="use_graph_arm"):
+src/python/tests/test_functional_graph_arm.py:110:        with pytest.raises(TypeError, match="use_graph_arm"):
+src/python/tests/test_ffi_safety.py:13:import pytest
+src/python/tests/test_ffi_safety.py:29:    with pytest.raises(BaseException) as excinfo:
+src/python/tests/test_ffi_safety.py:65:        with pytest.raises(WriteValidationError) as excinfo:
+src/python/tests/test_ffi_safety.py:94:        with pytest.raises(WriteValidationError) as excinfo:
+src/python/tests/test_ffi_safety.py:119:        with pytest.raises(WriteValidationError):
+src/python/tests/test_ffi_safety.py:147:@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
+src/python/tests/test_ffi_safety.py:156:        with pytest.raises(WriteValidationError) as excinfo:
+src/python/tests/test_ffi_safety.py:163:@pytest.mark.parametrize("field_factory", _STRING_FILTER_FACTORIES)
+src/python/tests/test_ffi_safety.py:172:        with pytest.raises(WriteValidationError) as excinfo:
+src/python/tests/test_r2_harness.py:19:import pytest
+src/python/tests/test_r2_harness.py:197:    with pytest.raises(ValueError, match=CORPUS_HASH_PREFIX):
+src/python/tests/test_release_surface.py:16:(~30-60s cold). Default ``pytest`` invocations skip with a clear log
+src/python/tests/test_release_surface.py:30:import pytest
+src/python/tests/test_release_surface.py:38:        pytest.skip(
+src/python/tests/test_release_surface.py:46:        pytest.skip("FATHOMDB_SKIP_NETWORK_TESTS set; skipping network-hitting test")
+srgrep: src/python/tests/__pycache__/test_release_surface.cpython-312-pytest-7.4.4.pyc: binary file matches
+c/python/tests/test_release_surface.py:49:@pytest.fixture(scope="module")
+src/python/tests/test_release_surface.py:50:def release_venv_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
+src/python/tests/test_interfaces_doc.py:17:import pytest
+src/python/tests/test_interfaces_doc.py:34:@pytest.mark.parametrize("doc_path", [PYTHON_INTERFACE_DOC, TS_INTERFACE_DOC])
+src/python/tests/test_interfaces_doc.py:43:@pytest.mark.parametrize("doc_path", [PYTHON_INTERFACE_DOC, TS_INTERFACE_DOC])
+grep: src/python/tests/__pycache__/test_verify_embed_db.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_search.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_no_recovery_surface.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_interfaces_doc.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_interfaces_doc.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_slice15_byo_llm_surface.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_scaffold.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_no_recovery_surface.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_property_template.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_typed_errors.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_retrieve.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r2_harness.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_reranker.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r2_harness.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_graph.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_typed_errors.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_graph_arm.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_save_time_validation.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_save_time_validation.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_scaffold.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_option3_lme_pipeline.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/conftest.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_slice15_byo_llm_surface.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_p0a_batch_e2e.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_pyright_narrowing.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_graph.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_workflow_yaml.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_release_surface.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_search.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_read_list.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_retrieve.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_openreport.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_openreport.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_surface.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_use_default_embedder.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r6_enrichment.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_errors.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r2_harness.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_option2_elps_pipeline.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_workflow_yaml.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_pyright_narrowing.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_save_time_validation.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_runtime_event_shape.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_errors.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_property_template.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_use_default_embedder.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_corpus_eval_qa.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_search.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_openreport.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_surface.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_use_default_embedder.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_runtime_event_shape.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_p0a_scorer.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_workflow_yaml.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_corpus_eval_qa.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_m1_decision_rule.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_interfaces_doc.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_retrieve.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/conftest.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_runtime_event_shape.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_option3_lme_pipeline.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_slice15_byo_llm_surface.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_no_recovery_surface.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_graph_arm.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_reranker.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_pyright_narrowing.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_option2_elps_pipeline.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_read_list.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r6_enrichment.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_errors.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_surface.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/conftest.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_read_list.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_scaffold.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_property_template.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_p0a_answer_scorer.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_graph.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_m1_decision_rule.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_release_surface.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_typed_errors.cpython-312-pytest-9.1.0.pyc: binary file matches
+
+exec
+/bin/bash -lc "grep -R \"musique\\|Slice 4\\|corpus acquire\" -n dev tests/corpus README.md | head -200" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+dev/acceptance.md:103:| AC-075      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-vector-binary-quant (recall floor; real-embedder eu7 vector-stage, Slice 40) |
+dev/acceptance.md:104:| AC-076      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-text-query-latency-gates-revised (tiered; 10k binding, Slice 40)         |
+dev/acceptance.md:288:**Status:** budget **superseded by AC-076** (revised, tiered: 10k binding, 100k/1M tracked) per `ADR-0.7.0-text-query-latency-gates-revised`, HITL-ruled 2026-06-07 (0.8.0 Slice 40). The unconditional p50 ≤ 20 / p99 ≤ 150 ms at 100k below is the legacy 0.6.0 budget, retained for history. The latency is O(N) FTS-scan cost, not the tokenizer (Slice 6).
+dev/acceptance.md:1138:**Supersedes:** the informal AC-013b floor assertion (the synthetic `ac_013b_recall_at_10_floor` previously hard-asserted 0.90 on an isotropic `VaryingEmbedder` — the asserting gate ran on the wrong fixture). HITL-approved 2026-06-06; ◆ B-1 ruling (Option 1) 2026-06-08; minted at the 0.8.0 GA gated slice (Slice 40).
+dev/acceptance.md:1149:**Supersedes:** the AC-012 unconditional 100k budget (legacy: p50 ≤ 20 / p99 ≤ 150 ms asserted at `AC012_DEFAULT_N = 100_000`). HITL-ruled 2026-06-07; minted at the 0.8.0 GA gated slice (Slice 40). AC-012 retained as the legacy budget basis.
+dev/design/slice-40-gate-restructure-and-ga.md:1:# Slice 40 / GA-2 — gate restructure (AC-075/076) + GA verification design memo
+dev/design/slice-40-gate-restructure-and-ga.md:146:scoreboard); no version bump / push / tag / publish; no Slice 46 / gap-37. Recovery suites +
+dev/design/0.8.2-m1-multihop-harness.md:55:- **License/provenance.** CC-BY-4.0 (`StonyBrookNLP/musique`). Acquired by a Slice-5 script,
+dev/design/0.8.2-m1-multihop-harness.md:56:  **gitignored**, pinned by a `musique_hash`. (Acquire script is **Slice 5**, not this slice.)
+dev/design/0.8.2-m1-multihop-harness.md:223:- **Pinned provenance** — every run artifact is pinned to `musique_hash` + extractor model id + arm
+dev/design/0.8.2-m1-multihop-harness.md:262:- **AC-M1-5a** — the retrieval+answer pipeline runs end-to-end over the pinned `musique_hash` and
+dev/plans/prompts/0.8.0-slice-20.md:202:  Slice 40 verification reconciliation, **not** this additive slice. If you believe G8 needs a
+dev/plans/prompts/0.8.0-slice-27.md:129:  `netns-deny-egress` may be non-green — environmental, CI-covered at Slice 40).
+dev/plans/prompts/0.8.0-slice-31.md:192:> `apparmor_restrict_unprivileged_userns=1`; CI-covered at Slice 40). Any other red is yours to resolve
+dev/plans/prompts/0.8.0-slice-31.md:264:  "next_step_for_orchestrator": "Slice 31 merged at <sha>; review (codex §9) + verify; on PASS close Slice 31 AND Slice 30 (its [P2] now resolved). Pointer → Slice 40."
+dev/plans/prompts/0.8.0-slice-31.md:291:> **and** Slice 30 (its [P2] now resolved) → pointer to Slice 40.
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE.md:146:  `apparmor_restrict_unprivileged_userns=1`; wired into CI at Slice 40 gate (n)) — name that
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE.md:161:- **At Slice 35 / Slice 40** — deferred-feature ADR decisions; GA sign-off request. (Slice 35 was
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE.md:165:  **deferred post-0.8.0 Slice 46** (`0.8.0-slice-46.md`); do **not** spawn 46 in the 0.8.0 campaign. After
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE.md:166:  Slice 35 signs + closes, the next and final 0.8.0 gate is **Slice 40** GA sign-off.)
+dev/plans/prompts/0.8.1-slice-35-g4-filter-grammar.md:356:  "next_step_for_orchestrator": "Slice 35 merged at <sha>; G4 filter grammar live; review, verify, close + note Slice 40 waits on all prior slices"
+dev/plans/prompts/0.8.0-slice-40.md:1:# Slice 40 (RE-SCOPED) — Gate restructure (AC-075/076) + Verification + Release Readiness · `[implementation + verification]` · depends-on: 5,10,15,20,25,30,35,6 (all CLOSED)
+dev/plans/prompts/0.8.0-slice-40.md:3:> **You are the re-scoped Slice 40 agent — the 0.8.0 GA terminus.** This prompt is **self-contained** — trust
+dev/plans/prompts/0.8.0-slice-40.md:55:3. `dev/plans/0.8.0-implementation.md` → "Slice 40" — the **original** contract (the verification battery +
+dev/plans/prompts/0.8.0-slice-40.md:127:tag/publish; the deferred Slice 46 / gap-37. **Do NOT edit `STATUS-0.8.0.md`** (orchestrator finalizes the
+dev/plans/prompts/0.8.0-slice-40.md:128:scoreboard + `Phase 0.8.0 CLOSED`). New ACs are limited to **AC-075 + AC-076** (Slice 40 is a gated slice;
+dev/plans/prompts/0.8.0-slice-40.md:224:git merge --no-ff slice-40-<TS> -m "feat(0.8.0): Slice 40 — gate restructure (AC-075 recall-verdict, AC-076 ac_012 tier) + release verification + AC-037 CI gate (n)"
+dev/plans/prompts/0.8.0-slice-46.md:1:# Slice 46 — Deferred framing-ADRs (POST-0.8.0): confidence-vs-importance (F9) + fielded-FTS-bm25f (F5) — experiment-gated · `[design-adr]` · depends-on: 35 (graph/grammar ADRs), 40 (0.8.0 GA), corpus/eval pipeline
+dev/plans/prompts/0.8.0-slice-46.md:11:> **You are the Slice 46 design-ADR agent** (when un-parked). Self-contained; you author **two framing
+dev/plans/prompts/0.8.0-slice-46.md:149:git merge --no-ff slice-46-<TS> -m "docs(0.8.x): Slice 46 — confidence-vs-importance + fielded-FTS-bm25f framing-ADRs (experiment-gated; status proposed)"
+dev/plans/prompts/0.8.0-slice-35.md:62:   parked in Slice 46. On any conflict, the contract-as-amended-by-this-split wins and you flag it.
+dev/plans/prompts/0.8.0-slice-35.md:128:> answers** are acceptable (that bar is correct for these two; the experiment-gated ADRs live in Slice 46).
+dev/plans/prompts/0.8.0-slice-35.md:199:  -m "docs(0.8.0): Slice 35 — graph-traversal-scope + filter-grammar design-ADRs (status proposed; awaiting HITL); F9/F5 deferred to Slice 46"
+dev/plans/prompts/0.8.0-slice-35.md:211:(those are Slice 46). Scope creep vs justified deviation: if a cited anchor is gone, or an upstream decision
+dev/plans/prompts/0.8.0-slice-30.md:288:> `apparmor_restrict_unprivileged_userns=1`; CI-covered at Slice 40). Any other red is yours to
+dev/plans/prompts/0.8.0-slice-30.md:383:  "next_step_for_orchestrator": "Slice 30 merged to main at <sha>; run 30.b parity-matrix + reader-isolation verify + codex §9; close + advance pointer to Slice 40 (final). Slice 27 (Rust pin) + 31/32 remain reserved."
+dev/plans/prompts/0.8.0-slice-30.md:418:> leak; Search unregressed. On PASS → close, advance pointer to **Slice 40** (final verification +
+dev/plans/prompts/0.8.0-slice-0b.md:106:  (X2; Slice 40 enforces as a release gate).
+dev/plans/prompts/0.8.0-slice-33.md:150:  environmental, CI-covered at Slice 40).
+dev/plans/prompts/0.8.0-slice-34.md:9:> ADRs) and Slice 40 (final verification) — keep it tight.
+dev/plans/prompts/0.8.0-slice-34.md:226:  `netns-deny-egress` may be non-green — environmental, CI-covered at Slice 40; **AC-050c removal-detect**
+dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md:195:> `apparmor_restrict_unprivileged_userns=1` blocks `unshare -rUn`; CI-covered at Slice 40
+dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md:109:   R-item/G-gap + TDD test names; **mint AC-078+ only at Slice 40 / the R2 eval gate (HITL)**.
+dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md:137:15+20+25, gated on **R2** → **Slice 40** GA battery → prepare **◆ 0.8.1 GA sign-off**.
+dev/plans/prompts/0.8.0-slice-25.md:358:> (host `apparmor_restrict_unprivileged_userns=1`; CI-covered at Slice 40). Any other red is yours
+dev/plans/prompts/0.8.1-slice-25-r2-parity-eval.md:90:7. `dev/plans/IR-C-test-query-quality-instrumentation-plan.md` — the corpus acquire runbook.
+dev/plans/prompts/0.8.x-IR-1-recall-measure.md:9:> 2. **Slice 40 merged** — AC-075/076 are on `main` (so **AC-077** is cleanly the next id; the Phase 2 guard
+dev/plans/prompts/0.8.x-IR-1-recall-measure.md:10:>    needs AC-076 to be the real max). Slice 40 is itself gated on the **B-1 corpus-basis ruling**.
+dev/plans/prompts/0.8.1-slice-5-r0-recall-cdf.md:78:4. `dev/plans/IR-C-test-query-quality-instrumentation-plan.md` — corpus acquire runbook.
+dev/plans/prompts/0.8.2-slice-4.md:1:# Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]`
+dev/plans/prompts/0.8.2-slice-4.md:3:> **You are the Slice 4 implementer** for FathomDB 0.8.2/M1. Self-contained; trust this + on-disk state.
+dev/plans/prompts/0.8.2-slice-4.md:27:2. **`dev/plans/plan-0.8.2.md` §4 "Slice 4"** — your authoritative contract.
+dev/plans/prompts/0.8.2-slice-4.md:35:1. **`tests/corpus/scripts/acquire_musique.py`** — deterministic acquisition of **MuSiQue-Ans, distractor
+dev/plans/prompts/0.8.2-slice-4.md:36:   setting** (CC-BY-4.0, `StonyBrookNLP/musique`). Prefer HF `datasets` (v5.0.0 is installed); if the HF
+dev/plans/prompts/0.8.2-slice-4.md:38:   Write raw to `data/corpus-data/raw/musique_*.jsonl` (gitignored). Acquire **both** the answerable dev
+dev/plans/prompts/0.8.2-slice-4.md:46:3. **Pin `musique_hash`** via the `freeze_corpus.py` hashing convention; add a `musique` entry to
+dev/plans/prompts/0.8.2-slice-4.md:48:4. **Manifest artifact** → `dev/plans/runs/0.8.2-m1-corpus-manifest.json`: `musique_hash`, per-hop counts
+dev/plans/prompts/0.8.2-slice-4.md:55:- **RED:** `tests/corpus/scripts/test_acquire_musique.py` (or `src/python/tests/…`) asserting, over the
+dev/plans/prompts/0.8.2-slice-4.md:59:  materializer exists. Capture the RED sha. (The `musique_hash` reproduce-check is a *verify* step à la
+dev/plans/prompts/0.8.2-slice-4.md:61:- **GREEN:** the acquire+materialize runner; tests pass; `musique_hash` pinned; re-acquire reproduces it.
+dev/plans/prompts/0.8.2-slice-4.md:67:./.venv/bin/python tests/corpus/scripts/acquire_musique.py            # (or your entrypoint) — acquires + materializes
+dev/plans/prompts/0.8.2-slice-4.md:69:# reproduce check: re-run acquire → musique_hash identical to the manifest
+dev/plans/prompts/0.8.2-slice-4.md:80:git merge --no-ff "$BR" -m "feat(0.8.2/M1 Slice 4): MuSiQue-Ans corpus acquire + pin musique_hash (shared corpus for 5∥10)"
+dev/plans/prompts/0.8.2-slice-4.md:91:`0.8.2-slice-4`; `tdd_evidence.red_commit_sha`; include the pinned `musique_hash` + per-hop/answerable
+dev/plans/prompts/0.8.2-slice-4.md:92:counts in `agent_verify_result`; `next_step_for_orchestrator` = "corpus pinned at <musique_hash>; fan out
+dev/plans/prompts/0.8.2-slice-4.md:93:Slice 5 ∥ Slice 10, both reproduce from `acquire_musique.py`").
+dev/plans/prompts/0.8.2-slice-4.md:97:(acquire source used, musique_hash, per-hop + answerable/unanswerable counts, merge SHA).
+dev/plans/prompts/scaffolds/3-GA-2-slice-40.md:4:Apply the ◆ B-1 ruling to Slice 40: pin eu7's corpus input, finalize AC-075, resolve B-3/`ac_020`, finish the
+dev/plans/prompts/0.8.1-CONTINUATION-HANDOFF.md:23:- **NOT STARTED:** Slice 25 (R2 parity eval), Slice 30 (R3 graph arm), Slice 40 (GA).
+dev/plans/prompts/0.8.1-CONTINUATION-HANDOFF.md:148:   test names; **mint AC-078+ only at Slice 40 / the R2 eval gate (HITL)**.
+dev/plans/prompts/0.8.1-CONTINUATION-HANDOFF.md:157:- **0.8.1 GA sign-off** (Slice 40) — X1/X2/X3 all-green, footprint invariant held, **#5/#6/#7 landed**,
+dev/plans/prompts/0.8.1-CONTINUATION-HANDOFF.md:169:go/no-go on R2] → **Slice 40 GA** [◆ sign-off, after landing #5/#6/#7 + the tracked items]. In parallel,
+dev/plans/prompts/0.8.x-corpus-source-expansion-search.md:208:   - Slice 4: any higher-friction cache-only source.
+dev/plans/prompts/0.8.0-slice-27-fix-1.md:172:  (only AC-037 `netns-deny-egress` may be non-green — environmental, CI-covered at Slice 40).
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md:5:point**: the GA verification slice (Slice 40, re-scoped) made the recall floor *actually assert* for the first
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md:81:### 2.2 How the gate was *wrong* before Slice 40 (the conflation)
+dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md:92:### 2.3 What Slice 40 did (the gate restructure — landed-correct on the branch)
+dev/plans/plan-0.8.2.md:116:Slice 4 pins the shared corpus once; **Slice 5 and Slice 10 then run in parallel** (baseline harness vs
+dev/plans/plan-0.8.2.md:175:### Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]` · depends-on: 0 (SIGNED) · gaps: 1–4 (Slice-0-adjacent)
+dev/plans/plan-0.8.2.md:181:**Objective.** Acquire MuSiQue-Ans (CC-BY-4.0, `StonyBrookNLP/musique`) via a **deterministic acquire
+dev/plans/plan-0.8.2.md:182:script** (committed); the raw data is **gitignored**; **pin a `musique_hash`**. Materialize the
+dev/plans/plan-0.8.2.md:185:**TDD.** RED: a test asserting (a) the acquire script reproduces the pinned `musique_hash` bit-identically,
+dev/plans/plan-0.8.2.md:191:this committed acquire script + `musique_hash`.
+dev/plans/plan-0.8.2.md:194:**Corpus.** Reproduce the **Slice-4** corpus locally from its committed acquire script + `musique_hash`
+dev/plans/plan-0.8.2.md:199:**TDD.** RED: harness test asserting (a) retrieval+answer pipeline runs over the pinned `musique_hash`,
+dev/plans/plan-0.8.2.md:213:**Objective.** Reproduce the **Slice-4** corpus locally (committed acquire script + `musique_hash`), then
+dev/plans/0.8.1-plan.md:113:  feasible). **Slice 40 enforces it as a release gate.**
+dev/plans/0.8.1-plan.md:126:**AC-078+** at **Slice 40** and at the **R2 eval gate** (the end-to-end Mem0/Zep
+dev/plans/0.8.1-implementation.md:56:`5 (R0)`. **Slice 40** closes on all of 5/10/15/20/25/30/35.
+dev/plans/0.8.1-implementation.md:229:### Slice 40 — Verification + Release Readiness (0.8.1) · `[verification]` · depends-on: 5,10,15,20,25,30,35 · gaps: 41–44
+dev/plans/0.8.1-implementation.md:253:  retrieval-quality or graph tracks. Slice 40 re-measures the number as the release confirmation.
+dev/plans/0.8.0-implementation.md:76:internal links. Slice 40 (verification) runs `mkdocs build` as a release gate; Slice 0
+dev/plans/0.8.0-implementation.md:127:  → Slice 40 (verification + release readiness)
+dev/plans/0.8.0-implementation.md:153:5. **At Slice 40** — HITL GA sign-off request.
+dev/plans/0.8.0-implementation.md:258:  board (Slice 40 enforces it as a release gate).
+dev/plans/0.8.0-implementation.md:458:  CI coverage is scheduled as Slice 40 gate (n).
+dev/plans/0.8.0-implementation.md:590:HALT. Worktree cleanup deferred to Slice 40's family close if kept warm for a reserved-gap.
+dev/plans/0.8.0-implementation.md:601:event for Slice 40 release notes. No new open question (G12-importance / F9-confidence deferred). Unclearable BLOCK on RRF
+dev/plans/0.8.0-implementation.md:656:pre-existing baseline pyright (11 errors, zero new); AC-037 userns blocker (Slice 40 CI gate (n)).
+dev/plans/0.8.0-implementation.md:810:`_fathomdb.pyi` field add); AC-037 userns blocker (Slice 40 CI gate (n)). **No new AC** (gap-tracked
+dev/plans/0.8.0-implementation.md:1084:band (32 graph-eval USER-spawned · 27 Rust pin · 33 cursor harden · 34 CLI readback) → Slice 40.
+dev/plans/0.8.0-implementation.md:1214:> 46). Pointer → **Slice 40**.
+dev/plans/0.8.0-implementation.md:1223:> F5 needs corpus retrieval profiling). They are **moved to the DEFERRED post-0.8.0 Slice 46**
+dev/plans/0.8.0-implementation.md:1317:advance to Slice 40`.
+dev/plans/0.8.0-implementation.md:1349:### Slice 40 — Verification + Release Readiness  · `[verification]` · depends-on: 5,10,15,20,25,30,35 · gaps: 41–44
+dev/plans/0.8.0-implementation.md:1365:outstanding feature worktrees (if any remain → route to §11 cleanup first; Slice 40 is the
+dev/plans/0.8.0-implementation.md:1450:it) — Slice 40 closes that gap.** Any single gate RED or `ac_013b` recall < 0.90 fails the slice. (4) Review / adversarial-verify — `codex exec
+dev/plans/0.8.0-implementation.md:1458:a Slice-40 fix-N;** Slice 40 HALTS its close until that gap re-greens. **Never override BLOCK;**
+dev/plans/0.8.0-implementation.md:1521:  adapted artifact (ADR/note/report) instead; Slice 40's 40.a emits an adapted no-worktree
+dev/plans/0.8.0-implementation.md:1530:  Bash call (never `find -delete`); Slice 40 is the final cleanup gate (ledger must be empty).
+dev/plans/0.8.0-implementation.md:1561:the bar is met or HITL signs. Non-impl slices use no worktree and (except Slice 40's 40.a) no
+dev/plans/0.8.0-implementation.md:1570:Slice 40 enforces all three as named release gates (k/l/m).
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:5:desc: Lines up every unfinished task to GA and to the IR-eval product-recall gate, with explicit dependencies, parallel tracks, and gates. Answers "B-1 or consensus first?", "when does the corpus freeze?", "when does Slice 40 land?", "when do IR-1 Phases 2–4 complete?".
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:17:- **GA track** — finish 0.8.0: rule B-1, land Slice 40, GA sign-off. *Critical path to the release.*
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:26:- If you can only push **one HITL decision**, push **B-1** — it unblocks Slice 40 *and* settles the corpus
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:42:versioned snapshot. → unblocks Slice 40.
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:47:| **GA-2** | Apply B-1 to Slice 40: pin eu7's corpus input + finalize AC-075; confirm **B-3 / `ac_020`** on the canonical runner (or route to the reader-pool band); finalize release docs (bar `m`). | B-1 |
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:48:| → **GA-merge** | Slice 40 codex §9 PASS → **merge to `main`**. AC-075/076 land. | GA-2 |
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:81:- **To 0.8.0 GA:**  GA-1 (A/B) → **B-1** → GA-2 (apply + verify + B-3) → **GA-merge** (Slice 40) → **GA sign-off**.
+dev/plans/0.8.0-GA-and-IR-eval-roadmap.md:102:- **When does Slice 40 land?** Immediately after **B-1** rules (corpus basis pinned ⇒ fidelity green) + GA-2
+dev/plans/0.8.0-plan.md:83:  (strict where feasible). **Slice 40 enforces it as a release gate.**
+dev/plans/0.8.0-plan.md:155:  canonical, zero new); AC-037 userns blocker (Slice 40 CI gate (n)).
+dev/plans/0.8.0-plan.md:217:  coverage is Slice 40 gate (n).
+dev/plans/0.8.0-plan.md:260:prompt; `implementer` prompt omits Agent/Task), §11 (worktree cleanup — Slice 40
+dev/plans/runs/0.8.0-slice-25-output.json:42:  "agent_verify_result": "PASS for the slice's surface (docs+test, no Rust/runtime change). Ran targeted steps rather than full agent-verify.sh because (a) full verify runs agent-security STRICT=1 which HARD-FAILS on AC-037 netns-deny-egress on this host (apparmor_restrict_unprivileged_userns=1; CI-covered at Slice 40 — the one documented-acceptable non-green), and (b) it would compile the whole Rust workspace for a slice with zero Rust changes. Green: pytest test_surface.py+test_no_recovery_surface.py = 17 passed; node --test full TS suite = 61 passed (surface = 10); pyright -p src/python = 0 ERRORS (canonical baseline 0/0/0 confirmed; the 25 warnings seen in the WORKTREE are reportMissingModuleSource on _fathomdb because the native ext isn't editable-installed in the throwaway worktree — NOT a regression, test_surface.py has zero diagnostics, merged canonical tree is 0/0/0); ruff = clean; prettier --check = clean; mkdocs build --strict = clean.",
+dev/plans/runs/0.8.2-slice-0-rev-review-20260617T014318Z.log:883: | `dev/design/slice-40-gate-restructure-and-ga.md` | **Slice 40 / GA-2 gate-restructure + GA verification design memo** — the ◆ B-1 correction (eu7 → ANN+ vector-stage fidelity via a test-only engine seam), AC-075/076 designs, CI split, release-doc plan, the falsifiable bar | 40/GA-2 | 2026-06-08 |
+dev/plans/runs/0.8.2-slice-0-rev-review-20260617T014318Z.log:903: - **License/provenance.** CC-BY-4.0 (`StonyBrookNLP/musique`). Acquired by a Slice-5 script,
+dev/plans/runs/0.8.2-slice-0-rev-review-20260617T014318Z.log:1099: - **AC-M1-5a** — the retrieval+answer pipeline runs end-to-end over the pinned `musique_hash` and
+dev/plans/runs/0.8.0-slice-30-output.json:48:  "agent_verify_result": "pass (targeted steps, per prompt §4 allowance to run targeted instead of full agent-verify.sh). Ran: cargo test -p fathomdb-engine (ALL green incl. pr_g2_get_by_id 6/6, pr_g3_read_collection 6/6, Slice 10 unfiltered pin); cargo test -p fathomdb --test no_recovery_surface (green); cargo clippy --workspace -- -D warnings (clean); cargo fmt --check (clean); pyright -p src/python = 0 errors (1 pre-existing unrelated yaml warning in test_workflow_yaml.py, untouched at baseline); ruff (clean); pytest test_surface.py + test_no_recovery_surface.py + test_functional_retrieve.py (24 passed); cd src/ts && npm test (67 passed incl. surface read.* live + functional-retrieve + no-recovery + release-surface); tsc typecheck clean; prettier --check clean; mkdocs build --strict (clean, no orphan/broken links). AC-037 netns-deny-egress not exercised (host apparmor; CI-covered at Slice 40) — the only acceptable non-green agent-verify step.",
+dev/plans/runs/0.8.0-slice-30-output.json:49:  "next_step_for_orchestrator": "Slice 30 merged to local main at 52ceab3. Run 30.b parity-matrix + reader-isolation verify + codex §9 (focus: reads use ReaderWorkerPool not connection.lock(); limit truly mandatory/no unbounded SELECT; active-only default on G2; Py≡TS parity exact; no recovery-denylisted name; no raw-SQL/DSL leak; Search unregressed; conformance genuinely-enforced not vacuous). On PASS → close, advance pointer to Slice 40 (final verification + release readiness). Reserved-gaps 27 (Rust pin) / 31 (NotFound class) / 32 (cursor hardening) / 33 (CLI op-store read-back) remain to prompt separately. Do NOT push/origin — HITL-only."
+dev/plans/runs/0.8.0-slice-33-output.json:44:  "blockers_encountered": "None blocking. (1) agent-verify AC-037 netns-deny-egress: BLOCKER (rootless userns+netns unavailable in this env) — the allowed environmental exemption, CI-covered at Slice 40. (2) agent-verify AC-050c removal-detect: FAIL on src/python/tests/test_surface.py (two renamed test functions not listed in CHANGELOG Removed) — PRE-EXISTING on the canonical baseline e1827c4 (reproduces identically on the untouched canonical repo); NOT introduced by Slice 33 (zero diff to test_surface.py). Surfaced for the orchestrator; not a Slice 33 regression.",
+dev/plans/runs/0.8.0-slice-33-output.json:51:  "next_step_for_orchestrator": "Slice 33 merged --no-ff onto local main (rebased onto Slice 27's f91542c; both DOC-INDEX/STATUS rows kept). Run the codex §9 review of the Slice 33 diff next. Two non-Slice-33 items to note: (a) AC-037 netns is the standing env exemption (Slice 40 CI); (b) AC-050c removal-detect FAILs on the BASELINE for src/python/tests/test_surface.py — a pre-existing CHANGELOG Removed-section gap independent of Slice 33; consider a separate cleanup. No push/origin touched."
+dev/plans/runs/0.8.0-slice-32-output.json:21:  "next_step_for_orchestrator": "Slice 32 CLOSED. Identity model settled through both lenses. Remaining: reserved-gaps 27 (Rust pin) / 33 (cursor harden) / 34 (CLI readback) + Slice 35 (deferred-feature design-ADRs, now founded on this graph-model ADR) + Slice 40 (final verification). All HITL-directed / USER-spawned as scheduled."
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:95: | `dev/design/slice-40-gate-restructure-and-ga.md` | **Slice 40 / GA-2 gate-restructure + GA verification design memo** — the ◆ B-1 correction (eu7 → ANN+ vector-stage fidelity via a test-only engine seam), AC-075/076 designs, CI split, release-doc plan, the falsifiable bar | 40/GA-2 | 2026-06-08 |
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:572:- **License/provenance.** CC-BY-4.0 (`StonyBrookNLP/musique`). Acquired by a Slice-5 script,
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:573:  **gitignored**, pinned by a `musique_hash`. (Acquire script is **Slice 5**, not this slice.)
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:680:- **Pinned provenance** — every run artifact is pinned to `musique_hash` + extractor model id + arm
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:718:- **AC-M1-5a** — the retrieval+answer pipeline runs end-to-end over the pinned `musique_hash` and
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1287:**Corpus prerequisite.** Acquire MuSiQue-Ans (CC-BY-4.0, StonyBrookNLP/musique) via an acquire script;
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1288:**gitignored**; pin a `musique_hash`. Build the per-question paragraph corpus + FTS5 index + passage
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1293:**TDD.** RED: harness test asserting (a) retrieval+answer pipeline runs over the pinned `musique_hash`,
+dev/plans/runs/STATUS-0.8.2.md:12:  shared **Slice 4** (so 5 ∥ 10 run truly parallel off one pinned corpus). **Slice 4 spawned.**
+dev/plans/runs/STATUS-0.8.2.md:13:- **Next action:** when Slice 4 lands the pinned corpus + acquire script → **fan out Slice 5 ∥ Slice 10**
+dev/plans/runs/STATUS-0.8.2.md:30:| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **IN-FLIGHT** | `runs/0.8.2-m1-corpus-manifest.json`; committed acquire script + pinned `musique_hash` |
+dev/plans/runs/STATUS-0.8.2.md:102:  `status: SIGNED`. Orchestrator refinement: **carved corpus acquisition into a shared Slice 4** (the
+dev/plans/runs/STATUS-0.8.2.md:105:  15 → 20`. Slice 4 spawned (reuses `tests/corpus/scripts/acquire_*.py` + `freeze_corpus.py` pattern).
+dev/plans/runs/0.8.0-slice-27-fix2-output.json:56:    "AC_037_netns": "environmental blocker only (CI at Slice 40) — not exercised standalone here"
+dev/plans/runs/0.8.0-slice-34-output.json:54:    "py_ts_conformance_slice25": "NOT RE-RUN locally (toolchain absent: no built py extension, no pyright, no ts node_modules). Byte-freeze proof shows zero Py/TS/SDK source change vs baseline => conformance preserved by construction; CI re-runs full cross-language at the per-PR gate / Slice 40."
+dev/plans/runs/0.8.0-slice-34-output.json:66:  "agent_verify_result": "0 violations, 1 blocker — AC-037 netns-deny-egress (unshare -rUn unavailable in this env; environmental, CI-covered at Slice 40, explicitly tolerated by the slice prompt §4). AC-050c removal-detect PASS (only added tests, removed none). All other ACs PASS.",
+dev/plans/runs/0.8.0-slice-34-output.json:74:  "next_step_for_orchestrator": "Slice 34 CLOSED on local main (after merge). Reserved-gap-34 (CLI op-store read-back) closed. Remaining 0.8.0 ladder: Slice 35 (deferred-feature ADRs), Slice 40 (final verification — wires agent-security/AC-037 into CI, full cross-language conformance + pyright + Py/TS functional suites). No push/PR performed (local-main only)."
+dev/plans/runs/0.8.0-slice-33-codex-review-20260605T213820Z.md:32:   standing exemption, CI-covered at Slice 40.
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:3:  "generated_by": "tests/corpus/scripts/acquire_musique.py",
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:5:  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:7:    "hf_id": "bdsaglam/musique",
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:11:    "note": "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. Both answerable (MuSiQue-Ans) and unanswerable contrast sets included via the 'answerable' field."
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:13:  "materialized_corpus_path": "data/corpus-data/raw/musique_dev.jsonl",
+dev/plans/runs/0.8.2-m1-corpus-manifest.json:14:  "acquire_command": "cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py",
+dev/plans/runs/0.8.0-slice-27-fix1-output.json:71:    "AC-037_netns": "BLOCKER (toolchain missing: rootless userns+netns unavailable) — environmental, acknowledged §4, CI-covered at Slice 40.",
+dev/plans/runs/0.8.0-slice-27-fix1-output.json:81:  "next_step_for_orchestrator": "Slice 27 fix-1 merged at f07aa01; re-review with codex (base 1c0d1b4 or current main); on PASS close Slice 27. Note: AC-037 netns remains the only non-green (environmental, CI at Slice 40). The raw-SQL release doctest is a documented pin (engine #[cfg(debug_assertions)] gate is canonical; verified symbol-absent in release rlib) — flag if a stricter CI-enforced release-surface assertion is wanted (would need trybuild or a RUSTDOCFLAGS no-debug-assertions doc run)."
+dev/plans/runs/0.8.0-slice-35-review-20260606T204206Z.md:46:`proposed → accepted` → CLOSED block + pointer to Slice 40.
+dev/plans/runs/0.8.0-slice-40-output.json:10:    "19d9d0c: docs(0.8.0): Slice 40 — verification plan + gate battery + routing rule",
+dev/plans/runs/0.8.0-slice-40-output.json:11:    "542ea5c: docs(0.8.0): Slice 40 Phase A results — HALT (3 RED perf/recall gates; Phase B not entered)"
+dev/plans/runs/0.8.0-slice-40-output.json:87:  "next_step_for_orchestrator": "HALT the Slice 40 close. (1) B2 is the critical real regression: open a remediation slice in the Slice-5/G1 band (6-9) for the FTS5 'porter unicode61 remove_diacritics 2' tokenizer latency cost (or HITL re-ratify the AC-012 100k budget). (2) B1: route the recall-floor calibration to HITL/ADR — the designated floor-gating test ac_013b is structurally below 0.90 on the synthetic fixture (pre-existing, v0.7.2 identical) and the 0.937 'floor holds' claim was never substantiated by THIS test; decide whether to re-point it at the real embedder / re-baseline / elevate eu7. (3) B3: confirm on the canonical perf runner or formalize as runner-pinned. Re-run Slice 40 (Phase A) after the band re-greens; only then proceed to Phase B (ci.yml gate-(n), release notes, X2/X3) and merge. Diagnostic worktrees (slice-40-* and baseline-v072-*) await cleanup; canonical is clean and unmodified."
+dev/plans/runs/0.8.0-slice-31-review-20260605T030242Z.md:3206:    strict risk minimal, CI-covered at Slice 40 (mkdocs not installable in this host).
+dev/plans/runs/0.8.0-slice-31-review-20260605T030242Z.md:3207:- DISPOSITION: PASS → close Slice 31 AND Slice 30 (its [P2] resolved by this substrate fix); pointer → Slice 40.
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:59: tests/corpus/scripts/acquire_musique.py      | 286 +++++++++++++++++++++++++++
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:61: tests/corpus/scripts/test_acquire_musique.py | 159 +++++++++++++++
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:65:tests/corpus/scripts/acquire_musique.py
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:67:tests/corpus/scripts/test_acquire_musique.py
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:70:/bin/bash -lc 'git diff --find-renames --find-copies bfc4f1e80624902855501859097ed2dfd7ea64c4 -- tests/corpus/scripts/acquire_musique.py tests/corpus/scripts/test_acquire_musique.py tests/corpus/scripts/manifest.json dev/DOC-INDEX.md dev/plans/runs/0.8.2-m1-corpus-manifest.json' in /home/coreyt/projects/fathomdb
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:81:+| `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan** — M1 slice contracts (0 design+pre-register → 4 corpus acquire → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict); reuse inventory; pre-registered endpoint + GO/NO-GO rule | 0.8.2 | 2026-06-16 |
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:82:+| `dev/plans/runs/0.8.2-m1-corpus-manifest.json` | **M1 corpus manifest artifact** — pinned `musique_hash` (sha256), per-hop counts (2/3/4), answerable vs unanswerable counts, materialized-corpus path, acquire command; consumed by Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:90:+| `tests/corpus/scripts/acquire_musique.py` | **MuSiQue-Ans corpus acquire script** — deterministic acquisition of `bdsaglam/musique` (re-hosts StonyBrookNLP/musique v1.0, CC-BY-4.0); downloads `default/validation` split (4 834 questions: answerable + unanswerable contrast set); materializes per-question paragraph corpus → `data/corpus-data/raw/musique_dev.jsonl`; pins `musique_hash` in `manifest.json`; shared prerequisite for Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:91:+| `tests/corpus/scripts/test_acquire_musique.py` | **TDD tests for MuSiQue materializer** — 6 tests: hop_count ∈ {2,3,4}; hop_count == supporting-para count (answerable); ≥1 supporting + ≥2 distractor paragraphs; unanswerable set non-empty + flagged; paragraph schema; byte-stability via manifest sha256 pin | 0.8.2 Slice 4 | 2026-06-17 |
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:100:+  "generated_by": "tests/corpus/scripts/acquire_musique.py",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:102:+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:104:+    "hf_id": "bdsaglam/musique",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:108:+    "note": "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. Both answerable (MuSiQue-Ans) and unanswerable contrast sets included via the 'answerable' field."
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:110:+  "materialized_corpus_path": "data/corpus-data/raw/musique_dev.jsonl",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:111:+  "acquire_command": "cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:137:diff --git a/tests/corpus/scripts/acquire_musique.py b/tests/corpus/scripts/acquire_musique.py
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:141:+++ b/tests/corpus/scripts/acquire_musique.py
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:146:+Source:  bdsaglam/musique on Hugging Face Hub (re-hosts StonyBrookNLP/musique v1.0).
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:147:+         StonyBrookNLP/musique is NOT directly accessible on the HF Hub (returns
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:148:+         "Repository not found"); bdsaglam/musique provides the canonical v1.0
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:149:+         data files (musique_ans_v1.0_dev.jsonl, musique_full_v1.0_dev.jsonl)
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:152:+Pinned:  bdsaglam/musique@22873a40 (last-modified 2024-10-05T06:57:44Z).
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:176:+Output: data/corpus-data/raw/musique_dev.jsonl  (gitignored).
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:178:+  tests/corpus/scripts/manifest.json           — adds 'musique' entry
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:195:+DATASET_ID = "bdsaglam/musique"
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:204:+OUT_PATH = corpus_data_dir() / "raw" / "musique_dev.jsonl"
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:323:+    count, musique_hash = write_corpus(OUT_PATH, rows)
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:325:+    print(f"[S4][ACQUIRE] musique_hash (sha256): {musique_hash}")
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:330:+    manifest["sources"]["musique"] = {
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:331:+        "script": "acquire_musique.py",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:336:+                "re-hosts StonyBrookNLP/musique v1.0 data files; "
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:337:+                "StonyBrookNLP/musique is not accessible on HF Hub (returns 404). "
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:338:+                "Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl "
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:339:+                "directly from the bdsaglam/musique HF file store."
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:349:+            "bdsaglam/musique re-hosts the canonical v1.0 files. "
+
+exec
+/bin/bash -lc "sed -n '1,140p' dev/plans/prompts/0.8.2-slice-4.md && sed -n '175,193p' dev/plans/plan-0.8.2.md && sed -n '1,120p' tests/corpus/scripts/freeze_corpus.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+# Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]`
+
+> **You are the Slice 4 implementer** for FathomDB 0.8.2/M1. Self-contained; trust this + on-disk state.
+> You own the **pre-created** worktree below; all work there; merge onto local `main` yourself when green.
+> No subagents. Recover out loud (`[DETECT]`/`[RESOLVE]`).
+
+## 0. Worktree (ALREADY CREATED — do NOT create another)
+```bash
+export CANON=/home/coreyt/projects/fathomdb
+export WT=/tmp/fdb-0.8.2-slice-4-20260617T021234Z
+export BR=slice-0.8.2-4-20260617T021234Z
+export BASE=809d7547aa3166e26451f635fbd6a580d1cb2873
+cd "$WT"
+test "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" && echo "[S4][PLAN] worktree confirmed"
+```
+Every edit path begins with `$WT`. Exception: `output.json` last under canonical `dev/plans/runs/`.
+**Raw corpus data is gitignored** (`/data/corpus-data/` in `.gitignore`) — it is NOT committed; only the
+**acquire script + manifest** are. Tripwire after edits: `git -C "$CANON" status --porcelain -- src/ dev/ tests/` → empty.
+
+## 1. Why this slice
+Both Slice 5 (baseline) and Slice 10 (graph) score on the **same** MuSiQue corpus. This slice pins it
+**once**, reproducibly, so the two parallel slices reproduce an identical corpus from one committed
+acquire script (the 0.8.1 frozen-corpus model) — not two conflicting acquisitions.
+
+## 2. Required reading
+1. `AGENTS.md` (TDD mandatory; no `--no-verify`).
+2. **`dev/plans/plan-0.8.2.md` §4 "Slice 4"** — your authoritative contract.
+3. `dev/design/0.8.2-m1-multihop-harness.md` §1 (datasets) — what the corpus must contain (MuSiQue-Ans
+   distractor, 2/3/4-hop, **answerable set + unanswerable contrast set**).
+4. **The reuse pattern** (follow it closely): `tests/corpus/scripts/acquire_*.py` (e.g.
+   `acquire_enronqa.py`, `acquire_cnn_dailymail.py` use HF `datasets`), `tests/corpus/scripts/_corpus_lib.py`,
+   `tests/corpus/scripts/freeze_corpus.py` (hash + `--reproduce` bit-identity), `tests/corpus/scripts/manifest.json`.
+
+## 3. Mandate (what this slice delivers — and not)
+1. **`tests/corpus/scripts/acquire_musique.py`** — deterministic acquisition of **MuSiQue-Ans, distractor
+   setting** (CC-BY-4.0, `StonyBrookNLP/musique`). Prefer HF `datasets` (v5.0.0 is installed); if the HF
+   dataset isn't directly loadable, fall back to the official MuSiQue release zip and **document which**.
+   Write raw to `data/corpus-data/raw/musique_*.jsonl` (gitignored). Acquire **both** the answerable dev
+   set **and** the unanswerable contrast set (MuSiQue-Full's unanswerable items, or the dataset's
+   `answerable` flag — document the source).
+2. **Materialize the per-question paragraph corpus** → a stable on-disk form both Slice 5 and 10 read:
+   per question `{id, question, hop_count (2|3|4), answer + aliases, answerable: bool, paragraphs: [{idx,
+   title, text, is_supporting}]}`. **Hop count is parseable from the MuSiQue question id** (`2hop__…`,
+   `3hop1__…`, `4hop3__…`) — use that (construction-defined, reliable); assert it matches the count of
+   supporting paragraphs where applicable.
+3. **Pin `musique_hash`** via the `freeze_corpus.py` hashing convention; add a `musique` entry to
+   `tests/corpus/scripts/manifest.json` (or a sibling manifest) with sha256 + counts + snapshot id.
+4. **Manifest artifact** → `dev/plans/runs/0.8.2-m1-corpus-manifest.json`: `musique_hash`, per-hop counts
+   (2/3/4), answerable vs unanswerable counts, the materialized-corpus path, and the acquire command.
+
+**Out of scope (do NOT build):** FTS5 index, embeddings, any retrieval/baseline arm (Slice 5); any
+graph/extractor (Slice 10); any answerer call. This slice is **acquire + materialize + pin** only.
+
+## 4. TDD (RED→GREEN; record RED sha)
+- **RED:** `tests/corpus/scripts/test_acquire_musique.py` (or `src/python/tests/…`) asserting, over the
+  materialized corpus: (a) every sampled question carries a hop_count ∈ {2,3,4} and ≥1 supporting + several
+  distractor paragraphs; (b) the **unanswerable contrast set is non-empty and flagged**; (c) re-running the
+  materializer on the same raw data is **byte-stable** (deterministic ordering). These fail before the
+  materializer exists. Capture the RED sha. (The `musique_hash` reproduce-check is a *verify* step à la
+  `freeze_corpus.py --reproduce`, run after first acquisition — not a classic RED.)
+- **GREEN:** the acquire+materialize runner; tests pass; `musique_hash` pinned; re-acquire reproduces it.
+- `log()` any sampling/subsetting (no silent cap).
+
+## 5. Self-check (from `$WT`)
+```bash
+cd "$WT"
+./.venv/bin/python tests/corpus/scripts/acquire_musique.py            # (or your entrypoint) — acquires + materializes
+FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest <your test path> -q   # green
+# reproduce check: re-run acquire → musique_hash identical to the manifest
+git -C "$CANON" status --porcelain -- src/ dev/ tests/    # empty (raw data is gitignored)
+```
+If the sandbox blocks the network download, **STOP and report** as a blocker (the human may run the
+acquire via `! ./.venv/bin/python …`); do not fake the corpus.
+
+## 6. Merge onto LOCAL `main`
+Commit on `$BR`: RED → GREEN (acquire script, materializer, manifest, test). Confirm **no raw data is
+staged** (`git status` — `data/corpus-data/` must be ignored). Never `--no-verify`. Then:
+```bash
+cd "$CANON"
+git merge --no-ff "$BR" -m "feat(0.8.2/M1 Slice 4): MuSiQue-Ans corpus acquire + pin musique_hash (shared corpus for 5∥10)"
+echo "[S4][MERGE] merged at $(git rev-parse HEAD)"
+```
+NO push/fetch/PR (the dataset DOWNLOAD is fine — that's acquisition, not a FathomDB network call). Conflict → STOP.
+
+## 7. Scope discipline
+Acquire + materialize + pin only. No retrieval/embeddings/graph/answerer. X3: a `docs/` or `dev/` note +
+`dev/DOC-INDEX.md` row for the acquire script + manifest. Escalate anything touching another slice's surface.
+
+## 8. Closure — `output.json` LAST
+`/home/coreyt/projects/fathomdb/dev/plans/runs/0.8.2-slice-4-output.json` (schema as prior slices; phase
+`0.8.2-slice-4`; `tdd_evidence.red_commit_sha`; include the pinned `musique_hash` + per-hop/answerable
+counts in `agent_verify_result`; `next_step_for_orchestrator` = "corpus pinned at <musique_hash>; fan out
+Slice 5 ∥ Slice 10, both reproduce from `acquire_musique.py`").
+
+## 9. Console contract
+`[S4][PHASE] msg` — PLAN/RED/GREEN/CHECK/MERGE/DETECT/RESOLVE/SUMMARY at each transition + final SUMMARY
+(acquire source used, musique_hash, per-hop + answerable/unanswerable counts, merge SHA).
+### Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]` · depends-on: 0 (SIGNED) · gaps: 1–4 (Slice-0-adjacent)
+**Why carved out (orchestrator refinement 2026-06-16).** The plan folded corpus acquisition into Slice 5,
+but **both** Slice 5 (baseline) and Slice 10 (graph) score on the **same** MuSiQue corpus. To run 5 ∥ 10
+truly in parallel without two worktrees authoring a conflicting acquire script, the corpus is a **shared,
+once-pinned** prerequisite (the 0.8.1 reproducible-frozen-corpus model). This is a Slice-0-adjacent
+follow-on the design revealed (the shared-corpus dependency between 5 and 10).
+**Objective.** Acquire MuSiQue-Ans (CC-BY-4.0, `StonyBrookNLP/musique`) via a **deterministic acquire
+script** (committed); the raw data is **gitignored**; **pin a `musique_hash`**. Materialize the
+**per-question paragraph corpus** (raw text per question — the shared input both 5 and 10 read). Verify
+coverage (every sampled question has its ~20 distractor paragraphs; 2/3/4-hop labels present).
+**TDD.** RED: a test asserting (a) the acquire script reproduces the pinned `musique_hash` bit-identically,
+(b) the per-question paragraph corpus is materialized with hop labels + the unanswerable contrast set.
+GREEN: the acquire+materialize runner. Output → `runs/0.8.2-m1-corpus-manifest.json` (hash, counts, paths).
+**DoD.** $0 (dataset download only). The acquire script + manifest are committed; raw corpus gitignored +
+locally reproducible. `log()` any sampling. X1 n/a; X3 + DOC-INDEX.
+**Unblocks:** Slice 5 (FTS5 + embeddings + arms) ∥ Slice 10 (graph build) — both reproduce the corpus from
+this committed acquire script + `musique_hash`.
+
+### Slice 5 — strong baseline + answerer e2e over the shared corpus (THE BAR) · `[implementation (measurement)]` · depends-on: 4 · gaps: 6–9
+#!/usr/bin/env python3
+"""COR-2 corpus freeze / verify / reconcile tool.
+
+Turns the manual COR-2 freeze checklist (corpus-card.md "Determinism" lock +
+scaffolds/5-COR-2-corpus-freeze.md) into one deterministic command. It operates
+on the on-disk corpus under data/corpus-data/raw/ (gitignored — restored from CI
+cache or rebuilt by the acquire_*.py scripts), so it MUST run where the data
+actually lives, not in an ephemeral checkout with an empty data dir.
+
+Modes
+-----
+  (default)        VERIFY  — hash every raw/*.jsonl, compare to manifest.json,
+                            report MATCH / MISMATCH / MISSING / UNMANIFESTED.
+                            Exit non-zero if anything is off.
+  --reconcile      Rewrite manifest.json sha256 + doc_count for MISMATCH sources
+                   to the values recomputed from the real bytes (prints a diff
+                   first). Fixes a stale pin (e.g. the qmsum checksum GA-1 found
+                   never matched on disk) — only ever from real bytes, never
+                   fabricated.
+  --freeze         After a clean verify, compute the snapshot (per-source
+                   sha256 + total_docs + combined corpus_hash + snapshot_id) and
+                   write tests/corpus/snapshot.json — the pinned basis IR-B/IR-C
+                   consume. Prints the corpus_hash to paste into the gold set.
+  --reproduce P    Re-hash the current corpus and assert it is bit-identical to a
+                   prior snapshot record P (the COR-2 step-4 determinism gate).
+                   On PASS, stamps reproduced_bit_identical=true in P.
+
+A snapshot that will not reproduce bit-identically is NOT frozen — `--reproduce`
+is the gate that proves it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+# Reuse the corpus lib's repo-root / data-dir resolution so paths match the
+# acquisition scripts exactly.
+from _corpus_lib import corpus_data_dir, corpus_doc_dir, repo_root
+
+# raw/*.jsonl files that are produced deterministically but NOT pinned in
+# manifest.json (synthetic generators, not upstream acquisitions). They are
+# expected members of the frozen corpus, just not manifest contracts.
+UNMANIFESTED_EXPECTED = {"chain_connectives"}
+
+SNAPSHOT_PATH = corpus_doc_dir() / "snapshot.json"
+MANIFEST_PATH = corpus_doc_dir() / "scripts" / "manifest.json"
+
+
+def _sha256_and_count(path: Path) -> tuple[str, int]:
+    """Return (sha256 of the file bytes, line count). Matches write_jsonl,
+    which hashes exactly the bytes it writes line by line."""
+    hasher = hashlib.sha256()
+    count = 0
+    with path.open("rb") as f:
+        for line in f:
+            hasher.update(line)
+            if line.strip():
+                count += 1
+    return hasher.hexdigest(), count
+
+
+def _raw_dir() -> Path:
+    return corpus_data_dir() / "raw"
+
+
+def _load_manifest() -> dict:
+    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+
+
+def _manifest_sources(manifest: dict) -> dict[str, dict]:
+    return manifest.get("sources", {})
+
+
+class Row:
+    """One source's verify result."""
+
+    def __init__(self, name: str, path: Path) -> None:
+        self.name = name
+        self.path = path
+        self.status = ""          # MATCH / MISMATCH / MISSING / UNMANIFESTED / UNKNOWN
+        self.disk_sha: str | None = None
+        self.disk_count: int | None = None
+        self.manifest_sha: str | None = None
+        self.manifest_count: int | None = None
+
+
+def verify(manifest: dict) -> list[Row]:
+    """Hash on-disk raw/*.jsonl and reconcile against the manifest."""
+    sources = _manifest_sources(manifest)
+    raw = _raw_dir()
+    rows: list[Row] = []
+    seen_files: set[Path] = set()
+
+    # 1) Every manifest source must exist on disk and match its pin.
+    for name, entry in sources.items():
+        out = repo_root() / entry["output"]
+        row = Row(name, out)
+        row.manifest_sha = entry.get("sha256")
+        row.manifest_count = entry.get("doc_count")
+        if not out.exists():
+            row.status = "MISSING"
+        else:
+            seen_files.add(out.resolve())
+            row.disk_sha, row.disk_count = _sha256_and_count(out)
+            row.status = "MATCH" if row.disk_sha == row.manifest_sha else "MISMATCH"
+        rows.append(row)
+
+    # 2) Any raw/*.jsonl not in the manifest (e.g. chain_connectives).
+    if raw.exists():
+        for f in sorted(raw.glob("*.jsonl")):
+            if f.resolve() in seen_files:
+                continue
+            stem = f.stem
+            row = Row(stem, f)
+            row.disk_sha, row.disk_count = _sha256_and_count(f)
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/agent-lint.sh && ./scripts/agent-lint.sh" in /home/coreyt/projects/fathomdb
+ succeeded in 4010ms:
+exec
+/bin/bash -lc 'cp tests/corpus/scripts/manifest.json /tmp/manifest.before && cp dev/plans/runs/0.8.2-m1-corpus-manifest.json /tmp/m1.before && python tests/corpus/scripts/acquire_musique.py >/tmp/acq.log && sha256sum data/corpus-data/raw/musique_dev.jsonl && diff -u /tmp/manifest.before tests/corpus/scripts/manifest.json || true && diff -u /tmp/m1.before dev/plans/runs/0.8.2-m1-corpus-manifest.json || true && git checkout -- tests/corpus/scripts/manifest.json dev/plans/runs/0.8.2-m1-corpus-manifest.json' in /home/coreyt/projects/fathomdb
+ succeeded in 3158ms:
+3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f  data/corpus-data/raw/musique_dev.jsonl
+--- /tmp/m1.before	2026-06-16 21:31:50.724915826 -0500
++++ dev/plans/runs/0.8.2-m1-corpus-manifest.json	2026-06-16 21:31:53.718336385 -0500
+@@ -1,7 +1,7 @@
+ {
+   "schema": "0.8.2-m1-corpus-manifest-v1",
+   "generated_by": "tests/corpus/scripts/acquire_musique.py",
+-  "generated_at": "2026-06-17T02:24:37Z",
++  "generated_at": "2026-06-17T02:31:53Z",
+   "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+   "source": {
+     "hf_id": "bdsaglam/musique",
+
+exec
+/bin/bash -lc "nl -ba tests/corpus/scripts/acquire_musique.py | sed -n '180,240p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   180	    # ── write corpus ──────────────────────────────────────────────────────────
+   181	    count, musique_hash = write_corpus(OUT_PATH, rows)
+   182	    print(f"[S4][ACQUIRE] wrote {count} questions → {OUT_PATH}")
+   183	    print(f"[S4][ACQUIRE] musique_hash (sha256): {musique_hash}")
+   184	    print()
+   185	
+   186	    # ── update manifest.json ──────────────────────────────────────────────────
+   187	    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+   188	    manifest["sources"]["musique"] = {
+   189	        "script": "acquire_musique.py",
+   190	        "upstream": {
+   191	            "kind": "huggingface_dataset",
+   192	            "id": DATASET_ID,
+   193	            "note": (
+   194	                "re-hosts StonyBrookNLP/musique v1.0 data files; "
+   195	                "StonyBrookNLP/musique is not accessible on HF Hub (returns 404). "
+   196	                "Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl "
+   197	                "directly from the bdsaglam/musique HF file store."
+   198	            ),
+   199	            "config": DATASET_CONFIG,
+   200	            "split": DATASET_SPLIT,
+   201	            "revision": DATASET_REVISION,
+   202	            "last_modified": "2024-10-05T06:57:44Z",
+   203	        },
+   204	        "license": LICENSE_SPDX,
+   205	        "license_notes": (
+   206	            "CC-BY-4.0 (Trivedi et al. 2022, MuSiQue, TACL arXiv:2108.00573). "
+   207	            "bdsaglam/musique re-hosts the canonical v1.0 files. "
+   208	            "License posture: commit-clean."
+   209	        ),
+   210	        "distribution": "cache",
+   211	        "output": "data/corpus-data/raw/musique_dev.jsonl",
+   212	        "doc_count": count,
+   213	        "doc_count_breakdown": {
+   214	            "answerable": answerable_total,
+   215	            "unanswerable": unanswerable_total,
+   216	            "hop_2": hop_total.get(2, 0),
+   217	            "hop_3": hop_total.get(3, 0),
+   218	            "hop_4": hop_total.get(4, 0),
+   219	        },
+   220	        "sha256": musique_hash,
+   221	        "acquired_at": datetime.date.today().isoformat(),
+   222	    }
+   223	    MANIFEST_PATH.write_text(
+   224	        json.dumps(manifest, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
+   225	    )
+   226	    print(f"[S4][ACQUIRE] updated manifest.json  (musique sha256={musique_hash[:16]}…)")
+   227	
+   228	    # ── write M1 corpus manifest ───────────────────────────────────────────────
+   229	    m1_manifest = {
+   230	        "schema": "0.8.2-m1-corpus-manifest-v1",
+   231	        "generated_by": "tests/corpus/scripts/acquire_musique.py",
+   232	        "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+   233	        "musique_hash": musique_hash,
+   234	        "source": {
+   235	            "hf_id": DATASET_ID,
+   236	            "revision": DATASET_REVISION,
+   237	            "config": DATASET_CONFIG,
+   238	            "split": DATASET_SPLIT,
+   239	            "note": (
+   240	                "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. "
+
+exec
+/bin/bash -lc "sed -n '1,220p' tests/corpus/scripts/acquire_cnn_dailymail.py && sed -n '1,200p' tests/corpus/scripts/acquire_enronqa.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "datasets>=3.0,<4.0",
+#   "pyarrow>=17",
+# ]
+# ///
+"""Acquire CNN/DailyMail articles into the canonical corpus JSONL.
+
+Source:  HuggingFace abisee/cnn_dailymail, config 3.0.0.
+License: Apache-2.0 (the prepared dataset). Commit OK per corpus-card.md.
+
+The HF distribution strips per-article dates and URLs, so we synthesize
+created_at deterministically across the publication window
+(2007-04-01 .. 2015-04-01) and mark provenance accordingly.
+
+Determinism:
+  - Dataset revision pinned via DATASET_REVISION below.
+  - First TARGET_COUNT rows from the train split, in HF stream order.
+  - created_at is a deterministic function of the row's HF id.
+
+Usage:
+    uv run tests/corpus/scripts/acquire_cnn_dailymail.py
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+# Make _corpus_lib importable when running via `uv run --script`.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
+
+DATASET_ID = "abisee/cnn_dailymail"
+DATASET_CONFIG = "3.0.0"
+# Pin to a specific dataset revision (HF commit SHA) for reproducibility.
+# Resolved + recorded by acquire run; first-run output prints the resolved SHA.
+DATASET_REVISION = "96df5e686bee6baa90b8bee7c28b81fa3fa6223d"
+TARGET_COUNT = 2500
+PROVENANCE = f"hf:{DATASET_ID}@{DATASET_CONFIG}"
+LICENSE_SPDX = "Apache-2.0"
+
+# Publication window for the original CNN/DM scrape — used to synthesize
+# created_at values uniformly. Documented in corpus-card.md §"Provenance".
+WINDOW_START = datetime(2007, 4, 1, tzinfo=timezone.utc)
+WINDOW_END = datetime(2015, 4, 1, tzinfo=timezone.utc)
+WINDOW_SECONDS = int((WINDOW_END - WINDOW_START).total_seconds())
+
+
+def synthesize_created_at(hf_id: str) -> str:
+    """Deterministic created_at from HF id (hash → seconds offset)."""
+    h = hashlib.sha256(hf_id.encode("utf-8")).digest()
+    offset = int.from_bytes(h[:8], "big") % WINDOW_SECONDS
+    return (WINDOW_START + timedelta(seconds=offset)).isoformat()
+
+
+def build_doc(row: dict) -> CorpusDoc:
+    hf_id = row["id"]
+    article = row["article"]
+    highlights = row["highlights"]
+    return CorpusDoc(
+        doc_id=doc_id(PROVENANCE, hf_id),
+        source_type="article",
+        title=None,                       # HF distribution has no title field
+        body=article,
+        created_at=synthesize_created_at(hf_id),
+        modified_at=None,
+        author_or_sender=None,
+        recipients=[],
+        people_mentions=[],               # filled by a later NER pass
+        project_mentions=[],
+        tags=["news", "highlights:" + str(len(highlights.split("\n")))],
+        url_or_external_id=hf_id,
+        thread_id=None,
+        parent_doc_id=None,
+        license=LICENSE_SPDX,
+        provenance=PROVENANCE + "+synthetic-date",
+    )
+
+
+def main() -> int:
+    from datasets import load_dataset  # type: ignore[import-not-found]
+
+    out_path = corpus_data_dir() / "raw" / "cnn_dailymail.jsonl"
+
+    print(f"streaming {DATASET_ID} ({DATASET_CONFIG}, revision={DATASET_REVISION})")
+    ds = load_dataset(
+        DATASET_ID,
+        DATASET_CONFIG,
+        split="train",
+        streaming=True,
+        revision=DATASET_REVISION,
+    )
+
+    def gen():
+        taken = 0
+        for row in ds:
+            if taken >= TARGET_COUNT:
+                break
+            yield build_doc(row)
+            taken += 1
+            if taken % 250 == 0:
+                print(f"  {taken}/{TARGET_COUNT}", flush=True)
+
+    count, sha = write_jsonl(out_path, gen())
+    if count != TARGET_COUNT:
+        print(f"ERROR: wanted {TARGET_COUNT} docs, got {count}", file=sys.stderr)
+        return 1
+    print(f"wrote {count} docs to {out_path}")
+    print(f"sha256 = {sha}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "datasets>=3.0,<4.0",
+#   "pyarrow>=17",
+# ]
+# ///
+"""Acquire EnronQA email docs and eval-only QA rows.
+
+Source:  HuggingFace MichaelR207/enron_qa_0922 (Ryan et al. 2025).
+Pinned:  dataset revision c0b3a919..221e (2024-09-22).
+License: not declared on the HF card; derived from the Enron base.
+         Treated as cache-only per corpus-card.md until clarified.
+
+The corpus document output remains the existing 200 selected emails.
+The upstream question/answer fields are now exported separately to
+`data/corpus-data/eval/enronqa_qa.jsonl`. Eval rows are marked grounded
+only when their email maps to one of the emitted corpus docs.
+
+Determinism: HF parquet order is fixed for a pinned revision.
+Take the first TARGET_COUNT rows from the train split.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _corpus_lib import (  # noqa: E402
+    CorpusDoc,
+    EvalQaRow,
+    EvidenceSpan,
+    corpus_data_dir,
+    doc_id,
+    qa_id,
+    write_eval_jsonl,
+    write_jsonl,
+)
+
+DATASET_ID = "MichaelR207/enron_qa_0922"
+DATASET_REVISION = "c0b3a9190fd970e83cfbe7d399a08860e43e221e"
+TARGET_COUNT = 200
+PROVENANCE = f"hf:{DATASET_ID}@{DATASET_REVISION[:8]}"
+LICENSE_SPDX = "LicenseRef-EnronQA-Undeclared"
+
+
+def native_id(row: dict[str, Any]) -> str:
+    user = row.get("user") or "unknown"
+    path = row.get("path") or "unknown"
+    return f"{user}/{path}"
+
+
+def build_doc(row: dict[str, Any]) -> CorpusDoc | None:
+    body = (row.get("email") or "").strip()
+    if not body:
+        return None
+    user = row.get("user") or "unknown"
+    nid = native_id(row)
+    return CorpusDoc(
+        doc_id=doc_id(PROVENANCE, nid),
+        source_type="email",
+        title=None,
+        body=body,
+        created_at="2002-01-01T00:00:00+00:00",
+        modified_at=None,
+        author_or_sender=user,
+        recipients=[],
+        people_mentions=[],
+        project_mentions=[],
+        tags=["enronqa-user:" + user],
+        url_or_external_id=f"enronqa:{nid}",
+        thread_id=None,
+        parent_doc_id=None,
+        license=LICENSE_SPDX,
+        provenance=PROVENANCE,
+    )
+
+
+def _list_value(row: dict[str, Any], key: str) -> list[Any]:
+    value = row.get(key) or []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _answer_texts(row: dict[str, Any], index: int) -> list[str]:
+    out: list[str] = []
+    for key in ("gold_answers", "alternate_answers"):
+        values = _list_value(row, key)
+        if index < len(values):
+            value = values[index]
+            if isinstance(value, list):
+                out.extend(str(v).strip() for v in value if str(v).strip())
+            elif str(value).strip():
+                out.append(str(value).strip())
+    return sorted(set(out))
+
+
+def _evidence_spans(row: dict[str, Any], index: int, doc: CorpusDoc) -> list[EvidenceSpan]:
+    spans: list[EvidenceSpan] = []
+    for key in ("gold_rationales", "alternate_rationales"):
+        values = _list_value(row, key)
+        if index >= len(values):
+            continue
+        rationales = values[index] if isinstance(values[index], list) else [values[index]]
+        for rationale in rationales:
+            text = str(rationale).strip()
+            start = doc.body.find(text)
+            if text and start >= 0:
+                spans.append(EvidenceSpan(doc_id=doc.doc_id, start=start, end=start + len(text), text=text))
+    return spans
+
+
+def build_qa_rows(row: dict[str, Any], doc: CorpusDoc) -> list[EvalQaRow]:
+    questions = [str(q).strip() for q in _list_value(row, "questions") if str(q).strip()]
+    rephrased = [str(q).strip() for q in _list_value(row, "rephrased_questions") if str(q).strip()]
+    out: list[EvalQaRow] = []
+    for index, question in enumerate(questions):
+        answers = _answer_texts(row, index)
+        if not answers:
+            continue
+        upstream = f"{native_id(row)}:{index}"
+        out.append(EvalQaRow(
+            qa_id=qa_id("enronqa", native_id(row), str(index)),
+            source="enronqa",
+            source_type="email",
+            question=question,
+            answers=answers,
+            answer_type="span",
+            evidence_doc_ids=[doc.doc_id],
+            evidence_spans=_evidence_spans(row, index, doc),
+            negative_doc_ids=[],
+            relation_type="mentions",
+            metadata={
+                "split": "train",
+                "user_id": row.get("user"),
+                "upstream_id": upstream,
+                "path": row.get("path"),
+                "rephrased_question": rephrased[index] if index < len(rephrased) else None,
+                "incorrect_answers": _list_value(row, "incorrect_answers"),
+                "include_email": row.get("include_email"),
+                "questions_count": row.get("questions_count"),
+            },
+            license=LICENSE_SPDX,
+            provenance=PROVENANCE,
+        ))
+    return out
+
+
+def main() -> int:
+    from datasets import load_dataset  # type: ignore[import-not-found]
+
+    raw_path = corpus_data_dir() / "raw" / "enronqa.jsonl"
+    eval_path = corpus_data_dir() / "eval" / "enronqa_qa.jsonl"
+
+    print(f"loading {DATASET_ID} (revision={DATASET_REVISION})")
+    ds = load_dataset(DATASET_ID, split="train", revision=DATASET_REVISION)
+
+    docs: list[CorpusDoc] = []
+    qa_rows: list[EvalQaRow] = []
+    seen_ids: set[str] = set()
+    for row in ds:
+        if len(docs) >= TARGET_COUNT:
+            break
+        d = build_doc(row)
+        if d is None or d.doc_id in seen_ids:
+            continue
+        seen_ids.add(d.doc_id)
+        docs.append(d)
+        qa_rows.extend(build_qa_rows(row, d))
+        if len(docs) % 50 == 0:
+            print(f"  {len(docs)}/{TARGET_COUNT}", flush=True)
+
+    count, sha = write_jsonl(raw_path, docs)
+    qa_count, qa_sha = write_eval_jsonl(eval_path, qa_rows)
+    print(f"wrote {count} docs to {raw_path}")
+    print(f"sha256 = {sha}")
+    print(f"wrote {qa_count} eval QA rows to {eval_path}")
+    print(f"eval sha256 = {qa_sha}")
+    return 0 if count == TARGET_COUNT else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+codex
+The acquisition logic materializes the expected corpus, but the committed reproduce path is not portable in a clean environment and rewrites tracked artifacts on every run. These issues undermine the slice's purpose as a reproducible shared prerequisite.
+
+Full review comments:
+
+- [P2] Declare the HF dataset dependencies — /home/coreyt/projects/fathomdb/tests/corpus/scripts/acquire_musique.py:1-1
+  In a fresh checkout that follows the repo setup, `datasets` is not installed by `src/python[dev]`, and this script has no PEP 723/`uv run --script` dependency block like the other HF acquisition scripts. The committed `acquire_command` therefore fails with `ModuleNotFoundError: datasets` for Slice 5/10 users trying to reproduce the pinned corpus unless they happen to have an untracked local package installed.
+
+- [P2] Keep reproduce runs from dirtying tracked manifests — /home/coreyt/projects/fathomdb/tests/corpus/scripts/acquire_musique.py:232-232
+  Every reproduce run rewrites the tracked M1 manifest with the current second, so running the committed acquire command from a clean checkout leaves `dev/plans/runs/0.8.2-m1-corpus-manifest.json` modified even when the corpus bytes and hash are identical. Since downstream slices are supposed to reproduce this corpus from the script, keep this timestamp stable, omit it, or only update the tracked artifact in an explicit freeze mode.
+The acquisition logic materializes the expected corpus, but the committed reproduce path is not portable in a clean environment and rewrites tracked artifacts on every run. These issues undermine the slice's purpose as a reproducible shared prerequisite.
+
+Full review comments:
+
+- [P2] Declare the HF dataset dependencies — /home/coreyt/projects/fathomdb/tests/corpus/scripts/acquire_musique.py:1-1
+  In a fresh checkout that follows the repo setup, `datasets` is not installed by `src/python[dev]`, and this script has no PEP 723/`uv run --script` dependency block like the other HF acquisition scripts. The committed `acquire_command` therefore fails with `ModuleNotFoundError: datasets` for Slice 5/10 users trying to reproduce the pinned corpus unless they happen to have an untracked local package installed.
+
+- [P2] Keep reproduce runs from dirtying tracked manifests — /home/coreyt/projects/fathomdb/tests/corpus/scripts/acquire_musique.py:232-232
+  Every reproduce run rewrites the tracked M1 manifest with the current second, so running the committed acquire command from a clean checkout leaves `dev/plans/runs/0.8.2-m1-corpus-manifest.json` modified even when the corpus bytes and hash are identical. Since downstream slices are supposed to reproduce this corpus from the script, keep this timestamp stable, omit it, or only update the tracked artifact in an explicit freeze mode.
