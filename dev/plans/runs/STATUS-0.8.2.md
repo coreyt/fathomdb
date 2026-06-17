@@ -7,12 +7,16 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 4 CLOSED → Slices 5 ∥ 10 IN-FLIGHT.** Shared MuSiQue corpus pinned/portable
-  (`musique_hash 3cff37fd…`, reproduce-stable; fix-1 closed `df1c879`). Slice 0 SIGNED. Slices 5 (baseline)
-  and 10 (graph build) spawned in parallel off the same corpus.
-- **Next action:** Slice 10 ($0) → git-gate + codex §9 + close. **Slice 5 stops at a budget checkpoint**
-  (cheap-validate + bounded priced pilot + power-sim → projected full-N cost) → orchestrator brings the
-  **$ projection to HITL** before authorizing the full priced baseline pass.
+- **State:** **Slice 10 RE-SPAWNED (running); Slice 5 HELD on a reranker prereq.** The first 5∥10 spawns
+  both **died on a transient API outage during read-only exploration** — git + worktrees + session
+  transcripts confirm **zero work written, nothing to recover** (main untouched `4fd5828`, branches at
+  baseline, worktrees clean). Infra re-checked UP (answerer 401=auth-ok; extractor host responds).
+- **◆ Slice 5 reranker prerequisite (open):** the signed `fused+rerank` fixed comparator (amendment 6)
+  needs the engine built `--features default-reranker` — currently OFF (`default = []`; `SoftFallback`
+  types present) → `search(rerank_depth>0)` soft-falls-back to identity, so `fused+rerank` ≡ `fused`.
+  Rebuild feasible (maturin 1.13.1; TinyBERT-L-2 ~4 MB weights auto-download). **Awaiting HITL: rebuild
+  the canonical extension then re-spawn Slice 5, vs defer the reranker arm.**
+- **Next action:** Slice 10 ($0, re-spawned) → git-gate + close. Resolve the Slice 5 reranker prereq → re-spawn Slice 5.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
