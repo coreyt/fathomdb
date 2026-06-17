@@ -20,6 +20,7 @@ binding. Deterministic: no clock, no RNG, no I/O.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from typing import Literal
@@ -68,8 +69,11 @@ def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) -> 
     Otherwise **NO_GO**. F1 is the primary continuous signal; EM is a coarse
     corroborating guard. Deterministic: same input → same verdict.
 
-    Raises :class:`KeyError` if a required hop or metric is missing (a malformed
-    endpoint must fail loudly, never silently return a verdict).
+    Raises :class:`KeyError` if a required hop or metric is missing, and
+    :class:`ValueError` if any EM or F1 value is non-finite (``NaN`` / ``±inf``)
+    — a malformed endpoint must fail loudly, never silently return a verdict. A
+    non-finite value is load-bearing here: ``nan < x`` is False, so a ``NaN``
+    would slip past every gate and silently yield ``GO``.
     """
     # Validate shape up front — fail loudly on a malformed endpoint.
     f1: dict[int, float] = {}
@@ -78,6 +82,14 @@ def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) -> 
         bucket = deltas_by_hop[hop]  # KeyError if a hop is missing
         f1[hop] = float(bucket["f1"])  # KeyError if a metric is missing
         em[hop] = float(bucket["em"])
+        # Reject non-finite (NaN / ±inf) values loudly: they slip past every
+        # ``<`` gate below and would silently return a verdict.
+        for metric, value in (("f1", f1[hop]), ("em", em[hop])):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"non-finite {metric} delta at hop {hop}: {value!r} "
+                    "(a malformed endpoint must fail loudly)"
+                )
 
     # Gate 1 — material positive F1 lift on every ≥3-hop stratum.
     if any(f1[hop] < MATERIAL_F1_LIFT for hop in _THREE_PLUS_HOPS):
