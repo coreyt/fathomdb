@@ -26,6 +26,7 @@ binding.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -46,9 +47,7 @@ _DESIGN_DOC = _REPO_ROOT / "dev" / "design" / "0.8.2-m1-multihop-harness.md"
 
 
 # --------------------------------------------------------------------------- #
-# Summary-statistic builders for the amended signature. The canonical GO set:
-# pooled >=3-hop ΔF1 material with CI above 0, EM not significantly worse, no
-# significantly-negative trend, no confident-wrong increase, powered.
+# Summary-statistic builders for the amended signature.
 # --------------------------------------------------------------------------- #
 def _material(f1_delta: float, f1_ci_low: float) -> dict[str, float]:
     return {"f1_delta": f1_delta, "f1_ci_low": f1_ci_low}
@@ -66,15 +65,29 @@ def _cw(increase_significant: bool) -> dict[str, bool]:
     return {"increase_significant": increase_significant}
 
 
-def _go_kwargs() -> dict[str, object]:
-    """A fully-passing (GO) argument set; tests poison one field at a time."""
-    return {
-        "material": _material(f1_delta=0.05, f1_ci_low=0.01),
-        "em": _em(ci_high=0.02),
-        "trend": _trend(neg_significant=False),
-        "confident_wrong": _cw(increase_significant=False),
-        "power_ok": True,
-    }
+def _decide(
+    *,
+    material: Mapping[str, float] | None = None,
+    em: Mapping[str, float] | None = None,
+    trend: Mapping[str, bool] | None = None,
+    confident_wrong: Mapping[str, bool] | None = None,
+    power_ok: bool = True,
+) -> str:
+    """Call ``decide`` from a fully-passing (GO) default set, overriding one field.
+
+    The defaults are the canonical GO set: pooled ≥3-hop ΔF1 material with a CI
+    above 0, EM not significantly worse, no significantly-negative trend, no
+    confident-wrong increase, powered. Each test poisons exactly one field.
+    """
+    return decide(
+        material=material if material is not None else _material(0.05, 0.01),
+        em=em if em is not None else _em(0.02),
+        trend=trend if trend is not None else _trend(False),
+        confident_wrong=(
+            confident_wrong if confident_wrong is not None else _cw(False)
+        ),
+        power_ok=power_ok,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -100,65 +113,47 @@ def test_amended_required_frozen_fields() -> None:
 # Truth table — GO only when ALL five gates hold.
 # --------------------------------------------------------------------------- #
 def test_all_gates_pass_is_go() -> None:
-    assert decide(**_go_kwargs()) == "GO"
+    assert _decide() == "GO"
 
 
 def test_f1_delta_exactly_material_with_ci_above_zero_is_go() -> None:
     # Boundary: f1_delta == MATERIAL_F1_LIFT is material (>=, not >).
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=MATERIAL_F1_LIFT, f1_ci_low=0.001)
-    assert decide(**kw) == "GO"
+    assert _decide(material=_material(MATERIAL_F1_LIFT, 0.001)) == "GO"
 
 
 def test_em_ci_high_exactly_zero_is_go() -> None:
     # Boundary: ci_high == 0 passes (EM not significantly worse; >= 0).
-    kw = _go_kwargs()
-    kw["em"] = _em(ci_high=0.0)
-    assert decide(**kw) == "GO"
+    assert _decide(em=_em(0.0)) == "GO"
 
 
 # --- single-gate failures ---------------------------------------------------- #
 def test_f1_delta_below_material_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=MATERIAL_F1_LIFT - 0.001, f1_ci_low=0.005)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(material=_material(MATERIAL_F1_LIFT - 0.001, 0.005)) == "NO_GO"
 
 
 def test_f1_ci_low_zero_is_no_go() -> None:
     # CI lower bound must be strictly > 0 (the CI must EXCLUDE 0).
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=0.05, f1_ci_low=0.0)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(material=_material(0.05, 0.0)) == "NO_GO"
 
 
 def test_f1_ci_low_negative_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=0.05, f1_ci_low=-0.01)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(material=_material(0.05, -0.01)) == "NO_GO"
 
 
 def test_significantly_negative_trend_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["trend"] = _trend(neg_significant=True)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(trend=_trend(True)) == "NO_GO"
 
 
 def test_em_ci_high_negative_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["em"] = _em(ci_high=-0.01)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(em=_em(-0.01)) == "NO_GO"
 
 
 def test_confident_wrong_increase_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["confident_wrong"] = _cw(increase_significant=True)
-    assert decide(**kw) == "NO_GO"
+    assert _decide(confident_wrong=_cw(True)) == "NO_GO"
 
 
 def test_underpowered_is_no_go() -> None:
-    kw = _go_kwargs()
-    kw["power_ok"] = False
-    assert decide(**kw) == "NO_GO"
+    assert _decide(power_ok=False) == "NO_GO"
 
 
 # --------------------------------------------------------------------------- #
@@ -172,30 +167,26 @@ def test_underpowered_is_no_go() -> None:
 # the verdict is GO.
 # --------------------------------------------------------------------------- #
 def test_flat_positive_non_growing_returns_go_old_rule_said_no_go() -> None:
-    # Flat slope -> not significantly negative.
-    flat_positive = {
-        "material": _material(f1_delta=0.04, f1_ci_low=0.015),
-        "em": _em(ci_high=0.01),
-        "trend": _trend(neg_significant=False),  # flat (==), so NOT neg-significant
-        "confident_wrong": _cw(increase_significant=False),
-        "power_ok": True,
-    }
-    assert decide(**flat_positive) == "GO"
+    verdict = _decide(
+        material=_material(0.04, 0.015),  # equal positive per-hop -> pooled material
+        em=_em(0.01),
+        trend=_trend(False),  # flat (==), so NOT significantly negative
+        confident_wrong=_cw(False),
+        power_ok=True,
+    )
+    assert verdict == "GO"
 
 
 # --------------------------------------------------------------------------- #
 # Determinism + return-domain.
 # --------------------------------------------------------------------------- #
 def test_determinism_same_input_same_verdict() -> None:
-    kw = _go_kwargs()
-    assert decide(**kw) == decide(**kw) == "GO"
-    no = _go_kwargs()
-    no["power_ok"] = False
-    assert decide(**no) == decide(**no) == "NO_GO"
+    assert _decide() == _decide() == "GO"
+    assert _decide(power_ok=False) == _decide(power_ok=False) == "NO_GO"
 
 
 def test_decide_returns_only_go_or_no_go() -> None:
-    assert decide(**_go_kwargs()) in ("GO", "NO_GO")
+    assert _decide() in ("GO", "NO_GO")
 
 
 # --------------------------------------------------------------------------- #
@@ -203,34 +194,26 @@ def test_decide_returns_only_go_or_no_go() -> None:
 # slips past every ``<`` / ``>=`` comparison and would silently return a verdict.
 # --------------------------------------------------------------------------- #
 def test_nan_f1_delta_with_otherwise_go_inputs_raises() -> None:
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=float("nan"), f1_ci_low=0.01)
     with pytest.raises(ValueError):
-        decide(**kw)
+        _decide(material=_material(float("nan"), 0.01))
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_non_finite_f1_delta_raises(bad: float) -> None:
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=bad, f1_ci_low=0.01)
     with pytest.raises(ValueError):
-        decide(**kw)
+        _decide(material=_material(bad, 0.01))
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_non_finite_f1_ci_low_raises(bad: float) -> None:
-    kw = _go_kwargs()
-    kw["material"] = _material(f1_delta=0.05, f1_ci_low=bad)
     with pytest.raises(ValueError):
-        decide(**kw)
+        _decide(material=_material(0.05, bad))
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_non_finite_em_ci_high_raises(bad: float) -> None:
-    kw = _go_kwargs()
-    kw["em"] = _em(ci_high=bad)
     with pytest.raises(ValueError):
-        decide(**kw)
+        _decide(em=_em(bad))
 
 
 # --------------------------------------------------------------------------- #

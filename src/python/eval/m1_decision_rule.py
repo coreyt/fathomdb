@@ -4,14 +4,26 @@ This module is the *executable core* of the Slice-0 pre-registration. It freezes
 two things as code, before any data is seen, so a downstream slice cannot post-hoc
 switch the endpoint:
 
-1. :func:`decide` — the GO/NO-GO computation over the per-hop ΔEM/ΔF1 endpoint.
+1. :func:`decide` — the GO/NO-GO computation over the **amended** primary endpoint
+   (pooled ≥3-hop ΔF1 vs the fixed ``fused+rerank`` comparator, with a trend gate,
+   a CI-banded EM gate, and an unanswerable-set confident-wrong guard).
    **Slice 20 imports this; it may not redefine the rule.**
 2. :func:`lint_preregistration` — the schema lint asserting the design doc
    ``dev/design/0.8.2-m1-multihop-harness.md`` carries the required frozen, dated
    pre-registration fields.
 
+**Amended 2026-06-16 (HITL — all 6 pre-freeze methodology-review amendments;
+``dev/plans/runs/0.8.2-slice-0-prereg-methodology-review.md``).** The original
+strict-monotonic ``f1[2] < f1[3] < f1[4]`` dose-response gate and per-hop-max
+baseline biased the rule toward the expected NO_GO. They are replaced by a trend
+gate (veto only on a *significantly negative* slope), a single fixed comparator,
+a pooled ≥3-hop material gate with a paired-bootstrap CI lower bound > 0, a
+whole-rule power simulation, and a CI-banded EM gate. ``decide`` now consumes
+**already-computed summary statistics** (the Slice-20 harness runs the paired
+bootstrap; this function stays pure/deterministic — no RNG, no I/O).
+
 Binding spec: ``dev/design/0.8.2-m1-multihop-harness.md`` §4 (pre-registration),
-``dev/plans/plan-0.8.2.md`` §4 (Slice 0 contract).
+``dev/plans/plan-0.8.2.md`` §4 (Slice 0 contract, AMENDED 2026-06-16).
 
 Pure stdlib — **no ``fathomdb`` / ``scipy`` / ``networkx`` import** — so it (and
 its test) run anywhere, independent of the native-extension build or the ``.venv``
@@ -30,80 +42,103 @@ from typing import Literal
 # decision-rule / mde-power-plan).
 # --------------------------------------------------------------------------- #
 
-#: The MuSiQue hop strata the endpoint is stratified by; the ≥3-hop region
-#: (3 and 4) is the graph-favored test region, hop-2 anchors the dose-response.
-REQUIRED_HOPS: tuple[int, int, int] = (2, 3, 4)
-
-#: Smallest ≥3-hop F1 lift worth a GO (2 F1 points). Slice 5 sizes N so the
-#: per-hop MDE falls below this.
+#: Smallest pooled ≥3-hop ΔF1 lift worth a GO (2 F1 points). Frozen **at/above**
+#: the Slice-5 pooled ≥3-hop MDE — the material threshold must sit at or above the
+#: MDE (the old "sized below MDE" wording was backwards; amendment 3).
 MATERIAL_F1_LIFT: float = 0.02
-
-#: ΔEM non-regression floor on the ≥3-hop strata (confident-wrong guard): the
-#: graph arm must not reduce exact-match on the strata it claims to help.
-EM_MIN_LIFT_3PLUS: float = 0.0
 
 Verdict = Literal["GO", "NO_GO"]
 _GO: Verdict = "GO"
 _NO_GO: Verdict = "NO_GO"
 
-#: Hop strata in the graph-favored region (≥3-hop) the rule evaluates for a lift.
-_THREE_PLUS_HOPS: tuple[int, ...] = tuple(h for h in REQUIRED_HOPS if h >= 3)
+
+def _require_finite(value: float, name: str) -> float:
+    """Return ``float(value)``; raise ``ValueError`` if it is non-finite.
+
+    A ``NaN`` slips past every ``<`` / ``>=`` comparison (``nan < x`` and
+    ``nan >= x`` are both False), so without this guard a malformed endpoint could
+    silently yield a verdict. A malformed endpoint must fail loudly instead (the
+    Slice-0 fix-1 guard; kept across the amendment).
+    """
+    v = float(value)
+    if not math.isfinite(v):
+        raise ValueError(
+            f"non-finite {name}: {value!r} (a malformed endpoint must fail loudly)"
+        )
+    return v
 
 
-def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) -> Verdict:
-    """Return the frozen GO/NO-GO verdict for the M1 primary endpoint.
+def decide(
+    material: Mapping[str, float],
+    em: Mapping[str, float],
+    trend: Mapping[str, bool],
+    confident_wrong: Mapping[str, bool],
+    power_ok: bool,
+) -> Verdict:
+    """Return the frozen GO/NO-GO verdict for the **amended** M1 primary endpoint.
 
-    ``deltas_by_hop`` maps each hop count in :data:`REQUIRED_HOPS` to a mapping
-    ``{"em": ΔEM, "f1": ΔF1}``, where Δ = ``(ppr-fusion) − (best baseline)`` on the
-    MuSiQue-Ans answerable set for that hop count.
+    All arguments are **already-computed summary statistics** (the Slice-20
+    harness runs the question-level paired bootstrap; this function is a pure,
+    deterministic gate — no RNG, no I/O):
+
+    * ``material`` = ``{"f1_delta", "f1_ci_low"}`` — the pooled ≥3-hop (hops 3+4)
+      ΔF1 of ``ppr-fusion`` vs the fixed ``fused+rerank`` comparator, and its
+      paired-bootstrap CI **lower** bound.
+    * ``em`` = ``{"ci_high"}`` — the pooled ≥3-hop ΔEM CI **upper** bound.
+    * ``trend`` = ``{"neg_significant"}`` — is the ΔF1-vs-hop slope *significantly
+      negative*?
+    * ``confident_wrong`` = ``{"increase_significant"}`` — did ppr-fusion
+      *significantly* raise the unanswerable-set confident-answer rate?
+    * ``power_ok`` — did the whole-rule power simulation clear ≥0.8 P(GO) under the
+      flat-positive +0.03 shape (set by Slice 5)?
 
     The rule (design §4.1 truth table) — **GO** iff *all* of:
 
-    * **material** ≥3-hop F1 lift — ``ΔF1 ≥`` :data:`MATERIAL_F1_LIFT` on **every**
-      ≥3-hop stratum (hop-3 and hop-4);
-    * **dose-responsive** — ΔF1 strictly grows across hops ``2 < 3 < 4``;
-    * **EM-non-regressing** — ``ΔEM ≥`` :data:`EM_MIN_LIFT_3PLUS` on every ≥3-hop
-      stratum (confident-wrong guard);
+    * **material** — ``f1_delta >=`` :data:`MATERIAL_F1_LIFT` **and**
+      ``f1_ci_low > 0`` (material lift *and* the CI excludes 0);
+    * **trend not significantly negative** — ``not trend["neg_significant"]``
+      (veto **only** on a significantly negative ΔF1-vs-hop slope; a flat or
+      positive slope passes — there is **no** strict-monotonic requirement);
+    * **EM not significantly worse** — ``em["ci_high"] >= 0`` (CI-banded, not a
+      point-estimate veto);
+    * **no confident-wrong increase** — ``not confident_wrong["increase_significant"]``
+      (the unanswerable-set confident-answer rate carries this role, not EM);
     * **adequately powered** — ``power_ok`` is True.
 
-    Otherwise **NO_GO**. F1 is the primary continuous signal; EM is a coarse
-    corroborating guard. Deterministic: same input → same verdict.
+    Otherwise **NO_GO**. F1 is the primary continuous signal. Deterministic: same
+    input → same verdict.
 
-    Raises :class:`KeyError` if a required hop or metric is missing, and
-    :class:`ValueError` if any EM or F1 value is non-finite (``NaN`` / ``±inf``)
-    — a malformed endpoint must fail loudly, never silently return a verdict. A
-    non-finite value is load-bearing here: ``nan < x`` is False, so a ``NaN``
-    would slip past every gate and silently yield ``GO``.
+    Raises :class:`KeyError` if a required key is missing, and :class:`ValueError`
+    if any float in ``material`` / ``em`` is non-finite (``NaN`` / ``±inf``) — a
+    malformed endpoint must fail loudly, never silently return a verdict.
     """
-    # Validate shape up front — fail loudly on a malformed endpoint.
-    f1: dict[int, float] = {}
-    em: dict[int, float] = {}
-    for hop in REQUIRED_HOPS:
-        bucket = deltas_by_hop[hop]  # KeyError if a hop is missing
-        f1[hop] = float(bucket["f1"])  # KeyError if a metric is missing
-        em[hop] = float(bucket["em"])
-        # Reject non-finite (NaN / ±inf) values loudly: they slip past every
-        # ``<`` gate below and would silently return a verdict.
-        for metric, value in (("f1", f1[hop]), ("em", em[hop])):
-            if not math.isfinite(value):
-                raise ValueError(
-                    f"non-finite {metric} delta at hop {hop}: {value!r} "
-                    "(a malformed endpoint must fail loudly)"
-                )
+    # Validate the float-bearing fields up front — fail loudly on a malformed
+    # endpoint (KeyError if a key is missing; ValueError if a value is non-finite).
+    f1_delta = _require_finite(material["f1_delta"], "material.f1_delta")
+    f1_ci_low = _require_finite(material["f1_ci_low"], "material.f1_ci_low")
+    em_ci_high = _require_finite(em["ci_high"], "em.ci_high")
 
-    # Gate 1 — material positive F1 lift on every ≥3-hop stratum.
-    if any(f1[hop] < MATERIAL_F1_LIFT for hop in _THREE_PLUS_HOPS):
+    # The boolean signals (KeyError if missing). Coerced to bool for safety.
+    trend_neg_significant = bool(trend["neg_significant"])
+    confident_wrong_increase = bool(confident_wrong["increase_significant"])
+
+    # Gate 1 — material pooled ≥3-hop F1 lift AND its CI excludes 0.
+    if f1_delta < MATERIAL_F1_LIFT or f1_ci_low <= 0.0:
         return _NO_GO
 
-    # Gate 1b — EM non-regression on the ≥3-hop strata (confident-wrong guard).
-    if any(em[hop] < EM_MIN_LIFT_3PLUS for hop in _THREE_PLUS_HOPS):
+    # Gate 2 — trend gate: veto ONLY on a significantly negative ΔF1-vs-hop slope.
+    if trend_neg_significant:
         return _NO_GO
 
-    # Gate 2 — dose-responsive: F1 lift strictly grows 2 < 3 < 4.
-    if not (f1[2] < f1[3] < f1[4]):
+    # Gate 3 — EM not significantly worse (CI-banded, not a point-estimate veto).
+    if em_ci_high < 0.0:
         return _NO_GO
 
-    # Gate 3 — adequate power.
+    # Gate 4 — confident-wrong guard (unanswerable-set confident-answer rate).
+    if confident_wrong_increase:
+        return _NO_GO
+
+    # Gate 5 — adequate whole-rule power.
     if not power_ok:
         return _NO_GO
 
@@ -114,12 +149,16 @@ def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) -> 
 # Pre-registration schema lint (frozen as code, imported by the Slice-0 test).
 # --------------------------------------------------------------------------- #
 
-#: The required frozen, dated fields the design doc must carry (design §4). Each
-#: must appear as a ``frozen-field: <key>`` line bearing a YYYY-MM-DD date.
+#: The required frozen, dated fields the design doc must carry (design §4, AMENDED
+#: 2026-06-16). Each must appear as a ``frozen-field: <key>`` line bearing a
+#: YYYY-MM-DD date. The amendment replaced ``per-hop-strata`` with the fixed
+#: ``comparator`` (= fused+rerank) and ``baseline-arms`` (incl. RRF k=60), and
+#: re-scoped ``mde-power-plan`` to the whole-rule power simulation.
 REQUIRED_FROZEN_FIELDS: tuple[str, ...] = (
     "primary-endpoint",
-    "per-hop-strata",
+    "comparator",
     "decision-rule",
+    "baseline-arms",
     "mde-power-plan",
 )
 
