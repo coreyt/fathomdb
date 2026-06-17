@@ -1,0 +1,27 @@
+{
+  "phase": "0.8.2-slice-h1",
+  "baseline_sha": "47e28700c27e72db2e3d44c728d1bafc2c1db8a8",
+  "branch": "slice-0.8.2-h1-20260617T011913Z",
+  "head_sha": "bd4b883ae3d3cfe096e32a2b4d32530fe57ed3c4",
+  "merged_to_main_sha": "74999b3af147b3fbbd0f5c9ecfd6818fa29b08b7",
+  "commits": [
+    "bd4b883: fix(0.8.2/H1): typing-only fixes → pyright -p src/python 0/0 (9 pre-existing errors)"
+  ],
+  "findings_addressed": [
+    "repo-wide pyright 9 errors → 0/0 (typing-only)"
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "n/a (pyright is the check)",
+    "red_evidence": "pyright -p src/python reported 9 errors at baseline; GREEN = 0/0/0",
+    "test_files": [
+      "src/python/tests/test_p0a_batch_e2e.py (20 passed)"
+    ]
+  },
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "Cluster 3 fix: annotated _FakeClient.__init__ output_file_id as str | None (None is legitimate — tests the defensive 'completed without file_id' path); did NOT change caller to pass a real string because None is the intent of the test.",
+    "Symlinked src/python/fathomdb/_fathomdb.abi3.so + .venv from canonical tree to worktree (local env only, not committed) to eliminate reportMissingModuleSource warnings so pyright reports true 0/0/0."
+  ],
+  "agent_verify_result": "pass — pyright -p src/python: 0 errors, 0 warnings, 0 informations; pytest test_p0a_batch_e2e.py: 20 passed in 0.14s; stray-edit tripwire: empty",
+  "next_step_for_orchestrator": "H1 merged at 74999b3af147b3fbbd0f5c9ecfd6818fa29b08b7; light codex §9 (typing-only), then close"
+}
