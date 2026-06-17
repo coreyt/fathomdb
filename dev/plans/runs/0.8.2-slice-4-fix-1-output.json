@@ -1,0 +1,39 @@
+{
+  "phase": "0.8.2-slice-4-fix-1",
+  "status": "merged",
+  "branch": "slice-0.8.2-4-20260617T021234Z",
+  "merge_commit": "df1c8795a027aa69b40811a856a0e80d0acfed69",
+  "findings_addressed": [
+    {
+      "id": "P2-1",
+      "description": "No PEP 723 dependency block in acquire_musique.py — clean checkout fails ModuleNotFoundError: datasets",
+      "fix": "Added '# /// script' block declaring 'datasets>=3.0' and 'pyarrow>=17', matching acquire_enronqa.py convention. Covers installed 5.0.0."
+    },
+    {
+      "id": "P2-2",
+      "description": "Reproduce runs dirty the tracked M1 manifest with volatile timestamps (generated_at, acquired_at)",
+      "fix": "Removed 'generated_at' from M1 manifest write. Preserved 'acquired_at' in local manifest.json by reading the existing value rather than overwriting with date.today(). Both tracked artifacts are now byte-identical across reproduce runs."
+    }
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "b31c5aa",
+    "red_commit_message": "test(0.8.2/M1 Slice 4 fix-1): RED — PEP723 dep block + reproduce-stable manifest assertions",
+    "red_tests_failed": [
+      "test_pep723_block_declares_datasets",
+      "test_m1_manifest_reproduce_stable"
+    ],
+    "red_prior_tests_passed": 6,
+    "green_commit_sha": "9a2b96d",
+    "green_tests_passed": 8,
+    "green_prior_tests_still_pass": true
+  },
+  "agent_verify_result": {
+    "musique_hash_unchanged": true,
+    "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+    "m1_manifest_byte_stable_after_reproduce": true,
+    "local_manifest_byte_stable_after_reproduce": true,
+    "all_8_tests_pass": true,
+    "canon_repo_tripwire_empty": true
+  },
+  "next_step_for_orchestrator": "re-review (codex §9), close Slice 4, fan out 5∥10"
+}

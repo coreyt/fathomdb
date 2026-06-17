@@ -7,12 +7,12 @@
 
 ## 1. Current state + next action
 
-- **State:** **◆ SIGNED 2026-06-16 (HITL coreyt) → fanning out.** Amended pre-registration signed
-  (design doc `status: SIGNED`). Slice 0 CLOSED (amended; codex PASS, 33/33). Corpus carved into a
-  shared **Slice 4** (so 5 ∥ 10 run truly parallel off one pinned corpus). **Slice 4 spawned.**
-- **Next action:** when Slice 4 lands the pinned corpus + acquire script → **fan out Slice 5 ∥ Slice 10**
-  (both reproduce the Slice-4 corpus). Slice 5's priced baseline run is HITL-authorized (cheap-validate
-  with flash-lite first; $ ledger).
+- **State:** **SLICE 4 CLOSED → Slices 5 ∥ 10 IN-FLIGHT.** Shared MuSiQue corpus pinned/portable
+  (`musique_hash 3cff37fd…`, reproduce-stable; fix-1 closed `df1c879`). Slice 0 SIGNED. Slices 5 (baseline)
+  and 10 (graph build) spawned in parallel off the same corpus.
+- **Next action:** Slice 10 ($0) → git-gate + codex §9 + close. **Slice 5 stops at a budget checkpoint**
+  (cheap-validate + bounded priced pilot + power-sim → projected full-N cost) → orchestrator brings the
+  **$ projection to HITL** before authorizing the full priced baseline pass.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -27,9 +27,9 @@
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
-| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | merged `614b333`; **fix-1 IN-FLIGHT** (2×[P2] reproducibility) | corpus reproduces `musique_hash 3cff37fd…`, 6/6 tests; fix = declare datasets dep + stable manifest |
-| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-baseline-n{N}.json` |
-| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
+| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
+| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅ | **IN-FLIGHT (→ budget checkpoint)** | `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection before full priced pass |
+| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **IN-FLIGHT** | `runs/0.8.2-m1-graph-coverage-n{N}.json`; $0 local extraction |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
@@ -98,6 +98,10 @@ Package for coreyt. **All 6 pre-freeze amendments landed + codex §9 PASS.** Sig
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — **Slice 4 CLOSED → fan out 5 ∥ 10.** Corpus pinned + reproduce-stable (fix-1 closed
+  on orchestrator verification; codex re-review waived for an objectively-verified reproducibility fix).
+  Slice 5 structured to STOP at a budget checkpoint (cheap-validate → bounded priced pilot → power-sim →
+  projected full-N cost) so HITL confirms the large spend; Slice 10 ($0) fully autonomous. Worktrees clean.
 - **2026-06-16** — **◆ HITL SIGNED the amended pre-registration** (coreyt) → fan out. Design doc
   `status: SIGNED`. Orchestrator refinement: **carved corpus acquisition into a shared Slice 4** (the
   plan folded it into Slice 5, but 5 ∥ 10 share the corpus → pin it once, reproducibly, so the two
