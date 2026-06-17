@@ -7,9 +7,10 @@
 
 ## 1. Current state + next action
 
-- **State:** PRE-SLICE-0. Plan triad authored (working tree, **uncommitted**); scoping pre-flight done.
-- **Next action:** HITL review of the scoping pre-flight (below) → commit the 0.8.2 triad → spawn
-  **Slice 0** (design + pre-registration `[design-adr]`).
+- **State:** **SLICE 0 IN-FLIGHT.** Triad committed (`b304147`); Slice 0 implementer spawned into a
+  main-thread-owned worktree off `b304147`.
+- **Next action:** await the implementer's merge-to-local-`main` + `output.json`; then gate from git,
+  run codex §9, and prepare the ◆ HITL design+pre-registration sign-off.
 - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
 
@@ -17,7 +18,7 @@
 
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
-| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | NOT STARTED | `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`) + `src/python/eval/m1_decision_rule.py` GREEN + RED sha in `output.json` |
+| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **IN-FLIGHT** | `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`) + `src/python/eval/m1_decision_rule.py` GREEN + RED sha in `output.json` |
 | 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
@@ -45,7 +46,9 @@ graph extraction) and may run in parallel.
 
 ## 5. Outstanding worktrees
 
-None.
+| Worktree | Branch | Baseline | Slice | State |
+|---|---|---|---|---|
+| `/tmp/fdb-0.8.2-slice-0-20260617T003233Z` | `slice-0.8.2-0-20260617T003233Z` | `b304147` | 0 | IN-FLIGHT |
 
 ## 6. Open HITL questions
 
