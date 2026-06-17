@@ -1,15 +1,16 @@
 ---
 title: ADR-0.8.1-deferred-f5-fielded-fts-bm25f
 date: 2026-06-13
-target_release: 0.8.2+
-desc: Framing ADR for F5 — fielded FTS / BM25F column-weighted scoring. Deferred pending R0 candidate-recall CDF (Slice 5) and R2 parity eval (Slice 25) signal. Captures what BM25F would require, why it is deferred, and the decision criteria.
-status: DEFERRED — 0.8.2+
+target_release: 0.8.5+
+desc: Framing ADR for F5 — fielded FTS / BM25F column-weighted scoring. Deferred pending R0 candidate-recall CDF (Slice 5) and R2 parity eval (Slice 25) signal. Captures what BM25F would require, why it is deferred, and the decision criteria. RE-POINTED 2026-06-16 from 0.8.2+ → 0.8.5+ (0.8.2–0.8.4 re-sequenced for the graph-adjudication track; lexical-baseline tuning must not be folded into the graph adjudication, where it would handicap the comparison).
+status: DEFERRED — 0.8.5+
 origin: dev/plans/0.8.1-implementation.md Slice 35 ("deferred-feature framing ADRs"); dev/design/0.8.0-v05-feature-triage.md F5 (DEFER 0.8.x); dev/adr/ADR-0.8.0-filter-grammar.md §7 follow-on
 ---
 
 # ADR-0.8.1 — Deferred F5: Fielded FTS / BM25F Column-Weighted Scoring
 
-**Status:** `DEFERRED — 0.8.2+`. **No code change follows from this ADR.** Framing-only.
+**Status:** `DEFERRED — 0.8.5+` (re-pointed 2026-06-16 from 0.8.2+; 0.8.2–0.8.4 host the
+graph-adjudication track — `dev/roadmap/0.8.2.md`). **No code change follows from this ADR.** Framing-only.
 HITL sign-off is NOT required in Slice 35; this ADR is authored to capture the decision
 model for future work.
 

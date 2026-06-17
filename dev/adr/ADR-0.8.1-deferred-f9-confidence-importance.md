@@ -1,15 +1,16 @@
 ---
 title: ADR-0.8.1-deferred-f9-confidence-importance
 date: 2026-06-13
-target_release: 0.8.2+
-desc: Framing ADR for F9 — confidence-vs-importance weighting on graph-retrieved nodes and edges. Deferred pending consumer signal + eval results from the BYO-LLM ingest track (Slices 0/15) and the R2 parity eval (Slice 25). Captures what Slice 15 now provides, what signal is needed before deciding, and what the implementation would look like.
-status: DEFERRED — 0.8.2+
+target_release: 0.8.5+
+desc: Framing ADR for F9 — confidence-vs-importance weighting on graph-retrieved nodes and edges. Deferred pending consumer signal + eval results from the BYO-LLM ingest track (Slices 0/15) and the R2 parity eval (Slice 25). Captures what Slice 15 now provides, what signal is needed before deciding, and what the implementation would look like. RE-POINTED 2026-06-16 from 0.8.2+ → 0.8.5+ (0.8.2–0.8.4 re-sequenced for the graph-adjudication track); F9 may surface earlier only as an ablation knob inside the 0.8.2 M1 / 0.8.3 M2 PPR arm (confidence-weighted seeds/edges), not as an opened slice.
+status: DEFERRED — 0.8.5+
 origin: dev/plans/0.8.1-implementation.md Slice 35 ("deferred-feature framing ADRs"); dev/design/0.8.0-v05-feature-triage.md F9 (DEFER 0.8.x); dev/adr/ADR-0.8.0-filter-grammar.md §7 follow-on
 ---
 
 # ADR-0.8.1 — Deferred F9: Confidence-vs-Importance Weighting
 
-**Status:** `DEFERRED — 0.8.2+`. **No code change follows from this ADR.** Framing-only.
+**Status:** `DEFERRED — 0.8.5+` (re-pointed 2026-06-16 from 0.8.2+; 0.8.2–0.8.4 host the
+graph-adjudication track — `dev/roadmap/0.8.2.md`). **No code change follows from this ADR.** Framing-only.
 HITL sign-off is NOT required in Slice 35; this ADR is authored to capture the decision
 model for future work.
 

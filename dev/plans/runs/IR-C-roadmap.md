@@ -169,6 +169,19 @@ exists but its transfer is unknown.
 
 ## 2. Prioritized roadmap
 
+> **RE-SEQUENCED 2026-06-16 (HITL coreyt) — graph-adjudication track.** After the "beat BM25"
+> investigation CONCLUDED (R6 below + the graph arm; no cheap lever beats strong lexical on
+> LongMemEval *needle-recall*), 0.8.2–0.8.4 now host a three-step adjudication of graphs **on their
+> favorable axes** (multi-hop answer accuracy + sensemaking), since the 0.8.1 negative was narrow
+> (memory/fact-edge structure, disfavored axis, disfavored seeding). New homes for the items below:
+> - **node-centric PPR (HippoRAG)** → **absorbed into 0.8.2 M1** as the lexically-seeded PPR-fusion
+>   arm (the literature's lightweight winner over raw BFS). Plan: `dev/plans/plan-0.8.2.md`.
+> - **R5 — vector-PRF** → **folded into 0.8.3 M2** (the no-LLM feedback control beside an IRCoT arm).
+> - **R3b — bundled CPU extractor** → **0.8.5, GATED on the M1–S1 verdict** (`dev/roadmap/0.8.5.md`).
+> - **R4 — whole-doc dense** → **0.8.5**; explicitly NOT pulled into M1/M2 (multi-hop wants
+>   passage-level dense; whole-doc blurs discrimination).
+> Roadmap index: `dev/roadmap/0.8.2.md` / `0.8.3.md` / `0.8.4.md` / `0.8.5.md`.
+
 Goal: retrieval/answer quality as-good-or-better than Mem0 and Zep **within
 local-first / CPU / no-API / 1-bit-binary**. Footprint is a hard constraint;
 every violation is flagged. Baseline: shipped `h_whole_1:3` — exact_fact R@10
@@ -333,7 +346,9 @@ classes)
   `canonical_edges(from_id)/(to_id)` indexes — fused as a third RRF arm
   (the LightRAG/Zep production template, `deep-research.md:60-63`). Node-centric
   PPR (HippoRAG) remains portable *later* as a ranking pass over the same
-  substrate — it is a scoring choice, not a schema choice.
+  substrate — it is a scoring choice, not a schema choice. **(RE-SEQUENCED
+  2026-06-16: node-centric PPR is now the 0.8.2 M1 mechanism — lexically-seeded
+  PPR fused with BM25, scored on MuSiQue answer accuracy; `dev/plans/plan-0.8.2.md`.)**
   **Construction is caller-supplied first (C7):** define the graph ingest API so
   the consumer's agent (Memex/Hermes/OpenClaw-class — they have LLMs) writes
   extracted facts; an optional local-CPU extraction path is a separate gate.
@@ -388,7 +403,7 @@ classes)
   if R3b ≈ R3a. Recall@K harness as regression guard, binary floor untouched.
 
 ### R4 — Whole-doc long-context dense + late chunking (research probe; the one
-unexplored dense mechanism)
+unexplored dense mechanism) · **→ 0.8.5 (`dev/roadmap/0.8.5.md`); NOT pulled into the M1/M2 multi-hop baseline — multi-hop wants passage-level dense; whole-doc blurs discrimination**
 
 - **What & why:** The only dense angle the three negatives never exercised
   (C5): embed the **full document** with a long-context model
@@ -428,7 +443,7 @@ unexplored dense mechanism)
 - **Measurement/gate:** existing dense diagnostic (median rank / top-50 /
   bucket shift) → binary-floor gate → only then a fusion-harness row.
 
-### R5 — Vector pseudo-relevance feedback (cheap opportunistic, post-R1)
+### R5 — Vector pseudo-relevance feedback (cheap opportunistic, post-R1) · **→ folded into 0.8.3 M2 as the no-LLM feedback control beside the IRCoT arm (`dev/roadmap/0.8.3.md`)**
 
 - **What & why:** Average the query f32 vector with top-k *reranked* passage
   vectors and re-run the dense arm — a query-side recall lever with **no extra

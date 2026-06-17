@@ -410,6 +410,35 @@ Slice 40's "ledger empty" gate applies to slice-managed worktrees only.
 
 ## 7. Recent decisions (newest on top)
 
+### 2026-06-16 — ◆ GRAPH-ADJUDICATION RE-SEQUENCING (HITL) — 0.8.2–0.8.4 test graphs on their FAVORABLE axes
+
+**Decision.** The "beat BM25" negative (below) is **narrow**: it measured the **memory/fact-on-edge**
+structure on the **graph-disfavored axis** (LongMemEval first-stage needle-recall) with **disfavored
+seeding** (the graph's own FTS, not the lexical top-K), and conceded that **multi_session** (the
+multi-hop-flavoured class) was tested and the graph *hurt* it (0.30→0.10, N=10, recall-not-answer). It
+says nothing about multi-hop **answer accuracy** or **sensemaking** — the axes graphs are *claimed* to
+win — because we never measured those and lacked the instruments. **Re-sequence 0.8.2–0.8.4 to build
+the instruments and adjudicate fairly** (validated by a 2026-06-16 literature pass):
+
+- **0.8.2 — M1 (multi-hop answer accuracy):** lexically-seeded **PPR-fusion** arm on **MuSiQue-Ans**,
+  EM/F1 **by hop count**, vs a **strong** baseline (BM25 ∪ passage-dense ∪ fused), same answerer.
+  Research correction folded in: step 1 is **HippoRAG-style PPR**, *not* raw BFS (BFS is the weak
+  anti-pattern we already measured). Honest prior: likely near-tie/modest-loss; worth running to
+  convert "weak BFS arm" → "literature's best lightweight graph method still didn't win." Plan:
+  `dev/plans/plan-0.8.2.md`; roadmap `dev/roadmap/0.8.2.md`.
+- **0.8.3 — M2 (full multi-hop study):** +2Wiki (gold reasoning-path diagnostic) +MultiHop-RAG (news),
+  **+IRCoT iterative arm** (the *proven* multi-hop lever — isolates iteration vs structure), **+R5
+  vector-PRF** (no-LLM feedback control). `dev/roadmap/0.8.3.md`.
+- **0.8.4 — S1 (sensemaking):** the **GraphRAG** paradigm — Leiden communities + community summaries +
+  BenchmarkQED LLM-judge — a *different structure* on data suited to it; the genuinely graph-favorable
+  bet; do NOT prejudge by M1/M2. `dev/roadmap/0.8.4.md`.
+
+**Re-sequencing of displaced items** (`dev/roadmap/0.8.5.md`): **node-centric PPR → absorbed into
+0.8.2 M1**; **R5 → 0.8.3 M2**; **R3b (bundled CPU extractor) → 0.8.5, GATED on the M1–S1 verdict**
+(don't productize a graph that hasn't earned its keep); **portable-DB vector guard, R4 whole-doc dense,
+tunable-b FTS5, EU7 perf → 0.8.5**. **F9 + F5 framing ADRs re-pointed 0.8.2+ → 0.8.5+** (F9 may surface
+only as an M1/M2 PPR confidence-weighting *ablation knob*). Plan triad + IR-C-roadmap §2 banner updated.
+
 ### 2026-06-16 — ◆ "BEAT BM25" INVESTIGATION CONCLUDED (HITL) — no cheap retrieval lever clears strong lexical
 
 **Decision: CONCLUDE.** Three levers were measured end-to-end (real designs, ACs, design + impl
