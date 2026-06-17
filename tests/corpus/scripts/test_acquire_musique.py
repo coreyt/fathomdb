@@ -9,6 +9,11 @@ Assertions:
   (b) the unanswerable contrast set is non-empty and every such row has answerable=False;
   (c) the sha256 of the materialized corpus file matches the pinned value in
       manifest.json → byte-stability / deterministic ordering check.
+  (d) [fix-1] acquire_musique.py declares a PEP 723 dependency block covering 'datasets'
+      so a clean checkout running the acquire command does not fail with
+      ModuleNotFoundError: datasets.
+  (e) [fix-1] a reproduce run (re-running acquire_musique.py) leaves the committed
+      dev/plans/runs/0.8.2-m1-corpus-manifest.json byte-identical — no timestamp drift.
 
 Sampling: the per-question structural tests run over the FULL corpus (4834 rows);
 any future sampling must be logged here.
@@ -21,15 +26,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 # Make _corpus_lib importable (scripts dir is a sibling of this file).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import corpus_data_dir  # noqa: E402
+from _corpus_lib import corpus_data_dir, repo_root  # noqa: E402
 
 CORPUS_FILE = corpus_data_dir() / "raw" / "musique_dev.jsonl"
 MANIFEST_FILE = Path(__file__).resolve().parent / "manifest.json"
+SCRIPT_FILE = Path(__file__).resolve().parent / "acquire_musique.py"
+M1_MANIFEST_FILE = repo_root() / "dev" / "plans" / "runs" / "0.8.2-m1-corpus-manifest.json"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -156,4 +164,86 @@ def test_byte_stability_via_manifest_pin():
         f"  pinned : {pinned_sha}\n"
         f"  on-disk: {actual_sha}\n"
         "Re-run acquire_musique.py to regenerate the corpus, or reconcile the manifest."
+    )
+
+
+# ── fix-1 tests (codex §9 [P2]) ───────────────────────────────────────────────
+
+
+def test_pep723_block_declares_datasets():
+    """acquire_musique.py must carry a PEP 723 '# /// script' block declaring 'datasets'.
+
+    Without this block a clean checkout running the documented acquire_command:
+      cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py
+    fails immediately with ModuleNotFoundError: datasets (the library is NOT in
+    src/python deps and NOT declared as an inline dependency).
+
+    RED: no '# /// script' block present → assertion fails.
+    GREEN: block added with 'datasets>=3.0' (covers tested 5.0.0).
+    """
+    script_text = SCRIPT_FILE.read_text(encoding="utf-8")
+
+    # Must have the PEP 723 opening sentinel.
+    assert "# /// script" in script_text, (
+        f"{SCRIPT_FILE.name} is missing the PEP 723 '# /// script' block — "
+        "a clean checkout running acquire_musique.py will fail with "
+        "ModuleNotFoundError: datasets.  Add a '# /// script' dependency block "
+        "matching the convention in acquire_enronqa.py."
+    )
+
+    # The block must declare 'datasets' so dependency managers can resolve it.
+    # We check the header (first 600 bytes) where the block must appear.
+    header = script_text[:600]
+    assert "datasets" in header, (
+        "PEP 723 block in acquire_musique.py does not declare the 'datasets' dependency "
+        "(checked first 600 bytes).  The block must include a line like "
+        "'  \"datasets>=3.0\"' inside the # /// script … # /// fence."
+    )
+
+
+def test_m1_manifest_reproduce_stable():
+    """Re-running acquire_musique.py must leave the committed M1 manifest byte-identical.
+
+    The manifest at dev/plans/runs/0.8.2-m1-corpus-manifest.json is a tracked artifact.
+    Volatile timestamps (generated_at, etc.) written on every reproduce run cause it to
+    be dirtied in git, defeating the shared-corpus reproduce contract for Slices 5/10.
+
+    RED: script writes 'generated_at' with the current timestamp → bytes differ.
+    GREEN: volatile timestamps removed from the reproduce path → bytes identical.
+
+    Note: this test runs the full acquisition script (corpus is expected to be
+    materialized at data/corpus-data/raw/musique_dev.jsonl from the prior acquire run;
+    HF cache is expected warm so no network I/O is needed).
+    """
+    if not CORPUS_FILE.exists():
+        import pytest  # type: ignore[import-not-found]
+        pytest.skip(
+            f"Corpus not acquired ({CORPUS_FILE}) — run acquire_musique.py first, "
+            "then re-run this test."
+        )
+    if not M1_MANIFEST_FILE.exists():
+        import pytest  # type: ignore[import-not-found]
+        pytest.skip(f"M1 manifest not found: {M1_MANIFEST_FILE}")
+
+    before_bytes = M1_MANIFEST_FILE.read_bytes()
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_FILE)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, (
+        f"acquire_musique.py exited non-zero ({result.returncode}).\n"
+        f"stdout: {result.stdout[-500:]}\n"
+        f"stderr: {result.stderr[-500:]}"
+    )
+
+    after_bytes = M1_MANIFEST_FILE.read_bytes()
+    assert before_bytes == after_bytes, (
+        "Reproduce run dirtied the tracked M1 manifest — volatile timestamp still present.\n"
+        "Remove 'generated_at' (and any other time-varying field) from the manifest write "
+        "in acquire_musique.py so the file is byte-stable across reproduce runs.\n\n"
+        f"Before ({len(before_bytes)} bytes, first 300):\n{before_bytes[:300].decode()}\n\n"
+        f"After  ({len(after_bytes)} bytes, first 300):\n{after_bytes[:300].decode()}"
     )

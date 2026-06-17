@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "datasets>=3.0",
+#   "pyarrow>=17",
+# ]
+# ///
 """Acquire MuSiQue-Ans corpus (distractor setting) for FathomDB 0.8.2 M1.
 
 Source:  bdsaglam/musique on Hugging Face Hub (re-hosts StonyBrookNLP/musique v1.0).
@@ -185,6 +192,11 @@ def main() -> int:
 
     # ── update manifest.json ──────────────────────────────────────────────────
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    # Preserve acquired_at from the existing entry so reproduce runs are
+    # byte-stable: only record the date on the FIRST acquisition; subsequent
+    # reproduces must not dirty the tracked manifest file.
+    existing_musique = manifest.get("sources", {}).get("musique", {})
+    acquired_at = existing_musique.get("acquired_at", datetime.date.today().isoformat())
     manifest["sources"]["musique"] = {
         "script": "acquire_musique.py",
         "upstream": {
@@ -218,7 +230,7 @@ def main() -> int:
             "hop_4": hop_total.get(4, 0),
         },
         "sha256": musique_hash,
-        "acquired_at": datetime.date.today().isoformat(),
+        "acquired_at": acquired_at,
     }
     MANIFEST_PATH.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
@@ -226,10 +238,13 @@ def main() -> int:
     print(f"[S4][ACQUIRE] updated manifest.json  (musique sha256={musique_hash[:16]}…)")
 
     # ── write M1 corpus manifest ───────────────────────────────────────────────
+    # generated_at is intentionally omitted: the M1 manifest is a TRACKED artifact
+    # whose stable provenance is musique_hash + the pinned bdsaglam/musique@22873a40
+    # commit.  Writing a volatile timestamp on every reproduce run would dirty the
+    # tracked file in git, defeating the Slice 5/10 reproduce contract.
     m1_manifest = {
         "schema": "0.8.2-m1-corpus-manifest-v1",
         "generated_by": "tests/corpus/scripts/acquire_musique.py",
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "musique_hash": musique_hash,
         "source": {
             "hf_id": DATASET_ID,
