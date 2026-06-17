@@ -160,6 +160,7 @@ REQUIRED_FROZEN_FIELDS: tuple[str, ...] = (
     "decision-rule",
     "baseline-arms",
     "mde-power-plan",
+    "trend-test",
 )
 
 #: The design must self-declare it is decision-ready.

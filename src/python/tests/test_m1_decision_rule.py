@@ -99,13 +99,16 @@ def test_frozen_material_threshold() -> None:
 
 def test_amended_required_frozen_fields() -> None:
     # The amendment replaced per-hop-strata with comparator + baseline-arms and
-    # re-scoped mde-power-plan to the whole-rule power sim.
+    # re-scoped mde-power-plan to the whole-rule power sim.  trend-test added
+    # (codex §9 [P2] fix): it is the ONLY frozen spec for how trend.neg_significant
+    # (gate 2) is computed.
     assert set(REQUIRED_FROZEN_FIELDS) == {
         "primary-endpoint",
         "comparator",
         "decision-rule",
         "baseline-arms",
         "mde-power-plan",
+        "trend-test",
     }
 
 
@@ -265,3 +268,29 @@ def test_preregistration_lint_requires_status_decision_ready() -> None:
     )
     problems = lint_preregistration(text)
     assert any("decision-ready" in p for p in problems)
+
+
+def test_preregistration_lint_flags_missing_trend_test_field() -> None:
+    # trend-test is load-bearing: it is the ONLY frozen spec for how
+    # trend.neg_significant (gate 2) is computed.  The lint must flag its
+    # absence so a post-hoc deletion cannot silently pass.
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    mutated = text.replace("frozen-field: trend-test", "xxx-removed-field")
+    problems = lint_preregistration(mutated)
+    assert any("trend-test" in p for p in problems)
+
+
+def test_preregistration_lint_flags_undated_trend_test_field() -> None:
+    # A trend-test frozen-field line present but stripped of its date must be
+    # flagged (mirrors the undated-field test for primary-endpoint).
+    import re as _re
+
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    out: list[str] = []
+    for ln in text.splitlines():
+        if "frozen-field: trend-test" in ln:
+            out.append(_re.sub(r"\b20\d\d-\d\d-\d\d\b", "REDACTED", ln))
+        else:
+            out.append(ln)
+    problems = lint_preregistration("\n".join(out))
+    assert any("trend-test" in p for p in problems)
