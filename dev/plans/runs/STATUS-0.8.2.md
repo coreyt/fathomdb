@@ -26,6 +26,7 @@
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
+| H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **IN-FLIGHT** | merge to main; `pyright -p src/python` 0/0; touched pytest green |
 
 Critical path: `0 → {5 ∥ 10} → 15 → 20`. Slices 5 and 10 are independent off 0 (baseline harness ∥
 graph extraction) and may run in parallel.
@@ -65,6 +66,14 @@ Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's pri
 - **Budget:** flash-lite cheap-validate before any priced `gemini-3.1-pro-preview` run; $ ledger live.
 - **Honesty flag carried:** literature expects near-tie-to-modest-loss; value = strongest fair graph test.
 - **Decision needed:** sign as-is / amend a frozen field / hold.
+
+## 5b. In-flight reviews (not slice agents)
+
+- **Methodology review of the M1 pre-registration** (general-purpose subagent, opus, web-grounded):
+  adversarially checks the frozen endpoint + decision-rule mechanics (strict dose-response gate, the
+  0.02 material bar, per-stratum conjunction, "best baseline" selection, EM guard, baseline strength)
+  against the multi-hop QA / GraphRAG literature. Feeds the ◆ HITL sign-off — **sign-off held until this
+  returns** (HITL directed it before freezing).
 
 ## 6. Open HITL questions
 

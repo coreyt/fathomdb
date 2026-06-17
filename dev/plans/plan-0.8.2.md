@@ -222,6 +222,28 @@ ablations (Slice-15 follow-ons) decide it before committing 0.8.3 budget.
 
 ---
 
+## 4a. Hygiene slices (off-ladder, parallel — no dependency on the M1 ladder or the ◆ sign-off)
+
+### Slice H1 — restore repo-wide `pyright -p src/python` to 0/0 · `[implementation]` · depends-on: —
+**Why.** Surfaced during Slice 0 codex §9: the repo-wide pyright baseline is **not** 0/0 (contradicting
+the SLICE-TEMPLATE standing baseline). **9 pre-existing errors** at `b304147`, in files M1 never touches
+— pure tech debt, blocks nothing in M1, but should be cleared so future slices' `pyright` self-check is
+meaningful again.
+**The 9 errors (3 clusters):**
+- 6× `eval/p0a_batch_e2e.py::score_e2e` `answers: dict[str, Optional[str]]` — `dict` is invariant, so
+  `dict[str, str]` call sites fail. **Fix:** widen the param to `Mapping[str, Optional[str]]` (covariant
+  value type; pyright's own suggestion). Touches the signature + the import.
+- 2× `eval/r6_index_key_enrichment.py:237,239` — `Operator "-"` on `float | None` operands. **Fix:**
+  narrow/guard the Optionals (assert-not-None or default) before the subtraction.
+- 1× `tests/test_p0a_batch_e2e.py:267` — `None` passed to `output_file_id: str`. **Fix:** make the
+  param/`None` consistent (Optional the param, or pass a value).
+**Bar (pyright IS the test here).** RED = the current 9 errors; GREEN = `pyright -p src/python` reports
+**0 errors / 0 warnings** AND `pytest` for the touched test files still passes (no behavior change). No
+runtime/logic change beyond typing/guards. Single merge. X3: note in DOC-INDEX only if a doc changes
+(likely none). Codex §9 light review (typing-only diff).
+**Out of scope:** any M1 file (`m1_decision_rule.py`, the design doc), any new feature, any non-typing
+refactor.
+
 ## 5. What M1 deliberately does NOT do (lives in 0.8.3 / 0.8.4)
 
 - **2WikiMultiHopQA + MultiHop-RAG, IRCoT iterative-retrieval arm, R5 vector-PRF** → **0.8.3 (M2)**.
