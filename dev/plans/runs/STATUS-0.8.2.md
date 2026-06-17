@@ -10,10 +10,12 @@
 - **State:** **SLICE 0 CLOSED (code); ◆ HITL SIGN-OFF PENDING.** Slice 0 + fix-1 merged to `main`
   (`a50953c`), git-gated, codex §9 **PASS** after fix-1 (one [P2] non-finite-input gap found + fixed,
   re-reviewed clean). Orchestrator independently re-ran 37/37 green; worktree + branch cleaned.
-- **Next action (◆ HITL gate — STOP):** present the **design + pre-registration sign-off package** to
-  HITL (coreyt). The pre-registration is a scientific pre-commitment — human-signed by design. **Until
-  signed, do NOT spawn Slices 5/10** (they test against the frozen design; Slice 5's priced baseline
-  run is explicitly gated on the sign-off).
+- **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
+  returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
+  monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
+  load-bearing amendments + 2 advised.** Orchestrator concurs. **Recommendation to HITL: do NOT sign;
+  approve the amendment set → spawn a Slice 0-revision (design §4 + `decide()` + tests) → re-review →
+  then sign.** Slices 5/10 remain gated behind the (amended) sign-off.
 - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
 
@@ -85,6 +87,14 @@ Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's pri
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — **Pre-freeze methodology review → pre-registration NOT sound to freeze as-is**
+  (HITL-directed; `runs/0.8.2-slice-0-prereg-methodology-review.md`). Core flaw: the strict monotonic
+  `f1[2]<f1[3]<f1[4]` GO gate encodes a literature-contradicted prior (HippoRAG: 4-hop path-finding "out
+  of reach" of single-pass PPR) and is noise-fragile (~1/6 pass under a true uniform win); the per-hop
+  "best-of-3 max" baseline adds winner's-curse + a dose-response confound. Net: biased toward the
+  expected NO_GO ⇒ cannot *earn* the pivot. Orchestrator concurs. **Pending HITL: approve amendments →
+  Slice 0-revision before sign-off.** (Codex §9 had reviewed `decide()` only for *correctness*, not
+  statistical validity — this review is the complementary axis.)
 - **2026-06-16** — Slice 0 **CLOSED (code)**: fix-1 merged (`a50953c`), codex §9 re-review **PASS**
   (`runs/0.8.2-slice-0-fix-1-review-20260617T005328Z.md`); 37/37 re-run green by the orchestrator;
   worktree/branch cleaned. Two log flags examined + dismissed with cause: the `[P1]/[P2]` tags are
