@@ -137,6 +137,37 @@ def test_missing_hop_raises() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Non-finite (NaN / ±inf) endpoints must fail LOUDLY, not silently return a
+# verdict. A NaN slips past every ``<`` comparison (``nan < x`` is False), so
+# without an explicit isfinite guard ``decide`` would return GO on malformed
+# data — see codex §9 [P2]. The exact codex repro is pinned below.
+# --------------------------------------------------------------------------- #
+def test_nan_em_at_hop3_with_otherwise_go_inputs_raises() -> None:
+    # Codex [P2] repro: otherwise-GO inputs, but ΔEM at hop-3 is NaN. The
+    # confident-wrong guard (nan < 0.0 is False) would silently pass and the
+    # rule would return GO; a non-finite endpoint must fail loudly instead.
+    nan = float("nan")
+    d = _deltas(0.01, 0.02, nan, 0.05, 0.05, 0.09)
+    with pytest.raises(ValueError):
+        decide(d, power_ok=True)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("metric", ["em", "f1"])
+@pytest.mark.parametrize("hop", [2, 3, 4])
+def test_non_finite_metric_at_any_required_hop_raises(
+    bad: float, metric: str, hop: int
+) -> None:
+    # Any non-finite EM or F1 at any required hop must raise loudly, regardless
+    # of which gate it would otherwise reach. Start from the GO row and poison
+    # one cell.
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    d[hop][metric] = bad
+    with pytest.raises(ValueError):
+        decide(d, power_ok=True)
+
+
+# --------------------------------------------------------------------------- #
 # Pre-registration schema lint — fails RED if any frozen/dated field is missing.
 # --------------------------------------------------------------------------- #
 def test_design_doc_exists() -> None:
