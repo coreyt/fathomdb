@@ -7,12 +7,12 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0 CLOSED (amended); ◆ HITL SIGN-OFF READY.** Revision + rev-fix-1 merged
-  (`2348f95`), git-gated, **33/33 re-run green**, codex §9 **PASS** (zero findings) on the final amended
-  rule. All 6 amendments + the trend-test lint enforcement landed; worktree cleaned. **No code gates
-  remain before sign-off.** Slice H1 CLOSED (`74999b3`).
-- **Next action (◆ HITL gate — STOP):** present the **amended** design + pre-registration for sign-off.
-  Until signed, Slices 5/10 stay gated.
+- **State:** **◆ SIGNED 2026-06-16 (HITL coreyt) → fanning out.** Amended pre-registration signed
+  (design doc `status: SIGNED`). Slice 0 CLOSED (amended; codex PASS, 33/33). Corpus carved into a
+  shared **Slice 4** (so 5 ∥ 10 run truly parallel off one pinned corpus). **Slice 4 spawned.**
+- **Next action:** when Slice 4 lands the pinned corpus + acquire script → **fan out Slice 5 ∥ Slice 10**
+  (both reproduce the Slice-4 corpus). Slice 5's priced baseline run is HITL-authorized (cheap-validate
+  with flash-lite first; $ ledger).
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -27,8 +27,9 @@
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
-| 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
-| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
+| 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **IN-FLIGHT** | `runs/0.8.2-m1-corpus-manifest.json`; committed acquire script + pinned `musique_hash` |
+| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-baseline-n{N}.json` |
+| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 | NOT STARTED (gated on 4) | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
@@ -97,6 +98,11 @@ Package for coreyt. **All 6 pre-freeze amendments landed + codex §9 PASS.** Sig
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — **◆ HITL SIGNED the amended pre-registration** (coreyt) → fan out. Design doc
+  `status: SIGNED`. Orchestrator refinement: **carved corpus acquisition into a shared Slice 4** (the
+  plan folded it into Slice 5, but 5 ∥ 10 share the corpus → pin it once, reproducibly, so the two
+  parallel worktrees don't author conflicting acquire scripts). Critical path now `0 → 4 → {5∥10} →
+  15 → 20`. Slice 4 spawned (reuses `tests/corpus/scripts/acquire_*.py` + `freeze_corpus.py` pattern).
 - **2026-06-16** — **Slice 0 CLOSED (amended); ◆ sign-off ready.** Revision + rev-fix-1 merged
   (`2348f95`); codex §9 **PASS** (zero findings) on the final amended rule; 33/33 re-run green by the
   orchestrator (lint enforces all 6 frozen fields incl `trend-test`; flat-positive ⇒ GO). The Slice 0

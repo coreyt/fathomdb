@@ -109,12 +109,12 @@ boundary, 1-bit-safe; the only LLM seams are the offline extractor (local, $0) a
 
 ## 3. Critical path
 
-`0 (design+pre-register) → 5 (MuSiQue corpus + strong baseline + answerer e2e = THE BAR)
-→ 10 (graph build over MuSiQue, reuse extractor) → 15 (PPR-fusion arm = mechanism KEYSTONE)
+`0 (design+pre-register, SIGNED) → 4 (MuSiQue corpus, SHARED) → {5 (strong baseline + answerer e2e =
+THE BAR) ∥ 10 (graph build, reuse extractor)} → 15 (PPR-fusion arm = mechanism KEYSTONE)
 → 20 (adjudication run + verdict → GO/NO-GO to 0.8.3)`.
 
-Slice 5 and Slice 10 are independent off Slice 0 (baseline harness vs graph extraction) and may run
-in parallel; Slice 15 joins them; Slice 20 closes on all.
+Slice 4 pins the shared corpus once; **Slice 5 and Slice 10 then run in parallel** (baseline harness vs
+graph extraction, both reproducing the Slice-4 corpus); Slice 15 joins them; Slice 20 closes on all.
 
 ---
 
@@ -172,10 +172,27 @@ GO/NO-GO rule frozen and dated; the whole-rule power-sim spec handed to Slice 5.
 **HITL gate:** the **amended** design + pre-registration signed before any priced run (Slice 20).
 **Reserved follow-on (1–4):** a power re-estimate if Slice 5's baseline variance is wider than assumed.
 
-### Slice 5 — MuSiQue corpus + strong baseline + answerer e2e (THE BAR) · `[implementation (measurement)]` · depends-on: 0 · gaps: 6–9
-**Corpus prerequisite.** Acquire MuSiQue-Ans (CC-BY-4.0, StonyBrookNLP/musique) via an acquire script;
-**gitignored**; pin a `musique_hash`. Build the per-question paragraph corpus + FTS5 index + passage
-embeddings.
+### Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]` · depends-on: 0 (SIGNED) · gaps: 1–4 (Slice-0-adjacent)
+**Why carved out (orchestrator refinement 2026-06-16).** The plan folded corpus acquisition into Slice 5,
+but **both** Slice 5 (baseline) and Slice 10 (graph) score on the **same** MuSiQue corpus. To run 5 ∥ 10
+truly in parallel without two worktrees authoring a conflicting acquire script, the corpus is a **shared,
+once-pinned** prerequisite (the 0.8.1 reproducible-frozen-corpus model). This is a Slice-0-adjacent
+follow-on the design revealed (the shared-corpus dependency between 5 and 10).
+**Objective.** Acquire MuSiQue-Ans (CC-BY-4.0, `StonyBrookNLP/musique`) via a **deterministic acquire
+script** (committed); the raw data is **gitignored**; **pin a `musique_hash`**. Materialize the
+**per-question paragraph corpus** (raw text per question — the shared input both 5 and 10 read). Verify
+coverage (every sampled question has its ~20 distractor paragraphs; 2/3/4-hop labels present).
+**TDD.** RED: a test asserting (a) the acquire script reproduces the pinned `musique_hash` bit-identically,
+(b) the per-question paragraph corpus is materialized with hop labels + the unanswerable contrast set.
+GREEN: the acquire+materialize runner. Output → `runs/0.8.2-m1-corpus-manifest.json` (hash, counts, paths).
+**DoD.** $0 (dataset download only). The acquire script + manifest are committed; raw corpus gitignored +
+locally reproducible. `log()` any sampling. X1 n/a; X3 + DOC-INDEX.
+**Unblocks:** Slice 5 (FTS5 + embeddings + arms) ∥ Slice 10 (graph build) — both reproduce the corpus from
+this committed acquire script + `musique_hash`.
+
+### Slice 5 — strong baseline + answerer e2e over the shared corpus (THE BAR) · `[implementation (measurement)]` · depends-on: 4 · gaps: 6–9
+**Corpus.** Reproduce the **Slice-4** corpus locally from its committed acquire script + `musique_hash`
+(do **not** re-author acquisition). Build the **FTS5 index + passage embeddings** over it.
 **Objective.** Establish the bar: **BM25 ∪ passage-dense ∪ fused(RRF)** retrieval → identical answerer
 → **EM/F1 per hop count (2/3/4)** + unanswerable-set behavior. No graph yet. This is the number the
 graph arm must beat.
@@ -192,8 +209,9 @@ merely a marginal per-hop MDE. `power_ok=True` only if that holds. Build all fou
 **Reserved follow-on (6–9):** passage-dense embedder/model-dim choice if the default underperforms (the
 baseline must be *strong* — a weak dense arm invalidates the verdict).
 
-### Slice 10 — Graph build over MuSiQue (reuse extractor) · `[implementation (measurement)]` · depends-on: 0 · gaps: 11–14
-**Objective.** Reuse the Qwen3.6-27B Airlock-vLLM-batch extractor ($0, local) to build entities +
+### Slice 10 — Graph build over MuSiQue (reuse extractor) · `[implementation (measurement)]` · depends-on: 4 · gaps: 11–14
+**Objective.** Reproduce the **Slice-4** corpus locally (committed acquire script + `musique_hash`), then
+reuse the Qwen3.6-27B Airlock-vLLM-batch extractor ($0, local) to build entities +
 fact-edges over the MuSiQue paragraph corpus; load into canonical_nodes/canonical_edges; cache
 incrementally. **Verify coverage** (per-question graph present, entity/edge counts) the way
 `eval/verify_embed_db.py` verifies embeds — drain/terminal status can lie
