@@ -210,7 +210,7 @@ def test_score_e2e_locks_substring_scorer_strictness():
 
 
 class _FakeClient:
-    def __init__(self, statuses, output="OUT", output_file_id="out-z"):
+    def __init__(self, statuses, output="OUT", output_file_id: str | None = "out-z"):
         self._statuses = list(statuses)
         self._output = output
         self._ofid = output_file_id

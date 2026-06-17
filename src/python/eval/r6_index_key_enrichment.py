@@ -233,9 +233,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"\n[sanity] naive_bm25 pooled R@10 = {pooled['naive_bm25']} (report anchor ~0.70)")
     # Pre-registered primary endpoint + the placebo attribution guard.
     fe, fp, pl = pooled.get("fathomdb_fts_enriched"), pooled.get("fathomdb_fts_only"), pooled.get("fathomdb_fts_placebo")
-    if None not in (fe, fp):
+    if fe is not None and fp is not None:
         print(f"[PRIMARY] FTS enriched − plain (pooled R@10) = {fe - fp:+.3f}")
-    if None not in (pl, fp):
+    if pl is not None and fp is not None:
         print(f"[placebo] FTS placebo  − plain (pooled R@10) = {pl - fp:+.3f}  "
               f"(if ≈ primary → length artifact, not a lexical bridge)")
     for v in systems.values():
