@@ -1,10 +1,23 @@
-"""Slice 0 (0.8.2 / M1) — frozen GO/NO-GO decision rule + pre-registration lint.
+"""Slice 0-rev (0.8.2 / M1) — AMENDED frozen GO/NO-GO decision rule + pre-reg lint.
 
 Pre-registration is only credible if the GO/NO-GO computation is frozen as *code*
 now, so Slice 20 cannot post-hoc switch the endpoint. This module pins the full
-truth table of ``eval.m1_decision_rule.decide`` at its boundaries, and lints that
-``dev/design/0.8.2-m1-multihop-harness.md`` carries the required frozen, dated
-pre-registration fields.
+truth table of the **amended** ``eval.m1_decision_rule.decide`` at its boundaries
+(6 HITL methodology amendments; see
+``dev/plans/runs/0.8.2-slice-0-prereg-methodology-review.md``), and lints that
+``dev/design/0.8.2-m1-multihop-harness.md`` carries the required AMENDED frozen,
+dated pre-registration fields.
+
+The amended rule consumes already-computed summary statistics (the harness runs
+the paired bootstrap; ``decide()`` stays pure/deterministic — no RNG, no I/O):
+
+    decide(material, em, trend, confident_wrong, power_ok) -> "GO" | "NO_GO"
+
+GO iff ALL: (1) ``material.f1_delta >= MATERIAL_F1_LIFT`` AND ``material.f1_ci_low
+> 0``; (2) ``not trend.neg_significant`` (veto only on a *significantly negative*
+ΔF1-vs-hop slope — flat/positive passes, NO strict-monotonic requirement);
+(3) ``em.ci_high >= 0``; (4) ``not confident_wrong.increase_significant``;
+(5) ``power_ok``. Non-finite floats raise ``ValueError``.
 
 Pure stdlib only — **no ``fathomdb`` / ``scipy`` / ``networkx`` import** — so this
 test runs anywhere, independent of the native-extension build or the ``.venv``
@@ -13,14 +26,14 @@ binding.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 from eval.m1_decision_rule import (
-    EM_MIN_LIFT_3PLUS,
     MATERIAL_F1_LIFT,
-    REQUIRED_HOPS,
+    REQUIRED_FROZEN_FIELDS,
     decide,
     lint_preregistration,
 )
@@ -33,138 +46,174 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DESIGN_DOC = _REPO_ROOT / "dev" / "design" / "0.8.2-m1-multihop-harness.md"
 
 
-def _deltas(
-    em2: float, f12: float, em3: float, f13: float, em4: float, f14: float
-) -> dict[int, dict[str, float]]:
-    """Build a ``deltas_by_hop`` map: hop -> {'em': ΔEM, 'f1': ΔF1}."""
-    return {
-        2: {"em": em2, "f1": f12},
-        3: {"em": em3, "f1": f13},
-        4: {"em": em4, "f1": f14},
+# --------------------------------------------------------------------------- #
+# Summary-statistic builders for the amended signature.
+# --------------------------------------------------------------------------- #
+def _material(f1_delta: float, f1_ci_low: float) -> dict[str, float]:
+    return {"f1_delta": f1_delta, "f1_ci_low": f1_ci_low}
+
+
+def _em(ci_high: float) -> dict[str, float]:
+    return {"ci_high": ci_high}
+
+
+def _trend(neg_significant: bool) -> dict[str, bool]:
+    return {"neg_significant": neg_significant}
+
+
+def _cw(increase_significant: bool) -> dict[str, bool]:
+    return {"increase_significant": increase_significant}
+
+
+def _decide(
+    *,
+    material: Mapping[str, float] | None = None,
+    em: Mapping[str, float] | None = None,
+    trend: Mapping[str, bool] | None = None,
+    confident_wrong: Mapping[str, bool] | None = None,
+    power_ok: bool = True,
+) -> str:
+    """Call ``decide`` from a fully-passing (GO) default set, overriding one field.
+
+    The defaults are the canonical GO set: pooled ≥3-hop ΔF1 material with a CI
+    above 0, EM not significantly worse, no significantly-negative trend, no
+    confident-wrong increase, powered. Each test poisons exactly one field.
+    """
+    return decide(
+        material=material if material is not None else _material(0.05, 0.01),
+        em=em if em is not None else _em(0.02),
+        trend=trend if trend is not None else _trend(False),
+        confident_wrong=(
+            confident_wrong if confident_wrong is not None else _cw(False)
+        ),
+        power_ok=power_ok,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Constants + frozen-field set are auditable (the rule must be inspectable).
+# --------------------------------------------------------------------------- #
+def test_frozen_material_threshold() -> None:
+    assert MATERIAL_F1_LIFT == pytest.approx(0.02)
+
+
+def test_amended_required_frozen_fields() -> None:
+    # The amendment replaced per-hop-strata with comparator + baseline-arms and
+    # re-scoped mde-power-plan to the whole-rule power sim.
+    assert set(REQUIRED_FROZEN_FIELDS) == {
+        "primary-endpoint",
+        "comparator",
+        "decision-rule",
+        "baseline-arms",
+        "mde-power-plan",
     }
 
 
 # --------------------------------------------------------------------------- #
-# Constants are frozen (the rule must be auditable).
+# Truth table — GO only when ALL five gates hold.
 # --------------------------------------------------------------------------- #
-def test_frozen_constants() -> None:
-    assert REQUIRED_HOPS == (2, 3, 4)
-    assert MATERIAL_F1_LIFT == pytest.approx(0.02)
-    assert EM_MIN_LIFT_3PLUS == pytest.approx(0.0)
+def test_all_gates_pass_is_go() -> None:
+    assert _decide() == "GO"
+
+
+def test_f1_delta_exactly_material_with_ci_above_zero_is_go() -> None:
+    # Boundary: f1_delta == MATERIAL_F1_LIFT is material (>=, not >).
+    assert _decide(material=_material(MATERIAL_F1_LIFT, 0.001)) == "GO"
+
+
+def test_em_ci_high_exactly_zero_is_go() -> None:
+    # Boundary: ci_high == 0 passes (EM not significantly worse; >= 0).
+    assert _decide(em=_em(0.0)) == "GO"
+
+
+# --- single-gate failures ---------------------------------------------------- #
+def test_f1_delta_below_material_is_no_go() -> None:
+    assert _decide(material=_material(MATERIAL_F1_LIFT - 0.001, 0.005)) == "NO_GO"
+
+
+def test_f1_ci_low_zero_is_no_go() -> None:
+    # CI lower bound must be strictly > 0 (the CI must EXCLUDE 0).
+    assert _decide(material=_material(0.05, 0.0)) == "NO_GO"
+
+
+def test_f1_ci_low_negative_is_no_go() -> None:
+    assert _decide(material=_material(0.05, -0.01)) == "NO_GO"
+
+
+def test_significantly_negative_trend_is_no_go() -> None:
+    assert _decide(trend=_trend(True)) == "NO_GO"
+
+
+def test_em_ci_high_negative_is_no_go() -> None:
+    assert _decide(em=_em(-0.01)) == "NO_GO"
+
+
+def test_confident_wrong_increase_is_no_go() -> None:
+    assert _decide(confident_wrong=_cw(True)) == "NO_GO"
+
+
+def test_underpowered_is_no_go() -> None:
+    assert _decide(power_ok=False) == "NO_GO"
 
 
 # --------------------------------------------------------------------------- #
-# Truth table — pin every row from the plan §4 / design §4.1.
+# LOAD-BEARING regression test — the whole point of the amendment.
+#
+# A FLAT-POSITIVE case: per-hop ΔF1 are equal and positive (so NOT strictly
+# increasing 2<3<4), the pooled >=3-hop ΔF1 is material with CI>0, EM ok, no
+# confident-wrong, powered. The OLD strict-monotonic rule returned NO_GO here
+# (its `f1[2] < f1[3] < f1[4]` gate fails on equal values). The amended trend
+# gate vetoes ONLY on a significantly NEGATIVE slope, so a flat slope passes and
+# the verdict is GO.
 # --------------------------------------------------------------------------- #
-def test_flat_lift_on_3plus_is_no_go() -> None:
-    # ≥3-hop F1 lift is flat (zero) → NO_GO, regardless of power.
-    d = _deltas(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    assert decide(d, power_ok=True) == "NO_GO"
+def test_flat_positive_non_growing_returns_go_old_rule_said_no_go() -> None:
+    verdict = _decide(
+        material=_material(0.04, 0.015),  # equal positive per-hop -> pooled material
+        em=_em(0.01),
+        trend=_trend(False),  # flat (==), so NOT significantly negative
+        confident_wrong=_cw(False),
+        power_ok=True,
+    )
+    assert verdict == "GO"
 
 
-def test_negative_lift_on_3plus_is_no_go() -> None:
-    # ≥3-hop F1 lift is negative (graph hurts) → NO_GO.
-    d = _deltas(0.0, -0.01, -0.02, -0.03, -0.03, -0.05)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
-def test_positive_below_material_on_3plus_is_no_go() -> None:
-    # Positive but below the material threshold on the ≥3-hop strata → NO_GO.
-    tiny = MATERIAL_F1_LIFT / 2.0
-    d = _deltas(0.0, 0.0, 0.01, tiny, 0.01, tiny)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
-def test_positive_material_but_flat_dose_is_no_go() -> None:
-    # Material positive ≥3-hop lift but NOT dose-responsive (flat across hops) → NO_GO.
-    d = _deltas(0.05, 0.05, 0.05, 0.05, 0.05, 0.05)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
-def test_positive_material_but_decreasing_dose_is_no_go() -> None:
-    # Material positive but the lift SHRINKS with hops (anti-dose-response) → NO_GO.
-    d = _deltas(0.05, 0.09, 0.05, 0.06, 0.05, 0.03)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
-def test_dose_responsive_but_underpowered_is_no_go() -> None:
-    # Dose-responsive, material ≥3-hop lift, EM non-regressing, but power_ok=False → NO_GO.
-    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
-    assert decide(d, power_ok=False) == "NO_GO"
-
-
-def test_dose_responsive_and_powered_is_go() -> None:
-    # The ONLY GO row: dose-responsive (2<3<4), material on hop-3 & hop-4,
-    # EM non-regressing on ≥3-hop, and adequately powered.
-    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
-    assert decide(d, power_ok=True) == "GO"
-
-
-def test_dose_responsive_powered_but_em_regresses_on_3plus_is_no_go() -> None:
-    # Confident-wrong guard: F1 dose-responsive + powered, but ΔEM negative on a
-    # ≥3-hop stratum → NO_GO.
-    d = _deltas(0.01, 0.02, -0.01, 0.05, 0.02, 0.09)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
-def test_material_lift_must_hold_on_both_hop3_and_hop4() -> None:
-    # Hop-3 material but hop-4 below material → NO_GO (the ≥3-hop region must ALL clear).
-    sub = MATERIAL_F1_LIFT / 2.0
-    d = _deltas(0.0, 0.01, 0.02, MATERIAL_F1_LIFT + 0.01, 0.02, sub)
-    assert decide(d, power_ok=True) == "NO_GO"
-
-
+# --------------------------------------------------------------------------- #
+# Determinism + return-domain.
+# --------------------------------------------------------------------------- #
 def test_determinism_same_input_same_verdict() -> None:
-    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
-    first = decide(d, power_ok=True)
-    second = decide(d, power_ok=True)
-    assert first == second == "GO"
-    neg = _deltas(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    assert decide(neg, power_ok=True) == decide(neg, power_ok=True) == "NO_GO"
+    assert _decide() == _decide() == "GO"
+    assert _decide(power_ok=False) == _decide(power_ok=False) == "NO_GO"
 
 
 def test_decide_returns_only_go_or_no_go() -> None:
-    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
-    assert decide(d, power_ok=True) in ("GO", "NO_GO")
-
-
-def test_missing_hop_raises() -> None:
-    # A malformed deltas map (missing a required hop) must fail loudly, not
-    # silently return a verdict.
-    bad = {2: {"em": 0.0, "f1": 0.0}, 3: {"em": 0.0, "f1": 0.05}}
-    with pytest.raises((KeyError, ValueError)):
-        decide(bad, power_ok=True)  # type: ignore[arg-type]
+    assert _decide() in ("GO", "NO_GO")
 
 
 # --------------------------------------------------------------------------- #
-# Non-finite (NaN / ±inf) endpoints must fail LOUDLY, not silently return a
-# verdict. A NaN slips past every ``<`` comparison (``nan < x`` is False), so
-# without an explicit isfinite guard ``decide`` would return GO on malformed
-# data — see codex §9 [P2]. The exact codex repro is pinned below.
+# Non-finite (NaN / ±inf) floats must fail LOUDLY (kept fix-1 guard). A NaN
+# slips past every ``<`` / ``>=`` comparison and would silently return a verdict.
 # --------------------------------------------------------------------------- #
-def test_nan_em_at_hop3_with_otherwise_go_inputs_raises() -> None:
-    # Codex [P2] repro: otherwise-GO inputs, but ΔEM at hop-3 is NaN. The
-    # confident-wrong guard (nan < 0.0 is False) would silently pass and the
-    # rule would return GO; a non-finite endpoint must fail loudly instead.
-    nan = float("nan")
-    d = _deltas(0.01, 0.02, nan, 0.05, 0.05, 0.09)
+def test_nan_f1_delta_with_otherwise_go_inputs_raises() -> None:
     with pytest.raises(ValueError):
-        decide(d, power_ok=True)
+        _decide(material=_material(float("nan"), 0.01))
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
-@pytest.mark.parametrize("metric", ["em", "f1"])
-@pytest.mark.parametrize("hop", [2, 3, 4])
-def test_non_finite_metric_at_any_required_hop_raises(
-    bad: float, metric: str, hop: int
-) -> None:
-    # Any non-finite EM or F1 at any required hop must raise loudly, regardless
-    # of which gate it would otherwise reach. Start from the GO row and poison
-    # one cell.
-    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
-    d[hop][metric] = bad
+def test_non_finite_f1_delta_raises(bad: float) -> None:
     with pytest.raises(ValueError):
-        decide(d, power_ok=True)
+        _decide(material=_material(bad, 0.01))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_f1_ci_low_raises(bad: float) -> None:
+    with pytest.raises(ValueError):
+        _decide(material=_material(0.05, bad))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_em_ci_high_raises(bad: float) -> None:
+    with pytest.raises(ValueError):
+        _decide(em=_em(bad))
 
 
 # --------------------------------------------------------------------------- #
@@ -180,29 +229,33 @@ def test_preregistration_is_complete_and_dated() -> None:
     assert problems == [], f"pre-registration lint failures: {problems}"
 
 
-def test_preregistration_lint_flags_missing_field() -> None:
-    # A doc missing a required frozen field must be flagged.
+def test_preregistration_lint_flags_missing_amended_field() -> None:
+    # The amended `comparator` frozen field is load-bearing (fixed fused+rerank).
     text = _DESIGN_DOC.read_text(encoding="utf-8")
-    mutated = text.replace("frozen-field: decision-rule", "xxx-removed-field")
+    mutated = text.replace("frozen-field: comparator", "xxx-removed-field")
     problems = lint_preregistration(mutated)
-    assert any("decision-rule" in p for p in problems)
+    assert any("comparator" in p for p in problems)
+
+
+def test_preregistration_lint_flags_missing_baseline_arms_field() -> None:
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    mutated = text.replace("frozen-field: baseline-arms", "xxx-removed-field")
+    problems = lint_preregistration(mutated)
+    assert any("baseline-arms" in p for p in problems)
 
 
 def test_preregistration_lint_flags_undated_field() -> None:
     # A required field present but stripped of its date must be flagged.
-    text = _DESIGN_DOC.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    out: list[str] = []
-    for ln in lines:
-        if "frozen-field: primary-endpoint" in ln:
-            # remove every YYYY-MM-DD token on that line
-            import re as _re
+    import re as _re
 
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    out: list[str] = []
+    for ln in text.splitlines():
+        if "frozen-field: primary-endpoint" in ln:
             out.append(_re.sub(r"\b20\d\d-\d\d-\d\d\b", "REDACTED", ln))
         else:
             out.append(ln)
-    mutated = "\n".join(out)
-    problems = lint_preregistration(mutated)
+    problems = lint_preregistration("\n".join(out))
     assert any("primary-endpoint" in p for p in problems)
 
 
