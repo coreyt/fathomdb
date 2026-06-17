@@ -28,6 +28,7 @@ import json
 import re
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
@@ -127,7 +128,7 @@ def parse_batch_output(text: str) -> tuple[dict[str, Optional[str]], int]:
 
 def score_e2e(
     sidecar: dict[str, dict[str, Any]],
-    answers: dict[str, Optional[str]],
+    answers: Mapping[str, Optional[str]],
     *,
     verdicts: Optional[dict[str, bool]] = None,
 ) -> dict[str, Any]:
