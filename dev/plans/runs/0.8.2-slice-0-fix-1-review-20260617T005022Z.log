@@ -1,0 +1,851 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019ed30e-cccd-7352-8f0a-587786d7ce03
+--------
+user
+changes against '753758f'
+exec
+/bin/bash -lc "cat MEMORY.md && for f in feedback_*.md; do echo '---' "'$f; cat "$f"; done' in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "ls -la && find .. -maxdepth 2 -name 'MEMORY.md' -o -name 'feedback_*.md'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+total 360
+drwxrwxr-x 24 coreyt coreyt   4096 Jun 15 12:47 .
+drwxrwxr-x 32 coreyt coreyt   4096 Jun  8 13:24 ..
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 13 19:43 .claude
+-r--r--r--  1 coreyt coreyt      0 May 29 16:05 .codex
+drwxrwxr-x  9 coreyt coreyt   4096 Jun 16 19:49 .git
+drwxrwxr-x  3 coreyt coreyt   4096 May 21 17:13 .github
+-rw-rw-r--  1 coreyt coreyt   1305 Jun 13 10:56 .gitignore
+drwxrwxr-x  3 coreyt coreyt   4096 Jun  5 21:41 .hypothesis
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 .local
+-rw-rw-r--  1 coreyt coreyt   1181 May 21 17:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   1350 May 21 17:13 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 May 21 17:13 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 May 21 17:13 .prettierrc.json
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:14 .pytest_cache
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 13 22:02 .ruff_cache
+drwxrwxr-x  5 coreyt coreyt   4096 Apr 10 08:59 .venv
+drwxrwxr-x  3 coreyt coreyt   4096 Jun 16 19:50 .wake
+-rw-rw-r--  1 coreyt coreyt  11521 May 31 08:26 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  34196 Jun  8 15:00 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 110596 Jun 15 12:47 Cargo.lock
+-rw-------  1 coreyt coreyt   2434 Jun 13 11:57 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Apr 10 07:33 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 May 21 17:13 README.md
+drwxrwxr-x  3 coreyt coreyt   4096 May 27 15:49 data
+-rw-rw-r--  1 coreyt coreyt    120 May 21 17:13 deny.toml
+drwxrwxr-x 24 coreyt coreyt   4096 Jun 16 19:41 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jun  1 10:40 docs
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 go
+-rw-rw-r--  1 coreyt coreyt   1481 May 21 17:13 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jun  4 18:14 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48297 May 24 15:41 package-lock.json
+-rw-rw-r--  1 coreyt coreyt    436 May 24 15:41 package.json
+drwxrwxr-x  9 coreyt coreyt   4096 Jun 13 10:42 python
+-rw-rw-r--  1 coreyt coreyt     66 May 21 17:13 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 May 21 17:13 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 May 25 13:06 scripts
+drwxrwxr-x 17 coreyt coreyt   4096 Jun  3 08:12 site
+drwxrwxr-x  6 coreyt coreyt   4096 Jun  4 14:57 src
+drwxrwxr-x  8 coreyt coreyt   4096 May 25 10:48 target
+drwxrwxr-x  6 coreyt coreyt   4096 May 21 17:13 test
+drwxrwxr-x  3 coreyt coreyt   4096 May 27 08:01 tests
+drwxrwxr-x  3 coreyt coreyt   4096 May 21 17:13 tools
+drwxrwxr-x  5 coreyt coreyt   4096 May 21 17:13 typescript
+../ado-mcp/MEMORY.md
+
+exec
+/bin/bash -lc 'git diff --stat 753758f6eb9d380f06bd509228dc5dad6184bb95 && git diff --name-status 753758f6eb9d380f06bd509228dc5dad6184bb95' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ dev/plans/prompts/0.8.2-slice-0-fix-1.md           |   90 ++
+ dev/plans/runs/0.8.2-slice-0-output.json           |   29 +
+ .../runs/0.8.2-slice-0-review-20260617T004340Z.log | 1434 ++++++++++++++++++++
+ .../runs/0.8.2-slice-0-review-20260617T004634Z.md  |   31 +
+ dev/plans/runs/STATUS-0.8.2.md                     |   15 +-
+ src/python/eval/m1_decision_rule.py                |   16 +-
+ src/python/tests/test_m1_decision_rule.py          |   31 +
+ 7 files changed, 1640 insertions(+), 6 deletions(-)
+A	dev/plans/prompts/0.8.2-slice-0-fix-1.md
+A	dev/plans/runs/0.8.2-slice-0-output.json
+A	dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log
+A	dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md
+M	dev/plans/runs/STATUS-0.8.2.md
+M	src/python/eval/m1_decision_rule.py
+M	src/python/tests/test_m1_decision_rule.py
+
+exec
+/bin/bash -lc 'git diff 753758f6eb9d380f06bd509228dc5dad6184bb95 -- src/python/eval/m1_decision_rule.py src/python/tests/test_m1_decision_rule.py' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/src/python/eval/m1_decision_rule.py b/src/python/eval/m1_decision_rule.py
+index 8042586..8466978 100644
+--- a/src/python/eval/m1_decision_rule.py
++++ b/src/python/eval/m1_decision_rule.py
+@@ -20,6 +20,7 @@ binding. Deterministic: no clock, no RNG, no I/O.
+ 
+ from __future__ import annotations
+ 
++import math
+ import re
+ from collections.abc import Mapping
+ from typing import Literal
+@@ -68,8 +69,11 @@ def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) ->
+     Otherwise **NO_GO**. F1 is the primary continuous signal; EM is a coarse
+     corroborating guard. Deterministic: same input → same verdict.
+ 
+-    Raises :class:`KeyError` if a required hop or metric is missing (a malformed
+-    endpoint must fail loudly, never silently return a verdict).
++    Raises :class:`KeyError` if a required hop or metric is missing, and
++    :class:`ValueError` if any EM or F1 value is non-finite (``NaN`` / ``±inf``)
++    — a malformed endpoint must fail loudly, never silently return a verdict. A
++    non-finite value is load-bearing here: ``nan < x`` is False, so a ``NaN``
++    would slip past every gate and silently yield ``GO``.
+     """
+     # Validate shape up front — fail loudly on a malformed endpoint.
+     f1: dict[int, float] = {}
+@@ -78,6 +82,14 @@ def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) ->
+         bucket = deltas_by_hop[hop]  # KeyError if a hop is missing
+         f1[hop] = float(bucket["f1"])  # KeyError if a metric is missing
+         em[hop] = float(bucket["em"])
++        # Reject non-finite (NaN / ±inf) values loudly: they slip past every
++        # ``<`` gate below and would silently return a verdict.
++        for metric, value in (("f1", f1[hop]), ("em", em[hop])):
++            if not math.isfinite(value):
++                raise ValueError(
++                    f"non-finite {metric} delta at hop {hop}: {value!r} "
++                    "(a malformed endpoint must fail loudly)"
++                )
+ 
+     # Gate 1 — material positive F1 lift on every ≥3-hop stratum.
+     if any(f1[hop] < MATERIAL_F1_LIFT for hop in _THREE_PLUS_HOPS):
+diff --git a/src/python/tests/test_m1_decision_rule.py b/src/python/tests/test_m1_decision_rule.py
+index ce4aa20..71e5aa3 100644
+--- a/src/python/tests/test_m1_decision_rule.py
++++ b/src/python/tests/test_m1_decision_rule.py
+@@ -136,6 +136,37 @@ def test_missing_hop_raises() -> None:
+         decide(bad, power_ok=True)  # type: ignore[arg-type]
+ 
+ 
++# --------------------------------------------------------------------------- #
++# Non-finite (NaN / ±inf) endpoints must fail LOUDLY, not silently return a
++# verdict. A NaN slips past every ``<`` comparison (``nan < x`` is False), so
++# without an explicit isfinite guard ``decide`` would return GO on malformed
++# data — see codex §9 [P2]. The exact codex repro is pinned below.
++# --------------------------------------------------------------------------- #
++def test_nan_em_at_hop3_with_otherwise_go_inputs_raises() -> None:
++    # Codex [P2] repro: otherwise-GO inputs, but ΔEM at hop-3 is NaN. The
++    # confident-wrong guard (nan < 0.0 is False) would silently pass and the
++    # rule would return GO; a non-finite endpoint must fail loudly instead.
++    nan = float("nan")
++    d = _deltas(0.01, 0.02, nan, 0.05, 0.05, 0.09)
++    with pytest.raises(ValueError):
++        decide(d, power_ok=True)
++
++
++@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
++@pytest.mark.parametrize("metric", ["em", "f1"])
++@pytest.mark.parametrize("hop", [2, 3, 4])
++def test_non_finite_metric_at_any_required_hop_raises(
++    bad: float, metric: str, hop: int
++) -> None:
++    # Any non-finite EM or F1 at any required hop must raise loudly, regardless
++    # of which gate it would otherwise reach. Start from the GO row and poison
++    # one cell.
++    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
++    d[hop][metric] = bad
++    with pytest.raises(ValueError):
++        decide(d, power_ok=True)
++
++
+ # --------------------------------------------------------------------------- #
+ # Pre-registration schema lint — fails RED if any frozen/dated field is missing.
+ # --------------------------------------------------------------------------- #
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/eval/m1_decision_rule.py && sed -n '1,220p' src/python/tests/test_m1_decision_rule.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""Frozen GO/NO-GO decision rule for the 0.8.2 / M1 multi-hop adjudication.
+
+This module is the *executable core* of the Slice-0 pre-registration. It freezes
+two things as code, before any data is seen, so a downstream slice cannot post-hoc
+switch the endpoint:
+
+1. :func:`decide` — the GO/NO-GO computation over the per-hop ΔEM/ΔF1 endpoint.
+   **Slice 20 imports this; it may not redefine the rule.**
+2. :func:`lint_preregistration` — the schema lint asserting the design doc
+   ``dev/design/0.8.2-m1-multihop-harness.md`` carries the required frozen, dated
+   pre-registration fields.
+
+Binding spec: ``dev/design/0.8.2-m1-multihop-harness.md`` §4 (pre-registration),
+``dev/plans/plan-0.8.2.md`` §4 (Slice 0 contract).
+
+Pure stdlib — **no ``fathomdb`` / ``scipy`` / ``networkx`` import** — so it (and
+its test) run anywhere, independent of the native-extension build or the ``.venv``
+binding. Deterministic: no clock, no RNG, no I/O.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections.abc import Mapping
+from typing import Literal
+
+# --------------------------------------------------------------------------- #
+# Frozen constants (the rule must be auditable). See design §4 (frozen-field:
+# decision-rule / mde-power-plan).
+# --------------------------------------------------------------------------- #
+
+#: The MuSiQue hop strata the endpoint is stratified by; the ≥3-hop region
+#: (3 and 4) is the graph-favored test region, hop-2 anchors the dose-response.
+REQUIRED_HOPS: tuple[int, int, int] = (2, 3, 4)
+
+#: Smallest ≥3-hop F1 lift worth a GO (2 F1 points). Slice 5 sizes N so the
+#: per-hop MDE falls below this.
+MATERIAL_F1_LIFT: float = 0.02
+
+#: ΔEM non-regression floor on the ≥3-hop strata (confident-wrong guard): the
+#: graph arm must not reduce exact-match on the strata it claims to help.
+EM_MIN_LIFT_3PLUS: float = 0.0
+
+Verdict = Literal["GO", "NO_GO"]
+_GO: Verdict = "GO"
+_NO_GO: Verdict = "NO_GO"
+
+#: Hop strata in the graph-favored region (≥3-hop) the rule evaluates for a lift.
+_THREE_PLUS_HOPS: tuple[int, ...] = tuple(h for h in REQUIRED_HOPS if h >= 3)
+
+
+def decide(deltas_by_hop: Mapping[int, Mapping[str, float]], power_ok: bool) -> Verdict:
+    """Return the frozen GO/NO-GO verdict for the M1 primary endpoint.
+
+    ``deltas_by_hop`` maps each hop count in :data:`REQUIRED_HOPS` to a mapping
+    ``{"em": ΔEM, "f1": ΔF1}``, where Δ = ``(ppr-fusion) − (best baseline)`` on the
+    MuSiQue-Ans answerable set for that hop count.
+
+    The rule (design §4.1 truth table) — **GO** iff *all* of:
+
+    * **material** ≥3-hop F1 lift — ``ΔF1 ≥`` :data:`MATERIAL_F1_LIFT` on **every**
+      ≥3-hop stratum (hop-3 and hop-4);
+    * **dose-responsive** — ΔF1 strictly grows across hops ``2 < 3 < 4``;
+    * **EM-non-regressing** — ``ΔEM ≥`` :data:`EM_MIN_LIFT_3PLUS` on every ≥3-hop
+      stratum (confident-wrong guard);
+    * **adequately powered** — ``power_ok`` is True.
+
+    Otherwise **NO_GO**. F1 is the primary continuous signal; EM is a coarse
+    corroborating guard. Deterministic: same input → same verdict.
+
+    Raises :class:`KeyError` if a required hop or metric is missing, and
+    :class:`ValueError` if any EM or F1 value is non-finite (``NaN`` / ``±inf``)
+    — a malformed endpoint must fail loudly, never silently return a verdict. A
+    non-finite value is load-bearing here: ``nan < x`` is False, so a ``NaN``
+    would slip past every gate and silently yield ``GO``.
+    """
+    # Validate shape up front — fail loudly on a malformed endpoint.
+    f1: dict[int, float] = {}
+    em: dict[int, float] = {}
+    for hop in REQUIRED_HOPS:
+        bucket = deltas_by_hop[hop]  # KeyError if a hop is missing
+        f1[hop] = float(bucket["f1"])  # KeyError if a metric is missing
+        em[hop] = float(bucket["em"])
+        # Reject non-finite (NaN / ±inf) values loudly: they slip past every
+        # ``<`` gate below and would silently return a verdict.
+        for metric, value in (("f1", f1[hop]), ("em", em[hop])):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"non-finite {metric} delta at hop {hop}: {value!r} "
+                    "(a malformed endpoint must fail loudly)"
+                )
+
+    # Gate 1 — material positive F1 lift on every ≥3-hop stratum.
+    if any(f1[hop] < MATERIAL_F1_LIFT for hop in _THREE_PLUS_HOPS):
+        return _NO_GO
+
+    # Gate 1b — EM non-regression on the ≥3-hop strata (confident-wrong guard).
+    if any(em[hop] < EM_MIN_LIFT_3PLUS for hop in _THREE_PLUS_HOPS):
+        return _NO_GO
+
+    # Gate 2 — dose-responsive: F1 lift strictly grows 2 < 3 < 4.
+    if not (f1[2] < f1[3] < f1[4]):
+        return _NO_GO
+
+    # Gate 3 — adequate power.
+    if not power_ok:
+        return _NO_GO
+
+    return _GO
+
+
+# --------------------------------------------------------------------------- #
+# Pre-registration schema lint (frozen as code, imported by the Slice-0 test).
+# --------------------------------------------------------------------------- #
+
+#: The required frozen, dated fields the design doc must carry (design §4). Each
+#: must appear as a ``frozen-field: <key>`` line bearing a YYYY-MM-DD date.
+REQUIRED_FROZEN_FIELDS: tuple[str, ...] = (
+    "primary-endpoint",
+    "per-hop-strata",
+    "decision-rule",
+    "mde-power-plan",
+)
+
+#: The design must self-declare it is decision-ready.
+REQUIRED_STATUS_TOKEN: str = "status: decision-ready"
+
+_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
+
+
+def lint_preregistration(doc_text: str) -> list[str]:
+    """Return a list of pre-registration problems (empty == clean).
+
+    Fails if the doc lacks ``status: decision-ready`` or any required
+    ``frozen-field: <key>`` line, or if such a line is present but undated. The
+    Slice-0 test asserts the list is empty for the real design doc and non-empty
+    for mutated copies (missing / undated field, downgraded status).
+    """
+    problems: list[str] = []
+
+    if REQUIRED_STATUS_TOKEN not in doc_text:
+        problems.append(f"missing or downgraded status (expected '{REQUIRED_STATUS_TOKEN}')")
+
+    lines = doc_text.splitlines()
+    for field in REQUIRED_FROZEN_FIELDS:
+        marker = f"frozen-field: {field}"
+        line = next((ln for ln in lines if marker in ln), None)
+        if line is None:
+            problems.append(f"missing frozen field: {field}")
+        elif not _DATE_RE.search(line):
+            problems.append(f"frozen field undated: {field}")
+
+    return problems
+"""Slice 0 (0.8.2 / M1) — frozen GO/NO-GO decision rule + pre-registration lint.
+
+Pre-registration is only credible if the GO/NO-GO computation is frozen as *code*
+now, so Slice 20 cannot post-hoc switch the endpoint. This module pins the full
+truth table of ``eval.m1_decision_rule.decide`` at its boundaries, and lints that
+``dev/design/0.8.2-m1-multihop-harness.md`` carries the required frozen, dated
+pre-registration fields.
+
+Pure stdlib only — **no ``fathomdb`` / ``scipy`` / ``networkx`` import** — so this
+test runs anywhere, independent of the native-extension build or the ``.venv``
+binding.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from eval.m1_decision_rule import (
+    EM_MIN_LIFT_3PLUS,
+    MATERIAL_F1_LIFT,
+    REQUIRED_HOPS,
+    decide,
+    lint_preregistration,
+)
+
+# --------------------------------------------------------------------------- #
+# Locate the frozen design doc (repo-relative; no fathomdb import).
+# tests/ -> src/python -> src -> repo-root
+# --------------------------------------------------------------------------- #
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DESIGN_DOC = _REPO_ROOT / "dev" / "design" / "0.8.2-m1-multihop-harness.md"
+
+
+def _deltas(
+    em2: float, f12: float, em3: float, f13: float, em4: float, f14: float
+) -> dict[int, dict[str, float]]:
+    """Build a ``deltas_by_hop`` map: hop -> {'em': ΔEM, 'f1': ΔF1}."""
+    return {
+        2: {"em": em2, "f1": f12},
+        3: {"em": em3, "f1": f13},
+        4: {"em": em4, "f1": f14},
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Constants are frozen (the rule must be auditable).
+# --------------------------------------------------------------------------- #
+def test_frozen_constants() -> None:
+    assert REQUIRED_HOPS == (2, 3, 4)
+    assert MATERIAL_F1_LIFT == pytest.approx(0.02)
+    assert EM_MIN_LIFT_3PLUS == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
+# Truth table — pin every row from the plan §4 / design §4.1.
+# --------------------------------------------------------------------------- #
+def test_flat_lift_on_3plus_is_no_go() -> None:
+    # ≥3-hop F1 lift is flat (zero) → NO_GO, regardless of power.
+    d = _deltas(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_negative_lift_on_3plus_is_no_go() -> None:
+    # ≥3-hop F1 lift is negative (graph hurts) → NO_GO.
+    d = _deltas(0.0, -0.01, -0.02, -0.03, -0.03, -0.05)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_positive_below_material_on_3plus_is_no_go() -> None:
+    # Positive but below the material threshold on the ≥3-hop strata → NO_GO.
+    tiny = MATERIAL_F1_LIFT / 2.0
+    d = _deltas(0.0, 0.0, 0.01, tiny, 0.01, tiny)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_positive_material_but_flat_dose_is_no_go() -> None:
+    # Material positive ≥3-hop lift but NOT dose-responsive (flat across hops) → NO_GO.
+    d = _deltas(0.05, 0.05, 0.05, 0.05, 0.05, 0.05)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_positive_material_but_decreasing_dose_is_no_go() -> None:
+    # Material positive but the lift SHRINKS with hops (anti-dose-response) → NO_GO.
+    d = _deltas(0.05, 0.09, 0.05, 0.06, 0.05, 0.03)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_dose_responsive_but_underpowered_is_no_go() -> None:
+    # Dose-responsive, material ≥3-hop lift, EM non-regressing, but power_ok=False → NO_GO.
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    assert decide(d, power_ok=False) == "NO_GO"
+
+
+def test_dose_responsive_and_powered_is_go() -> None:
+    # The ONLY GO row: dose-responsive (2<3<4), material on hop-3 & hop-4,
+    # EM non-regressing on ≥3-hop, and adequately powered.
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    assert decide(d, power_ok=True) == "GO"
+
+
+def test_dose_responsive_powered_but_em_regresses_on_3plus_is_no_go() -> None:
+    # Confident-wrong guard: F1 dose-responsive + powered, but ΔEM negative on a
+    # ≥3-hop stratum → NO_GO.
+    d = _deltas(0.01, 0.02, -0.01, 0.05, 0.02, 0.09)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_material_lift_must_hold_on_both_hop3_and_hop4() -> None:
+    # Hop-3 material but hop-4 below material → NO_GO (the ≥3-hop region must ALL clear).
+    sub = MATERIAL_F1_LIFT / 2.0
+    d = _deltas(0.0, 0.01, 0.02, MATERIAL_F1_LIFT + 0.01, 0.02, sub)
+    assert decide(d, power_ok=True) == "NO_GO"
+
+
+def test_determinism_same_input_same_verdict() -> None:
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    first = decide(d, power_ok=True)
+    second = decide(d, power_ok=True)
+    assert first == second == "GO"
+    neg = _deltas(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert decide(neg, power_ok=True) == decide(neg, power_ok=True) == "NO_GO"
+
+
+def test_decide_returns_only_go_or_no_go() -> None:
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    assert decide(d, power_ok=True) in ("GO", "NO_GO")
+
+
+def test_missing_hop_raises() -> None:
+    # A malformed deltas map (missing a required hop) must fail loudly, not
+    # silently return a verdict.
+    bad = {2: {"em": 0.0, "f1": 0.0}, 3: {"em": 0.0, "f1": 0.05}}
+    with pytest.raises((KeyError, ValueError)):
+        decide(bad, power_ok=True)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# Non-finite (NaN / ±inf) endpoints must fail LOUDLY, not silently return a
+# verdict. A NaN slips past every ``<`` comparison (``nan < x`` is False), so
+# without an explicit isfinite guard ``decide`` would return GO on malformed
+# data — see codex §9 [P2]. The exact codex repro is pinned below.
+# --------------------------------------------------------------------------- #
+def test_nan_em_at_hop3_with_otherwise_go_inputs_raises() -> None:
+    # Codex [P2] repro: otherwise-GO inputs, but ΔEM at hop-3 is NaN. The
+    # confident-wrong guard (nan < 0.0 is False) would silently pass and the
+    # rule would return GO; a non-finite endpoint must fail loudly instead.
+    nan = float("nan")
+    d = _deltas(0.01, 0.02, nan, 0.05, 0.05, 0.09)
+    with pytest.raises(ValueError):
+        decide(d, power_ok=True)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("metric", ["em", "f1"])
+@pytest.mark.parametrize("hop", [2, 3, 4])
+def test_non_finite_metric_at_any_required_hop_raises(
+    bad: float, metric: str, hop: int
+) -> None:
+    # Any non-finite EM or F1 at any required hop must raise loudly, regardless
+    # of which gate it would otherwise reach. Start from the GO row and poison
+    # one cell.
+    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+    d[hop][metric] = bad
+    with pytest.raises(ValueError):
+        decide(d, power_ok=True)
+
+
+# --------------------------------------------------------------------------- #
+# Pre-registration schema lint — fails RED if any frozen/dated field is missing.
+# --------------------------------------------------------------------------- #
+def test_design_doc_exists() -> None:
+    assert _DESIGN_DOC.is_file(), f"design doc not found: {_DESIGN_DOC}"
+
+
+def test_preregistration_is_complete_and_dated() -> None:
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    problems = lint_preregistration(text)
+    assert problems == [], f"pre-registration lint failures: {problems}"
+
+
+def test_preregistration_lint_flags_missing_field() -> None:
+    # A doc missing a required frozen field must be flagged.
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    mutated = text.replace("frozen-field: decision-rule", "xxx-removed-field")
+    problems = lint_preregistration(mutated)
+    assert any("decision-rule" in p for p in problems)
+
+
+def test_preregistration_lint_flags_undated_field() -> None:
+    # A required field present but stripped of its date must be flagged.
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    out: list[str] = []
+    for ln in lines:
+        if "frozen-field: primary-endpoint" in ln:
+            # remove every YYYY-MM-DD token on that line
+            import re as _re
+
+            out.append(_re.sub(r"\b20\d\d-\d\d-\d\d\b", "REDACTED", ln))
+        else:
+            out.append(ln)
+    mutated = "\n".join(out)
+    problems = lint_preregistration(mutated)
+    assert any("primary-endpoint" in p for p in problems)
+
+
+def test_preregistration_lint_requires_status_decision_ready() -> None:
+    text = _DESIGN_DOC.read_text(encoding="utf-8").replace(
+        "status: decision-ready", "status: draft"
+    )
+    problems = lint_preregistration(text)
+    assert any("decision-ready" in p for p in problems)
+
+exec
+/bin/bash -lc "git diff 753758f6eb9d380f06bd509228dc5dad6184bb95 -- dev/plans/runs/STATUS-0.8.2.md dev/plans/prompts/0.8.2-slice-0-fix-1.md dev/plans/runs/0.8.2-slice-0-output.json dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md | sed -n '1,240p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/dev/plans/prompts/0.8.2-slice-0-fix-1.md b/dev/plans/prompts/0.8.2-slice-0-fix-1.md
+new file mode 100644
+index 0000000..4f08f6e
+--- /dev/null
++++ b/dev/plans/prompts/0.8.2-slice-0-fix-1.md
+@@ -0,0 +1,90 @@
++# Slice 0 fix-1 — reject non-finite endpoint metrics in `decide()` · `[implementation]`
++
++> **You are the Slice 0 fix-1 implementer.** Self-contained; trust this + on-disk state. You own the
++> **existing** worktree below (do NOT create a new one), add an **additive** RED→GREEN fix, and merge
++> onto local `main` yourself. Do **not** spawn subagents. Recover out loud (`[DETECT]`/`[RESOLVE]`).
++
++## 0. Your worktree (EXISTING — reuse it)
++```bash
++export CANON=/home/coreyt/projects/fathomdb
++export WT=/tmp/fdb-0.8.2-slice-0-20260617T003233Z
++export BR=slice-0.8.2-0-20260617T003233Z
++export BASE=b5666acaf39be8d0172e6ed7bcce07fc17e1dceb   # current branch HEAD; build ON TOP, additive only
++cd "$WT"
++test "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" && echo "[S0fix1][PLAN] worktree confirmed"
++git rev-parse HEAD   # expect b5666ac…
++```
++Every edit path begins with `$WT`. Exception: write `output.json` LAST under the canonical
++`dev/plans/runs/` path. Stray-edit tripwire after each edit batch:
++`git -C "$CANON" status --porcelain -- src/ dev/` → must be empty.
++
++## 1. The finding to address (codex §9, promoted)
++Verdict: `/home/coreyt/projects/fathomdb/dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md` (read it).
++
++**[P2] `decide()` can return GO on non-finite (NaN) EM data** — `src/python/eval/m1_decision_rule.py:87`.
++`nan < 0.0` is False, so the EM confident-wrong guard silently passes; material+dose-responsive F1 then
++yields `GO`. Repro: `decide({2:{"em":0,"f1":.01},3:{"em":float("nan"),"f1":.05},4:{"em":0,"f1":.09}}, True) == "GO"`.
++This violates the rule's own docstring contract ("a malformed endpoint must fail loudly, never silently
++return a verdict"). The same NaN-blindness applies to F1 inputs (and ±inf).
++
++## 2. Mandate (exactly this — nothing else)
++Make `decide()` **reject non-finite** (`NaN`, `±inf`) EM **and** F1 values **loudly**, consistent with
++the existing missing-hop/metric `KeyError` shape-check. Pick the loud failure that fits the existing
++"fail loudly" intent — raise `ValueError` from the up-front validation loop (alongside the `float(...)`
++parse), so no gate ever sees a non-finite value. Update the docstring's "Raises" note to include it.
++
++**Out of scope:** any change to the thresholds, the truth table, the gates' logic, the design doc's
++frozen fields (the *rule* is unchanged — you are only hardening input validation), or any other file
++beyond the module + its test. If you find you must touch the design doc or thresholds, **STOP and
++escalate** — that would be a spec change, not a fix.
++
++## 3. TDD (additive; record the RED sha)
++- **RED:** add cases to `src/python/tests/test_m1_decision_rule.py` asserting `decide()` **raises**
++  (e.g. `pytest.raises(ValueError)`) when any EM or F1 value at any required hop is `NaN`, `+inf`, or
++  `-inf` — including the exact codex repro (NaN EM at hop 3 with otherwise-GO inputs). They must FAIL
++  against the current module (which returns GO / does not raise). Commit tests-only; capture the RED sha.
++  `echo "[S0fix1][RED] non-finite cases failing as expected"`.
++- **GREEN:** add the `math.isfinite` validation in the up-front loop of `decide()`; update the docstring.
++  All prior 18 tests + the new cases pass. `echo "[S0fix1][GREEN] non-finite rejected; suite green"`.
++
++## 4. Self-check (from `$WT`)
++```bash
++cd "$WT"
++FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
++pyright src/python/eval/m1_decision_rule.py   # 0/0
++```
++(The autouse maturin fixture is bypassed by `FATHOMDB_TESTS_NO_REBUILD=1` since this test imports no
++`fathomdb`.) Then run the stray-edit tripwire (§0) — canonical clean. `echo "[S0fix1][CHECK] green; canonical clean"`.
++
++## 5. Commit + merge onto LOCAL `main`
++Additive commits on `$BR`: RED (tests) → GREEN. Never `--no-verify`, never rewrite history. Then:
++```bash
++cd "$CANON"
++git merge --no-ff "$BR" -m "fix(0.8.2/M1 Slice 0): decide() rejects non-finite EM/F1 endpoints (codex §9 [P2])"
++echo "[S0fix1][MERGE] merged to local main at $(git rev-parse HEAD)"
++```
++Do NOT push/fetch/PR. If `git merge` conflicts, STOP and report (do not force-resolve).
++
++## 6. Closure — write `output.json` LAST
++`/home/coreyt/projects/fathomdb/dev/plans/runs/0.8.2-slice-0-fix-1-output.json`:
++```json
++{
++  "phase": "0.8.2-slice-0-fix-1",
++  "baseline_sha": "b5666acaf39be8d0172e6ed7bcce07fc17e1dceb",
++  "branch": "slice-0.8.2-0-20260617T003233Z",
++  "head_sha": "<branch HEAD before this merge>",
++  "merged_to_main_sha": "<merge commit on main>",
++  "commits": ["<sha>: <subject>", "..."],
++  "findings_addressed": ["codex §9 [P2]: decide() GO on non-finite EM/F1"],
++  "tdd_evidence": { "red_commit_sha": "<sha>", "test_files": ["src/python/tests/test_m1_decision_rule.py"] },
++  "blockers_encountered": [],
++  "additional_changes_made_in_scope": [],
++  "agent_verify_result": "pass | fail (+ tail of pytest/pyright)",
++  "next_step_for_orchestrator": "fix-1 merged at <sha>; re-review the fix diff (codex §9), then ◆ HITL sign-off"
++}
++```
++
++## 7. Console contract
++`[S0fix1][PHASE] msg` — PLAN/RED/GREEN/CHECK/MERGE/DETECT/RESOLVE/SUMMARY. Emit at each transition,
++the instant you detect a problem, after you resolve it, and a final `[SUMMARY]` (files/commits,
++self-check, merge SHA). Stay in-slice; escalate any spec-level temptation instead of absorbing it.
+diff --git a/dev/plans/runs/0.8.2-slice-0-output.json b/dev/plans/runs/0.8.2-slice-0-output.json
+new file mode 100644
+index 0000000..bb0e196
+--- /dev/null
++++ b/dev/plans/runs/0.8.2-slice-0-output.json
+@@ -0,0 +1,29 @@
++{
++  "phase": "0.8.2-slice-0",
++  "baseline_sha": "b30414710825661bccbf6c7768ff77413f7a0fa1",
++  "branch": "slice-0.8.2-0-20260617T003233Z",
++  "head_sha": "b5666acaf39be8d0172e6ed7bcce07fc17e1dceb",
++  "merged_to_main_sha": "753758f6eb9d380f06bd509228dc5dad6184bb95",
++  "commits": [
++    "70ed44c52fc235478c2df2d87c0674de6ce05601: docs(0.8.2/M1 Slice 0): M1 multi-hop harness design + frozen pre-registration",
++    "1afa9a972369d66f835295d2f7e1984fd00669db: test(0.8.2/M1 Slice 0): RED — pin decide() truth table + pre-registration schema lint",
++    "a958ee961c26842aa28279c3eff9df38ed860087: feat(0.8.2/M1 Slice 0): GREEN — frozen decide() rule + pre-registration lint",
++    "b5666acaf39be8d0172e6ed7bcce07fc17e1dceb: docs(0.8.2/M1 Slice 0): DOC-INDEX row for M1 multi-hop harness design"
++  ],
++  "findings_addressed": [],
++  "tdd_evidence": {
++    "red_commit_sha": "1afa9a972369d66f835295d2f7e1984fd00669db",
++    "red_evidence": "at the RED commit `python -m pytest tests/test_m1_decision_rule.py` errored with ModuleNotFoundError: No module named 'eval.m1_decision_rule' (module absent by design); GREEN commit a958ee9 makes all 18 tests pass",
++    "test_files": ["src/python/tests/test_m1_decision_rule.py"]
++  },
++  "blockers_encountered": [],
++  "additional_changes_made_in_scope": [
++    "SDK parity (Py/TS): declared n/a — no SDK surface change (pure-Python eval-harness module + design doc).",
++    "X1 cross-binding functional harness: declared n/a — eval-harness design + pure-Python decision rule, no engine behavior to cross-check across bindings.",
++    "X2 mkdocs: declared n/a — dev/design/ is not in mkdocs.yml nav (verified); the design doc is internal-only.",
++    "Out-of-scope deferrals NOT performed (per mandate §2): MuSiQue acquire script (Slice 5), any retrieval/graph/PPR code (Slices 10/15), any priced or unpriced answerer run (Slices 5/20), scipy/networkx install (Slice 15).",
++    "Rebased the slice branch onto local main (advanced +2 commits since baseline, none touching slice paths) before merge per prompt §5; rebase clean, self-check re-run green. RED sha recorded is the post-rebase value on main."
++  ],
++  "agent_verify_result": "pass — pytest: 18 passed in 0.10s (FATHOMDB_TESTS_NO_REBUILD=1, no fathomdb import); pyright eval/m1_decision_rule.py: 0 errors, 0 warnings, 0 informations; stray-edit tripwire empty (canonical src/+dev/ clean, slice files isolated to the worktree).",
++  "next_step_for_orchestrator": "Slice 0 merged to local main at 753758f6eb9d380f06bd509228dc5dad6184bb95; review (codex §9), then ◆ HITL design+pre-registration sign-off before any priced run (gates Slice 20). Slices 5 (baseline bar) and 10 (graph build) are independent off Slice 0 and may run in parallel; Slice 15 imports nothing from this slice but Slice 20 MUST import eval.m1_decision_rule.decide() and may not redefine the rule."
++}
+diff --git a/dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md b/dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md
+new file mode 100644
+index 0000000..f5280bb
+--- /dev/null
++++ b/dev/plans/runs/0.8.2-slice-0-review-20260617T004634Z.md
+@@ -0,0 +1,31 @@
++# Slice 0 (0.8.2/M1) Review — codex gpt-5.5 verdict
++
++Reviewer: `codex exec review --base 0cd7524 --dangerously-bypass-approvals-and-sandbox` (gpt-5.5, effort medium, danger-full-access).
++Target: local `main` merge `753758f` (slice diff `0cd7524..753758f`, branch `slice-0.8.2-0-20260617T003233Z` HEAD `b5666ac`).
++Baseline: `0cd7524` (main pre-merge; the +2 commits above the slice baseline b304147 are orchestrator docs, excluded).
++Review log: `dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log`.
++
++Sandbox note: codex ran read+exec (danger-full-access) but wrote no repo files; main thread promotes this verdict from the log.
++
++## Verdict: CONCERN (one [P2]; no [P1]/BLOCK)
++
++### 1. [P2/medium] decide() can return GO on non-finite (NaN) EM data
++Refs: `src/python/eval/m1_decision_rule.py:87` (Gate 1b, EM non-regression).
++If a downstream run yields `NaN` for a ≥3-hop EM delta, `nan < 0.0` is False, so the
++confident-wrong guard passes; otherwise-material/dose-responsive F1 then returns `GO`.
++Codex repro: `decide({2:{em:0,f1:.01},3:{em:nan,f1:.03},4:{em:0,f1:.05}}, True) == "GO"`.
++This contradicts the rule's own docstring contract ("a malformed endpoint must fail
++loudly, never silently return a verdict"). The same NaN-blindness applies to F1 inputs.
++
++## What passed on inspection
++- decide() logic matches the design §4.1 truth table; frozen thresholds (MATERIAL_F1_LIFT=0.02,
++  EM_MIN_LIFT_3PLUS=0.0) named + dated; deterministic; KeyError on missing hop/metric.
++- Pre-registration doc `status: decision-ready` with dated frozen-field lines + schema lint.
++- 18 tests pin the truth table; independently re-run by the orchestrator: 18 passed, exit 0.
++
++## Orchestrator triage
++**FIX-1.** Substantive correctness gap in *the* load-bearing frozen artifact (Slice 20 imports
++decide()); not structural/prompt-induced, so not an override candidate. The design is only truly
++"decision-ready" once decide() rejects malformed (non-finite) endpoints loudly. Remediate in the
++existing worktree (RED: NaN EM/F1 cases ⇒ raise; GREEN: math.isfinite validation alongside the
++existing KeyError shape-check), re-review, then proceed to the ◆ HITL sign-off.
+diff --git a/dev/plans/runs/STATUS-0.8.2.md b/dev/plans/runs/STATUS-0.8.2.md
+index 76b07c3..db5eb8a 100644
+--- a/dev/plans/runs/STATUS-0.8.2.md
++++ b/dev/plans/runs/STATUS-0.8.2.md
+@@ -7,10 +7,11 @@
+ 
+ ## 1. Current state + next action
+ 
+-- **State:** **SLICE 0 IN-FLIGHT.** Triad committed (`b304147`); Slice 0 implementer spawned into a
+-  main-thread-owned worktree off `b304147`.
+-- **Next action:** await the implementer's merge-to-local-`main` + `output.json`; then gate from git,
+-  run codex §9, and prepare the ◆ HITL design+pre-registration sign-off.
++- **State:** **SLICE 0 — fix-1 IN-FLIGHT.** Slice 0 merged to `main` (`753758f`), git-gated, 18 tests
++  re-run green by the orchestrator. codex §9 returned one **[P2]** (`decide()` can GO on non-finite
++  EM/F1) → fix-1 spawned into the existing worktree.
++- **Next action:** await fix-1 merge + `output.json`; re-review the fix diff (codex §9); then prepare
++  the ◆ HITL design+pre-registration sign-off (gates any priced run / Slice 20).
+ - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
+   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
+ 
+@@ -60,6 +61,12 @@ graph extraction) and may run in parallel.
+ 
+ ## 7. Recent decisions (newest on top)
+ 
++- **2026-06-16** — Slice 0 codex §9: **CONCERN, one [P2]** — `decide()` returns GO on non-finite (NaN)
++  EM/F1 because `nan < 0.0` is False, contradicting its "fail loudly" contract. Substantive (not
++  structural/prompt-induced) ⇒ **FIX-1**, not override. Verdict promoted
++  (`runs/0.8.2-slice-0-review-20260617T004634Z.md`); fix-1 hardens input validation only (rule
++  unchanged). Orchestrator independently re-ran the 18 tests green before reviewing (not trusting the
++  agent's green claim — [[background-exit-masks-real-exit]]).
+ - **2026-06-16** — Slice 0 gets a real **TDD** even as `[design-adr]`: the pre-registered GO/NO-GO
+   rule is frozen as a pure-Python `decide()` function (+ schema lint on the design doc) at Slice 0, so
+   Slice 20 imports it and cannot post-hoc switch the endpoint. Encodes the plan's anti-post-hoc stance
+
+exec
+/bin/bash -lc 'FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q' in /home/coreyt/projects/fathomdb
+ succeeded in 272ms:
+.....................................                                    [100%]
+37 passed in 0.12s
+
+exec
+/bin/bash -lc 'python -m pyright src/python/eval/m1_decision_rule.py src/python/tests/test_m1_decision_rule.py' in /home/coreyt/projects/fathomdb
+ succeeded in 752ms:
+0 errors, 0 warnings, 0 informations
+
+exec
+/bin/bash -lc "nl -ba src/python/tests/test_m1_decision_rule.py | sed -n '135,166p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   135	    with pytest.raises((KeyError, ValueError)):
+   136	        decide(bad, power_ok=True)  # type: ignore[arg-type]
+   137	
+   138	
+   139	# --------------------------------------------------------------------------- #
+   140	# Non-finite (NaN / ±inf) endpoints must fail LOUDLY, not silently return a
+   141	# verdict. A NaN slips past every ``<`` comparison (``nan < x`` is False), so
+   142	# without an explicit isfinite guard ``decide`` would return GO on malformed
+   143	# data — see codex §9 [P2]. The exact codex repro is pinned below.
+   144	# --------------------------------------------------------------------------- #
+   145	def test_nan_em_at_hop3_with_otherwise_go_inputs_raises() -> None:
+   146	    # Codex [P2] repro: otherwise-GO inputs, but ΔEM at hop-3 is NaN. The
+   147	    # confident-wrong guard (nan < 0.0 is False) would silently pass and the
+   148	    # rule would return GO; a non-finite endpoint must fail loudly instead.
+   149	    nan = float("nan")
+   150	    d = _deltas(0.01, 0.02, nan, 0.05, 0.05, 0.09)
+   151	    with pytest.raises(ValueError):
+   152	        decide(d, power_ok=True)
+   153	
+   154	
+   155	@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+   156	@pytest.mark.parametrize("metric", ["em", "f1"])
+   157	@pytest.mark.parametrize("hop", [2, 3, 4])
+   158	def test_non_finite_metric_at_any_required_hop_raises(
+   159	    bad: float, metric: str, hop: int
+   160	) -> None:
+   161	    # Any non-finite EM or F1 at any required hop must raise loudly, regardless
+   162	    # of which gate it would otherwise reach. Start from the GO row and poison
+   163	    # one cell.
+   164	    d = _deltas(0.01, 0.02, 0.03, 0.05, 0.05, 0.09)
+   165	    d[hop][metric] = bad
+   166	    with pytest.raises(ValueError):
+
+exec
+/bin/bash -lc ./scripts/agent-lint.sh in /home/coreyt/projects/fathomdb
+ succeeded in 4733ms:
+exec
+/bin/bash -lc ./scripts/agent-typecheck.sh in /home/coreyt/projects/fathomdb
+ exited 1 in 5404ms:
+FAIL typecheck-python (exit=1, 2345ms)
+----
+/home/coreyt/projects/fathomdb/src/python/eval/r6_index_key_enrichment.py
+  /home/coreyt/projects/fathomdb/src/python/eval/r6_index_key_enrichment.py:237:65 - error: Operator "-" not supported for types "float | None" and "float | None"
+    Operator "-" not supported for types "float" and "None"
+    Operator "-" not supported for types "None" and "float"
+    Operator "-" not supported for types "None" and "None" (reportOperatorIssue)
+  /home/coreyt/projects/fathomdb/src/python/eval/r6_index_key_enrichment.py:239:65 - error: Operator "-" not supported for types "float | None" and "float | None"
+    Operator "-" not supported for types "float" and "None"
+    Operator "-" not supported for types "None" and "float"
+    Operator "-" not supported for types "None" and "None" (reportOperatorIssue)
+/home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:177:30 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:267:54 - error: Argument of type "None" cannot be assigned to parameter "output_file_id" of type "str" in function "__init__"
+    "None" is not assignable to "str" (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:350:31 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:351:31 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:356:32 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:357:32 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /home/coreyt/projects/fathomdb/src/python/tests/test_p0a_batch_e2e.py:365:30 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "answers" of type "dict[str, str | None]" in function "score_e2e"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+9 errors, 0 warnings, 0 informations
+WARNING: there is a new pyright version available (v1.1.409 -> v1.1.410).
+Please install the new version or set PYRIGHT_PYTHON_FORCE_VERSION to `latest`
+
+----
+full log: /tmp/fathomdb-agent-typecheck-python-1395084.log
+
+codex
+The change adds finite-value validation before the decision gates and covers NaN/±inf cases with tests. I did not find any introduced correctness issues in the diff.
+The change adds finite-value validation before the decision gates and covers NaN/±inf cases with tests. I did not find any introduced correctness issues in the diff.

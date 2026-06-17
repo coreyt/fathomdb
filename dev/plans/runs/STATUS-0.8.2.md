@@ -7,11 +7,13 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0 — fix-1 IN-FLIGHT.** Slice 0 merged to `main` (`753758f`), git-gated, 18 tests
-  re-run green by the orchestrator. codex §9 returned one **[P2]** (`decide()` can GO on non-finite
-  EM/F1) → fix-1 spawned into the existing worktree.
-- **Next action:** await fix-1 merge + `output.json`; re-review the fix diff (codex §9); then prepare
-  the ◆ HITL design+pre-registration sign-off (gates any priced run / Slice 20).
+- **State:** **SLICE 0 CLOSED (code); ◆ HITL SIGN-OFF PENDING.** Slice 0 + fix-1 merged to `main`
+  (`a50953c`), git-gated, codex §9 **PASS** after fix-1 (one [P2] non-finite-input gap found + fixed,
+  re-reviewed clean). Orchestrator independently re-ran 37/37 green; worktree + branch cleaned.
+- **Next action (◆ HITL gate — STOP):** present the **design + pre-registration sign-off package** to
+  HITL (coreyt). The pre-registration is a scientific pre-commitment — human-signed by design. **Until
+  signed, do NOT spawn Slices 5/10** (they test against the frozen design; Slice 5's priced baseline
+  run is explicitly gated on the sign-off).
 - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
 
@@ -19,7 +21,7 @@
 
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
-| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **IN-FLIGHT** | `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`) + `src/python/eval/m1_decision_rule.py` GREEN + RED sha in `output.json` |
+| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED** (code; ◆ HITL sign-off pending) | merged `a50953c`; codex §9 PASS (post fix-1); 37/37 green |
 | 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
@@ -47,9 +49,22 @@ graph extraction) and may run in parallel.
 
 ## 5. Outstanding worktrees
 
-| Worktree | Branch | Baseline | Slice | State |
-|---|---|---|---|---|
-| `/tmp/fdb-0.8.2-slice-0-20260617T003233Z` | `slice-0.8.2-0-20260617T003233Z` | `b304147` | 0 | IN-FLIGHT |
+None for 0.8.2 (Slice 0 worktree + branch removed at close). *(A stray `/tmp/fdb-g0-…` worktree from a
+prior 0.8.0 session exists — out of 0.8.2 scope.)*
+
+## 5a. Open HITL gate — ◆ design + pre-registration sign-off (BLOCKS 5/10)
+
+Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's priced baseline run).
+- **Design doc:** `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`).
+- **Frozen primary endpoint:** paired ΔEM/ΔF1 = (PPR-fusion) − (best baseline), **per hop count
+  (2/3/4)**, 2→3→4 dose-response load-bearing. Unanswerable set = confident-wrong guard.
+- **Frozen decision rule (as code, `decide()`):** GO iff ΔF1 ≥ **0.02** on hops 3 **and** 4, strictly
+  dose-responsive (`f1[2]<f1[3]<f1[4]`), ΔEM ≥ 0 on hops 3/4, **and** adequately powered; else NO_GO.
+  Non-finite inputs raise (post fix-1). Slice 20 imports it, may not redefine it.
+- **Strong baseline:** BM25 ∪ passage-dense ∪ fused(RRF) — not lexical-only; same answerer all arms.
+- **Budget:** flash-lite cheap-validate before any priced `gemini-3.1-pro-preview` run; $ ledger live.
+- **Honesty flag carried:** literature expects near-tie-to-modest-loss; value = strongest fair graph test.
+- **Decision needed:** sign as-is / amend a frozen field / hold.
 
 ## 6. Open HITL questions
 
@@ -61,6 +76,15 @@ graph extraction) and may run in parallel.
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — Slice 0 **CLOSED (code)**: fix-1 merged (`a50953c`), codex §9 re-review **PASS**
+  (`runs/0.8.2-slice-0-fix-1-review-20260617T005328Z.md`); 37/37 re-run green by the orchestrator;
+  worktree/branch cleaned. Two log flags examined + dismissed with cause: the `[P1]/[P2]` tags are
+  diff-echoes (not findings); the 9 `test_p0a_batch_e2e.py` pyright errors are **pre-existing** at
+  `b304147` (untouched file) — pre-existing tech debt, not a Slice 0 regression. **Next = ◆ HITL
+  design+pre-registration sign-off (gates 5/10).**
+- **2026-06-16** — Pre-existing debt noted (not 0.8.2's): repo-wide `pyright -p src/python` is **not**
+  0/0 — 9 errors in `test_p0a_batch_e2e.py` (`score_e2e` `dict[str,str]` vs `dict[str,str|None]`) at
+  baseline `b304147`, contradicting the SLICE-TEMPLATE "0/0 standing baseline". Cleanup candidate.
 - **2026-06-16** — Slice 0 codex §9: **CONCERN, one [P2]** — `decide()` returns GO on non-finite (NaN)
   EM/F1 because `nan < 0.0` is False, contradicting its "fail loudly" contract. Substantive (not
   structural/prompt-induced) ⇒ **FIX-1**, not override. Verdict promoted
