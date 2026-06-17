@@ -7,10 +7,12 @@
 
 ## 1. Current state + next action
 
-- **State:** **SLICE 0-REVISION — rev-fix-1 IN-FLIGHT.** Revision merged (`d4140e0`), git-gated, 31/31
-  re-run green (flat-positive now GO). codex §9 on the revision → one **[P2]** (the 6th `trend-test`
-  frozen-field isn't enforced by the lint — my 5-field under-spec) → rev-fix-1 spawned (add it to
-  `REQUIRED_FROZEN_FIELDS` + RED test). **Slice H1 CLOSED** (`74999b3`).
+- **State:** **SLICE 0 CLOSED (amended); ◆ HITL SIGN-OFF READY.** Revision + rev-fix-1 merged
+  (`2348f95`), git-gated, **33/33 re-run green**, codex §9 **PASS** (zero findings) on the final amended
+  rule. All 6 amendments + the trend-test lint enforcement landed; worktree cleaned. **No code gates
+  remain before sign-off.** Slice H1 CLOSED (`74999b3`).
+- **Next action (◆ HITL gate — STOP):** present the **amended** design + pre-registration for sign-off.
+  Until signed, Slices 5/10 stay gated.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -24,7 +26,7 @@
 
 | # | Slice | Type | Depends | State | Witness |
 |---|-------|------|---------|-------|---------|
-| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | v1 closed; **REVISION IN-FLIGHT** (6 amendments) | v1 `a50953c` codex PASS; revision rewrites rule+doc+tests → re-review → ◆ HITL sign-off |
+| 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
 | 5 | MuSiQue corpus + strong baseline + answerer e2e (THE BAR) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-baseline-n{N}.json` |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 0 | NOT STARTED | `runs/0.8.2-m1-graph-coverage-n{N}.json` |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
@@ -56,18 +58,25 @@ graph extraction) and may run in parallel.
 None for 0.8.2 (Slice 0 worktree + branch removed at close). *(A stray `/tmp/fdb-g0-…` worktree from a
 prior 0.8.0 session exists — out of 0.8.2 scope.)*
 
-## 5a. Open HITL gate — ◆ design + pre-registration sign-off (BLOCKS 5/10)
+## 5a. Open HITL gate — ◆ AMENDED design + pre-registration sign-off (BLOCKS 5/10)
 
-Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's priced baseline run).
-- **Design doc:** `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`).
-- **Frozen primary endpoint:** paired ΔEM/ΔF1 = (PPR-fusion) − (best baseline), **per hop count
-  (2/3/4)**, 2→3→4 dose-response load-bearing. Unanswerable set = confident-wrong guard.
-- **Frozen decision rule (as code, `decide()`):** GO iff ΔF1 ≥ **0.02** on hops 3 **and** 4, strictly
-  dose-responsive (`f1[2]<f1[3]<f1[4]`), ΔEM ≥ 0 on hops 3/4, **and** adequately powered; else NO_GO.
-  Non-finite inputs raise (post fix-1). Slice 20 imports it, may not redefine it.
-- **Strong baseline:** BM25 ∪ passage-dense ∪ fused(RRF) — not lexical-only; same answerer all arms.
-- **Budget:** flash-lite cheap-validate before any priced `gemini-3.1-pro-preview` run; $ ledger live.
-- **Honesty flag carried:** literature expects near-tie-to-modest-loss; value = strongest fair graph test.
+Package for coreyt. **All 6 pre-freeze amendments landed + codex §9 PASS.** Sign to unblock Slices 5 ∥ 10
+(and authorize Slice 5's priced baseline run + the whole-rule power sim).
+- **Design doc:** `dev/design/0.8.2-m1-multihop-harness.md` (`status: decision-ready`, frozen block
+  AMENDED 2026-06-16). Frozen-as-code: `src/python/eval/m1_decision_rule.py::decide()` (33 tests, codex PASS).
+- **Frozen primary endpoint:** **pooled ≥3-hop (3+4) ΔF1** of PPR-fusion vs a **single fixed comparator =
+  the `fused+rerank` arm**, via **question-level paired bootstrap** (point estimate + BCa CI). Per-hop
+  (2/3/4) = pre-registered secondary feeding the trend read.
+- **Frozen decision rule (`decide(material, em, trend, confident_wrong, power_ok)`):** GO iff (1) pooled
+  ≥3-hop ΔF1 ≥ **0.02** AND its **CI lower bound > 0**; (2) **not** a significantly **negative** ΔF1-vs-hop
+  slope (flat/positive passes — no strict monotonicity); (3) ΔEM CI upper bound ≥ 0 (CI-banded); (4) the
+  **unanswerable-set** confident-answer rate not significantly raised; (5) adequately powered. Else NO_GO.
+  Non-finite inputs raise. Slice 20 imports it, may not redefine it.
+- **Strong baseline:** {BM25, passage-dense, fused-RRF (**k=60**), **fused+rerank** (0.8.1 R1 cross-encoder)};
+  same answerer (`gemini-3.1-pro-preview`) all arms.
+- **Power:** Slice 5 runs a **whole-rule power simulation** (flat-positive/monotonic/inverted-U shapes);
+  `power_ok` only if rule-level **P(GO) ≥ 0.8 under flat-positive +0.03**.
+- **Budget:** flash-lite cheap-validate before any priced run; $ ledger live. **Honesty flag carried.**
 - **Decision needed:** sign as-is / amend a frozen field / hold.
 
 ## 5b. In-flight reviews (not slice agents)
@@ -88,6 +97,12 @@ Package for coreyt. Sign to unblock Slices 5 ∥ 10 (and authorize Slice 5's pri
 
 ## 7. Recent decisions (newest on top)
 
+- **2026-06-16** — **Slice 0 CLOSED (amended); ◆ sign-off ready.** Revision + rev-fix-1 merged
+  (`2348f95`); codex §9 **PASS** (zero findings) on the final amended rule; 33/33 re-run green by the
+  orchestrator (lint enforces all 6 frozen fields incl `trend-test`; flat-positive ⇒ GO). The Slice 0
+  family ran v1 → fix-1 (non-finite) → pre-freeze methodology review → revision (6 amendments) → rev-fix-1
+  (trend-test lint) → PASS — exactly the tightening the frozen-as-code pre-registration is meant to force
+  *before* data. Worktrees cleaned. **Next = ◆ HITL sign-off of the amended pre-reg → unblock 5/10.**
 - **2026-06-16** — **HITL adopted all 6 amendments → Slice 0-revision spawned.** Rule rewritten: trend
   gate (negative-slope veto only, no strict monotonic), fixed `fused+rerank` comparator (not per-hop max),
   pooled ≥3-hop ΔF1 ≥ 0.02 with bootstrap CI > 0, CI-banded EM + unanswerable-set confident-wrong role,
