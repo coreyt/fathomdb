@@ -175,6 +175,32 @@
       "eval_qa_count": 7993,
       "eval_sha256": "299866fc33f496adc8da78b5e7c3d6a9f5f01f9f7b774f8769a4d464409239c1",
       "acquired_at": "2026-06-02"
+    },
+    "musique": {
+      "script": "acquire_musique.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "bdsaglam/musique",
+        "note": "re-hosts StonyBrookNLP/musique v1.0 data files; StonyBrookNLP/musique is not accessible on HF Hub (returns 404). Preferred HF path; fall back = download musique_full_v1.0_dev.jsonl directly from the bdsaglam/musique HF file store.",
+        "config": "default",
+        "split": "validation",
+        "revision": "22873a405dd809893b22ada0b499299fb612d2df",
+        "last_modified": "2024-10-05T06:57:44Z"
+      },
+      "license": "CC-BY-4.0",
+      "license_notes": "CC-BY-4.0 (Trivedi et al. 2022, MuSiQue, TACL arXiv:2108.00573). bdsaglam/musique re-hosts the canonical v1.0 files. License posture: commit-clean.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/musique_dev.jsonl",
+      "doc_count": 4834,
+      "doc_count_breakdown": {
+        "answerable": 2417,
+        "unanswerable": 2417,
+        "hop_2": 2504,
+        "hop_3": 1520,
+        "hop_4": 810
+      },
+      "sha256": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+      "acquired_at": "2026-06-16"
     }
   }
 }
