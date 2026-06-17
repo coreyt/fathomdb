@@ -1,0 +1,39 @@
+{
+  "schema": "0.8.2-m1-corpus-manifest-v1",
+  "generated_by": "tests/corpus/scripts/acquire_musique.py",
+  "generated_at": "2026-06-17T02:24:37Z",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "source": {
+    "hf_id": "bdsaglam/musique",
+    "revision": "22873a405dd809893b22ada0b499299fb612d2df",
+    "config": "default",
+    "split": "validation",
+    "note": "bdsaglam/musique re-hosts StonyBrookNLP/musique v1.0 under CC-BY-4.0. Both answerable (MuSiQue-Ans) and unanswerable contrast sets included via the 'answerable' field."
+  },
+  "materialized_corpus_path": "data/corpus-data/raw/musique_dev.jsonl",
+  "acquire_command": "cd <repo_root> && ./.venv/bin/python tests/corpus/scripts/acquire_musique.py",
+  "counts": {
+    "total": 4834,
+    "answerable": 2417,
+    "unanswerable": 2417
+  },
+  "per_hop_counts": {
+    "2": 2504,
+    "3": 1520,
+    "4": 810
+  },
+  "per_hop_answerable": {
+    "2": {
+      "answerable": 1252,
+      "unanswerable": 1252
+    },
+    "3": {
+      "answerable": 760,
+      "unanswerable": 760
+    },
+    "4": {
+      "answerable": 405,
+      "unanswerable": 405
+    }
+  }
+}
