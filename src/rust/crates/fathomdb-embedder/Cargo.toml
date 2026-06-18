@@ -45,6 +45,22 @@ default-embedder = [
     "dep:candle-transformers",
     "dep:tokenizers",
 ]
+# 0.8.2 Slice E1 — the default CPU cross-encoder reranker (TinyBERT-L-2). Pulls
+# the SAME Candle + tokenizers + loader stack as `default-embedder` (CPU only),
+# but is a distinct opt-in so the engine can enable reranking without forcing the
+# default embedder on, and the feature-off build stays ML-free + no-network.
+default-reranker = [
+    "dep:ureq",
+    "dep:sha2",
+    "dep:dirs",
+    "dep:fs2",
+    "dep:serde_json",
+    "dep:thiserror",
+    "dep:candle-core",
+    "dep:candle-nn",
+    "dep:candle-transformers",
+    "dep:tokenizers",
+]
 # GPU acceleration (opt-in; default build stays CPU so tests + byte-stability are
 # unaffected). Activate the device at runtime with FATHOMDB_EMBED_DEVICE=cuda|metal.
 # Cross-vendor (AMD ROCm / Intel) is NOT a candle backend — that path is a separate

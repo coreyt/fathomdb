@@ -4905,12 +4905,21 @@ fn ce_rerank(
     Some(result)
 }
 
-/// 0.8.1 Slice 10 (R1) — CPU TinyBERT-L-2 cross-encoder (feature-gated).
+/// 0.8.1 Slice 10 (R1) / 0.8.2 Slice E1 — CPU TinyBERT-L-2 cross-encoder.
 ///
-/// Uses Candle's BERT transformer stack + the `tokenizers` crate.
-/// Model weights are loaded once from cache at first request (lazy init).
-/// When the model is absent or load fails, `try_get_loaded()` returns `None`
-/// and the caller applies the soft-fallback.
+/// Thin engine-side handle over the embedder crate's `CandleTinyBertReranker`
+/// (Candle BERT stack + `tokenizers`, pinned `cross-encoder/ms-marco-TinyBERT-
+/// L2-v2`). The model is loaded once, process-wide, the first time
+/// `rerank_depth > 0` reaches the CE path (lazy init via the `OnceLock` below);
+/// on cache miss that first load fetches the ~17 MB weights over the network
+/// (sha256-verified). When the weights are absent and the network is
+/// unavailable, the load fails and `try_get_loaded()` returns `None` so the
+/// caller soft-falls-back to RRF order — it never panics.
+///
+/// Footprint: this whole type compiles ONLY under `default-reranker`. With the
+/// feature off the CE path compiles away and `rerank_fused` is always identity.
+/// With the feature on, `rerank_depth == 0` short-circuits in `rerank_fused`
+/// BEFORE this is ever touched, so depth-0 stays byte-identical and no-network.
 #[cfg(feature = "default-reranker")]
 struct CandleCrossEncoder;
 
@@ -4919,17 +4928,13 @@ impl CandleCrossEncoder {
     /// Returns a model handle if the weights are cached locally, `None` otherwise.
     /// Does NOT trigger a network fetch (fetch is a separate init step).
     fn try_get_loaded() -> Option<Self> {
-        // TODO(0.8.1 Slice 10): implement weight-cache probe and model load.
-        // Returns None until weights are present → always soft-fallback in
-        // non-test builds that don't pre-stage the weights.
+        // TODO(0.8.2 Slice E1): implement weight-cache probe and model load.
         None
     }
 
     /// Score a (query, passage) pair. Returns the raw cross-encoder logit.
     fn score(&self, _query: &str, _passage: &str) -> f64 {
-        // TODO(0.8.1 Slice 10): implement Candle BERT inference for TinyBERT-L-2.
-        // Tokenize (query, passage) pair → feed through 2-layer BERT →
-        // return the CLS logit from the linear classifier head.
+        // TODO(0.8.2 Slice E1): implement Candle BERT inference for TinyBERT-L-2.
         0.0
     }
 }

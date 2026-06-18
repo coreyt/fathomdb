@@ -78,10 +78,21 @@ mod candle_bge;
 #[cfg(feature = "default-embedder")]
 mod nomic;
 
+// 0.8.2 Slice E1: the default CPU cross-encoder reranker (TinyBERT-L-2).
+// Lives behind its own `default-reranker` feature so the default build pulls
+// in zero ML code. The engine's `default-reranker` feature forwards to this.
+#[cfg(feature = "default-reranker")]
+mod candle_reranker;
+
 #[cfg(feature = "default-embedder")]
 pub use candle_bge::{CandleBgeEmbedder, Pooling, DEFAULT_EMBEDDER_DIM, DEFAULT_EMBEDDER_NAME};
 #[cfg(feature = "default-embedder")]
 pub use nomic::{NomicEmbedder, NOMIC_DIM};
+
+#[cfg(all(feature = "default-reranker", any(test, feature = "loader-test-hooks")))]
+pub use candle_reranker::RERANKER_REVISION;
+#[cfg(feature = "default-reranker")]
+pub use candle_reranker::{CandleTinyBertReranker, RerankerLoadError, DEFAULT_RERANKER_NAME};
 
 #[derive(Clone, Debug)]
 pub struct NoopEmbedder {

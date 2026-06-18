@@ -43,7 +43,10 @@ embed-metal = ["default-embedder", "fathomdb-embedder/embed-metal"]
 # network call, no ML dependency. With the feature ON and weights cached
 # locally, `rerank_depth > 0` activates the CE scorer + score-blend.
 # Design memo: dev/design/0.8.1-slice-10-reranker-design.md.
-default-reranker = []
+# 0.8.2 Slice E1: forwards to the embedder's `default-reranker` feature, which
+# owns the Candle + tokenizers CE stack (`CandleTinyBertReranker`). The default
+# engine build enables neither, staying ML-free + no-network.
+default-reranker = ["fathomdb-embedder/default-reranker"]
 
 # The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
 # only builds when the `operator` feature is enabled (skipped on default builds).
@@ -109,6 +112,14 @@ required-features = ["operator"]
 [[test]]
 name = "verify_embedder"
 required-features = ["operator"]
+
+# 0.8.2 Slice E1: the CE-reorders test exercises the real reranker, so the whole
+# target only compiles/runs under `--features default-reranker`. The default
+# build skips it (and the soft-fallback identity tests in `pr_g10_reranker.rs`
+# stay default-runnable).
+[[test]]
+name = "pr_g10_reranker_ce"
+required-features = ["default-reranker"]
 
 [dev-dependencies]
 libc = "0.2"
