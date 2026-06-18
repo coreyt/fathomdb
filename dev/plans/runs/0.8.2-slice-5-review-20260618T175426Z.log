@@ -1,0 +1,447 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019edbde-c0a5-7000-b1bb-782fedfd8adb
+--------
+user
+changes against 'd55e922'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null || true; ls feedback_*.md 2>/dev/null' in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+exec
+/bin/bash -lc 'git diff d55e9221388b12b6c098286d9a1f59053d1fb24b --stat && git diff d55e9221388b12b6c098286d9a1f59053d1fb24b' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ dev/plans/prompts/0.8.2-slice-5.md | 21 +++++++++++++++------
+ dev/plans/runs/STATUS-0.8.2.md     | 17 ++++++++++-------
+ 2 files changed, 25 insertions(+), 13 deletions(-)
+diff --git a/dev/plans/prompts/0.8.2-slice-5.md b/dev/plans/prompts/0.8.2-slice-5.md
+index 4a39562..50011b8 100644
+--- a/dev/plans/prompts/0.8.2-slice-5.md
++++ b/dev/plans/prompts/0.8.2-slice-5.md
+@@ -8,9 +8,9 @@
+ ## 0. Worktree (ALREADY CREATED — do NOT create another)
+ ```bash
+ export CANON=/home/coreyt/projects/fathomdb
+-export WT=/tmp/fdb-0.8.2-slice-5-20260617T024723Z
+-export BR=slice-0.8.2-5-20260617T024723Z
+-export BASE=92ed09ef7e4a4cb8a3db531be628ed5e2b05584f
++export WT=/tmp/fdb-0.8.2-slice-5-20260618T154504Z
++export BR=slice-0.8.2-5-20260618T154504Z
++export BASE=d55e9221388b12b6c098286d9a1f59053d1fb24b
+ cd "$WT"; test "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" && echo "[S5][PLAN] worktree confirmed"
+ ```
+ Edits under `$WT`; `output.json` last under canonical. Raw corpus stays gitignored. Tripwire:
+@@ -38,9 +38,18 @@ Establish **THE BAR**: the strong-baseline numbers the graph arm (Slice 15/20) m
+    **BM25** (lexical), **passage-dense** (vector), **fused-RRF (k=60 pinned)**, **fused+rerank** (the
+    engine CE via `search(rerank_depth=K)`; use the 0.8.1 R0 recommendation K=200). If an arm cannot be
+    isolated from the engine's hybrid search, build it in-harness (BM25/dense/RRF are ~tens of lines) and
+-   document it. **`fused+rerank` is the fixed primary comparator** — if the CE reranker isn't available in
+-   the built extension (needs the `default-reranker` feature + weights), **STOP and escalate** (it is
+-   load-bearing for the endpoint).
++   document it.
++   > **The CE reranker is LIVE in the installed extension (Slice E1, orchestrator-rebuilt + verified):**
++   > `search(rerank_depth>0)` runs the real TinyBERT-L2 cross-encoder (weights auto-download once to
++   > `~/.cache/fathomdb/reranker/`; it correctly promotes the relevant passage on clear relevant-vs-distractor
++   > pools — exactly MuSiQue's shape). **Use `FATHOMDB_TESTS_NO_REBUILD=1` for every python/pytest call** so
++   > the autouse maturin fixture does NOT rebuild the `.so` without `default-reranker` (which would silently
++   > drop the reranker → `fused+rerank` ≡ `fused`). If `import fathomdb` fails in the worktree, copy the
++   > canonical `.so`: `cp /home/coreyt/projects/fathomdb/src/python/fathomdb/_fathomdb*.so $WT/src/python/fathomdb/`.
++   > **Sanity-check once at the start** that `fused+rerank` differs from `fused` on a clear case (or that the
++   > weights are present + scores change); if it's silently identity, **STOP and escalate**.
++   `SearchHit` fields are `id`, `body`, `score`, `kind`, `source_id` (source_id is None for non-graph hits —
++   identify passages by `id`/`body`).
+ 4. **Answerer (identical across arms):** the `AirlockAnswerer` / `BaseAnswerer` identical-answerer protocol
+    — same prompt template, same top-K passage budget, deterministic (temp 0, seed 0). Strong reader =
+    `gemini-3.1-pro-preview`; cheap-validate reader = `gemini-2.5-flash-lite`. Base-url/key from the ELPS
+diff --git a/dev/plans/runs/STATUS-0.8.2.md b/dev/plans/runs/STATUS-0.8.2.md
+index 6bd0e6c..b3b8bc5 100644
+--- a/dev/plans/runs/STATUS-0.8.2.md
++++ b/dev/plans/runs/STATUS-0.8.2.md
+@@ -15,12 +15,15 @@
+   signed `fused+rerank` comparator wasn't real. **HITL (2026-06-18) chose to IMPLEMENT it** (engine slice
+   E1) rather than revise amendment 6 — a deliberate, HITL-approved deviation from M1's no-engine-change
+   footprint (footprint-preserving: no network at feature-off / `rerank_depth=0`). Amendment 6 **upheld**.
+-- **IN-FLIGHT now:** **Slice E1** (reranker impl, Rust/cargo TDD; fills `try_get_loaded`+`score` reusing
+-  the embedder's Candle BERT loader) ∥ **Slice 10 fix-1** ([P2] hash-validate + [P3] honor-n). Slice 5
+-  HELD until E1 merges + the orchestrator rebuilds the canonical extension `--features …,default-reranker`
+-  and functionally verifies real reranking.
+-- **Next action:** E1 merge → main-thread extension rebuild + functional rerank verify → re-spawn Slice 5.
+-  Slice 10 fix-1 merge → re-review + close Slice 10.
++- **DONE:** E1 CLOSED (reranker real, Rust reorder-test proven). **Orchestrator rebuilt the canonical
++  extension** `--features pyo3/extension-module,default-embedder,fathomdb-engine/default-reranker` (CPU; no
++  `embed-cuda` — no `nvcc`, CPU-pinned embedder unaffected) and **functionally verified** the CE runs
++  through the `.so` (weights download + scores change; the Rust test proves it promotes the relevant
++  passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
++  WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
++- **IN-FLIGHT:** **Slice 5 RE-SPAWNED** (fresh worktree off `d55e922`, reranker-enabled) with the real
++  `fused+rerank` comparator → budget checkpoint.
++- **Next action:** Slice 5 stops at the budget checkpoint → orchestrator brings the projected baseline $ to HITL.
+ - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
+   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
+   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
+@@ -36,7 +39,7 @@
+ |---|-------|------|---------|-------|---------|
+ | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
+ | 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
+-| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅ | **IN-FLIGHT (→ budget checkpoint)** | `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection before full priced pass |
++| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅ | **RE-SPAWNED (→ budget checkpoint)** | off `d55e922` w/ live reranker; `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection |
+ | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **CLOSED** (fix-1 `f8bc631`) | n=300 graph, coverage 1.0, 50.6k entities/51.2k body-less edges, hash-validated; cache preserved to canonical for Slice 15 |
+ | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
+ | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
+
+exec
+/bin/bash -lc "grep -R \"FATHOMDB_TESTS_NO_REBUILD\\|default-reranker\\|_fathomdb\" -n src scripts dev | head -100" in /home/coreyt/projects/fathomdb
+ succeeded in 105ms:
+src/lib.rs:73:create_exception!(_fathomdb, OverloadedError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:74:create_exception!(_fathomdb, ClosingError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:75:create_exception!(_fathomdb, DatabaseLockedError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:76:create_exception!(_fathomdb, CorruptionError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:77:create_exception!(_fathomdb, IncompatibleSchemaVersionError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:78:create_exception!(_fathomdb, MigrationError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:79:create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:80:create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:82:create_exception!(_fathomdb, ExtractorError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:84:create_exception!(_fathomdb, InvalidFilterError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:86:create_exception!(_fathomdb, InvalidArgumentError, EngineError);
+src/rust/crates/fathomdb-py/src/lib.rs:301:#[pyclass(module = "fathomdb._fathomdb", name = "WriteReceipt", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:323:#[pyclass(module = "fathomdb._fathomdb", name = "IngestWithExtractorReceipt", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:341:#[pyclass(module = "fathomdb._fathomdb", name = "SoftFallback", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:360:#[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:391:#[pyclass(module = "fathomdb._fathomdb", name = "SearchResult", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:409:#[pyclass(module = "fathomdb._fathomdb", name = "NodeRecord", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:429:#[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:455:#[pyclass(module = "fathomdb._fathomdb", name = "CounterSnapshot", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:466:#[pyclass(module = "fathomdb._fathomdb", name = "MigrationStepReport", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:480:#[pyclass(module = "fathomdb._fathomdb", name = "EmbedderIdentity", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:494:#[pyclass(module = "fathomdb._fathomdb", name = "OpenReport", frozen, get_all)]
+src/rust/crates/fathomdb-py/src/lib.rs:516:    /// `_fathomdb_embedder_profiles.mean_vec IS NOT NULL`.
+src/rust/crates/fathomdb-py/src/lib.rs:591:#[pyclass(module = "fathomdb._fathomdb", name = "Engine")]
+src/rust/crates/fathomdb-py/src/lib.rs:643:    /// `default-reranker` feature is enabled and the model is loaded; otherwise
+src/rust/crates/fathomdb-py/src/lib.rs:1220:fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:20:        "CREATE TABLE IF NOT EXISTS _fathomdb_embedder_profiles(
+src/rust/crates/fathomdb-engine/tests/compatibility.rs:31:        "INSERT INTO _fathomdb_embedder_profiles(profile, name, revision, dimension)
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:8://!      `_fathomdb_embedder_profiles`.
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:49:        .prepare("PRAGMA table_info(_fathomdb_embedder_profiles)")
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:68:    assert!(found, "mean_vec column missing from _fathomdb_embedder_profiles");
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:90:                "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs:111:                "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:87:    // 2. Seed an unknown kind into _fathomdb_vector_rows and rewind
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs:92:            "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, 'banana', ?1)",
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1439:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1440:             LEFT JOIN _fathomdb_projection_terminal
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1441:               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1443:              AND _fathomdb_projection_terminal.write_cursor IS NULL
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1447:             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1448:             LEFT JOIN _fathomdb_projection_terminal
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1449:               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1451:              AND _fathomdb_projection_terminal.write_cursor IS NULL
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:116:                "SELECT COUNT(*) FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:124:                "SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:129:        assert_eq!(in_vec_rows, 0, "_fathomdb_vector_rows residue for cursor {cursor}");
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:415:        .query_row("SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE kind = 'edge_fact'", [], |r| {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:418:        .expect("_fathomdb_vector_rows query");
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:419:    assert!(edge_vec_count > 0, "edge body must produce a vector entry in _fathomdb_vector_rows");
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs:75:    // In EU-5a1 the `_fathomdb_embedder_profiles.mean_vec` column does
+src/rust/crates/fathomdb-engine/tests/corpus_vector.rs:110:        .query_row("SELECT count(*) FROM _fathomdb_vector_kinds WHERE kind = 'doc'", [], |row| {
+src/rust/crates/fathomdb-engine/tests/pr_g1_tokenizer_crash_recovery.rs:115:        raw.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [REPROJECT_MARKER_KEY])
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs:7://! All tests in this file run in the **default build** (no `default-reranker`
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs:26:/// only** — when `default-reranker` is on, the real model is loaded so the
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs:30:#[cfg(not(feature = "default-reranker"))]
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs:53:/// Note: when `default-reranker` feature is enabled and the model is loaded,
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:146:        "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs:682:            // (no default-reranker feature or model absent).
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs:142:        "UPDATE _fathomdb_embedder_profiles SET dimension = -1 WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs:234:            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker_ce.rs:3://! Runs ONLY under `--features default-reranker` (the whole target is
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker_ce.rs:80:    assert_eq!(out, hits, "depth=0 must stay byte-identical even under default-reranker");
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:10://! `_fathomdb_embedder_profiles.mean_vec` NULL and sign-bits uncentered.
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:148:        "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:361:            "UPDATE _fathomdb_embedder_profiles SET mean_vec = NULL WHERE profile = 'default'",
+src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs:269:    // async projection) for kinds present in _fathomdb_vector_kinds. Without
+
+exec
+/bin/bash -lc "grep -R \"NO_REBUILD\" -n src/python src/rust dev/plans scripts || true; find src/python -maxdepth 3 -type f | sed -n '1,60p'; ls -l src/python/fathomdb | head" in /home/coreyt/projects/fathomdb
+ succeeded in 238ms:
+src/python/tests/conftest.py:64:    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
+src/python/tests/conftest.py:68:    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+dev/plans/prompts/0.8.2-slice-0-rev.md:94:FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
+dev/plans/prompts/0.8.2-slice-0-rev-fix-1.md:43:FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
+dev/plans/prompts/0.8.2-slice-10.md:58:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest <your coverage test> -q   # green
+dev/plans/prompts/0.8.2-slice-5.md:45:   > pools — exactly MuSiQue's shape). **Use `FATHOMDB_TESTS_NO_REBUILD=1` for every python/pytest call** so
+dev/plans/prompts/0.8.2-slice-5.md:77:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest <your tests> -q   # green (stub answerer)
+dev/plans/prompts/0.8.2-slice-10-fix-1.md:39:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest src/python/tests/test_m1_graph_build.py -q   # green
+dev/plans/prompts/0.8.2-slice-0-fix-1.md:53:FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
+dev/plans/prompts/0.8.2-slice-0-fix-1.md:56:(The autouse maturin fixture is bypassed by `FATHOMDB_TESTS_NO_REBUILD=1` since this test imports no
+dev/plans/prompts/0.8.2-slice-4.md:68:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest <your test path> -q   # green
+dev/plans/prompts/0.8.2-slice-h1.md:46:  `cd "$WT" && FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_p0a_batch_e2e.py -q`
+dev/plans/prompts/0.8.2-slice-h1.md:58:cd "$WT" && FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_p0a_batch_e2e.py -q
+dev/plans/prompts/0.8.2-slice-4-fix-1.md:58:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest tests/corpus/scripts/test_acquire_musique.py -q   # green
+dev/plans/runs/0.8.2-slice-5-review-20260618T175426Z.log:51:+   > pools — exactly MuSiQue's shape). **Use `FATHOMDB_TESTS_NO_REBUILD=1` for every python/pytest call** so
+dev/plans/runs/0.8.2-slice-5-review-20260618T175426Z.log:80:+  passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
+dev/plans/runs/0.8.2-slice-5-review-20260618T175426Z.log:81:+  WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
+dev/plans/runs/0.8.2-slice-5-review-20260618T175426Z.log:99:/bin/bash -lc "grep -R \"FATHOMDB_TESTS_NO_REBUILD\\|default-reranker\\|_fathomdb\" -n src scripts dev | head -100" in /home/coreyt/projects/fathomdb
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1098:    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1102:    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+dev/plans/runs/0.8.2-slice-0-review-20260617T004340Z.log:1375:  "agent_verify_result": "pass — pytest: 18 passed in 0.10s (FATHOMDB_TESTS_NO_REBUILD=1, no fathomdb import); pyright eval/m1_decision_rule.py: 0 errors, 0 warnings, 0 informations; stray-edit tripwire empty (canonical src/+dev/ clean, slice files isolated to the worktree).",
+dev/plans/runs/STATUS-0.8.2.md:22:  passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
+dev/plans/runs/STATUS-0.8.2.md:23:  WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
+dev/plans/runs/0.8.2-slice-0-rev-output.json:22:    "red_evidence": "at RED commit d7ad296 (amended test vs the still-old decide()) `FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q` reported 27 failed, 4 passed — the new 5-gate decide(material, em, trend, confident_wrong, power_ok) signature TypeErrors against the old decide(deltas_by_hop, power_ok), and the lint asserted the amended frozen-field set (comparator/baseline-arms) the old REQUIRED_FROZEN_FIELDS lacked. GREEN commit 095e292 makes all 31 tests pass, including the load-bearing test_flat_positive_non_growing_returns_go_old_rule_said_no_go (the old rule returned NO_GO; the amended rule returns GO).",
+dev/plans/runs/0.8.2-slice-0-rev-output.json:35:  "agent_verify_result": "pass — FATHOMDB_TESTS_NO_REBUILD=1 pytest src/python/tests/test_m1_decision_rule.py: 31 passed in 0.11s (no fathomdb/scipy/networkx import); pyright src/python/eval/m1_decision_rule.py: 0/0; pyright src/python/tests/test_m1_decision_rule.py: 0/0; flat-positive case confirmed GO on merged main; stray-edit tripwire empty (canonical clean of slice files throughout). main advanced +2 docs-only commits since baseline (none touching slice paths); merge --no-ff clean, no conflicts.",
+dev/plans/runs/0.8.2-slice-0-rev-fix-1-review-20260617T015049Z.log:727:+FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
+dev/plans/runs/0.8.2-slice-0-rev-fix-1-review-20260617T015049Z.log:777:+    "red_evidence": "at RED commit d7ad296 (amended test vs the still-old decide()) `FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q` reported 27 failed, 4 passed — the new 5-gate decide(material, em, trend, confident_wrong, power_ok) signature TypeErrors against the old decide(deltas_by_hop, power_ok), and the lint asserted the amended frozen-field set (comparator/baseline-arms) the old REQUIRED_FROZEN_FIELDS lacked. GREEN commit 095e292 makes all 31 tests pass, including the load-bearing test_flat_positive_non_growing_returns_go_old_rule_said_no_go (the old rule returned NO_GO; the amended rule returns GO).",
+dev/plans/runs/0.8.2-slice-0-rev-fix-1-review-20260617T015049Z.log:790:+  "agent_verify_result": "pass — FATHOMDB_TESTS_NO_REBUILD=1 pytest src/python/tests/test_m1_decision_rule.py: 31 passed in 0.11s (no fathomdb/scipy/networkx import); pyright src/python/eval/m1_decision_rule.py: 0/0; pyright src/python/tests/test_m1_decision_rule.py: 0/0; flat-positive case confirmed GO on merged main; stray-edit tripwire empty (canonical clean of slice files throughout). main advanced +2 docs-only commits since baseline (none touching slice paths); merge --no-ff clean, no conflicts.",
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:422:+    print("  FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest "
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:487:+Run: FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest tests/corpus/scripts/test_acquire_musique.py -q
+dev/plans/runs/0.8.2-slice-4-review-20260617T023012Z.log:1639:FATHOMDB_TESTS_NO_REBUILD=1 ./.venv/bin/python -m pytest <your test path> -q   # green
+dev/plans/runs/0.8.2-slice-0-output.json:27:  "agent_verify_result": "pass — pytest: 18 passed in 0.10s (FATHOMDB_TESTS_NO_REBUILD=1, no fathomdb import); pyright eval/m1_decision_rule.py: 0 errors, 0 warnings, 0 informations; stray-edit tripwire empty (canonical src/+dev/ clean, slice files isolated to the worktree).",
+dev/plans/runs/0.8.2-slice-5-output.json:19:    "tests_green": "16 passed (FATHOMDB_TESTS_NO_REBUILD=1); pyright 0/0 on all 5 new modules+tests"
+dev/plans/runs/0.8.2-slice-0-fix-1-review-20260617T005022Z.log:607:+FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q   # all green
+dev/plans/runs/0.8.2-slice-0-fix-1-review-20260617T005022Z.log:610:+(The autouse maturin fixture is bypassed by `FATHOMDB_TESTS_NO_REBUILD=1` since this test imports no
+dev/plans/runs/0.8.2-slice-0-fix-1-review-20260617T005022Z.log:677:+  "agent_verify_result": "pass — pytest: 18 passed in 0.10s (FATHOMDB_TESTS_NO_REBUILD=1, no fathomdb import); pyright eval/m1_decision_rule.py: 0 errors, 0 warnings, 0 informations; stray-edit tripwire empty (canonical src/+dev/ clean, slice files isolated to the worktree).",
+dev/plans/runs/0.8.2-slice-0-fix-1-review-20260617T005022Z.log:752:/bin/bash -lc 'FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest src/python/tests/test_m1_decision_rule.py -q' in /home/coreyt/projects/fathomdb
+src/python/.ruff_cache/0.15.17/17355064930337245353
+src/python/.ruff_cache/0.15.17/12954026767400546080
+src/python/.ruff_cache/0.15.17/13880541339264089604
+src/python/.ruff_cache/0.15.14/2056585953569861998
+src/python/.ruff_cache/0.15.14/3179863895324699449
+src/python/.ruff_cache/0.15.14/9482857088841436733
+src/python/.ruff_cache/CACHEDIR.TAG
+src/python/.ruff_cache/.gitignore
+src/python/.ruff_cache/0.15.10/3350691986482104603
+src/python/.ruff_cache/0.15.10/3919254607336771053
+src/python/.ruff_cache/0.15.10/9828250992515692708
+src/python/.ruff_cache/0.15.10/9227027795267287213
+src/python/_typecheck_fixtures/_pyright_narrowing_fixture.py
+src/python/pyproject.toml
+src/python/.hypothesis/.gitignore
+src/python/.hypothesis/constants/3cbcdfa77d1a96b7
+src/python/.hypothesis/constants/f13d0f29effce7fd
+src/python/.hypothesis/constants/982741e4b3418482
+src/python/.hypothesis/constants/ce63e152c1e1a4f9
+src/python/.hypothesis/constants/4850d82d544b129e
+src/python/.hypothesis/constants/6a2f036c72342a2d
+src/python/.hypothesis/constants/2824c96575940f55
+src/python/.hypothesis/constants/0caf466a556748db
+src/python/.hypothesis/constants/6d164b0f92096a13
+src/python/.hypothesis/constants/f9d58bbd26d0250c
+src/python/.hypothesis/constants/fc6e9cdddee8f3e2
+src/python/.hypothesis/constants/e1ba2b34afe56bf4
+src/python/.hypothesis/constants/18af62232749766e
+src/python/.hypothesis/constants/9e1617a8ad5b92e6
+src/python/.hypothesis/constants/a7992ba7a1a6fd20
+src/python/.hypothesis/constants/67b0a8ccf18bf5d2
+src/python/.hypothesis/constants/7a7867f0727c8762
+src/python/.hypothesis/constants/19ffe572bf76e547
+src/python/.hypothesis/constants/5848e66100341eb2
+src/python/.hypothesis/constants/d1d1c59ae051a322
+src/python/.hypothesis/constants/761af8aab9e4f143
+src/python/.hypothesis/constants/181b11f4a433521e
+src/python/.hypothesis/constants/4b0e87c687568d9c
+src/python/.hypothesis/constants/039be5b4fbcaa7ff
+src/python/eval/r2_parity_eval.py
+src/python/eval/m1_decision_rule.py
+src/python/eval/__init__.py
+src/python/eval/graph_arm_recall.py
+src/python/eval/elps_live_harness.py
+src/python/eval/p0a_base_retrieval.py
+src/python/eval/__pycache__/r6_index_key_enrichment.cpython-312.pyc
+src/python/eval/__pycache__/graph_arm_recall.cpython-312.pyc
+src/python/eval/__pycache__/p0a_batch_e2e.cpython-312.pyc
+src/python/eval/__pycache__/r2_parity_eval.cpython-312.pyc
+src/python/eval/__pycache__/m1_decision_rule.cpython-312.pyc
+src/python/eval/__pycache__/__init__.cpython-312.pyc
+src/python/eval/__pycache__/m1_graph_build.cpython-312.pyc
+src/python/eval/__pycache__/verify_embed_db.cpython-312.pyc
+src/python/eval/__pycache__/p0a_base_retrieval.cpython-312.pyc
+src/python/eval/verify_embed_db.py
+src/python/eval/m1_graph_build.py
+src/python/eval/p0a_batch_e2e.py
+src/python/eval/r6_index_key_enrichment.py
+src/python/eval/gold_gen.py
+src/python/tests/test_corpus_eval_qa.py
+total 16736
+-rw-rw-r-- 1 coreyt coreyt     1206 Jun 13 08:36 __init__.py
+drwxrwxr-x 2 coreyt coreyt     4096 Jun 15 14:02 __pycache__
+-rwxrwxr-x 1 coreyt coreyt 17061000 Jun 18 10:41 _fathomdb.abi3.so
+-rw-rw-r-- 1 coreyt coreyt     8049 Jun 15 14:13 _fathomdb.pyi
+-rw-rw-r-- 1 coreyt coreyt     1160 Jun  3 14:04 admin.py
+-rw-rw-r-- 1 coreyt coreyt      767 May 21 17:13 config.py
+-rw-rw-r-- 1 coreyt coreyt     9722 Jun 15 14:00 engine.py
+-rw-rw-r-- 1 coreyt coreyt     5234 Jun 13 01:48 errors.py
+-rw-rw-r-- 1 coreyt coreyt     6079 Jun 13 03:27 graph.py
+
+exec
+/bin/bash -lc "nl -ba dev/plans/prompts/0.8.2-slice-5.md | sed -n '35,55p'; nl -ba dev/plans/runs/STATUS-0.8.2.md | sed -n '15,30p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    35	2. **Index** the per-question paragraphs into a FathomDB engine: FTS5 + passage embeddings (passage-level,
+    36	   **not** whole-doc). Per-question retrieval scope (each question's ~20 distractor paragraphs).
+    37	3. **Build the 4 baseline arms** (the design's strong baseline), each returning a ranked top-K passage list:
+    38	   **BM25** (lexical), **passage-dense** (vector), **fused-RRF (k=60 pinned)**, **fused+rerank** (the
+    39	   engine CE via `search(rerank_depth=K)`; use the 0.8.1 R0 recommendation K=200). If an arm cannot be
+    40	   isolated from the engine's hybrid search, build it in-harness (BM25/dense/RRF are ~tens of lines) and
+    41	   document it.
+    42	   > **The CE reranker is LIVE in the installed extension (Slice E1, orchestrator-rebuilt + verified):**
+    43	   > `search(rerank_depth>0)` runs the real TinyBERT-L2 cross-encoder (weights auto-download once to
+    44	   > `~/.cache/fathomdb/reranker/`; it correctly promotes the relevant passage on clear relevant-vs-distractor
+    45	   > pools — exactly MuSiQue's shape). **Use `FATHOMDB_TESTS_NO_REBUILD=1` for every python/pytest call** so
+    46	   > the autouse maturin fixture does NOT rebuild the `.so` without `default-reranker` (which would silently
+    47	   > drop the reranker → `fused+rerank` ≡ `fused`). If `import fathomdb` fails in the worktree, copy the
+    48	   > canonical `.so`: `cp /home/coreyt/projects/fathomdb/src/python/fathomdb/_fathomdb*.so $WT/src/python/fathomdb/`.
+    49	   > **Sanity-check once at the start** that `fused+rerank` differs from `fused` on a clear case (or that the
+    50	   > weights are present + scores change); if it's silently identity, **STOP and escalate**.
+    51	   `SearchHit` fields are `id`, `body`, `score`, `kind`, `source_id` (source_id is None for non-graph hits —
+    52	   identify passages by `id`/`body`).
+    53	4. **Answerer (identical across arms):** the `AirlockAnswerer` / `BaseAnswerer` identical-answerer protocol
+    54	   — same prompt template, same top-K passage budget, deterministic (temp 0, seed 0). Strong reader =
+    55	   `gemini-3.1-pro-preview`; cheap-validate reader = `gemini-2.5-flash-lite`. Base-url/key from the ELPS
+    15	  signed `fused+rerank` comparator wasn't real. **HITL (2026-06-18) chose to IMPLEMENT it** (engine slice
+    16	  E1) rather than revise amendment 6 — a deliberate, HITL-approved deviation from M1's no-engine-change
+    17	  footprint (footprint-preserving: no network at feature-off / `rerank_depth=0`). Amendment 6 **upheld**.
+    18	- **DONE:** E1 CLOSED (reranker real, Rust reorder-test proven). **Orchestrator rebuilt the canonical
+    19	  extension** `--features pyo3/extension-module,default-embedder,fathomdb-engine/default-reranker` (CPU; no
+    20	  `embed-cuda` — no `nvcc`, CPU-pinned embedder unaffected) and **functionally verified** the CE runs
+    21	  through the `.so` (weights download + scores change; the Rust test proves it promotes the relevant
+    22	  passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
+    23	  WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
+    24	- **IN-FLIGHT:** **Slice 5 RE-SPAWNED** (fresh worktree off `d55e922`, reranker-enabled) with the real
+    25	  `fused+rerank` comparator → budget checkpoint.
+    26	- **Next action:** Slice 5 stops at the budget checkpoint → orchestrator brings the projected baseline $ to HITL.
+    27	- **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
+    28	  returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
+    29	  monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
+    30	  load-bearing amendments + 2 advised.** Orchestrator concurs. **Recommendation to HITL: do NOT sign;
+
+exec
+/bin/bash -lc "grep -R \"fathomdb-engine\" -n Cargo.toml src/rust/crates/fathomdb-py/Cargo.toml src/python/pyproject.toml | head -40; sed -n '1,120p' src/rust/crates/fathomdb-py/Cargo.toml" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+Cargo.toml:7:    "src/rust/crates/fathomdb-engine",
+Cargo.toml:51:fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.8.0" }
+src/rust/crates/fathomdb-py/Cargo.toml:23:default-embedder = ["fathomdb-engine/default-embedder"]
+src/rust/crates/fathomdb-py/Cargo.toml:27:embed-cuda = ["default-embedder", "fathomdb-engine/embed-cuda"]
+src/rust/crates/fathomdb-py/Cargo.toml:28:embed-metal = ["default-embedder", "fathomdb-engine/embed-metal"]
+src/rust/crates/fathomdb-py/Cargo.toml:33:fathomdb-engine.workspace = true
+src/python/pyproject.toml:8:description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+[package]
+name = "fathomdb-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "fathomdb_py"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+test-hooks = []
+# EU-6: forward the engine's default-embedder feature so the
+# `use_default_embedder=True` kwarg actually materializes a real
+# `CandleBgeEmbedder` rather than failing with a typed Embedder error.
+# Wheels built without this feature still expose the kwarg but reject
+# `True` at open time per ADR-0.7.1-default-embedder-weight-fetch (no
+# silent network in a no-feature wheel).
+default-embedder = ["fathomdb-engine/default-embedder"]
+# GPU acceleration (opt-in; forwards to the engine; default wheel stays CPU).
+# Build: `maturin develop --features pyo3/extension-module,embed-cuda`; activate via
+# FATHOMDB_EMBED_DEVICE=cuda. See dev/design/0.8.1-embedder-gpu-and-portability.md.
+embed-cuda = ["default-embedder", "fathomdb-engine/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-engine/embed-metal"]
+
+[dependencies]
+fathomdb-embedder.workspace = true
+fathomdb-embedder-api.workspace = true
+fathomdb-engine.workspace = true
+fathomdb-schema.workspace = true
+pyo3 = { version = "0.24", features = ["extension-module", "abi3-py310"] }
+serde_json = "1"
+
+exec
+/bin/bash -lc "sed -n '350,390p' src/rust/crates/fathomdb-py/src/lib.rs; grep -R \"source_id\" -n src/python | head -20" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+            branch: match s.branch {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+        }
+    }
+}
+
+#[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all)]
+#[derive(Clone)]
+struct PySearchHit {
+    id: u64,
+    kind: String,
+    body: String,
+    score: f64,
+    branch: String,
+    /// G0 Phase-2 — source-document provenance. Set (to the traversed edge's
+    /// `source_id`) only for graph-arm hits; `None` for every two-arm hit.
+    source_id: Option<String>,
+}
+
+impl PySearchHit {
+    fn from_rust(h: &RustSearchHit) -> Self {
+        Self {
+            id: h.id,
+            kind: h.kind.clone(),
+            body: h.body.clone(),
+            score: h.score,
+            branch: match h.branch {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+            source_id: h.source_id.clone(),
+        }
+    }
+}
+
+grep: src/python/eval/__pycache__/graph_arm_recall.cpython-312.pyc: binary file matches
+grep: src/python/eval/__pycache__/r2_parity_eval.cpython-312.pyc: binary file matches
+grep: src/python/eval/__pycache__/m1_graph_build.cpython-312.pyc: binary file matches
+src/python/eval/r2_parity_eval.py:303:    hit's ``source_id`` resolves to the same id space as gold. Idempotent
+src/python/eval/r2_parity_eval.py:310:    carried ``source_id`` (the traversed edge's session, canonicalized) when
+src/python/eval/r2_parity_eval.py:315:        sid = getattr(sh, "source_id", None)
+src/python/eval/graph_arm_recall.py:6:``source_id`` = first session it appeared in) + per-session EDGES (``source_id`` =
+src/python/eval/graph_arm_recall.py:9:edges, and emits reached neighbors carrying the traversed edge's ``source_id`` — which
+src/python/eval/graph_arm_recall.py:198:    # Docs (session bodies) — source_id None → resolve via cursor map.
+src/python/eval/graph_arm_recall.py:206:    # Global entities: logical_id = normalized name; source_id = first session seen.
+src/python/eval/graph_arm_recall.py:219:        {"kind": "entity", "body": ent_name[lid], "logical_id": lid, "source_id": ent_first[lid]}
+src/python/eval/graph_arm_recall.py:225:    # Edges: from/to known entities; source_id = the session the relation came from.
+src/python/eval/graph_arm_recall.py:239:            # rides the edge's source_id. (Source-A edge-fact FTS is OFF: engine follow-up.)
+src/python/eval/graph_arm_recall.py:241:                "kind": "rel", "from": f, "to": t, "source_id": sid,
+src/python/eval/graph_arm_recall.py:289:    # source_id is a real haystack session id.
+src/python/eval/graph_arm_recall.py:292:    ga = [(h.body[:40], h.source_id) for h in res.results if h.branch == "graph_arm"]
+src/python/eval/m1_graph_build.py:31:edge's ``source_id`` (the question id) and the per-paragraph cache.
+src/python/eval/m1_graph_build.py:274:      - docs:     kind="doc",    body=passage text, source_id=qid, logical_id="{qid}#{idx}"
+src/python/eval/m1_graph_build.py:275:      - entities: kind="entity", body=name,         source_id=qid, logical_id="{qid}|ent:{norm}"
+src/python/eval/m1_graph_build.py:276:      - edges:    kind="rel", from/to=entity logical_ids, source_id=qid,
+src/python/eval/m1_graph_build.py:308:                "source_id": qid,
+src/python/eval/m1_graph_build.py:326:            {"kind": "entity", "body": ent_name[lid], "source_id": qid, "logical_id": lid}
+src/python/eval/m1_graph_build.py:346:                    "kind": "rel", "from": f, "to": t, "source_id": qid,
+grep: src/python/tests/__pycache__/test_r2_harness.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_functional_search.cpython-312-pytest-9.0.3.pyc: binary file matches
+
+exec
+/bin/bash -lc 'test -d /tmp/fdb-0.8.2-slice-5-20260618T154504Z && echo exists || echo missing; git worktree list | cat' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+exists
+/home/coreyt/projects/fathomdb           6ad361e [main]
+/tmp/fdb-0.8.2-slice-5-20260618T154504Z  7037523 [slice-0.8.2-5-20260618T154504Z]
+/tmp/fdb-g0-20260614T174004Z             aaeafd9 [g0-20260614T174004Z]
+
+codex
+The changes only update planning/status documentation and prompt instructions for the respawned Slice 5 workflow. I did not find a discrete, actionable issue introduced by this diff that would break code, tests, or the documented workflow.
+The changes only update planning/status documentation and prompt instructions for the respawned Slice 5 workflow. I did not find a discrete, actionable issue introduced by this diff that would break code, tests, or the documented workflow.

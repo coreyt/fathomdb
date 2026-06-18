@@ -21,9 +21,15 @@
   through the `.so` (weights download + scores change; the Rust test proves it promotes the relevant
   passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
   WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
-- **IN-FLIGHT:** **Slice 5 RE-SPAWNED** (fresh worktree off `d55e922`, reranker-enabled) with the real
-  `fused+rerank` comparator → budget checkpoint.
-- **Next action:** Slice 5 stops at the budget checkpoint → orchestrator brings the projected baseline $ to HITL.
+- **◆ Slice 5 at budget checkpoint — HOLD merge, HITL decision (branch `7037523`, unmerged).** Harness +
+  cheap-validate + bounded priced pilot done ($2.39 spent; full pass NOT run). **codex §9 [P1]: the
+  `fused_rerank` comparator reranked the engine's capped text-only pool, not the in-harness fused pool →
+  its 0.314 is invalid; correctly building it needs a standalone rerank API (more engine work).** [P2]
+  power inverted-U mis-centered. **Valid BAR (clean arms): bm25 0.278 · dense 0.363 · fused-RRF 0.376.**
+  Underpowered for +0.03 (P(GO)≈0.6 @ full 1165-corpus; feasible only at ρ≥0.7). Full feasible pass $27.54.
+- **◆ Two HITL decisions:** (1) **comparator** — fused-RRF (strongest clean arm; recommend, reverts
+  amendment 6) vs build a standalone-rerank API (E2) for a real fused+rerank; (2) **direction** — proceed
+  underpowered to the graph arm vs redirect. Then fix-1 ([P1]+[P2]) + re-pilot for valid numbers.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
