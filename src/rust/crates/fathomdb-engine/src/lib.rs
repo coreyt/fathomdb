@@ -4921,21 +4921,35 @@ fn ce_rerank(
 /// With the feature on, `rerank_depth == 0` short-circuits in `rerank_fused`
 /// BEFORE this is ever touched, so depth-0 stays byte-identical and no-network.
 #[cfg(feature = "default-reranker")]
-struct CandleCrossEncoder;
+struct CandleCrossEncoder {
+    inner: &'static fathomdb_embedder::CandleTinyBertReranker,
+}
+
+/// Process-wide lazily-initialized reranker. `None` once initialization has
+/// been attempted and failed (no weights + no network) — memoized so a failed
+/// load is not retried on every query.
+#[cfg(feature = "default-reranker")]
+fn reranker_singleton() -> Option<&'static fathomdb_embedder::CandleTinyBertReranker> {
+    static CELL: std::sync::OnceLock<Option<fathomdb_embedder::CandleTinyBertReranker>> =
+        std::sync::OnceLock::new();
+    CELL.get_or_init(|| fathomdb_embedder::CandleTinyBertReranker::try_load().ok()).as_ref()
+}
 
 #[cfg(feature = "default-reranker")]
 impl CandleCrossEncoder {
-    /// Returns a model handle if the weights are cached locally, `None` otherwise.
-    /// Does NOT trigger a network fetch (fetch is a separate init step).
+    /// Returns a model handle if the reranker is (or can be) loaded, `None`
+    /// otherwise. The first call drives the lazy load (cache probe → gated
+    /// download); subsequent calls reuse the memoized result.
     fn try_get_loaded() -> Option<Self> {
-        // TODO(0.8.2 Slice E1): implement weight-cache probe and model load.
-        None
+        Some(Self { inner: reranker_singleton()? })
     }
 
-    /// Score a (query, passage) pair. Returns the raw cross-encoder logit.
-    fn score(&self, _query: &str, _passage: &str) -> f64 {
-        // TODO(0.8.2 Slice E1): implement Candle BERT inference for TinyBERT-L-2.
-        0.0
+    /// Score a (query, passage) pair. Returns the raw cross-encoder logit, or
+    /// `0.0` (a neutral logit → sigmoid 0.5) if the forward pass errors, so a
+    /// single bad pair degrades to a neutral CE contribution rather than
+    /// panicking in the reader thread.
+    fn score(&self, query: &str, passage: &str) -> f64 {
+        self.inner.score(query, passage).map(f64::from).unwrap_or(0.0)
     }
 }
 
