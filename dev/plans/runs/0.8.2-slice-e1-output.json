@@ -1,0 +1,56 @@
+{
+  "phase": "0.8.2-slice-e1",
+  "baseline_sha": "a823ff7a03f2809ff8278355ef3b11a080b85ecd",
+  "branch": "slice-0.8.2-e1-20260618T150810Z",
+  "head_sha": "ef2710c8e69f997e8951752becbf48dfb5cdfcb3",
+  "merged_to_main_sha": "dc60098a7fb5dc1c6e28705715186fa932cad15f",
+  "commits": [
+    "5fabbb3: test(0.8.2/E1): RED — CE rerank reorders when CE disagrees with RRF (module+wiring landed, engine seam STILL stubbed)",
+    "a22b022: feat(0.8.2/E1): GREEN — real TinyBERT-L-2 CE reranker (try_get_loaded + score)",
+    "ef2710c: docs(0.8.2/E1): reranker design status stub -> IMPLEMENTED + DOC-INDEX"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "5fabbb333f5f5e6d360c1146e4d8b24bcabaeb8f",
+    "red_evidence": "At the RED commit (5fabbb3) the full reranker module + Cargo feature wiring are present but the engine CandleCrossEncoder seam is still the stub (try_get_loaded->None, score->0.0). `cargo test -p fathomdb-engine --features default-reranker --test pr_g10_reranker_ce` => ce_rerank_reorders_when_ce_disagrees_with_rrf FAILED (out == input, no reorder), ce_feature_on_depth_0_is_identity passed. GREEN at a22b022: same command => 2 passed (CE reorders relevant passage id=2 to top).",
+    "test_files": [
+      "src/rust/crates/fathomdb-engine/tests/pr_g10_reranker_ce.rs"
+    ]
+  },
+  "pinned_model": {
+    "id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
+    "note": "canonical repo the ms-marco-TinyBERT-L-2-v2 name redirects to; BertForSequenceClassification, model_type=bert, 2 layers, hidden_size=128, num_labels=1, head activation Identity",
+    "revision": "81d1926f67cb8eee2c2be17ca9f793c7c3bd20cc",
+    "sha256": {
+      "config.json": "2144195e107cd7ea61556478e7add12986ebfbc3085f924fc0b90c2410604879",
+      "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+      "model.safetensors": "a0e7364ddf91ff7028f1102e1b91ac7a72e3db4061241bd84efe45c72c9af03a"
+    }
+  },
+  "footprint_confirmations": {
+    "feature_off_ml_free_no_network": "Engine default-reranker feature OFF: the CandleCrossEncoder / ce_rerank / candle_reranker code is #[cfg]-gated away; no candle/tokenizers/ureq linked. `cargo test -p fathomdb-engine` (feature-off) green; `cargo test -p fathomdb-engine --no-run` compiles all targets feature-off.",
+    "depth_0_identity_no_network": "rerank_fused returns hits unchanged at rerank_depth==0 BEFORE any #[cfg] block, so no model load and no network even with the feature ON. Verified by ce_feature_on_depth_0_is_identity (feature-on) and rerank_depth_0_is_byte_identical_to_identity_stub + rerank_fused_soft_fallback_preserves_fused_order (feature-off).",
+    "weights_cached_no_network": "Loader probes the sha256-verified cache fast-path first (no lock, no network) and the engine memoizes the loaded model in a process-wide OnceLock; network fires only on first rerank_depth>0 with weights absent. Memoized None on load failure => soft-fallback, never panics.",
+    "cache_location": "~/.cache/fathomdb/reranker/<sha256(repo@rev)[..12]>/ (override via FATHOMDB_RERANKER_CACHE)"
+  },
+  "crate_placement": "CE inference type CandleTinyBertReranker lives in fathomdb-embedder/src/candle_reranker.rs (the crate that already owns the Candle stack); engine `default-reranker = [\"fathomdb-embedder/default-reranker\"]` forwards the feature and the thin engine CandleCrossEncoder seam wraps it via a OnceLock. Refines design Decision 1 (no new crate; default engine build stays ML-free + no-network). Documented in the design memo + DOC-INDEX.",
+  "verification": {
+    "cargo_test_feature_on_ce": "cargo test -p fathomdb-engine --features default-reranker --test pr_g10_reranker_ce => 2 passed (CE reorders id=2 to top; depth=0 identity)",
+    "cargo_test_feature_off": "cargo test -p fathomdb-engine --test pr_g10_reranker => 5 passed (soft-fallback/identity/determinism/recall-gate-schema)",
+    "compile_all_targets": "cargo test -p fathomdb-engine --features default-reranker --no-run AND feature-off --no-run both compile all integration targets",
+    "clippy": "cargo clippy -p fathomdb-engine --features default-reranker --tests -- -D warnings clean; cargo clippy -p fathomdb-embedder --features default-reranker -- -D warnings clean",
+    "fmt": "cargo fmt --check clean (worktree + post-merge canonical main)",
+    "post_merge": "merged --no-ff onto local main at dc60098 (main had advanced a823ff7->a58c18c with disjoint Slice-10 Python/plan changes; clean merge). Post-merge fmt clean + feature-off reranker test green from canonical."
+  },
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "Pinned-model selection done empirically: queried HF, downloaded the 3 files, computed sha256, inspected config.json (hidden 128, 2 layers, num_labels=1) and the safetensors tensor names (bert.*, bert.pooler.dense, classifier) before writing the loader.",
+    "score() uses the real (query,passage) segment ids (token_type_ids 0/1) from the pair encoding — required for the cross-encoder's segment embeddings (not zeros like the single-text embedder).",
+    "candle's BertModel::load reaches the bert.* tensors via its model_type prefix fallback; pooler dense + classifier head loaded separately from the root VarBuilder; pooler applies tanh, classifier returns the raw logit (ce_rerank does the sigmoid+blend, ALPHA=0.3 untouched).",
+    "New feature `default-reranker` on fathomdb-embedder mirrors default-embedder's dep set (candle-core/nn/transformers 0.10, tokenizers 0.20, ureq, sha2, dirs, fs2, serde_json, thiserror) — distinct opt-in so reranking does not force the default embedder on.",
+    "RED was produced honestly by landing all infra then reverting ONLY the engine seam to the stub; GREEN restores the real seam."
+  ],
+  "scope_notes": "Touched ONLY the reranker model impl + Cargo wiring + the feature-gated test + the design-doc status + DOC-INDEX. No other engine behavior, no public SDK surface change (rerank_fused signature was already the 3-arg form; no new public type — CandleTinyBertReranker is an embedder-internal impl detail exposed for the engine seam, not on the governed SDK surface). No Python/TS, no Slice-5 harness.",
+  "agent_verify_result": "pass — RED@5fabbb3 (CE test fails against stub seam), GREEN@a22b022 (CE reorders, real TinyBERT-L2 logits), docs@ef2710c. Feature-on + feature-off cargo green, clippy -D warnings clean both, fmt clean. Merged --no-ff onto local main at dc60098. NO push/fetch/PR.",
+  "next_step_for_orchestrator": "reranker implemented + cargo-green and merged to local main at dc60098. Orchestrator: run codex §9 review of the E1 change, then rebuild the canonical Python extension with `--features ...,default-reranker` (e.g. maturin develop), functionally verify rerank end-to-end (rerank_depth>0 reorders on real data; depth=0 + feature-off stay identity/no-network), then re-spawn Slice 5 (fused+rerank baseline arm). Note: the engine `default-reranker` feature must be threaded into whatever build wraps fathomdb-py for the rerank path to be live; weights (~17MB) download once to ~/.cache/fathomdb/reranker/ on first rerank_depth>0."
+}
