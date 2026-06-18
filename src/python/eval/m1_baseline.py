@@ -522,6 +522,7 @@ def run_baseline(
     reranker: Optional[RerankerProtocol] = None,
     arms: Sequence[str] = ARM_NAMES,
     progress: Any = None,
+    answer_workers: int = 1,
 ) -> dict[str, Any]:
     """Run the four-arm strong baseline over ``questions`` with one shared answerer.
 
@@ -530,13 +531,29 @@ def run_baseline(
     variable. Returns a structured artifact with per-question paired records,
     per-hop (2/3/4) + pooled ≥3-hop EM/F1, and the unanswerable confident-answer
     rate.
+
+    ``answer_workers > 1`` parallelises the per-question arm answer calls across a
+    thread pool (the priced LLM seam is I/O-bound — the strong reader is a
+    reasoning model with ~10 s latency, so concurrency is what makes a 100-Q pilot
+    tractable). Retrieval stays sequential; the *same* answerer instance answers
+    every arm, so the identical-answerer invariant is unchanged. Default
+    ``answer_workers=1`` keeps the deterministic single-threaded path for tests.
     """
     encoder = encoder or BGEEncoder()
     reranker = reranker or EngineReranker()
     answerer_available = answerer.available
     results: list[QuestionResult] = []
 
-    for n, q in enumerate(questions):
+    # Phase 1 — retrieval (CPU; sequential). Build every (question, arm) answer task.
+    @dataclass
+    class _Task:
+        qr: "QuestionResult"
+        q: Question
+        arm: str
+        context: list[str]
+
+    tasks: list[_Task] = []
+    for q in questions:
         arm_rankings = retrieve_arms(q, encoder, reranker)
         qr = QuestionResult(
             qid=q.id,
@@ -545,19 +562,35 @@ def run_baseline(
             n_pool=int(arm_rankings["n_pool"]),
             n_paragraphs=int(arm_rankings["n_paragraphs"]),
         )
+        results.append(qr)
         for arm in arms:
             ranked_idx = arm_rankings[arm][:k]
-            context = [q.paragraphs[i].body for i in ranked_idx]
-            ans = answerer.answer(q.question, context) if answerer_available else None
-            qr.answers[arm] = ans
-            if q.answerable:
-                qr.em[arm] = em_score(ans, q.golds)
-                qr.f1[arm] = f1_score(ans, q.golds)
-            else:
-                qr.confident[arm] = is_confident_answer(ans)
-        results.append(qr)
-        if progress is not None:
-            progress(n + 1, len(questions), qr)
+            tasks.append(_Task(qr, q, arm, [q.paragraphs[i].body for i in ranked_idx]))
+
+    # Phase 2 — answer (priced; optionally concurrent) + score.
+    def _do(task: "_Task") -> None:
+        ans = answerer.answer(task.q.question, task.context) if answerer_available else None
+        task.qr.answers[task.arm] = ans
+        if task.q.answerable:
+            task.qr.em[task.arm] = em_score(ans, task.q.golds)
+            task.qr.f1[task.arm] = f1_score(ans, task.q.golds)
+        else:
+            task.qr.confident[task.arm] = is_confident_answer(ans)
+
+    if answer_workers > 1 and answerer_available:
+        from concurrent.futures import ThreadPoolExecutor
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=answer_workers) as ex:
+            for _ in ex.map(_do, tasks):
+                done += 1
+                if progress is not None and done % len(arms) == 0:
+                    progress(done // len(arms), len(questions), None)
+    else:
+        for i, task in enumerate(tasks):
+            _do(task)
+            if progress is not None and (i + 1) % len(arms) == 0:
+                progress((i + 1) // len(arms), len(questions), task.qr)
 
     return _aggregate(results, answerer, k=k, arms=arms)
 
