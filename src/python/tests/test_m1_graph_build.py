@@ -11,7 +11,9 @@ is fast and offline):
   - the partial-coverage failure mode is DETECTED (a question with an empty graph
     makes the report ``ok == False`` and ``assert_coverage`` raise) — the
     verify_embed_db "partial embed passes naive checks" lesson;
-  - ``sample_questions`` is deterministic + hop-stratified.
+  - ``sample_questions`` is deterministic + hop-stratified;
+  - [P2] ``validate_corpus_hash`` raises on mismatch before any extraction;
+  - [P3] the sampler returns exactly n items (no silent rounding-down).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from eval.m1_graph_build import (
     assert_coverage,
     build_question_graph_engine,
     sample_questions,
+    validate_corpus_hash,
     verify_coverage,
 )
 
@@ -123,3 +126,54 @@ def test_sample_questions_deterministic_and_stratified():
     # different seed ⇒ (generally) a different selection, still all strata
     c = sample_questions(rows, n=14, seed=99, log=lambda *_: None)
     assert {int(q["hop_count"]) for q in c} == {2, 3, 4}
+
+
+# ---------------------------------------------------------------------------
+# [P2] RED: validate_corpus_hash raises on mismatch (Slice 10 fix-1)
+# ---------------------------------------------------------------------------
+
+def test_corpus_hash_mismatch_raises(tmp_path):
+    """[P2] validate_corpus_hash must raise ValueError on corpus/hash mismatch.
+
+    Fails RED against current code because validate_corpus_hash does not exist
+    yet (ImportError) or does not perform the check.
+    """
+    from eval.m1_graph_build import MUSIQUE_HASH
+
+    fake_corpus = tmp_path / "wrong.jsonl"
+    fake_corpus.write_text('{"id": "not_the_real_corpus"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="corpus hash mismatch"):
+        validate_corpus_hash(fake_corpus, MUSIQUE_HASH)
+
+
+# ---------------------------------------------------------------------------
+# [P3] RED: sampler must return exactly n (Slice 10 fix-1)
+# ---------------------------------------------------------------------------
+
+def test_sample_questions_exact_n():
+    """[P3] sampler must return exactly n items when n <= len(pool).
+
+    Pool proportions 313:190:101 (total 604) reproduce the actual n=300→299
+    rounding bug: round(300*313/604)+round(300*190/604)+round(300*101/604)
+    = 155+94+50 = 299 with current code.
+
+    Fails RED against current code (len==299, not 300).
+    """
+    rows = (
+        [_q(f"2hop__{i}_{i}", 3, 2) for i in range(313)]
+        + [_q(f"3hop1__{i}_{i}", 3, 3) for i in range(190)]
+        + [_q(f"4hop3__{i}_{i}", 3, 4) for i in range(101)]
+    )
+    assert len(rows) == 604
+
+    # The actual failing case from the coverage artifact: n=300.
+    result = sample_questions(rows, n=300, seed=20260617, log=lambda *_: None)
+    assert len(result) == 300, (
+        f"[P3] sampler returned {len(result)}, expected 300 — rounding not corrected"
+    )
+
+    # Additional spot-checks for exact count across representative n values.
+    for n in [1, 14, 99, 150, 250]:
+        result = sample_questions(rows, n=n, seed=20260617, log=lambda *_: None)
+        assert len(result) == n, f"expected {n}, got {len(result)}"
