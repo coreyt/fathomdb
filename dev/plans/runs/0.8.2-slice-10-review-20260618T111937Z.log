@@ -1,0 +1,2304 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019eda75-43f6-7062-8a4a-307d9a529373
+--------
+user
+changes against 'a4a4391'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null; for f in feedback_*.md; do [ -e "$f" ] && echo "--- $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff --stat a4a439144c2d844ca4f7e376c2fca80de3fd8185 && git diff --name-only a4a439144c2d844ca4f7e376c2fca80de3fd8185' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ dev/DOC-INDEX.md                                 |    3 +
+ dev/plans/runs/0.8.2-m1-graph-coverage-n299.json | 1235 ++++++++++++++++++++++
+ dev/plans/runs/0.8.2-slice-10-graph-build.md     |   85 ++
+ src/python/eval/m1_graph_build.py                |  534 ++++++++++
+ src/python/tests/test_m1_graph_build.py          |  125 +++
+ 5 files changed, 1982 insertions(+)
+dev/DOC-INDEX.md
+dev/plans/runs/0.8.2-m1-graph-coverage-n299.json
+dev/plans/runs/0.8.2-slice-10-graph-build.md
+src/python/eval/m1_graph_build.py
+src/python/tests/test_m1_graph_build.py
+
+exec
+/bin/bash -lc 'git diff a4a439144c2d844ca4f7e376c2fca80de3fd8185 -- src/python/eval/m1_graph_build.py src/python/tests/test_m1_graph_build.py dev/DOC-INDEX.md' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/dev/DOC-INDEX.md b/dev/DOC-INDEX.md
+index c0ef940..545228b 100644
+--- a/dev/DOC-INDEX.md
++++ b/dev/DOC-INDEX.md
+@@ -131,6 +131,9 @@ refresh in the closing commit when you touch a doc).
+ | `dev/roadmap/0.8.2.md` | **0.8.2 roadmap** — RE-SEQUENCED 2026-06-16: now **M1 multi-hop answer-accuracy harness** (lexically-seeded PPR-fusion on MuSiQue, EM/F1 by hop count); step 1 of the 3-version graph adjudication. (Former R3b content → 0.8.5) | 0.8.2 | 2026-06-16 |
+ | `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan** — M1 slice contracts (0 design+pre-register → 4 corpus acquire → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict); reuse inventory; pre-registered endpoint + GO/NO-GO rule | 0.8.2 | 2026-06-16 |
+ | `dev/plans/runs/0.8.2-m1-corpus-manifest.json` | **M1 corpus manifest artifact** — pinned `musique_hash` (sha256), per-hop counts (2/3/4), answerable vs unanswerable counts, materialized-corpus path, acquire command; consumed by Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
++| `src/python/eval/m1_graph_build.py` (+ `tests/test_m1_graph_build.py`) | **M1 per-question graph build** (Slice 10) — reproduces the Slice-4 corpus, reuses `graph_arm_recall.extract_graph` (Qwen3.6-27B Airlock vLLM batch, $0) to extract entities + fact-edges per MuSiQue **paragraph** (incremental cache), loads into a FathomDB engine with **per-question-namespaced** entities + **BODY-LESS** edges (dodges the `edge_fact` vector-projection scale bug), then **coverage-verifies** read-only (`verify_embed_db` pattern — every sampled question ≥1 entity node, tables populated, no edge body). PPR arm (Slice 15) seeds from this graph + the per-paragraph cache | 0.8.2 Slice 10 | 2026-06-17 |
++| `dev/plans/runs/0.8.2-m1-graph-coverage-n299.json` | **M1 graph coverage artifact** (Slice 10) — pinned to `musique_hash 3cff37fd…` + extractor model id; per-question entity/edge counts, coverage = questions-with-non-empty-graph / total, median entities & edges, body-less-edge confirmation, `priced_api_calls=0` over the n=299 (300-requested, hop-stratified) answerable sample | 0.8.2 Slice 10 | 2026-06-17 |
++| `dev/plans/runs/0.8.2-slice-10-graph-build.md` | **Slice 10 note** — what the graph build delivers (per-question, body-less edges), the granularity choice (per-paragraph for HippoRAG passage→entity membership), the sampling rule (hop-stratified, deterministic, `log()`-ed), the asset-divergence finding (asset already body-less at 92ed09e), and the Slice-15 hand-off (engine + cache paths, both gitignored) | 0.8.2 Slice 10 | 2026-06-17 |
+ | `dev/roadmap/0.8.3.md` | **0.8.3 roadmap** — **M2 full multi-hop study** (+2Wiki +MultiHop-RAG, +IRCoT iterative arm, +R5 vector-PRF); step 2; gated on the M1 verdict | 0.8.3 | 2026-06-16 |
+ | `dev/roadmap/0.8.4.md` | **0.8.4 roadmap** — **S1 GraphRAG sensemaking** (Leiden communities + community summaries + BenchmarkQED LLM-judge); step 3; the graph-favorable bet | 0.8.4 | 2026-06-16 |
+ | `dev/roadmap/0.8.5.md` | **0.8.5 roadmap** — displaced/contingent items: R3b (GATED on the M1–S1 verdict), portable-DB vector guard, R4 whole-doc dense, tunable-b FTS5, EU7 perf | 0.8.5 | 2026-06-16 |
+diff --git a/src/python/eval/m1_graph_build.py b/src/python/eval/m1_graph_build.py
+new file mode 100644
+index 0000000..859c996
+--- /dev/null
++++ b/src/python/eval/m1_graph_build.py
+@@ -0,0 +1,534 @@
++"""M1 (0.8.2 Slice 10) — per-question knowledge-graph build over MuSiQue-Ans.
++
++Builds the per-question graph the **PPR arm (Slice 15)** will traverse, over the
++**same** pinned corpus the baseline (Slice 5) scores on
++(``musique_hash 3cff37fd…``; see ``dev/plans/runs/0.8.2-m1-corpus-manifest.json``).
++
++Pipeline (all $0 — local GPU extraction, no priced API):
++  1. Reproduce the Slice-4 corpus (``acquire_musique.py``) and read its rows.
++  2. **Extract** entities + fact-edges per MuSiQue **paragraph** (custom_id
++     ``"{qid}#{idx}"``) by reusing ``eval.graph_arm_recall.extract_graph`` —
++     Qwen3.6-27B via the Airlock vLLM **batch** gateway (``enable_thinking:false``,
++     $0 local). Per-paragraph granularity preserves passage→entity membership that
++     HippoRAG-style PPR (Slice 15) needs. Extraction is **cached incrementally**
++     (keyed by paragraph custom_id) so a re-run extracts only missing paragraphs.
++  3. **Load** into a FathomDB engine (``canonical_nodes`` / ``canonical_edges``),
++     entities namespaced **per question** (``logical_id = "{qid}|ent:{norm}"``) so
++     identically-named entities in different questions do NOT merge across the
++     distractor sets. Each question is its own isolated subgraph (MuSiQue's
++     distractor paragraphs are per-question, not a shared haystack).
++  4. **Verify coverage** the way ``eval.verify_embed_db`` verifies embeds —
++     drain/terminal status can lie ([[embed-completeness-and-gpu-readiness]]): a
++     read-only ``mode=ro`` sqlite pass over ``canonical_nodes`` / ``canonical_edges``
++     confirming **every sampled question has a non-empty graph** and the node/edge
++     tables are populated.
++
++**BODY-LESS EDGES (the load-bearing adaptation).** Edges are written **without** a
++``body``. Setting an edge ``body`` makes the engine auto-enqueue ``edge_fact`` vector
++projection (lib.rs), which (a) needs an embedder (else SchedulerError) and (b) hits a
++StorageError scale bug at ~8-14k edges — the known 0.8.1 engine follow-up. The
++relation still connects its two entities for PPR traversal; provenance rides the
++edge's ``source_id`` (the question id) and the per-paragraph cache.
++
++  NOTE on the reused asset: the Slice-10 prompt/plan states
++  ``graph_arm_recall.build_graph_engine`` "builds edges WITH body by default" and that
++  body-less is the opposite of its default. At this baseline (92ed09e) the asset
++  ALREADY builds edges body-less (see its ``build_graph_engine`` — the edge dict has no
++  ``body`` key). So body-less is **consistent with**, not opposite to, the current
++  asset; this module keeps edges body-less **explicitly** regardless.
++
++**PII redaction.** The reused ``extract_graph`` performs **no** PII redaction (there is
++no redaction seam in the extractor or engine write path), so the standing
++"disable pii_redact for synthetic extraction" rule is satisfied by construction; the
++MuSiQue paragraphs are public synthetic-eval data (CC-BY-4.0).
++
++CLI:
++    python -m eval.m1_graph_build --n 300 --seed 20260617 \
++        --db-dir data/corpus-data/graph-cache/0.8.2-m1-v1 \
++        --output dev/plans/runs/0.8.2-m1-graph-coverage-n300.json
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sqlite3
++import statistics
++import sys
++import time
++from collections import defaultdict
++from dataclasses import asdict, dataclass, field
++from pathlib import Path
++from typing import Any, Callable, Optional, Sequence
++
++# ``eval.graph_arm_recall`` carries the reused extractor + the entity normalizer.
++from eval.graph_arm_recall import _norm, extract_graph
++
++#: extractor identity recorded in artifacts (the local, $0 seam).
++EXTRACTOR_MODEL_ID = "qwen3.6-27b (local vLLM batch, enable_thinking=false)"
++
++#: default corpus path (Slice-4 materialized corpus; gitignored).
++DEFAULT_CORPUS = "data/corpus-data/raw/musique_dev.jsonl"
++
++#: the pinned corpus hash this build is valid for (Slice-4).
++MUSIQUE_HASH = "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f"
++
++
++# --------------------------------------------------------------------------- #
++# Corpus load + deterministic sampling
++# --------------------------------------------------------------------------- #
++def load_questions(corpus_path: str | Path) -> list[dict]:
++    """Read the materialized MuSiQue corpus (one JSON object per line)."""
++    rows: list[dict] = []
++    with Path(corpus_path).open(encoding="utf-8") as f:
++        for line in f:
++            line = line.strip()
++            if line:
++                rows.append(json.loads(line))
++    return rows
++
++
++def sample_questions(
++    rows: Sequence[dict],
++    *,
++    n: Optional[int],
++    seed: int,
++    answerable_only: bool = True,
++    log: Callable[[str], Any] = print,
++) -> list[dict]:
++    """Deterministically sample ``n`` questions, **stratified by hop count** so all of
++    {2,3,4} are represented in proportion. ``n=None`` ⇒ take the whole (filtered) set.
++
++    Determinism: sort each hop stratum by question id, then take a seed-rotated,
++    evenly-strided slice. No silent caps — the sample size + per-hop breakdown are
++    ``log()``-ed (bias-control §7 of the design)."""
++    pool = [r for r in rows if (r.get("answerable") if answerable_only else True)]
++    pool_kind = "answerable" if answerable_only else "all"
++    by_hop: dict[int, list[dict]] = defaultdict(list)
++    for r in pool:
++        by_hop[int(r["hop_count"])].append(r)
++    for h in by_hop:
++        by_hop[h].sort(key=lambda r: r["id"])
++
++    if n is None or n >= len(pool):
++        out = sorted(pool, key=lambda r: r["id"])
++        log(f"[S10][SAMPLE] full {pool_kind} set: {len(out)} questions "
++            f"(per-hop { {h: len(by_hop[h]) for h in sorted(by_hop)} })")
++        return out
++
++    total = len(pool)
++    out: list[dict] = []
++    per_hop_taken: dict[int, int] = {}
++    for h in sorted(by_hop):
++        stratum = by_hop[h]
++        # proportional allocation, deterministic stride + seed rotation
++        take = max(1, round(n * len(stratum) / total)) if stratum else 0
++        take = min(take, len(stratum))
++        if take == 0:
++            per_hop_taken[h] = 0
++            continue
++        stride = len(stratum) / take
++        off = seed % len(stratum)
++        idxs = sorted({int((off + i * stride)) % len(stratum) for i in range(take)})
++        # stride collisions can under-fill; top up deterministically from the front
++        j = 0
++        while len(idxs) < take and j < len(stratum):
++            if j not in idxs:
++                idxs.append(j)
++            j += 1
++        idxs = sorted(set(idxs))[:take]
++        out.extend(stratum[i] for i in idxs)
++        per_hop_taken[h] = len(idxs)
++    out.sort(key=lambda r: r["id"])
++    log(f"[S10][SAMPLE] sampled {len(out)}/{total} {pool_kind} questions "
++        f"(n requested={n}, seed={seed}; per-hop taken={ {h: per_hop_taken[h] for h in sorted(per_hop_taken)} })")
++    return out
++
++
++# --------------------------------------------------------------------------- #
++# Extraction (per-paragraph, incrementally cached) — reuses extract_graph ($0)
++# --------------------------------------------------------------------------- #
++def paragraph_documents(questions: Sequence[dict]) -> dict[str, str]:
++    """Flatten sampled questions to ``{ "{qid}#{idx}": "title\\ntext" }`` paragraph
++    documents — the unit the extractor sees (passage-level granularity)."""
++    docs: dict[str, str] = {}
++    for q in questions:
++        qid = q["id"]
++        for p in q["paragraphs"]:
++            cid = f"{qid}#{p['idx']}"
++            title = (p.get("title") or "").strip()
++            text = (p.get("text") or "").strip()
++            docs[cid] = (f"{title}\n{text}" if title else text).strip()
++    return docs
++
++
++def extract_question_graphs(
++    questions: Sequence[dict],
++    cache_path: str | Path,
++    *,
++    chunk_size: int = 1500,
++    max_tokens: int = 3072,
++    log: Callable[[str], Any] = print,
++) -> dict[str, dict]:
++    """Extract per-paragraph graphs for the sampled questions, **caching
++    incrementally** (keyed by paragraph custom_id). Only MISSING paragraphs are
++    extracted; the cache is persisted after every chunk so a long build is
++    resumable. Returns ``{ "{qid}#{idx}": {"entities":[...], "relations":[...]} }``
++    for the requested paragraphs."""
++    cache_path = Path(cache_path)
++    cache_path.parent.mkdir(parents=True, exist_ok=True)
++    cached: dict[str, dict] = (
++        json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
++    )
++    wanted = paragraph_documents(questions)
++    missing = {cid: body for cid, body in wanted.items() if cid not in cached}
++    log(f"[S10][EXTRACT] {len(wanted)} paragraphs wanted; "
++        f"{len(wanted) - len(missing)} cached, {len(missing)} to extract")
++    if missing:
++        items = list(missing.items())
++        for i in range(0, len(items), chunk_size):
++            chunk = dict(items[i : i + chunk_size])
++            log(f"[S10][EXTRACT] chunk {i // chunk_size + 1} "
++                f"({len(chunk)} paragraphs, {i + len(chunk)}/{len(items)})")
++            new = extract_graph(chunk, max_tokens=max_tokens, log=log)
++            cached.update(new)
++            cache_path.write_text(json.dumps(cached), encoding="utf-8")
++            log(f"[S10][EXTRACT] cache persisted -> {cache_path} ({len(cached)} paragraphs)")
++    return {cid: cached[cid] for cid in wanted if cid in cached}
++
++
++# --------------------------------------------------------------------------- #
++# Graph build — per-question namespaced, BODY-LESS edges
++# --------------------------------------------------------------------------- #
++def _qid_of(cid: str) -> str:
++    """``"{qid}#{idx}"`` -> ``qid`` (MuSiQue ids carry no ``#``)."""
++    return cid.rsplit("#", 1)[0]
++
++
++def _qnorm(qid: str, name: Any) -> Optional[str]:
++    """Per-question-namespaced entity logical_id: ``"{qid}|ent:{normalized name}"``.
++    Returns None for an unusable name."""
++    base = _norm(name)  # -> "ent:<normalized>" | None
++    return f"{qid}|{base}" if base else None
++
++
++def build_question_graph_engine(
++    questions: Sequence[dict],
++    para_graphs: dict[str, dict],
++    db_path: str | Path,
++    *,
++    log: Callable[[str], Any] = print,
++):
++    """Load passages (docs), per-question entities, and **body-less** fact-edges into
++    a FathomDB engine. Returns ``(engine, stats)``.
++
++    Schema written:
++      - docs:     kind="doc",    body=passage text, source_id=qid, logical_id="{qid}#{idx}"
++      - entities: kind="entity", body=name,         source_id=qid, logical_id="{qid}|ent:{norm}"
++      - edges:    kind="rel", from/to=entity logical_ids, source_id=qid,
++                  logical_id="{qid}|e:{n}", **NO body** (edge_fact-projection-safe)
++    """
++    from fathomdb.engine import Engine
++
++    db_path = Path(db_path)
++    db_path.parent.mkdir(parents=True, exist_ok=True)
++    if db_path.exists():
++        db_path.unlink()
++    for suffix in ("-wal", "-shm"):
++        side = Path(str(db_path) + suffix)
++        if side.exists():
++            side.unlink()
++
++    engine = Engine.open(str(db_path), use_default_embedder=False)
++
++    # group extracted paragraph graphs by question (stable order)
++    qids = [q["id"] for q in sorted(questions, key=lambda r: r["id"])]
++    para_by_q: dict[str, list[tuple[str, dict]]] = defaultdict(list)
++    for cid, g in para_graphs.items():
++        para_by_q[_qid_of(cid)].append((cid, g))
++
++    n_doc = n_ent = n_edge = 0
++
++    for qid in qids:
++        q = next(r for r in questions if r["id"] == qid)
++
++        # 1) passages (docs)
++        doc_writes = [
++            {
++                "kind": "doc",
++                "body": (f"{(p.get('title') or '').strip()}\n{(p.get('text') or '').strip()}").strip(),
++                "source_id": qid,
++                "logical_id": f"{qid}#{p['idx']}",
++            }
++            for p in q["paragraphs"]
++        ]
++        for i in range(0, len(doc_writes), 64):
++            engine.write(doc_writes[i : i + 64])
++        n_doc += len(doc_writes)
++
++        # 2) entities (per-question namespaced; first display name wins)
++        ent_name: dict[str, str] = {}
++        for _cid, g in sorted(para_by_q.get(qid, []), key=lambda t: t[0]):
++            for e in g.get("entities", []) or []:
++                raw = e.get("name") if isinstance(e, dict) else e
++                lid = _qnorm(qid, raw)
++                if lid and lid not in ent_name:
++                    ent_name[lid] = (raw if isinstance(raw, str) and raw.strip() else lid)
++        ent_writes = [
++            {"kind": "entity", "body": ent_name[lid], "source_id": qid, "logical_id": lid}
++            for lid in sorted(ent_name)
++        ]
++        for i in range(0, len(ent_writes), 64):
++            engine.write(ent_writes[i : i + 64])
++        n_ent += len(ent_writes)
++
++        # 3) edges (BODY-LESS; both endpoints must be known entities of THIS question)
++        edge_writes = []
++        e_n = 0
++        for _cid, g in sorted(para_by_q.get(qid, []), key=lambda t: t[0]):
++            for r in g.get("relations", []) or []:
++                if not isinstance(r, dict):
++                    continue
++                f = _qnorm(qid, r.get("subject"))
++                t = _qnorm(qid, r.get("object"))
++                if not f or not t or f == t or f not in ent_name or t not in ent_name:
++                    continue
++                e_n += 1
++                edge_writes.append({"edge": {
++                    "kind": "rel", "from": f, "to": t, "source_id": qid,
++                    "logical_id": f"{qid}|e:{e_n}",
++                    # NO "body" — keeps edge_fact vector projection from firing.
++                }})
++        for i in range(0, len(edge_writes), 64):
++            engine.write(edge_writes[i : i + 64])
++        n_edge += len(edge_writes)
++
++    engine.drain(timeout_s=300)
++    stats = {"docs": n_doc, "entities": n_ent, "edges": n_edge, "questions": len(qids)}
++    log(f"[S10][BUILD] docs={n_doc} entities={n_ent} edges={n_edge} "
++        f"over {len(qids)} questions -> {db_path}")
++    return engine, stats
++
++
++# --------------------------------------------------------------------------- #
++# Coverage verification (read-only sqlite — drain/terminal status can lie)
++# --------------------------------------------------------------------------- #
++@dataclass
++class CoverageReport:
++    db: str
++    n_questions: int
++    n_questions_nonempty: int  # >=1 entity node
++    coverage: float  # n_questions_nonempty / n_questions
++    n_nodes_total: int
++    n_entity_nodes: int
++    n_edges_total: int
++    n_edges_with_body: int  # MUST be 0 (body-less invariant)
++    median_entities: float
++    median_edges: float
++    per_question: dict[str, dict[str, int]] = field(default_factory=dict)
++    empty_questions: list[str] = field(default_factory=list)
++    min_coverage: float = 1.0
++
++    @property
++    def ok(self) -> bool:
++        return (
++            self.n_questions > 0
++            and self.coverage >= self.min_coverage
++            and self.n_entity_nodes > 0
++            and self.n_edges_total > 0
++            and self.n_edges_with_body == 0
++        )
++
++    def to_dict(self) -> dict[str, Any]:
++        d = asdict(self)
++        d["ok"] = self.ok
++        return d
++
++
++def _scalar(con: sqlite3.Connection, sql: str, params: Sequence[Any] = ()) -> int:
++    row = con.execute(sql, tuple(params)).fetchone()
++    return int(row[0]) if row and row[0] is not None else 0
++
++
++def verify_coverage(
++    db_path: str | Path,
++    question_ids: Sequence[str],
++    *,
++    min_coverage: float = 1.0,
++) -> CoverageReport:
++    """Inspect the built graph DB read-only (``mode=ro``, NOT ``immutable=1`` — must
++    see committed-but-uncheckpointed WAL rows while the engine still holds the DB),
++    and report per-question entity/edge coverage. A non-empty graph == ≥1 entity node
++    for the question. Mirrors ``verify_embed_db`` (terminal/drain status can lie; only
++    per-row attribution is ground truth)."""
++    db_path = str(db_path)
++    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
++    try:
++        n_nodes_total = _scalar(
++            con, "SELECT count(*) FROM canonical_nodes WHERE superseded_at IS NULL")
++        n_entity_nodes = _scalar(
++            con, "SELECT count(*) FROM canonical_nodes "
++                 "WHERE kind='entity' AND superseded_at IS NULL")
++        n_edges_total = _scalar(
++            con, "SELECT count(*) FROM canonical_edges WHERE superseded_at IS NULL")
++        n_edges_with_body = _scalar(
++            con, "SELECT count(*) FROM canonical_edges "
++                 "WHERE superseded_at IS NULL AND body IS NOT NULL")
++
++        ent_by_q: dict[str, int] = {}
++        for qid, c in con.execute(
++            "SELECT source_id, count(*) FROM canonical_nodes "
++            "WHERE kind='entity' AND superseded_at IS NULL GROUP BY source_id"
++        ):
++            if qid is not None:
++                ent_by_q[str(qid)] = int(c)
++        edge_by_q: dict[str, int] = {}
++        for qid, c in con.execute(
++            "SELECT source_id, count(*) FROM canonical_edges "
++            "WHERE kind='rel' AND superseded_at IS NULL GROUP BY source_id"
++        ):
++            if qid is not None:
++                edge_by_q[str(qid)] = int(c)
++    finally:
++        con.close()
++
++    per_question: dict[str, dict[str, int]] = {}
++    empty: list[str] = []
++    ent_counts: list[int] = []
++    edge_counts: list[int] = []
++    for qid in question_ids:
++        ne = ent_by_q.get(qid, 0)
++        nr = edge_by_q.get(qid, 0)
++        per_question[qid] = {"entities": ne, "edges": nr}
++        ent_counts.append(ne)
++        edge_counts.append(nr)
++        if ne == 0:
++            empty.append(qid)
++
++    n_q = len(question_ids)
++    n_nonempty = n_q - len(empty)
++    return CoverageReport(
++        db=db_path,
++        n_questions=n_q,
++        n_questions_nonempty=n_nonempty,
++        coverage=round(n_nonempty / n_q, 6) if n_q else 0.0,
++        n_nodes_total=n_nodes_total,
++        n_entity_nodes=n_entity_nodes,
++        n_edges_total=n_edges_total,
++        n_edges_with_body=n_edges_with_body,
++        median_entities=float(statistics.median(ent_counts)) if ent_counts else 0.0,
++        median_edges=float(statistics.median(edge_counts)) if edge_counts else 0.0,
++        per_question=per_question,
++        empty_questions=empty,
++        min_coverage=min_coverage,
++    )
++
++
++class CoverageIncompleteError(RuntimeError):
++    def __init__(self, message: str, report: CoverageReport) -> None:
++        super().__init__(message)
++        self.report = report
++
++
++def assert_coverage(
++    db_path: str | Path,
++    question_ids: Sequence[str],
++    *,
++    min_coverage: float = 1.0,
++) -> CoverageReport:
++    """Raise :class:`CoverageIncompleteError` unless every sampled question has a
++    non-empty graph and the node/edge tables are populated (body-less)."""
++    report = verify_coverage(db_path, question_ids, min_coverage=min_coverage)
++    if not report.ok:
++        reasons = []
++        if report.coverage < report.min_coverage:
++            reasons.append(
++                f"coverage {report.coverage:.4f} < {report.min_coverage} "
++                f"({len(report.empty_questions)} empty: {report.empty_questions[:5]})")
++        if report.n_entity_nodes == 0:
++            reasons.append("no entity nodes")
++        if report.n_edges_total == 0:
++            reasons.append("no edges")
++        if report.n_edges_with_body != 0:
++            reasons.append(f"{report.n_edges_with_body} edges carry a body (body-less invariant violated)")
++        raise CoverageIncompleteError("graph coverage incomplete: " + "; ".join(reasons), report)
++    return report
++
++
++# --------------------------------------------------------------------------- #
++# Main
++# --------------------------------------------------------------------------- #
++def main(argv: Optional[list[str]] = None) -> int:
++    ap = argparse.ArgumentParser(
++        description="M1 Slice 10 — per-question MuSiQue graph build (Qwen extractor, body-less edges)")
++    ap.add_argument("--corpus", default=DEFAULT_CORPUS)
++    ap.add_argument("--n", type=int, default=300,
++                    help="number of questions to sample (default 300; 0 ⇒ full set)")
++    ap.add_argument("--seed", type=int, default=20260617)
++    ap.add_argument("--answerable-only", dest="answerable_only", action="store_true", default=True)
++    ap.add_argument("--include-unanswerable", dest="answerable_only", action="store_false")
++    ap.add_argument("--db-dir", default="data/corpus-data/graph-cache/0.8.2-m1-v1")
++    ap.add_argument("--output", required=True)
++    ap.add_argument("--chunk-size", type=int, default=1500)
++    ap.add_argument("--max-tokens", type=int, default=3072)
++    args = ap.parse_args(argv)
++
++    t0 = time.time()
++    rows = load_questions(args.corpus)
++    print(f"[S10][LOAD] {len(rows)} questions from {args.corpus}")
++
++    questions = sample_questions(
++        rows, n=(None if args.n == 0 else args.n), seed=args.seed,
++        answerable_only=args.answerable_only)
++    qids = [q["id"] for q in questions]
++
++    db_dir = Path(args.db_dir)
++    db_dir.mkdir(parents=True, exist_ok=True)
++    cache_path = db_dir / "extractions.json"
++
++    para_graphs = extract_question_graphs(
++        questions, cache_path, chunk_size=args.chunk_size, max_tokens=args.max_tokens)
++
++    db_path = db_dir / "graph.sqlite"
++    engine, build_stats = build_question_graph_engine(questions, para_graphs, db_path)
++
++    report = verify_coverage(db_path, qids, min_coverage=1.0)
++    engine.close()
++
++    artifact = {
++        "schema": "0.8.2-m1-graph-coverage-v1",
++        "phase": "0.8.2-slice-10",
++        "generated_by": "eval.m1_graph_build",
++        "musique_hash": MUSIQUE_HASH,
++        "extractor_model_id": EXTRACTOR_MODEL_ID,
++        "priced_api_calls": 0,
++        "edge_body_policy": "body-less (edge_fact vector-projection-safe; see module docstring)",
++        "sample": {
++            "n_requested": args.n,
++            "seed": args.seed,
++            "answerable_only": args.answerable_only,
++            "n_questions": len(qids),
++        },
++        "build_stats": build_stats,
++        "coverage": report.to_dict(),
++        "wall_seconds": round(time.time() - t0, 1),
++    }
++    out_path = Path(args.output)
++    out_path.parent.mkdir(parents=True, exist_ok=True)
++    out_path.write_text(json.dumps(artifact, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
++
++    verdict = "OK" if report.ok else "INCOMPLETE"
++    print(f"[S10][VERIFY] [{verdict}] coverage={report.coverage:.4f} "
++          f"({report.n_questions_nonempty}/{report.n_questions} non-empty) "
++          f"entity_nodes={report.n_entity_nodes} edges={report.n_edges_total} "
++          f"edges_with_body={report.n_edges_with_body} "
++          f"median_entities={report.median_entities} median_edges={report.median_edges}")
++    print(f"[S10][VERIFY] wrote {out_path}")
++    if report.empty_questions:
++        print(f"[S10][VERIFY] WARNING {len(report.empty_questions)} empty-graph questions: "
++              f"{report.empty_questions[:10]}")
++    return 0 if report.ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/src/python/tests/test_m1_graph_build.py b/src/python/tests/test_m1_graph_build.py
+new file mode 100644
+index 0000000..5cfb9e7
+--- /dev/null
++++ b/src/python/tests/test_m1_graph_build.py
+@@ -0,0 +1,125 @@
++"""Coverage test for the M1 (0.8.2 Slice 10) per-question graph build.
++
++Load-bearing assertions (no real extraction — a tiny hand-built fixture so the test
++is fast and offline):
++  - ``build_question_graph_engine`` loads per-question entities + **body-less**
++    fact-edges into ``canonical_nodes`` / ``canonical_edges``;
++  - ``verify_coverage`` confirms **every sampled question has a non-empty graph**
++    (≥1 entity node) and the node/edge tables are populated — the way
++    ``verify_embed_db`` verifies embeds (drain/terminal status can lie);
++  - the **body-less edge invariant** holds (no edge carries a ``body``);
++  - the partial-coverage failure mode is DETECTED (a question with an empty graph
++    makes the report ``ok == False`` and ``assert_coverage`` raise) — the
++    verify_embed_db "partial embed passes naive checks" lesson;
++  - ``sample_questions`` is deterministic + hop-stratified.
++"""
++
++from __future__ import annotations
++
++import pytest
++
++from eval.m1_graph_build import (
++    CoverageIncompleteError,
++    assert_coverage,
++    build_question_graph_engine,
++    sample_questions,
++    verify_coverage,
++)
++
++
++def _q(qid: str, n_para: int, hop: int, answerable: bool = True) -> dict:
++    return {
++        "id": qid,
++        "hop_count": hop,
++        "answerable": answerable,
++        "paragraphs": [
++            {"idx": i, "title": f"T{i}", "text": f"body of paragraph {i} for {qid}"}
++            for i in range(n_para)
++        ],
++    }
++
++
++# Two real questions with non-empty extracted graphs.
++_Q1 = _q("2hop__1_1", 2, 2)
++_Q2 = _q("3hop1__2_2", 1, 3)
++# A third question whose extraction yielded NOTHING (the partial-coverage failure).
++_Q_EMPTY = _q("2hop__9_9", 1, 2)
++
++_PARA_GRAPHS = {
++    "2hop__1_1#0": {
++        "entities": [{"name": "Alice", "type": "person"}, {"name": "Paris", "type": "city"}],
++        "relations": [{"subject": "Alice", "predicate": "lives in", "object": "Paris"}],
++    },
++    "2hop__1_1#1": {
++        "entities": [{"name": "Paris", "type": "city"}, {"name": "France", "type": "country"}],
++        "relations": [{"subject": "Paris", "predicate": "capital of", "object": "France"}],
++    },
++    "3hop1__2_2#0": {
++        "entities": [{"name": "Bob", "type": "person"}, {"name": "London", "type": "city"}],
++        "relations": [{"subject": "Bob", "predicate": "lives in", "object": "London"}],
++    },
++    # _Q_EMPTY contributes no entities/relations.
++    "2hop__9_9#0": {"entities": [], "relations": []},
++}
++
++
++@pytest.fixture()
++def built_db(tmp_path):
++    db = tmp_path / "graph.sqlite"
++    questions = [_Q1, _Q2, _Q_EMPTY]
++    engine, stats = build_question_graph_engine(questions, _PARA_GRAPHS, db, log=lambda *_: None)
++    engine.close()
++    return db, [q["id"] for q in questions], stats
++
++
++def test_build_populates_canonical_tables_bodyless(built_db):
++    db, _qids, stats = built_db
++    # Q1: {alice, paris, france} = 3 entities, 2 edges; Q2: {bob, london} = 2 entities, 1 edge.
++    assert stats["entities"] == 5
++    assert stats["edges"] == 3
++    assert stats["docs"] == 4  # 2 + 1 + 1 paragraphs
++    rep = verify_coverage(db, [_Q1["id"], _Q2["id"]])
++    assert rep.n_entity_nodes == 5
++    assert rep.n_edges_total == 3
++    # BODY-LESS invariant: not a single edge may carry a body.
++    assert rep.n_edges_with_body == 0
++
++
++def test_every_sampled_question_has_nonempty_graph(built_db):
++    db, _qids, _stats = built_db
++    rep = verify_coverage(db, [_Q1["id"], _Q2["id"]])
++    assert rep.ok
++    assert rep.coverage == 1.0
++    assert rep.n_questions_nonempty == 2
++    assert rep.per_question[_Q1["id"]]["entities"] == 3
++    assert rep.per_question[_Q1["id"]]["edges"] == 2
++    assert rep.per_question[_Q2["id"]]["entities"] == 2
++    assert rep.per_question[_Q2["id"]]["edges"] == 1
++    assert_coverage(db, [_Q1["id"], _Q2["id"]])  # does not raise
++
++
++def test_partial_coverage_is_detected(built_db):
++    db, _qids, _stats = built_db
++    # Include the empty-graph question: coverage must drop below 1.0 and fail.
++    rep = verify_coverage(db, [_Q1["id"], _Q2["id"], _Q_EMPTY["id"]])
++    assert not rep.ok
++    assert rep.coverage == pytest.approx(2 / 3, rel=1e-6)
++    assert _Q_EMPTY["id"] in rep.empty_questions
++    with pytest.raises(CoverageIncompleteError):
++        assert_coverage(db, [_Q1["id"], _Q2["id"], _Q_EMPTY["id"]])
++
++
++def test_sample_questions_deterministic_and_stratified():
++    rows = (
++        [_q(f"2hop__{i}_{i}", 3, 2) for i in range(40)]
++        + [_q(f"3hop1__{i}_{i}", 3, 3) for i in range(20)]
++        + [_q(f"4hop3__{i}_{i}", 3, 4) for i in range(10)]
++    )
++    a = sample_questions(rows, n=14, seed=7, log=lambda *_: None)
++    b = sample_questions(rows, n=14, seed=7, log=lambda *_: None)
++    assert [q["id"] for q in a] == [q["id"] for q in b]  # determinism
++    hops = {int(q["hop_count"]) for q in a}
++    assert hops == {2, 3, 4}  # every stratum represented
++    # different seed ⇒ (generally) a different selection, still all strata
++    c = sample_questions(rows, n=14, seed=99, log=lambda *_: None)
++    assert {int(q["hop_count"]) for q in c} == {2, 3, 4}
+
+exec
+/bin/bash -lc "grep -R \"def build_graph_engine\\|canonical_edges\\|class Engine\" -n src/python src/rust/crates | head -100" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+grep: src/python/eval/__pycache__/m1_graph_build.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_m1_graph_build.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r6_enrichment.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-7.4.4.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312-pytest-9.0.3.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_r6_enrichment.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/fathomdb/__pycache__/graph.cpython-312.pyc: binary file matches
+grep: src/python/fathomdb/_fathomdb.abi3.so: binary file matches
+src/python/eval/graph_arm_recall.py:180:def build_graph_engine(documents: dict[str, str], graphs: dict[str, dict], db_path: Path, *, log=print):
+src/python/eval/m1_graph_build.py:15:  3. **Load** into a FathomDB engine (``canonical_nodes`` / ``canonical_edges``),
+src/python/eval/m1_graph_build.py:22:     read-only ``mode=ro`` sqlite pass over ``canonical_nodes`` / ``canonical_edges``
+src/python/eval/m1_graph_build.py:373:            con, "SELECT count(*) FROM canonical_edges WHERE superseded_at IS NULL")
+src/python/eval/m1_graph_build.py:375:            con, "SELECT count(*) FROM canonical_edges "
+src/python/eval/m1_graph_build.py:387:            "SELECT source_id, count(*) FROM canonical_edges "
+src/python/tests/test_r6_enrichment.py:99:    n_edges = c.execute("SELECT COUNT(*) FROM canonical_edges").fetchone()[0]
+src/python/tests/test_ffi_safety.py:42:        "PanicException must NOT subclass EngineError"
+src/python/tests/test_m1_graph_build.py:6:    fact-edges into ``canonical_nodes`` / ``canonical_edges``;
+src/python/fathomdb/graph.py:50:    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+src/python/fathomdb/config.py:14:class EngineConfig:
+src/python/fathomdb/engine.py:41:class Engine:
+src/python/fathomdb/_fathomdb.pyi:85:class Engine:
+src/python/fathomdb/_fathomdb.pyi:179:    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+src/python/fathomdb/_fathomdb.pyi:208:class EngineError(Exception): ...
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:3://! Tests the 5 additive nullable columns on `canonical_edges` and the
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:46:/// ADR §6 criterion 1 — after step-14, `canonical_edges` has all five G11 columns.
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:48:fn s14_g11_canonical_edges_has_all_five_columns() {
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:52:    let cols = column_names(&conn, "canonical_edges");
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:56:            "canonical_edges must have column {expected} after step-14, got: {cols:?}"
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:76:        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id) VALUES(1, 'link', 'A', 'B')",
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:94:             FROM canonical_edges WHERE write_cursor = 1",
+src/rust/crates/fathomdb-schema/tests/migrations.rs:154:        .prepare("PRAGMA table_info(canonical_edges)")
+src/rust/crates/fathomdb-schema/tests/migrations.rs:160:    assert!(edges_has_source_id, "canonical_edges.source_id must be present after migration 8");
+src/rust/crates/fathomdb-schema/tests/migrations.rs:174:            ["canonical_edges_source_id_idx"],
+src/rust/crates/fathomdb-schema/tests/migrations.rs:229:    for table in ["canonical_nodes", "canonical_edges"] {
+src/rust/crates/fathomdb-schema/tests/migrations.rs:244:        "canonical_edges_logical_active_idx",
+src/rust/crates/fathomdb-schema/tests/migrations.rs:246:        "canonical_edges_from_id_idx",
+src/rust/crates/fathomdb-schema/tests/migrations.rs:247:        "canonical_edges_to_id_idx",
+src/rust/crates/fathomdb-schema/tests/migrations.rs:255:    for idx_name in ["canonical_nodes_logical_active_idx", "canonical_edges_logical_active_idx"] {
+src/rust/crates/fathomdb-schema/src/lib.rs:44:    "canonical_edges",
+src/rust/crates/fathomdb-schema/src/lib.rs:111:              CREATE TABLE IF NOT EXISTS canonical_edges(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL);",
+src/rust/crates/fathomdb-schema/src/lib.rs:199:              ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:202:              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+src/rust/crates/fathomdb-schema/src/lib.rs:203:                  ON canonical_edges(source_id);",
+src/rust/crates/fathomdb-schema/src/lib.rs:291:    // (`canonical_nodes(kind)`, `canonical_edges(from_id)/(to_id)`) ride this one
+src/rust/crates/fathomdb-schema/src/lib.rs:302:              ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:303:              ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
+src/rust/crates/fathomdb-schema/src/lib.rs:306:              CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
+src/rust/crates/fathomdb-schema/src/lib.rs:307:                  ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
+src/rust/crates/fathomdb-schema/src/lib.rs:310:              CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
+src/rust/crates/fathomdb-schema/src/lib.rs:311:                  ON canonical_edges(from_id);
+src/rust/crates/fathomdb-schema/src/lib.rs:312:              CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
+src/rust/crates/fathomdb-schema/src/lib.rs:313:                  ON canonical_edges(to_id);",
+src/rust/crates/fathomdb-schema/src/lib.rs:337:    // 2026-06-13). Five additive nullable columns on `canonical_edges`:
+src/rust/crates/fathomdb-schema/src/lib.rs:350:              ALTER TABLE canonical_edges ADD COLUMN body TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:351:              ALTER TABLE canonical_edges ADD COLUMN t_valid TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:352:              ALTER TABLE canonical_edges ADD COLUMN t_invalid TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:353:              ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+src/rust/crates/fathomdb-schema/src/lib.rs:354:              ALTER TABLE canonical_edges ADD COLUMN extractor_model_id TEXT;
+src/rust/crates/fathomdb-schema/src/lib.rs:374:              ALTER TABLE canonical_edges ADD COLUMN temporal_fallback INTEGER;",
+src/rust/crates/fathomdb-schema/migrations/008_source_id.sql:11:ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+src/rust/crates/fathomdb-schema/migrations/008_source_id.sql:14:CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+src/rust/crates/fathomdb-schema/migrations/008_source_id.sql:15:    ON canonical_edges(source_id);
+src/rust/crates/fathomdb-schema/migrations/002_canonical.sql:13:CREATE TABLE IF NOT EXISTS canonical_edges(
+src/rust/crates/fathomdb-py/src/lib.rs:1147:/// Slice 20 (G5) — bounded BFS from `logical_id` over `canonical_edges`.
+src/rust/crates/fathomdb-napi/src/lib.rs:1161:/// Slice 20 (G5) — bounded BFS from `logicalId` over `canonical_edges`.
+src/rust/crates/fathomdb-engine/tests/elps_conformance_golden.rs:75:            "SELECT COUNT(*) FROM canonical_edges e
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs:167:/// `canonical_edges.temporal_fallback INTEGER`. BFS now filters
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:13://! - EXPLAIN gate — BFS CTE uses `canonical_edges(from_id)/(to_id)` indexes.
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:276:/// EXPLAIN gate: the BFS CTE must use `canonical_edges(from_id)` or
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:277:/// `canonical_edges(to_id)` indexes — no full SCAN of `canonical_edges`.
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:297:    // The plan must reference an index on canonical_edges.
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:299:        plan.iter().any(|line| line.contains("canonical_edges") && line.contains("USING INDEX"));
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:301:        // A line containing "SCAN canonical_edges" without "USING INDEX" is a full scan.
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:302:        line.contains("SCAN canonical_edges") && !line.contains("USING INDEX")
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:305:    assert!(has_index, "BFS CTE must use an index on canonical_edges;\nplan:\n{}", plan.join("\n"));
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:306:    assert!(!has_scan, "BFS CTE must NOT full-scan canonical_edges;\nplan:\n{}", plan.join("\n"));
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:93:            "SELECT extractor_model_id FROM canonical_edges WHERE superseded_at IS NULL LIMIT 1",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:173:// BYO-LLM §5 criterion 4 — edge → canonical_edges mapping with G11 columns
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:177:/// Criterion 4 (BYO-LLM) + Criteria 5/8 (G11): extracted edges in canonical_edges
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:180:fn edge_canonical_edges_mapping() {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:216:             FROM canonical_edges
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:236:         FROM canonical_edges
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:274:        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for'", [], |r| {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:280:            "SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NULL",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:292:        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for'", [], |r| {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:298:            "SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NULL",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:305:            "SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NOT NULL",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:318:            "SELECT body FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NOT NULL",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:503:        conn.query_row("SELECT COUNT(*) FROM canonical_edges", [], |r| r.get(0)).unwrap();
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:511:        conn.query_row("SELECT COUNT(*) FROM canonical_edges", [], |r| r.get(0)).unwrap();
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:513:        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE superseded_at IS NULL", [], |r| {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:587:            "SELECT COUNT(*) FROM canonical_edges
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:627:        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for'", [], |r| {
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:633:            "SELECT COUNT(*) FROM canonical_edges WHERE kind = 'works_for' AND superseded_at IS NULL",
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:1129:        .query_row("SELECT COUNT(*) FROM canonical_edges WHERE superseded_at IS NULL", [], |r| {
+src/rust/crates/fathomdb-engine/tests/source_id_writes.rs:38:fn phase9_pack_b_source_id_round_trips_through_canonical_edges() {
+src/rust/crates/fathomdb-engine/tests/source_id_writes.rs:64:        .query_row("SELECT source_id FROM canonical_edges WHERE from_id = ?1", ["a"], |row| {
+src/rust/crates/fathomdb-engine/tests/trace_source_ref.rs:75:    assert!(tables.contains(&"canonical_edges"));
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:5://! written to canonical_edges with the expected `from_id`, `to_id`,
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:11://! engine's WAL-mode SQLite file and queries `canonical_edges`
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:35:        .prepare("SELECT kind, to_id FROM canonical_edges WHERE from_id = ?1")
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:81:    // chain's other doc_ids are reachable via canonical_edges (1 hop).
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:116:        "{} of {} chains had zero in-chain edges in canonical_edges",
+src/rust/crates/fathomdb-engine/tests/dump_row_counts.rs:29:    assert_eq!(counts_for(&report, "canonical_edges"), 0);
+src/rust/crates/fathomdb-engine/tests/dump_row_counts.rs:48:    assert_eq!(counts_for(&report, "canonical_edges"), 0);
+src/rust/crates/fathomdb-engine/tests/pr_g8_dangling_edges.rs:10://! index `canonical_nodes_logical_active_idx` (no node-kind: `canonical_edges`
+src/rust/crates/fathomdb-engine/tests/pr_g8_dangling_edges.rs:160:            "SELECT COUNT(*) FROM canonical_edges WHERE from_id = 'GHOST_A' AND to_id = 'GHOST_B'",
+src/rust/crates/fathomdb-engine/tests/qd_envelope_deserialize.rs:276:                "SELECT COUNT(*) FROM canonical_edges e
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/python/eval/graph_arm_recall.py && sed -n '1,130p' src/python/fathomdb/engine.py && grep -R \"def write\\|pub fn write\" -n src/rust/crates/fathomdb-py/src/lib.rs src/rust/crates/fathomdb-engine/src | head -50" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""C1 graph-arm recall@K vs BM25 — extract a real entity/edge graph (local
+Qwen3.6-27B via the Airlock vLLM batch gateway), write it into a FathomDB engine,
+and compare ``use_graph_arm`` retrieval against BM25 / FTS-only on LongMemEval gold.
+
+Graph model (Slice-30/ELPS): GLOBAL entities (``logical_id`` = normalized name,
+``source_id`` = first session it appeared in) + per-session EDGES (``source_id`` =
+the session the relation was extracted from, ``body`` = the relation triple text).
+C1 seeds the BFS frontier from query-matched **entity-node FTS (source B)**, traverses
+edges, and emits reached neighbors carrying the traversed edge's ``source_id`` — which
+resolves to a gold session id (doc keys == gold session ids). NOTE: **source-A (edge-fact
+FTS) seeding is OFF** here — setting edge bodies triggers `edge_fact` vector projection,
+which hits an engine scale bug at ~10k+ edges (FOLLOW-UP). So this is a graph-arm recall
+**lower bound** (source-B + traversal only).
+
+The load-bearing comparison is **graph-arm ON vs OFF on the same engine**
+(`fathomdb_graph` vs `fathomdb_graph_off`), which isolates the arm; `naive_bm25` and
+`fathomdb_fts_only` (docs-only) are external references.
+
+LLM is used ONLY for extraction (local, $0). recall@K is LLM-free.
+
+Usage:
+    python -m eval.graph_arm_recall --per-class 1 --db-dir /tmp/gar_dry --output /tmp/gar_dry.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import os
+import re
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+import httpx
+
+from eval.p0a_base_retrieval import (
+    DEFAULT_DATASET,
+    DEFAULT_SPLIT,
+    SMOKE_CLASSES,
+    build_variants,
+    load_lme_smoke,
+    run_retrieval_loop,
+)
+from fathomdb import SearchFilter
+from eval.r2_parity_eval import FathomDBAdapter, _make_doc_id_of
+
+_AIRLOCK = "http://localhost:4000"
+_KEY = os.environ.get("AIRLOCK_MASTER_KEY", "sk-airlock-mk")
+_PROV = "vllm"
+_ALIAS = "qwen36-27b-vllm-batch"
+_EXTRACT_PROMPT = (
+    "Extract the key entities and relationships from this chat session for a "
+    "knowledge graph. Output ONLY compact JSON (no prose, no markdown): "
+    '{"entities":[{"name":"..","type":".."}],'
+    '"relations":[{"subject":"..","predicate":"..","object":".."}]}.\n\nSession:\n'
+)
+
+
+# --------------------------------------------------------------------------- #
+# Extraction (local Qwen3.6-27B via Airlock vLLM batch — $0)
+# --------------------------------------------------------------------------- #
+def _salvage_json(content: str) -> Optional[dict]:
+    """Parse extraction JSON; on truncation, salvage the complete prefix by
+    closing the arrays/object at the last complete element."""
+    c = content.strip()
+    c = re.sub(r"^```(json)?", "", c).strip()
+    c = re.sub(r"```$", "", c).strip()
+    try:
+        return json.loads(c)
+    except Exception:
+        pass
+    # Truncation salvage: cut back to the last complete top-level "}," in a list
+    # and close the structure. Best-effort — recovers complete entities/relations.
+    start = c.find("{")
+    if start < 0:
+        return None
+    frag = c[start:]
+    last = frag.rfind("},")
+    if last < 0:
+        return None
+    repaired = frag[: last + 1] + "]}"
+    # We may have cut inside "relations": try closing entities-only too.
+    for candidate in (repaired, frag[: last + 1] + "]}}"):
+        try:
+            return json.loads(candidate)
+        except Exception:
+            continue
+    return None
+
+
+def extract_graph(
+    documents: dict[str, str], *, max_tokens: int = 3072, char_cap: int = 6000, log=print
+) -> dict[str, dict]:
+    """Batch-extract entities/relations for each session. Returns
+    {session_id: {"entities":[...], "relations":[...]}}. Salvages truncations."""
+    items = list(documents.items())
+    H = {"Authorization": f"Bearer {_KEY}"}
+    P = {"custom_llm_provider": _PROV}
+    cli = httpx.Client(timeout=1800.0)
+
+    def mk(sid: str, body: str) -> dict:
+        return {
+            "custom_id": sid,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": {
+                "model": _ALIAS,
+                "messages": [{"role": "user", "content": _EXTRACT_PROMPT + body[:char_cap]}],
+                "max_tokens": max_tokens,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        }
+
+    jsonl = "".join(json.dumps(mk(s, b)) + "\n" for s, b in items).encode()
+    r = cli.post(
+        f"{_AIRLOCK}/v1/files", headers=H, params=P, data={"purpose": "batch"},
+        files={"file": ("extract.jsonl", io.BytesIO(jsonl), "application/jsonl")},
+    )
+    r.raise_for_status()
+    fid = r.json()["id"]
+    t0 = time.time()
+    r = cli.post(
+        f"{_AIRLOCK}/v1/batches", headers={**H, "Content-Type": "application/json"}, params=P,
+        json={"input_file_id": fid, "endpoint": "/v1/chat/completions",
+              "completion_window": "24h", "model": _ALIAS},
+    )
+    r.raise_for_status()
+    bid = r.json()["id"]
+    st: dict = {}
+    status = None
+    for _ in range(4000):  # ~5.5h cap at 5s — bounds a hung batch
+        st = cli.get(f"{_AIRLOCK}/v1/batches/{bid}", headers=H, params=P).json()
+        status = st.get("status")
+        if status in ("completed", "failed", "cancelled"):
+            break
+        time.sleep(5)
+    log(f"[extract] {status} counts={st.get('request_counts')} wall={time.time() - t0:.0f}s")
+    if status != "completed" or not st.get("output_file_id"):
+        raise RuntimeError(f"extraction batch did not complete: status={status} errors={st.get('errors')}")
+    out = cli.get(f"{_AIRLOCK}/v1/files/{st['output_file_id']}/content", headers=H, params=P)
+    graphs: dict[str, dict] = {}
+    ok = salvaged = failed = 0
+    for line in out.text.strip().splitlines():
+        o = json.loads(line)
+        sid = o["custom_id"]
+        if o.get("error") or not o.get("response"):
+            failed += 1
+            continue
+        try:
+            content = o["response"]["body"]["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            failed += 1
+            continue
+        try:
+            j = json.loads(content.strip())
+            ok += 1
+        except Exception:
+            j = _salvage_json(content)
+            if j is None:
+                failed += 1
+                continue
+            salvaged += 1
+        graphs[sid] = {"entities": j.get("entities", []) or [], "relations": j.get("relations", []) or []}
+    log(f"[extract] parsed clean={ok} salvaged={salvaged} failed={failed} -> {len(graphs)} graphs")
+    return graphs
+
+
+# --------------------------------------------------------------------------- #
+# Graph build
+# --------------------------------------------------------------------------- #
+def _norm(name: Any) -> Optional[str]:
+    if not isinstance(name, str):
+        return None
+    s = re.sub(r"\s+", " ", name.strip().lower())
+    return f"ent:{s}" if s else None
+
+
+def build_graph_engine(documents: dict[str, str], graphs: dict[str, dict], db_path: Path, *, log=print):
+    """Write docs (cursor-resolved) + global entities + per-session edges. Returns
+    (engine, cursor_to_doc)."""
+    from fathomdb.engine import Engine
+
+    if db_path.exists():
+        db_path.unlink()
+    # FTS-only (no embedder). NOTE: we deliberately write edges WITHOUT a body so the
+    # engine does NOT auto-enqueue `edge_fact` vector projection (lib.rs:8594). That
+    # path requires an embedder (else SchedulerError) AND hits a StorageError in the
+    # edge_fact embedding pipeline under heavy write load (~8-14k edges) — an engine
+    # scale bug (FOLLOW-UP). Consequence: C1 **source-A (edge-fact FTS) seeding is OFF**
+    # here; the graph arm runs on **source-B (entity-node FTS) + edge traversal** only —
+    # the primary mechanism, and a recall LOWER BOUND. The edge-body binding fix stands;
+    # it's the engine edge_fact pipeline that can't yet take this scale.
+    engine = Engine.open(str(db_path), use_default_embedder=False)
+    cursor_to_doc: dict[int, str] = {}
+
+    # Docs (session bodies) — source_id None → resolve via cursor map.
+    items = list(documents.items())
+    for i in range(0, len(items), 64):
+        chunk = items[i : i + 64]
+        receipt = engine.write([{"kind": "doc", "body": b} for _, b in chunk])
+        for (sid, _b), cur in zip(chunk, receipt.row_cursors):
+            cursor_to_doc[int(cur)] = sid
+
+    # Global entities: logical_id = normalized name; source_id = first session seen.
+    ent_first: dict[str, str] = {}
+    ent_name: dict[str, str] = {}
+    for sid, g in graphs.items():
+        for e in g["entities"]:
+            lid = _norm(e.get("name") if isinstance(e, dict) else e)
+            if lid and lid not in ent_first:
+                ent_first[lid] = sid
+                ent_name[lid] = (e.get("name") if isinstance(e, dict) else e) or lid
+    # kind="entity" (NOT "doc") so the two-arm doc-retrieval can filter them out
+    # (kind="doc") — they pollute recall otherwise — while source-B graph seeding
+    # (which queries the FTS index directly, unfiltered) still finds them.
+    ent_writes = [
+        {"kind": "entity", "body": ent_name[lid], "logical_id": lid, "source_id": ent_first[lid]}
+        for lid in ent_first
+    ]
+    for i in range(0, len(ent_writes), 64):
+        engine.write(ent_writes[i : i + 64])
+
+    # Edges: from/to known entities; source_id = the session the relation came from.
+    edge_writes = []
+    n_edge = 0
+    for sid, g in graphs.items():
+        for r in g["relations"]:
+            if not isinstance(r, dict):
+                continue
+            subj, obj = r.get("subject"), r.get("object")
+            f, t = _norm(subj), _norm(obj)
+            if not f or not t or f == t or f not in ent_first or t not in ent_first:
+                continue
+            n_edge += 1
+            # NO body — avoids edge_fact vector projection (see build_graph_engine note).
+            # The relation still connects the two entities for BFS traversal; provenance
+            # rides the edge's source_id. (Source-A edge-fact FTS is OFF: engine follow-up.)
+            edge_writes.append({"edge": {
+                "kind": "rel", "from": f, "to": t, "source_id": sid,
+                "logical_id": f"e:{sid}:{n_edge}",
+            }})
+    for i in range(0, len(edge_writes), 64):
+        engine.write(edge_writes[i : i + 64])
+
+    engine.drain(timeout_s=300)
+    log(f"[graph] docs={len(items)} entities={len(ent_first)} edges={len(edge_writes)}")
+    return engine, cursor_to_doc
+
+
+# --------------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------------- #
+def main(argv: Optional[list[str]] = None) -> int:
+    ap = argparse.ArgumentParser(description="C1 graph-arm recall@K vs BM25 (local-extracted graph)")
+    ap.add_argument("--per-class", type=int, default=1)
+    ap.add_argument("--seed", type=int, default=20260614)
+    ap.add_argument("--max-tokens", type=int, default=3072)
+    ap.add_argument("--db-dir", default="/tmp/gar")
+"""Python wrapper around the native PyO3 engine handle.
+
+`Engine` mirrors the public five-verb surface owned by
+`dev/interfaces/python.md`. The native PyO3 class
+(`fathomdb._fathomdb.Engine`) holds the `Arc<fathomdb_engine::Engine>`
+and runs every blocking call under `py.allow_threads`; this Python
+wrapper converts native return values into the dataclasses in
+`fathomdb.types` and rejects unknown `open()` kwargs.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, cast
+
+from fathomdb._fathomdb import Engine as _NativeEngine
+from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb.config import EngineConfig
+from fathomdb.types import (
+    CounterSnapshot,
+    EmbedderIdentity,
+    MigrationStepReport,
+    OpenReport,
+    SearchFilter,
+    SearchHit,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
+
+_KWARG_FIELDS = {
+    "embedder_pool_size",
+    "scheduler_runtime_threads",
+    "provenance_row_cap",
+    "embedder_call_timeout_ms",
+    "slow_threshold_ms",
+}
+
+
+class Engine:
+    """Python handle that wraps the native PyO3 engine."""
+
+    __slots__ = ("_native", "_path", "_config")
+
+    def __init__(
+        self,
+        native: _NativeEngine,
+        *,
+        path: str,
+        config: EngineConfig,
+    ) -> None:
+        self._native = native
+        self._path = path
+        self._config = config
+
+    @classmethod
+    def open(
+        cls,
+        path: str,
+        *,
+        config: EngineConfig | None = None,
+        use_default_embedder: bool = False,
+        **engine_config: Any,
+    ) -> "Engine":
+        """Open the database at `path`.
+
+        Either `config` or per-knob keyword arguments may be supplied,
+        but not both. Unknown keyword arguments are rejected.
+
+        EU-6: ``use_default_embedder`` opts into the engine's pinned
+        default embedder (``fathomdb-bge-small-en-v1.5``). On first use,
+        weights are downloaded from HuggingFace and cached under
+        ``~/.cache/fathomdb/embedders/``. The default (``False``) opens
+        without an embedder; subsequent vector writes fail with
+        ``EmbedderNotConfiguredError``. Caller-supplied custom embedders
+        are deferred to a later release (see ``dev/interfaces/python.md``).
+        """
+
+        if config is not None and engine_config:
+            raise ValueError(
+                "Engine.open accepts either config= or per-knob keyword arguments, not both",
+            )
+
+        unknown = set(engine_config) - _KWARG_FIELDS
+        if unknown:
+            raise TypeError(
+                f"Engine.open got unexpected keyword arguments: {sorted(unknown)!r}",
+            )
+
+        resolved = config if config is not None else EngineConfig(**engine_config)
+        native = _NativeEngine.open(path, use_default_embedder=use_default_embedder)
+        return cls(native, path=path, config=resolved)
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def config(self) -> EngineConfig:
+        return self._config
+
+    def write(self, batch: list[Any] | None = None) -> WriteReceipt:
+        receipt = self._native.write(batch or [])
+        return WriteReceipt(
+            cursor=receipt.cursor,
+            row_cursors=tuple(receipt.row_cursors),
+            dangling_edge_endpoints=receipt.dangling_edge_endpoints,
+        )
+
+    def search(
+        self,
+        query: str,
+        filter: SearchFilter | None = None,
+        *,
+        rerank_depth: int = 0,
+        use_graph_arm: bool = False,
+    ) -> SearchResult:
+        """Hybrid search with optional CE reranking and optional graph-BFS arm.
+
+        Args:
+            query: Free-text search query.
+            filter: Optional closed metadata filter (``SearchFilter``).
+            rerank_depth: 0 (default) = soft-fallback / identity (no CE).
+                N > 0 = rerank the top-N fused hits with the cross-encoder.
+                Must be a non-negative integer. Negative values raise
+                ``ValueError``.
+            use_graph_arm: When ``True``, seed a BFS over temporal fact-edges
+                from the top-10 fused hits and fuse reachable nodes as a third
+                RRF arm (Slice 30 R3). Default ``False`` → byte-identical to
+src/rust/crates/fathomdb-engine/src/lib.rs:2384:    pub fn write(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:3696:    pub fn write_vector_for_test(
+
+exec
+/bin/bash -lc "sed -n '2360,2500p' src/rust/crates/fathomdb-engine/src/lib.rs && grep -n \"struct PreparedWrite\\|enum PreparedWrite\\|from.*to\" -n src/rust/crates/fathomdb-py/src/lib.rs | head -80" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+            debug_assert_eq!(
+                rc,
+                rusqlite::ffi::SQLITE_OK,
+                "sqlite3_db_config(LOOKASIDE) must return SQLITE_OK on a freshly opened reader",
+            );
+            lookaside_rcs.push(rc);
+            reader
+                .pragma_update(None, "journal_mode", "WAL")
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
+            reader
+                .pragma_update(None, "query_only", "ON")
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::SchemaProbe))?;
+            apply_perf_experiment_reader_pragmas(&reader);
+            readers.push(reader);
+        }
+
+        Ok((connection, readers, report, lookaside_rcs))
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn write(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+        let category = if batch_is_admin(batch) {
+            lifecycle::EventCategory::Admin
+        } else {
+            lifecycle::EventCategory::Writer
+        };
+        self.emit_event(lifecycle::Phase::Started, category, None);
+        let started = Instant::now();
+        let outcome = self.write_inner(batch);
+        self.detect_slow(started, category);
+        match outcome {
+            Ok(receipt) => {
+                let rows = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+                if batch_is_admin(batch) {
+                    self.counters.record_admin();
+                } else {
+                    self.counters.record_write(rows);
+                }
+                self.emit_event(lifecycle::Phase::Finished, category, None);
+                Ok(receipt)
+            }
+            Err(err) => {
+                let code = err.stable_code();
+                self.counters.record_error(code);
+                // AC-003d: capture-ordinal < raise-ordinal — Failed and Error
+                // events both fire before the EngineError returns to the caller.
+                self.emit_event(lifecycle::Phase::Failed, category, Some(code));
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Error,
+                    Some(code),
+                );
+                Err(err)
+            }
+        }
+    }
+
+    fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+        self.ensure_open()?;
+
+        if batch.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let plans = validate_batch(connection, batch)?;
+        let projection_jobs = collect_projection_jobs(connection, batch)?;
+        #[cfg(debug_assertions)]
+        if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
+            return Err(EngineError::Storage);
+        }
+        // One cursor per row. `base_cursor` is the last committed cursor;
+        // row i in the batch gets cursor `base_cursor + i + 1`, and the
+        // batch's final cursor (returned in WriteReceipt and stored as
+        // the new `next_cursor`) is `base_cursor + batch.len()`. Sharing
+        // one cursor across the batch previously collapsed every vec0
+        // INSERT onto the same rowid via `INSERT OR IGNORE` — see
+        // `dev/notes/0.7.0-engine-batch-vec0-collapse.md`.
+        let base_cursor = self.next_cursor.load(Ordering::SeqCst);
+        let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+        let last_cursor = base_cursor.saturating_add(increment);
+        // G11 (Slice 15) — edge bodies also need projection-runtime notification.
+        // `collect_projection_jobs` only tracks Node items (pre-fetched for
+        // cursor assignment); edge bodies update `_fathomdb_projection_state` in
+        // `commit_batch` but need the scanner to wake up via `notify_new_work`.
+        let has_edge_body_work =
+            batch.iter().any(|w| matches!(w, PreparedWrite::Edge { body: Some(_), .. }));
+        let pending_projection = !projection_jobs.is_empty() || has_edge_body_work;
+
+        let dangling_edge_endpoints = match commit_batch(
+            connection,
+            batch,
+            &plans,
+            base_cursor,
+            self.provenance_row_cap.load(Ordering::Relaxed),
+        ) {
+            Ok(count) => count,
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                return Err(EngineError::Storage);
+            }
+        };
+        self.next_cursor.store(last_cursor, Ordering::SeqCst);
+        if pending_projection {
+            self.projection_runtime.notify_new_work();
+        }
+
+        // G0 — surface the per-row cursors (1:1 with input order). Row i got
+        // `base_cursor + i + 1`, matching the allocation in `commit_batch`.
+        let row_cursors = (0..batch.len())
+            .map(|i| base_cursor.saturating_add((i as u64).saturating_add(1)))
+            .collect();
+        Ok(WriteReceipt { cursor: last_cursor, row_cursors, dangling_edge_endpoints })
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+    /// speaking the `fathomdb.extract.v1` NDJSON-over-stdio protocol, send
+    /// documents for extraction, and write the resulting entities
+    /// (→ `canonical_nodes`) and fact-edges (→ `canonical_edges` with G11
+    /// enrichment columns) to the store.
+    ///
+    /// `cmd` is argv (first element = program, rest = args). Documents are
+    /// batched per the harness's `max_docs_per_request`. Entity `logical_id`
+    /// is derived as `sha256("<type>:<name>")` (lowercase, hex-encoded) for
+    /// stable cross-re-ingestion identity. Edge `logical_id` is derived as
+    /// `sha256("<from_lid>:<to_lid>:<relation>")`. Both are consistent with
+    /// G0 supersession: re-ingesting the same document yields the same ids,
+    /// triggering tombstone-then-insert rather than accumulation.
+    ///
+    /// Returns [`EngineError::Extractor`] on protocol errors (bad handshake,
+    /// subprocess spawn failure, JSON decode error). `no_facts` warnings from
+    /// the harness are not errors and do not affect the receipt counts.
+    pub fn ingest_with_extractor(
+        &self,
+        cmd: &[&str],
+        documents: &[ExtractDocument],
+10://! PyO3 binding from the Python SDK to `fathomdb-engine`.
+332:    fn from_rust(r: RustIngestWithExtractorReceipt) -> Self {
+442:    fn from_rust(r: &RustOpStoreRow) -> Self {
+661:        // from the top-10 fused hits and fuse reachable nodes as a third RRF arm.
+
+exec
+/bin/bash -lc "grep -n \"PreparedWrite\" -n src/rust/crates/fathomdb-py/src/lib.rs | head -80 && sed -n '520,760p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+43:    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
+820:    // `PreparedWrite::AdminSchema` requires `kind ∈ {latest_state,
+824:    let batch = vec![PreparedWrite::AdminSchema {
+977:fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
+1002:fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+1025:fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+1033:    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
+1036:fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+1052:    Ok(PreparedWrite::Edge {
+1067:fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+1075:    Ok(PreparedWrite::OpStore { collection, record_key, schema_id, body })
+1078:fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+1086:    Ok(PreparedWrite::AdminSchema { name, kind, schema_json, retention_json })
+impl PyOpenReport {
+    fn from_rust(py: Python<'_>, r: &RustOpenReport) -> Self {
+        let embedder_events =
+            r.embedder_events.iter().map(|ev| embedder_event_to_py(py, ev)).collect();
+        Self {
+            schema_version_before: r.schema_version_before,
+            schema_version_after: r.schema_version_after,
+            migration_steps: r
+                .migration_steps
+                .iter()
+                .map(PyMigrationStepReport::from_rust)
+                .collect(),
+            embedder_warmup_ms: r.embedder_warmup_ms,
+            query_backend: r.query_backend.to_string(),
+            default_embedder: PyEmbedderIdentity::from_rust(&r.default_embedder),
+            embedder_download_ms: r.embedder_download_ms,
+            embedder_events,
+            embedder_mean_centering_required: r.embedder_mean_centering_required,
+            embedder_mean_vec_pinned: r.embedder_mean_vec_pinned,
+        }
+    }
+}
+
+/// Serialise one [`RustEmbedderEvent`] as a Python `dict`. The `kind`
+/// key carries the variant name (`"DefaultEmbedderDownload"`,
+/// `"DefaultEmbedderCacheHit"`, `"MeanVecPinned"`); the remaining keys
+/// carry the variant payload in snake_case. We pick a dict (rather than
+/// a per-variant `#[pyclass]`) so callers can pattern-match on the
+/// `"kind"` discriminant without importing leaf classes.
+fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> PyObject {
+    let dict = PyDict::new(py);
+    match ev {
+        RustEmbedderEvent::DefaultEmbedderDownload {
+            file,
+            url,
+            bytes,
+            sha256,
+            cache_path,
+            duration_ms,
+        } => {
+            let _ = dict.set_item("kind", "DefaultEmbedderDownload");
+            let _ = dict.set_item("file", file);
+            let _ = dict.set_item("url", url);
+            let _ = dict.set_item("bytes", *bytes);
+            let _ = dict.set_item("sha256", sha256);
+            let _ = dict.set_item("cache_path", cache_path.display().to_string());
+            let _ = dict.set_item("duration_ms", *duration_ms);
+        }
+        RustEmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => {
+            let _ = dict.set_item("kind", "DefaultEmbedderCacheHit");
+            let _ = dict.set_item("file", file);
+            let _ = dict.set_item("sha256", sha256);
+            let _ = dict.set_item("cache_path", cache_path.display().to_string());
+        }
+        RustEmbedderEvent::MeanVecPinned { dim, doc_count } => {
+            let _ = dict.set_item("kind", "MeanVecPinned");
+            let _ = dict.set_item("dim", *dim);
+            let _ = dict.set_item("doc_count", *doc_count);
+        }
+        RustEmbedderEvent::MeanVecRecomputed { dim, doc_count, trigger } => {
+            let _ = dict.set_item("kind", "MeanVecRecomputed");
+            let _ = dict.set_item("dim", *dim);
+            let _ = dict.set_item("doc_count", *doc_count);
+            let _ = dict.set_item("trigger", trigger.as_str());
+        }
+    }
+    dict.into()
+}
+
+// ===== Engine =========================================================
+
+#[pyclass(module = "fathomdb._fathomdb", name = "Engine")]
+struct PyEngine {
+    inner: Arc<RustEngine>,
+    open_report: Arc<RustOpenReport>,
+}
+
+#[pymethods]
+impl PyEngine {
+    #[staticmethod]
+    #[pyo3(signature = (path, use_default_embedder = false))]
+    fn open(py: Python<'_>, path: String, use_default_embedder: bool) -> PyResult<Self> {
+        validate_ffi_string_py(&path)?;
+        let opened = py
+            .allow_threads(|| {
+                catch_unwind(AssertUnwindSafe(|| {
+                    // EU-6: True → `EmbedderChoice::Default` (engine
+                    // materialises the pinned bge-small embedder via the
+                    // EU-3 loader); False → `EmbedderChoice::None`
+                    // (engine opens; vector writes fail
+                    // EmbedderNotConfigured). Caller-supplied custom
+                    // embedders are deferred to a future slice per
+                    // ADR-0.6.0-embedder-protocol Invariant 3.
+                    let choice = if use_default_embedder {
+                        EmbedderChoice::Default
+                    } else {
+                        EmbedderChoice::None
+                    };
+                    RustEngine::open_with_choice(path, choice)
+                }))
+            })
+            .map_err(|_| PanicException::new_err("engine panic during open"))?
+            .map_err(engine_open_error_to_py)?;
+        let _ = py; // used inside the conversion below via the GIL handle.
+        Ok(Self { inner: Arc::new(opened.engine), open_report: Arc::new(opened.report) })
+    }
+
+    fn open_report(&self, py: Python<'_>) -> PyOpenReport {
+        PyOpenReport::from_rust(py, &self.open_report)
+    }
+
+    fn write(&self, py: Python<'_>, batch: Bound<'_, PyList>) -> PyResult<PyWriteReceipt> {
+        let prepared = translate_batch(&batch)?;
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(py, move || engine.write(&prepared))?;
+        Ok(PyWriteReceipt::from_rust(receipt))
+    }
+
+    /// G10 + 0.8.1 R1 — hybrid search with an optional closed metadata filter
+    /// and an optional CE rerank depth. Each filter field is an optional kwarg;
+    /// all-`None` is the unfiltered (byte-identical) path. `rerank_depth=0`
+    /// (default) keeps the identity / soft-fallback path. `rerank_depth > 0`
+    /// activates CE reranking over the top-N fused hits (when the
+    /// `default-reranker` feature is enabled and the model is loaded; otherwise
+    /// falls back to identity).
+    // 0.8.1 R1/R3: rerank_depth and use_graph_arm add 8th arg; suppress lint.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(
+        signature = (query, source_type=None, kind=None, created_after=None,
+                     status=None, rerank_depth=0, use_graph_arm=false)
+    )]
+    fn search(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        source_type: Option<Bound<'_, PyAny>>,
+        kind: Option<Bound<'_, PyAny>>,
+        created_after: Option<i64>,
+        status: Option<Bound<'_, PyAny>>,
+        rerank_depth: usize,
+        // 0.8.1 R3 (Slice 30) — when True, seed BFS over temporal fact-edges
+        // from the top-10 fused hits and fuse reachable nodes as a third RRF arm.
+        // Default False → byte-identical to the pre-Slice-30 two-arm pipeline.
+        use_graph_arm: bool,
+    ) -> PyResult<PySearchResult> {
+        validate_ffi_string_py(query)?;
+        // G10 filter strings cross the FFI exactly like `query` and the write
+        // fields, so they go through the same validation gate
+        // (`extract_validated_str`: rejects embedded NUL and lone UTF-16
+        // surrogate as the typed `WriteValidationError`). `None` stays `None`
+        // so the all-`None` filter remains the byte-identical unfiltered path.
+        let source_type = extract_opt_validated_str(source_type.as_ref())?;
+        let kind = extract_opt_validated_str(kind.as_ref())?;
+        let status = extract_opt_validated_str(status.as_ref())?;
+        let engine = Arc::clone(&self.inner);
+        let query = query.to_string();
+        let filter = if source_type.is_some()
+            || kind.is_some()
+            || created_after.is_some()
+            || status.is_some()
+        {
+            Some(RustSearchFilter { source_type, kind, created_after, status })
+        } else {
+            None
+        };
+        // 0.8.1 R1: use search_reranked so rerank_depth=0 is a no-op (identity)
+        // and rerank_depth>0 activates the CE path.
+        // 0.8.1 R3: use_graph_arm=True activates the graph-BFS third arm.
+        let result = call_engine(py, move || {
+            engine.search_reranked(&query, filter, rerank_depth, use_graph_arm)
+        })?;
+        Ok(PySearchResult::from_rust(result))
+    }
+
+    fn close(&self, py: Python<'_>) -> PyResult<()> {
+        let engine = Arc::clone(&self.inner);
+        call_engine(py, move || engine.close())
+    }
+
+    #[pyo3(signature = (timeout_s = 0.0))]
+    fn drain(&self, py: Python<'_>, timeout_s: f64) -> PyResult<()> {
+        let ms =
+            if timeout_s.is_finite() && timeout_s > 0.0 { (timeout_s * 1000.0) as u64 } else { 0 };
+        let engine = Arc::clone(&self.inner);
+        call_engine(py, move || engine.drain(ms))
+    }
+
+    /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn
+    /// (first element = program, rest = args). `documents` is a list of
+    /// dicts with `source_doc_id` and `body` keys.
+    fn ingest_with_extractor(
+        &self,
+        py: Python<'_>,
+        cmd: Bound<'_, PyList>,
+        documents: Bound<'_, PyList>,
+    ) -> PyResult<PyIngestWithExtractorReceipt> {
+        // Translate cmd list to Vec<String>.
+        let cmd_strings: Vec<String> = cmd
+            .iter()
+            .map(|item| {
+                item.extract::<String>()
+                    .map_err(|_| WriteValidationError::new_err("cmd elements must be strings"))
+            })
+            .collect::<PyResult<_>>()?;
+
+        // Translate documents list of dicts to Vec<ExtractDocument>.
+        let docs: Vec<RustExtractDocument> = documents
+            .iter()
+            .map(|item| {
+                let dict = item
+                    .downcast::<PyDict>()
+                    .map_err(|_| WriteValidationError::new_err("document must be a dict"))?;
+                let source_doc_id = dict_str_required(dict, "source_doc_id")?;
+                let body = dict_str_required(dict, "body")?;
+                Ok(RustExtractDocument { source_doc_id, body })
+            })
+            .collect::<PyResult<_>>()?;
+
+        let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(py, move || engine.ingest_with_extractor(&cmd_refs, &docs))?;
+        Ok(PyIngestWithExtractorReceipt::from_rust(receipt))
+    }
+
+    fn counters(&self) -> PyCounterSnapshot {
+        let snap = self.inner.counters();
+        PyCounterSnapshot {
+            queries: snap.queries,
+            writes: snap.writes,
+            write_rows: snap.write_rows,
+            admin_ops: snap.admin_ops,
+            cache_hit: snap.cache_hit,
+            cache_miss: snap.cache_miss,
+        }
+    }
+
+    fn set_profiling(&self, enabled: bool) -> PyResult<()> {
+        self.inner.set_profiling(enabled).map_err(engine_error_to_py)
+    }
+
+    fn set_slow_threshold_ms(&self, value: u64) -> PyResult<()> {
+
+exec
+/bin/bash -lc "sed -n '960,1065p' src/rust/crates/fathomdb-py/src/lib.rs && grep -R \"source_id.*canonical_nodes\\|logical_id\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -60" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    limit: u64,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let kind = extract_validated_str(kind)?;
+    let mut rust_predicates: Vec<RustPredicate> = Vec::new();
+    if let Some(plist) = predicates {
+        for item in plist.iter() {
+            rust_predicates.push(py_predicate_to_rust(&item)?);
+        }
+    }
+    let limit = limit as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_list(&kind, &rust_predicates, limit))?;
+    Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
+}
+
+// ===== Batch translation ==============================================
+
+fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
+    let mut out = Vec::with_capacity(batch.len());
+    for item in batch.iter() {
+        out.push(translate_write_item(&item)?);
+    }
+    Ok(out)
+}
+
+fn dict_get<'py>(d: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    d.get_item(key)
+}
+
+fn dict_str(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
+    match dict_get(d, key)? {
+        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(&v)?)),
+        _ => Ok(None),
+    }
+}
+
+fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
+    dict_str(d, key)?.ok_or_else(|| {
+        WriteValidationError::new_err(format!("write item missing required field {key:?}"))
+    })
+}
+
+fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+    let dict = item
+        .downcast::<PyDict>()
+        .map_err(|_| WriteValidationError::new_err("write item must be a dict"))?;
+
+    if let Some(inner) = dict_get(dict, "edge")? {
+        return translate_edge(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "op_store")? {
+        return translate_op_store(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "admin_schema")? {
+        return translate_admin_schema(&inner);
+    }
+    if let Some(inner) = dict_get(dict, "node")? {
+        return translate_node(&inner);
+    }
+
+    // Bare `{"kind": ..., ...}` shape is treated as a Node — keeps the
+    // five-verb test surface terse and matches the 0.6.0 Python stub.
+    translate_node(item)
+}
+
+fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+    let dict = item
+        .downcast::<PyDict>()
+        .map_err(|_| WriteValidationError::new_err("node write item must be a dict"))?;
+    let kind = dict_str_required(dict, "kind")?;
+    let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
+    let source_id = dict_str(dict, "source_id")?;
+    let logical_id = dict_str(dict, "logical_id")?;
+    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
+}
+
+fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
+    let dict = item
+        .downcast::<PyDict>()
+        .map_err(|_| WriteValidationError::new_err("edge write item must be a dict"))?;
+    let kind = dict_str_required(dict, "kind")?;
+    let from = dict_str_required(dict, "from")?;
+    let to = dict_str_required(dict, "to")?;
+    let source_id = dict_str(dict, "source_id")?;
+    let logical_id = dict_str(dict, "logical_id")?;
+    // Edge body (the relation text) — optional. Projected into `search_index_edges`
+    // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
+    let body = dict_str(dict, "body")?;
+    // R3 (Slice 30) — temporal validity fields accepted from user-facing write API.
+    // `t_valid` and `t_invalid` are ISO 8601 datetime strings (optional).
+    let t_valid = dict_str(dict, "t_valid")?;
+    let t_invalid = dict_str(dict, "t_invalid")?;
+    Ok(PreparedWrite::Edge {
+        kind,
+        from,
+        to,
+        source_id,
+        logical_id,
+        body,
+        t_valid,
+        t_invalid,
+        confidence: None,
+        extractor_model_id: None,
+        temporal_fallback: None,
+    })
+}
+35:// and unconditionally by `ingest_with_extractor` (G11 logical_id derivation).
+445:    /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
+450:        logical_ids: Vec<String>,
+476:        root_logical_id: String,
+482:    /// Resolves search hit `write_cursor`s to `logical_id`s, runs G5 traversal
+493:        root_logical_id: String,
+728:            ReaderRequest::GetById { logical_ids, respond } => {
+729:                let result = read_get_by_id_in_tx(&mut connection, &logical_ids);
+740:            ReaderRequest::GraphNeighbors { root_logical_id, depth, direction, respond } => {
+742:                    graph_neighbors_in_tx(&mut connection, &root_logical_id, depth, direction);
+749:            ReaderRequest::ExplainGraphNeighbors { root_logical_id, depth, direction, respond } => {
+752:                    &root_logical_id,
+991:    /// when no **active** node (`superseded_at IS NULL`) carries its `logical_id`;
+1035:/// `logical_id` at the G0 keystone (Slice 15) with no carrier reshape.
+1067:/// `logical_id = NULL`), so `seeds_resolved == 0` and `resolved_seed_rate == 0.0`
+1075:    /// Seed candidates that resolved to an active `logical_id` (pushed onto the frontier).
+1097:/// `logical_id` is the queried stable identity (echoed). `write_cursor` is the
+1100:/// superseded `logical_id` is a normal absence (`None`), never an error.
+1103:    pub logical_id: String,
+1325:    /// Deduplicated union of all logical_ids (search hits first, then expanded).
+1326:    pub all_logical_ids: Vec<String>,
+1379:    /// for entities that already have a matching active logical_id).
+1406:        /// active version of `(logical_id, kind)` (tombstone-then-insert).
+1408:        /// NULL `logical_id` (NULL-safe — never collides with other NULLs).
+1409:        logical_id: Option<String>,
+1418:        /// edges (keyed by `(logical_id, kind)`).
+1419:        logical_id: Option<String>,
+2487:    /// batched per the harness's `max_docs_per_request`. Entity `logical_id`
+2489:    /// stable cross-re-ingestion identity. Edge `logical_id` is derived as
+2635:            // --- map entities → PreparedWrite::Node with stable logical_id ---
+2672:                        // fix-34 [P1]: derive_logical_id now rejects an empty name
+2675:                        let logical_id = derive_logical_id(kind, name)?;
+2680:                            logical_id: Some(logical_id),
+2685:                // fix-29/fix-34 [P2]: deduplicate within the batch by logical_id so
+2688:                let node_batch = dedup_prepared_by_logical_id(node_batch);
+2690:                // fix-23 [P2]: skip entities whose logical_id is already active
+2695:                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+2711:                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+2730:                // result's `entities[]` so each endpoint's logical_id matches the
+2800:                        // so this is the defensive path). derive_logical_id (fix-34)
+2810:                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+2811:                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
+2813:                        let edge_lid = derive_logical_id("edge", &edge_key)?;
+2824:                            logical_id: Some(edge_lid),
+2834:                // fix-34 [P2]: dedup edges by logical_id, mirroring the node arm
+2837:                let edge_batch = dedup_prepared_by_logical_id(edge_batch);
+3080:    /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
+3084:    pub fn read_get(&self, logical_id: &str) -> Result<Option<NodeRecord>, EngineError> {
+3085:        let ids = [logical_id.to_string()];
+3091:    /// `logical_id`s. Returns one slot per requested id in REQUEST ORDER, `None`
+3095:        logical_ids: &[String],
+3098:        if logical_ids.is_empty() {
+3103:            ReaderRequest::GetById { logical_ids: logical_ids.to_vec(), respond: response_tx };
+3116:    /// Slice 20 (G5) — `read.neighbors`: bounded BFS from `root_logical_id`
+3128:        root_logical_id: &str,
+3140:            root_logical_id: root_logical_id.to_string(),
+3163:    /// A `depth = 0` call returns search hits with their logical_ids resolved
+3192:                all_logical_ids: Vec::new(),
+3195:        // Step 2: dispatch to the reader pool to resolve logical_ids and run BFS.
+3196:        // depth=0 is forwarded to the reader so it can populate all_logical_ids
+
+exec
+/bin/bash -lc 'PYTHONPATH=src/python pytest -q src/python/tests/test_m1_graph_build.py' in /home/coreyt/projects/fathomdb
+ succeeded in 488ms:
+....                                                                     [100%]
+4 passed in 0.32s
+
+exec
+/bin/bash -lc 'head -80 dev/plans/runs/0.8.2-m1-graph-coverage-n299.json && tail -40 dev/plans/runs/0.8.2-m1-graph-coverage-n299.json' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+{
+  "schema": "0.8.2-m1-graph-coverage-v1",
+  "phase": "0.8.2-slice-10",
+  "generated_by": "eval.m1_graph_build",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "extractor_model_id": "qwen3.6-27b (local vLLM batch, enable_thinking=false)",
+  "priced_api_calls": 0,
+  "edge_body_policy": "body-less (edge_fact vector-projection-safe; see module docstring)",
+  "sample": {
+    "n_requested": 300,
+    "seed": 20260617,
+    "answerable_only": true,
+    "n_questions": 299
+  },
+  "build_stats": {
+    "docs": 5979,
+    "entities": 50465,
+    "edges": 50943,
+    "questions": 299
+  },
+  "coverage": {
+    "db": "data/corpus-data/graph-cache/0.8.2-m1-v1/graph.sqlite",
+    "n_questions": 299,
+    "n_questions_nonempty": 299,
+    "coverage": 1.0,
+    "n_nodes_total": 56444,
+    "n_entity_nodes": 50465,
+    "n_edges_total": 50943,
+    "n_edges_with_body": 0,
+    "median_entities": 166.0,
+    "median_edges": 167.0,
+    "per_question": {
+      "2hop__10114_599630": {
+        "entities": 199,
+        "edges": 174
+      },
+      "2hop__106864_80460": {
+        "entities": 151,
+        "edges": 158
+      },
+      "2hop__108336_772156": {
+        "entities": 145,
+        "edges": 134
+      },
+      "2hop__122140_37168": {
+        "entities": 181,
+        "edges": 175
+      },
+      "2hop__123214_22402": {
+        "entities": 221,
+        "edges": 224
+      },
+      "2hop__125412_544665": {
+        "entities": 160,
+        "edges": 166
+      },
+      "2hop__129499_85379": {
+        "entities": 134,
+        "edges": 147
+      },
+      "2hop__13106_158105": {
+        "entities": 217,
+        "edges": 227
+      },
+      "2hop__132854_417697": {
+        "entities": 179,
+        "edges": 153
+      },
+      "2hop__133241_33564": {
+        "entities": 177,
+        "edges": 169
+      },
+      "2hop__135652_669373": {
+        "entities": 150,
+        "edges": 139
+      },
+      "2hop__135993_160249": {
+        "entities": 160,
+        "edges": 154
+      },
+      },
+      "4hop3__316459_41402_599212_13584": {
+        "entities": 162,
+        "edges": 182
+      },
+      "4hop3__373866_5189_31809_86687": {
+        "entities": 179,
+        "edges": 154
+      },
+      "4hop3__439878_88460_30152_20999": {
+        "entities": 170,
+        "edges": 169
+      },
+      "4hop3__531933_836463_161616_77103": {
+        "entities": 153,
+        "edges": 144
+      },
+      "4hop3__661103_698586_57596_54362": {
+        "entities": 182,
+        "edges": 182
+      },
+      "4hop3__678814_466199_695123_72134": {
+        "entities": 139,
+        "edges": 134
+      },
+      "4hop3__773800_152874_161616_77103": {
+        "entities": 194,
+        "edges": 187
+      },
+      "4hop3__860588_88460_30152_20999": {
+        "entities": 176,
+        "edges": 196
+      }
+    },
+    "empty_questions": [],
+    "min_coverage": 1.0,
+    "ok": true
+  },
+  "wall_seconds": 2726.9
+}
+
+exec
+/bin/bash -lc 'python -m json.tool dev/plans/runs/0.8.2-m1-graph-coverage-n299.json >/dev/null && echo ok' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ok
+
+exec
+/bin/bash -lc "find src/python/eval -maxdepth 1 -type f -name '__init__.py' -o -maxdepth 1 -type f | sed -n '1,20p'; grep -R \"packages\" -n src/python/pyproject.toml setup.cfg setup.py pyproject.toml 2>/dev/null" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+src/python/eval/r2_parity_eval.py
+src/python/eval/m1_decision_rule.py
+src/python/eval/__init__.py
+src/python/eval/graph_arm_recall.py
+src/python/eval/elps_live_harness.py
+src/python/eval/p0a_base_retrieval.py
+src/python/eval/verify_embed_db.py
+src/python/eval/m1_graph_build.py
+src/python/eval/p0a_batch_e2e.py
+src/python/eval/r6_index_key_enrichment.py
+src/python/eval/gold_gen.py
+src/python/pyproject.toml:47:# test-infra, NOT part of the shipped wheel (maturin only packages `fathomdb`).
+
+exec
+/bin/bash -lc "sed -n '1,90p' src/python/pyproject.toml" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fathomdb"
+version = "0.8.0"
+description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6"]
+lint = ["ruff>=0.6"]
+typecheck = ["pyright>=1.1.380"]
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6"]
+
+[tool.maturin]
+manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
+module-name = "fathomdb._fathomdb"
+python-source = "."
+# EU-6 FIX-1: this list is what BOTH editable installs (`pip install -e .`,
+# `maturin develop`) AND the release workflow's `PyO3/maturin-action`
+# inherit unless they pass an explicit `--features` override. Therefore
+# it must match the SHIPPED feature surface exactly:
+#
+#   * `pyo3/extension-module` — required for the abi3 extension build.
+#   * `default-embedder` — kept ON so editable installs have parity with
+#     the shipped wheel (the `use_default_embedder=True` opt-in must
+#     work against `pip install -e .` without any extra step).
+#
+# `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
+# `_write_vector_for_test` etc. on `Engine`) and would leak onto every
+# wheel `release.yml`'s build-python job emits to PyPI. Tests that need
+# the hook surface (`test_use_default_embedder.py`, `test_ffi_safety.py`,
+# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
+# in `tests/conftest.py` that runs
+#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
+# before the suite. The release workflow's `args:` pins its own explicit
+# feature list, so this file never gates the shipped artifact.
+features = ["pyo3/extension-module", "default-embedder"]
+
+[tool.pytest.ini_options]
+# Slice 25: the R2 eval harness lives at `eval/` (sibling of `fathomdb/`); it is
+# test-infra, NOT part of the shipped wheel (maturin only packages `fathomdb`).
+# Prepend the python-source root so `import eval.r2_parity_eval` resolves under
+# pytest's prepend import mode without an editable install of the harness.
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pyright]
+include = ["fathomdb", "tests", "eval"]
+typeCheckingMode = "standard"
+pythonVersion = "3.10"
+venvPath = "../.."
+venv = ".venv"
+
+exec
+/bin/bash -lc 'cd src/python && ruff check eval/m1_graph_build.py tests/test_m1_graph_build.py' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+All checks passed!
+
+exec
+/bin/bash -lc 'if [ -f data/corpus-data/raw/musique_dev.jsonl ]; then head -1 data/corpus-data/raw/musique_dev.jsonl | python -m json.tool | head -80; fi' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+{
+    "answer": "Walt Disney",
+    "answer_aliases": [],
+    "answerable": false,
+    "hop_count": 2,
+    "id": "2hop__153573_109006",
+    "paragraphs": [
+        {
+            "idx": 0,
+            "is_supporting": false,
+            "text": "Precursors to the web browser emerged in the form of hyperlinked applications during the mid and late 1980s (the bare concept of hyperlinking had by then existed for some decades). Following these, Tim Berners - Lee is credited with inventing the World Wide Web in 1989 and developing in 1990 both the first web server, and the first web browser, called WorldWideWeb (no spaces) and later renamed Nexus. Many others were soon developed, with Marc Andreessen's 1993 Mosaic (later Netscape), being particularly easy to use and install, and often credited with sparking the internet boom of the 1990s. Today, the major web browsers are Firefox, Internet Explorer, Google Chrome, Opera and Safari.",
+            "title": "History of the Internet"
+        },
+        {
+            "idx": 1,
+            "is_supporting": false,
+            "text": "Ceville is a humorous graphic adventure video game developed by the German game studio Realmforge Studios and published by Kalypso Media. Despite the game's use of 3D environments and models, the gameplay is very true to the graphical point-and-click adventure tradition of gameplay, immortalized by game series like Monkey Island from LucasArts and the King's Quest series from Sierra Online.",
+            "title": "Ceville"
+        },
+        {
+            "idx": 2,
+            "is_supporting": false,
+            "text": "Zipline Safari is a zip-line course in Florida. It is the only zip-line course in the state, and is claimed to be the world's only zip-line created for flat land. Zipline Safari opened on 16 January 2009 in Forever Florida, a wildlife attraction near Holopaw, Florida. The zip-line cost $350,000 to build, and consists of nine platforms built up from the ground and traveled between by zip-lining. Forever Florida built the course to promote ecotourism and interaction with the natural environment of Florida.",
+            "title": "Zipline Safari"
+        },
+        {
+            "idx": 3,
+            "is_supporting": false,
+            "text": "Parc Safari is a zoo in Hemmingford, Quebec, Canada, and is one of the region's major tourist attractions; that has both African & Asian species of elephant.",
+            "title": "Parc Safari"
+        },
+        {
+            "idx": 4,
+            "is_supporting": false,
+            "text": "The Reporter is an American drama series that aired on CBS from September 25 to December 18, 1964. The series was created by Jerome Weidman and developed by executive producers Keefe Brasselle and John Simon.",
+            "title": "The Reporter (TV series)"
+        },
+        {
+            "idx": 5,
+            "is_supporting": false,
+            "text": "Earthworm Jim 4 is a video game in the \"Earthworm Jim\" series. It was originally announced by Interplay Entertainment in 2008, and referred to by Interplay as \"still in development\" in May 2011. Later commentary from individual developers would claim that development hadn't started, though desire to create a new entry in the series remained. In May 2019, it was announced that the game was to begin development exclusively for the upcoming Intellivision Amico console.",
+            "title": "Earthworm Jim 4"
+        },
+        {
+            "idx": 6,
+            "is_supporting": false,
+            "text": "Availability on desktop operating systems Platform Latest version Browser support Windows XP and later Windows Server 2003 and later 27.0. 0.183 Firefox, Chrome, Chromium, Safari, Opera, Internet Explorer, Microsoft Edge Windows 2000 11.1. 102.55? Windows 98 and ME 9.0. 115.0? Windows 95 and NT 4 7.0. 14.0? Mac OS X 10.6 or later 27.0. 0.183 Firefox, Chrome, Chromium, Safari, Opera Mac OS X 10.5 10.3. 183.90? Classic Mac OS, PowerPC 7.0. 14.0? Classic Mac OS, 68k 5.0? Linux 27.0. 0.183 Firefox, Chrome, Chromium, Opera",
+            "title": "Adobe Flash Player"
+        },
+        {
+            "idx": 7,
+            "is_supporting": false,
+            "text": "Apple Inc. is an American multinational technology company headquartered in Cupertino, California that designs, develops, and sells consumer electronics, computer software, and online services. The company's hardware products include the iPhone smartphone, the iPad tablet computer, the Mac personal computer, the iPod portable media player, the Apple Watch smartwatch, the Apple TV digital media player, and the HomePod smart speaker. Apple's consumer software includes the macOS and iOS operating systems, the iTunes media player, the Safari web browser, and the iLife and iWork creativity and productivity suites. Its online services include the iTunes Store, the iOS App Store and Mac App Store, Apple Music, and iCloud.",
+            "title": "Apple Inc."
+        },
+        {
+            "idx": 8,
+            "is_supporting": false,
+            "text": "The Philadelphia Zoo, located in the Centennial District of Philadelphia, Pennsylvania, on the west bank of the Schuylkill River, was the first true zoo in the United States. Chartered by the Commonwealth of Pennsylvania on March 21, 1859, its opening was delayed by the American Civil War until July 1, 1874. It opened with 1,000 animals and an admission price of 25 cents. For a brief time, the zoo also housed animals brought over from safari on behalf of the Smithsonian Institution, which had not yet built the National Zoo.",
+            "title": "Philadelphia Zoo"
+        },
+        {
+            "idx": 9,
+            "is_supporting": false,
+            "text": "Apple's Safari had its first beta release in January 2003; as of April 2011, it had a dominant share of Apple-based web browsing, accounting for just over 7% of the entire browser market.",
+            "title": "Web browser"
+        },
+        {
+            "idx": 10,
+            "is_supporting": false,
+            "text": "The 100 (pronounced The Hundred) is an American post-apocalyptic science fiction drama television series developed by Jason Rothenberg, which premiered on March 19, 2014, on The CW. It is loosely based on a 2013 book of the same name, the first in a book series by Kass Morgan. The series follows a group of teens as they become the first people from a space habitat to return to Earth after a devastating nuclear apocalypse.",
+            "title": "List of The 100 episodes"
+        },
+        {
+            "idx": 11,
+            "is_supporting": false,
+            "text": "Shiira (\u30b7\u30a4\u30e9, Japanese for the common dolphin-fish) is a discontinued open source web browser for the Mac OS X operating system. According to its lead developer Makoto Kinoshita, the goal of Shiira was \"to create a browser that is better and more useful than Safari\". Shiira used WebKit for rendering and scripting. The project reached version 2.3 before it was discontinued, and by December 2011 the developer's website had been removed.",
+            "title": "Shiira"
+        },
+        {
+
+exec
+/bin/bash -lc 'cd src/python && pyright eval/m1_graph_build.py tests/test_m1_graph_build.py' in /home/coreyt/projects/fathomdb
+ succeeded in 1014ms:
+0 errors, 0 warnings, 0 informations
+
+exec
+/bin/bash -lc "python - <<'PY'
+import json,collections
+rows=[json.loads(l) for l in open('data/corpus-data/raw/musique_dev.jsonl')]
+pool=[r for r in rows if r.get('answerable')]
+c=collections.Counter(int(r['hop_count']) for r in pool)
+print(len(pool), c)
+for h,v in sorted(c.items()): print(h, round(300*v/len(pool)))
+PY" in /home/coreyt/projects/fathomdb
+ succeeded in 243ms:
+2417 Counter({2: 1252, 3: 760, 4: 405})
+2 155
+3 94
+4 50
+
+exec
+/bin/bash -lc "nl -ba src/python/eval/m1_graph_build.py | sed -n '70,115p;480,525p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    70	#: default corpus path (Slice-4 materialized corpus; gitignored).
+    71	DEFAULT_CORPUS = "data/corpus-data/raw/musique_dev.jsonl"
+    72	
+    73	#: the pinned corpus hash this build is valid for (Slice-4).
+    74	MUSIQUE_HASH = "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f"
+    75	
+    76	
+    77	# --------------------------------------------------------------------------- #
+    78	# Corpus load + deterministic sampling
+    79	# --------------------------------------------------------------------------- #
+    80	def load_questions(corpus_path: str | Path) -> list[dict]:
+    81	    """Read the materialized MuSiQue corpus (one JSON object per line)."""
+    82	    rows: list[dict] = []
+    83	    with Path(corpus_path).open(encoding="utf-8") as f:
+    84	        for line in f:
+    85	            line = line.strip()
+    86	            if line:
+    87	                rows.append(json.loads(line))
+    88	    return rows
+    89	
+    90	
+    91	def sample_questions(
+    92	    rows: Sequence[dict],
+    93	    *,
+    94	    n: Optional[int],
+    95	    seed: int,
+    96	    answerable_only: bool = True,
+    97	    log: Callable[[str], Any] = print,
+    98	) -> list[dict]:
+    99	    """Deterministically sample ``n`` questions, **stratified by hop count** so all of
+   100	    {2,3,4} are represented in proportion. ``n=None`` ⇒ take the whole (filtered) set.
+   101	
+   102	    Determinism: sort each hop stratum by question id, then take a seed-rotated,
+   103	    evenly-strided slice. No silent caps — the sample size + per-hop breakdown are
+   104	    ``log()``-ed (bias-control §7 of the design)."""
+   105	    pool = [r for r in rows if (r.get("answerable") if answerable_only else True)]
+   106	    pool_kind = "answerable" if answerable_only else "all"
+   107	    by_hop: dict[int, list[dict]] = defaultdict(list)
+   108	    for r in pool:
+   109	        by_hop[int(r["hop_count"])].append(r)
+   110	    for h in by_hop:
+   111	        by_hop[h].sort(key=lambda r: r["id"])
+   112	
+   113	    if n is None or n >= len(pool):
+   114	        out = sorted(pool, key=lambda r: r["id"])
+   115	        log(f"[S10][SAMPLE] full {pool_kind} set: {len(out)} questions "
+   480	    questions = sample_questions(
+   481	        rows, n=(None if args.n == 0 else args.n), seed=args.seed,
+   482	        answerable_only=args.answerable_only)
+   483	    qids = [q["id"] for q in questions]
+   484	
+   485	    db_dir = Path(args.db_dir)
+   486	    db_dir.mkdir(parents=True, exist_ok=True)
+   487	    cache_path = db_dir / "extractions.json"
+   488	
+   489	    para_graphs = extract_question_graphs(
+   490	        questions, cache_path, chunk_size=args.chunk_size, max_tokens=args.max_tokens)
+   491	
+   492	    db_path = db_dir / "graph.sqlite"
+   493	    engine, build_stats = build_question_graph_engine(questions, para_graphs, db_path)
+   494	
+   495	    report = verify_coverage(db_path, qids, min_coverage=1.0)
+   496	    engine.close()
+   497	
+   498	    artifact = {
+   499	        "schema": "0.8.2-m1-graph-coverage-v1",
+   500	        "phase": "0.8.2-slice-10",
+   501	        "generated_by": "eval.m1_graph_build",
+   502	        "musique_hash": MUSIQUE_HASH,
+   503	        "extractor_model_id": EXTRACTOR_MODEL_ID,
+   504	        "priced_api_calls": 0,
+   505	        "edge_body_policy": "body-less (edge_fact vector-projection-safe; see module docstring)",
+   506	        "sample": {
+   507	            "n_requested": args.n,
+   508	            "seed": args.seed,
+   509	            "answerable_only": args.answerable_only,
+   510	            "n_questions": len(qids),
+   511	        },
+   512	        "build_stats": build_stats,
+   513	        "coverage": report.to_dict(),
+   514	        "wall_seconds": round(time.time() - t0, 1),
+   515	    }
+   516	    out_path = Path(args.output)
+   517	    out_path.parent.mkdir(parents=True, exist_ok=True)
+   518	    out_path.write_text(json.dumps(artifact, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+   519	
+   520	    verdict = "OK" if report.ok else "INCOMPLETE"
+   521	    print(f"[S10][VERIFY] [{verdict}] coverage={report.coverage:.4f} "
+   522	          f"({report.n_questions_nonempty}/{report.n_questions} non-empty) "
+   523	          f"entity_nodes={report.n_entity_nodes} edges={report.n_edges_total} "
+   524	          f"edges_with_body={report.n_edges_with_body} "
+   525	          f"median_entities={report.median_entities} median_edges={report.median_edges}")
+
+exec
+/bin/bash -lc "nl -ba src/python/eval/m1_graph_build.py | sed -n '118,155p;155,170p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   118	
+   119	    total = len(pool)
+   120	    out: list[dict] = []
+   121	    per_hop_taken: dict[int, int] = {}
+   122	    for h in sorted(by_hop):
+   123	        stratum = by_hop[h]
+   124	        # proportional allocation, deterministic stride + seed rotation
+   125	        take = max(1, round(n * len(stratum) / total)) if stratum else 0
+   126	        take = min(take, len(stratum))
+   127	        if take == 0:
+   128	            per_hop_taken[h] = 0
+   129	            continue
+   130	        stride = len(stratum) / take
+   131	        off = seed % len(stratum)
+   132	        idxs = sorted({int((off + i * stride)) % len(stratum) for i in range(take)})
+   133	        # stride collisions can under-fill; top up deterministically from the front
+   134	        j = 0
+   135	        while len(idxs) < take and j < len(stratum):
+   136	            if j not in idxs:
+   137	                idxs.append(j)
+   138	            j += 1
+   139	        idxs = sorted(set(idxs))[:take]
+   140	        out.extend(stratum[i] for i in idxs)
+   141	        per_hop_taken[h] = len(idxs)
+   142	    out.sort(key=lambda r: r["id"])
+   143	    log(f"[S10][SAMPLE] sampled {len(out)}/{total} {pool_kind} questions "
+   144	        f"(n requested={n}, seed={seed}; per-hop taken={ {h: per_hop_taken[h] for h in sorted(per_hop_taken)} })")
+   145	    return out
+   146	
+   147	
+   148	# --------------------------------------------------------------------------- #
+   149	# Extraction (per-paragraph, incrementally cached) — reuses extract_graph ($0)
+   150	# --------------------------------------------------------------------------- #
+   151	def paragraph_documents(questions: Sequence[dict]) -> dict[str, str]:
+   152	    """Flatten sampled questions to ``{ "{qid}#{idx}": "title\\ntext" }`` paragraph
+   153	    documents — the unit the extractor sees (passage-level granularity)."""
+   154	    docs: dict[str, str] = {}
+   155	    for q in questions:
+   155	    for q in questions:
+   156	        qid = q["id"]
+   157	        for p in q["paragraphs"]:
+   158	            cid = f"{qid}#{p['idx']}"
+   159	            title = (p.get("title") or "").strip()
+   160	            text = (p.get("text") or "").strip()
+   161	            docs[cid] = (f"{title}\n{text}" if title else text).strip()
+   162	    return docs
+   163	
+   164	
+   165	def extract_question_graphs(
+   166	    questions: Sequence[dict],
+   167	    cache_path: str | Path,
+   168	    *,
+   169	    chunk_size: int = 1500,
+   170	    max_tokens: int = 3072,
+
+codex
+The graph build can produce artifacts that falsely claim the pinned corpus hash, and the sampler does not honor the requested sample size for the default run. These are correctness issues for the evaluation artifact.
+
+Full review comments:
+
+- [P2] Validate the corpus hash before stamping artifacts — /home/coreyt/projects/fathomdb/src/python/eval/m1_graph_build.py:480-482
+  When `--corpus` points at a stale or different JSONL, the script still emits the hard-coded `MUSIQUE_HASH`, so the coverage artifact can falsely claim it was built from the pre-registered Slice-4 corpus. Since this artifact is used as evidence for the M1 graph build, compute the file hash (or compare to the manifest) and fail before sampling when it does not match.
+
+- [P3] Preserve the requested sample size — /home/coreyt/projects/fathomdb/src/python/eval/m1_graph_build.py:124-126
+  For proportional strata where the rounded per-hop allocations do not sum to `n`, this returns fewer or more questions than requested; with the checked-in MuSiQue answerable counts, `--n 300` produces 299 questions. That silently changes the evaluation sample size even though enough rows exist, so allocate the rounding remainder deterministically (or otherwise top up/trim) to make `len(out) == n` whenever `n < len(pool)`.
+The graph build can produce artifacts that falsely claim the pinned corpus hash, and the sampler does not honor the requested sample size for the default run. These are correctness issues for the evaluation artifact.
+
+Full review comments:
+
+- [P2] Validate the corpus hash before stamping artifacts — /home/coreyt/projects/fathomdb/src/python/eval/m1_graph_build.py:480-482
+  When `--corpus` points at a stale or different JSONL, the script still emits the hard-coded `MUSIQUE_HASH`, so the coverage artifact can falsely claim it was built from the pre-registered Slice-4 corpus. Since this artifact is used as evidence for the M1 graph build, compute the file hash (or compare to the manifest) and fail before sampling when it does not match.
+
+- [P3] Preserve the requested sample size — /home/coreyt/projects/fathomdb/src/python/eval/m1_graph_build.py:124-126
+  For proportional strata where the rounded per-hop allocations do not sum to `n`, this returns fewer or more questions than requested; with the checked-in MuSiQue answerable counts, `--n 300` produces 299 questions. That silently changes the evaluation sample size even though enough rows exist, so allocate the rounding remainder deterministically (or otherwise top up/trim) to make `len(out) == n` whenever `n < len(pool)`.

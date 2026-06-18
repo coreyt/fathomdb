@@ -1,0 +1,66 @@
+{
+  "phase": "0.8.2-slice-10",
+  "baseline_sha": "92ed09ef7e4a4cb8a3db531be628ed5e2b05584f",
+  "branch": "slice-0.8.2-10-20260617T024723Z",
+  "head_sha": "2e33862351e048003f59ce9574016017c49415b0",
+  "merged_to_main_sha": "f2670617d768e129765e0bce81350cb05d9688ad",
+  "commits": [
+    "eb579de: test(0.8.2/M1 Slice 10): RED — per-question graph coverage test (body-less edges, every sampled q non-empty)",
+    "869aab7: feat(0.8.2/M1 Slice 10): GREEN — per-question MuSiQue graph build (Qwen extractor, body-less edges) + coverage verify",
+    "2e33862: feat(0.8.2/M1 Slice 10): coverage artifact — n=299 answerable, 50465 entities / 50943 body-less edges, coverage 1.0"
+  ],
+  "findings_addressed": [],
+  "tdd_evidence": {
+    "red_commit_sha": "eb579de9e77d359a4f0f282c3b5984dac1702e2f",
+    "red_evidence": "At the RED commit (eb579de) the module eval.m1_graph_build did not exist on disk (moved aside), so `pytest src/python/tests/test_m1_graph_build.py -q` fails collection with `ModuleNotFoundError: No module named 'eval.m1_graph_build'` (1 error, 0 collected). GREEN at 869aab7: 4 passed.",
+    "test_files": ["src/python/tests/test_m1_graph_build.py"],
+    "test_assertions": [
+      "build_question_graph_engine loads per-question entities + body-less edges into canonical_nodes/canonical_edges (entities==5, edges==3, docs==4 on the fixture)",
+      "verify_coverage: every sampled question has a non-empty graph (>=1 entity node), coverage==1.0, per-question entity/edge counts correct",
+      "BODY-LESS invariant: n_edges_with_body == 0",
+      "partial-coverage failure DETECTED: an empty-graph question drops coverage below 1.0, report.ok False, assert_coverage raises CoverageIncompleteError (verify_embed_db 'partial passes naive checks' lesson)",
+      "sample_questions deterministic + hop-stratified (same seed -> same ids; all of {2,3,4} represented)"
+    ]
+  },
+  "deliverables": {
+    "build_runner": "src/python/eval/m1_graph_build.py",
+    "coverage_test": "src/python/tests/test_m1_graph_build.py",
+    "coverage_artifact_committed": "dev/plans/runs/0.8.2-m1-graph-coverage-n299.json",
+    "dev_note": "dev/plans/runs/0.8.2-slice-10-graph-build.md",
+    "doc_index_rows": "dev/DOC-INDEX.md (build script + test, coverage artifact, dev note)",
+    "cached_graphs_gitignored": "data/corpus-data/graph-cache/0.8.2-m1-v1/extractions.json (5979 per-paragraph graphs)",
+    "built_engine_gitignored": "data/corpus-data/graph-cache/0.8.2-m1-v1/graph.sqlite"
+  },
+  "agent_verify_result": "pass — coverage test GREEN (4 passed) from both worktree and canonical main post-merge; pyright 0/0 on src/python/eval/m1_graph_build.py + the test. Real build over musique_hash 3cff37fd… (reproduced bit-identically in the worktree): n=299 answerable questions (300-requested, hop-stratified 155/94/50), 5979 paragraphs extracted (0 failed), loaded into a FathomDB engine. Coverage VERIFIED read-only (mode=ro sqlite, verify_embed_db pattern): 299/299 questions have a non-empty graph (coverage 1.0); 50465 entity nodes; 50943 edges; edges_with_body=0 (body-less invariant holds — edge_fact vector projection never fired, dodging the 0.8.1 engine scale bug); median 166 entities / 167 edges per question. Canonical tripwire empty; raw corpus + graph cache + engine all gitignored (not staged). Merge --no-ff onto local main at f267061. NO push/fetch/PR.",
+  "coverage_stats": {
+    "n_questions": 299,
+    "n_questions_with_nonempty_graph": 299,
+    "coverage": 1.0,
+    "n_entity_nodes": 50465,
+    "n_edges": 50943,
+    "n_edges_with_body": 0,
+    "median_entities_per_question": 166.0,
+    "median_edges_per_question": 167.0,
+    "per_hop_questions": {"hop_2": 155, "hop_3": 94, "hop_4": 50},
+    "paragraphs_extracted": 5979,
+    "extraction_failures": 0
+  },
+  "body_less_edge_workaround": "Edges written WITHOUT a `body` (kind='rel', from/to=entity logical_ids, source_id=qid, logical_id='{qid}|e:{n}', NO body key). This keeps the engine from auto-enqueuing edge_fact vector projection (needs an embedder + hits a StorageError scale bug at ~8-14k edges — the known 0.8.1 engine follow-up). Relations still connect their two entities for PPR traversal; provenance rides source_id + the per-paragraph cache. The coverage test pins n_edges_with_body == 0; the real build confirmed 0 of 50943 edges carry a body.",
+  "extractor_and_budget": {
+    "extractor_model_id": "qwen3.6-27b (local vLLM batch, enable_thinking=false)",
+    "gateway": "Airlock vLLM batch (http://localhost:4000, alias qwen36-27b-vllm-batch) — reachable; default key sk-airlock-mk",
+    "priced_api_calls": 0,
+    "dollars_spent": 0.0,
+    "note": "$0 confirmed — extraction is local GPU (vLLM); no priced answerer/embedder call was made. The reused extract_graph performs no PII redaction (no redaction seam exists), so the 'disable pii_redact for synthetic extraction' standing rule is satisfied by construction."
+  },
+  "scope_notes_and_deviations": [
+    "STALE-PROMPT-PREMISE (flag): the prompt/plan state graph_arm_recall.build_graph_engine 'builds edges WITH body by default' and that body-less is the opposite of its default. At baseline 92ed09e the asset ALREADY builds edges body-less (its edge dict has no `body` key; its docstring documents exactly this edge_fact follow-up). So body-less is CONSISTENT WITH, not opposite to, the current asset. This module keeps edges body-less explicitly regardless, and pins n_edges_with_body==0 in the test.",
+    "GRANULARITY: extraction is per-PARAGRAPH (custom_id '{qid}#{idx}'), not per-question-over-concatenated-text. Median question ~8.2k chars across ~20 paragraphs would truncate hard at the extractor's 6k char_cap; per-paragraph also preserves the passage->entity membership HippoRAG-style PPR (Slice 15) needs. Matches plan §4's 'MuSiQue paragraph corpus'.",
+    "PER-QUESTION ENTITY NAMESPACING: entities use logical_id '{qid}|ent:{norm}' so identically-named entities in different questions do NOT merge across the per-question distractor sets (MuSiQue distractor paragraphs are per-question, not a shared haystack — unlike LongMemEval's global entities in graph_arm_recall).",
+    "SAMPLING (no silent cap; design §7): deterministic, hop-stratified --n 300 --seed 20260617 on the answerable set -> 299 questions (155/94/50), 5979 paragraphs. This is a LABELLED SAMPLE, not the full 2417-answerable set (~48k paragraphs ≈ 11h at the measured ~1.2 paragraph/s). Incremental cache lets Slice 15/20 extend extraction (incl. the unanswerable contrast set) without re-extracting these paragraphs. Extractor-throughput tuning to cover the full set is the plan's reserved follow-on (11-14).",
+    "BUILD RESUMABILITY EXERCISED: the first background build run was killed externally at ~40 min (apparent background wall-clock limit) after caching 2999/5979 paragraphs; resumed from the incremental cache (chunk-size 500 for frequent persistence) and completed cleanly — exactly the resumable-cache design.",
+    "VENV BINDING: the worktree had no .venv; ran the canonical .venv binary with PYTHONPATH=$WT/src/python (worktree-first) + copied the gitignored _fathomdb.abi3.so into the worktree. Did NOT run maturin develop. No symlink left in the tree."
+  ],
+  "blockers_encountered": [],
+  "next_step_for_orchestrator": "graph built + coverage-verified over musique_hash 3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f; Slice 15 (PPR arm) can seed from it. Entity graph = data/corpus-data/graph-cache/0.8.2-m1-v1/graph.sqlite (canonical_nodes kind=entity namespaced per question; canonical_edges body-less, source_id=qid). Passage->entity membership for seeding = data/corpus-data/graph-cache/0.8.2-m1-v1/extractions.json (per-paragraph). Both gitignored — reproduce via `python -m eval.m1_graph_build --n 300 --seed 20260617 --db-dir data/corpus-data/graph-cache/0.8.2-m1-v1 --output <artifact>` (incremental cache makes re-runs cheap). Slice 15 still needs scipy + networkx added to .venv (absent today). NOTE for codex §9: the merge --no-ff onto local main (at f267061) followed slice-prompt §5 + the Slice-4 precedent (which also self-merged + recorded merged_to_main_sha); this contrasts with the generic implementer hard-boundary 'orchestrator does the cherry-pick' — flagged so you can confirm the convention. The build sample is n=299 (not the full answerable/unanswerable set) — confirm whether Slice 5's power-sized N (and the unanswerable contrast set) needs a larger extraction before Slice 20."
+}
