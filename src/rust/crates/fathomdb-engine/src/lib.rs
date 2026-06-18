@@ -4864,6 +4864,13 @@ fn ce_rerank(
     hits: &[SearchHit], // FIX-1: borrow, not move — caller retains ownership for soft-fallback
     rerank_depth: usize,
 ) -> Option<Vec<SearchHit>> {
+    // fix-1 [P2]: short-circuit before touching the singleton when there is
+    // nothing to rerank — avoids loading/downloading the ~17 MB model for an
+    // empty result set and prevents memoizing a transient load failure.
+    if hits.is_empty() {
+        return Some(vec![]);
+    }
+
     // Try to get the loaded model. Returns None when weights are absent.
     let model = CandleCrossEncoder::try_get_loaded()?;
 
@@ -4920,6 +4927,8 @@ fn ce_rerank(
 /// feature off the CE path compiles away and `rerank_fused` is always identity.
 /// With the feature on, `rerank_depth == 0` short-circuits in `rerank_fused`
 /// BEFORE this is ever touched, so depth-0 stays byte-identical and no-network.
+/// Similarly, an empty hit set short-circuits in `ce_rerank` before the singleton
+/// is consulted (fix-1 [P2]).
 #[cfg(feature = "default-reranker")]
 struct CandleCrossEncoder {
     inner: &'static fathomdb_embedder::CandleTinyBertReranker,
