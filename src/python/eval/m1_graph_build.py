@@ -51,6 +51,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import statistics
@@ -86,6 +87,39 @@ def load_questions(corpus_path: str | Path) -> list[dict]:
             if line:
                 rows.append(json.loads(line))
     return rows
+
+
+def compute_corpus_hash(corpus_path: str | Path) -> str:
+    """Compute the SHA-256 of a corpus file (same algorithm as
+    ``acquire_musique.write_corpus``): hash the raw bytes of the file.
+
+    Since ``write_corpus`` feeds each ``line.encode("utf-8")`` sequentially into
+    the hasher, the result equals SHA-256 of the whole file contents.
+    """
+    hasher = hashlib.sha256()
+    with Path(corpus_path).open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def validate_corpus_hash(corpus_path: str | Path, expected_hash: str) -> str:
+    """Assert that the corpus file matches the expected SHA-256.  Returns the
+    verified hash so callers can stamp it directly.
+
+    Raises :class:`ValueError` on mismatch — **fail-fast** before any
+    extraction or sampling so the coverage artifact can never be stamped with
+    the wrong corpus identity.
+    """
+    actual = compute_corpus_hash(corpus_path)
+    if actual != expected_hash:
+        raise ValueError(
+            f"corpus hash mismatch for {corpus_path!r}: "
+            f"expected {expected_hash!r} but got {actual!r}. "
+            "Re-run tests/corpus/scripts/acquire_musique.py to reproduce "
+            "the pinned corpus (dev/plans/runs/0.8.2-m1-corpus-manifest.json)."
+        )
+    return actual
 
 
 def sample_questions(
@@ -140,6 +174,20 @@ def sample_questions(
         out.extend(stratum[i] for i in idxs)
         per_hop_taken[h] = len(idxs)
     out.sort(key=lambda r: r["id"])
+
+    # Deterministic top-up / trim so len(out) == n exactly.
+    # Proportional round() can silently under-allocate by 1–2 items (the n=300→299
+    # bug in the original artifact).  Top up from the remaining sorted pool in
+    # stable (id-sort) order; trim from the tail if over-allocated.
+    if len(out) != n:
+        selected_ids = {r["id"] for r in out}
+        remainder = [r for r in sorted(pool, key=lambda r: r["id"]) if r["id"] not in selected_ids]
+        if len(out) < n:
+            out.extend(remainder[: n - len(out)])
+        else:
+            out = out[:n]
+        out.sort(key=lambda r: r["id"])
+
     log(f"[S10][SAMPLE] sampled {len(out)}/{total} {pool_kind} questions "
         f"(n requested={n}, seed={seed}; per-hop taken={ {h: per_hop_taken[h] for h in sorted(per_hop_taken)} })")
     return out
@@ -476,6 +524,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     t0 = time.time()
     rows = load_questions(args.corpus)
     print(f"[S10][LOAD] {len(rows)} questions from {args.corpus}")
+
+    # [P2] Fail-fast: verify the corpus matches the pinned hash BEFORE sampling or
+    # stamping so the coverage artifact can only ever reflect the validated corpus.
+    validate_corpus_hash(args.corpus, MUSIQUE_HASH)
+    print(f"[S10][HASH] corpus hash verified: {MUSIQUE_HASH[:16]}…")
 
     questions = sample_questions(
         rows, n=(None if args.n == 0 else args.n), seed=args.seed,

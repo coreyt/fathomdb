@@ -10,26 +10,30 @@
     "n_requested": 300,
     "seed": 20260617,
     "answerable_only": true,
-    "n_questions": 299
+    "n_questions": 300
   },
   "build_stats": {
-    "docs": 5979,
-    "entities": 50465,
-    "edges": 50943,
-    "questions": 299
+    "docs": 5999,
+    "entities": 50644,
+    "edges": 51158,
+    "questions": 300
   },
   "coverage": {
     "db": "data/corpus-data/graph-cache/0.8.2-m1-v1/graph.sqlite",
-    "n_questions": 299,
-    "n_questions_nonempty": 299,
+    "n_questions": 300,
+    "n_questions_nonempty": 300,
     "coverage": 1.0,
-    "n_nodes_total": 56444,
-    "n_entity_nodes": 50465,
-    "n_edges_total": 50943,
+    "n_nodes_total": 56643,
+    "n_entity_nodes": 50644,
+    "n_edges_total": 51158,
     "n_edges_with_body": 0,
     "median_entities": 166.0,
     "median_edges": 167.0,
     "per_question": {
+      "2hop__10017_18974": {
+        "entities": 179,
+        "edges": 215
+      },
       "2hop__10114_599630": {
         "entities": 199,
         "edges": 174
@@ -1231,5 +1235,5 @@
     "min_coverage": 1.0,
     "ok": true
   },
-  "wall_seconds": 2726.9
+  "wall_seconds": 26.6
 }
