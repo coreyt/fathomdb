@@ -145,18 +145,20 @@ def simulate_p_go(
     rng = np.random.default_rng(seed)
     go = 0
     for _ in range(n_trials):
-        # Resample a size-n pooled ≥3-hop cell from the measured baseline.
+        # Resample a size-n pooled ≥3-hop cell from the measured baseline (its hop
+        # mix carries the trend structure).
         sel = rng.integers(0, bf.size, size=n)
-        base = bf[sel]
         hops = bh[sel]
         true_d = effect_delta(shape, hops, lift=lift)
-        ppr = np.clip(base + true_d + rng.normal(0, sd_pair_f1, size=n), 0.0, 1.0)
-        delta_f1 = ppr - base
-
-        # EM: small effect, centred at ~0 lift (F1 is the primary signal).
-        base_e = be[rng.integers(0, be.size, size=n)] if be.size else np.zeros(n)
-        ppr_e = np.clip(base_e + rng.normal(0, sd_pair_em, size=n), 0.0, 1.0)
-        delta_em = ppr_e - base_e
+        # Model the per-question PAIRED DIFFERENCE directly (ppr − comparator):
+        # mean = the shape's true ΔF1, SD = the paired-difference SD derived from
+        # the measured baseline variance. Per-question F1 ∈ [0,1] ⇒ ΔF1 ∈ [-1,1];
+        # clip the *difference*, NOT ppr=base+noise — the latter biases the mean
+        # delta negative at large N when the baseline F1 is bimodal (a power
+        # artifact that made P(GO) spuriously fall toward 0 as N grew).
+        delta_f1 = np.clip(true_d + rng.normal(0, sd_pair_f1, size=n), -1.0, 1.0)
+        # EM: no modelled lift (F1 is the primary signal; EM is a CI-banded guard).
+        delta_em = np.clip(rng.normal(0, sd_pair_em, size=n), -1.0, 1.0)
 
         f1_delta = float(delta_f1.mean())
         f1_ci_low = _percentile_ci_low(delta_f1, rng, n_boot=n_boot)

@@ -22,7 +22,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
+
 from eval.m1_baseline import (
+    ARM_NAMES,
     CHEAP_READER_DEFAULT,
     COMPARATOR_ARM,
     MUSIQUE_HASH,
@@ -33,7 +36,7 @@ from eval.m1_baseline import (
     load_musique,
     run_baseline,
 )
-from eval.m1_power_sim import required_n, simulate_p_go
+from eval.m1_power_sim import FLAT_POSITIVE_LIFT, required_n, simulate_p_go
 from eval.p0a_base_retrieval import AirlockAnswerer
 
 #: Documented price assumptions ($ per 1M tokens). The proxy does not return a
@@ -108,6 +111,99 @@ class CostTrackingAnswerer(AirlockAnswerer):
         }
 
 
+#: The available MuSiQue-Ans answerable pool per hop (the hard ceiling on any
+#: feasible cell). From the pinned corpus: 760 (3-hop) + 405 (4-hop) answerable.
+CORPUS_ANSWERABLE_GE3HOP = 1165
+CORPUS_ANSWERABLE_TOTAL = 2417
+
+#: Power-sim grid extended high enough to locate a required-N even at the wide
+#: measured baseline variance (per-question F1 is near-binary ⇒ sd≈0.45).
+_POWER_GRID = (50, 100, 150, 200, 300, 400, 600, 800, 1200, 1600, 2000, 3000, 5000, 8000)
+
+
+def build_power_block(paired_records: list[dict[str, Any]], cost: dict[str, Any]) -> dict[str, Any]:
+    """Whole-rule power sim + the full-pass $ projection, from a run's records.
+
+    Pure post-processing over the measured pooled ≥3-hop comparator F1/EM — **no
+    priced call** — so it can be re-derived from a saved artifact (the model was
+    corrected after the priced pilot; this lets the artifact be regenerated for
+    free). Returns P(GO) at the pilot N for each effect shape, the required N for
+    P(GO) ≥ 0.8 under flat-positive (+ a rho-sensitivity sweep), an on-corpus
+    feasibility verdict, and the projected $ for the full baseline pass.
+    """
+    ge3 = [r for r in paired_records if r["answerable"] and r["hop_count"] >= 3]
+    base_f1 = [r["f1"][COMPARATOR_ARM] for r in ge3 if COMPARATOR_ARM in r["f1"]]
+    base_em = [r["em"][COMPARATOR_ARM] for r in ge3 if COMPARATOR_ARM in r["em"]]
+    hops = [r["hop_count"] for r in ge3 if COMPARATOR_ARM in r["f1"]]
+    if len(base_f1) < 5:
+        return {"note": "insufficient ≥3-hop answerable sample for power sim"}
+
+    pilot_n = len(base_f1)
+    shape_p_go = {
+        shape: simulate_p_go(base_f1, base_em, hops, shape=shape, n=pilot_n,
+                             n_trials=400, n_boot=600, seed=0)
+        for shape in ("flat_positive", "monotonic", "inverted_u")
+    }
+    req = required_n(base_f1, base_em, hops, shape="flat_positive", target=0.8,
+                     grid=_POWER_GRID, n_trials=400, n_boot=600, seed=0)
+    rho_sweep = {
+        f"rho_{rho}": required_n(base_f1, base_em, hops, shape="flat_positive",
+                                 target=0.8, rho=rho, grid=_POWER_GRID,
+                                 n_trials=400, n_boot=600, seed=0)["required_n"]
+        for rho in (0.3, 0.5, 0.7)
+    }
+
+    # Analytic cross-check (normal-approx, paired CI-excludes-0 at ~80% power):
+    # required_N ≈ (sd_pair * (z_0.975 + z_0.80) / lift)^2 — a sanity anchor for
+    # the bootstrap required_n above (both must say "≫ corpus" for a +0.03 effect).
+    import math as _math
+
+    sd_f1 = float(np.std(np.asarray(base_f1, dtype=float), ddof=1)) if pilot_n > 1 else 0.0
+    sd_pair = sd_f1 * _math.sqrt(2 * (1 - 0.5))
+    analytic_n = int(_math.ceil((sd_pair * (1.96 + 0.84) / FLAT_POSITIVE_LIFT) ** 2)) if sd_pair else None
+
+    # $ projection: per (question×arm) call cost from the pilot.
+    n_calls = max(int(cost.get("n_calls", 0)), 1)
+    per_call_usd = round(float(cost.get("usd", 0.0)) / n_calls, 6)
+    n_arms = len(ARM_NAMES)
+    req_n = req["required_n"]
+    feasible_on_corpus = req_n is not None and req_n <= CORPUS_ANSWERABLE_GE3HOP
+    max_feasible_n = CORPUS_ANSWERABLE_GE3HOP
+    p_go_at_full_corpus = next(
+        (c["p_go"] for c in req["curve"] if c["n"] >= max_feasible_n), req["curve"][-1]["p_go"]
+    )
+
+    def proj(n: int) -> float:
+        return round(per_call_usd * n * n_arms, 2)
+
+    return {
+        "measured_pilot_cell_n": pilot_n,
+        "measured_comparator_mean_f1": round(sum(base_f1) / pilot_n, 4),
+        "sd_baseline_f1": shape_p_go["flat_positive"]["sd_baseline_f1"],
+        "p_go_at_pilot_n_by_shape": shape_p_go,
+        "required_n_flat_positive": req,
+        "analytic_required_n_normal_approx_rho0.5": analytic_n,
+        "rho_sensitivity_required_n": rho_sweep,
+        "corpus_answerable_ge3hop": CORPUS_ANSWERABLE_GE3HOP,
+        "feasible_on_corpus": feasible_on_corpus,
+        "p_go_if_whole_ge3hop_corpus_run": p_go_at_full_corpus,
+        "projection": {
+            "per_call_usd": per_call_usd,
+            "n_baseline_arms": n_arms,
+            "projected_full_pass_usd_at_required_n": (proj(req_n) if req_n else None),
+            "projected_usd_whole_ge3hop_corpus": proj(CORPUS_ANSWERABLE_GE3HOP),
+            "projected_usd_whole_answerable_corpus": proj(CORPUS_ANSWERABLE_TOTAL),
+            "note": (
+                "projected_full_pass_usd = required_N x #baseline_arms x per_call_usd. "
+                "If required_N > corpus_answerable_ge3hop the power target is "
+                "UNREACHABLE on this corpus for the +0.03 effect — HITL decision: "
+                "raise the detectable effect size, accept the whole-corpus run at the "
+                "stated sub-0.8 P(GO), or redirect (design §0 reserved follow-on 1-4)."
+            ),
+        },
+    }
+
+
 def select_sample(
     questions: Sequence[Question],
     *,
@@ -158,7 +254,10 @@ def run(
         n_unanswerable_ge3=n_unans,
         seed=seed,
     )
-    answerer = CostTrackingAnswerer(reader)
+    # 240 s per call: the strong reader is a reasoning model; some hard multi-hop
+    # questions exceed the 120 s default. A still-too-slow call degrades to an
+    # abstention (run_baseline catches it) rather than crashing the priced pass.
+    answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
     if not answerer.available:
         raise SystemExit(
             f"answerer endpoint unreachable / reader {reader!r} unavailable "
@@ -183,29 +282,8 @@ def run(
     art = run_baseline(sample, answerer, k=k, encoder=encoder, reranker=reranker,
                         progress=progress, answer_workers=answer_workers)
 
-    # Power simulation from the measured pooled ≥3-hop comparator variance.
-    ge3 = [r for r in art["paired_records"] if r["answerable"] and r["hop_count"] >= 3]
-    base_f1 = [r["f1"][COMPARATOR_ARM] for r in ge3 if COMPARATOR_ARM in r["f1"]]
-    base_em = [r["em"][COMPARATOR_ARM] for r in ge3 if COMPARATOR_ARM in r["em"]]
-    hops = [r["hop_count"] for r in ge3 if COMPARATOR_ARM in r["f1"]]
-
-    power: dict[str, Any] = {"note": "insufficient ≥3-hop answerable sample for power sim"}
-    if len(base_f1) >= 5:
-        shape_p_go = {
-            shape: simulate_p_go(
-                base_f1, base_em, hops, shape=shape, n=len(base_f1),
-                n_trials=400, n_boot=600, seed=0,
-            )
-            for shape in ("flat_positive", "monotonic", "inverted_u")
-        }
-        req = required_n(base_f1, base_em, hops, shape="flat_positive", target=0.8,
-                         n_trials=400, n_boot=600, seed=0)
-        power = {
-            "measured_pilot_cell_n": len(base_f1),
-            "p_go_at_pilot_n_by_shape": shape_p_go,
-            "required_n_flat_positive": req,
-        }
-
+    art["cost"] = answerer.cost_block()
+    art["power_sim"] = build_power_block(art["paired_records"], art["cost"])
     art["mode"] = mode
     art["reader_model"] = reader
     art["reader_model_mapping_note"] = (
@@ -219,8 +297,6 @@ def run(
         "n_unanswerable_ge3": n_unans, "seed": seed, "n_total": len(sample),
         "no_silent_cap": "sampling logged; truncated run labelled, not full coverage",
     }
-    art["cost"] = answerer.cost_block()
-    art["power_sim"] = power
     art["elapsed_s"] = round(time.time() - t0, 1)
     art["musique_hash"] = MUSIQUE_HASH
 
@@ -233,7 +309,13 @@ def run(
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="M1 strong-baseline cheap-validate / pilot runner")
-    ap.add_argument("--mode", choices=["cheap", "pilot"], required=True)
+    ap.add_argument("--mode", choices=["cheap", "pilot"], default=None)
+    ap.add_argument(
+        "--recompute",
+        default=None,
+        help="path to an existing artifact JSON: re-derive the power_sim block "
+        "(corrected model) in place — NO priced call",
+    )
     ap.add_argument("--reader", default=None, help="answerer model id (defaults per mode)")
     ap.add_argument("--corpus", default=None)
     ap.add_argument("--k", type=int, default=10)
@@ -242,8 +324,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--n-unans", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=8, help="concurrent answerer calls")
-    ap.add_argument("--output", required=True)
+    ap.add_argument("--output", default=None)
     args = ap.parse_args(argv)
+
+    # Recompute-only path: re-derive the power block on a saved artifact, $0.
+    if args.recompute:
+        path = Path(args.recompute)
+        art = json.loads(path.read_text(encoding="utf-8"))
+        art["power_sim"] = build_power_block(art["paired_records"], art["cost"])
+        out = Path(args.output) if args.output else path
+        out.write_text(json.dumps(art, indent=2), encoding="utf-8")
+        print(f"[S5][RECOMPUTE] re-derived power_sim → {out} (no priced call)")
+        return 0
+
+    if args.mode is None:
+        raise SystemExit("--mode is required unless --recompute is given")
+    if not args.output:
+        raise SystemExit("--output is required")
 
     corpus = Path(args.corpus) if args.corpus else (
         Path(__file__).resolve().parents[3] / "data" / "corpus-data" / "raw" / "musique_dev.jsonl"

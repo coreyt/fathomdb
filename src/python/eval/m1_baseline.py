@@ -567,9 +567,19 @@ def run_baseline(
             ranked_idx = arm_rankings[arm][:k]
             tasks.append(_Task(qr, q, arm, [q.paragraphs[i].body for i in ranked_idx]))
 
-    # Phase 2 — answer (priced; optionally concurrent) + score.
+    # Phase 2 — answer (priced; optionally concurrent) + score. A failed/timed-out
+    # call degrades to an abstention (None) and is counted — never crashes the run
+    # (a single reasoning-model timeout must not discard the whole priced pass).
     def _do(task: "_Task") -> None:
-        ans = answerer.answer(task.q.question, task.context) if answerer_available else None
+        ans: Optional[str] = None
+        if answerer_available:
+            try:
+                ans = answerer.answer(task.q.question, task.context)
+            except Exception:  # noqa: BLE001 - record + degrade, do not abort the pass
+                n_err = getattr(answerer, "n_errors", None)
+                if isinstance(n_err, int):
+                    answerer.n_errors = n_err + 1  # type: ignore[attr-defined]
+                ans = None
         task.qr.answers[task.arm] = ans
         if task.q.answerable:
             task.qr.em[task.arm] = em_score(ans, task.q.golds)
