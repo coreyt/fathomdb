@@ -1,0 +1,1285 @@
+{
+  "schema": "0.8.2-m1-baseline-v1",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "arms": [
+    "bm25",
+    "passage_dense",
+    "fused",
+    "fused_rerank"
+  ],
+  "comparator_arm": "fused_rerank",
+  "rrf_k": 60,
+  "rerank_depth": 200,
+  "top_k": 10,
+  "answerer_model": "gemini-3.1-flash-lite",
+  "answerer_available": true,
+  "identical_answerer": true,
+  "n_questions": 40,
+  "n_answerable": 32,
+  "n_unanswerable": 8,
+  "primary_cell_pooled_ge3hop": {
+    "bm25": {
+      "n": 24,
+      "em": 0.083333,
+      "f1": 0.111111,
+      "em_var": 0.07971,
+      "f1_var": 0.093398
+    },
+    "passage_dense": {
+      "n": 24,
+      "em": 0.166667,
+      "f1": 0.194444,
+      "em_var": 0.144928,
+      "f1_var": 0.153784
+    },
+    "fused": {
+      "n": 24,
+      "em": 0.125,
+      "f1": 0.155556,
+      "em_var": 0.11413,
+      "f1_var": 0.124702
+    },
+    "fused_rerank": {
+      "n": 24,
+      "em": 0.083333,
+      "f1": 0.083333,
+      "em_var": 0.07971,
+      "f1_var": 0.07971
+    }
+  },
+  "per_hop": {
+    "2": {
+      "bm25": {
+        "n": 8,
+        "em": 0.0,
+        "f1": 0.113982,
+        "em_var": 0.0,
+        "f1_var": 0.048355
+      },
+      "passage_dense": {
+        "n": 8,
+        "em": 0.125,
+        "f1": 0.250887,
+        "em_var": 0.125,
+        "f1_var": 0.150969
+      },
+      "fused": {
+        "n": 8,
+        "em": 0.25,
+        "f1": 0.325887,
+        "em_var": 0.214286,
+        "f1_var": 0.191055
+      },
+      "fused_rerank": {
+        "n": 8,
+        "em": 0.25,
+        "f1": 0.403664,
+        "em_var": 0.214286,
+        "f1_var": 0.228922
+      }
+    },
+    "3": {
+      "bm25": {
+        "n": 16,
+        "em": 0.125,
+        "f1": 0.125,
+        "em_var": 0.116667,
+        "f1_var": 0.116667
+      },
+      "passage_dense": {
+        "n": 16,
+        "em": 0.25,
+        "f1": 0.25,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      },
+      "fused": {
+        "n": 16,
+        "em": 0.1875,
+        "f1": 0.191667,
+        "em_var": 0.1625,
+        "f1_var": 0.161111
+      },
+      "fused_rerank": {
+        "n": 16,
+        "em": 0.125,
+        "f1": 0.125,
+        "em_var": 0.116667,
+        "f1_var": 0.116667
+      }
+    },
+    "4": {
+      "bm25": {
+        "n": 8,
+        "em": 0.0,
+        "f1": 0.083333,
+        "em_var": 0.0,
+        "f1_var": 0.055556
+      },
+      "passage_dense": {
+        "n": 8,
+        "em": 0.0,
+        "f1": 0.083333,
+        "em_var": 0.0,
+        "f1_var": 0.055556
+      },
+      "fused": {
+        "n": 8,
+        "em": 0.0,
+        "f1": 0.083333,
+        "em_var": 0.0,
+        "f1_var": 0.055556
+      },
+      "fused_rerank": {
+        "n": 8,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      }
+    }
+  },
+  "unanswerable_contrast": {
+    "bm25": {
+      "n": 8,
+      "confident_answer_rate": 0.125
+    },
+    "passage_dense": {
+      "n": 8,
+      "confident_answer_rate": 0.125
+    },
+    "fused": {
+      "n": 8,
+      "confident_answer_rate": 0.0
+    },
+    "fused_rerank": {
+      "n": 8,
+      "confident_answer_rate": 0.125
+    }
+  },
+  "paired_records": [
+    {
+      "qid": "2hop__156085_436709",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused_rerank": null,
+        "bm25": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "2hop__170341_43945",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "fused": 0.3404255319148936,
+        "bm25": 0.3404255319148936,
+        "fused_rerank": 0.3404255319148936,
+        "passage_dense": 0.3404255319148936
+      },
+      "confident": {},
+      "answers": {
+        "fused": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
+        "bm25": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
+        "fused_rerank": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams stated, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
+        "passage_dense": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\""
+      }
+    },
+    {
+      "qid": "2hop__17192_77606",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "2hop__497191_129669",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 4,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Vila Franca de Xira",
+        "fused": "Lisbon",
+        "fused_rerank": "Lisbon",
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "2hop__519160_78303",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "2hop__560534_91104",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "ATS-6",
+        "fused_rerank": "ATS-6",
+        "fused": "ATS-6"
+      }
+    },
+    {
+      "qid": "2hop__726892_131968",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused_rerank": null,
+        "passage_dense": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "2hop__84937_148696",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.6666666666666666,
+        "bm25": 0.5714285714285715,
+        "fused": 0.2666666666666667,
+        "fused_rerank": 0.888888888888889
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "The person impeached was the first Governor-General of India.",
+        "bm25": "Warren Hastings was the first \"de facto\" Governor-General of India.",
+        "fused": "The person impeached in England for acts committed as governor-general of India was Warren Hastings, who held the position of the first \"de facto\" Governor-General of India.",
+        "fused_rerank": "The first Governor-General of India."
+      }
+    },
+    {
+      "qid": "3hop1__109185_720914_41132",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__169494_42197_18397",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.06666666666666667,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": "Mao Zedong reported to the Politburo that he would intervene in Korea when the People's Liberation Army's (PLA) Taiwan invasion force was reorganized into the PLA North East Frontier Force.",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__17192_78396_157843",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "1853",
+        "fused": null,
+        "fused_rerank": "1853",
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop1__337705_132457_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "Toronto Coach Terminal",
+        "fused": "Toronto Coach Terminal",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__398232_326948_78782",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop1__458916_651917_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__488744_443779_52195",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 1.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": "Francisco Guterres"
+      }
+    },
+    {
+      "qid": "3hop1__593597_40769_64047",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__632623_160713_77246",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__652852_2053_5289",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Oriole Records",
+        "fused": "Oriole Records",
+        "passage_dense": "Oriole Records",
+        "fused_rerank": "Oriole Records"
+      }
+    },
+    {
+      "qid": "3hop1__662618_339990_54675",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "passage_dense": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__68802_89752_75165",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": "1,335,907",
+        "passage_dense": "1,335,907",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__796649_720914_41132",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__8148_24918_24939",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop1__83970_685536_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__847684_339990_54675",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": "Mt. Hood, Mt. St. Helens, Mt. Adams, and Mt. Rainier."
+      }
+    },
+    {
+      "qid": "3hop1__857_846_7713",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false,
+        "passage_dense": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop2__132957_52222_40768",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop2__304722_689786_63959",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "passage_dense": false,
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__161765_53706_795904_580996",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__33012_53706_795904_580996",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__525129_315334_131926_90707",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.6666666666666666,
+        "passage_dense": 0.6666666666666666,
+        "fused": 0.6666666666666666,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
+        "passage_dense": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
+        "fused": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__56226_32392_823060_610794",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "passage_dense": false,
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__58323_375563_161848_67585",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "fused": false,
+        "bm25": false,
+        "fused_rerank": false,
+        "passage_dense": false
+      },
+      "answers": {
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "4hop1__88342_49853_128008_80286",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "passage_dense": true,
+        "fused": false,
+        "bm25": true,
+        "fused_rerank": true
+      },
+      "answers": {
+        "passage_dense": "Pete Rose",
+        "fused": null,
+        "bm25": "Pete Rose",
+        "fused_rerank": "Pete Rose"
+      }
+    },
+    {
+      "qid": "4hop2__161602_474028_88460_20999",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused_rerank": null,
+        "bm25": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "4hop2__9988_685934_70784_61381",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false,
+        "passage_dense": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "4hop2__9988_729371_70784_61381",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "4hop3__131775_29339_508306_70744",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__426860_88460_30152_20999",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__547073_88460_30152_20999",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "passage_dense": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__678814_466199_695123_72134",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null
+      }
+    }
+  ],
+  "mode": "cheap",
+  "reader_model": "gemini-3.1-flash-lite",
+  "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the local airlock proxy serves neither exact id, so the closest available id is used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
+  "answer_workers": 8,
+  "sample_selection": {
+    "n_ge3_answerable": 24,
+    "n_2hop_answerable": 8,
+    "n_unanswerable_ge3": 8,
+    "seed": 0,
+    "n_total": 40,
+    "no_silent_cap": "sampling logged; truncated run labelled, not full coverage"
+  },
+  "cost": {
+    "model": "gemini-3.1-flash-lite",
+    "n_calls": 160,
+    "n_errors": 0,
+    "prompt_tokens": 218577,
+    "completion_tokens": 1204,
+    "price_per_1m_input_usd": 0.05,
+    "price_per_1m_output_usd": 0.2,
+    "usd": 0.0112
+  },
+  "power_sim": {
+    "measured_pilot_cell_n": 24,
+    "p_go_at_pilot_n_by_shape": {
+      "flat_positive": {
+        "shape": "flat_positive",
+        "n": 24,
+        "p_go": 0.86,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.28233,
+        "sd_pair_f1": 0.28233,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "monotonic": {
+        "shape": "monotonic",
+        "n": 24,
+        "p_go": 0.8575,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.28233,
+        "sd_pair_f1": 0.28233,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "inverted_u": {
+        "shape": "inverted_u",
+        "n": 24,
+        "p_go": 0.8775,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.28233,
+        "sd_pair_f1": 0.28233,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      }
+    },
+    "required_n_flat_positive": {
+      "shape": "flat_positive",
+      "target_p_go": 0.8,
+      "required_n": 50,
+      "power_ok": true,
+      "curve": [
+        {
+          "n": 50,
+          "p_go": 0.9675
+        },
+        {
+          "n": 100,
+          "p_go": 0.9825
+        },
+        {
+          "n": 150,
+          "p_go": 1.0
+        },
+        {
+          "n": 200,
+          "p_go": 1.0
+        },
+        {
+          "n": 300,
+          "p_go": 1.0
+        },
+        {
+          "n": 400,
+          "p_go": 1.0
+        },
+        {
+          "n": 600,
+          "p_go": 1.0
+        },
+        {
+          "n": 800,
+          "p_go": 1.0
+        },
+        {
+          "n": 1200,
+          "p_go": 1.0
+        },
+        {
+          "n": 1600,
+          "p_go": 1.0
+        },
+        {
+          "n": 2000,
+          "p_go": 1.0
+        }
+      ],
+      "rho": 0.5,
+      "lift": 0.03,
+      "material_threshold": 0.02,
+      "note": "required_n is the pooled >=3-hop cell size; power sized via the whole decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.02) sits at/above the implied pooled >=3-hop MDE at this N."
+    }
+  },
+  "elapsed_s": 169.3
+}

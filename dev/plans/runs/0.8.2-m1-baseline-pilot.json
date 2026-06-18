@@ -1,0 +1,1826 @@
+{
+  "schema": "0.8.2-m1-baseline-v1",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "arms": [
+    "bm25",
+    "passage_dense",
+    "fused",
+    "fused_rerank"
+  ],
+  "comparator_arm": "fused_rerank",
+  "rrf_k": 60,
+  "rerank_depth": 200,
+  "top_k": 10,
+  "answerer_model": "gemini-3.1-pro",
+  "answerer_available": true,
+  "identical_answerer": true,
+  "n_questions": 60,
+  "n_answerable": 50,
+  "n_unanswerable": 10,
+  "primary_cell_pooled_ge3hop": {
+    "bm25": {
+      "n": 40,
+      "em": 0.25,
+      "f1": 0.27803,
+      "em_var": 0.192308,
+      "f1_var": 0.193821
+    },
+    "passage_dense": {
+      "n": 40,
+      "em": 0.325,
+      "f1": 0.362705,
+      "em_var": 0.225,
+      "f1_var": 0.218672
+    },
+    "fused": {
+      "n": 40,
+      "em": 0.325,
+      "f1": 0.376037,
+      "em_var": 0.225,
+      "f1_var": 0.217892
+    },
+    "fused_rerank": {
+      "n": 40,
+      "em": 0.275,
+      "f1": 0.313961,
+      "em_var": 0.204487,
+      "f1_var": 0.202686
+    }
+  },
+  "per_hop": {
+    "2": {
+      "bm25": {
+        "n": 10,
+        "em": 0.3,
+        "f1": 0.414302,
+        "em_var": 0.233333,
+        "f1_var": 0.221632
+      },
+      "passage_dense": {
+        "n": 10,
+        "em": 0.5,
+        "f1": 0.558182,
+        "em_var": 0.277778,
+        "f1_var": 0.230821
+      },
+      "fused": {
+        "n": 10,
+        "em": 0.3,
+        "f1": 0.434386,
+        "em_var": 0.233333,
+        "f1_var": 0.212058
+      },
+      "fused_rerank": {
+        "n": 10,
+        "em": 0.2,
+        "f1": 0.389876,
+        "em_var": 0.177778,
+        "f1_var": 0.225476
+      }
+    },
+    "3": {
+      "bm25": {
+        "n": 26,
+        "em": 0.230769,
+        "f1": 0.230769,
+        "em_var": 0.184615,
+        "f1_var": 0.184615
+      },
+      "passage_dense": {
+        "n": 26,
+        "em": 0.307692,
+        "f1": 0.3657,
+        "em_var": 0.221538,
+        "f1_var": 0.212531
+      },
+      "fused": {
+        "n": 26,
+        "em": 0.346154,
+        "f1": 0.402694,
+        "em_var": 0.235385,
+        "f1_var": 0.224448
+      },
+      "fused_rerank": {
+        "n": 26,
+        "em": 0.230769,
+        "f1": 0.24309,
+        "em_var": 0.184615,
+        "f1_var": 0.181609
+      }
+    },
+    "4": {
+      "bm25": {
+        "n": 14,
+        "em": 0.285714,
+        "f1": 0.365801,
+        "em_var": 0.21978,
+        "f1_var": 0.21367
+      },
+      "passage_dense": {
+        "n": 14,
+        "em": 0.357143,
+        "f1": 0.357143,
+        "em_var": 0.247253,
+        "f1_var": 0.247253
+      },
+      "fused": {
+        "n": 14,
+        "em": 0.285714,
+        "f1": 0.326531,
+        "em_var": 0.21978,
+        "f1_var": 0.217986
+      },
+      "fused_rerank": {
+        "n": 14,
+        "em": 0.357143,
+        "f1": 0.445578,
+        "em_var": 0.247253,
+        "f1_var": 0.230109
+      }
+    }
+  },
+  "unanswerable_contrast": {
+    "bm25": {
+      "n": 10,
+      "confident_answer_rate": 0.1
+    },
+    "passage_dense": {
+      "n": 10,
+      "confident_answer_rate": 0.1
+    },
+    "fused": {
+      "n": 10,
+      "confident_answer_rate": 0.1
+    },
+    "fused_rerank": {
+      "n": 10,
+      "confident_answer_rate": 0.1
+    }
+  },
+  "paired_records": [
+    {
+      "qid": "2hop__10122_18974",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.4,
+        "fused_rerank": 0.08888888888888888,
+        "fused": 0.21052631578947367,
+        "bm25": 0.09302325581395349
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "Chen Zheng, together with his son Chen Yuanguang",
+        "fused_rerank": "Based on the provided context, Min dialects are spoken on Zhejiang's border with Fujian. The military expeditions to Fujian were led by **Chen Zheng (\u9673\u653f) together with his son Chen Yuanguang (\u9673\u5143\u5149)** in 677, and later by the two brothers **Wang Chao (\u738b\u6f6e) and Wang Shenzhi (\u738b\u5be9\u77e5)** in 885.",
+        "fused": "Chen Zheng (\u9673\u653f), together with his son Chen Yuanguang (\u9673\u5143\u5149), and later the two brothers Wang Chao (\u738b\u6f6e) and Wang Shenzhi (\u738b\u5be9\u77e5).",
+        "bm25": "Based on the provided context, Min dialects are spoken on the border with Fujian. The people who led military expeditions to Fujian are **Chen Zheng** (together with his son **Chen Yuanguang**) in 677, and later the two brothers **Wang Chao** and **Wang Shenzhi** in 885."
+      }
+    },
+    {
+      "qid": "2hop__122651_141338",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0,
+        "fused": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0,
+        "fused": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "City University of New York",
+        "passage_dense": "City University of New York",
+        "fused_rerank": null,
+        "fused": "City University of New York"
+      }
+    },
+    {
+      "qid": "2hop__147260_623159",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.8,
+        "passage_dense": 1.0,
+        "fused": 0.8,
+        "fused_rerank": 0.8
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Yaroslavl Oblast, Russia",
+        "passage_dense": "Yaroslavl Oblast",
+        "fused": "Yaroslavl Oblast, Russia",
+        "fused_rerank": "Yaroslavl Oblast, Russia"
+      }
+    },
+    {
+      "qid": "2hop__16632_110014",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "bm25": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "fused": null,
+        "fused_rerank": null,
+        "bm25": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "2hop__415518_616002",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "fused": null,
+        "bm25": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "2hop__62369_84616",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.9473684210526316,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused_rerank": "Best Performance by a Leading Actress in a Play in Ondine",
+        "fused": null
+      }
+    },
+    {
+      "qid": "2hop__68590_27628",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Vitor Const\u00e2ncio",
+        "fused_rerank": "Vitor Const\u00e2ncio",
+        "passage_dense": "Vitor Const\u00e2ncio",
+        "fused": "Vitor Const\u00e2ncio"
+      }
+    },
+    {
+      "qid": "2hop__754826_7292",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "passage_dense": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "George Benson",
+        "fused": "George Benson",
+        "fused_rerank": "George Benson",
+        "passage_dense": "George Benson"
+      }
+    },
+    {
+      "qid": "2hop__804417_126089",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 14,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "Johan Remkes",
+        "fused_rerank": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "2hop__8347_8311",
+      "hop_count": 2,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.25,
+        "passage_dense": 0.18181818181818182,
+        "fused_rerank": 0.0625,
+        "fused": 0.33333333333333337
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "In 1216 and on 17 May 1220.",
+        "passage_dense": "In 1216, with a further coronation held on 17 May 1220.",
+        "fused_rerank": "Based on the provided context, the chapter house was built under Henry III. He was first crowned in **1216** (in Gloucester Cathedral) and had a further coronation on **17 May 1220** (in Westminster Abbey).",
+        "fused": "1216 and 17 May 1220"
+      }
+    },
+    {
+      "qid": "3hop1__109185_720914_41132",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__140554_2053_5289",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "fused_rerank": 1.0,
+        "fused": 1.0,
+        "passage_dense": 0.0,
+        "bm25": 1.0
+      },
+      "f1": {
+        "fused_rerank": 1.0,
+        "fused": 1.0,
+        "passage_dense": 0.0,
+        "bm25": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "fused_rerank": "Oriole Records",
+        "fused": "Oriole Records",
+        "passage_dense": null,
+        "bm25": "Oriole Records"
+      }
+    },
+    {
+      "qid": "3hop1__140855_2053_5289",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Oriole Records",
+        "passage_dense": "Oriole Records",
+        "fused_rerank": "Oriole Records",
+        "fused": "Oriole Records"
+      }
+    },
+    {
+      "qid": "3hop1__157177_625046_613900",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "passage_dense": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__169494_42197_18397",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.6666666666666666,
+        "fused": 0.6666666666666666,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "To the Politburo",
+        "fused": "To the Politburo",
+        "bm25": "Based on the provided context, Dmitry Okhotsimsky was a citizen of the Soviet Union. The person who argued that the Soviet Union had become an imperialist power was Mao Zedong. Mao Zedong declared that he would intervene in **Korea**.",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__17192_78396_157843",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__194006_42197_18397",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "bm25": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "the Politburo",
+        "fused": "the Politburo",
+        "bm25": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__337705_132457_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.5454545454545454,
+        "fused": 0.6,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "Toronto Coach Terminal (located at 610 Bay Street)",
+        "fused": "Toronto Coach Terminal (or 610 Bay Street)",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__389761_567566_84283",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "Warner Music Group",
+        "fused": "Warner Music Group",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__398232_326948_78782",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__458916_651917_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__459153_544076_84283",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": true,
+        "fused": true,
+        "passage_dense": true,
+        "fused_rerank": true
+      },
+      "answers": {
+        "bm25": "Universal Music Japan",
+        "fused": "Universal Music Japan",
+        "passage_dense": "Universal Music Japan",
+        "fused_rerank": "Universal Music Japan"
+      }
+    },
+    {
+      "qid": "3hop1__488744_443779_52195",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "Francisco Guterres",
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__497845_629431_124169",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused_rerank": null,
+        "passage_dense": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "3hop1__593597_40769_64047",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.13559322033898305,
+        "passage_dense": 0.19607843137254902,
+        "fused_rerank": 0.2727272727272727
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": "Based on the provided context, the manufacturer of the Scion Fuse is Toyota, and its luxury division is Lexus. Lexus changed the body style (facelift) of the RX by designing it through **late 2010**, patenting it on **7 January 2011**, and unveiling it at the **March 2012** Geneva Motor Show (with sales for the RX 350 beginning in **April 2012**).",
+        "passage_dense": "Based on the provided context, the manufacturer of the Scion Fuse is Toyota, and its luxury division is Lexus. Lexus changed the styling (designed a facelift) of the RX 350 through **late 2010** (it was later patented on 7 January 2011, unveiled in March 2012, and sales began in April 2012).",
+        "fused_rerank": "Based on the provided context, a facelift (change in styling) for the Lexus RX was designed through late 2010, patented on 7 January 2011, unveiled at the March 2012 Geneva Motor Show, and sales for the RX 350 began worldwide in April 2012."
+      }
+    },
+    {
+      "qid": "3hop1__624901_42197_18397",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "passage_dense": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__632623_160713_77246",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__652852_2053_5289",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Oriole Records",
+        "passage_dense": "Oriole Records",
+        "fused": "Oriole Records",
+        "fused_rerank": "Oriole Records"
+      }
+    },
+    {
+      "qid": "3hop1__68802_89752_75165",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "bm25": 1.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "bm25": 1.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "1,335,907",
+        "fused": "1,335,907",
+        "bm25": "1,335,907",
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__742780_567566_84283",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "passage_dense": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__796649_720914_41132",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused_rerank": null,
+        "passage_dense": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "3hop1__796649_720914_41132",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "passage_dense": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__8148_24918_24939",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__818422_160545_34751",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false,
+        "passage_dense": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop1__83970_685536_47686",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop1__847684_339990_54675",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused": 0.06779661016949151,
+        "fused_rerank": 0.047619047619047616,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused": "Based on the provided context, Lorenz Park is located in Columbia County. The state that also contains a Columbia County and the city of Portland is Oregon. \n\nFrom Portland, Oregon, you can see **Mt. Hood, Mt. St. Helens, Mt. Adams, and Mt. Rainier**. (The Tualatin Mountains, Mt. Tabor, the Oregon Coast Range, and the Cascade Range are also visible or located within/around the city).",
+        "fused_rerank": "Based on the provided context, the county where Lorenz Park is located is Columbia County. Columbia County is also located in Oregon (the state containing Portland). \n\nThe mountains you can see from Portland are **Mt. Hood, Mt. St. Helens, Mt. Adams, and Mt. Rainier**.",
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop1__857_846_7870",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "along Shanghai road and its neighbourhood.",
+        "fused": "along Shanghai road and its neighbourhood",
+        "passage_dense": "Along Shanghai road and its neighbourhood.",
+        "fused_rerank": "Along Shanghai road and its neighbourhood."
+      }
+    },
+    {
+      "qid": "3hop2__132957_52222_40768",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0,
+        "bm25": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "A decade after the 1973 oil crisis",
+        "fused_rerank": "A decade after the 1973 oil crisis",
+        "fused": null,
+        "bm25": null
+      }
+    },
+    {
+      "qid": "3hop2__222979_132628_40768",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "A decade after the 1973 oil crisis",
+        "passage_dense": "A decade after the 1973 oil crisis",
+        "fused_rerank": "A decade after the 1973 oil crisis",
+        "fused": "A decade after the 1973 oil crisis"
+      }
+    },
+    {
+      "qid": "3hop2__304722_238553_63959",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop2__326964_7855_7713",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "fused_rerank": false,
+        "fused": false,
+        "passage_dense": false
+      },
+      "answers": {
+        "bm25": null,
+        "fused_rerank": null,
+        "fused": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "3hop2__49541_140875_51068",
+      "hop_count": 3,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "passage_dense": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "3hop2__851134_613770_7713",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused": 1.0,
+        "passage_dense": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "about 400 years",
+        "fused": "about 400 years",
+        "passage_dense": "about 400 years",
+        "fused_rerank": "about 400 years"
+      }
+    },
+    {
+      "qid": "3hop2__90327_89854_76291",
+      "hop_count": 3,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused_rerank": 1.0,
+        "fused": 1.0,
+        "passage_dense": 0.1
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "The 2014 elections",
+        "fused_rerank": "January 2015",
+        "fused": "January 2015",
+        "passage_dense": "Based on the provided context, the organization that approves the members of the U.S. cabinet is the Senate, and the party that holds the majority in the House of Representatives is the Republican party. The Republicans regained control/majority of the Senate in **January 2015** (following the 2014 elections)."
+      }
+    },
+    {
+      "qid": "4hop1__152146_5274_458768_33677",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 1.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": "2013",
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop1__166471_49925_13759_736921",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "fused_rerank": 1.0,
+        "fused": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Saxony-Anhalt",
+        "fused_rerank": "Saxony-Anhalt",
+        "fused": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "4hop1__40316_497223_15840_36002",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.45454545454545453,
+        "fused": 0.5714285714285715,
+        "fused_rerank": 0.5714285714285715
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": "Based on the provided context, the Genesis's advantages over the NES (the system featuring the game *NFL*, named after the National Football League) were that it was built on a 16-bit architecture and offered improved graphics and sound.",
+        "fused": "Based on the provided context, the Genesis's advantages over the NES were that it was built on a 16-bit architecture and offered improved graphics and sound.",
+        "fused_rerank": "Based on the provided context, the Genesis's advantages over the NES were that it was built on a 16-bit architecture and offered improved graphics and sound."
+      }
+    },
+    {
+      "qid": "4hop1__668178_765799_282674_759393",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 17,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused_rerank": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "4hop1__711773_508773_85832_745702",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "Sebastian Cabot",
+        "passage_dense": "Sebastian Cabot",
+        "fused": "Sebastian Cabot",
+        "fused_rerank": "Sebastian Cabot"
+      }
+    },
+    {
+      "qid": "4hop1__726675_508773_85832_745702",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "bm25": 0.0
+      },
+      "f1": {
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0,
+        "bm25": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "Sebastian Cabot",
+        "fused": "Sebastian Cabot",
+        "fused_rerank": "Sebastian Cabot",
+        "bm25": null
+      }
+    },
+    {
+      "qid": "4hop1__88342_75218_128008_46748",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.6666666666666666,
+        "fused_rerank": 0.6666666666666666,
+        "passage_dense": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "26 wins",
+        "fused_rerank": "26 wins",
+        "passage_dense": "11 games",
+        "fused": null
+      }
+    },
+    {
+      "qid": "4hop1__93963_170667_443779_52195",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 1.0,
+        "bm25": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "passage_dense": 1.0,
+        "bm25": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": "Francisco Guterres",
+        "bm25": "Francisco Guterres",
+        "fused": "Francisco Guterres",
+        "fused_rerank": "Francisco Guterres"
+      }
+    },
+    {
+      "qid": "4hop1__94201_642284_131926_89261",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop2__567956_14670_8987_8529",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused_rerank": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "4hop2__71753_158279_70784_79935",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0,
+        "passage_dense": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "fused_rerank": null,
+        "fused": null,
+        "passage_dense": null
+      }
+    },
+    {
+      "qid": "4hop3__129682_29339_508306_70744",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "f1": {
+        "bm25": 1.0,
+        "passage_dense": 1.0,
+        "fused": 1.0,
+        "fused_rerank": 1.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": "University of South Carolina",
+        "passage_dense": "University of South Carolina",
+        "fused": "University of South Carolina",
+        "fused_rerank": "University of South Carolina"
+      }
+    },
+    {
+      "qid": "4hop3__193820_466199_128875_72134",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 18,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__372437_88460_30152_20999",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "bm25": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__373573_132409_223216_35031",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 19,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "bm25": false,
+        "passage_dense": false,
+        "fused_rerank": false,
+        "fused": false
+      },
+      "answers": {
+        "bm25": null,
+        "passage_dense": null,
+        "fused_rerank": null,
+        "fused": null
+      }
+    },
+    {
+      "qid": "4hop3__860588_88460_30152_20999",
+      "hop_count": 4,
+      "answerable": false,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {},
+      "f1": {},
+      "confident": {
+        "passage_dense": false,
+        "bm25": false,
+        "fused": false,
+        "fused_rerank": false
+      },
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    }
+  ],
+  "mode": "pilot",
+  "reader_model": "gemini-3.1-pro",
+  "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the local airlock proxy serves neither exact id, so the closest available id is used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
+  "answer_workers": 6,
+  "sample_selection": {
+    "n_ge3_answerable": 40,
+    "n_2hop_answerable": 10,
+    "n_unanswerable_ge3": 10,
+    "seed": 0,
+    "n_total": 60,
+    "no_silent_cap": "sampling logged; truncated run labelled, not full coverage"
+  },
+  "cost": {
+    "model": "gemini-3.1-pro",
+    "n_calls": 240,
+    "n_errors": 0,
+    "prompt_tokens": 331499,
+    "completion_tokens": 200798,
+    "price_per_1m_input_usd": 1.25,
+    "price_per_1m_output_usd": 5.0,
+    "usd": 1.4184
+  },
+  "power_sim": {
+    "measured_pilot_cell_n": 40,
+    "measured_comparator_mean_f1": 0.314,
+    "sd_baseline_f1": 0.450207,
+    "p_go_at_pilot_n_by_shape": {
+      "flat_positive": {
+        "shape": "flat_positive",
+        "n": 40,
+        "p_go": 0.065,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.450207,
+        "sd_pair_f1": 0.450207,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "monotonic": {
+        "shape": "monotonic",
+        "n": 40,
+        "p_go": 0.065,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.450207,
+        "sd_pair_f1": 0.450207,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "inverted_u": {
+        "shape": "inverted_u",
+        "n": 40,
+        "p_go": 0.095,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.450207,
+        "sd_pair_f1": 0.450207,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      }
+    },
+    "required_n_flat_positive": {
+      "shape": "flat_positive",
+      "target_p_go": 0.8,
+      "required_n": 5000,
+      "power_ok": true,
+      "curve": [
+        {
+          "n": 50,
+          "p_go": 0.0875
+        },
+        {
+          "n": 100,
+          "p_go": 0.09
+        },
+        {
+          "n": 150,
+          "p_go": 0.125
+        },
+        {
+          "n": 200,
+          "p_go": 0.1525
+        },
+        {
+          "n": 300,
+          "p_go": 0.1675
+        },
+        {
+          "n": 400,
+          "p_go": 0.2175
+        },
+        {
+          "n": 600,
+          "p_go": 0.3225
+        },
+        {
+          "n": 800,
+          "p_go": 0.42
+        },
+        {
+          "n": 1200,
+          "p_go": 0.605
+        },
+        {
+          "n": 1600,
+          "p_go": 0.7075
+        },
+        {
+          "n": 2000,
+          "p_go": 0.7725
+        },
+        {
+          "n": 3000,
+          "p_go": 0.7975
+        },
+        {
+          "n": 5000,
+          "p_go": 0.9
+        },
+        {
+          "n": 8000,
+          "p_go": 0.9175
+        }
+      ],
+      "rho": 0.5,
+      "lift": 0.03,
+      "material_threshold": 0.02,
+      "note": "required_n is the pooled >=3-hop cell size; power sized via the whole decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.02) sits at/above the implied pooled >=3-hop MDE at this N."
+    },
+    "analytic_required_n_normal_approx_rho0.5": 1766,
+    "rho_sensitivity_required_n": {
+      "rho_0.3": 5000,
+      "rho_0.5": 5000,
+      "rho_0.7": 1200
+    },
+    "corpus_answerable_ge3hop": 1165,
+    "feasible_on_corpus": false,
+    "p_go_if_whole_ge3hop_corpus_run": 0.605,
+    "projection": {
+      "per_call_usd": 0.00591,
+      "n_baseline_arms": 4,
+      "projected_full_pass_usd_at_required_n": 118.2,
+      "projected_usd_whole_ge3hop_corpus": 27.54,
+      "projected_usd_whole_answerable_corpus": 57.14,
+      "note": "projected_full_pass_usd = required_N x #baseline_arms x per_call_usd. If required_N > corpus_answerable_ge3hop the power target is UNREACHABLE on this corpus for the +0.03 effect \u2014 HITL decision: raise the detectable effect size, accept the whole-corpus run at the stated sub-0.8 P(GO), or redirect (design \u00a70 reserved follow-on 1-4)."
+    }
+  },
+  "elapsed_s": 542.8
+}
