@@ -79,3 +79,24 @@ fn ce_feature_on_depth_0_is_identity() {
     let out = rerank_fused("anything", hits.clone(), 0);
     assert_eq!(out, hits, "depth=0 must stay byte-identical even under default-reranker");
 }
+
+/// Empty-hits short-circuit: `rerank_fused` with `rerank_depth > 0` but an
+/// empty hit set must return an empty vec immediately — without driving the
+/// singleton `try_get_loaded()` for nothing.
+///
+/// This pins the `hits.is_empty()` guard added in fix-1 (codex §9 [P2]).
+/// Without the guard, the implementation would call `try_get_loaded()` on every
+/// empty search at `rerank_depth > 0`, potentially loading/downloading the ~17 MB
+/// model for no benefit, and memoizing a transient load failure process-wide.
+///
+/// The correctness contract (empty-in → empty-out) is equivalent with or without
+/// the guard; the assertion below is the regression anchor.
+#[test]
+fn ce_rerank_empty_hits_returns_empty_immediately() {
+    let hits: Vec<SearchHit> = vec![];
+    let out = rerank_fused("any query", hits.clone(), 10);
+    assert!(
+        out.is_empty(),
+        "rerank_fused with rerank_depth>0 and empty input must return empty immediately"
+    );
+}
