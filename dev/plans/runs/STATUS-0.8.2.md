@@ -15,12 +15,15 @@
   signed `fused+rerank` comparator wasn't real. **HITL (2026-06-18) chose to IMPLEMENT it** (engine slice
   E1) rather than revise amendment 6 — a deliberate, HITL-approved deviation from M1's no-engine-change
   footprint (footprint-preserving: no network at feature-off / `rerank_depth=0`). Amendment 6 **upheld**.
-- **IN-FLIGHT now:** **Slice E1** (reranker impl, Rust/cargo TDD; fills `try_get_loaded`+`score` reusing
-  the embedder's Candle BERT loader) ∥ **Slice 10 fix-1** ([P2] hash-validate + [P3] honor-n). Slice 5
-  HELD until E1 merges + the orchestrator rebuilds the canonical extension `--features …,default-reranker`
-  and functionally verifies real reranking.
-- **Next action:** E1 merge → main-thread extension rebuild + functional rerank verify → re-spawn Slice 5.
-  Slice 10 fix-1 merge → re-review + close Slice 10.
+- **DONE:** E1 CLOSED (reranker real, Rust reorder-test proven). **Orchestrator rebuilt the canonical
+  extension** `--features pyo3/extension-module,default-embedder,fathomdb-engine/default-reranker` (CPU; no
+  `embed-cuda` — no `nvcc`, CPU-pinned embedder unaffected) and **functionally verified** the CE runs
+  through the `.so` (weights download + scores change; the Rust test proves it promotes the relevant
+  passage). **Fragility:** a plain `pytest` (no `FATHOMDB_TESTS_NO_REBUILD=1`) would rebuild the `.so`
+  WITHOUT `default-reranker` and silently drop the reranker — slices must use `FATHOMDB_TESTS_NO_REBUILD=1`.
+- **IN-FLIGHT:** **Slice 5 RE-SPAWNED** (fresh worktree off `d55e922`, reranker-enabled) with the real
+  `fused+rerank` comparator → budget checkpoint.
+- **Next action:** Slice 5 stops at the budget checkpoint → orchestrator brings the projected baseline $ to HITL.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -36,7 +39,7 @@
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
 | 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
-| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅ | **IN-FLIGHT (→ budget checkpoint)** | `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection before full priced pass |
+| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅ | **RE-SPAWNED (→ budget checkpoint)** | off `d55e922` w/ live reranker; `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **CLOSED** (fix-1 `f8bc631`) | n=300 graph, coverage 1.0, 50.6k entities/51.2k body-less edges, hash-validated; cache preserved to canonical for Slice 15 |
 | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
