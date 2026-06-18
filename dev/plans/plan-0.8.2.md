@@ -265,7 +265,35 @@ ablations (Slice-15 follow-ons) decide it before committing 0.8.3 budget.
 
 ---
 
-## 4a. Hygiene slices (off-ladder, parallel — no dependency on the M1 ladder or the ◆ sign-off)
+## 4a. Hygiene + engine-prerequisite slices (off the eval ladder)
+
+### Slice E1 — implement the TinyBERT-L-2 CE reranker (engine) · `[implementation]` · depends-on: — · unblocks Slice 5
+**Why (HITL 2026-06-18).** Amendment 6's `fused+rerank` fixed comparator requires a real cross-encoder.
+The 0.8.1 R1 slice built the seam/API/feature-gate/RRF-blend but left the model a **stub**
+(`CandleCrossEncoder::try_get_loaded()` → `None`; `score()` → `0.0`; `lib.rs:4925,4930` TODOs). HITL chose
+to **implement it** rather than revise the comparator. **This is a deliberate, HITL-approved deviation
+from M1's "not an engine change" footprint**, scoped to the reranker only; the footprint invariant
+(CPU-only, no-network at `rerank_depth=0` / feature-off) is **preserved**.
+**Spec:** `dev/design/0.8.1-slice-10-reranker-design.md` (TinyBERT-L-2 CE, Candle BERT, ureq+sha2 lazy
+weight fetch cached under `~/.cache/fathomdb/reranker/`, no network unless feature-on AND
+`rerank_depth>0` AND weights absent). **Reuse:** `fathomdb-embedder` candle stack + `candle_bge.rs` /
+`loader.rs` (BERT load+forward template) — the CE adds (query,passage) pair tokenization + a
+classification head over CLS. Pin a real model (e.g. `cross-encoder/ms-marco-TinyBERT-L-2-v2`) +
+sha256.
+**TDD (Rust, cargo — NOT via the Python .so):** RED `cargo test -p fathomdb-engine --features
+default-reranker` asserting a `rerank_depth>0` call **reranks** (loads weights, blends CE+RRF, changes
+order) vs the existing depth=0 identity test (`rerank_fused_soft_fallback_preserves_fused_order` must
+still pass); preserve the no-network contracts. GREEN: implement `try_get_loaded()` + `score()` (+ Cargo
+feature wiring to expose candle to the engine reranker). RED sha recorded.
+**DoD.** `cargo test -p fathomdb-engine --features default-reranker` green; depth=0 + feature-off remain
+byte-identical/no-network; clippy clean. Rust source merged to local `main`. **Then the orchestrator
+(main thread) rebuilds the canonical extension `--features …,default-reranker`** (preserving the current
+feature set) + functionally verifies `search(rerank_depth>0)` reranks, before re-spawning Slice 5.
+X3: DOC-INDEX + update the reranker design doc's status (stub → implemented).
+**Do NOT** `maturin develop` from the worktree ([[agent-worktree-stale-base-trap]]); the extension build
+is the main thread's job after merge.
+
+## 4a-bis. Hygiene slices (off-ladder, parallel — no dependency on the M1 ladder or the ◆ sign-off)
 
 ### Slice H1 — restore repo-wide `pyright -p src/python` to 0/0 · `[implementation]` · depends-on: —
 **Why.** Surfaced during Slice 0 codex §9: the repo-wide pyright baseline is **not** 0/0 (contradicting

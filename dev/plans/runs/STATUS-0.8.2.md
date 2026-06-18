@@ -11,18 +11,16 @@
   both **died on a transient API outage during read-only exploration** — git + worktrees + session
   transcripts confirm **zero work written, nothing to recover** (main untouched `4fd5828`, branches at
   baseline, worktrees clean). Infra re-checked UP (answerer 401=auth-ok; extractor host responds).
-- **◆ Slice 5 reranker comparator BLOCKED — the CE reranker is a STUB, not buildable in M1 scope.**
-  Investigated the rebuild path: `--features default-reranker` compiles the seam/API/RRF-blend, but
-  `CandleCrossEncoder::try_get_loaded()` returns `None` unconditionally and `score()` returns `0.0`
-  (`lib.rs:4925,4930` — `// TODO(0.8.1 Slice 10): implement`). The 0.8.1 R1 slice built the gate but
-  **never implemented TinyBERT inference**; "R2 loads real weights" never landed. So `fused+rerank` ≡
-  `fused` regardless of the feature. Rebuilt+verified this, then **restored the original `.so`** (rebuild
-  achieved nothing functional + dropped embed-cuda; shared extension back to known-good, tree clean).
-- **Recommendation → revise amendment 6:** use **fused-RRF as the fixed comparator** (strongest AVAILABLE
-  baseline = BM25 ∪ passage-dense ∪ fused-RRF k=60); note the CE reranker as unimplemented future-work.
-  Implementing it = real engine work, violating M1's "not an engine change" footprint. **Awaiting HITL
-  sign-off (revises the SIGNED pre-reg's `comparator`/`baseline-arms` frozen fields).**
-- **Next action:** HITL decision on the comparator → re-spawn Slice 5. (Slice 10 fix-1 still pending, independent.)
+- **CE reranker was a STUB** (`try_get_loaded()`→None, `score()`→0.0; `lib.rs:4925,4930` TODOs) → so the
+  signed `fused+rerank` comparator wasn't real. **HITL (2026-06-18) chose to IMPLEMENT it** (engine slice
+  E1) rather than revise amendment 6 — a deliberate, HITL-approved deviation from M1's no-engine-change
+  footprint (footprint-preserving: no network at feature-off / `rerank_depth=0`). Amendment 6 **upheld**.
+- **IN-FLIGHT now:** **Slice E1** (reranker impl, Rust/cargo TDD; fills `try_get_loaded`+`score` reusing
+  the embedder's Candle BERT loader) ∥ **Slice 10 fix-1** ([P2] hash-validate + [P3] honor-n). Slice 5
+  HELD until E1 merges + the orchestrator rebuilds the canonical extension `--features …,default-reranker`
+  and functionally verifies real reranking.
+- **Next action:** E1 merge → main-thread extension rebuild + functional rerank verify → re-spawn Slice 5.
+  Slice 10 fix-1 merge → re-review + close Slice 10.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
