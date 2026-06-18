@@ -1,0 +1,38 @@
+{
+  "phase": "0.8.2-slice-e1-fix-1",
+  "status": "GREEN",
+  "head_sha": "b577b111742632b6388661f690e090d63aa13a47",
+  "branch": "main",
+  "merge_commit": "b577b111742632b6388661f690e090d63aa13a47",
+  "findings_addressed": [
+    {
+      "id": "P2-codex",
+      "description": "ce_rerank called try_get_loaded() before checking hits.is_empty() — empty search at rerank_depth>0 loaded/downloaded ~17MB model for nothing and could memoize a transient failure",
+      "fix": "Added hits.is_empty() guard at top of ce_rerank (feature-on path) before try_get_loaded(); returns Some(vec![]) immediately. Location: src/rust/crates/fathomdb-engine/src/lib.rs",
+      "status": "FIXED"
+    },
+    {
+      "id": "orchestrator-test-regression",
+      "description": "rerank_fused_depth_gt0_soft_fallbacks_in_default_build FAILED under --features default-reranker: test pins the feature-OFF soft-fallback contract but ran without cfg-gate in the feature-ON build where the real model reranks",
+      "fix": "Added #[cfg(not(feature = \"default-reranker\"))] to rerank_fused_depth_gt0_soft_fallbacks_in_default_build in src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs",
+      "status": "FIXED"
+    }
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "0df8ea762cefe38dbc13d9ecdf1573d629586555",
+    "red_commit_message": "test(0.8.2/E1 fix-1): RED — empty-hits contract test + confirms cfg-gate regression",
+    "red_test_added": "ce_rerank_empty_hits_returns_empty_immediately in pr_g10_reranker_ce.rs",
+    "red_existing_failure": "rerank_fused_depth_gt0_soft_fallbacks_in_default_build (feature-on regression confirmed)",
+    "green_commit_sha": "e339e04d02edd80c3fb6e1eddab6c7e2a6e1b2f0",
+    "green_commit_message": "fix(0.8.2/E1): short-circuit empty hits before reranker load + cfg-gate default-build soft-fallback test"
+  },
+  "self_check_results": {
+    "feature_on_pr_g10_reranker": "4 passed, 0 failed (cfg-gated test excluded as designed)",
+    "feature_on_pr_g10_reranker_ce": "3 passed, 0 failed (ce_rerank_reorders + ce_feature_on_depth_0_is_identity + ce_rerank_empty_hits_returns_empty_immediately)",
+    "feature_off_pr_g10_reranker": "5 passed, 0 failed (all including cfg-gated soft-fallback test)",
+    "clippy_feature_on": "clean (0 warnings, -D warnings)"
+  },
+  "tripwire": "git status --porcelain -- src/ dev/ = empty (clean)",
+  "out_of_scope_confirmed": "CE inference, model choice, weight loader, blend math, footprint contracts — untouched",
+  "next_step_for_orchestrator": "re-verify cargo both states + codex re-review; then orchestrator rebuilds the extension --features …,default-reranker + functionally verifies rerank; re-spawn Slice 5"
+}
