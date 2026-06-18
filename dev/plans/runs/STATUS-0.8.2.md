@@ -11,12 +11,18 @@
   both **died on a transient API outage during read-only exploration** — git + worktrees + session
   transcripts confirm **zero work written, nothing to recover** (main untouched `4fd5828`, branches at
   baseline, worktrees clean). Infra re-checked UP (answerer 401=auth-ok; extractor host responds).
-- **◆ Slice 5 reranker prerequisite (open):** the signed `fused+rerank` fixed comparator (amendment 6)
-  needs the engine built `--features default-reranker` — currently OFF (`default = []`; `SoftFallback`
-  types present) → `search(rerank_depth>0)` soft-falls-back to identity, so `fused+rerank` ≡ `fused`.
-  Rebuild feasible (maturin 1.13.1; TinyBERT-L-2 ~4 MB weights auto-download). **Awaiting HITL: rebuild
-  the canonical extension then re-spawn Slice 5, vs defer the reranker arm.**
-- **Next action:** Slice 10 ($0, re-spawned) → git-gate + close. Resolve the Slice 5 reranker prereq → re-spawn Slice 5.
+- **◆ Slice 5 reranker comparator BLOCKED — the CE reranker is a STUB, not buildable in M1 scope.**
+  Investigated the rebuild path: `--features default-reranker` compiles the seam/API/RRF-blend, but
+  `CandleCrossEncoder::try_get_loaded()` returns `None` unconditionally and `score()` returns `0.0`
+  (`lib.rs:4925,4930` — `// TODO(0.8.1 Slice 10): implement`). The 0.8.1 R1 slice built the gate but
+  **never implemented TinyBERT inference**; "R2 loads real weights" never landed. So `fused+rerank` ≡
+  `fused` regardless of the feature. Rebuilt+verified this, then **restored the original `.so`** (rebuild
+  achieved nothing functional + dropped embed-cuda; shared extension back to known-good, tree clean).
+- **Recommendation → revise amendment 6:** use **fused-RRF as the fixed comparator** (strongest AVAILABLE
+  baseline = BM25 ∪ passage-dense ∪ fused-RRF k=60); note the CE reranker as unimplemented future-work.
+  Implementing it = real engine work, violating M1's "not an engine change" footprint. **Awaiting HITL
+  sign-off (revises the SIGNED pre-reg's `comparator`/`baseline-arms` frozen fields).**
+- **Next action:** HITL decision on the comparator → re-spawn Slice 5. (Slice 10 fix-1 still pending, independent.)
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -33,7 +39,7 @@
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
 | 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
 | 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅ | **IN-FLIGHT (→ budget checkpoint)** | `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection before full priced pass |
-| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **IN-FLIGHT** | `runs/0.8.2-m1-graph-coverage-n{N}.json`; $0 local extraction |
+| 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | merged `f267061`; **fix-1 pending** ([P2] hash-validate + [P3] sample-size) | n=299 graph, coverage 1.0, 50.5k nodes/edges, body-less; codex CONCERN |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
