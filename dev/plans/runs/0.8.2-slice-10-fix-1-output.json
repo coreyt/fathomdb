@@ -1,0 +1,50 @@
+{
+  "phase": "0.8.2-slice-10-fix-1",
+  "status": "complete",
+  "head_sha": "f8bc631",
+  "slice_branch": "slice-0.8.2-10-20260617T024723Z",
+  "merged_to": "main",
+  "findings_addressed": [
+    {
+      "id": "P2",
+      "description": "stamps MUSIQUE_HASH without validating --corpus matches it",
+      "fix": "Added compute_corpus_hash() + validate_corpus_hash(); called in main() before sampling/stamping; raises ValueError on mismatch with corpus path, expected, and actual hash in message",
+      "location": "src/python/eval/m1_graph_build.py"
+    },
+    {
+      "id": "P3",
+      "description": "proportional stratified sampler rounds so --n 300 returns 299",
+      "fix": "Added deterministic top-up/trim after proportional allocation: if len(out) < n, extend from sorted(pool) excluding already-selected ids; if len(out) > n, trim; ensures len(sample)==n when n<=len(pool)",
+      "location": "src/python/eval/m1_graph_build.py"
+    }
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "0a62b11",
+    "red_tests": [
+      "test_corpus_hash_mismatch_raises",
+      "test_sample_questions_exact_n"
+    ],
+    "red_failure_mode": "ImportError: cannot import name 'validate_corpus_hash' + len==299 not 300",
+    "green_commit_sha": "fdc0097",
+    "all_tests_green": true,
+    "test_count": 6
+  },
+  "artifact": {
+    "old_filename": "dev/plans/runs/0.8.2-m1-graph-coverage-n299.json",
+    "new_filename": "dev/plans/runs/0.8.2-m1-graph-coverage-n300.json",
+    "n_requested": 300,
+    "n_questions": 300,
+    "coverage": 1.0,
+    "n_edges_with_body": 0,
+    "musique_hash_verified": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+    "extra_extractions": 20,
+    "extra_questions": 1,
+    "note": "body-less invariant holds; +1 question (20 paragraphs) extracted via cache-warm Qwen3.6-27B batch"
+  },
+  "self_check": {
+    "tests_green": true,
+    "pyright": "0 errors, 0 warnings, 0 informations",
+    "tripwire_clean": true
+  },
+  "next_step_for_orchestrator": "re-review (codex §9), close Slice 10"
+}
