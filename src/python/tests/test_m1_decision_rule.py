@@ -94,7 +94,7 @@ def _decide(
 # Constants + frozen-field set are auditable (the rule must be inspectable).
 # --------------------------------------------------------------------------- #
 def test_frozen_material_threshold() -> None:
-    assert MATERIAL_F1_LIFT == pytest.approx(0.02)
+    assert MATERIAL_F1_LIFT == pytest.approx(0.04)
 
 
 def test_amended_required_frozen_fields() -> None:
@@ -122,6 +122,14 @@ def test_all_gates_pass_is_go() -> None:
 def test_f1_delta_exactly_material_with_ci_above_zero_is_go() -> None:
     # Boundary: f1_delta == MATERIAL_F1_LIFT is material (>=, not >).
     assert _decide(material=_material(MATERIAL_F1_LIFT, 0.001)) == "GO"
+
+
+def test_f1_delta_in_old_range_0p03_is_no_go() -> None:
+    # 0.03 was "material" under the old 0.02 threshold but is SUB-MATERIAL
+    # under the 0.04 threshold (AMENDED 2026-06-19; 0.04 = ceil(ρ=0.5 MDE
+    # 0.037), corpus-feasible at N=1165).  With all other gates passing this
+    # must return NO_GO, not GO.
+    assert _decide(material=_material(0.03, 0.01)) == "NO_GO"
 
 
 def test_em_ci_high_exactly_zero_is_go() -> None:

@@ -5,8 +5,9 @@ two things as code, before any data is seen, so a downstream slice cannot post-h
 switch the endpoint:
 
 1. :func:`decide` — the GO/NO-GO computation over the **amended** primary endpoint
-   (pooled ≥3-hop ΔF1 vs the fixed ``fused+rerank`` comparator, with a trend gate,
-   a CI-banded EM gate, and an unanswerable-set confident-wrong guard).
+   (pooled ≥3-hop ΔF1 vs the fixed ``fused-RRF`` comparator (k=60; AMENDED
+   2026-06-19 from ``fused+rerank`` — data shows fused-RRF best composition), with a
+   trend gate, a CI-banded EM gate, and an unanswerable-set confident-wrong guard).
    **Slice 20 imports this; it may not redefine the rule.**
 2. :func:`lint_preregistration` — the schema lint asserting the design doc
    ``dev/design/0.8.2-m1-multihop-harness.md`` carries the required frozen, dated
@@ -42,10 +43,12 @@ from typing import Literal
 # decision-rule / mde-power-plan).
 # --------------------------------------------------------------------------- #
 
-#: Smallest pooled ≥3-hop ΔF1 lift worth a GO (2 F1 points). Frozen **at/above**
+#: Smallest pooled ≥3-hop ΔF1 lift worth a GO (4 F1 points). Frozen **at/above**
 #: the Slice-5 pooled ≥3-hop MDE — the material threshold must sit at or above the
 #: MDE (the old "sized below MDE" wording was backwards; amendment 3).
-MATERIAL_F1_LIFT: float = 0.02
+#: **AMENDED 2026-06-19 (HITL):** 0.04 = ceil(conservative ρ=0.5 MDE 0.037),
+#: corpus-feasible at N=1165 (`runs/0.8.2-m1-bridge-vs-answer-diagnostic.md`).
+MATERIAL_F1_LIFT: float = 0.04
 
 Verdict = Literal["GO", "NO_GO"]
 _GO: Verdict = "GO"
@@ -82,8 +85,8 @@ def decide(
     deterministic gate — no RNG, no I/O):
 
     * ``material`` = ``{"f1_delta", "f1_ci_low"}`` — the pooled ≥3-hop (hops 3+4)
-      ΔF1 of ``ppr-fusion`` vs the fixed ``fused+rerank`` comparator, and its
-      paired-bootstrap CI **lower** bound.
+      ΔF1 of ``ppr-fusion`` vs the fixed ``fused-RRF (k=60)`` comparator (AMENDED
+      2026-06-19), and its paired-bootstrap CI **lower** bound.
     * ``em`` = ``{"ci_high"}`` — the pooled ≥3-hop ΔEM CI **upper** bound.
     * ``trend`` = ``{"neg_significant"}`` — is the ΔF1-vs-hop slope *significantly
       negative*?
