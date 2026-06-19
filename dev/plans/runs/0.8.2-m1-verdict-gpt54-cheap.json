@@ -1,0 +1,891 @@
+{
+  "schema": "0.8.2-m1-verdict-v1",
+  "stage": "stage-1 (299-graph, HITL-authorized ~$10 run)",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "arms": [
+    "bm25",
+    "passage_dense",
+    "fused",
+    "fused_rerank",
+    "ppr_fusion"
+  ],
+  "comparator_arm": "fused",
+  "treatment_arm": "ppr_fusion",
+  "n_questions": 15,
+  "n_answerable": 15,
+  "primary_endpoint": {
+    "treatment_arm": "ppr_fusion",
+    "comparator_arm": "fused",
+    "n_boot": 2000,
+    "seed": 0,
+    "pooled_ge3hop": {
+      "n": 10,
+      "f1_delta": -0.016667,
+      "f1_ci_low": -0.15,
+      "f1_ci_high": 0.1,
+      "em_delta": 0.0,
+      "em_ci_low": -0.3,
+      "em_ci_high": 0.3
+    },
+    "trend": {
+      "slope": -0.094444,
+      "neg_significant": false,
+      "hops_present": [
+        2,
+        3,
+        4
+      ]
+    },
+    "per_hop": {
+      "2": {
+        "n": 5,
+        "f1_delta": 0.088889,
+        "f1_ci_low": 0.0,
+        "f1_ci_high": 0.266667,
+        "em_delta": 0.0
+      },
+      "3": {
+        "n": 5,
+        "f1_delta": 0.066667,
+        "f1_ci_low": 0.0,
+        "f1_ci_high": 0.2,
+        "em_delta": 0.2
+      },
+      "4": {
+        "n": 5,
+        "f1_delta": -0.1,
+        "f1_ci_low": -0.3,
+        "f1_ci_high": 0.0,
+        "em_delta": -0.2
+      }
+    }
+  },
+  "five_arm_pooled_ge3hop": {
+    "bm25": {
+      "f1": 0.345238,
+      "em": 0.2,
+      "n": 10
+    },
+    "passage_dense": {
+      "f1": 0.266667,
+      "em": 0.2,
+      "n": 10
+    },
+    "fused": {
+      "f1": 0.395238,
+      "em": 0.3,
+      "n": 10
+    },
+    "fused_rerank": {
+      "f1": 0.395238,
+      "em": 0.3,
+      "n": 10
+    },
+    "ppr_fusion": {
+      "f1": 0.378571,
+      "em": 0.3,
+      "n": 10
+    }
+  },
+  "per_hop_arms": {
+    "2": {
+      "bm25": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.4,
+        "em_var": 0.3,
+        "f1_var": 0.3
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      }
+    },
+    "3": {
+      "bm25": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.190476,
+        "em_var": 0.0,
+        "f1_var": 0.086168
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.133333,
+        "em_var": 0.0,
+        "f1_var": 0.088889
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.190476,
+        "em_var": 0.0,
+        "f1_var": 0.086168
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.190476,
+        "em_var": 0.0,
+        "f1_var": 0.086168
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.257143,
+        "em_var": 0.2,
+        "f1_var": 0.187755
+      }
+    },
+    "4": {
+      "bm25": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.5,
+        "em_var": 0.3,
+        "f1_var": 0.25
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.4,
+        "em_var": 0.3,
+        "f1_var": 0.3
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.6,
+        "f1": 0.6,
+        "em_var": 0.3,
+        "f1_var": 0.3
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.6,
+        "f1": 0.6,
+        "em_var": 0.3,
+        "f1_var": 0.3
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.5,
+        "em_var": 0.3,
+        "f1_var": 0.25
+      }
+    }
+  },
+  "decide_inputs": {
+    "material": {
+      "f1_delta": -0.016667,
+      "f1_ci_low": -0.15
+    },
+    "em": {
+      "ci_high": 0.3
+    },
+    "trend": {
+      "neg_significant": false
+    },
+    "confident_wrong": {
+      "increase_significant": false
+    },
+    "power_ok": false
+  },
+  "verdict": "NO_GO",
+  "verdict_source": "imported m1_decision_rule.decide (frozen; not redefined)",
+  "confident_wrong_status": "UNEVALUATED in stage 1 \u2014 the graph covers only answerable questions, so there is NO unanswerable contrast set; decide() is fed confident_wrong.increase_significant=False as a placeholder, NOT a measured no-confident-wrong result.",
+  "power_status": "power_ok=False by construction \u2014 the \u22653-hop cell N\u2248144 is far below the 1165 the whole-rule power sim requires; decide() => NO_GO via the power gate is expected and correct for stage 1.",
+  "stage2_recommendation": {
+    "recommendation": "recommend_stage2",
+    "rationale": "ppr-fusion \u0394F1 is positive / its CI straddles 0 / borderline \u2014 underpowered (N\u2248144 \u226a 1165) to call it. Recommend stage 2: extend the graph to N=1165 \u22653-hop + an unanswerable set, then the full ~$38 powered run. Do NOT run stage 2 here.",
+    "run_stage2": true
+  },
+  "decision_rule_note": "decide() is formally NO_GO via the power gate. The load-bearing scientific read is the effect size (pooled \u22653-hop \u0394F1 point estimate + paired-bootstrap CI) and the stage-2 recommendation derived from it.",
+  "baseline_run": {
+    "schema": "0.8.2-m1-baseline-v1",
+    "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+    "arms": [
+      "bm25",
+      "passage_dense",
+      "fused",
+      "fused_rerank",
+      "ppr_fusion"
+    ],
+    "comparator_arm": "fused_rerank",
+    "rrf_k": 60,
+    "rerank_depth": 200,
+    "top_k": 10,
+    "answerer_model": "gpt-5.4",
+    "answerer_available": true,
+    "identical_answerer": true,
+    "n_questions": 15,
+    "n_answerable": 15,
+    "n_unanswerable": 0,
+    "primary_cell_pooled_ge3hop": {
+      "bm25": {
+        "n": 10,
+        "em": 0.2,
+        "f1": 0.345238,
+        "em_var": 0.177778,
+        "f1_var": 0.17602
+      },
+      "passage_dense": {
+        "n": 10,
+        "em": 0.2,
+        "f1": 0.266667,
+        "em_var": 0.177778,
+        "f1_var": 0.192593
+      },
+      "fused": {
+        "n": 10,
+        "em": 0.3,
+        "f1": 0.395238,
+        "em_var": 0.233333,
+        "f1_var": 0.218216
+      },
+      "fused_rerank": {
+        "n": 10,
+        "em": 0.3,
+        "f1": 0.395238,
+        "em_var": 0.233333,
+        "f1_var": 0.218216
+      },
+      "ppr_fusion": {
+        "n": 10,
+        "em": 0.3,
+        "f1": 0.378571,
+        "em_var": 0.233333,
+        "f1_var": 0.210941
+      }
+    },
+    "per_hop": {
+      "2": {
+        "bm25": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.488889,
+          "em_var": 0.3,
+          "f1_var": 0.250617
+        },
+        "passage_dense": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.488889,
+          "em_var": 0.3,
+          "f1_var": 0.250617
+        },
+        "fused": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.4,
+          "em_var": 0.3,
+          "f1_var": 0.3
+        },
+        "fused_rerank": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.488889,
+          "em_var": 0.3,
+          "f1_var": 0.250617
+        },
+        "ppr_fusion": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.488889,
+          "em_var": 0.3,
+          "f1_var": 0.250617
+        }
+      },
+      "3": {
+        "bm25": {
+          "n": 5,
+          "em": 0.0,
+          "f1": 0.190476,
+          "em_var": 0.0,
+          "f1_var": 0.086168
+        },
+        "passage_dense": {
+          "n": 5,
+          "em": 0.0,
+          "f1": 0.133333,
+          "em_var": 0.0,
+          "f1_var": 0.088889
+        },
+        "fused": {
+          "n": 5,
+          "em": 0.0,
+          "f1": 0.190476,
+          "em_var": 0.0,
+          "f1_var": 0.086168
+        },
+        "fused_rerank": {
+          "n": 5,
+          "em": 0.0,
+          "f1": 0.190476,
+          "em_var": 0.0,
+          "f1_var": 0.086168
+        },
+        "ppr_fusion": {
+          "n": 5,
+          "em": 0.2,
+          "f1": 0.257143,
+          "em_var": 0.2,
+          "f1_var": 0.187755
+        }
+      },
+      "4": {
+        "bm25": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.5,
+          "em_var": 0.3,
+          "f1_var": 0.25
+        },
+        "passage_dense": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.4,
+          "em_var": 0.3,
+          "f1_var": 0.3
+        },
+        "fused": {
+          "n": 5,
+          "em": 0.6,
+          "f1": 0.6,
+          "em_var": 0.3,
+          "f1_var": 0.3
+        },
+        "fused_rerank": {
+          "n": 5,
+          "em": 0.6,
+          "f1": 0.6,
+          "em_var": 0.3,
+          "f1_var": 0.3
+        },
+        "ppr_fusion": {
+          "n": 5,
+          "em": 0.4,
+          "f1": 0.5,
+          "em_var": 0.3,
+          "f1_var": 0.25
+        }
+      }
+    },
+    "unanswerable_contrast": {
+      "bm25": {
+        "n": 0,
+        "confident_answer_rate": null
+      },
+      "passage_dense": {
+        "n": 0,
+        "confident_answer_rate": null
+      },
+      "fused": {
+        "n": 0,
+        "confident_answer_rate": null
+      },
+      "fused_rerank": {
+        "n": 0,
+        "confident_answer_rate": null
+      },
+      "ppr_fusion": {
+        "n": 0,
+        "confident_answer_rate": null
+      }
+    },
+    "paired_records": [
+      {
+        "qid": "2hop__10017_18974",
+        "hop_count": 2,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "passage_dense": 0.0,
+          "bm25": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "passage_dense": 0.4444444444444445,
+          "bm25": 0.4444444444444445,
+          "fused": 0.0,
+          "fused_rerank": 0.4444444444444445,
+          "ppr_fusion": 0.4444444444444445
+        },
+        "confident": {},
+        "answers": {
+          "passage_dense": "Chen Zheng and his son Chen Yuanguang.",
+          "bm25": "Chen Zheng and his son Chen Yuanguang.",
+          "fused": "Wang Chao and Wang Shenzhi",
+          "fused_rerank": "Chen Zheng and his son Chen Yuanguang.",
+          "ppr_fusion": "Chen Zheng and his son Chen Yuanguang."
+        }
+      },
+      {
+        "qid": "2hop__10114_599630",
+        "hop_count": 2,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "Wenzhou.",
+          "passage_dense": "Wenzhou",
+          "fused": "Wenzhou",
+          "fused_rerank": "Wenzhou",
+          "ppr_fusion": "Wenzhou."
+        }
+      },
+      {
+        "qid": "2hop__106864_80460",
+        "hop_count": 2,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "passage_dense": 1.0,
+          "bm25": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "f1": {
+          "passage_dense": 1.0,
+          "bm25": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "confident": {},
+        "answers": {
+          "passage_dense": "207.77 million people",
+          "bm25": "207.77 million people",
+          "fused": "207.77 million people",
+          "fused_rerank": "207.77 million people",
+          "ppr_fusion": "207.77 million people"
+        }
+      },
+      {
+        "qid": "2hop__108336_772156",
+        "hop_count": 2,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": null,
+          "passage_dense": null,
+          "fused": null,
+          "fused_rerank": null,
+          "ppr_fusion": null
+        }
+      },
+      {
+        "qid": "2hop__122140_37168",
+        "hop_count": 2,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 1.0,
+          "passage_dense": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "f1": {
+          "bm25": 1.0,
+          "passage_dense": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "551-600",
+          "passage_dense": "551-600",
+          "fused": "551-600",
+          "fused_rerank": "551-600",
+          "ppr_fusion": "551-600"
+        }
+      },
+      {
+        "qid": "3hop1__103197_214799_259594",
+        "hop_count": 3,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "passage_dense": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "passage_dense": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": null,
+          "fused_rerank": null,
+          "fused": null,
+          "passage_dense": null,
+          "ppr_fusion": "Hungary"
+        }
+      },
+      {
+        "qid": "3hop1__103890_10659_83548",
+        "hop_count": 3,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": null,
+          "passage_dense": null,
+          "fused": null,
+          "fused_rerank": null,
+          "ppr_fusion": null
+        }
+      },
+      {
+        "qid": "3hop1__106042_64399_53006",
+        "hop_count": 3,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": null,
+          "passage_dense": null,
+          "fused_rerank": null,
+          "fused": null,
+          "ppr_fusion": null
+        }
+      },
+      {
+        "qid": "3hop1__106847_160713_77246",
+        "hop_count": 3,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.28571428571428575,
+          "passage_dense": 0.0,
+          "fused": 0.28571428571428575,
+          "fused_rerank": 0.28571428571428575,
+          "ppr_fusion": 0.28571428571428575
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "a large body of water",
+          "passage_dense": null,
+          "fused": "a large body of water",
+          "fused_rerank": "a large body of water",
+          "ppr_fusion": "a large body of water"
+        }
+      },
+      {
+        "qid": "3hop1__108833_720914_41132",
+        "hop_count": 3,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 1.0
+        },
+        "f1": {
+          "bm25": 0.6666666666666666,
+          "passage_dense": 0.6666666666666666,
+          "fused": 0.6666666666666666,
+          "fused_rerank": 0.6666666666666666,
+          "ppr_fusion": 1.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "22 times",
+          "passage_dense": "22 times",
+          "fused": "22 times",
+          "fused_rerank": "22 times",
+          "ppr_fusion": "22"
+        }
+      },
+      {
+        "qid": "4hop1__107309_457883_650651_7262",
+        "hop_count": 4,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.0,
+          "passage_dense": 0.0,
+          "fused_rerank": 0.0,
+          "fused": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "Johnny Dare",
+          "passage_dense": "Johnny Dare",
+          "fused_rerank": "Johnny Dare",
+          "fused": "Johnny Dare",
+          "ppr_fusion": "Johnny Dare"
+        }
+      },
+      {
+        "qid": "4hop1__130508_32392_823060_610794",
+        "hop_count": 4,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 0.0,
+          "passage_dense": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "bm25": 0.5,
+          "passage_dense": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 0.5
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "Sumter County",
+          "passage_dense": "Richland County",
+          "fused": "Richland County",
+          "fused_rerank": "Richland County",
+          "ppr_fusion": "Sumter County"
+        }
+      },
+      {
+        "qid": "4hop1__145087_32392_823060_610794",
+        "hop_count": 4,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 1.0,
+          "fused": 1.0,
+          "passage_dense": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "f1": {
+          "bm25": 1.0,
+          "fused": 1.0,
+          "passage_dense": 1.0,
+          "fused_rerank": 1.0,
+          "ppr_fusion": 1.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "Richland County",
+          "fused": "Richland County",
+          "passage_dense": "Richland County",
+          "fused_rerank": "Richland County",
+          "ppr_fusion": "Richland County"
+        }
+      },
+      {
+        "qid": "4hop1__151903_5274_458768_33633",
+        "hop_count": 4,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "passage_dense": 0.0,
+          "bm25": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "f1": {
+          "passage_dense": 0.0,
+          "bm25": 0.0,
+          "fused": 0.0,
+          "fused_rerank": 0.0,
+          "ppr_fusion": 0.0
+        },
+        "confident": {},
+        "answers": {
+          "passage_dense": null,
+          "bm25": null,
+          "fused": null,
+          "fused_rerank": null,
+          "ppr_fusion": null
+        }
+      },
+      {
+        "qid": "4hop1__152562_5274_458768_33632",
+        "hop_count": 4,
+        "answerable": true,
+        "n_pool": 20,
+        "n_paragraphs": 20,
+        "em": {
+          "bm25": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "passage_dense": 0.0,
+          "ppr_fusion": 1.0
+        },
+        "f1": {
+          "bm25": 1.0,
+          "fused": 1.0,
+          "fused_rerank": 1.0,
+          "passage_dense": 0.0,
+          "ppr_fusion": 1.0
+        },
+        "confident": {},
+        "answers": {
+          "bm25": "May 4",
+          "fused": "May 4",
+          "fused_rerank": "May 4",
+          "passage_dense": null,
+          "ppr_fusion": "May 4"
+        }
+      }
+    ]
+  },
+  "cost": {
+    "model": "gpt-5.4",
+    "n_calls": 75,
+    "n_errors": 0,
+    "n_retries": 0,
+    "prompt_tokens": 107481,
+    "completion_tokens": 518,
+    "price_per_1m_input_usd": 1.25,
+    "price_per_1m_output_usd": 5.0,
+    "usd": 0.1369
+  },
+  "ppr_divergence": {
+    "n_questions": 300,
+    "n_ppr_differs_from_bm25_topk": 66,
+    "fraction_differs": 0.22,
+    "top_k": 10,
+    "silently_identical_to_bm25": false
+  },
+  "mode": "cheap",
+  "reader_model": "gpt-5.4",
+  "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the airlock proxy serves neither exact id \u2014 closest available used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
+  "answer_workers": 3,
+  "k": 10,
+  "elapsed_s": 124.6,
+  "answer_completeness": {
+    "expected_calls": 75,
+    "n_errors": 0,
+    "completeness": 1.0,
+    "floor": 0.97,
+    "run_valid": true
+  },
+  "run_valid": true
+}

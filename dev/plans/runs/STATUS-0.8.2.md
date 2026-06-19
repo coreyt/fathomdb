@@ -7,10 +7,22 @@
 
 ## 1. Current state + next action
 
-- **State:** **Slice 10 RE-SPAWNED (running); Slice 5 HELD on a reranker prereq.** The first 5∥10 spawns
-  both **died on a transient API outage during read-only exploration** — git + worktrees + session
-  transcripts confirm **zero work written, nothing to recover** (main untouched `4fd5828`, branches at
-  baseline, worktrees clean). Infra re-checked UP (answerer 401=auth-ok; extractor host responds).
+- **STATE: ✅ M1 CLOSED — verdict NO-GO (robust), HITL-signed 2026-06-19.** The lexically-seeded PPR
+  graph-fusion arm does **not** beat fused-RRF on multi-hop QA. Clean valid run: reader `gpt-5.4`,
+  completeness **1.0**, 0 errors, **$2.50**. **Primary ≥3-hop ΔF1 (ppr_fusion − fused) = −0.0405, CI
+  [−0.116, +0.031]** (n=144) — point-negative + CI upper below the +0.04 materiality bar ⇒ a material graph
+  win is ruled out. 5-arm ≥3-hop F1: dense **0.487** > fused 0.450 > fused_rerank 0.415 > ppr_fusion 0.410 >
+  bm25 0.370. `decide()`=NO_GO; **no stage 2**. Findings: `0.8.2-m1-FINDINGS.md`; closure:
+  `0.8.2-slice-20-output.json`; verdict: `0.8.2-m1-verdict-gpt54.json`.
+- **NEXT (0.8.3):** redirect to **index-key enrichment** (not graph traversal) per
+  [[graph-arm-doesnt-beat-bm25-pivot]]; carry forward that **passage_dense** was the single strongest arm.
+- **Reader pivot (2026-06-19):** the **gemini** provider hit a hard **$25 airlock budget cap** mid-effort
+  (3 invalid/partial runs: a 429 storm, a process-window death, a relaunch loop) → pivoted to **gpt-5.4**
+  (separate provider, ~3.5× cheaper/call, 0 errors) after rebuilding the harness to be **resilient by
+  construction** (auto-resume from atomic incremental checkpoint, failure≠abstention, 429 backoff,
+  completeness validity guard; codex §9 [P2] resume-abstention fix). Direction is reader-robust (gemini
+  partial, cheap gpt-5.4, full gpt-5.4 all agree). **pwrfix** landed: power-sim aligned to 0.04 (finding:
+  rule underpowered even at N=1165, P(GO)=0.45 — moot under a robust reject).
 - **CE reranker was a STUB** (`try_get_loaded()`→None, `score()`→0.0; `lib.rs:4925,4930` TODOs) → so the
   signed `fused+rerank` comparator wasn't real. **HITL (2026-06-18) chose to IMPLEMENT it** (engine slice
   E1) rather than revise amendment 6 — a deliberate, HITL-approved deviation from M1's no-engine-change

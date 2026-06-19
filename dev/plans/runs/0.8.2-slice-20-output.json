@@ -1,0 +1,55 @@
+{
+  "phase": "0.8.2-m1-slice-20-verdict",
+  "status": "CLOSED",
+  "verdict": "NO_GO",
+  "signed_off_by": "HITL 2026-06-19",
+  "reader_model": "gpt-5.4",
+  "run_valid": true,
+  "answer_completeness": 1.0,
+  "n_errors": 0,
+  "cost_usd_this_run": 2.5032,
+  "primary_endpoint": {
+    "definition": "pooled >=3-hop ΔF1 = F1(ppr_fusion) - F1(fused-RRF)",
+    "f1_delta": -0.040469,
+    "f1_ci": [-0.115765, 0.03108],
+    "em_delta": -0.034722,
+    "n": 144,
+    "interpretation": "point-estimate negative at the materiality threshold; CI upper (+0.031) < MATERIAL_F1_LIFT (+0.04) => a material graph win is ruled out => robust NO_GO"
+  },
+  "five_arm_pooled_ge3hop_f1": {
+    "passage_dense": 0.4866, "fused": 0.4502, "fused_rerank": 0.4152, "ppr_fusion": 0.4097, "bm25": 0.3700
+  },
+  "per_hop_f1_delta": {"2": -0.015551, "3": -0.044307, "4": -0.033254},
+  "trend_slope": -0.012774,
+  "trend_neg_significant": false,
+  "distinctness_guard": "ppr_fusion != bm25 on 66/300 (0.22) -> graph arm materially distinct, not vacuous",
+  "stage2_recommendation": "no_stage2_robust_no_go",
+  "cross_reader_robustness": "direction invariant: gemini 81% partial (ppr 0.227 < fused 0.240), cheap gpt-5.4 (fused 0.395 > ppr 0.379), full gpt-5.4 (this run) -> graph loses under every reader",
+  "caveats": [
+    "confident-wrong guard UNEVALUATED (no unanswerable contrast set in this graph)",
+    "CI includes 0; NO_GO rests on point-estimate-negative + sub-material CI upper, not significance of harm",
+    "decide() formally NO_GO via the power gate (n=144 << 1165); effect size is the load-bearing read",
+    "pwrfix finding: decide() rule is underpowered even at N=1165 (P(GO)=0.45 for a true +0.04) -> moot here (robust reject)"
+  ],
+  "artifacts": {
+    "findings_report": "dev/plans/runs/0.8.2-m1-FINDINGS.md",
+    "verdict": "dev/plans/runs/0.8.2-m1-verdict-gpt54.json",
+    "mechanical_report": "dev/plans/runs/0.8.2-m1-report-gpt54.md",
+    "cheap_validate": "dev/plans/runs/0.8.2-m1-verdict-gpt54-cheap.json",
+    "gemini_partial_invalid": "dev/plans/runs/0.8.2-m1-verdict-n300.json"
+  },
+  "budget_ledger": {
+    "gemini_total_usd_hard_capped": 25.05,
+    "gpt54_cheap_usd": 0.1369,
+    "gpt54_full_usd": 2.5032,
+    "note": "gemini provider hit a hard $25 airlock budget cap mid-effort (3 invalid/partial runs); pivoted to gpt-5.4 (separate provider, ~3.5x cheaper/call) for the clean valid verdict"
+  },
+  "harness_resilience_landed": [
+    "auto-resume from atomic incremental checkpoint (default, no flag)",
+    "failure != abstention (failed cell re-called on resume, never scored 0-F1)",
+    "429/5xx exponential backoff",
+    "answer_completeness >= 0.97 validity guard",
+    "codex §9 [P2] fix: resume reuses key-present-None abstentions, re-calls only absent cells"
+  ],
+  "next_step_for_orchestrator": "M1 CLOSED, NO_GO signed. Redirect 0.8.3 to index-key enrichment (not graph traversal). Secondary: passage_dense was the strongest arm (0.487 > fused 0.450) -> dense is where the multi-hop signal lives."
+}

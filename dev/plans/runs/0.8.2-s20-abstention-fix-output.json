@@ -1,0 +1,31 @@
+{
+  "phase": "0.8.2-s20-abstention-fix",
+  "status": "GREEN",
+  "head_sha": "da5be7cd9602a3400a602a70b79f45d53a99f0bf",
+  "merge_sha": "d03650478d15f84b28632d5b026a30d480e96281",
+  "red_sha": "7896e6a7020543dcf3609406765c84c2d8d73775",
+  "tdd": {
+    "red_test": "test_abstention_is_reused_not_recalled",
+    "red_failure": "AssertionError: Expected 1 re-call (the absent failure cell); got 5. key-present-None abstentions are being incorrectly re-called!",
+    "green_tests": 29,
+    "green_failures": 0
+  },
+  "fix_summary": {
+    "file": "src/python/eval/m1_baseline.py",
+    "function": "_do (run_baseline inner closure)",
+    "old_guard": "if prev is not None  (reuses only non-None values, re-calls abstentions)",
+    "new_guard": "if _key in prior_answers  (reuses any persisted cell including None=abstention; re-calls only absent keys)"
+  },
+  "abstention_reused": true,
+  "only_absent_recalled": true,
+  "pyright": "0 errors, 0 warnings on m1_baseline.py + m1_verdict.py + m1_verdict_run.py",
+  "tripwire": "empty (canonical src/ dev/ tests/ unchanged)",
+  "files_changed": [
+    "src/python/eval/m1_baseline.py",
+    "src/python/eval/m1_verdict.py",
+    "src/python/eval/m1_verdict_run.py",
+    "src/python/tests/test_m1_verdict.py"
+  ],
+  "cost_usd": 0,
+  "next_step_for_orchestrator": "resume semantics correct; the in-flight verdict run benefits on its next window relaunch + stage 2 won't re-pay abstentions"
+}
