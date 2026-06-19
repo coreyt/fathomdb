@@ -1,13 +1,17 @@
 {
- "phase": "0.8.2-slice-5",
- "supersedes": "the original Slice-5 pilot (codex [P1]-invalid fused_rerank); this is the corrected re-pilot",
- "merged_to_main_sha": "57f7464",
+ "phase": "0.8.2-slice-5-fix-2",
+ "supersedes": "0.8.2-slice-5-fix-1 (codex §9 [P1] numpy + [P2] CLS/Mean now resolved)",
+ "merged_to_main_sha": "3902cc4e50c4fa09b944d34afc0bda881e2e1f07",
  "tdd_evidence": {
-  "red_commit_sha": "75aaffe",
+  "red_commit_sha": "21b36d73246df1665ab63b5823e492567176bca7",
+  "green_commit_sha": "9db4eb50",
   "test_files": [
    "src/python/tests/test_m1_baseline.py",
    "src/python/tests/test_m1_power_sim.py"
-  ]
+  ],
+  "n_tests_green": 19,
+  "n_tests_prior": 18,
+  "new_test": "test_bridges_present_at_k_correctness"
  },
  "the_bar_pooled_ge3hop_f1": {
   "bm25": 0.2388,
@@ -15,7 +19,8 @@
   "fused": 0.3064,
   "fused_rerank": 0.306,
   "n": 60,
-  "note": "fused_rerank (corrected: reranks the in-harness fused pool via fathomdb.rerank) is TIED with fused \u2014 the CE neither helps nor hurts multi-hop answer-F1"
+  "note": "UNCHANGED from fix-1 — no re-pilot, no priced calls ($0 slice). CLS pooling was already used in the original pilot.",
+  "bar_unchanged": true
  },
  "retrieval_recall_at_10": {
   "bm25": 0.667,
@@ -23,30 +28,63 @@
   "fused": 0.759,
   "fused_rerank": 0.753,
   "n_with_gold": 150,
-  "note": "dense best recall@10; fused\u2248fused_rerank (rerank slightly lowers low-K recall \u2014 demotes bridge passages)"
+  "note": "Per-passage recall@10 — unchanged from fix-1 (same CLS-space retrieval, same corpus)"
+ },
+ "all_bridges_present_at_k": {
+  "description": "Fraction of questions where ALL gold supporting passages appear in top-K (multi-hop-correct binary). Added Slice 5 fix-2. Computed $0 over 150 ≥3-hop answerable questions (same sample as retrieval_recall).",
+  "n_questions": 150,
+  "at_k_10": {
+   "bm25": 0.2533,
+   "passage_dense": 0.52,
+   "fused": 0.3667,
+   "fused_rerank": 0.3467
+  },
+  "at_k_5": {
+   "bm25": 0.0667,
+   "passage_dense": 0.1733,
+   "fused": 0.1667,
+   "fused_rerank": 0.16
+  },
+  "full_table_in_artifact": "dev/plans/runs/0.8.2-m1-baseline-pilot.json → retrieval_recall.all_bridges_present_at_k",
+  "key_finding": "passage_dense (0.52) >> fused (0.37) > fused_rerank (0.35) > bm25 (0.25) at K=10. RRF fusion dilutes the full-bridge set vs dense alone — the BM25 arm pulls in lexically-relevant but non-supporting passages that displace bridge passages. The CE reranker also slightly hurts the all-bridges metric vs fused (consistent with the recall finding that it demotes bridge passages). This motivates the graph PPR arm: can graph traversal recover the complete bridge set that RRF loses?"
+ },
+ "cls_pooling_resolution": {
+  "canonical_pooling": "CLS (x[0], L2-normalised)",
+  "evidence": "bge-small-en-v1.5 ships 1_Pooling/config.json with pooling_mode_cls_token:true; BGE docs warn Mean causes significant performance drop",
+  "harness_uses": "CLS — BGEEncoder.encode() takes x[0] at line ~341 of m1_baseline.py",
+  "harness_is_correct": true,
+  "documented_in": "m1_baseline.py module docstring (CLS pooling section added fix-2)",
+  "slice_15_prerequisite": "PPR arm MUST embed in the same CLS space (inject BGEEncoder or configure engine with Pooling::Cls)"
+ },
+ "engine_mean_default_bug": {
+  "status": "FLAGGED — NOT fixed here",
+  "location": "src/rust/crates/fathomdb-embedder/src/candle_bge.rs line ~229: pooling: Pooling::Mean",
+  "impact": "Stored engine vectors are in Mean space; harness/BAR vectors are in CLS space — different embedding geometries",
+  "fix_requires": "re-embed pass + embedder-identity change + eu7 re-measurement (see ADR-0.8.0-embedder-identity-change-workflow.md)",
+  "dev_note": "dev/notes/0.8.2-bge-cls-mean-engine-bug.md",
+  "doc_index_row": "added to dev/DOC-INDEX.md"
+ },
+ "numpy_declared": {
+  "status": "FIXED",
+  "file": "src/python/pyproject.toml",
+  "groups": ["test", "dev"],
+  "version": ">=1.24",
+  "resolves": "pip install -e src/python[dev] now succeeds without ModuleNotFoundError for numpy"
  },
  "proposed_material_f1_lift": {
   "value": 0.04,
   "rho_0.5_mde": 0.0366,
   "rho_0.7_mde": 0.0283,
   "current_frozen": 0.02,
-  "note": "PROPOSED \u2014 decide() unchanged; HITL confirms before Slice 20. At 0.04 the 1165-corpus is adequately powered."
- },
- "power": {
-  "sd_baseline_f1": 0.445,
-  "required_n_+0.03_rho0.5": 3000,
-  "required_n_+0.03_rho0.7": 1200,
-  "corpus_answerable_ge3hop": 1165,
-  "p_go_whole_corpus_at_+0.03": 0.62
+  "note": "PROPOSED — UNCHANGED from fix-1; HITL confirms before Slice 20. At 0.04 the 1165-corpus is adequately powered."
  },
  "budget": {
+  "slice5_fix2_usd": 0.0,
   "slice5_pilot_usd": 2.578,
   "slice5_cheapval_usd": 0.011,
   "cumulative_slice5_usd": 4.97,
-  "projected_full_ge3hop_baseline_usd": 30.1,
-  "projected_full_answerable_usd": 62.46,
-  "note": "full graph adjudication (Slice 20) is a separate HITL-gated spend"
+  "note": "fix-2 is entirely $0 (numpy declaration, CLS docs, bridges metric recompute over existing retrieval cache)"
  },
- "agent_verify_result": "pass \u2014 corrected fused_rerank reranks the fused pool (cheap-validate confirmed); 18 harness tests green; pilot 399 calls 1 error $2.578",
- "next_step_for_orchestrator": "HITL: (1) comparator decision (fused vs fused_rerank \u2014 TIED, so fused-RRF is the simpler strong comparator); (2) confirm MATERIAL_F1_LIFT=0.04 \u2192 tiny decide() re-freeze; then Slice 15 (graph PPR arm) + Slice 20 verdict"
+ "agent_verify_result": "pass — numpy declared in [dev]+[test]; CLS pooling documented + engine Mean-default bug flagged in dev/notes; bridges_present_at_k implemented + all_bridges@K recomputed into pilot artifact; 19 tests green (18+1); pyright 0/0; tripwire empty; BAR F1 unchanged",
+ "next_step_for_orchestrator": "BAR re-confirmed (CLS correct, no re-pilot); all-bridges metric added → HITL finalizes comparator + MATERIAL_F1_LIFT; engine Mean-default bug flagged for a separate slice; then Slice 15/20"
 }
