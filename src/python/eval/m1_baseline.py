@@ -77,7 +77,7 @@ import os
 import re
 import struct
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
@@ -682,6 +682,7 @@ def run_baseline(
     arms: Sequence[str] = ARM_NAMES,
     progress: Any = None,
     answer_workers: int = 1,
+    augment_rankings: Optional[Callable[[dict[str, Any], "Question"], dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Run the four-arm strong baseline over ``questions`` with one shared answerer.
 
@@ -690,6 +691,14 @@ def run_baseline(
     variable. Returns a structured artifact with per-question paired records,
     per-hop (2/3/4) + pooled ≥3-hop EM/F1, and the unanswerable confident-answer
     rate.
+
+    ``augment_rankings`` is an optional hook ``(arm_rankings, question) ->
+    arm_rankings`` applied to each question's per-arm ranking dict **before** the
+    answer tasks are built — the Slice-20 seam that adds the 5th ``ppr_fusion`` arm
+    (via ``m1_ppr.add_ppr_fusion_arm``) without forking this runner. Default
+    ``None`` leaves the four-baseline-arm path byte-identical; when supplied, the
+    extra arm must be listed in ``arms`` so it is scored. The identical-answerer
+    invariant is unchanged — the augmented arm shares the same answerer/top-K.
 
     ``answer_workers > 1`` parallelises the per-question arm answer calls across a
     thread pool (the priced LLM seam is I/O-bound — the strong reader is a
@@ -714,6 +723,8 @@ def run_baseline(
     tasks: list[_Task] = []
     for q in questions:
         arm_rankings = retrieve_arms(q, encoder, reranker)
+        if augment_rankings is not None:
+            arm_rankings = augment_rankings(arm_rankings, q)
         qr = QuestionResult(
             qid=q.id,
             hop_count=q.hop_count,
