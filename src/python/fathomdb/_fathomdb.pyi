@@ -203,6 +203,25 @@ def search_expand(
     ...
 
 
+def rerank(
+    query: str,
+    passages: list[dict[str, Any]],
+    rerank_depth: int,
+) -> list[dict[str, Any]]:
+    """0.8.2 Slice E2 — standalone CE rerank over an arbitrary passage list.
+
+    Each ``passages`` entry is ``{"id": int, "body": str, "score": float}``
+    (``score`` = the caller's fused/RRF score). Returns the reranked order as
+    ``[{"id": int, "score": float}]`` where ``score`` is the CE-blended score.
+    ``rerank_depth == 0`` OR an empty list returns the input order with input
+    scores, byte-identical (no model load, no network). Unlike
+    ``Engine.search(rerank_depth=...)`` — which reranks the engine's own capped
+    text pool — this reranks the caller-supplied pool with the identical
+    cross-encoder.
+    """
+    ...
+
+
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...

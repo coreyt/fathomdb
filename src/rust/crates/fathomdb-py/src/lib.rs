@@ -35,9 +35,9 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
-    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    ExtractDocument as RustExtractDocument,
+    rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp, CorruptionDetail,
+    CorruptionKind, EmbedderChoice, Engine as RustEngine, EngineError as RustEngineError,
+    EngineOpenError, ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
@@ -1203,6 +1203,94 @@ fn search_expand(
     Ok(PySearchExpandResult::from_rust(result))
 }
 
+// ===== rerank (0.8.2 Slice E2) ========================================
+//
+// Standalone CE rerank over a caller-supplied passage list — NOT engine-bound.
+// Slice 5's `fused_rerank` comparator must CE-rerank its OWN in-harness
+// fused(bm25+dense) pool with the identical cross-encoder, but the engine's
+// `search()` only reranks its own capped text pool. This thin wrapper marshals
+// `[{"id": int, "body": str, "score": float}]` into `(id, body, score)` tuples,
+// calls the pure engine helper `rerank_passages`, and returns the reranked
+// order as `[{"id": int, "score": float}]` (input score is the harness's fused
+// RRF score; the output score is the CE-blended score). Identity contract:
+// `rerank_depth == 0` OR an empty list returns the input order with input scores
+// (no model load, no network — feature-off the whole CE path is compiled away).
+// Never panics: malformed passages raise the typed `WriteValidationError`; the
+// pure helper is `catch_unwind`-wrapped (mirroring `call_engine`) so any
+// escaping panic surfaces as a `PanicException`, never an abort.
+
+/// Extract a required non-negative integer `id` from a passage dict.
+fn dict_u64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<u64> {
+    let v = dict_get(d, key)?.filter(|v| !v.is_none()).ok_or_else(|| {
+        WriteValidationError::new_err(format!("passage missing required field {key:?}"))
+    })?;
+    v.extract::<u64>().map_err(|_| {
+        WriteValidationError::new_err(format!(
+            "passage field {key:?} must be a non-negative integer"
+        ))
+    })
+}
+
+/// Extract a required finite float `score` from a passage dict.
+fn dict_f64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<f64> {
+    let v = dict_get(d, key)?.filter(|v| !v.is_none()).ok_or_else(|| {
+        WriteValidationError::new_err(format!("passage missing required field {key:?}"))
+    })?;
+    v.extract::<f64>().map_err(|_| {
+        WriteValidationError::new_err(format!("passage field {key:?} must be a number"))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (query, passages, rerank_depth))]
+fn rerank(
+    py: Python<'_>,
+    query: &str,
+    passages: &Bound<'_, PyList>,
+    rerank_depth: usize,
+) -> PyResult<Vec<Py<PyDict>>> {
+    validate_ffi_string_py(query)?;
+
+    // Marshal the passage dicts into `(id, body, score)` tuples. `body` rides the
+    // same FFI string gate as the write path (rejects embedded NUL / lone
+    // surrogate as the typed WriteValidationError).
+    let tuples: Vec<(u64, String, f64)> = passages
+        .iter()
+        .map(|item| {
+            let dict = item
+                .downcast::<PyDict>()
+                .map_err(|_| WriteValidationError::new_err("passage must be a dict"))?;
+            let id = dict_u64_required(dict, "id")?;
+            let body = dict_str_required(dict, "body")?;
+            let score = dict_f64_required(dict, "score")?;
+            Ok((id, body, score))
+        })
+        .collect::<PyResult<_>>()?;
+
+    let query = query.to_string();
+    // The helper is pure CPU (no engine handle); it may perform a one-time gated
+    // model load on a cold cache, so release the GIL for the duration.
+    // `catch_unwind` + `AssertUnwindSafe` mirror `call_engine` so the never-panic
+    // contract holds even though the helper is engine-free (no Result channel).
+    let reranked = py
+        .allow_threads(|| {
+            catch_unwind(AssertUnwindSafe(move || {
+                rust_rerank_passages(&query, tuples, rerank_depth)
+            }))
+        })
+        .map_err(|_| PanicException::new_err("rerank panic (see logs)"))?;
+
+    reranked
+        .into_iter()
+        .map(|(id, score)| {
+            let d = PyDict::new(py);
+            d.set_item("id", id)?;
+            d.set_item("score", score)?;
+            Ok(d.unbind())
+        })
+        .collect()
+}
+
 // ===== Test hooks =====================================================
 
 /// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
@@ -1244,6 +1332,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // Slice 20 — G5/G6 graph traversal fns.
     m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
     m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
+    // 0.8.2 Slice E2 — standalone rerank over an arbitrary passage list.
+    m.add_function(wrap_pyfunction!(rerank, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
