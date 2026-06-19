@@ -256,3 +256,28 @@ def test_scorer_em_f1_and_confident() -> None:
     assert normalize_squad("The Green Bay!") == "green bay"
     assert is_confident_answer("paris") is True
     assert is_confident_answer(None) is False
+
+
+# --------------------------------------------------------------------------- #
+# [S5fix2] all_bridges_present@K — RED test (must fail before metric exists)
+# --------------------------------------------------------------------------- #
+
+
+def test_bridges_present_at_k_correctness() -> None:
+    """[S5fix2] bridges_present_at_k: all gold in top-K → 1.0; one missing → 0.0.
+
+    RED: this test imports ``bridges_present_at_k`` from ``eval.m1_baseline``;
+    the symbol does not exist before the fix-2 GREEN commit, so collection fails.
+    """
+    from eval.m1_baseline import bridges_present_at_k  # noqa: PLC0415
+
+    # All gold passages present in the top-K → 1.0
+    assert bridges_present_at_k([0, 1, 2, 3, 4], {0, 2}, k=3) == 1.0
+    # One gold passage missing from the top-K → 0.0
+    assert bridges_present_at_k([0, 1, 2, 3, 4], {0, 4}, k=3) == 0.0
+    # No gold passages → None (excluded from mean)
+    assert bridges_present_at_k([0, 1, 2], set(), k=3) is None
+    # Both gold passages exactly at boundary (K=3, positions 0 and 2) → 1.0
+    assert bridges_present_at_k([0, 2, 1, 3, 4], {0, 2}, k=2) == 1.0
+    # Gold passage at position 3 excluded when K=2 → 0.0
+    assert bridges_present_at_k([0, 1, 2, 3, 4], {0, 3}, k=2) == 0.0
