@@ -12,14 +12,19 @@ license = { text = "Apache-2.0" }
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24"]
+test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
 lint = ["ruff>=0.6"]
 typecheck = ["pyright>=1.1.380"]
 # numpy is required by the M1 eval harness (eval/m1_baseline.py, eval/m1_baseline_run.py,
 # eval/m1_graph_build.py) and their test suites (test_m1_baseline.py imports numpy directly).
 # Without this declaration `pip install -e src/python[dev]` fails with ModuleNotFoundError
 # ([P1] from codex §9 Slice 5 fix-1 review).
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24"]
+#
+# scipy + networkx are required by the M1 PPR-fusion arm (eval/m1_ppr.py — networkx for
+# Personalized-PageRank, scipy as its sparse-linalg backend) and test_m1_ppr.py (Slice 15).
+# They are HARNESS-only CPU deps (NOT linked into the FathomDB library → footprint-invariant
+# safe; design §9). Declared here so a clean `pip install -e src/python[dev]` runs the arm.
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
 
 [tool.maturin]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
