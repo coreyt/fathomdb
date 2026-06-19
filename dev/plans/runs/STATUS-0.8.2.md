@@ -27,9 +27,14 @@
   its 0.314 is invalid; correctly building it needs a standalone rerank API (more engine work).** [P2]
   power inverted-U mis-centered. **Valid BAR (clean arms): bm25 0.278 · dense 0.363 · fused-RRF 0.376.**
   Underpowered for +0.03 (P(GO)≈0.6 @ full 1165-corpus; feasible only at ρ≥0.7). Full feasible pass $27.54.
-- **◆ Two HITL decisions:** (1) **comparator** — fused-RRF (strongest clean arm; recommend, reverts
-  amendment 6) vs build a standalone-rerank API (E2) for a real fused+rerank; (2) **direction** — proceed
-  underpowered to the graph arm vs redirect. Then fix-1 ([P1]+[P2]) + re-pilot for valid numbers.
+- **◆ HITL decided (2026-06-18):** (1) **comparator** — **build the standalone-rerank API (E2)** so
+  `fused_rerank` reranks the real fused pool + fix the [P1]; get FRESH valid fused+rerank results (defer the
+  fused-RRF-vs-fused+rerank comparator call until valid data); budget **<$30**. (2) **direction** — **raise
+  the detectable effect size** so the 1165-corpus is adequately powered (set MATERIAL_F1_LIFT to the
+  corpus-feasible MDE — a pre-reg revision; the new value is HITL-confirmed at the next gate).
+- **IN-FLIGHT: Slice E2** (standalone rerank SDK API, Rust/cargo TDD). Then: rebuild extension → Slice 5
+  fix-1 (use E2 on the fused pool [P1] + center inverted-U [P2] + raise MATERIAL_F1_LIFT + re-pilot, <$30).
+  Slice 5 branch `7037523` stays unmerged; fix-1 rebases it onto main-with-E2 and lands once, corrected.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
