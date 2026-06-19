@@ -107,10 +107,16 @@ def prior_answers_from_artifact(prior: Mapping[str, Any]) -> dict[tuple[str, str
     """Build the resume map ``(qid, arm) -> answer`` from a prior verdict artifact's
     persisted ``baseline_run.paired_records``.
 
-    Only cells whose stored answer is non-``None`` will be reused by ``run_baseline``
-    (a stored ``None`` = a previously-failed cell ⇒ it is re-called). Returns an empty
-    map if the prior artifact carries no persisted answers (e.g. a run that dropped
-    ``baseline_run``) — in which case the re-run is a full pass (correct + safe)."""
+    The **keys** of the returned map are exactly the persisted ``(qid, arm)`` cells.
+    A key-present ``None`` means the prior call SUCCEEDED but returned no usable
+    answer (a legitimate abstention) — ``run_baseline`` will **reuse** it (no
+    re-call, scored 0).  An ABSENT key means the prior call NEVER succeeded (a
+    retry-exhausted failure) — ``run_baseline`` will **re-call** it.  Membership,
+    not value-non-None, is the reuse signal.
+
+    Returns an empty map if the prior artifact carries no persisted answers (e.g. a
+    run that dropped ``baseline_run``) — in which case the re-run is a full pass
+    (correct + safe)."""
     out: dict[tuple[str, str], Optional[str]] = {}
     recs = (prior.get("baseline_run") or {}).get("paired_records") or []
     for r in recs:

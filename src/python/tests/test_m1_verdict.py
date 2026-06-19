@@ -293,7 +293,7 @@ def test_prior_answers_from_artifact_skips_none() -> None:
     }
     m = prior_answers_from_artifact(prior)
     assert m[("2hop__a", "bm25")] == "x"
-    assert m[("2hop__a", "ppr_fusion")] is None  # stored None ⇒ will be re-called
+    assert m[("2hop__a", "ppr_fusion")] is None  # key-present None ⇒ REUSED (abstention, NOT re-called)
     assert m[("3hop__b", "bm25")] == "y"
     # an artifact with no persisted answers ⇒ empty map ⇒ a full (safe) re-run.
     assert prior_answers_from_artifact({"verdict": "NO_GO"}) == {}
@@ -310,14 +310,15 @@ def test_resume_recalls_only_failed_cells() -> None:
     prior = prior_answers_from_artifact(art1)
     assert all(v is not None for v in prior.values())
 
-    # Simulate that the ppr_fusion arm FAILED for every question (None'd in the prior).
+    # Simulate that the ppr_fusion arm FAILED for every question.
+    # Failure = ABSENT key (not key-present-None, which is an abstention).
     failed = dict(prior)
     n_failed = 0
     for q in qs:
-        failed[(q.id, TREATMENT_ARM)] = None
+        del failed[(q.id, TREATMENT_ARM)]  # ABSENT = prior failure → must be re-called
         n_failed += 1
 
-    # Pass 2 — resume: only the None'd ppr_fusion cells should be (re)called.
+    # Pass 2 — resume: only the ABSENT ppr_fusion cells should be (re)called.
     spy = CountingAnswerer()
     art2 = _run_baseline(
         qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
@@ -539,8 +540,11 @@ def test_auto_resume_reuses_preserved_214_cells() -> None:
     ckpt = json.loads(_PRESERVED_CHECKPOINT.read_text(encoding="utf-8"))
     recs = ckpt["baseline_run"]["paired_records"]
     prior = prior_answers_from_artifact(ckpt)
-    n_reusable = sum(1 for v in prior.values() if v is not None)
-    assert n_reusable == 214  # the preserved real progress — must be re-used, not re-spent
+    # All keys in prior are reusable: non-None answers AND key-present-None abstentions.
+    # (Before the abstention fix, n_reusable counted only non-None values = 214.
+    #  Post-fix: all persisted cells are reused, including None abstentions.)
+    n_reusable = len(prior)  # membership-based count: every persisted (qid, arm) cell
+    assert n_reusable >= 214  # at least the 214 non-None cells must be present
 
     qs = [
         _mini_question(r["qid"], int(r["hop_count"]), f"a{i}")
@@ -554,7 +558,7 @@ def test_auto_resume_reuses_preserved_214_cells() -> None:
         arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
     )
     expected_cells = len(qs) * len(VERDICT_ARMS)
-    assert len(spy.asked) == expected_cells - n_reusable  # re-call ONLY the missing
+    assert len(spy.asked) == expected_cells - n_reusable  # re-call ONLY the absent cells
 
 
 def test_resolve_resume_auto_detects_sidecar_without_a_flag(tmp_path) -> None:
