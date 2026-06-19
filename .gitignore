@@ -66,3 +66,6 @@ credentials.*
 # that Memex installs as a uv path dependency (`../fathomdb/python`). Keep it on
 # disk for Memex; ignore it here. Root-anchored so it never matches src/python/.
 /python/
+
+# 0.8.2 M1 verdict-run checkpoint sidecars (churning runtime resume-state, not deliverables)
+dev/plans/runs/0.8.2-m1-verdict-*.checkpoint.json
