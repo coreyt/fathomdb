@@ -45,6 +45,21 @@ def test_effect_delta_shapes_have_expected_profile() -> None:
     assert inv[1] > inv[0] and inv[1] > inv[2]  # peak at hop 3
 
 
+def test_inverted_u_pooled_mean_equals_lift() -> None:
+    # [P2] the inverted-U must be CENTERED so its pooled ≥3-hop mean == lift
+    # (only its hop-profile differs from flat/monotonic). The un-centered formula
+    # added the bump ON TOP of lift ⇒ pooled mean ≈ lift·(1 + 0.8·frac_3hop) > lift,
+    # inflating P(GO) for that shape.
+    rng = np.random.default_rng(3)
+    hops = rng.choice([3, 4], size=600, p=[0.65, 0.35])
+    for lift in (0.02, 0.03, 0.06):
+        d = effect_delta("inverted_u", hops, lift=lift)
+        assert abs(float(d.mean()) - lift) < 1e-9
+    # still peaks at hop 3 after centering
+    prof = effect_delta("inverted_u", np.array([2, 3, 4]), lift=0.03)
+    assert prof[1] > prof[0] and prof[1] > prof[2]
+
+
 def test_simulate_p_go_uses_real_decide_and_returns_probability() -> None:
     f1, em, hops = _baseline()
     for shape in EFFECT_SHAPES:

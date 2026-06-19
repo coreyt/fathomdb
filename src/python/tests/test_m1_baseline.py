@@ -183,6 +183,46 @@ def test_arms_are_distinct_and_pinned() -> None:
     assert arms["n_pool"] == 20
 
 
+def test_fused_rerank_reranks_the_fused_pool() -> None:
+    # [P1] regression: the fused_rerank arm must CE-rerank the IN-HARNESS
+    # fused(bm25+dense) pool via fathomdb.rerank — NOT the engine's own capped
+    # text pool. Construct a pool where the CE flips a middle pair: a distractor
+    # the CE demotes sits just ABOVE the answer in RRF, with scores close enough
+    # that the 0.3·CE term overcomes the 0.7·RRF_norm gap (engine Decision 5).
+    # Local import so RED (symbols absent) fails THIS test alone, not collection.
+    from eval.m1_baseline import FusedPoolReranker, rrf_fuse_scored  # noqa: PLC0415
+    import fathomdb  # noqa: PLC0415
+
+    paras = [
+        Paragraph(0, "Wall", "The Great Wall of China stretches thousands of kilometres across northern China.", False),
+        Paragraph(1, "Banana", "Bananas are a yellow tropical fruit rich in potassium and fibre.", False),
+        Paragraph(2, "Paris", "Paris is the capital and most populous city of France.", True),
+        Paragraph(3, "Ocean", "The Pacific Ocean is the largest and deepest of Earth's oceans.", False),
+    ]
+    query = "what is the capital of France?"
+    # Fused order ranks the answer (idx 2) THIRD, just below an irrelevant idx 1.
+    fused_scored = [(0, 1.0), (1, 0.55), (2, 0.50), (3, 0.0)]
+    fused_order = [i for i, _ in fused_scored]
+
+    reranker = FusedPoolReranker()
+    ranked, n_pool = reranker.rank_fused(query, paras, fused_scored, depth=200)
+
+    # (1) reranks the WHOLE fused pool (rerank_depth clamps to the pool size).
+    assert n_pool == 4
+    # (2) matches fathomdb.rerank applied to the SAME fused pool (id/body/score).
+    payload = [{"id": i, "body": paras[i].body, "score": s} for i, s in fused_scored]
+    expected = [int(d["id"]) for d in fathomdb.rerank(query, payload, 4)]
+    assert ranked == expected
+    # (3) the CE actually reordered the pool — differs from the raw fused order,
+    #     and the answer passage moved UP above the demoted distractor.
+    assert ranked != fused_order
+    assert ranked.index(2) < fused_order.index(2)
+    # rrf_fuse_scored is the in-harness pool the arm consumes (id, score) desc.
+    scored = rrf_fuse_scored([[2, 0, 1, 3], [2, 1, 0, 3]])
+    assert scored[0][0] == 2 and scored[-1][0] == 3
+    assert all(scored[i][1] >= scored[i + 1][1] for i in range(len(scored) - 1))
+
+
 def test_rrf_is_k60_and_fuses() -> None:
     # an item ranked top by both arms must beat one ranked low by both
     r1 = [3, 1, 2, 0]
