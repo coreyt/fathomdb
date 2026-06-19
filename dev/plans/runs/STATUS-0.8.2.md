@@ -32,9 +32,13 @@
   fused-RRF-vs-fused+rerank comparator call until valid data); budget **<$30**. (2) **direction** — **raise
   the detectable effect size** so the 1165-corpus is adequately powered (set MATERIAL_F1_LIFT to the
   corpus-feasible MDE — a pre-reg revision; the new value is HITL-confirmed at the next gate).
-- **IN-FLIGHT: Slice E2** (standalone rerank SDK API, Rust/cargo TDD). Then: rebuild extension → Slice 5
-  fix-1 (use E2 on the fused pool [P1] + center inverted-U [P2] + raise MATERIAL_F1_LIFT + re-pilot, <$30).
-  Slice 5 branch `7037523` stays unmerged; fix-1 rebases it onto main-with-E2 and lands once, corrected.
+- **E2 CLOSED + extension rebuilt + VERIFIED:** `fathomdb.rerank` reorders `[1,2,3]→[2,1,3]` (promotes the
+  relevant passage) through the `.so`; NaN→`WriteValidationError`; built via plain `maturin develop`
+  (pyproject carries `default-reranker` now — NO_REBUILD fragility RESOLVED). The CE genuinely reranks.
+- **NEXT: Slice 5 fix-1** (reuse branch `7037523`, rebase onto main+E2): fix [P1] (`fathomdb.rerank` over
+  the in-harness fused pool) + [P2] (center inverted-U) + **raise MATERIAL_F1_LIFT to the corpus-feasible
+  MDE** (provisional; HITL confirms the specific value before Slice 20) + re-pilot for fresh valid BAR
+  (fused vs valid fused_rerank), <$30. Then HITL: comparator call + threshold confirm → Slice 15/20.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
@@ -53,6 +57,7 @@
 | 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅ | **RE-SPAWNED (→ budget checkpoint)** | off `d55e922` w/ live reranker; `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **CLOSED** (fix-1 `f8bc631`) | n=300 graph, coverage 1.0, 50.6k entities/51.2k body-less edges, hash-validated; cache preserved to canonical for Slice 15 |
 | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
+| E2 | Standalone rerank SDK API (`fathomdb.rerank`) over arbitrary passages | impl | — | **CLOSED** (fix-1 `f2c910f`) | Python-verified reorders [1,2,3]→[2,1,3]; non-finite→WriteValidationError; default-reranker now in dev/test build (durable) |
 | 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |

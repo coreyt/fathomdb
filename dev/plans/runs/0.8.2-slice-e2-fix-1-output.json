@@ -1,0 +1,60 @@
+{
+  "phase": "0.8.2-slice-e2-fix-1",
+  "status": "GREEN",
+  "head_sha": "f2c910f961cfa33e8f6ccc27b1faeab785680ec2",
+  "branch": "main",
+  "merge_commit": "f2c910f961cfa33e8f6ccc27b1faeab785680ec2",
+  "tdd_evidence": {
+    "red_commit_sha": "aa44b4f",
+    "red_commit_description": "test(0.8.2/E2 fix-1): RED — rerank_passages returns Result + non-finite score rejects (codex §9 [P2]); 4 tests fail (NaN/+inf/-inf/mixed-pool assert is_err but get Ok because no guard yet)",
+    "green_commit_sha": "5ac881b",
+    "green_commit_description": "fix(0.8.2/E2 fix-1): GREEN — is_finite guard + default-reranker forwarded to dev/test builds; all 5 pr_e2_rerank_nonfinite tests pass"
+  },
+  "findings_addressed": [
+    {
+      "id": "P1",
+      "description": "fathomdb.rerank(depth>0) silently returns IDENTITY in dev/test builds — default-reranker not forwarded",
+      "fix": "Added `default-reranker = [\"fathomdb-engine/default-reranker\"]` to fathomdb-py/Cargo.toml [features]; added \"default-reranker\" to pyproject.toml [tool.maturin] features list; added `default-reranker` to conftest.py maturin-develop fixture feature string. Verified: cargo build -p fathomdb-py --features default-reranker resolves via new passthrough.",
+      "release_ci_unchanged": true,
+      "release_ci_note": "release.yml and ci.yml have no default-reranker entry (grep confirmed clean); shipped wheel surface unchanged."
+    },
+    {
+      "id": "P2",
+      "description": "fathomdb.rerank accepts non-finite score (NaN/±inf) → NaN blended scores / unstable sort order",
+      "fix": "Changed `rerank_passages` in fathomdb-engine to return `Result<Vec<(u64, f64)>, String>`; added is_finite() check before building SearchHits — returns Err(\"rerank: non-finite score for passage id=…\") immediately. PyO3 binding propagates inner Err as WriteValidationError. Added pr_e2_rerank_nonfinite.rs (ungated, 5 tests) covering NaN, +Inf, -Inf, mixed-pool, and the finite-ok sanity path.",
+      "tests_added": [
+        "pr_e2_rerank_nonfinite::rerank_passages_rejects_nan_score",
+        "pr_e2_rerank_nonfinite::rerank_passages_rejects_pos_inf_score",
+        "pr_e2_rerank_nonfinite::rerank_passages_rejects_neg_inf_score",
+        "pr_e2_rerank_nonfinite::rerank_passages_rejects_nonfinite_in_mixed_pool",
+        "pr_e2_rerank_nonfinite::rerank_passages_accepts_finite_scores"
+      ]
+    }
+  ],
+  "self_check": {
+    "cargo_test_engine_with_default_reranker": "PASS (all ok except pre-existing pr_g1_tokenizer_crash_recovery which was failing before this slice)",
+    "cargo_build_fathomdb_py_with_default_reranker": "PASS — Finished dev profile",
+    "cargo_clippy_fathomdb_py_with_default_reranker_D_warnings": "PASS — Finished dev profile, no errors",
+    "config_grep_confirmed": {
+      "pyproject_toml": "features = [\"pyo3/extension-module\", \"default-embedder\", \"default-reranker\"]",
+      "fathomdb_py_cargo_toml": "default-reranker = [\"fathomdb-engine/default-reranker\"]",
+      "conftest_py": "\"pyo3/extension-module,test-hooks,default-embedder,default-reranker\""
+    },
+    "canonical_tripwire": "CLEAN — git status --porcelain -- src/ dev/ returned empty"
+  },
+  "files_changed": [
+    "src/rust/crates/fathomdb-engine/src/lib.rs",
+    "src/rust/crates/fathomdb-engine/Cargo.toml",
+    "src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_nonfinite.rs",
+    "src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_passages.rs",
+    "src/rust/crates/fathomdb-py/Cargo.toml",
+    "src/rust/crates/fathomdb-py/src/lib.rs",
+    "src/python/pyproject.toml",
+    "src/python/tests/conftest.py"
+  ],
+  "pre_existing_failures": [
+    "pr_g1_tokenizer_crash_recovery::ac_fts_tokenizer_reproject_recovers_after_crash — confirmed failing on baseline commit aa44b4f before any changes in this slice"
+  ],
+  "escalations": [],
+  "next_step_for_orchestrator": "orchestrator rebuilds via plain maturin develop (pyproject now includes default-reranker) + Python-verifies fathomdb.rerank reranks; then Slice 5 fix-1"
+}
