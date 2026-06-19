@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +26,7 @@ from eval.m1_baseline import (
     STRONG_READER_DEFAULT,
     BGEEncoder,
     FusedPoolReranker,
+    Question,
 )
 from eval.m1_baseline_run import CostTrackingAnswerer
 from eval.m1_verdict import (
@@ -34,6 +36,7 @@ from eval.m1_verdict import (
     prior_answers_from_artifact,
     run_verdict,
 )
+from eval.r2_parity_eval import BaseAnswerer
 
 #: HARD stage-1 budget ceiling (USD). The HITL authorization is "~$10 on the
 #: current 299-graph". The pre-flight projection must clear this with the
@@ -61,6 +64,38 @@ def _load_extractions(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _atomic_write_json(path: Path, obj: Any) -> None:
+    """Atomically serialise ``obj`` to ``path`` (temp-file + :func:`os.replace`).
+
+    The JSON is written to a sibling ``<name>.tmp`` and ``os.replace``d into place —
+    a single atomic rename on the same filesystem. A process death **mid-write** can
+    only ever leave the (discardable) temp file partial; the live ``path`` is never a
+    half-written file (it keeps its prior contents until the rename commits). This is
+    the resilience guard for the incremental checkpoint."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _resolve_resume(
+    output: Path, resume: Optional[Path], checkpoint_path: Optional[Path]
+) -> Optional[Path]:
+    """The auto-resume source — **on by default, no manual flag required**.
+
+    Precedence: (1) an explicit ``--resume`` path (alternate source / override);
+    (2) the sidecar checkpoint this run writes — ``checkpoint_path`` if given, else
+    ``<output>.checkpoint.json`` — **auto-detected** when it already exists so any
+    relaunch (window-eviction / manual / crash) continues from it with zero re-spend;
+    (3) ``None`` → a clean from-scratch pass. Returns the path to load, or ``None``."""
+    if resume is not None:
+        return Path(resume)
+    sidecar = checkpoint_path or output.with_suffix(".checkpoint.json")
+    if sidecar.exists():
+        return sidecar
+    return None
+
+
 def run(
     *,
     mode: str,
@@ -76,29 +111,45 @@ def run(
     max_usd: float = HARD_CAP_USD,
     resume: Optional[Path] = None,
     checkpoint_path: Optional[Path] = None,
-    checkpoint_every: int = 25,
+    checkpoint_every: int = 10,
+    answerer: Optional[BaseAnswerer] = None,
+    encoder: Any = None,
+    reranker: Any = None,
+    questions: Optional[list[Question]] = None,
+    extractions: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     t0 = time.time()
-    extractions = _load_extractions(extractions_path)
-    questions = load_graph_questions(corpus, extractions)
+    if extractions is None:
+        extractions = _load_extractions(extractions_path)
+    if questions is None:
+        questions = load_graph_questions(corpus, extractions)
 
-    # Resume seam: reuse already-successful (qid, arm) answers from a prior artifact,
-    # re-calling ONLY the previously-failed cells (deterministic answerer ⇒ identical
-    # to a clean pass, but $0 for the cells that already succeeded).
+    # The sidecar checkpoint this run owns (resume source + atomic write target).
+    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
+
+    # AUTO-RESUME (on by default — no manual flag). Detect the sidecar checkpoint (or
+    # an explicit --resume override) and reuse every already-answered (qid, arm) cell,
+    # re-calling ONLY the missing/failed cells. Any restart (eviction / manual / crash)
+    # then continues with ZERO re-spend and NO restart-from-scratch. The answerer is
+    # deterministic (temp0/seed0), so a fill-in of the missing cells is identical to a
+    # clean pass — but $0 for the cells that already succeeded.
     prior_answers = None
-    if resume is not None:
-        prior = json.loads(Path(resume).read_text(encoding="utf-8"))
+    resume_src = _resolve_resume(output, resume, ckpt_path)
+    if resume_src is not None and resume_src.exists():
+        prior = json.loads(resume_src.read_text(encoding="utf-8"))
         prior_answers = prior_answers_from_artifact(prior)
         n_reusable = sum(1 for v in prior_answers.values() if v is not None)
+        how = "explicit --resume" if resume is not None else "AUTO-DETECTED sidecar"
         print(
-            f"[S20][RESUME] {n_reusable} prior non-None (qid,arm) cells reused from "
-            f"{resume}; only failed/missing cells will be (re)called",
+            f"[S20][AUTO-RESUME] {how}: {n_reusable} already-answered (qid,arm) cells "
+            f"reused from {resume_src}; only missing/failed cells will be (re)called "
+            f"(zero re-spend on the {n_reusable} reused)",
             flush=True,
         )
         if n_reusable == 0:
             print(
-                "[S20][RESUME] WARNING: prior artifact persisted 0 answers "
-                "(baseline_run absent) → this is a FULL re-run, not a fill-in",
+                "[S20][AUTO-RESUME] note: source persisted 0 answers → this is a FULL "
+                "run, not a fill-in",
                 flush=True,
             )
     from collections import Counter
@@ -150,43 +201,54 @@ def run(
                 "— refusing the priced pass."
             )
 
-    answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
+    if answerer is None:
+        answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
     if not answerer.available:
         raise SystemExit(
             f"[S20][STOP] answerer endpoint unreachable / reader {reader!r} unavailable "
-            f"(base_url={answerer.base_url}) — do NOT fake answers"
+            f"(base_url={getattr(answerer, 'base_url', '?')}) — do NOT fake answers"
         )
 
-    encoder = BGEEncoder()
-    reranker = FusedPoolReranker()
+    if encoder is None:
+        encoder = BGEEncoder()
+    if reranker is None:
+        reranker = FusedPoolReranker()
 
-    # Incremental checkpoint: atomically persist the partial answer matrix every
-    # ``checkpoint_every`` questions so a process kill mid-pass loses nothing — a
-    # later ``--resume <checkpoint>`` re-uses every persisted non-None cell and
-    # re-calls only the rest. Defaults to the output path + ``.checkpoint.json``.
-    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
+    # The answerer may be the real CostTrackingAnswerer or an injected stub; access
+    # its optional accounting attributes (usd / n_calls / n_errors / cost_block)
+    # dynamically through an Any alias.
+    ans_any: Any = answerer
+
+    # Incremental checkpoint: ATOMICALLY persist the partial answer matrix at least
+    # every ``checkpoint_every`` questions (temp-file + os.replace) so a process kill
+    # mid-pass loses nothing and can never corrupt the live file — auto-resume then
+    # re-uses every persisted non-None cell and re-calls only the rest. Failed cells
+    # are MISSING (absent), never persisted as a scored abstention. Defaults to the
+    # output path + ``.checkpoint.json``.
+    def _usd() -> float:
+        fn = getattr(ans_any, "usd", None)
+        if not callable(fn):
+            return 0.0
+        val: Any = fn()
+        return float(val)
 
     def _checkpoint(records: list[dict[str, Any]]) -> None:
         if mode != "priced":
             return
         n_ans = sum(1 for r in records for v in r.get("answers", {}).values() if v is not None)
-        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = ckpt_path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps({"baseline_run": {"paired_records": records}}), encoding="utf-8"
-        )
-        tmp.replace(ckpt_path)
+        _atomic_write_json(ckpt_path, {"baseline_run": {"paired_records": records}})
         print(
-            f"[S20][CKPT] persisted {n_ans} non-None cells -> {ckpt_path.name} "
-            f"(${answerer.usd():.4f})",
+            f"[S20][CKPT] atomically persisted {n_ans} answered cells -> "
+            f"{ckpt_path.name} (${_usd():.4f})",
             flush=True,
         )
 
     def progress(done: int, total: int, _qr: Any) -> None:
         if done == 1 or done % 10 == 0 or done == total:
             print(
-                f"[S20][{mode.upper()}] {done}/{total} calls={answerer.n_calls} "
-                f"${answerer.usd():.4f} ({round(time.time() - t0, 1)}s)",
+                f"[S20][{mode.upper()}] {done}/{total} "
+                f"calls={getattr(ans_any, 'n_calls', '?')} "
+                f"${_usd():.4f} ({round(time.time() - t0, 1)}s)",
                 flush=True,
             )
 
@@ -207,7 +269,14 @@ def run(
         checkpoint_every=checkpoint_every,
     )
 
-    art["cost"] = answerer.cost_block()
+    cost_fn = getattr(ans_any, "cost_block", None)
+    cost_block: Any = cost_fn() if callable(cost_fn) else {
+        "model": getattr(ans_any, "model_id", reader),
+        "n_calls": getattr(ans_any, "n_calls", None),
+        "n_errors": int(getattr(ans_any, "n_errors", 0) or 0),
+        "usd": _usd(),
+    }
+    art["cost"] = cost_block
     art["ppr_divergence"] = div
     art["mode"] = mode
     art["reader_model"] = reader
@@ -222,12 +291,14 @@ def run(
     art["musique_hash"] = MUSIQUE_HASH
 
     # ---- answer-completeness validity guard ([[background-exit-masks-real-exit]]) ----
-    # A corrupted priced pass (endpoint outage / rate-limit mid-run) degrades failed
-    # calls to abstention (None ⇒ F1=0), which silently DEFLATES every arm and biases
-    # the endpoint toward 0. Flag the run INVALID when the answer matrix is materially
-    # incomplete — never present an underpopulated endpoint as a verdict.
+    # Failures (retry-exhausted 429/5xx/timeout) are now MISSING cells (excluded from
+    # scoring, never a spurious F1=0 abstention) and are counted in ``n_errors``. If
+    # too many cells are missing the answer matrix is materially incomplete and the
+    # ≥3-hop endpoint is under-populated — flag the run INVALID rather than cite an
+    # under-powered verdict. Auto-resume re-calls exactly these missing cells, so a
+    # relaunch drives the run back to validity with zero re-spend on the answered set.
     expected = len(questions) * len(VERDICT_ARMS)
-    n_errors = int(art["cost"].get("n_errors", 0))
+    n_errors = int(cost_block.get("n_errors", 0) or 0)
     completeness = round(1.0 - n_errors / max(expected, 1), 4)
     run_valid = completeness >= VALID_COMPLETENESS_FLOOR
     art["answer_completeness"] = {
@@ -242,17 +313,20 @@ def run(
         art["INVALID"] = (
             f"INVALID priced pass — answer completeness {completeness} < "
             f"{VALID_COMPLETENESS_FLOOR}: {n_errors}/{expected} answerer calls FAILED "
-            "(endpoint outage / rate-limit mid-run), degrading those (question,arm) cells "
-            "to spurious abstentions. The endpoint numbers below are NOT a citable verdict "
-            "— a clean re-run on a stable endpoint is required."
+            "(retry-exhausted 429/5xx/timeout). Those (question,arm) cells are MISSING "
+            "(NOT scored as abstentions), so the ≥3-hop endpoint is under-populated. The "
+            "numbers below are NOT a citable verdict — RELAUNCH to auto-resume (it re-calls "
+            "only the missing cells; zero re-spend on the answered set) until completeness "
+            "clears the floor."
         )
         print(f"[S20][INVALID] {art['INVALID']}", flush=True)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(art, indent=2), encoding="utf-8")
     print(
-        f"[S20][{mode.upper()}] wrote {output} | cost ${answerer.usd():.4f} "
-        f"({answerer.n_calls} calls, {answerer.n_errors} errors)",
+        f"[S20][{mode.upper()}] wrote {output} | cost ${_usd():.4f} "
+        f"({getattr(ans_any, 'n_calls', '?')} calls, "
+        f"{int(getattr(ans_any, 'n_errors', 0) or 0)} errors)",
         flush=True,
     )
     return art
@@ -425,13 +499,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--cheap-limit", type=int, default=15)
     ap.add_argument("--max-usd", type=float, default=HARD_CAP_USD)
     ap.add_argument("--resume", default=None,
-                    help="prior verdict artifact JSON: reuse its successful (qid,arm) "
-                    "answers and (re)call ONLY the previously-failed cells")
+                    help="EXPLICIT resume source (prior artifact / checkpoint JSON): "
+                    "overrides the auto-detected sidecar. Auto-resume is ON BY DEFAULT "
+                    "(the <output>.checkpoint.json sidecar is loaded automatically), so "
+                    "this flag is only for an alternate source")
     ap.add_argument("--checkpoint", default=None,
                     help="path to write the incremental partial-answer checkpoint "
-                    "(default: <output>.checkpoint.json); --resume it after a kill")
-    ap.add_argument("--checkpoint-every", type=int, default=25,
-                    help="persist the checkpoint every N completed questions (priced mode)")
+                    "(default: <output>.checkpoint.json); auto-resumed after a kill")
+    ap.add_argument("--checkpoint-every", type=int, default=10,
+                    help="atomically persist the checkpoint at least every N completed "
+                    "questions (priced mode)")
     args = ap.parse_args(argv)
 
     corpus = Path(args.corpus) if args.corpus else _DEFAULT_CORPUS

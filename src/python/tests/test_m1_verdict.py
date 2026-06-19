@@ -531,18 +531,53 @@ def test_resolve_resume_auto_detects_sidecar_without_a_flag(tmp_path) -> None:
     assert _resolve_resume(out, None, ckpt) == ckpt
 
 
+def _distinct_question(qid: str, hop: int, answer: str) -> Question:
+    """A question whose 20 paragraphs have DISTINCT lexical content (so BM25 has a
+    real ranking) — used by the run()-level guard, which aborts if ppr_fusion is
+    silently identical to BM25 on every question."""
+    paras = tuple(
+        Paragraph(
+            idx=i, title=f"T{i}",
+            text=f"paragraph {i} keyword{i} about {answer if i == 0 else 'topic' + str(i)}",
+            is_supporting=(i == 0),
+        )
+        for i in range(20)
+    )
+    return Question(
+        id=qid, question=f"what is {answer} keyword3 keyword7?", hop_count=hop,
+        answer=answer, answer_aliases=(), answerable=True, paragraphs=paras,
+    )
+
+
+def _star_extractions(questions: list[Question]) -> dict[str, dict]:
+    """A hub graph that lets PPR pull high-index paragraphs into the top-k (so the
+    ppr_fusion arm materially diverges from BM25 — clears the run() vacuity guard)."""
+    out: dict[str, dict] = {}
+    for q in questions:
+        for p in q.paragraphs:
+            rels = [{"subject": f"E{p.idx}", "object": "HUB"}]
+            if p.idx in (15, 16, 17, 18, 19):
+                rels += [{"subject": "HUB", "object": f"E{p.idx}"},
+                         {"subject": f"E{p.idx}", "object": "E0"}]
+            out[f"{q.id}#{p.idx}"] = {
+                "entities": [{"name": f"E{p.idx}"}, {"name": "HUB"}], "relations": rels,
+            }
+    return out
+
+
 def test_run_auto_resumes_with_no_flag_zero_respend(tmp_path) -> None:
     from eval.m1_verdict_run import run
 
-    qs = _mini_set()
-    ext = _mini_extractions(qs)
+    qs = [_distinct_question(f"{h}hop__{t}", h, f"ans{h}{t}")
+          for h in (2, 3, 4) for t in ("a", "b", "c")]
+    ext = _star_extractions(qs)
     out = tmp_path / "verdict.json"
 
     # Pass 1 — a full priced-mode run (stub answerer) that writes the sidecar checkpoint.
     spy1 = CountingAnswerer()
     run(
         mode="priced", reader="stub", corpus=Path("/nonexistent"),
-        extractions_path=Path("/nonexistent"), output=out, n_boot=80,
+        extractions_path=Path("/nonexistent"), output=out, k=3, n_boot=80,
         questions=qs, extractions=ext, answerer=spy1,
         encoder=FakeEncoder(), reranker=FakeReranker(),
     )
@@ -555,7 +590,7 @@ def test_run_auto_resumes_with_no_flag_zero_respend(tmp_path) -> None:
     spy2 = CountingAnswerer()
     run(
         mode="priced", reader="stub", corpus=Path("/nonexistent"),
-        extractions_path=Path("/nonexistent"), output=out, n_boot=80,
+        extractions_path=Path("/nonexistent"), output=out, k=3, n_boot=80,
         questions=qs, extractions=ext, answerer=spy2,
         encoder=FakeEncoder(), reranker=FakeReranker(),
     )

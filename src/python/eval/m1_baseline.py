@@ -672,6 +672,22 @@ class QuestionResult:
     confident: dict[str, bool] = field(default_factory=dict)
 
 
+def _bump_n_errors(answerer: BaseAnswerer) -> None:
+    """Thread-safely increment a counting answerer's ``n_errors`` (a failed cell).
+
+    No-op for answerers that do not track errors. Uses the answerer's ``_lock`` when
+    present so the concurrent (``answer_workers > 1``) path counts every failure."""
+    n_err = getattr(answerer, "n_errors", None)
+    if not isinstance(n_err, int):
+        return
+    lock = getattr(answerer, "_lock", None)
+    if lock is not None:
+        with lock:
+            answerer.n_errors = getattr(answerer, "n_errors", 0) + 1  # type: ignore[attr-defined]
+    else:
+        answerer.n_errors = n_err + 1  # type: ignore[attr-defined]
+
+
 def run_baseline(
     questions: Sequence[Question],
     answerer: BaseAnswerer,
@@ -740,11 +756,16 @@ def run_baseline(
             ranked_idx = arm_rankings[arm][:k]
             tasks.append(_Task(qr, q, arm, [q.paragraphs[i].body for i in ranked_idx]))
 
-    # Phase 2 — answer (priced; optionally concurrent) + score. A failed/timed-out
-    # call degrades to an abstention (None) and is counted — never crashes the run
-    # (a single reasoning-model timeout must not discard the whole priced pass).
+    # Phase 2 — answer (priced; optionally concurrent) + score. **Failure ≠
+    # abstention** (Slice 20 resilience, HITL): a SUCCESSFUL call that returns no
+    # usable answer is a legitimate *abstention* (``None``, scored 0, persisted); a
+    # call that NEVER succeeded (a retry-exhausted 429/5xx/timeout — surfaced as a
+    # raise from ``answerer.answer``) is a *failure* — left **MISSING** (the cell is
+    # never written, so it is excluded from scoring and from the checkpoint's
+    # answered set, re-called on the next resume, and counted against
+    # ``answer_completeness``). A failed cell is NEVER persisted as a scored
+    # abstention (the bug that silently deflated every arm toward F1=0).
     def _do(task: "_Task") -> None:
-        ans: Optional[str] = None
         # Resume: reuse a prior NON-None answer for this (qid, arm) cell — only the
         # cells that previously FAILED (absent / None) are (re)called. The answerer is
         # deterministic (temp0/seed0), so a fill-in of the failed cells is identical to
@@ -759,14 +780,19 @@ def run_baseline(
                 else:
                     task.qr.confident[task.arm] = is_confident_answer(prev)
                 return
+        ans: Optional[str] = None
         if answerer_available:
             try:
                 ans = answerer.answer(task.q.question, task.context)
-            except Exception:  # noqa: BLE001 - record + degrade, do not abort the pass
-                n_err = getattr(answerer, "n_errors", None)
-                if isinstance(n_err, int):
-                    answerer.n_errors = n_err + 1  # type: ignore[attr-defined]
-                ans = None
+            except Exception:  # noqa: BLE001 — a FAILURE (never succeeded): mark MISSING.
+                # Count the error and leave the cell UNSET (no answer / no score) so it
+                # is excluded from the answered set + re-called on resume — never a
+                # spurious scored abstention. Do not abort the pass.
+                _bump_n_errors(answerer)
+                return
+        # SUCCESS (including a legitimate abstention where ``ans is None``): persist +
+        # score. A None here = the reader answered "I don't know" ⇒ scored 0, NOT
+        # retried, NOT missing.
         task.qr.answers[task.arm] = ans
         if task.q.answerable:
             task.qr.em[task.arm] = em_score(ans, task.q.golds)
@@ -817,6 +843,16 @@ def run_baseline(
             if progress is not None and (i + 1) % len(arms) == 0:
                 progress((i + 1) // len(arms), len(questions), task.qr)
             _maybe_checkpoint(i + 1)
+
+    # Final flush: persist the COMPLETE answer matrix once at the end (independent of
+    # the periodic cadence) so the sidecar checkpoint always reflects the finished
+    # pass — a relaunch then auto-resumes with zero re-spend, and a kill that lands
+    # just after the last periodic beat never loses the tail.
+    if checkpoint is not None and checkpoint_every > 0:
+        try:
+            checkpoint(_snapshot())
+        except Exception:  # noqa: BLE001 — a checkpoint failure must never abort the pass
+            pass
 
     return _aggregate(results, answerer, k=k, arms=arms)
 
