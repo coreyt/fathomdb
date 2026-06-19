@@ -121,6 +121,13 @@ required-features = ["operator"]
 name = "pr_g10_reranker_ce"
 required-features = ["default-reranker"]
 
+# 0.8.2 Slice E2: the standalone-rerank helper (`rerank_passages`) reorder test
+# exercises the real reranker, so the whole target only compiles/runs under
+# `--features default-reranker` (same gate as `pr_g10_reranker_ce`).
+[[test]]
+name = "pr_e2_rerank_passages"
+required-features = ["default-reranker"]
+
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"
