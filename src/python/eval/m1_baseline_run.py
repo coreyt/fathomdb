@@ -31,12 +31,18 @@ from eval.m1_baseline import (
     MUSIQUE_HASH,
     STRONG_READER_DEFAULT,
     BGEEncoder,
-    EngineReranker,
+    FusedPoolReranker,
     Question,
     load_musique,
+    retrieval_recall,
     run_baseline,
 )
-from eval.m1_power_sim import FLAT_POSITIVE_LIFT, required_n, simulate_p_go
+from eval.m1_power_sim import (
+    FLAT_POSITIVE_LIFT,
+    propose_material_f1_lift,
+    required_n,
+    simulate_p_go,
+)
 from eval.p0a_base_retrieval import AirlockAnswerer
 
 #: Documented price assumptions ($ per 1M tokens). The proxy does not return a
@@ -162,6 +168,11 @@ def build_power_block(paired_records: list[dict[str, Any]], cost: dict[str, Any]
     sd_pair = sd_f1 * _math.sqrt(2 * (1 - 0.5))
     analytic_n = int(_math.ceil((sd_pair * (1.96 + 0.84) / FLAT_POSITIVE_LIFT) ** 2)) if sd_pair else None
 
+    # MDE + proposed MATERIAL_F1_LIFT at the FULL feasible ≥3-hop corpus (N=1165),
+    # paired, power 0.8, reported across ρ∈{0.5,0.7}. PROPOSED ONLY — decide()/
+    # MATERIAL_F1_LIFT untouched; HITL confirms the value at the next gate.
+    proposed_mde = propose_material_f1_lift(sd_f1, CORPUS_ANSWERABLE_GE3HOP, rhos=(0.5, 0.7))
+
     # $ projection: per (question×arm) call cost from the pilot.
     n_calls = max(int(cost.get("n_calls", 0)), 1)
     per_call_usd = round(float(cost.get("usd", 0.0)) / n_calls, 6)
@@ -184,6 +195,7 @@ def build_power_block(paired_records: list[dict[str, Any]], cost: dict[str, Any]
         "required_n_flat_positive": req,
         "analytic_required_n_normal_approx_rho0.5": analytic_n,
         "rho_sensitivity_required_n": rho_sweep,
+        "mde_at_full_corpus_n1165": proposed_mde,
         "corpus_answerable_ge3hop": CORPUS_ANSWERABLE_GE3HOP,
         "feasible_on_corpus": feasible_on_corpus,
         "p_go_if_whole_ge3hop_corpus_run": p_go_at_full_corpus,
@@ -232,6 +244,15 @@ def select_sample(
     return sample
 
 
+def recall_sample(questions: Sequence[Question], *, n: int, seed: int = 0) -> list[Question]:
+    """Deterministic ≥3-hop answerable sample for the $0 recall comparison
+    (decoupled from the priced cap; sized only by CPU budget)."""
+    pool = sorted([q for q in questions if q.answerable and q.hop_count >= 3], key=lambda q: q.id)
+    if len(pool) <= n:
+        return pool
+    return random.Random(seed).sample(pool, n)
+
+
 def run(
     corpus: Path,
     *,
@@ -244,6 +265,7 @@ def run(
     seed: int,
     output: Path,
     answer_workers: int = 8,
+    n_recall: int = 0,
 ) -> dict[str, Any]:
     t0 = time.time()
     questions = load_musique(corpus)
@@ -264,7 +286,7 @@ def run(
             f"(base_url={answerer.base_url}); STOP — do not fake answers"
         )
     encoder = BGEEncoder()
-    reranker = EngineReranker()
+    reranker = FusedPoolReranker()
 
     n_done = 0
 
@@ -284,6 +306,15 @@ def run(
 
     art["cost"] = answerer.cost_block()
     art["power_sim"] = build_power_block(art["paired_records"], art["cost"])
+
+    # $0 retrieval-recall comparison (gold supporting-passage recall@K per arm) —
+    # the cheaper, lower-variance signal for whether the CE rerank helps/hurts
+    # bridge-passage retrieval. No LLM; CPU-only over a ≥3-hop answerable sample.
+    if n_recall > 0:
+        rsample = recall_sample(questions, n=n_recall, seed=seed)
+        print(f"[S5][{mode.upper()}] recall pass over {len(rsample)} ≥3-hop answerable Q ($0) ...",
+              flush=True)
+        art["retrieval_recall"] = retrieval_recall(rsample, encoder, reranker, ks=(1, 2, 3, 5, 10))
     art["mode"] = mode
     art["reader_model"] = reader
     art["reader_model_mapping_note"] = (
@@ -324,6 +355,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--n-unans", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=8, help="concurrent answerer calls")
+    ap.add_argument("--recall-n", type=int, default=0,
+                    help="$0 retrieval-recall comparison over N ≥3-hop answerable Q (CPU-only)")
     ap.add_argument("--output", default=None)
     args = ap.parse_args(argv)
 
@@ -363,7 +396,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     run(
         corpus, mode=args.mode, reader=reader, k=args.k,
         n_ge3=n_ge3, n_2hop=n_2hop, n_unans=n_unans, seed=args.seed,
-        output=Path(args.output), answer_workers=args.workers,
+        output=Path(args.output), answer_workers=args.workers, n_recall=args.recall_n,
     )
     return 0
 

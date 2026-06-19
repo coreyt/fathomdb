@@ -12,9 +12,10 @@ The four baseline arms (design §2):
   * ``passage_dense`` — passage-level dense retrieval (bge-small-en-v1.5, the
                         engine's pinned embedder), run **in-harness** (see below).
   * ``fused``         — RRF(bm25, passage_dense), **k=60 pinned**.
-  * ``fused_rerank``  — the **live engine cross-encoder** (TinyBERT-L2) via
-                        ``Engine.search(rerank_depth=200)`` — the **fixed
-                        comparator** (design amendment 6).
+  * ``fused_rerank``  — the ``fused`` pool re-ordered by the **live cross-encoder**
+                        (TinyBERT-L2) via the standalone ``fathomdb.rerank`` API
+                        (Slice E2), ``rerank_depth=200`` — the **fixed comparator**
+                        (design amendment 6). Differs from ``fused`` ONLY by the CE.
 
 **Why the dense / fused arms are in-harness (justified deviation, logged).**
 The canonical extension built for this slice carries the ``default-reranker``
@@ -28,12 +29,15 @@ would drop ``default-reranker`` and silently kill the comparator — exactly wha
 the slice prompt forbids. The design explicitly sanctions building an arm
 in-harness when it cannot be isolated from the engine; we therefore build the
 dense arm in-harness with a pure-numpy forward pass of the **same** pinned model
-(``bge-small-en-v1.5``, CLS-pooled + L2-normalised), and reuse the **live engine
-CE** for ``fused_rerank``. Because a cross-encoder scores each (query, passage)
-pair independently, the reranked order over a fixed candidate **set** is
-input-order-independent; the engine's text pool ≈ the full per-question passage
-set, so ``fused_rerank`` == "the fused pool re-ordered by the CE" faithfully.
-``n_pool`` per question is recorded (no silent cap).
+(``bge-small-en-v1.5``, CLS-pooled + L2-normalised). ``fused_rerank`` reranks the
+**identical in-harness fused(bm25+dense) RRF pool** the ``fused`` arm produces,
+via the standalone ``fathomdb.rerank`` API (Slice E2) — the live TinyBERT-L2
+cross-encoder over a caller-supplied passage list, NOT the engine's own capped
+text-only ``search`` pool (the [P1] the first pilot tripped on). The two arms
+differ ONLY by the CE rerank over the same pool; ``fathomdb.rerank`` blends the CE
+logit with the input RRF score (engine Decision 5: ``0.3·sigmoid(ce)+0.7·rrf_norm``).
+``n_pool`` (the CE-reranked depth, ``min(200, pool)``) per question is recorded
+(no silent cap).
 
 Footprint: CPU-only, offline, deterministic; the answerer LLM is the one priced
 seam (gated, reused from ``r2_parity_eval`` / ``p0a_base_retrieval``).
@@ -47,7 +51,6 @@ import math
 import os
 import re
 import struct
-import tempfile
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -103,10 +106,22 @@ class EncoderProtocol(Protocol):
 
 
 @runtime_checkable
-class RerankerProtocol(Protocol):
-    """Per-question CE reranker seam: returns (ranked passage idx, n_pool)."""
+class FusedRerankerProtocol(Protocol):
+    """Fused-pool CE reranker seam (the [P1] correction).
 
-    def rank(self, query: str, passages: Sequence["Paragraph"]) -> tuple[list[int], int]: ...
+    Reranks the **in-harness** fused(bm25+dense) pool the ``fused`` arm produces.
+    ``fused_scored`` is that pool as ``(passage_idx, rrf_score)`` in fused order;
+    returns ``(ranked passage idx, n_pool)`` where ``n_pool`` is the CE-reranked
+    depth (``min(depth, pool)`` — no silent cap)."""
+
+    def rank_fused(
+        self,
+        query: str,
+        passages: Sequence["Paragraph"],
+        fused_scored: Sequence[tuple[int, float]],
+        *,
+        depth: Optional[int] = None,
+    ) -> tuple[list[int], int]: ...
 
 
 @dataclass(frozen=True)
@@ -341,72 +356,94 @@ def dense_rank(query: str, passages: Sequence[Paragraph], encoder: EncoderProtoc
 # --------------------------------------------------------------------------- #
 
 
-def rrf_fuse(rankings: Sequence[Sequence[int]], *, k: int = RRF_K) -> list[int]:
-    """Reciprocal-rank fusion of several rankings (lists of item ids). k pinned."""
+def rrf_fuse_scored(
+    rankings: Sequence[Sequence[int]], *, k: int = RRF_K
+) -> list[tuple[int, float]]:
+    """RRF of several rankings → ``[(item, fused_score), ...]`` desc by score.
+
+    The scored form is what ``fused_rerank`` consumes: the per-passage RRF score is
+    the input ``score`` ``fathomdb.rerank`` blends with the CE logit (no recompute,
+    so the fused pool the CE reranks is byte-identical to the ``fused`` arm's)."""
     score: dict[int, float] = defaultdict(float)
     for ranking in rankings:
         for rank, item in enumerate(ranking):
             score[item] += 1.0 / (k + rank + 1)
     # higher fused score first; tie-break by smallest id for determinism.
-    return [i for i, _ in sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def rrf_fuse(rankings: Sequence[Sequence[int]], *, k: int = RRF_K) -> list[int]:
+    """Reciprocal-rank fusion of several rankings (lists of item ids). k pinned."""
+    return [i for i, _ in rrf_fuse_scored(rankings, k=k)]
 
 
 # --------------------------------------------------------------------------- #
-# Arm 4 — fused + CE rerank (the LIVE engine cross-encoder)
+# Arm 4 — fused + CE rerank (the in-harness fused pool, via fathomdb.rerank)
 # --------------------------------------------------------------------------- #
 
 
-class EngineReranker:
-    """Reranks a question's passages via the live engine cross-encoder.
+class FusedPoolReranker:
+    """Reranks the in-harness fused(bm25+dense) pool with the live cross-encoder
+    via the standalone ``fathomdb.rerank`` API (Slice E2) — the [P1] correction.
 
-    Indexes the passages into a throwaway engine and calls
-    ``search(rerank_depth=RERANK_DEPTH)``. Returns ranked passage indices plus
-    the realised candidate-pool size (``n_pool``) for the no-silent-cap log.
-    The CE scores each (query, passage) pair independently, so the order over the
-    pool is input-order-independent — this is "the fused pool re-ordered by CE".
+    The ``fused`` and ``fused_rerank`` arms consume the IDENTICAL per-question
+    fused(bm25+dense) RRF pool; they differ ONLY by this CE rerank over the top-K
+    (``K = rerank_depth`` clamped to the pool). ``fathomdb.rerank`` marshals
+    ``[{"id","body","score"}...]`` to the pure engine helper ``rerank_passages``
+    and blends the CE logit with the input RRF score (engine Decision 5:
+    ``0.3·sigmoid(ce)+0.7·rrf_norm``). This is "the fused pool re-ordered by the
+    CE" — NOT the engine ``search`` path's own capped text-only pool (which the
+    first pilot's ``Engine.search(rerank_depth=...)`` arm reranked instead).
     """
 
     def __init__(self, *, rerank_depth: int = RERANK_DEPTH) -> None:
         self._depth = rerank_depth
-        self._engine_cls: Any = None
 
     @property
     def available(self) -> bool:
         try:
-            from fathomdb.engine import Engine  # noqa: F401
+            import fathomdb  # noqa: F401, PLC0415
         except Exception:
             return False
-        return True
+        return hasattr(__import__("fathomdb"), "rerank")
 
-    def rank(self, query: str, passages: Sequence[Paragraph]) -> tuple[list[int], int]:
-        from fathomdb.engine import Engine
+    def rank_fused(
+        self,
+        query: str,
+        passages: Sequence[Paragraph],
+        fused_scored: Sequence[tuple[int, float]],
+        *,
+        depth: Optional[int] = None,
+    ) -> tuple[list[int], int]:
+        import fathomdb  # noqa: PLC0415
 
-        body_to_idx: dict[str, int] = {p.body: i for i, p in enumerate(passages)}
-        db_path = tempfile.mktemp(suffix=".sqlite")
-        eng = Engine.open(db_path, use_default_embedder=False)
-        try:
-            eng.write([{"kind": "doc", "body": p.body} for p in passages])
-            eng.drain(timeout_s=60)
-            res = eng.search(query, rerank_depth=self._depth)
-            ranked: list[int] = []
-            seen: set[int] = set()
-            for hit in res.results:
-                i = body_to_idx.get(hit.body)
-                if i is None or i in seen:
-                    continue
+        d = self._depth if depth is None else depth
+        k = min(d, len(fused_scored))
+        pool = list(fused_scored[:k])
+        payload = [
+            {"id": int(idx), "body": passages[idx].body, "score": float(score)}
+            for idx, score in pool
+        ]
+        reranked = fathomdb.rerank(query, payload, k)
+        ranked: list[int] = []
+        seen: set[int] = set()
+        for hit in reranked:
+            i = int(hit["id"])
+            if i not in seen:
                 seen.add(i)
                 ranked.append(i)
-            n_pool = len(ranked)
-            # Append any passages the text pool dropped (kept last, original order)
-            # so the arm always returns a full ranking; counted out of n_pool.
-            for i in range(len(passages)):
-                if i not in seen:
-                    ranked.append(i)
-            return ranked, n_pool
-        finally:
-            eng.close()
-            with __import__("contextlib").suppress(FileNotFoundError):
-                os.unlink(db_path)
+        n_pool = len(ranked)
+        # Append the fused tail (passages beyond top-K) in fused order, then any
+        # remainder, so the arm always returns a full ranking; counted out of n_pool.
+        for idx, _ in fused_scored[k:]:
+            if idx not in seen:
+                seen.add(idx)
+                ranked.append(idx)
+        for i in range(len(passages)):
+            if i not in seen:
+                seen.add(i)
+                ranked.append(i)
+        return ranked, n_pool
 
 
 # --------------------------------------------------------------------------- #
@@ -417,18 +454,22 @@ class EngineReranker:
 def retrieve_arms(
     question: Question,
     encoder: EncoderProtocol,
-    reranker: RerankerProtocol,
+    reranker: Optional[FusedRerankerProtocol] = None,
 ) -> dict[str, Any]:
     """Return the ranked passage-index list for each of the four arms + n_pool.
 
     Every arm ranks the *identical* per-question passage pool (retrieval is the
-    only variable); the answerer is applied identically downstream.
+    only variable); the answerer is applied identically downstream. ``fused`` and
+    ``fused_rerank`` consume the SAME fused(bm25+dense) RRF pool — they differ ONLY
+    by the cross-encoder rerank (``fathomdb.rerank`` over that pool).
     """
+    reranker = reranker or FusedPoolReranker()
     paras = question.paragraphs
     bm = bm25_rank(question.question, paras)
     dn = dense_rank(question.question, paras, encoder)
-    fused = rrf_fuse([bm, dn])
-    rer, n_pool = reranker.rank(question.question, paras)
+    fused_scored = rrf_fuse_scored([bm, dn])
+    fused = [i for i, _ in fused_scored]
+    rer, n_pool = reranker.rank_fused(question.question, paras, fused_scored, depth=RERANK_DEPTH)
     return {
         "bm25": bm,
         "passage_dense": dn,
@@ -496,6 +537,68 @@ def is_confident_answer(pred: Optional[str]) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# $0 retrieval-recall comparison — gold supporting-passage recall@K per arm
+# --------------------------------------------------------------------------- #
+
+
+def supporting_positions(question: Question) -> set[int]:
+    """Gold supporting-passage POSITIONS (into ``question.paragraphs``) — the same
+    index space the arm rankings use (``bm25_rank``/``dense_rank`` return
+    enumerate positions, not ``Paragraph.idx``)."""
+    return {i for i, p in enumerate(question.paragraphs) if p.is_supporting}
+
+
+def recall_at_k(ranked: Sequence[int], gold: set[int], k: int) -> Optional[float]:
+    """Fraction of the gold supporting set retrieved in the top-``k``. ``None`` when
+    the question has no labelled supporting passage (excluded from the mean)."""
+    if not gold:
+        return None
+    return len(set(ranked[:k]) & gold) / len(gold)
+
+
+def retrieval_recall(
+    questions: Sequence[Question],
+    encoder: Optional[EncoderProtocol] = None,
+    reranker: Optional[FusedRerankerProtocol] = None,
+    *,
+    ks: Sequence[int] = (1, 2, 3, 5, 10),
+    arms: Sequence[str] = ARM_NAMES,
+) -> dict[str, Any]:
+    """$0 retrieval-recall comparison: gold supporting-passage recall@K per arm.
+
+    The cheaper, lower-variance signal (no LLM) for whether the CE rerank helps or
+    hurts finding the bridge passages multi-hop answering needs — it compares the
+    four arms' rankings directly against the MuSiQue ``is_supporting`` labels.
+    """
+    encoder = encoder or BGEEncoder()
+    reranker = reranker or FusedPoolReranker()
+    per_arm: dict[str, dict[int, list[float]]] = {a: {k: [] for k in ks} for a in arms}
+    n_used = 0
+    for q in questions:
+        gold = supporting_positions(q)
+        if not gold:
+            continue
+        n_used += 1
+        rankings = retrieve_arms(q, encoder, reranker)
+        for arm in arms:
+            for k in ks:
+                r = recall_at_k(rankings[arm], gold, k)
+                if r is not None:
+                    per_arm[arm][k].append(r)
+    return {
+        "schema": "0.8.2-m1-recall-v1",
+        "n_questions_with_gold": n_used,
+        "ks": list(ks),
+        "n_gold_mean": round(
+            sum(len(supporting_positions(q)) for q in questions) / max(n_used, 1), 4
+        ),
+        "recall_at_k": {
+            arm: {str(k): _mean(per_arm[arm][k]) for k in ks} for arm in arms
+        },
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Pipeline
 # --------------------------------------------------------------------------- #
 
@@ -519,7 +622,7 @@ def run_baseline(
     *,
     k: int = 10,
     encoder: Optional[EncoderProtocol] = None,
-    reranker: Optional[RerankerProtocol] = None,
+    reranker: Optional[FusedRerankerProtocol] = None,
     arms: Sequence[str] = ARM_NAMES,
     progress: Any = None,
     answer_workers: int = 1,
@@ -540,7 +643,7 @@ def run_baseline(
     ``answer_workers=1`` keeps the deterministic single-threaded path for tests.
     """
     encoder = encoder or BGEEncoder()
-    reranker = reranker or EngineReranker()
+    reranker = reranker or FusedPoolReranker()
     answerer_available = answerer.available
     results: list[QuestionResult] = []
 

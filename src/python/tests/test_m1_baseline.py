@@ -66,9 +66,12 @@ class FakeEncoder:
 
 
 class FakeReranker:
-    """Returns the bm25 order as the 'reranked' order; n_pool == len(passages)."""
+    """Reranks the fused pool by bm25 order (deterministic; no CE/model).
 
-    def rank(self, query, passages):  # noqa: ANN001
+    Implements the fused-pool seam: receives the in-harness fused(bm25+dense)
+    scored pool and returns a full ranking + the reranked-pool size (n_pool)."""
+
+    def rank_fused(self, query, passages, fused_scored, *, depth=None):  # noqa: ANN001
         order = bm25_rank(query, passages)
         return order, len(passages)
 

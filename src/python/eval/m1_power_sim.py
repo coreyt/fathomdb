@@ -47,6 +47,74 @@ DEFAULT_RHO = 0.5
 TARGET_P_GO = 0.8
 
 
+#: Closed-form MDE z critical values. The material gate is "paired CI_low > 0"
+#: (a 95% two-sided CI ⇒ a one-sided 2.5% lower bound), so z_alpha = Φ⁻¹(0.975);
+#: power 0.8 ⇒ z_power = Φ⁻¹(0.8).
+_Z_ALPHA_2SIDED_05 = 1.959963984540054
+_Z_POWER_80 = 0.8416212335729143
+
+
+def paired_mde(
+    sd_baseline: float,
+    n: int,
+    *,
+    rho: float = DEFAULT_RHO,
+    alpha_z: float = _Z_ALPHA_2SIDED_05,
+    power_z: float = _Z_POWER_80,
+) -> float:
+    """Minimum detectable paired ΔF1 at cell size ``n`` and power 0.8.
+
+    Closed-form normal approximation for the one-sample (paired-difference) test
+    the material gate implements::
+
+        MDE = (z_alpha + z_power) · sd_diff / sqrt(n),
+        sd_diff = sd_baseline · sqrt(2·(1 − rho))
+
+    ``sd_baseline`` is the measured per-question baseline F1 SD; ``rho`` the
+    documented within-question arm correlation (ρ=0.5 ⇒ sd_diff == sd_baseline,
+    the conservative case)."""
+    if n <= 0:
+        raise ValueError("n must be positive")
+    sd_diff = sd_baseline * math.sqrt(2.0 * (1.0 - rho))
+    return (alpha_z + power_z) * sd_diff / math.sqrt(n)
+
+
+def propose_material_f1_lift(
+    sd_baseline: float,
+    n: int,
+    *,
+    rhos: Sequence[float] = (0.5, 0.7),
+    round_to: float = 0.01,
+) -> dict[str, Any]:
+    """Compute the paired MDE at ``n`` for each ρ and PROPOSE a MATERIAL_F1_LIFT.
+
+    The proposed value is the conservative (smallest-ρ ⇒ largest sd_diff ⇒ largest
+    MDE) MDE rounded UP to ``round_to``. **Pure compute** — this does NOT touch
+    :data:`m1_decision_rule.MATERIAL_F1_LIFT` or :func:`decide`; the re-freeze is
+    HITL-confirmed at the next gate. The current frozen value is reported for the
+    delta."""
+    conservative_rho = min(rhos)
+    mde_by_rho = {f"rho_{rho}": round(paired_mde(sd_baseline, n, rho=rho), 6) for rho in rhos}
+    conservative = paired_mde(sd_baseline, n, rho=conservative_rho)
+    proposed = math.ceil(conservative / round_to) * round_to
+    return {
+        "n": n,
+        "sd_baseline_f1": round(sd_baseline, 6),
+        "power": TARGET_P_GO,
+        "alpha_two_sided": 0.05,
+        "mde_by_rho": mde_by_rho,
+        "conservative_rho": conservative_rho,
+        "conservative_mde": round(conservative, 6),
+        "proposed_material_f1_lift": round(proposed, 4),
+        "rounding_rule": f"ceil(conservative ρ={conservative_rho} MDE / {round_to}) · {round_to}",
+        "current_frozen_material_f1_lift": MATERIAL_F1_LIFT,
+        "note": (
+            "PROPOSED ONLY — decide()/MATERIAL_F1_LIFT unchanged in this slice; HITL "
+            "confirms the value at the next gate before a tiny decide() re-freeze."
+        ),
+    }
+
+
 def effect_delta(shape: str, hop_counts: np.ndarray, *, lift: float = FLAT_POSITIVE_LIFT) -> np.ndarray:
     """Per-question TRUE ΔF1 (ppr − comparator) for an effect ``shape``.
 
@@ -64,8 +132,12 @@ def effect_delta(shape: str, hop_counts: np.ndarray, *, lift: float = FLAT_POSIT
         base = (hops - hops.mean()) * lift
         d = lift + base
     elif shape == "inverted_u":
-        # peak at hop 3: penalise distance from 3
-        d = lift + (lift * 0.8) * (1.0 - np.abs(hops - 3.0))
+        # peak at hop 3: penalise distance from 3, then CENTER so the pooled mean
+        # over the present hops == lift (subtract the mean bump). Without centering
+        # the bump rode ON TOP of lift ⇒ pooled mean ≈ lift·(1+0.8·frac_3hop) > lift,
+        # inflating P(GO) for this shape relative to flat/monotonic ([P2]).
+        bump = (lift * 0.8) * (1.0 - np.abs(hops - 3.0))
+        d = lift + bump - bump.mean()
     else:
         raise ValueError(f"unknown effect shape: {shape!r} (expected one of {EFFECT_SHAPES})")
     return d
