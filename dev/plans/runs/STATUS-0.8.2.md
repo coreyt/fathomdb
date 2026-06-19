@@ -35,10 +35,20 @@
 - **E2 CLOSED + extension rebuilt + VERIFIED:** `fathomdb.rerank` reorders `[1,2,3]→[2,1,3]` (promotes the
   relevant passage) through the `.so`; NaN→`WriteValidationError`; built via plain `maturin develop`
   (pyproject carries `default-reranker` now — NO_REBUILD fragility RESOLVED). The CE genuinely reranks.
-- **NEXT: Slice 5 fix-1** (reuse branch `7037523`, rebase onto main+E2): fix [P1] (`fathomdb.rerank` over
-  the in-harness fused pool) + [P2] (center inverted-U) + **raise MATERIAL_F1_LIFT to the corpus-feasible
-  MDE** (provisional; HITL confirms the specific value before Slice 20) + re-pilot for fresh valid BAR
-  (fused vs valid fused_rerank), <$30. Then HITL: comparator call + threshold confirm → Slice 15/20.
+- **Slice 5 fix-1 DONE + merged (`57f7464`):** corrected `fused_rerank` (reranks the fused pool via
+  `fathomdb.rerank`) → **THE BAR pooled ≥3-hop F1: bm25 0.239 · dense 0.262 · fused 0.306 · fused_rerank
+  0.306 (TIED)**. recall@10: dense 0.836 · fused 0.759 · fused_rerank 0.753. The CE reranker neither helps
+  nor hurts multi-hop (valid measurement). Pilot $2.58, cum ~$4.97.
+- **◆ HITL (2026-06-19):** comparator = **"best-of per the recall signal"** (discuss) → answer-F1 endpoint
+  favors fused-RRF (tied w/ fused_rerank); recall@10 favors dense but that's a per-passage proxy — adding
+  an **all-bridges@K** metric (fix-2) to decide on the multi-hop-correct retrieval view. threshold =
+  **decide after fix-2 re-confirms the BAR**.
+- **codex §9 fix-1 [P2] = real engine finding:** the harness CLS pooling is CORRECT for bge-small; the
+  **engine `CandleBgeEmbedder` DEFAULTS to `Mean`** (its own comment says bge is CLS + BGE docs warn Mean
+  degrades) → a latent **product bug** in the shipped default embedder. Flagged for a separate slice; the
+  eval is unaffected (harness uses CLS). So the BAR STANDS — no re-pilot.
+- **IN-FLIGHT: Slice 5 fix-2 ($0)** — declare numpy [P1]; lock/document CLS + flag the engine bug [P2]; add
+  the all-bridges@K metric. Then HITL finalizes comparator + MATERIAL_F1_LIFT on solid numbers → Slice 15/20.
 - **Next action (◆ HITL gate — STOP):** the pre-freeze methodology review (orchestrator-directed)
   returned **NOT sound to freeze as-is** (`runs/0.8.2-slice-0-prereg-methodology-review.md`): the strict
   monotonic dose-response gate + per-hop-max baseline bias the rule toward the expected NO_GO. **4
