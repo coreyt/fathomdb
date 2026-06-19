@@ -477,6 +477,52 @@ def test_failure_recalled_on_resume_excluded_from_answered_set() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# [absten] codex §9 [P2] — resume must REUSE key-present-None abstentions
+# --------------------------------------------------------------------------- #
+
+
+def test_abstention_is_reused_not_recalled() -> None:
+    """[absten][RED→GREEN] A key-present-None in prior_answers is a SUCCESSFUL
+    abstention that must be REUSED (no re-call).  An ABSENT key is a prior
+    failure that must be re-called.  This test fails against the old
+    ``if prev is not None`` logic (which re-calls abstentions) and passes once
+    ``_do`` uses the membership-based ``if key in prior_answers`` guard."""
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+
+    # Build a prior where, for qs[0] ("2hop__a"):
+    #   - "bm25" arm:  ABSENT key  (simulated prior failure → must be re-called)
+    #   - all other arms: key-present-None  (prior abstention → must be REUSED)
+    # All other questions have non-None cached values (never re-called).
+    absent_q = qs[0]
+    absent_arm = VERDICT_ARMS[0]  # "bm25"
+    prior: dict[tuple[str, str], str | None] = {}
+    for q in qs:
+        for arm in VERDICT_ARMS:
+            if q.id == absent_q.id and arm == absent_arm:
+                pass  # deliberately ABSENT = prior failure
+            elif q.id == absent_q.id:
+                prior[(q.id, arm)] = None  # key-present-None = prior abstention
+            else:
+                prior[(q.id, arm)] = "cached-answer"
+
+    spy = CountingAnswerer()
+    run_baseline(
+        qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
+    )
+
+    # Exactly ONE re-call: the absent failure cell.  The key-present-None
+    # abstentions must NOT generate any re-calls.
+    assert len(spy.asked) == 1, (
+        f"Expected 1 re-call (the absent failure cell); got {len(spy.asked)}. "
+        "key-present-None abstentions are being incorrectly re-called!"
+    )
+    # That one call must be for the question whose arm was absent.
+    assert spy.asked[0] == absent_q.question
+
+
+# --------------------------------------------------------------------------- #
 # (1) auto-resume by default
 # --------------------------------------------------------------------------- #
 
