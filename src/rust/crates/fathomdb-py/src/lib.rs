@@ -1271,14 +1271,19 @@ fn rerank(
     // The helper is pure CPU (no engine handle); it may perform a one-time gated
     // model load on a cold cache, so release the GIL for the duration.
     // `catch_unwind` + `AssertUnwindSafe` mirror `call_engine` so the never-panic
-    // contract holds even though the helper is engine-free (no Result channel).
+    // contract holds even though the helper returns a Result channel.
+    // E2 fix-1 [P2]: `rust_rerank_passages` now returns `Result<Vec<…>, String>`;
+    // the inner `Err` (non-finite score) surfaces as `WriteValidationError`.
     let reranked = py
         .allow_threads(|| {
             catch_unwind(AssertUnwindSafe(move || {
                 rust_rerank_passages(&query, tuples, rerank_depth)
             }))
         })
-        .map_err(|_| PanicException::new_err("rerank panic (see logs)"))?;
+        // outer Result: catch_unwind — any panic → PanicException (hard invariant).
+        .map_err(|_| PanicException::new_err("rerank panic (see logs)"))?
+        // inner Result: validation error (non-finite score) → WriteValidationError.
+        .map_err(WriteValidationError::new_err)?;
 
     reranked
         .into_iter()

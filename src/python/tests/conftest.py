@@ -89,7 +89,7 @@ def _ensure_test_hooks_binding() -> None:
             "maturin",
             "develop",
             "--features",
-            "pyo3/extension-module,test-hooks,default-embedder",
+            "pyo3/extension-module,test-hooks,default-embedder,default-reranker",
         ],
         cwd=str(_PYTHON_SRC_DIR),
     )

@@ -40,7 +40,7 @@ python-source = "."
 #   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
 # before the suite. The release workflow's `args:` pins its own explicit
 # feature list, so this file never gates the shipped artifact.
-features = ["pyo3/extension-module", "default-embedder"]
+features = ["pyo3/extension-module", "default-embedder", "default-reranker"]
 
 [tool.pytest.ini_options]
 # Slice 25: the R2 eval harness lives at `eval/` (sibling of `fathomdb/`); it is

@@ -128,6 +128,11 @@ required-features = ["default-reranker"]
 name = "pr_e2_rerank_passages"
 required-features = ["default-reranker"]
 
+# 0.8.2 Slice E2 fix-1 [P2]: is_finite guard tests — no feature gate because the
+# guard fires before the CE model path (depth/feature state irrelevant).
+[[test]]
+name = "pr_e2_rerank_nonfinite"
+
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"
