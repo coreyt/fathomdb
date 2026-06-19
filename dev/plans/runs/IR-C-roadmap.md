@@ -169,17 +169,24 @@ exists but its transfer is unknown.
 
 ## 2. Prioritized roadmap
 
-> **RE-SEQUENCED 2026-06-16 (HITL coreyt) — graph-adjudication track.** After the "beat BM25"
-> investigation CONCLUDED (R6 below + the graph arm; no cheap lever beats strong lexical on
-> LongMemEval *needle-recall*), 0.8.2–0.8.4 now host a three-step adjudication of graphs **on their
-> favorable axes** (multi-hop answer accuracy + sensemaking), since the 0.8.1 negative was narrow
-> (memory/fact-edge structure, disfavored axis, disfavored seeding). New homes for the items below:
-> - **node-centric PPR (HippoRAG)** → **absorbed into 0.8.2 M1** as the lexically-seeded PPR-fusion
->   arm (the literature's lightweight winner over raw BFS). Plan: `dev/plans/plan-0.8.2.md`.
-> - **R5 — vector-PRF** → **folded into 0.8.3 M2** (the no-LLM feedback control beside an IRCoT arm).
-> - **R3b — bundled CPU extractor** → **0.8.5, GATED on the M1–S1 verdict** (`dev/roadmap/0.8.5.md`).
-> - **R4 — whole-doc dense** → **0.8.5**; explicitly NOT pulled into M1/M2 (multi-hop wants
->   passage-level dense; whole-doc blurs discrimination).
+> **RE-SEQUENCED 2026-06-16; UPDATED with the M1 verdict 2026-06-19 (HITL coreyt) — graph-adjudication
+> track.** After the "beat BM25" investigation CONCLUDED (R6 below + the graph arm; no cheap lever beats
+> strong lexical on LongMemEval *needle-recall*), 0.8.2–0.8.4 host a three-step adjudication of graphs
+> **on their favorable axes** (multi-hop answer accuracy + sensemaking). **The multi-hop steps have now
+> resolved NEGATIVE:**
+> - **0.8.2 M1 — CLOSED NO-GO (n=300, gpt-5.4):** node-centric PPR fused with BM25 (`ppr_fusion`) does
+>   not beat fused-RRF on MuSiQue multi-hop QA — ΔF1 −0.0405, CI upper +0.031 **< +0.04** materiality;
+>   `passage_dense` (0.487) was the single strongest arm. Graph multi-hop now refuted on both recall
+>   (n=40) and answer-accuracy (n=300). Findings: `dev/plans/runs/0.8.2-m1-FINDINGS.md`;
+>   memory [[m1-graph-arm-nogo-registered-n300]].
+> - **0.8.3 — REDIRECTED** from "M2 full multi-hop graph study" to **non-graph retrieval**: index-key
+>   enrichment (revived **R6**) + **passage-dense** (promoted from the M1 observation) + **R5 vector-PRF**
+>   (now folded in beside *dense retrieval*, not the dropped IRCoT arm). `dev/roadmap/0.8.3.md`.
+>   The 2Wiki/MultiHop-RAG/IRCoT-on-graph M2 study is **dropped**.
+> - **R3b — bundled CPU extractor** → **0.8.5, gate now S1-alone** (M1 already NO-GO; `dev/roadmap/0.8.5.md`).
+> - **R4 — whole-doc dense** → **0.8.5**; NOT used in M1/M2 (multi-hop wants passage-level dense).
+> - **S1 (0.8.4 GraphRAG sensemaking)** = the sole surviving graph hypothesis; a third graph null would
+>   settle the graph question for FathomDB. `dev/roadmap/0.8.4.md`.
 > Roadmap index: `dev/roadmap/0.8.2.md` / `0.8.3.md` / `0.8.4.md` / `0.8.5.md`.
 
 Goal: retrieval/answer quality as-good-or-better than Mem0 and Zep **within
@@ -189,13 +196,16 @@ every violation is flagged. Baseline: shipped `h_whole_1:3` — exact_fact R@10
 sizes below are derived from the corrected headroom math (§1.2 C1/C2), not from
 fixed anchors.
 
-### R6 — Index-key enrichment (DONE 2026-06-16 — measured, does NOT beat baseline; investigation CONCLUDED)
-> **OUTCOME:** tested at 40q ($0). Real placebo-confirmed content value (+0.075 over a length-matched
-> placebo; +0.05 on BM25) but **net < plain FathomDB-FTS (0.80)** (fts_enriched 0.775). A BM25 `b`-sweep
-> confirmed a length-norm penalty (lower b helps) but enriched+low-b 0.775 still < 0.80. Combined with the
-> graph arm (adds 0) → **no cheap retrieval lever beats strong lexical @N=40; the "beat BM25" investigation
-> is CONCLUDED** (report `0.8.1-beat-bm25-report.md`; STATUS §7). Deferred lever: tunable-`b` FTS5 + enrichment
-> (engine work). The original proposal text follows (historical).
+### R6 — Index-key enrichment (DONE 2026-06-16 @ n=40; REVIVED 2026-06-19 as 0.8.3 D2 after the M1 redirect)
+> **OUTCOME (0.8.1, n=40):** tested at 40q ($0). Real placebo-confirmed content value (+0.075 over a
+> length-matched placebo; +0.05 on BM25) but **net < plain FathomDB-FTS (0.80)** (fts_enriched 0.775). A
+> BM25 `b`-sweep confirmed a length-norm penalty (lower b helps) but enriched+low-b 0.775 still < 0.80.
+> Combined with the graph arm (adds 0) → no cheap retrieval lever beats strong lexical @N=40; the "beat
+> BM25" *needle-recall* investigation is CONCLUDED (report `0.8.1-beat-bm25-report.md`; STATUS §7).
+> **REVIVED 2026-06-19:** the 0.8.2 M1 NO-GO redirected 0.8.3 to non-graph retrieval, and R6 is its **D2**
+> — re-run enriched-vs-plain (with the placebo control + the implicated length-norm/tunable-`b` fix) on
+> the **M1 multi-hop harness** at adequate N, the "surface that placebo-confirmed content value" follow-up
+> this OUTCOME left open. See `dev/roadmap/0.8.3.md`. The original proposal text follows (historical).
 - **What & why:** append each session's extracted entities/facts to **its own doc's FTS
   content** (keys *on the doc*, not separate entity rows / not a graph arm). Adds the
   lexical-bridge vocabulary that lets a query match a session via its facts, **without** the
@@ -347,8 +357,11 @@ classes)
   (the LightRAG/Zep production template, `deep-research.md:60-63`). Node-centric
   PPR (HippoRAG) remains portable *later* as a ranking pass over the same
   substrate — it is a scoring choice, not a schema choice. **(RE-SEQUENCED
-  2026-06-16: node-centric PPR is now the 0.8.2 M1 mechanism — lexically-seeded
-  PPR fused with BM25, scored on MuSiQue answer accuracy; `dev/plans/plan-0.8.2.md`.)**
+  2026-06-16: node-centric PPR became the 0.8.2 M1 mechanism — lexically-seeded
+  PPR fused with BM25, scored on MuSiQue answer accuracy; `dev/plans/plan-0.8.2.md`.
+  RESULT 2026-06-19: M1 CLOSED **NO-GO** — ppr_fusion ΔF1 −0.0405 vs fused-RRF, CI
+  upper +0.031 < +0.04 materiality; `passage_dense` was strongest. Graph multi-hop
+  refuted on both axes; `0.8.2-m1-FINDINGS.md`, [[m1-graph-arm-nogo-registered-n300]].)**
   **Construction is caller-supplied first (C7):** define the graph ingest API so
   the consumer's agent (Memex/Hermes/OpenClaw-class — they have LLMs) writes
   extracted facts; an optional local-CPU extraction path is a separate gate.
@@ -443,7 +456,7 @@ unexplored dense mechanism) · **→ 0.8.5 (`dev/roadmap/0.8.5.md`); NOT pulled 
 - **Measurement/gate:** existing dense diagnostic (median rank / top-50 /
   bucket shift) → binary-floor gate → only then a fusion-harness row.
 
-### R5 — Vector pseudo-relevance feedback (cheap opportunistic, post-R1) · **→ folded into 0.8.3 M2 as the no-LLM feedback control beside the IRCoT arm (`dev/roadmap/0.8.3.md`)**
+### R5 — Vector pseudo-relevance feedback (cheap opportunistic, post-R1) · **→ 0.8.3 D1 (the no-LLM query-side lever beside *passage-dense*; the IRCoT arm it was originally paired with was dropped with the M2 redirect — `dev/roadmap/0.8.3.md`)**
 
 - **What & why:** Average the query f32 vector with top-k *reranked* passage
   vectors and re-run the dense arm — a query-side recall lever with **no extra

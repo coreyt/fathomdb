@@ -15,6 +15,19 @@
 > - **0.8.4 — S1:** the GraphRAG **sensemaking** paradigm (Leiden communities + community summaries,
 >   BenchmarkQED-style LLM-judge eval) — a *different* structure on data suited to it.
 
+> **✅ OUTCOME — M1 EXECUTED → verdict NO-GO (robust), HITL-signed 2026-06-19.** This plan ran to
+> completion (Slices 0→4→{5∥10}→15→20, plus engine slices **E1/E2** that implemented a real CE reranker
+> after the signed `fused+rerank` comparator was found to be a stub, and a resilient-by-construction
+> priced harness after a gemini provider cap — HITL-approved deviations, see `runs/STATUS-0.8.2.md`).
+> **Result:** the lexically-seeded PPR arm fused with BM25 does **not** beat fused-RRF on MuSiQue
+> multi-hop QA — **≥3-hop ΔF1 −0.0405, CI [−0.116, +0.031]** (n=300, reader **gpt-5.4**, not the
+> gemini-3.1-pro this plan named — the reader pivoted after a $25 provider cap), CI upper **< +0.04**
+> materiality, per-hop uniformly negative, `passage_dense` (0.487) strongest. **No stage 2; redirect
+> 0.8.3 → index-key enrichment + passage-dense** ([`../roadmap/0.8.3.md`](../roadmap/0.8.3.md)).
+> Findings: [`runs/0.8.2-m1-FINDINGS.md`](runs/0.8.2-m1-FINDINGS.md); board:
+> [`runs/STATUS-0.8.2.md`](runs/STATUS-0.8.2.md). The slice contracts below are retained as the
+> as-built record.
+
 Ladder shape + reserved-gap policy: reuse [`0.8.1-plan.md`](0.8.1-plan.md) §"Ladder".
 Process: [`../design/orchestration.md`](../design/orchestration.md) (three-role separation,
 codex §9, worktrees §11). Slice prompts generate from
