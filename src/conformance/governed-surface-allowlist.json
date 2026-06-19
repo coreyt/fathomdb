@@ -15,7 +15,8 @@
     "ingestWithExtractor",
     "graph.neighbors",
     "graph.search_expand",
-    "graph.searchExpand"
+    "graph.searchExpand",
+    "rerank"
   ],
   "core": ["Engine.open", "admin.configure", "write", "search", "close"],
   "recovery_denylist": ["recover", "restore", "repair", "fix", "rebuild"]

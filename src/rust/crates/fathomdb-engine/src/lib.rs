@@ -4848,6 +4848,43 @@ pub fn rerank_fused(_query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> 
     hits
 }
 
+/// 0.8.2 Slice E2 — standalone CE rerank of a caller-supplied passage list.
+///
+/// The pure, testable core that the `fathomdb.rerank` pyo3 binding is a thin
+/// wrapper over. Slice 5's `fused_rerank` comparator must CE-rerank its OWN
+/// in-harness fused(bm25+dense) pool — a pool the engine's `search()` never
+/// constructs — so the CE has to be reachable over an arbitrary passage list,
+/// not just the engine's capped text-only pool. This adapts `(id, body, score)`
+/// passages into `SearchHit`s (`kind = "passage"`, `branch = Vector`,
+/// `source_id = None`; only `body` and `score` feed the blend), runs them
+/// through [`rerank_fused`], and projects back to `(id, score)` in the reranked
+/// order.
+///
+/// Contract (inherited verbatim from `rerank_fused`): `rerank_depth == 0` OR an
+/// empty list returns the input order WITH the input scores, byte-identical — no
+/// model load, no network. With `--features default-reranker` and
+/// `rerank_depth > 0` the CE blends the top-`depth` and may reorder; with the
+/// feature off the CE path compiles away and this is always identity.
+#[must_use]
+pub fn rerank_passages(
+    query: &str,
+    passages: Vec<(u64, String, f64)>,
+    rerank_depth: usize,
+) -> Vec<(u64, f64)> {
+    let hits: Vec<SearchHit> = passages
+        .into_iter()
+        .map(|(id, body, score)| SearchHit {
+            id,
+            kind: "passage".to_string(),
+            body,
+            score,
+            branch: SoftFallbackBranch::Vector,
+            source_id: None,
+        })
+        .collect();
+    rerank_fused(query, hits, rerank_depth).into_iter().map(|h| (h.id, h.score)).collect()
+}
+
 /// 0.8.1 Slice 10 — score-blend reranking when CE model is loaded.
 ///
 /// Returns `Some(reranked)` if the model is available, `None` otherwise
