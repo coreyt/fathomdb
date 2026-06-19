@@ -58,6 +58,13 @@
 - **Blocked on:** nothing engine-side. Slice 0 has no priced run; the first ◆ HITL gate is the
   Slice-0 design+pre-registration sign-off (must land *before* any priced answerer run at Slice 20).
 
+- **◆ HITL CONFIRMED (2026-06-19):** comparator = **fused-RRF**; threshold = **MATERIAL_F1_LIFT 0.04**.
+  Data-backed by the \$0 bridge-vs-answer diagnostic (`runs/0.8.2-m1-bridge-vs-answer-diagnostic.md`):
+  complete-bridge retrieval drives F1 (+0.442); conditional on all bridges fused-RRF answers BEST (0.552)
+  / dense WORST (0.464) → fused's edge is a real composition advantage, not noise; dense retrieves best but
+  answers worst (distractor composition). **IN-FLIGHT: Slice 0-rev2** ($0 pre-reg re-freeze: comparator→
+  fused-RRF + MATERIAL_F1_LIFT→0.04 + tests) → then Slice 15 (PPR arm, Δ vs fused-RRF).
+
 ## 2. Slice scoreboard
 
 | # | Slice | Type | Depends | State | Witness |
