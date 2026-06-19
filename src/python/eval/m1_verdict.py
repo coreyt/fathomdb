@@ -364,9 +364,8 @@ def build_verdict_artifact(
         n_boot=n_boot,
         seed=seed,
     )
-    # RED STUB — a post-hoc string verdict, NOT yet derived from the imported
-    # decide(); no decide_inputs recorded. The mechanical-derivation test fails here.
-    verdict = "NO_GO"
+    inputs = decide_inputs(endpoint, power_ok=power_ok)
+    verdict = verdict_from_inputs(inputs)
     pooled = endpoint["pooled_ge3hop"]
     stage2 = stage2_recommendation(pooled["f1_delta"], pooled["f1_ci_low"], pooled["f1_ci_high"])
 
@@ -382,6 +381,7 @@ def build_verdict_artifact(
         "primary_endpoint": endpoint,
         "five_arm_pooled_ge3hop": _five_arm_pooled_f1_table(baseline_art),
         "per_hop_arms": baseline_art.get("per_hop"),
+        "decide_inputs": inputs,
         "verdict": verdict,
         "verdict_source": "imported m1_decision_rule.decide (frozen; not redefined)",
         "confident_wrong_status": (
