@@ -347,6 +347,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="path to an existing artifact JSON: re-derive the power_sim block "
         "(corrected model) in place — NO priced call",
     )
+    ap.add_argument(
+        "--recompute-recall",
+        default=None,
+        dest="recompute_recall",
+        help="path to an existing artifact JSON: re-run the $0 retrieval recall "
+        "and add all_bridges_present_at_k alongside recall_at_k — NO priced call; "
+        "uses the same n/seed as the stored retrieval_recall block",
+    )
     ap.add_argument("--reader", default=None, help="answerer model id (defaults per mode)")
     ap.add_argument("--corpus", default=None)
     ap.add_argument("--k", type=int, default=10)
@@ -370,8 +378,32 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"[S5][RECOMPUTE] re-derived power_sim → {out} (no priced call)")
         return 0
 
+    # Recompute-recall path: re-run the $0 retrieval recall (+ all_bridges@K) on a saved artifact.
+    # Uses the same recall_sample(n, seed) that produced the stored retrieval_recall block.
+    # No LLM calls; requires the corpus + BGE encoder cache.
+    if args.recompute_recall:
+        path = Path(args.recompute_recall)
+        art = json.loads(path.read_text(encoding="utf-8"))
+        corpus_path = Path(args.corpus) if args.corpus else (
+            Path(__file__).resolve().parents[3] / "data" / "corpus-data" / "raw" / "musique_dev.jsonl"
+        )
+        questions = load_musique(corpus_path)
+        stored_recall = art.get("retrieval_recall") or {}
+        n = int(stored_recall.get("n_questions_with_gold", 150))
+        seed = int((art.get("sample_selection") or {}).get("seed", 0))
+        rsample = recall_sample(questions, n=n, seed=seed)
+        encoder = BGEEncoder()
+        reranker = FusedPoolReranker()
+        print(f"[S5][RECOMPUTE-RECALL] re-running $0 retrieval over {len(rsample)} Q "
+              f"(n={n}, seed={seed}) — computing recall@K + all_bridges@K ...", flush=True)
+        art["retrieval_recall"] = retrieval_recall(rsample, encoder, reranker, ks=(1, 2, 3, 5, 10))
+        out = Path(args.output) if args.output else path
+        out.write_text(json.dumps(art, indent=2), encoding="utf-8")
+        print(f"[S5][RECOMPUTE-RECALL] updated retrieval_recall + all_bridges_present_at_k → {out} ($0)")
+        return 0
+
     if args.mode is None:
-        raise SystemExit("--mode is required unless --recompute is given")
+        raise SystemExit("--mode is required unless --recompute or --recompute-recall is given")
     if not args.output:
         raise SystemExit("--output is required")
 

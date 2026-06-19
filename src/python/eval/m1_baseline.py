@@ -41,6 +41,31 @@ logit with the input RRF score (engine Decision 5: ``0.3·sigmoid(ce)+0.7·rrf_n
 
 Footprint: CPU-only, offline, deterministic; the answerer LLM is the one priced
 seam (gated, reused from ``r2_parity_eval`` / ``p0a_base_retrieval``).
+
+**CLS pooling — canonical space for all dense-derived arms ([P2] Slice 5 fix-2).**
+``bge-small-en-v1.5`` ships ``1_Pooling/config.json`` with
+``pooling_mode_cls_token: true``, and BGE's docs warn that mean-pooling causes "a
+significant decrease in performance."  **CLS is therefore the canonical pooling
+mode for this model.**
+
+This harness uses CLS pooling for every dense-derived arm (``passage_dense``,
+``fused``, ``fused_rerank``): the ``BGEEncoder`` below takes ``x[0]`` (the
+``[CLS]`` token at sequence position 0) and L2-normalises it.
+
+Known latent bug — **do NOT fix here**: ``CandleBgeEmbedder::new()`` in the Rust
+engine (``src/rust/crates/fathomdb-embedder/src/candle_bge.rs``) defaults to
+``Pooling::Mean``, the WRONG mode.  This means stored engine vectors and the
+harness vectors live in different embedding spaces.  The bug is flagged in
+``dev/notes/0.8.2-bge-cls-mean-engine-bug.md`` + DOC-INDEX for a separate fix
+slice (changing the default touches stored-vector compatibility).
+
+**Slice-15 prerequisite (PPR arm):** Slice 15's PPR seeding queries must embed
+passages/entities using the **same CLS space** as this harness (``BGEEncoder``
+with ``x[0]`` extraction).  If the PPR arm uses the engine's live embedder
+(``Pooling::Mean`` default), the dense scores will be in an incomparable space
+and the recall comparison will be invalid.  Slice 15 MUST either inject this
+harness's ``BGEEncoder`` directly or configure the engine embedder with
+``with_pooling(Pooling::Cls)`` before embedding.
 """
 
 from __future__ import annotations
@@ -556,6 +581,23 @@ def recall_at_k(ranked: Sequence[int], gold: set[int], k: int) -> Optional[float
     return len(set(ranked[:k]) & gold) / len(gold)
 
 
+def bridges_present_at_k(ranked: Sequence[int], gold: set[int], k: int) -> Optional[float]:
+    """1.0 if ALL gold supporting passages are in the top-``k``, 0.0 otherwise.
+
+    The multi-hop-correct binary: a question is "bridged" only when every gold
+    passage is retrieved in the top-K window — partial credit yields 0.0 here
+    (use ``recall_at_k`` for the partial-credit signal).  Returns ``None`` when
+    the question has no labelled supporting passage (excluded from the mean).
+
+    This is the metric that directly signals whether the retriever can supply the
+    complete bridge set needed for multi-hop reasoning — distinct from the mean
+    per-passage recall@K computed by ``recall_at_k``.
+    """
+    if not gold:
+        return None
+    return 1.0 if gold.issubset(set(ranked[:k])) else 0.0
+
+
 def retrieval_recall(
     questions: Sequence[Question],
     encoder: Optional[EncoderProtocol] = None,
@@ -569,10 +611,18 @@ def retrieval_recall(
     The cheaper, lower-variance signal (no LLM) for whether the CE rerank helps or
     hurts finding the bridge passages multi-hop answering needs — it compares the
     four arms' rankings directly against the MuSiQue ``is_supporting`` labels.
+
+    Returns two retrieval metrics in a single pass:
+    * ``recall_at_k`` — mean fraction of gold passages retrieved in the top-K
+      (per-passage partial credit).
+    * ``all_bridges_present_at_k`` — fraction of *questions* where **ALL** gold
+      passages are in the top-K (the multi-hop-correct binary; distinct from the
+      per-passage recall).  Added in Slice 5 fix-2 (``bridges_present_at_k``).
     """
     encoder = encoder or BGEEncoder()
     reranker = reranker or FusedPoolReranker()
     per_arm: dict[str, dict[int, list[float]]] = {a: {k: [] for k in ks} for a in arms}
+    per_arm_bridges: dict[str, dict[int, list[float]]] = {a: {k: [] for k in ks} for a in arms}
     n_used = 0
     for q in questions:
         gold = supporting_positions(q)
@@ -585,6 +635,9 @@ def retrieval_recall(
                 r = recall_at_k(rankings[arm], gold, k)
                 if r is not None:
                     per_arm[arm][k].append(r)
+                b = bridges_present_at_k(rankings[arm], gold, k)
+                if b is not None:
+                    per_arm_bridges[arm][k].append(b)
     return {
         "schema": "0.8.2-m1-recall-v1",
         "n_questions_with_gold": n_used,
@@ -594,6 +647,9 @@ def retrieval_recall(
         ),
         "recall_at_k": {
             arm: {str(k): _mean(per_arm[arm][k]) for k in ks} for arm in arms
+        },
+        "all_bridges_present_at_k": {
+            arm: {str(k): _mean(per_arm_bridges[arm][k]) for k in ks} for arm in arms
         },
     }
 
