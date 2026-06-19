@@ -77,7 +77,7 @@ import os
 import re
 import struct
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
@@ -682,6 +682,8 @@ def run_baseline(
     arms: Sequence[str] = ARM_NAMES,
     progress: Any = None,
     answer_workers: int = 1,
+    augment_rankings: Optional[Callable[[dict[str, Any], "Question"], dict[str, Any]]] = None,
+    prior_answers: Optional[dict[tuple[str, str], Optional[str]]] = None,
 ) -> dict[str, Any]:
     """Run the four-arm strong baseline over ``questions`` with one shared answerer.
 
@@ -690,6 +692,14 @@ def run_baseline(
     variable. Returns a structured artifact with per-question paired records,
     per-hop (2/3/4) + pooled ≥3-hop EM/F1, and the unanswerable confident-answer
     rate.
+
+    ``augment_rankings`` is an optional hook ``(arm_rankings, question) ->
+    arm_rankings`` applied to each question's per-arm ranking dict **before** the
+    answer tasks are built — the Slice-20 seam that adds the 5th ``ppr_fusion`` arm
+    (via ``m1_ppr.add_ppr_fusion_arm``) without forking this runner. Default
+    ``None`` leaves the four-baseline-arm path byte-identical; when supplied, the
+    extra arm must be listed in ``arms`` so it is scored. The identical-answerer
+    invariant is unchanged — the augmented arm shares the same answerer/top-K.
 
     ``answer_workers > 1`` parallelises the per-question arm answer calls across a
     thread pool (the priced LLM seam is I/O-bound — the strong reader is a
@@ -714,6 +724,8 @@ def run_baseline(
     tasks: list[_Task] = []
     for q in questions:
         arm_rankings = retrieve_arms(q, encoder, reranker)
+        if augment_rankings is not None:
+            arm_rankings = augment_rankings(arm_rankings, q)
         qr = QuestionResult(
             qid=q.id,
             hop_count=q.hop_count,
@@ -731,6 +743,20 @@ def run_baseline(
     # (a single reasoning-model timeout must not discard the whole priced pass).
     def _do(task: "_Task") -> None:
         ans: Optional[str] = None
+        # Resume: reuse a prior NON-None answer for this (qid, arm) cell — only the
+        # cells that previously FAILED (absent / None) are (re)called. The answerer is
+        # deterministic (temp0/seed0), so a fill-in of the failed cells is identical to
+        # a clean single pass — but pays $0 for the cells that already succeeded.
+        if prior_answers is not None:
+            prev = prior_answers.get((task.q.id, task.arm))
+            if prev is not None:
+                task.qr.answers[task.arm] = prev
+                if task.q.answerable:
+                    task.qr.em[task.arm] = em_score(prev, task.q.golds)
+                    task.qr.f1[task.arm] = f1_score(prev, task.q.golds)
+                else:
+                    task.qr.confident[task.arm] = is_confident_answer(prev)
+                return
         if answerer_available:
             try:
                 ans = answerer.answer(task.q.question, task.context)

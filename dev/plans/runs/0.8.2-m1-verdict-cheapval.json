@@ -1,0 +1,252 @@
+{
+  "schema": "0.8.2-m1-verdict-v1",
+  "stage": "stage-1 (299-graph, HITL-authorized ~$10 run)",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "arms": [
+    "bm25",
+    "passage_dense",
+    "fused",
+    "fused_rerank",
+    "ppr_fusion"
+  ],
+  "comparator_arm": "fused",
+  "treatment_arm": "ppr_fusion",
+  "n_questions": 15,
+  "n_answerable": 15,
+  "primary_endpoint": {
+    "treatment_arm": "ppr_fusion",
+    "comparator_arm": "fused",
+    "n_boot": 500,
+    "seed": 0,
+    "pooled_ge3hop": {
+      "n": 10,
+      "f1_delta": 0.0,
+      "f1_ci_low": -0.3,
+      "f1_ci_high": 0.3,
+      "em_delta": 0.0,
+      "em_ci_low": -0.2,
+      "em_ci_high": 0.3
+    },
+    "trend": {
+      "slope": 0.076471,
+      "neg_significant": false,
+      "hops_present": [
+        2,
+        3,
+        4
+      ]
+    },
+    "per_hop": {
+      "2": {
+        "n": 5,
+        "f1_delta": -0.152941,
+        "f1_ci_low": -0.375163,
+        "f1_ci_high": 0.0,
+        "em_delta": -0.2
+      },
+      "3": {
+        "n": 5,
+        "f1_delta": 0.0,
+        "f1_ci_low": 0.0,
+        "f1_ci_high": 0.0,
+        "em_delta": 0.0
+      },
+      "4": {
+        "n": 5,
+        "f1_delta": 0.0,
+        "f1_ci_low": -0.6,
+        "f1_ci_high": 0.6,
+        "em_delta": 0.0
+      }
+    }
+  },
+  "five_arm_pooled_ge3hop": {
+    "bm25": {
+      "f1": 0.1,
+      "em": 0.1,
+      "n": 10
+    },
+    "passage_dense": {
+      "f1": 0.1,
+      "em": 0.1,
+      "n": 10
+    },
+    "fused": {
+      "f1": 0.1,
+      "em": 0.1,
+      "n": 10
+    },
+    "fused_rerank": {
+      "f1": 0.1,
+      "em": 0.1,
+      "n": 10
+    },
+    "ppr_fusion": {
+      "f1": 0.1,
+      "em": 0.1,
+      "n": 10
+    }
+  },
+  "per_hop_arms": {
+    "2": {
+      "bm25": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.447059,
+        "em_var": 0.3,
+        "f1_var": 0.264014
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.377778,
+        "em_var": 0.2,
+        "f1_var": 0.17037
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.4,
+        "f1": 0.488889,
+        "em_var": 0.3,
+        "f1_var": 0.250617
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.335948,
+        "em_var": 0.2,
+        "f1_var": 0.172147
+      }
+    },
+    "3": {
+      "bm25": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      }
+    },
+    "4": {
+      "bm25": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.2,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      },
+      "passage_dense": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.2,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      },
+      "fused": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.2,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      },
+      "fused_rerank": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.2,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      },
+      "ppr_fusion": {
+        "n": 5,
+        "em": 0.2,
+        "f1": 0.2,
+        "em_var": 0.2,
+        "f1_var": 0.2
+      }
+    }
+  },
+  "decide_inputs": {
+    "material": {
+      "f1_delta": 0.0,
+      "f1_ci_low": -0.3
+    },
+    "em": {
+      "ci_high": 0.3
+    },
+    "trend": {
+      "neg_significant": false
+    },
+    "confident_wrong": {
+      "increase_significant": false
+    },
+    "power_ok": false
+  },
+  "verdict": "NO_GO",
+  "verdict_source": "imported m1_decision_rule.decide (frozen; not redefined)",
+  "confident_wrong_status": "UNEVALUATED in stage 1 \u2014 the graph covers only answerable questions, so there is NO unanswerable contrast set; decide() is fed confident_wrong.increase_significant=False as a placeholder, NOT a measured no-confident-wrong result.",
+  "power_status": "power_ok=False by construction \u2014 the \u22653-hop cell N\u2248144 is far below the 1165 the whole-rule power sim requires; decide() => NO_GO via the power gate is expected and correct for stage 1.",
+  "stage2_recommendation": {
+    "recommendation": "recommend_stage2",
+    "rationale": "ppr-fusion \u0394F1 is positive / its CI straddles 0 / borderline \u2014 underpowered (N\u2248144 \u226a 1165) to call it. Recommend stage 2: extend the graph to N=1165 \u22653-hop + an unanswerable set, then the full ~$38 powered run. Do NOT run stage 2 here.",
+    "run_stage2": true
+  },
+  "decision_rule_note": "decide() is formally NO_GO via the power gate. The load-bearing scientific read is the effect size (pooled \u22653-hop \u0394F1 point estimate + paired-bootstrap CI) and the stage-2 recommendation derived from it.",
+  "cost": {
+    "model": "gemini-3.1-flash-lite",
+    "n_calls": 75,
+    "n_errors": 0,
+    "prompt_tokens": 113018,
+    "completion_tokens": 518,
+    "price_per_1m_input_usd": 0.05,
+    "price_per_1m_output_usd": 0.2,
+    "usd": 0.0058
+  },
+  "ppr_divergence": {
+    "n_questions": 300,
+    "n_ppr_differs_from_bm25_topk": 66,
+    "fraction_differs": 0.22,
+    "top_k": 10,
+    "silently_identical_to_bm25": false
+  },
+  "mode": "cheap",
+  "reader_model": "gemini-3.1-flash-lite",
+  "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the airlock proxy serves neither exact id \u2014 closest available used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
+  "answer_workers": 8,
+  "k": 10,
+  "elapsed_s": 113.3
+}

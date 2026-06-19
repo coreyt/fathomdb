@@ -1,0 +1,262 @@
+{
+  "schema": "0.8.2-m1-verdict-v1",
+  "stage": "stage-1 (299-graph, HITL-authorized ~$10 run)",
+  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "arms": [
+    "bm25",
+    "passage_dense",
+    "fused",
+    "fused_rerank",
+    "ppr_fusion"
+  ],
+  "comparator_arm": "fused",
+  "treatment_arm": "ppr_fusion",
+  "n_questions": 300,
+  "n_answerable": 300,
+  "primary_endpoint": {
+    "treatment_arm": "ppr_fusion",
+    "comparator_arm": "fused",
+    "n_boot": 5000,
+    "seed": 0,
+    "pooled_ge3hop": {
+      "n": 144,
+      "f1_delta": -0.011658,
+      "f1_ci_low": -0.041279,
+      "f1_ci_high": 0.018553,
+      "em_delta": -0.006944,
+      "em_ci_low": -0.034722,
+      "em_ci_high": 0.020833
+    },
+    "trend": {
+      "slope": 0.035004,
+      "neg_significant": false,
+      "hops_present": [
+        2,
+        3,
+        4
+      ]
+    },
+    "per_hop": {
+      "2": {
+        "n": 156,
+        "f1_delta": -0.064363,
+        "f1_ci_low": -0.127627,
+        "f1_ci_high": -0.000818,
+        "em_delta": -0.044872
+      },
+      "3": {
+        "n": 94,
+        "f1_delta": -0.017858,
+        "f1_ci_low": -0.062337,
+        "f1_ci_high": 0.025737,
+        "em_delta": -0.010638
+      },
+      "4": {
+        "n": 50,
+        "f1_delta": 0.0,
+        "f1_ci_low": 0.0,
+        "f1_ci_high": 0.0,
+        "em_delta": 0.0
+      }
+    }
+  },
+  "five_arm_pooled_ge3hop": {
+    "bm25": {
+      "f1": 0.09638,
+      "em": 0.083333,
+      "n": 144
+    },
+    "passage_dense": {
+      "f1": 0.134025,
+      "em": 0.104167,
+      "n": 144
+    },
+    "fused": {
+      "f1": 0.101765,
+      "em": 0.083333,
+      "n": 144
+    },
+    "fused_rerank": {
+      "f1": 0.102253,
+      "em": 0.090278,
+      "n": 144
+    },
+    "ppr_fusion": {
+      "f1": 0.090108,
+      "em": 0.076389,
+      "n": 144
+    }
+  },
+  "per_hop_arms": {
+    "2": {
+      "bm25": {
+        "n": 156,
+        "em": 0.339744,
+        "f1": 0.43251,
+        "em_var": 0.225765,
+        "f1_var": 0.203042
+      },
+      "passage_dense": {
+        "n": 156,
+        "em": 0.410256,
+        "f1": 0.527543,
+        "em_var": 0.243507,
+        "f1_var": 0.204824
+      },
+      "fused": {
+        "n": 156,
+        "em": 0.403846,
+        "f1": 0.512276,
+        "em_var": 0.242308,
+        "f1_var": 0.203819
+      },
+      "fused_rerank": {
+        "n": 156,
+        "em": 0.391026,
+        "f1": 0.496185,
+        "em_var": 0.239661,
+        "f1_var": 0.205359
+      },
+      "ppr_fusion": {
+        "n": 156,
+        "em": 0.358974,
+        "f1": 0.447913,
+        "em_var": 0.231596,
+        "f1_var": 0.207322
+      }
+    },
+    "3": {
+      "bm25": {
+        "n": 94,
+        "em": 0.12766,
+        "f1": 0.147647,
+        "em_var": 0.11256,
+        "f1_var": 0.119755
+      },
+      "passage_dense": {
+        "n": 94,
+        "em": 0.159574,
+        "f1": 0.205315,
+        "em_var": 0.135553,
+        "f1_var": 0.145061
+      },
+      "fused": {
+        "n": 94,
+        "em": 0.12766,
+        "f1": 0.155896,
+        "em_var": 0.11256,
+        "f1_var": 0.120143
+      },
+      "fused_rerank": {
+        "n": 94,
+        "em": 0.138298,
+        "f1": 0.156642,
+        "em_var": 0.120453,
+        "f1_var": 0.125136
+      },
+      "ppr_fusion": {
+        "n": 94,
+        "em": 0.117021,
+        "f1": 0.138037,
+        "em_var": 0.104438,
+        "f1_var": 0.112573
+      }
+    },
+    "4": {
+      "bm25": {
+        "n": 50,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "passage_dense": {
+        "n": 50,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "fused": {
+        "n": 50,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "fused_rerank": {
+        "n": 50,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      },
+      "ppr_fusion": {
+        "n": 50,
+        "em": 0.0,
+        "f1": 0.0,
+        "em_var": 0.0,
+        "f1_var": 0.0
+      }
+    }
+  },
+  "decide_inputs": {
+    "material": {
+      "f1_delta": -0.011658,
+      "f1_ci_low": -0.041279
+    },
+    "em": {
+      "ci_high": 0.020833
+    },
+    "trend": {
+      "neg_significant": false
+    },
+    "confident_wrong": {
+      "increase_significant": false
+    },
+    "power_ok": false
+  },
+  "verdict": "NO_GO",
+  "verdict_source": "imported m1_decision_rule.decide (frozen; not redefined)",
+  "confident_wrong_status": "UNEVALUATED in stage 1 \u2014 the graph covers only answerable questions, so there is NO unanswerable contrast set; decide() is fed confident_wrong.increase_significant=False as a placeholder, NOT a measured no-confident-wrong result.",
+  "power_status": "power_ok=False by construction \u2014 the \u22653-hop cell N\u2248144 is far below the 1165 the whole-rule power sim requires; decide() => NO_GO via the power gate is expected and correct for stage 1.",
+  "stage2_recommendation": {
+    "recommendation": "recommend_stage2",
+    "rationale": "ppr-fusion \u0394F1 is positive / its CI straddles 0 / borderline \u2014 underpowered (N\u2248144 \u226a 1165) to call it. Recommend stage 2: extend the graph to N=1165 \u22653-hop + an unanswerable set, then the full ~$38 powered run. Do NOT run stage 2 here.",
+    "run_stage2": true
+  },
+  "decision_rule_note": "decide() is formally NO_GO via the power gate. The load-bearing scientific read is the effect size (pooled \u22653-hop \u0394F1 point estimate + paired-bootstrap CI) and the stage-2 recommendation derived from it.",
+  "cost": {
+    "model": "gemini-3.1-pro",
+    "n_calls": 1068,
+    "n_errors": 432,
+    "prompt_tokens": 1434579,
+    "completion_tokens": 782474,
+    "price_per_1m_input_usd": 1.25,
+    "price_per_1m_output_usd": 5.0,
+    "usd": 5.7056
+  },
+  "ppr_divergence": {
+    "n_questions": 300,
+    "n_ppr_differs_from_bm25_topk": 66,
+    "fraction_differs": 0.22,
+    "top_k": 10,
+    "silently_identical_to_bm25": false
+  },
+  "mode": "priced",
+  "reader_model": "gemini-3.1-pro",
+  "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the airlock proxy serves neither exact id \u2014 closest available used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
+  "answer_workers": 10,
+  "k": 10,
+  "elapsed_s": 2558.5,
+  "answer_completeness": {
+    "expected_calls": 1500,
+    "n_errors": 432,
+    "completeness": 0.712,
+    "floor": 0.97,
+    "run_valid": false
+  },
+  "run_valid": false,
+  "INVALID": "INVALID priced pass \u2014 answer completeness 0.712 < 0.97: 432/1500 answerer calls FAILED (airlock HTTP 429 rate-limit mid-run under workers=10), degrading those (question,arm) cells to spurious abstentions. The endpoint numbers are NOT a citable verdict \u2014 a clean re-run on a quota-recovered endpoint with workers<=4 is required.",
+  "failure_root_cause": "airlock proxy returned HTTP 429 Too Many Requests; 10 concurrent workers on gemini-3.1-pro tripped a quota around question ~220/300 (sorted-id order: late 3-hop + all 4-hop), after which every call 429d. Cost froze at $5.7056 from q220. Endpoint still 429 at post-run probe."
+}
