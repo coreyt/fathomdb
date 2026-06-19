@@ -71,12 +71,13 @@
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
 | 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
-| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅, E2 ✅ | **fix-1 merged `57f7464`; fix-2 IN-FLIGHT ($0)** | BAR pooled≥3hop F1: bm25 .239/dense .262/fused .306/fused_rerank .306 (TIED); MDE→0.04 proposed; fix-2 = numpy+CLS+all-bridges@K |
+| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅, E2 ✅ | **CLOSED** (through fix-2) | BAR pooled≥3hop F1: bm25 .239/dense .262/**fused .306**/fused_rerank .306; all-bridges@10 dense .52 best; $0 diagnostic → comparator=fused-RRF |
 | — | **Tracked bug (separate slice):** engine `CandleBgeEmbedder` defaults to `Pooling::Mean` for CLS-pooled bge-small → degrades shipped dense retrieval (BGE docs). Eval unaffected (harness=CLS). | bug | — | FLAGGED | `candle_bge.rs:229`; candidate for its own slice (touches stored-vector compat) |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **CLOSED** (fix-1 `f8bc631`) | n=300 graph, coverage 1.0, 50.6k entities/51.2k body-less edges, hash-validated; cache preserved to canonical for Slice 15 |
 | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
 | E2 | Standalone rerank SDK API (`fathomdb.rerank`) over arbitrary passages | impl | — | **CLOSED** (fix-1 `f2c910f`) | Python-verified reorders [1,2,3]→[2,1,3]; non-finite→WriteValidationError; default-reranker now in dev/test build (durable) |
-| 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5, 10 | NOT STARTED | branch `output.json` + RED sha in `tdd_evidence` |
+| 0-rev2 | pre-reg re-freeze: comparator→fused-RRF + MATERIAL_F1_LIFT→0.04 | design-adr+TDD | — | **CLOSED** `0f2129cb` | HITL-confirmed, data-justified; 34/34 tests; f1_delta=0.03→NO_GO |
+| 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5✅,10✅ | **IN-FLIGHT ($0)** | lexically-seeded IDF-weighted PPR over the preserved graph, RRF k=60; TDD: determinism/restart-collapse/IDF-live/no-regression |
 | 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
 
