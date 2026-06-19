@@ -4865,16 +4865,28 @@ pub fn rerank_fused(_query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> 
 /// model load, no network. With `--features default-reranker` and
 /// `rerank_depth > 0` the CE blends the top-`depth` and may reorder; with the
 /// feature off the CE path compiles away and this is always identity.
-#[must_use]
+///
 /// 0.8.2 Slice E2 fix-1 [P2]: returns `Err` when any passage carries a non-finite
 /// score (NaN / ±inf), mirroring the malformed-passage loud-fail contract.
 /// Callers (pyo3 `rerank` binding, tests) must handle `Result`.
-/// (is_finite guard added in the GREEN commit; this is the RED scaffold.)
+/// (`#[must_use]` removed: `Result` is already `#[must_use]`.)
 pub fn rerank_passages(
     query: &str,
     passages: Vec<(u64, String, f64)>,
     rerank_depth: usize,
 ) -> Result<Vec<(u64, f64)>, String> {
+    // [P2] guard: reject non-finite scores before they reach normalization/sort.
+    // A NaN or ±inf score would produce NaN blended scores and an unstable sort
+    // order — surface the error early as the typed WriteValidationError at the
+    // pyo3 boundary (mirroring the malformed-passage loud-fail contract).
+    for (id, _, score) in &passages {
+        if !score.is_finite() {
+            return Err(format!(
+                "rerank: non-finite score for passage id={id}: {score} \
+                 (NaN/\u{00b1}inf must not reach the normalization/sort step)"
+            ));
+        }
+    }
     let hits: Vec<SearchHit> = passages
         .into_iter()
         .map(|(id, body, score)| SearchHit {

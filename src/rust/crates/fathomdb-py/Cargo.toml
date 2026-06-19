@@ -21,6 +21,11 @@ test-hooks = []
 # `True` at open time per ADR-0.7.1-default-embedder-weight-fetch (no
 # silent network in a no-feature wheel).
 default-embedder = ["fathomdb-engine/default-embedder"]
+# 0.8.2 Slice E2 fix-1 [P1]: forward the engine's default-reranker feature so
+# a plain `maturin develop` / `pytest` activates the real CE reranker in
+# dev/test builds. The shipped wheel keeps `default-reranker` OFF (release.yml
+# and ci.yml pin their own explicit `--features` lists that omit it).
+default-reranker = ["fathomdb-engine/default-reranker"]
 # GPU acceleration (opt-in; forwards to the engine; default wheel stays CPU).
 # Build: `maturin develop --features pyo3/extension-module,embed-cuda`; activate via
 # FATHOMDB_EMBED_DEVICE=cuda. See dev/design/0.8.1-embedder-gpu-and-portability.md.

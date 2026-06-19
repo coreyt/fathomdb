@@ -1283,7 +1283,7 @@ fn rerank(
         // outer Result: catch_unwind — any panic → PanicException (hard invariant).
         .map_err(|_| PanicException::new_err("rerank panic (see logs)"))?
         // inner Result: validation error (non-finite score) → WriteValidationError.
-        .map_err(|e| WriteValidationError::new_err(e))?;
+        .map_err(WriteValidationError::new_err)?;
 
     reranked
         .into_iter()
