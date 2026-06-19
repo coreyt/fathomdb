@@ -1,0 +1,59 @@
+{
+  "phase": "0.8.2-slice-15",
+  "title": "Lexically-seeded PPR-fusion arm (the graph mechanism KEYSTONE)",
+  "status": "COMPLETE",
+  "merged_to_local_main": true,
+  "pushed": false,
+  "merge_commit_sha": "f30bca3807d789b70eeb062e45e9d30b1adc15ab",
+  "branch": "slice-0.8.2-15-20260619T141923Z",
+  "baseline_sha": "528d05743276f7905ba170d108179af3d4cce4be",
+  "main_advanced_since_baseline_to": "7807a5961f6c688a4c33aa309c5659bcebbc6531",
+  "tdd_evidence": {
+    "red_commit_sha": "0b297351199394d9cd77dc91cd58fada193b5ab3",
+    "green_commit_sha": "c31df9f8f1ee95f2e86dac60453b21b681b8b937",
+    "docs_commit_sha": "004aa70b7e575a325ab2e8ae9573d0f70139243f",
+    "red_failure": "ModuleNotFoundError: No module named 'eval.m1_ppr' (module absent); then 2 substantive failures pre-fix (restart-collapse + IDF-live) when PageRank silently fell back to the seed vector on non-convergence",
+    "tests": "src/python/tests/test_m1_ppr.py — 5 passed (FATHOMDB_TESTS_NO_REBUILD=1)"
+  },
+  "deliverables": {
+    "module": "src/python/eval/m1_ppr.py",
+    "tests": "src/python/tests/test_m1_ppr.py",
+    "deps_declared": "src/python/pyproject.toml (scipy>=1.11, networkx>=3.0 in test+dev extras; harness-only, footprint-invariant safe)",
+    "docs": ["dev/DOC-INDEX.md (2 rows)", "dev/plans/runs/0.8.2-slice-15-ppr-arm.md"]
+  },
+  "load_bearing_properties_confirmed": {
+    "AC-M1-15a_determinism": "PASS — identical (query, passages, extractions) -> byte-identical ranking AND byte-identical passage_scores + ppr_mass (run twice, asserted equal).",
+    "AC-M1-15b_restart_1.0_collapse": "PASS — at alpha=0.0 (teleport/restart=1.0) PageRank returns the personalization vector exactly: propagated (non-seed) entities have EXACTLY zero mass and ppr-only top-2 == BM25 seed passages; at alpha=0.85 those entities gain strictly positive mass (carol/dave: 0.0 -> 0.23 on the fixture). Propagation wired correctly.",
+    "AC-M1-15c_idf_weighting_live": "PASS — hub-vs-specific fixture (two symmetric components): uniform weighting ties the two non-seed passages (carol==dave==0.214, index order) but IDF weighting flips them (dave 0.371 >> carol 0.032) -> the two ppr-only rankings differ ([0,2,3,1] vs [0,3,1,2]).",
+    "AC-M1-15d_fusion_no_regression": "PASS — when BM25 and PPR both rank the seed passages above the rest and agree on their order, RRF (k=60) never drops a BM25-top-K passage below its BM25-alone rank (pr_g9-style pin)."
+  },
+  "ppr_config": {
+    "alpha_damping": 0.85,
+    "restart_teleport_prob": 0.15,
+    "rrf_k": 60,
+    "seed_k": 10,
+    "idf_scheme": "log((N+1)/(df+0.5)) over entity passage document-frequency; idf_weighting=False -> uniform 1.0 (ablation knob)",
+    "max_iter": 1000,
+    "tol": 1e-06,
+    "max_iter_tol_rationale": "sized for near-bipartite entity-graph oscillation (decay rate alpha; ~85 iters needed for tol=1e-6 at alpha=0.85); a too-strict tol/too-few-iters silently fell back to the seed vector masking propagation -> caught RED->GREEN; fallback now retries at 10x budget, never silently collapses",
+    "edges": "body-less (predicate text discarded; topology only)",
+    "membership": "passage membership = the extracted 'entities' list only (deterministic); relation-only phrase nodes relay PPR mass but score no passage and can never be a seed",
+    "embedder": "none — arm is lexical+graph only; CLS-pooling constraint does NOT apply",
+    "graph_lib": "networkx 3.6.1 (pagerank, scipy 1.17.1 sparse backend)"
+  },
+  "smoke": {
+    "ran": true,
+    "cost_usd": 0,
+    "detail": "Built ppr_fusion over 6 real questions (hops 2/3/4) from the pinned corpus + the Slice-10 preserved extractions (data/corpus-data/graph-cache/0.8.2-m1-v1/extractions.json, 300 qids). Per-question graphs: 115-277 entities, 115-282 edges; all 20 passages score nonzero; rankings are valid permutations of the pool."
+  },
+  "cost_usd": 0,
+  "cost_note": "$0 — PPR runs in-harness (no API, no answerer, no priced extraction; the preserved Slice-10 graph is reused). The answerer is the only priced seam and belongs to Slice 20.",
+  "out_of_scope_respected": "Did not touch the other arms (m1_baseline.retrieve_arms byte-identical), decide(), or any priced/answerer path. PPR is a parallel retrieve_ppr arm; add_ppr_fusion_arm is the Slice-20 hook.",
+  "tripwire": "clean — git status --porcelain on canonical src/ dev/ tests/ empty before merge",
+  "self_check": {
+    "pytest": "5 passed (test_m1_ppr.py); broader M1 suite 21 passed / 1 skipped",
+    "pyright": "0 errors, 0 warnings on eval/m1_ppr.py (resolved against the canonical .venv)",
+    "merge": "--no-ff onto local main, clean (no file overlap with main's advance), no push/fetch/PR"
+  },
+  "next_step_for_orchestrator": "ppr-fusion arm built + unit-verified; Slice 20 runs all 5 arms -> same answerer -> ΔF1 = (ppr-fusion) - (fused-RRF) at MATERIAL_F1_LIFT=0.04 -> GO/NO-GO via decide()"
+}
