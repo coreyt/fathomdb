@@ -1,79 +1,52 @@
 {
-  "phase": "0.8.2-slice-5",
-  "baseline_sha": "d55e9221388b12b6c098286d9a1f59053d1fb24b",
-  "branch": "slice-0.8.2-5-20260618T154504Z",
-  "head_sha": "703752386f405937615d527b282fbf6e89fac573",
-  "merged_to_main_sha": null,
-  "merge_status": "NOT MERGED by implementer — per the spawn hard boundary the orchestrator runs codex §9 review + the cherry-pick/merge AFTER exit. Branch is clean, rebased on the baseline, ready to merge --no-ff. (This deviates from slice-prompt §6 'merge yourself'; the system-prompt boundary 'you do neither [the cherry-pick]' was treated as authoritative.)",
-  "commits": [
-    "134a580: test(Slice 5): RED — 4-arm harness + identical-answerer parity + whole-decide() power sim",
-    "91aaf3a: feat(Slice 5): GREEN — strong-baseline 4-arm harness (eval/m1_baseline.py) + power sim (eval/m1_power_sim.py)",
-    "c4023d5: feat(Slice 5): pilot runner (eval/m1_baseline_run.py) + concurrent answerer phase",
-    "5adec2d: fix(Slice 5): resilient priced pass + corrected paired-difference power model + projection/recompute",
-    "7037523: feat(Slice 5): cheap-validate + bounded priced pilot artifacts (THE BAR) + DOC-INDEX"
-  ],
-  "tdd_evidence": {
-    "red_commit_sha": "134a5802fb57ac814683f31927e09a69a8ce3ba4",
-    "red_evidence": "At RED (134a580) test_m1_baseline.py + test_m1_power_sim.py FAIL at collection (ModuleNotFoundError: eval.m1_baseline / eval.m1_power_sim — impl absent): '2 errors during collection'. At GREEN (91aaf3a onward) all 16 tests pass.",
-    "test_files": ["src/python/tests/test_m1_baseline.py", "src/python/tests/test_m1_power_sim.py"],
-    "tests_green": "16 passed (FATHOMDB_TESTS_NO_REBUILD=1); pyright 0/0 on all 5 new modules+tests"
-  },
-  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
-  "musique_hash_reproduced": "yes — re-ran tests/corpus/scripts/acquire_musique.py in the worktree; produced the pinned hash byte-for-byte (manifest reproduce clean, git untouched). load_musique() asserts the hash on every run (COR-2 invariant).",
-  "deliverables": {
-    "harness": "src/python/eval/m1_baseline.py — load_musique (hash-asserting), 4 baseline arms, SQuAD EM/F1 per-hop(2/3/4)+pooled>=3-hop+unanswerable, identical-answerer protocol, per-question paired records",
-    "power_sim": "src/python/eval/m1_power_sim.py — whole-decide()-rule power sim over flat_positive+0.03 / monotonic / inverted_u; required_n(); imports the REAL frozen decide() (never redefined)",
-    "runner": "src/python/eval/m1_baseline_run.py — cheap|pilot CLI + CostTrackingAnswerer + build_power_block (projection+rho-sweep+analytic x-check) + --recompute ($0 power re-derive)",
-    "artifacts": [
-      "dev/plans/runs/0.8.2-m1-baseline-cheapval.json",
-      "dev/plans/runs/0.8.2-m1-baseline-pilot.json"
-    ]
-  },
-  "budget": {
-    "flash_lite_usd": 0.0224,
-    "flash_lite_note": "two cheap-validate passes (gemini-3.1-flash-lite): initial $0.0112 + a concurrency re-validation $0.0112; 40 Q x 4 arms = 160 calls each, 0 errors, all fields populated, identical-answerer parity holds",
-    "pilot_usd": 1.4184,
-    "pilot_usd_note": "successful N=60 pilot (gemini-3.1-pro, 240 calls, 0 errors). A FIRST N=100 pilot crashed mid-run on a single >120s reasoning-model timeout (no try/except yet) spending ~$0.95 (estimated from last progress log $0.8496@40/100; not recoverable — no artifact written). Total Slice-5 priced spend ~= $2.39.",
-    "pilot_n": 60,
-    "pilot_pooled_ge3hop_cell_n": 40,
-    "measured_variance": {
-      "pooled_ge3hop_comparator_f1_var": 0.202686,
-      "pooled_ge3hop_comparator_sd_f1": 0.450207,
-      "note": "per-question F1 is near-binary (mean comparator F1=0.314), so the per-question SD is very wide (~0.45) relative to the +0.03 pre-registered effect"
-    },
-    "power_sim_required_N": 5000,
-    "power_sim_required_N_detail": {
-      "shape": "flat_positive_+0.03",
-      "rho": 0.5,
-      "bootstrap_required_n": 5000,
-      "analytic_normal_approx_required_n": 1766,
-      "rho_sensitivity": {"rho_0.3": 5000, "rho_0.5": 5000, "rho_0.7": 1200},
-      "corpus_answerable_ge3hop_available": 1165,
-      "feasible_on_corpus": false,
-      "p_go_if_whole_ge3hop_corpus_run": 0.605
-    },
-    "projected_full_pass_usd": 27.54,
-    "projected_full_pass_usd_detail": {
-      "per_call_usd": 0.00591,
-      "n_baseline_arms": 4,
-      "at_required_n_5000_INFEASIBLE": 118.2,
-      "whole_ge3hop_corpus_1165_MAX_FEASIBLE": 27.54,
-      "whole_answerable_corpus_2417": 57.14,
-      "price_assumption": "gemini-3.1-pro @ $1.25/1M input + $5/1M output (documented in the artifact; proxy returns no price). Slice 20 adds a 5th arm (ppr-fusion) => x5/4.",
-      "headline": "projected_full_pass_usd=27.54 is the MAX-FEASIBLE on-corpus full pass (whole >=3-hop answerable, 1165 Q); it is UNDERPOWERED (P(GO)~0.6<0.8) for the +0.03 effect. The power-target required N (1766-5000) EXCEEDS the corpus."
-    }
-  },
-  "agent_verify_result": "PASS (harness + cheap-validate + bounded priced pilot). THE BAR (pooled >=3-hop EM/F1): bm25 EM=0.250/F1=0.278 | passage_dense EM=0.325/F1=0.363 | fused(RRF k=60) EM=0.325/F1=0.376 | fused_rerank(comparator) EM=0.275/F1=0.314. Per-hop F1 fused_rerank: hop2(n=10)=0.390, hop3(n=26)=0.243, hop4(n=14)=0.446. Unanswerable confident-answer rate=0.10 all arms. CE reranker verified LIVE (RRF scores ~0.09 -> real CE scores 0.85/0.64/...; order differs on some questions; NOT silently identity). 16 tests green, pyright 0/0, 0 answerer errors in the pilot.",
-  "key_findings": [
-    "COMPARATOR DOES NOT DOMINATE: the pre-registered fixed comparator fused_rerank (F1=0.314) UNDERPERFORMS plain fused (0.376) and passage_dense (0.363) on pooled >=3-hop. The CE cross-encoder helps single-passage relevance but demotes bridge passages multi-hop answering needs. The design FROZE fused_rerank as the comparator regardless (amendment 6); this is now an empirical caveat for Slice 20, not a spec change.",
-    "UNDERPOWERED FOR +0.03 ON-CORPUS (triggers design §0 reserved follow-on 1-4): measured sd_f1~0.45 => required N for P(GO)>=0.8 @ flat-positive+0.03 is ~1766 (analytic) to ~5000 (bootstrap percentile CI) at rho=0.5; even optimistic rho=0.7 needs 1200. The MuSiQue corpus has only 1165 answerable >=3-hop questions. Running the WHOLE >=3-hop corpus (max feasible) gives P(GO)~0.605 < 0.8. The pre-registered +0.03 effect is not detectable at adequate power on this corpus.",
-    "ENGINE DENSE ARM INERT IN THIS BUILD: the canonical .so carries default-reranker (CE live) but NOT test-hooks, and there is no production Python surface to register a node vector kind => _fathomdb_vector_kinds is empty => Engine.search returns a text-branch-only pool (zero doc vectors). Rebuilding with test-hooks would drop default-reranker (kill the comparator). Justified deviation (design-sanctioned): the dense + fused arms are built IN-HARNESS (pure-numpy bge-small-en-v1.5, the same pinned model); fused_rerank uses the LIVE engine CE over the full per-question pool (CE rerank is set-order-independent, so == 'fused pool re-ordered by CE'). Logged in m1_baseline.py module docstring + n_pool per question."
-  ],
-  "blockers_encountered": [
-    "First N=100 priced pilot crashed on a single gemini-3.1-pro call exceeding the 120s urllib timeout (unhandled) -> whole run discarded, ~$0.95 lost. RESOLVED: run_baseline now degrades a failed/timed-out call to an abstention (counted), timeout raised to 240s; re-ran at N=60 cleanly (0 errors).",
-    "Exact slice-prompt model ids unavailable on the airlock proxy: gemini-3.1-pro-preview -> gemini-3.1-pro; gemini-2.5-flash-lite -> gemini-3.1-flash-lite (closest available; env-overridable via M1_STRONG_READER / M1_CHEAP_READER; mapping recorded in every artifact).",
-    "Power model bug caught + fixed POST-pilot (no priced cost): the initial ppr=clip(base+noise) form biased mean delta negative at large N (P(GO) fell toward 0). Corrected to model the paired difference directly; pilot power block regenerated via the $0 --recompute path. The buggy numbers were never reported as a verdict.",
-    "Pre-existing (NOT a Slice-5 regression): tests/test_ffi_safety.py errors at collection under this .so (needs native test-hooks absent from the default-reranker build); untouched by this slice."
-  ],
-  "next_step_for_orchestrator": "harness + cheap-validate + bounded priced pilot COMMITTED on slice-0.8.2-5-20260618T154504Z @ 703752386f405937615d527b282fbf6e89fac573 (NOT merged — implementer respected the 'you do neither [cherry-pick]' boundary). (1) Run codex §9 review on the branch, then merge --no-ff onto LOCAL main. (2) FULL priced pass is GATED ON HITL: bring the budget block to HITL. The pre-registered +0.03 effect is UNDERPOWERED on-corpus (required N 1766-5000 >> 1165 available; max-feasible whole->=3-hop run = $27.54 at P(GO)~0.6). HITL must decide: (a) raise the detectable effect size (a larger true lift, e.g. +0.06, ~quarters the required N -> feasible), (b) accept the whole->=3-hop-corpus run (1165 Q, ~$27.54, P(GO)~0.6 acknowledged), or (c) redirect (design §0 reserved follow-on 1-4 = power re-estimate, exactly this case). Also flag for Slice 20: the CE comparator does NOT dominate fused/passage_dense on this corpus. (3) On go-ahead, the follow-on runs `python -m eval.m1_baseline_run --mode pilot --n-ge3 <N> ...` (or a full-corpus variant) -> runs/0.8.2-m1-baseline-n{N}.json (the runner enforces the N<=100 pilot cap; a full pass needs the cap lifted deliberately)."
+ "phase": "0.8.2-slice-5",
+ "supersedes": "the original Slice-5 pilot (codex [P1]-invalid fused_rerank); this is the corrected re-pilot",
+ "merged_to_main_sha": "57f7464",
+ "tdd_evidence": {
+  "red_commit_sha": "75aaffe",
+  "test_files": [
+   "src/python/tests/test_m1_baseline.py",
+   "src/python/tests/test_m1_power_sim.py"
+  ]
+ },
+ "the_bar_pooled_ge3hop_f1": {
+  "bm25": 0.2388,
+  "passage_dense": 0.2617,
+  "fused": 0.3064,
+  "fused_rerank": 0.306,
+  "n": 60,
+  "note": "fused_rerank (corrected: reranks the in-harness fused pool via fathomdb.rerank) is TIED with fused \u2014 the CE neither helps nor hurts multi-hop answer-F1"
+ },
+ "retrieval_recall_at_10": {
+  "bm25": 0.667,
+  "passage_dense": 0.836,
+  "fused": 0.759,
+  "fused_rerank": 0.753,
+  "n_with_gold": 150,
+  "note": "dense best recall@10; fused\u2248fused_rerank (rerank slightly lowers low-K recall \u2014 demotes bridge passages)"
+ },
+ "proposed_material_f1_lift": {
+  "value": 0.04,
+  "rho_0.5_mde": 0.0366,
+  "rho_0.7_mde": 0.0283,
+  "current_frozen": 0.02,
+  "note": "PROPOSED \u2014 decide() unchanged; HITL confirms before Slice 20. At 0.04 the 1165-corpus is adequately powered."
+ },
+ "power": {
+  "sd_baseline_f1": 0.445,
+  "required_n_+0.03_rho0.5": 3000,
+  "required_n_+0.03_rho0.7": 1200,
+  "corpus_answerable_ge3hop": 1165,
+  "p_go_whole_corpus_at_+0.03": 0.62
+ },
+ "budget": {
+  "slice5_pilot_usd": 2.578,
+  "slice5_cheapval_usd": 0.011,
+  "cumulative_slice5_usd": 4.97,
+  "projected_full_ge3hop_baseline_usd": 30.1,
+  "projected_full_answerable_usd": 62.46,
+  "note": "full graph adjudication (Slice 20) is a separate HITL-gated spend"
+ },
+ "agent_verify_result": "pass \u2014 corrected fused_rerank reranks the fused pool (cheap-validate confirmed); 18 harness tests green; pilot 399 calls 1 error $2.578",
+ "next_step_for_orchestrator": "HITL: (1) comparator decision (fused vs fused_rerank \u2014 TIED, so fused-RRF is the simpler strong comparator); (2) confirm MATERIAL_F1_LIFT=0.04 \u2192 tiny decide() re-freeze; then Slice 15 (graph PPR arm) + Slice 20 verdict"
 }
