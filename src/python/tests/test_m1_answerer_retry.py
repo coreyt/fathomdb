@@ -70,7 +70,7 @@ def test_429_then_200_yields_answer_not_none() -> None:
     out = ans.answer("what is the capital of France?", ["ctx"])
 
     assert out is not None  # recovered after backoff, NOT degraded to abstention
-    assert out == "paris"
+    assert out == "Paris"
     assert calls["n"] == 3  # 2 failed attempts + 1 success
     assert ans.n_retries == 2
     assert ans.n_calls == 1  # exactly one SUCCESSFUL completion counted
@@ -88,7 +88,7 @@ def test_transient_5xx_is_retried() -> None:
         return _FakeResp(_BODY)
 
     ans._open = fake_open  # type: ignore[assignment]
-    assert ans.answer("q?", ["ctx"]) == "paris"
+    assert ans.answer("q?", ["ctx"]) == "Paris"
     assert ans.n_retries == 1
 
 
