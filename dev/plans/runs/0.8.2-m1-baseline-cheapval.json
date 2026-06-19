@@ -41,10 +41,10 @@
     },
     "fused_rerank": {
       "n": 24,
-      "em": 0.083333,
-      "f1": 0.083333,
-      "em_var": 0.07971,
-      "f1_var": 0.07971
+      "em": 0.125,
+      "f1": 0.152778,
+      "em_var": 0.11413,
+      "f1_var": 0.125403
     }
   },
   "per_hop": {
@@ -73,9 +73,9 @@
       "fused_rerank": {
         "n": 8,
         "em": 0.25,
-        "f1": 0.403664,
+        "f1": 0.375887,
         "em_var": 0.214286,
-        "f1_var": 0.228922
+        "f1_var": 0.204287
       }
     },
     "3": {
@@ -102,10 +102,10 @@
       },
       "fused_rerank": {
         "n": 16,
-        "em": 0.125,
-        "f1": 0.125,
-        "em_var": 0.116667,
-        "f1_var": 0.116667
+        "em": 0.1875,
+        "f1": 0.1875,
+        "em_var": 0.1625,
+        "f1_var": 0.1625
       }
     },
     "4": {
@@ -133,9 +133,9 @@
       "fused_rerank": {
         "n": 8,
         "em": 0.0,
-        "f1": 0.0,
+        "f1": 0.083333,
         "em_var": 0.0,
-        "f1_var": 0.0
+        "f1_var": 0.055556
       }
     }
   },
@@ -154,7 +154,7 @@
     },
     "fused_rerank": {
       "n": 8,
-      "confident_answer_rate": 0.125
+      "confident_answer_rate": 0.0
     }
   },
   "paired_records": [
@@ -166,21 +166,21 @@
       "n_paragraphs": 20,
       "em": {
         "passage_dense": 0.0,
-        "fused_rerank": 0.0,
         "bm25": 0.0,
+        "fused_rerank": 0.0,
         "fused": 0.0
       },
       "f1": {
         "passage_dense": 0.0,
-        "fused_rerank": 0.0,
         "bm25": 0.0,
+        "fused_rerank": 0.0,
         "fused": 0.0
       },
       "confident": {},
       "answers": {
         "passage_dense": null,
-        "fused_rerank": null,
         "bm25": null,
+        "fused_rerank": null,
         "fused": null
       }
     },
@@ -191,23 +191,23 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "fused": 0.0,
         "bm25": 0.0,
-        "fused_rerank": 0.0,
-        "passage_dense": 0.0
+        "fused": 0.0,
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
       },
       "f1": {
-        "fused": 0.3404255319148936,
         "bm25": 0.3404255319148936,
-        "fused_rerank": 0.3404255319148936,
-        "passage_dense": 0.3404255319148936
+        "fused": 0.3404255319148936,
+        "passage_dense": 0.3404255319148936,
+        "fused_rerank": 0.3404255319148936
       },
       "confident": {},
       "answers": {
-        "fused": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
         "bm25": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
-        "fused_rerank": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams stated, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
-        "passage_dense": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\""
+        "fused": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
+        "passage_dense": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\"",
+        "fused_rerank": "Common Sense was important because it crystallized the rebellious demand for independence from Great Britain, and it was so influential that John Adams said, \"Without the pen of the author of Common Sense, the sword of Washington would have been raised in vain.\""
       }
     },
     {
@@ -240,26 +240,26 @@
       "qid": "2hop__497191_129669",
       "hop_count": 2,
       "answerable": true,
-      "n_pool": 4,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
+        "passage_dense": 0.0,
         "bm25": 0.0,
-        "fused": 1.0,
         "fused_rerank": 1.0,
-        "passage_dense": 0.0
+        "fused": 1.0
       },
       "f1": {
+        "passage_dense": 0.0,
         "bm25": 0.0,
-        "fused": 1.0,
         "fused_rerank": 1.0,
-        "passage_dense": 0.0
+        "fused": 1.0
       },
       "confident": {},
       "answers": {
+        "passage_dense": null,
         "bm25": "Vila Franca de Xira",
-        "fused": "Lisbon",
         "fused_rerank": "Lisbon",
-        "passage_dense": null
+        "fused": "Lisbon"
       }
     },
     {
@@ -269,22 +269,22 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
+        "bm25": 0.0,
         "passage_dense": 0.0,
         "fused": 0.0,
-        "bm25": 0.0,
         "fused_rerank": 0.0
       },
       "f1": {
+        "bm25": 0.0,
         "passage_dense": 0.0,
         "fused": 0.0,
-        "bm25": 0.0,
         "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
+        "bm25": null,
         "passage_dense": null,
         "fused": null,
-        "bm25": null,
         "fused_rerank": null
       }
     },
@@ -295,21 +295,21 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "bm25": 0.0,
         "passage_dense": 1.0,
+        "bm25": 0.0,
         "fused_rerank": 1.0,
         "fused": 1.0
       },
       "f1": {
-        "bm25": 0.0,
         "passage_dense": 1.0,
+        "bm25": 0.0,
         "fused_rerank": 1.0,
         "fused": 1.0
       },
       "confident": {},
       "answers": {
-        "bm25": null,
         "passage_dense": "ATS-6",
+        "bm25": null,
         "fused_rerank": "ATS-6",
         "fused": "ATS-6"
       }
@@ -318,26 +318,26 @@
       "qid": "2hop__726892_131968",
       "hop_count": 2,
       "answerable": true,
-      "n_pool": 19,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
+        "fused": 0.0,
         "bm25": 0.0,
-        "fused_rerank": 0.0,
         "passage_dense": 0.0,
-        "fused": 0.0
+        "fused_rerank": 0.0
       },
       "f1": {
+        "fused": 0.0,
         "bm25": 0.0,
-        "fused_rerank": 0.0,
         "passage_dense": 0.0,
-        "fused": 0.0
+        "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
+        "fused": null,
         "bm25": null,
-        "fused_rerank": null,
         "passage_dense": null,
-        "fused": null
+        "fused_rerank": null
       }
     },
     {
@@ -347,48 +347,48 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "passage_dense": 0.0,
         "bm25": 0.0,
-        "fused": 0.0,
-        "fused_rerank": 0.0
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "f1": {
-        "passage_dense": 0.6666666666666666,
         "bm25": 0.5714285714285715,
-        "fused": 0.2666666666666667,
-        "fused_rerank": 0.888888888888889
+        "passage_dense": 0.6666666666666666,
+        "fused_rerank": 0.6666666666666666,
+        "fused": 0.2666666666666667
       },
       "confident": {},
       "answers": {
-        "passage_dense": "The person impeached was the first Governor-General of India.",
         "bm25": "Warren Hastings was the first \"de facto\" Governor-General of India.",
-        "fused": "The person impeached in England for acts committed as governor-general of India was Warren Hastings, who held the position of the first \"de facto\" Governor-General of India.",
-        "fused_rerank": "The first Governor-General of India."
+        "passage_dense": "The person impeached was the first Governor-General of India.",
+        "fused_rerank": "The person impeached was the first Governor-General of India.",
+        "fused": "The person impeached in England for acts committed as governor-general of India was Warren Hastings, who held the position of the first \"de facto\" Governor-General of India."
       }
     },
     {
       "qid": "3hop1__109185_720914_41132",
       "hop_count": 3,
       "answerable": true,
-      "n_pool": 19,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "passage_dense": 0.0,
         "fused": 0.0,
         "bm25": 0.0,
+        "passage_dense": 0.0,
         "fused_rerank": 0.0
       },
       "f1": {
-        "passage_dense": 0.0,
         "fused": 0.0,
         "bm25": 0.0,
+        "passage_dense": 0.0,
         "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
-        "passage_dense": null,
         "fused": null,
         "bm25": null,
+        "passage_dense": null,
         "fused_rerank": null
       }
     },
@@ -427,21 +427,21 @@
       "em": {
         "bm25": 1.0,
         "fused": 0.0,
-        "fused_rerank": 1.0,
-        "passage_dense": 0.0
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
       },
       "f1": {
         "bm25": 1.0,
         "fused": 0.0,
-        "fused_rerank": 1.0,
-        "passage_dense": 0.0
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": "1853",
         "fused": null,
-        "fused_rerank": "1853",
-        "passage_dense": null
+        "passage_dense": null,
+        "fused_rerank": null
       }
     },
     {
@@ -451,23 +451,23 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "bm25": 0.0,
         "passage_dense": 1.0,
+        "bm25": 0.0,
         "fused": 1.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 1.0
       },
       "f1": {
-        "bm25": 0.0,
         "passage_dense": 1.0,
+        "bm25": 0.0,
         "fused": 1.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 1.0
       },
       "confident": {},
       "answers": {
-        "bm25": null,
         "passage_dense": "Toronto Coach Terminal",
+        "bm25": null,
         "fused": "Toronto Coach Terminal",
-        "fused_rerank": null
+        "fused_rerank": "Toronto Coach Terminal"
       }
     },
     {
@@ -478,47 +478,47 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
+        "passage_dense": 0.0,
         "fused": 0.0,
-        "fused_rerank": 0.0,
-        "passage_dense": 0.0
+        "fused_rerank": 0.0
       },
       "f1": {
         "bm25": 0.0,
+        "passage_dense": 0.0,
         "fused": 0.0,
-        "fused_rerank": 0.0,
-        "passage_dense": 0.0
+        "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
+        "passage_dense": null,
         "fused": null,
-        "fused_rerank": null,
-        "passage_dense": null
+        "fused_rerank": null
       }
     },
     {
       "qid": "3hop1__458916_651917_47686",
       "hop_count": 3,
       "answerable": true,
-      "n_pool": 18,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
+        "passage_dense": 0.0,
         "bm25": 0.0,
         "fused": 0.0,
-        "passage_dense": 0.0,
         "fused_rerank": 0.0
       },
       "f1": {
+        "passage_dense": 0.0,
         "bm25": 0.0,
         "fused": 0.0,
-        "passage_dense": 0.0,
         "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
+        "passage_dense": null,
         "bm25": null,
         "fused": null,
-        "passage_dense": null,
         "fused_rerank": null
       }
     },
@@ -530,48 +530,48 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "fused": 0.0,
+        "passage_dense": 1.0,
         "fused_rerank": 0.0,
-        "passage_dense": 1.0
+        "fused": 0.0
       },
       "f1": {
         "bm25": 0.0,
-        "fused": 0.0,
+        "passage_dense": 1.0,
         "fused_rerank": 0.0,
-        "passage_dense": 1.0
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "fused": null,
+        "passage_dense": "Francisco Guterres",
         "fused_rerank": null,
-        "passage_dense": "Francisco Guterres"
+        "fused": null
       }
     },
     {
       "qid": "3hop1__593597_40769_64047",
       "hop_count": 3,
       "answerable": true,
-      "n_pool": 19,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "bm25": 0.0,
-        "fused": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "f1": {
-        "bm25": 0.0,
-        "fused": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "bm25": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
-        "bm25": null,
-        "fused": null,
         "passage_dense": null,
-        "fused_rerank": null
+        "bm25": null,
+        "fused_rerank": null,
+        "fused": null
       }
     },
     {
@@ -582,22 +582,22 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "passage_dense": 0.0,
         "fused": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
       },
       "f1": {
         "bm25": 0.0,
-        "passage_dense": 0.0,
         "fused": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "passage_dense": null,
         "fused": null,
-        "fused_rerank": null
+        "fused_rerank": null,
+        "passage_dense": null
       }
     },
     {
@@ -607,22 +607,22 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
+        "passage_dense": 1.0,
         "bm25": 1.0,
         "fused": 1.0,
-        "passage_dense": 1.0,
         "fused_rerank": 1.0
       },
       "f1": {
+        "passage_dense": 1.0,
         "bm25": 1.0,
         "fused": 1.0,
-        "passage_dense": 1.0,
         "fused_rerank": 1.0
       },
       "confident": {},
       "answers": {
+        "passage_dense": "Oriole Records",
         "bm25": "Oriole Records",
         "fused": "Oriole Records",
-        "passage_dense": "Oriole Records",
         "fused_rerank": "Oriole Records"
       }
     },
@@ -630,21 +630,21 @@
       "qid": "3hop1__662618_339990_54675",
       "hop_count": 3,
       "answerable": false,
-      "n_pool": 18,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {},
       "f1": {},
       "confident": {
         "bm25": false,
-        "fused": false,
         "passage_dense": false,
-        "fused_rerank": false
+        "fused_rerank": false,
+        "fused": false
       },
       "answers": {
         "bm25": null,
-        "fused": null,
         "passage_dense": null,
-        "fused_rerank": null
+        "fused_rerank": null,
+        "fused": null
       }
     },
     {
@@ -655,29 +655,29 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "fused": 1.0,
         "passage_dense": 1.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 1.0,
+        "fused": 1.0
       },
       "f1": {
         "bm25": 0.0,
-        "fused": 1.0,
         "passage_dense": 1.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 1.0,
+        "fused": 1.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "fused": "1,335,907",
         "passage_dense": "1,335,907",
-        "fused_rerank": null
+        "fused_rerank": "1,335,907",
+        "fused": "1,335,907"
       }
     },
     {
       "qid": "3hop1__796649_720914_41132",
       "hop_count": 3,
       "answerable": true,
-      "n_pool": 19,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
@@ -707,22 +707,22 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "fused": 0.0,
         "fused_rerank": 0.0,
-        "passage_dense": 0.0
+        "passage_dense": 0.0,
+        "fused": 0.0
       },
       "f1": {
         "bm25": 0.0,
-        "fused": 0.0,
         "fused_rerank": 0.0,
-        "passage_dense": 0.0
+        "passage_dense": 0.0,
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "fused": null,
         "fused_rerank": null,
-        "passage_dense": null
+        "passage_dense": null,
+        "fused": null
       }
     },
     {
@@ -733,48 +733,48 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
+        "fused_rerank": 0.0,
         "fused": 0.0,
-        "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "passage_dense": 0.0
       },
       "f1": {
         "bm25": 0.0,
+        "fused_rerank": 0.0,
         "fused": 0.0,
-        "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "passage_dense": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
+        "fused_rerank": null,
         "fused": null,
-        "passage_dense": null,
-        "fused_rerank": null
+        "passage_dense": null
       }
     },
     {
       "qid": "3hop1__847684_339990_54675",
       "hop_count": 3,
       "answerable": true,
-      "n_pool": 17,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "fused": 0.0,
+        "fused_rerank": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "fused": 0.0
       },
       "f1": {
         "bm25": 0.0,
-        "fused": 0.0,
+        "fused_rerank": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "fused": null,
+        "fused_rerank": "Mt. Hood, Mt. St. Helens, Mt. Adams, and Mt. Rainier.",
         "passage_dense": null,
-        "fused_rerank": "Mt. Hood, Mt. St. Helens, Mt. Adams, and Mt. Rainier."
+        "fused": null
       }
     },
     {
@@ -787,15 +787,15 @@
       "f1": {},
       "confident": {
         "bm25": false,
+        "passage_dense": false,
         "fused": false,
-        "fused_rerank": false,
-        "passage_dense": false
+        "fused_rerank": false
       },
       "answers": {
         "bm25": null,
+        "passage_dense": null,
         "fused": null,
-        "fused_rerank": null,
-        "passage_dense": null
+        "fused_rerank": null
       }
     },
     {
@@ -835,66 +835,66 @@
       "confident": {
         "passage_dense": false,
         "bm25": false,
-        "fused": false,
-        "fused_rerank": false
+        "fused_rerank": false,
+        "fused": false
       },
       "answers": {
         "passage_dense": null,
         "bm25": null,
-        "fused": null,
-        "fused_rerank": null
+        "fused_rerank": null,
+        "fused": null
       }
     },
     {
       "qid": "4hop1__161765_53706_795904_580996",
       "hop_count": 4,
       "answerable": true,
-      "n_pool": 17,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "passage_dense": 0.0,
         "bm25": 0.0,
-        "fused": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
       },
       "f1": {
-        "passage_dense": 0.0,
         "bm25": 0.0,
-        "fused": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "passage_dense": 0.0,
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
-        "passage_dense": null,
         "bm25": null,
-        "fused": null,
-        "fused_rerank": null
+        "fused_rerank": null,
+        "passage_dense": null,
+        "fused": null
       }
     },
     {
       "qid": "4hop1__33012_53706_795904_580996",
       "hop_count": 4,
       "answerable": true,
-      "n_pool": 18,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "fused": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "f1": {
         "bm25": 0.0,
-        "fused": 0.0,
         "passage_dense": 0.0,
-        "fused_rerank": 0.0
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
         "bm25": null,
-        "fused": null,
         "passage_dense": null,
-        "fused_rerank": null
+        "fused_rerank": null,
+        "fused": null
       }
     },
     {
@@ -905,29 +905,29 @@
       "n_paragraphs": 20,
       "em": {
         "bm25": 0.0,
-        "passage_dense": 0.0,
         "fused": 0.0,
+        "passage_dense": 0.0,
         "fused_rerank": 0.0
       },
       "f1": {
         "bm25": 0.6666666666666666,
-        "passage_dense": 0.6666666666666666,
         "fused": 0.6666666666666666,
-        "fused_rerank": 0.0
+        "passage_dense": 0.6666666666666666,
+        "fused_rerank": 0.6666666666666666
       },
       "confident": {},
       "answers": {
         "bm25": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
-        "passage_dense": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
         "fused": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
-        "fused_rerank": null
+        "passage_dense": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois.",
+        "fused_rerank": "The Ohio River joins the Mississippi River at the city of Cairo, Illinois."
       }
     },
     {
       "qid": "4hop1__56226_32392_823060_610794",
       "hop_count": 4,
       "answerable": false,
-      "n_pool": 19,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {},
       "f1": {},
@@ -953,16 +953,16 @@
       "em": {},
       "f1": {},
       "confident": {
-        "fused": false,
         "bm25": false,
-        "fused_rerank": false,
-        "passage_dense": false
+        "fused": false,
+        "passage_dense": false,
+        "fused_rerank": false
       },
       "answers": {
-        "fused": null,
         "bm25": null,
-        "fused_rerank": null,
-        "passage_dense": null
+        "fused": null,
+        "passage_dense": null,
+        "fused_rerank": null
       }
     },
     {
@@ -974,16 +974,16 @@
       "em": {},
       "f1": {},
       "confident": {
+        "bm25": true,
         "passage_dense": true,
         "fused": false,
-        "bm25": true,
-        "fused_rerank": true
+        "fused_rerank": false
       },
       "answers": {
+        "bm25": "Pete Rose",
         "passage_dense": "Pete Rose",
         "fused": null,
-        "bm25": "Pete Rose",
-        "fused_rerank": "Pete Rose"
+        "fused_rerank": null
       }
     },
     {
@@ -993,23 +993,23 @@
       "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "passage_dense": 0.0,
-        "fused_rerank": 0.0,
         "bm25": 0.0,
-        "fused": 0.0
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
       },
       "f1": {
-        "passage_dense": 0.0,
-        "fused_rerank": 0.0,
         "bm25": 0.0,
-        "fused": 0.0
+        "passage_dense": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
       },
       "confident": {},
       "answers": {
-        "passage_dense": null,
-        "fused_rerank": null,
         "bm25": null,
-        "fused": null
+        "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
       }
     },
     {
@@ -1022,45 +1022,19 @@
       "f1": {},
       "confident": {
         "bm25": false,
+        "passage_dense": false,
         "fused": false,
-        "fused_rerank": false,
-        "passage_dense": false
+        "fused_rerank": false
       },
       "answers": {
         "bm25": null,
+        "passage_dense": null,
         "fused": null,
-        "fused_rerank": null,
-        "passage_dense": null
+        "fused_rerank": null
       }
     },
     {
       "qid": "4hop2__9988_729371_70784_61381",
-      "hop_count": 4,
-      "answerable": true,
-      "n_pool": 20,
-      "n_paragraphs": 20,
-      "em": {
-        "fused": 0.0,
-        "bm25": 0.0,
-        "fused_rerank": 0.0,
-        "passage_dense": 0.0
-      },
-      "f1": {
-        "fused": 0.0,
-        "bm25": 0.0,
-        "fused_rerank": 0.0,
-        "passage_dense": 0.0
-      },
-      "confident": {},
-      "answers": {
-        "fused": null,
-        "bm25": null,
-        "fused_rerank": null,
-        "passage_dense": null
-      }
-    },
-    {
-      "qid": "4hop3__131775_29339_508306_70744",
       "hop_count": 4,
       "answerable": true,
       "n_pool": 20,
@@ -1081,6 +1055,32 @@
       "answers": {
         "bm25": null,
         "passage_dense": null,
+        "fused": null,
+        "fused_rerank": null
+      }
+    },
+    {
+      "qid": "4hop3__131775_29339_508306_70744",
+      "hop_count": 4,
+      "answerable": true,
+      "n_pool": 20,
+      "n_paragraphs": 20,
+      "em": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "f1": {
+        "passage_dense": 0.0,
+        "bm25": 0.0,
+        "fused": 0.0,
+        "fused_rerank": 0.0
+      },
+      "confident": {},
+      "answers": {
+        "passage_dense": null,
+        "bm25": null,
         "fused": null,
         "fused_rerank": null
       }
@@ -1136,29 +1136,186 @@
       "qid": "4hop3__678814_466199_695123_72134",
       "hop_count": 4,
       "answerable": true,
-      "n_pool": 17,
+      "n_pool": 20,
       "n_paragraphs": 20,
       "em": {
-        "passage_dense": 0.0,
-        "fused": 0.0,
         "bm25": 0.0,
-        "fused_rerank": 0.0
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "f1": {
-        "passage_dense": 0.0,
-        "fused": 0.0,
         "bm25": 0.0,
-        "fused_rerank": 0.0
+        "passage_dense": 0.0,
+        "fused_rerank": 0.0,
+        "fused": 0.0
       },
       "confident": {},
       "answers": {
-        "passage_dense": null,
-        "fused": null,
         "bm25": null,
-        "fused_rerank": null
+        "passage_dense": null,
+        "fused_rerank": null,
+        "fused": null
       }
     }
   ],
+  "cost": {
+    "model": "gemini-3.1-flash-lite",
+    "n_calls": 160,
+    "n_errors": 0,
+    "prompt_tokens": 219039,
+    "completion_tokens": 1224,
+    "price_per_1m_input_usd": 0.05,
+    "price_per_1m_output_usd": 0.2,
+    "usd": 0.0112
+  },
+  "power_sim": {
+    "measured_pilot_cell_n": 24,
+    "measured_comparator_mean_f1": 0.1528,
+    "sd_baseline_f1": 0.354122,
+    "p_go_at_pilot_n_by_shape": {
+      "flat_positive": {
+        "shape": "flat_positive",
+        "n": 24,
+        "p_go": 0.095,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.354122,
+        "sd_pair_f1": 0.354122,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "monotonic": {
+        "shape": "monotonic",
+        "n": 24,
+        "p_go": 0.095,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.354122,
+        "sd_pair_f1": 0.354122,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      },
+      "inverted_u": {
+        "shape": "inverted_u",
+        "n": 24,
+        "p_go": 0.085,
+        "rho": 0.5,
+        "lift": 0.03,
+        "sd_baseline_f1": 0.354122,
+        "sd_pair_f1": 0.354122,
+        "n_trials": 400,
+        "n_boot": 600,
+        "material_threshold": 0.02,
+        "seed": 0
+      }
+    },
+    "required_n_flat_positive": {
+      "shape": "flat_positive",
+      "target_p_go": 0.8,
+      "required_n": 1200,
+      "power_ok": true,
+      "curve": [
+        {
+          "n": 50,
+          "p_go": 0.0975
+        },
+        {
+          "n": 100,
+          "p_go": 0.145
+        },
+        {
+          "n": 150,
+          "p_go": 0.165
+        },
+        {
+          "n": 200,
+          "p_go": 0.2
+        },
+        {
+          "n": 300,
+          "p_go": 0.25
+        },
+        {
+          "n": 400,
+          "p_go": 0.38
+        },
+        {
+          "n": 600,
+          "p_go": 0.4925
+        },
+        {
+          "n": 800,
+          "p_go": 0.62
+        },
+        {
+          "n": 1200,
+          "p_go": 0.8025
+        },
+        {
+          "n": 1600,
+          "p_go": 0.825
+        },
+        {
+          "n": 2000,
+          "p_go": 0.8175
+        },
+        {
+          "n": 3000,
+          "p_go": 0.8525
+        },
+        {
+          "n": 5000,
+          "p_go": 0.935
+        },
+        {
+          "n": 8000,
+          "p_go": 0.9275
+        }
+      ],
+      "rho": 0.5,
+      "lift": 0.03,
+      "material_threshold": 0.02,
+      "note": "required_n is the pooled >=3-hop cell size; power sized via the whole decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.02) sits at/above the implied pooled >=3-hop MDE at this N."
+    },
+    "analytic_required_n_normal_approx_rho0.5": 1093,
+    "rho_sensitivity_required_n": {
+      "rho_0.3": 3000,
+      "rho_0.5": 1200,
+      "rho_0.7": 1200
+    },
+    "mde_at_full_corpus_n1165": {
+      "n": 1165,
+      "sd_baseline_f1": 0.354122,
+      "power": 0.8,
+      "alpha_two_sided": 0.05,
+      "mde_by_rho": {
+        "rho_0.5": 0.029067,
+        "rho_0.7": 0.022515
+      },
+      "conservative_rho": 0.5,
+      "conservative_mde": 0.029067,
+      "proposed_material_f1_lift": 0.03,
+      "rounding_rule": "ceil(conservative \u03c1=0.5 MDE / 0.01) \u00b7 0.01",
+      "current_frozen_material_f1_lift": 0.02,
+      "note": "PROPOSED ONLY \u2014 decide()/MATERIAL_F1_LIFT unchanged in this slice; HITL confirms the value at the next gate before a tiny decide() re-freeze."
+    },
+    "corpus_answerable_ge3hop": 1165,
+    "feasible_on_corpus": false,
+    "p_go_if_whole_ge3hop_corpus_run": 0.8025,
+    "projection": {
+      "per_call_usd": 7e-05,
+      "n_baseline_arms": 4,
+      "projected_full_pass_usd_at_required_n": 0.34,
+      "projected_usd_whole_ge3hop_corpus": 0.33,
+      "projected_usd_whole_answerable_corpus": 0.68,
+      "note": "projected_full_pass_usd = required_N x #baseline_arms x per_call_usd. If required_N > corpus_answerable_ge3hop the power target is UNREACHABLE on this corpus for the +0.03 effect \u2014 HITL decision: raise the detectable effect size, accept the whole-corpus run at the stated sub-0.8 P(GO), or redirect (design \u00a70 reserved follow-on 1-4)."
+    }
+  },
   "mode": "cheap",
   "reader_model": "gemini-3.1-flash-lite",
   "reader_model_mapping_note": "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite (cheap); the local airlock proxy serves neither exact id, so the closest available id is used: strong=gemini-3.1-pro, cheap=gemini-3.1-flash-lite",
@@ -1171,115 +1328,5 @@
     "n_total": 40,
     "no_silent_cap": "sampling logged; truncated run labelled, not full coverage"
   },
-  "cost": {
-    "model": "gemini-3.1-flash-lite",
-    "n_calls": 160,
-    "n_errors": 0,
-    "prompt_tokens": 218577,
-    "completion_tokens": 1204,
-    "price_per_1m_input_usd": 0.05,
-    "price_per_1m_output_usd": 0.2,
-    "usd": 0.0112
-  },
-  "power_sim": {
-    "measured_pilot_cell_n": 24,
-    "p_go_at_pilot_n_by_shape": {
-      "flat_positive": {
-        "shape": "flat_positive",
-        "n": 24,
-        "p_go": 0.86,
-        "rho": 0.5,
-        "lift": 0.03,
-        "sd_baseline_f1": 0.28233,
-        "sd_pair_f1": 0.28233,
-        "n_trials": 400,
-        "n_boot": 600,
-        "material_threshold": 0.02,
-        "seed": 0
-      },
-      "monotonic": {
-        "shape": "monotonic",
-        "n": 24,
-        "p_go": 0.8575,
-        "rho": 0.5,
-        "lift": 0.03,
-        "sd_baseline_f1": 0.28233,
-        "sd_pair_f1": 0.28233,
-        "n_trials": 400,
-        "n_boot": 600,
-        "material_threshold": 0.02,
-        "seed": 0
-      },
-      "inverted_u": {
-        "shape": "inverted_u",
-        "n": 24,
-        "p_go": 0.8775,
-        "rho": 0.5,
-        "lift": 0.03,
-        "sd_baseline_f1": 0.28233,
-        "sd_pair_f1": 0.28233,
-        "n_trials": 400,
-        "n_boot": 600,
-        "material_threshold": 0.02,
-        "seed": 0
-      }
-    },
-    "required_n_flat_positive": {
-      "shape": "flat_positive",
-      "target_p_go": 0.8,
-      "required_n": 50,
-      "power_ok": true,
-      "curve": [
-        {
-          "n": 50,
-          "p_go": 0.9675
-        },
-        {
-          "n": 100,
-          "p_go": 0.9825
-        },
-        {
-          "n": 150,
-          "p_go": 1.0
-        },
-        {
-          "n": 200,
-          "p_go": 1.0
-        },
-        {
-          "n": 300,
-          "p_go": 1.0
-        },
-        {
-          "n": 400,
-          "p_go": 1.0
-        },
-        {
-          "n": 600,
-          "p_go": 1.0
-        },
-        {
-          "n": 800,
-          "p_go": 1.0
-        },
-        {
-          "n": 1200,
-          "p_go": 1.0
-        },
-        {
-          "n": 1600,
-          "p_go": 1.0
-        },
-        {
-          "n": 2000,
-          "p_go": 1.0
-        }
-      ],
-      "rho": 0.5,
-      "lift": 0.03,
-      "material_threshold": 0.02,
-      "note": "required_n is the pooled >=3-hop cell size; power sized via the whole decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.02) sits at/above the implied pooled >=3-hop MDE at this N."
-    }
-  },
-  "elapsed_s": 169.3
+  "elapsed_s": 1045.4
 }
