@@ -23,8 +23,12 @@ contracts of the verdict harness — none of which needs a priced LLM call (a
 from __future__ import annotations
 
 import hashlib
+import inspect
+import json
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from eval.m1_baseline import Paragraph, Question, run_baseline
 from eval.m1_decision_rule import MATERIAL_F1_LIFT, decide
@@ -44,7 +48,7 @@ from eval.m1_verdict import (
     stage2_recommendation,
     verdict_from_inputs,
 )
-from eval.r2_parity_eval import StubAnswerer
+from eval.r2_parity_eval import BaseAnswerer, StubAnswerer
 
 
 # --------------------------------------------------------------------------- #
@@ -383,3 +387,217 @@ def test_build_artifact_schema_and_five_arm_table() -> None:
     assert set(art["five_arm_pooled_ge3hop"].keys()) == set(VERDICT_ARMS)
     assert art["comparator_arm"] == "fused"
     assert "stage2_recommendation" in art
+
+
+# =========================================================================== #
+# Slice 20 resilience redesign (HITL: resilient BY CONSTRUCTION)
+#   (1) auto-resume by default   (2) failure ≠ abstention   (3) atomic checkpoint
+# =========================================================================== #
+
+
+class _AbstainOrFailAnswerer(BaseAnswerer):
+    """A deterministic stub that, per the failure/abstention split, can either
+    **succeed-with-no-answer** (a legit abstention → returns ``None``) or **fail**
+    (raises, as a retry-exhausted 429/5xx/timeout would after backoff). Targeted by
+    a substring of the question text (each ``_mini_question`` embeds its answer)."""
+
+    model_id = "abstain-or-fail-stub-v1"
+
+    def __init__(self, *, abstain: tuple[str, ...] = (), fail: tuple[str, ...] = ()) -> None:
+        self.n_errors = 0
+        self.asked: list[str] = []
+        self._abstain = abstain
+        self._fail = fail
+
+    def answer(self, question: str, context: list[str]):  # noqa: ANN201
+        self.asked.append(question)
+        if any(t in question for t in self._fail):
+            raise RuntimeError("simulated retry-exhausted 429 failure (call never succeeded)")
+        if any(t in question for t in self._abstain):
+            return None  # a SUCCESSFUL call that returned no usable answer
+        return context[0] if context else None
+
+
+# --------------------------------------------------------------------------- #
+# (2) failure ≠ abstention
+# --------------------------------------------------------------------------- #
+
+
+def test_abstention_is_scored_but_failure_is_missing() -> None:
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    # 3hop__a abstains (success→None); 4hop__a fails (raises after retries).
+    ans = _AbstainOrFailAnswerer(abstain=("ans3a",), fail=("ans4a",))
+    art = run_baseline(
+        qs, ans, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext),
+    )
+    recs = {r["qid"]: r for r in art["paired_records"]}
+
+    # Abstention: a SUCCESSFUL None — every arm PRESENT with value None, scored 0.
+    a = recs["3hop__a"]
+    assert set(a["answers"].keys()) == set(VERDICT_ARMS)
+    assert all(v is None for v in a["answers"].values())
+    assert all(a["f1"][arm] == 0.0 for arm in VERDICT_ARMS)
+
+    # Failure: the call never succeeded — the cells are MISSING, NEVER persisted as
+    # a scored abstention (no None=F1=0 deflation), and excluded from scoring.
+    f = recs["4hop__a"]
+    assert f["answers"] == {}
+    assert f["f1"] == {}
+    assert f["em"] == {}
+
+    # The five failed arms count as errors (→ answer_completeness), abstentions do not.
+    assert ans.n_errors == len(VERDICT_ARMS)
+
+
+def test_failure_recalled_on_resume_excluded_from_answered_set() -> None:
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    ans1 = _AbstainOrFailAnswerer(fail=("ans4a",))
+    art1 = run_baseline(
+        qs, ans1, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext),
+    )
+    prior = prior_answers_from_artifact({"baseline_run": {"paired_records": art1["paired_records"]}})
+    # The failed cells are absent from the answered set (not persisted as None).
+    for arm in VERDICT_ARMS:
+        assert ("4hop__a", arm) not in prior
+
+    spy = CountingAnswerer()  # everything succeeds on the resume pass
+    art2 = run_baseline(
+        qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
+    )
+    # ONLY the previously-missing cells are re-called — zero re-spend elsewhere.
+    assert len(spy.asked) == len(VERDICT_ARMS)
+    recs2 = {r["qid"]: r for r in art2["paired_records"]}
+    assert set(recs2["4hop__a"]["answers"].keys()) == set(VERDICT_ARMS)
+    assert all(v is not None for v in recs2["4hop__a"]["answers"].values())
+
+
+# --------------------------------------------------------------------------- #
+# (1) auto-resume by default
+# --------------------------------------------------------------------------- #
+
+
+_PRESERVED_CHECKPOINT = Path(
+    "/home/coreyt/projects/fathomdb/data/corpus-data/0.8.2-m1-verdict.checkpoint.json"
+)
+
+
+@pytest.mark.skipif(
+    not _PRESERVED_CHECKPOINT.exists(), reason="preserved 214-cell checkpoint not present"
+)
+def test_auto_resume_reuses_preserved_214_cells() -> None:
+    ckpt = json.loads(_PRESERVED_CHECKPOINT.read_text(encoding="utf-8"))
+    recs = ckpt["baseline_run"]["paired_records"]
+    prior = prior_answers_from_artifact(ckpt)
+    n_reusable = sum(1 for v in prior.values() if v is not None)
+    assert n_reusable == 214  # the preserved real progress — must be re-used, not re-spent
+
+    qs = [
+        _mini_question(r["qid"], int(r["hop_count"]), f"a{i}")
+        for i, r in enumerate(recs)
+        if r.get("answerable", True)
+    ]
+    ext = _mini_extractions(qs)
+    spy = CountingAnswerer()
+    run_baseline(
+        qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
+    )
+    expected_cells = len(qs) * len(VERDICT_ARMS)
+    assert len(spy.asked) == expected_cells - n_reusable  # re-call ONLY the missing
+
+
+def test_resolve_resume_auto_detects_sidecar_without_a_flag(tmp_path) -> None:
+    from eval.m1_verdict_run import _resolve_resume
+
+    out = tmp_path / "verdict.json"
+    sidecar = out.with_suffix(".checkpoint.json")
+    # nothing yet → no resume source
+    assert _resolve_resume(out, None, None) is None
+    # the sidecar exists → auto-detected WITHOUT a manual --resume flag
+    sidecar.write_text("{}", encoding="utf-8")
+    assert _resolve_resume(out, None, None) == sidecar
+    # an explicit --resume path overrides the auto-detected sidecar
+    other = tmp_path / "preserved.checkpoint.json"
+    other.write_text("{}", encoding="utf-8")
+    assert _resolve_resume(out, other, None) == other
+    # an explicit checkpoint path is the one auto-detected
+    ckpt = tmp_path / "ck.json"
+    ckpt.write_text("{}", encoding="utf-8")
+    assert _resolve_resume(out, None, ckpt) == ckpt
+
+
+def test_run_auto_resumes_with_no_flag_zero_respend(tmp_path) -> None:
+    from eval.m1_verdict_run import run
+
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    out = tmp_path / "verdict.json"
+
+    # Pass 1 — a full priced-mode run (stub answerer) that writes the sidecar checkpoint.
+    spy1 = CountingAnswerer()
+    run(
+        mode="priced", reader="stub", corpus=Path("/nonexistent"),
+        extractions_path=Path("/nonexistent"), output=out, n_boot=80,
+        questions=qs, extractions=ext, answerer=spy1,
+        encoder=FakeEncoder(), reranker=FakeReranker(),
+    )
+    sidecar = out.with_suffix(".checkpoint.json")
+    assert sidecar.exists()
+    assert spy1.asked, "pass 1 should have made the priced calls"
+
+    # Pass 2 — relaunch with NO --resume flag. Auto-resume must re-use every cell →
+    # ZERO re-spend (the exact loop the un-resumed run kept paying for).
+    spy2 = CountingAnswerer()
+    run(
+        mode="priced", reader="stub", corpus=Path("/nonexistent"),
+        extractions_path=Path("/nonexistent"), output=out, n_boot=80,
+        questions=qs, extractions=ext, answerer=spy2,
+        encoder=FakeEncoder(), reranker=FakeReranker(),
+    )
+    assert spy2.asked == []  # auto-resumed from the sidecar; nothing re-called
+
+
+# --------------------------------------------------------------------------- #
+# (3) atomic, frequent checkpoint
+# --------------------------------------------------------------------------- #
+
+
+def test_atomic_write_json_round_trips(tmp_path) -> None:
+    from eval.m1_verdict_run import _atomic_write_json
+
+    p = tmp_path / "out.checkpoint.json"
+    _atomic_write_json(p, {"answered": 100})
+    assert json.loads(p.read_text(encoding="utf-8"))["answered"] == 100
+    # the temp file is never left behind as the live path
+    assert not (p.with_name(p.name + ".tmp")).exists()
+
+
+def test_atomic_checkpoint_survives_midwrite_death(tmp_path, monkeypatch) -> None:
+    import eval.m1_verdict_run as mod
+    from eval.m1_verdict_run import _atomic_write_json
+
+    p = tmp_path / "out.checkpoint.json"
+    _atomic_write_json(p, {"answered": 100})  # a good prior checkpoint
+
+    def _boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("process killed mid-serialize")
+
+    monkeypatch.setattr(mod.json, "dumps", _boom)
+    with pytest.raises(RuntimeError):
+        _atomic_write_json(p, {"answered": 200})
+
+    # os.replace never ran → the live checkpoint is the intact PRIOR one, never a
+    # half-written file. No corruption on a mid-write death.
+    assert json.loads(p.read_text(encoding="utf-8"))["answered"] == 100
+
+
+def test_checkpoint_cadence_is_at_least_every_10_questions() -> None:
+    from eval.m1_verdict_run import run
+
+    default = inspect.signature(run).parameters["checkpoint_every"].default
+    assert default <= 10  # frequent: checkpoint at least every ~10 questions
