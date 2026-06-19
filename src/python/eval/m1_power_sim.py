@@ -4,10 +4,10 @@ Binding spec: ``dev/design/0.8.2-m1-multihop-harness.md`` §4 (frozen-field:
 mde-power-plan) and ``dev/plans/plan-0.8.2.md`` §4 (Slice 5 AC-M1-5d). Power is
 sized by a **whole-rule power simulation**, NOT a marginal per-hop MDE: from the
 measured baseline F1/EM variance, draw question-level paired-bootstrap resamples
-under ≥3 effect shapes (**flat-positive +0.03**, **monotonic**, **inverted-U**),
+under ≥3 effect shapes (**flat-positive +0.04**, **monotonic**, **inverted-U**),
 push each through the **real** frozen :func:`m1_decision_rule.decide`, and report
 **P(GO)** per shape. N (the pooled ≥3-hop cell) is sized so the rule attains
-**P(GO) ≥ 0.8 under flat-positive +0.03**; ``power_ok = True`` only if that holds.
+**P(GO) ≥ 0.8 under flat-positive +0.04**; ``power_ok = True`` only if that holds.
 
 We do **not** redefine ``decide()`` — it is imported and called as the single
 source of the GO/NO-GO computation.
@@ -40,7 +40,10 @@ from eval.m1_decision_rule import MATERIAL_F1_LIFT, decide
 EFFECT_SHAPES: tuple[str, ...] = ("flat_positive", "monotonic", "inverted_u")
 
 #: Default flat-positive lift the power target is sized against (design §4).
-FLAT_POSITIVE_LIFT = 0.03
+#: Must equal MATERIAL_F1_LIFT so a threshold change is automatically reflected
+#: in the power target (pwrfix: rev2 left this at 0.03 while MATERIAL_F1_LIFT
+#: was bumped to 0.04, making the sim compute P(GO) at a sub-threshold effect).
+FLAT_POSITIVE_LIFT: float = MATERIAL_F1_LIFT
 #: Default within-question arm correlation for the paired-difference noise model.
 DEFAULT_RHO = 0.5
 #: Default power target.
@@ -303,7 +306,7 @@ def required_n(
         "material_threshold": MATERIAL_F1_LIFT,
         "note": (
             "required_n is the pooled >=3-hop cell size; power sized via the whole "
-            "decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.02) sits "
+            "decide() rule (imported, not redefined). MATERIAL_F1_LIFT (0.04) sits "
             "at/above the implied pooled >=3-hop MDE at this N."
         ),
     }
