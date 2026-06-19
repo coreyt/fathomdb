@@ -437,13 +437,17 @@ def run_verdict(
     answer_workers: int = 1,
     power_ok: bool = False,
     prior_answers: Optional[dict[tuple[str, str], Optional[str]]] = None,
+    checkpoint: Optional[Callable[[list[dict[str, Any]]], None]] = None,
+    checkpoint_every: int = 0,
 ) -> dict[str, Any]:
     """Run the 5-arm pipeline (4 baseline + ppr_fusion) with the identical answerer
     and return the full verdict artifact (the baseline run nested under
     ``baseline_run``).
 
     ``prior_answers`` (the resume seam) reuses already-successful ``(qid, arm)``
-    answers from a prior run so only the previously-failed cells are (re)called."""
+    answers from a prior run so only the previously-failed cells are (re)called.
+    ``checkpoint``/``checkpoint_every`` periodically persist the partial answer
+    matrix (resume-shaped) so a process kill mid-pass is recoverable."""
     baseline_art = run_baseline(
         questions,
         answerer,
@@ -455,6 +459,8 @@ def run_verdict(
         answer_workers=answer_workers,
         augment_rankings=ppr_augment(extractions, cfg),
         prior_answers=prior_answers,
+        checkpoint=checkpoint,
+        checkpoint_every=checkpoint_every,
     )
     art = build_verdict_artifact(
         baseline_art, n_boot=n_boot, seed=seed, power_ok=power_ok

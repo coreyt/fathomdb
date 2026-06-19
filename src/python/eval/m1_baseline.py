@@ -684,6 +684,8 @@ def run_baseline(
     answer_workers: int = 1,
     augment_rankings: Optional[Callable[[dict[str, Any], "Question"], dict[str, Any]]] = None,
     prior_answers: Optional[dict[tuple[str, str], Optional[str]]] = None,
+    checkpoint: Optional[Callable[[list[dict[str, Any]]], None]] = None,
+    checkpoint_every: int = 0,
 ) -> dict[str, Any]:
     """Run the four-arm strong baseline over ``questions`` with one shared answerer.
 
@@ -772,6 +774,33 @@ def run_baseline(
         else:
             task.qr.confident[task.arm] = is_confident_answer(ans)
 
+    # Best-effort incremental checkpoint: snapshot the answers filled so far in a
+    # resume-shaped record list ({qid, hop_count, answerable, answers}) so a process
+    # kill mid-pass loses nothing — a later --resume re-uses every persisted non-None
+    # cell and re-calls only the rest. Snapshotting is defensive against the workers
+    # mutating answer dicts concurrently (a transient size-change just skips one beat).
+    def _snapshot() -> list[dict[str, Any]]:
+        snap: list[dict[str, Any]] = []
+        for r in results:
+            try:
+                ans = dict(r.answers)
+            except RuntimeError:
+                ans = dict(list(r.answers.items()))
+            snap.append(
+                {"qid": r.qid, "hop_count": r.hop_count, "answerable": r.answerable, "answers": ans}
+            )
+        return snap
+
+    def _maybe_checkpoint(done_tasks: int) -> None:
+        if checkpoint is None or checkpoint_every <= 0:
+            return
+        if done_tasks % (checkpoint_every * len(arms)) != 0:
+            return
+        try:
+            checkpoint(_snapshot())
+        except Exception:  # noqa: BLE001 — a checkpoint failure must never abort the priced pass
+            pass
+
     if answer_workers > 1 and answerer_available:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -781,11 +810,13 @@ def run_baseline(
                 done += 1
                 if progress is not None and done % len(arms) == 0:
                     progress(done // len(arms), len(questions), None)
+                _maybe_checkpoint(done)
     else:
         for i, task in enumerate(tasks):
             _do(task)
             if progress is not None and (i + 1) % len(arms) == 0:
                 progress((i + 1) // len(arms), len(questions), task.qr)
+            _maybe_checkpoint(i + 1)
 
     return _aggregate(results, answerer, k=k, arms=arms)
 

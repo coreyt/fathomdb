@@ -351,6 +351,26 @@ def test_resume_all_reused_pays_zero_calls() -> None:
     assert art2["primary_endpoint"]["pooled_ge3hop"] == art1["primary_endpoint"]["pooled_ge3hop"]
 
 
+def test_checkpoint_emits_resume_loadable_records() -> None:
+    # the incremental checkpoint hook receives resume-shaped records mid-pass; the
+    # wrapped {baseline_run:{paired_records}} must be loadable by the resume reader.
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    seen: list[list[dict]] = []
+    run_baseline(
+        qs, StubAnswerer(), k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext),
+        checkpoint=lambda recs: seen.append(recs), checkpoint_every=3,
+    )
+    assert seen, "checkpoint hook was never called"
+    last = seen[-1]
+    assert {r["qid"] for r in last} == {q.id for q in qs}
+    resume = prior_answers_from_artifact({"baseline_run": {"paired_records": last}})
+    for q in qs:
+        for arm in VERDICT_ARMS:
+            assert resume[(q.id, arm)] is not None
+
+
 def test_build_artifact_schema_and_five_arm_table() -> None:
     qs = _mini_set()
     ext = _mini_extractions(qs)

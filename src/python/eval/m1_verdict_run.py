@@ -75,6 +75,8 @@ def run(
     cheap_limit: int = 15,
     max_usd: float = HARD_CAP_USD,
     resume: Optional[Path] = None,
+    checkpoint_path: Optional[Path] = None,
+    checkpoint_every: int = 25,
 ) -> dict[str, Any]:
     t0 = time.time()
     extractions = _load_extractions(extractions_path)
@@ -158,6 +160,28 @@ def run(
     encoder = BGEEncoder()
     reranker = FusedPoolReranker()
 
+    # Incremental checkpoint: atomically persist the partial answer matrix every
+    # ``checkpoint_every`` questions so a process kill mid-pass loses nothing — a
+    # later ``--resume <checkpoint>`` re-uses every persisted non-None cell and
+    # re-calls only the rest. Defaults to the output path + ``.checkpoint.json``.
+    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
+
+    def _checkpoint(records: list[dict[str, Any]]) -> None:
+        if mode != "priced":
+            return
+        n_ans = sum(1 for r in records for v in r.get("answers", {}).values() if v is not None)
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ckpt_path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"baseline_run": {"paired_records": records}}), encoding="utf-8"
+        )
+        tmp.replace(ckpt_path)
+        print(
+            f"[S20][CKPT] persisted {n_ans} non-None cells -> {ckpt_path.name} "
+            f"(${answerer.usd():.4f})",
+            flush=True,
+        )
+
     def progress(done: int, total: int, _qr: Any) -> None:
         if done == 1 or done % 10 == 0 or done == total:
             print(
@@ -179,6 +203,8 @@ def run(
         answer_workers=answer_workers,
         power_ok=False,  # stage 1: N≈144 ≪ 1165 required
         prior_answers=prior_answers,
+        checkpoint=_checkpoint,
+        checkpoint_every=checkpoint_every,
     )
 
     art["cost"] = answerer.cost_block()
@@ -401,6 +427,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--resume", default=None,
                     help="prior verdict artifact JSON: reuse its successful (qid,arm) "
                     "answers and (re)call ONLY the previously-failed cells")
+    ap.add_argument("--checkpoint", default=None,
+                    help="path to write the incremental partial-answer checkpoint "
+                    "(default: <output>.checkpoint.json); --resume it after a kill")
+    ap.add_argument("--checkpoint-every", type=int, default=25,
+                    help="persist the checkpoint every N completed questions (priced mode)")
     args = ap.parse_args(argv)
 
     corpus = Path(args.corpus) if args.corpus else _DEFAULT_CORPUS
@@ -420,6 +451,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         cheap_limit=args.cheap_limit,
         max_usd=args.max_usd,
         resume=Path(args.resume) if args.resume else None,
+        checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
+        checkpoint_every=args.checkpoint_every,
     )
     if args.report and args.mode == "priced":
         write_report(art, Path(args.report))
