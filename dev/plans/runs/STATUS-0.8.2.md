@@ -64,7 +64,8 @@
 |---|-------|------|---------|-------|---------|
 | 0 | Design + pre-registration (**+ TDD: frozen decision-rule module**) | `[design-adr]` | — | **CLOSED (amended); ◆ HITL sign-off ready** | revision+fix merged `2348f95`; codex §9 PASS; 33/33 green; all 6 amendments + trend-test lint |
 | 4 | **MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10)** | impl (measurement) | 0 ✅ | **CLOSED** | merged+fix-1 `df1c879`; `musique_hash 3cff37fd…`, reproduce-stable, 8/8 tests; orchestrator-verified |
-| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅ | **RE-SPAWNED (→ budget checkpoint)** | off `d55e922` w/ live reranker; `runs/0.8.2-m1-baseline-n{N}.json`; stops at cost projection |
+| 5 | strong baseline + answerer e2e over shared corpus (THE BAR) | impl (measurement) | 4 ✅, E1 ✅, E2 ✅ | **fix-1 merged `57f7464`; fix-2 IN-FLIGHT ($0)** | BAR pooled≥3hop F1: bm25 .239/dense .262/fused .306/fused_rerank .306 (TIED); MDE→0.04 proposed; fix-2 = numpy+CLS+all-bridges@K |
+| — | **Tracked bug (separate slice):** engine `CandleBgeEmbedder` defaults to `Pooling::Mean` for CLS-pooled bge-small → degrades shipped dense retrieval (BGE docs). Eval unaffected (harness=CLS). | bug | — | FLAGGED | `candle_bge.rs:229`; candidate for its own slice (touches stored-vector compat) |
 | 10 | Graph build over MuSiQue (reuse extractor) | impl (measurement) | 4 ✅ | **CLOSED** (fix-1 `f8bc631`) | n=300 graph, coverage 1.0, 50.6k entities/51.2k body-less edges, hash-validated; cache preserved to canonical for Slice 15 |
 | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
 | E2 | Standalone rerank SDK API (`fathomdb.rerank`) over arbitrary passages | impl | — | **CLOSED** (fix-1 `f2c910f`) | Python-verified reorders [1,2,3]→[2,1,3]; non-finite→WriteValidationError; default-reranker now in dev/test build (durable) |
@@ -79,7 +80,9 @@ graph extraction) and may run in parallel.
 
 | Date | Slice | Run | Model | $ | Note |
 |---|---|---|---|---|---|
-| — | — | — | — | 0.00 | No priced run yet. Cheap-validate = `gemini-2.5-flash-lite`; strong reader = `gemini-3.1-pro-preview`. |
+| 06-18 | 5 (orig) | cheap-validate + pilots | flash-lite + gemini-3.1-pro | ~2.39 | incl. a crashed N=100 pilot (~$0.95, no artifact) — fixed with answer-phase resilience |
+| 06-18 | 5 fix-1 | cheap-validate + bounded re-pilot (N=100) | flash-lite + gemini-3.1-pro | ~2.59 | valid BAR; 399 calls, 1 err |
+| | | | **cumulative** | **~4.97** | of the HITL <$30 ceiling for the re-measure. Full graph adjudication (Slice 20) = separate gate (~$30 ≥3-hop). |
 
 **Running total: $0.00.**
 
