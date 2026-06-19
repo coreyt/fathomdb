@@ -103,6 +103,24 @@ def load_graph_questions(
     return sorted((q for q in qs if q.answerable and q.id in qids), key=lambda q: q.id)
 
 
+def prior_answers_from_artifact(prior: Mapping[str, Any]) -> dict[tuple[str, str], Optional[str]]:
+    """Build the resume map ``(qid, arm) -> answer`` from a prior verdict artifact's
+    persisted ``baseline_run.paired_records``.
+
+    Only cells whose stored answer is non-``None`` will be reused by ``run_baseline``
+    (a stored ``None`` = a previously-failed cell ⇒ it is re-called). Returns an empty
+    map if the prior artifact carries no persisted answers (e.g. a run that dropped
+    ``baseline_run``) — in which case the re-run is a full pass (correct + safe)."""
+    out: dict[tuple[str, str], Optional[str]] = {}
+    recs = (prior.get("baseline_run") or {}).get("paired_records") or []
+    for r in recs:
+        qid = r.get("qid")
+        for arm, ans in (r.get("answers") or {}).items():
+            if qid is not None:
+                out[(str(qid), str(arm))] = ans
+    return out
+
+
 def ppr_augment(
     extractions: Mapping[str, Mapping[str, Any]], cfg: PPRConfig = DEFAULT_PPR_CONFIG
 ) -> Callable[[dict[str, Any], Question], dict[str, Any]]:
@@ -418,10 +436,14 @@ def run_verdict(
     progress: Any = None,
     answer_workers: int = 1,
     power_ok: bool = False,
+    prior_answers: Optional[dict[tuple[str, str], Optional[str]]] = None,
 ) -> dict[str, Any]:
     """Run the 5-arm pipeline (4 baseline + ppr_fusion) with the identical answerer
     and return the full verdict artifact (the baseline run nested under
-    ``baseline_run``)."""
+    ``baseline_run``).
+
+    ``prior_answers`` (the resume seam) reuses already-successful ``(qid, arm)``
+    answers from a prior run so only the previously-failed cells are (re)called."""
     baseline_art = run_baseline(
         questions,
         answerer,
@@ -432,6 +454,7 @@ def run_verdict(
         progress=progress,
         answer_workers=answer_workers,
         augment_rankings=ppr_augment(extractions, cfg),
+        prior_answers=prior_answers,
     )
     art = build_verdict_artifact(
         baseline_art, n_boot=n_boot, seed=seed, power_ok=power_ok

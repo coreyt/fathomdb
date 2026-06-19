@@ -31,6 +31,7 @@ from eval.m1_verdict import (
     VERDICT_ARMS,
     load_graph_questions,
     ppr_divergence,
+    prior_answers_from_artifact,
     run_verdict,
 )
 
@@ -73,10 +74,31 @@ def run(
     answer_workers: int = 4,
     cheap_limit: int = 15,
     max_usd: float = HARD_CAP_USD,
+    resume: Optional[Path] = None,
 ) -> dict[str, Any]:
     t0 = time.time()
     extractions = _load_extractions(extractions_path)
     questions = load_graph_questions(corpus, extractions)
+
+    # Resume seam: reuse already-successful (qid, arm) answers from a prior artifact,
+    # re-calling ONLY the previously-failed cells (deterministic answerer ⇒ identical
+    # to a clean pass, but $0 for the cells that already succeeded).
+    prior_answers = None
+    if resume is not None:
+        prior = json.loads(Path(resume).read_text(encoding="utf-8"))
+        prior_answers = prior_answers_from_artifact(prior)
+        n_reusable = sum(1 for v in prior_answers.values() if v is not None)
+        print(
+            f"[S20][RESUME] {n_reusable} prior non-None (qid,arm) cells reused from "
+            f"{resume}; only failed/missing cells will be (re)called",
+            flush=True,
+        )
+        if n_reusable == 0:
+            print(
+                "[S20][RESUME] WARNING: prior artifact persisted 0 answers "
+                "(baseline_run absent) → this is a FULL re-run, not a fill-in",
+                flush=True,
+            )
     from collections import Counter
 
     hop_dist = dict(sorted(Counter(q.hop_count for q in questions).items()))
@@ -156,6 +178,7 @@ def run(
         progress=progress,
         answer_workers=answer_workers,
         power_ok=False,  # stage 1: N≈144 ≪ 1165 required
+        prior_answers=prior_answers,
     )
 
     art["cost"] = answerer.cost_block()
@@ -375,6 +398,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="concurrent answerer calls; keep LOW (≤4) to avoid 429 rate-limits")
     ap.add_argument("--cheap-limit", type=int, default=15)
     ap.add_argument("--max-usd", type=float, default=HARD_CAP_USD)
+    ap.add_argument("--resume", default=None,
+                    help="prior verdict artifact JSON: reuse its successful (qid,arm) "
+                    "answers and (re)call ONLY the previously-failed cells")
     args = ap.parse_args(argv)
 
     corpus = Path(args.corpus) if args.corpus else _DEFAULT_CORPUS
@@ -393,6 +419,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         answer_workers=args.workers,
         cheap_limit=args.cheap_limit,
         max_usd=args.max_usd,
+        resume=Path(args.resume) if args.resume else None,
     )
     if args.report and args.mode == "priced":
         write_report(art, Path(args.report))

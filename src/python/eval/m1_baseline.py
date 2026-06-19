@@ -683,6 +683,7 @@ def run_baseline(
     progress: Any = None,
     answer_workers: int = 1,
     augment_rankings: Optional[Callable[[dict[str, Any], "Question"], dict[str, Any]]] = None,
+    prior_answers: Optional[dict[tuple[str, str], Optional[str]]] = None,
 ) -> dict[str, Any]:
     """Run the four-arm strong baseline over ``questions`` with one shared answerer.
 
@@ -742,6 +743,20 @@ def run_baseline(
     # (a single reasoning-model timeout must not discard the whole priced pass).
     def _do(task: "_Task") -> None:
         ans: Optional[str] = None
+        # Resume: reuse a prior NON-None answer for this (qid, arm) cell — only the
+        # cells that previously FAILED (absent / None) are (re)called. The answerer is
+        # deterministic (temp0/seed0), so a fill-in of the failed cells is identical to
+        # a clean single pass — but pays $0 for the cells that already succeeded.
+        if prior_answers is not None:
+            prev = prior_answers.get((task.q.id, task.arm))
+            if prev is not None:
+                task.qr.answers[task.arm] = prev
+                if task.q.answerable:
+                    task.qr.em[task.arm] = em_score(prev, task.q.golds)
+                    task.qr.f1[task.arm] = f1_score(prev, task.q.golds)
+                else:
+                    task.qr.confident[task.arm] = is_confident_answer(prev)
+                return
         if answerer_available:
             try:
                 ans = answerer.answer(task.q.question, task.context)

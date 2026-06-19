@@ -28,6 +28,7 @@ import numpy as np
 
 from eval.m1_baseline import Paragraph, Question, run_baseline
 from eval.m1_decision_rule import MATERIAL_F1_LIFT, decide
+from eval.m1_baseline import run_baseline as _run_baseline
 from eval.m1_verdict import (
     COMPARATOR_ARM,
     TREATMENT_ARM,
@@ -38,6 +39,7 @@ from eval.m1_verdict import (
     graph_qids,
     ppr_augment,
     ppr_divergence,
+    prior_answers_from_artifact,
     run_verdict,
     stage2_recommendation,
     verdict_from_inputs,
@@ -256,6 +258,97 @@ def test_ppr_divergence_reports_structure() -> None:
 def test_graph_qids_extracts_question_ids() -> None:
     ext = {"2hop__10114_599630#0": {}, "2hop__10114_599630#11": {}, "3hop1__a#3": {}}
     assert graph_qids(ext) == {"2hop__10114_599630", "3hop1__a"}
+
+
+# --------------------------------------------------------------------------- #
+# (f) resume — reuse prior successful answers, (re)call ONLY the failed cells
+# --------------------------------------------------------------------------- #
+
+
+class CountingAnswerer(StubAnswerer):
+    """A StubAnswerer that counts how many (question, context) cells it is asked."""
+
+    model_id = "counting-stub-v1"
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    def answer(self, question: str, context: list[str]):  # noqa: ANN201
+        self.asked.append(question)
+        return super().answer(question, context)
+
+
+def test_prior_answers_from_artifact_skips_none() -> None:
+    prior = {
+        "baseline_run": {
+            "paired_records": [
+                {"qid": "2hop__a", "answers": {"bm25": "x", "ppr_fusion": None}},
+                {"qid": "3hop__b", "answers": {"bm25": "y"}},
+            ]
+        }
+    }
+    m = prior_answers_from_artifact(prior)
+    assert m[("2hop__a", "bm25")] == "x"
+    assert m[("2hop__a", "ppr_fusion")] is None  # stored None ⇒ will be re-called
+    assert m[("3hop__b", "bm25")] == "y"
+    # an artifact with no persisted answers ⇒ empty map ⇒ a full (safe) re-run.
+    assert prior_answers_from_artifact({"verdict": "NO_GO"}) == {}
+
+
+def test_resume_recalls_only_failed_cells() -> None:
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    # Pass 1 — full run; every (qid, arm) answered.
+    art1 = run_verdict(
+        qs, StubAnswerer(), ext, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        n_boot=300, seed=0,
+    )
+    prior = prior_answers_from_artifact(art1)
+    assert all(v is not None for v in prior.values())
+
+    # Simulate that the ppr_fusion arm FAILED for every question (None'd in the prior).
+    failed = dict(prior)
+    n_failed = 0
+    for q in qs:
+        failed[(q.id, TREATMENT_ARM)] = None
+        n_failed += 1
+
+    # Pass 2 — resume: only the None'd ppr_fusion cells should be (re)called.
+    spy = CountingAnswerer()
+    art2 = _run_baseline(
+        qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=failed,
+    )
+    assert len(spy.asked) == n_failed  # exactly the failed cells, nothing else
+    # the reused (non-failed) arms keep pass-1 answers; ppr_fusion is freshly answered.
+    recs1 = {r["qid"]: r for r in art1["baseline_run"]["paired_records"]}
+    for r in art2["paired_records"]:
+        for arm in VERDICT_ARMS:
+            if arm != TREATMENT_ARM:
+                assert r["answers"][arm] == recs1[r["qid"]]["answers"][arm]
+        assert r["answers"][TREATMENT_ARM] is not None  # re-called, not left None
+
+
+def test_resume_all_reused_pays_zero_calls() -> None:
+    # if every cell is reusable, the resume run makes ZERO answerer calls and
+    # reproduces the same endpoint as the original full run.
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+    art1 = run_verdict(
+        qs, StubAnswerer(), ext, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        n_boot=300, seed=0,
+    )
+    prior = prior_answers_from_artifact(art1)
+    spy = CountingAnswerer()
+    art2 = build_verdict_artifact(
+        _run_baseline(
+            qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+            arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
+        ),
+        n_boot=300, seed=0,
+    )
+    assert spy.asked == []  # nothing re-called
+    assert art2["primary_endpoint"]["pooled_ge3hop"] == art1["primary_endpoint"]["pooled_ge3hop"]
 
 
 def test_build_artifact_schema_and_five_arm_table() -> None:
