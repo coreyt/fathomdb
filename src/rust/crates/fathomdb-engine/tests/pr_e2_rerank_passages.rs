@@ -49,7 +49,7 @@ fn rerank_passages_reorders_when_ce_disagrees_with_input_order() {
     assert_eq!(input[0].0, 1);
     assert_eq!(input[1].0, 2);
 
-    let out = rerank_passages(query, input.clone(), 3);
+    let out = rerank_passages(query, input.clone(), 3).unwrap();
 
     let in_ids: Vec<u64> = input.iter().map(|p| p.0).collect();
     let out_ids: Vec<u64> = out.iter().map(|p| p.0).collect();
@@ -73,7 +73,7 @@ fn rerank_passages_reorders_when_ce_disagrees_with_input_order() {
 fn rerank_passages_depth_0_is_identity() {
     let input =
         vec![passage(10, "alpha", 0.05), passage(20, "beta", 0.04), passage(30, "gamma", 0.03)];
-    let out = rerank_passages("anything", input.clone(), 0);
+    let out = rerank_passages("anything", input.clone(), 0).unwrap();
     let expected: Vec<(u64, f64)> = input.iter().map(|p| (p.0, p.2)).collect();
     assert_eq!(out, expected, "depth=0 must preserve input order AND scores byte-identical");
 }
@@ -82,6 +82,6 @@ fn rerank_passages_depth_0_is_identity() {
 /// pins the `rerank_fused`/`ce_rerank` empty guard through the helper.
 #[test]
 fn rerank_passages_empty_is_identity() {
-    let out = rerank_passages("any query", vec![], 10);
+    let out = rerank_passages("any query", vec![], 10).unwrap();
     assert!(out.is_empty(), "empty passage list must return empty immediately");
 }
