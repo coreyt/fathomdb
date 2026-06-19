@@ -293,7 +293,7 @@ def test_prior_answers_from_artifact_skips_none() -> None:
     }
     m = prior_answers_from_artifact(prior)
     assert m[("2hop__a", "bm25")] == "x"
-    assert m[("2hop__a", "ppr_fusion")] is None  # stored None ⇒ will be re-called
+    assert m[("2hop__a", "ppr_fusion")] is None  # key-present None ⇒ REUSED (abstention, NOT re-called)
     assert m[("3hop__b", "bm25")] == "y"
     # an artifact with no persisted answers ⇒ empty map ⇒ a full (safe) re-run.
     assert prior_answers_from_artifact({"verdict": "NO_GO"}) == {}
@@ -310,14 +310,15 @@ def test_resume_recalls_only_failed_cells() -> None:
     prior = prior_answers_from_artifact(art1)
     assert all(v is not None for v in prior.values())
 
-    # Simulate that the ppr_fusion arm FAILED for every question (None'd in the prior).
+    # Simulate that the ppr_fusion arm FAILED for every question.
+    # Failure = ABSENT key (not key-present-None, which is an abstention).
     failed = dict(prior)
     n_failed = 0
     for q in qs:
-        failed[(q.id, TREATMENT_ARM)] = None
+        del failed[(q.id, TREATMENT_ARM)]  # ABSENT = prior failure → must be re-called
         n_failed += 1
 
-    # Pass 2 — resume: only the None'd ppr_fusion cells should be (re)called.
+    # Pass 2 — resume: only the ABSENT ppr_fusion cells should be (re)called.
     spy = CountingAnswerer()
     art2 = _run_baseline(
         qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
@@ -477,6 +478,52 @@ def test_failure_recalled_on_resume_excluded_from_answered_set() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# [absten] codex §9 [P2] — resume must REUSE key-present-None abstentions
+# --------------------------------------------------------------------------- #
+
+
+def test_abstention_is_reused_not_recalled() -> None:
+    """[absten][RED→GREEN] A key-present-None in prior_answers is a SUCCESSFUL
+    abstention that must be REUSED (no re-call).  An ABSENT key is a prior
+    failure that must be re-called.  This test fails against the old
+    ``if prev is not None`` logic (which re-calls abstentions) and passes once
+    ``_do`` uses the membership-based ``if key in prior_answers`` guard."""
+    qs = _mini_set()
+    ext = _mini_extractions(qs)
+
+    # Build a prior where, for qs[0] ("2hop__a"):
+    #   - "bm25" arm:  ABSENT key  (simulated prior failure → must be re-called)
+    #   - all other arms: key-present-None  (prior abstention → must be REUSED)
+    # All other questions have non-None cached values (never re-called).
+    absent_q = qs[0]
+    absent_arm = VERDICT_ARMS[0]  # "bm25"
+    prior: dict[tuple[str, str], str | None] = {}
+    for q in qs:
+        for arm in VERDICT_ARMS:
+            if q.id == absent_q.id and arm == absent_arm:
+                pass  # deliberately ABSENT = prior failure
+            elif q.id == absent_q.id:
+                prior[(q.id, arm)] = None  # key-present-None = prior abstention
+            else:
+                prior[(q.id, arm)] = "cached-answer"
+
+    spy = CountingAnswerer()
+    run_baseline(
+        qs, spy, k=10, encoder=FakeEncoder(), reranker=FakeReranker(),
+        arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
+    )
+
+    # Exactly ONE re-call: the absent failure cell.  The key-present-None
+    # abstentions must NOT generate any re-calls.
+    assert len(spy.asked) == 1, (
+        f"Expected 1 re-call (the absent failure cell); got {len(spy.asked)}. "
+        "key-present-None abstentions are being incorrectly re-called!"
+    )
+    # That one call must be for the question whose arm was absent.
+    assert spy.asked[0] == absent_q.question
+
+
+# --------------------------------------------------------------------------- #
 # (1) auto-resume by default
 # --------------------------------------------------------------------------- #
 
@@ -493,8 +540,11 @@ def test_auto_resume_reuses_preserved_214_cells() -> None:
     ckpt = json.loads(_PRESERVED_CHECKPOINT.read_text(encoding="utf-8"))
     recs = ckpt["baseline_run"]["paired_records"]
     prior = prior_answers_from_artifact(ckpt)
-    n_reusable = sum(1 for v in prior.values() if v is not None)
-    assert n_reusable == 214  # the preserved real progress — must be re-used, not re-spent
+    # All keys in prior are reusable: non-None answers AND key-present-None abstentions.
+    # (Before the abstention fix, n_reusable counted only non-None values = 214.
+    #  Post-fix: all persisted cells are reused, including None abstentions.)
+    n_reusable = len(prior)  # membership-based count: every persisted (qid, arm) cell
+    assert n_reusable >= 214  # at least the 214 non-None cells must be present
 
     qs = [
         _mini_question(r["qid"], int(r["hop_count"]), f"a{i}")
@@ -508,7 +558,7 @@ def test_auto_resume_reuses_preserved_214_cells() -> None:
         arms=VERDICT_ARMS, augment_rankings=ppr_augment(ext), prior_answers=prior,
     )
     expected_cells = len(qs) * len(VERDICT_ARMS)
-    assert len(spy.asked) == expected_cells - n_reusable  # re-call ONLY the missing
+    assert len(spy.asked) == expected_cells - n_reusable  # re-call ONLY the absent cells
 
 
 def test_resolve_resume_auto_detects_sidecar_without_a_flag(tmp_path) -> None:

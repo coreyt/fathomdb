@@ -766,13 +766,15 @@ def run_baseline(
     # ``answer_completeness``). A failed cell is NEVER persisted as a scored
     # abstention (the bug that silently deflated every arm toward F1=0).
     def _do(task: "_Task") -> None:
-        # Resume: reuse a prior NON-None answer for this (qid, arm) cell — only the
-        # cells that previously FAILED (absent / None) are (re)called. The answerer is
-        # deterministic (temp0/seed0), so a fill-in of the failed cells is identical to
-        # a clean single pass — but pays $0 for the cells that already succeeded.
+        # Resume: reuse ANY persisted (qid, arm) cell — including key-present-None
+        # abstentions.  Only ABSENT keys (prior failures) are (re)called.  The
+        # answerer is deterministic (temp0/seed0), so a fill-in of the failed cells
+        # is identical to a clean single pass — but pays $0 for every cell that was
+        # already answered (including legitimate abstentions).
         if prior_answers is not None:
-            prev = prior_answers.get((task.q.id, task.arm))
-            if prev is not None:
+            _key = (task.q.id, task.arm)
+            if _key in prior_answers:
+                prev = prior_answers[_key]  # may be None (a successful abstention)
                 task.qr.answers[task.arm] = prev
                 if task.q.answerable:
                     task.qr.em[task.arm] = em_score(prev, task.q.golds)
@@ -802,9 +804,10 @@ def run_baseline(
 
     # Best-effort incremental checkpoint: snapshot the answers filled so far in a
     # resume-shaped record list ({qid, hop_count, answerable, answers}) so a process
-    # kill mid-pass loses nothing — a later --resume re-uses every persisted non-None
-    # cell and re-calls only the rest. Snapshotting is defensive against the workers
-    # mutating answer dicts concurrently (a transient size-change just skips one beat).
+    # kill mid-pass loses nothing — a later --resume re-uses every persisted cell
+    # (including key-present-None abstentions) and re-calls only ABSENT cells.
+    # Snapshotting is defensive against workers mutating answer dicts concurrently
+    # (a transient size-change just skips one beat).
     def _snapshot() -> list[dict[str, Any]]:
         snap: list[dict[str, Any]] = []
         for r in results:

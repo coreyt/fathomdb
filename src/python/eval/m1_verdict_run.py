@@ -138,12 +138,14 @@ def run(
     if resume_src is not None and resume_src.exists():
         prior = json.loads(resume_src.read_text(encoding="utf-8"))
         prior_answers = prior_answers_from_artifact(prior)
-        n_reusable = sum(1 for v in prior_answers.values() if v is not None)
+        # All keys in prior_answers are reusable: key-present-None = abstention
+        # (kept as-is, no re-call); absent key = prior failure (re-called).
+        n_reusable = len(prior_answers)
         how = "explicit --resume" if resume is not None else "AUTO-DETECTED sidecar"
         print(
-            f"[S20][AUTO-RESUME] {how}: {n_reusable} already-answered (qid,arm) cells "
-            f"reused from {resume_src}; only missing/failed cells will be (re)called "
-            f"(zero re-spend on the {n_reusable} reused)",
+            f"[S20][AUTO-RESUME] {how}: {n_reusable} persisted (qid,arm) cells "
+            f"reused from {resume_src}; only ABSENT (failed) cells will be (re)called "
+            f"(zero re-spend on the {n_reusable} reused, incl. any None abstentions)",
             flush=True,
         )
         if n_reusable == 0:
@@ -222,9 +224,9 @@ def run(
     # Incremental checkpoint: ATOMICALLY persist the partial answer matrix at least
     # every ``checkpoint_every`` questions (temp-file + os.replace) so a process kill
     # mid-pass loses nothing and can never corrupt the live file — auto-resume then
-    # re-uses every persisted non-None cell and re-calls only the rest. Failed cells
-    # are MISSING (absent), never persisted as a scored abstention. Defaults to the
-    # output path + ``.checkpoint.json``.
+    # re-uses every persisted cell (including key-present-None abstentions) and
+    # re-calls only ABSENT (failed) cells. Failed cells are MISSING (absent), never
+    # persisted as a scored abstention. Defaults to the output path + ``.checkpoint.json``.
     def _usd() -> float:
         fn = getattr(ans_any, "usd", None)
         if not callable(fn):
