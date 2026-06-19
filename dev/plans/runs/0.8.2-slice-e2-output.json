@@ -1,0 +1,53 @@
+{
+  "phase": "0.8.2-slice-e2",
+  "baseline_sha": "f151f372f5ff0b9ab5a54e052d2b1b3bcac7eefe",
+  "branch": "slice-0.8.2-e2-20260619T001413Z",
+  "head_sha": "94732bb531e3945882c02d23433b3e6ce25412ce",
+  "merged_to_main_sha": "6884acb1ea89ab49e449b1c46c1c3a38ab33f43f",
+  "commits": [
+    "5799f4d: test(0.8.2/E2): RED — rerank_passages helper reorders CE-disagrees pool + depth0/empty identity",
+    "94732bb: feat(0.8.2/E2): GREEN — standalone rerank SDK API over an arbitrary passage list (engine helper + pyo3 fn + governed-surface registration + DOC-INDEX)"
+  ],
+  "findings_addressed": [],
+  "api": {
+    "engine_helper": "pub fn rerank_passages(query: &str, passages: Vec<(u64, String, f64)>, rerank_depth: usize) -> Vec<(u64, f64)>  (fathomdb-engine/src/lib.rs, immediately after rerank_fused; pure, calls rerank_fused; adapts each passage into SearchHit{kind=\"passage\", branch=Vector, source_id=None} — only body+score feed the blend — then projects the reranked SearchHits back to (id, score))",
+    "pyo3_module_fn": "fathomdb.rerank(query: str, passages: list[dict], rerank_depth: int) -> list[dict]",
+    "input_shape": "passages = list of {\"id\": int (>=0), \"body\": str, \"score\": float}  (score = the caller's fused/RRF score)",
+    "output_shape": "list of {\"id\": int, \"score\": float} in the RERANKED order; output score is the CE-blended score (alpha=0.3 x sigmoid(CE) + 0.7 x RRF-norm over the top-depth pool)",
+    "shape_decision": "Module-level free function (not Engine.rerank) chosen because the rerank is engine-FREE: it operates on a caller-supplied pool with no DB/engine handle, exactly what Slice 5's in-harness fused(bm25+dense) pool needs. Output carries (id, score) only — sufficient for the comparator to reorder its own pool (body is keyed by id in the harness); kept minimal per the thin-wrapper mandate and matches the pure helper's Vec<(id,score)> return verbatim.",
+    "registration": "Native fn registered in the _fathomdb #[pymodule] (m.add_function(wrap_pyfunction!(rerank, &m))). Re-exported as fathomdb.rerank in src/python/fathomdb/__init__.py (import + __all__). Type stub added to src/python/fathomdb/_fathomdb.pyi. Governed-surface allowlist member 'rerank' added to the single shared src/conformance/governed-surface-allowlist.json."
+  },
+  "tdd_evidence": {
+    "red_commit_sha": "5799f4d35e5c7c8b561659cf069216f2a305eb3d",
+    "red_evidence": "At RED (5799f4d) the new feature-gated test target tests/pr_e2_rerank_passages.rs references fathomdb_engine::rerank_passages which does not yet exist => `cargo test -p fathomdb-engine --features default-reranker --test pr_e2_rerank_passages` FAILS to compile: error[E0432] unresolved import `fathomdb_engine::rerank_passages` (no `rerank_passages` in the root). GREEN at 94732bb: same command => 3 passed (reorders id=2 to top via real TinyBERT-L-2 CE; depth0 identity; empty identity).",
+    "test_files": [
+      "src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_passages.rs"
+    ]
+  },
+  "contracts_confirmed": {
+    "depth0_identity": "rerank_passages(_, input, 0) returns (id, score) in input order with input scores byte-identical — inherited from rerank_fused's depth==0 short-circuit (BEFORE any #[cfg(default-reranker)] block). Verified feature-on by rerank_passages_depth_0_is_identity (green).",
+    "empty_identity": "rerank_passages(_, [], depth) returns [] immediately — inherited from rerank_fused/ce_rerank empty guard; no model load. Verified by rerank_passages_empty_is_identity (green).",
+    "no_network": "depth==0 and empty short-circuit before the CE singleton is touched; with the feature OFF the entire CE path compiles away (rerank_fused is always identity). The only network is the existing E1 gated ~17MB cache-miss fetch on first rerank_depth>0 with weights absent — unchanged by E2.",
+    "feature_off_candle_free": "fathomdb-py default features = [] and the rerank wrapper references nothing candle-specific (only rerank_passages/rerank_fused which exist in both feature states). `cargo tree -p fathomdb-py --features pyo3/extension-module -e features | grep -ci candle` => 0. Feature-off `cargo clippy -p fathomdb-engine -p fathomdb-py -- -D warnings` clean.",
+    "never_panics": "pyo3 fn returns PyResult; malformed passages (non-dict item, missing/typed-wrong id/body/score) raise the typed WriteValidationError; body rides the FFI string gate (validate_ffi_string_py). The pure helper call is wrapped in catch_unwind(AssertUnwindSafe(..)) inside py.allow_threads, mapping any escaping panic to PanicException (mirrors call_engine)."
+  },
+  "verification": {
+    "cargo_test_feature_on_e2": "cargo test -p fathomdb-engine --features default-reranker --test pr_e2_rerank_passages => 3 passed (CE reorder id=2->top; depth0 identity; empty identity)",
+    "cargo_test_feature_off_reranker": "cargo test -p fathomdb-engine --test pr_g10_reranker => 5 passed (soft-fallback/identity/determinism/recall-gate-schema) — E2 helper does not regress the feature-off path",
+    "cargo_build_py_reranker": "cargo build -p fathomdb-py --features pyo3/extension-module,default-embedder,fathomdb-engine/default-reranker => compiles clean",
+    "clippy": "cargo clippy -p fathomdb-engine -p fathomdb-py --features default-reranker -- -D warnings clean; feature-off clippy clean",
+    "fmt": "cargo fmt --check clean (pre-commit enforced on both RED and GREEN commits)",
+    "candle_free_minimal": "cargo tree -p fathomdb-py --features pyo3/extension-module -e features => 0 candle nodes",
+    "post_merge": "merged --no-ff onto local main at 6884acb (clean; main had not advanced past baseline f151f37). NO push/fetch/PR."
+  },
+  "blockers_encountered": [],
+  "preexisting_failure_noted": {
+    "test": "fathomdb-engine tests/pr_g1_tokenizer_crash_recovery.rs::ac_fts_tokenizer_reproject_recovers_after_crash",
+    "symptom": "asserts open at SCHEMA_VERSION 14 but fathomdb-schema SCHEMA_VERSION is 15 (left:15 right:14)",
+    "verdict": "PRE-EXISTING at baseline f151f37 and UNRELATED to E2 — E2's diff touches neither the schema crate nor that test; the failure reproduces with E2's GREEN changes stashed. A prior slice bumped SCHEMA_VERSION 14->15 without updating this dependent assertion. Out of scope for E2 ('no other engine behavior'); flagged for the orchestrator to triage/repair separately.",
+    "evidence": "git diff f151f372 --name-only excludes src/rust/crates/fathomdb-schema/ and the test file; with E2 changes stashed (working tree == RED commit, schema unchanged from baseline) the test still FAILS with the same 15-vs-14 assertion."
+  },
+  "scope_notes": "Touched ONLY: the engine helper rerank_passages (additive pub fn), the feature-gated test target + Cargo.toml gate, the pyo3 `rerank` fn + module registration, the Python __init__/.pyi re-export, the single shared governed-surface allowlist (added 'rerank'), and the DOC-INDEX E1 row (amended to note E2's standalone API). No Slice-5 harness, no other engine behavior, NO TypeScript binding. TS parity NOT ballooned: 'rerank' is added only to the shared allowlist JSON — both Py and TS surface suites do SUBSET checks (live ⊆ allowlist), so the extra allowlist member is safe for both bindings without a TS implementation (Python is what Slice 5 needs); no TS source changed, so no escalation required.",
+  "agent_verify_result": "pass — RED@5799f4d (helper-missing compile failure), GREEN@94732bb (3 tests green incl. real-CE reorder; depth0/empty identity; never-panics; feature-off candle-free; clippy -D warnings clean both states; fmt clean). Merged --no-ff onto local main at 6884acb. NO push/fetch/PR. Could NOT exercise the Python .so (no maturin in worktree, per mandate) — orchestrator rebuilds + Python-verifies.",
+  "next_step_for_orchestrator": "rerank API added; orchestrator rebuilds extension + Python-verifies, then Slice 5 fix-1 uses fathomdb.rerank over the fused pool. Specifically: rebuild fathomdb-py with `--features pyo3/extension-module,default-embedder,fathomdb-engine/default-reranker` (maturin develop/build) so the CE path is LIVE, then sanity-check fathomdb.rerank(query, [{id,body,score}...], rerank_depth>0) reorders on real data and depth=0/empty return input order byte-identical (no network); run codex §9 review of the E2 change. SEPARATELY: triage the pre-existing pr_g1_tokenizer_crash_recovery SCHEMA_VERSION 14-vs-15 failure (not introduced by E2)."
+}
