@@ -10,12 +10,15 @@ flat-positive +0.03 shape. Pure CPU / deterministic (seeded) — no LLM, no DB.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from eval.m1_decision_rule import decide
+from eval.m1_decision_rule import MATERIAL_F1_LIFT, decide
 from eval.m1_power_sim import (
     EFFECT_SHAPES,
+    FLAT_POSITIVE_LIFT,
     effect_delta,
     required_n,
     simulate_p_go,
@@ -112,3 +115,41 @@ def test_decide_is_the_real_frozen_rule() -> None:
 def test_unknown_shape_raises() -> None:
     with pytest.raises(ValueError):
         effect_delta("linear", np.array([3, 4]))
+
+
+# --------------------------------------------------------------------------- #
+# pwrfix invariants — FLAT_POSITIVE_LIFT must track MATERIAL_F1_LIFT (no drift)
+# and the design mde-power-plan must name the aligned +0.04 target.
+# --------------------------------------------------------------------------- #
+def test_flat_positive_lift_equals_material_f1_lift_no_drift() -> None:
+    """FLAT_POSITIVE_LIFT must equal MATERIAL_F1_LIFT — they cannot drift.
+
+    rev2 bumped MATERIAL_F1_LIFT 0.02→0.04 but left FLAT_POSITIVE_LIFT at 0.03,
+    making the power sim compute P(GO) at a sub-threshold effect, defeating the
+    raise.  FLAT_POSITIVE_LIFT must reference MATERIAL_F1_LIFT so a future
+    threshold bump is automatically reflected in the power target.
+    """
+    assert FLAT_POSITIVE_LIFT == MATERIAL_F1_LIFT
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DESIGN_DOC = _REPO_ROOT / "dev" / "design" / "0.8.2-m1-multihop-harness.md"
+
+
+def test_design_mde_power_plan_names_flat_positive_0p04() -> None:
+    """The mde-power-plan frozen field must name the aligned flat-positive +0.04 target.
+
+    Mirrors the schema-lint dated-field check: the lint asserts the field is
+    present and dated; this test asserts the value it names is the current
+    threshold (flat-positive +0.04, not the stale +0.03).
+    """
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    start = text.find("frozen-field: mde-power-plan")
+    assert start != -1, "frozen-field: mde-power-plan not found in design doc"
+    # The next frozen-field marker bounds the mde-power-plan block.
+    end = text.find("frozen-field: trend-test", start)
+    block = text[start:end] if end != -1 else text[start : start + 1000]
+    assert "flat-positive +0.04" in block, (
+        "mde-power-plan frozen field must name the aligned power target 'flat-positive +0.04'; "
+        f"found block:\n{block[:400]}"
+    )
