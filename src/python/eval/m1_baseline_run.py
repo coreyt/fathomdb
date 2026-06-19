@@ -58,16 +58,54 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
 _DEFAULT_PRICE = (1.25, 5.00)
 
 
-class CostTrackingAnswerer(AirlockAnswerer):
-    """:class:`AirlockAnswerer` that accumulates token usage + call counts."""
+def _is_retryable(exc: BaseException) -> bool:
+    """A transient airlock failure worth retrying: an HTTP **429** (rate-limit) or
+    **5xx** (proxy/upstream hiccup), or a connection-level :class:`URLError`. A 4xx
+    other than 429 (e.g. 400/401) is a hard error — never retried."""
+    import urllib.error
 
-    def __init__(self, model_id: str, *, timeout_s: float = 120.0) -> None:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429 or 500 <= exc.code < 600
+    return isinstance(exc, urllib.error.URLError)
+
+
+class CostTrackingAnswerer(AirlockAnswerer):
+    """:class:`AirlockAnswerer` that accumulates token usage + call counts and
+    **retries transient HTTP 429 / 5xx with exponential backoff**.
+
+    The Slice-20 first priced pass was INVALIDATED by a 429 storm (``workers=10``
+    tripped the quota; every later call 429'd and degraded to an abstention,
+    deflating the ≥3-hop cell). Backoff lets a rate-limited cell recover instead of
+    being lost; a cell counts as failed only after ``max_retries`` are exhausted."""
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        timeout_s: float = 120.0,
+        max_retries: int = 4,
+        backoff_base: float = 1.0,
+        max_backoff: float = 30.0,
+        sleep: Any = time.sleep,
+    ) -> None:
         super().__init__(model_id, timeout_s=timeout_s)
         self.n_calls = 0
         self.n_errors = 0
+        self.n_retries = 0
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self._lock = threading.Lock()
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base
+        self._max_backoff = max_backoff
+        self._sleep = sleep
+        self._jitter = random.Random(0)
+
+    def _open(self, req: Any) -> Any:
+        """Seam over the raw POST (injectable in tests). Returns the urlopen ctx mgr."""
+        import urllib.request
+
+        return urllib.request.urlopen(req, timeout=self._timeout)  # noqa: S310
 
     def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
         import urllib.request
@@ -90,8 +128,25 @@ class CostTrackingAnswerer(AirlockAnswerer):
                 "Authorization": f"Bearer {self.api_key}",
             },
         )
-        with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
-            body = json.loads(resp.read().decode("utf-8"))
+        # Exponential backoff over transient 429 / 5xx: the initial try plus up to
+        # ``max_retries`` retries. A non-retryable error (or an exhausted budget)
+        # propagates; run_baseline's _do then counts it + degrades the cell to None.
+        attempt = 0
+        while True:
+            try:
+                with self._open(req) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                break
+            except Exception as exc:  # noqa: BLE001 - classify; retry only the transient ones
+                if attempt < self._max_retries and _is_retryable(exc):
+                    delay = min(self._backoff_base * (2.0**attempt), self._max_backoff)
+                    with self._lock:
+                        self.n_retries += 1
+                        jitter = self._jitter.uniform(0.0, self._backoff_base)
+                    self._sleep(delay + jitter)
+                    attempt += 1
+                    continue
+                raise
         usage = body.get("usage") or {}
         with self._lock:
             self.prompt_tokens += int(usage.get("prompt_tokens", 0))
@@ -109,6 +164,7 @@ class CostTrackingAnswerer(AirlockAnswerer):
             "model": self.model_id,
             "n_calls": self.n_calls,
             "n_errors": self.n_errors,
+            "n_retries": self.n_retries,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "price_per_1m_input_usd": pin,
