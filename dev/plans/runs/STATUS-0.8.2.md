@@ -77,8 +77,8 @@
 | E1 | Implement TinyBERT-L-2 CE reranker (engine; unblocks 5) | impl | — | **CLOSED** (fix-1 `b577b11`) | real reorder 3/3 + identity both-states green (orchestrator-verified); codex [P2] + a feature-on test regression fixed |
 | E2 | Standalone rerank SDK API (`fathomdb.rerank`) over arbitrary passages | impl | — | **CLOSED** (fix-1 `f2c910f`) | Python-verified reorders [1,2,3]→[2,1,3]; non-finite→WriteValidationError; default-reranker now in dev/test build (durable) |
 | 0-rev2 | pre-reg re-freeze: comparator→fused-RRF + MATERIAL_F1_LIFT→0.04 | design-adr+TDD | — | **CLOSED** `0f2129cb` | HITL-confirmed, data-justified; 34/34 tests; f1_delta=0.03→NO_GO |
-| 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5✅,10✅ | **IN-FLIGHT ($0)** | lexically-seeded IDF-weighted PPR over the preserved graph, RRF k=60; TDD: determinism/restart-collapse/IDF-live/no-regression |
-| 20 | Adjudication run + verdict (GO/NO-GO → 0.8.3) | impl (measurement) | 15 | NOT STARTED | `runs/0.8.2-m1-verdict-n{N}.json` + `runs/0.8.2-m1-report.md` |
+| 15 | PPR-fusion arm (mechanism KEYSTONE) | impl | 5✅,10✅ | **CLOSED** `f30bca3` | codex PASS; graph arm verified live ≠ BM25 (propagates, not silent-collapse); 4 properties hold |
+| 20 | Adjudication verdict (stage 1, ~$10) | impl (measurement) | 15✅ | **IN-FLIGHT** | 5 arms over the 299-graph → ΔF1 vs fused-RRF; decide()=NO_GO/underpowered; read effect size → stage-2 call |
 | H1 | Restore repo-wide `pyright -p src/python` to 0/0 (off-ladder hygiene) | impl | — | **CLOSED** | merged `74999b3`; pyright 0/0/0 (orchestrator-verified); 20 tests green; typing-only |
 
 Critical path: `0 → {5 ∥ 10} → 15 → 20`. Slices 5 and 10 are independent off 0 (baseline harness ∥
