@@ -517,3 +517,80 @@ def test_from_repin_gold_raises_on_underfilled_manifest(tmp_path: Path) -> None:
         load_repin_gold(gold_path)
     with pytest.raises(ValueError):
         R2Harness.from_repin_gold(gold_path, StubAnswerer())
+
+
+# ===========================================================================
+# Slice 5 fix-2 (codex §9) — fix-1 introduced 2 regressions:
+#   [P1] build_local_mem0_config required corpus_hash -> try_build() raised
+#        TypeError -> Mem0 arm always silently skipped.
+#   [P2] from_repin_gold reported qrels_version from the (stable) corpus_hash
+#        instead of the gold's repin_hash -> distinct gold revisions collide.
+# ===========================================================================
+
+
+def test_build_local_mem0_config_callable_as_try_build_passes_it() -> None:
+    """[P1] try_build() calls build_local_mem0_config with ONLY api_key (+ optional
+    llm_model/base_url) — NO corpus_hash. That must NOT raise TypeError, and the
+    result must still be per-run unique (no shared collection/path/user_id)."""
+    from eval.mem0_local import build_local_mem0_config
+
+    cfg = build_local_mem0_config(api_key="sk-test")  # must NOT raise TypeError
+    assert cfg["vector_store"]["provider"] == "chroma"
+    cfg2 = build_local_mem0_config(api_key="sk-test")
+    va, vb = cfg["vector_store"]["config"], cfg2["vector_store"]["config"]
+    assert va["collection_name"] != vb["collection_name"], "collection not per-run"
+    assert va["path"] != vb["path"], "on-disk path not per-run"
+    assert cfg["_user_id"] != cfg2["_user_id"], "user_id not per-run (stale leakage)"
+    # the exact kwarg set try_build builds (with optional overrides) also works.
+    cfg3 = build_local_mem0_config(
+        api_key="sk-test", llm_model="qwen3.6-27b", base_url="http://localhost:4000/v1"
+    )
+    assert cfg3["llm"]["config"]["model"] == "qwen3.6-27b"
+
+
+def test_try_build_constructs_config_without_typeerror(monkeypatch) -> None:  # noqa: ANN001
+    """[P1] Drive the actual try_build() path with a fake mem0 backend: it must
+    build a config and return a live adapter, NOT swallow a TypeError and skip the
+    Mem0 arm. This is the regression fix-1 introduced (every R2 run skipped Mem0)."""
+    import sys
+    import types
+
+    captured: dict = {}
+
+    class _FakeMemory:
+        @classmethod
+        def from_config(cls, config):  # noqa: ANN001
+            captured["config"] = config
+            return _FakeMem0Backend()
+
+    fake_mod = types.ModuleType("mem0")
+    fake_mod.Memory = _FakeMemory  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mem0", fake_mod)
+    monkeypatch.setenv("R2_MEM0_API_KEY", "sk-test")
+
+    adapter = Mem0OSSAdapter.try_build()
+    assert adapter is not None, (
+        "try_build() returned None — build_local_mem0_config raised (TypeError "
+        "regression) so the Mem0 arm is always skipped"
+    )
+    assert adapter.available is True
+    cfg = captured["config"]
+    assert cfg["vector_store"]["provider"] == "chroma"
+    assert "localhost" in cfg["llm"]["config"]["openai_base_url"]
+
+
+def test_repin_gold_qrels_version_reflects_repin_hash_not_corpus_hash() -> None:
+    """[P2] The gold's identity is repin_hash (2916cace), NOT the intentionally
+    stable corpus_hash (1859817a). qrels_version must derive from repin_hash so
+    distinct gold revisions stay distinguishable in results/audit logs."""
+    from eval.r2_parity_eval import load_repin_gold
+
+    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+    assert corpus_hash.startswith("1859"), "corpus_hash stays the LME corpus hash"
+    assert qrels_version.startswith("repin-2916"), qrels_version
+    assert not qrels_version.startswith("repin-1859"), "must not key off corpus_hash"
+    assert queries
+
+    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+    assert harness.qrels_version.startswith("repin-2916"), harness.qrels_version
+    assert harness.corpus_hash.startswith("1859")
