@@ -1,0 +1,72 @@
+{
+  "phase": "0.8.3-slice-10-phaseA",
+  "title": "D0b — measure the FathomDB − {Mem0, Graphiti/Zep, naive-RAG} per-class parity gap (PHASE A: build + cheap-validate + pilot + phase-gate)",
+  "baseline_sha": "a8ccb0da519937544064f06b09f2983db4ca4645",
+  "branch": "slice-10-20260621T221212Z",
+  "head_sha": "f548488715262e91db94d5c07aed8caee1e8756d",
+  "commits": [
+    {"sha": "67dcd603", "type": "design", "subject": "design(0.8.3/Slice 10): D0b parity-gap runner + Mem0/Graphiti stand-up + phase-A cost model"},
+    {"sha": "03fbaf12", "type": "RED", "subject": "test(0.8.3/Slice 10): RED — D0b parity runner contract (deltas+CIs, resilient resume, decide_083, completeness)"},
+    {"sha": "6d2faaa9", "type": "GREEN", "subject": "feat(0.8.3/Slice 10): GREEN — D0b resilient parity runner + per-class deltas/CIs + decide_083 wiring"},
+    {"sha": "10ac2b88", "type": "feat", "subject": "feat(0.8.3/Slice 10): window-fit context budget + $0 cost projection + mem0 2.x search-API compat"},
+    {"sha": "7fb02649", "type": "chore", "subject": "chore(0.8.3/Slice 10 Phase A): cheap-validate + pilot artifacts + $ ledger + report scaffold"},
+    {"sha": "f5484887", "type": "chore", "subject": "chore(0.8.3/Slice 10): gitignore the D0b parity-run checkpoint sidecars (runtime resume-state)"}
+  ],
+  "phase_gate": {
+    "pipeline_works": "yes",
+    "pipeline_works_evidence": "Cheap-validate (gemini-flash-lite, 8 q across all 4 memory classes, 3 arms = 24 calls, $0.0275, 0 errors, completeness 1.0): all arms ran, per-class recall + accuracy deltas + paired 95% CI + MDE produced, atomic checkpoint + auto-resume exercised, decide_083 emitted a mechanical verdict. Priced pilot (gpt-5.4, 12 q, 3 arms = 36 calls, $0.9693, 0 errors, completeness 1.0): the priced path works end-to-end + decide_083 emitted. Resume PROVEN before spend by a backend-free kill/restart unit test (test_resume_reuses_prior_cells_and_recalls_only_absent: re-calls ONLY the 16 absent cells, zero re-spend on the 48 reused; failure!=abstention; completeness guard rejects an incomplete matrix). 12/12 d0b unit tests + 30 (-k d0b/parity/resume/decide_083/mem0) green.",
+    "cheapval_summary": {
+      "artifact": "dev/plans/runs/0.8.3-d0b-cheapval.json",
+      "reader": "gemini-flash-lite",
+      "n_questions": 8,
+      "arms_run": ["fathomdb", "mem0_oss", "naive_rag"],
+      "n_calls": 24,
+      "n_errors": 0,
+      "completeness": 1.0,
+      "usd": 0.0275,
+      "per_class_deltas_emitted": true,
+      "paired_ci_emitted": true,
+      "note": "pipeline-proof on a tiny subset; NOT the citable per-class parity verdict (that is Phase B at N=606). cheapval accuracy fathomdb-mem0 deltas were 0.0 (both arms equal on the 8-q toy subset); recall deltas were non-vacuous (knowledge_update +0.5, temporal +0.5)."
+    },
+    "pilot_cost_usd": 0.9693,
+    "cost_per_question_usd": 0.026925,
+    "cost_per_question_note": "per (question x arm) answerer call (the prompt's 'cost/question x (606 q x n_priced_arms)' factor). per-question across all 3 arms = $0.080775. Input-token-dominated: ~21,484 prompt tokens/call (long LME multi-turn session bodies in context); ~14 completion tokens. gpt-5.4 priced at the documented _DEFAULT_PRICE (1.25/5.00 per 1M) — gpt-5.4 is not in the explicit price table.",
+    "projected_full_cost_usd": 48.95,
+    "projected_full_cost_basis": "$0.026925/call x 606 questions x 3 priced arms (1818 calls) at the pilot config (k=10, full session bodies).",
+    "within_20_budget": false,
+    "within_20_budget_detail": "NOT <= $20 at the pilot config (~$48.95; also exceeds the aggregate $30 program budget on D0b alone). $0 cost-reduction levers (analytic, via project_full_cost): context-budget <= ~32k chars (~8k tok) -> ~$18.44 (<=20); context <= 24k chars -> ~$13.90; k=4 full-body -> ~$19.74 (<=20); k=3 -> ~$14.87. The window-fit lever is applied identically across arms (R2 invariant preserved); reducing context may lower identical-answerer accuracy (a measurement-validity tradeoff for the HITL). Phase B is BLOCKED until the orchestrator/HITL authorizes a reduced-context config or raises the budget.",
+    "mem0_status": "STOOD UP. Installed mem0ai 2.0.7 + chromadb + sentence-transformers into an ISOLATED env (--target /tmp/d0b-mem0-env on PYTHONPATH; canonical .venv NOT polluted). try_build() -> build_local_mem0_config (airlock qwen3.6-27b LLM + local bge-small embedder + on-disk chroma, per-run isolated; NO Mem0 cloud) constructs a working adapter that ingested + retrieved live in both cheap-validate and pilot. Mem0OSSAdapter.retrieve made version-robust to the mem0 2.x search API (filters={'user_id'} + top_k + threshold) via signature introspection; the <=1.x fake-backend conformance test still passes.",
+    "graphiti_status": "CLEAN BLOCKER (not run). No local Neo4j/FalkorDB graph backend is running (neo4j 7474 down, falkor/redis 6379 down) and graphiti_core is not installed. Standing up Graphiti/Zep needs a graph-DB server + graphiti_core + a per-doc-LLM-extraction adapter behind the R2 contract (its own ingest cost, like Mem0). Per design 0.8.3-mem0-parity.md §3, Graphiti/Zep is the SECOND comparator, NOT a blocker on the Mem0 resolution; the gap runs with {Mem0, naive-RAG}. Phase-B recipe: docker run falkordb/falkordb (or neo4j), pip install graphiti-core into the isolated env, add eval/graphiti_local.build_graphiti_adapter behind the retrieve(question,k)->[Hit] contract (build_live_adapters already imports it lazily and records a clean blocker when absent).",
+    "decide_083_on_cheapval": {
+      "verdict": "NOT_REACHED",
+      "blocked_by": "eu7",
+      "binding_constraint": null,
+      "explanation": "decide_083 was fed the cheap-validate accuracy fathomdb-mem0 deltas + eu7_recall=0.896 (the honest current eu7 point estimate per design §5) + latency_ok=true. The eu7 hard-gate (floor 0.90) fires first and correctly returns NOT_REACHED blocked_by='eu7'. This is the correct mechanical output, not the parity gap. At Phase B with the real N=150 per class, expect NOT_REACHED underpowered:<class> (manifest implied-N proxy: every class needs N>>150 for paired MDE<=eps=0.05) once eu7 clears — the per-class gap numbers still LAND (design §5) and the under-power triggers a HITL escalation (grow N vs accept), not suppression."
+    },
+    "blockers": [
+      {"id": "phase-b-cost-exceeds-20-budget", "severity": "HITL/orchestrator decision", "detail": "Projected full priced D0b ~$48.95 > $20 at the pilot config. Authorize a window-fit context budget (<= ~32k chars -> ~$18) or k<=4 (~$20), OR raise the budget. Reduced context may lower identical-answerer accuracy (validity tradeoff)."},
+      {"id": "graphiti-zep-unavailable", "severity": "informational (2nd comparator)", "detail": "No local graph-DB backend + graphiti_core not installed; recorded as a clean blocker per design §3. Phase B can add it (FalkorDB/Neo4j + graphiti-core + adapter) or run the gap with {Mem0, naive-RAG}."},
+      {"id": "power-underpowered-HITL", "severity": "HITL-escalation (expected, Phase B)", "detail": "N_min=150 per class is expected to remain under-powered for a strict paired MDE<=eps=0.05 parity claim (implied N: factoid 524, knowledge_update 601, multi_session 768, temporal 752). Run the real paired power-check in Phase B and escalate to HITL on any mde>eps; report the gap regardless."},
+      {"id": "design-doc-path-collision", "severity": "informational (loud deviation)", "detail": "The prompt named dev/design/slice-10-design.md; that path is the UNRELATED 0.8.0 G9-RRF doc (tracked). To avoid clobbering history the 0.8.3 design is namespaced dev/design/0.8.3-slice-10-design.md (matching the Slice-5 precedent)."},
+      {"id": "canonical-untracked-not-mine", "severity": "informational", "detail": "The canonical working tree carries untracked files (0.8.3-corpus-adequacy-note.md, locomo_loader.py, paired_power_proxy.py, acquire_locomo.py, etc.) from concurrent orchestrator activity (canonical HEAD advanced to c8ccbe6e during this spawn). NONE were authored by this slice; all Slice-10 work is committed on the slice branch and my worktree is clean."}
+    ]
+  },
+  "additional_changes_made_in_scope": [
+    "eval/d0b_parity_run.py: the resilient D0b parity runner (REUSES m1_verdict_run._atomic_write_json/_resolve_resume + m1_power_sim bootstrap CI helpers + CostTrackingAnswerer backoff; never a hand-rolled weaker resilience). Pure helpers paired_metric_deltas / class_delta / per_class_delta_table / external_per_class_for_decide / answer_completeness / resume_map / fit_context / project_full_cost; CLI builds the LME corpus + best-effort live adapters.",
+    "eval/r2_parity_eval.py: Mem0OSSAdapter.retrieve made version-robust to mem0 2.x (no contract change; minimal in-scope Mem0 stand-up fix).",
+    "tests/test_d0b_parity_run.py: 12 backend-free unit tests (fake adapters + fake answerer).",
+    "dev/design/0.8.3-slice-10-design.md (namespaced); dev/plans/runs/{STATUS-0.8.3.md, 0.8.3-report.md, 0.8.3-d0b-cheapval.json, 0.8.3-d0b-pilot.json}; .gitignore d0b checkpoint sidecars."
+  ],
+  "self_check": {
+    "pytest_k_d0b_parity_resume_decide083_mem0": "30 passed, 343 deselected",
+    "pytest_test_d0b_parity_run": "12 passed",
+    "ruff_eval": "All checks passed!",
+    "mkdocs_build_q": "OK",
+    "worktree_git_status_porcelain": "clean (checkpoint sidecars gitignored)",
+    "canonical_repo_git_status_porcelain": "NOT empty — untracked files present, but NONE authored by this slice (concurrent orchestrator activity; canonical HEAD moved to c8ccbe6e during this spawn). Verified no d0b/slice-10 files leaked into canonical.",
+    "phase_a_spend_usd": 0.9968,
+    "phase_a_spend_within_1_cap": true
+  },
+  "agent_verify_result": "pass (PHASE A) — pipeline built + cheap-validated ($0.0275) + priced-pilot-validated ($0.9693); resilience (atomic checkpoint + verified auto-resume + backoff + completeness guard + failure!=abstention) proven BEFORE spend via backend-free unit tests; Mem0-OSS stood up in an isolated env; decide_083 consumed (not modified); decision_rule_083.py / m1_decision_rule.py / the gold artifact untouched; no engine/Rust; canonical .venv not polluted; worktree clean. PHASE-GATE finding: projected full run ~$48.95 > $20 at the pilot config (window-fit/k levers reach <=$20). NO full priced pass run (phase-gate STOP).",
+  "next_step_for_orchestrator": "verify pipeline + projected cost <= $20 -> authorize Phase B full priced pass. The pilot config (k=10, full bodies) projects ~$48.95 > $20; authorize a reduced-context Phase-B config (--context-char-budget 32000 -> ~$18, or k<=4 -> ~$20) OR raise the D0b budget, then run the resilient full priced pass over the 606-q gold (resume-safe, atomic checkpoint, completeness>=0.97). Optionally stand up Graphiti/Zep (FalkorDB/Neo4j + graphiti-core) as the 2nd comparator. Cherry-pick the 6 commits (67dcd603 design, 03fbaf12 RED, 6d2faaa9 GREEN, 10ac2b88 feat, 7fb02649 chore, f5484887 chore) and run codex §9 review (eval-infra; resilience + cost model; no vacuous/empty gold)."
+}
