@@ -69,3 +69,5 @@ credentials.*
 
 # 0.8.2 M1 verdict-run checkpoint sidecars (churning runtime resume-state, not deliverables)
 dev/plans/runs/0.8.2-m1-verdict-*.checkpoint.json
+# 0.8.3 D0a gold re-pin checkpoint sidecar (per-class augmentation resume-state)
+dev/plans/runs/0.8.3-d0a-*.checkpoint.json

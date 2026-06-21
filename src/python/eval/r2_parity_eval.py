@@ -432,14 +432,30 @@ class Mem0OSSAdapter:
 
     @staticmethod
     def try_build() -> Optional["Mem0OSSAdapter"]:
-        """Best-effort local construction. Returns None (not raising) when mem0ai
-        or its backend is unavailable, so the runner can record a clean blocker."""
+        """Best-effort LOCAL construction (0.8.3 Slice-5 stand-up). Returns None (not
+        raising) when ``mem0ai`` or its backend is unavailable, so the runner records
+        a clean blocker.
+
+        Uses the pinned footprint-safe local config
+        (:func:`eval.mem0_local.build_local_mem0_config`): airlock-local LLM + local
+        ``bge-small`` embedder + on-disk chroma — **never Mem0 cloud** (ADR §3.6). The
+        airlock key is read from ``R2_MEM0_API_KEY`` (falling back to
+        ``R2_ANSWERER_API_KEY``); the LLM model/base-url from ``R2_MEM0_MODEL`` /
+        ``R2_MEM0_BASE_URL`` when overriding the defaults."""
         try:
             from mem0 import Memory  # type: ignore[import-not-found]
+
+            from eval.mem0_local import build_local_mem0_config
         except Exception:
             return None
+        api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
+        kwargs: dict[str, str] = {"api_key": api_key}
+        if os.environ.get("R2_MEM0_MODEL"):
+            kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
+        if os.environ.get("R2_MEM0_BASE_URL"):
+            kwargs["base_url"] = os.environ["R2_MEM0_BASE_URL"]
         try:
-            memory = Memory()  # default local config; needs a configured backend
+            memory = Memory.from_config(build_local_mem0_config(**kwargs))
         except Exception:
             return None
         return Mem0OSSAdapter(memory=memory)
@@ -560,6 +576,23 @@ def _parse_gold(raw: dict[str, Any]) -> list[GoldQuery]:
     return out
 
 
+def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, queries)``.
+
+    Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
+    consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
+    re-pin is the LongMemEval corpus, design §3); it requires only that the file
+    declares a non-empty ``corpus_hash`` and at least one query."""
+    raw = json.loads(Path(gold_path).read_text(encoding="utf-8"))
+    corpus_hash = str(raw.get("corpus_hash", "")).strip()
+    if not corpus_hash:
+        raise ValueError(f"re-pin gold {gold_path!s} has no corpus_hash")
+    queries = _parse_gold(raw)
+    if not queries:
+        raise ValueError(f"re-pin gold {gold_path!s} has no queries")
+    return corpus_hash, queries
+
+
 def _mean(values: list[float]) -> Optional[float]:
     return round(sum(values) / len(values), 4) if values else None
 
@@ -589,6 +622,23 @@ class R2Harness:
         self.qrels_version = str(raw.get("qrels_version", ""))
         self.queries = _parse_gold(raw)
         self.answerer = answerer
+
+    @classmethod
+    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+        """Construct an R2Harness from a 0.8.3 D0a **re-pinned** gold file.
+
+        The re-pinned memory-class gold is LongMemEval-derived (design §3): its
+        ``corpus_hash`` is the LME corpus hash, **not** the COR-2 ``fe973fcd`` IR
+        corpus, so it deliberately bypasses the COR-2 ``__init__`` pin via
+        :meth:`from_queries` (the same path LME mode uses). The file must still
+        declare a non-empty ``corpus_hash`` and ``queries`` (validated here)."""
+        corpus_hash, queries = load_repin_gold(gold_path)
+        return cls.from_queries(
+            queries,
+            answerer,
+            corpus_hash=corpus_hash,
+            qrels_version=f"repin-{corpus_hash[:8]}",
+        )
 
     @classmethod
     def from_queries(

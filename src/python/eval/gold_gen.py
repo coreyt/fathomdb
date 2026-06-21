@@ -254,6 +254,81 @@ def generate_memory_gold(
 
 
 # ---------------------------------------------------------------------------
+# Class-targeted generation (0.8.3 Slice 5 re-pin top-up)
+# ---------------------------------------------------------------------------
+
+#: Per-class targeted prompt bodies. Used to TOP UP a single class to N_min when
+#: the LongMemEval real gold is short (design §5). Each is appended after a shared
+#: JSON-schema instruction + the documents block.
+_TARGETED_INSTRUCTIONS: dict[str, str] = {
+    "temporal": (
+        "Generate ONLY \"temporal\" questions: questions about WHEN something "
+        "happened (the answer is a specific date / time / ordering). Cite every "
+        "doc_id needed in required_evidence."
+    ),
+    "multi_session": (
+        "Generate ONLY \"multi_session\" questions: questions answerable ONLY by "
+        "combining facts from TWO OR MORE separate conversations / doc_ids. "
+        "required_evidence MUST list two or more doc_ids."
+    ),
+    "knowledge_update": (
+        "These conversations contain facts that get UPDATED / CORRECTED over time "
+        "(a value stated earlier is later changed). Generate ONLY "
+        "\"knowledge_update\" questions where the correct answer is the LATEST / "
+        "most-recent value, so a system must prefer updated info over stale info. "
+        "Cite every doc_id needed."
+    ),
+    "multi_hop": (
+        "Generate ONLY \"multi_hop\" questions requiring information from TWO OR "
+        "MORE of these documents combined. required_evidence MUST list the doc_ids."
+    ),
+    "factoid": (
+        "Generate ONLY \"factoid\" questions: single-fact questions answerable from "
+        "ONE document, with a short (1-3 word) answer. Cite the doc_id."
+    ),
+}
+
+_TARGETED_SYSTEM = (
+    "You generate evaluation questions for memory-retrieval systems. "
+    "Return ONLY valid JSON, no prose."
+)
+
+
+def generate_class_targeted(
+    docs: list[tuple[str, str]],
+    query_class: str,
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    max_chars: int = 3500,
+    aim: int = 8,
+) -> list[dict[str, Any]]:
+    """Generate QA pairs for a SINGLE class from one batch of ``(doc_id, body)``.
+
+    Used by :mod:`eval.gold_repin` to top up an under-N_min class. Returns the raw
+    query dicts (caller assigns ids / dedups / validates). Returns ``[]`` on any
+    LLM/parse failure (never raises) so the resilient runner can continue."""
+    instr = _TARGETED_INSTRUCTIONS.get(query_class)
+    if instr is None:
+        raise ValueError(f"unknown target class: {query_class!r}")
+    docs_block = "\n".join(f"--- doc_id: {d}\n{b[:max_chars]}" for d, b in docs)
+    user = (
+        f"{instr}\n\nGenerate as many distinct, high-quality questions as the text "
+        f"supports (aim for {aim}). Each item: "
+        f'{{"query": "...", "query_class": "{query_class}", '
+        '"required_evidence": [{"doc_id": "<id>"}], "answers": ["..."]}.\n'
+        'Return {"queries": [ ... ]}.\n\nDocuments:\n' + docs_block
+    )
+    try:
+        result = _call_llm(_TARGETED_SYSTEM, user, base_url=base_url, api_key=api_key, model=model)
+        return [q for q in result.get("queries", []) if str(q.get("query_class", "")) == query_class]
+    except Exception as exc:  # noqa: BLE001
+        print(f"[gold_gen] targeted '{query_class}' batch failed: {exc}", file=sys.stderr, flush=True)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

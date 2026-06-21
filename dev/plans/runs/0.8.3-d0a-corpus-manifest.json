@@ -1,0 +1,62 @@
+{
+  "schema": "0.8.3-d0a-corpus-manifest-v1",
+  "generated_by": "src/python/eval/gold_repin.py",
+  "corpus_hash": "1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df",
+  "qrels_version": "repin-1859817a",
+  "n_min": 150,
+  "per_class_gold_counts": {
+    "factoid": 156,
+    "knowledge_update": 150,
+    "multi_session": 150,
+    "temporal": 150
+  },
+  "synthetic_fraction": {
+    "factoid": 0.0,
+    "knowledge_update": 0.48,
+    "multi_session": 0.1133,
+    "temporal": 0.1133
+  },
+  "per_class_variance": {
+    "factoid": {
+      "n_eval": 156,
+      "recall_at_k_proxy": 0.7821,
+      "outcome_variance": 0.1704,
+      "implied_n_for_mde_le_eps": 524
+    },
+    "knowledge_update": {
+      "n_eval": 150,
+      "recall_at_k_proxy": 0.86,
+      "outcome_variance": 0.1204,
+      "implied_n_for_mde_le_eps": 371
+    },
+    "multi_session": {
+      "n_eval": 150,
+      "recall_at_k_proxy": 0.5133,
+      "outcome_variance": 0.2498,
+      "implied_n_for_mde_le_eps": 768
+    },
+    "temporal": {
+      "n_eval": 150,
+      "recall_at_k_proxy": 0.5733,
+      "outcome_variance": 0.2446,
+      "implied_n_for_mde_le_eps": 752
+    }
+  },
+  "doc_source": {
+    "dataset": "xiaowu0162/longmemeval-cleaned",
+    "split": "oracle",
+    "n_sessions": 940,
+    "sampling": "all unique haystack sessions of memory-class instances"
+  },
+  "generator_model": "qwen3.6-27b",
+  "seed": 0,
+  "gold_path": "dev/plans/runs/0.8.3-d0a-memory-gold.json",
+  "memory_classes": [
+    "factoid",
+    "knowledge_update",
+    "multi_session",
+    "temporal"
+  ],
+  "eps_near_parity": 0.05,
+  "power_note": "n_min=150 is the design provisional BUILD target; the per_class_variance implied_n_for_mde_le_eps proxy shows MDE<=eps needs N>>150 \u2014 Slice 10 runs the real paired power-check and escalates to HITL if mde>eps (no parity claim on an under-powered class)."
+}
