@@ -1,0 +1,24 @@
+{
+  "schema": "0.8.3-locomo-manifest-v1",
+  "generated_by": "src/python/eval/locomo_loader.py",
+  "source": "snap-research/locomo data/locomo10.json",
+  "license": "CC-BY-NC-4.0 (Maharana et al. 2024) \u2014 EVAL-ONLY, not committed",
+  "corpus_hash": "e9999b551ac67e899f0008c9ec446cecce937ce12f01f2f08cefa9f690fc4c7c",
+  "n_sessions": 272,
+  "n_conversations": 10,
+  "per_class_gold_counts": {
+    "factoid": 841,
+    "multi_session": 281,
+    "temporal": 321
+  },
+  "class_map": {
+    "4": "factoid",
+    "2": "temporal",
+    "1": "multi_session"
+  },
+  "excluded_categories": {
+    "3": "open-domain (not a memory class)",
+    "5": "adversarial (negative)"
+  },
+  "caveat_multi_session": "LOCOMO multi-hop (cat 1) does not guarantee evidence spanning >=2 distinct sessions; apply the LME re-pin >=2-session predicate (codex Slice-5 [P1#1]) before gate use."
+}

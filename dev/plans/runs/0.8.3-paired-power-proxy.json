@@ -1,0 +1,169 @@
+{
+  "schema": "0.8.3-paired-power-proxy-v1",
+  "eps": 0.05,
+  "k": 10,
+  "note": "rho=0 reproduces the Slice-5 UNPAIRED implied_n; rho=measured is the lexical-arm paired estimate; the authoritative paired check is Slice 10.",
+  "sources": {
+    "longmemeval": {
+      "n_docs": 940,
+      "per_class": {
+        "factoid": {
+          "n": 156,
+          "p_bm25": 0.7821,
+          "p_tfidf": 0.7436,
+          "rho_hat": 0.7212,
+          "var_diff_empirical": 0.1011,
+          "paired_implied_n_empirical": 156,
+          "unpaired_implied_n": 524,
+          "implied_n_by_rho": {
+            "rho=0.0": 524,
+            "rho=0.3": 367,
+            "rho=0.5": 262,
+            "rho=0.7": 158,
+            "rho=measured": 147
+          }
+        },
+        "knowledge_update": {
+          "n": 150,
+          "p_bm25": 0.7333,
+          "p_tfidf": 0.5467,
+          "rho_hat": 0.4199,
+          "var_diff_empirical": 0.2585,
+          "paired_implied_n_empirical": 398,
+          "unpaired_implied_n": 601,
+          "implied_n_by_rho": {
+            "rho=0.0": 601,
+            "rho=0.3": 421,
+            "rho=0.5": 301,
+            "rho=0.7": 181,
+            "rho=measured": 349
+          }
+        },
+        "multi_session": {
+          "n": 150,
+          "p_bm25": 0.5133,
+          "p_tfidf": 0.4,
+          "rho_hat": 0.7678,
+          "var_diff_empirical": 0.1138,
+          "paired_implied_n_empirical": 175,
+          "unpaired_implied_n": 768,
+          "implied_n_by_rho": {
+            "rho=0.0": 768,
+            "rho=0.3": 538,
+            "rho=0.5": 384,
+            "rho=0.7": 231,
+            "rho=measured": 179
+          }
+        },
+        "temporal": {
+          "n": 150,
+          "p_bm25": 0.5733,
+          "p_tfidf": 0.4067,
+          "rho_hat": 0.6319,
+          "var_diff_empirical": 0.1789,
+          "paired_implied_n_empirical": 275,
+          "unpaired_implied_n": 752,
+          "implied_n_by_rho": {
+            "rho=0.0": 752,
+            "rho=0.3": 527,
+            "rho=0.5": 376,
+            "rho=0.7": 226,
+            "rho=measured": 277
+          }
+        }
+      }
+    },
+    "locomo": {
+      "n_docs": 272,
+      "license": "CC-BY-NC-4.0 \u2014 EVAL-ONLY, not committed",
+      "per_class": {
+        "factoid": {
+          "n": 841,
+          "p_bm25": 0.9691,
+          "p_tfidf": 0.9227,
+          "rho_hat": 0.4113,
+          "var_diff_empirical": 0.0632,
+          "paired_implied_n_empirical": 98,
+          "unpaired_implied_n": 93,
+          "implied_n_by_rho": {
+            "rho=0.0": 93,
+            "rho=0.3": 65,
+            "rho=0.5": 47,
+            "rho=0.7": 28,
+            "rho=measured": 55
+          }
+        },
+        "multi_session": {
+          "n": 281,
+          "p_bm25": 0.4342,
+          "p_tfidf": 0.3701,
+          "rho_hat": 0.5925,
+          "var_diff_empirical": 0.1952,
+          "paired_implied_n_empirical": 300,
+          "unpaired_implied_n": 755,
+          "implied_n_by_rho": {
+            "rho=0.0": 755,
+            "rho=0.3": 529,
+            "rho=0.5": 378,
+            "rho=0.7": 227,
+            "rho=measured": 308
+          }
+        },
+        "temporal": {
+          "n": 321,
+          "p_bm25": 0.891,
+          "p_tfidf": 0.8629,
+          "rho_hat": 0.6452,
+          "var_diff_empirical": 0.0771,
+          "paired_implied_n_empirical": 119,
+          "unpaired_implied_n": 299,
+          "implied_n_by_rho": {
+            "rho=0.0": 299,
+            "rho=0.3": 209,
+            "rho=0.5": 150,
+            "rho=0.7": 90,
+            "rho=measured": 106
+          }
+        }
+      }
+    }
+  },
+  "combined_adequacy": {
+    "factoid": {
+      "n_longmemeval_gold": 156,
+      "n_locomo_gold": 841,
+      "n_available_combined": 997,
+      "required_n_unpaired": 524,
+      "required_n_paired_est": 147,
+      "verdict_combined": "robust",
+      "lme_only_verdict": "powered-if-paired"
+    },
+    "knowledge_update": {
+      "n_longmemeval_gold": 150,
+      "n_locomo_gold": 0,
+      "n_available_combined": 150,
+      "required_n_unpaired": 601,
+      "required_n_paired_est": 349,
+      "verdict_combined": "UNDERPOWERED",
+      "lme_only_verdict": "UNDERPOWERED"
+    },
+    "multi_session": {
+      "n_longmemeval_gold": 150,
+      "n_locomo_gold": 281,
+      "n_available_combined": 431,
+      "required_n_unpaired": 768,
+      "required_n_paired_est": 308,
+      "verdict_combined": "powered-if-paired",
+      "lme_only_verdict": "UNDERPOWERED"
+    },
+    "temporal": {
+      "n_longmemeval_gold": 150,
+      "n_locomo_gold": 321,
+      "n_available_combined": 471,
+      "required_n_unpaired": 752,
+      "required_n_paired_est": 277,
+      "verdict_combined": "powered-if-paired",
+      "lme_only_verdict": "UNDERPOWERED"
+    }
+  }
+}
