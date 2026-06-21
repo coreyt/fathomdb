@@ -1,0 +1,286 @@
+{
+  "schema": "0.8.3-d0b-parity-v1",
+  "mode": "pilot",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "n_boot": 2000,
+  "seed": 0,
+  "arms_run": [
+    "fathomdb",
+    "mem0_oss",
+    "naive_rag"
+  ],
+  "n_questions": 12,
+  "n_per_class": {
+    "factoid": 3,
+    "knowledge_update": 3,
+    "multi_session": 3,
+    "temporal": 3
+  },
+  "treatment_arm": "fathomdb",
+  "comparator_arms": [
+    "mem0_oss",
+    "graphiti_zep",
+    "naive_rag"
+  ],
+  "recall_deltas": {
+    "mem0_oss": {
+      "factoid": {
+        "point": -0.333333,
+        "ci_lo": -1.0,
+        "ci_hi": 0.0,
+        "mde": 0.933862,
+        "n": 3
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "multi_session": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "temporal": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      }
+    },
+    "graphiti_zep": {
+      "factoid": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "knowledge_update": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "multi_session": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "temporal": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      }
+    },
+    "naive_rag": {
+      "factoid": {
+        "point": -0.333333,
+        "ci_lo": -1.0,
+        "ci_hi": 0.0,
+        "mde": 0.933862,
+        "n": 3
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "multi_session": {
+        "point": 0.333333,
+        "ci_lo": 0.0,
+        "ci_hi": 1.0,
+        "mde": 0.933862,
+        "n": 3
+      },
+      "temporal": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      }
+    }
+  },
+  "accuracy_deltas": {
+    "mem0_oss": {
+      "factoid": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "multi_session": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "temporal": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      }
+    },
+    "graphiti_zep": {
+      "factoid": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "knowledge_update": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "multi_session": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "temporal": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      }
+    },
+    "naive_rag": {
+      "factoid": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "multi_session": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      },
+      "temporal": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+      }
+    }
+  },
+  "decide_083": {
+    "verdict": "NOT_REACHED",
+    "per_class": {
+      "factoid": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3,
+        "near_parity": true,
+        "better": false,
+        "underpowered": false
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3,
+        "near_parity": true,
+        "better": false,
+        "underpowered": false
+      },
+      "multi_session": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3,
+        "near_parity": true,
+        "better": false,
+        "underpowered": false
+      },
+      "temporal": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3,
+        "near_parity": true,
+        "better": false,
+        "underpowered": false
+      }
+    },
+    "binding_constraint": null,
+    "surpass_candidates": [],
+    "blocked_by": "eu7"
+  },
+  "decide_083_error": null,
+  "answer_completeness": {
+    "expected_calls": 36,
+    "n_errors": 0,
+    "completeness": 1.0,
+    "floor": 0.97,
+    "run_valid": true
+  },
+  "run_valid": true,
+  "aborted_for_cap": false,
+  "cost": {
+    "model": "gpt-5.4",
+    "n_calls": 36,
+    "n_errors": 0,
+    "n_retries": 0,
+    "prompt_tokens": 773409,
+    "completion_tokens": 500,
+    "price_per_1m_input_usd": 1.25,
+    "price_per_1m_output_usd": 5.0,
+    "usd": 0.9693
+  },
+  "elapsed_s": 134.5,
+  "blockers_encountered": [
+    {
+      "id": "graphiti-zep-unavailable",
+      "description": "Graphiti/Zep local stand-up not available (No module named 'eval.graphiti_local'); running the gap with the arms present"
+    }
+  ]
+}
