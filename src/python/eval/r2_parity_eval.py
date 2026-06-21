@@ -469,7 +469,27 @@ class Mem0OSSAdapter:
     def retrieve(self, question: str, k: int) -> list[Hit]:
         if self._memory is None:
             raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
-        res = self._memory.search(query=question, user_id=self._user_id, limit=k)
+        # mem0's search() API drifted across versions: ≤1.x took ``user_id=`` +
+        # ``limit=``; 2.x rejects a top-level ``user_id`` (raises ValueError) and
+        # renamed ``limit`` → ``top_k``, scoping the user via ``filters={'user_id':…}``
+        # + a ``threshold`` cutoff. Introspect the bound method's signature and build
+        # the right kwargs so the adapter is version-robust (and the fake-backend
+        # conformance test, which keeps the ≤1.x shape, still passes).
+        import inspect
+
+        try:
+            params = inspect.signature(self._memory.search).parameters
+        except (TypeError, ValueError):
+            params = {}
+        kwargs: dict[str, Any] = {"query": question}
+        if "filters" in params:
+            kwargs["filters"] = {"user_id": self._user_id}
+        else:
+            kwargs["user_id"] = self._user_id
+        kwargs["top_k" if "top_k" in params else "limit"] = k
+        if "threshold" in params:
+            kwargs["threshold"] = 0.0  # return the top-k regardless of similarity floor
+        res = self._memory.search(**kwargs)
         items = res.get("results", res) if isinstance(res, dict) else res
         hits: list[Hit] = []
         for item in items:

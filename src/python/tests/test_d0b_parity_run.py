@@ -22,7 +22,9 @@ from eval.d0b_parity_run import (
     answer_completeness,
     class_delta,
     external_per_class_for_decide,
+    fit_context,
     paired_metric_deltas,
+    project_full_cost,
     resume_map,
     run_d0b,
 )
@@ -125,6 +127,37 @@ def test_external_per_class_for_decide_raises_on_unusable_class() -> None:
 # --------------------------------------------------------------------------- #
 # Completeness validity guard.
 # --------------------------------------------------------------------------- #
+def test_fit_context_window_fits_to_budget() -> None:
+    bodies = ["aaaa", "bbbb", "cccc"]  # 12 chars total
+    assert fit_context(bodies, None) == bodies  # no cap
+    assert fit_context(bodies, 0) == bodies  # non-positive = no cap
+    assert fit_context(bodies, 100) == bodies  # budget exceeds total
+    # budget 6 chars: full "aaaa" (4) + 2 chars of "bbbb"
+    assert fit_context(bodies, 6) == ["aaaa", "bb"]
+    # budget smaller than the first doc: always keep >=1 doc (truncated)
+    assert fit_context(bodies, 2) == ["aa"]
+    assert fit_context([], 5) == []
+
+
+def test_project_full_cost_scales_with_budget_and_arms() -> None:
+    # measured pilot: 36 calls, 773409 prompt tok, 500 completion, gpt-5.4 @ (1.25,5.00)
+    full = project_full_cost(
+        prompt_tokens=773409, completion_tokens=500, n_calls=36,
+        price_in_per_1m=1.25, price_out_per_1m=5.00,
+        n_questions_full=606, n_priced_arms=3,
+    )
+    assert full["projected_full_calls"] == 1818
+    assert full["projected_full_usd"] > 40.0  # full-body k=10 blows the $20 budget
+    # a window-fit context budget brings it down monotonically
+    capped = project_full_cost(
+        prompt_tokens=773409, completion_tokens=500, n_calls=36,
+        price_in_per_1m=1.25, price_out_per_1m=5.00,
+        n_questions_full=606, n_priced_arms=3, context_token_budget=8000,
+    )
+    assert capped["projected_full_usd"] < full["projected_full_usd"]
+    assert capped["projected_full_usd"] <= 20.0  # the ≤$20 path
+
+
 def test_completeness_guard_rejects_incomplete_matrix() -> None:
     recs = [{"has_answers": True} for _ in range(10)]
     arms = ["fathomdb", "mem0_oss", "naive_rag"]  # expected = 30 cells

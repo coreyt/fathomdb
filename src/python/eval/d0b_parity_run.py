@@ -195,6 +195,43 @@ def external_per_class_for_decide(
     return ext
 
 
+def project_full_cost(
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    n_calls: int,
+    price_in_per_1m: float,
+    price_out_per_1m: float,
+    n_questions_full: int,
+    n_priced_arms: int,
+    context_token_budget: Optional[int] = None,
+    overhead_tokens: int = 60,
+) -> dict[str, Any]:
+    """$0 linear cost projection from a measured pilot (the phase-gate number).
+
+    The answerer cost is input-token-dominated (long session bodies in context). Model
+    per-call prompt tokens as ``overhead_tokens`` (template+question) + the context
+    tokens, the latter capped at ``context_token_budget`` (the window-fit lever) when
+    given. ``projected_full_usd`` = per-call cost × ``n_questions_full`` ×
+    ``n_priced_arms`` (the full priced matrix). Pure arithmetic; no LLM call."""
+    n_calls = max(n_calls, 1)
+    avg_prompt = prompt_tokens / n_calls
+    avg_comp = completion_tokens / n_calls
+    ctx_tokens = max(avg_prompt - overhead_tokens, 0.0)
+    if context_token_budget is not None:
+        ctx_tokens = min(ctx_tokens, float(context_token_budget))
+    proj_prompt = overhead_tokens + ctx_tokens
+    cost_per_call = proj_prompt / 1e6 * price_in_per_1m + avg_comp / 1e6 * price_out_per_1m
+    full_calls = n_questions_full * n_priced_arms
+    return {
+        "context_token_budget": context_token_budget,
+        "projected_prompt_tokens_per_call": round(proj_prompt, 1),
+        "cost_per_call_usd": round(cost_per_call, 6),
+        "projected_full_calls": full_calls,
+        "projected_full_usd": round(cost_per_call * full_calls, 2),
+    }
+
+
 def answer_completeness(
     records: Sequence[Mapping[str, Any]],
     *,
@@ -249,6 +286,34 @@ def _select_subset(queries: Sequence[GoldQuery], *, per_class: int, classes: Seq
     return out
 
 
+def fit_context(bodies: Sequence[str], budget_chars: Optional[int]) -> list[str]:
+    """Window-fit the answerer context to a total ``budget_chars`` cap
+    ([[priced-runs-need-resilience-before-spend]] — window-fit/chunk + the priced-cost
+    lever). Bodies are added in retrieval-rank order until the budget is reached; the
+    body that crosses it is truncated to the remaining budget (≥1 doc always kept).
+    Applied IDENTICALLY across every arm, so the R2 same-context-budget invariant
+    holds (any delta stays retrieval, not a per-arm context advantage). ``None`` /
+    non-positive budget = no truncation."""
+    if not budget_chars or budget_chars <= 0:
+        return list(bodies)
+    out: list[str] = []
+    used = 0
+    for b in bodies:
+        if used >= budget_chars:
+            break
+        remaining = budget_chars - used
+        if len(b) <= remaining:
+            out.append(b)
+            used += len(b)
+        else:
+            out.append(b[:remaining])
+            used = budget_chars
+            break
+    if not out and bodies:  # always keep at least the top doc (truncated)
+        out = [bodies[0][:budget_chars]]
+    return out
+
+
 def run_d0b(
     *,
     mode: str,
@@ -269,6 +334,7 @@ def run_d0b(
     eu7_recall: float = 0.896,
     latency_ok: bool = True,
     classes: Sequence[str] = MEMORY_CLASSES,
+    context_char_budget: Optional[int] = None,
     on_progress: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Run the D0b parity matrix resiliently and emit the per-class deltas + verdict.
@@ -339,8 +405,9 @@ def run_d0b(
                 if key in rmap:
                     ans = rmap[key]  # reuse (incl. a None abstention) — $0
                 else:
+                    ctx = fit_context([h.body for h in hits if h.body], context_char_budget)
                     try:
-                        ans = answerer.answer(q.question, [h.body for h in hits if h.body])
+                        ans = answerer.answer(q.question, ctx)
                     except Exception:  # noqa: BLE001 — retry-exhausted = a MISSING cell
                         n_errors += 1
                         continue  # absent key → re-called on the next resume; not scored
@@ -393,6 +460,7 @@ def run_d0b(
         "mode": mode,
         "reader_model": reader,
         "k": k,
+        "context_char_budget": context_char_budget,
         "n_boot": n_boot,
         "seed": seed,
         "arms_run": arms,
@@ -528,6 +596,9 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     ap.add_argument("--gold", default="dev/plans/runs/0.8.3-d0a-memory-gold.json")
     ap.add_argument("--output", required=True)
     ap.add_argument("--k", type=int, default=10)
+    ap.add_argument("--context-char-budget", type=int, default=None,
+                    help="window-fit cap on total answerer context chars (priced-cost lever; "
+                    "applied identically across arms)")
     ap.add_argument("--per-class", type=int, default=None, help="cheap/pilot per-class subset size")
     ap.add_argument("--distractor-cap", type=int, default=0)
     ap.add_argument("--max-usd", type=float, default=1.0)
@@ -570,6 +641,7 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
         checkpoint_every=args.checkpoint_every,
         resume=Path(args.resume) if args.resume else None,
         max_usd=args.max_usd,
+        context_char_budget=args.context_char_budget,
         on_progress=lambda i, n, usd: print(f"[D0b][{args.mode}] {i}/{n} ${usd:.4f}", flush=True)
         if (i == 1 or i % 5 == 0 or i == n)
         else None,
