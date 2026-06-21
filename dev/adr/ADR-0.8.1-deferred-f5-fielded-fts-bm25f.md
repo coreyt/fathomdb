@@ -14,6 +14,16 @@ graph-adjudication track — `dev/roadmap/0.8.2.md`). **No code change follows f
 HITL sign-off is NOT required in Slice 35; this ADR is authored to capture the decision
 model for future work.
 
+> **2026-06-21 — proposed conditional re-point to 0.8.3 (PENDING HITL ratification).** The 0.8.3 Slice-0
+> design (`dev/design/0.8.3-mem0-parity.md` §6, ADJ-2) **proposes promoting F5** (fielded-FTS/BM25F + the
+> tunable-/lower-`b` length-norm path) **forward into 0.8.3 Slice 25 as the strong form of D2**, conditional
+> on **both** (a) the **15b content-at-scale proxy passing** (`probe_15b_pass`, design §5) **and** (b)
+> **Slice 20 leaving a measured Mem0 gap**. If 15b fails or Slice 20 already reaches parity, F5/D2 **defers
+> to 0.8.5** (this status stands; revert path retained, `dev/roadmap/0.8.5.md` §4). This note records the
+> *proposed* re-point; the binding `status:` above is **unchanged** until the **Slice-0 HITL gate** ratifies
+> it (plan-0.8.3.md §4 — "the F5 ruling … is part of this gate"). Frozen pre-registration:
+> `eval/decision_rule_083.py`.
+
 ---
 
 ## 1. Context — what is F5?
