@@ -16,6 +16,45 @@ from typing import Any
 
 from eval.decision_rule_083 import MEMORY_CLASSES
 
+#: The memory classes whose DEFINITION requires evidence spanning >=2 distinct
+#: sessions (codex §9 [P1]): a ``multi_session`` / ``knowledge_update`` query
+#: answerable from a SINGLE session/document is mislabeled gold. ``factoid`` /
+#: ``temporal`` keep the existing >=1-evidence rule.
+SESSION_SPAN_CLASSES: frozenset[str] = frozenset({"multi_session", "knowledge_update"})
+
+
+def query_session_ids(query: Mapping[str, Any]) -> set[str]:
+    """Distinct session ids a query's ``required_evidence`` resolves to.
+
+    Maps each evidence ``doc_id`` through :func:`eval.r2_parity_eval.session_id_of`
+    (strips a ``#c<N>`` chunk suffix) so two chunks of the SAME session count once."""
+    from eval.r2_parity_eval import session_id_of  # local: avoid import cycle
+
+    out: set[str] = set()
+    for ev in query.get("required_evidence") or []:
+        did = ev.get("doc_id")
+        if did:
+            out.add(session_id_of(str(did)))
+    return out
+
+
+def class_predicate_ok(query: Mapping[str, Any]) -> bool:
+    """True when a gold query conforms to its class DEFINITION (codex §9 [P1]).
+
+    * ``multi_session`` / ``knowledge_update`` — evidence must span **>=2 distinct
+      sessions** (single-session => mislabeled, rejected);
+    * every other class (``factoid`` / ``temporal``) — keeps the existing rule:
+      at least one evidence session.
+    """
+    from eval.r2_parity_eval import GOLD_CLASS_MAP  # local: avoid import cycle
+
+    raw = str(query.get("query_class", "")).strip()
+    cls = GOLD_CLASS_MAP.get(raw, raw)
+    n_sessions = len(query_session_ids(query))
+    if cls in SESSION_SPAN_CLASSES:
+        return n_sessions >= 2
+    return n_sessions >= 1
+
 
 def validate_repin(
     manifest: Mapping[str, Any],
@@ -68,6 +107,22 @@ def validate_repin(
                     f"manifest/gold count mismatch for {cls}: "
                     f"manifest={declared} gold={observed.get(cls, 0)}"
                 )
+
+        # Class-definition guard (codex §9 [P1]): no span-class query may be
+        # answerable from a single session.
+        from eval.r2_parity_eval import GOLD_CLASS_MAP  # local: avoid import cycle
+
+        offenders: dict[str, list[str]] = {}
+        for q in gold_queries:
+            cls = GOLD_CLASS_MAP.get(str(q.get("query_class", "")).strip(),
+                                     str(q.get("query_class", "")).strip())
+            if cls in SESSION_SPAN_CLASSES and not class_predicate_ok(q):
+                offenders.setdefault(cls, []).append(str(q.get("query_id", "?")))
+        for cls, ids in sorted(offenders.items()):
+            problems.append(
+                f"single-session {cls} gold (must span >=2 sessions): "
+                f"{len(ids)} cases e.g. {ids[:5]}"
+            )
 
     return problems
 

@@ -1,8 +1,10 @@
 {
-  "schema": "0.8.3-d0a-corpus-manifest-v1",
+  "schema": "0.8.3-d0a-corpus-manifest-v2",
   "generated_by": "src/python/eval/gold_repin.py",
   "corpus_hash": "1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df",
-  "qrels_version": "repin-1859817a",
+  "qrels_hash": "8189d0821fe90d697eb6707680bc6481514e1a7b5c59d01aa435705d1734728d",
+  "repin_hash": "2916cace7f64903f6fbf15ca14e5c7c306c7b198aa9d38014fec5d1c4053957b",
+  "qrels_version": "repin-2916cace",
   "n_min": 150,
   "per_class_gold_counts": {
     "factoid": 156,
@@ -16,6 +18,7 @@
     "multi_session": 0.1133,
     "temporal": 0.1133
   },
+  "class_predicate_rejected": {},
   "per_class_variance": {
     "factoid": {
       "n_eval": 156,
@@ -25,9 +28,9 @@
     },
     "knowledge_update": {
       "n_eval": 150,
-      "recall_at_k_proxy": 0.86,
-      "outcome_variance": 0.1204,
-      "implied_n_for_mde_le_eps": 371
+      "recall_at_k_proxy": 0.7333,
+      "outcome_variance": 0.1956,
+      "implied_n_for_mde_le_eps": 601
     },
     "multi_session": {
       "n_eval": 150,
@@ -42,6 +45,7 @@
       "implied_n_for_mde_le_eps": 752
     }
   },
+  "_class_predicate": "multi_session & knowledge_update REQUIRE evidence spanning >=2 distinct sessions (session_id_of-resolved); factoid & temporal keep the >=1-evidence rule. Enforced in gold_repin.augment_class + a build-time filter pass + the runtime corpus_validity.validate_repin guard (codex \u00a79 [P1]).",
   "doc_source": {
     "dataset": "xiaowu0162/longmemeval-cleaned",
     "split": "oracle",

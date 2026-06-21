@@ -19,6 +19,9 @@ is deferred to Slice 10 so this eval-infra slice does not pollute the shared ``.
 
 from __future__ import annotations
 
+import tempfile
+import uuid
+from pathlib import Path
 from typing import Any
 
 #: The local LLM the de-risk verified is loaded on the airlock (qwen3-32b was NOT
@@ -30,21 +33,50 @@ LOCAL_BASE_URL = "http://localhost:4000/v1"
 LOCAL_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 
 
+def new_run_id() -> str:
+    """A fresh per-run id (codex §9 [P1]). Used to namespace the Chroma store and
+    derive a non-fixed ``user_id`` so a re-run cannot read stale memories."""
+    return uuid.uuid4().hex[:12]
+
+
+def run_user_id(run_id: str) -> str:
+    """Per-run Mem0 ``user_id`` derived from ``run_id`` — NOT a fixed value, so a
+    new run searches its own namespace, never a prior run's memories."""
+    return f"r2-{run_id}"
+
+
 def build_local_mem0_config(
     *,
     api_key: str,
+    corpus_hash: str,
+    run_id: str | None = None,
     llm_model: str = LOCAL_LLM_MODEL,
     base_url: str = LOCAL_BASE_URL,
     embed_model: str = LOCAL_EMBED_MODEL,
-    chroma_path: str = "/tmp/mem0_chroma",
-    collection_name: str = "r2_eval",
+    chroma_root: str | None = None,
 ) -> dict[str, Any]:
     """Return the Mem0 ``config`` dict for an all-local, $0, no-cloud backend.
 
-    Pass this to ``mem0.Memory.from_config(build_local_mem0_config(api_key=...))`` at
-    the D0b stand-up. Every provider here is local; there is no Mem0 cloud client
-    anywhere (ADR §3.6)."""
+    Pass this to ``mem0.Memory.from_config(build_local_mem0_config(...))`` at the
+    D0b stand-up. Every provider here is local; there is no Mem0 cloud client
+    anywhere (ADR §3.6).
+
+    Per-run isolation (codex §9 [P1#2]): both the Chroma **collection name** and
+    the on-disk **path** are keyed by ``corpus_hash`` + a per-run ``run_id`` (a
+    fresh one is minted when omitted), so re-running on a different corpus/branch
+    cannot reopen a previous run's collection and search stale memories. Pair this
+    with :func:`run_user_id` (``run_user_id(run_id)``) for the ``add``/``search``
+    ``user_id``. Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe
+    required."""
+    rid = run_id or new_run_id()
+    key = f"{str(corpus_hash)[:12]}_{rid}"
+    if chroma_root is None:
+        chroma_root = tempfile.gettempdir()
+    chroma_path = str(Path(chroma_root) / f"mem0_chroma_{key}")
+    collection_name = f"r2_eval_{key}"
     return {
+        "_run_id": rid,
+        "_user_id": run_user_id(rid),
         "llm": {
             "provider": "openai",
             "config": {

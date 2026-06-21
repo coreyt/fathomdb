@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from eval import gold_gen
+from eval.corpus_validity import class_predicate_ok, validate_repin
 from eval.decision_rule_083 import EPS_NEAR_PARITY, MEMORY_CLASSES
 from eval.r2_parity_eval import (
     LME_CLASS_MAP,
@@ -168,7 +169,9 @@ def augment_class(
 ) -> list[dict[str, Any]]:
     """Generate up to ``deficit`` validated, deduped ``query_class`` queries from
     ``sessions``. Validates: class match, ≥1 ``required_evidence`` doc_id present in
-    the corpus, non-empty answers, and not a duplicate of existing/generated gold."""
+    the corpus, non-empty answers, not a duplicate of existing/generated gold, **and
+    the class-definition predicate** (codex §9 [P1]) — ``multi_session`` /
+    ``knowledge_update`` must span ≥2 distinct sessions (single-session rejected)."""
     accepted: list[dict[str, Any]] = []
     norms = set(existing_norms)
     n_batches = min(max_batches, math.ceil(len(sessions) / batch_size) if sessions else 0)
@@ -187,17 +190,18 @@ def augment_class(
             n = _norm(qtext)
             if not qtext or not ev or not ans or n in norms:
                 continue
+            candidate = {
+                "query": qtext,
+                "query_class": query_class,
+                "required_evidence": [{"doc_id": d} for d in ev],
+                "answers": ans,
+                "_provenance": f"qwen-aug:{model}",
+                "_source": "gold_gen-targeted",
+            }
+            if not class_predicate_ok(candidate):
+                continue  # mislabeled (e.g. single-session multi_session) — reject
             norms.add(n)
-            accepted.append(
-                {
-                    "query": qtext,
-                    "query_class": query_class,
-                    "required_evidence": [{"doc_id": d} for d in ev],
-                    "answers": ans,
-                    "_provenance": f"qwen-aug:{model}",
-                    "_source": "gold_gen-targeted",
-                }
-            )
+            accepted.append(candidate)
             if len(accepted) >= deficit:
                 break
         print(f"[gold_repin]   {query_class}: +{len(accepted)}/{deficit} "
@@ -262,6 +266,26 @@ def corpus_hash(documents: dict[str, str]) -> str:
     return h.hexdigest()
 
 
+def qrels_hash(queries: list[dict[str, Any]]) -> str:
+    """Deterministic sha256 over the gold qrels (class + question + sorted evidence
+    + answers), order-independent. Distinct from :func:`corpus_hash`: the LME corpus
+    is invariant across rebuilds, so a gold-only change (the fix-1 re-pin) is
+    captured HERE, not by ``corpus_hash`` (codex §9 [P1])."""
+    rows: list[str] = []
+    for q in queries:
+        ev = sorted(
+            str(e.get("doc_id")) for e in (q.get("required_evidence") or []) if e.get("doc_id")
+        )
+        ans = sorted(str(a) for a in (q.get("answers") or []))
+        rows.append("\t".join([str(q.get("query_class", "")), str(q.get("query", "")),
+                               "|".join(ev), "|".join(ans)]))
+    h = hashlib.sha256()
+    for row in sorted(rows):
+        h.update(row.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
 def build_repin(
     *,
     dataset: str,
@@ -317,28 +341,58 @@ def build_repin(
         ckpt[cls] = augmented[cls]
         ckpt_path.write_text(json.dumps({"augmented": ckpt}, indent=2), encoding="utf-8")
 
-    # Assemble + assign deterministic ids.
+    # Class-definition filter pass (codex §9 [P1]): drop any query that fails its
+    # class predicate (single-session multi_session / knowledge_update). Applies to
+    # real LME gold too (a no-op there — LME span gold is already >=2-session) so
+    # the rule is enforced uniformly and the artifact cannot carry a mislabel.
+    rejected: dict[str, int] = defaultdict(int)
     all_queries: list[dict[str, Any]] = []
     counter = 0
     for cls in sorted({*MEMORY_CLASSES, *by_class}):
         for q in [*by_class.get(cls, []), *augmented.get(cls, [])]:
+            if not class_predicate_ok(q):
+                rejected[cls] += 1
+                continue
             counter += 1
             q = dict(q)
             q.setdefault("query_id", f"d0a-{counter:04d}")
             all_queries.append(q)
+    if rejected:
+        print(f"[gold_repin] class-predicate rejected (single-session span-class): "
+              f"{dict(rejected)}", file=sys.stderr, flush=True)
 
-    ch = corpus_hash(documents)
-    per_class_counts = {c: len(by_class.get(c, [])) + len(augmented.get(c, [])) for c in MEMORY_CLASSES}
+    # Post-filter per-class counts (the authoritative, emitted counts).
+    emitted_by_class: dict[str, int] = defaultdict(int)
+    for q in all_queries:
+        emitted_by_class[str(q.get("query_class"))] += 1
+    per_class_counts = {c: emitted_by_class.get(c, 0) for c in MEMORY_CLASSES}
+    # Synthetic queries that survived the filter, per class.
+    emitted_synth: dict[str, int] = defaultdict(int)
+    for q in all_queries:
+        if str(q.get("_provenance", "")).startswith("qwen-aug"):
+            emitted_synth[str(q.get("query_class"))] += 1
     synthetic_fraction = {
-        c: round(len(augmented.get(c, [])) / per_class_counts[c], 4) if per_class_counts[c] else 0.0
+        c: round(emitted_synth.get(c, 0) / per_class_counts[c], 4) if per_class_counts[c] else 0.0
         for c in MEMORY_CLASSES
     }
     var_proxy = variance_proxy(documents, all_queries)
 
+    ch = corpus_hash(documents)
+    # The LME corpus (documents) is deterministic, so ``corpus_hash`` is INVARIANT
+    # across rebuilds — it identifies the corpus, which did not change. The fix-1
+    # gold DID change, so a separate ``qrels_hash`` (over the emitted gold) is the
+    # NEW identity, and ``repin_hash`` binds the (corpus, qrels) pair. Downstream
+    # keys (e.g. the per-run Mem0 collection) key off this changing identity.
+    qh = qrels_hash(all_queries)
+    rh = hashlib.sha256(f"{ch}\n{qh}".encode()).hexdigest()
+    qrels_version = f"repin-{rh[:8]}"
+
     gold_doc = {
-        "version": "0.8.3-d0a-repin-v1",
+        "version": "0.8.3-d0a-repin-v2",
         "corpus_hash": ch,
-        "qrels_version": f"repin-{ch[:8]}",
+        "qrels_hash": qh,
+        "repin_hash": rh,
+        "qrels_version": qrels_version,
         "generator_model": gen_model,
         "seed": seed,
         "n_min": n_min,
@@ -349,14 +403,23 @@ def build_repin(
     out_gold.write_text(json.dumps(gold_doc, indent=2), encoding="utf-8")
 
     manifest = {
-        "schema": "0.8.3-d0a-corpus-manifest-v1",
+        "schema": "0.8.3-d0a-corpus-manifest-v2",
         "generated_by": "src/python/eval/gold_repin.py",
         "corpus_hash": ch,
-        "qrels_version": f"repin-{ch[:8]}",
+        "qrels_hash": qh,
+        "repin_hash": rh,
+        "qrels_version": qrels_version,
         "n_min": n_min,
         "per_class_gold_counts": per_class_counts,
         "synthetic_fraction": synthetic_fraction,
+        "class_predicate_rejected": dict(rejected),
         "per_class_variance": var_proxy,
+        "_class_predicate": (
+            "multi_session & knowledge_update REQUIRE evidence spanning >=2 distinct "
+            "sessions (session_id_of-resolved); factoid & temporal keep the >=1-evidence "
+            "rule. Enforced in gold_repin.augment_class + a build-time filter pass + the "
+            "runtime corpus_validity.validate_repin guard (codex §9 [P1])."
+        ),
         "doc_source": {
             "dataset": dataset,
             "split": split,
@@ -378,10 +441,19 @@ def build_repin(
     out_manifest.parent.mkdir(parents=True, exist_ok=True)
     out_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
+    # Post-build corpus-validity check (codex §9 [P1]/[P2]). A class that cannot
+    # reach n_min AFTER the >=2-session filter is an HITL escalation, NOT a silent
+    # under-fill — surface it loudly (the caller decides whether to ship).
+    problems = validate_repin(manifest, all_queries)
+    if problems:
+        print(f"[gold_repin] !! CORPUS-VALIDITY PROBLEMS (do NOT ship — HITL): {problems}",
+              file=sys.stderr, flush=True)
+    manifest["_validity_problems"] = problems
+
     print(f"[gold_repin] wrote {out_gold} ({len(all_queries)} queries) + {out_manifest}",
           file=sys.stderr, flush=True)
-    print(f"[gold_repin] per_class_gold_counts={per_class_counts} corpus_hash={ch[:12]}",
-          file=sys.stderr, flush=True)
+    print(f"[gold_repin] per_class_gold_counts={per_class_counts} corpus_hash={ch[:12]} "
+          f"repin_hash={rh[:12]}", file=sys.stderr, flush=True)
     return manifest
 
 

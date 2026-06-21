@@ -403,13 +403,32 @@ def test_local_mem0_config_is_footprint_safe() -> None:
     """The de-risk output: the pinned local backend config is LOCAL (no cloud)."""
     from eval.mem0_local import build_local_mem0_config
 
-    cfg = build_local_mem0_config(api_key="sk-test")
+    cfg = build_local_mem0_config(api_key="sk-test", corpus_hash="deadbeefcafe")
     # LLM points at the local airlock OpenAI-compatible base URL, not the cloud.
     assert "localhost" in cfg["llm"]["config"]["openai_base_url"]
     assert cfg["llm"]["config"]["model"].startswith("qwen")
     # embedder + vector store are local providers (no Mem0 cloud, ADR §3.6).
     assert cfg["embedder"]["provider"] == "huggingface"
     assert cfg["vector_store"]["provider"] in {"chroma", "faiss"}
+
+
+def test_local_mem0_config_is_per_run_isolated() -> None:
+    """codex §9 [P1#2]: two configs over the SAME corpus must NOT share a Chroma
+    collection / path / user_id — a re-run cannot read stale memories."""
+    from eval.mem0_local import build_local_mem0_config
+
+    a = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+    b = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+    va, vb = a["vector_store"]["config"], b["vector_store"]["config"]
+    assert va["collection_name"] != vb["collection_name"], "collection not per-run"
+    assert va["path"] != vb["path"], "on-disk path not per-run"
+    assert a["_user_id"] != b["_user_id"], "user_id not per-run (fixed -> stale leakage)"
+    # the corpus_hash namespaces the run (so a different corpus is also distinct).
+    assert "cafef00dbabe"[:12] in va["collection_name"]
+    # an explicit run_id is honoured (reproducible by construction).
+    c = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe", run_id="fixedrun")
+    assert "fixedrun" in c["vector_store"]["config"]["collection_name"]
+    assert c["_user_id"].endswith("fixedrun")
 
 
 # ===========================================================================

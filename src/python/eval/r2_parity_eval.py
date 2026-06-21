@@ -582,11 +582,31 @@ def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
     Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
     consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
     re-pin is the LongMemEval corpus, design §3); it requires only that the file
-    declares a non-empty ``corpus_hash`` and at least one query."""
+    declares a non-empty ``corpus_hash`` and at least one query.
+
+    Runtime corpus-validity guard (codex §9 [P2]): runs :func:`validate_repin`
+    over the gold itself (per-class counts derived from the file, ``n_min`` from
+    the file) and **RAISES** on any problem — an underfilled / N=0 / missing /
+    single-session-mislabeled class can never silently run to emit null (the
+    Slice-25 N=0 mode)."""
     raw = json.loads(Path(gold_path).read_text(encoding="utf-8"))
     corpus_hash = str(raw.get("corpus_hash", "")).strip()
     if not corpus_hash:
         raise ValueError(f"re-pin gold {gold_path!s} has no corpus_hash")
+    raw_queries = list(raw.get("queries", []))
+
+    from eval.corpus_validity import _observed_counts, validate_repin
+
+    synth_manifest = {
+        "n_min": raw.get("n_min"),
+        "per_class_gold_counts": _observed_counts(raw_queries),
+    }
+    problems = validate_repin(synth_manifest, raw_queries)
+    if problems:
+        raise ValueError(
+            f"re-pin gold {gold_path!s} failed corpus-validity guard: {problems}"
+        )
+
     queries = _parse_gold(raw)
     if not queries:
         raise ValueError(f"re-pin gold {gold_path!s} has no queries")

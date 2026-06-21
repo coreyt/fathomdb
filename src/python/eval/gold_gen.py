@@ -276,7 +276,9 @@ _TARGETED_INSTRUCTIONS: dict[str, str] = {
         "(a value stated earlier is later changed). Generate ONLY "
         "\"knowledge_update\" questions where the correct answer is the LATEST / "
         "most-recent value, so a system must prefer updated info over stale info. "
-        "Cite every doc_id needed."
+        "required_evidence MUST list TWO OR MORE doc_ids from DIFFERENT documents — "
+        "the earlier document stating the original value AND the later document that "
+        "supersedes it (an update spans at least two separate sessions)."
     ),
     "multi_hop": (
         "Generate ONLY \"multi_hop\" questions requiring information from TWO OR "
