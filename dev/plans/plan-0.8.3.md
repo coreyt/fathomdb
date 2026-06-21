@@ -338,8 +338,10 @@ Codex §9. **HITL gate:** the R2 **metric/threshold** stays a HITL eval gate (pe
 the parity claim is a product-value judgement) — but standing up the baseline + producing the number is
 the approved deliverable. Report the e2e parity number into `runs/0.8.3-report.md` and the conclusion of
 `runs/0.8.x-capability-status-report.md` (clears its #1 caveat).
-**Reserved follow-on (D0b.1–4):** add Zep/Graphiti as a second external baseline only if Mem0 parity is
-close and a second comparator changes the read.
+**Reserved follow-on (D0b.1–4):** none — a second external comparator is **explicitly OUT of 0.8.3** to
+keep D0 focused on **Mem0-type function**. The **Graphiti/Zep** agentic-memory head-to-head (and the
+**GraphRAG/HippoRAG** multi-hop head-to-head) is a recorded **0.8.4 known-gap** — see
+[`../roadmap/0.8.4.md`](../roadmap/0.8.4.md) §5.
 
 ---
 
@@ -352,6 +354,11 @@ close and a second comparator changes the read.
 - **No whole-doc dense (R4), no bundled CPU extractor (R3b), no portable-DB vector guard** — those stay in
   [`../roadmap/0.8.5.md`](../roadmap/0.8.5.md); R3b's gate is now S1-alone (0.8.4).
 - **GraphRAG sensemaking (S1)** is **0.8.4**, a different structure on a different axis — not 0.8.3.
+- **No competitor head-to-head beyond Mem0.** D0 stands up **Mem0-OSS only** (Mem0-type function). The
+  **Graphiti/Zep** (agentic-memory) and **GraphRAG/HippoRAG** (multi-hop) as-is head-to-heads are a
+  recorded **0.8.4 known-gap** ([`../roadmap/0.8.4.md`](../roadmap/0.8.4.md) §5), not 0.8.3 scope; until
+  then those competitors stay literature-only / not apples-to-apples (per
+  [`runs/0.8.x-capability-status-report.md`](runs/0.8.x-capability-status-report.md)).
 
 ## 6. Reuse inventory (new infra is minimal + footprint-safe)
 
