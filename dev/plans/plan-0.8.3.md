@@ -187,6 +187,18 @@ F5 ruling + the surpass protocol are part of this gate.
 **Reserved follow-on (1–4):** power re-estimate if Slice-10 variance is wider than assumed.
 
 ### Slice 5 — D0a: power-sized gold re-pin + answerer seam + Mem0-OSS de-risk & stand-up · `[implementation (eval-infra)]` · depends-on: 0 · gaps: 6–9
+> **✅ CLOSED on main 2026-06-21 (codex §9 PASS after fix-1 + fix-2).** Re-pinned gold: `corpus_hash`
+> `1859817a` (stable LME corpus) + gold `repin_hash` `2916cace`; per-class counts factoid 156 /
+> knowledge_update 150 / multi_session 150 / temporal 150 (all ≥ n_min=150 — the Slice-25 N=0 defect fixed).
+> Mem0-OSS de-risk = **GO for D0b** (footprint-safe local backend `eval/mem0_local.py`; airlock Qwen +
+> local bge-small + on-disk chroma, per-run isolated). Answerer seam wired + cheap-validated (~$0.0001).
+> Commits (slice + 2 fix rounds): `76bf9c75`/`65f96ceb`/`988aa499` + fix-1 `02b8726b`/`88ba3772` + fix-2
+> `aaa0a7b8`/`94952b69`. Reviews: `runs/0.8.3-slice-5-review-20260621T212116Z.md` (2×P1+P2),
+> `runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md` (2 new regressions), `…-fix-2-review-20260621T220452Z.md`
+> (PASS). **Carry forward:** Slice-10 paired power-check may HITL-escalate an under-powered class;
+> `knowledge_update` is partly synthetic (≥2-session-correct) — sanity-review before citing its delta.
+> **NEXT = Slice 10 (D0b)** — first priced parity run; per-run cheap-validate → HITL spend check before spend.
+
 **Objective.** Rebuild/re-pin the R2 gold so all four memory classes carry **≥ N_min gold** (sized at
 Slice 0; the prerequisite that made every class delta null in Slice 25); wire the identical-answerer seam
 (`R2_RUN=1`, `R2_ANSWERER_*`). **First task = a de-risk spike diagnosing the prior Mem0-OSS blocker**

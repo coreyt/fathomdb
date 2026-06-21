@@ -1,0 +1,1586 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019eec37-1440-73d1-83fa-2c2e597864d6
+--------
+user
+changes against '9e47b236'
+exec
+/bin/bash -lc "printf 'Reading repo memory and diff prerequisites\\n' && cat MEMORY.md && printf '\\n---\\n' && git diff --stat 9e47b236ad189fc0ad949167a28121e04252631b" in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+Reading repo memory and diff prerequisites
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' | sed 's#"'^#/#'"' | head -200" in /home/coreyt/projects/fathomdb
+ succeeded in 994ms:
+/../ado-mcp/MEMORY.md
+
+exec
+/bin/bash -lc "pwd && ls -la && find . -maxdepth 3 \\( -name 'MEMORY.md' -o -name 'feedback_*.md' \\) -print" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb
+total 360
+drwxrwxr-x 24 coreyt coreyt   4096 Jun 21 16:21 .
+drwxrwxr-x 32 coreyt coreyt   4096 Jun  8 13:24 ..
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 13 19:43 .claude
+-r--r--r--  1 coreyt coreyt      0 May 29 16:05 .codex
+drwxrwxr-x  9 coreyt coreyt   4096 Jun 21 17:04 .git
+drwxrwxr-x  3 coreyt coreyt   4096 May 21 17:13 .github
+-rw-rw-r--  1 coreyt coreyt   1573 Jun 21 16:21 .gitignore
+drwxrwxr-x  3 coreyt coreyt   4096 Jun  5 21:41 .hypothesis
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 .local
+-rw-rw-r--  1 coreyt coreyt   1181 May 21 17:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   1350 May 21 17:13 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 May 21 17:13 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 May 21 17:13 .prettierrc.json
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:14 .pytest_cache
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 13 22:02 .ruff_cache
+drwxrwxr-x  5 coreyt coreyt   4096 Apr 10 08:59 .venv
+drwxrwxr-x  3 coreyt coreyt   4096 Jun 21 17:05 .wake
+-rw-rw-r--  1 coreyt coreyt  11521 May 31 08:26 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  34196 Jun  8 15:00 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 110596 Jun 15 12:47 Cargo.lock
+-rw-------  1 coreyt coreyt   2434 Jun 13 11:57 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Apr 10 07:33 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 May 21 17:13 README.md
+drwxrwxr-x  3 coreyt coreyt   4096 May 27 15:49 data
+-rw-rw-r--  1 coreyt coreyt    120 May 21 17:13 deny.toml
+drwxrwxr-x 25 coreyt coreyt   4096 Jun 21 16:21 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jun  1 10:40 docs
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 go
+-rw-rw-r--  1 coreyt coreyt   1481 May 21 17:13 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jun  4 18:14 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48297 May 24 15:41 package-lock.json
+-rw-rw-r--  1 coreyt coreyt    436 May 24 15:41 package.json
+drwxrwxr-x  9 coreyt coreyt   4096 Jun 13 10:42 python
+-rw-rw-r--  1 coreyt coreyt     66 May 21 17:13 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 May 21 17:13 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 May 25 13:06 scripts
+drwxrwxr-x 17 coreyt coreyt   4096 Jun  3 08:12 site
+drwxrwxr-x  6 coreyt coreyt   4096 Jun  4 14:57 src
+drwxrwxr-x  8 coreyt coreyt   4096 May 25 10:48 target
+drwxrwxr-x  6 coreyt coreyt   4096 May 21 17:13 test
+drwxrwxr-x  3 coreyt coreyt   4096 May 27 08:01 tests
+drwxrwxr-x  3 coreyt coreyt   4096 May 21 17:13 tools
+drwxrwxr-x  5 coreyt coreyt   4096 May 21 17:13 typescript
+
+Reviewing the diff against the specified merge base: inspect changed files, analyze for correctness issues, then summarize findings in the required JSON format.
+  → Inspect diff and identify touched files and relevant context
+  • Analyze changed code for discrete, actionable bugs
+  • Produce prioritized review findings JSON
+exec
+/bin/bash -lc "git diff --stat 9e47b236ad189fc0ad949167a28121e04252631b && echo '---FILES---' && git diff --name-only 9e47b236ad189fc0ad949167a28121e04252631b" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ src/python/eval/mem0_local.py       | 22 ++++++----
+ src/python/eval/r2_parity_eval.py   | 25 +++++++++---
+ src/python/tests/test_r2_harness.py | 80 ++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 113 insertions(+), 14 deletions(-)
+---FILES---
+src/python/eval/mem0_local.py
+src/python/eval/r2_parity_eval.py
+src/python/tests/test_r2_harness.py
+
+exec
+/bin/bash -lc 'git diff 9e47b236ad189fc0ad949167a28121e04252631b -- src/python/eval/mem0_local.py src/python/eval/r2_parity_eval.py src/python/tests/test_r2_harness.py' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/src/python/eval/mem0_local.py b/src/python/eval/mem0_local.py
+index 835bb382..babdec52 100644
+--- a/src/python/eval/mem0_local.py
++++ b/src/python/eval/mem0_local.py
+@@ -48,7 +48,7 @@ def run_user_id(run_id: str) -> str:
+ def build_local_mem0_config(
+     *,
+     api_key: str,
+-    corpus_hash: str,
++    corpus_hash: str | None = None,
+     run_id: str | None = None,
+     llm_model: str = LOCAL_LLM_MODEL,
+     base_url: str = LOCAL_BASE_URL,
+@@ -62,14 +62,20 @@ def build_local_mem0_config(
+     anywhere (ADR §3.6).
+ 
+     Per-run isolation (codex §9 [P1#2]): both the Chroma **collection name** and
+-    the on-disk **path** are keyed by ``corpus_hash`` + a per-run ``run_id`` (a
+-    fresh one is minted when omitted), so re-running on a different corpus/branch
+-    cannot reopen a previous run's collection and search stale memories. Pair this
+-    with :func:`run_user_id` (``run_user_id(run_id)``) for the ``add``/``search``
+-    ``user_id``. Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe
+-    required."""
++    the on-disk **path** are keyed by a per-run ``run_id`` (a fresh one is minted
++    when omitted) — optionally prefixed by ``corpus_hash`` when one is supplied —
++    so re-running on a different corpus/branch cannot reopen a previous run's
++    collection and search stale memories. Pair this with :func:`run_user_id`
++    (``run_user_id(run_id)``) for the ``add``/``search`` ``user_id``.
++    Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe required.
++
++    ``corpus_hash`` is OPTIONAL (codex §9 fix-2 [P1]): the only production caller,
++    ``Mem0OSSAdapter.try_build()``, builds this config from runtime env (api_key /
++    optional llm_model / base_url) and does NOT know the corpus_hash. The per-run
++    ``run_id`` alone guarantees uniqueness; when ``corpus_hash`` is given it is
++    folded into the key so a different corpus is also distinct."""
+     rid = run_id or new_run_id()
+-    key = f"{str(corpus_hash)[:12]}_{rid}"
++    key = f"{str(corpus_hash)[:12]}_{rid}" if corpus_hash else rid
+     if chroma_root is None:
+         chroma_root = tempfile.gettempdir()
+     chroma_path = str(Path(chroma_root) / f"mem0_chroma_{key}")
+diff --git a/src/python/eval/r2_parity_eval.py b/src/python/eval/r2_parity_eval.py
+index 41ebd361..71ef7bff 100644
+--- a/src/python/eval/r2_parity_eval.py
++++ b/src/python/eval/r2_parity_eval.py
+@@ -576,8 +576,8 @@ def _parse_gold(raw: dict[str, Any]) -> list[GoldQuery]:
+     return out
+ 
+ 
+-def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+-    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, queries)``.
++def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
++    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
+ 
+     Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
+     consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
+@@ -610,7 +610,22 @@ def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+     queries = _parse_gold(raw)
+     if not queries:
+         raise ValueError(f"re-pin gold {gold_path!s} has no queries")
+-    return corpus_hash, queries
++
++    # The gold's identity is its repin_hash (corpus_hash is the intentionally
++    # STABLE LME corpus hash and cannot distinguish gold revisions). Derive the
++    # qrels_version from repin_hash so distinct gold revisions stay distinct in
++    # results/audit logs (codex §9 fix-2 [P2]). Key off repin_hash first; else
++    # the gold's declared qrels_version; only fall back to corpus_hash if a
++    # (malformed) gold lacks both — which should not happen for the pinned file.
++    repin_hash = str(raw.get("repin_hash", "")).strip()
++    declared_version = str(raw.get("qrels_version", "")).strip()
++    if repin_hash:
++        qrels_version = f"repin-{repin_hash[:8]}"
++    elif declared_version:
++        qrels_version = declared_version
++    else:
++        qrels_version = f"repin-{corpus_hash[:8]}"
++    return corpus_hash, qrels_version, queries
+ 
+ 
+ def _mean(values: list[float]) -> Optional[float]:
+@@ -652,12 +667,12 @@ class R2Harness:
+         corpus, so it deliberately bypasses the COR-2 ``__init__`` pin via
+         :meth:`from_queries` (the same path LME mode uses). The file must still
+         declare a non-empty ``corpus_hash`` and ``queries`` (validated here)."""
+-        corpus_hash, queries = load_repin_gold(gold_path)
++        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+         return cls.from_queries(
+             queries,
+             answerer,
+             corpus_hash=corpus_hash,
+-            qrels_version=f"repin-{corpus_hash[:8]}",
++            qrels_version=qrels_version,
+         )
+ 
+     @classmethod
+diff --git a/src/python/tests/test_r2_harness.py b/src/python/tests/test_r2_harness.py
+index 639aeb72..11510dbf 100644
+--- a/src/python/tests/test_r2_harness.py
++++ b/src/python/tests/test_r2_harness.py
+@@ -323,8 +323,9 @@ def test_answerer_seam_scores_over_repinned_gold() -> None:
+     R2_RUN, no network, no live LLM — the wiring smoke."""
+     from eval.r2_parity_eval import load_repin_gold
+ 
+-    corpus_hash, queries = load_repin_gold(_D0A_GOLD)
++    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+     assert corpus_hash, "re-pin gold carries a corpus_hash"
++    assert qrels_version, "re-pin gold carries a qrels_version"
+     assert queries, "re-pin gold carries queries"
+ 
+     harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+@@ -517,3 +518,80 @@ def test_from_repin_gold_raises_on_underfilled_manifest(tmp_path: Path) -> None:
+         load_repin_gold(gold_path)
+     with pytest.raises(ValueError):
+         R2Harness.from_repin_gold(gold_path, StubAnswerer())
++
++
++# ===========================================================================
++# Slice 5 fix-2 (codex §9) — fix-1 introduced 2 regressions:
++#   [P1] build_local_mem0_config required corpus_hash -> try_build() raised
++#        TypeError -> Mem0 arm always silently skipped.
++#   [P2] from_repin_gold reported qrels_version from the (stable) corpus_hash
++#        instead of the gold's repin_hash -> distinct gold revisions collide.
++# ===========================================================================
++
++
++def test_build_local_mem0_config_callable_as_try_build_passes_it() -> None:
++    """[P1] try_build() calls build_local_mem0_config with ONLY api_key (+ optional
++    llm_model/base_url) — NO corpus_hash. That must NOT raise TypeError, and the
++    result must still be per-run unique (no shared collection/path/user_id)."""
++    from eval.mem0_local import build_local_mem0_config
++
++    cfg = build_local_mem0_config(api_key="sk-test")  # must NOT raise TypeError
++    assert cfg["vector_store"]["provider"] == "chroma"
++    cfg2 = build_local_mem0_config(api_key="sk-test")
++    va, vb = cfg["vector_store"]["config"], cfg2["vector_store"]["config"]
++    assert va["collection_name"] != vb["collection_name"], "collection not per-run"
++    assert va["path"] != vb["path"], "on-disk path not per-run"
++    assert cfg["_user_id"] != cfg2["_user_id"], "user_id not per-run (stale leakage)"
++    # the exact kwarg set try_build builds (with optional overrides) also works.
++    cfg3 = build_local_mem0_config(
++        api_key="sk-test", llm_model="qwen3.6-27b", base_url="http://localhost:4000/v1"
++    )
++    assert cfg3["llm"]["config"]["model"] == "qwen3.6-27b"
++
++
++def test_try_build_constructs_config_without_typeerror(monkeypatch) -> None:  # noqa: ANN001
++    """[P1] Drive the actual try_build() path with a fake mem0 backend: it must
++    build a config and return a live adapter, NOT swallow a TypeError and skip the
++    Mem0 arm. This is the regression fix-1 introduced (every R2 run skipped Mem0)."""
++    import sys
++    import types
++
++    captured: dict = {}
++
++    class _FakeMemory:
++        @classmethod
++        def from_config(cls, config):  # noqa: ANN001
++            captured["config"] = config
++            return _FakeMem0Backend()
++
++    fake_mod = types.ModuleType("mem0")
++    fake_mod.Memory = _FakeMemory  # type: ignore[attr-defined]
++    monkeypatch.setitem(sys.modules, "mem0", fake_mod)
++    monkeypatch.setenv("R2_MEM0_API_KEY", "sk-test")
++
++    adapter = Mem0OSSAdapter.try_build()
++    assert adapter is not None, (
++        "try_build() returned None — build_local_mem0_config raised (TypeError "
++        "regression) so the Mem0 arm is always skipped"
++    )
++    assert adapter.available is True
++    cfg = captured["config"]
++    assert cfg["vector_store"]["provider"] == "chroma"
++    assert "localhost" in cfg["llm"]["config"]["openai_base_url"]
++
++
++def test_repin_gold_qrels_version_reflects_repin_hash_not_corpus_hash() -> None:
++    """[P2] The gold's identity is repin_hash (2916cace), NOT the intentionally
++    stable corpus_hash (1859817a). qrels_version must derive from repin_hash so
++    distinct gold revisions stay distinguishable in results/audit logs."""
++    from eval.r2_parity_eval import load_repin_gold
++
++    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
++    assert corpus_hash.startswith("1859"), "corpus_hash stays the LME corpus hash"
++    assert qrels_version.startswith("repin-2916"), qrels_version
++    assert not qrels_version.startswith("repin-1859"), "must not key off corpus_hash"
++    assert queries
++
++    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
++    assert harness.qrels_version.startswith("repin-2916"), harness.qrels_version
++    assert harness.corpus_hash.startswith("1859")
+
+exec
+/bin/bash -lc "sed -n '560,740p' src/python/eval/r2_parity_eval.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+        doc_ids: list[str] = []
+        for ev in q.get("required_evidence") or []:
+            did = ev.get("doc_id")
+            if did:
+                doc_ids.append(str(did))
+        if not doc_ids:
+            doc_ids = [str(d) for d in (q.get("expected_top_k_doc_ids") or [])]
+        out.append(
+            GoldQuery(
+                query_id=str(q.get("query_id", "")),
+                question=str(q.get("query", "")),
+                reporting_class=reporting,
+                answers=answers,
+                gold_doc_ids=tuple(doc_ids),
+            )
+        )
+    return out
+
+
+def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
+
+    Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
+    consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
+    re-pin is the LongMemEval corpus, design §3); it requires only that the file
+    declares a non-empty ``corpus_hash`` and at least one query.
+
+    Runtime corpus-validity guard (codex §9 [P2]): runs :func:`validate_repin`
+    over the gold itself (per-class counts derived from the file, ``n_min`` from
+    the file) and **RAISES** on any problem — an underfilled / N=0 / missing /
+    single-session-mislabeled class can never silently run to emit null (the
+    Slice-25 N=0 mode)."""
+    raw = json.loads(Path(gold_path).read_text(encoding="utf-8"))
+    corpus_hash = str(raw.get("corpus_hash", "")).strip()
+    if not corpus_hash:
+        raise ValueError(f"re-pin gold {gold_path!s} has no corpus_hash")
+    raw_queries = list(raw.get("queries", []))
+
+    from eval.corpus_validity import _observed_counts, validate_repin
+
+    synth_manifest = {
+        "n_min": raw.get("n_min"),
+        "per_class_gold_counts": _observed_counts(raw_queries),
+    }
+    problems = validate_repin(synth_manifest, raw_queries)
+    if problems:
+        raise ValueError(
+            f"re-pin gold {gold_path!s} failed corpus-validity guard: {problems}"
+        )
+
+    queries = _parse_gold(raw)
+    if not queries:
+        raise ValueError(f"re-pin gold {gold_path!s} has no queries")
+
+    # The gold's identity is its repin_hash (corpus_hash is the intentionally
+    # STABLE LME corpus hash and cannot distinguish gold revisions). Derive the
+    # qrels_version from repin_hash so distinct gold revisions stay distinct in
+    # results/audit logs (codex §9 fix-2 [P2]). Key off repin_hash first; else
+    # the gold's declared qrels_version; only fall back to corpus_hash if a
+    # (malformed) gold lacks both — which should not happen for the pinned file.
+    repin_hash = str(raw.get("repin_hash", "")).strip()
+    declared_version = str(raw.get("qrels_version", "")).strip()
+    if repin_hash:
+        qrels_version = f"repin-{repin_hash[:8]}"
+    elif declared_version:
+        qrels_version = declared_version
+    else:
+        qrels_version = f"repin-{corpus_hash[:8]}"
+    return corpus_hash, qrels_version, queries
+
+
+def _mean(values: list[float]) -> Optional[float]:
+    return round(sum(values) / len(values), 4) if values else None
+
+
+def _delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
+    if a is None or b is None:
+        return None
+    return round(a - b, 4)
+
+
+class R2Harness:
+    """Runs the identical-answerer eval over a set of retrieval adapters.
+
+    The COR-2 corpus-hash pin is asserted in ``__init__`` — *before* any number is
+    produced — so a wrong/unpinned corpus cannot yield a citable result."""
+
+    def __init__(self, gold_path: str | Path, answerer: BaseAnswerer) -> None:
+        path = Path(gold_path)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        corpus_hash = str(raw.get("corpus_hash", ""))
+        if not corpus_hash.startswith(CORPUS_HASH_PREFIX):
+            raise ValueError(
+                f"corpus_hash {corpus_hash!r} does not start with {CORPUS_HASH_PREFIX!r} "
+                "(COR-2): refusing to produce eval numbers on an unpinned corpus"
+            )
+        self.corpus_hash = corpus_hash
+        self.qrels_version = str(raw.get("qrels_version", ""))
+        self.queries = _parse_gold(raw)
+        self.answerer = answerer
+
+    @classmethod
+    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+        """Construct an R2Harness from a 0.8.3 D0a **re-pinned** gold file.
+
+        The re-pinned memory-class gold is LongMemEval-derived (design §3): its
+        ``corpus_hash`` is the LME corpus hash, **not** the COR-2 ``fe973fcd`` IR
+        corpus, so it deliberately bypasses the COR-2 ``__init__`` pin via
+        :meth:`from_queries` (the same path LME mode uses). The file must still
+        declare a non-empty ``corpus_hash`` and ``queries`` (validated here)."""
+        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+        return cls.from_queries(
+            queries,
+            answerer,
+            corpus_hash=corpus_hash,
+            qrels_version=qrels_version,
+        )
+
+    @classmethod
+    def from_queries(
+        cls,
+        queries: list[GoldQuery],
+        answerer: BaseAnswerer,
+        *,
+        corpus_hash: str = "lme-eval-v1",
+        qrels_version: str = "lme-loaded-v1",
+    ) -> "R2Harness":
+        """Construct an R2Harness from in-memory queries (no gold file, no COR-2 pin).
+
+        Used for LME mode where the corpus is different from the frozen FathomDB corpus.
+        """
+        obj = object.__new__(cls)
+        obj.corpus_hash = corpus_hash
+        obj.qrels_version = qrels_version
+        obj.queries = queries
+        obj.answerer = answerer
+        return obj
+
+    def run(
+        self,
+        systems: Mapping[str, RetrievalAdapter],
+        *,
+        k: int = 10,
+        limit: Optional[int] = None,
+    ) -> dict[str, Any]:
+        queries = self.queries[:limit] if limit is not None else self.queries
+        answerer_available = self.answerer.available
+        scorer = PerClassScorer()
+
+        report_classes = sorted(scorer.classes | {q.reporting_class for q in queries})
+
+        # accumulators[system][class] -> {"recall": [...], "acc": [...], "abst": [...]}
+        acc: dict[str, dict[str, dict[str, list[float]]]] = {
+            sys_name: {cls: {"recall": [], "acc": [], "abst": []} for cls in report_classes}
+            for sys_name in systems
+        }
+        n_per_class: dict[str, int] = {cls: 0 for cls in report_classes}
+
+        for q in queries:
+            n_per_class[q.reporting_class] += 1
+            for sys_name, adapter in systems.items():
+                hits = adapter.retrieve(q.question, k)
+                bucket = acc[sys_name][q.reporting_class]
+                if q.gold_doc_ids:
+                    retrieved = {h.doc_id for h in hits}
+                    bucket["recall"].append(
+                        1.0 if all(g in retrieved for g in q.gold_doc_ids) else 0.0
+                    )
+                if answerer_available:
+                    answer = self.answerer.answer(q.question, [h.body for h in hits if h.body])
+                    bucket["abst"].append(1.0 if answer is None else 0.0)
+                    if q.answers:  # only score accuracy when answer strings exist
+                        bucket["acc"].append(scorer.score_answer(list(q.answers), answer))
+
+        results: dict[str, dict[str, dict[str, Optional[float]]]] = {}
+        for sys_name in systems:
+            results[sys_name] = {}
+            for cls in report_classes:
+                b = acc[sys_name][cls]
+                results[sys_name][cls] = {
+                    "recall_at_k": _mean(b["recall"]),
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/eval/mem0_local.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""Footprint-safe LOCAL Mem0-OSS backend config (0.8.3 Slice 5 de-risk output).
+
+``Mem0OSSAdapter.try_build()`` returned None for two reasons (see
+``dev/design/0.8.3-slice-5-design.md`` §A): ``mem0ai`` was not installed, and even
+when installed ``Memory()`` needs a configured LLM + embedder + vector store (the
+default config targets the OpenAI cloud + a Qdrant server). **Mem0 cloud is forbidden
+(ADR §3.6).** This module pins the exact LOCAL, $0 backend the D0b stand-up uses, as
+code, so the config is reviewable and cannot drift:
+
+* LLM            — the airlock OpenAI-compatible endpoint, model ``qwen3.6-27b``
+                   (local vLLM; the currently-loaded local model verified at Slice 5);
+* Embedder       — ``huggingface`` ``BAAI/bge-small-en-v1.5`` (CPU, local);
+* Vector store   — ``chroma`` (embedded, on-disk; no server).
+
+This module performs NO install and NO network call at import — the unit tests stay
+backend-free. The D0b install (``pip install mem0ai chromadb sentence-transformers``)
+is deferred to Slice 10 so this eval-infra slice does not pollute the shared ``.venv``.
+"""
+
+from __future__ import annotations
+
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any
+
+#: The local LLM the de-risk verified is loaded on the airlock (qwen3-32b was NOT
+#: loaded at Slice 5 — use this one).
+LOCAL_LLM_MODEL = "qwen3.6-27b"
+#: The airlock OpenAI-compatible base URL (LiteLLM proxy in front of the local vLLM).
+LOCAL_BASE_URL = "http://localhost:4000/v1"
+#: Same embedder family FathomDB uses, for a fair retrieval axis. CPU/local.
+LOCAL_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+
+
+def new_run_id() -> str:
+    """A fresh per-run id (codex §9 [P1]). Used to namespace the Chroma store and
+    derive a non-fixed ``user_id`` so a re-run cannot read stale memories."""
+    return uuid.uuid4().hex[:12]
+
+
+def run_user_id(run_id: str) -> str:
+    """Per-run Mem0 ``user_id`` derived from ``run_id`` — NOT a fixed value, so a
+    new run searches its own namespace, never a prior run's memories."""
+    return f"r2-{run_id}"
+
+
+def build_local_mem0_config(
+    *,
+    api_key: str,
+    corpus_hash: str | None = None,
+    run_id: str | None = None,
+    llm_model: str = LOCAL_LLM_MODEL,
+    base_url: str = LOCAL_BASE_URL,
+    embed_model: str = LOCAL_EMBED_MODEL,
+    chroma_root: str | None = None,
+) -> dict[str, Any]:
+    """Return the Mem0 ``config`` dict for an all-local, $0, no-cloud backend.
+
+    Pass this to ``mem0.Memory.from_config(build_local_mem0_config(...))`` at the
+    D0b stand-up. Every provider here is local; there is no Mem0 cloud client
+    anywhere (ADR §3.6).
+
+    Per-run isolation (codex §9 [P1#2]): both the Chroma **collection name** and
+    the on-disk **path** are keyed by a per-run ``run_id`` (a fresh one is minted
+    when omitted) — optionally prefixed by ``corpus_hash`` when one is supplied —
+    so re-running on a different corpus/branch cannot reopen a previous run's
+    collection and search stale memories. Pair this with :func:`run_user_id`
+    (``run_user_id(run_id)``) for the ``add``/``search`` ``user_id``.
+    Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe required.
+
+    ``corpus_hash`` is OPTIONAL (codex §9 fix-2 [P1]): the only production caller,
+    ``Mem0OSSAdapter.try_build()``, builds this config from runtime env (api_key /
+    optional llm_model / base_url) and does NOT know the corpus_hash. The per-run
+    ``run_id`` alone guarantees uniqueness; when ``corpus_hash`` is given it is
+    folded into the key so a different corpus is also distinct."""
+    rid = run_id or new_run_id()
+    key = f"{str(corpus_hash)[:12]}_{rid}" if corpus_hash else rid
+    if chroma_root is None:
+        chroma_root = tempfile.gettempdir()
+    chroma_path = str(Path(chroma_root) / f"mem0_chroma_{key}")
+    collection_name = f"r2_eval_{key}"
+    return {
+        "_run_id": rid,
+        "_user_id": run_user_id(rid),
+        "llm": {
+            "provider": "openai",
+            "config": {
+                "model": llm_model,
+                "openai_base_url": base_url,
+                "api_key": api_key,
+                "temperature": 0,
+            },
+        },
+        "embedder": {
+            "provider": "huggingface",
+            "config": {"model": embed_model},
+        },
+        "vector_store": {
+            "provider": "chroma",
+            "config": {"path": chroma_path, "collection_name": collection_name},
+        },
+    }
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/python/tests/test_r2_harness.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""Slice 25 — R2 parity eval harness contract tests (RED → GREEN).
+
+These exercise the harness *internals* with stubs only: no DB, no live LLM, no
+``R2_RUN``. They pin the load-bearing measurement-neutrality properties the codex
+§9 review checks (ADR-0.8.1-ir-measure-eval-design §3):
+
+* RED-1 identical-answerer constraint (the same answerer / same prompt template
+  serves all three systems; adapters cannot build their own prompt);
+* RED-2 per-class scorer (all five R2 classes present; abstention counts as a miss);
+* RED-3 corpus-hash pin (COR-2) is asserted before any number is produced;
+* RED-4 output artifact carries the required keys.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from eval.r2_parity_eval import (
+    CORPUS_HASH_PREFIX,
+    R2_CLASSES,
+    Hit,
+    Mem0OSSAdapter,
+    PerClassScorer,
+    R2Harness,
+    RecordingAnswerer,
+    StubAdapter,
+    StubAnswerer,
+    _make_doc_id_of,
+    session_id_of,
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_D0A_MANIFEST = _REPO_ROOT / "dev/plans/runs/0.8.3-d0a-corpus-manifest.json"
+_D0A_GOLD = _REPO_ROOT / "dev/plans/runs/0.8.3-d0a-memory-gold.json"
+
+
+class _StubHit:
+    """Minimal SearchHit stand-in for doc_id_of resolution tests."""
+
+    def __init__(self, id: int, source_id=None) -> None:
+        self.id = id
+        self.source_id = source_id
+        self.body = ""
+        self.score = 0.0
+
+
+def test_chunked_session_source_resolves_to_bare_session_id() -> None:
+    """G0 Phase-2 §E — a graph-arm hit's chunked ``source_id`` (``sess#c2``)
+    resolves to the bare gold session id, and ``doc_id_of`` prefers ``source_id``
+    over the cursor map; a two-arm hit (source_id=None) falls back to the map."""
+    assert session_id_of("sess_42#c0") == "sess_42"
+    assert session_id_of("sess_42#c17") == "sess_42"
+    assert session_id_of("sess_42") == "sess_42"  # idempotent / no suffix
+
+    cursor_to_doc = {7: "cursor_session"}
+    doc_id_of = _make_doc_id_of(cursor_to_doc)
+
+    # Graph-arm hit: carries a chunked source_id → canonicalized, map ignored.
+    assert doc_id_of(_StubHit(id=7, source_id="sess_42#c2")) == "sess_42"
+    # Two-arm hit: no source_id → cursor map.
+    assert doc_id_of(_StubHit(id=7, source_id=None)) == "cursor_session"
+    # Unknown cursor, no source_id → stringified id fallback.
+    assert doc_id_of(_StubHit(id=99, source_id=None)) == "99"
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _write_stub_gold(path: Path, *, corpus_hash: str) -> Path:
+    """Write a tiny gold file (one query per class we exercise) with the given
+    ``corpus_hash`` so the harness can be constructed without the frozen corpus."""
+
+    queries = [
+        {
+            "query_id": "q-factoid-1",
+            "query": "What is the capital of France?",
+            "query_class": "exact_fact",  # mapped → factoid by the harness
+            "answers": ["Paris"],
+            "required_evidence": [{"doc_id": "doc-fr", "locator": {"kind": "whole_body"}}],
+        },
+        {
+            "query_id": "q-explore-1",
+            "query": "Summarize the meeting outcomes.",
+            "query_class": "exploratory",
+            "answers": ["a plan was drafted"],
+            "required_evidence": [{"doc_id": "doc-mtg", "locator": {"kind": "whole_body"}}],
+        },
+        {
+            "query_id": "q-neg-1",
+            "query": "Who won the 3019 world cup?",
+            "query_class": "negative",
+            "answers": [],
+            "required_evidence": [],
+        },
+    ]
+    payload = {
+        "corpus_hash": corpus_hash,
+        "qrels_version": "ir-c-reused-v1",
+        "note": "slice-25 unit-test stub gold",
+        "queries": queries,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _stub_systems() -> dict[str, StubAdapter]:
+    """Three adapters that each retrieve a fixed (correct) hit for every query."""
+
+    hits_by_query = {
+        "What is the capital of France?": [Hit(doc_id="doc-fr", body="Paris is the capital.", score=1.0)],
+        "Summarize the meeting outcomes.": [Hit(doc_id="doc-mtg", body="The team drafted a plan.", score=1.0)],
+        "Who won the 3019 world cup?": [],  # nothing to find → answerer must abstain
+    }
+    return {
+        "fathomdb": StubAdapter(name="fathomdb", hits_by_query=hits_by_query),
+        "mem0_oss": StubAdapter(name="mem0_oss", hits_by_query=hits_by_query),
+        "naive_rag": StubAdapter(name="naive_rag", hits_by_query=hits_by_query),
+    }
+
+
+# ---------------------------------------------------------------------------
+# RED-1 — identical-answerer constraint
+# ---------------------------------------------------------------------------
+
+
+def test_identical_answerer_constraint_enforced(tmp_path: Path) -> None:
+    gold = _write_stub_gold(tmp_path / "stub.gold.json", corpus_hash="fe973fcd49fb_stub")
+    answerer = RecordingAnswerer()
+    systems = _stub_systems()
+
+    harness = R2Harness(gold_path=gold, answerer=answerer)
+    harness.run(systems, k=5)
+
+    # The one answerer object served every system (≥ one call per system × query).
+    assert answerer.records, "answerer was never invoked by the harness"
+
+    # Adapters expose ONLY retrieval — they cannot build a prompt or answer, so a
+    # per-system prompt divergence is structurally impossible.
+    for adapter in systems.values():
+        assert hasattr(adapter, "retrieve")
+        assert not hasattr(adapter, "answer")
+        assert not hasattr(adapter, "build_prompt")
+
+    # Every prompt template the answerer saw is byte-identical (same skeleton for
+    # all three systems): the load-bearing identical-answerer property.
+    templates = {rec.template for rec in answerer.records}
+    assert len(templates) == 1, f"prompt template diverged across systems: {templates!r}"
+
+    # And for the SAME question routed through all three systems, the template is
+    # identical while only the retrieved context may differ.
+    by_question: dict[str, set[str]] = {}
+    for rec in answerer.records:
+        by_question.setdefault(rec.question, set()).add(rec.template)
+    for question, tmpls in by_question.items():
+        assert len(tmpls) == 1, f"question {question!r} got divergent templates {tmpls!r}"
+
+
+# ---------------------------------------------------------------------------
+# RED-2 — per-class scorer
+# ---------------------------------------------------------------------------
+
+
+def test_per_class_scoring_has_all_five_classes() -> None:
+    scorer = PerClassScorer()
+    required = {"factoid", "temporal", "multi_hop", "knowledge_update", "multi_session"}
+    assert required <= scorer.classes
+    assert required <= set(R2_CLASSES)
+
+
+def test_abstention_counted_as_miss() -> None:
+    scorer = PerClassScorer()
+    # ground truth exists but the system returned no answer → a miss (0.0), NOT skipped.
+    acc = scorer.score_answer(ground_truth=["X"], system_answer=None)
+    assert acc == 0.0
+
+
+def test_answering_a_negative_query_is_a_false_positive() -> None:
+    scorer = PerClassScorer()
+    # No answer exists (negative class) but the system answered → false positive (0.0).
+    assert scorer.score_answer(ground_truth=[], system_answer="some confident guess") == 0.0
+    # Correctly abstaining on a negative query scores 1.0.
+    assert scorer.score_answer(ground_truth=[], system_answer=None) == 1.0
+
+
+def test_correct_answer_scores_one() -> None:
+    scorer = PerClassScorer()
+    assert scorer.score_answer(ground_truth=["Paris"], system_answer="The capital is Paris.") == 1.0
+    assert scorer.score_answer(ground_truth=["Paris"], system_answer="London") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# RED-3 — corpus-hash pin (COR-2)
+# ---------------------------------------------------------------------------
+
+
+def test_harness_rejects_wrong_corpus_hash(tmp_path: Path) -> None:
+    gold = _write_stub_gold(tmp_path / "bad.gold.json", corpus_hash="deadbeefdeadbeef")
+    with pytest.raises(ValueError, match=CORPUS_HASH_PREFIX):
+        R2Harness(gold_path=gold, answerer=StubAnswerer())
+
+
+def test_harness_accepts_pinned_corpus_hash(tmp_path: Path) -> None:
+    gold = _write_stub_gold(tmp_path / "ok.gold.json", corpus_hash="fe973fcd49fb_stub")
+    harness = R2Harness(gold_path=gold, answerer=StubAnswerer())
+    assert harness.corpus_hash.startswith(CORPUS_HASH_PREFIX)
+
+
+# ---------------------------------------------------------------------------
+# RED-4 — output artifact schema
+# ---------------------------------------------------------------------------
+
+
+def test_output_json_has_required_keys(tmp_path: Path) -> None:
+    gold = _write_stub_gold(tmp_path / "stub.gold.json", corpus_hash="fe973fcd49fb_stub")
+    harness = R2Harness(gold_path=gold, answerer=StubAnswerer())
+    out = harness.run(_stub_systems(), k=5)
+
+    for key in ("r2_per_class_deltas", "corpus_hash", "answerer_model", "n_queries_per_class"):
+        assert key in out, f"missing required output key: {key}"
+
+    # The delta table MUST carry the three R3 go/no-go classes (even if null).
+    for cls in ("temporal", "multi_hop", "knowledge_update"):
+        assert cls in out["r2_per_class_deltas"], f"delta table missing class {cls}"
+        row = out["r2_per_class_deltas"][cls]
+        assert "fathomdb_minus_mem0" in row
+        assert "fathomdb_minus_naive_rag" in row
+
+    # n_queries_per_class is keyed by the five R2 classes.
+    for cls in R2_CLASSES:
+        assert cls in out["n_queries_per_class"]
+
+    assert out["corpus_hash"].startswith(CORPUS_HASH_PREFIX)
+
+
+# ===========================================================================
+# Slice 5 (D0a) — power-sized gold re-pin + answerer seam + Mem0-OSS de-risk
+# ===========================================================================
+
+from eval.decision_rule_083 import MEMORY_CLASSES  # noqa: E402 — Slice-5 contract
+
+
+# ---------------------------------------------------------------------------
+# S5-RED-A — corpus-validity guard (the Slice-25 N=0 regression this slice fixes)
+# ---------------------------------------------------------------------------
+
+
+def _good_manifest(n_min: int = 150) -> dict:
+    return {
+        "corpus_hash": "lmeoracle_deadbeef",
+        "n_min": n_min,
+        "per_class_gold_counts": {c: n_min for c in MEMORY_CLASSES},
+    }
+
+
+def test_corpus_validity_catches_n0_memory_class() -> None:
+    """The guard that was MISSING in Slice 25: a class at N=0 must be flagged.
+
+exec
+/bin/bash -lc "rg -n \"build_local_mem0_config|Mem0OSSAdapter|load_repin_gold|qrels_version\" src/python/eval src/python/tests -g '"'!src/python/tests/test_r2_harness.py'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/python/tests/test_option2_elps_pipeline.py:177:        json.dumps({"corpus_hash": corpus_hash, "qrels_version": "stub-v1", "queries": queries}),
+src/python/tests/test_option3_lme_pipeline.py:170:        qrels_version="lme-test-v1",
+src/python/eval/gold_repin.py:388:    qrels_version = f"repin-{rh[:8]}"
+src/python/eval/gold_repin.py:395:        "qrels_version": qrels_version,
+src/python/eval/gold_repin.py:411:        "qrels_version": qrels_version,
+src/python/eval/mem0_local.py:3:``Mem0OSSAdapter.try_build()`` returned None for two reasons (see
+src/python/eval/mem0_local.py:48:def build_local_mem0_config(
+src/python/eval/mem0_local.py:60:    Pass this to ``mem0.Memory.from_config(build_local_mem0_config(...))`` at the
+src/python/eval/mem0_local.py:73:    ``Mem0OSSAdapter.try_build()``, builds this config from runtime env (api_key /
+src/python/eval/__init__.py:15:    Mem0OSSAdapter,
+src/python/eval/__init__.py:27:    "Mem0OSSAdapter",
+src/python/eval/r2_parity_eval.py:413:class Mem0OSSAdapter:
+src/python/eval/r2_parity_eval.py:434:    def try_build() -> Optional["Mem0OSSAdapter"]:
+src/python/eval/r2_parity_eval.py:440:        (:func:`eval.mem0_local.build_local_mem0_config`): airlock-local LLM + local
+src/python/eval/r2_parity_eval.py:448:            from eval.mem0_local import build_local_mem0_config
+src/python/eval/r2_parity_eval.py:458:            memory = Memory.from_config(build_local_mem0_config(**kwargs))
+src/python/eval/r2_parity_eval.py:461:        return Mem0OSSAdapter(memory=memory)
+src/python/eval/r2_parity_eval.py:465:            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+src/python/eval/r2_parity_eval.py:471:            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+src/python/eval/r2_parity_eval.py:579:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+src/python/eval/r2_parity_eval.py:580:    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
+src/python/eval/r2_parity_eval.py:616:    # qrels_version from repin_hash so distinct gold revisions stay distinct in
+src/python/eval/r2_parity_eval.py:618:    # the gold's declared qrels_version; only fall back to corpus_hash if a
+src/python/eval/r2_parity_eval.py:621:    declared_version = str(raw.get("qrels_version", "")).strip()
+src/python/eval/r2_parity_eval.py:623:        qrels_version = f"repin-{repin_hash[:8]}"
+src/python/eval/r2_parity_eval.py:625:        qrels_version = declared_version
+src/python/eval/r2_parity_eval.py:627:        qrels_version = f"repin-{corpus_hash[:8]}"
+src/python/eval/r2_parity_eval.py:628:    return corpus_hash, qrels_version, queries
+src/python/eval/r2_parity_eval.py:657:        self.qrels_version = str(raw.get("qrels_version", ""))
+src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+src/python/eval/r2_parity_eval.py:675:            qrels_version=qrels_version,
+src/python/eval/r2_parity_eval.py:685:        qrels_version: str = "lme-loaded-v1",
+src/python/eval/r2_parity_eval.py:693:        obj.qrels_version = qrels_version
+src/python/eval/r2_parity_eval.py:749:            "qrels_version": self.qrels_version,
+src/python/eval/r2_parity_eval.py:1170:    mem0 = Mem0OSSAdapter.try_build()
+src/python/eval/r2_parity_eval.py:1278:    mem0 = Mem0OSSAdapter.try_build()
+src/python/eval/r2_parity_eval.py:1314:        qrels_version=f"lme-{args.lme_split}-loaded-v1",
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/python/eval/r2_parity_eval.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+"""R2 parity eval harness — identical-answerer protocol, per-class scoring.
+
+Binding spec: ``dev/adr/ADR-0.8.1-ir-measure-eval-design.md §3``. Design memo:
+``dev/design/slice-25-r2-design.md``.
+
+The load-bearing invariant (ADR §3.2): the **same answerer** (same prompt
+template, same context budget) answers questions retrieved by **all three**
+systems. Adapters expose only ``retrieve(question, k)`` — they cannot build a
+prompt — so a per-system prompt divergence is structurally impossible. The
+harness owns the single :class:`BaseAnswerer` and routes every system's context
+through it.
+
+Footprint (ADR §3.6): the answerer LLM and Mem0-OSS are **test-infra** (BYO/local,
+gated by ``R2_RUN``); FathomDB itself makes zero network calls (local SQLite).
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+from collections import defaultdict
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from fathomdb.engine import Engine
+
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+
+#: COR-2: the frozen corpus snapshot the parity numbers are pinned to.
+CORPUS_HASH_PREFIX = "fe973fcd"
+
+#: The five R2 query classes (ADR §3.4). Slice 30's go/no-go reads the middle
+#: three (``temporal``/``multi_hop``/``knowledge_update``).
+R2_CLASSES: tuple[str, ...] = (
+    "factoid",
+    "temporal",
+    "multi_hop",
+    "knowledge_update",
+    "multi_session",
+)
+
+#: Gold-set ``query_class`` → reporting class. The frozen FathomDB gold carries
+#: only ``exact_fact``/``exploratory``/``negative``; ``exact_fact`` maps onto the
+#: R2 ``factoid`` class, the other two are carried as report-only extras. The four
+#: memory classes have no gold in the frozen corpus (see the design memo §1).
+GOLD_CLASS_MAP: dict[str, str] = {
+    "exact_fact": "factoid",
+    "factoid": "factoid",
+    "exploratory": "exploratory",
+    "negative": "negative",
+    "temporal": "temporal",
+    "multi_hop": "multi_hop",
+    "knowledge_update": "knowledge_update",
+    "multi_session": "multi_session",
+    # LME entries (so _parse_gold works on LME-formatted gold files too):
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
+}
+
+#: LME question_type → R2 reporting class.
+LME_CLASS_MAP: dict[str, str] = {
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    # abstention variants
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
+}
+
+_R2_RUN_ENV = "R2_RUN"
+
+#: Maximum characters of a session body fed to the ELPS extractor.  LME sessions
+#: can be ~12 k chars; with max_tokens=4096 the LLM truncates mid-JSON and the
+#: extractor parse fails, eventually exhausting the Rust 300 s IO timeout and
+#: raising EngineError::Extractor.  FTS indexing uses the full body (pass 1).
+_ELPS_MAX_CHARS = 2000
+
+
+# --------------------------------------------------------------------------- #
+# Data model
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class Hit:
+    """A single retrieved candidate. ``doc_id`` is the *corpus* doc id (the join
+    key against the gold set), not an engine-internal row cursor."""
+
+    doc_id: str
+    body: str
+    score: float
+
+
+@dataclass(frozen=True)
+class GoldQuery:
+    query_id: str
+    question: str
+    reporting_class: str
+    answers: tuple[str, ...]
+    gold_doc_ids: tuple[str, ...]
+
+    @property
+    def has_answer(self) -> bool:
+        """True when an answer exists (positive query); False for the negative
+        class (no answer exists — answering it is a false positive)."""
+        return bool(self.answers) or bool(self.gold_doc_ids)
+
+
+# --------------------------------------------------------------------------- #
+# Answerer (identical across all systems)
+# --------------------------------------------------------------------------- #
+
+
+class BaseAnswerer:
+    """Shared answerer. The prompt template lives here, never on an adapter, so
+    every system answers through the identical template (ADR §3.2)."""
+
+    PROMPT_TEMPLATE = (
+        "You are a precise question-answering assistant. Answer the question using "
+        "ONLY the provided context. If the context does not contain the answer, "
+        "reply with exactly: I don't know.\n\n"
+        "Context:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+    model_id: str = "<unset>"
+
+    @property
+    def available(self) -> bool:
+        """Whether this answerer can actually produce answers in this environment.
+        When False, the harness emits retrieval-only metrics (accuracy = null)."""
+        return True
+
+    def build_prompt(self, question: str, context: list[str]) -> str:
+        joined = "\n---\n".join(context) if context else "(no documents retrieved)"
+        return self.PROMPT_TEMPLATE.format(context=joined, question=question)
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        prompt = self.build_prompt(question, context)
+        return self._complete(prompt, question, context)
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        raise NotImplementedError
+
+
+class StubAnswerer(BaseAnswerer):
+    """Deterministic, LLM-free answerer for unit tests and stub runs: it echoes
+    the top retrieved passage, or abstains (``None``) when nothing was retrieved.
+    No network, no ``R2_RUN`` gate."""
+
+    model_id = "stub-deterministic-v1"
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        if not context:
+            return None
+        return context[0]
+
+
+@dataclass
+class _Record:
+    question: str
+    template: str
+    context: tuple[str, ...]
+
+
+class RecordingAnswerer(StubAnswerer):
+    """A :class:`StubAnswerer` that records every (question, template, context) it
+    is asked — used by the identical-answerer constraint test (RED-1)."""
+
+    model_id = "recording-stub-v1"
+
+    def __init__(self) -> None:
+        self.records: list[_Record] = []
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        self.records.append(
+            _Record(question=question, template=self.PROMPT_TEMPLATE, context=tuple(context))
+        )
+        return super().answer(question, context)
+
+
+class NullAnswerer(BaseAnswerer):
+    """Retrieval-only sentinel: ``available`` is False, so the harness produces
+    Evidence Recall@K but leaves ``answerer_accuracy``/``abstention_rate`` null
+    (the §9 null-vs-zero distinction). Used when no answerer LLM is available."""
+
+    model_id = "unavailable — see blockers_encountered"
+
+    @property
+    def available(self) -> bool:
+        return False
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        raise RuntimeError("NullAnswerer cannot answer (no LLM available)")
+
+
+class LLMAnswerer(BaseAnswerer):
+    """BYO/local answerer over an OpenAI-compatible ``/chat/completions`` endpoint.
+
+    Gated by ``R2_RUN=1`` plus ``R2_ANSWERER_MODEL`` and ``R2_ANSWERER_BASE_URL``
+    (e.g. a local llama.cpp/ollama OpenAI shim). Temperature 0 + fixed seed for
+    replay-determinism (design memo §4). FathomDB never calls this — it is the
+    answerer for *all three* systems equally.
+    """
+
+    def __init__(self) -> None:
+        self.base_url = os.environ.get("R2_ANSWERER_BASE_URL", "")
+        self.api_key = os.environ.get("R2_ANSWERER_API_KEY", "")
+        self.model_id = os.environ.get("R2_ANSWERER_MODEL", "<unset>")
+
+    @property
+    def available(self) -> bool:
+        return (
+            os.environ.get(_R2_RUN_ENV) == "1"
+            and bool(self.base_url)
+            and self.model_id != "<unset>"
+        )
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        if os.environ.get(_R2_RUN_ENV) != "1":
+            raise RuntimeError(f"{_R2_RUN_ENV} not set; set to 1 to run the full eval")
+        if not self.available:
+            raise RuntimeError(
+                "LLMAnswerer not configured: set R2_ANSWERER_BASE_URL + R2_ANSWERER_MODEL"
+            )
+        import urllib.request  # local import: stdlib only, keeps the import graph clean
+
+        payload = json.dumps(
+            {
+                "model": self.model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "seed": 0,
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url.rstrip("/") + "/chat/completions",
+            data=payload,
+
+exec
+/bin/bash -lc "sed -n '400,490p' src/python/eval/r2_parity_eval.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+        for t in q_terms:
+            idf = self._idf.get(t)
+            if not idf:
+                continue
+            coeff = self._k1 + 1
+            for doc_id, f in self._postings.get(t, ()):
+                dl = self._doc_len[doc_id]
+                denom = f + self._k1 * (1 - self._b + self._b * dl / self._avgdl)
+                scores[doc_id] += idf * (f * coeff) / denom
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
+        return [Hit(doc_id=doc_id, body=self._bodies.get(doc_id, ""), score=score) for doc_id, score in ranked]
+
+
+class Mem0OSSAdapter:
+    """Local Mem0-OSS baseline (``pip install mem0ai`` — NOT the cloud API; cloud
+    is a footprint violation, ADR §3.6). ``mem0`` is imported lazily so the harness
+    and its unit tests do not require it; ``available`` is False until both the
+    library and a configured backend (LLM + embedder) exist.
+
+    Mem0's ``add()`` extraction and ``search()`` embedding both require an LLM /
+    embedding backend; with no local model available the adapter is inert and the
+    live comparison runs FathomDB vs naive-RAG only (recorded as a blocker)."""
+
+    name = "mem0_oss"
+
+    def __init__(self, memory: Optional[Any] = None, *, user_id: str = "r2-eval") -> None:
+        self._memory = memory
+        self._user_id = user_id
+
+    @property
+    def available(self) -> bool:
+        return self._memory is not None
+
+    @staticmethod
+    def try_build() -> Optional["Mem0OSSAdapter"]:
+        """Best-effort LOCAL construction (0.8.3 Slice-5 stand-up). Returns None (not
+        raising) when ``mem0ai`` or its backend is unavailable, so the runner records
+        a clean blocker.
+
+        Uses the pinned footprint-safe local config
+        (:func:`eval.mem0_local.build_local_mem0_config`): airlock-local LLM + local
+        ``bge-small`` embedder + on-disk chroma — **never Mem0 cloud** (ADR §3.6). The
+        airlock key is read from ``R2_MEM0_API_KEY`` (falling back to
+        ``R2_ANSWERER_API_KEY``); the LLM model/base-url from ``R2_MEM0_MODEL`` /
+        ``R2_MEM0_BASE_URL`` when overriding the defaults."""
+        try:
+            from mem0 import Memory  # type: ignore[import-not-found]
+
+            from eval.mem0_local import build_local_mem0_config
+        except Exception:
+            return None
+        api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
+        kwargs: dict[str, str] = {"api_key": api_key}
+        if os.environ.get("R2_MEM0_MODEL"):
+            kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
+        if os.environ.get("R2_MEM0_BASE_URL"):
+            kwargs["base_url"] = os.environ["R2_MEM0_BASE_URL"]
+        try:
+            memory = Memory.from_config(build_local_mem0_config(**kwargs))
+        except Exception:
+            return None
+        return Mem0OSSAdapter(memory=memory)
+
+    def ingest(self, documents: dict[str, str]) -> None:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        for doc_id, body in documents.items():
+            self._memory.add(body, user_id=self._user_id, metadata={"doc_id": doc_id})
+
+    def retrieve(self, question: str, k: int) -> list[Hit]:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        res = self._memory.search(query=question, user_id=self._user_id, limit=k)
+        items = res.get("results", res) if isinstance(res, dict) else res
+        hits: list[Hit] = []
+        for item in items:
+            doc_id = str(item.get("metadata", {}).get("doc_id", item.get("id", "")))
+            hits.append(Hit(doc_id=doc_id, body=str(item.get("memory", "")), score=float(item.get("score", 0.0))))
+        return hits
+
+
+# --------------------------------------------------------------------------- #
+# Scoring
+# --------------------------------------------------------------------------- #
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+
+
+# Abstention strings treated as "no answer", computed THROUGH `_normalize` so the
+
+exec
+/bin/bash -lc "rg -n \"load_repin_gold\\(\" -S src/python" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/python/eval/r2_parity_eval.py:579:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+src/python/tests/test_r2_harness.py:326:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+src/python/tests/test_r2_harness.py:518:        load_repin_gold(gold_path)
+src/python/tests/test_r2_harness.py:589:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+
+exec
+/bin/bash -lc "rg -n \"build_local_mem0_config\\(\" src/python" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/python/eval/r2_parity_eval.py:458:            memory = Memory.from_config(build_local_mem0_config(**kwargs))
+src/python/eval/mem0_local.py:48:def build_local_mem0_config(
+src/python/eval/mem0_local.py:60:    Pass this to ``mem0.Memory.from_config(build_local_mem0_config(...))`` at the
+src/python/tests/test_r2_harness.py:407:    cfg = build_local_mem0_config(api_key="sk-test", corpus_hash="deadbeefcafe")
+src/python/tests/test_r2_harness.py:421:    a = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+src/python/tests/test_r2_harness.py:422:    b = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+src/python/tests/test_r2_harness.py:430:    c = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe", run_id="fixedrun")
+src/python/tests/test_r2_harness.py:538:    cfg = build_local_mem0_config(api_key="sk-test")  # must NOT raise TypeError
+src/python/tests/test_r2_harness.py:540:    cfg2 = build_local_mem0_config(api_key="sk-test")
+src/python/tests/test_r2_harness.py:546:    cfg3 = build_local_mem0_config(
+
+exec
+/bin/bash -lc "sed -n '380,460p' src/python/tests/test_r2_harness.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    adapter = Mem0OSSAdapter(memory=_FakeMem0Backend())
+    assert adapter.available is True
+    adapter.ingest({"doc-1": "Paris is the capital of France.",
+                    "doc-2": "Berlin is the capital of Germany.",
+                    "doc-3": "Rome is the capital of Italy."})
+
+    hits = adapter.retrieve("What is the capital of France?", k=2)
+    assert isinstance(hits, list)
+    assert len(hits) <= 2
+    assert all(isinstance(h, Hit) for h in hits)
+    assert hits[0].doc_id == "doc-1"  # metadata doc_id round-trips
+    assert "Paris" in hits[0].body
+
+
+def test_mem0_adapter_unavailable_without_backend() -> None:
+    """The §9 null-vs-zero distinction: no backend ⇒ not available (clean blocker),
+    never a silent empty result."""
+    adapter = Mem0OSSAdapter(memory=None)
+    assert adapter.available is False
+    with pytest.raises(RuntimeError):
+        adapter.retrieve("anything", k=5)
+
+
+def test_local_mem0_config_is_footprint_safe() -> None:
+    """The de-risk output: the pinned local backend config is LOCAL (no cloud)."""
+    from eval.mem0_local import build_local_mem0_config
+
+    cfg = build_local_mem0_config(api_key="sk-test", corpus_hash="deadbeefcafe")
+    # LLM points at the local airlock OpenAI-compatible base URL, not the cloud.
+    assert "localhost" in cfg["llm"]["config"]["openai_base_url"]
+    assert cfg["llm"]["config"]["model"].startswith("qwen")
+    # embedder + vector store are local providers (no Mem0 cloud, ADR §3.6).
+    assert cfg["embedder"]["provider"] == "huggingface"
+    assert cfg["vector_store"]["provider"] in {"chroma", "faiss"}
+
+
+def test_local_mem0_config_is_per_run_isolated() -> None:
+    """codex §9 [P1#2]: two configs over the SAME corpus must NOT share a Chroma
+    collection / path / user_id — a re-run cannot read stale memories."""
+    from eval.mem0_local import build_local_mem0_config
+
+    a = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+    b = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe")
+    va, vb = a["vector_store"]["config"], b["vector_store"]["config"]
+    assert va["collection_name"] != vb["collection_name"], "collection not per-run"
+    assert va["path"] != vb["path"], "on-disk path not per-run"
+    assert a["_user_id"] != b["_user_id"], "user_id not per-run (fixed -> stale leakage)"
+    # the corpus_hash namespaces the run (so a different corpus is also distinct).
+    assert "cafef00dbabe"[:12] in va["collection_name"]
+    # an explicit run_id is honoured (reproducible by construction).
+    c = build_local_mem0_config(api_key="k", corpus_hash="cafef00dbabe", run_id="fixedrun")
+    assert "fixedrun" in c["vector_store"]["config"]["collection_name"]
+    assert c["_user_id"].endswith("fixedrun")
+
+
+# ===========================================================================
+# Slice 5 fix-1 (codex §9) — class-span predicate + runtime corpus-validity raise
+# ===========================================================================
+from eval.r2_parity_eval import GOLD_CLASS_MAP  # noqa: E402 — fix-1 predicate map
+
+
+def _mk_q(query_class: str, doc_ids: list[str]) -> dict:
+    return {
+        "query": f"q over {doc_ids}",
+        "query_class": query_class,
+        "required_evidence": [{"doc_id": d} for d in doc_ids],
+        "answers": ["x"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# S5-fix1-RED-A — the [P1] class definition: multi_session / knowledge_update
+# require evidence spanning >=2 DISTINCT sessions (single-session = mislabeled).
+# ---------------------------------------------------------------------------
+
+
+def test_class_predicate_rejects_single_session_span_class() -> None:
+    """A multi_session / knowledge_update query answerable from ONE session is
+    mislabeled and must be rejected; the same class spanning >=2 sessions passes;
+    factoid / temporal keep the >=1-evidence rule (single-session OK)."""
+    from eval.corpus_validity import class_predicate_ok
+
+exec
+/bin/bash -lc "sed -n '360,430p' src/python/eval/gold_repin.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    if rejected:
+        print(f"[gold_repin] class-predicate rejected (single-session span-class): "
+              f"{dict(rejected)}", file=sys.stderr, flush=True)
+
+    # Post-filter per-class counts (the authoritative, emitted counts).
+    emitted_by_class: dict[str, int] = defaultdict(int)
+    for q in all_queries:
+        emitted_by_class[str(q.get("query_class"))] += 1
+    per_class_counts = {c: emitted_by_class.get(c, 0) for c in MEMORY_CLASSES}
+    # Synthetic queries that survived the filter, per class.
+    emitted_synth: dict[str, int] = defaultdict(int)
+    for q in all_queries:
+        if str(q.get("_provenance", "")).startswith("qwen-aug"):
+            emitted_synth[str(q.get("query_class"))] += 1
+    synthetic_fraction = {
+        c: round(emitted_synth.get(c, 0) / per_class_counts[c], 4) if per_class_counts[c] else 0.0
+        for c in MEMORY_CLASSES
+    }
+    var_proxy = variance_proxy(documents, all_queries)
+
+    ch = corpus_hash(documents)
+    # The LME corpus (documents) is deterministic, so ``corpus_hash`` is INVARIANT
+    # across rebuilds — it identifies the corpus, which did not change. The fix-1
+    # gold DID change, so a separate ``qrels_hash`` (over the emitted gold) is the
+    # NEW identity, and ``repin_hash`` binds the (corpus, qrels) pair. Downstream
+    # keys (e.g. the per-run Mem0 collection) key off this changing identity.
+    qh = qrels_hash(all_queries)
+    rh = hashlib.sha256(f"{ch}\n{qh}".encode()).hexdigest()
+    qrels_version = f"repin-{rh[:8]}"
+
+    gold_doc = {
+        "version": "0.8.3-d0a-repin-v2",
+        "corpus_hash": ch,
+        "qrels_hash": qh,
+        "repin_hash": rh,
+        "qrels_version": qrels_version,
+        "generator_model": gen_model,
+        "seed": seed,
+        "n_min": n_min,
+        "source": f"{dataset}:{split}",
+        "queries": all_queries,
+    }
+    out_gold.parent.mkdir(parents=True, exist_ok=True)
+    out_gold.write_text(json.dumps(gold_doc, indent=2), encoding="utf-8")
+
+    manifest = {
+        "schema": "0.8.3-d0a-corpus-manifest-v2",
+        "generated_by": "src/python/eval/gold_repin.py",
+        "corpus_hash": ch,
+        "qrels_hash": qh,
+        "repin_hash": rh,
+        "qrels_version": qrels_version,
+        "n_min": n_min,
+        "per_class_gold_counts": per_class_counts,
+        "synthetic_fraction": synthetic_fraction,
+        "class_predicate_rejected": dict(rejected),
+        "per_class_variance": var_proxy,
+        "_class_predicate": (
+            "multi_session & knowledge_update REQUIRE evidence spanning >=2 distinct "
+            "sessions (session_id_of-resolved); factoid & temporal keep the >=1-evidence "
+            "rule. Enforced in gold_repin.augment_class + a build-time filter pass + the "
+            "runtime corpus_validity.validate_repin guard (codex §9 [P1])."
+        ),
+        "doc_source": {
+            "dataset": dataset,
+            "split": split,
+            "n_sessions": len(documents),
+            "sampling": "all unique haystack sessions of memory-class instances",
+        },
+        "generator_model": gen_model,
+        "seed": seed,
+
+exec
+/bin/bash -lc "rg -n \"qrels_version\" -S src/python | sed -n '1,200p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/python/eval/r2_parity_eval.py:580:    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
+src/python/eval/r2_parity_eval.py:616:    # qrels_version from repin_hash so distinct gold revisions stay distinct in
+src/python/eval/r2_parity_eval.py:618:    # the gold's declared qrels_version; only fall back to corpus_hash if a
+src/python/eval/r2_parity_eval.py:621:    declared_version = str(raw.get("qrels_version", "")).strip()
+src/python/eval/r2_parity_eval.py:623:        qrels_version = f"repin-{repin_hash[:8]}"
+src/python/eval/r2_parity_eval.py:625:        qrels_version = declared_version
+src/python/eval/r2_parity_eval.py:627:        qrels_version = f"repin-{corpus_hash[:8]}"
+src/python/eval/r2_parity_eval.py:628:    return corpus_hash, qrels_version, queries
+src/python/eval/r2_parity_eval.py:657:        self.qrels_version = str(raw.get("qrels_version", ""))
+src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+src/python/eval/r2_parity_eval.py:675:            qrels_version=qrels_version,
+src/python/eval/r2_parity_eval.py:685:        qrels_version: str = "lme-loaded-v1",
+src/python/eval/r2_parity_eval.py:693:        obj.qrels_version = qrels_version
+src/python/eval/r2_parity_eval.py:749:            "qrels_version": self.qrels_version,
+src/python/eval/r2_parity_eval.py:1314:        qrels_version=f"lme-{args.lme_split}-loaded-v1",
+src/python/eval/gold_repin.py:388:    qrels_version = f"repin-{rh[:8]}"
+src/python/eval/gold_repin.py:395:        "qrels_version": qrels_version,
+src/python/eval/gold_repin.py:411:        "qrels_version": qrels_version,
+src/python/tests/test_option2_elps_pipeline.py:177:        json.dumps({"corpus_hash": corpus_hash, "qrels_version": "stub-v1", "queries": queries}),
+src/python/tests/test_option3_lme_pipeline.py:170:        qrels_version="lme-test-v1",
+src/python/tests/test_r2_harness.py:102:        "qrels_version": "ir-c-reused-v1",
+src/python/tests/test_r2_harness.py:326:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+src/python/tests/test_r2_harness.py:328:    assert qrels_version, "re-pin gold carries a qrels_version"
+src/python/tests/test_r2_harness.py:510:        "qrels_version": "repin-underfill",
+src/python/tests/test_r2_harness.py:527:#   [P2] from_repin_gold reported qrels_version from the (stable) corpus_hash
+src/python/tests/test_r2_harness.py:583:def test_repin_gold_qrels_version_reflects_repin_hash_not_corpus_hash() -> None:
+src/python/tests/test_r2_harness.py:585:    stable corpus_hash (1859817a). qrels_version must derive from repin_hash so
+src/python/tests/test_r2_harness.py:589:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+src/python/tests/test_r2_harness.py:591:    assert qrels_version.startswith("repin-2916"), qrels_version
+src/python/tests/test_r2_harness.py:592:    assert not qrels_version.startswith("repin-1859"), "must not key off corpus_hash"
+src/python/tests/test_r2_harness.py:596:    assert harness.qrels_version.startswith("repin-2916"), harness.qrels_version
+
+exec
+/bin/bash -lc 'pytest -q src/python/tests/test_r2_harness.py -q' in /home/coreyt/projects/fathomdb
+ succeeded in 318ms:
+.........................                                                [100%]
+
+exec
+/bin/bash -lc "rg -n \"from_repin_gold\\(\" -S" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/python/tests/test_r2_harness.py:331:    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+src/python/tests/test_r2_harness.py:520:        R2Harness.from_repin_gold(gold_path, StubAnswerer())
+src/python/tests/test_r2_harness.py:595:    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+src/python/eval/r2_parity_eval.py:662:    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/design/0.8.3-slice-5-design.md:180:- `R2Harness.from_repin_gold(path, answerer)` — builds a harness over the re-pinned
+dev/design/0.8.3-slice-5-design.md:224:`R2Harness.from_repin_gold()`) now calls `validate_repin()` over the gold (per-class
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:292:+- `R2Harness.from_repin_gold(path, answerer)` — builds a harness over the re-pinned
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:11759:+    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:11898:+    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13570:    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13975:   627	    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14138:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14150:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:1036: - `R2Harness.from_repin_gold(path, answerer)` — builds a harness over the re-pinned
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:1080:+`R2Harness.from_repin_gold()`) now calls `validate_repin()` over the gold (per-class
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4669:     def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4721:     harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4911:+        R2Harness.from_repin_gold(gold_path, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:5998:     def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6050:     harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6240:+        R2Harness.from_repin_gold(gold_path, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6975:    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8002:src/python/tests/test_r2_harness.py:330:    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8003:src/python/tests/test_r2_harness.py:519:        R2Harness.from_repin_gold(gold_path, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8005:src/python/eval/r2_parity_eval.py:647:    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8101:h = R2Harness.from_repin_gold(p, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8126:- [P2] Preserve the re-pinned file’s `qrels_version` in `from_repin_gold()` — /home/coreyt/projects/fathomdb/src/python/eval/r2_parity_eval.py:655-660
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8127:  After this change the gold’s identity is `repin-{repin_hash[:8]}`, but `R2Harness.from_repin_gold()` still synthesizes `qrels_version` from `corpus_hash`. Because the LME `corpus_hash` is intentionally stable across repins, any eval built from a re-pinned gold file now reports the wrong version tag (for the checked-in file, `repin-1859817a` instead of `repin-2916cace`), which makes distinct gold revisions indistinguishable in downstream results and audit logs.
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8135:- [P2] Preserve the re-pinned file’s `qrels_version` in `from_repin_gold()` — /home/coreyt/projects/fathomdb/src/python/eval/r2_parity_eval.py:655-660
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:8136:  After this change the gold’s identity is `repin-{repin_hash[:8]}`, but `R2Harness.from_repin_gold()` still synthesizes `qrels_version` from `corpus_hash`. Because the LME `corpus_hash` is intentionally stable across repins, any eval built from a re-pinned gold file now reports the wrong version tag (for the checked-in file, `repin-1859817a` instead of `repin-2916cace`), which makes distinct gold revisions indistinguishable in downstream results and audit logs.
+dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:202:     harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:206:         R2Harness.from_repin_gold(gold_path, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:281:+    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:390:    def from_repin_gold(cls, gold_path: str | Path, answerer: BaseAnswerer) -> "R2Harness":
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md:20:### 2. [medium / P2] `from_repin_gold()` reports the wrong `qrels_version`
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md:22:Gold identity is now `repin-{repin_hash[:8]}`, but `from_repin_gold()` still derives `qrels_version` from
+dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md:37:   `load_repin_gold()` → `from_repin_gold()` so `qrels_version == repin-2916cace…` for the checked-in file.
+
+exec
+/bin/bash -lc "rg -n \"load_repin_gold\\(\" -S ." in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+./src/python/tests/test_r2_harness.py:326:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./src/python/tests/test_r2_harness.py:518:        load_repin_gold(gold_path)
+./src/python/tests/test_r2_harness.py:589:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./src/python/eval/r2_parity_eval.py:579:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+./src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/design/0.8.3-slice-5-design.md:178:- `eval.r2_parity_eval.load_repin_gold(path) -> (corpus_hash, queries)` — loads a
+./dev/design/0.8.3-slice-5-design.md:223:**[P2] runtime corpus-validity guard.** `load_repin_gold()` (and therefore
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:290:+- `eval.r2_parity_eval.load_repin_gold(path) -> (corpus_hash, queries)` — loads a
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:11734:+def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:11767:+        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:11894:+    corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13522:def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13578:        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13927:   579	def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:13983:   635	        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14138:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14150:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:1034: - `eval.r2_parity_eval.load_repin_gold(path) -> (corpus_hash, queries)` — loads a
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:1079:+**[P2] runtime corpus-validity guard.** `load_repin_gold()` (and therefore
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4600: def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4677:         corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4717:     corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:4909:+        load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:5929: def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6006:         corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6046:     corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6238:+        load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6907:def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:6983:        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.log:7635:   655	        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:142:-def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:144:+def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:149:@@ -610,7 +610,22 @@ def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:177:-        corpus_hash, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:178:+        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:196:-    corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:197:+    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:204:         load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:275:+    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:307:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:398:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:863:src/python/eval/r2_parity_eval.py:579:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:873:src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1244:src/python/eval/r2_parity_eval.py:579:def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1245:src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1246:src/python/tests/test_r2_harness.py:326:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1247:src/python/tests/test_r2_harness.py:518:        load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1248:src/python/tests/test_r2_harness.py:589:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1436:src/python/eval/r2_parity_eval.py:670:        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1448:src/python/tests/test_r2_harness.py:326:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1454:src/python/tests/test_r2_harness.py:589:    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1478:dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14138:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1479:dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.log:14150:  `load_repin_gold()` only checks for a non-empty `corpus_hash` and at least one query, but this slice's new `validate_repin()` guard is never called on the runtime path. If a rebuild produces an underfilled class (for example via `--no-augment` or a stale checkpoint), `R2Harness.from_repin_gold()` will still run and `run()` will quietly emit 0/`null` for the missing classes—recreating the Slice-25 `N=0` failure mode that this change set is supposed to prevent.
+./dev/plans/runs/0.8.3-slice-5-fix-2-review-20260621T220452Z.log:1503:dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md:37:   `load_repin_gold()` → `from_repin_gold()` so `qrels_version == repin-2916cace…` for the checked-in file.
+./dev/plans/runs/0.8.3-slice-5-fix-1-review-20260621T215345Z.md:37:   `load_repin_gold()` → `from_repin_gold()` so `qrels_version == repin-2916cace…` for the checked-in file.
+./dev/plans/runs/0.8.3-slice-5-review-20260621T212116Z.md:29:`load_repin_gold()` only checks a non-empty `corpus_hash` + ≥1 query; the new `validate_repin()` is never
+
+exec
+/bin/bash -lc "python - <<'PY'
+import json
+from pathlib import Path
+p = Path('dev/plans/runs/0.8.3-d0a-memory-gold.json')
+raw = json.loads(p.read_text())
+print(raw.get('corpus_hash'))
+print(raw.get('qrels_version'))
+print(raw.get('repin_hash'))
+PY" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df
+repin-2916cace
+2916cace7f64903f6fbf15ca14e5c7c306c7b198aa9d38014fec5d1c4053957b
+
+Inspected the full diff, reviewed surrounding implementation and call sites, and ran the targeted Python harness tests. I did not find any discrete correctness issues introduced by this patch.
+  ✓ Inspect diff and identify touched files and relevant context
+  ✓ Analyze changed code for discrete, actionable bugs
+  → Produce prioritized review findings JSON
+codex
+I reviewed the Python changes against the specified merge base, checked the surrounding call sites, and ran the targeted `src/python/tests/test_r2_harness.py` suite. The patch appears to correctly fix the reported regressions without introducing new discrete correctness issues.
+I reviewed the Python changes against the specified merge base, checked the surrounding call sites, and ran the targeted `src/python/tests/test_r2_harness.py` suite. The patch appears to correctly fix the reported regressions without introducing new discrete correctness issues.

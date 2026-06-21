@@ -1,0 +1,53 @@
+{
+  "phase": "0.8.3-slice-5-fix-2",
+  "baseline_sha": "88ba3772",
+  "branch": "slice-5-20260621T204753Z",
+  "head_sha": "94952b691f7cd486ded1979f805f06182c5d457d",
+  "commits": [
+    {
+      "sha": "aaa0a7b8",
+      "kind": "RED",
+      "subject": "test(0.8.3/Slice 5 fix-2): RED — try_build() mem0 config call (no corpus_hash) + qrels_version from repin_hash (codex §9 P1+P2)"
+    },
+    {
+      "sha": "94952b691f7cd486ded1979f805f06182c5d457d",
+      "kind": "GREEN",
+      "subject": "fix(0.8.3/Slice 5 fix-2): restore try_build() mem0 config call + thread repin_hash into qrels_version (codex §9 P1+P2)"
+    }
+  ],
+  "findings_addressed": [
+    {
+      "id": "P1",
+      "ref": "src/python/eval/mem0_local.py:48-52 (build_local_mem0_config) ; caller src/python/eval/r2_parity_eval.py:458 (Mem0OSSAdapter.try_build)",
+      "fix": "Made corpus_hash an OPTIONAL kwarg (default None). The isolation key is now the per-run run_id alone (minted fresh when omitted), optionally PREFIXED by corpus_hash[:12] when one is supplied. try_build() — which calls Memory.from_config(build_local_mem0_config(**kwargs)) with only api_key (+ optional llm_model/base_url) and NO corpus_hash — no longer raises TypeError, so the Mem0 arm is no longer silently skipped on every live R2 run. Per-run uniqueness preserved (codex §9 [P1#2] not reintroduced): two calls yield distinct collection_name, on-disk path, and _user_id; an explicit run_id is still honoured (reproducible). RED test_try_build_constructs_config_without_typeerror drives the real try_build() path with a fake mem0 backend and asserts a live adapter is returned; RED test_build_local_mem0_config_callable_as_try_build_passes_it asserts no-corpus_hash construction + per-run uniqueness.",
+      "status": "fixed"
+    },
+    {
+      "id": "P2",
+      "ref": "src/python/eval/r2_parity_eval.py:579-613 (load_repin_gold) + :655-660 (from_repin_gold)",
+      "fix": "load_repin_gold() now returns a 3-tuple (corpus_hash, qrels_version, queries). qrels_version is derived from the gold's repin_hash (\"repin-\" + repin_hash[:8]); falls back to the gold's declared qrels_version, then to corpus_hash[:8] only if a malformed gold lacks both. from_repin_gold() threads that qrels_version through instead of recomputing f\"repin-{corpus_hash[:8]}\". corpus_hash kept as corpus_hash (still the stable LME hash 1859817a). For the checked-in gold this yields qrels_version == repin-2916cace (== repin_hash[:8]), NOT repin-1859. The one other unpacker (test_answerer_seam_scores_over_repinned_gold) was updated to the 3-tuple; no other callers exist. RED test_repin_gold_qrels_version_reflects_repin_hash_not_corpus_hash asserts repin-2916 (not repin-1859) at both the loader and harness level.",
+      "status": "fixed"
+    }
+  ],
+  "scope_note": "Touched ONLY src/python/eval/mem0_local.py, src/python/eval/r2_parity_eval.py, src/python/tests/test_r2_harness.py (+ this output.json). No gold regeneration (gold is correct). No engine/Rust. decision_rule_083.py / m1_decision_rule.py untouched. Tests stay backend-free (fake in-memory mem0 backend; no mem0ai, no network, no priced run, no Mem0 cloud).",
+  "spec_deviation_note": "The prompt's literal self-check snippet 'build_local_mem0_config(api_key=\\'x\\', model=\\'m\\', base_url=\\'u\\')' uses kwarg name 'model', but the real production caller try_build() (r2_parity_eval.py:453-456) passes 'llm_model' (and 'base_url'). 'model' is not a valid kwarg and was NOT added — doing so would diverge from the real caller. The load-bearing point ('no corpus_hash required') is satisfied and verified with the real kwarg names; test_try_build_constructs_config_without_typeerror exercises the authoritative try_build() path.",
+  "agent_verify_result": {
+    "pass": true,
+    "self_check": {
+      "pytest_selection": "27 passed, 334 deselected (FATHOMDB_TESTS_NO_REBUILD=1, PYTHONPATH=worktree/src/python, -k 'mem0 or repin or qrels or r2 or d0a or corpus_valid')",
+      "pytest_full_r2_harness": "25 passed",
+      "inline_assert_mem0_no_corpus_hash_unique": "PASS — build_local_mem0_config(api_key='x') (no corpus_hash) builds; two calls give distinct collection_name (r2_eval_72df7720d764 vs r2_eval_392985198ca4) and distinct _user_id",
+      "inline_assert_qrels_version": "PASS — load_repin_gold + from_repin_gold over 0.8.3-d0a-memory-gold.json report qrels_version=repin-2916cace (startswith repin-2916), corpus_hash[:8]=1859817a (unchanged)",
+      "ruff_eval": "All checks passed (src/python/eval/)",
+      "ruff_test": "All checks passed (src/python/tests/test_r2_harness.py)",
+      "mkdocs": "mkdocs build -q OK (exit 0)",
+      "canonical_repo_status": "no MY target-file edits leaked into the canonical repo working tree (pre-existing untracked orchestrator artifacts only)"
+    }
+  },
+  "files_changed": [
+    "src/python/eval/mem0_local.py",
+    "src/python/eval/r2_parity_eval.py",
+    "src/python/tests/test_r2_harness.py"
+  ],
+  "next_step_for_orchestrator": "Cherry-pick fix-2 RED aaa0a7b8 + GREEN 94952b69 onto main; re-review codex §9 on the fix-2 net diff; then close Slice 5. Note: after cherry-pick the prompt self-check runs clean WITHOUT the PYTHONPATH override (editable install resolves eval to canonical = the fixed code). Also note the spec_deviation_note: the self-check's illustrative 'model=' kwarg is not a real parameter; the real caller uses 'llm_model' and the try_build() path is verified."
+}
