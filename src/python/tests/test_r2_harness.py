@@ -22,6 +22,7 @@ from eval.r2_parity_eval import (
     CORPUS_HASH_PREFIX,
     R2_CLASSES,
     Hit,
+    Mem0OSSAdapter,
     PerClassScorer,
     R2Harness,
     RecordingAnswerer,
@@ -30,6 +31,10 @@ from eval.r2_parity_eval import (
     _make_doc_id_of,
     session_id_of,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_D0A_MANIFEST = _REPO_ROOT / "dev/plans/runs/0.8.3-d0a-corpus-manifest.json"
+_D0A_GOLD = _REPO_ROOT / "dev/plans/runs/0.8.3-d0a-memory-gold.json"
 
 
 class _StubHit:
@@ -229,3 +234,179 @@ def test_output_json_has_required_keys(tmp_path: Path) -> None:
         assert cls in out["n_queries_per_class"]
 
     assert out["corpus_hash"].startswith(CORPUS_HASH_PREFIX)
+
+
+# ===========================================================================
+# Slice 5 (D0a) — power-sized gold re-pin + answerer seam + Mem0-OSS de-risk
+# ===========================================================================
+
+from eval.decision_rule_083 import MEMORY_CLASSES  # noqa: E402 — Slice-5 contract
+
+
+# ---------------------------------------------------------------------------
+# S5-RED-A — corpus-validity guard (the Slice-25 N=0 regression this slice fixes)
+# ---------------------------------------------------------------------------
+
+
+def _good_manifest(n_min: int = 150) -> dict:
+    return {
+        "corpus_hash": "lmeoracle_deadbeef",
+        "n_min": n_min,
+        "per_class_gold_counts": {c: n_min for c in MEMORY_CLASSES},
+    }
+
+
+def test_corpus_validity_catches_n0_memory_class() -> None:
+    """The guard that was MISSING in Slice 25: a class at N=0 must be flagged.
+    Demonstrates the catch (the whole reason this slice exists)."""
+    from eval.corpus_validity import validate_repin
+
+    m = _good_manifest()
+    m["per_class_gold_counts"]["knowledge_update"] = 0  # the N=0 regression
+    problems = validate_repin(m, [])
+    assert problems, "validate_repin failed to catch an N=0 memory class"
+    assert any("knowledge_update" in p for p in problems)
+    assert any("0" in p or "N=0" in p.lower() or "empty" in p.lower() for p in problems)
+
+
+def test_corpus_validity_catches_under_n_min_class() -> None:
+    """A class present but below n_min must be flagged (not silently accepted)."""
+    from eval.corpus_validity import validate_repin
+
+    m = _good_manifest(n_min=150)
+    m["per_class_gold_counts"]["temporal"] = 149  # one short of n_min
+    problems = validate_repin(m, [])
+    assert any("temporal" in p for p in problems), problems
+
+
+def test_corpus_validity_catches_missing_memory_class() -> None:
+    """A frozen MEMORY_CLASS entirely absent from the manifest is a failure."""
+    from eval.corpus_validity import validate_repin
+
+    m = _good_manifest()
+    del m["per_class_gold_counts"]["multi_session"]
+    problems = validate_repin(m, [])
+    assert any("multi_session" in p for p in problems), problems
+
+
+def test_corpus_validity_passes_a_well_formed_manifest() -> None:
+    """Non-vacuous: a fully-populated, at-or-above-n_min manifest is clean."""
+    from eval.corpus_validity import validate_repin
+
+    assert validate_repin(_good_manifest(), []) == []
+
+
+def test_pinned_d0a_manifest_is_valid() -> None:
+    """The REAL pinned re-pin manifest: every MEMORY_CLASS ≥ n_min, no N=0."""
+    from eval.corpus_validity import validate_repin
+
+    manifest = json.loads(_D0A_MANIFEST.read_text(encoding="utf-8"))
+    gold = json.loads(_D0A_GOLD.read_text(encoding="utf-8"))
+    queries = gold.get("queries", [])
+    assert validate_repin(manifest, queries) == [], "pinned d0a manifest is invalid"
+
+    cc = manifest["per_class_gold_counts"]
+    n_min = manifest["n_min"]
+    for c in MEMORY_CLASSES:
+        assert cc.get(c, 0) >= n_min, f"class {c} under n_min: {cc.get(c)} < {n_min}"
+        assert cc[c] > 0, f"class {c} is N=0"
+
+
+# ---------------------------------------------------------------------------
+# S5-RED-B — identical-answerer seam runs end-to-end over the re-pinned gold
+# ---------------------------------------------------------------------------
+
+
+def test_answerer_seam_scores_over_repinned_gold() -> None:
+    """The seam: load the re-pinned LME gold via the non-COR-2 loader, run the
+    identical (stub) answerer over a few queries, get a scored result. No
+    R2_RUN, no network, no live LLM — the wiring smoke."""
+    from eval.r2_parity_eval import load_repin_gold
+
+    corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+    assert corpus_hash, "re-pin gold carries a corpus_hash"
+    assert queries, "re-pin gold carries queries"
+
+    harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())
+    assert harness.answerer.available  # stub answerer is always available
+
+    # A stub adapter that returns the gold doc for each query → recall is scorable.
+    hits_by_q = {
+        q.question: [Hit(doc_id=d, body=f"body for {d}", score=1.0) for d in q.gold_doc_ids]
+        for q in harness.queries
+        if q.gold_doc_ids
+    }
+    systems = {"fathomdb": StubAdapter(name="fathomdb", hits_by_query=hits_by_q)}
+    out = harness.run(systems, k=10, limit=5)
+
+    assert out["answerer_available"] is True
+    assert out["answerer_model"] == StubAnswerer.model_id
+    # the memory classes the resolution scores must be representable in the output
+    assert set(out["n_queries_per_class"]) >= set(MEMORY_CLASSES)
+    # at least one query was actually scored end-to-end
+    assert sum(out["n_queries_per_class"].values()) > 0
+
+
+# ---------------------------------------------------------------------------
+# S5-RED-C — Mem0-OSS adapter conformance (fake in-memory backend; no mem0ai)
+# ---------------------------------------------------------------------------
+
+
+class _FakeMem0Backend:
+    """In-memory stand-in for ``mem0.Memory`` exposing only what the adapter
+    calls (``add`` / ``search``) — so the conformance test needs no live mem0ai."""
+
+    def __init__(self) -> None:
+        self._mems: list[dict] = []
+
+    def add(self, body, *, user_id, metadata=None):  # noqa: ANN001
+        self._mems.append({"memory": body, "metadata": metadata or {}, "id": f"m{len(self._mems)}"})
+
+    def search(self, *, query, user_id, limit):  # noqa: ANN001
+        # naive substring relevance → deterministic ordering
+        scored = []
+        for i, m in enumerate(self._mems):
+            score = 1.0 if any(t in m["memory"].lower() for t in query.lower().split()) else 0.0
+            scored.append((score, -i, m))
+        scored.sort(reverse=True)
+        return {"results": [
+            {"id": m["id"], "memory": m["memory"], "metadata": m["metadata"], "score": s}
+            for s, _, m in scored[:limit]
+        ]}
+
+
+def test_mem0_adapter_returns_topk_hits_under_shared_contract() -> None:
+    adapter = Mem0OSSAdapter(memory=_FakeMem0Backend())
+    assert adapter.available is True
+    adapter.ingest({"doc-1": "Paris is the capital of France.",
+                    "doc-2": "Berlin is the capital of Germany.",
+                    "doc-3": "Rome is the capital of Italy."})
+
+    hits = adapter.retrieve("What is the capital of France?", k=2)
+    assert isinstance(hits, list)
+    assert len(hits) <= 2
+    assert all(isinstance(h, Hit) for h in hits)
+    assert hits[0].doc_id == "doc-1"  # metadata doc_id round-trips
+    assert "Paris" in hits[0].body
+
+
+def test_mem0_adapter_unavailable_without_backend() -> None:
+    """The §9 null-vs-zero distinction: no backend ⇒ not available (clean blocker),
+    never a silent empty result."""
+    adapter = Mem0OSSAdapter(memory=None)
+    assert adapter.available is False
+    with pytest.raises(RuntimeError):
+        adapter.retrieve("anything", k=5)
+
+
+def test_local_mem0_config_is_footprint_safe() -> None:
+    """The de-risk output: the pinned local backend config is LOCAL (no cloud)."""
+    from eval.mem0_local import build_local_mem0_config
+
+    cfg = build_local_mem0_config(api_key="sk-test")
+    # LLM points at the local airlock OpenAI-compatible base URL, not the cloud.
+    assert "localhost" in cfg["llm"]["config"]["openai_base_url"]
+    assert cfg["llm"]["config"]["model"].startswith("qwen")
+    # embedder + vector store are local providers (no Mem0 cloud, ADR §3.6).
+    assert cfg["embedder"]["provider"] == "huggingface"
+    assert cfg["vector_store"]["provider"] in {"chroma", "faiss"}
