@@ -300,9 +300,15 @@ def test_probe_15a_fails_when_hard_margin_ci_not_above_zero() -> None:
     assert probe_15a_pass(_cand_15a(hard_margin_ci_lo=-0.01), _BASE_15A) is False
 
 
-def test_probe_15a_fails_when_not_beating_base_point() -> None:
-    # Positive margin CI but candidate point not above base — must fail.
-    assert probe_15a_pass(_cand_15a(eu8=0.571), _BASE_15A) is False
+def test_probe_15a_point_tie_with_positive_margin_ci_passes() -> None:
+    # Frozen design §5 gates 15a on the paired margin CI lower bound > 0 on BOTH
+    # eu8 and the hard subset (plus cpu_feasible + 1-bit-survivable) — NOT on a raw
+    # candidate-point > base comparison. A candidate whose point estimate TIES the
+    # base (c_eu8 == base.eu8, c_hard == base.hard) but whose margin CI lower bounds
+    # are both > 0 must CLEAR (the unregistered raw-point check is removed; the old
+    # code returned False here = a rounding-induced false negative).
+    cand = _cand_15a(eu8=_BASE_15A["eu8"], hard=_BASE_15A["hard"])
+    assert probe_15a_pass(cand, _BASE_15A) is True
 
 
 def test_probe_15a_fails_when_not_cpu_feasible() -> None:
@@ -343,8 +349,14 @@ def test_probe_15b_fails_when_margin_ci_not_above_zero() -> None:
     assert probe_15b_pass(_enriched_15b(margin_ci_lo=0.0), _PLACEBO_15B) is False
 
 
-def test_probe_15b_fails_when_not_beating_placebo_point() -> None:
-    assert probe_15b_pass(_enriched_15b(recall=0.50), _PLACEBO_15B) is False
+def test_probe_15b_point_tie_with_positive_margin_ci_passes() -> None:
+    # Frozen design §5 gates 15b on the paired enriched-placebo margin CI lower
+    # bound > 0 AND removes_length_norm_penalty — NOT on a raw enriched-point >
+    # placebo-point comparison. Enriched recall that TIES the placebo point but with
+    # a margin CI lower bound > 0 (and penalty removed) must PASS; the old code
+    # returned False here = a rounding-induced false negative.
+    enriched = _enriched_15b(recall=_PLACEBO_15B["recall"])
+    assert probe_15b_pass(enriched, _PLACEBO_15B) is True
 
 
 def test_probe_15b_fails_when_length_norm_penalty_not_removed() -> None:
