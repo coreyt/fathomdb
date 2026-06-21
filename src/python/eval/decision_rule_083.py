@@ -218,21 +218,27 @@ def probe_15a_pass(
 
     Returns ``True`` only when every criterion holds. Non-finite floats raise.
     """
-    c_eu8 = _require_finite(cand["eu8"], "cand.eu8")
-    c_hard = _require_finite(cand["hard"], "cand.hard")
+    # Validate the carried point estimates for finiteness (a malformed endpoint
+    # must fail loudly) but do NOT gate on a raw cand-point > base-point check:
+    # frozen design §5 (15a) gates on the paired margin CI lower bound only.
+    _require_finite(cand["eu8"], "cand.eu8")
+    _require_finite(cand["hard"], "cand.hard")
+    _require_finite(base["eu8"], "base.eu8")
+    _require_finite(base["hard"], "base.hard")
     eu8_margin_ci_lo = _require_finite(cand["eu8_margin_ci_lo"], "cand.eu8_margin_ci_lo")
     hard_margin_ci_lo = _require_finite(
         cand["hard_margin_ci_lo"], "cand.hard_margin_ci_lo"
     )
     projected_eu7 = _require_finite(cand["projected_eu7"], "cand.projected_eu7")
     cpu_feasible = bool(cand["cpu_feasible"])
-    b_eu8 = _require_finite(base["eu8"], "base.eu8")
-    b_hard = _require_finite(base["hard"], "base.hard")
 
-    beats_eu8 = c_eu8 > b_eu8 and eu8_margin_ci_lo > 0.0
-    beats_hard = c_hard > b_hard and hard_margin_ci_lo > 0.0
     one_bit_survivable = projected_eu7 >= EU7_FLOOR
-    return beats_eu8 and beats_hard and cpu_feasible and one_bit_survivable
+    return (
+        eu8_margin_ci_lo > 0.0
+        and hard_margin_ci_lo > 0.0
+        and cpu_feasible
+        and one_bit_survivable
+    )
 
 
 def probe_15b_pass(
@@ -252,13 +258,15 @@ def probe_15b_pass(
 
     Returns ``True`` only when both criteria hold. Non-finite floats raise.
     """
-    e_recall = _require_finite(enriched["recall"], "enriched.recall")
+    # Validate the carried point estimates for finiteness (a malformed endpoint
+    # must fail loudly) but do NOT gate on a raw enriched-point > placebo-point
+    # check: frozen design §5 (15b) gates on the paired margin CI lower bound only.
+    _require_finite(enriched["recall"], "enriched.recall")
+    _require_finite(placebo["recall"], "placebo.recall")
     margin_ci_lo = _require_finite(enriched["margin_ci_lo"], "enriched.margin_ci_lo")
     removes_penalty = bool(enriched["removes_length_norm_penalty"])
-    p_recall = _require_finite(placebo["recall"], "placebo.recall")
 
-    beats_placebo = e_recall > p_recall and margin_ci_lo > 0.0
-    return beats_placebo and removes_penalty
+    return margin_ci_lo > 0.0 and removes_penalty
 
 
 # --------------------------------------------------------------------------- #
