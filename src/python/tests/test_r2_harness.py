@@ -410,3 +410,91 @@ def test_local_mem0_config_is_footprint_safe() -> None:
     # embedder + vector store are local providers (no Mem0 cloud, ADR §3.6).
     assert cfg["embedder"]["provider"] == "huggingface"
     assert cfg["vector_store"]["provider"] in {"chroma", "faiss"}
+
+
+# ===========================================================================
+# Slice 5 fix-1 (codex §9) — class-span predicate + runtime corpus-validity raise
+# ===========================================================================
+from eval.r2_parity_eval import GOLD_CLASS_MAP  # noqa: E402 — fix-1 predicate map
+
+
+def _mk_q(query_class: str, doc_ids: list[str]) -> dict:
+    return {
+        "query": f"q over {doc_ids}",
+        "query_class": query_class,
+        "required_evidence": [{"doc_id": d} for d in doc_ids],
+        "answers": ["x"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# S5-fix1-RED-A — the [P1] class definition: multi_session / knowledge_update
+# require evidence spanning >=2 DISTINCT sessions (single-session = mislabeled).
+# ---------------------------------------------------------------------------
+
+
+def test_class_predicate_rejects_single_session_span_class() -> None:
+    """A multi_session / knowledge_update query answerable from ONE session is
+    mislabeled and must be rejected; the same class spanning >=2 sessions passes;
+    factoid / temporal keep the >=1-evidence rule (single-session OK)."""
+    from eval.corpus_validity import class_predicate_ok
+
+    # span classes: single session (even with a #cN chunk suffix on the SAME
+    # session) is REJECTED; two distinct sessions ACCEPTED.
+    assert class_predicate_ok(_mk_q("multi_session", ["sessA"])) is False
+    assert class_predicate_ok(_mk_q("multi_session", ["sessA#c0", "sessA#c1"])) is False
+    assert class_predicate_ok(_mk_q("multi_session", ["sessA", "sessB"])) is True
+    assert class_predicate_ok(_mk_q("knowledge_update", ["sessA"])) is False
+    assert class_predicate_ok(_mk_q("knowledge_update", ["sessA", "sessB"])) is True
+    # non-span classes keep the existing >=1-evidence rule.
+    assert class_predicate_ok(_mk_q("factoid", ["sessA"])) is True
+    assert class_predicate_ok(_mk_q("temporal", ["sessA"])) is True
+    assert class_predicate_ok(_mk_q("factoid", [])) is False
+
+
+def test_pinned_d0a_gold_has_no_single_session_span_violations() -> None:
+    """The committed gold MUST carry ZERO single-session multi_session /
+    knowledge_update cases (the d0a-0441 / d0a-0235 taint codex flagged is gone);
+    every span-class query resolves to >=2 distinct sessions."""
+    gold = json.loads(_D0A_GOLD.read_text(encoding="utf-8"))
+    span_classes = {"multi_session", "knowledge_update"}
+    violations: list[str] = []
+    for q in gold.get("queries", []):
+        cls = GOLD_CLASS_MAP.get(str(q.get("query_class", "")).strip(),
+                                 str(q.get("query_class", "")).strip())
+        if cls not in span_classes:
+            continue
+        sids = {
+            session_id_of(str(e.get("doc_id")))
+            for e in (q.get("required_evidence") or [])
+            if e.get("doc_id")
+        }
+        if len(sids) < 2:
+            violations.append(f"{q.get('query_id')} ({cls}, {len(sids)} session)")
+    assert not violations, f"single-session span-class gold remains: {violations[:10]}"
+
+
+# ---------------------------------------------------------------------------
+# S5-fix1-RED-B — [P2] runtime corpus-validity guard: from_repin_gold /
+# load_repin_gold must RAISE on an underfilled class, not silently score null.
+# ---------------------------------------------------------------------------
+
+
+def test_from_repin_gold_raises_on_underfilled_manifest(tmp_path: Path) -> None:
+    """An under-n_min re-pin gold (the Slice-25 N=0 mode) must RAISE at load,
+    never run to emit null for the missing class."""
+    from eval.r2_parity_eval import load_repin_gold
+
+    underfilled = {
+        "corpus_hash": "lmeoracle_underfilled",
+        "qrels_version": "repin-underfill",
+        "n_min": 150,
+        "queries": [_mk_q("factoid", ["sessA"]) for _ in range(3)],  # << n_min, classes missing
+    }
+    gold_path = tmp_path / "underfilled-gold.json"
+    gold_path.write_text(json.dumps(underfilled), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_repin_gold(gold_path)
+    with pytest.raises(ValueError):
+        R2Harness.from_repin_gold(gold_path, StubAnswerer())
