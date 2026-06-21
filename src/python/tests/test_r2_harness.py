@@ -323,8 +323,9 @@ def test_answerer_seam_scores_over_repinned_gold() -> None:
     R2_RUN, no network, no live LLM — the wiring smoke."""
     from eval.r2_parity_eval import load_repin_gold
 
-    corpus_hash, queries = load_repin_gold(_D0A_GOLD)
+    corpus_hash, qrels_version, queries = load_repin_gold(_D0A_GOLD)
     assert corpus_hash, "re-pin gold carries a corpus_hash"
+    assert qrels_version, "re-pin gold carries a qrels_version"
     assert queries, "re-pin gold carries queries"
 
     harness = R2Harness.from_repin_gold(_D0A_GOLD, StubAnswerer())

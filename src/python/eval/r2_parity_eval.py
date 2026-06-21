@@ -576,8 +576,8 @@ def _parse_gold(raw: dict[str, Any]) -> list[GoldQuery]:
     return out
 
 
-def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
-    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, queries)``.
+def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
 
     Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
     consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
@@ -610,7 +610,22 @@ def load_repin_gold(gold_path: str | Path) -> tuple[str, list[GoldQuery]]:
     queries = _parse_gold(raw)
     if not queries:
         raise ValueError(f"re-pin gold {gold_path!s} has no queries")
-    return corpus_hash, queries
+
+    # The gold's identity is its repin_hash (corpus_hash is the intentionally
+    # STABLE LME corpus hash and cannot distinguish gold revisions). Derive the
+    # qrels_version from repin_hash so distinct gold revisions stay distinct in
+    # results/audit logs (codex §9 fix-2 [P2]). Key off repin_hash first; else
+    # the gold's declared qrels_version; only fall back to corpus_hash if a
+    # (malformed) gold lacks both — which should not happen for the pinned file.
+    repin_hash = str(raw.get("repin_hash", "")).strip()
+    declared_version = str(raw.get("qrels_version", "")).strip()
+    if repin_hash:
+        qrels_version = f"repin-{repin_hash[:8]}"
+    elif declared_version:
+        qrels_version = declared_version
+    else:
+        qrels_version = f"repin-{corpus_hash[:8]}"
+    return corpus_hash, qrels_version, queries
 
 
 def _mean(values: list[float]) -> Optional[float]:
@@ -652,12 +667,12 @@ class R2Harness:
         corpus, so it deliberately bypasses the COR-2 ``__init__`` pin via
         :meth:`from_queries` (the same path LME mode uses). The file must still
         declare a non-empty ``corpus_hash`` and ``queries`` (validated here)."""
-        corpus_hash, queries = load_repin_gold(gold_path)
+        corpus_hash, qrels_version, queries = load_repin_gold(gold_path)
         return cls.from_queries(
             queries,
             answerer,
             corpus_hash=corpus_hash,
-            qrels_version=f"repin-{corpus_hash[:8]}",
+            qrels_version=qrels_version,
         )
 
     @classmethod

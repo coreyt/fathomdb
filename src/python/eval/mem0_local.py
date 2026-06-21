@@ -48,7 +48,7 @@ def run_user_id(run_id: str) -> str:
 def build_local_mem0_config(
     *,
     api_key: str,
-    corpus_hash: str,
+    corpus_hash: str | None = None,
     run_id: str | None = None,
     llm_model: str = LOCAL_LLM_MODEL,
     base_url: str = LOCAL_BASE_URL,
@@ -62,14 +62,20 @@ def build_local_mem0_config(
     anywhere (ADR §3.6).
 
     Per-run isolation (codex §9 [P1#2]): both the Chroma **collection name** and
-    the on-disk **path** are keyed by ``corpus_hash`` + a per-run ``run_id`` (a
-    fresh one is minted when omitted), so re-running on a different corpus/branch
-    cannot reopen a previous run's collection and search stale memories. Pair this
-    with :func:`run_user_id` (``run_user_id(run_id)``) for the ``add``/``search``
-    ``user_id``. Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe
-    required."""
+    the on-disk **path** are keyed by a per-run ``run_id`` (a fresh one is minted
+    when omitted) — optionally prefixed by ``corpus_hash`` when one is supplied —
+    so re-running on a different corpus/branch cannot reopen a previous run's
+    collection and search stale memories. Pair this with :func:`run_user_id`
+    (``run_user_id(run_id)``) for the ``add``/``search`` ``user_id``.
+    Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe required.
+
+    ``corpus_hash`` is OPTIONAL (codex §9 fix-2 [P1]): the only production caller,
+    ``Mem0OSSAdapter.try_build()``, builds this config from runtime env (api_key /
+    optional llm_model / base_url) and does NOT know the corpus_hash. The per-run
+    ``run_id`` alone guarantees uniqueness; when ``corpus_hash`` is given it is
+    folded into the key so a different corpus is also distinct."""
     rid = run_id or new_run_id()
-    key = f"{str(corpus_hash)[:12]}_{rid}"
+    key = f"{str(corpus_hash)[:12]}_{rid}" if corpus_hash else rid
     if chroma_root is None:
         chroma_root = tempfile.gettempdir()
     chroma_path = str(Path(chroma_root) / f"mem0_chroma_{key}")
