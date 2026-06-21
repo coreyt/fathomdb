@@ -14,20 +14,22 @@
   win is ruled out. 5-arm ≥3-hop F1: dense **0.487** > fused 0.450 > fused_rerank 0.415 > ppr_fusion 0.410 >
   bm25 0.370. `decide()`=NO_GO; **no stage 2**. Findings: `0.8.2-m1-FINDINGS.md`; closure:
   `0.8.2-slice-20-output.json`; verdict: `0.8.2-m1-verdict-gpt54.json`.
-- **NEXT (0.8.3):** redirect to the two **non-graph** levers (not graph traversal) per
-  [[graph-arm-doesnt-beat-bm25-pivot]] / [[m1-graph-arm-nogo-registered-n300]]: **D1 passage-dense** (the
-  single strongest M1 arm, 0.487) and **D2 fielded index-key enrichment**. Roadmap `../../roadmap/0.8.3.md`,
-  plan `../plan-0.8.3.md` (DRAFTED 2026-06-20; **EXTENDED 2026-06-21** by the capability-status-report review,
-  `0.8.x-capability-status-report.md`). **New ladder:** `0 (design+pre-register+F5-scope+fallback) → 5 (D1a
-  CLS-fix+eu7+corrected baseline+latency) → 10 (NEW $0 gates: embedder-ceiling probe ∥ D2 content-at-scale
-  proxy) → {15 D1b PRF [gated by the embedder probe] ∥ 20 D2 fielded-FTS engine [gated by the D2 proxy]} →
-  25 D2 build+verdict+latency)`, plus a **parallel HITL-approved D0 measurement-unblock track** (D0a gold-
-  corpus re-pin + answerer seam; D0b Mem0-OSS baseline) that closes the capability report's #1 gap — no
-  end-to-end agentic-memory parity number vs Mem0/Zep. ADJ-6..10: the two $0 gates de-risk both engine
-  builds *before* commitment, D0 makes the parity number producible, latency-regression is a DoD gate on
-  read-path slices, D1 is reframed corrected-fused-vs-corrected-dense (composition co-primary), and a both-
-  null fallback is pre-registered. **The ADJ-6..10 measurement + prerequisite work is HITL-approved
-  (2026-06-21); engine commitment (5/20) + priced runs still wait on the Slice-0 gate.**
+- **NEXT (0.8.3) — RE-ANCHORED 2026-06-21 on the Mem0-parity RESOLUTION.** 0.8.3's gate is a measured
+  outcome: **FathomDB reaches near-parity-or-better vs Mem0** (and Graphiti/Zep) on agentic memory,
+  identical-answerer — the non-graph levers (D1 dense/embedder, D2 fielded enrichment) are *means to close
+  that gap*. Roadmap `../../roadmap/0.8.3.md` §1c, plan `../plan-0.8.3.md`. **Resolution-driven ladder:**
+  `0 (design + pre-register the resolution gate + power-sized N + $0-probe criteria + eu7-break fork +
+  surpass protocol + F5 scope) → 5 (D0a: power-sized gold re-pin + answerer seam + Mem0-OSS de-risk &
+  stand-up) → 10 (D0b: measure FathomDB − {Mem0, Graphiti/Zep, naive-RAG} per-class gap = THE TARGET) →
+  15 ($0 triage: 15a embedder-ceiling PRIMARY ∥ 15b D2 content-at-scale proxy) → 20 (D1 build: CLS-fix +
+  chosen embedder, one re-embed + one eu7 re-clear, PRF only if a gap remains) → 25 (D2 build: fielded-FTS/
+  BM25F + tunable-b, conditional on 15b + a remaining gap) → 30 (resolution verdict + surpass-option
+  package)`. Two-level measurement (external Mem0 gate / internal corrected-fused attribution); D0 is now
+  the Phase-A **spine** (closes the capability report's #1 gap — the parity number must LAND in 0.8.3); the
+  embedder is the **primary** D1 lever (re-embed/eu7 once on the winner); levers ordered by gap-closure,
+  **stop at parity**; **surpass-Mem0 option presented before the HITL parity sign-off**. **The D0 + $0-probe
+  measurement work is HITL-approved (2026-06-21); engine commitment (20/25) + priced runs wait on the
+  Slice-0 gate.**
 - **Reader pivot (2026-06-19):** the **gemini** provider hit a hard **$25 airlock budget cap** mid-effort
   (3 invalid/partial runs: a 429 storm, a process-window death, a relaunch loop) → pivoted to **gpt-5.4**
   (separate provider, ~3.5× cheaper/call, 0 errors) after rebuilding the harness to be **resilient by
