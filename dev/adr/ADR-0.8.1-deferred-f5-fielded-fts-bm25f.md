@@ -9,20 +9,16 @@ origin: dev/plans/0.8.1-implementation.md Slice 35 ("deferred-feature framing AD
 
 # ADR-0.8.1 — Deferred F5: Fielded FTS / BM25F Column-Weighted Scoring
 
-**Status:** `DEFERRED — 0.8.5+` (re-pointed 2026-06-16 from 0.8.2+; 0.8.2–0.8.4 host the
-graph-adjudication track — `dev/roadmap/0.8.2.md`). **No code change follows from this ADR.** Framing-only.
-HITL sign-off is NOT required in Slice 35; this ADR is authored to capture the decision
-model for future work.
+**Status:** `CONDITIONAL — 0.8.3 Slice 25` (RATIFIED by the HITL Slice-0 gate 2026-06-21; re-pointed from
+`DEFERRED — 0.8.5+`). F5 (fielded-FTS/BM25F + tunable-/lower-`b`) is promoted into **0.8.3 Slice 25 as the
+strong form of D2**, gated on **both** (a) the **15b content-at-scale proxy passing** (`probe_15b_pass`,
+design §5) **and** (b) **Slice 20 leaving a measured Mem0 gap**. If either fails, F5/D2 **reverts to 0.8.5+**
+(`dev/roadmap/0.8.5.md` §4). A real engine change now follows from this ADR when its gates pass.
 
-> **2026-06-21 — proposed conditional re-point to 0.8.3 (PENDING HITL ratification).** The 0.8.3 Slice-0
-> design (`dev/design/0.8.3-mem0-parity.md` §6, ADJ-2) **proposes promoting F5** (fielded-FTS/BM25F + the
-> tunable-/lower-`b` length-norm path) **forward into 0.8.3 Slice 25 as the strong form of D2**, conditional
-> on **both** (a) the **15b content-at-scale proxy passing** (`probe_15b_pass`, design §5) **and** (b)
-> **Slice 20 leaving a measured Mem0 gap**. If 15b fails or Slice 20 already reaches parity, F5/D2 **defers
-> to 0.8.5** (this status stands; revert path retained, `dev/roadmap/0.8.5.md` §4). This note records the
-> *proposed* re-point; the binding `status:` above is **unchanged** until the **Slice-0 HITL gate** ratifies
-> it (plan-0.8.3.md §4 — "the F5 ruling … is part of this gate"). Frozen pre-registration:
-> `eval/decision_rule_083.py`.
+> **2026-06-21 — RATIFIED (HITL Slice-0 gate signed).** The 0.8.3 Slice-0 design
+> (`dev/design/0.8.3-mem0-parity.md` §6, ADJ-2) promotion of F5 forward into 0.8.3 Slice 25 is **ratified**;
+> the binding `status:` above is updated accordingly. The conditional gates (15b proxy pass + a remaining
+> Slice-20 Mem0 gap) and the 0.8.5 revert path stand. Frozen pre-registration: `eval/decision_rule_083.py`.
 
 ---
 

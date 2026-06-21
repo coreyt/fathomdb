@@ -169,10 +169,10 @@ by expected gap-closure × cheapness: embedder (highest-leverage per the report)
 > `705bf515`(design) `e38868c8`(F5-ADR/DOC-INDEX) + fix-1 `15ae7735`(RED) `9da63574`(GREEN). Review #1 =
 > CONCERN 2×[P2] (probes stricter than frozen §5 — raw-point gates); fix-1 dropped them to CI-lower-only;
 > re-review PASS. Verdicts: `runs/0.8.3-slice-0-review-20260621T201312Z.md`,
-> `runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.md`. **NEXT = the HITL Slice-0 gate** (sign the
-> pre-registration + ratify the ADJ-2 F5 conditional promotion + the surpass-option protocol) before any
-> Slice-5 work. The D0 + $0-probe measurement is HITL-approved; engine commitment (20/25) + priced runs
-> (10/20/25/30) wait on the gate.
+> `runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.md`. **✅ HITL Slice-0 gate SIGNED 2026-06-21** —
+> pre-registration frozen; **ADJ-2 F5 promotion RATIFIED** (ADR re-pointed to Slice 25, conditional);
+> **surpass-option protocol RATIFIED**. Engine commitment (20/25) + priced runs (10/20/25/30) are unblocked
+> subject to their per-slice cheap-validate / HITL spend checks. **NEXT = Slice 5 (D0a)** — IN PROGRESS.
 
 **Objective.** Freeze: the **two-level measurement** (external Mem0/Zep gate; internal corrected-fused
 attribution), the **near-parity band ε** + **power-sized per-class N** (MDE ≤ ε), the **$0-probe pass/fail
