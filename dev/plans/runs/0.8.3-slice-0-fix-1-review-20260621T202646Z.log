@@ -1,0 +1,581 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019eebdd-4094-7a12-9fff-283f226952bd
+--------
+user
+changes against 'e38868c8'
+exec
+/bin/bash -lc "printf '--- MEMORY.md ---\\n'; sed -n '1,220p' MEMORY.md; printf '\\n--- feedback files referenced ---\\n'; grep -Eo 'feedback_["'^ )]+'"' MEMORY.md | sort -u" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+/bin/bash: line 1: printf: --: invalid option
+printf: usage: printf [-v var] format [arguments]
+sed: can't read MEMORY.md: No such file or directory
+
+--- feedback files referenced ---
+grep: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "git diff --stat e38868c8eacfaa667703d5d8c005c8122f372bba && printf '\\n--- FULL DIFF ---\\n' && git diff --unified=3 e38868c8eacfaa667703d5d8c005c8122f372bba" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ src/python/eval/decision_rule_083.py       | 30 +++++++++++++++++++-----------
+ src/python/tests/test_decision_rule_083.py | 22 +++++++++++++++++-----
+ 2 files changed, 36 insertions(+), 16 deletions(-)
+
+--- FULL DIFF ---
+diff --git a/src/python/eval/decision_rule_083.py b/src/python/eval/decision_rule_083.py
+index 0f110e42..b383a179 100644
+--- a/src/python/eval/decision_rule_083.py
++++ b/src/python/eval/decision_rule_083.py
+@@ -218,21 +218,27 @@ def probe_15a_pass(
+ 
+     Returns ``True`` only when every criterion holds. Non-finite floats raise.
+     """
+-    c_eu8 = _require_finite(cand["eu8"], "cand.eu8")
+-    c_hard = _require_finite(cand["hard"], "cand.hard")
++    # Validate the carried point estimates for finiteness (a malformed endpoint
++    # must fail loudly) but do NOT gate on a raw cand-point > base-point check:
++    # frozen design §5 (15a) gates on the paired margin CI lower bound only.
++    _require_finite(cand["eu8"], "cand.eu8")
++    _require_finite(cand["hard"], "cand.hard")
++    _require_finite(base["eu8"], "base.eu8")
++    _require_finite(base["hard"], "base.hard")
+     eu8_margin_ci_lo = _require_finite(cand["eu8_margin_ci_lo"], "cand.eu8_margin_ci_lo")
+     hard_margin_ci_lo = _require_finite(
+         cand["hard_margin_ci_lo"], "cand.hard_margin_ci_lo"
+     )
+     projected_eu7 = _require_finite(cand["projected_eu7"], "cand.projected_eu7")
+     cpu_feasible = bool(cand["cpu_feasible"])
+-    b_eu8 = _require_finite(base["eu8"], "base.eu8")
+-    b_hard = _require_finite(base["hard"], "base.hard")
+ 
+-    beats_eu8 = c_eu8 > b_eu8 and eu8_margin_ci_lo > 0.0
+-    beats_hard = c_hard > b_hard and hard_margin_ci_lo > 0.0
+     one_bit_survivable = projected_eu7 >= EU7_FLOOR
+-    return beats_eu8 and beats_hard and cpu_feasible and one_bit_survivable
++    return (
++        eu8_margin_ci_lo > 0.0
++        and hard_margin_ci_lo > 0.0
++        and cpu_feasible
++        and one_bit_survivable
++    )
+ 
+ 
+ def probe_15b_pass(
+@@ -252,13 +258,15 @@ def probe_15b_pass(
+ 
+     Returns ``True`` only when both criteria hold. Non-finite floats raise.
+     """
+-    e_recall = _require_finite(enriched["recall"], "enriched.recall")
++    # Validate the carried point estimates for finiteness (a malformed endpoint
++    # must fail loudly) but do NOT gate on a raw enriched-point > placebo-point
++    # check: frozen design §5 (15b) gates on the paired margin CI lower bound only.
++    _require_finite(enriched["recall"], "enriched.recall")
++    _require_finite(placebo["recall"], "placebo.recall")
+     margin_ci_lo = _require_finite(enriched["margin_ci_lo"], "enriched.margin_ci_lo")
+     removes_penalty = bool(enriched["removes_length_norm_penalty"])
+-    p_recall = _require_finite(placebo["recall"], "placebo.recall")
+ 
+-    beats_placebo = e_recall > p_recall and margin_ci_lo > 0.0
+-    return beats_placebo and removes_penalty
++    return margin_ci_lo > 0.0 and removes_penalty
+ 
+ 
+ # --------------------------------------------------------------------------- #
+diff --git a/src/python/tests/test_decision_rule_083.py b/src/python/tests/test_decision_rule_083.py
+index ae8dd18b..fa66b067 100644
+--- a/src/python/tests/test_decision_rule_083.py
++++ b/src/python/tests/test_decision_rule_083.py
+@@ -300,9 +300,15 @@ def test_probe_15a_fails_when_hard_margin_ci_not_above_zero() -> None:
+     assert probe_15a_pass(_cand_15a(hard_margin_ci_lo=-0.01), _BASE_15A) is False
+ 
+ 
+-def test_probe_15a_fails_when_not_beating_base_point() -> None:
+-    # Positive margin CI but candidate point not above base — must fail.
+-    assert probe_15a_pass(_cand_15a(eu8=0.571), _BASE_15A) is False
++def test_probe_15a_point_tie_with_positive_margin_ci_passes() -> None:
++    # Frozen design §5 gates 15a on the paired margin CI lower bound > 0 on BOTH
++    # eu8 and the hard subset (plus cpu_feasible + 1-bit-survivable) — NOT on a raw
++    # candidate-point > base comparison. A candidate whose point estimate TIES the
++    # base (c_eu8 == base.eu8, c_hard == base.hard) but whose margin CI lower bounds
++    # are both > 0 must CLEAR (the unregistered raw-point check is removed; the old
++    # code returned False here = a rounding-induced false negative).
++    cand = _cand_15a(eu8=_BASE_15A["eu8"], hard=_BASE_15A["hard"])
++    assert probe_15a_pass(cand, _BASE_15A) is True
+ 
+ 
+ def test_probe_15a_fails_when_not_cpu_feasible() -> None:
+@@ -343,8 +349,14 @@ def test_probe_15b_fails_when_margin_ci_not_above_zero() -> None:
+     assert probe_15b_pass(_enriched_15b(margin_ci_lo=0.0), _PLACEBO_15B) is False
+ 
+ 
+-def test_probe_15b_fails_when_not_beating_placebo_point() -> None:
+-    assert probe_15b_pass(_enriched_15b(recall=0.50), _PLACEBO_15B) is False
++def test_probe_15b_point_tie_with_positive_margin_ci_passes() -> None:
++    # Frozen design §5 gates 15b on the paired enriched-placebo margin CI lower
++    # bound > 0 AND removes_length_norm_penalty — NOT on a raw enriched-point >
++    # placebo-point comparison. Enriched recall that TIES the placebo point but with
++    # a margin CI lower bound > 0 (and penalty removed) must PASS; the old code
++    # returned False here = a rounding-induced false negative.
++    enriched = _enriched_15b(recall=_PLACEBO_15B["recall"])
++    assert probe_15b_pass(enriched, _PLACEBO_15B) is True
+ 
+ 
+ def test_probe_15b_fails_when_length_norm_penalty_not_removed() -> None:
+
+exec
+/bin/bash -lc 'git status --short && git rev-parse --show-toplevel && git branch --show-current' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+?? dev/plans/prompts/0.8.3-slice-0-prompt.md
+?? dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log
+?? dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.log
+?? dev/plans/runs/0.8.3-slice-0-review-20260621T201312Z.log
+?? dev/plans/runs/0.8.3-slice-0-review-20260621T201312Z.md
+/home/coreyt/projects/fathomdb
+main
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' | sed -n '1,120p'" in /home/coreyt/projects/fathomdb
+ succeeded in 988ms:
+../ado-mcp/MEMORY.md
+
+exec
+/bin/bash -lc "sed -n '180,290p' src/python/eval/decision_rule_083.py && printf '\\n---\\n' && sed -n '260,380p' src/python/tests/test_decision_rule_083.py" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+            blocked_by=blocked_by,
+        )
+
+    # 1 — hard-gate BLOCK (checked first; eu7 before latency).
+    if eu7 < EU7_FLOOR:
+        return _result(_NOT_REACHED, None, "eu7")
+    if not latency_intact:
+        return _result(_NOT_REACHED, None, "latency")
+
+    # 2 — power guard: no parity claim on an under-powered class.
+    for cls in MEMORY_CLASSES:
+        if per_class[cls]["underpowered"]:
+            return _result(_NOT_REACHED, f"underpowered:{cls}", None)
+
+    # 3 — resolution: every class must clear the near-parity band.
+    below = [cls for cls in MEMORY_CLASSES if not per_class[cls]["near_parity"]]
+    if below:
+        return _result(_NOT_REACHED, "below_parity:" + ",".join(below), None)
+
+    return _result(_REACHED, None, None)
+
+
+def probe_15a_pass(
+    cand: Mapping[str, float],
+    base: Mapping[str, float],
+) -> bool:
+    """15a embedder-ceiling probe (PRIMARY) — design §5.
+
+    A candidate embedder *clears* iff it beats the CLS-corrected ``bge-small``
+    reference on **both** eu8 relevance recall@10 and the ~596-q hard subset by a
+    margin whose paired-CI **lower bound > 0**, **and** is CPU-feasible, **and** is
+    1-bit-survivable (projected eu7 ≥ :data:`EU7_FLOOR`).
+
+    ``cand`` carries ``{"eu8", "hard"}`` (candidate point estimates),
+    ``{"eu8_margin_ci_lo", "hard_margin_ci_lo"}`` (the paired ``cand − base`` margin
+    CI lower bounds, already computed), ``cpu_feasible`` (bool), and
+    ``projected_eu7`` (float). ``base`` carries the CLS-corrected ``bge-small``
+    reference points ``{"eu8", "hard"}``.
+
+    Returns ``True`` only when every criterion holds. Non-finite floats raise.
+    """
+    # Validate the carried point estimates for finiteness (a malformed endpoint
+    # must fail loudly) but do NOT gate on a raw cand-point > base-point check:
+    # frozen design §5 (15a) gates on the paired margin CI lower bound only.
+    _require_finite(cand["eu8"], "cand.eu8")
+    _require_finite(cand["hard"], "cand.hard")
+    _require_finite(base["eu8"], "base.eu8")
+    _require_finite(base["hard"], "base.hard")
+    eu8_margin_ci_lo = _require_finite(cand["eu8_margin_ci_lo"], "cand.eu8_margin_ci_lo")
+    hard_margin_ci_lo = _require_finite(
+        cand["hard_margin_ci_lo"], "cand.hard_margin_ci_lo"
+    )
+    projected_eu7 = _require_finite(cand["projected_eu7"], "cand.projected_eu7")
+    cpu_feasible = bool(cand["cpu_feasible"])
+
+    one_bit_survivable = projected_eu7 >= EU7_FLOOR
+    return (
+        eu8_margin_ci_lo > 0.0
+        and hard_margin_ci_lo > 0.0
+        and cpu_feasible
+        and one_bit_survivable
+    )
+
+
+def probe_15b_pass(
+    enriched: Mapping[str, float],
+    placebo: Mapping[str, float],
+) -> bool:
+    """15b D2 content-at-scale proxy probe — design §5.
+
+    Enrichment *passes* iff the fielded content beats the **length-matched
+    placebo** at power (margin paired-CI **lower bound > 0**) **and** fielding
+    removes the FTS length-norm penalty. FAIL ⇒ Slice 25 (D2 engine) defers/drops.
+
+    ``enriched`` carries ``recall`` (enriched point estimate), ``margin_ci_lo``
+    (the paired ``enriched − placebo`` margin CI lower bound, already computed), and
+    ``removes_length_norm_penalty`` (bool). ``placebo`` carries the length-matched
+    foreign-token placebo ``recall``.
+
+    Returns ``True`` only when both criteria hold. Non-finite floats raise.
+    """
+    # Validate the carried point estimates for finiteness (a malformed endpoint
+    # must fail loudly) but do NOT gate on a raw enriched-point > placebo-point
+    # check: frozen design §5 (15b) gates on the paired margin CI lower bound only.
+    _require_finite(enriched["recall"], "enriched.recall")
+    _require_finite(placebo["recall"], "placebo.recall")
+    margin_ci_lo = _require_finite(enriched["margin_ci_lo"], "enriched.margin_ci_lo")
+    removes_penalty = bool(enriched["removes_length_norm_penalty"])
+
+    return margin_ci_lo > 0.0 and removes_penalty
+
+
+# --------------------------------------------------------------------------- #
+# Pre-registration schema lint (frozen as code, imported by the Slice-0 test).
+# --------------------------------------------------------------------------- #
+
+#: The required frozen, dated fields the design doc must carry (design §5). Each
+#: must appear as a ``frozen-field: <key>`` line bearing a YYYY-MM-DD date. These
+#: are matched as substrings of the bolded field headers in §5.
+REQUIRED_FROZEN_FIELDS_083: tuple[str, ...] = (
+    "near-parity-band",
+    "power-sizing rule",
+    "decision-rule",
+    "$0-probe pass/fail",
+    "eu7-break fork",
+    "surpass-option protocol",
+)
+
+#: The design must self-declare it is decision-ready.
+REQUIRED_STATUS_TOKEN: str = "status: decision-ready"
+
+
+---
+        decide_083(table, eu7_recall=0.92, latency_ok=True)
+
+
+# --- determinism ------------------------------------------------------------ #
+def test_determinism_same_input_same_result() -> None:
+    a = decide_083(_all(), eu7_recall=0.92, latency_ok=True)
+    b = decide_083(_all(), eu7_recall=0.92, latency_ok=True)
+    assert a == b
+
+
+# --------------------------------------------------------------------------- #
+# Probe 15a — embedder-ceiling (PRIMARY). Clears iff beats CLS-corrected
+# bge-small on BOTH eu8 and the hard subset by a CI-lower-> 0 margin, is
+# CPU-feasible, AND is 1-bit-survivable (projected eu7 >= 0.90).
+# --------------------------------------------------------------------------- #
+def _cand_15a(**overrides: float) -> dict[str, float]:
+    cand = {
+        "eu8": 0.60,
+        "hard": 0.50,
+        "eu8_margin_ci_lo": 0.01,
+        "hard_margin_ci_lo": 0.01,
+        "cpu_feasible": True,
+        "projected_eu7": 0.91,
+    }
+    cand.update(overrides)
+    return cand
+
+
+_BASE_15A = {"eu8": 0.571, "hard": 0.45}
+
+
+def test_probe_15a_all_criteria_pass() -> None:
+    assert probe_15a_pass(_cand_15a(), _BASE_15A) is True
+
+
+def test_probe_15a_fails_when_eu8_margin_ci_not_above_zero() -> None:
+    assert probe_15a_pass(_cand_15a(eu8_margin_ci_lo=0.0), _BASE_15A) is False
+
+
+def test_probe_15a_fails_when_hard_margin_ci_not_above_zero() -> None:
+    assert probe_15a_pass(_cand_15a(hard_margin_ci_lo=-0.01), _BASE_15A) is False
+
+
+def test_probe_15a_point_tie_with_positive_margin_ci_passes() -> None:
+    # Frozen design §5 gates 15a on the paired margin CI lower bound > 0 on BOTH
+    # eu8 and the hard subset (plus cpu_feasible + 1-bit-survivable) — NOT on a raw
+    # candidate-point > base comparison. A candidate whose point estimate TIES the
+    # base (c_eu8 == base.eu8, c_hard == base.hard) but whose margin CI lower bounds
+    # are both > 0 must CLEAR (the unregistered raw-point check is removed; the old
+    # code returned False here = a rounding-induced false negative).
+    cand = _cand_15a(eu8=_BASE_15A["eu8"], hard=_BASE_15A["hard"])
+    assert probe_15a_pass(cand, _BASE_15A) is True
+
+
+def test_probe_15a_fails_when_not_cpu_feasible() -> None:
+    assert probe_15a_pass(_cand_15a(cpu_feasible=False), _BASE_15A) is False
+
+
+def test_probe_15a_fails_when_not_one_bit_survivable() -> None:
+    assert probe_15a_pass(_cand_15a(projected_eu7=0.89), _BASE_15A) is False
+
+
+def test_probe_15a_projected_eu7_exactly_floor_survives() -> None:
+    assert probe_15a_pass(_cand_15a(projected_eu7=EU7_FLOOR), _BASE_15A) is True
+
+
+# --------------------------------------------------------------------------- #
+# Probe 15b — D2 content-at-scale proxy. Passes iff fielded content beats the
+# length-matched placebo at power (margin CI lower > 0) AND fielding removes the
+# FTS length-norm penalty.
+# --------------------------------------------------------------------------- #
+def _enriched_15b(**overrides: float) -> dict[str, float]:
+    enriched = {
+        "recall": 0.55,
+        "margin_ci_lo": 0.02,
+        "removes_length_norm_penalty": True,
+    }
+    enriched.update(overrides)
+    return enriched
+
+
+_PLACEBO_15B = {"recall": 0.50}
+
+
+def test_probe_15b_all_criteria_pass() -> None:
+    assert probe_15b_pass(_enriched_15b(), _PLACEBO_15B) is True
+
+
+def test_probe_15b_fails_when_margin_ci_not_above_zero() -> None:
+    assert probe_15b_pass(_enriched_15b(margin_ci_lo=0.0), _PLACEBO_15B) is False
+
+
+def test_probe_15b_point_tie_with_positive_margin_ci_passes() -> None:
+    # Frozen design §5 gates 15b on the paired enriched-placebo margin CI lower
+    # bound > 0 AND removes_length_norm_penalty — NOT on a raw enriched-point >
+    # placebo-point comparison. Enriched recall that TIES the placebo point but with
+    # a margin CI lower bound > 0 (and penalty removed) must PASS; the old code
+    # returned False here = a rounding-induced false negative.
+    enriched = _enriched_15b(recall=_PLACEBO_15B["recall"])
+    assert probe_15b_pass(enriched, _PLACEBO_15B) is True
+
+
+def test_probe_15b_fails_when_length_norm_penalty_not_removed() -> None:
+    assert (
+        probe_15b_pass(_enriched_15b(removes_length_norm_penalty=False), _PLACEBO_15B)
+        is False
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Pre-registration schema lint — raises if any frozen/dated field is missing.
+# --------------------------------------------------------------------------- #
+def test_design_doc_exists() -> None:
+    assert _DESIGN_DOC.is_file(), f"design doc not found: {_DESIGN_DOC}"
+
+
+def test_prereg_083_lint_passes_on_real_design_doc() -> None:
+    # No raise == clean (the doc is finalized to decision-ready in Slice 0).
+    lint_preregistration_083(_DESIGN_DOC.read_text(encoding="utf-8"))
+
+
+
+exec
+/bin/bash -lc "grep -RIn \"probe_15a_pass\\|probe_15b_pass\\|15a\\|15b\\|frozen design\" src/python/eval src/python/tests dev docs | sed -n '1,240p'" in /home/coreyt/projects/fathomdb
+ succeeded in 1143ms:
+lta":{"type":"input_json_delta","partial_json":"s). 4) s"}},"session_id":"38adc285-4437-4bbf-a855-0849e65f1132","parent_tool_use_id":null,"uuid":"d79dc1c5-0083-4d4f-b26b-c1e4c9e15a84"}
+dev/plans/runs/E1-prepare-cached-readers-20260504T024906Z.log:7147:{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"true, 4 see"}},"session_id":"38adc285-4437-4bbf-a855-0849e65f1132","parent_tool_use_id":null,"uuid":"240a0cbd-37d7-4bad-b1ec-c6114215aadd"}
+dev/plans/runs/E1-prepare-cached-readers-20260504T024906Z.log:7160:{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"are-miss co"}},"session_id":"38adc285-4437-4bbf-a855-0849e65f1132","parent_tool_use_id":null,"uuid":"486658c0-40a5-4647-9959-929a015bd211"}
+dev/plans/runs/E1-prepare-cached-readers-20260504T024906Z.log:7256:{"type":"assistant","message":{"model":"claude-sonnet-4-6","id":"msg_01Pqv4m2NJ4RtKxvdK7qd9U7","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01Xj6jNgxWP6q6vVJHBG7A38","name":"Bash","input":{"command":"git add dev/plan/runs/E1-prepare-cached-readers-output.json && git commit -m \"$(cat <<'EOF'\ndocs(E1): record INCONCLUSIVE result + output JSON\n\nAC-020 n=5: seq median 157ms (-13.7%), conc median 125ms (+8.7% vs A.1\nbut +3.5ms vs B.1/C.1 environmental baseline of 121.5ms). Parse cost\nconfirmed real (sequential improved) but not AC-020 bottleneck (concurrent\nunchanged from environmental baseline). Kill criterion matched. Next: E.3.\nEOF\n)\"","description":"Commit output JSON"},"caller":{"type":"direct"}}],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1,"cache_creation_input_tokens":1634,"cache_read_input_tokens":123505,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":1634},"output_tokens":53,"service_tier":"standard","inference_geo":"not_available"},"diagnostics":null,"context_management":null},"parent_tool_use_id":null,"session_id":"38adc285-4437-4bbf-a855-0849e65f1132","uuid":"82bd15b5-d9e9-454b-a103-dee01561830a"}
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.log:36:@@ -218,21 +218,27 @@ def probe_15a_pass(
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.log:44:+    # frozen design §5 (15a) gates on the paired margin CI lower bound only.
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.log:70: def probe_15b_pass(
+
+exec
+/bin/bash -lc "sed -n '70,95p' dev/design/0.8.3-mem0-parity.md && printf '\\n---\\n' && sed -n '205,226p' dev/plans/plan-0.8.3.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  ≥ 600 — to be confirmed/escalated at Slice 5; base-retrieval MDE was ≈21pp at n=160, far too coarse, so
+  N must rise). Slice-10 power-check **asserts MDE ≤ ε per class** or **escalates to HITL** (no parity
+  claim on an under-powered class).
+- **frozen-field: decision-rule** (frozen 2026-06-21) (`decide_083`, §9): **REACHED** iff *every* class clears the near-parity
+  band (external CI lower ≥ −ε) **and** eu7 ≥ 0.90 **and** latency intact ⇒ present the surpass-option
+  package; HITL signs "ship at parity" or "pursue surpass". **NOT_REACHED** ⇒ record the **residual per-class
+  gap + the named binding constraint** (most-likely: embedder ceiling / reader / a class-specific lever) +
+  the explicit fork: (a) carry a stronger embedder, (b) the caller-side reader axis (out of library
+  footprint), (c) a memory-class-specific lever. **This replaces the retired "both-null fallback": 0.8.3
+  always ends in a decision, never an open redirect.**
+- **frozen-field: $0-probe pass/fail.** (frozen 2026-06-21)
+  - **15a embedder-ceiling (PRIMARY):** a candidate embedder *clears* iff it beats CLS-corrected `bge-small`
+    on eu8 + the hard subset by a margin whose CI lower > 0 **and** is CPU-feasible **and** 1-bit-survivable
+    (projected eu7 ≥ 0.90). Output = the embedder projected to close the most Mem0 gap; if none clears,
+    Slice 20 keeps CLS-corrected `bge-small`.
+  - **15b D2 content-at-scale proxy:** enrichment *passes* iff fielded content beats the **length-matched
+    placebo** at power (CI lower > 0) **and** fielding removes the FTS length-norm penalty. FAIL ⇒ Slice 25
+    (D2 engine) defers/drops.
+- **frozen-field: eu7-break fork.** (frozen 2026-06-21) Any embedder/pooling change rewrites stored vectors ⇒ re-clear eu7 ≥0.90
+  **once** on the chosen embedder. Breach = **BLOCK → HITL** + the fidelity-recovery fork (rotation/whitening
+  before 1-bit sign-quant; raise ANN fan-out K>192; a 2-bit option) **and** a **0.937→0.896 bisect** (is CLS
+  the cause, or the pre-existing unbisected vector-path regression?). Today's point eu7 = 0.896 (CI-hi 0.925).
+- **frozen-field: surpass-option protocol.** (frozen 2026-06-21) At every Phase-B gate the orchestrator records whether a
+  credible surpass-Mem0 lever exists (a 15a embedder with headroom; a class-specific lever; the caller-side
+  reader axis). The **Slice-30 sign-off package presents it** with cost + expected lift, so HITL chooses
+  "ship at parity" vs "spend to surpass" — never a silent stop at the parity line.
+
+---
+**Reserved follow-on (11–14):** none — a *third* external comparator is OUT; the **GraphRAG/HippoRAG**
+multi-hop head-to-head is the 0.8.4 resolution ([`../roadmap/0.8.4.md`](../roadmap/0.8.4.md)).
+
+### Slice 15 — $0 triage probes: embedder-ceiling (primary) ∥ D2 content-at-scale proxy · `[implementation (measurement, $0 LLM-free)]` · depends-on: 10 · gaps: 16–19
+**Objective (ADJ-6, ADJ-7).** Two $0, LLM-free probes that pick the Phase-B levers by expected
+gap-closure:
+- **(15a) Embedder-ceiling — PRIMARY.** A/B the CLS-corrected `bge-small` vs **genuinely stronger
+  CPU/ONNX embedders** (`bge-base`, `gte-base`, `e5-base`, a retrieval/memory-tuned candidate) on eu8 +
+  the ~596-q hard subset + (where cheaply derivable) the memory-class recall, within the candle/ONNX
+  footprint (`EmbedderChoice::Caller`+ONNX, [[embed-completeness-and-gpu-readiness]]). **Output:** the
+  embedder projected to close the most Mem0 gap subject to CPU-feasibility + 1-bit survivability.
+- **(15b) D2 content-at-scale proxy.** Measure fielded-enrichment content value at scale in an **in-harness
+  separate index (no migration)** vs the corrected baseline + a length-matched placebo; confirm content >
+  placebo at power and that fielding removes the FTS length-norm penalty.
+**TDD.** RED: each probe asserts its pre-registered metric + a mechanical PASS/FAIL; placebo length-match
+(15b); ONNX-embedder load determinism (15a). GREEN: the two runners. Outputs →
+`runs/0.8.3-s15a-embedder.json`, `runs/0.8.3-s15b-d2-proxy-n*.json`.
+**Gate semantics:** **15a** picks the Slice-20 embedder (corrected `bge-small` if no candidate clears it
+with headroom; else the winner); **15b FAIL** ⇒ Slice 25 (D2 engine) defers/drops. **Surpass check:** if a
+15a candidate *overshoots* the projected parity gap, flag it as a surpass-Mem0 option for the Slice-30
+package.
+**DoD.** EVAL-ONLY / $0 / deterministic. Codex §9 (probe validity + gate logic). No HITL gate
+
+exec
+/bin/bash -lc "python - <<'PY'
+from pathlib import Path
+text=Path('dev/design/0.8.3-mem0-parity.md').read_text()
+for needle in ['15a embedder-ceiling','15b D2 content-at-scale proxy','margin','paired-CI','beats CLS-corrected','beats the **length-matched placebo**']:
+    print('\\nNEEDLE',needle)
+    idx=text.find(needle)
+    print(idx)
+    if idx"'!=-1:
+        start=max(0,idx-180); end=min(len(text), idx+500)
+        print(text[start:end])
+PY' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+
+NEEDLE 15a embedder-ceiling
+5891
+r. **This replaces the retired "both-null fallback": 0.8.3
+  always ends in a decision, never an open redirect.**
+- **frozen-field: $0-probe pass/fail.** (frozen 2026-06-21)
+  - **15a embedder-ceiling (PRIMARY):** a candidate embedder *clears* iff it beats CLS-corrected `bge-small`
+    on eu8 + the hard subset by a margin whose CI lower > 0 **and** is CPU-feasible **and** 1-bit-survivable
+    (projected eu7 ≥ 0.90). Output = the embedder projected to close the most Mem0 gap; if none clears,
+    Slice 20 keeps CLS-corrected `bge-small`.
+  - **15b D2 content-at-scale proxy:** enrichment *passes* iff fielded content beats the **length-matched
+    placebo** at power (CI lower
+
+NEEDLE 15b D2 content-at-scale proxy
+6259
+*and** 1-bit-survivable
+    (projected eu7 ≥ 0.90). Output = the embedder projected to close the most Mem0 gap; if none clears,
+    Slice 20 keeps CLS-corrected `bge-small`.
+  - **15b D2 content-at-scale proxy:** enrichment *passes* iff fielded content beats the **length-matched
+    placebo** at power (CI lower > 0) **and** fielding removes the FTS length-norm penalty. FAIL ⇒ Slice 25
+    (D2 engine) defers/drops.
+- **frozen-field: eu7-break fork.** (frozen 2026-06-21) Any embedder/pooling change rewrites stored vectors ⇒ re-clear eu7 ≥0.90
+  **once** on the chosen embedder. Breach = **BLOCK → HITL** + the fidelity-recovery fork (rotation/whitening
+  before 1-bit sign-qua
+
+NEEDLE margin
+6028
+obe pass/fail.** (frozen 2026-06-21)
+  - **15a embedder-ceiling (PRIMARY):** a candidate embedder *clears* iff it beats CLS-corrected `bge-small`
+    on eu8 + the hard subset by a margin whose CI lower > 0 **and** is CPU-feasible **and** 1-bit-survivable
+    (projected eu7 ≥ 0.90). Output = the embedder projected to close the most Mem0 gap; if none clears,
+    Slice 20 keeps CLS-corrected `bge-small`.
+  - **15b D2 content-at-scale proxy:** enrichment *passes* iff fielded content beats the **length-matched
+    placebo** at power (CI lower > 0) **and** fielding removes the FTS length-norm penalty. FAIL ⇒ Slice 25
+    (D2 engine) defers/drops.
+- **frozen-field: eu7-break for
+
+NEEDLE paired-CI
+4473
+may redefine these.
+
+- **frozen-field: near-parity-band ε = 0.05** (frozen 2026-06-21) (5 percentage points). "Near-parity-or-better" on a class =
+  the external `FathomDB − Mem0` paired-CI **lower bound ≥ −ε**. "Better" = CI lower bound **> 0**.
+- **frozen-field: power-sizing rule.** (frozen 2026-06-21) Per-class N is the smallest N whose paired **MDE ≤ ε** at the
+  **Slice-5-measured** per-class variance + pairing ρ. The *rule* is frozen now; the *number* is computed
+  deterministically from the frozen variance at Slice 5 (provisional target per-class **N ≥ 150**, pooled
+  ≥ 600 — to be confirmed/escalated at Slice 5; base-retrieval MDE was ≈21pp at n=160, far too coars
+
+NEEDLE beats CLS-corrected
+5962
+s in a decision, never an open redirect.**
+- **frozen-field: $0-probe pass/fail.** (frozen 2026-06-21)
+  - **15a embedder-ceiling (PRIMARY):** a candidate embedder *clears* iff it beats CLS-corrected `bge-small`
+    on eu8 + the hard subset by a margin whose CI lower > 0 **and** is CPU-feasible **and** 1-bit-survivable
+    (projected eu7 ≥ 0.90). Output = the embedder projected to close the most Mem0 gap; if none clears,
+    Slice 20 keeps CLS-corrected `bge-small`.
+  - **15b D2 content-at-scale proxy:** enrichment *passes* iff fielded content beats the **length-matched
+    placebo** at power (CI lower > 0) **and** fielding removes the FTS length-norm penalty. FAIL ⇒ Slic
+
+NEEDLE beats the **length-matched placebo**
+-1
+
+exec
+/bin/bash -lc "grep -RIn \"eu8_margin_ci_lo\\|hard_margin_ci_lo\\|margin_ci_lo\\|cpu_feasible\\|removes_length_norm_penalty\" src/python dev | sed -n '1,200p'" in /home/coreyt/projects/fathomdb
+exec
+/bin/bash -lc "grep -RIn \"probe_15a_pass\\|probe_15b_pass\" -n . | sed -n '1,120p'" in /home/coreyt/projects/fathomdb
+ succeeded in 1611ms:
+/tests/test_decision_rule_083.py:279:        "eu8_margin_ci_lo": 0.01,
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:963:./src/python/tests/test_decision_rule_083.py:280:        "hard_margin_ci_lo": 0.01,
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:964:./src/python/tests/test_decision_rule_083.py:281:        "cpu_feasible": True,
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:966:./src/python/tests/test_decision_rule_083.py:296:    assert probe_15a_pass(_cand_15a(eu8_margin_ci_lo=0.0), _BASE_15A) is False
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:967:./src/python/tests/test_decision_rule_083.py:300:    assert probe_15a_pass(_cand_15a(hard_margin_ci_lo=-0.01), _BASE_15A) is False
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:968:./src/python/tests/test_decision_rule_083.py:305:    # eu8 and the hard subset (plus cpu_feasible + 1-bit-survivable) — NOT on a raw
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:970:./src/python/tests/test_decision_rule_083.py:314:def test_probe_15a_fails_when_not_cpu_feasible() -> None:
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:971:./src/python/tests/test_decision_rule_083.py:315:    assert probe_15a_pass(_cand_15a(cpu_feasible=False), _BASE_15A) is False
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:974:./src/python/tests/test_decision_rule_083.py:334:        "margin_ci_lo": 0.02,
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:975:./src/python/tests/test_decision_rule_083.py:335:        "removes_length_norm_penalty": True,
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:977:./src/python/tests/test_decision_rule_083.py:349:    assert probe_15b_pass(_enriched_15b(margin_ci_lo=0.0), _PLACEBO_15B) is False
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:978:./src/python/tests/test_decision_rule_083.py:354:    # bound > 0 AND removes_length_norm_penalty — NOT on a raw enriched-point >
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:980:./src/python/tests/test_decision_rule_083.py:364:        probe_15b_pass(_enriched_15b(removes_length_norm_penalty=False), _PLACEBO_15B)
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:985:./src/python/eval/decision_rule_083.py:214:    ``{"eu8_margin_ci_lo", "hard_margin_ci_lo"}`` (the paired ``cand − base`` margin
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:986:./src/python/eval/decision_rule_083.py:215:    CI lower bounds, already computed), ``cpu_feasible`` (bool), and
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:987:./src/python/eval/decision_rule_083.py:228:    eu8_margin_ci_lo = _require_finite(cand["eu8_margin_ci_lo"], "cand.eu8_margin_ci_lo")
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:988:./src/python/eval/decision_rule_083.py:229:    hard_margin_ci_lo = _require_finite(
+dev/plans/runs/0.8.3-slice-0-fix-1-review-20260621T202615Z.log:989:./src/python/eval/decision_rule_083.py:230:        cand["hard_margin_ci_lo"], "cand.hard_margin_ci_lo"
+
+exec
+/bin/bash -lc 'pytest -q src/python/tests/test_decision_rule_083.py -q' in /home/coreyt/projects/fathomdb
+ succeeded in 349ms:
+...............................................                          [100%]
+
+exec
+/bin/bash -lc "rg -n \"probe_15[ab]_pass\" src/python dev --glob '"'!dev/plans/runs/**'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md:20:> on **both** (a) the **15b content-at-scale proxy passing** (`probe_15b_pass`, design §5) **and** (b)
+dev/DOC-INDEX.md:153:| `src/python/eval/decision_rule_083.py` (+ `tests/test_decision_rule_083.py`) | **0.8.3 frozen RESOLUTION decision rule** (Slice 0) — the executable pre-registration extending `m1_decision_rule.py`'s style (pure stdlib, deterministic, consumes already-computed summary stats; **no `fathomdb`/`scipy`/`numpy`/`networkx`/RNG/I-O**): `EPS_NEAR_PARITY = 0.05`, `MEMORY_CLASSES`, `decide_083` (**BLOCK** on eu7 < 0.90 / latency first → per-class power guard `mde > ε` → **REACHED** iff every class `ci_lo ≥ −ε`; `surpass_candidates` = classes `ci_lo > 0`; `below_parity:`/`underpowered:` binding-constraint), `probe_15a_pass`/`probe_15b_pass` (the §5 $0-probe criteria), and `lint_preregistration_083` (asserts the design carries every dated `frozen-field:`). Tests run under plain `pytest` (no extension build; `FATHOMDB_TESTS_NO_REBUILD=1`) | 0.8.3 Slice 0 | 2026-06-21 |
+src/python/tests/test_decision_rule_083.py:41:    probe_15a_pass,
+src/python/tests/test_decision_rule_083.py:42:    probe_15b_pass,
+src/python/tests/test_decision_rule_083.py:292:    assert probe_15a_pass(_cand_15a(), _BASE_15A) is True
+src/python/tests/test_decision_rule_083.py:296:    assert probe_15a_pass(_cand_15a(eu8_margin_ci_lo=0.0), _BASE_15A) is False
+src/python/tests/test_decision_rule_083.py:300:    assert probe_15a_pass(_cand_15a(hard_margin_ci_lo=-0.01), _BASE_15A) is False
+src/python/tests/test_decision_rule_083.py:311:    assert probe_15a_pass(cand, _BASE_15A) is True
+src/python/tests/test_decision_rule_083.py:315:    assert probe_15a_pass(_cand_15a(cpu_feasible=False), _BASE_15A) is False
+src/python/tests/test_decision_rule_083.py:319:    assert probe_15a_pass(_cand_15a(projected_eu7=0.89), _BASE_15A) is False
+src/python/tests/test_decision_rule_083.py:323:    assert probe_15a_pass(_cand_15a(projected_eu7=EU7_FLOOR), _BASE_15A) is True
+src/python/tests/test_decision_rule_083.py:345:    assert probe_15b_pass(_enriched_15b(), _PLACEBO_15B) is True
+src/python/tests/test_decision_rule_083.py:349:    assert probe_15b_pass(_enriched_15b(margin_ci_lo=0.0), _PLACEBO_15B) is False
+src/python/tests/test_decision_rule_083.py:359:    assert probe_15b_pass(enriched, _PLACEBO_15B) is True
+src/python/tests/test_decision_rule_083.py:364:        probe_15b_pass(_enriched_15b(removes_length_norm_penalty=False), _PLACEBO_15B)
+src/python/eval/decision_rule_083.py:12:2. :func:`probe_15a_pass` / :func:`probe_15b_pass` — the two $0, LLM-free triage
+src/python/eval/decision_rule_083.py:202:def probe_15a_pass(
+src/python/eval/decision_rule_083.py:244:def probe_15b_pass(
+dev/design/0.8.3-mem0-parity.md:133:- `probe_15a_pass(cand, base) -> bool`, `probe_15b_pass(enriched, placebo) -> bool` (the §5 criteria).
+dev/plans/prompts/0.8.3-slice-0-prompt.md:41:   `ci_lo > 0`), `probe_15a_pass`, `probe_15b_pass`, and `lint_preregistration_083(design_md_text)`
+
+codex
+The change aligns the probe implementations with the preregistered rule in the design doc by treating the paired margin CI lower bound as the gate and retaining finiteness validation for the carried point estimates. I did not identify any discrete, actionable regression in the diff.
+The change aligns the probe implementations with the preregistered rule in the design doc by treating the paired margin CI lower bound as the gate and retaining finiteness validation for the carried point estimates. I did not identify any discrete, actionable regression in the diff.

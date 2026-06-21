@@ -1,0 +1,50 @@
+{
+  "phase": "0.8.3-slice-0-fix-1",
+  "baseline_sha": "15fb3dec",
+  "branch": "slice-0-20260621T190159Z",
+  "head_sha": "916b1d40445ebc9dce9410d483f807780f2fdae0",
+  "commits": [
+    {
+      "sha": "e8b06734",
+      "kind": "RED",
+      "subject": "test(0.8.3/Slice 0 fix-1): RED — probe point-tie with positive margin CI must pass (registered §5)"
+    },
+    {
+      "sha": "916b1d40",
+      "kind": "GREEN",
+      "subject": "fix(0.8.3/Slice 0 fix-1): probes gate on CI-lower only (drop unregistered raw-point checks; codex §9 2×P2)"
+    }
+  ],
+  "findings_addressed": [
+    {
+      "id": "P2-1",
+      "ref": "src/python/eval/decision_rule_083.py:232-233 (probe_15a_pass)",
+      "summary": "Removed unregistered raw-point checks `c_eu8 > b_eu8` and `c_hard > b_hard`. probe_15a_pass now gates on `eu8_margin_ci_lo > 0.0 and hard_margin_ci_lo > 0.0 and cpu_feasible and one_bit_survivable` only, matching frozen design §5 (15a). Candidate/base point fields are still validated for finiteness via inline `_require_finite(...)` (no unused locals)."
+    },
+    {
+      "id": "P2-2",
+      "ref": "src/python/eval/decision_rule_083.py:260 (probe_15b_pass)",
+      "summary": "Removed unregistered raw-point check `e_recall > p_recall`. probe_15b_pass now gates on `margin_ci_lo > 0.0 and removes_penalty` only, matching frozen design §5 (15b). enriched/placebo recall points still validated for finiteness inline (no unused locals)."
+    }
+  ],
+  "tests": {
+    "red_demonstrated": "test_probe_15a_point_tie_with_positive_margin_ci_passes + test_probe_15b_point_tie_with_positive_margin_ci_passes FAILED against pre-fix code (assert False is True); replaced the old raw-point FAIL tests test_probe_15a_fails_when_not_beating_base_point and test_probe_15b_fails_when_not_beating_placebo_point.",
+    "green_result": "47 passed (after fix)"
+  },
+  "agent_verify_result": {
+    "status": "pass",
+    "tail": "pytest: 47 passed in 0.12s | lint: lint OK | ruff: All checks passed! | canonical repo: no edits from this agent (only orchestrator-owned untracked prompt/review artifacts present)"
+  },
+  "scope_compliance": {
+    "files_touched": [
+      "src/python/eval/decision_rule_083.py",
+      "src/python/tests/test_decision_rule_083.py",
+      "dev/plans/runs/0.8.3-slice-0-fix-1-output.json"
+    ],
+    "no_design_value_changes": true,
+    "no_decide_083_or_lint_changes": true,
+    "no_m1_decision_rule_changes": true,
+    "no_native_build": true
+  },
+  "next_step_for_orchestrator": "cherry-pick fix-1 to main; re-review codex §9; then HITL Slice-0 gate"
+}

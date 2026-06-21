@@ -164,6 +164,16 @@ by expected gap-closure × cheapness: embedder (highest-leverage per the report)
 ## 4. Per-slice contracts
 
 ### Slice 0 — Design + pre-registration (resolution gate + surpass protocol + F5 scope) · `[design-adr]` · depends-on: — · gaps: 1–4
+> **✅ CLOSED on main 2026-06-21 (codex §9 PASS after fix-1).** Frozen rule `eval/decision_rule_083.py`
+> + `dev/design/0.8.3-mem0-parity.md` (`decision-ready`). Commits: `c611535c`(RED) `424752f8`(GREEN)
+> `705bf515`(design) `e38868c8`(F5-ADR/DOC-INDEX) + fix-1 `15ae7735`(RED) `9da63574`(GREEN). Review #1 =
+> CONCERN 2×[P2] (probes stricter than frozen §5 — raw-point gates); fix-1 dropped them to CI-lower-only;
+> re-review PASS. Verdicts: `runs/0.8.3-slice-0-review-20260621T201312Z.md`,
+> `runs/0.8.3-slice-0-fix-1-review-20260621T202646Z.md`. **NEXT = the HITL Slice-0 gate** (sign the
+> pre-registration + ratify the ADJ-2 F5 conditional promotion + the surpass-option protocol) before any
+> Slice-5 work. The D0 + $0-probe measurement is HITL-approved; engine commitment (20/25) + priced runs
+> (10/20/25/30) wait on the gate.
+
 **Objective.** Freeze: the **two-level measurement** (external Mem0/Zep gate; internal corrected-fused
 attribution), the **near-parity band ε** + **power-sized per-class N** (MDE ≤ ε), the **$0-probe pass/fail
 criteria** (15a embedder headroom; 15b enriched-beats-placebo-at-power), the **eu7-break fork**, the
