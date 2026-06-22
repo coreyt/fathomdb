@@ -341,27 +341,27 @@ class BM25Okapi:
 # --------------------------------------------------------------------------- #
 
 
-def projected_eu7(
+def projected_eu7_recalls(
     doc_vecs: np.ndarray,
     query_vecs: np.ndarray,
     *,
     hamming_k: int = PROJECTED_EU7_K,
     top_k: int = 10,
     mean_center: bool = True,
-) -> float:
-    """1-bit survivability proxy: recall@``top_k`` of the sign-quant Hamming→f32
-    rerank path vs the model's OWN f32-exact top-``top_k`` (design §5.4).
+) -> list[float]:
+    """Per-query 1-bit survivability recall series backing :func:`projected_eu7`.
 
-    Mean-centering ON (default): subtract the per-corpus mean f32 vector from BOTH
-    doc and query vectors BEFORE sign-quant; the f32 rerank uses the UN-centered
-    vectors (centering is a sign-quant bias correction only). Inputs are taken
-    as-is (callers pass the L2-normalized f32 vectors); no re-normalization here.
+    Returns the per-query recall@``top_k`` of the sign-quant Hamming→f32 rerank
+    path vs the model's OWN f32-exact top-``top_k`` (design §5.4). The mean of
+    this series is the gated ``projected_eu7`` point; exposing the per-query
+    series lets the caller bootstrap a transparency CI over the SAME values the
+    point summarizes (no separate metric). Empty inputs -> empty series.
     """
     docs = np.asarray(doc_vecs, dtype=np.float32)
     queries = np.asarray(query_vecs, dtype=np.float32)
     n_docs = docs.shape[0]
     if n_docs == 0 or queries.shape[0] == 0:
-        return 0.0
+        return []
     k = min(top_k, n_docs)
     kk = min(hamming_k, n_docs)
 
@@ -397,6 +397,35 @@ def projected_eu7(
         exact_set = set(exact[i].tolist())
         hit = len(exact_set.intersection(rer.tolist()))
         recalls.append(hit / len(exact_set))
+    return recalls
+
+
+def projected_eu7(
+    doc_vecs: np.ndarray,
+    query_vecs: np.ndarray,
+    *,
+    hamming_k: int = PROJECTED_EU7_K,
+    top_k: int = 10,
+    mean_center: bool = True,
+) -> float:
+    """1-bit survivability proxy: recall@``top_k`` of the sign-quant Hamming→f32
+    rerank path vs the model's OWN f32-exact top-``top_k`` (design §5.4) — the
+    GATED point estimate (mean over the per-query series).
+
+    Mean-centering ON (default): subtract the per-corpus mean f32 vector from BOTH
+    doc and query vectors BEFORE sign-quant; the f32 rerank uses the UN-centered
+    vectors (centering is a sign-quant bias correction only). Inputs are taken
+    as-is (callers pass the L2-normalized f32 vectors); no re-normalization here.
+    """
+    recalls = projected_eu7_recalls(
+        doc_vecs,
+        query_vecs,
+        hamming_k=hamming_k,
+        top_k=top_k,
+        mean_center=mean_center,
+    )
+    if not recalls:
+        return 0.0
     return float(np.mean(recalls))
 
 
@@ -1182,7 +1211,10 @@ def run_probe(
             h10, h50, hranks = hard_hits(
                 corpus.doc_ids, docs, qvecs, queries, hard_set
             )
-            proj = projected_eu7(docs, qvecs, hamming_k=PROJECTED_EU7_K, mean_center=True)
+            proj_recalls = projected_eu7_recalls(
+                docs, qvecs, hamming_k=PROJECTED_EU7_K, mean_center=True
+            )
+            proj = float(np.mean(proj_recalls)) if proj_recalls else 0.0
             # ms_per_query: single-text; ms_per_doc: batched (per-item). Both
             # measured steady-state (model resident + warmup), excluding load.
             ms_q = measure_latency(
@@ -1211,6 +1243,7 @@ def run_probe(
             "hard_r50_hits": h50,
             "hard_ranks": hranks,
             "projected_eu7": proj,
+            "projected_eu7_recalls": proj_recalls,
             "ms_per_query": ms_q,
             "ms_per_doc": ms_d,
         }
@@ -1247,6 +1280,18 @@ def run_probe(
             seed=bootstrap_seed,
             n_resamples=bootstrap_resamples,
         )
+        # projected_eu7 TRANSPARENCY CI (design §5.4): bootstrap over the SAME
+        # per-query recall series the gated point summarizes. Single-series (not
+        # cand−base): reuse paired_bootstrap_ci with a zero baseline so the point
+        # IS mean(recalls) == raw["projected_eu7"]. CI is reported ONLY; the gate
+        # below still consumes the POINT (codex §9 [P2]).
+        proj_recalls = raw["projected_eu7_recalls"]
+        proj_eu7_ci = paired_bootstrap_ci(
+            proj_recalls,
+            [0.0] * len(proj_recalls),
+            seed=bootstrap_seed,
+            n_resamples=bootstrap_resamples,
+        )
         cpu_feasible = raw["ms_per_query"] <= CPU_FEASIBLE_MULT * base_ms
         cand_metrics = {
             "eu8": _mean(raw["eu8_hits"]),
@@ -1267,6 +1312,7 @@ def run_probe(
             },
             "memory_class_recall": None,
             "projected_eu7": raw["projected_eu7"],
+            "projected_eu7_ci": proj_eu7_ci,
             "cpu_latency": {
                 "ms_per_query": raw["ms_per_query"],
                 "ms_per_doc": raw["ms_per_doc"],
@@ -1392,23 +1438,32 @@ def write_outputs(result: dict[str, Any], *, out_json: Path, out_md: Path) -> No
     lines.append("")
     lines.append("## Per-candidate verdict")
     lines.append("")
-    lines.append("| candidate | eu8 | hard@10 | proj_eu7 | eu8_ci_lo | hard_ci_lo | "
-                 "cpu | in_lib | PASS |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.append("| candidate | eu8 | hard@10 | proj_eu7 | proj_eu7_ci | eu8_ci_lo | "
+                 "hard_ci_lo | cpu | in_lib | PASS |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for name, m in result["per_candidate"].items():
         if m.get("measurement_status") == "failed":
             lines.append(
-                f"| {name} | FAILED | — | — | — | — | — | "
+                f"| {name} | FAILED | — | — | — | — | — | — | "
                 f"{m.get('in_library_feasible')} | n/a |"
             )
             continue
+        proj_ci = m["projected_eu7_ci"]
         lines.append(
             f"| {name} | {m['eu8']:.4f} | {m['hard']['r@10']:.4f} | "
-            f"{m['projected_eu7']:.4f} | {m['eu8_margin_ci']['lo']:+.4f} | "
+            f"{m['projected_eu7']:.4f} | "
+            f"[{proj_ci['lo']:.4f}, {proj_ci['hi']:.4f}] | "
+            f"{m['eu8_margin_ci']['lo']:+.4f} | "
             f"{m['hard_margin_ci']['lo']:+.4f} | "
             f"{m['cpu_latency']['feasible']} | {m['in_library_feasible']} | "
             f"{'PASS' if m['probe_15a_pass'] else 'fail'} |"
         )
+    lines.append("")
+    lines.append(
+        "_proj_eu7_ci is a transparency bootstrap CI over the per-query "
+        "projected_eu7 recall series; the gate consumes the POINT (proj_eu7 "
+        ">= 0.90) only._"
+    )
     lines.append("")
     failures = result.get("measurement_failures") or []
     if failures:
