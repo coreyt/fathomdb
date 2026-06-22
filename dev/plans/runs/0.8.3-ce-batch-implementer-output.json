@@ -1,0 +1,34 @@
+{
+  "phase": "0.8.3-ce-batch-release",
+  "baseline_sha": "5bcd447fbc29283c29e96d5ff29aee7905afe7fe",
+  "branch": "0.8.3-ce-batch-release",
+  "head_sha": "2ca589528b5a73fb4501f88059ea300a82f64593",
+  "commits": [
+    {
+      "sha": "412b618d7bbe0fb3aa9a952e8c42f52c10bcf351",
+      "type": "test",
+      "subject": "test(0.8.3/CE-batch): RED — score_batch==per-pair equivalence + determinism + empty"
+    },
+    {
+      "sha": "2ca589528b5a73fb4501f88059ea300a82f64593",
+      "type": "feat",
+      "subject": "feat(0.8.3/CE-batch): GREEN — batched CE forward in score_batch + wire rerank_fused"
+    }
+  ],
+  "what_changed": {
+    "fathomdb-embedder/src/candle_reranker.rs": "Added pub fn score_batch(&self, query, passages: &[&str]) -> Result<Vec<f32>, candle_core::Error>. Tokenizes each (query,passage) pair exactly as score() (encode((query,passage), true)); right-pads every row to L_max over the batch (real tokens left-aligned so [CLS] stays at position 0; pad slots get tokenizer [PAD] id, token_type_id 0, attention_mask 0); ONE self.model.forward over (N,L_max) input_ids/type_ids/Some(mask); CLS = narrow(1,0,1).squeeze(1) -> (N,H) -> pooler->tanh->classifier -> squeeze(1) -> to_vec1::<f32> in input order. Empty passages -> Ok(vec![]) with no forward. Kept the single score() unchanged. Added a #[cfg(test)] mod with 4 tests (load-from-cache or skip).",
+    "fathomdb-engine/src/lib.rs": "Added CandleCrossEncoder::score_batch(&self, query, passages: &[&str]) -> Vec<f64>: tries inner.score_batch; on whole-batch Err falls back to per-pair score() so one bad pair cannot neutralize the pool; each element keeps the neutral-0.0-on-error contract. Rewired ce_rerank (the rerank_fused -> ce_rerank top-N loop, ~line 4943): collect bodies: Vec<&str> from the top-N pool, call model.score_batch(_query, &bodies) ONCE, zip the logits into the existing RRF-min-max-norm / sigmoid / ALPHA=0.3 blend / sort loop. Ranking math byte-unchanged."
+  },
+  "gate_results": {
+    "cargo_test_embedder": "cargo test -p fathomdb-embedder --features default-reranker candle_reranker — 4 passed; 0 failed (score_batch_matches_per_pair, score_batch_is_deterministic, score_batch_short_plus_capped, score_batch_empty). RED (against the neutral-logit stub) had 2 failed (the two equivalence tests) before the real impl.",
+    "batched_vs_per_pair_max_abs_diff": "0.0 (exactly 0e0) across the 3-pair differing-length fixture — batched gemm produced bit-identical CLS logits vs per-pair on this CPU/candle build; tolerance bar was <1e-3.",
+    "cargo_build_engine": "cargo build -p fathomdb-engine --features default-reranker — Finished, clean.",
+    "cargo_clippy": "cargo clippy -p fathomdb-embedder -p fathomdb-engine --features default-reranker — Finished, no warnings.",
+    "python_ruff_pyright": "n/a — Rust-only slice; no Python or canonical-doc edits."
+  },
+  "candle_masking_subtlety": "candle-transformers 0.10.2 BertModel::forward(input_ids, token_type_ids, Some(attention_mask)) accepts a 2-D (N,L) mask — the SAME shape score() already passes for N=1 — and lifts it via get_extended_attention_mask (rank 2 -> unsqueeze(1).unsqueeze(1)) adding f32::MIN to zero-mask positions before the encoder softmax. So padded positions are removed from every attention sum and the CLS hidden state at position 0 (never padded, content left-aligned / pad on the right) attends only to that pair's real tokens. The pad token id is therefore inert to the output; [PAD] (id from tokenizer, fallback 0) is used only to keep embeddings in-vocab. No forward signature mismatch — no STOP condition hit.",
+  "agent_verify_result": "PASS — RED commit (412b618d) reproduced the failure: the equivalence + short+capped tests fail against a neutral-logit stub while empty/determinism pass, proving the load-bearing test catches a wrong pad/mask. GREEN commit (2ca58952) lands the real batched forward + engine wiring: all 4 embedder tests green, engine builds clean, clippy clean, observed batched-vs-per-pair max abs diff 0.0. Ranking math in ce_rerank is byte-unchanged (only model.score per-pair -> model.score_batch once + zip).",
+  "blockers": "None.",
+  "notes": "No engine-level rerank_fused order test was added: exercising it requires the OnceLock singleton + the cached model through the engine crate's test harness (more setup than the embedder-level equivalence test, which already proves logit identity to 0.0 abs diff, hence identical blended scores and sort order). Did NOT maturin develop (per task). The score_batch tests load the pinned reranker from ~/.cache/fathomdb/reranker (present locally) and skip with an eprintln if the cache is cold — locally they executed the real forward (not vacuous).",
+  "next_step_for_orchestrator": "Self-review then codex §9 on branch 0.8.3-ce-batch-release @ 2ca58952 (commits 412b618d RED, 2ca58952 GREEN, plus this output.json commit). Then maturin develop --release from main so the canonical _fathomdb.abi3.so is release+batched, and restart the rerank-accuracy run from 0 (discard the paused 250-record debug-per-pair checkpoint; mixing debug per-pair with release batched is unsafe per the design memo §4)."
+}
