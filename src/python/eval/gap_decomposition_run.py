@@ -99,6 +99,10 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
     # cheap rates so price_for does not fail closed on the prescribed cheap path
     # (codex §9 P2).
     "gemini-2.5-flash-lite": (0.05, 0.20),
+    # Fallback cheap distiller so the priced run can route off the (503-ing) Google
+    # cheap model. Authoritative litellm pricing DB rate (the airlock maps
+    # ``gpt-5-nano`` → ``openai/gpt-5.4-nano``): $0.05 / 1M in, $0.40 / 1M out.
+    "gpt-5-nano": (0.05, 0.40),
 }
 
 #: The D0b spend carried as this ledger's opening balance (design §4).
