@@ -322,8 +322,9 @@ def test_run_gap_decomposition_end_to_end_with_fakes(tmp_path: Path) -> None:
     # The ledger booked spend for the new-arm reader calls and stayed within cap.
     assert art["ledger"]["spent_usd"] >= 10.7479
     assert art["ledger"]["spent_usd"] <= 30.0
-    # Retention diagnostic present for every new arm.
-    assert set(art["answer_retention"]) == {"oracle_raw", "oracle_distilled", "fathomdb_distilled"}
+    # Retention diagnostic present for every ACTIVE new arm. With no fathomdb adapter
+    # the fathomdb_distilled arm is cleanly absent (fix-4 [P2]).
+    assert set(art["answer_retention"]) == {"oracle_raw", "oracle_distilled"}
     assert art["answer_retention"]["oracle_raw"]["retention"] == 1.0
 
 
@@ -635,3 +636,163 @@ def test_complete_run_is_citable_and_may_publish_verdict(tmp_path: Path) -> None
     assert art["answer_completeness"] == 1.0
     assert art["verdict"] == art["verdicts"]["pooled"]["verdict"]
     assert art["verdict"] != "ABORTED_INCOMPLETE"
+
+
+# --------------------------------------------------------------------------- #
+# fix-4 [P1]#1 — the priced DISTILLER's spend is persisted alongside the distill
+# cache and restored on resume, so cached-and-skipped docs still count against the
+# $30 cap (codex §9 P1#1). Without this a partial distill cache + crash lets the
+# next run skip the cached docs WITHOUT restoring the dollars already paid → the
+# guard would authorise > the per-experiment cap.
+# --------------------------------------------------------------------------- #
+def test_distill_corpus_resume_restores_prior_spend_and_trips_cap(tmp_path: Path) -> None:
+    from eval.gap_decomposition_run import distill_spent_sidecar
+
+    client = _RecClient()
+    distiller = BlindDistiller(client)
+    cache_path = tmp_path / "distill.json"
+    # A partial cache: d1 was already distilled + PAID for in a prior process.
+    cache_path.write_text(
+        json.dumps({"d1": {"distilled": "s", "prompt": "p", "model": "fake-distiller-v1", "hash": "h"}}),
+        encoding="utf-8",
+    )
+    # The distiller's cumulative spend persisted alongside the cache (near the cap).
+    distill_spent_sidecar(cache_path).write_text(
+        json.dumps({"ledger_spent_usd": 29.999}), encoding="utf-8"
+    )
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=512)
+    # Resuming with a FRESH ledger: d1 is cached+skipped, but its $29.999 prior spend
+    # is RESTORED, so distilling the NEW d2 trips the cap BEFORE the call. Without the
+    # fix the fresh $10.7479 ledger would wrongly authorise > the $30 cap.
+    with pytest.raises(BudgetExceeded):
+        distill_corpus(
+            {"d1": "x" * 100, "d2": "x" * 4000}, distiller,
+            cache_path=cache_path, ledger=ledger, priced_model="gemini-flash-lite",
+        )
+    assert client.seen == []  # d1 cached; d2 halted before the call → no distill calls
+    assert ledger.spent == pytest.approx(29.999, abs=1e-3)
+
+
+def test_distill_corpus_persists_and_restores_cumulative_spend(tmp_path: Path) -> None:
+    from eval.gap_decomposition_run import distill_spent_sidecar
+
+    client = _RecClient()
+    distiller = BlindDistiller(client)
+    cache_path = tmp_path / "distill.json"
+    led1 = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    distill_corpus({"d1": "x" * 4000}, distiller, cache_path=cache_path,
+                   ledger=led1, priced_model="gemini-flash-lite")
+    spent1 = led1.spent
+    assert spent1 > 10.7479
+    # The cumulative spend is persisted alongside the cache (sidecar).
+    sidecar = distill_spent_sidecar(cache_path)
+    assert sidecar.exists()
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["ledger_spent_usd"] == pytest.approx(spent1)
+    # A resume with a FRESH ledger restores the prior spend, then pays only for d2,
+    # so the cumulative total carries the already-paid d1 (cap is per-EXPERIMENT).
+    led2 = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    distill_corpus({"d1": "x" * 4000, "d2": "y" * 4000}, distiller, cache_path=cache_path,
+                   ledger=led2, priced_model="gemini-flash-lite")
+    assert led2.spent > spent1  # restored prior d1 spend + the new d2 spend
+
+
+# --------------------------------------------------------------------------- #
+# fix-4 [P1]#2 — a NON-budget answerer failure (retry-exhausted 429/5xx, or a
+# non-retryable HTTP error) leaves that arm's cell ABSENT, checkpoints, and the run
+# CONTINUES (failure ≠ abstention; codex §9 P1#2). It must NOT crash the run, and the
+# completeness gate then marks the artifact non-citable. A BudgetExceeded still
+# cleanly cap-aborts (regression guard).
+# --------------------------------------------------------------------------- #
+class _DistilledFailAnswerer(BaseAnswerer):
+    """Raises a NON-budget error on the distilled-summary contexts (models a
+    retry-exhausted 5xx) but answers the raw-oracle context normally."""
+
+    model_id = "distill-fail-v1"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        if any("summary" in c for c in context):
+            raise RuntimeError("airlock 503 — retries exhausted (non-budget)")
+        return context[0] if context else None
+
+
+def test_answerer_failure_is_missing_cell_not_crash(tmp_path: Path) -> None:
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(4)))
+    out = tmp_path / "out.json"
+    ckpt = out.with_suffix(".checkpoint.json")
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    # No crash: a non-budget answerer error leaves that arm's cell ABSENT, checkpoints,
+    # and the run continues to completion (mirror d0b's failure≠abstention contract).
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_DistilledFailAnswerer(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",), checkpoint_path=ckpt, checkpoint_every=1,
+    )
+    assert art["aborted_for_cap"] is False  # a per-cell failure, NOT a cap abort
+    assert art["citable"] is False          # missing cells → non-citable
+    assert art["run_valid"] is False
+    assert art["answer_completeness"] < 1.0
+    assert art["verdict"] == "ABORTED_INCOMPLETE"
+    # The failed arm's cell is ABSENT (not fabricated); the raw arm succeeded.
+    persisted = json.loads(ckpt.read_text(encoding="utf-8"))
+    answerable = [r for r in persisted["records"] if r["has_answers"]]
+    assert answerable and all("oracle_raw" in r["answers"] for r in answerable)
+    assert all("oracle_distilled" not in r["answers"] for r in answerable)
+
+
+# --------------------------------------------------------------------------- #
+# fix-4 [P2] — fathomdb_distilled is cleanly ABSENT without an adapter (no paid
+# no-op, no crash, not counted in completeness); WITH an adapter the cross-check
+# delta acc_fathomdb_distilled − acc_fathomdb + per-arm accuracy are exported
+# (codex §9 P2).
+# --------------------------------------------------------------------------- #
+def test_no_adapter_skips_fathomdb_distilled_cleanly(tmp_path: Path) -> None:
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(4)))
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    spy = _SpyAnswerer()
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=spy, ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",),
+    )
+    # fathomdb_distilled is simply ABSENT (no adapter): not a paid no-op, not counted.
+    assert set(art["answer_retention"]) == {"oracle_raw", "oracle_distilled"}
+    assert art["active_new_arms"] == ["oracle_raw", "oracle_distilled"]
+    assert spy.calls == 4 * 2  # 2 active arms × 4 questions — NOT a 3rd empty no-op call
+    # The run stays citable on the two real arms (fathomdb_distilled not counted).
+    assert art["citable"] is True
+    assert art["answer_completeness"] == 1.0
+    assert "fathomdb_distilled_crosscheck" not in art
+
+
+def test_with_adapter_exports_fathomdb_distilled_crosscheck(tmp_path: Path) -> None:
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(6)))
+    # An adapter that retrieves each query's own gold doc (so the distilled fdb body
+    # carries the answer) → a measurable acc_fathomdb_distilled − acc_fathomdb delta.
+    hits_by_q = {q.question: [Hit(doc_id=q.gold_doc_ids[0], body=documents[q.gold_doc_ids[0]], score=1.0)]
+                 for q in queries}
+    adapter = _FakeAdapter(hits_by_q)
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_EchoAnswerer(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=adapter,
+        budget=32000, n_boot=50, classes=("factoid",),
+    )
+    assert art["active_new_arms"] == ["oracle_raw", "oracle_distilled", "fathomdb_distilled"]
+    assert "fathomdb_distilled" in art["answer_retention"]
+    cc = art["fathomdb_distilled_crosscheck"]
+    assert "delta_per_class" in cc and "pooled" in cc["delta_per_class"]
+    assert set(cc["per_arm_accuracy"]) == {"fathomdb", "fathomdb_distilled"}
+    # fathomdb cells (acc 0.0 from d0b) vs fathomdb_distilled (echo over a distilled
+    # body mentioning the answer → 1.0) → a positive cross-check delta.
+    assert cc["per_arm_accuracy"]["fathomdb"] == pytest.approx(0.0)
+    assert cc["per_arm_accuracy"]["fathomdb_distilled"] == pytest.approx(1.0)
+    assert cc["delta_per_class"]["pooled"]["point"] == pytest.approx(1.0)
