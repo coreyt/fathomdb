@@ -12,6 +12,7 @@ runner module exists, the suite REDs with a per-test ``ModuleNotFoundError``
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import subprocess
@@ -20,6 +21,26 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+# --------------------------------------------------------------------------- #
+# Opt-in guard for the @pytest.mark.integration tests (codex §9 fix-3 [P2]).
+# These tests load REAL HuggingFace models (and can touch the network). They must
+# be EXPLICITLY opt-in: in the default gate they are collected-but-skipped and
+# never import a model — even on a box where torch happens to be installed. Enable
+# only when FDB_S15A_INTEGRATION=1 AND both torch and transformers are importable.
+# --------------------------------------------------------------------------- #
+_INTEGRATION_ENABLED = (
+    os.environ.get("FDB_S15A_INTEGRATION") == "1"
+    and importlib.util.find_spec("torch") is not None
+    and importlib.util.find_spec("transformers") is not None
+)
+_integration = pytest.mark.skipif(
+    not _INTEGRATION_ENABLED,
+    reason=(
+        "opt-in integration test: set FDB_S15A_INTEGRATION=1 with torch + "
+        "transformers installed (default gate skips — no model load / no network)"
+    ),
+)
 
 # --------------------------------------------------------------------------- #
 # (c) probe wiring truth-table — calls the REAL frozen probe_15a_pass.
@@ -486,6 +507,7 @@ def test_cache_sidecar_match_reuses(
 
 
 @pytest.mark.integration
+@_integration
 def test_embed_texts_steady_state_no_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("torch")
     from eval import s15a_embedder_probe as m
@@ -510,6 +532,7 @@ def test_embed_texts_steady_state_no_reload(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.integration
+@_integration
 def test_model_cache_byte_identical_vectors() -> None:
     pytest.importorskip("torch")
     from eval import s15a_embedder_probe as m
@@ -529,6 +552,7 @@ def test_model_cache_byte_identical_vectors() -> None:
 
 
 @pytest.mark.integration
+@_integration
 def test_embedding_determinism_cpu() -> None:
     pytest.importorskip("torch")
     from eval.s15a_embedder_probe import MODELS, embed_texts
@@ -547,6 +571,7 @@ def test_embedding_determinism_cpu() -> None:
 
 
 @pytest.mark.integration
+@_integration
 def test_pooling_known_vector_cls_ne_mean() -> None:
     pytest.importorskip("torch")
     from dataclasses import replace
