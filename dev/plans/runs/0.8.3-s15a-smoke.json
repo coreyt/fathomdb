@@ -1,0 +1,133 @@
+{
+  "base": {
+    "eu8": 1.0,
+    "hard_r@10": 0.0,
+    "ms_per_query": 98.92063518054783,
+    "name": "bge-small"
+  },
+  "caveats": [
+    "torch-CPU vs ONNX-CPU produce f32-equivalent vectors; ceiling is a model-weights property (design \u00a77).",
+    "memory_class_recall not computed \u2014 LME corpus is separate from the IR snapshot; deferred to Slice 20 re-embed (design \u00a74).",
+    "projected_eu7 GATE is the frozen POINT >= 0.90; the reported CI is transparency-only (design \u00a75.4/\u00a711.4)."
+  ],
+  "chosen_embedder": "bge-small",
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "corpus_resolved_count": 120,
+  "hard_subset": {
+    "b": 0.75,
+    "cap": 50,
+    "count": 0,
+    "definition": "non-negative qids whose required docs are NOT all within BM25 top-cap (strict all-of)",
+    "fts5_caveat": "pure-Python BM25 tokenizer is NOT byte-identical to the engine FTS5 tokenizer; the subset is deterministic + model-independent for a fair A/B (design \u00a711.1), not a production-FTS bucket.",
+    "k1": 1.2,
+    "tokenizer": "lowercase + regex [a-z0-9]+"
+  },
+  "model_revisions": {
+    "bge-base": "default",
+    "bge-small": "default"
+  },
+  "no_swap": true,
+  "num_threads": 1,
+  "per_candidate": {
+    "bge-base": {
+      "binding_margin": 0.0,
+      "cpu_latency": {
+        "ac012_p50_ms": 20.0,
+        "ac012_p99_ms": 150.0,
+        "ac013_p50_ms": 80.0,
+        "ac013_p99_ms": 300.0,
+        "base_ms_per_query": 98.92063518054783,
+        "feasible": true,
+        "ms_per_doc": 457.5680959969759,
+        "ms_per_query": 166.18832712993026,
+        "threads": 1
+      },
+      "eu8": 1.0,
+      "eu8_margin_ci": {
+        "hi": 0.0,
+        "lo": 0.0,
+        "point": 0.0
+      },
+      "hard": {
+        "median_rank": null,
+        "r@10": 0.0,
+        "r@50": 0.0
+      },
+      "hard_margin_ci": {
+        "hi": 0.0,
+        "lo": 0.0,
+        "point": 0.0
+      },
+      "in_library_feasible": true,
+      "memory_class_recall": null,
+      "probe_15a_pass": false,
+      "projected_eu7": 1.0
+    }
+  },
+  "phase": "0.8.3-slice-15a",
+  "pooling_prefix_table": {
+    "bge-base": {
+      "dim": 768,
+      "hf_id": "BAAI/bge-base-en-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "Represent this sentence for searching relevant passages: ",
+      "trust_remote_code": false
+    },
+    "bge-small": {
+      "dim": 384,
+      "hf_id": "BAAI/bge-small-en-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "Represent this sentence for searching relevant passages: ",
+      "trust_remote_code": false
+    },
+    "e5-base-v2": {
+      "dim": 768,
+      "hf_id": "intfloat/e5-base-v2",
+      "in_library_feasible": true,
+      "passage_prefix": "passage: ",
+      "pooling": "mean",
+      "query_prefix": "query: ",
+      "trust_remote_code": false
+    },
+    "gte-base": {
+      "dim": 768,
+      "hf_id": "Alibaba-NLP/gte-base-en-v1.5",
+      "in_library_feasible": false,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "",
+      "trust_remote_code": true
+    },
+    "nomic": {
+      "dim": 768,
+      "hf_id": "nomic-ai/nomic-embed-text-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "search_document: ",
+      "pooling": "mean",
+      "query_prefix": "search_query: ",
+      "trust_remote_code": true
+    }
+  },
+  "qrels_version": "ir-c-reused-v1",
+  "ranking": [
+    "bge-base"
+  ],
+  "runtime": {
+    "numpy": "2.4.6",
+    "torch": "2.12.0+cpu",
+    "transformers": "5.9.0"
+  },
+  "seeds": {
+    "bootstrap_resamples": 500,
+    "bootstrap_seed": 346
+  },
+  "smoke": true,
+  "stage_split": "Stage 1 (this slice): mechanical probe_15a_pass verdict + ranking + chosen embedder. Stage 2 (after D0b/HITL): gap-relative surpass finalization (design \u00a76).",
+  "surpass_flag": {
+    "bge-base": false
+  }
+}
