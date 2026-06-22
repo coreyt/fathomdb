@@ -13,6 +13,7 @@ import pytest
 
 from eval.gap_decomposition_run import (
     CHEAP_READER_DEFAULT,
+    NEW_ARMS,
     STRONG_READER_DEFAULT,
     BlindDistiller,
     BudgetExceeded,
@@ -351,3 +352,157 @@ def test_answer_retention_separates_lossy_distill() -> None:
     dist = answer_retention(records, arm="oracle_distilled")
     assert raw["retention"] == 1.0
     assert dist["retention"] == 0.5  # a lossy-distill signal, reported separately
+
+
+# --------------------------------------------------------------------------- #
+# fix-2 [P2] — `--mode cheap` defaults to the CHEAP reader (codex §9 P2).
+# --------------------------------------------------------------------------- #
+def test_cheap_mode_defaults_to_cheap_reader() -> None:
+    from eval.gap_decomposition_run import resolve_reader
+
+    # cheap-mode with no explicit --reader must NOT select the priced gpt-5.4.
+    assert resolve_reader("cheap", None) == CHEAP_READER_DEFAULT
+    assert resolve_reader("cheap", None) != STRONG_READER_DEFAULT
+    assert resolve_reader("cheap", None) != "gpt-5.4"
+    # full-mode keeps the strong reader; an explicit --reader always wins.
+    assert resolve_reader("full", None) == STRONG_READER_DEFAULT
+    assert resolve_reader("cheap", "gpt-5.4") == "gpt-5.4"
+    assert resolve_reader("full", CHEAP_READER_DEFAULT) == CHEAP_READER_DEFAULT
+
+
+# --------------------------------------------------------------------------- #
+# fix-2 [P1]#2 — the distiller bypasses the QA answer template (codex §9 P1#2).
+# A real cheap model behind the QA template returns abstentions ("I don't know"),
+# corrupting BOTH distilled arms. The distiller must send the RAW distill prompt.
+# --------------------------------------------------------------------------- #
+class _FakeCtx:
+    def __enter__(self) -> "_FakeCtx":
+        return self
+
+    def __exit__(self, *_: Any) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(
+            {
+                "choices": [{"message": {"content": "a one line summary of the doc"}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+            }
+        ).encode("utf-8")
+
+
+class _CapturingOpen:
+    """Captures the outgoing urllib request (exercises the payload-build path)."""
+
+    def __init__(self) -> None:
+        self.reqs: list[Any] = []
+
+    def __call__(self, req: Any) -> _FakeCtx:
+        self.reqs.append(req)
+        return _FakeCtx()
+
+
+def test_distiller_uses_raw_completion_not_qa_template() -> None:
+    from eval.gap_decomposition_run import RawCompletionDistillerClient
+    from eval.m1_baseline_run import CostTrackingAnswerer
+
+    ans = CostTrackingAnswerer("gemini-flash-lite", timeout_s=5.0)
+    ans.base_url = "http://airlock.test"
+    ans.api_key = "k"
+    cap = _CapturingOpen()
+    ans._open = cap  # type: ignore[method-assign]  # inject the POST seam
+
+    client = RawCompletionDistillerClient(ans)
+    distiller = BlindDistiller(client)
+    out = distiller.distill("The capital of France is Paris.")
+
+    assert out  # a one-line summary came back, not an abstention
+    assert len(cap.reqs) == 1
+    payload = json.loads(cap.reqs[0].data.decode("utf-8"))
+    content = payload["messages"][0]["content"]
+    # The RAW distill prompt is the user message (body + the distill instruction).
+    assert "The capital of France is Paris." in content
+    assert "One-line summary" in content
+    # The QA answer template / empty-context abstention instruction must NOT leak in.
+    assert "I don't know" not in content
+    assert "precise question-answering assistant" not in content
+    assert "ONLY the provided context" not in content
+
+
+# --------------------------------------------------------------------------- #
+# fix-2 [P1]#1 — the $ ledger spend is persisted + restored across a resume
+# (budget integrity: the $30 cap is per-EXPERIMENT, not per-PROCESS; codex §9 P1#1).
+# --------------------------------------------------------------------------- #
+def _decomp_fixtures(
+    qids: tuple[str, ...],
+) -> tuple[list[GoldQuery], dict[str, str], dict[str, dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:
+    queries: list[GoldQuery] = []
+    documents: dict[str, str] = {}
+    distill_cache: dict[str, dict[str, Any]] = {}
+    d0b_cells: dict[tuple[str, str], dict[str, Any]] = {}
+    for qid in qids:
+        gid = f"doc-{qid}"
+        answer = f"answer-{qid}"
+        documents[gid] = f"context body containing {answer} and more text"
+        distill_cache[gid] = {"distilled": f"summary mentioning {answer}", "prompt": "p",
+                              "model": "fake", "hash": "h"}
+        queries.append(_gold(qid, "factoid", (gid,), answer))
+        d0b_cells[(qid, "fathomdb")] = {"acc": 0.0, "answer": None}
+        d0b_cells[(qid, "mem0_oss")] = {"acc": 1.0, "answer": "x"}
+    return queries, documents, distill_cache, d0b_cells
+
+
+def test_checkpoint_persists_ledger_spend(tmp_path: Path) -> None:
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(4)))
+    out = tmp_path / "out.json"
+    ckpt = out.with_suffix(".checkpoint.json")
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_EchoAnswerer(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",), checkpoint_path=ckpt, checkpoint_every=1,
+    )
+    assert art["ledger"]["spent_usd"] > 10.7479  # reader calls booked spend
+    # The cumulative spend is persisted in the checkpoint (atomic with the records).
+    persisted = json.loads(ckpt.read_text(encoding="utf-8"))
+    assert "ledger_spent_usd" in persisted
+    assert persisted["ledger_spent_usd"] == pytest.approx(art["ledger"]["spent_usd"])
+
+
+def test_resume_restores_ledger_spend_and_trips_cap(tmp_path: Path) -> None:
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(("factoid-0", "factoid-1"))
+    out = tmp_path / "out.json"
+    ckpt = out.with_suffix(".checkpoint.json")
+    # A prior checkpoint that already spent up to one tick under the $30 cap, with
+    # factoid-0's new-arm answers already paid for (so it resumes from the rmap).
+    ckpt.write_text(
+        json.dumps({
+            "records": [
+                {"qid": "factoid-0", "reporting_class": "factoid",
+                 "answers": {a: "prior" for a in NEW_ARMS}},
+            ],
+            "ledger_spent_usd": 29.999,
+            "mode": "run", "reader": "gpt-5.4",
+        }),
+        encoding="utf-8",
+    )
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=512)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_EchoAnswerer(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",), checkpoint_path=ckpt, checkpoint_every=1,
+    )
+    # Restoring the prior $29.999 spend (NOT just the $10.7479 opening) means the
+    # NEW factoid-1 reader call trips the cap and the run aborts BEFORE the call.
+    assert art["ledger"]["spent_usd"] == pytest.approx(29.999, abs=1e-3)
+    assert art["aborted_for_cap"] is True
+
+
+def test_budget_ledger_restore_spent_sets_running_total() -> None:
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0)
+    assert ledger.spent == pytest.approx(10.7479)
+    ledger.restore_spent(25.5)
+    assert ledger.spent == pytest.approx(25.5)
+    assert ledger.remaining == pytest.approx(4.5)
