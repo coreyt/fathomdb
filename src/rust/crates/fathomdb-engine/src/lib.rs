@@ -4936,11 +4936,17 @@ fn ce_rerank(
     let rrf_max = top.iter().map(|h| h.score).fold(f64::NEG_INFINITY, f64::max);
     let rrf_span = rrf_max - rrf_min;
 
+    // Batched CE scoring: ONE forward over the whole top-N pool instead of N
+    // per-pair forwards. The ranking math below (RRF min-max norm, sigmoid,
+    // ALPHA blend, sort) is byte-unchanged — only the scoring is batched.
+    let bodies: Vec<&str> = top.iter().map(|h| h.body.as_str()).collect();
+    let raw_logits = model.score_batch(_query, &bodies);
+
     let mut scored: Vec<(f64, SearchHit)> = top
         .iter()
-        .map(|h| {
+        .zip(raw_logits)
+        .map(|(h, raw_logit)| {
             let rrf_norm = if rrf_span > 0.0 { (h.score - rrf_min) / rrf_span } else { 1.0 };
-            let raw_logit = model.score(_query, &h.body);
             // Sigmoid for CE normalization: 1/(1+exp(-x)).
             let ce_norm = 1.0 / (1.0 + (-raw_logit).exp());
             const ALPHA: f64 = 0.3;
@@ -5012,6 +5018,22 @@ impl CandleCrossEncoder {
     /// panicking in the reader thread.
     fn score(&self, query: &str, passage: &str) -> f64 {
         self.inner.score(query, passage).map(f64::from).unwrap_or(0.0)
+    }
+
+    /// Batched [`score`](Self::score): score every `(query, passage_i)` pair in a
+    /// single forward pass. Returns one logit per passage in input order, each
+    /// honoring the same neutral-`0.0`-on-error contract as [`score`](Self::score).
+    ///
+    /// Fallback: if the batched forward errors as a whole (e.g. an OOM or a
+    /// tokenize failure on one pair surfaces as a batch `Err`), we DO NOT
+    /// neutralize the entire pool — we fall back to per-pair [`score`](Self::score),
+    /// so a single bad pair degrades only its own element to a neutral logit while
+    /// the rest keep their real scores. Empty input → empty output (no forward).
+    fn score_batch(&self, query: &str, passages: &[&str]) -> Vec<f64> {
+        match self.inner.score_batch(query, passages) {
+            Ok(logits) => logits.into_iter().map(f64::from).collect(),
+            Err(_) => passages.iter().map(|p| self.score(query, p)).collect(),
+        }
     }
 }
 

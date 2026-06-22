@@ -80,6 +80,22 @@ const RERANKER_HIDDEN_SIZE: usize = 128;
 /// model's 512-slot learned position embeddings.
 const MAX_SEQUENCE_TOKENS: usize = 512;
 
+/// Maximum number of `(query, passage)` pairs scored in a single `model.forward`.
+///
+/// One forward's self-attention allocates on the order of
+/// `batch * num_heads * L_max^2` activation entries, so an unbounded,
+/// caller-controlled `rerank_depth` (the candidate pool can be hundreds or
+/// thousands of ~512-token passages) could consume GBs and OOM/kill the process
+/// before the engine's per-pair fallback can run. Capping the per-forward batch
+/// at 32 bounds peak attention memory at ~`32 * num_heads * 512^2` while still
+/// amortizing kernel-launch overhead ~32× versus per-pair forwards.
+///
+/// Chunking never changes a score: each pair is still scored with its own mask,
+/// `L_max` is computed *per chunk* (which only REDUCES memory vs a whole-batch
+/// `L_max`), and `[CLS]` stays at position 0 — so the padded positions a chunk's
+/// mask removes are exactly the ones a per-pair (or whole-batch) forward removes.
+const MAX_CE_BATCH: usize = 32;
+
 /// Env var overriding the cache root (otherwise `dirs::cache_dir()`).
 pub(crate) const ENV_RERANKER_CACHE: &str = "FATHOMDB_RERANKER_CACHE";
 
@@ -230,6 +246,234 @@ impl CandleTinyBertReranker {
         // Classifier: (1, 1) logit.
         let logit = self.classifier.forward(&pooled)?;
         logit.squeeze(1)?.squeeze(0)?.to_scalar::<f32>()
+    }
+
+    /// Batched variant of [`score`](Self::score): score every `(query, passage_i)`
+    /// pair with far fewer kernel launches than `N` per-pair forwards on the hot
+    /// rerank path, while **bounding peak memory**.
+    ///
+    /// The pairs are split into chunks of at most `MAX_CE_BATCH` and each chunk
+    /// runs in ONE `model.forward`; the per-chunk `Vec<f32>` results are
+    /// concatenated in input order. Chunking caps peak self-attention memory at
+    /// ~`MAX_CE_BATCH * num_heads * L_max^2` regardless of how large the
+    /// caller-controlled pool is, so a big `rerank_depth` cannot OOM the process.
+    /// For `passages.len() <= MAX_CE_BATCH` (incl. the single-pair case) this is a
+    /// single forward, behaving exactly as before.
+    ///
+    /// Within each chunk every pair is tokenized identically to
+    /// [`score`](Self::score) (`encode((query, passage), true)`), then
+    /// **right-padded** to that chunk's `L_max = max(len)`: real tokens are
+    /// left-aligned (so `[CLS]` stays at position 0, never padded) and pad slots
+    /// get the tokenizer's pad id, `token_type_id = 0`, and `attention_mask = 0`.
+    /// Candle's BERT lifts the 2-D mask through `get_extended_attention_mask`,
+    /// adding `f32::MIN` to padded positions so the softmax zeroes them — making
+    /// the CLS hidden state attend ONLY to that pair's real tokens. Computing
+    /// `L_max` per chunk only REDUCES padding (and thus memory) versus a
+    /// whole-batch `L_max`, and never perturbs a logit. Consequently
+    /// `score_batch(q, [p_i..])[i] == score(q, p_i)` within floating-point
+    /// tolerance for any batch size.
+    ///
+    /// Output order matches the input `passages` order. An empty `passages`
+    /// returns `Ok(vec![])` with NO forward. Any tokenize/forward failure
+    /// propagates as `Err` so the caller can map it to the neutral-score contract.
+    pub fn score_batch(
+        &self,
+        query: &str,
+        passages: &[&str],
+    ) -> Result<Vec<f32>, candle_core::Error> {
+        if passages.is_empty() {
+            return Ok(vec![]);
+        }
+        // Bound peak attention memory: at most MAX_CE_BATCH pairs per forward.
+        // `chunks` of a non-empty slice yields only non-empty chunks; results are
+        // concatenated in input order so the output index matches `passages`.
+        let mut out: Vec<f32> = Vec::with_capacity(passages.len());
+        for chunk in passages.chunks(MAX_CE_BATCH) {
+            out.extend(self.score_chunk(query, chunk)?);
+        }
+        Ok(out)
+    }
+
+    /// Score one bounded chunk (`1..=MAX_CE_BATCH` pairs) in a single forward.
+    /// Pads to this chunk's `L_max`; see [`score_batch`](Self::score_batch) for
+    /// the masking/correctness contract.
+    fn score_chunk(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, candle_core::Error> {
+        // Tokenize each pair exactly as `score` does, retaining per-pair ids,
+        // segment ids, and attention masks.
+        let mut all_ids: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut all_types: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut all_attn: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut l_max = 0usize;
+        for passage in passages {
+            let enc = self
+                .tokenizer
+                .encode((query, *passage), true)
+                .map_err(|e| candle_core::Error::Msg(format!("tokenize pair: {e}")))?;
+            let ids = enc.get_ids().to_vec();
+            l_max = l_max.max(ids.len());
+            all_types.push(enc.get_type_ids().to_vec());
+            all_attn.push(enc.get_attention_mask().to_vec());
+            all_ids.push(ids);
+        }
+
+        // BERT `[PAD]` token id (config `pad_token_id = 0`); the value is inert
+        // because the attention mask removes pad positions, but use the real id
+        // so embeddings stay in-vocab.
+        let pad_id = self.tokenizer.token_to_id("[PAD]").unwrap_or(0);
+        let n = passages.len();
+
+        // Right-pad each row to L_max into flat (N * L_max) buffers.
+        let mut ids_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        let mut type_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        let mut attn_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        for i in 0..n {
+            let ids = &all_ids[i];
+            let types = &all_types[i];
+            let attn = &all_attn[i];
+            let len = ids.len();
+            ids_buf.extend_from_slice(ids);
+            type_buf.extend_from_slice(types);
+            attn_buf.extend_from_slice(attn);
+            for _ in len..l_max {
+                ids_buf.push(pad_id);
+                type_buf.push(0);
+                attn_buf.push(0);
+            }
+        }
+
+        let input_ids = Tensor::from_vec(ids_buf, (n, l_max), &self.device)?;
+        let token_type_ids = Tensor::from_vec(type_buf, (n, l_max), &self.device)?;
+        let attn_mask = Tensor::from_vec(attn_buf, (n, l_max), &self.device)?;
+
+        // (N, L_max, H) sequence output → [CLS] at position 0 → (N, H).
+        let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask))?;
+        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?;
+        // Pooler: tanh(dense(cls)) → classifier → (N, 1) → (N,).
+        let pooled = self.pooler.forward(&cls)?.tanh()?;
+        let logits = self.classifier.forward(&pooled)?.squeeze(1)?;
+        logits.to_vec1::<f32>()
+    }
+}
+
+// ----- Tests (default-reranker only; uses the locally cached pinned model) ----
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Load the pinned reranker from the local cache, or skip the test if it is
+    /// unavailable (offline CI with a cold cache). Locally the model is cached so
+    /// these tests DO execute the real forward — they are not vacuously green.
+    fn load_or_skip() -> Option<CandleTinyBertReranker> {
+        match CandleTinyBertReranker::try_load() {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("SKIP: reranker model unavailable ({e})");
+                None
+            }
+        }
+    }
+
+    const QUERY: &str = "What is the capital of France?";
+    // Three passages of deliberately DIFFERENT token lengths so that batching
+    // forces right-padding to L_max — this is what exercises the pad/mask path.
+    const PASSAGES: [&str; 3] = [
+        "Paris.",
+        "Paris is the capital and most populous city of France.",
+        "France is a country in Western Europe with several overseas regions and \
+         territories; its capital and largest city is Paris, a major global center \
+         for art, fashion, gastronomy, and culture, situated on the river Seine.",
+    ];
+
+    /// THE load-bearing test: batched scoring must equal per-pair scoring within
+    /// tolerance on pairs of differing token lengths (proves pad + mask).
+    #[test]
+    fn score_batch_matches_per_pair() {
+        let Some(model) = load_or_skip() else { return };
+
+        let per_pair: Vec<f32> =
+            PASSAGES.iter().map(|p| model.score(QUERY, p).expect("per-pair score")).collect();
+        let batched = model.score_batch(QUERY, &PASSAGES).expect("batched score");
+
+        assert_eq!(batched.len(), PASSAGES.len(), "one logit per passage, order preserved");
+        let mut max_abs = 0f32;
+        for (i, (b, p)) in batched.iter().zip(per_pair.iter()).enumerate() {
+            let d = (b - p).abs();
+            max_abs = max_abs.max(d);
+            assert!(
+                d < 1e-3,
+                "pair {i}: batched {b} vs per-pair {p} differ by {d} (>1e-3); pad/mask is wrong"
+            );
+        }
+        eprintln!("score_batch vs per-pair max abs diff = {max_abs:e}");
+    }
+
+    /// Determinism: identical input → byte-identical output across two calls.
+    #[test]
+    fn score_batch_is_deterministic() {
+        let Some(model) = load_or_skip() else { return };
+        let a = model.score_batch(QUERY, &PASSAGES).expect("batch a");
+        let b = model.score_batch(QUERY, &PASSAGES).expect("batch b");
+        assert_eq!(a, b, "batched scoring must be deterministic");
+    }
+
+    /// A very short passage mixed with a ~512-cap (truncated) passage in one batch
+    /// still matches per-pair — exercises the maximum padding span.
+    #[test]
+    fn score_batch_short_plus_capped() {
+        let Some(model) = load_or_skip() else { return };
+        let long = "lorem ipsum ".repeat(2000); // far exceeds 512 tokens → truncated
+        let passages: Vec<&str> = vec!["hi", long.as_str()];
+
+        let per_pair: Vec<f32> =
+            passages.iter().map(|p| model.score(QUERY, p).expect("per-pair")).collect();
+        let batched = model.score_batch(QUERY, &passages).expect("batched");
+        for (i, (b, p)) in batched.iter().zip(per_pair.iter()).enumerate() {
+            assert!((b - p).abs() < 1e-3, "pair {i}: {b} vs {p} (short+capped batch)");
+        }
+    }
+
+    /// Chunk-boundary correctness: a batch of N > `MAX_CE_BATCH` pairs (spanning
+    /// two full chunks plus a partial trailing chunk), of DIFFERING token lengths
+    /// so each chunk pads to a different per-chunk `L_max`, must still equal
+    /// per-pair `score` within tolerance AND preserve input order across chunk
+    /// boundaries. This is the load-bearing test for the OOM-bounding fix: it
+    /// proves the chunk loop concatenates per-chunk results in order and that
+    /// per-chunk (rather than whole-batch) padding does not perturb any logit.
+    #[test]
+    fn score_batch_spans_chunk_boundaries() {
+        let Some(model) = load_or_skip() else { return };
+
+        // Spans 2 full chunks + a 3-element partial chunk (e.g. 67 at MAX=32).
+        let n = MAX_CE_BATCH * 2 + 3;
+        // Differing lengths so per-chunk L_max varies across chunk boundaries.
+        let owned: Vec<String> =
+            (0..n).map(|i| "Paris is the capital of France. ".repeat(1 + (i % 7))).collect();
+        let passages: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        let per_pair: Vec<f32> =
+            passages.iter().map(|p| model.score(QUERY, p).expect("per-pair score")).collect();
+        let batched = model.score_batch(QUERY, &passages).expect("batched score");
+
+        assert_eq!(batched.len(), n, "one logit per passage across all chunks, order preserved");
+        let mut max_abs = 0f32;
+        for (i, (b, p)) in batched.iter().zip(per_pair.iter()).enumerate() {
+            let d = (b - p).abs();
+            max_abs = max_abs.max(d);
+            assert!(
+                d < 1e-3,
+                "pair {i}: batched {b} vs per-pair {p} differ by {d} (>1e-3) across chunk boundary"
+            );
+        }
+        eprintln!("score_batch_spans_chunk_boundaries: N={n} (MAX_CE_BATCH={MAX_CE_BATCH}), max abs diff = {max_abs:e}");
+    }
+
+    /// Empty batch → Ok(vec![]) with no forward.
+    #[test]
+    fn score_batch_empty() {
+        let Some(model) = load_or_skip() else { return };
+        let out = model.score_batch(QUERY, &[]).expect("empty batch");
+        assert!(out.is_empty(), "empty passages → empty output");
     }
 }
 
