@@ -366,6 +366,16 @@ def run_rerank_accuracy(
     else:
         verdict = ABORTED_VERDICT
         go = False
+        # codex §9 [P1]: neutralize the NESTED decision fields too. A capped/incomplete
+        # prefix can compute a powered nested pooled/per_class lever_realized="PASS" +
+        # go=True that a downstream reader could publish despite citable=False. Suppress
+        # the DECISION fields (lever_realized → ABORTED_VERDICT, go → False) + stamp the
+        # reason on pooled + every per_class entry; the raw numeric margin stats
+        # (point/ci/mde/n) survive untouched for forensics.
+        for block in (summary["pooled"], *summary["per_class"].values()):
+            block["lever_realized"] = ABORTED_VERDICT
+            block["go"] = False
+            block["reason"] = non_citable_reason
 
     retention = answer_retention(records, arm=RERANK_ARM)
 
