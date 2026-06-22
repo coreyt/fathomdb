@@ -1,0 +1,66 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "title": "embedder-ceiling probe ($0 / CPU / EVAL-ONLY) — Slice-20 lever pick",
+  "base_sha": "6b8503da36bbd8c477c87af421c18ef5e0eeb2e9",
+  "branch": "0.8.3-slice-15a",
+  "head_sha": "d3f3bc99e001c6b9c2a299d0bf7dee0beef82f20",
+  "merged_to_main": false,
+  "design": "dev/design/0.8.3-slice-15a-embedder-probe.md",
+  "consumes_frozen": ["decision_rule_083.probe_15a_pass", "decision_rule_083.EU7_FLOOR=0.90"],
+  "frozen_untouched": ["src/python/eval/decision_rule_083.py", "data/corpus-data/eval/ir_gold/*"],
+
+  "measurement": {
+    "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+    "corpus_docs": 10506,
+    "qrels_version": "ir-c-reused-v1",
+    "queries": 4597,
+    "hard_subset": {"definition": "non-negative qids whose required docs are NOT all within BM25 top-50 (strict all-of)", "cap": 50, "bm25": "Okapi k1=1.2 b=0.75, tokenizer lowercase+[a-z0-9]+", "count": 825},
+    "base_reference": "CLS-corrected bge-small-en-v1.5",
+    "eu7_proxy": "1-bit sign-quant + mean-centering ON, Hamming K=192, f32 rerank, recall@10 vs model's own f32-exact top-10; GATE=frozen POINT >=0.90 (CI reported for transparency)",
+    "offline": true, "cpu_only": true, "threads": 12, "usd_cost": 0,
+    "artifact": "dev/plans/runs/0.8.3-s15a-embedder.json",
+    "report": "dev/plans/runs/0.8.3-s15a-report.md"
+  },
+
+  "chosen_embedder": "bge-small",
+  "no_swap": true,
+  "per_candidate_summary": {
+    "bge-base":   {"status": "ok", "in_library_feasible": true,  "eu8": 0.4235, "eu8_margin_ci_lo": 0.0150, "hard_margin_ci_lo": -0.0036, "projected_eu7": 0.7855, "cpu_feasible": true,  "probe_15a_pass": false, "fail_reasons": ["hard_margin_ci_lo<=0", "projected_eu7<0.90"]},
+    "e5-base-v2": {"status": "ok", "in_library_feasible": true,  "eu8": 0.4674, "eu8_margin_ci_lo": 0.0568, "hard_margin_ci_lo": -0.0061, "projected_eu7": 0.8960, "cpu_feasible": true,  "probe_15a_pass": false, "fail_reasons": ["hard_margin_ci_lo<=0", "projected_eu7<0.90"]},
+    "nomic":      {"status": "ok", "in_library_feasible": true,  "eu8": 0.4510, "eu8_margin_ci_lo": 0.0416, "hard_margin_ci_lo": -0.0085, "projected_eu7": 0.9317, "cpu_feasible": false, "probe_15a_pass": false, "fail_reasons": ["hard_margin_ci_lo<=0", "cpu_feasible=false (38.5ms/q > 3x base 12.4ms)"]},
+    "gte-base":   {"status": "failed", "in_library_feasible": false, "error": "IndexError in custom HF modeling (transformers 5.9); non-selectable (no candle encoder), non-fatal"}
+  },
+  "probe_15a_pass_verdicts": {"bge-base": false, "e5-base-v2": false, "nomic": false, "gte-base": "n/a (measurement failed)"},
+  "surpass_flag": {"bge-base": false, "e5-base-v2": false, "nomic": false},
+  "surpass_candidates_provisional": [],
+
+  "interpretation": "Clean pre-registered NEGATIVE. Every measurable candidate IMPROVES eu8 relevance at power (e5-base +0.057 CI-lo, nomic +0.042, bge-base +0.015) but NONE beats the lexically-hard subset (all hard delta CI-lo < 0) — the hard/exploratory axis is granularity/task-structure-bound, not embedder-bound (matches the prior nomic diagnostic surfaced in design consult). Larger models also break 1-bit survivability (bge-base proj_eu7 0.786, e5 0.896 < 0.90) or the CPU budget (nomic). => Slice-20 keeps CLS-corrected bge-small (no swap).",
+
+  "stage_split": {
+    "stage1_mechanical": "DONE — probe_15a_pass verdict + ranking + chosen embedder (this slice).",
+    "stage2_gap_relative": "DEFERRED to after D0b lands — gap-relative 'is any lift enough / surpass' finalization (design §6). D0b is still running its priced parity pass."
+  },
+
+  "tdd": {"red_then_green": true, "unit_tests": "19 passed, 4 deselected (integration opt-in)", "integration_tests": "validated under eu-0 CPU venv (byte-identical determinism, cls!=mean)", "ruff": "clean", "pyright": "0 errors"},
+
+  "codex_verdict": "CLEAN (round 6, post-fix-6): 'I did not identify a discrete, actionable bug introduced by this patch.' Six review rounds: design consult (Q2/Q3/Q5/Q6 folded) + code r1 (latency/revisions->fix-1) + r2 (Hamming-tie/cache->fix-2) + r3 (test-opt-in->fix-3) + full-run failure (gte)->fix-4 resilience + r4 (offline/cache-identity->fix-5) + r5 (proj_eu7 CI->fix-6) + r6 CLEAN. All [P2], no [P1].",
+  "gate_results": {"probe_15a_pass_any_candidate": false, "decision": "no_swap (bge-small)", "eu7_floor_consumed": 0.90, "determinism": "verified (byte-identical gate numbers on regenerate)", "footprint": "OFFLINE-BUILD/EVAL-ONLY, $0, CPU-only, no GPU, no airlock, no engine/Rust change"},
+
+  "commits": [
+    "8ba6d714 design", "6bd19e88 design (consult folded)",
+    "8331ff43 RED", "aa9415de GREEN", "e618f888 perf(bm25 index)", "cb821a08 impl-closure",
+    "0942b5c6/40b64f65/302b69f6 fix-1 (latency+revisions)",
+    "bb919817/aa95a087/2fe6f308 fix-2 (hamming-tie+cache-sidecar)",
+    "53e213a2 de-pollute",
+    "bd78d1d4/5055d8e4/8d3402dd fix-3 (integration opt-in)",
+    "10a3c6dc/90720909/9be50c59 fix-4 (per-candidate resilience)",
+    "4a241f9b result (NO SWAP)",
+    "0a5659d5/53e705da/9ac3fb7c fix-5 (offline-pin+input_id_hash)",
+    "a8738dd8/965b5bc0/292f6499 fix-6 (projected_eu7 CI)",
+    "d3f3bc99 result (regenerate w/ CI)"
+  ],
+
+  "env_notes": ["embedding via dev/research/eu-0/.venv (torch-cpu+transformers); einops added to THAT venv only (canonical .venv verified clean)", "canonical .venv lacks torch by design; pure-logic tests run there with FATHOMDB_TESTS_NO_REBUILD=1", "raw codex/full-run TUI logs gitignored; concise review-record committed"],
+
+  "next_step_for_orchestrator": "land on main after D0b lands (cherry-pick this branch; do NOT merge now to avoid racing D0b); feed the chosen embedder (CLS-corrected bge-small — NO SWAP) into Slice 20. Slice-20 implication: the embedder is NOT the lever for the hard/exploratory axis; the dense lever buys eu8 relevance but not the hard subset, so the remaining Mem0 gap (once D0b quantifies it) must be closed by a non-embedder lever (PRF and/or D2 fielded enrichment per 15b) or accepted. Stage-2 surpass finalization pends the D0b gap."
+}
