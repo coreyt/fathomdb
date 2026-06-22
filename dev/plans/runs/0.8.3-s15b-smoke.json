@@ -1,0 +1,41 @@
+{
+  "mode": "s15b-d2-proxy-smoke",
+  "backend": "bm25",
+  "n_questions": 16,
+  "n_sessions": 16,
+  "corpus_hash": "a0be15940d9d534b0534ba95a3a31c3c",
+  "extraction": {
+    "source": "synthetic-smoke",
+    "coverage": 16,
+    "n_sessions": 16
+  },
+  "footprint": "OFFLINE-BUILD / EVAL-ONLY / LLM-free-at-measure",
+  "verdict": "PASS",
+  "slice_25_eligible": true,
+  "probe_15b_pass": true,
+  "delta_d2": 0.03,
+  "n_questions_scored": 16,
+  "criterion_1_content": {
+    "enriched_recall": 1.0,
+    "placebo_recall": 0.0,
+    "margin_point": 1.0,
+    "margin_ci_lo": 1.0,
+    "margin_ci_hi": 1.0,
+    "margin_mde": 0.0,
+    "pass": true
+  },
+  "criterion_2_length_norm": {
+    "b_hi": 0.75,
+    "b_lo": 0.0,
+    "penalty_present": false,
+    "penalty_ci_lo": 0.0,
+    "penalty_ci_hi": 0.0,
+    "neutralization": "neutralized",
+    "neut_ci_lo": 0.0,
+    "neut_ci_hi": 0.0,
+    "neut_mde": 0.0,
+    "removes_length_norm_penalty": "removed"
+  },
+  "seed": 20260622,
+  "n_boot": 10000
+}

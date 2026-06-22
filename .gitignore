@@ -81,3 +81,6 @@ dev/plans/runs/0.8.3-s15a-design-consult-*.md
 
 # eu7 bisect — raw codex review transcript (concise outcome lives in the bisect-report)
 dev/plans/runs/0.8.3-eu7-bisect-doc-review-*.md
+# 0.8.3 Slice 15b — raw codex review TUI logs (verbose; verdicts captured in the design review-record)
+dev/plans/runs/0.8.3-s15b-*review*.log
+dev/plans/runs/0.8.3-s15b-design-consult-*.log
