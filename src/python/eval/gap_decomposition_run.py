@@ -106,6 +106,16 @@ DEFAULT_MAX_OUTPUT_TOKENS = 512
 #: Default paired-bootstrap resample count (deterministic given seed).
 DEFAULT_N_BOOT = 2000
 
+#: The published verdict token for a NON-CITABLE run (capped / incomplete). A run
+#: in this state must NEVER emit a RETRIEVAL/DISTILLED_FORM/MEM0_RESIDUAL DOMINANT
+#: result — an incomplete priced run is non-citable until completeness is satisfied
+#: (codex §9 P1: the resilience contract).
+ABORTED_VERDICT = "ABORTED_INCOMPLETE"
+#: Answer-completeness floor: the fraction of the input's answerable questions whose
+#: THREE new arms were all processed. Below this (or on a budget abort) the run is
+#: non-citable. 1.0 = every answerable question's new arms were produced/resumed.
+ANSWER_COMPLETENESS_MIN = 1.0
+
 
 # --------------------------------------------------------------------------- #
 # Errors (loud, never silent).
@@ -162,17 +172,21 @@ def resolve_distiller_model(distiller: Optional[str], reader: str) -> str:
     **never** the priced strong reader.
 
     Defaults to :data:`CHEAP_READER_DEFAULT` (the gemini-flash-lite id m1/d0b
-    cheap-validate use). **Fail-closed**: if the resolved distiller equals the
-    reader AND the reader is the priced strong reader (:data:`STRONG_READER_DEFAULT`,
-    e.g. ``gpt-5.4``), raise :class:`SystemExit` — the distiller must not be the
-    priced reader (the flagged placeholder ``distiller_model = reader`` is the bug
+    cheap-validate use). **Fail-closed**: if the resolved distiller equals the priced
+    strong reader (:data:`STRONG_READER_DEFAULT`, e.g. ``gpt-5.4``), raise
+    :class:`SystemExit` — **independent of the reader / mode** (codex §9 P2). The old
+    guard only fired when ``distiller == reader`` AND the reader was strong, so a
+    cheap-resolved reader (e.g. ``--mode cheap``) let ``--distiller gpt-5.4`` slip a
+    priced distiller through; the corpus distiller must never be the strong/priced
+    model in ANY mode (the flagged placeholder ``distiller_model = reader`` is the bug
     this guards)."""
     model = distiller or CHEAP_READER_DEFAULT
-    if model == reader and reader == STRONG_READER_DEFAULT:
+    if model == STRONG_READER_DEFAULT:
         raise SystemExit(
-            f"[GAPDECOMP][STOP] distiller {model!r} == the priced strong reader "
-            f"{reader!r}; the corpus distiller must be a cheap/local model, NEVER "
-            f"the priced reader (design §4). Pass --distiller with a cheap id "
+            f"[GAPDECOMP][STOP] distiller {model!r} is the priced strong reader "
+            f"{STRONG_READER_DEFAULT!r}; the corpus distiller must be a cheap/local "
+            f"model, NEVER the strong/priced model — in ANY mode (codex §9 P2; reader "
+            f"resolved to {reader!r}). Pass --distiller with a cheap id "
             f"(default {CHEAP_READER_DEFAULT!r})."
         )
     return model
@@ -579,6 +593,30 @@ def _context_contains_answer(context: Sequence[str], answers: Sequence[str]) -> 
 # --------------------------------------------------------------------------- #
 
 
+def answer_completeness(
+    records: Sequence[Mapping[str, Any]],
+    queries: Sequence[GoldQuery],
+) -> float:
+    """Fraction of the input's **answerable** questions whose THREE new arms were all
+    processed (codex §9 P1). A question counts as complete only when its record is
+    present AND every arm in :data:`NEW_ARMS` was produced (key present in
+    ``answers`` — an abstention ``None`` still counts as *processed*; a budget abort
+    leaves the un-reached arms' keys ABSENT). A skipped (never-appended) question and
+    a partially-answered question both count against completeness, so a capped prefix
+    scores ``< 1.0``. Returns ``1.0`` when the input has no answerable question."""
+    expected = sum(1 for q in queries if q.answers)
+    if expected == 0:
+        return 1.0
+    complete = 0
+    for r in records:
+        if not r.get("has_answers"):
+            continue
+        answers = r.get("answers") or {}
+        if all(arm in answers for arm in NEW_ARMS):
+            complete += 1
+    return round(complete / expected, 4)
+
+
 def decide_all_classes(
     component_table: Mapping[str, Mapping[str, Mapping[str, Any]]],
     records: Sequence[Mapping[str, Any]],
@@ -730,9 +768,39 @@ def run_gap_decomposition(
             _checkpoint()
 
     table = per_component_table(records, classes=classes, n_boot=n_boot, seed=seed)
-    verdicts = decide_all_classes(table, records, classes=classes)
+    raw_verdicts = decide_all_classes(table, records, classes=classes)
     retention = {arm: answer_retention(records, arm=arm) for arm in NEW_ARMS}
     coverages = {c: class_fit_coverage(records, c) for c in classes}
+
+    # --- citability gate (codex §9 P1) --------------------------------------- #
+    # An incomplete / cap-aborted priced run is NON-CITABLE: a low-variance prefix
+    # must NOT be allowed to emit a powered DOMINANT verdict for an INCOMPLETE
+    # experiment. When aborted OR answer-completeness is below the floor, suppress
+    # every DOMINANT result and publish ABORTED_INCOMPLETE; the component tables are
+    # still recorded but the whole artifact is clearly marked non-citable.
+    completeness = answer_completeness(records, queries)
+    incomplete = aborted_for_cap or completeness < ANSWER_COMPLETENESS_MIN
+    citable = not incomplete
+    if aborted_for_cap:
+        non_citable_reason: Optional[str] = "aborted_for_cap"
+    elif incomplete:
+        non_citable_reason = f"answer_completeness:{completeness:.4f}<{ANSWER_COMPLETENESS_MIN}"
+    else:
+        non_citable_reason = None
+
+    if citable:
+        verdicts: dict[str, Any] = dict(raw_verdicts)
+        top_verdict = str(raw_verdicts["pooled"]["verdict"])
+    else:
+        # Override EVERY per-class + pooled verdict to the non-citable token so no
+        # RETRIEVAL/DISTILLED_FORM/MEM0_RESIDUAL DOMINANT result can be published.
+        verdicts = {}
+        for cls_name, dec in raw_verdicts.items():
+            d = dict(dec)
+            d["verdict"] = ABORTED_VERDICT
+            d["reason"] = non_citable_reason
+            verdicts[cls_name] = d
+        top_verdict = ABORTED_VERDICT
 
     art: dict[str, Any] = {
         "schema": "0.8.3-gap-decomposition-v1",
@@ -749,7 +817,13 @@ def run_gap_decomposition(
         "fit_coverage_per_class": coverages,
         "fit_coverage_min": FIT_COVERAGE_MIN,
         "component_deltas": table,
+        "verdict": top_verdict,
         "verdicts": verdicts,
+        "citable": citable,
+        "run_valid": citable,
+        "answer_completeness": completeness,
+        "answer_completeness_min": ANSWER_COMPLETENESS_MIN,
+        "non_citable_reason": non_citable_reason,
         "answer_retention": retention,
         "over_salience_note": (
             "answer-retention is a LOSSY-DISTILL diagnostic, reported SEPARATELY from "
@@ -779,7 +853,7 @@ def run_gap_decomposition(
     print(
         f"[GAPDECOMP][{mode.upper()}] wrote {output} | {len(records)} Q | "
         f"spent ${ledger.spent:.4f}/{ledger.hard_cap_usd:.0f} | "
-        f"pooled={verdicts['pooled']['verdict']}",
+        f"citable={citable} compl={completeness} | verdict={top_verdict}",
         flush=True,
     )
     return art
