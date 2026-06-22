@@ -287,16 +287,18 @@ class BM25Okapi:
         self.n_docs = len(self.corpus_tokens)
         self.doc_len = [len(d) for d in self.corpus_tokens]
         self.avgdl = (sum(self.doc_len) / self.n_docs) if self.n_docs else 0.0
-        # term frequencies per doc + document frequency.
-        self.tf: list[dict[str, int]] = []
+        # Inverted index: term -> list of (doc_idx, tf). Scoring touches only the
+        # docs that actually contain a query term (O(postings), not O(n_docs)).
+        self.postings: dict[str, list[tuple[int, int]]] = {}
         df: dict[str, int] = {}
-        for toks in self.corpus_tokens:
+        for i, toks in enumerate(self.corpus_tokens):
             freqs: dict[str, int] = {}
             for t in toks:
                 freqs[t] = freqs.get(t, 0) + 1
-            self.tf.append(freqs)
-            for t in freqs:
+            for t, f in freqs.items():
+                self.postings.setdefault(t, []).append((i, f))
                 df[t] = df.get(t, 0) + 1
+        self._dl = np.asarray(self.doc_len, dtype=np.float64)
         # Okapi idf with the +1 floor (non-negative; ATIRE/standard form).
         self.idf: dict[str, float] = {
             t: math.log(1.0 + (self.n_docs - n + 0.5) / (n + 0.5)) for t, n in df.items()
@@ -307,16 +309,21 @@ class BM25Okapi:
         scores = np.zeros(self.n_docs, dtype=np.float64)
         if self.avgdl == 0.0:
             return scores
+        norm = 1.0 - self.b + self.b * self._dl / self.avgdl  # per-doc length norm
+        qtf: dict[str, int] = {}
         for t in query_tokens:
+            qtf[t] = qtf.get(t, 0) + 1
+        for t, qn in qtf.items():
             idf = self.idf.get(t)
-            if idf is None:
+            posting = self.postings.get(t)
+            if idf is None or not posting:
                 continue
-            for i in range(self.n_docs):
-                f = self.tf[i].get(t, 0)
-                if f == 0:
-                    continue
-                denom = f + self.k1 * (1.0 - self.b + self.b * self.doc_len[i] / self.avgdl)
-                scores[i] += idf * (f * (self.k1 + 1.0)) / denom
+            idxs = np.fromiter((i for i, _ in posting), dtype=np.int64, count=len(posting))
+            fs = np.fromiter((f for _, f in posting), dtype=np.float64, count=len(posting))
+            denom = fs + self.k1 * norm[idxs]
+            # qn preserves the per-occurrence sum of the classic loop (repeated
+            # query terms count, matching rank_bm25's BM25Okapi).
+            scores[idxs] += qn * idf * (fs * (self.k1 + 1.0)) / denom
         return scores
 
     def topk(self, query_tokens: Sequence[str], k: int) -> list[int]:
