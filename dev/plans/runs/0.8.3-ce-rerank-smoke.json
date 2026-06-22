@@ -1,0 +1,224 @@
+{
+  "schema": "0.8.3-ce-rerank-probe-v1",
+  "smoke": true,
+  "k": 10,
+  "pool_n": 50,
+  "rerank_depth": 50,
+  "ce_model_repo": "cross-encoder/ms-marco-TinyBERT-L2-v2",
+  "ce_model_name": "fathomdb-ms-marco-TinyBERT-L2-v2",
+  "corpus_hash": "1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df",
+  "seed": 0,
+  "n_boot": 2000,
+  "n_items": 20,
+  "arms_run": [
+    "fathomdb",
+    "fathomdb_rerank",
+    "naive_rag"
+  ],
+  "oracle_headroom_source": "dev/plans/runs/0.8.3-gap-decomposition-n606.json",
+  "blockers": [],
+  "rerank_margin": {
+    "treatment_arm": "fathomdb_rerank",
+    "baseline_arm": "fathomdb",
+    "per_class": {
+      "factoid": {
+        "margin": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "verdict": "FAIL",
+        "rerank_recall": 0.0,
+        "fathomdb_recall": 0.0,
+        "oracle_gap": 0.371795,
+        "headroom_captured": 0.0
+      },
+      "knowledge_update": {
+        "margin": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "verdict": "FAIL",
+        "rerank_recall": 0.4,
+        "fathomdb_recall": 0.4,
+        "oracle_gap": 0.530435,
+        "headroom_captured": 0.0
+      },
+      "multi_session": {
+        "margin": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "verdict": "FAIL",
+        "rerank_recall": 0.4,
+        "fathomdb_recall": 0.4,
+        "oracle_gap": 0.411765,
+        "headroom_captured": 0.0
+      },
+      "temporal": {
+        "margin": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "verdict": "FAIL",
+        "rerank_recall": 0.4,
+        "fathomdb_recall": 0.4,
+        "oracle_gap": 0.247423,
+        "headroom_captured": 0.0
+      }
+    },
+    "pooled": {
+      "margin": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 20
+      },
+      "verdict": "FAIL",
+      "rerank_recall": 0.3,
+      "fathomdb_recall": 0.3,
+      "oracle_gap": 0.392202,
+      "headroom_captured": 0.0
+    }
+  },
+  "lme_plus_locomo": {
+    "source_filter": "lme+locomo",
+    "n_items": 20,
+    "per_class_n": {
+      "factoid": 5,
+      "knowledge_update": 5,
+      "multi_session": 5,
+      "temporal": 5
+    },
+    "per_arm_recall": {
+      "fathomdb_rerank": {
+        "factoid": {
+          "mean": 0.0,
+          "n": 5
+        },
+        "knowledge_update": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "multi_session": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "temporal": {
+          "mean": 0.4,
+          "n": 5
+        }
+      },
+      "fathomdb": {
+        "factoid": {
+          "mean": 0.0,
+          "n": 5
+        },
+        "knowledge_update": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "multi_session": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "temporal": {
+          "mean": 0.4,
+          "n": 5
+        }
+      },
+      "naive_rag": {
+        "factoid": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "knowledge_update": {
+          "mean": 0.6,
+          "n": 5
+        },
+        "multi_session": {
+          "mean": 0.4,
+          "n": 5
+        },
+        "temporal": {
+          "mean": 0.6,
+          "n": 5
+        }
+      }
+    },
+    "recall_deltas": {
+      "fathomdb": {
+        "factoid": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "knowledge_update": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "multi_session": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "temporal": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        }
+      },
+      "naive_rag": {
+        "factoid": {
+          "point": -0.4,
+          "ci_lo": -0.8,
+          "ci_hi": 0.0,
+          "mde": 0.686245,
+          "n": 5
+        },
+        "knowledge_update": {
+          "point": -0.2,
+          "ci_lo": -0.6,
+          "ci_hi": 0.0,
+          "mde": 0.560317,
+          "n": 5
+        },
+        "multi_session": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 5
+        },
+        "temporal": {
+          "point": -0.2,
+          "ci_lo": -0.6,
+          "ci_hi": 0.0,
+          "mde": 0.560317,
+          "n": 5
+        }
+      }
+    }
+  }
+}

@@ -344,11 +344,28 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     # --- gold ----------------------------------------------------------------
     corpus_hash, _qv, lme_queries = load_repin_gold(Path(args.gold))
     lme_pool = lme_items(lme_queries)
-    loco_docs, loco_gold = load_locomo(args.locomo)
-    loco_pool_raw = locomo_items(loco_gold)
-    loco_pool, n_dropped = filter_min_sessions(
-        loco_pool_raw, min_sessions=2, classes=("multi_session",)
-    )
+    blockers: list[dict[str, str]] = []
+    # LOCOMO is CC-BY-NC, gitignored + acquired on demand; tolerate its absence
+    # (record a blocker, run the LME slice) rather than crash — mirrors the d0b
+    # recorded-blocker discipline. The powered LME+LOCOMO claim needs LOCOMO; the
+    # smoke does not.
+    loco_docs: dict[str, str] = {}
+    loco_pool: list[Any] = []
+    n_dropped = 0
+    try:
+        loco_docs, loco_gold = load_locomo(args.locomo)
+        loco_pool_raw = locomo_items(loco_gold)
+        loco_pool, n_dropped = filter_min_sessions(
+            loco_pool_raw, min_sessions=2, classes=("multi_session",)
+        )
+    except FileNotFoundError:
+        blockers.append(
+            {
+                "id": "locomo-absent",
+                "description": f"LOCOMO corpus {args.locomo} not present (CC-BY-NC; "
+                "acquire via tests/corpus/scripts/acquire_locomo.py) — running LME slice only",
+            }
+        )
     items = [*lme_pool, *loco_pool]
 
     # --smoke: deterministic per-class cap (small end-to-end on real data).
@@ -375,7 +392,6 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     print(f"[ce-rerank] corpus sessions = {len(documents)}", flush=True)
 
     # --- arms ----------------------------------------------------------------
-    blockers: list[dict[str, str]] = []
     adapters: dict[str, Any] = {FLOOR_ARM: NaiveRAGAdapter(documents)}
     try:
         from eval.r2_parity_eval import _build_fathomdb
