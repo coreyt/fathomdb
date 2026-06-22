@@ -140,7 +140,8 @@ def test_default_distiller_is_cheap_not_the_priced_reader() -> None:
     assert model != "gpt-5.4"
     # The cheap distiller is still PINNED so the ledger cap stays enforceable
     # (price_for fail-closed; the cap on the distiller must remain projectable).
-    assert price_for(model)  # does not raise UnpinnedPricing
+    pin, pout = price_for(model)  # does not raise UnpinnedPricing
+    assert pin > 0.0 and pout > 0.0
 
 
 def test_distiller_cannot_be_the_priced_reader() -> None:

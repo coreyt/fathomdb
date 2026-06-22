@@ -43,7 +43,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
-from eval.d0b_parity_run import class_delta, fit_context
+from eval.d0b_parity_run import CHEAP_READER_DEFAULT, class_delta, fit_context
 from eval.gap_decomposition_rule import (
     COMPONENTS,
     FIT_COVERAGE_MIN,
@@ -88,8 +88,13 @@ STRONG_READER_DEFAULT = "gpt-5.4"
 
 #: PINNED pricing ($ / 1M tokens) — the exact rates the D0b n606 run recorded.
 #: NO default fallback: an un-pinned priced model fails closed (codex BLOCK Q5).
+#: The cheap distiller ids (``gemini-flash-lite`` / ``gemini-3.1-flash-lite``,
+#: the rates m1/d0b cheap-validate use) are pinned too so the ledger cap on the
+#: distiller stays projectable; only a truly-unpinned model fails closed.
 PRICE_PER_1M: dict[str, tuple[float, float]] = {
     "gpt-5.4": (1.25, 5.00),
+    "gemini-flash-lite": (0.05, 0.20),
+    "gemini-3.1-flash-lite": (0.05, 0.20),
 }
 
 #: The D0b spend carried as this ledger's opening balance (design §4).
@@ -138,6 +143,27 @@ def price_for(model: str) -> tuple[float, float]:
             f"$-cap on a default (codex BLOCK Q5). Pinned models: {sorted(PRICE_PER_1M)}"
         )
     return price
+
+
+def resolve_distiller_model(distiller: Optional[str], reader: str) -> str:
+    """Resolve the corpus distiller model (design §4): a CHEAP / local model,
+    **never** the priced strong reader.
+
+    Defaults to :data:`CHEAP_READER_DEFAULT` (the gemini-flash-lite id m1/d0b
+    cheap-validate use). **Fail-closed**: if the resolved distiller equals the
+    reader AND the reader is the priced strong reader (:data:`STRONG_READER_DEFAULT`,
+    e.g. ``gpt-5.4``), raise :class:`SystemExit` — the distiller must not be the
+    priced reader (the flagged placeholder ``distiller_model = reader`` is the bug
+    this guards)."""
+    model = distiller or CHEAP_READER_DEFAULT
+    if model == reader and reader == STRONG_READER_DEFAULT:
+        raise SystemExit(
+            f"[GAPDECOMP][STOP] distiller {model!r} == the priced strong reader "
+            f"{reader!r}; the corpus distiller must be a cheap/local model, NEVER "
+            f"the priced reader (design §4). Pass --distiller with a cheap id "
+            f"(default {CHEAP_READER_DEFAULT!r})."
+        )
+    return model
 
 
 def estimate_tokens(text: str) -> int:
@@ -709,6 +735,11 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     ap = argparse.ArgumentParser(description="0.8.3 gap-decomposition runner")
     ap.add_argument("--mode", choices=["cheap", "full"], required=True)
     ap.add_argument("--reader", default=None)
+    ap.add_argument(
+        "--distiller", default=CHEAP_READER_DEFAULT,
+        help=("corpus distiller model — a CHEAP/local id, NEVER the priced reader "
+              f"(default {CHEAP_READER_DEFAULT!r}; fail-closed if == the strong reader)"),
+    )
     ap.add_argument("--gold", default="dev/plans/runs/0.8.3-d0a-memory-gold.json")
     ap.add_argument("--d0b-checkpoint", required=True,
                     help="0.8.3-d0b-parity-v2.checkpoint.json (HARD-STOP if no per-question records)")
@@ -735,9 +766,12 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     documents = build_documents_from_lme(queries)
     ledger = BudgetLedger(max_output_tokens=args.max_output_tokens)
 
-    # Distiller: a $-capped cheap model via the airlock (fail-closed pricing). A
-    # local-Qwen ($0) distiller would pass ledger=None — wire it here if available.
-    distiller_model = reader
+    # Distiller: a $-capped CHEAP model via the airlock (fail-closed pricing),
+    # NEVER the priced reader. A local-Qwen ($0) distiller would pass ledger=None —
+    # wire it here when the GPU is free. resolve_distiller_model fail-closes if the
+    # distiller would be the priced strong reader.
+    distiller_model = resolve_distiller_model(args.distiller, reader)
+    price_for(distiller_model)  # fail closed: the distiller cap needs pinned pricing
     distill_client = CostTrackingAnswerer(distiller_model, timeout_s=120.0)
 
     class _BodyOnlyClient:
