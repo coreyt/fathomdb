@@ -117,6 +117,17 @@ def test_price_for_pins_cheap_validate_model() -> None:
     assert price_for("gemini-2.5-flash-lite") == (0.05, 0.20)
 
 
+def test_gpt5_nano_distiller_is_pinned_and_allowed() -> None:
+    # The priced run must be able to route the distiller off the (503-ing) Google
+    # cheap model onto gpt-5-nano. Authoritative litellm pricing DB rate:
+    # gpt-5-nano = $0.05 / 1M in, $0.40 / 1M out.
+    assert price_for("gpt-5-nano") == (0.05, 0.40)
+    # gpt-5-nano is a cheap model, NOT the priced strong reader, so the
+    # strong-distiller guard must allow it (no SystemExit) in any mode.
+    assert resolve_distiller_model("gpt-5-nano", "gpt-5.4") == "gpt-5-nano"
+    assert resolve_distiller_model("gpt-5-nano", "gemini-flash-lite") == "gpt-5-nano"
+
+
 def test_price_for_fail_closed_on_unpinned_model() -> None:
     assert price_for("gpt-5.4") == (1.25, 5.00)
     with pytest.raises(UnpinnedPricing):
