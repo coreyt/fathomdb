@@ -497,7 +497,9 @@ def choose_embedder(per_candidate: Mapping[str, Mapping[str, Any]]) -> dict[str,
     qualifying = [
         (name, m)
         for name, m in per_candidate.items()
-        if bool(m.get("probe_15a_pass")) and bool(m.get("in_library_feasible"))
+        if m.get("measurement_status") != "failed"
+        and bool(m.get("probe_15a_pass"))
+        and bool(m.get("in_library_feasible"))
     ]
     # Rank by binding margin desc, projected_eu7 headroom as the tiebreak.
     ranking = sorted(
@@ -1053,6 +1055,19 @@ def _median_finite(xs: Sequence[float]) -> float | None:
     return float(statistics.median(finite)) if finite else None
 
 
+def _format_measure_error(exc: BaseException, *, max_len: int = 300) -> str:
+    """Compact ``"<ExcType>: <message>"`` for a failed-candidate record (truncated).
+
+    Records the exception TYPE + message so a candidate's failure is honestly
+    visible in the output (fix-4 — failure ≠ abstention) without dumping a full
+    traceback into the §9 json.
+    """
+    msg = f"{type(exc).__name__}: {exc}".strip()
+    if len(msg) > max_len:
+        msg = msg[: max_len - 1] + "…"
+    return msg
+
+
 def run_probe(
     *,
     model_names: Sequence[str],
@@ -1098,8 +1113,14 @@ def run_probe(
     hard = compute_hard_subset(corpus, queries)
     hard_set = set(hard.qids)
 
-    # Embed + measure each model.
+    # Embed + measure each model. A CANDIDATE that raises during load / embed /
+    # metrics (e.g. gte-base's custom HF modeling code crashing under transformers
+    # 5.9) is recorded as measurement_status="failed" and the probe CONTINUES —
+    # failure ≠ abstention; one non-selectable candidate must not kill the whole
+    # measurement (fix-4). The BASE has no reference embedder, so a base failure
+    # STAYS fatal (re-raised loudly).
     per_model_raw: dict[str, dict[str, Any]] = {}
+    measurement_failures: list[dict[str, str]] = []
     sample_q = [q.text for q in queries[:latency_sample]] or [q.text for q in queries[:1]]
     sample_d = corpus.bodies[:latency_sample] or corpus.bodies[:1]
     for name in model_names:
@@ -1107,30 +1128,44 @@ def run_probe(
         # codex §9 [P2]#2). The SHA == the current cache default, so the warm
         # .npy vectors stay valid (the .npy key is the model NAME, not revision).
         cfg = pinned_cfg(MODELS[name])
-        docs, qvecs = embed_model(
-            cfg,
-            corpus,
-            queries,
-            cache_dir=cache_dir,
-            num_threads=num_threads,
-            batch_size=batch_size,
-            resume=resume,
-        )
-        eu8 = eu8_hits(corpus.doc_ids, docs, qvecs, queries)
-        h10, h50, hranks = hard_hits(
-            corpus.doc_ids, docs, qvecs, queries, hard_set
-        )
-        proj = projected_eu7(docs, qvecs, hamming_k=PROJECTED_EU7_K, mean_center=True)
-        # ms_per_query: single-text; ms_per_doc: batched (per-item). Both measured
-        # steady-state (model resident + warmup), excluding checkpoint load.
-        ms_q = measure_latency(
-            cfg, sample_q, is_query=True, num_threads=num_threads, batch_size=1
-        )
-        ms_d = measure_latency(
-            cfg, sample_d, is_query=False, num_threads=num_threads, batch_size=batch_size
-        )
+        try:
+            docs, qvecs = embed_model(
+                cfg,
+                corpus,
+                queries,
+                cache_dir=cache_dir,
+                num_threads=num_threads,
+                batch_size=batch_size,
+                resume=resume,
+            )
+            eu8 = eu8_hits(corpus.doc_ids, docs, qvecs, queries)
+            h10, h50, hranks = hard_hits(
+                corpus.doc_ids, docs, qvecs, queries, hard_set
+            )
+            proj = projected_eu7(docs, qvecs, hamming_k=PROJECTED_EU7_K, mean_center=True)
+            # ms_per_query: single-text; ms_per_doc: batched (per-item). Both
+            # measured steady-state (model resident + warmup), excluding load.
+            ms_q = measure_latency(
+                cfg, sample_q, is_query=True, num_threads=num_threads, batch_size=1
+            )
+            ms_d = measure_latency(
+                cfg, sample_d, is_query=False, num_threads=num_threads, batch_size=batch_size
+            )
+        except Exception as exc:  # noqa: BLE001 — per-candidate resilience boundary
+            if name == BASE_NAME:
+                # No reference embedder without the base -> abort the whole probe.
+                raise
+            err = _format_measure_error(exc)
+            per_model_raw[name] = {
+                "cfg": cfg,
+                "measurement_status": "failed",
+                "error": err,
+            }
+            measurement_failures.append({"name": name, "error": err})
+            continue
         per_model_raw[name] = {
             "cfg": cfg,
+            "measurement_status": "ok",
             "eu8_hits": eu8,
             "hard_r10_hits": h10,
             "hard_r50_hits": h50,
@@ -1151,6 +1186,15 @@ def run_probe(
             continue
         raw = per_model_raw[name]
         cfg: ModelCfg = raw["cfg"]
+        if raw.get("measurement_status") == "failed":
+            # Failure ≠ abstention: record the failure (no metric fields, no
+            # probe_15a_pass verdict) and keep it out of passers/selection.
+            per_candidate[name] = {
+                "measurement_status": "failed",
+                "error": raw["error"],
+                "in_library_feasible": cfg.in_library_feasible,
+            }
+            continue
         eu8_ci = paired_bootstrap_ci(
             raw["eu8_hits"],
             base_raw["eu8_hits"],
@@ -1174,6 +1218,7 @@ def run_probe(
         }
         passed = candidate_passes(cand_metrics, {"eu8": base_eu8, "hard": base_hard})
         per_candidate[name] = {
+            "measurement_status": "ok",
             "eu8": cand_metrics["eu8"],
             "hard": {
                 "r@10": cand_metrics["hard"],
@@ -1206,6 +1251,7 @@ def run_probe(
     surpass_flag = {
         name: bool(m["probe_15a_pass"]) and m["binding_margin"] > 0.0
         for name, m in per_candidate.items()
+        if m.get("measurement_status") != "failed"
     }
 
     return {
@@ -1218,6 +1264,7 @@ def run_probe(
             "ms_per_query": base_ms,
         },
         "per_candidate": per_candidate,
+        "measurement_failures": measurement_failures,
         "chosen_embedder": choice["chosen_embedder"],
         "no_swap": choice["no_swap"],
         "ranking": choice["ranking"],
@@ -1309,6 +1356,12 @@ def write_outputs(result: dict[str, Any], *, out_json: Path, out_md: Path) -> No
                  "cpu | in_lib | PASS |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
     for name, m in result["per_candidate"].items():
+        if m.get("measurement_status") == "failed":
+            lines.append(
+                f"| {name} | FAILED | — | — | — | — | — | "
+                f"{m.get('in_library_feasible')} | n/a |"
+            )
+            continue
         lines.append(
             f"| {name} | {m['eu8']:.4f} | {m['hard']['r@10']:.4f} | "
             f"{m['projected_eu7']:.4f} | {m['eu8_margin_ci']['lo']:+.4f} | "
@@ -1317,6 +1370,13 @@ def write_outputs(result: dict[str, Any], *, out_json: Path, out_md: Path) -> No
             f"{'PASS' if m['probe_15a_pass'] else 'fail'} |"
         )
     lines.append("")
+    failures = result.get("measurement_failures") or []
+    if failures:
+        lines.append("## Measurement failures (recorded, non-fatal)")
+        lines.append("")
+        for f in failures:
+            lines.append(f"- **{f['name']}**: {f['error']}")
+        lines.append("")
     lines.append(f"## Chosen Slice-20 embedder: **{result['chosen_embedder']}**"
                  + (" (no swap)" if result["no_swap"] else ""))
     lines.append("")
