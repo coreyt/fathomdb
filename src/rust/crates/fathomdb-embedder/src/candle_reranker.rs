@@ -252,7 +252,7 @@ impl CandleTinyBertReranker {
     /// pair with far fewer kernel launches than `N` per-pair forwards on the hot
     /// rerank path, while **bounding peak memory**.
     ///
-    /// The pairs are split into chunks of at most [`MAX_CE_BATCH`] and each chunk
+    /// The pairs are split into chunks of at most `MAX_CE_BATCH` and each chunk
     /// runs in ONE `model.forward`; the per-chunk `Vec<f32>` results are
     /// concatenated in input order. Chunking caps peak self-attention memory at
     /// ~`MAX_CE_BATCH * num_heads * L_max^2` regardless of how large the
