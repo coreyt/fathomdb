@@ -297,6 +297,190 @@ def test_model_revisions_are_resolved_shas() -> None:
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# fix-2 [P2]#1 — deterministic Hamming fanout (stable tie-break by doc index).
+# argpartition picks an ARBITRARY subset of docs tied at the Kth Hamming
+# distance; a tied near-floor candidate can then pass/fail projected_eu7 on an
+# unpinned tie. The fix selects the index-ordered (lexicographic (hamming, idx))
+# top-K candidate set. Torch-free: numpy-only on hand-built vectors.
+# --------------------------------------------------------------------------- #
+
+
+def test_projected_eu7_deterministic_hamming_fanout() -> None:
+    from eval.s15a_embedder_probe import projected_eu7
+
+    # q = all-ones, so 1-bit Hamming distance == the number of negative
+    # components. The ham layout below is one where numpy's argpartition tie-break
+    # at the fanout boundary (kk=9) keeps doc index 8 and DROPS doc index 6, while
+    # a stable index-ordered fanout keeps index 6. We make index 6 the global
+    # f32-exact top-1 (dot 29.99), so:
+    #   * argpartition (current): index 6 excluded from the 9 Hamming candidates
+    #     -> rerank top-1 = index 8 -> overlap with exact {6} = 0 -> proxy 0.0.
+    #   * stable index-ordered fanout (fix): index 6 kept -> rerank top-1 = 6 ->
+    #     overlap = 1 -> proxy 1.0.
+    # ham per index: [0,0,3,0,2,0,1,1,1,1,0,0,0,0]
+    docs = np.array(
+        [
+            [0.1, 0.1, 0.1, 0.1],     # 0  ham0
+            [0.1, 0.1, 0.1, 0.1],     # 1  ham0
+            [0.1, -0.1, -0.1, -0.1],  # 2  ham3
+            [0.1, 0.1, 0.1, 0.1],     # 3  ham0
+            [0.1, 0.1, -0.1, -0.1],   # 4  ham2
+            [0.1, 0.1, 0.1, 0.1],     # 5  ham0
+            [10.0, 10.0, 10.0, -0.01],  # 6  ham1  <- f32-exact best (dot 29.99)
+            [0.2, 0.2, 0.2, -0.01],   # 7  ham1
+            [5.0, 5.0, 5.0, -0.01],   # 8  ham1  <- argpartition keeps this instead
+            [0.2, 0.2, 0.2, -0.01],   # 9  ham1
+            [0.1, 0.1, 0.1, 0.1],     # 10 ham0
+            [0.1, 0.1, 0.1, 0.1],     # 11 ham0
+            [0.1, 0.1, 0.1, 0.1],     # 12 ham0
+            [0.1, 0.1, 0.1, 0.1],     # 13 ham0
+        ],
+        dtype=np.float32,
+    )
+    q = np.array([[1.0, 1.0, 1.0, 1.0]], dtype=np.float32)
+
+    # Deterministic index-ordered tie-break keeps the f32-best boundary doc.
+    val = projected_eu7(docs, q, hamming_k=9, top_k=1, mean_center=False)
+    assert val == pytest.approx(1.0)
+
+    # Repeatable run-to-run (no unpinned tie -> identical value every call).
+    again = projected_eu7(docs, q, hamming_k=9, top_k=1, mean_center=False)
+    assert again == val
+
+
+# --------------------------------------------------------------------------- #
+# fix-2 [P2]#2 — vector cache key must include revision + input identity.
+# --resume reused {model}.docs.npy/{model}.queries.npy on ROW COUNT alone, so a
+# different resolved revision / changed input set silently fed STALE vectors into
+# every gate metric. The fix writes a {model}.meta.json sidecar and reuses the
+# cache ONLY when (revision, corpus_hash, n_docs, n_queries, pooling, dim) match.
+# Torch-free: embed_texts is monkeypatched to a fresh-vector sentinel.
+# --------------------------------------------------------------------------- #
+
+
+def _tiny_corpus_and_queries():  # type: ignore[no-untyped-def]
+    from eval.s15a_embedder_probe import Corpus, GoldQuery
+
+    corpus = Corpus(
+        doc_ids=["d0", "d1", "d2"],
+        bodies=["b0", "b1", "b2"],
+        corpus_hash="HASH_A",
+        resolved_count=3,
+        sources=["s"],
+    )
+    queries = [
+        GoldQuery(query_id="q0", text="t0", query_class="factual", required_doc_ids=["d0"]),
+        GoldQuery(query_id="q1", text="t1", query_class="factual", required_doc_ids=["d1"]),
+    ]
+    return corpus, queries
+
+
+_STALE = 7.0
+_FRESH = 1.0
+
+
+def _install_fresh_embedder(m: object, calls: list[str]):  # type: ignore[no-untyped-def]
+    def fake_embed_texts(cfg, texts, *, is_query, **kw):  # type: ignore[no-untyped-def]
+        calls.append("query" if is_query else "doc")
+        return np.full((len(list(texts)), cfg.dim), _FRESH, dtype=np.float32)
+
+    return fake_embed_texts
+
+
+def test_cache_sidecar_revision_mismatch_reembeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+) -> None:
+    from dataclasses import replace
+
+    from eval import s15a_embedder_probe as m
+
+    corpus, queries = _tiny_corpus_and_queries()
+    cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
+
+    cache_dir = tmp_path  # type: ignore[assignment]
+    doc_npy = cache_dir / f"{cfg.name}.docs.npy"  # type: ignore[operator]
+    qry_npy = cache_dir / f"{cfg.name}.queries.npy"  # type: ignore[operator]
+    meta_path = cache_dir / f"{cfg.name}.meta.json"  # type: ignore[operator]
+
+    # Stale warm vectors with MATCHING row counts (the only thing current code
+    # checks) but a sidecar pinning a DIFFERENT revision.
+    m._atomic_save_npy(doc_npy, np.full((3, 4), _STALE, np.float32))
+    m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
+    import json as _json
+
+    meta_path.write_text(  # type: ignore[attr-defined]
+        _json.dumps(
+            {
+                "revision": "REV_OLD",
+                "corpus_hash": "HASH_A",
+                "n_docs": 3,
+                "n_queries": 2,
+                "pooling": cfg.pooling,
+                "dim": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(m, "embed_texts", _install_fresh_embedder(m, calls))
+
+    docs, qvecs = m.embed_model(
+        cfg, corpus, queries, cache_dir=cache_dir, num_threads=1, batch_size=8, resume=True
+    )
+    # The stale cache must NOT be returned; the revision mismatch forces a re-embed.
+    assert not np.array_equal(docs, np.full((3, 4), _STALE, np.float32))
+    assert np.array_equal(docs, np.full((3, 4), _FRESH, np.float32))
+    assert np.array_equal(qvecs, np.full((2, 4), _FRESH, np.float32))
+    assert calls, "expected a re-embed (embed_texts called) on sidecar mismatch"
+
+
+def test_cache_sidecar_match_reuses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+) -> None:
+    from dataclasses import replace
+
+    from eval import s15a_embedder_probe as m
+
+    corpus, queries = _tiny_corpus_and_queries()
+    cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
+
+    cache_dir = tmp_path  # type: ignore[assignment]
+    doc_npy = cache_dir / f"{cfg.name}.docs.npy"  # type: ignore[operator]
+    qry_npy = cache_dir / f"{cfg.name}.queries.npy"  # type: ignore[operator]
+    meta_path = cache_dir / f"{cfg.name}.meta.json"  # type: ignore[operator]
+
+    m._atomic_save_npy(doc_npy, np.full((3, 4), _STALE, np.float32))
+    m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
+    import json as _json
+
+    meta_path.write_text(  # type: ignore[attr-defined]
+        _json.dumps(
+            {
+                "revision": "REV_A",
+                "corpus_hash": "HASH_A",
+                "n_docs": 3,
+                "n_queries": 2,
+                "pooling": cfg.pooling,
+                "dim": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(m, "embed_texts", _install_fresh_embedder(m, calls))
+
+    docs, qvecs = m.embed_model(
+        cfg, corpus, queries, cache_dir=cache_dir, num_threads=1, batch_size=8, resume=True
+    )
+    # A fully-matching sidecar -> reuse the warm vectors, no re-embed.
+    assert np.array_equal(docs, np.full((3, 4), _STALE, np.float32))
+    assert np.array_equal(qvecs, np.full((2, 4), _STALE, np.float32))
+    assert calls == [], "matching sidecar must reuse the cache (no embed_texts call)"
+
+
 @pytest.mark.integration
 def test_embed_texts_steady_state_no_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("torch")
