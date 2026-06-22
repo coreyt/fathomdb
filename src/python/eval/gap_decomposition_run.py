@@ -95,6 +95,10 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
     "gpt-5.4": (1.25, 5.00),
     "gemini-flash-lite": (0.05, 0.20),
     "gemini-3.1-flash-lite": (0.05, 0.20),
+    # The documented cheap-validate id (design §cheap-validate). Pinned at the same
+    # cheap rates so price_for does not fail closed on the prescribed cheap path
+    # (codex §9 P2).
+    "gemini-2.5-flash-lite": (0.05, 0.20),
 }
 
 #: The D0b spend carried as this ledger's opening balance (design §4).
@@ -421,6 +425,21 @@ class RawCompletionDistillerClient:
 
 def _body_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+
+
+def effective_distill_cache_path(
+    distill_cache_arg: str | Path | None, output: str | Path
+) -> Path:
+    """Resolve the distill cache path, defaulting to an OUTPUT-derived path.
+
+    When ``--distill-cache`` is omitted the priced distiller's outputs and its
+    ``.spent.json`` spend sidecar must STILL be persisted, so an interrupted+rerun
+    priced run resumes instead of re-distilling (which can exceed the per-experiment
+    cap). Defaulting the cache next to ``--output`` makes priced distillation always
+    persisted+resumable (codex §9 P1)."""
+    if distill_cache_arg is not None:
+        return Path(distill_cache_arg)
+    return Path(output).with_suffix(".distill-cache.json")
 
 
 def distill_spent_sidecar(cache_path: str | Path) -> Path:
@@ -1027,9 +1046,13 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     # answer template (codex §9 P1#2: the template made a real cheap model abstain,
     # corrupting both distilled arms).
     distiller = BlindDistiller(RawCompletionDistillerClient(distill_client))
+    # ALWAYS persist the distill cache: default it to an output-derived path so an
+    # interrupted+rerun priced run resumes prior distiller spend instead of
+    # re-distilling (which could exceed the per-experiment cap) (codex §9 P1).
+    distill_cache_path = effective_distill_cache_path(args.distill_cache, Path(args.output))
     distill_cache = distill_corpus(
         documents, distiller,
-        cache_path=Path(args.distill_cache) if args.distill_cache else None,
+        cache_path=distill_cache_path,
         ledger=ledger, priced_model=distiller_model,
     )
 
