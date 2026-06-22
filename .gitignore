@@ -73,3 +73,7 @@ dev/plans/runs/0.8.2-m1-verdict-*.checkpoint.json
 dev/plans/runs/0.8.3-d0a-*.checkpoint.json
 # 0.8.3 D0b parity-run checkpoint sidecars (runtime resume-state, not deliverables)
 dev/plans/runs/0.8.3-d0b-*.checkpoint.json
+
+# 0.8.3 Slice 15b — raw codex review TUI logs (verbose; verdicts captured in the design review-record)
+dev/plans/runs/0.8.3-s15b-*review*.log
+dev/plans/runs/0.8.3-s15b-design-consult-*.log
