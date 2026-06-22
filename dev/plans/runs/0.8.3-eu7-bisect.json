@@ -1,0 +1,82 @@
+{
+  "_comment": "0.8.3 eu7 0.937->0.896 fidelity-regression bisect / root-cause. OFFLINE, $0, no LLM, no GPU, no build, canonical .venv untouched. Pure git/artifact archaeology.",
+  "run_id": "0.8.3-eu7-bisect",
+  "date": "2026-06-22",
+  "base_sha": "6b8503da36bbd8c477c87af421c18ef5e0eeb2e9",
+  "branch": "eu7-bisect-20260622",
+  "cost_usd": 0.0,
+  "used_llm": false,
+  "used_gpu": false,
+  "built_extension": false,
+  "canonical_venv_touched": false,
+  "question": "Is eu7 0.937->0.896 caused by CLS-pooling/embedding (case B) or a quantization/ANN vector-path issue (case A)?",
+  "verdict": {
+    "case": "A",
+    "case_label": "vector-path / measurement-SUT (NOT CLS/embedding)",
+    "case_B_cls_embedding": "RULED_OUT",
+    "case_C_corpus": "RULED_OUT",
+    "within_case_A_leading_hypothesis": "measurement-SUT definition change (B-1 vector_stage_only seam vs 0.7.1 search()), not a genuine quantization-fidelity collapse",
+    "confidence": "high on A-vs-B; medium on the within-A sub-mechanism"
+  },
+  "anchors": {
+    "good_0937": {
+      "artifact": "dev/plans/runs/0.7.1-EU-7-measurements.json",
+      "date": "2026-05-31T08:13",
+      "recall_at_10": 0.937,
+      "ci": [0.913, 0.957],
+      "sigma": 0.0116,
+      "n": 7667,
+      "sut": "engine.search() (pre-fusion vector path at anchor time)",
+      "recall_method": "exclude-before+dedup-by-body /10",
+      "mean_centering": true,
+      "k": 192
+    },
+    "bad_0896": {
+      "artifact": "dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.json",
+      "date": "2026-06-08",
+      "recall_at_10": 0.896,
+      "ci": [0.864, 0.925],
+      "sigma": 0.0157,
+      "n": 7667,
+      "recall_at_10_n1000": 0.924,
+      "recall_at_10_fused_search": 0.871,
+      "sut": "vector_stage_only B-1 seam (bit-KNN K=192 + f32 rerank)",
+      "recall_method": "exclude-before+dedup-by-body /10",
+      "mean_centering": true,
+      "k": 192
+    }
+  },
+  "eliminations": [
+    {
+      "candidate": "case B: CLS / embedding pooling",
+      "ruling": "RULED_OUT",
+      "evidence": "git diff v0.7.2 v0.8.0 -- fathomdb-embedder/src/ is EMPTY (f32 vectors byte-identical). CLS pooling is commit c7afbfde (2026-06-11, AFTER the 0.896 run), default Mean, production unchanged; CandleBgeEmbedder::new() used by eu7 still returns Pooling::Mean."
+    },
+    {
+      "candidate": "case C: corpus harder/larger/quality",
+      "ruling": "RULED_OUT",
+      "evidence": "GA-1-corpus-ab-20260608: 7667-doc corpus byte-identical between both runs (mtime 2026-05-27, same dir, same sha256). 'Expansion' was a stale qmsum checksum + a qaconv/qasper manifest entry that loaded no files."
+    },
+    {
+      "candidate": "case A: bit-KNN SQL / K=192 / f32 rerank",
+      "ruling": "RANKING_INVARIANT (not literally byte-identical; codex §9 P2)",
+      "evidence": "d28d2046 refactored the unfiltered phase-1 SQL: v0.7.2 selects c.rowid and orders by vec_distance_l2(v.embedding, vec_f32(?2)); build_vector_phase1_sql(None) selects c.rowid, vec_distance_l2(...) AS l2 and orders by the l2 alias. Cosmetic/ranking-invariant (same L2 distance, same order, TOP_K_BIT_CANDIDATES/SEARCH_RERANK_LIMIT/K=192 unchanged) -> cannot change top-10 membership, so it does not explain the recall move; but it is equivalence, not byte-identity."
+    },
+    {
+      "candidate": "case A: stored quantized bits (Pack1->Pack2)",
+      "ruling": "BYTE_IDENTICAL",
+      "evidence": "migrate_vector_partition_pack1_to_pack2 copies embedding/embedding_bin verbatim, only re-tags vec0 BIT subtype + adds status column. Comment: 'no re-quantize, so centering survives the upgrade.' Hamming distances unaffected."
+    }
+  ],
+  "residual": {
+    "leading": "B-1 vector_stage_only seam returns vector_results AS FED TO fuse_rrf (an intermediate list) with its own limit/slack/ordering, not necessarily the bit-identical list 0.7.1 search() returned to the caller -> a legitimate SUT-definition delta (~4pp, sigma shift) with no fidelity loss.",
+    "secondary": "a vector-branch change in the pre-v0.7.2 sub-window (2026-05-31 anchor -> 2026-06-01 v0.7.2 tag, PR-9 embedder-concurrency hardening) was not build-bisected.",
+    "blocker": "definitive engine 0.7.x-vs-0.8.0 vector-stage A/B requires an embedded eu7 IR-corpus snapshot; NO pre-embedded eu7-corpus DB exists (/tmp DBs are LME/d0b/r2 corpora, not the 7667-doc IR raw corpus); full CPU re-embed forbidden/out of $0 scope."
+  },
+  "recommended_slice20_fix_direction": [
+    "Decouple CLS-pooling from eu7 fidelity: CLS is an eu8/relevance lever, not the fidelity-recovery for 0.937->0.896.",
+    "Reset baseline: true current vector-stage fidelity is 0.896 (CI 0.864-0.925), not 0.937; 0.937 is a pre-B-1-seam SUT number, not directly comparable. Judge Slice-20 eu7 against the 0.90 floor measured FRESH on the seam after re-embed (GA-3 CI gate recall_ci_hi>=0.90).",
+    "If fresh eu7 < 0.90 after re-embed, the fork is QUANT-path (NOT pooling), EV order: rotation/whitening before sign-quant > raise ANN fan-out K>192 > 2-bit option.",
+    "Settle the residual cheaply: when GPU util<5% (sibling releases GPU), one GPU-embedded eu7 snapshot makes the 0.7.x-vs-0.8.0 vector-stage A/B a minutes-long $0 confirmation."
+  ]
+}

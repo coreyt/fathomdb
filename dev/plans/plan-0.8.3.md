@@ -83,7 +83,12 @@ Slice 0 freezes both in code (`eval/decision_rule_083.py`, extending `eval/m1_de
   hit that N per class (escalate the source if it can't). No parity claim on an under-powered class.
 - **eu7 re-clear is a HARD gate (ADJ-3).** Any embedder/pooling change rewrites the stored vectors; the
   1-bit index must re-pass **eu7 ≥0.90** (point 0.896, CI-hi 0.925 today). A floor breach is **BLOCK →
-  HITL**, even if relevance improves. The unbisected 0.937→0.896 vector-path regression is bisected here.
+  HITL**, even if relevance improves. **The 0.937→0.896 "regression" is now bisected (2026-06-22,
+  `runs/0.8.3-eu7-bisect-report.md`): NOT the CLS/embedding path (case B ruled out — embedder src
+  byte-identical v0.7.2→v0.8.0); it is case A (vector-path/SUT), most consistent with a measurement-SUT
+  change (0.937 = pre-correction `search()` anchor, 0.896 = the `vector_stage_only` seam — not directly
+  comparable), with no fidelity-loss commit found. So 0.937 is NOT a recoverable target; judge Slice-20
+  eu7 fresh against the 0.90 floor, and if it breaches, the fork is the QUANT path, not pooling.**
 - **Embedder is a first-class lever, not a contingency (ADJ-6).** Dense is embedder-bound (eu8 ceiling
   ≈0.571; fused *ties* BM25). So the $0 embedder probe is **primary**: it selects the lever, and PRF is
   secondary. **Re-embed once** on the chosen embedder (CLS-correct), re-clear eu7 once — no double-jeopardy.
@@ -260,10 +265,14 @@ composition; ADJ-10).
 **TDD.** RED: a Rust CLS-pooling pin (+ embedder-swap functional test if the embedder changed); an eu7
 harness test; PRF determinism + capped-expansion + a **composition guard** (PRF must not drop
 F1-given-all-bridges below corrected fused); the verdict harness computes the pre-registered external +
-internal endpoints. GREEN: the fix/swap + PRF arm + runner. **eu7 gate:** fidelity < 0.90 → **BLOCK →
-HITL**, and trigger the **fidelity-recovery fork** (rotation/whitening, raise ANN fan-out K>192, or a
-2-bit option) + the **0.937→0.896 bisect** (is CLS the cause or a pre-existing path bug?). Cheap-validate
-before the priced confirmatory pass. Outputs → `runs/0.8.3-d1-eu7.json`,
+internal endpoints. GREEN: the fix/swap + PRF arm + runner. **eu7 gate:** the CLS-fix rewrites the stored
+vectors, so re-measure eu7 **fresh** on the `vector_stage_only` seam against the **0.90 floor** (baseline
+is the true vector-stage **0.896**, NOT 0.937 — see the bisect below). fidelity < 0.90 → **BLOCK → HITL**,
+and trigger the **fidelity-recovery fork**. **The 0.937→0.896 bisect is DONE
+(`runs/0.8.3-eu7-bisect-report.md`): the cause is NOT CLS/pooling (case B ruled out) — it is case A
+(vector-path/SUT). So the fork is the QUANT path: rotation/whitening before sign-quant → raise ANN fan-out
+K>192 → a 2-bit option. Treat the CLS-fix as an eu8/relevance lever, not the eu7 fidelity-recovery.**
+Cheap-validate before the priced confirmatory pass. Outputs → `runs/0.8.3-d1-eu7.json`,
 `runs/0.8.3-d1-verdict-n*.json`, `runs/0.8.3-d1-latency.json`.
 **DoD.** X1 (Py+TS embedder/PRF parity + functional harness), X2, X3. IN-LIBRARY, CPU, deterministic.
 **ADJ-9 latency gate** (re-embed + PRF re-query): AC012/AC013/AC020; breach → BLOCK → HITL. Codex §9.

@@ -44,7 +44,14 @@
 //! intended fusion divergence — the cause of the Slice-40 Phase-A HALT
 //! (recall 0.8710 < 0.90), root-caused in
 //! `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`. The corrected
-//! vector-stage SUT measures recall@10 = 0.937 (CI 0.913–0.957). The
+//! vector-stage SUT measures recall@10 = 0.896 (CI 0.864–0.925, σ 0.0157) at
+//! N=7667 (0.924 at N=1000) — the live B-1 remeasure
+//! (`GA-signoff-eu7-remeasure-20260608T172804Z`). (The 0.937 figure earlier in
+//! this campaign was the 0.7.1 `search()`-SUT anchor, carried as a GA-2
+//! assumption; it is NOT the vector-stage value. The 0.937→0.896 gap is a
+//! vector-stage measurement-SUT change — old `search()` vs this seam — not a
+//! fidelity regression, and not embedder-pooling; bisected in
+//! `dev/plans/runs/0.8.3-eu7-bisect-report.md`.) The
 //! harness ALSO reports the fused-`search()` recall (`EU7_RECALL_FUSED`,
 //! ~0.871) as the report-only delta, so the correction is demonstrably
 //! load-bearing, not cosmetic. This is the ANN-quantization FIDELITY axis,
