@@ -219,6 +219,15 @@ vacuous/empty gold; this is eval infra, not a product AC — [[acceptance-md-loc
 escalation**, not a silent deferral (the resolution depends on this number existing).
 
 ### Slice 10 — D0b: measure the FathomDB − Mem0 gap (= the target) · `[implementation (measurement)]` · depends-on: 5 · gaps: 11–14
+> **✅ CLOSED on main 2026-06-22.** The per-class `FathomDB − Mem0` gap LANDED (priced 606 q, $10.75,
+> `runs/0.8.3-d0b-parity-n606.json`): `decide_083 = NOT_REACHED` (eu7-blocked + underpowered),
+> **−20…27 pp accuracy** behind Mem0 on 3 classes (temporal a tie), with the **accuracy gap ≫ recall
+> gap** ⇒ **answer/memory-formation is the binding constraint, not retrieval**. codex §9 done (P2 fixes
+> `22b63dc8`/`349be76f`). Phase-A+B + persistent Mem0 ingest + powered LME+LOCOMO recall all landed;
+> capability-report #1 caveat cleared. **Reframes Phase B** (retrieval levers D1/D2 close at most the
+> recall portion) → the **gap-decomposition probe** (formation vs retrieval) interprets the gap before
+> any lever pivot; the powered + post-eu7 PRICED verdict is Slice 20/30.
+
 **Objective.** Produce the **per-class `FathomDB − {Mem0, Graphiti/Zep, naive-RAG}` delta** (strict
 Recall@K + identical-answerer accuracy) on the re-pinned, power-sized corpus. This is the **target the
 Phase-B levers must close** — and the headline number the capability report's #1 gap demands. Graphiti/Zep

@@ -12,6 +12,7 @@ D1 confirmatory (Slice 20), D2 confirmatory (Slice 25, conditional).
 | 2026-06-21 | 5 (D0a) | cheap-validate seam (2 q) | gemini-flash-lite | 2 | 0.0001 | 0.0001 |
 | 2026-06-21 | 10 (D0b, Phase A) | cheap-validate FULL pipeline (8 q × 3 arms) | gemini-flash-lite | 24 | 0.0275 | 0.0276 |
 | 2026-06-21 | 10 (D0b, Phase A) | priced PILOT (12 q × 3 arms) | gpt-5.4 | 36 | 0.9693 | 0.9969 |
+| 2026-06-22 | 10 (D0b, Phase B) | FULL priced parity (606 q × 3 arms, ctx 32k, mem0-persist) | gpt-5.4 | 1818 | 10.7479 | 11.7448 |
 
 **Phase-A spend (Slice 10): $0.9968** (cheap-validate $0.0275 + pilot $0.9693) —
 within the ~$1 Phase-A cap. **No full priced pass run** (phase-gate STOP).
@@ -73,6 +74,32 @@ gateable now buys nothing. Phase-B = (a) **priced** identical-answerer accuracy 
 (b) **$0** strict Recall@K on the **powered LME+LOCOMO** corpus. The per-class gap LANDS
 (capability-report #1); the powered **priced** verdict is deferred to Slice 20 (post-eu7).
 Graphiti/Zep deferred (clean blocker; 2nd comparator) → run {Mem0, naive_rag}.
+
+## Slice 10 (D0b) — Phase-B RESULT + **CLOSED** (2026-06-22)
+
+Full priced pass ran clean: 606 q × 3 arms (fathomdb, mem0_oss, naive_rag), gpt-5.4 @ ctx 32k,
+**$10.75**, completeness 1.0, `--mem0-persist` (940-doc Mem0 ingest, reused store). Verdict
+`decide_083 = NOT_REACHED` (eu7-blocked + all classes underpowered — expected). Artifact
+`runs/0.8.3-d0b-parity-n606.json`; report `runs/0.8.3-report.md`. codex §9 done (P2 fixes
+`22b63dc8`/`349be76f`).
+
+**The gap (FathomDB − Mem0, per class):**
+
+| class | accuracy Δ | recall Δ |
+|---|---|---|
+| factoid | −23.7pp [−32,−15] | −9.6pp |
+| knowledge_update | −27.3pp [−37,−18] | −16.7pp |
+| multi_session | −20.0pp [−28,−13] | −10.0pp |
+| temporal | −3.3pp (tie) | −1.3pp |
+
+**Strategic finding:** the **accuracy gap ≫ recall gap** (~2×) → roughly half the gap is
+**answer/memory-FORMATION**, not retrieval. Reinforced by Slice-15a (**no embedder swap** beats
+CLS-corrected `bge-small`) + the powered recall (FathomDB FTS < BM25). ⇒ in-library *retrieval*
+levers (D1 embedder/PRF, D2 enrichment) close at most the recall portion; closing the Mem0 gap to
+parity likely needs a **memory-formation** lever (caller-side BYO-LLM / offline-build). **This
+reframes Phase B** → being diagnosed by the **gap-decomposition probe** (in-flight) before any lever
+pivot. Slice 10 deliverable (per-class gap; capability-report #1) EXISTS + landed → **CLOSED**;
+powered + post-eu7 PRICED verdict deferred to Slice 20/30.
 
 ## eu7 0.937→0.896 bisect RESOLVED (2026-06-22, $0 / no-LLM / no-GPU / no-build)
 
