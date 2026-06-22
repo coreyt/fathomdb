@@ -1,0 +1,175 @@
+{
+  "schema": "0.8.3-d0b-powered-recall-v1",
+  "k": 10,
+  "arms_run": [
+    "naive_rag"
+  ],
+  "treatment_arm": null,
+  "comparator_arms": [
+    "naive_rag"
+  ],
+  "locomo_2session_dropped": 12,
+  "n_lme_items": 606,
+  "n_locomo_items": 1431,
+  "blockers": [],
+  "lme_only": {
+    "source_filter": "lme",
+    "n_items": 606,
+    "per_class_n": {
+      "factoid": 156,
+      "knowledge_update": 150,
+      "multi_session": 150,
+      "temporal": 150
+    },
+    "per_arm_recall": {
+      "fathomdb": {
+        "factoid": {
+          "mean": null,
+          "n": 0
+        },
+        "knowledge_update": {
+          "mean": null,
+          "n": 0
+        },
+        "multi_session": {
+          "mean": null,
+          "n": 0
+        },
+        "temporal": {
+          "mean": null,
+          "n": 0
+        }
+      },
+      "naive_rag": {
+        "factoid": {
+          "mean": 0.782051,
+          "n": 156
+        },
+        "knowledge_update": {
+          "mean": 0.72,
+          "n": 150
+        },
+        "multi_session": {
+          "mean": 0.48,
+          "n": 150
+        },
+        "temporal": {
+          "mean": 0.573333,
+          "n": 150
+        }
+      }
+    },
+    "recall_deltas": {
+      "naive_rag": {
+        "factoid": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "knowledge_update": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "multi_session": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "temporal": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        }
+      }
+    }
+  },
+  "lme_plus_locomo": {
+    "source_filter": "lme+locomo",
+    "n_items": 2037,
+    "per_class_n": {
+      "factoid": 997,
+      "knowledge_update": 150,
+      "multi_session": 419,
+      "temporal": 471
+    },
+    "per_arm_recall": {
+      "fathomdb": {
+        "factoid": {
+          "mean": null,
+          "n": 0
+        },
+        "knowledge_update": {
+          "mean": null,
+          "n": 0
+        },
+        "multi_session": {
+          "mean": null,
+          "n": 0
+        },
+        "temporal": {
+          "mean": null,
+          "n": 0
+        }
+      },
+      "naive_rag": {
+        "factoid": {
+          "mean": 0.929789,
+          "n": 997
+        },
+        "knowledge_update": {
+          "mean": 0.72,
+          "n": 150
+        },
+        "multi_session": {
+          "mean": 0.405728,
+          "n": 419
+        },
+        "temporal": {
+          "mean": 0.781316,
+          "n": 471
+        }
+      }
+    },
+    "recall_deltas": {
+      "naive_rag": {
+        "factoid": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "knowledge_update": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "multi_session": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        },
+        "temporal": {
+          "point": null,
+          "ci_lo": null,
+          "ci_hi": null,
+          "mde": null,
+          "n": 0
+        }
+      }
+    }
+  }
+}
