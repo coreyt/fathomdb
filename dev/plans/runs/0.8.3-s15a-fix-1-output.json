@@ -1,0 +1,51 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "fix": "fix-1",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "cb821a08",
+  "head_sha": "40b64f65",
+  "remediates": [
+    "codex §9 [P2]#1 — latency measured model reload, not steady-state embed (gate-affecting via cpu_feasible)",
+    "codex §9 [P2]#2 — ModelCfg.revision unset -> model_revisions recorded \"default\" (no reproducibility pin)"
+  ],
+  "commits": [
+    "0942b5c6 test(0.8.3/Slice 15a fix-1): RED — latency-no-reload + pinned revisions",
+    "40b64f65 fix(0.8.3/Slice 15a fix-1): in-process model cache (steady-state latency) + resolved model-revision SHAs (codex §9 P2x2)"
+  ],
+  "red_commit": "0942b5c6",
+  "green_commit": "40b64f65",
+  "files_changed": [
+    "src/python/eval/s15a_embedder_probe.py",
+    "src/python/tests/test_s15a_embedder_probe.py"
+  ],
+  "p2_1_fix": {
+    "what": "Added module-level _MODEL_CACHE keyed by (hf_id, revision, pooling); _load_model() loads once via _load_model_uncached() and reuses the (tokenizer, model) across all embed_texts calls. embed_texts no longer calls from_pretrained per call.",
+    "measure_latency": "Loads once (cache) + one warmup forward EXCLUDED from timing, then times steady-state per-item forwards. batch_size=1 -> single-text ms_per_query; batch_size>1 -> batched per-item ms_per_doc (total batch time / batch len). run_probe now passes batch_size for ms_per_doc.",
+    "byte_identical": "Verified under eu-0 CPU venv: cached == freshly-loaded == reload, byte-identical (np.array_equal) for bge-small; pinned-revision vectors == unpinned. Cache changes only caching, not numerics."
+  },
+  "p2_2_fix": {
+    "what": "resolve_revision(hf_id) reads the local HF cache snapshot (models--<org>--<name>/refs/main, fallback snapshots/<sha>) honouring $HF_HUB_CACHE/$HUGGINGFACE_HUB_CACHE/$HF_HOME; torch/transformers-free + offline. build_model_revisions(names) produces the §9 model_revisions record. pinned_cfg(cfg) sets ModelCfg.revision to the resolved SHA and run_probe passes it to from_pretrained.",
+    "cache_key_unchanged": "The .npy vector cache key is the model NAME (f'{cfg.name}.docs.npy'), NOT the revision; pinned_cfg preserves name via dataclasses.replace, so the currently-warming /tmp/fdb-s15a-cache-full vectors stay valid. Resolved SHA == current cache default.",
+    "resolved_shas_eu0_cache": {
+      "bge-small": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+      "bge-base": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+      "gte-base": "a829fd0e060bb84554da0dfd354d0de0f7712b7f",
+      "e5-base-v2": "f52bf8ec8c7124536f0efb74aca902b2995e5bcd",
+      "nomic": "e9b6763023c676ca8431644204f50c2b100d9aab"
+    }
+  },
+  "tests": {
+    "gate_unit": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python .venv/bin/python -m pytest tests/test_s15a_embedder_probe.py -m 'not integration' -q => 9 passed, 4 deselected (was 6 passed pre-fix; +3 new: test_in_process_model_cache_loads_once, test_resolve_revision_from_local_cache, test_model_revisions_are_resolved_shas).",
+    "red_confirmed": "Before the GREEN impl, the 3 new unit tests FAILED (cache layer AttributeError; resolve_revision/build_model_revisions ImportError).",
+    "integration_cpu": "2 new @pytest.mark.integration tests (test_embed_texts_steady_state_no_reload, test_model_cache_byte_identical_vectors) validated directly under dev/research/eu-0/.venv (gate venv has no torch; eu-0 venv has no pytest, so bodies exercised via eu-0 python): _load_model_uncached called once across 2 embed_texts + measure_latency; vectors byte-identical; all 5 model_revisions are 40-hex SHAs."
+  },
+  "ruff": "All checks passed! (eval/s15a_embedder_probe.py + tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings, 0 informations (pyright 1.1.409, --pythonpath canonical .venv python)",
+  "guardrails": "No GPU/airlock; offline + $0; did NOT run --full; did NOT touch /tmp/fdb-s15a-cache-full/ or dev/plans/runs/0.8.3-s15a-embedder.json; did NOT modify decision_rule_083.py or the gold; no merge/push; no maturin develop; .npy cache key unchanged so the in-flight full run's warm vectors remain valid.",
+  "notes": [
+    "The in-flight orchestrator --full process imported the OLD module, so it will still record model_revisions=\"default\" and load-inclusive latency; this fix lands the pinned SHAs + steady-state latency for the NEXT (orchestrator) rerun. The resolved SHAs == the cache defaults, so the warm vectors stay valid.",
+    "resolve_revision falls back to \"default\" only if a model is absent from the local HF cache; under the eu-0 HF_HOME all 5 resolve to 40-hex SHAs (recorded above)."
+  ],
+  "blockers": [],
+  "next_step_for_orchestrator": "codex §9 re-review on the branch; on a future --full rerun (orchestrator-owned, eu-0 venv + HF_HOME) model_revisions will be the resolved SHAs and ms_per_query will be load-excluded steady-state."
+}
