@@ -1,0 +1,52 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "6b8503da",
+  "head_sha": "e618f888",
+  "commits": [
+    "8331ff43 test(0.8.3/Slice 15a): RED — embedder-ceiling probe",
+    "aa9415de feat(0.8.3/Slice 15a): GREEN — embedder-ceiling probe runner",
+    "e618f888 perf(0.8.3/Slice 15a): BM25 inverted index — frozen hard-subset tractable"
+  ],
+  "files_created": [
+    "src/python/eval/s15a_embedder_probe.py",
+    "src/python/tests/test_s15a_embedder_probe.py",
+    "dev/plans/runs/0.8.3-s15a-smoke.json",
+    "dev/plans/runs/0.8.3-s15a-smoke-report.md"
+  ],
+  "red_commit": "8331ff43",
+  "green_commit": "aa9415de",
+  "smoke_result_path": "dev/plans/runs/0.8.3-s15a-smoke.json",
+  "full_command_line": "SETUP (network ON, one-time pre-fetch of the uncached models): cd /tmp/fdb-slice-15a-6b8503da/src/python && export CUDA_VISIBLE_DEVICES=\"\" HF_HOME=/home/coreyt/projects/fathomdb/dev/research/eu-0/hf_cache TOKENIZERS_PARALLELISM=false && /home/coreyt/projects/fathomdb/dev/research/eu-0/.venv/bin/python -c \"from transformers import AutoModel, AutoTokenizer; [ (AutoTokenizer.from_pretrained(m, trust_remote_code=tr), AutoModel.from_pretrained(m, trust_remote_code=tr)) for m,tr in [('Alibaba-NLP/gte-base-en-v1.5',True),('intfloat/e5-base-v2',False),('nomic-ai/nomic-embed-text-v1.5',True)] ]\"   ###   MEASURED RUN (offline): cd /tmp/fdb-slice-15a-6b8503da/src/python && export CUDA_VISIBLE_DEVICES=\"\" HF_HOME=/home/coreyt/projects/fathomdb/dev/research/eu-0/hf_cache TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 && PYTHONPATH=. /home/coreyt/projects/fathomdb/dev/research/eu-0/.venv/bin/python -m eval.s15a_embedder_probe --full --threads 4 --resume --cache-dir /tmp/fdb-s15a-cache-full --out-json /tmp/fdb-slice-15a-6b8503da/dev/plans/runs/0.8.3-s15a-embedder.json --out-md /tmp/fdb-slice-15a-6b8503da/dev/plans/runs/0.8.3-s15a-report.md",
+  "tests_run": {
+    "pure_logic": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=. .venv/bin/python -m pytest tests/test_s15a_embedder_probe.py -m 'not integration' -q  => 6 passed, 2 deselected",
+    "integration_cpu": "validated under dev/research/eu-0/.venv (CPU, threads=1): embed determinism byte-identical + L2-normalized + cls!=mean (the eu-0 venv has no pytest, so the two @pytest.mark.integration test bodies were exercised directly via the eu-0 python)"
+  },
+  "ruff": "All checks passed! (eval/s15a_embedder_probe.py + tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings (pyright --pythonpath <canonical .venv python>; torch/transformers are lazy + type:ignored)",
+  "hard_subset": {
+    "cap": 50,
+    "count": 825,
+    "k1": 1.2,
+    "b": 0.75,
+    "tokenizer": "lowercase + regex [a-z0-9]+",
+    "definition": "non-negative qids whose required docs are NOT all within BM25 Okapi top-50 (strict all-of)",
+    "note": "actual reproduced frozen count over the full 10506-doc corpus; the design ~596 reference is NOT forced (design §4/§11.1)"
+  },
+  "corpus_hash_verified": true,
+  "notes": [
+    "corpus_hash fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e re-verified per-source AND combined before any embedding; gold all.gold.json carries the same hash; qrels_version=ir-c-reused-v1, 4597 queries (4472 non-negative, 125 negative excluded from the recall denominator).",
+    "Gate consumed verbatim from decision_rule_083.probe_15a_pass (NOT reimplemented/relaxed; no raw-point gate). chosen_embedder = largest-headroom (min(eu8_ci_lo,hard_ci_lo), projected_eu7 tiebreak) passer that is in_library_feasible, else bge-small (no swap).",
+    "in_library_feasible: gte-base=False (no candle GTE encoder) -> measured for attribution but NOT selectable; e5-base-v2 marked True pending a candle-BERT-path load verification at pin time (design §3 note 2) -- the runner records the flag, the orchestrator should confirm e5 loads via fathomdb-embedder's BERT path before adopting it.",
+    "projected_eu7: mean-centering ON (per-corpus mean subtracted before sign-quant on docs AND queries; f32 rerank uses un-centered vectors), Hamming K=192; GATE is the frozen POINT >= 0.90 via probe_15a_pass (a transparency CI may be added later; the point gate is authoritative, design §5.4/§11.4).",
+    "cpu_feasible = ms_per_query <= 3.0 x base_ms_per_query; AC012/AC013 absolutes recorded for context only (authoritative latency re-measure is Slice 20's engine gate).",
+    "Determinism: torch.set_num_threads(1) pins the determinism assertion; runtime recorded (torch 2.12.0+cpu, transformers 5.9.0, numpy 2.4.6). Measured run sets HF_HUB_OFFLINE=1 + TRANSFORMERS_OFFLINE=1; SETUP pre-fetches weights with network ON.",
+    "memory_class_recall = null (report-only): the LME re-pin corpus is separate from the IR snapshot; deferred to Slice 20 re-embed (design §4), recorded with reason, not faked.",
+    "Smoke (committed proof): pipeline green end-to-end on a 120-doc subset, base bge-small + candidate bge-base, threads=1, offline; degenerate metrics (eu8=1.0, hard_count=0) by construction -- it is a pipeline proof, NOT a measurement.",
+    "Resilience: per-model doc/query f32 vectors checkpointed to atomic .npy under --cache-dir; --resume reuses them (a multi-hour CPU embed survives restart).",
+    "DID NOT run --full (orchestrator owns the resilient full measurement, per the task). DID pre-fetch BAAI/bge-base-en-v1.5 for the smoke; gte-base/e5-base-v2/nomic-v1.5 still need the SETUP pre-fetch before the offline --full.",
+    "Stage 1 only (mechanical probe_15a_pass verdict + ranking + chosen embedder). Stage 2 (gap-relative surpass finalization) defers to after D0b/HITL (design §6)."
+  ],
+  "blockers": [],
+  "next_step_for_orchestrator": "Run SETUP pre-fetch then the offline --full command above; codex §9 review on the branch; land on main after D0b; feed chosen_embedder into Slice 20 (verify e5-base-v2 candle-BERT load at pin time)."
+}

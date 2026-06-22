@@ -1,0 +1,41 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "fix": "fix-5",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "4a241f9b",
+  "head_sha": "53e705da",
+  "problem": "Two forward-hardening codex §9 [P2] findings on src/python/eval/s15a_embedder_probe.py. [P2]#1: _load_model_uncached called AutoTokenizer/AutoModel.from_pretrained WITHOUT local_files_only, so a missing weight could be silently fetched from HuggingFace mid-measurement, turning a measured run network-dependent. [P2]#2: the resume sidecar bound only (revision, corpus_hash, n_docs, n_queries, pooling, dim) — NOT the actual ordered doc_ids/query ids+texts — so a smoke subset or a revised gold sharing the same corpus_hash + same counts could silently reuse stale .npy vectors.",
+  "fix_summary": "[P2]#1: load_kw in _load_model_uncached now includes local_files_only=True (threaded into BOTH AutoTokenizer.from_pretrained and AutoModel.from_pretrained via **load_kw; trust_remote_code unchanged). The measured load is offline-pinned so a missing checkpoint is a loud setup failure; the SETUP pre-fetch still populates the cache with the network ON. [P2]#2: added _input_id_hash(corpus, queries) — a deterministic sha256 over the ordered doc_ids and the ordered query (query_id, text) pairs with length-delimited field framing — and added its result as a new input_id_hash key in _cache_meta. embed_model already gates reuse on on_disk == _cache_meta(...), so the new field is automatically required to match on --resume (missing/mismatched => re-embed, fail-safe). The existing six checks are kept.",
+  "commits": [
+    "0a5659d5 test(0.8.3/Slice 15a fix-5): RED — offline-pinned load + input-identity cache hash",
+    "53e705da fix(0.8.3/Slice 15a fix-5): local_files_only load + input_id_hash cache guard (codex §9 P2x2)"
+  ],
+  "red_commit": "0a5659d5",
+  "green_commit": "53e705da",
+  "files_changed": [
+    "src/python/eval/s15a_embedder_probe.py",
+    "src/python/tests/test_s15a_embedder_probe.py"
+  ],
+  "implementation": {
+    "p2_1_offline_pin": "_load_model_uncached load_kw = {trust_remote_code, local_files_only: True} (+ revision when set); both from_pretrained calls receive **load_kw so tokenizer AND model are offline-pinned. Pins WHERE weights come from, never the forward pass.",
+    "p2_2_input_id_hash": "_input_id_hash(corpus, queries) -> sha256 hexdigest over ordered corpus.doc_ids then each query's (query_id, text); each field framed as tag + ascii(len) + ':' + utf8 bytes to prevent boundary aliasing. _cache_meta adds key 'input_id_hash'. No change needed in embed_model (its reuse predicate is on_disk == _cache_meta(...)); the comment there was updated to list input_id_hash."
+  },
+  "tests": {
+    "new": [
+      "test_load_model_is_offline_pinned — injects a fake `transformers` module (torch-free) capturing from_pretrained kwargs; asserts BOTH tokenizer and model loads pass local_files_only=True and that trust_remote_code is still threaded through.",
+      "test_cache_meta_binds_input_identity — asserts _cache_meta now carries input_id_hash, that it DIFFERS for a same-corpus_hash+same-count set with different ordered doc_ids and again for different query ids/texts, and that it is stable/repeatable for identical input.",
+      "test_cache_sidecar_input_identity_mismatch_reembeds — writes stale .npy + a sidecar produced by _cache_meta over a DIFFERENT input set sharing corpus_hash+counts+revision+pooling+dim; asserts embed_model re-embeds (fresh, not stale) on the input_id_hash mismatch."
+    ],
+    "updated": [
+      "test_cache_sidecar_match_reuses — now writes its sidecar via _cache_meta(cfg, corpus, queries) instead of a hardcoded six-field dict, so the full-match-reuse assertion stays valid once input_id_hash is part of the meta."
+    ],
+    "red_confirmed": "At RED commit 0a5659d5 on baseline code: 3 failed, 15 passed. test_load_model_is_offline_pinned FAILED (no local_files_only). test_cache_meta_binds_input_identity FAILED (no input_id_hash key). test_cache_sidecar_input_identity_mismatch_reembeds FAILED (baseline six-field meta matched -> stale reuse). The updated match-reuses test stayed green at RED.",
+    "green": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python .venv/bin/python -m pytest src/python/tests/test_s15a_embedder_probe.py -q -m 'not integration' -p no:cacheprovider => 18 passed, 4 deselected (15 prior + 3 new). The 4 torch integration tests remain deselected."
+  },
+  "ruff": "All checks passed! (eval/s15a_embedder_probe.py + tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings, 0 informations on both changed files (pyright 1.1.409, PYTHONPATH=src/python canonical .venv python).",
+  "determinism": "Embedding numerics UNCHANGED. [P2]#1 only pins the load SOURCE to the local cache (local_files_only) — the resolved checkpoint already in the cache loads byte-for-byte the same weights, so the forward pass / pooling / L2-norm are untouched. [P2]#2 only adds a metadata key to the resume sidecar; it never runs near the forward pass. The integration determinism / byte-identical-vector tests (test_embedding_determinism_cpu, test_model_cache_byte_identical_vectors) are unchanged and remain valid; they could not be EXECUTED here because no torch/transformers venv exists in this $0/CPU/offline gate (they are opt-in @integration and deselected). The committed measurement result (dev/plans/runs/0.8.3-s15a-embedder.json/-report.md) stays valid: these fixes do not change numerics, so the orchestrator need not re-run --full.",
+  "guardrails": "Offline + $0/CPU; no GPU/airlock; did NOT run --full; did NOT touch /tmp/fdb-s15a-cache-full/; did NOT delete/overwrite the committed 0.8.3-s15a-embedder.json/-report.md; did NOT modify decision_rule_083.py or the gold; did NOT touch sibling worktrees; no merge/push; no agent spawn; no maturin develop; stayed inside /tmp/fdb-slice-15a-6b8503da.",
+  "blockers": [],
+  "next_step_for_orchestrator": "codex §9 re-review of fix-5 on the branch, then cherry-pick. No --full re-run needed (numerics unchanged; committed result remains valid)."
+}

@@ -1,0 +1,40 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "fix": "fix-4",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "8d3402dd",
+  "head_sha": "90720909",
+  "problem": "The full --full run aborted: gte-base-en-v1.5 (in_library_feasible=False, no-candle, measure-only) crashes inside its custom HuggingFace modeling code (IndexError: index ... out of bounds for dimension 0 with size 512 in transformers_modules/Alibaba.../modeling.py under transformers 5.9). A single non-selectable candidate's embedding failure aborted the ENTIRE probe (run raised; no embedder.json written), violating the failure≠abstention / completeness-validity discipline.",
+  "fix_summary": "Added per-candidate measurement resilience to run_probe in src/python/eval/s15a_embedder_probe.py. Each model's embed+metric body is wrapped in a try/except: a CANDIDATE that raises during load/embed/metrics is recorded measurement_status='failed' with a compact '<ExcType>: <message>' error (no metric fields, no probe_15a_pass verdict), is excluded from passers/selection, and is added to a top-level measurement_failures list; the probe CONTINUES with the remaining candidates + the base. A BASE (bge-small) failure has no reference embedder, so it is re-raised (still fatal). Successful candidates are unchanged numerically and gain measurement_status='ok'.",
+  "commits": [
+    "10a3c6dc test(0.8.3/Slice 15a fix-4): RED — per-candidate measurement resilience",
+    "90720909 fix(0.8.3/Slice 15a fix-4): tolerate+record a candidate's embed failure, continue probe (base failure still fatal)"
+  ],
+  "red_commit": "10a3c6dc",
+  "green_commit": "90720909",
+  "files_changed": [
+    "src/python/eval/s15a_embedder_probe.py",
+    "src/python/tests/test_s15a_embedder_probe.py"
+  ],
+  "implementation": {
+    "guard_site": "run_probe embed+measure loop: the per-model embed_model/eu8_hits/hard_hits/projected_eu7/measure_latency calls are wrapped in try/except Exception. On a CANDIDATE exception -> per_model_raw[name] = {cfg, measurement_status:'failed', error}, append {name, error} to measurement_failures, continue. On a BASE exception (name == BASE_NAME) -> raise (fatal). On success -> per_model_raw[name] gains measurement_status:'ok' + the usual metric fields.",
+    "per_candidate_record": "The per_candidate-building loop emits {measurement_status:'failed', error, in_library_feasible} for a failed candidate (no metric fields, no probe_15a_pass) and continues; OK candidates get measurement_status:'ok' plus the unchanged metric block.",
+    "selection_exclusion": "choose_embedder's qualifying filter now also requires measurement_status != 'failed' (belt-and-suspenders alongside the falsy probe_15a_pass); surpass_flag skips failed candidates. Existing dicts without a measurement_status key are treated as not-failed (backward compatible — the choose_embedder unit test is unaffected).",
+    "honest_reporting": "New top-level result key measurement_failures: list[{name, error}] makes any candidate failure visible; write_outputs renders failed candidates as a 'FAILED' table row and adds a 'Measurement failures (recorded, non-fatal)' markdown section.",
+    "error_helper": "_format_measure_error(exc, max_len=300) -> '<ExcType>: <message>' truncated with an ellipsis (records exception type+message, not a full traceback)."
+  },
+  "tests": {
+    "new": [
+      "test_run_probe_tolerates_candidate_failure — monkeypatches embed_model to raise IndexError for gte-base over a tiny torch-free corpus/gold; asserts the probe completes, base + bge-base are measured (measurement_status='ok'), gte-base is recorded measurement_status='failed' with the error and no metric fields, is not a passer, is excluded from chosen_embedder, and appears in measurement_failures.",
+      "test_run_probe_base_failure_is_fatal — monkeypatches embed_model to raise for bge-small; asserts run_probe re-raises (base failure stays fatal)."
+    ],
+    "red_confirmed": "At RED commit 10a3c6dc on baseline code: test_run_probe_tolerates_candidate_failure FAILED (the IndexError propagated out of run_probe — the whole probe aborted). test_run_probe_base_failure_is_fatal already passed on baseline (current code aborts on any failure) and is a regression guard that the base path stays fatal.",
+    "green": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python .venv/bin/python -m pytest src/python/tests/test_s15a_embedder_probe.py -q -m 'not integration' -p no:cacheprovider => 15 passed, 4 deselected (13 prior + 2 new). All prior pure tests + the fix-3 meta-test stay green; the 4 torch integration tests remain deselected."
+  },
+  "ruff": "All checks passed! (eval/s15a_embedder_probe.py + tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings, 0 informations on both changed files (pyright 1.1.409, PYTHONPATH=src/python canonical .venv python).",
+  "determinism": "Successful candidates are numerically unchanged (the guard adds only the measurement_status key + the new measurement_failures top-level list); metric computations are byte-identical to fix-3.",
+  "guardrails": "Offline + $0/CPU; no GPU/airlock; did NOT run --full; did NOT touch /tmp/fdb-s15a-cache-full/ (warm bge-small+bge-base checkpoints left intact for the orchestrator re-run); did NOT modify decision_rule_083.py or the gold; did NOT touch sibling worktrees; no merge/push; no agent spawn; no maturin develop; stayed inside /tmp/fdb-slice-15a-6b8503da.",
+  "blockers": [],
+  "next_step_for_orchestrator": "codex §9 re-review of fix-4 on the branch, then cherry-pick. After cherry-pick, the orchestrator's --full re-run will now tolerate the gte-base IndexError: gte-base will be recorded measurement_status='failed' in per_candidate + measurement_failures, the other candidates + base will be measured, and embedder.json/report.md will be written. gte-base was already non-selectable (in_library_feasible=False), so chosen_embedder is unaffected by its failure."
+}

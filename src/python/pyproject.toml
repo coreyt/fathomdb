@@ -57,6 +57,13 @@ features = ["pyo3/extension-module", "default-embedder", "default-reranker"]
 # Prepend the python-source root so `import eval.r2_parity_eval` resolves under
 # pytest's prepend import mode without an editable install of the harness.
 pythonpath = ["."]
+# Slice 15a fix-3 (codex §9 [P2]): register the `integration` marker so it does not
+# emit a PytestUnknownMarkWarning. These are OPT-IN tests (real HuggingFace model
+# loads, possible network); they skip in the default gate and run only with
+# FDB_S15A_INTEGRATION=1 + torch/transformers present (see test_s15a_embedder_probe.py).
+markers = [
+    "integration: opt-in tests that load real models (require FDB_S15A_INTEGRATION=1 + torch/transformers)",
+]
 
 [tool.ruff]
 line-length = 100

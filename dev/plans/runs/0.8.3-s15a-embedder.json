@@ -1,0 +1,238 @@
+{
+  "base": {
+    "eu8": 0.39937388193202145,
+    "hard_r@10": 0.019393939393939394,
+    "ms_per_query": 11.227384558878839,
+    "name": "bge-small"
+  },
+  "caveats": [
+    "torch-CPU vs ONNX-CPU produce f32-equivalent vectors; ceiling is a model-weights property (design \u00a77).",
+    "memory_class_recall not computed \u2014 LME corpus is separate from the IR snapshot; deferred to Slice 20 re-embed (design \u00a74).",
+    "projected_eu7 GATE is the frozen POINT >= 0.90; the reported CI is transparency-only (design \u00a75.4/\u00a711.4)."
+  ],
+  "chosen_embedder": "bge-small",
+  "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+  "corpus_resolved_count": 10506,
+  "hard_subset": {
+    "b": 0.75,
+    "cap": 50,
+    "count": 825,
+    "definition": "non-negative qids whose required docs are NOT all within BM25 top-cap (strict all-of)",
+    "fts5_caveat": "pure-Python BM25 tokenizer is NOT byte-identical to the engine FTS5 tokenizer; the subset is deterministic + model-independent for a fair A/B (design \u00a711.1), not a production-FTS bucket.",
+    "k1": 1.2,
+    "tokenizer": "lowercase + regex [a-z0-9]+"
+  },
+  "measurement_failures": [
+    {
+      "error": "IndexError: index 126396013669456 is out of bounds for dimension 0 with size 512",
+      "name": "gte-base"
+    }
+  ],
+  "model_revisions": {
+    "bge-base": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+    "bge-small": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "e5-base-v2": "f52bf8ec8c7124536f0efb74aca902b2995e5bcd",
+    "gte-base": "a829fd0e060bb84554da0dfd354d0de0f7712b7f",
+    "nomic": "e9b6763023c676ca8431644204f50c2b100d9aab"
+  },
+  "no_swap": true,
+  "num_threads": 12,
+  "per_candidate": {
+    "bge-base": {
+      "binding_margin": -0.0036363636363636364,
+      "cpu_latency": {
+        "ac012_p50_ms": 20.0,
+        "ac012_p99_ms": 150.0,
+        "ac013_p50_ms": 80.0,
+        "ac013_p99_ms": 300.0,
+        "base_ms_per_query": 11.227384558878839,
+        "feasible": true,
+        "ms_per_doc": 121.3486905908212,
+        "ms_per_query": 26.064457488246262,
+        "threads": 12
+      },
+      "eu8": 0.42352415026833634,
+      "eu8_margin_ci": {
+        "hi": 0.033547629695885504,
+        "lo": 0.014976520572450809,
+        "point": 0.024150268336314847
+      },
+      "hard": {
+        "median_rank": 22.0,
+        "r@10": 0.02303030303030303,
+        "r@50": 0.08121212121212121
+      },
+      "hard_margin_ci": {
+        "hi": 0.012121212121212121,
+        "lo": -0.0036363636363636364,
+        "point": 0.0036363636363636364
+      },
+      "in_library_feasible": true,
+      "measurement_status": "ok",
+      "memory_class_recall": null,
+      "probe_15a_pass": false,
+      "projected_eu7": 0.7855122906243203,
+      "projected_eu7_ci": {
+        "hi": 0.7923885142484229,
+        "lo": 0.7779192951925169,
+        "point": 0.7855122906243203
+      }
+    },
+    "e5-base-v2": {
+      "binding_margin": -0.006060606060606061,
+      "cpu_latency": {
+        "ac012_p50_ms": 20.0,
+        "ac012_p99_ms": 150.0,
+        "ac013_p50_ms": 80.0,
+        "ac013_p99_ms": 300.0,
+        "base_ms_per_query": 11.227384558878839,
+        "feasible": true,
+        "ms_per_doc": 134.22531379619613,
+        "ms_per_query": 23.677658988162875,
+        "threads": 12
+      },
+      "eu8": 0.4673524150268336,
+      "eu8_margin_ci": {
+        "hi": 0.0789355992844365,
+        "lo": 0.056797853309481214,
+        "point": 0.06797853309481217
+      },
+      "hard": {
+        "median_rank": 18.0,
+        "r@10": 0.02666666666666667,
+        "r@50": 0.08363636363636363
+      },
+      "hard_margin_ci": {
+        "hi": 0.020606060606060607,
+        "lo": -0.006060606060606061,
+        "point": 0.007272727272727273
+      },
+      "in_library_feasible": true,
+      "measurement_status": "ok",
+      "memory_class_recall": null,
+      "probe_15a_pass": false,
+      "projected_eu7": 0.8959538829671525,
+      "projected_eu7_ci": {
+        "hi": 0.9004356101805525,
+        "lo": 0.8913851424842288,
+        "point": 0.8959538829671525
+      }
+    },
+    "gte-base": {
+      "error": "IndexError: index 126396013669456 is out of bounds for dimension 0 with size 512",
+      "in_library_feasible": false,
+      "measurement_status": "failed"
+    },
+    "nomic": {
+      "binding_margin": -0.008515151515151488,
+      "cpu_latency": {
+        "ac012_p50_ms": 20.0,
+        "ac012_p99_ms": 150.0,
+        "ac013_p50_ms": 80.0,
+        "ac013_p99_ms": 300.0,
+        "base_ms_per_query": 11.227384558878839,
+        "feasible": false,
+        "ms_per_doc": 182.40677415160462,
+        "ms_per_query": 36.05634544510394,
+        "threads": 12
+      },
+      "eu8": 0.45102862254025045,
+      "eu8_margin_ci": {
+        "hi": 0.06239378354203935,
+        "lo": 0.04159212880143113,
+        "point": 0.05165474060822898
+      },
+      "hard": {
+        "median_rank": 21.0,
+        "r@10": 0.02181818181818182,
+        "r@50": 0.05696969696969697
+      },
+      "hard_margin_ci": {
+        "hi": 0.012121212121212121,
+        "lo": -0.008515151515151488,
+        "point": 0.0024242424242424242
+      },
+      "in_library_feasible": true,
+      "measurement_status": "ok",
+      "memory_class_recall": null,
+      "probe_15a_pass": false,
+      "projected_eu7": 0.9316945834239722,
+      "projected_eu7_ci": {
+        "hi": 0.9351979551881663,
+        "lo": 0.9279312595170766,
+        "point": 0.9316945834239722
+      }
+    }
+  },
+  "phase": "0.8.3-slice-15a",
+  "pooling_prefix_table": {
+    "bge-base": {
+      "dim": 768,
+      "hf_id": "BAAI/bge-base-en-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "Represent this sentence for searching relevant passages: ",
+      "trust_remote_code": false
+    },
+    "bge-small": {
+      "dim": 384,
+      "hf_id": "BAAI/bge-small-en-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "Represent this sentence for searching relevant passages: ",
+      "trust_remote_code": false
+    },
+    "e5-base-v2": {
+      "dim": 768,
+      "hf_id": "intfloat/e5-base-v2",
+      "in_library_feasible": true,
+      "passage_prefix": "passage: ",
+      "pooling": "mean",
+      "query_prefix": "query: ",
+      "trust_remote_code": false
+    },
+    "gte-base": {
+      "dim": 768,
+      "hf_id": "Alibaba-NLP/gte-base-en-v1.5",
+      "in_library_feasible": false,
+      "passage_prefix": "",
+      "pooling": "cls",
+      "query_prefix": "",
+      "trust_remote_code": true
+    },
+    "nomic": {
+      "dim": 768,
+      "hf_id": "nomic-ai/nomic-embed-text-v1.5",
+      "in_library_feasible": true,
+      "passage_prefix": "search_document: ",
+      "pooling": "mean",
+      "query_prefix": "search_query: ",
+      "trust_remote_code": true
+    }
+  },
+  "qrels_version": "ir-c-reused-v1",
+  "ranking": [
+    "bge-base",
+    "e5-base-v2",
+    "nomic",
+    "gte-base"
+  ],
+  "runtime": {
+    "numpy": "2.4.6",
+    "torch": "2.12.0+cpu",
+    "transformers": "5.9.0"
+  },
+  "seeds": {
+    "bootstrap_resamples": 1000,
+    "bootstrap_seed": 346
+  },
+  "smoke": false,
+  "stage_split": "Stage 1 (this slice): mechanical probe_15a_pass verdict + ranking + chosen embedder. Stage 2 (after D0b/HITL): gap-relative surpass finalization (design \u00a76).",
+  "surpass_flag": {
+    "bge-base": false,
+    "e5-base-v2": false,
+    "nomic": false
+  }
+}

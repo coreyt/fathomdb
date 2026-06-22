@@ -1,0 +1,49 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "fix": "fix-2",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "302b69f6",
+  "head_sha": "aa95a087",
+  "remediates": [
+    "codex §9 [P2]#1 — non-deterministic Hamming fanout: np.argpartition picked an ARBITRARY subset of docs tied at the Kth Hamming distance (ubiquitous with 1-bit vectors); that candidate set is f32-reranked and feeds the projected_eu7 >= 0.90 gate, so a near-floor candidate could pass/fail on an unpinned tie",
+    "codex §9 [P2]#2 — vector cache reused {model}.docs.npy/{model}.queries.npy on ROW COUNT alone, so a different resolved revision / changed HF_HOME / same-sized-but-different input set silently fed STALE vectors into every gate metric while the output still reported the current model_revisions"
+  ],
+  "commits": [
+    "bb919817 test(0.8.3/Slice 15a fix-2): RED — deterministic Hamming fanout + cache identity guard",
+    "aa95a087 fix(0.8.3/Slice 15a fix-2): stable Hamming fanout tie-break + revision/input cache sidecar (codex §9 P2x2)"
+  ],
+  "red_commit": "bb919817",
+  "green_commit": "aa95a087",
+  "files_changed": [
+    "src/python/eval/s15a_embedder_probe.py",
+    "src/python/tests/test_s15a_embedder_probe.py"
+  ],
+  "p2_1_fix": {
+    "what": "projected_eu7's per-query fanout selection at the former line ~388 changed from `np.argpartition(ham, kk - 1)[:kk]` to `np.argsort(ham, kind=\"stable\")[:kk]` — lexicographic (hamming_distance, doc_index) ordering, so docs tied at the Kth Hamming distance are broken deterministically by index instead of by argpartition's arbitrary partition order.",
+    "semantics_preserved": "Fanout K is unchanged (still kk == min(PROJECTED_EU7_K=192, n_docs)); only the tie determinism changed, not the value of K. The kk>=n_docs short-circuit (cand_idx = arange) is untouched.",
+    "other_sites_verified": "The other top-k sites (cosine_topk line ~227, BM25Okapi.topk ~335, projected_eu7 exact-truth ~370, the f32 rerank ~391) already use np.argsort(..., kind=\"stable\") and are deterministic; left as-is. Line ~388 argpartition was the only defect.",
+    "red_demonstration": "test_projected_eu7_deterministic_hamming_fanout builds 14 docs with ham layout [0,0,3,0,2,0,1,1,1,1,0,0,0,0] (q=all-ones) where numpy argpartition(kk=9) keeps doc index 8 and DROPS index 6 among the ham=1 boundary ties, while stable index order keeps index 6. Index 6 is the global f32-exact top-1 (dot 29.99). Current argpartition path -> projected_eu7 = 0.0 (RED); stable fanout -> 1.0 (GREEN). Verified repeatable run-to-run."
+  },
+  "p2_2_fix": {
+    "what": "embed_model now writes a {model}.meta.json sidecar (via new _cache_meta + _atomic_write_json) capturing {revision, corpus_hash, n_docs, n_queries, pooling, dim}. On --resume the warm .npy cache is reused ONLY if the sidecar EXISTS and equals the current expected meta (and row counts still match); a missing or mismatched or unparseable sidecar => re-embed (fail-safe).",
+    "fail_safe": "Reuse requires doc_npy.exists() and qry_npy.exists() and meta_npy.exists() and on_disk == expected_meta; json.JSONDecodeError/OSError on the sidecar => on_disk=None => re-embed. The new sidecar is written atomically (tmp + os.replace) alongside the atomic .npy saves.",
+    "expected_full_reembed": "The existing warm /tmp/fdb-s15a-cache-full/*.npy have NO sidecar, so the orchestrator's next --full will re-embed them. That is correct and expected; no back-fill of the old cache was attempted (and that cache was left untouched).",
+    "red_demonstration": "test_cache_sidecar_revision_mismatch_reembeds writes stale .npy (matching row counts) + a sidecar pinning revision REV_OLD, then calls embed_model with cfg.revision=REV_A and a monkeypatched fresh-vector embed_texts. Current code reuses the stale .npy on row count alone (RED); fixed code detects the revision mismatch and returns the freshly re-embedded vectors. test_cache_sidecar_match_reuses asserts a fully-matching sidecar reuses the warm cache with NO embed_texts call."
+  },
+  "tests": {
+    "gate_unit": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python .venv/bin/python -m pytest src/python/tests/test_s15a_embedder_probe.py -q -m 'not integration' -p no:cacheprovider => 12 passed, 4 deselected (was 9 passed pre-fix; +3 new: test_projected_eu7_deterministic_hamming_fanout, test_cache_sidecar_revision_mismatch_reembeds, test_cache_sidecar_match_reuses).",
+    "red_confirmed": "At the RED commit (bb919817), 2 of the 3 new tests FAILED on baseline code: test_projected_eu7_deterministic_hamming_fanout (argpartition -> 0.0 != expected 1.0) and test_cache_sidecar_revision_mismatch_reembeds (stale .npy reused on row count). test_cache_sidecar_match_reuses passed on baseline (the reuse path already existed) and documents the match contract.",
+    "integration_cpu": "No new integration tests; the 4 existing torch integration tests remain deselected by -m 'not integration' (gate venv has no torch)."
+  },
+  "ruff": "All checks passed! (eval/s15a_embedder_probe.py + tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings, 0 informations on both changed files (pyright 1.1.409, PYTHONPATH=src/python canonical .venv python)",
+  "determinism_confirmed": "projected_eu7 is now repeatable run-to-run: the fanout candidate set is the stable (hamming, index) ordering, so no gate-feeding metric depends on an unpinned argpartition tie.",
+  "cache_guard_confirmed": "Cache reuse now requires a sidecar matching (revision, corpus_hash, n_docs, n_queries, pooling, dim); a different revision or input set re-embeds instead of serving stale vectors.",
+  "guardrails": "No GPU/airlock; offline + $0; did NOT run --full (orchestrator-owned); did NOT touch /tmp/fdb-s15a-cache-full/ or dev/plans/runs/0.8.3-s15a-embedder.json; did NOT modify decision_rule_083.py or the gold; no merge/push; no agent spawn; no maturin develop; stayed inside the /tmp/fdb-slice-15a-6b8503da worktree.",
+  "notes": [
+    "The cache key (.npy filenames) is still the model NAME; the sidecar is the identity guard, not a key change. This means the next --full re-embeds the sidecar-less warm vectors once, after which subsequent --resume runs reuse correctly.",
+    "argpartition vs argsort divergence is numpy-implementation-specific but deterministic for a fixed input/version; the RED was confirmed on the installed numpy and the GREEN assertion (== 1.0) holds regardless of numpy version since the fix uses argsort."
+  ],
+  "blockers": [],
+  "next_step_for_orchestrator": "codex §9 re-review on the branch; then cherry-pick. On the next orchestrator --full (eu-0 venv + HF_HOME) the sidecar-less warm cache will be re-embedded once and a {model}.meta.json written per model; projected_eu7 is now tie-deterministic."
+}
