@@ -385,7 +385,12 @@ def projected_eu7(
         if kk >= n_docs:
             cand_idx = np.arange(n_docs)
         else:
-            cand_idx = np.argpartition(ham, kk - 1)[:kk]
+            # Deterministic fanout: stable sort by (hamming_distance, doc_index)
+            # so docs tied at the Kth Hamming distance are broken by index, NOT
+            # by argpartition's arbitrary partition order (codex §9 [P2]#1 — a
+            # tied near-floor candidate must not pass/fail projected_eu7 on an
+            # unpinned tie). Keeps the same fanout K=kk semantics.
+            cand_idx = np.argsort(ham, kind="stable")[:kk]
         # f32 rerank over the Hamming candidates (un-centered cosine).
         rer_scores = docs[cand_idx] @ queries[i]
         rer = cand_idx[np.argsort(-rer_scores, kind="stable")][:k]
@@ -889,6 +894,34 @@ def _atomic_save_npy(path: Path, arr: np.ndarray) -> None:
     os.replace(tmp, path)
 
 
+def _atomic_write_json(path: Path, obj: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(obj, fh, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def _cache_meta(
+    cfg: ModelCfg, corpus: Corpus, queries: Sequence[GoldQuery]
+) -> dict[str, Any]:
+    """The cache-identity sidecar payload for ``cfg`` over this exact input.
+
+    The vector ``.npy`` cache is valid ONLY for the same resolved revision AND the
+    same input set (codex §9 [P2]#2). Keying on row count alone let a different
+    revision / changed ``HF_HOME`` / a same-sized-but-different corpus silently
+    feed STALE vectors into every gate metric.
+    """
+    return {
+        "revision": cfg.revision or "default",
+        "corpus_hash": corpus.corpus_hash,
+        "n_docs": len(corpus.doc_ids),
+        "n_queries": len(queries),
+        "pooling": cfg.pooling,
+        "dim": cfg.dim,
+    }
+
+
 def embed_model(
     cfg: ModelCfg,
     corpus: Corpus,
@@ -902,11 +935,21 @@ def embed_model(
     """Embed (or resume) doc + query f32 vectors for ``cfg``; checkpoint to .npy."""
     doc_npy = cache_dir / f"{cfg.name}.docs.npy"
     qry_npy = cache_dir / f"{cfg.name}.queries.npy"
-    if resume and doc_npy.exists() and qry_npy.exists():
-        docs = np.load(doc_npy)
-        qvecs = np.load(qry_npy)
-        if docs.shape[0] == len(corpus.doc_ids) and qvecs.shape[0] == len(queries):
-            return docs, qvecs
+    meta_npy = cache_dir / f"{cfg.name}.meta.json"
+    expected_meta = _cache_meta(cfg, corpus, queries)
+    if resume and doc_npy.exists() and qry_npy.exists() and meta_npy.exists():
+        # Reuse the warm cache ONLY if the sidecar matches the current
+        # (revision, corpus_hash, n_docs, n_queries, pooling, dim). A missing or
+        # mismatched sidecar => re-embed (fail-safe; codex §9 [P2]#2).
+        try:
+            on_disk = json.loads(meta_npy.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            on_disk = None
+        if on_disk == expected_meta:
+            docs = np.load(doc_npy)
+            qvecs = np.load(qry_npy)
+            if docs.shape[0] == len(corpus.doc_ids) and qvecs.shape[0] == len(queries):
+                return docs, qvecs
     docs = embed_texts(
         cfg, corpus.bodies, is_query=False, batch_size=batch_size, num_threads=num_threads
     )
@@ -919,6 +962,7 @@ def embed_model(
     )
     _atomic_save_npy(doc_npy, docs)
     _atomic_save_npy(qry_npy, qvecs)
+    _atomic_write_json(meta_npy, expected_meta)
     return docs, qvecs
 
 

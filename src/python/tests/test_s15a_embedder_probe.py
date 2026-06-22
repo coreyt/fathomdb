@@ -13,6 +13,7 @@ runner module exists, the suite REDs with a per-test ``ModuleNotFoundError``
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -389,7 +390,7 @@ def _install_fresh_embedder(m: object, calls: list[str]):  # type: ignore[no-unt
 
 
 def test_cache_sidecar_revision_mismatch_reembeds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from dataclasses import replace
 
@@ -398,10 +399,10 @@ def test_cache_sidecar_revision_mismatch_reembeds(
     corpus, queries = _tiny_corpus_and_queries()
     cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
 
-    cache_dir = tmp_path  # type: ignore[assignment]
-    doc_npy = cache_dir / f"{cfg.name}.docs.npy"  # type: ignore[operator]
-    qry_npy = cache_dir / f"{cfg.name}.queries.npy"  # type: ignore[operator]
-    meta_path = cache_dir / f"{cfg.name}.meta.json"  # type: ignore[operator]
+    cache_dir = tmp_path
+    doc_npy = cache_dir / f"{cfg.name}.docs.npy"
+    qry_npy = cache_dir / f"{cfg.name}.queries.npy"
+    meta_path = cache_dir / f"{cfg.name}.meta.json"
 
     # Stale warm vectors with MATCHING row counts (the only thing current code
     # checks) but a sidecar pinning a DIFFERENT revision.
@@ -409,7 +410,7 @@ def test_cache_sidecar_revision_mismatch_reembeds(
     m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
     import json as _json
 
-    meta_path.write_text(  # type: ignore[attr-defined]
+    meta_path.write_text(
         _json.dumps(
             {
                 "revision": "REV_OLD",
@@ -437,7 +438,7 @@ def test_cache_sidecar_revision_mismatch_reembeds(
 
 
 def test_cache_sidecar_match_reuses(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from dataclasses import replace
 
@@ -446,16 +447,16 @@ def test_cache_sidecar_match_reuses(
     corpus, queries = _tiny_corpus_and_queries()
     cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
 
-    cache_dir = tmp_path  # type: ignore[assignment]
-    doc_npy = cache_dir / f"{cfg.name}.docs.npy"  # type: ignore[operator]
-    qry_npy = cache_dir / f"{cfg.name}.queries.npy"  # type: ignore[operator]
-    meta_path = cache_dir / f"{cfg.name}.meta.json"  # type: ignore[operator]
+    cache_dir = tmp_path
+    doc_npy = cache_dir / f"{cfg.name}.docs.npy"
+    qry_npy = cache_dir / f"{cfg.name}.queries.npy"
+    meta_path = cache_dir / f"{cfg.name}.meta.json"
 
     m._atomic_save_npy(doc_npy, np.full((3, 4), _STALE, np.float32))
     m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
     import json as _json
 
-    meta_path.write_text(  # type: ignore[attr-defined]
+    meta_path.write_text(
         _json.dumps(
             {
                 "revision": "REV_A",
