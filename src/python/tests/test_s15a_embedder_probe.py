@@ -480,17 +480,10 @@ def test_cache_sidecar_match_reuses(
     m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
     import json as _json
 
+    # A FULLY-matching sidecar = exactly what _cache_meta writes for THIS input
+    # (so the new input_id_hash field, fix-5 [P2]#2, is present + correct).
     meta_path.write_text(
-        _json.dumps(
-            {
-                "revision": "REV_A",
-                "corpus_hash": "HASH_A",
-                "n_docs": 3,
-                "n_queries": 2,
-                "pooling": cfg.pooling,
-                "dim": 4,
-            }
-        ),
+        _json.dumps(m._cache_meta(cfg, corpus, queries)),
         encoding="utf-8",
     )
 
@@ -784,3 +777,139 @@ def test_run_probe_base_failure_is_fatal(
 
     with pytest.raises(RuntimeError, match="base embedder failed to load"):
         _run_probe(m, tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# fix-5 [P2]#1 — the MEASURED model load must be OFFLINE-PINNED.
+# AutoTokenizer/AutoModel.from_pretrained will silently fetch a missing weight
+# from HuggingFace unless pinned, turning a measured run network-dependent. The
+# load must pass local_files_only=True so a missing checkpoint is a LOUD setup
+# failure (the SETUP pre-fetch step populates the cache with the network ON; only
+# the measured load is pinned). Torch-free: a fake `transformers` module captures
+# the from_pretrained kwargs.
+# --------------------------------------------------------------------------- #
+
+
+def test_load_model_is_offline_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    import types
+
+    from eval import s15a_embedder_probe as m
+
+    captured: dict[str, dict[str, object]] = {}
+
+    class _FakeAuto:
+        kind = "?"
+
+        @classmethod
+        def from_pretrained(cls, hf_id: str, **kw: object) -> object:
+            captured[cls.kind] = {"hf_id": hf_id, "kw": kw}
+            obj = types.SimpleNamespace()
+            obj.eval = lambda: obj  # model.eval() is a no-op stub
+            return obj
+
+    class FakeTokenizer(_FakeAuto):
+        kind = "tokenizer"
+
+    class FakeModel(_FakeAuto):
+        kind = "model"
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.AutoTokenizer = FakeTokenizer  # type: ignore[attr-defined]
+    fake_transformers.AutoModel = FakeModel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    cfg = m.MODELS["bge-small"]
+    m._load_model_uncached(cfg)
+
+    # BOTH the tokenizer and the model load must be pinned offline.
+    assert captured["tokenizer"]["kw"].get("local_files_only") is True, (  # type: ignore[union-attr]
+        "AutoTokenizer.from_pretrained must pass local_files_only=True"
+    )
+    assert captured["model"]["kw"].get("local_files_only") is True, (  # type: ignore[union-attr]
+        "AutoModel.from_pretrained must pass local_files_only=True"
+    )
+    # trust_remote_code is still threaded through (unchanged behavior).
+    assert "trust_remote_code" in captured["model"]["kw"]  # type: ignore[operator]
+
+
+# --------------------------------------------------------------------------- #
+# fix-5 [P2]#2 — the resume sidecar must bind the ACTUAL input identities.
+# (revision, corpus_hash, n_docs, n_queries, pooling, dim) does NOT pin the
+# ordered doc_ids/query ids+texts, so a smoke subset or a revised gold with the
+# SAME corpus_hash + SAME counts could silently reuse stale .npy vectors. The fix
+# adds an input_id_hash over the ordered ids/texts; a mismatch => re-embed.
+# Torch-free: embed_texts is monkeypatched to a fresh-vector sentinel.
+# --------------------------------------------------------------------------- #
+
+
+def test_cache_meta_binds_input_identity() -> None:
+    from dataclasses import replace
+
+    from eval import s15a_embedder_probe as m
+
+    corpus, queries = _tiny_corpus_and_queries()
+    cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
+
+    base = m._cache_meta(cfg, corpus, queries)
+    assert "input_id_hash" in base, "sidecar must bind an input_id_hash (fix-5 [P2]#2)"
+
+    # SAME corpus_hash + counts, but DIFFERENT ordered doc ids => different hash.
+    other_docs = replace(corpus, doc_ids=["x0", "x1", "x2"])
+    assert m._cache_meta(cfg, other_docs, queries)["input_id_hash"] != base["input_id_hash"]
+
+    # SAME counts, but DIFFERENT query ids/texts => different hash.
+    other_q = [
+        replace(queries[0], query_id="zz", text="totally different"),
+        queries[1],
+    ]
+    assert m._cache_meta(cfg, corpus, other_q)["input_id_hash"] != base["input_id_hash"]
+
+    # Identical input => stable, repeatable hash.
+    assert m._cache_meta(cfg, corpus, queries)["input_id_hash"] == base["input_id_hash"]
+
+
+def test_cache_sidecar_input_identity_mismatch_reembeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    from eval import s15a_embedder_probe as m
+
+    corpus, queries = _tiny_corpus_and_queries()
+    cfg = replace(m.MODELS["bge-small"], revision="REV_A", dim=4)
+
+    cache_dir = tmp_path
+    doc_npy = cache_dir / f"{cfg.name}.docs.npy"
+    qry_npy = cache_dir / f"{cfg.name}.queries.npy"
+    meta_path = cache_dir / f"{cfg.name}.meta.json"
+
+    # Stale warm vectors + a sidecar written by a PRIOR run over a DIFFERENT input
+    # set that happens to share corpus_hash + counts + revision + pooling + dim
+    # (the smoke-subset / revised-gold risk). On current code this 6-field meta is
+    # byte-identical to the expected meta for THIS input -> stale reuse (the bug).
+    other_corpus = replace(corpus, doc_ids=["x0", "x1", "x2"], bodies=["bb0", "bb1", "bb2"])
+    other_queries = [
+        replace(queries[0], query_id="z0", text="different text 0"),
+        replace(queries[1], query_id="z1", text="different text 1"),
+    ]
+    m._atomic_save_npy(doc_npy, np.full((3, 4), _STALE, np.float32))
+    m._atomic_save_npy(qry_npy, np.full((2, 4), _STALE, np.float32))
+    import json as _json
+
+    meta_path.write_text(
+        _json.dumps(m._cache_meta(cfg, other_corpus, other_queries)),
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(m, "embed_texts", _install_fresh_embedder(m, calls))
+
+    docs, qvecs = m.embed_model(
+        cfg, corpus, queries, cache_dir=cache_dir, num_threads=1, batch_size=8, resume=True
+    )
+    # The sidecar binds a DIFFERENT input identity -> must NOT reuse the stale
+    # vectors; re-embed (fail-safe).
+    assert not np.array_equal(docs, np.full((3, 4), _STALE, np.float32))
+    assert np.array_equal(docs, np.full((3, 4), _FRESH, np.float32))
+    assert np.array_equal(qvecs, np.full((2, 4), _FRESH, np.float32))
+    assert calls, "expected a re-embed on an input_id_hash mismatch"
