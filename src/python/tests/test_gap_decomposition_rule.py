@@ -151,7 +151,8 @@ def test_fit_coverage_below_floor_forces_inconclusive() -> None:
     }
     d = decide_gap_decomposition(comps, fit_coverage=FIT_COVERAGE_MIN - 0.01)
     assert d["verdict"] == "INCONCLUSIVE"
-    assert d["reason"].startswith("fit_coverage:")
+    reason = d["reason"]
+    assert reason is not None and reason.startswith("fit_coverage:")
 
 
 def test_fit_coverage_at_floor_allows_dominance() -> None:
