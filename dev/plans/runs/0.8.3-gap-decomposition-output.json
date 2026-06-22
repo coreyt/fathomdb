@@ -1,0 +1,9 @@
+{"phase":"0.8.3-gap-decomposition","branch":"0.8.3-gap-decomposition","verdict_mechanical":"INCONCLUSIVE",
+ "reason":"fit_coverage 0.7195<0.80 + marginal underpower (mde~0.067>0.05)","citable_artifact":true,"completeness":1.0,
+ "cost_usd":15.9488,"cap_usd":30.0,"reader":"gpt-5.4","distiller":"gpt-5-nano (off Google-503)",
+ "finding":"RETRIEVAL-PRECISION dominant (R=+0.392 pooled, +ve & largest across all 4 classes); oracle_raw ~ mem0+0.19 => perfect retrieval exceeds Mem0 => parity reachable in-footprint. DISTILLED_FORM=-0.362 is a lossy-distiller artifact (retention 0.11), NOT a form signal; MEM0_RESIDUAL inflated. Overturns the D0b answer-formation hypothesis.",
+ "next_levers":"retrieval precision: Slice 20 reranker+PRF (rerank_fused is identity stub), Slice 25 D2; embedder out (15a). NOT memory-formation.",
+ "to_make_citable":["raise fit_coverage>=0.80 (32k budget truncates multi_session/temporal gold)","non-lossy distiller","more power to mde<=0.05"],
+ "artifacts":["0.8.3-gap-decomposition-n606.json","0.8.3-gap-decomposition-report.md"],
+ "code_gated":"design 4 rounds + code 5 codex rounds + self-review; 52 tests; ledger/cap/blind-distiller/resilience hardened",
+ "next_step_for_orchestrator":"land on main (cherry-pick) post-D0b; direction (retrieval) unblocks tasks 5/6/7 toward in-footprint parity"}
