@@ -37,7 +37,7 @@ import math
 import os
 import time
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence, cast
 
 from eval.decision_rule_083 import MEMORY_CLASSES, decide_083
 from eval.m1_power_sim import _percentile_ci_high, _percentile_ci_low
@@ -376,7 +376,7 @@ def run_d0b(
 
     def _usd() -> float:
         fn = getattr(answerer, "usd", None)
-        return float(fn()) if callable(fn) else 0.0
+        return float(cast(Any, fn)()) if callable(fn) else 0.0
 
     records: list[dict[str, Any]] = []
     n_errors = 0
@@ -452,8 +452,12 @@ def run_d0b(
             decide_error = str(exc)
 
     cost_fn = getattr(answerer, "cost_block", None)
-    cost_block = cost_fn() if callable(cost_fn) else {"model": reader, "usd": _usd()}
-    cost_block.setdefault("n_errors", n_errors)
+    raw_cost = cast(Any, cost_fn)() if callable(cost_fn) else {"model": reader, "usd": _usd()}
+    cost_block: dict[str, Any] = dict(raw_cost) if isinstance(raw_cost, Mapping) else {"model": reader, "usd": _usd()}
+    # [P3] ledger integrity: the answerer's own n_errors never sees the runner's
+    # retry-exhausted cells, so reconcile to the run-level count → cost.n_errors ==
+    # answer_completeness.n_errors (a self-consistent ledger before any priced run).
+    cost_block["n_errors"] = max(n_errors, int(cost_block.get("n_errors", 0)))
 
     art: dict[str, Any] = {
         "schema": "0.8.3-d0b-parity-v1",
