@@ -1,0 +1,37 @@
+{
+  "phase": "0.8.3-slice-10-fix-1",
+  "baseline_sha": "a8ccb0da519937544064f06b09f2983db4ca4645",
+  "branch": "slice-10-20260621T221212Z",
+  "head_sha": "e25b454401b7da4105bbb0c9397ad498c9b85c8b",
+  "commits": [
+    {
+      "sha": "fcf03386e8542f0d8d2ccf353cc506539949ddc7",
+      "type": "test",
+      "subject": "test(0.8.3/Slice 10 fix-1): RED — cost.n_errors reconciliation on retry-exhaustion"
+    },
+    {
+      "sha": "e25b454401b7da4105bbb0c9397ad498c9b85c8b",
+      "type": "fix",
+      "subject": "fix(0.8.3/Slice 10 fix-1): pyright-narrow dynamic answerer accessors + reconcile cost.n_errors (codex §9 P2+P3)"
+    }
+  ],
+  "findings_addressed": [
+    {
+      "id": "P2",
+      "how": "Added `cast` to the typing import; narrowed the two dynamic getattr-callables via `cast(Any, fn)()` so `float(usd())` is type-safe and the cost_block result is built as an explicit `dict[str, Any]` (isinstance(Mapping) guard + dict() copy) before `.setdefault`/mutation. No `# type: ignore`, no gate-config change. pyright: 0 errors, 0 warnings."
+    },
+    {
+      "id": "P3",
+      "how": "Replaced `cost_block.setdefault(\"n_errors\", n_errors)` (which never overwrote the answerer's stale 0) with `cost_block[\"n_errors\"] = max(n_errors, int(cost_block.get(\"n_errors\", 0)))`, reconciling the answerer's own ledger with the run-level retry-exhausted count so the artifact's `cost.n_errors == answer_completeness.n_errors` (self-consistent ledger before any priced run). One-line comment documents the choice."
+    }
+  ],
+  "gate_results": {
+    "pyright": "0 errors, 0 warnings, 0 informations — EXIT=0 (also: bash scripts/agent-typecheck.sh EXIT=0)",
+    "pytest_fix_test": "src/python/tests/test_d0b_parity_run.py — 13 passed in 0.21s — EXIT=0 (RED was `assert 0 == 4` before the fix)",
+    "pytest_k": "-k 'd0b or parity or resume or decide_083 or mem0' — 31 passed, 343 deselected in 1.64s — EXIT=0",
+    "ruff": "All checks passed! — EXIT=0",
+    "mkdocs": "n/a — no docs changed"
+  },
+  "agent_verify_result": "PASS — RED test reproduced the ledger inconsistency (cost.n_errors=0 vs answer_completeness.n_errors=4) on the retry-exhaustion path; GREEN fix makes both equal the forced-failure count; all gates (pyright, fix-test, -k suite, ruff) green; canonical repo clean of my edits.",
+  "next_step_for_orchestrator": "Run codex §9 review on branch slice-10-20260621T221212Z @ e25b454, then cherry-pick the two commits (fcf0338 RED, e25b454 GREEN) onto the slice line. No priced run was executed; D0b parity pass remains pending its own gate. Scope was strictly the two §9 findings + the RED test; decision_rule_083.py, the gold artifact, and resilience/resume logic untouched."
+}
