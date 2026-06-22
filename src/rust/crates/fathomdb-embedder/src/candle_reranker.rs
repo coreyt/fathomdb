@@ -395,6 +395,41 @@ mod tests {
         }
     }
 
+    /// Chunk-boundary correctness: a batch of N > `MAX_CE_BATCH` pairs (spanning
+    /// two full chunks plus a partial trailing chunk), of DIFFERING token lengths
+    /// so each chunk pads to a different per-chunk `L_max`, must still equal
+    /// per-pair `score` within tolerance AND preserve input order across chunk
+    /// boundaries. This is the load-bearing test for the OOM-bounding fix: it
+    /// proves the chunk loop concatenates per-chunk results in order and that
+    /// per-chunk (rather than whole-batch) padding does not perturb any logit.
+    #[test]
+    fn score_batch_spans_chunk_boundaries() {
+        let Some(model) = load_or_skip() else { return };
+
+        // Spans 2 full chunks + a 3-element partial chunk (e.g. 67 at MAX=32).
+        let n = MAX_CE_BATCH * 2 + 3;
+        // Differing lengths so per-chunk L_max varies across chunk boundaries.
+        let owned: Vec<String> =
+            (0..n).map(|i| "Paris is the capital of France. ".repeat(1 + (i % 7))).collect();
+        let passages: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        let per_pair: Vec<f32> =
+            passages.iter().map(|p| model.score(QUERY, p).expect("per-pair score")).collect();
+        let batched = model.score_batch(QUERY, &passages).expect("batched score");
+
+        assert_eq!(batched.len(), n, "one logit per passage across all chunks, order preserved");
+        let mut max_abs = 0f32;
+        for (i, (b, p)) in batched.iter().zip(per_pair.iter()).enumerate() {
+            let d = (b - p).abs();
+            max_abs = max_abs.max(d);
+            assert!(
+                d < 1e-3,
+                "pair {i}: batched {b} vs per-pair {p} differ by {d} (>1e-3) across chunk boundary"
+            );
+        }
+        eprintln!("score_batch_spans_chunk_boundaries: N={n} (MAX_CE_BATCH={MAX_CE_BATCH}), max abs diff = {max_abs:e}");
+    }
+
     /// Empty batch → Ok(vec![]) with no forward.
     #[test]
     fn score_batch_empty() {
