@@ -12,6 +12,8 @@ from typing import Any, Optional
 import pytest
 
 from eval.gap_decomposition_run import (
+    CHEAP_READER_DEFAULT,
+    STRONG_READER_DEFAULT,
     BlindDistiller,
     BudgetExceeded,
     BudgetLedger,
@@ -26,6 +28,7 @@ from eval.gap_decomposition_run import (
     oracle_context,
     per_component_table,
     price_for,
+    resolve_distiller_model,
     run_gap_decomposition,
 )
 from eval.r2_parity_eval import BaseAnswerer, GoldQuery, Hit
@@ -123,6 +126,29 @@ def test_unpinned_reader_fails_closed_in_guard() -> None:
     ledger = BudgetLedger()
     with pytest.raises(UnpinnedPricing):
         ledger.guard("mystery-reader", prompt_tokens=10)
+
+
+# --------------------------------------------------------------------------- #
+# (b2) the distiller is a CHEAP model, NEVER the priced reader (the flagged seam).
+# --------------------------------------------------------------------------- #
+def test_default_distiller_is_cheap_not_the_priced_reader() -> None:
+    # --reader gpt-5.4 with the DEFAULT distiller ⇒ a cheap model, never the priced
+    # strong reader (the distiller must not be gpt-5.4; design §4).
+    model = resolve_distiller_model(None, STRONG_READER_DEFAULT)
+    assert model == CHEAP_READER_DEFAULT
+    assert model != STRONG_READER_DEFAULT
+    assert model != "gpt-5.4"
+    # The cheap distiller is still PINNED so the ledger cap stays enforceable
+    # (price_for fail-closed; the cap on the distiller must remain projectable).
+    assert price_for(model)  # does not raise UnpinnedPricing
+
+
+def test_distiller_cannot_be_the_priced_reader() -> None:
+    # Explicitly wiring the distiller to the priced strong reader is fail-closed.
+    with pytest.raises(SystemExit):
+        resolve_distiller_model("gpt-5.4", "gpt-5.4")
+    with pytest.raises(SystemExit):
+        resolve_distiller_model(STRONG_READER_DEFAULT, STRONG_READER_DEFAULT)
 
 
 # --------------------------------------------------------------------------- #
