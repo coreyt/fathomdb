@@ -50,6 +50,7 @@ def build_local_mem0_config(
     api_key: str,
     corpus_hash: str | None = None,
     run_id: str | None = None,
+    persist: bool = False,
     llm_model: str = LOCAL_LLM_MODEL,
     base_url: str = LOCAL_BASE_URL,
     embed_model: str = LOCAL_EMBED_MODEL,
@@ -61,28 +62,51 @@ def build_local_mem0_config(
     D0b stand-up. Every provider here is local; there is no Mem0 cloud client
     anywhere (ADR §3.6).
 
-    Per-run isolation (codex §9 [P1#2]): both the Chroma **collection name** and
-    the on-disk **path** are keyed by a per-run ``run_id`` (a fresh one is minted
-    when omitted) — optionally prefixed by ``corpus_hash`` when one is supplied —
-    so re-running on a different corpus/branch cannot reopen a previous run's
-    collection and search stale memories. Pair this with :func:`run_user_id`
-    (``run_user_id(run_id)``) for the ``add``/``search`` ``user_id``.
-    Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe required.
+    **Default (``persist=False``) — per-run isolation (codex §9 [P1#2]):** both the
+    Chroma **collection name** and the on-disk **path** are keyed by a per-run
+    ``run_id`` (a fresh one is minted when omitted) — optionally prefixed by
+    ``corpus_hash`` when one is supplied — so re-running on a different corpus/branch
+    cannot reopen a previous run's collection and search stale memories. Pair this
+    with :func:`run_user_id` (``run_user_id(run_id)``) for the ``add``/``search``
+    ``user_id``. Reproducible-by-construction; no manual ``/tmp/mem0_chroma`` wipe
+    required. ``corpus_hash`` is OPTIONAL here (codex §9 fix-2 [P1]): the per-run
+    ``run_id`` alone guarantees uniqueness; when given it is folded into the key so a
+    different corpus is also distinct.
 
-    ``corpus_hash`` is OPTIONAL (codex §9 fix-2 [P1]): the only production caller,
-    ``Mem0OSSAdapter.try_build()``, builds this config from runtime env (api_key /
-    optional llm_model / base_url) and does NOT know the corpus_hash. The per-run
-    ``run_id`` alone guarantees uniqueness; when ``corpus_hash`` is given it is
-    folded into the key so a different corpus is also distinct."""
-    rid = run_id or new_run_id()
-    key = f"{str(corpus_hash)[:12]}_{rid}" if corpus_hash else rid
+    **Opt-in (``persist=True``) — corpus-keyed REUSE (Slice 10 / Phase-B):** the path,
+    collection AND ``_user_id`` are keyed by ``corpus_hash`` ALONE
+    (``mem0_chroma_<hash12>`` / ``r2_eval_<hash12>`` / ``r2-<hash12>``) — NO ``run_id``
+    — so a relaunch on the SAME corpus reopens the SAME on-disk store + searches the
+    SAME namespace, letting the expensive ~78-min full-corpus ingest happen ONCE and
+    be reused across S10/S20/S30 runs. This is **reproducible-by-construction**: the
+    key is a pure function of the corpus content hash, so the store identity is
+    deterministic (the per-run isolation is deliberately traded for reuse). ``persist``
+    REQUIRES a ``corpus_hash`` (there is no deterministic key without one) → raises
+    ``ValueError`` otherwise. The returned ``_persist`` / ``_chroma_path`` keys let
+    :meth:`Mem0OSSAdapter.try_build_persistent` locate the doc-id resume sidecar."""
     if chroma_root is None:
         chroma_root = tempfile.gettempdir()
+    if persist:
+        if not corpus_hash:
+            raise ValueError(
+                "build_local_mem0_config(persist=True) requires a corpus_hash — the "
+                "persistent store key is the corpus content hash (deterministic reuse)"
+            )
+        ch12 = str(corpus_hash)[:12]
+        rid = ch12
+        key = ch12
+        user_id = f"r2-{ch12}"
+    else:
+        rid = run_id or new_run_id()
+        key = f"{str(corpus_hash)[:12]}_{rid}" if corpus_hash else rid
+        user_id = run_user_id(rid)
     chroma_path = str(Path(chroma_root) / f"mem0_chroma_{key}")
     collection_name = f"r2_eval_{key}"
     return {
         "_run_id": rid,
-        "_user_id": run_user_id(rid),
+        "_user_id": user_id,
+        "_persist": persist,
+        "_chroma_path": chroma_path,
         "llm": {
             "provider": "openai",
             "config": {

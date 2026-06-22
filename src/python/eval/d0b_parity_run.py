@@ -533,10 +533,18 @@ def build_live_adapters(
     want_mem0: bool = True,
     want_graphiti: bool = True,
     db_path: str = "/tmp/d0b-fathomdb.sqlite",
+    corpus_hash: str | None = None,
+    mem0_persist: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Best-effort live adapter stand-up. Returns ``(adapters, blockers)``; a backend
     that cannot stand up is a recorded blocker, never a crash (Graphiti especially —
-    2nd comparator, design §3). naive_rag is always available (pure-Python BM25)."""
+    2nd comparator, design §3). naive_rag is always available (pure-Python BM25).
+
+    ``mem0_persist`` (Slice 10 / Phase-B): when True AND a ``corpus_hash`` is given,
+    the Mem0 arm is built via :meth:`Mem0OSSAdapter.try_build_persistent` — a
+    corpus-keyed on-disk store + a doc-id resume sidecar — so the expensive
+    full-corpus ingest happens ONCE and is reused/continued across runs instead of
+    re-ingested per run. Default (False) keeps the per-run-isolated stand-up."""
     from eval.r2_parity_eval import NaiveRAGAdapter
 
     adapters: dict[str, Any] = {"naive_rag": NaiveRAGAdapter(documents)}
@@ -554,7 +562,10 @@ def build_live_adapters(
     if want_mem0:
         from eval.r2_parity_eval import Mem0OSSAdapter
 
-        mem0 = Mem0OSSAdapter.try_build()
+        if mem0_persist and corpus_hash:
+            mem0 = Mem0OSSAdapter.try_build_persistent(corpus_hash)
+        else:
+            mem0 = Mem0OSSAdapter.try_build()
         if mem0 is not None and mem0.available:
             try:
                 mem0.ingest(documents)
@@ -612,21 +623,37 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     ap.add_argument("--no-fathomdb", action="store_true")
     ap.add_argument("--no-mem0", action="store_true")
     ap.add_argument("--no-graphiti", action="store_true")
+    # Slice 10 / Phase-B: persistent + resumable corpus-keyed Mem0 ingest. Defaults
+    # ON for --mode full (the long, expensive run that must ingest ONCE and be
+    # reusable across S10/S20/S30) and OFF for cheap/pilot; --mem0-persist /
+    # --no-mem0-persist override either way.
+    ap.add_argument("--mem0-persist", dest="mem0_persist", action="store_true", default=None,
+                    help="reuse a corpus-keyed Mem0 store + doc-id resume sidecar "
+                    "(ingest once; default ON for --mode full)")
+    ap.add_argument("--no-mem0-persist", dest="mem0_persist", action="store_false",
+                    help="force per-run-isolated Mem0 ingest (disable persistence)")
     ap.add_argument("--blockers-out", default=None)
     args = ap.parse_args(argv)
 
     reader = args.reader or (CHEAP_READER_DEFAULT if args.mode == "cheap" else STRONG_READER_DEFAULT)
-    _ch, _qv, queries = load_repin_gold(Path(args.gold))
+    corpus_hash, _qv, queries = load_repin_gold(Path(args.gold))
     if args.mode in ("cheap", "pilot") and args.per_class:
         queries = _select_subset(queries, per_class=args.per_class, classes=MEMORY_CLASSES)
 
+    mem0_persist = args.mem0_persist if args.mem0_persist is not None else (args.mode == "full")
     documents = build_documents_from_lme(queries, distractor_cap=args.distractor_cap)
-    print(f"[D0b][CLI] {len(queries)} queries, {len(documents)} sessions in corpus", flush=True)
+    print(
+        f"[D0b][CLI] {len(queries)} queries, {len(documents)} sessions in corpus | "
+        f"corpus_hash={corpus_hash[:12]} mem0_persist={mem0_persist}",
+        flush=True,
+    )
     adapters, blockers = build_live_adapters(
         documents,
         want_fathomdb=not args.no_fathomdb,
         want_mem0=not args.no_mem0,
         want_graphiti=not args.no_graphiti,
+        corpus_hash=corpus_hash,
+        mem0_persist=mem0_persist,
     )
     print(f"[D0b][CLI] adapters: {sorted(adapters)} | blockers: {[b['id'] for b in blockers]}", flush=True)
     answerer = CostTrackingAnswerer(reader, timeout_s=240.0)

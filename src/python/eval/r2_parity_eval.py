@@ -422,13 +422,62 @@ class Mem0OSSAdapter:
 
     name = "mem0_oss"
 
-    def __init__(self, memory: Optional[Any] = None, *, user_id: str = "r2-eval") -> None:
+    def __init__(
+        self,
+        memory: Optional[Any] = None,
+        *,
+        user_id: str = "r2-eval",
+        chroma_path: Optional[str] = None,
+        persist: bool = False,
+    ) -> None:
         self._memory = memory
         self._user_id = user_id
+        # Persistent mode (Slice 10 / Phase-B): the on-disk Chroma path is the
+        # anchor for the doc-id resume sidecar `<chroma_path>.ingested.json`.
+        self._chroma_path = chroma_path
+        self._persist = persist
 
     @property
     def available(self) -> bool:
         return self._memory is not None
+
+    @staticmethod
+    def try_build_persistent(corpus_hash: str) -> Optional["Mem0OSSAdapter"]:
+        """Build a **persistent, corpus-keyed** adapter (Slice 10 / Phase-B) that
+        REUSES a prior ingest for the same ``corpus_hash`` instead of re-ingesting.
+
+        Same footprint-safe local backend as :meth:`try_build` (airlock-local LLM +
+        local ``bge-small`` embedder + on-disk chroma — never Mem0 cloud, ADR §3.6),
+        but the Chroma path/collection AND ``user_id`` are keyed by ``corpus_hash``
+        ALONE (no per-run id), so a relaunch reopens the same store and
+        :meth:`ingest` skips already-ingested docs via the sidecar. Returns None (not
+        raising) when ``mem0ai``/its backend is unavailable, mirroring
+        :meth:`try_build`."""
+        try:
+            from mem0 import Memory  # type: ignore[import-not-found]
+
+            from eval.mem0_local import build_local_mem0_config
+        except Exception:
+            return None
+        api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if os.environ.get("R2_MEM0_MODEL"):
+            kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
+        if os.environ.get("R2_MEM0_BASE_URL"):
+            kwargs["base_url"] = os.environ["R2_MEM0_BASE_URL"]
+        cfg = build_local_mem0_config(corpus_hash=corpus_hash, persist=True, **kwargs)
+        try:
+            memory = Memory.from_config(cfg)
+        except Exception:
+            return None
+        # The adapter user_id MUST match the config namespace so a reopen searches the
+        # SAME memories the prior ingest wrote (the whole point of persistence).
+        return Mem0OSSAdapter(
+            memory=memory,
+            user_id=str(cfg["_user_id"]),
+            chroma_path=str(cfg["_chroma_path"]),
+            persist=True,
+        )
 
     @staticmethod
     def try_build() -> Optional["Mem0OSSAdapter"]:
@@ -449,7 +498,7 @@ class Mem0OSSAdapter:
         except Exception:
             return None
         api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
-        kwargs: dict[str, str] = {"api_key": api_key}
+        kwargs: dict[str, Any] = {"api_key": api_key}
         if os.environ.get("R2_MEM0_MODEL"):
             kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
         if os.environ.get("R2_MEM0_BASE_URL"):
@@ -463,8 +512,43 @@ class Mem0OSSAdapter:
     def ingest(self, documents: dict[str, str]) -> None:
         if self._memory is None:
             raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        if not self._persist or self._chroma_path is None:
+            # Non-persistent (codex Slice-5 [P1#2] default): ingest every doc, no
+            # sidecar — a fresh per-run store starts empty so re-ingest is correct.
+            for doc_id, body in documents.items():
+                self._memory.add(body, user_id=self._user_id, metadata={"doc_id": doc_id})
+            return
+        # Persistent + resumable (Slice 10 / Phase-B): the sidecar records every
+        # doc_id already written to this corpus-keyed store. SKIP docs already
+        # present; ADD only the new ones; flush the sidecar AFTER each add so a kill
+        # mid-ingest resumes from exactly where it stopped (incremental + idempotent).
+        sidecar = Path(str(self._chroma_path) + ".ingested.json")
+        done = self._load_ingested(sidecar)
         for doc_id, body in documents.items():
+            if doc_id in done:
+                continue
             self._memory.add(body, user_id=self._user_id, metadata={"doc_id": doc_id})
+            done.add(doc_id)
+            self._write_ingested(sidecar, done)
+
+    @staticmethod
+    def _load_ingested(sidecar: Path) -> set[str]:
+        """Load the set of already-ingested doc_ids; tolerate a missing/corrupt
+        sidecar (treat as empty → a clean from-scratch ingest)."""
+        try:
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        return {str(d) for d in data} if isinstance(data, list) else set()
+
+    @staticmethod
+    def _write_ingested(sidecar: Path, done: set[str]) -> None:
+        """Atomically persist the ingested-doc_id set (temp-file + ``os.replace``)
+        so a kill mid-write cannot corrupt the resume sidecar."""
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+        tmp.write_text(json.dumps(sorted(done)), encoding="utf-8")
+        os.replace(tmp, sidecar)
 
     def retrieve(self, question: str, k: int) -> list[Hit]:
         if self._memory is None:
