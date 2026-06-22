@@ -116,3 +116,34 @@ def test_recall_records_and_per_class_delta() -> None:
     )
     assert lme_only["per_class_n"]["multi_session"] == 0
     assert lme_only["per_class_n"]["factoid"] == 2
+
+
+class _DupAdapter:
+    """Returns duplicate doc-ids in rank order — models Mem0 (several memories per
+    session). Honors the requested pool size (codex §9 [P2] regression fixture)."""
+
+    def __init__(self, ranked: list[str]) -> None:
+        self._ranked = ranked
+
+    def retrieve(self, question: str, k: int):  # noqa: ANN001 ANN201
+        return [Hit(doc_id=d, body="", score=1.0) for d in self._ranked[:k]]
+
+
+def test_recall_dedupes_before_topk_cut_codex_p2() -> None:
+    """A gold doc whose UNIQUE rank is <= k but whose RAW rank is > k must still
+    count — the scorer fetches a larger pool, dedupes, THEN cuts (codex §9 [P2]).
+    Old behavior (retrieve k raw, then dedupe) scored this 0.0."""
+    # First 10 RAW hits hold only 5 unique docs; gold "G" is at raw-rank 11,
+    # unique-rank 6 (<= k=10).
+    ranked = ["a", "a", "b", "b", "c", "c", "d", "d", "e", "e", "G"]
+    items = [
+        RecallItem(
+            query_id="q1",
+            reporting_class="factoid",
+            gold_doc_ids=("G",),
+            source="lme",
+            question="q1",
+        )
+    ]
+    recs = recall_records(items, {"mem0_oss": _DupAdapter(ranked)}, k=10)
+    assert recs[0]["recall"]["mem0_oss"] == 1.0, "dedupe-then-cut must surface unique-rank<=k gold"

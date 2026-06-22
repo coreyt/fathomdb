@@ -1,0 +1,282 @@
+{
+  "schema": "0.8.3-d0b-parity-v1",
+  "mode": "full",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "context_char_budget": 32000,
+  "n_boot": 2000,
+  "seed": 0,
+  "arms_run": [
+    "fathomdb",
+    "mem0_oss",
+    "naive_rag"
+  ],
+  "n_questions": 606,
+  "n_per_class": {
+    "factoid": 156,
+    "knowledge_update": 150,
+    "multi_session": 150,
+    "temporal": 150
+  },
+  "treatment_arm": "fathomdb",
+  "comparator_arms": [
+    "mem0_oss",
+    "graphiti_zep",
+    "naive_rag"
+  ],
+  "recall_deltas": {
+    "mem0_oss": {
+      "factoid": {
+        "point": -0.096154,
+        "ci_lo": -0.166667,
+        "ci_hi": -0.019231,
+        "mde": 0.104369,
+        "n": 156
+      },
+      "knowledge_update": {
+        "point": -0.166667,
+        "ci_lo": -0.253333,
+        "ci_hi": -0.086667,
+        "mde": 0.119749,
+        "n": 150
+      },
+      "multi_session": {
+        "point": -0.1,
+        "ci_lo": -0.186667,
+        "ci_hi": -0.02,
+        "mde": 0.120723,
+        "n": 150
+      },
+      "temporal": {
+        "point": -0.013333,
+        "ci_lo": -0.093333,
+        "ci_hi": 0.066667,
+        "mde": 0.115479,
+        "n": 150
+      }
+    },
+    "graphiti_zep": {
+      "factoid": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "knowledge_update": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "multi_session": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "temporal": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      }
+    },
+    "naive_rag": {
+      "factoid": {
+        "point": -0.044872,
+        "ci_lo": -0.096154,
+        "ci_hi": 0.0,
+        "mde": 0.069044,
+        "n": 156
+      },
+      "knowledge_update": {
+        "point": -0.2,
+        "ci_lo": -0.266667,
+        "ci_hi": -0.14,
+        "mde": 0.095555,
+        "n": 150
+      },
+      "multi_session": {
+        "point": -0.14,
+        "ci_lo": -0.193333,
+        "ci_hi": -0.086667,
+        "mde": 0.079639,
+        "n": 150
+      },
+      "temporal": {
+        "point": -0.086667,
+        "ci_lo": -0.16,
+        "ci_hi": -0.02,
+        "mde": 0.098937,
+        "n": 150
+      }
+    }
+  },
+  "accuracy_deltas": {
+    "mem0_oss": {
+      "factoid": {
+        "point": -0.237179,
+        "ci_lo": -0.320513,
+        "ci_hi": -0.153846,
+        "mde": 0.117073,
+        "n": 156
+      },
+      "knowledge_update": {
+        "point": -0.273333,
+        "ci_lo": -0.366667,
+        "ci_hi": -0.18,
+        "mde": 0.137445,
+        "n": 150
+      },
+      "multi_session": {
+        "point": -0.2,
+        "ci_lo": -0.28,
+        "ci_hi": -0.126667,
+        "mde": 0.11552,
+        "n": 150
+      },
+      "temporal": {
+        "point": -0.033333,
+        "ci_lo": -0.093333,
+        "ci_hi": 0.026667,
+        "mde": 0.081326,
+        "n": 150
+      }
+    },
+    "graphiti_zep": {
+      "factoid": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "knowledge_update": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "multi_session": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      },
+      "temporal": {
+        "point": null,
+        "ci_lo": null,
+        "ci_hi": null,
+        "mde": null,
+        "n": 0
+      }
+    },
+    "naive_rag": {
+      "factoid": {
+        "point": -0.262821,
+        "ci_lo": -0.339744,
+        "ci_hi": -0.185897,
+        "mde": 0.11139,
+        "n": 156
+      },
+      "knowledge_update": {
+        "point": -0.266667,
+        "ci_lo": -0.360167,
+        "ci_hi": -0.166667,
+        "mde": 0.136856,
+        "n": 150
+      },
+      "multi_session": {
+        "point": -0.06,
+        "ci_lo": -0.113333,
+        "ci_hi": -0.006667,
+        "mde": 0.076029,
+        "n": 150
+      },
+      "temporal": {
+        "point": -0.086667,
+        "ci_lo": -0.146667,
+        "ci_hi": -0.033333,
+        "mde": 0.079226,
+        "n": 150
+      }
+    }
+  },
+  "decide_083": {
+    "verdict": "NOT_REACHED",
+    "per_class": {
+      "factoid": {
+        "point": -0.237179,
+        "ci_lo": -0.320513,
+        "ci_hi": -0.153846,
+        "mde": 0.117073,
+        "n": 156,
+        "near_parity": false,
+        "better": false,
+        "underpowered": true
+      },
+      "knowledge_update": {
+        "point": -0.273333,
+        "ci_lo": -0.366667,
+        "ci_hi": -0.18,
+        "mde": 0.137445,
+        "n": 150,
+        "near_parity": false,
+        "better": false,
+        "underpowered": true
+      },
+      "multi_session": {
+        "point": -0.2,
+        "ci_lo": -0.28,
+        "ci_hi": -0.126667,
+        "mde": 0.11552,
+        "n": 150,
+        "near_parity": false,
+        "better": false,
+        "underpowered": true
+      },
+      "temporal": {
+        "point": -0.033333,
+        "ci_lo": -0.093333,
+        "ci_hi": 0.026667,
+        "mde": 0.081326,
+        "n": 150,
+        "near_parity": false,
+        "better": false,
+        "underpowered": true
+      }
+    },
+    "binding_constraint": null,
+    "surpass_candidates": [],
+    "blocked_by": "eu7"
+  },
+  "decide_083_error": null,
+  "answer_completeness": {
+    "expected_calls": 1818,
+    "n_errors": 0,
+    "completeness": 1.0,
+    "floor": 0.97,
+    "run_valid": true
+  },
+  "run_valid": true,
+  "aborted_for_cap": false,
+  "cost": {
+    "model": "gpt-5.4",
+    "n_calls": 1818,
+    "n_errors": 0,
+    "n_retries": 2,
+    "prompt_tokens": 8523175,
+    "completion_tokens": 18794,
+    "price_per_1m_input_usd": 1.25,
+    "price_per_1m_output_usd": 5.0,
+    "usd": 10.7479
+  },
+  "elapsed_s": 2938.2,
+  "blockers_encountered": []
+}

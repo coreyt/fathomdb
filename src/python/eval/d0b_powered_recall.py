@@ -43,6 +43,11 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from eval.d0b_parity_run import TREATMENT_ARM, per_class_delta_table
 from eval.decision_rule_083 import MEMORY_CLASSES
 
+#: Raw-pool multiplier for strict Recall@K (codex §9 [P2]): fetch ``k * RECALL_POOL_FACTOR``
+#: raw hits so that after de-duplicating doc-ids in rank order we still have >= k UNIQUE
+#: docs before the top-K cut — otherwise a duplicate-producing arm (Mem0) undercounts recall.
+RECALL_POOL_FACTOR: int = 5
+
 # --------------------------------------------------------------------------- #
 # The recall unit + pure helpers (the TDD core — backend-free).
 # --------------------------------------------------------------------------- #
@@ -160,11 +165,20 @@ def recall_records(
             "recall": {},
         }
         for arm, adapter in adapters.items():
-            hits = adapter.retrieve(it.question, k)
+            # Fetch a LARGER raw pool, dedupe to unique doc-ids in rank order, THEN
+            # cut to top-K (codex §9 [P2]): a duplicate-producing arm (e.g. Mem0,
+            # which stores several memories per session) can emit repeat doc-ids in
+            # its first k raw hits, pushing a gold doc whose UNIQUE rank is <= k past
+            # a top-k raw cut — undercounting strict Recall@K. Requesting k*pool then
+            # deduping-then-cutting fixes the bias deterministically.
+            pool_k = k * RECALL_POOL_FACTOR
+            hits = adapter.retrieve(it.question, pool_k)
             seen: list[str] = []
             for h in hits:
                 if h.doc_id not in seen:
                     seen.append(h.doc_id)
+                if len(seen) >= k:
+                    break
             rec["recall"][arm] = strict_recall_at_k(seen, it.gold_doc_ids, k)
         records.append(rec)
     return records
