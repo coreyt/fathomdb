@@ -1,0 +1,354 @@
+{
+  "schema": "0.8.3-gap-decomposition-v1",
+  "mode": "cheap",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "context_char_budget": 32000,
+  "n_boot": 500,
+  "seed": 0,
+  "new_arms": [
+    "oracle_raw",
+    "oracle_distilled",
+    "fathomdb_distilled"
+  ],
+  "reused_arms": [
+    "fathomdb",
+    "mem0_oss"
+  ],
+  "n_questions": 40,
+  "n_per_class": {
+    "factoid": 10,
+    "knowledge_update": 10,
+    "multi_session": 10,
+    "temporal": 10
+  },
+  "fit_coverage_per_class": {
+    "factoid": 1.0,
+    "knowledge_update": 1.0,
+    "multi_session": 1.0,
+    "temporal": 1.0
+  },
+  "fit_coverage_min": 0.8,
+  "component_deltas": {
+    "factoid": {
+      "RETRIEVAL": {
+        "point": 1.0,
+        "ci_lo": 1.0,
+        "ci_hi": 1.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "DISTILLED_FORM": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "MEM0_RESIDUAL": {
+        "point": -0.5,
+        "ci_lo": -0.8,
+        "ci_hi": -0.2,
+        "mde": 0.466931,
+        "n": 10
+      }
+    },
+    "knowledge_update": {
+      "RETRIEVAL": {
+        "point": 1.0,
+        "ci_lo": 1.0,
+        "ci_hi": 1.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "DISTILLED_FORM": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "MEM0_RESIDUAL": {
+        "point": -0.5,
+        "ci_lo": -0.8,
+        "ci_hi": -0.2,
+        "mde": 0.466931,
+        "n": 10
+      }
+    },
+    "multi_session": {
+      "RETRIEVAL": {
+        "point": 1.0,
+        "ci_lo": 1.0,
+        "ci_hi": 1.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "DISTILLED_FORM": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "MEM0_RESIDUAL": {
+        "point": -0.5,
+        "ci_lo": -0.8,
+        "ci_hi": -0.2,
+        "mde": 0.466931,
+        "n": 10
+      }
+    },
+    "temporal": {
+      "RETRIEVAL": {
+        "point": 1.0,
+        "ci_lo": 1.0,
+        "ci_hi": 1.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "DISTILLED_FORM": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 10
+      },
+      "MEM0_RESIDUAL": {
+        "point": -0.5,
+        "ci_lo": -0.8,
+        "ci_hi": -0.2,
+        "mde": 0.466931,
+        "n": 10
+      }
+    },
+    "pooled": {
+      "RETRIEVAL": {
+        "point": 1.0,
+        "ci_lo": 1.0,
+        "ci_hi": 1.0,
+        "mde": 0.0,
+        "n": 40
+      },
+      "DISTILLED_FORM": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 40
+      },
+      "MEM0_RESIDUAL": {
+        "point": -0.5,
+        "ci_lo": -0.65,
+        "ci_hi": -0.35,
+        "mde": 0.224306,
+        "n": 40
+      }
+    }
+  },
+  "verdicts": {
+    "factoid": {
+      "verdict": "RETRIEVAL_DOMINANT",
+      "components": {
+        "RETRIEVAL": {
+          "point": 1.0,
+          "ci_lo": 1.0,
+          "ci_hi": 1.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": true,
+          "powered": true
+        },
+        "DISTILLED_FORM": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": false,
+          "powered": true
+        },
+        "MEM0_RESIDUAL": {
+          "point": -0.5,
+          "ci_lo": -0.8,
+          "ci_hi": -0.2,
+          "mde": 0.466931,
+          "n": 10,
+          "positive": false,
+          "powered": false
+        }
+      },
+      "fit_coverage": 1.0,
+      "reason": null
+    },
+    "knowledge_update": {
+      "verdict": "RETRIEVAL_DOMINANT",
+      "components": {
+        "RETRIEVAL": {
+          "point": 1.0,
+          "ci_lo": 1.0,
+          "ci_hi": 1.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": true,
+          "powered": true
+        },
+        "DISTILLED_FORM": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": false,
+          "powered": true
+        },
+        "MEM0_RESIDUAL": {
+          "point": -0.5,
+          "ci_lo": -0.8,
+          "ci_hi": -0.2,
+          "mde": 0.466931,
+          "n": 10,
+          "positive": false,
+          "powered": false
+        }
+      },
+      "fit_coverage": 1.0,
+      "reason": null
+    },
+    "multi_session": {
+      "verdict": "RETRIEVAL_DOMINANT",
+      "components": {
+        "RETRIEVAL": {
+          "point": 1.0,
+          "ci_lo": 1.0,
+          "ci_hi": 1.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": true,
+          "powered": true
+        },
+        "DISTILLED_FORM": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": false,
+          "powered": true
+        },
+        "MEM0_RESIDUAL": {
+          "point": -0.5,
+          "ci_lo": -0.8,
+          "ci_hi": -0.2,
+          "mde": 0.466931,
+          "n": 10,
+          "positive": false,
+          "powered": false
+        }
+      },
+      "fit_coverage": 1.0,
+      "reason": null
+    },
+    "temporal": {
+      "verdict": "RETRIEVAL_DOMINANT",
+      "components": {
+        "RETRIEVAL": {
+          "point": 1.0,
+          "ci_lo": 1.0,
+          "ci_hi": 1.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": true,
+          "powered": true
+        },
+        "DISTILLED_FORM": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 10,
+          "positive": false,
+          "powered": true
+        },
+        "MEM0_RESIDUAL": {
+          "point": -0.5,
+          "ci_lo": -0.8,
+          "ci_hi": -0.2,
+          "mde": 0.466931,
+          "n": 10,
+          "positive": false,
+          "powered": false
+        }
+      },
+      "fit_coverage": 1.0,
+      "reason": null
+    },
+    "pooled": {
+      "verdict": "RETRIEVAL_DOMINANT",
+      "components": {
+        "RETRIEVAL": {
+          "point": 1.0,
+          "ci_lo": 1.0,
+          "ci_hi": 1.0,
+          "mde": 0.0,
+          "n": 40,
+          "positive": true,
+          "powered": true
+        },
+        "DISTILLED_FORM": {
+          "point": 0.0,
+          "ci_lo": 0.0,
+          "ci_hi": 0.0,
+          "mde": 0.0,
+          "n": 40,
+          "positive": false,
+          "powered": true
+        },
+        "MEM0_RESIDUAL": {
+          "point": -0.5,
+          "ci_lo": -0.65,
+          "ci_hi": -0.35,
+          "mde": 0.224306,
+          "n": 40,
+          "positive": false,
+          "powered": false
+        }
+      },
+      "fit_coverage": 1.0,
+      "reason": null
+    }
+  },
+  "answer_retention": {
+    "oracle_raw": {
+      "arm": "oracle_raw",
+      "n": 40,
+      "retention": 1.0
+    },
+    "oracle_distilled": {
+      "arm": "oracle_distilled",
+      "n": 40,
+      "retention": 1.0
+    },
+    "fathomdb_distilled": {
+      "arm": "fathomdb_distilled",
+      "n": 40,
+      "retention": 0.0
+    }
+  },
+  "over_salience_note": "answer-retention is a LOSSY-DISTILL diagnostic, reported SEPARATELY from the verdict: a low-retention distilled arm is a distillation artifact, NOT Mem0 superiority (codex Q6). A high oracle_raw retention with low oracle_distilled retention flags over-salience loss in the distiller.",
+  "confounds": [
+    "R (RETRIEVAL) is an upper bound \u2014 oracle also strips distractors PRF/D2 cannot fully reproduce; treat as a ceiling, not the PRF lift.",
+    "Resid (MEM0_RESIDUAL) bundles Mem0 retrieval+indexing+consolidation; a dominant Resid triggers a disambiguation follow-up, NOT a direct build.",
+    "the 'Mem0-FORM' label is PROVISIONAL: a generic blind distiller is not Mem0's memory units (codex Q4)."
+  ],
+  "ledger": {
+    "opening_balance_usd": 10.7479,
+    "hard_cap_usd": 30.0,
+    "spent_usd": 10.779059,
+    "remaining_usd": 19.220941
+  },
+  "aborted_for_cap": false,
+  "elapsed_s": 0.0,
+  "cheapval_kind": "machinery-$0-deterministic-reader (synthetic docs/cells)",
+  "blocker": "PRICED directional cheap-validate BLOCKED: (1) D0b per-question checkpoint 0.8.3-d0b-parity-v2.checkpoint.json ABSENT \u2014 only the aggregate 0.8.3-d0b-parity-n606.json (no 'records') exists, so load_d0b_cells HARD-STOPS; (2) mem0 not installed in this env; (3) fathomdb native ext shadowed under the worktree PYTHONPATH. Real-reader R/F/Resid needs the paid D0b cells -> orchestrator decision."
+}
