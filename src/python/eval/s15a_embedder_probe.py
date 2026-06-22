@@ -30,7 +30,7 @@ import re
 import statistics
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -525,8 +525,116 @@ def choose_embedder(per_candidate: Mapping[str, Mapping[str, Any]]) -> dict[str,
 
 
 # --------------------------------------------------------------------------- #
+# Model-revision resolution (local HF cache snapshot → pinned 40-hex SHA).
+# --------------------------------------------------------------------------- #
+
+#: A bare 40-hex git commit SHA (HF snapshot id).
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _hf_cache_dir() -> Path:
+    """The active HF hub cache dir (honours ``$HF_HUB_CACHE`` / ``$HF_HOME``).
+
+    Mirrors ``huggingface_hub``'s resolution order without importing it (keeps
+    this resolver torch/transformers-free and offline): explicit hub-cache env,
+    then ``$HF_HOME/hub``, then the default ``~/.cache/huggingface/hub``.
+    """
+    for env in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        v = os.environ.get(env)
+        if v:
+            return Path(v)
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        return Path(hf_home) / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+def resolve_revision(hf_id: str) -> str | None:
+    """Resolve ``hf_id``'s pinned 40-hex commit SHA from the local HF cache.
+
+    Reads ``models--<org>--<name>/refs/main`` (the resolved ``main`` commit),
+    falling back to a 40-hex-named ``snapshots/<sha>`` directory. Returns the SHA
+    string, or ``None`` if the model is not present in the local cache (no
+    network; reproducibility-record only). The resolved SHA is the current cache
+    default, so it does NOT change the ``.npy`` vector cache key (design §5/§7).
+    """
+    model_dir = _hf_cache_dir() / f"models--{hf_id.replace('/', '--')}"
+    ref = model_dir / "refs" / "main"
+    if ref.is_file():
+        sha = ref.read_text(encoding="utf-8").strip()
+        if _SHA_RE.match(sha):
+            return sha
+    snap_dir = model_dir / "snapshots"
+    if snap_dir.is_dir():
+        shas = sorted(p.name for p in snap_dir.iterdir() if _SHA_RE.match(p.name))
+        if shas:
+            return shas[0]
+    return None
+
+
+def build_model_revisions(model_names: Sequence[str]) -> dict[str, str]:
+    """Map each model name → its resolved 40-hex SHA (``"default"`` if uncached).
+
+    This is the exact producer of the §9 ``model_revisions`` record: a pinned SHA
+    when the weights are in the local HF cache, else the ``"default"`` placeholder
+    (recorded honestly rather than faked).
+    """
+    out: dict[str, str] = {}
+    for name in model_names:
+        sha = resolve_revision(MODELS[name].hf_id)
+        out[name] = sha if sha is not None else "default"
+    return out
+
+
+def pinned_cfg(cfg: ModelCfg) -> ModelCfg:
+    """Return ``cfg`` with ``revision`` pinned to the resolved cache SHA.
+
+    If the SHA cannot be resolved (model uncached), ``cfg`` is returned unchanged
+    (``revision`` stays as configured, typically ``None``).
+    """
+    sha = resolve_revision(cfg.hf_id)
+    return replace(cfg, revision=sha) if sha is not None else cfg
+
+
+# --------------------------------------------------------------------------- #
 # Embedding (lazy torch/transformers).
 # --------------------------------------------------------------------------- #
+
+#: In-process (tokenizer, model) cache keyed by (hf_id, revision, pooling). A
+#: loaded checkpoint is reused across :func:`embed_texts` calls so latency
+#: measures STEADY-STATE embedding, not repeated ``from_pretrained`` reloads
+#: (codex §9 [P2]#1). Caching changes only caching, not numerics.
+_MODEL_CACHE: dict[tuple[str, str, str], tuple[Any, Any]] = {}
+
+
+def _load_model_uncached(model_cfg: ModelCfg) -> tuple[Any, Any]:
+    """Load ``(tokenizer, model)`` via ``from_pretrained`` (no caching)."""
+    from transformers import (  # type: ignore[import-not-found]  # noqa: PLC0415
+        AutoModel,
+        AutoTokenizer,
+    )
+
+    load_kw: dict[str, Any] = {"trust_remote_code": model_cfg.trust_remote_code}
+    if model_cfg.revision:
+        load_kw["revision"] = model_cfg.revision
+    tokenizer = AutoTokenizer.from_pretrained(model_cfg.hf_id, **load_kw)
+    model = AutoModel.from_pretrained(model_cfg.hf_id, **load_kw)
+    model.eval()
+    return tokenizer, model
+
+
+def _load_model(model_cfg: ModelCfg) -> tuple[Any, Any]:
+    """Return the cached ``(tokenizer, model)`` for ``model_cfg``; load once.
+
+    Keyed by ``(hf_id, revision, pooling)`` so a checkpoint loaded for one
+    :func:`embed_texts` call is reused by every subsequent call (steady-state).
+    """
+    key = (model_cfg.hf_id, model_cfg.revision or "default", model_cfg.pooling)
+    cached = _MODEL_CACHE.get(key)
+    if cached is None:
+        cached = _load_model_uncached(model_cfg)
+        _MODEL_CACHE[key] = cached
+    return cached
 
 
 def embed_texts(
@@ -540,28 +648,21 @@ def embed_texts(
 ) -> np.ndarray:
     """Embed ``texts`` on CPU → L2-normalized f32 ``(len(texts), dim)`` array.
 
-    Lazy-imports torch/transformers. Applies the per-model prefix (query vs
-    passage) and pooling (cls vs mean), runs in ``eval`` mode under
-    ``torch.no_grad()``. Deterministic for a fixed model revision + thread count
-    (the determinism ASSERTION pins ``num_threads=1``; design §7).
+    Lazy-imports torch/transformers. The ``(tokenizer, model)`` is loaded ONCE
+    and reused via :data:`_MODEL_CACHE` (so repeated calls do not reload the
+    checkpoint). Applies the per-model prefix (query vs passage) and pooling (cls
+    vs mean), runs in ``eval`` mode under ``torch.no_grad()``. Deterministic for a
+    fixed model revision + thread count (the determinism ASSERTION pins
+    ``num_threads=1``; design §7). Caching changes only caching, not numerics —
+    vectors stay byte-identical.
     """
     import torch  # type: ignore[import-not-found]  # noqa: PLC0415 — heavy lazy dep
-    from transformers import (  # type: ignore[import-not-found]  # noqa: PLC0415
-        AutoModel,
-        AutoTokenizer,
-    )
 
     if num_threads is not None:
         torch.set_num_threads(num_threads)
 
     prefix = model_cfg.query_prefix if is_query else model_cfg.passage_prefix
-    load_kw: dict[str, Any] = {"trust_remote_code": model_cfg.trust_remote_code}
-    if model_cfg.revision:
-        load_kw["revision"] = model_cfg.revision
-
-    tokenizer = AutoTokenizer.from_pretrained(model_cfg.hf_id, **load_kw)
-    model = AutoModel.from_pretrained(model_cfg.hf_id, **load_kw)
-    model.eval()
+    tokenizer, model = _load_model(model_cfg)
 
     out: list[np.ndarray] = []
     with torch.no_grad():
@@ -827,14 +928,30 @@ def measure_latency(
     *,
     is_query: bool,
     num_threads: int,
+    batch_size: int = 1,
 ) -> float:
-    """Median per-text embed latency in ms (one-at-a-time, design §5.5)."""
-    times: list[float] = []
-    for t in sample_texts:
+    """Median per-item STEADY-STATE embed latency in ms (design §5.5).
+
+    The model is loaded ONCE (via :data:`_MODEL_CACHE`) and a single warmup
+    forward is run BEFORE timing, so the reported latency EXCLUDES checkpoint
+    load (codex §9 [P2]#1 — load time dwarfs CPU embedding and would wrongly fail
+    ``cpu_feasible``). ``batch_size=1`` gives single-text ``ms_per_query``; a
+    larger ``batch_size`` gives batched per-item ``ms_per_doc`` (total batch time
+    / batch length).
+    """
+    texts = list(sample_texts)
+    if not texts:
+        return math.inf
+    bs = max(1, batch_size)
+    # Warmup: make the model resident + prime lazy torch init; EXCLUDED from timing.
+    embed_texts(cfg, texts[:bs], is_query=is_query, batch_size=bs, num_threads=num_threads)
+    per_item_ms: list[float] = []
+    for start in range(0, len(texts), bs):
+        chunk = texts[start : start + bs]
         t0 = time.perf_counter()
-        embed_texts(cfg, [t], is_query=is_query, batch_size=1, num_threads=num_threads)
-        times.append((time.perf_counter() - t0) * 1000.0)
-    return float(statistics.median(times)) if times else math.inf
+        embed_texts(cfg, chunk, is_query=is_query, batch_size=bs, num_threads=num_threads)
+        per_item_ms.append((time.perf_counter() - t0) * 1000.0 / len(chunk))
+    return float(statistics.median(per_item_ms)) if per_item_ms else math.inf
 
 
 def eu8_hits(
@@ -942,7 +1059,10 @@ def run_probe(
     sample_q = [q.text for q in queries[:latency_sample]] or [q.text for q in queries[:1]]
     sample_d = corpus.bodies[:latency_sample] or corpus.bodies[:1]
     for name in model_names:
-        cfg = MODELS[name]
+        # Pin the revision to the resolved local-cache SHA (reproducibility,
+        # codex §9 [P2]#2). The SHA == the current cache default, so the warm
+        # .npy vectors stay valid (the .npy key is the model NAME, not revision).
+        cfg = pinned_cfg(MODELS[name])
         docs, qvecs = embed_model(
             cfg,
             corpus,
@@ -957,8 +1077,14 @@ def run_probe(
             corpus.doc_ids, docs, qvecs, queries, hard_set
         )
         proj = projected_eu7(docs, qvecs, hamming_k=PROJECTED_EU7_K, mean_center=True)
-        ms_q = measure_latency(cfg, sample_q, is_query=True, num_threads=num_threads)
-        ms_d = measure_latency(cfg, sample_d, is_query=False, num_threads=num_threads)
+        # ms_per_query: single-text; ms_per_doc: batched (per-item). Both measured
+        # steady-state (model resident + warmup), excluding checkpoint load.
+        ms_q = measure_latency(
+            cfg, sample_q, is_query=True, num_threads=num_threads, batch_size=1
+        )
+        ms_d = measure_latency(
+            cfg, sample_d, is_query=False, num_threads=num_threads, batch_size=batch_size
+        )
         per_model_raw[name] = {
             "cfg": cfg,
             "eu8_hits": eu8,
@@ -1067,9 +1193,7 @@ def run_probe(
             ),
             "fts5_caveat": hard.fts5_caveat,
         },
-        "model_revisions": {
-            name: (MODELS[name].revision or "default") for name in model_names
-        },
+        "model_revisions": build_model_revisions(model_names),
         "seeds": {
             "bootstrap_seed": bootstrap_seed,
             "bootstrap_resamples": bootstrap_resamples,
