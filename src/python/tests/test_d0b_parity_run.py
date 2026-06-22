@@ -286,6 +286,59 @@ def test_failure_is_not_a_scored_abstention(tmp_path: Path) -> None:
     assert art["decide_083"] is None and art["decide_083_error"]
 
 
+class _CostFlakyAnswerer(BaseAnswerer):
+    """Mirrors the live ``CostTrackingAnswerer`` ledger seam: exposes ``usd()`` and a
+    ``cost_block()`` whose OWN ``n_errors`` stays 0 (the answerer never sees the
+    runner's retry-exhausted cells), while ``.answer()`` always raises. This is the
+    [P3] inconsistency: the artifact ledger reported ``cost.n_errors == 0`` even though
+    ``answer_completeness.n_errors`` counted real failures."""
+
+    model_id = "cost-flaky-v1"
+
+    def __init__(self) -> None:
+        self.n_calls = 0
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        self.n_calls += 1
+        raise RuntimeError("simulated retry-exhausted 429")
+
+    def usd(self) -> float:
+        return 0.0
+
+    def cost_block(self) -> dict[str, object]:
+        # the answerer's own counter never learns of the runner's retry-exhaustion
+        return {"model": self.model_id, "n_calls": self.n_calls, "n_errors": 0, "usd": 0.0}
+
+
+def test_cost_n_errors_reconciled_with_completeness_on_retry_exhaustion(tmp_path: Path) -> None:
+    # Tiny gold: two answer-bearing questions x two arms = 4 priced cells, ALL fail.
+    queries = [
+        _gold("rx-0", "factoid", ("g-rx-0",), ("ans-0",)),
+        _gold("rx-1", "factoid", ("g-rx-1",), ("ans-1",)),
+    ]
+    arms = ["fathomdb", "mem0_oss"]
+    hits = {
+        a: {q.question: [Hit(doc_id=f"g-{q.query_id}", body=f"body-{a}-{q.query_id}", score=1.0)] for q in queries}
+        for a in arms
+    }
+    adapters = {a: _FakeAdapter(a, hits[a]) for a in arms}
+    out = tmp_path / "d0b.json"
+    art = run_d0b(
+        mode="full", reader="cost-flaky-v1", output=out, queries=queries,
+        adapters=adapters, answerer=_CostFlakyAnswerer(), n_boot=50, checkpoint_every=5,
+    )
+    n_forced_failures = len(queries) * len(arms)  # 4, every priced cell raised
+    assert art["answer_completeness"]["n_errors"] == n_forced_failures
+    # [P3]: the run ledger must be self-consistent — cost.n_errors reflects the real
+    # retry-exhausted count, NOT the answerer's stale 0.
+    assert art["cost"]["n_errors"] == art["answer_completeness"]["n_errors"]
+    assert art["cost"]["n_errors"] == n_forced_failures
+
+
 def test_atomic_checkpoint_written_every_n(tmp_path: Path) -> None:
     queries, adapters, answerer = _build_full_fixture()
     out = tmp_path / "d0b.json"
