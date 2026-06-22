@@ -12,6 +12,8 @@ runner module exists, the suite REDs with a per-test ``ModuleNotFoundError``
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -212,8 +214,130 @@ def test_pooling_prefix_config_table() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# fix-1 [P2]#1 — in-process model cache (steady-state latency, no per-call reload).
+# Torch-free: exercises the cache layer directly so it RUNs (not skips) in the
+# gate venv (which has no torch). The end-to-end embed_texts proof is the
+# integration test below (validated under the eu-0 CPU venv).
+# --------------------------------------------------------------------------- #
+
+
+def test_in_process_model_cache_loads_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from eval import s15a_embedder_probe as m
+
+    # An in-process cache must exist and start empty for this test.
+    m._MODEL_CACHE.clear()
+
+    calls: list[tuple[str, str | None, str]] = []
+
+    def fake_uncached(cfg: object) -> tuple[str, str]:
+        calls.append((cfg.hf_id, cfg.revision, cfg.pooling))  # type: ignore[attr-defined]
+        return (f"tok::{cfg.hf_id}", f"model::{cfg.hf_id}")  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(m, "_load_model_uncached", fake_uncached)
+
+    cfg = m.MODELS["bge-small"]
+    a = m._load_model(cfg)
+    b = m._load_model(cfg)
+    # Loaded ONCE across two calls — steady-state reuse, not a per-call reload.
+    assert len(calls) == 1
+    # The very same cached (tokenizer, model) tuple is handed back.
+    assert a is b
+
+    # A distinct model loads independently (a separate cache key).
+    cfg2 = m.MODELS["bge-base"]
+    m._load_model(cfg2)
+    m._load_model(cfg2)
+    assert len(calls) == 2
+
+    # Cache key is (hf_id, revision, pooling).
+    keys = set(m._MODEL_CACHE.keys())
+    assert (cfg.hf_id, cfg.revision or "default", cfg.pooling) in keys
+    assert (cfg2.hf_id, cfg2.revision or "default", cfg2.pooling) in keys
+
+
+# --------------------------------------------------------------------------- #
+# fix-1 [P2]#2 — model revisions pinned to resolved 40-hex commit SHAs.
+# Resolved from the local HF cache snapshot; offline + $0. The base bge-small is
+# present in the default cache, so this RUNs (not skips) in the gate venv.
+# --------------------------------------------------------------------------- #
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _base_in_hf_cache() -> bool:
+    from eval.s15a_embedder_probe import MODELS, resolve_revision
+
+    return resolve_revision(MODELS["bge-small"].hf_id) is not None
+
+
+def test_resolve_revision_from_local_cache() -> None:
+    from eval.s15a_embedder_probe import MODELS, resolve_revision
+
+    if not _base_in_hf_cache():
+        pytest.skip("bge-small not in local HF cache")
+    sha = resolve_revision(MODELS["bge-small"].hf_id)
+    assert sha is not None
+    assert _SHA_RE.match(sha), f"resolved revision is not a 40-hex SHA: {sha!r}"
+
+
+def test_model_revisions_are_resolved_shas() -> None:
+    from eval.s15a_embedder_probe import BASE_NAME, build_model_revisions
+
+    if not _base_in_hf_cache():
+        pytest.skip("bge-small not in local HF cache")
+    revs = build_model_revisions([BASE_NAME])
+    val = revs[BASE_NAME]
+    # NOT the placeholder "default" — a pinned 40-hex commit SHA.
+    assert val != "default"
+    assert _SHA_RE.match(val), f"model_revisions[{BASE_NAME}] is not a 40-hex SHA: {val!r}"
+
+
+# --------------------------------------------------------------------------- #
 # Integration (CPU, eu-0 venv): require torch; skip otherwise. Pin threads=1.
 # --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_embed_texts_steady_state_no_reload(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("torch")
+    from eval import s15a_embedder_probe as m
+
+    m._MODEL_CACHE.clear()
+    real = m._load_model_uncached
+    calls: list[str] = []
+
+    def counting(cfg: object) -> tuple[object, object]:
+        calls.append(cfg.hf_id)  # type: ignore[attr-defined]
+        return real(cfg)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(m, "_load_model_uncached", counting)
+
+    cfg = m.MODELS["bge-small"]
+    m.embed_texts(cfg, ["one", "two", "three"], is_query=False, num_threads=1)
+    m.embed_texts(cfg, ["four"], is_query=False, num_threads=1)
+    m.measure_latency(cfg, ["a", "b", "c"], is_query=False, num_threads=1)
+    # from_pretrained-equivalent (_load_model_uncached) called ONCE total across
+    # two embed_texts calls AND a multi-text latency measurement.
+    assert len(calls) == 1
+
+
+@pytest.mark.integration
+def test_model_cache_byte_identical_vectors() -> None:
+    pytest.importorskip("torch")
+    from eval import s15a_embedder_probe as m
+
+    cfg = m.MODELS["bge-small"]
+    texts = ["the quick brown fox", "a second sentence about memory retrieval"]
+
+    m._MODEL_CACHE.clear()
+    v_fresh = m.embed_texts(cfg, texts, is_query=False, num_threads=1)  # cold load
+    v_cached = m.embed_texts(cfg, texts, is_query=False, num_threads=1)  # cached reuse
+    # Cache changes ONLY caching, not numerics: cached == freshly-loaded.
+    assert np.array_equal(v_fresh, v_cached)
+
+    m._MODEL_CACHE.clear()
+    v_reload = m.embed_texts(cfg, texts, is_query=False, num_threads=1)  # cold again
+    assert np.array_equal(v_fresh, v_reload)
 
 
 @pytest.mark.integration
