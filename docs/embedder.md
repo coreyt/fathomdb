@@ -8,8 +8,10 @@ your own (Rust only, today).
 
 > Status: the default embedder ships in 0.7.1. The real-corpus recall floor was
 > re-derived in the 0.7.2 hardening release: the apparent recall "gap" seen
-> during 0.7.1 scouting was a measurement artifact, the corrected ANN-fidelity
-> recall@10 is **0.937** on the reference corpus, and the 0.90 floor holds — see
+> during 0.7.1 scouting was a measurement artifact. The current ANN-fidelity
+> recall@10, measured on the pre-fusion **vector stage** (the SUT the 0.90 floor
+> gates), is **0.896** (95% CI 0.864–0.925, N=7,667) and holds the **0.90 floor
+> under the one-sided CI gate** (`recall_ci_hi ≥ 0.90`) — see
 > [Caveats](#caveats-and-limitations).
 
 ## What it is
@@ -114,13 +116,19 @@ for a later release.
   recall@10 around 0.83 over the reference corpus, which looked like it was below
   the 0.90 floor. The 0.7.2 hardening work showed that 0.83 was a **measurement
   artifact** (exclude-after-top-10 plus body-string ground truth over a corpus
-  with duplicate bodies), not an engine deficiency. The corrected ANN-fidelity
+  with duplicate bodies), not an engine deficiency. The ANN-fidelity
   measurement — how faithfully the 1-bit sign-quant index reproduces the same
-  model's exact f32 top-10 — is **recall@10 = 0.937** (95% CI 0.913–0.957) on the
-  real bge-small embedder (N=7,667, K=192, mean-centering), so the **0.90 floor
-  holds**. This is an ANN/quantization-fidelity number, not an IR-relevance
-  number. A full-scale N=1M run remains infeasible on commodity hardware; 0.937
-  at N≈7.7k is treated as a near-upper bound (recall declines slowly with N).
+  model's exact f32 top-10 — is **recall@10 = 0.896** (95% CI 0.864–0.925) on the
+  real bge-small embedder (N=7,667, K=192, mean-centering), measured on the
+  pre-fusion **vector stage** (the SUT the floor gates). The **0.90 floor holds
+  under the one-sided CI gate** (`recall_ci_hi 0.925 ≥ 0.90`). This is an
+  ANN/quantization-fidelity number, not an IR-relevance number. (An earlier
+  **0.937** figure was measured on the pre-correction `search()` SUT at the 0.7.1
+  anchor; the 0.937→0.896 difference is a vector-stage **measurement-SUT** change,
+  not a fidelity regression, and is **not** caused by embedder pooling — bisected
+  in `dev/plans/runs/0.8.3-eu7-bisect-report.md`.) A full-scale N=1M run remains
+  infeasible on commodity hardware; the N≈7.7k value is treated as a near-upper
+  bound (recall declines slowly with N).
 - **Topic-drift mean** (see above): pinned on the first 256 docs; reindex to
   refresh.
 - **Custom Python/TypeScript embedders** are deferred to a later release; the

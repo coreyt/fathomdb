@@ -21,8 +21,11 @@
 //!
 //! **The 0.90 floor constant is UNCHANGED.** This CI form is a 0.8.0-scoped
 //! reconciliation of the asserting gate to the HITL acceptance; it is to be
-//! revisited after 0.8.0 (the point-estimate-≥0.90 recovery + the ~4pt
-//! 0.7.x→0.8.0 vector-stage drop diagnosis are 0.8.1 items).
+//! revisited after 0.8.0 (the point-estimate-≥0.90 recovery is a later item).
+//! The ~4pt "0.7.x→0.8.0 vector-stage drop" was diagnosed in 0.8.3
+//! (`dev/plans/runs/0.8.3-eu7-bisect-report.md`): it is largely a
+//! measurement-SUT change (the 0.937 anchor measured `search()`; this gate
+//! measures the `vector_stage_only` seam), NOT an embedder-pooling regression.
 
 /// AC-075 gate predicate: the recall 95% CI is **not significantly below** the
 /// floor (one-sided). PASS iff the upper CI bound clears the floor.

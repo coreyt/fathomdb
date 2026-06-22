@@ -73,3 +73,21 @@ gateable now buys nothing. Phase-B = (a) **priced** identical-answerer accuracy 
 (b) **$0** strict Recall@K on the **powered LME+LOCOMO** corpus. The per-class gap LANDS
 (capability-report #1); the powered **priced** verdict is deferred to Slice 20 (post-eu7).
 Graphiti/Zep deferred (clean blocker; 2nd comparator) → run {Mem0, naive_rag}.
+
+## eu7 0.937→0.896 bisect RESOLVED (2026-06-22, $0 / no-LLM / no-GPU / no-build)
+
+Offline archaeology — `runs/0.8.3-eu7-bisect-report.md` (+ `.json` / `-output.json`).
+**Verdict: case A (vector-path/SUT), NOT case B (CLS/embedding); corpus also ruled out.**
+- Embedder src **byte-identical** v0.7.2→v0.8.0; CLS pooling is option-only (`c7afbfde`,
+  default Mean, dated AFTER the 0.896 run) → CLS cannot be the cause.
+- GA-1 already ruled out corpus (byte-identical). Every deterministic quant/KNN
+  primitive (KNN SQL, Pack1→Pack2 bits, f32 rerank) is byte-identical → no
+  fidelity-loss commit. Leading cause = the B-1 `vector_stage_only` SUT change
+  (0.937 = pre-correction `search()` anchor; 0.896 = the seam — not comparable).
+- **Reaffirms the Phase-B Option A premise above:** `eu7=0.896<0.90` is the true
+  vector-stage fidelity, and it is **not a CLS problem**. Slice-20 must judge eu7
+  **fresh** vs the 0.90 floor after the re-embed; if it breaches, the recovery lever
+  is the **quant path** (whitening → K>192 → 2-bit), NOT pooling.
+- Residual (definitive engine 0.7.x-vs-0.8.0 vector-stage A/B) blocked: no
+  pre-embedded eu7-corpus DB. **$0 in API** (eu7 is LLM-free); needs an embed
+  (minutes on GPU when util<5%, ~1h CPU) — schedule as a Slice-20 sub-task, not a blocker.
