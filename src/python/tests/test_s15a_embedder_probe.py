@@ -12,7 +12,10 @@ runner module exists, the suite REDs with a per-test ``ModuleNotFoundError``
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -558,3 +561,78 @@ def test_pooling_known_vector_cls_ne_mean() -> None:
     # A mean-vs-CLS swap is a real difference (the Slice-20 bug); the vectors must
     # NOT be equal.
     assert not np.allclose(v_cls, v_mean, atol=1e-4)
+
+
+# --------------------------------------------------------------------------- #
+# fix-3 [P2] — the @pytest.mark.integration tests MUST be opt-in.
+# In the DEFAULT gate (no FDB_S15A_INTEGRATION) they must be COLLECTED-BUT-SKIPPED
+# — never loading a real HuggingFace model or hitting the network, even on a box
+# where torch happens to be installed. The skip must come from the env-var guard
+# (not merely the in-body importorskip("torch")), and the `integration` marker
+# must be REGISTERED so no PytestUnknownMarkWarning is emitted.
+#
+# This meta-test runs pytest in a subprocess on THIS file selecting only the
+# integration-marked tests, with FDB_S15A_INTEGRATION explicitly unset, and asserts
+# (a) every selected test is skipped (none ran/failed), (b) the active skip reason
+# references the opt-in env var, and (c) no unknown-mark warning is emitted.
+# It is itself NOT marked `integration`, so `-m integration` never selects it.
+# --------------------------------------------------------------------------- #
+
+_INTEGRATION_OPT_IN_ENV = "FDB_S15A_INTEGRATION"
+
+
+def test_integration_tests_are_opt_in_and_marker_registered() -> None:
+    this_file = Path(__file__).resolve()
+    repo_python_src = this_file.parent.parent  # src/python
+
+    env = dict(os.environ)
+    env.pop(_INTEGRATION_OPT_IN_ENV, None)  # default gate: opt-in NOT enabled
+    env["FATHOMDB_TESTS_NO_REBUILD"] = "1"
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(repo_python_src), env.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(this_file),
+            "-m",
+            "integration",
+            "-rs",
+            "-W",
+            "error::pytest.PytestUnknownMarkWarning",
+            "-p",
+            "no:cacheprovider",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(repo_python_src.parent.parent),  # repo root
+    )
+    out = proc.stdout + proc.stderr
+
+    # (a) The integration tests are collected and skipped — none ran or failed.
+    assert proc.returncode == 0, f"default-gate integration run was not all-skipped:\n{out}"
+    assert re.search(r"\b\d+ skipped\b", out), f"no skipped tests reported:\n{out}"
+    assert " passed" not in out, f"an integration test actually RAN (not skipped):\n{out}"
+    assert " failed" not in out, f"an integration test FAILED:\n{out}"
+    assert " error" not in out.lower().replace("error::pytest", ""), (
+        f"errors during default-gate integration run:\n{out}"
+    )
+
+    # (b) The active skip reason is the opt-in env-var guard (NOT the in-body
+    # importorskip("torch") — which would let the tests RUN whenever torch exists).
+    assert _INTEGRATION_OPT_IN_ENV in out, (
+        f"integration tests are not gated on {_INTEGRATION_OPT_IN_ENV}; the skip "
+        f"reason must reference the opt-in env var:\n{out}"
+    )
+
+    # (c) The `integration` marker is registered: no unknown-mark warning. With
+    # -W error::pytest.PytestUnknownMarkWarning an unregistered mark turns the run
+    # red, so a clean returncode==0 above already proves this; assert the absence of
+    # the warning text too for a legible failure if the policy ever changes.
+    assert "PytestUnknownMarkWarning" not in out, (
+        f"the `integration` marker is not registered (unknown-mark warning):\n{out}"
+    )
