@@ -2,9 +2,10 @@
   "schema": "0.8.3-d0b-powered-recall-v1",
   "k": 10,
   "arms_run": [
+    "fathomdb",
     "naive_rag"
   ],
-  "treatment_arm": null,
+  "treatment_arm": "fathomdb",
   "comparator_arms": [
     "naive_rag"
   ],
@@ -24,20 +25,20 @@
     "per_arm_recall": {
       "fathomdb": {
         "factoid": {
-          "mean": null,
-          "n": 0
+          "mean": 0.737179,
+          "n": 156
         },
         "knowledge_update": {
-          "mean": null,
-          "n": 0
+          "mean": 0.553333,
+          "n": 150
         },
         "multi_session": {
-          "mean": null,
-          "n": 0
+          "mean": 0.373333,
+          "n": 150
         },
         "temporal": {
-          "mean": null,
-          "n": 0
+          "mean": 0.473333,
+          "n": 150
         }
       },
       "naive_rag": {
@@ -50,7 +51,7 @@
           "n": 150
         },
         "multi_session": {
-          "mean": 0.48,
+          "mean": 0.486667,
           "n": 150
         },
         "temporal": {
@@ -62,32 +63,32 @@
     "recall_deltas": {
       "naive_rag": {
         "factoid": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.044872,
+          "ci_lo": -0.096154,
+          "ci_hi": 0.0,
+          "mde": 0.069044,
+          "n": 156
         },
         "knowledge_update": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.166667,
+          "ci_lo": -0.233333,
+          "ci_hi": -0.106667,
+          "mde": 0.089547,
+          "n": 150
         },
         "multi_session": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.113333,
+          "ci_lo": -0.166667,
+          "ci_hi": -0.06,
+          "mde": 0.081842,
+          "n": 150
         },
         "temporal": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.1,
+          "ci_lo": -0.166667,
+          "ci_hi": -0.04,
+          "mde": 0.086893,
+          "n": 150
         }
       }
     }
@@ -104,20 +105,20 @@
     "per_arm_recall": {
       "fathomdb": {
         "factoid": {
-          "mean": null,
-          "n": 0
+          "mean": 0.918756,
+          "n": 997
         },
         "knowledge_update": {
-          "mean": null,
-          "n": 0
+          "mean": 0.553333,
+          "n": 150
         },
         "multi_session": {
-          "mean": null,
-          "n": 0
+          "mean": 0.415274,
+          "n": 419
         },
         "temporal": {
-          "mean": null,
-          "n": 0
+          "mean": 0.726115,
+          "n": 471
         }
       },
       "naive_rag": {
@@ -130,7 +131,7 @@
           "n": 150
         },
         "multi_session": {
-          "mean": 0.405728,
+          "mean": 0.408115,
           "n": 419
         },
         "temporal": {
@@ -142,32 +143,32 @@
     "recall_deltas": {
       "naive_rag": {
         "factoid": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.011033,
+          "ci_lo": -0.025075,
+          "ci_hi": 0.003034,
+          "mde": 0.019656,
+          "n": 997
         },
         "knowledge_update": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.166667,
+          "ci_lo": -0.233333,
+          "ci_hi": -0.106667,
+          "mde": 0.089547,
+          "n": 150
         },
         "multi_session": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": 0.00716,
+          "ci_lo": -0.035859,
+          "ci_hi": 0.047733,
+          "mde": 0.057188,
+          "n": 419
         },
         "temporal": {
-          "point": null,
-          "ci_lo": null,
-          "ci_hi": null,
-          "mde": null,
-          "n": 0
+          "point": -0.055202,
+          "ci_lo": -0.084926,
+          "ci_hi": -0.027601,
+          "mde": 0.042342,
+          "n": 471
         }
       }
     }
