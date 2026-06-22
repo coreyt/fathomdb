@@ -80,9 +80,10 @@ Offline archaeology — `runs/0.8.3-eu7-bisect-report.md` (+ `.json` / `-output.
 **Verdict: case A (vector-path/SUT), NOT case B (CLS/embedding); corpus also ruled out.**
 - Embedder src **byte-identical** v0.7.2→v0.8.0; CLS pooling is option-only (`c7afbfde`,
   default Mean, dated AFTER the 0.896 run) → CLS cannot be the cause.
-- GA-1 already ruled out corpus (byte-identical). Every deterministic quant/KNN
-  primitive (KNN SQL, Pack1→Pack2 bits, f32 rerank) is byte-identical → no
-  fidelity-loss commit. Leading cause = the B-1 `vector_stage_only` SUT change
+- GA-1 already ruled out corpus (byte-identical). The vector-stage ranking is
+  unchanged: stored quantized bits byte-identical (Pack1→Pack2 copies verbatim),
+  KNN SQL ranking-invariant (a cosmetic refactor — codex §9 P2), f32 rerank
+  unchanged → no fidelity-loss commit. Leading cause = the B-1 `vector_stage_only` SUT change
   (0.937 = pre-correction `search()` anchor; 0.896 = the seam — not comparable).
 - **Reaffirms the Phase-B Option A premise above:** `eu7=0.896<0.90` is the true
   vector-stage fidelity, and it is **not a CLS problem**. Slice-20 must judge eu7

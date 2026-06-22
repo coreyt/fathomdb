@@ -59,8 +59,8 @@
     },
     {
       "candidate": "case A: bit-KNN SQL / K=192 / f32 rerank",
-      "ruling": "BYTE_IDENTICAL",
-      "evidence": "d28d2046 self-documents the unfiltered path (filter=None, used by eu7) as byte-identical to 0.7.2; build_vector_phase1_sql(None) reproduces the same ORDER BY distance LIMIT TOP_K_BIT_CANDIDATES / SEARCH_RERANK_LIMIT."
+      "ruling": "RANKING_INVARIANT (not literally byte-identical; codex §9 P2)",
+      "evidence": "d28d2046 refactored the unfiltered phase-1 SQL: v0.7.2 selects c.rowid and orders by vec_distance_l2(v.embedding, vec_f32(?2)); build_vector_phase1_sql(None) selects c.rowid, vec_distance_l2(...) AS l2 and orders by the l2 alias. Cosmetic/ranking-invariant (same L2 distance, same order, TOP_K_BIT_CANDIDATES/SEARCH_RERANK_LIMIT/K=192 unchanged) -> cannot change top-10 membership, so it does not explain the recall move; but it is equivalence, not byte-identity."
     },
     {
       "candidate": "case A: stored quantized bits (Pack1->Pack2)",
