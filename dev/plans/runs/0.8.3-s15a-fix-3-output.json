@@ -1,0 +1,40 @@
+{
+  "phase": "0.8.3-slice-15a",
+  "fix": "fix-3",
+  "branch": "0.8.3-slice-15a",
+  "base_sha": "53e213a2",
+  "head_sha": "5055d8e4",
+  "remediates": [
+    "codex §9 [P2] (test hygiene) — the @pytest.mark.integration tests in src/python/tests/test_s15a_embedder_probe.py were NOT actually opt-in: they relied only on an in-body pytest.importorskip('torch'), so in any env where torch happened to be installed (e.g. scripts/agent-test.sh on a box with torch) they would perform REAL HuggingFace model loads and could hit the network / fail if transformers/weights are absent. The `integration` marker was also unregistered, emitting a PytestUnknownMarkWarning x4."
+  ],
+  "commits": [
+    "bd78d1d4 test(0.8.3/Slice 15a fix-3): RED — integration tests must be opt-in",
+    "5055d8e4 fix(0.8.3/Slice 15a fix-3): skip integration tests unless FDB_S15A_INTEGRATION=1 + register marker (codex §9 P2)"
+  ],
+  "red_commit": "bd78d1d4",
+  "green_commit": "5055d8e4",
+  "files_changed": [
+    "src/python/tests/test_s15a_embedder_probe.py",
+    "src/python/pyproject.toml"
+  ],
+  "fix": {
+    "guard": "Added a module-level opt-in guard `_INTEGRATION_ENABLED = os.environ.get('FDB_S15A_INTEGRATION') == '1' and importlib.util.find_spec('torch') is not None and importlib.util.find_spec('transformers') is not None`, and a `_integration = pytest.mark.skipif(not _INTEGRATION_ENABLED, reason=...)`. Each of the 4 integration tests now carries BOTH `@pytest.mark.integration` (selection) and `@_integration` (skip-guard). In the default gate (no env var) they are collected-but-skipped at marker-eval time — BEFORE the in-body importorskip — so no model is ever loaded and no network is touched, even when torch IS installed.",
+    "marker_registration": "Registered the marker additively in the existing `[tool.pytest.ini_options]` of src/python/pyproject.toml via `markers = [\"integration: opt-in tests that load real models (require FDB_S15A_INTEGRATION=1 + torch/transformers)\"]`. No conftest needed; no unrelated config touched.",
+    "red_demonstration": "test_integration_tests_are_opt_in_and_marker_registered runs pytest in a subprocess on this file with `-m integration -rs -W error::pytest.PytestUnknownMarkWarning`, with FDB_S15A_INTEGRATION explicitly unset. On baseline it FAILED two ways: (1) the unregistered `integration` mark + `-W error` turned the run into a collection error (returncode 2), and (2) the active skip reason was 'could not import torch' (the importorskip), not the opt-in env var. After the fix it PASSES: returncode 0, all selected tests skipped, skip reason references FDB_S15A_INTEGRATION, and no PytestUnknownMarkWarning."
+  },
+  "tests": {
+    "default_gate_full": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python .venv/bin/python -m pytest src/python/tests/test_s15a_embedder_probe.py -rs => 13 passed, 4 skipped in 0.62s. The 4 skips report reason 'opt-in integration test: set FDB_S15A_INTEGRATION=1 with torch + transformers installed (default gate skips — no model load / no network)'. NO warnings section emitted.",
+    "not_integration_gate": "-m 'not integration' => 13 passed, 4 deselected. (12 original pure tests + the new fix-3 meta-test; the meta-test is NOT marked integration so it runs in the default gate.)",
+    "red_confirmed": "At RED commit bd78d1d4 the meta-test FAILED on baseline (returncode 2 from the unknown-mark warning promoted to error + env-var guard absent). 4 PytestUnknownMarkWarning were emitted.",
+    "twelve_pure_tests": "The 12 pre-existing pure tests all still pass (test_probe_wiring_truth_table, test_choose_embedder_feasibility_and_no_swap, test_projected_eu7_handcomputed, test_paired_bootstrap_ci, test_bm25_and_hard_subset_strict_all_of, test_pooling_prefix_config_table, test_in_process_model_cache_loads_once, test_resolve_revision_from_local_cache, test_model_revisions_are_resolved_shas, test_projected_eu7_deterministic_hamming_fanout, test_cache_sidecar_revision_mismatch_reembeds, test_cache_sidecar_match_reuses)."
+  },
+  "ruff": "All checks passed! (src/python/tests/test_s15a_embedder_probe.py)",
+  "pyright": "0 errors, 0 warnings, 0 informations on tests/test_s15a_embedder_probe.py (pyright 1.1.409). The 'venv .venv subdirectory not found' note is pre-existing config noise (the canonical .venv is at repo root, not inside the worktree) and is unrelated to this change.",
+  "guardrails": "No GPU/airlock; offline + $0; did NOT run --full (a full measurement is running concurrently and was not disturbed; this test file is not used by it); did NOT touch /tmp/fdb-s15a-cache-full/ or any sibling worktree; did NOT modify decision_rule_083.py or the gold; no merge/push; no agent spawn; no maturin develop; stayed inside the /tmp/fdb-slice-15a-6b8503da worktree.",
+  "notes": [
+    "Marker registration was placed in the existing src/python/pyproject.toml [tool.pytest.ini_options] (the smallest additive change; that config is already discovered by the gate, which is how the unknown-mark warning surfaced). No conftest.py was added.",
+    "The in-body pytest.importorskip('torch') calls were left in place as defence-in-depth; the new module-level skipif is the primary guard and is evaluated first."
+  ],
+  "blockers": [],
+  "next_step_for_orchestrator": "codex §9 re-review of fix-3 on the branch, then cherry-pick. No functional/eval-harness behavior changed — only test gating + marker registration."
+}
