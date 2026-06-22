@@ -30,5 +30,31 @@
   "agent_verify_result": "PASS — RED commit (412b618d) reproduced the failure: the equivalence + short+capped tests fail against a neutral-logit stub while empty/determinism pass, proving the load-bearing test catches a wrong pad/mask. GREEN commit (2ca58952) lands the real batched forward + engine wiring: all 4 embedder tests green, engine builds clean, clippy clean, observed batched-vs-per-pair max abs diff 0.0. Ranking math in ce_rerank is byte-unchanged (only model.score per-pair -> model.score_batch once + zip).",
   "blockers": "None.",
   "notes": "No engine-level rerank_fused order test was added: exercising it requires the OnceLock singleton + the cached model through the engine crate's test harness (more setup than the embedder-level equivalence test, which already proves logit identity to 0.0 abs diff, hence identical blended scores and sort order). Did NOT maturin develop (per task). The score_batch tests load the pinned reranker from ~/.cache/fathomdb/reranker (present locally) and skip with an eprintln if the cache is cold — locally they executed the real forward (not vacuous).",
-  "next_step_for_orchestrator": "Self-review then codex §9 on branch 0.8.3-ce-batch-release @ 2ca58952 (commits 412b618d RED, 2ca58952 GREEN, plus this output.json commit). Then maturin develop --release from main so the canonical _fathomdb.abi3.so is release+batched, and restart the rerank-accuracy run from 0 (discard the paused 250-record debug-per-pair checkpoint; mixing debug per-pair with release batched is unsafe per the design memo §4)."
+  "next_step_for_orchestrator": "Self-review then codex §9 on branch 0.8.3-ce-batch-release @ 2ca58952 (commits 412b618d RED, 2ca58952 GREEN, plus this output.json commit). Then maturin develop --release from main so the canonical _fathomdb.abi3.so is release+batched, and restart the rerank-accuracy run from 0 (discard the paused 250-record debug-per-pair checkpoint; mixing debug per-pair with release batched is unsafe per the design memo §4).",
+  "p2_fix_bound_batched_forward": {
+    "codex_finding": "[P2] score_batch sent the ENTIRE passage list through ONE model.forward; attention allocates ~N*heads*L_max^2, so a large caller-controlled rerank_depth (hundreds/thousands of ~512-token passages) could OOM/kill the process before the engine's per-pair fallback runs.",
+    "head_sha": "5a039f98",
+    "commits": [
+      {
+        "sha": "d880f4e3",
+        "type": "test",
+        "subject": "test(0.8.3/CE-batch fix): RED — chunk-boundary equivalence across N>MAX_CE_BATCH"
+      },
+      {
+        "sha": "5a039f98",
+        "type": "fix",
+        "subject": "fix(0.8.3/CE-batch fix): GREEN — bound batched CE forward at MAX_CE_BATCH=32 (codex §9 P2)"
+      }
+    ],
+    "what_changed": "candle_reranker.rs ONLY. Added documented const MAX_CE_BATCH: usize = 32 (bounds peak attention memory ~MAX_CE_BATCH*heads*512^2 while amortizing kernel-launch overhead ~32x). score_batch now splits passages into chunks of MAX_CE_BATCH and runs ONE model.forward per chunk via a new private score_chunk (which holds the prior tokenize/right-pad-to-L_max/forward/CLS/pooler/classifier body, L_max now computed PER CHUNK — only reduces memory), concatenating per-chunk Vec<f32> in input order. Empty passages -> Ok(vec![]) unchanged. <=32 batches (incl. single pair) take the single-forward path, byte-identical to before. No engine-math change: ce_rerank still just calls score_batch. No Python/canonical-doc edits.",
+    "red": "score_batch_spans_chunk_boundaries references MAX_CE_BATCH (absent pre-fix) -> compile-error RED (E0425 cannot find value MAX_CE_BATCH); cargo test failed to compile fathomdb-embedder lib test.",
+    "n_gt_max_ce_batch_test_result": "score_batch_spans_chunk_boundaries: N=67 (= MAX_CE_BATCH*2+3, spans 3 chunks 32+32+3), passages of differing token lengths (per-chunk L_max varies) -> batched == per-pair within tol, order preserved across chunk boundaries. PASS.",
+    "observed_max_abs_diff": "1.9073486e-6 (well under the 1e-3 tolerance bar) for the N=67 chunk-boundary fixture; the prior 3-pair single-chunk fixture remains 0e0.",
+    "gate_results": {
+      "cargo_test_embedder": "cargo test -p fathomdb-embedder --features default-reranker candle_reranker — 5 passed; 0 failed (the 4 prior tests + score_batch_spans_chunk_boundaries); model loaded from local cache so the forward ran for real (~4.0s).",
+      "cargo_build_engine": "cargo build -p fathomdb-engine --features default-reranker — Finished, clean.",
+      "cargo_clippy": "cargo clippy -p fathomdb-embedder -p fathomdb-engine --features default-reranker — Finished, no warnings."
+    },
+    "blockers": "None."
+  }
 }
