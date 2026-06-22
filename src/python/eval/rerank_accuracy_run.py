@@ -366,7 +366,7 @@ def run_rerank_accuracy(
     else:
         verdict = ABORTED_VERDICT
         go = False
-        # codex §9 [P1]: neutralize the NESTED decision fields too. A capped/incomplete
+        # Non-citable invariant: neutralize the NESTED decision fields too. A capped/incomplete
         # prefix can compute a powered nested pooled/per_class lever_realized="PASS" +
         # go=True that a downstream reader could publish despite citable=False. Suppress
         # the DECISION fields (lever_realized → ABORTED_VERDICT, go → False) + stamp the
