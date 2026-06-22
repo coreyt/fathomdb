@@ -423,6 +423,19 @@ def _body_hash(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
+def distill_spent_sidecar(cache_path: str | Path) -> Path:
+    """The sidecar that persists the priced distiller's cumulative spend next to the
+    distill cache (codex §9 P1#1). The cache is keyed by ``doc_id``; the spend lives
+    in a sibling ``<cache>.spent.json`` so the cache file shape stays a pure doc map.
+
+    On a resume the cached-and-skipped docs are not re-distilled (no re-spend), so the
+    dollars already paid for them MUST be restored from this sidecar — otherwise the
+    pre-call cap would authorise > the per-experiment ``$30`` (the cap is per
+    EXPERIMENT, not per PROCESS)."""
+    p = Path(cache_path)
+    return p.with_name(p.name + ".spent.json")
+
+
 def distill_corpus(
     documents: Mapping[str, str],
     distiller: BlindDistiller,
@@ -436,10 +449,26 @@ def distill_corpus(
 
     When ``ledger`` + ``priced_model`` are given, the distiller is **$-capped**: the
     PRE-call projection guards each distill (raises :class:`BudgetExceeded` before a
-    call that would exceed). A local-Qwen / $0 distiller passes ``ledger=None``."""
+    call that would exceed). A local-Qwen / $0 distiller passes ``ledger=None``.
+
+    Priced-resume integrity (codex §9 P1#1): when a partial cache exists, the
+    distiller's cumulative spend persisted in :func:`distill_spent_sidecar` is RESTORED
+    into the ledger before any new distill, so cached-and-skipped docs still count
+    against the cap; the sidecar is re-written atomically with the cache after each new
+    distill so a later resume sees the up-to-date paid total."""
     cache: dict[str, dict[str, Any]] = {}
+    sidecar = distill_spent_sidecar(cache_path) if cache_path is not None else None
     if cache_path is not None and Path(cache_path).exists():
         cache = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        # Restore the prior priced-distiller spend so the cap accounts for the
+        # already-paid, cached-and-skipped docs (codex §9 P1#1). The persisted value
+        # is the cumulative ledger spend (already inclusive of the opening balance),
+        # so restore_spent is a plain assignment — never a double-counting add.
+        if ledger is not None and sidecar is not None and sidecar.exists():
+            prior = json.loads(sidecar.read_text(encoding="utf-8"))
+            prior_spent = prior.get("ledger_spent_usd")
+            if prior_spent is not None:
+                ledger.restore_spent(float(prior_spent))
     for doc_id, body in documents.items():
         if doc_id in cache:
             continue
@@ -457,6 +486,10 @@ def distill_corpus(
         }
         if cache_path is not None:
             _atomic_write_json(Path(cache_path), cache)
+            # Persist the cumulative distiller spend atomically with the cache so a
+            # resume restores the true per-experiment spend (codex §9 P1#1).
+            if ledger is not None and sidecar is not None:
+                _atomic_write_json(sidecar, {"ledger_spent_usd": ledger.spent})
     return cache
 
 
@@ -499,18 +532,17 @@ def answer_with_budget(
 # --------------------------------------------------------------------------- #
 
 
-def component_paired_deltas(
+def paired_arm_deltas(
     records: Sequence[Mapping[str, Any]],
     *,
-    component: str,
+    minuend: str,
+    subtrahend: str,
     cls: str,
     fit_required: bool = True,
 ) -> list[float]:
-    """Per-question paired ``minuend − subtrahend`` accuracy deltas for ``component``
-    in ``cls``. A question contributes ONLY when both arms carry a non-``None`` acc
-    AND (when ``fit_required``) its oracle context fit untruncated (design §2: unfit
-    oracle questions are excluded from the decomposition)."""
-    minuend, subtrahend = _COMPONENT_ARMS[component]
+    """Per-question paired ``acc[minuend] − acc[subtrahend]`` deltas within ``cls``. A
+    question contributes ONLY when both arms carry a non-``None`` acc AND (when
+    ``fit_required``) its oracle context fit untruncated (design §2)."""
     out: list[float] = []
     for r in records:
         if r.get("reporting_class") != cls:
@@ -523,6 +555,63 @@ def component_paired_deltas(
         if tv is not None and cv is not None:
             out.append(float(tv) - float(cv))
     return out
+
+
+def component_paired_deltas(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    component: str,
+    cls: str,
+    fit_required: bool = True,
+) -> list[float]:
+    """Per-question paired ``minuend − subtrahend`` accuracy deltas for ``component``
+    in ``cls``. A question contributes ONLY when both arms carry a non-``None`` acc
+    AND (when ``fit_required``) its oracle context fit untruncated (design §2: unfit
+    oracle questions are excluded from the decomposition)."""
+    minuend, subtrahend = _COMPONENT_ARMS[component]
+    return paired_arm_deltas(
+        records, minuend=minuend, subtrahend=subtrahend, cls=cls, fit_required=fit_required
+    )
+
+
+def fathomdb_distilled_crosscheck(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    classes: Sequence[str] = GAP_CLASSES,
+    n_boot: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """The ``acc_fathomdb_distilled − acc_fathomdb`` FORM cross-check (codex §9 P2):
+    distilling FathomDB's OWN retrieved bodies vs FathomDB raw, on the actually-paid
+    cells. Only meaningful when a fathomdb adapter produced the ``fathomdb_distilled``
+    arm. Returns the per-class + pooled paired delta plus each arm's mean accuracy.
+
+    Unlike the component table this delta is NOT oracle-gated (``fit_required=False``):
+    neither arm is an oracle arm, so the oracle-fit subset does not apply."""
+    delta_per_class: dict[str, dict[str, Any]] = {}
+    for cls in list(classes) + ["pooled"]:
+        if cls == "pooled":
+            deltas: list[float] = []
+            for c in classes:
+                deltas += paired_arm_deltas(
+                    records, minuend="fathomdb_distilled", subtrahend="fathomdb",
+                    cls=c, fit_required=False,
+                )
+        else:
+            deltas = paired_arm_deltas(
+                records, minuend="fathomdb_distilled", subtrahend="fathomdb",
+                cls=cls, fit_required=False,
+            )
+        delta_per_class[cls] = class_delta(deltas, n_boot=n_boot, seed=seed)
+    per_arm: dict[str, Optional[float]] = {}
+    for arm in ("fathomdb", "fathomdb_distilled"):
+        vals = [
+            float((r.get("acc") or {})[arm])
+            for r in records
+            if (r.get("acc") or {}).get(arm) is not None
+        ]
+        per_arm[arm] = round(sum(vals) / len(vals), 4) if vals else None
+    return {"delta_per_class": delta_per_class, "per_arm_accuracy": per_arm}
 
 
 def per_component_table(
@@ -596,14 +685,21 @@ def _context_contains_answer(context: Sequence[str], answers: Sequence[str]) -> 
 def answer_completeness(
     records: Sequence[Mapping[str, Any]],
     queries: Sequence[GoldQuery],
+    *,
+    new_arms: Sequence[str] = NEW_ARMS,
 ) -> float:
-    """Fraction of the input's **answerable** questions whose THREE new arms were all
+    """Fraction of the input's **answerable** questions whose ACTIVE new arms were all
     processed (codex §9 P1). A question counts as complete only when its record is
-    present AND every arm in :data:`NEW_ARMS` was produced (key present in
-    ``answers`` — an abstention ``None`` still counts as *processed*; a budget abort
-    leaves the un-reached arms' keys ABSENT). A skipped (never-appended) question and
-    a partially-answered question both count against completeness, so a capped prefix
-    scores ``< 1.0``. Returns ``1.0`` when the input has no answerable question."""
+    present AND every arm in ``new_arms`` was produced (key present in ``answers`` — an
+    abstention ``None`` still counts as *processed*; a budget abort OR a per-cell
+    failure leaves the un-reached arms' keys ABSENT). A skipped (never-appended)
+    question and a partially-answered question both count against completeness, so a
+    capped prefix scores ``< 1.0``.
+
+    ``new_arms`` is the set of arms actually attempted: without a fathomdb adapter the
+    ``fathomdb_distilled`` arm is not produced and so is NOT required for completeness
+    (codex §9 P2 — it is cleanly absent, not a missing cell). Returns ``1.0`` when the
+    input has no answerable question."""
     expected = sum(1 for q in queries if q.answers)
     if expected == 0:
         return 1.0
@@ -612,7 +708,7 @@ def answer_completeness(
         if not r.get("has_answers"):
             continue
         answers = r.get("answers") or {}
-        if all(arm in answers for arm in NEW_ARMS):
+        if all(arm in answers for arm in new_arms):
             complete += 1
     return round(complete / expected, 4)
 
@@ -674,6 +770,13 @@ def run_gap_decomposition(
     answerer_available = bool(getattr(answerer, "available", False))
     ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
 
+    # Without a fathomdb adapter the `fathomdb_distilled` arm is NOT produced — it is
+    # cleanly absent (no paid no-op, no crash) and not required for completeness
+    # (codex §9 P2). With an adapter all three new arms are active + the form
+    # cross-check is exported.
+    has_fathomdb = fathomdb_adapter is not None
+    active_new_arms: tuple[str, ...] = NEW_ARMS if has_fathomdb else ("oracle_raw", "oracle_distilled")
+
     # Resume the NEW-arm answers from a prior checkpoint (membership = reuse signal).
     rmap: dict[tuple[str, str], Optional[str]] = {}
     if ckpt_path.exists():
@@ -707,18 +810,15 @@ def run_gap_decomposition(
         gold = list(q.gold_doc_ids)
         oracle_raw_ctx, fit_complete = oracle_context(gold, documents, budget=budget)
         oracle_distilled_ctx = distilled_context(gold, distill_cache, budget=budget)
-        if fathomdb_adapter is not None:
-            fdb_hits = fathomdb_adapter.retrieve(q.question, k)
-            fdb_doc_ids = [h.doc_id for h in fdb_hits]
-        else:
-            fdb_doc_ids = []
-        fathomdb_distilled_ctx = distilled_context(fdb_doc_ids, distill_cache, budget=budget)
 
         arm_ctx: dict[str, list[str]] = {
             "oracle_raw": oracle_raw_ctx,
             "oracle_distilled": oracle_distilled_ctx,
-            "fathomdb_distilled": fathomdb_distilled_ctx,
         }
+        if fathomdb_adapter is not None:
+            fdb_hits = fathomdb_adapter.retrieve(q.question, k)
+            fdb_doc_ids = [h.doc_id for h in fdb_hits]
+            arm_ctx["fathomdb_distilled"] = distilled_context(fdb_doc_ids, distill_cache, budget=budget)
 
         rec: dict[str, Any] = {
             "qid": q.query_id,
@@ -737,7 +837,7 @@ def run_gap_decomposition(
                 rec["acc"][arm] = float(cell["acc"])
 
         if answerer_available and q.answers:
-            for arm in NEW_ARMS:
+            for arm in active_new_arms:
                 ctx = [b for b in arm_ctx[arm] if b]
                 rec["context_has_gold"][arm] = _context_contains_answer(ctx, q.answers)
                 key = (q.query_id, arm)
@@ -749,9 +849,17 @@ def run_gap_decomposition(
                             answerer, reader=reader, question=q.question, context=ctx, ledger=ledger
                         )
                     except BudgetExceeded:
+                        # A pre-call cap projection → clean cap-abort (checkpoint + stop).
                         aborted_for_cap = True
                         _checkpoint()
                         break
+                    except Exception:  # noqa: BLE001 — non-budget answerer failure
+                        # failure ≠ abstention (codex §9 P1#2; mirror d0b): a
+                        # retry-exhausted 429/5xx or non-retryable HTTP error leaves
+                        # this arm's cell ABSENT (never fabricated), and the run
+                        # CONTINUES. The completeness gate then marks the artifact
+                        # non-citable. The per-question `else` checkpoints progress.
+                        continue
                 rec["answers"][arm] = ans
                 rec["acc"][arm] = scorer.score_answer(list(q.answers), ans)
             else:
@@ -769,7 +877,7 @@ def run_gap_decomposition(
 
     table = per_component_table(records, classes=classes, n_boot=n_boot, seed=seed)
     raw_verdicts = decide_all_classes(table, records, classes=classes)
-    retention = {arm: answer_retention(records, arm=arm) for arm in NEW_ARMS}
+    retention = {arm: answer_retention(records, arm=arm) for arm in active_new_arms}
     coverages = {c: class_fit_coverage(records, c) for c in classes}
 
     # --- citability gate (codex §9 P1) --------------------------------------- #
@@ -778,7 +886,7 @@ def run_gap_decomposition(
     # experiment. When aborted OR answer-completeness is below the floor, suppress
     # every DOMINANT result and publish ABORTED_INCOMPLETE; the component tables are
     # still recorded but the whole artifact is clearly marked non-citable.
-    completeness = answer_completeness(records, queries)
+    completeness = answer_completeness(records, queries, new_arms=active_new_arms)
     incomplete = aborted_for_cap or completeness < ANSWER_COMPLETENESS_MIN
     citable = not incomplete
     if aborted_for_cap:
@@ -811,7 +919,9 @@ def run_gap_decomposition(
         "n_boot": n_boot,
         "seed": seed,
         "new_arms": list(NEW_ARMS),
+        "active_new_arms": list(active_new_arms),
         "reused_arms": list(REUSED_ARMS),
+        "fathomdb_adapter_present": has_fathomdb,
         "n_questions": len(records),
         "n_per_class": {c: sum(1 for r in records if r["reporting_class"] == c) for c in classes},
         "fit_coverage_per_class": coverages,
@@ -848,6 +958,13 @@ def run_gap_decomposition(
         "aborted_for_cap": aborted_for_cap,
         "elapsed_s": round(time.time() - t0, 1),
     }
+    # The fathomdb-FORM cross-check (acc_fathomdb_distilled − acc_fathomdb) is only
+    # exported when an adapter produced the fathomdb_distilled arm (codex §9 P2). With
+    # no adapter the key is simply absent (the arm was never produced / never paid).
+    if has_fathomdb:
+        art["fathomdb_distilled_crosscheck"] = fathomdb_distilled_crosscheck(
+            records, classes=classes, n_boot=n_boot, seed=seed
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(art, indent=2, default=str), encoding="utf-8")
     print(

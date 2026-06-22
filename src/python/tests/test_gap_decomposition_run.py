@@ -656,12 +656,13 @@ def test_distill_corpus_resume_restores_prior_spend_and_trips_cap(tmp_path: Path
         json.dumps({"d1": {"distilled": "s", "prompt": "p", "model": "fake-distiller-v1", "hash": "h"}}),
         encoding="utf-8",
     )
-    # The distiller's cumulative spend persisted alongside the cache (near the cap).
+    # The distiller's cumulative spend persisted alongside the cache (one tick under
+    # the cap, so any further distill projection exceeds it).
     distill_spent_sidecar(cache_path).write_text(
-        json.dumps({"ledger_spent_usd": 29.999}), encoding="utf-8"
+        json.dumps({"ledger_spent_usd": 29.9999}), encoding="utf-8"
     )
     ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=512)
-    # Resuming with a FRESH ledger: d1 is cached+skipped, but its $29.999 prior spend
+    # Resuming with a FRESH ledger: d1 is cached+skipped, but its $29.9999 prior spend
     # is RESTORED, so distilling the NEW d2 trips the cap BEFORE the call. Without the
     # fix the fresh $10.7479 ledger would wrongly authorise > the $30 cap.
     with pytest.raises(BudgetExceeded):
@@ -670,7 +671,7 @@ def test_distill_corpus_resume_restores_prior_spend_and_trips_cap(tmp_path: Path
             cache_path=cache_path, ledger=ledger, priced_model="gemini-flash-lite",
         )
     assert client.seen == []  # d1 cached; d2 halted before the call → no distill calls
-    assert ledger.spent == pytest.approx(29.999, abs=1e-3)
+    assert ledger.spent == pytest.approx(29.9999, abs=1e-4)
 
 
 def test_distill_corpus_persists_and_restores_cumulative_spend(tmp_path: Path) -> None:
