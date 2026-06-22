@@ -25,6 +25,7 @@ from eval.gap_decomposition_run import (
     component_paired_deltas,
     decide_all_classes,
     distill_corpus,
+    effective_distill_cache_path,
     load_d0b_cells,
     oracle_context,
     per_component_table,
@@ -93,6 +94,29 @@ class _FakeAdapter:
 # --------------------------------------------------------------------------- #
 # (b) fail-closed pricing + pre-call $-cap halts BEFORE the call.
 # --------------------------------------------------------------------------- #
+def test_distill_cache_defaults_to_output_derived_path(tmp_path: Path) -> None:
+    # codex §9 P1: when --distill-cache is omitted the distill cache (paid distiller
+    # outputs + .spent.json sidecar) must STILL be persisted/resumable. The effective
+    # path defaults to an output-derived path so a priced run is never lost on rerun.
+    out = tmp_path / "gapdecomp.json"
+    effective = effective_distill_cache_path(None, out)
+    assert effective is not None
+    assert Path(effective).parent == out.parent
+    assert Path(effective) == out.with_suffix(".distill-cache.json")
+
+
+def test_distill_cache_explicit_flag_is_respected() -> None:
+    # An explicit --distill-cache wins over the output-derived default.
+    explicit = "/tmp/explicit-distill.json"
+    assert str(effective_distill_cache_path(explicit, Path("/tmp/out.json"))) == explicit
+
+
+def test_price_for_pins_cheap_validate_model() -> None:
+    # codex §9 P2: the documented cheap-validate id must be pinned at the cheap rates
+    # so price_for does not fail closed on the prescribed cheap-validate path.
+    assert price_for("gemini-2.5-flash-lite") == (0.05, 0.20)
+
+
 def test_price_for_fail_closed_on_unpinned_model() -> None:
     assert price_for("gpt-5.4") == (1.25, 5.00)
     with pytest.raises(UnpinnedPricing):
