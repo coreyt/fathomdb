@@ -44,3 +44,32 @@ context budget ≤ ~32k chars (`--context-char-budget 32000`, projected ~$18) or
 Reducing context may lower identical-answerer accuracy (a measurement-validity
 tradeoff) — flag for the HITL. The window-fit lever is applied identically across all
 arms, so the R2 same-context-budget invariant holds.
+
+## Slice 10 — Phase-A + fix-1 LANDED on main (2026-06-21)
+
+- Phase-A (D0b runner + Mem0 stand-up + cheap-validate + pilot) cherry-picked to main
+  (`625fd946`..`9b425553`); codex §9 = **CONCERN → fix-1** (P2 pyright gate + P3
+  cost.n_errors ledger reconciliation), remediated (`f7e2f62e` RED, `636b3ab4` fix),
+  re-verified (pyright EXIT=0, 31 tests green). Slice-5 fix-1/fix-2 were already closed
+  by a prior session (codex §9 PASS); not re-done.
+
+## Corpus-adequacy decisions (HITL 2026-06-21) — see `0.8.3-corpus-adequacy-note.md`
+
+1. **Research/EVAL-ONLY** use of LOCOMO (CC-BY-NC) + AP-News (MS-Research, no-redistribute);
+   payloads gitignored, never committed.
+2. **LOCOMO = a SECOND pinned corpus** (own `corpus_hash`), not merged into the LME hash
+   — pre-registration amendment to the SIGNED Slice 0 (approved). Restores power on
+   multi_session/temporal (paired-power proxy: LME-only underpowers all 3 non-factoid
+   classes; +LOCOMO → powered-if-paired).
+3. **`knowledge_update` = report-only** (no LOCOMO analog; underpowered even +LOCOMO).
+4. Apply the ≥2-session predicate to LOCOMO cat-1 before counting its multi_session N.
+
+## Slice 10 — Phase-B AUTHORIZED: **Option A — land the gap cheaply now, power at S20**
+
+Rationale: `eu7=0.896 < 0.90` makes `decide_083` return NOT_REACHED/blocked_by:eu7
+**regardless of power**, and eu7 only re-clears at Slice 20 — so spending to make classes
+gateable now buys nothing. Phase-B = (a) **priced** identical-answerer accuracy on
+**LME-only**, `--context-char-budget 32000`, `--max-usd 20` (~$18), resilient/resumable;
+(b) **$0** strict Recall@K on the **powered LME+LOCOMO** corpus. The per-class gap LANDS
+(capability-report #1); the powered **priced** verdict is deferred to Slice 20 (post-eu7).
+Graphiti/Zep deferred (clean blocker; 2nd comparator) → run {Mem0, naive_rag}.
