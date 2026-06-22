@@ -256,11 +256,64 @@ impl CandleTinyBertReranker {
         query: &str,
         passages: &[&str],
     ) -> Result<Vec<f32>, candle_core::Error> {
-        // RED stub: returns neutral logits (no real batched forward yet). The
-        // equivalence test below must FAIL against this, proving the test is
-        // load-bearing before the real batched implementation lands.
-        let _ = (query, &self.model, &self.pooler, &self.classifier, &self.device);
-        Ok(vec![0.0; passages.len()])
+        if passages.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Tokenize each pair exactly as `score` does, retaining per-pair ids,
+        // segment ids, and attention masks.
+        let mut all_ids: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut all_types: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut all_attn: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        let mut l_max = 0usize;
+        for passage in passages {
+            let enc = self
+                .tokenizer
+                .encode((query, *passage), true)
+                .map_err(|e| candle_core::Error::Msg(format!("tokenize pair: {e}")))?;
+            let ids = enc.get_ids().to_vec();
+            l_max = l_max.max(ids.len());
+            all_types.push(enc.get_type_ids().to_vec());
+            all_attn.push(enc.get_attention_mask().to_vec());
+            all_ids.push(ids);
+        }
+
+        // BERT `[PAD]` token id (config `pad_token_id = 0`); the value is inert
+        // because the attention mask removes pad positions, but use the real id
+        // so embeddings stay in-vocab.
+        let pad_id = self.tokenizer.token_to_id("[PAD]").unwrap_or(0);
+        let n = passages.len();
+
+        // Right-pad each row to L_max into flat (N * L_max) buffers.
+        let mut ids_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        let mut type_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        let mut attn_buf: Vec<u32> = Vec::with_capacity(n * l_max);
+        for i in 0..n {
+            let ids = &all_ids[i];
+            let types = &all_types[i];
+            let attn = &all_attn[i];
+            let len = ids.len();
+            ids_buf.extend_from_slice(ids);
+            type_buf.extend_from_slice(types);
+            attn_buf.extend_from_slice(attn);
+            for _ in len..l_max {
+                ids_buf.push(pad_id);
+                type_buf.push(0);
+                attn_buf.push(0);
+            }
+        }
+
+        let input_ids = Tensor::from_vec(ids_buf, (n, l_max), &self.device)?;
+        let token_type_ids = Tensor::from_vec(type_buf, (n, l_max), &self.device)?;
+        let attn_mask = Tensor::from_vec(attn_buf, (n, l_max), &self.device)?;
+
+        // (N, L_max, H) sequence output → [CLS] at position 0 → (N, H).
+        let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask))?;
+        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?;
+        // Pooler: tanh(dense(cls)) → classifier → (N, 1) → (N,).
+        let pooled = self.pooler.forward(&cls)?.tanh()?;
+        let logits = self.classifier.forward(&pooled)?.squeeze(1)?;
+        logits.to_vec1::<f32>()
     }
 }
 
