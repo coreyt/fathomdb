@@ -1,0 +1,73 @@
+{
+  "schema": "slice-implementer-output-v1",
+  "slice": "0.8.3 / Slice 20 precursor — CE-rerank precision probe ($0 / CPU / LLM-free)",
+  "branch": "0.8.3-ce-rerank-probe",
+  "baseline_commit": "4df06a4a",
+  "design_doc": "dev/design/0.8.3-ce-rerank-precision-probe.md",
+  "status": "COMPLETE",
+  "commits": [
+    {
+      "sha": "8b108fbe",
+      "kind": "RED",
+      "summary": "test: probe_rerank_pass truth-table + rerank-arm reorder + paired-CI determinism + depth0 identity (fails at collection, modules absent)"
+    },
+    {
+      "sha": "9fa43458",
+      "kind": "GREEN",
+      "summary": "feat: eval/ce_rerank_rule.py (frozen pure rule) + eval/ce_rerank_probe.py (FathomDBRerankAdapter + margin summary + CLI)"
+    },
+    {
+      "sha": "1a811517",
+      "kind": "smoke+harden",
+      "summary": "chore: --smoke 5 artifact (LME+LOCOMO, n=20) + main() tolerates absent CC-BY-NC LOCOMO"
+    }
+  ],
+  "head_sha": "1a811517f71d2c5f2ffde55677f6547b6b15b937",
+  "files_added": [
+    "src/python/eval/ce_rerank_rule.py",
+    "src/python/eval/ce_rerank_probe.py",
+    "src/python/tests/test_ce_rerank_probe.py",
+    "dev/plans/runs/0.8.3-ce-rerank-smoke.json"
+  ],
+  "files_modified": [],
+  "no_engine_or_rust_change": true,
+  "no_canonical_doc_edits": true,
+  "no_priced_llm": true,
+  "red_green": {
+    "red_proof": "collection ModuleNotFoundError: No module named 'eval.ce_rerank_probe' (impl moved aside)",
+    "green_proof": "8 passed in 0.18s (FATHOMDB_TESTS_NO_REBUILD=1)"
+  },
+  "gates": {
+    "ruff": "clean (eval/ce_rerank_probe.py, eval/ce_rerank_rule.py, tests/test_ce_rerank_probe.py)",
+    "pyright": "0 errors, 0 warnings (standard mode, .venv resolved)",
+    "pure_tests": "8/8 green, no-rebuild hatch"
+  },
+  "pins": {
+    "pool_n": 50,
+    "rerank_depth": 50,
+    "ce_model_repo": "cross-encoder/ms-marco-TinyBERT-L2-v2",
+    "ce_model_name": "fathomdb-ms-marco-TinyBERT-L2-v2",
+    "k": 10,
+    "seed": 0,
+    "n_boot": 2000,
+    "eps_mde": 0.05
+  },
+  "smoke": {
+    "path": "dev/plans/runs/0.8.3-ce-rerank-smoke.json",
+    "n_items": 20,
+    "corpus": "LME (606 gold) + LOCOMO (1431, 12 cat-1 <2-session dropped); 1212 corpus sessions; arms=[fathomdb, fathomdb_rerank, naive_rag]",
+    "pooled_verdict": "FAIL",
+    "note": "smoke (n=5/class) is a pipeline + determinism check, NOT the powered verdict; pooled margin point=0.0 (CE top-10 == FTS top-10 gold membership on these 20 q); deterministic.",
+    "headroom_captured_pooled": 0.0
+  },
+  "full_command": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python /home/coreyt/projects/fathomdb/.venv/bin/python -m eval.ce_rerank_probe --output dev/plans/runs/0.8.3-ce-rerank-n606.json --k 10 --pool-n 50 --seed 0 --n-boot 2000 --oracle-headroom dev/plans/runs/0.8.3-gap-decomposition-n606.json",
+  "smoke_command": "FATHOMDB_TESTS_NO_REBUILD=1 PYTHONPATH=src/python /home/coreyt/projects/fathomdb/.venv/bin/python -m eval.ce_rerank_probe --smoke 5 --output dev/plans/runs/0.8.3-ce-rerank-smoke.json",
+  "blockers": [],
+  "notes_for_orchestrator": [
+    "Output path: prompt said 'runs/'; followed repo convention dev/plans/runs/ (matches sibling 0.8.3 artifacts).",
+    "Symlinked the canonical _fathomdb.abi3.so into src/python/fathomdb/ (gitignored) per the prompt; no rebuild, no maturin.",
+    "LOCOMO (CC-BY-NC) was acquired on demand to data/corpus-data/raw/locomo10.json (gitignored, NOT committed); no verbatim NC text in any committed artifact.",
+    "Frozen rule mde==0 (zero variance) => powered => FAIL when ci_lo<=0 (correct); underpowered (mde>eps or None) => INCONCLUSIVE.",
+    "decision_rule_083.py was NOT edited (mirrored only)."
+  ]
+}
