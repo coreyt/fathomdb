@@ -13,6 +13,7 @@ runner module exists, the suite REDs with a per-test ``ModuleNotFoundError``
 from __future__ import annotations
 
 import importlib.util
+import math
 import os
 import re
 import subprocess
@@ -913,3 +914,54 @@ def test_cache_sidecar_input_identity_mismatch_reembeds(
     assert np.array_equal(docs, np.full((3, 4), _FRESH, np.float32))
     assert np.array_equal(qvecs, np.full((2, 4), _FRESH, np.float32))
     assert calls, "expected a re-embed on an input_id_hash mismatch"
+
+
+# --------------------------------------------------------------------------- #
+# fix-6 [P2] — projected_eu7 TRANSPARENCY bootstrap CI.
+# Design §5.4 (and the emitted caveat) promise the projected_eu7 bootstrap CI is
+# reported for transparency. The GATE stays the frozen POINT (projected_eu7 >=
+# 0.90); the CI is reported alongside the point ONLY. Each OK candidate record
+# must carry `projected_eu7_ci = {lo, hi, point}` with finite lo <= point <= hi,
+# the point byte-identical to the gated `projected_eu7`, and deterministic for a
+# fixed bootstrap seed.
+# --------------------------------------------------------------------------- #
+
+
+def test_run_probe_emits_projected_eu7_transparency_ci(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    m, corpus, queries = _tiny_run_probe_env(monkeypatch, tmp_path)
+
+    def fake_embed_model(cfg, corpus_, queries_, **kw):  # type: ignore[no-untyped-def]
+        return _fresh_vectors(m, cfg, len(corpus_.doc_ids), len(queries_))
+
+    monkeypatch.setattr(m, "embed_model", fake_embed_model)
+
+    result = _run_probe(m, tmp_path)
+
+    ok = {
+        name: rec
+        for name, rec in result["per_candidate"].items()
+        if rec.get("measurement_status") == "ok"
+    }
+    assert ok, "expected at least one OK candidate"
+
+    for name, rec in ok.items():
+        assert "projected_eu7_ci" in rec, f"{name} missing projected_eu7_ci"
+        ci = rec["projected_eu7_ci"]
+        assert set(ci) == {"lo", "hi", "point"}, f"{name} CI keys: {set(ci)}"
+        lo, hi, point = ci["lo"], ci["hi"], ci["point"]
+        for v in (lo, hi, point):
+            assert math.isfinite(v), f"{name} non-finite CI value {v}"
+        assert lo <= point <= hi, f"{name} CI not ordered: {lo} <= {point} <= {hi}"
+        # The reported CI point IS the gated POINT estimate (CI is transparency
+        # only; the gate consumes `projected_eu7`).
+        assert point == pytest.approx(rec["projected_eu7"])
+
+    # Deterministic: a second run with the same fixed seed yields the same CI.
+    result2 = _run_probe(m, tmp_path)
+    for name in ok:
+        assert (
+            result2["per_candidate"][name]["projected_eu7_ci"]
+            == result["per_candidate"][name]["projected_eu7_ci"]
+        )
