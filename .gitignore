@@ -78,3 +78,6 @@ dev/plans/runs/0.8.3-d0b-*.checkpoint.json
 dev/plans/runs/0.8.3-s15a-*review-*.log
 dev/plans/runs/0.8.3-s15a-full-run-*.log
 dev/plans/runs/0.8.3-s15a-design-consult-*.md
+
+# eu7 bisect — raw codex review transcript (concise outcome lives in the bisect-report)
+dev/plans/runs/0.8.3-eu7-bisect-doc-review-*.md
