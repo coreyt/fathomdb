@@ -2,7 +2,7 @@
   "base": {
     "eu8": 0.39937388193202145,
     "hard_r@10": 0.019393939393939394,
-    "ms_per_query": 12.382013606838882,
+    "ms_per_query": 11.227384558878839,
     "name": "bge-small"
   },
   "caveats": [
@@ -24,7 +24,7 @@
   },
   "measurement_failures": [
     {
-      "error": "IndexError: index 1100735888 is out of bounds for dimension 0 with size 512",
+      "error": "IndexError: index 126396013669456 is out of bounds for dimension 0 with size 512",
       "name": "gte-base"
     }
   ],
@@ -45,10 +45,10 @@
         "ac012_p99_ms": 150.0,
         "ac013_p50_ms": 80.0,
         "ac013_p99_ms": 300.0,
-        "base_ms_per_query": 12.382013606838882,
+        "base_ms_per_query": 11.227384558878839,
         "feasible": true,
-        "ms_per_doc": 163.3262683521025,
-        "ms_per_query": 28.342817444354296,
+        "ms_per_doc": 121.3486905908212,
+        "ms_per_query": 26.064457488246262,
         "threads": 12
       },
       "eu8": 0.42352415026833634,
@@ -71,7 +71,12 @@
       "measurement_status": "ok",
       "memory_class_recall": null,
       "probe_15a_pass": false,
-      "projected_eu7": 0.7855122906243203
+      "projected_eu7": 0.7855122906243203,
+      "projected_eu7_ci": {
+        "hi": 0.7923885142484229,
+        "lo": 0.7779192951925169,
+        "point": 0.7855122906243203
+      }
     },
     "e5-base-v2": {
       "binding_margin": -0.006060606060606061,
@@ -80,10 +85,10 @@
         "ac012_p99_ms": 150.0,
         "ac013_p50_ms": 80.0,
         "ac013_p99_ms": 300.0,
-        "base_ms_per_query": 12.382013606838882,
+        "base_ms_per_query": 11.227384558878839,
         "feasible": true,
-        "ms_per_doc": 161.3646216574125,
-        "ms_per_query": 26.146130869165063,
+        "ms_per_doc": 134.22531379619613,
+        "ms_per_query": 23.677658988162875,
         "threads": 12
       },
       "eu8": 0.4673524150268336,
@@ -106,10 +111,15 @@
       "measurement_status": "ok",
       "memory_class_recall": null,
       "probe_15a_pass": false,
-      "projected_eu7": 0.8959538829671525
+      "projected_eu7": 0.8959538829671525,
+      "projected_eu7_ci": {
+        "hi": 0.9004356101805525,
+        "lo": 0.8913851424842288,
+        "point": 0.8959538829671525
+      }
     },
     "gte-base": {
-      "error": "IndexError: index 1100735888 is out of bounds for dimension 0 with size 512",
+      "error": "IndexError: index 126396013669456 is out of bounds for dimension 0 with size 512",
       "in_library_feasible": false,
       "measurement_status": "failed"
     },
@@ -120,10 +130,10 @@
         "ac012_p99_ms": 150.0,
         "ac013_p50_ms": 80.0,
         "ac013_p99_ms": 300.0,
-        "base_ms_per_query": 12.382013606838882,
+        "base_ms_per_query": 11.227384558878839,
         "feasible": false,
-        "ms_per_doc": 244.93689009686932,
-        "ms_per_query": 38.504433003254235,
+        "ms_per_doc": 182.40677415160462,
+        "ms_per_query": 36.05634544510394,
         "threads": 12
       },
       "eu8": 0.45102862254025045,
@@ -146,7 +156,12 @@
       "measurement_status": "ok",
       "memory_class_recall": null,
       "probe_15a_pass": false,
-      "projected_eu7": 0.9316945834239722
+      "projected_eu7": 0.9316945834239722,
+      "projected_eu7_ci": {
+        "hi": 0.9351979551881663,
+        "lo": 0.9279312595170766,
+        "point": 0.9316945834239722
+      }
     }
   },
   "phase": "0.8.3-slice-15a",
