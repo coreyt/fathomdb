@@ -506,3 +506,132 @@ def test_budget_ledger_restore_spent_sets_running_total() -> None:
     ledger.restore_spent(25.5)
     assert ledger.spent == pytest.approx(25.5)
     assert ledger.remaining == pytest.approx(4.5)
+
+
+# --------------------------------------------------------------------------- #
+# fix-3 [P2] — the strong/priced model is rejected as the distiller in ALL modes
+# (codex §9 P2). The old guard only fired when distiller==reader AND reader was
+# strong, so `--mode cheap --distiller gpt-5.4` (reader resolved cheap) slipped a
+# priced distiller through. The distiller must NEVER be STRONG_READER_DEFAULT.
+# --------------------------------------------------------------------------- #
+def test_strong_distiller_rejected_in_all_modes() -> None:
+    # The flagged hole: reader resolved to a CHEAP model, but the distiller is the
+    # priced strong reader — must STILL fail closed.
+    with pytest.raises(SystemExit):
+        resolve_distiller_model("gpt-5.4", "gemini-flash-lite")
+    with pytest.raises(SystemExit):
+        resolve_distiller_model(STRONG_READER_DEFAULT, CHEAP_READER_DEFAULT)
+    # Independent of the reader: even with no reader context the strong model is
+    # rejected as the distiller.
+    with pytest.raises(SystemExit):
+        resolve_distiller_model(STRONG_READER_DEFAULT, STRONG_READER_DEFAULT)
+    # A cheap distiller is always fine (with a cheap or any reader).
+    assert resolve_distiller_model("gemini-flash-lite", "gemini-flash-lite") == "gemini-flash-lite"
+    assert resolve_distiller_model("gemini-flash-lite", STRONG_READER_DEFAULT) == "gemini-flash-lite"
+
+
+# --------------------------------------------------------------------------- #
+# fix-3 [P1] — an incomplete / cap-aborted run is NON-CITABLE: it must NOT publish
+# a DOMINANT verdict over the completed prefix (codex §9 P1). A low-variance prefix
+# could otherwise emit a powered DOMINANT verdict for an INCOMPLETE experiment.
+# --------------------------------------------------------------------------- #
+class _CountingEchoAnswerer(BaseAnswerer):
+    """Echoes context[0] (so the raw-oracle arm scores 1.0 and the prefix WOULD be
+    RETRIEVAL_DOMINANT) AND books a large fixed prompt-token cost per call, so the
+    ledger predictably trips the $30 cap part-way through the query set."""
+
+    model_id = "counting-echo-v1"
+
+    def __init__(self, tokens_per_call: int) -> None:
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self._tpc = tokens_per_call
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        self.prompt_tokens += self._tpc
+        return context[0] if context else None
+
+
+def test_capped_run_is_non_citable_never_dominant(tmp_path: Path) -> None:
+    # 10 answerable factoid queries; the completed prefix (constant RETRIEVAL=1.0
+    # deltas, zero variance) WOULD score RETRIEVAL_DOMINANT if it were published.
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(10)))
+    out = tmp_path / "out.json"
+    ckpt = out.with_suffix(".checkpoint.json")
+    # ~$1.25 booked per reader call (1M prompt tokens @ gpt-5.4 in-price) with a
+    # ~$19.25 budget head-room ⇒ the cap trips after ~5 full queries (mid-way).
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_CountingEchoAnswerer(1_000_000), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",), checkpoint_path=ckpt, checkpoint_every=1,
+    )
+    # The cap tripped mid-way → the run is non-citable / invalid.
+    assert art["aborted_for_cap"] is True
+    assert art["citable"] is False
+    assert art["run_valid"] is False
+    assert art["verdict"] == "ABORTED_INCOMPLETE"
+    assert art["answer_completeness"] < 1.0
+    # The completed prefix held >= 2 RETRIEVAL deltas (it WOULD have been DOMINANT)
+    # but NO DOMINANT verdict may be published for any class or pooled.
+    assert art["component_deltas"]["pooled"]["RETRIEVAL"]["n"] >= 2
+    for cls, dec in art["verdicts"].items():
+        assert "DOMINANT" not in dec["verdict"], cls
+        assert dec["verdict"] == "ABORTED_INCOMPLETE"
+
+
+def test_incomplete_run_below_floor_is_non_citable(tmp_path: Path) -> None:
+    # An unavailable reader produces no new-arm answers → answer-completeness below
+    # the floor → non-citable, even though the budget cap never tripped.
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(4)))
+
+    class _Unavailable(BaseAnswerer):
+        model_id = "unavailable-v1"
+
+        @property
+        def available(self) -> bool:
+            return False
+
+        def answer(self, question: str, context: list[str]) -> Optional[str]:
+            return None
+
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_Unavailable(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",),
+    )
+    assert art["aborted_for_cap"] is False
+    assert art["citable"] is False
+    assert art["run_valid"] is False
+    assert art["verdict"] == "ABORTED_INCOMPLETE"
+    for dec in art["verdicts"].values():
+        assert "DOMINANT" not in dec["verdict"]
+
+
+def test_complete_run_is_citable_and_may_publish_verdict(tmp_path: Path) -> None:
+    # The complete fakes path stays citable (run_valid True) and the pooled verdict
+    # is the real frozen decision (regression guard: the non-citable gate must NOT
+    # fire on a fully-processed run).
+    queries, documents, distill_cache, d0b_cells = _decomp_fixtures(tuple(f"factoid-{j}" for j in range(6)))
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_gap_decomposition(
+        queries=queries, documents=documents, d0b_cells=d0b_cells,
+        distill_cache=distill_cache, answerer=_EchoAnswerer(), ledger=ledger,
+        reader="gpt-5.4", output=out, fathomdb_adapter=None,
+        budget=32000, n_boot=50, classes=("factoid",),
+    )
+    assert art["aborted_for_cap"] is False
+    assert art["citable"] is True
+    assert art["run_valid"] is True
+    assert art["answer_completeness"] == 1.0
+    assert art["verdict"] == art["verdicts"]["pooled"]["verdict"]
+    assert art["verdict"] != "ABORTED_INCOMPLETE"
