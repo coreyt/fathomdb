@@ -310,6 +310,74 @@ def test_capped_run_is_non_citable_never_pass(tmp_path: Path) -> None:
     assert art["answer_completeness"] < 1.0
 
 
+def test_non_citable_suppresses_nested_pooled_and_per_class_decision(tmp_path: Path) -> None:
+    # codex §9 [P1]: an INCOMPLETE run whose answered prefix computes a powered nested
+    # pooled PASS + go=True must NOT leave that PASS/go in accuracy_margin (pooled or
+    # any per_class) — a downstream reader could publish it despite citable=False.
+    qids = tuple(f"factoid-{j}" for j in range(8))
+    queries, reranked, _r = _run_fixtures(qids)  # gold "body 3" → reranked acc 1.0
+    reused: dict[tuple[str, str], dict[str, Any]] = {}
+    for q in queries:
+        reused[(q.query_id, "fathomdb")] = {"acc": 0.0, "answer": None}
+        reused[(q.query_id, "mem0_oss")] = {"acc": 1.0, "answer": "x"}
+
+    class _FailLastAnswerer(_SpyAnswerer):
+        def answer(self, question: str, context: list[str]) -> Optional[str]:
+            if question == f"q-{qids[-1]}":
+                raise RuntimeError("retry-exhausted 5xx — cell ABSENT (failure != abstention)")
+            return super().answer(question, context)
+
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_rerank_accuracy(
+        queries=queries, reused_cells=reused, reranked_adapter=reranked,
+        answerer=_FailLastAnswerer(), ledger=ledger, reader="gpt-5.4", output=out,
+        n_boot=50, classes=("factoid",), checkpoint_every=1,
+    )
+
+    # The answered prefix (7/8) WOULD compute a powered nested pooled PASS + go=True.
+    assert art["answer_completeness"] < 1.0
+    assert art["citable"] is False
+    # Top-level (already enforced on HEAD).
+    assert art["verdict"] == "ABORTED_INCOMPLETE"
+    assert art["go"] is False
+    # NESTED must be suppressed too — pooled + every per_class entry. The raw stats
+    # survive for forensics; only the DECISION fields are neutralized.
+    pooled = art["accuracy_margin"]["pooled"]
+    assert pooled["lever_realized"] == "ABORTED_INCOMPLETE"
+    assert pooled["go"] is False
+    assert pooled["reason"] == art["non_citable_reason"]
+    assert pooled["margin"]["point"] is not None  # raw stats intact for forensics
+    for cls, block in art["accuracy_margin"]["per_class"].items():
+        assert block["lever_realized"] == "ABORTED_INCOMPLETE", cls
+        assert block["go"] is False, cls
+        assert block["reason"] == art["non_citable_reason"], cls
+
+
+def test_citable_run_keeps_real_nested_pass_and_go(tmp_path: Path) -> None:
+    # No-regression: a fully-complete citable run must surface the REAL nested PASS/GO
+    # unchanged (no suppression, no injected reason).
+    queries, reranked, _r = _run_fixtures(tuple(f"factoid-{j}" for j in range(6)))
+    reused: dict[tuple[str, str], dict[str, Any]] = {}
+    for q in queries:
+        reused[(q.query_id, "fathomdb")] = {"acc": 0.0, "answer": None}
+        reused[(q.query_id, "mem0_oss")] = {"acc": 1.0, "answer": "x"}
+        reused[(q.query_id, "oracle_raw")] = {"acc": 1.0, "answer": "y"}
+    out = tmp_path / "out.json"
+    ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+    art = run_rerank_accuracy(
+        queries=queries, reused_cells=reused, reranked_adapter=reranked,
+        answerer=_SpyAnswerer(), ledger=ledger, reader="gpt-5.4", output=out,
+        n_boot=200, classes=("factoid",),
+    )
+    assert art["citable"] is True
+    pooled = art["accuracy_margin"]["pooled"]
+    assert pooled["lever_realized"] == "PASS"
+    assert pooled["go"] is True
+    assert "reason" not in pooled  # citable runs are untouched
+    assert art["verdict"] == "PASS" and art["go"] is True
+
+
 def test_complete_run_is_citable_and_may_pass(tmp_path: Path) -> None:
     queries, reranked, _r = _run_fixtures(tuple(f"factoid-{j}" for j in range(6)))
     # reranked hits gold (body 3 surfaces via the reverse rerank) → reranked acc 1.0;
