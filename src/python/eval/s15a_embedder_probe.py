@@ -615,13 +615,24 @@ _MODEL_CACHE: dict[tuple[str, str, str], tuple[Any, Any]] = {}
 
 
 def _load_model_uncached(model_cfg: ModelCfg) -> tuple[Any, Any]:
-    """Load ``(tokenizer, model)`` via ``from_pretrained`` (no caching)."""
+    """Load ``(tokenizer, model)`` via ``from_pretrained`` (no caching).
+
+    The MEASURED load is offline-pinned (``local_files_only=True``): a missing
+    checkpoint is a LOUD setup failure rather than a silent HuggingFace download
+    that would turn a measured run network-dependent (codex §9 fix-5 [P2]#1). The
+    SETUP pre-fetch step populates the cache with the network ON; only this load
+    is pinned. Pinning the source changes only WHERE weights come from, never the
+    forward pass — vectors stay byte-identical.
+    """
     from transformers import (  # type: ignore[import-not-found]  # noqa: PLC0415
         AutoModel,
         AutoTokenizer,
     )
 
-    load_kw: dict[str, Any] = {"trust_remote_code": model_cfg.trust_remote_code}
+    load_kw: dict[str, Any] = {
+        "trust_remote_code": model_cfg.trust_remote_code,
+        "local_files_only": True,
+    }
     if model_cfg.revision:
         load_kw["revision"] = model_cfg.revision
     tokenizer = AutoTokenizer.from_pretrained(model_cfg.hf_id, **load_kw)
@@ -904,6 +915,31 @@ def _atomic_write_json(path: Path, obj: Mapping[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _input_id_hash(corpus: Corpus, queries: Sequence[GoldQuery]) -> str:
+    """A deterministic sha256 over the ACTUAL ordered input identities.
+
+    Binds the ordered ``doc_ids`` and the ordered query ``(query_id, text)`` pairs
+    so that a smoke subset or a revised gold sharing the SAME ``corpus_hash`` +
+    SAME counts is still distinguishable (codex §9 fix-5 [P2]#2). Length-delimited
+    field framing prevents id/text boundary aliasing.
+    """
+    h = hashlib.sha256()
+
+    def _feed(tag: bytes, value: str) -> None:
+        raw = value.encode("utf-8")
+        h.update(tag)
+        h.update(str(len(raw)).encode("ascii"))
+        h.update(b":")
+        h.update(raw)
+
+    for did in corpus.doc_ids:
+        _feed(b"d", did)
+    for q in queries:
+        _feed(b"qid", q.query_id)
+        _feed(b"qtx", q.text)
+    return h.hexdigest()
+
+
 def _cache_meta(
     cfg: ModelCfg, corpus: Corpus, queries: Sequence[GoldQuery]
 ) -> dict[str, Any]:
@@ -912,7 +948,9 @@ def _cache_meta(
     The vector ``.npy`` cache is valid ONLY for the same resolved revision AND the
     same input set (codex §9 [P2]#2). Keying on row count alone let a different
     revision / changed ``HF_HOME`` / a same-sized-but-different corpus silently
-    feed STALE vectors into every gate metric.
+    feed STALE vectors into every gate metric. ``input_id_hash`` additionally binds
+    the ACTUAL ordered doc/query identities so a same-``corpus_hash`` + same-count
+    smoke subset / revised gold cannot reuse stale vectors (codex §9 fix-5 [P2]#2).
     """
     return {
         "revision": cfg.revision or "default",
@@ -921,6 +959,7 @@ def _cache_meta(
         "n_queries": len(queries),
         "pooling": cfg.pooling,
         "dim": cfg.dim,
+        "input_id_hash": _input_id_hash(corpus, queries),
     }
 
 
@@ -941,8 +980,9 @@ def embed_model(
     expected_meta = _cache_meta(cfg, corpus, queries)
     if resume and doc_npy.exists() and qry_npy.exists() and meta_npy.exists():
         # Reuse the warm cache ONLY if the sidecar matches the current
-        # (revision, corpus_hash, n_docs, n_queries, pooling, dim). A missing or
-        # mismatched sidecar => re-embed (fail-safe; codex §9 [P2]#2).
+        # (revision, corpus_hash, n_docs, n_queries, pooling, dim, input_id_hash).
+        # A missing or mismatched sidecar => re-embed (fail-safe; codex §9 [P2]#2
+        # + fix-5 [P2]#2 input-identity binding).
         try:
             on_disk = json.loads(meta_npy.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
