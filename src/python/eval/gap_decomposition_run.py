@@ -145,6 +145,18 @@ def price_for(model: str) -> tuple[float, float]:
     return price
 
 
+def resolve_reader(mode: str, reader: Optional[str]) -> str:
+    """Default the reader by ``mode`` (codex §9 P2), mirroring the D0b runner:
+    ``cheap`` → :data:`CHEAP_READER_DEFAULT`, ``full`` → :data:`STRONG_READER_DEFAULT`.
+
+    An explicit ``--reader`` always wins. The bug this fixes: ``--mode cheap`` with no
+    ``--reader`` still picked the priced ``gpt-5.4`` → a cheap-validate pass spent
+    priced budget."""
+    if reader:
+        return reader
+    return CHEAP_READER_DEFAULT if mode == "cheap" else STRONG_READER_DEFAULT
+
+
 def resolve_distiller_model(distiller: Optional[str], reader: str) -> str:
     """Resolve the corpus distiller model (design §4): a CHEAP / local model,
     **never** the priced strong reader.
@@ -201,6 +213,16 @@ class BudgetLedger:
     @property
     def remaining(self) -> float:
         return round(self.hard_cap_usd - self._spent, 6)
+
+    def restore_spent(self, spent_usd: float) -> None:
+        """Set the running total to a persisted cumulative spend (codex §9 P1#1).
+
+        On a checkpoint-resume the ledger MUST carry forward the spend already paid
+        in prior processes (new-arm reader + distiller calls), so the ``$30`` cap is
+        per-EXPERIMENT, not per-PROCESS. The persisted value is the cumulative
+        :attr:`spent` (already inclusive of the D0b opening balance), so this is a
+        plain assignment, never an addition (no double-count)."""
+        self._spent = float(spent_usd)
 
     def project(self, model: str, prompt_tokens: int) -> float:
         """Projected cost of one call: ``prompt_tokens`` + the full
@@ -355,6 +377,32 @@ class BlindDistiller:
         """Distill ONE document body (blind to any query/answer). Returns one line."""
         out = self._client.complete(self.build_prompt(body))
         return " ".join(str(out).split())
+
+
+class RawCompletionDistillerClient:
+    """A :class:`DistillerClient` that sends the distill prompt as a **RAW**
+    chat/completions user message — NO QA answer template, NO empty-context "I don't
+    know" abstention instruction (codex §9 P1#2).
+
+    The flagged seam wrapped the distill prompt in :class:`BaseAnswerer`'s QA
+    template (``answer ONLY from the context / reply exactly: I don't know``) by
+    calling ``answerer.answer(prompt, [])``; a real cheap model then returned
+    QA-shaped abstentions, corrupting BOTH distilled arms. This client instead calls
+    the answerer's underlying chat/completions path directly with the distill prompt
+    as the sole user message, reusing the cost-tracking + 429/5xx backoff seam. It
+    stays query-/answer-blind and ledger-capped (the cap is enforced by
+    :func:`distill_corpus`'s pre-call guard, unchanged)."""
+
+    def __init__(self, answerer: BaseAnswerer) -> None:
+        self._answerer = answerer
+        self.model_id = str(getattr(answerer, "model_id", "<unset>"))
+
+    def complete(self, prompt: str) -> str:
+        # `_complete` posts the prompt verbatim as the user message (no template);
+        # question/context are ignored by the airlock answerers (only StubAnswerer
+        # subclasses read them), so the distill prompt is sent RAW.
+        out = self._answerer._complete(prompt, "", [])
+        return out or ""
 
 
 def _body_hash(body: str) -> str:
@@ -592,6 +640,12 @@ def run_gap_decomposition(
     rmap: dict[tuple[str, str], Optional[str]] = {}
     if ckpt_path.exists():
         prior = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        # Carry forward the prior cumulative $ spend so the cap is per-EXPERIMENT,
+        # not per-PROCESS (codex §9 P1#1). The persisted value already includes the
+        # D0b opening balance + all prior gap-decomp spend (new-arm + distiller).
+        prior_spent = prior.get("ledger_spent_usd")
+        if prior_spent is not None:
+            ledger.restore_spent(float(prior_spent))
         for r in prior.get("records") or []:
             qid = r.get("qid")
             if qid is None:
@@ -604,7 +658,12 @@ def run_gap_decomposition(
     aborted_for_cap = False
 
     def _checkpoint() -> None:
-        _atomic_write_json(ckpt_path, {"records": records, "mode": mode, "reader": reader})
+        # Persist the cumulative ledger spend ATOMICALLY with the records so a
+        # resume restores the true per-experiment spend (codex §9 P1#1).
+        _atomic_write_json(
+            ckpt_path,
+            {"records": records, "mode": mode, "reader": reader, "ledger_spent_usd": ledger.spent},
+        )
 
     for i, q in enumerate(queries, start=1):
         gold = list(q.gold_doc_ids)
@@ -754,7 +813,7 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     from eval.d0b_parity_run import _select_subset, build_documents_from_lme, build_live_adapters
     from eval.m1_baseline_run import CostTrackingAnswerer
 
-    reader = args.reader or STRONG_READER_DEFAULT
+    reader = resolve_reader(args.mode, args.reader)  # cheap-mode → cheap reader (P2)
     price_for(reader)  # fail closed BEFORE any backend stand-up
 
     _ch, _qv, queries = load_repin_gold(Path(args.gold))
@@ -773,14 +832,10 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     distiller_model = resolve_distiller_model(args.distiller, reader)
     price_for(distiller_model)  # fail closed: the distiller cap needs pinned pricing
     distill_client = CostTrackingAnswerer(distiller_model, timeout_s=120.0)
-
-    class _BodyOnlyClient:
-        model_id = distiller_model
-
-        def complete(self, prompt: str) -> str:
-            return distill_client.answer(prompt, []) or ""
-
-    distiller = BlindDistiller(_BodyOnlyClient())
+    # RAW completion path — the distill prompt is sent verbatim, NOT through the QA
+    # answer template (codex §9 P1#2: the template made a real cheap model abstain,
+    # corrupting both distilled arms).
+    distiller = BlindDistiller(RawCompletionDistillerClient(distill_client))
     distill_cache = distill_corpus(
         documents, distiller,
         cache_path=Path(args.distill_cache) if args.distill_cache else None,
