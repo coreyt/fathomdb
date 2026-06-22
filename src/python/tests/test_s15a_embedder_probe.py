@@ -661,3 +661,126 @@ def test_integration_tests_are_opt_in_and_marker_registered() -> None:
     assert "PytestUnknownMarkWarning" not in out, (
         f"the `integration` marker is not registered (unknown-mark warning):\n{out}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# fix-4 — per-candidate measurement resilience (failure ≠ abstention).
+# A single non-selectable candidate's embed/load/metric failure (e.g. gte-base's
+# custom HF modeling code raising IndexError under transformers 5.9) must NOT
+# abort the entire probe: the failed candidate is recorded
+# measurement_status="failed" with the error, is NOT a passer/selection, and the
+# remaining candidates + the base are still measured. A BASE failure has no
+# reference embedder, so it STAYS fatal. Torch-free: the heavy embed/measure
+# helpers are monkeypatched; run_probe's wiring is exercised directly.
+# --------------------------------------------------------------------------- #
+
+
+def _tiny_run_probe_env(monkeypatch, tmp_path):  # type: ignore[no-untyped-def]
+    """Install torch-free corpus/gold/latency stubs for run_probe; return module."""
+    from eval import s15a_embedder_probe as m
+
+    corpus = m.Corpus(
+        doc_ids=["d0", "d1", "d2", "d3"],
+        bodies=[
+            "alpha memory retrieval document",
+            "beta retrieval ranking passage",
+            "gamma temporal session note",
+            "delta knowledge update entry",
+        ],
+        corpus_hash=m.EXPECTED_CORPUS_HASH,
+        resolved_count=4,
+        sources=["s"],
+    )
+    queries = [
+        m.GoldQuery(query_id="q0", text="alpha memory", query_class="factual",
+                    required_doc_ids=["d0"]),
+        m.GoldQuery(query_id="q1", text="beta ranking", query_class="factual",
+                    required_doc_ids=["d1"]),
+        m.GoldQuery(query_id="q2", text="gamma session", query_class="factual",
+                    required_doc_ids=["d2"]),
+    ]
+
+    monkeypatch.setattr(m, "load_corpus", lambda **kw: corpus)
+    monkeypatch.setattr(m, "load_gold", lambda _p: (m.EXPECTED_CORPUS_HASH, "v1", queries))
+    monkeypatch.setattr(m, "default_gold_path", lambda root=None: tmp_path / "gold.json")
+    # Latency is torch-bound; stub to a constant ms (resilience is about embed/metrics).
+    monkeypatch.setattr(m, "measure_latency", lambda *a, **kw: 1.0)
+    return m, corpus, queries
+
+
+def _fresh_vectors(m, cfg, n_docs: int, n_q: int):  # type: ignore[no-untyped-def]
+    rng = np.random.default_rng(abs(hash(cfg.name)) % (2**32))
+    docs = rng.standard_normal((n_docs, cfg.dim)).astype(np.float32)
+    qv = rng.standard_normal((n_q, cfg.dim)).astype(np.float32)
+    return m.l2_normalize(docs), m.l2_normalize(qv)
+
+
+def _run_probe(m, tmp_path):  # type: ignore[no-untyped-def]
+    return m.run_probe(
+        model_names=["bge-small", "bge-base", "gte-base"],
+        data_root=tmp_path,
+        cache_dir=tmp_path,
+        num_threads=1,
+        batch_size=8,
+        latency_sample=2,
+        bootstrap_seed=0x15A,
+        bootstrap_resamples=64,
+        resume=False,
+        smoke=False,
+        smoke_doc_cap=10,
+    )
+
+
+def test_run_probe_tolerates_candidate_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    m, corpus, queries = _tiny_run_probe_env(monkeypatch, tmp_path)
+
+    def fake_embed_model(cfg, corpus_, queries_, **kw):  # type: ignore[no-untyped-def]
+        if cfg.name == "gte-base":
+            # The real gte-base crash: custom HF modeling code under transformers 5.9.
+            raise IndexError(
+                "index 512 is out of bounds for dimension 0 with size 512"
+            )
+        return _fresh_vectors(m, cfg, len(corpus_.doc_ids), len(queries_))
+
+    monkeypatch.setattr(m, "embed_model", fake_embed_model)
+
+    result = _run_probe(m, tmp_path)
+
+    # (a) the probe COMPLETES and writes results for the base + the OK candidate.
+    assert result["base"]["name"] == "bge-small"
+    assert result["per_candidate"]["bge-base"]["measurement_status"] == "ok"
+    assert "eu8" in result["per_candidate"]["bge-base"]
+
+    # (b) the failed candidate is recorded failed + carries the error, with NO
+    # metric fields, and is NOT a passer.
+    failed = result["per_candidate"]["gte-base"]
+    assert failed["measurement_status"] == "failed"
+    assert "IndexError" in failed["error"]
+    assert "eu8" not in failed
+    assert bool(failed.get("probe_15a_pass")) is False
+
+    # ... and is excluded from selection.
+    assert result["chosen_embedder"] != "gte-base"
+
+    # The failure is surfaced top-level (honest reporting, not silently dropped).
+    assert any(f["name"] == "gte-base" for f in result["measurement_failures"])
+    assert all(f["name"] != "bge-base" for f in result["measurement_failures"])
+
+
+def test_run_probe_base_failure_is_fatal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    m, corpus, queries = _tiny_run_probe_env(monkeypatch, tmp_path)
+
+    def fake_embed_model(cfg, corpus_, queries_, **kw):  # type: ignore[no-untyped-def]
+        if cfg.name == "bge-small":
+            # No reference embedder without the base -> must abort loudly.
+            raise RuntimeError("base embedder failed to load")
+        return _fresh_vectors(m, cfg, len(corpus_.doc_ids), len(queries_))
+
+    monkeypatch.setattr(m, "embed_model", fake_embed_model)
+
+    with pytest.raises(RuntimeError, match="base embedder failed to load"):
+        _run_probe(m, tmp_path)
