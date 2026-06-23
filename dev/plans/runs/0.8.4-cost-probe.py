@@ -18,11 +18,12 @@ from eval.decision_rule_084 import HEADLINE_METRICS, MIN_RUNS
 
 # --- prices ($/1M in, $/1M out) ------------------------------------------------ #
 GPT54 = (1.25, 5.00)  # pinned in eval/gap_decomposition_run.py (the answerer)
-# Cross-family Claude JUDGE — representative tiers (TO BE PINNED before the real run):
+# Cross-family Claude JUDGE — REAL prices (claude-api skill table, now pinned in
+# eval/gap_decomposition_run.py::PRICE_PER_1M). USD / 1M (input, output).
 JUDGE_TIERS = {
-    "claude-haiku-ish": (1.00, 5.00),
-    "claude-sonnet-ish": (3.00, 15.00),
-    "claude-opus-ish": (15.00, 75.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-opus-4-8": (5.00, 25.00),
 }
 
 K = 10

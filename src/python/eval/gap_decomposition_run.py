@@ -103,6 +103,12 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
     # cheap model. Authoritative litellm pricing DB rate (the airlock maps
     # ``gpt-5-nano`` → ``openai/gpt-5.4-nano``): $0.05 / 1M in, $0.40 / 1M out.
     "gpt-5-nano": (0.05, 0.40),
+    # Cross-family Anthropic JUDGE candidates for the 0.8.4 AutoE pass (pinned so
+    # price_for does not fail closed on the judge leg). USD / 1M (input, output),
+    # per the claude-api skill model table (cached 2026-06-04).
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-opus-4-8": (5.00, 25.00),
 }
 
 #: The D0b spend carried as this ledger's opening balance (design §4).
