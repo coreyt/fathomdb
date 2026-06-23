@@ -1,0 +1,56 @@
+{
+  "slice": "0.8.4-slice-5b",
+  "title": "AutoE pairwise-LLM-judge harness ($0, fake judge, no priced spend)",
+  "branch": "0.8.4-slice-5b",
+  "base_sha": "1a1e24afa9fd43827a96aa6383cbf126ccc89464",
+  "red_sha": "4edab7c9272f9208b3e6cb5656dc09e8ce2bcc2e",
+  "green_sha": "8db2f321e1e85c45cccfd9c06671047d46bc29a2",
+  "p2_fix_red_sha": "78b28206b1bc8d579d2563056f878e5fa8b11d39 (RED+GREEN squashed in one commit; RED verified before fix)",
+  "p2_fix_green_sha": "78b28206b1bc8d579d2563056f878e5fa8b11d39",
+  "head_sha": "78b28206b1bc8d579d2563056f878e5fa8b11d39",
+  "status": "COMPLETE",
+  "files_touched": [
+    "src/python/eval/autoe_judge.py",
+    "src/python/tests/test_autoe_judge.py"
+  ],
+  "deliverables": {
+    "1_pairwise_prompt_builder": "build_pairwise_prompt — deterministic A/B/tie per metric; 3 headline metrics + directness kept SEPARATE",
+    "2_position_bias_order_swap": "JudgmentKey(question_id,pair,run_idx,order) idempotent custom_id; run_autoe judges BOTH orders (ORDER_TC/ORDER_CT) and averages",
+    "3_absent_safe_parser": "parse_verdict — empty/None/unparseable completion or value -> ABSENT, excluded from denominator, never a silent loss/tie",
+    "4_compute_winrates": "compute_winrates -> decide_084 primary_per_metric {win_rate,ci_lo,ci_hi,mde,n}; ties=0.5; bootstrap CI CLUSTERED BY QUESTION; seed is a PARAMETER; mde=CI half-width",
+    "5_bias_and_length_assembly": "assemble_bias_controls (order_swapped=True structural) + assemble_length_corroboration + length_contradicts (headline winner loses directness by margin)",
+    "6_batch_build_integration": "build_autoe_batch_jsonl (+ parse_autoe_batch_output) in p0a_batch_e2e shape, fake-tested, NO live submit",
+    "7_cost_projection": "project_autoe_cost reuses d0b_parity_run.project_full_cost; full_calls = n_questions x n_pairs x n_runs x 2 orders"
+  },
+  "contract_test": "test_contract_all_a_wins_round_trips_to_reached_with_surpass + test_contract_all_b_wins_round_trips_to_below_parity — compute_winrates output fed straight into decide_084: all-A-wins -> REACHED with surpass_candidates = all 3 headline metrics; all-B-wins -> NOT_REACHED below_parity",
+  "reuse": [
+    "BiasControls / LengthCorroboration / HEADLINE_METRICS imported from eval.decision_rule_084",
+    "BaseAnswerer / Hit / RetrievalAdapter imported from eval.r2_parity_eval (build_arm_answers)",
+    "project_full_cost imported from eval.d0b_parity_run"
+  ],
+  "gates": {
+    "ruff_check": "PASS (All checks passed!)",
+    "ruff_format_check": "PASS (2 files already formatted)",
+    "agent_typecheck": "EXIT 0 (pyright: 0 errors, 46 pre-existing native-extension import warnings)",
+    "pytest": "PASS 27/27 (FATHOMDB_TESTS_NO_REBUILD=1, tests/test_autoe_judge.py) — was 26, +1 for the P2 resume-rejudge test"
+  },
+  "codex_review_fixes": {
+    "P2_rejudge_fully_absent_on_resume": "run_autoe stored a failed (empty/None/unparseable) completion as a FULLY-ABSENT Judgment; on resume `if key in out: continue` cached it as done and never re-judged it, violating the 'ABSENT re-attempted on resume' resilience contract. FIX: added _is_fully_absent(judgment, metrics) and changed the skip to `if key in out and not _is_fully_absent(out[key], metrics): continue` — dead cells (every metric in the run's `metrics` is ABSENT) are re-judged; a cell with >=1 decided metric is kept. TDD: test_run_autoe_rejudges_fully_absent_cell_on_resume (CountingJudge asserts calls==1 and the decided cell is untouched). Commit 78b28206."
+  },
+  "money_spent_usd": 0,
+  "no_real_llm": true,
+  "no_live_batch_submit": true,
+  "deviations": [
+    "Added parse_autoe_batch_output (counterpart of build_autoe_batch_jsonl) — small, in-scope for deliverable 6 (batch integration point); ABSENT-safe per cid, supports resume round-trip. Not a scope change to the rule.",
+    "Added build_arm_answers helper to satisfy 'reuse the answerer/Hit seam' explicitly (imports BaseAnswerer/Hit/RetrievalAdapter); answers are produced via the shared identical-answerer.",
+    "Bootstrap uses stdlib random.Random(f'{seed}:{metric}') (not numpy) to keep the module dependency-light and build-independent, mirroring decision_rule_084's pure-stdlib ethos. Seed is a parameter; deterministic."
+  ],
+  "out_of_scope_untouched": [
+    "dev/plans/plan-0.8.4.md",
+    "dev/roadmap/0.8.4.md",
+    "dev/plans/runs/STATUS-0.8.3.md and 0.8.4 STATUS",
+    "S1 / GraphRAG / HippoRAG adapters",
+    "no real judge/pilot run; no embedder upgrade"
+  ],
+  "notes_for_orchestrator": "Reviewer (codex) + cherry-pick run after this exits. The priced AutoE pilot that drives this harness is a later HITL-gated step; project_autoe_cost produces the dry-run USD number for that gate."
+}
