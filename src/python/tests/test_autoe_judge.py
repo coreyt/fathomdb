@@ -154,8 +154,10 @@ def test_judgment_key_is_hashable_and_idempotent() -> None:
 
 
 def test_parse_verdict_valid_json() -> None:
-    out = parse_verdict(json.dumps({"comprehensiveness": "A", "diversity": "tie", "empowerment": "B"}),
-                        ("comprehensiveness", "diversity", "empowerment"))
+    out = parse_verdict(
+        json.dumps({"comprehensiveness": "A", "diversity": "tie", "empowerment": "B"}),
+        ("comprehensiveness", "diversity", "empowerment"),
+    )
     assert out == {"comprehensiveness": "A", "diversity": "tie", "empowerment": "B"}
 
 
@@ -172,8 +174,10 @@ def test_parse_verdict_empty_or_unparseable_is_absent_never_loss(bad) -> None:
 
 
 def test_parse_verdict_missing_metric_and_bad_value_are_absent() -> None:
-    out = parse_verdict(json.dumps({"comprehensiveness": "A", "diversity": "maybe"}),
-                        ("comprehensiveness", "diversity", "empowerment"))
+    out = parse_verdict(
+        json.dumps({"comprehensiveness": "A", "diversity": "maybe"}),
+        ("comprehensiveness", "diversity", "empowerment"),
+    )
     assert out["comprehensiveness"] == "A"
     assert out["diversity"] == "ABSENT"  # unparseable value, not a silent tie/loss
     assert out["empowerment"] == "ABSENT"  # missing metric
@@ -259,14 +263,32 @@ def test_assemble_bias_controls_shape() -> None:
 
 def test_length_contradicts_rule_both_branches() -> None:
     # treatment won the headlines but LOSES directness by a margin → contradiction.
-    assert length_contradicts({"comprehensiveness": 0.9, "diversity": 0.8, "empowerment": 0.7},
-                              directness_winrate=0.2, margin=0.1) is True
+    assert (
+        length_contradicts(
+            {"comprehensiveness": 0.9, "diversity": 0.8, "empowerment": 0.7},
+            directness_winrate=0.2,
+            margin=0.1,
+        )
+        is True
+    )
     # treatment won the headlines AND is direct enough → no contradiction.
-    assert length_contradicts({"comprehensiveness": 0.9, "diversity": 0.8, "empowerment": 0.7},
-                              directness_winrate=0.6, margin=0.1) is False
+    assert (
+        length_contradicts(
+            {"comprehensiveness": 0.9, "diversity": 0.8, "empowerment": 0.7},
+            directness_winrate=0.6,
+            margin=0.1,
+        )
+        is False
+    )
     # comparator won the headlines and ALSO loses directness (treatment very direct) → contradiction.
-    assert length_contradicts({"comprehensiveness": 0.2, "diversity": 0.1, "empowerment": 0.3},
-                              directness_winrate=0.9, margin=0.1) is True
+    assert (
+        length_contradicts(
+            {"comprehensiveness": 0.2, "diversity": 0.1, "empowerment": 0.3},
+            directness_winrate=0.9,
+            margin=0.1,
+        )
+        is True
+    )
 
 
 def test_assemble_length_corroboration_flags_verbosity_artifact() -> None:
