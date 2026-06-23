@@ -75,7 +75,12 @@ from eval.decision_rule_084 import (
     MIN_RUNS,
     strong_baseline_clears,
 )
-from eval.gap_decomposition_run import BudgetExceeded, BudgetLedger, price_for
+from eval.gap_decomposition_run import (
+    BudgetExceeded,
+    BudgetLedger,
+    UnpinnedPricing,
+    price_for,
+)
 from eval.m1_baseline_run import _is_retryable, _retry_after_seconds
 from eval.m1_verdict_run import _atomic_write_json
 from eval.r2_parity_eval import BaseAnswerer, LLMAnswerer, NullAnswerer, RetrievalAdapter
@@ -449,6 +454,76 @@ def _make_ledger(max_usd: Optional[float], opening_spent: float = 0.0) -> Budget
     return ledger
 
 
+def _is_priced(model: str) -> bool:
+    """Whether ``model`` has pinned pricing. A BYO/local answerer (e.g. a llama.cpp /
+    ollama shim) is legitimately ``$0`` and unpinned — for it the answerer leg is a
+    free local generation (not guarded, projected at ``$0``); a hosted/priced answerer
+    is routed through the same :class:`BudgetLedger` as the judge so ``--max-usd``
+    bounds the TOTAL spend (answerer + judge), not just the judge leg."""
+    try:
+        price_for(model)
+    except UnpinnedPricing:
+        return False
+    return True
+
+
+class _MeteringAnswerer(BaseAnswerer):
+    """A thin metering wrapper around the shared :class:`BaseAnswerer` so the
+    answerer-generation leg is **guarded and recorded through the same ledger** as the
+    judge — making the ``--max-usd`` cap and the HITL spend number TOTAL spend, not
+    judge-only (§9 fallback review [P2] #2).
+
+    Per delegated :meth:`answer` it estimates the answerer prompt tokens, applies the
+    :class:`BudgetLedger` **pre-call** guard (only when the answerer model is priced —
+    a local/$0 answerer is never guarded), calls the inner answerer, then records the
+    measured-or-estimated tokens into the ledger and ``cost_state``. It reuses the
+    harness's :func:`eval.autoe_judge.build_arm_answers` unchanged (the metering lives
+    in this wrapper, not in the harness)."""
+
+    def __init__(
+        self,
+        inner: BaseAnswerer,
+        *,
+        model: str,
+        priced: bool,
+        ledger: BudgetLedger,
+        cost_state: dict[str, int],
+    ) -> None:
+        self._inner = inner
+        self._model = model
+        self._priced = priced
+        self._ledger = ledger
+        self._cost_state = cost_state
+        self.model_id = getattr(inner, "model_id", "<unset>")
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._inner, "available", True))
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        # Unused: answer() is overridden to delegate to the inner answerer directly.
+        raise NotImplementedError  # pragma: no cover
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        prompt = self._inner.build_prompt(question, context)
+        est_pt = _estimate_tokens(prompt)
+        if self._priced:
+            # Pre-call budget guard for the answerer leg — raise BEFORE the call that
+            # would exceed --max-usd (so the cap bounds answerer + judge spend).
+            self._ledger.guard(self._model, est_pt)
+        answer = self._inner.answer(question, context) or ""
+        pt = getattr(self._inner, "last_prompt_tokens", None)
+        ct = getattr(self._inner, "last_completion_tokens", None)
+        pt = est_pt if pt is None else int(pt)
+        ct = max(_estimate_tokens(answer), 1) if ct is None else int(ct)
+        if self._priced:
+            self._ledger.record(self._model, pt, ct)
+        self._cost_state["n_calls"] += 1
+        self._cost_state["prompt_tokens"] += pt
+        self._cost_state["completion_tokens"] += ct
+        return answer
+
+
 # --------------------------------------------------------------------------- #
 # 2 — run_pilot orchestration
 # --------------------------------------------------------------------------- #
@@ -466,6 +541,8 @@ def run_pilot(
     seed: int = 0,
     n_boot: int = DEFAULT_N_BOOT,
     judge_model: Optional[str] = None,
+    answerer_model: Optional[str] = None,
+    projection_n_runs: Optional[int] = None,
     checkpoint_path: Optional[str | Path] = None,
     resume: Optional[str | Path] = None,
     max_usd: Optional[float] = None,
@@ -487,10 +564,19 @@ def run_pilot(
     be among the arm answerer families in ``families`` — a self-preference-biased
     judge is a measurement error, so this raises :class:`ValueError` BEFORE any spend.
 
-    ``cheap_validate`` forces the tiny-N path (:data:`CHEAP_LIMIT` × :data:`CHEAP_N_RUNS`)
-    whose only job is to prove the pipeline and size the spend. No network here unless
-    ``judge`` makes one; tests inject a fake.
+    ``cheap_validate`` forces the tiny-N **execution** path (:data:`CHEAP_LIMIT` ×
+    :data:`CHEAP_N_RUNS`) whose only job is to prove the pipeline and size the spend.
+    Critically, the cost projection sizes the *powered* run (``projection_n_runs``,
+    default ``max(n_runs, MIN_RUNS)``) — NOT the 1-run cheap execution — because the
+    powered run needs ``n_runs >= MIN_RUNS`` (``decide_084`` blocks below it); using the
+    cheap ``n_runs=1`` would under-project the powered spend ~5× (§9 review [P2] #1). No
+    network here unless ``judge`` makes one; tests inject a fake.
     """
+    # The cost projection sizes the POWERED run, so resolve its n_runs BEFORE the
+    # cheap-validate execution override drops n_runs to 1 (§9 review [P2] #1).
+    projected_n_runs = (
+        int(projection_n_runs) if projection_n_runs is not None else max(int(n_runs), MIN_RUNS)
+    )
     if cheap_validate:
         limit = CHEAP_LIMIT
         n_runs = CHEAP_N_RUNS
@@ -514,7 +600,15 @@ def run_pilot(
         )
 
     resolved_model = judge_model or getattr(judge, "model_id", None) or DEFAULT_JUDGE_MODEL
-    price_for(resolved_model)  # fail closed BEFORE spend if the judge model is unpinned
+    pin, pout = price_for(resolved_model)  # fail closed BEFORE spend if judge model unpinned
+
+    # The shared-answerer leg: priced (hosted) → guarded+recorded through the SAME ledger
+    # as the judge so --max-usd bounds TOTAL spend; unpinned (BYO/local) → a free local
+    # generation, projected at $0 (§9 review [P2] #2).
+    resolved_answerer_model = (
+        answerer_model or getattr(answerer, "model_id", None) or DEFAULT_JUDGE_MODEL
+    )
+    answerer_priced = _is_priced(resolved_answerer_model)
 
     # --- sample + build the arms' answers ------------------------------------ #
     qpairs = _sample_questions(questions, limit=limit)
@@ -525,23 +619,38 @@ def run_pilot(
     for arm in (t_arm, c_arm):
         if arm not in adapters:
             raise ValueError(f"unknown arm {arm!r}; known baselines: {sorted(adapters)}")
-    answers_by_arm = build_arm_answers(answerer, adapters, qpairs, k=k)
 
-    # --- resume state -------------------------------------------------------- #
+    # --- resume state (load BEFORE building the ledger / answering) ----------- #
     ckpt = Path(checkpoint_path) if checkpoint_path is not None else None
     source = _resolve_checkpoint_source(ckpt, Path(resume) if resume is not None else None)
     existing: dict[JudgmentKey, Judgment] = {}
     cost_state = {"n_calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
-    opening_spent = 0.0
     if source is not None and source.exists():
         blob = json.loads(source.read_text(encoding="utf-8"))
         existing = _load_judgments(blob)
         prior_cost = blob.get("cost") or {}
         for key in ("n_calls", "prompt_tokens", "completion_tokens"):
             cost_state[key] = int(prior_cost.get(key, 0))
-        opening_spent = float(prior_cost.get("spent_usd", 0.0))
 
-    ledger = _make_ledger(max_usd, opening_spent=opening_spent)
+    # The judge spend already paid (restored from the persisted JUDGE token counts, so a
+    # resume never double-charges the re-run answerer leg). The ledger then accrues this
+    # process's answerer + new-judge spend on top — the live --max-usd guard is TOTAL.
+    judge_opening_spent = (
+        cost_state["prompt_tokens"] / 1e6 * pin + cost_state["completion_tokens"] / 1e6 * pout
+    )
+    ledger = _make_ledger(max_usd, opening_spent=judge_opening_spent)
+
+    # The answerer leg runs through the metering wrapper (pre-call guard + record on the
+    # shared ledger); build_arm_answers itself is the harness function, reused unchanged.
+    answerer_cost_state = {"n_calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    metering_answerer = _MeteringAnswerer(
+        answerer,
+        model=resolved_answerer_model,
+        priced=answerer_priced,
+        ledger=ledger,
+        cost_state=answerer_cost_state,
+    )
+    answers_by_arm = build_arm_answers(metering_answerer, adapters, qpairs, k=k)
 
     # --- the resilient judging pass ------------------------------------------ #
     out = _judge_resiliently(
@@ -559,7 +668,8 @@ def run_pilot(
     )
 
     # --- aggregation → report ------------------------------------------------ #
-    pin, pout = price_for(resolved_model)
+    # Judge leg: one call scores all metrics for each (question, pair, run, order); the
+    # projection sizes the POWERED run (projected_n_runs >= MIN_RUNS), not the cheap exec.
     projection = project_autoe_cost(
         prompt_tokens=cost_state["prompt_tokens"],
         completion_tokens=cost_state["completion_tokens"],
@@ -568,14 +678,54 @@ def run_pilot(
         price_out_per_1m=pout,
         n_questions=target_questions,
         n_pairs=1,
-        n_runs=n_runs,
+        n_runs=projected_n_runs,
     )
+    # Answerer leg: one shared-answerer call per arm per question (answers are reused
+    # across runs/orders → no run/order fan-out). Priced → its cost is projected and
+    # added to the TOTAL; unpinned (local/$0) → $0 (§9 review [P2] #2).
+    n_arms = len({t_arm, c_arm})
+    if answerer_priced:
+        apin, apout = price_for(resolved_answerer_model)
+        answerer_projection = project_autoe_cost(
+            prompt_tokens=answerer_cost_state["prompt_tokens"],
+            completion_tokens=answerer_cost_state["completion_tokens"],
+            n_calls=max(answerer_cost_state["n_calls"], 1),
+            price_in_per_1m=apin,
+            price_out_per_1m=apout,
+            n_questions=target_questions,
+            n_pairs=n_arms,
+            n_runs=1,
+            n_orders=1,
+        )
+    else:
+        answerer_projection = {
+            "context_token_budget": None,
+            "projected_prompt_tokens_per_call": 0.0,
+            "cost_per_call_usd": 0.0,
+            "projected_full_calls": target_questions * n_arms,
+            "projected_full_usd": 0.0,
+        }
+    judge_full_usd = float(projection["projected_full_usd"])
+    answerer_full_usd = float(answerer_projection["projected_full_usd"])
+    cost_total = {
+        "judge_usd": judge_full_usd,
+        "answerer_usd": answerer_full_usd,
+        "projected_full_usd": round(judge_full_usd + answerer_full_usd, 2),
+        "answerer_model": resolved_answerer_model,
+        "answerer_priced": answerer_priced,
+        "max_usd_bounds": (
+            "answerer+judge"
+            if answerer_priced
+            else "judge-only (answerer model unpinned → treated as local/$0)"
+        ),
+    }
 
     decided = [j for j in out.values() if not _fully_absent(j, JUDGE_METRICS)]
     report: dict[str, Any] = {
         "mode": "cheap_validate" if cheap_validate else "full",
         "pair": list(pair),
         "n_runs": n_runs,
+        "projection_n_runs": projected_n_runs,
         "limit": limit,
         "k": k,
         "seed": seed,
@@ -584,7 +734,10 @@ def run_pilot(
         "judge_family": judge.family,
         "bias_controls": dict(bias_controls),
         "measured": dict(cost_state),
+        "answerer_measured": dict(answerer_cost_state),
         "cost_projection": projection,
+        "answerer_cost_projection": answerer_projection,
+        "cost_total": cost_total,
         "target_questions": target_questions,
         "ledger": {
             "spent_usd": ledger.spent,
@@ -657,6 +810,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--max-usd", type=float, default=None)
     parser.add_argument("--target-questions", type=int, default=100)
     parser.add_argument("--k", type=int, default=10)
+    parser.add_argument(
+        "--answerer-model",
+        default=None,
+        help="Pricing id for the shared-answerer leg (default: the answerer's model_id). "
+        "A priced id routes the answerer through the --max-usd ledger (TOTAL spend); an "
+        "unpinned/local id is treated as a free local generation.",
+    )
     args = parser.parse_args(argv)
 
     if os.environ.get(_R2_RUN_ENV) != "1":
@@ -693,6 +853,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         pair=args.pair,
         limit=args.limit,
         n_runs=args.n_runs,
+        answerer_model=args.answerer_model,
         k=args.k,
         checkpoint_path=args.checkpoint,
         resume=args.resume,

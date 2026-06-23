@@ -41,6 +41,7 @@ from eval.autoe_pilot_run import (
     main,
     run_pilot,
 )
+from eval.decision_rule_084 import MIN_RUNS
 from eval.r2_parity_eval import BaseAnswerer
 
 WIN_TOKEN = "WINNER"
@@ -276,8 +277,20 @@ def test_checkpoint_and_resume_rejudges_nothing(tmp_path: Path) -> None:
 # Budget guard
 # --------------------------------------------------------------------------- #
 def test_max_usd_guard_raises_before_spend() -> None:
+    j = FakeJudge()
     with pytest.raises(BudgetExceeded):
-        _run(FakeJudge(), limit=2, max_usd=1e-9)
+        _run(j, limit=2, max_usd=1e-9)
+    # The guard must fire BEFORE the judge is ever invoked — not after a spent call.
+    assert j.calls == 0
+
+
+def test_max_usd_bounds_priced_answerer_leg_before_judge() -> None:
+    # With a PRICED answerer, --max-usd must bound the answerer leg too: the guard
+    # fires during answering, BEFORE any judge call (total-spend guard, [P2] #2).
+    j = FakeJudge()
+    with pytest.raises(BudgetExceeded):
+        _run(j, limit=2, max_usd=1e-9, answerer_model="gemini-2.5-flash-lite")
+    assert j.calls == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -300,6 +313,52 @@ def test_cost_projection_scales_with_target_questions() -> None:
     assert cb["projected_full_calls"] == 2 * cs["projected_full_calls"]
     assert cb["projected_full_usd"] == pytest.approx(2 * cs["projected_full_usd"], rel=1e-6)
     assert cs["cost_per_call_usd"] > 0.0  # measured tokens → a real per-call cost
+
+
+# --------------------------------------------------------------------------- #
+# [P2] #1 — cheap-validate projection must size the POWERED run (>= MIN_RUNS),
+# NOT the 1-run cheap execution (else it under-projects the spend ~5×).
+# --------------------------------------------------------------------------- #
+def test_cheap_validate_projection_sizes_powered_run() -> None:
+    report = _run(FakeJudge(), cheap_validate=True, target_questions=10)
+    assert report["n_runs"] == CHEAP_N_RUNS  # the EXECUTION ran a single run
+    assert report["projection_n_runs"] == MIN_RUNS
+    proj = report["cost_projection"]
+    # full_calls = target_questions × n_pairs(1) × MIN_RUNS × n_orders(2) — the POWERED
+    # fan-out, NOT the buggy cheap n_runs=1 (which would give 10 × 1 × 1 × 2 = 20).
+    assert proj["projected_full_calls"] == 10 * 1 * MIN_RUNS * 2
+    assert proj["projected_full_calls"] != 10 * 1 * CHEAP_N_RUNS * 2
+
+
+# --------------------------------------------------------------------------- #
+# [P2] #2 — the projected/total cost must include the shared-answerer leg, not
+# the judge leg alone (so the HITL spend number is TOTAL spend).
+# --------------------------------------------------------------------------- #
+def test_projection_includes_answerer_leg() -> None:
+    # A priced answerer model routes the answerer leg through the cost ledger/projection.
+    # Large target so both legs round to a non-zero USD (projected_full_usd is 2-dp).
+    report = _run(
+        FakeJudge(), limit=2, target_questions=100_000, answerer_model="gemini-2.5-flash-lite"
+    )
+    am = report["answerer_measured"]
+    assert am["n_calls"] == 2 * 2  # one shared-answerer call per arm per question
+    ct = report["cost_total"]
+    assert ct["judge_usd"] > 0.0
+    assert ct["answerer_usd"] > 0.0  # the answerer leg is a NON-ZERO contribution
+    assert ct["projected_full_usd"] == pytest.approx(ct["judge_usd"] + ct["answerer_usd"], rel=1e-9)
+    # The TOTAL strictly exceeds the judge-only projection (answerer leg is additive).
+    assert ct["projected_full_usd"] > report["cost_projection"]["projected_full_usd"]
+    assert ct["max_usd_bounds"] == "answerer+judge"
+
+
+def test_local_answerer_leg_is_free_and_labeled_judge_only() -> None:
+    # The default FakeAnswerer (model_id 'fake-answerer-v1') is unpinned → local/$0.
+    report = _run(FakeJudge(), limit=2, target_questions=10)
+    ct = report["cost_total"]
+    assert ct["answerer_priced"] is False
+    assert ct["answerer_usd"] == 0.0
+    assert ct["projected_full_usd"] == pytest.approx(ct["judge_usd"], rel=1e-9)
+    assert "judge-only" in ct["max_usd_bounds"]
 
 
 # --------------------------------------------------------------------------- #
