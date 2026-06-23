@@ -260,6 +260,15 @@ def parse_verdict(completion: Optional[str], metrics: tuple[str, ...]) -> dict[s
 # --------------------------------------------------------------------------- #
 # Run (position-bias control): judge each pair in BOTH orders, idempotently
 # --------------------------------------------------------------------------- #
+def _is_fully_absent(judgment: Judgment, metrics: tuple[str, ...]) -> bool:
+    """True iff EVERY metric in ``metrics`` is ABSENT for ``judgment`` — i.e. the whole
+    judge call failed (empty/None/unparseable) and was stored as a dead cell. Such a cell
+    must be RE-judged on resume; a judgment with ≥1 decided metric is a real, completed
+    result and is kept. The check uses the run's ``metrics`` so it can't be fooled by a
+    judgment carrying extra/missing keys."""
+    return all(judgment.verdicts.get(m, "ABSENT") == "ABSENT" for m in metrics)
+
+
 def run_autoe(
     judge: Judge,
     answers_by_arm: Mapping[str, Mapping[str, str]],
@@ -287,8 +296,8 @@ def run_autoe(
         for run_idx in range(n_runs):
             for order in _ORDERS:
                 key = JudgmentKey(question_id=qid, pair=pair, run_idx=run_idx, order=order)
-                if key in out:
-                    continue  # idempotent resume
+                if key in out and not _is_fully_absent(out[key], metrics):
+                    continue  # idempotent resume — but re-judge dead (fully-ABSENT) cells
                 if order == ORDER_TC:
                     answer_a, answer_b = t_ans, c_ans
                 else:

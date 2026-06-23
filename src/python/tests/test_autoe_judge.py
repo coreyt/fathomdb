@@ -78,6 +78,22 @@ class FakeJudge:
 
 
 @dataclass
+class CountingJudge:
+    """Wraps :class:`FakeJudge` and counts ``judge_pair`` calls — to prove resume
+    re-judges ONLY dead (fully-ABSENT) cells and leaves decided cells untouched."""
+
+    family: str = "counting-judge-family"
+    calls: int = 0
+    inner: FakeJudge = field(default_factory=FakeJudge)
+
+    def judge_pair(
+        self, question: str, answer_a: str, answer_b: str, metrics: tuple[str, ...]
+    ) -> str:
+        self.calls += 1
+        return self.inner.judge_pair(question, answer_a, answer_b, metrics)
+
+
+@dataclass
 class PositionBiasedJudge:
     """A pathological judge that ALWAYS prefers whichever answer is shown first (A),
     ignoring content — the failure mode the order-swap control must neutralize."""
@@ -232,6 +248,31 @@ def test_run_autoe_emits_both_orders_and_is_resume_idempotent() -> None:
     # Resume: feeding the prior dict back in re-derives the same keys (idempotent).
     again = run_autoe(FakeJudge(), _answers(True), _QUESTIONS, _PAIR, n_runs=5, existing=judgments)
     assert set(again) == set(judgments)
+
+
+def test_run_autoe_rejudges_fully_absent_cell_on_resume() -> None:
+    # A prior call that failed (empty/unparseable completion) was stored as a
+    # FULLY-ABSENT Judgment. On resume it must be RE-judged (resilience contract:
+    # a failed call is re-attempted, never cached as done) — while a cell with at
+    # least one decided metric stays skipped (idempotent resume, not re-judged).
+    answers = _answers(True)
+    base = run_autoe(FakeJudge(), answers, _QUESTIONS, _PAIR, n_runs=1)
+    metrics = JUDGE_METRICS
+    existing = dict(base)
+    dead_key = JudgmentKey("q1", _PAIR, 0, ORDER_TC)
+    existing[dead_key] = Judgment(key=dead_key, verdicts={m: "ABSENT" for m in metrics})
+    decided_key = JudgmentKey("q2", _PAIR, 0, ORDER_TC)
+    assert any(v != "ABSENT" for v in existing[decided_key].verdicts.values())
+
+    judge = CountingJudge()
+    out = run_autoe(judge, answers, _QUESTIONS, _PAIR, n_runs=1, existing=existing)
+
+    # the dead (fully-ABSENT) cell was re-judged → no longer all ABSENT
+    assert any(v != "ABSENT" for v in out[dead_key].verdicts.values())
+    # ONLY the dead cell was re-judged (the decided cells were skipped)
+    assert judge.calls == 1
+    # the decided cell is untouched
+    assert out[decided_key].verdicts == existing[decided_key].verdicts
 
 
 def test_winrate_excludes_absent_from_denominator() -> None:
