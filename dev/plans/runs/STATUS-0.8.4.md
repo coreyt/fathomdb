@@ -26,7 +26,7 @@ The Slice-5 pilot produces the exact per-call cost so the HITL approves a real n
 
 | slice | title | state | notes |
 |---|---|---|---|
-| **0** | Design + pre-register (+ codex §9 + HITL gate) | **IN REVIEW** | design `decision-ready` + `decision_rule_084.py` + 52-test pin committed `45aa2f4f`; codex §9 running (`0.8.4-slice-0-review-codex.log`); then HITL honest-prior + budget gate |
+| **0** | Design + pre-register (+ codex §9 + HITL gate) | **AWAITING HITL** | design `decision-ready` + `decision_rule_084.py` + 52-test pin (`45aa2f4f`); **codex §9 PASS** after 2×[P1] pyright fixes (`67079e40`, verdict `0.8.4-slice-0-review-VERDICT.md`); typecheck exit 0, ruff clean, 52/52 green. **HITL honest-prior FUND/NO-FUND + budget top-up + sign pre-reg → unblocks Slice 5.** |
 | 5 | Corpus + baselines + AutoQ + pilot | BLOCKED on Slice-0 gate | AP-News EVAL-ONLY; vector-RAG + long-context; AutoQ batched; pilot → `strong_baseline_clears` kill-early |
 | 10 | S1 build: Leiden + community summaries | BLOCKED on gate | OFFLINE-BUILD, local Qwen3.6-27B ($0); determinism + coverage ACs |
 | 15 | Map-reduce QFS reader (KEYSTONE) + running GraphRAG + HippoRAG-2 | BLOCKED on gate | competitor LLMs competitor-side (EVAL-ONLY) |
