@@ -7,14 +7,17 @@ head-to-head); HippoRAG-2 a secondary MuSiQue cross-check. Gate frozen as
 Budget discipline ([[0.8.1-budget-discipline-cheap-validate-and-ledger]],
 [[priced-runs-need-resilience-before-spend]], [[airlock-batch-and-provider-protection]]).
 
-## Carry-in budget reality (HARD constraint — TOP-UP likely needed)
+## Budget reality — UPDATED with a $0 corpus-measured projection (2026-06-23)
 
-0.8.3 spent **~$38.16 of the $50 program cap → ~$11.84 remaining.** 0.8.4 is the
-**most expensive version** (running GraphRAG index + AutoQ synth + AutoE pairwise ×
-≥5 runs × order-swap × 3 comparisons × 3 metrics). Even batched (~50% off), the
-realistic spend is **plausibly $30–60+**. A **budget top-up is a Slice-0 HITL
-decision** — without it, only a reduced-scope (likely under-powered) pilot is fundable.
-The Slice-5 pilot produces the exact per-call cost so the HITL approves a real number.
+0.8.3 spent **~$38.16 of the $50 program cap → ~$11.84 remaining.** The Slice-0 §7
+guess ("$30–60+") was worst-case; a **$0 corpus-measured cost probe**
+(`0.8.4-cost-probe-FINDINGS.md`) overturns it: with a **Haiku/Sonnet cross-family judge**
+the realistic powered run is **single-digit-to-low-double-digit dollars** (e.g. one
+`vector_rag`-vs-`long_context` pair at 100 q ≈ **$4.51 Haiku / $7.40 Sonnet**; a full
+multi-pair ~100-q run ≈ **~$8–12 Haiku / ~$15–20 Sonnet**). **The judge tier is the
+dominant cost lever** — an Opus judge (~$60–80 full) is what forces a top-up; Haiku/Sonnet
+fit at/near the remaining $11.84. **Required pre-run fix:** pin the chosen Claude judge's
+price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → fails closed).
 
 ## $ ledger
 
