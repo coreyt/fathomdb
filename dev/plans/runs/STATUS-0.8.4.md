@@ -29,9 +29,29 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | 2026-06-23 | 5b | **CROSS-FAMILY pilot** (Qwen answers $0 + claude-haiku judge, 8q×5runs×2pairs) | claude-haiku | ~160 | ~0.25 | ~0.25 |
 | 2026-06-23 | 5b | **POWERED cross-family pilot** (gpt-5.4 answerer + claude-haiku judge, 12q×5runs×2pairs) | gpt-5.4 + claude-haiku | ~370 | ~2.3 | ~2.55 |
 | 2026-06-23 | 10 | **community-S1 build** (Qwen reports) + cross-family judge, 60-art/10q | gpt-5.4 + claude-haiku | ~480 | ~3.5 | ~6.0 |
-| 2026-06-23 | 10 | **community-S1 STRONG reports** (gpt-5.4 reports) + judge — decisive null | gpt-5.4 + claude-haiku | ~480 | ~3.7 | **~9.7** |
+| 2026-06-23 | 10 | **community-S1 STRONG reports** (gpt-5.4 reports) + judge — decisive null | gpt-5.4 + claude-haiku | ~480 | ~3.7 | ~9.7 |
+| 2026-06-23 | 15 | **Microsoft GraphRAG 3.1.0** index (15 docs, gpt-5.4) + 8 global-search + cross-family judge | gpt-5.4 + claude-haiku | ~700 | ~4.5 | **~14.2** |
 
-## ⭐⭐ PROVISIONAL RESOLUTION (2026-06-23) — the GraphRAG community paradigm = the graph null
+## ⭐⭐⭐ DEFINITIVE (2026-06-23) — LITERAL FathomDB vs RUNNING Microsoft GraphRAG: GraphRAG WINS
+
+`runs/0.8.4-vs-microsoft-graphrag-RESULT.md`. Stood up an **actual Microsoft GraphRAG 3.1.0** (real
+pipeline: entity/relationship/claim extraction → **Leiden hierarchical communities** → **115 LLM
+community reports** → relevance-scored global map-reduce; gpt-5.4 via airlock, embeddings via a local
+shim) over 15 AP-News articles, and ran its **global-search** head-to-head vs FathomDB over the SAME 15
+docs, cross-family judged. **VERDICT: Microsoft GraphRAG WINS decisively — FathomDB win-rate vs GraphRAG
+= 0.00–0.33** (comprehensiveness 0.06 mapreduce / **0.00** vector), well below the 0.45 near-parity band.
+`decide_084`=NOT_REACHED. **FathomDB does NOT reach parity-or-better vs GraphRAG on sensemaking.**
+
+**This OVERTURNS the provisional "community paradigm = graph null" lean below** — that was based on a
+CRUDE community-S1 reimplementation (label-prop/60-doc/simple reports) that under-represented real
+GraphRAG. The actual Microsoft GraphRAG beats even FathomDB's raw-text map-reduce → **the
+community-summary paradigm DOES pay off when implemented well.** CORRECTED decision: the (large) gap
+**JUSTIFIES funding a real Microsoft-grade S1 build** — OR record the measured GraphRAG win as the
+publishable outcome (roadmap-sanctioned). The "don't fund S1" lean is **WITHDRAWN.** Caveats: 15-doc
+index, n=8 (underpowered but comprehensiveness≈0 is decisive), length-bias possible, sensemaking axis
+only (HippoRAG-2 multi-hop unrun). Session airlock spend ~$14–15.
+
+## ⭐⭐ (SUPERSEDED) PROVISIONAL RESOLUTION (2026-06-23) — the GraphRAG community paradigm = the graph null
 
 `runs/0.8.4-graphrag-RESOLUTION.md`. After driving a coherent set of **cross-family** (claude-haiku
 judge, gpt-5.4 reader, ≥5-run, order-swapped) pilots, the 0.8.4 premise resolves **provisionally
