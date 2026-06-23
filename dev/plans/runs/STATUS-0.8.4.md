@@ -27,9 +27,25 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | 2026-06-23 | 5b | $0 directional smokes (premise + GraphRAG-style) | local Qwen | ~190 | 0.00 | 0.00 |
 | 2026-06-23 | 5b | cheap-validate claude-haiku route (airlock unblocked via .env) | claude-haiku | 1 | ~0.0001 | ~0.0001 |
 | 2026-06-23 | 5b | **CROSS-FAMILY pilot** (Qwen answers $0 + claude-haiku judge, 8q×5runs×2pairs) | claude-haiku | ~160 | ~0.25 | ~0.25 |
-| 2026-06-23 | 5b | **POWERED cross-family pilot** (gpt-5.4 answerer + claude-haiku judge, 12q×5runs×2pairs) | gpt-5.4 + claude-haiku | ~370 | ~2.3 | **~2.55** |
+| 2026-06-23 | 5b | **POWERED cross-family pilot** (gpt-5.4 answerer + claude-haiku judge, 12q×5runs×2pairs) | gpt-5.4 + claude-haiku | ~370 | ~2.3 | ~2.55 |
+| 2026-06-23 | 10 | **community-S1 build** (Qwen reports) + cross-family judge, 60-art/10q | gpt-5.4 + claude-haiku | ~480 | ~3.5 | ~6.0 |
+| 2026-06-23 | 10 | **community-S1 STRONG reports** (gpt-5.4 reports) + judge — decisive null | gpt-5.4 + claude-haiku | ~480 | ~3.7 | **~9.7** |
 
-## ⭐ Headline measurement (2026-06-23) — TWO overturns; registered-config premise is POSITIVE
+## ⭐⭐ PROVISIONAL RESOLUTION (2026-06-23) — the GraphRAG community paradigm = the graph null
+
+`runs/0.8.4-graphrag-RESOLUTION.md`. After driving a coherent set of **cross-family** (claude-haiku
+judge, gpt-5.4 reader, ≥5-run, order-swapped) pilots, the 0.8.4 premise resolves **provisionally
+NEGATIVE for the community-summary paradigm** (underpowered/subset/not-Microsoft-package, so
+decision-grade not registered-REACHED). Win-rate vs vector_rag (comprehensiveness): **flat map-reduce
+over RAW text 0.83 (wins)** · community-S1 + Qwen reports 0.39 (loses) · community-S1 + **gpt-5.4** reports
+0.32 (**still loses**). The community-summary structure is a **lossy compression** that does NOT pay off
+even with strong reports; the measured value is the **strong reader synthesizing over RAW TEXT**, not the
+graph machinery (M1/M2 + Samsung-prior consistent). **RECOMMENDATION: do NOT fund the full S1
+community-summary build; ship the cheaper winner (BYO-LLM strong-reader map-reduce over FathomDB's raw
+retrieved text).** Two control lessons en route: same-family judge inflates (self-preference, false +0.75);
+reader quality is the dominant lever (flipped the same arm win↔loss). Session airlock spend ~$10.
+
+## ⭐ Headline measurement (2026-06-23) — TWO overturns; registered-config premise is POSITIVE (superseded by the RESOLUTION above)
 
 **Airlock unblocked** (HITL-authorized `~/projects/airlock/.env`; exposes gpt-5.4 + claude-haiku/
 sonnet/opus). Ran cross-family (claude-haiku judge), ≥5-run, order-swapped measurements through
