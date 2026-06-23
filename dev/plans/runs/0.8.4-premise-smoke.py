@@ -68,7 +68,7 @@ sample = qs[:: max(1, len(qs) // N_Q)][:N_Q]
 print(f"corpus={len(arts)} autoq={len(qs)} sampled={len(sample)} buckets={sorted({q.bucket for q in sample})}\n")
 
 vec = VectorRagAdapter(docs)
-lon = LongContextAdapter(docs, char_budget=24_000)  # smaller window for the smoke
+lon = LongContextAdapter(docs, char_budget=120_000)  # ~30k tok ≈ ~30 articles, fits Qwen 64k window
 questions = [(q.question_id or f"q{i}", q.question_text) for i, q in enumerate(sample)]
 
 # --- generate arm answers (real Qwen) ------------------------------------------- #
@@ -76,7 +76,8 @@ print("generating arm answers (local Qwen, thinking off)...")
 answers_by_arm = {"vector_rag": {}, "long_context": {}}
 for qid, qtext in questions:
     answers_by_arm["vector_rag"][qid] = answer(qtext, vec.retrieve(qtext, K))
-    answers_by_arm["long_context"][qid] = answer(qtext, lon.retrieve(qtext, K))
+    # long_context: large k so the 120k-char budget binds (the honest "stuff-it-all-in" control).
+    answers_by_arm["long_context"][qid] = answer(qtext, lon.retrieve(qtext, 60))
     print(f"  {qid}: vec={len(answers_by_arm['vector_rag'][qid])}c  lon={len(answers_by_arm['long_context'][qid])}c")
 
 # --- judge (real Qwen, both orders) → win-rates --------------------------------- #
