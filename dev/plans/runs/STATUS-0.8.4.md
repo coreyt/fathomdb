@@ -24,6 +24,22 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | date | slice | item | reader | calls | USD | running total |
 |---|---|---|---|---|---|---|
 | 2026-06-23 | 0 | design + pre-registration (decision_rule_084, $0 — no LLM) | — | 0 | 0.00 | 0.00 |
+| 2026-06-23 | 5b | $0 directional smokes (premise + GraphRAG-style) | local Qwen | ~190 | 0.00 | 0.00 |
+| 2026-06-23 | 5b | cheap-validate claude-haiku route (airlock unblocked via .env) | claude-haiku | 1 | ~0.0001 | ~0.0001 |
+| 2026-06-23 | 5b | **CROSS-FAMILY pilot** (Qwen answers $0 + claude-haiku judge, 8q×5runs×2pairs) | claude-haiku | ~160 | ~0.25 | **~0.25** |
+
+## ⭐ Headline measurement (2026-06-23) — cross-family pilot OVERTURNS the same-family smokes
+
+`runs/0.8.4-xfamily-pilot-RESULT.md`. **Airlock unblocked** (HITL-authorized `~/projects/airlock/.env`;
+exposes gpt-5.4 + claude-haiku/sonnet/opus). First **cross-family** (claude-haiku judge vs Qwen
+answerer), **≥5-run**, order-swapped measurement scored through `decide_084`. **A GraphRAG-style
+map-reduce arm that "won" 0.750 under a same-family Qwen judge LOSES under the unbiased Claude judge**
+— vs long_context 0.25/0.24/0.39, vs vector_rag ~0.44 (comp/div/emp). `decide_084` = NOT_REACHED
+(underpowered, mde≈0.31). **The 0.750 was self-preference bias** (the control fired hard). Every prior
+$0 Qwen-judged smoke is now suspect. **Decision lean: premise looks WEAK under an unbiased judge
+(long_context wins — the Samsung prior) → leans AGAINST funding the full S1 build, but underpowered +
+minimal-subset-arm + Qwen answerer = not a kill.** Cheap decisive next step: power up THIS cross-family
+pilot (more questions → mde ≤ 0.05).
 
 ## Slice board
 
