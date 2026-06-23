@@ -26,20 +26,29 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | 2026-06-23 | 0 | design + pre-registration (decision_rule_084, $0 — no LLM) | — | 0 | 0.00 | 0.00 |
 | 2026-06-23 | 5b | $0 directional smokes (premise + GraphRAG-style) | local Qwen | ~190 | 0.00 | 0.00 |
 | 2026-06-23 | 5b | cheap-validate claude-haiku route (airlock unblocked via .env) | claude-haiku | 1 | ~0.0001 | ~0.0001 |
-| 2026-06-23 | 5b | **CROSS-FAMILY pilot** (Qwen answers $0 + claude-haiku judge, 8q×5runs×2pairs) | claude-haiku | ~160 | ~0.25 | **~0.25** |
+| 2026-06-23 | 5b | **CROSS-FAMILY pilot** (Qwen answers $0 + claude-haiku judge, 8q×5runs×2pairs) | claude-haiku | ~160 | ~0.25 | ~0.25 |
+| 2026-06-23 | 5b | **POWERED cross-family pilot** (gpt-5.4 answerer + claude-haiku judge, 12q×5runs×2pairs) | gpt-5.4 + claude-haiku | ~370 | ~2.3 | **~2.55** |
 
-## ⭐ Headline measurement (2026-06-23) — cross-family pilot OVERTURNS the same-family smokes
+## ⭐ Headline measurement (2026-06-23) — TWO overturns; registered-config premise is POSITIVE
 
-`runs/0.8.4-xfamily-pilot-RESULT.md`. **Airlock unblocked** (HITL-authorized `~/projects/airlock/.env`;
-exposes gpt-5.4 + claude-haiku/sonnet/opus). First **cross-family** (claude-haiku judge vs Qwen
-answerer), **≥5-run**, order-swapped measurement scored through `decide_084`. **A GraphRAG-style
-map-reduce arm that "won" 0.750 under a same-family Qwen judge LOSES under the unbiased Claude judge**
-— vs long_context 0.25/0.24/0.39, vs vector_rag ~0.44 (comp/div/emp). `decide_084` = NOT_REACHED
-(underpowered, mde≈0.31). **The 0.750 was self-preference bias** (the control fired hard). Every prior
-$0 Qwen-judged smoke is now suspect. **Decision lean: premise looks WEAK under an unbiased judge
-(long_context wins — the Samsung prior) → leans AGAINST funding the full S1 build, but underpowered +
-minimal-subset-arm + Qwen answerer = not a kill.** Cheap decisive next step: power up THIS cross-family
-pilot (more questions → mde ≤ 0.05).
+**Airlock unblocked** (HITL-authorized `~/projects/airlock/.env`; exposes gpt-5.4 + claude-haiku/
+sonnet/opus). Ran cross-family (claude-haiku judge), ≥5-run, order-swapped measurements through
+`decide_084`. Two bias-control lessons, both characterized:
+
+1. **Same-family judge inflated** (`0.8.4-xfamily-pilot-RESULT.md`): a GraphRAG-style map-reduce arm
+   that "won" 0.750 under a SAME-family Qwen judge **lost** (0.25–0.44) under the cross-family Claude
+   judge → the 0.750 was **self-preference bias.** All $0 Qwen-judged smokes are suspect.
+2. **Weak answerer suppressed** (`0.8.4-xfamily-pilot-powered-RESULT.md`): with the **Qwen answerer**
+   the GraphRAG-style arm lost (0.25–0.44); swapping to the design's **real reader gpt-5.4** it **WINS**
+   — vs long_context **0.72/0.55/0.57**, vs vector_rag **0.83/0.68/0.63** (comp/div/emp);
+   comprehensiveness-vs-vector_rag is a **SURPASS** candidate (ci_lo 0.617 > 0.5). map-reduce QFS
+   depends on synthesis quality → Qwen suppressed it, gpt-5.4 realizes it (the GraphRAG thesis).
+
+**`decide_084` = NOT_REACHED on both, but the powered run is blocked by POWER (mde 0.19–0.25 > ε),
+NOT below-parity — all win-rates ≥0.5.** **Decision lean (registered config: strong reader +
+cross-family judge): premise POSITIVELY supported, trending to SURPASS → power up (more q → mde≤0.05)
+→ likely REACHES → JUSTIFIES funding the S1 build.** Caveats: minimal subset map-reduce arm (not
+Microsoft GraphRAG), underpowered, premise-not-full-resolution. Spend to date ~$2.5.
 
 ## Slice board
 
