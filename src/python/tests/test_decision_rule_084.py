@@ -30,6 +30,7 @@ binding.
 from __future__ import annotations
 
 import re as _re
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,9 @@ from eval.decision_rule_084 import (
     MIN_RUNS,
     PARITY,
     REQUIRED_FROZEN_FIELDS_084,
+    BiasControls,
+    LengthCorroboration,
+    Resolution,
     decide_084,
     honest_prior_cleared,
     lint_preregistration_084,
@@ -76,28 +80,30 @@ def _metrics(**overrides: dict[str, float]) -> dict[str, dict[str, float]]:
     return table
 
 
-def _controls(**overrides: object) -> dict[str, object]:
-    controls: dict[str, object] = {
-        "order_swapped": True,
-        "n_runs": 5,
-        "judge_family": "anthropic",
-        "system_families": ["openai", "microsoft"],
+def _controls(
+    *,
+    order_swapped: bool = True,
+    n_runs: int = 5,
+    judge_family: str = "anthropic",
+    system_families: Sequence[str] = ("openai", "microsoft"),
+) -> BiasControls:
+    return {
+        "order_swapped": order_swapped,
+        "n_runs": n_runs,
+        "judge_family": judge_family,
+        "system_families": list(system_families),
     }
-    controls.update(overrides)
-    return controls
 
 
-def _length(**overrides: object) -> dict[str, object]:
-    corr: dict[str, object] = {"ran": True, "contradicts": False}
-    corr.update(overrides)
-    return corr
+def _length(*, ran: bool = True, contradicts: bool = False) -> LengthCorroboration:
+    return {"ran": ran, "contradicts": contradicts}
 
 
 def _decide(
     table: dict[str, dict[str, float]] | None = None,
-    controls: dict[str, object] | None = None,
-    length: dict[str, object] | None = None,
-) -> dict:
+    controls: BiasControls | None = None,
+    length: LengthCorroboration | None = None,
+) -> Resolution:
     return decide_084(
         table if table is not None else _metrics(),
         controls if controls is not None else _controls(),

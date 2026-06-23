@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal, TypedDict
 
 # --------------------------------------------------------------------------- #
@@ -121,6 +121,27 @@ class Resolution(TypedDict):
     blocked_by: BlockedBy | None
 
 
+class BiasControls(TypedDict):
+    """The four LLM-judge bias controls applied to the AutoE comparison (design §5).
+
+    Typed precisely (not ``Mapping[str, object]``) so the rule's accesses are
+    statically checkable — mirrors :mod:`eval.decision_rule_083`'s "type the value
+    precisely" discipline.
+    """
+
+    order_swapped: bool  # position bias: answer order swapped + averaged.
+    n_runs: int  # stochasticity: number of independent runs.
+    judge_family: str  # the judge's model family (for the self-preference check).
+    system_families: Sequence[str]  # families of EVERY system under test.
+
+
+class LengthCorroboration(TypedDict):
+    """The directness / claim-count non-judge length-bias control (design §5)."""
+
+    ran: bool  # the corroboration was actually run.
+    contradicts: bool  # it indicates S1's win is a verbosity artifact.
+
+
 def _require_finite(value: float, name: str) -> float:
     """Return ``float(value)``; raise ``ValueError`` if it is non-finite.
 
@@ -135,8 +156,8 @@ def _require_finite(value: float, name: str) -> float:
 
 
 def _check_bias_controls(
-    bias_controls: Mapping[str, object],
-    length_corroboration: Mapping[str, object],
+    bias_controls: BiasControls,
+    length_corroboration: LengthCorroboration,
 ) -> BlockedBy | None:
     """Return the first failing bias-control BLOCK reason, or ``None`` if clean.
 
@@ -174,8 +195,8 @@ def _check_bias_controls(
 
 def decide_084(
     primary_per_metric: Mapping[str, Mapping[str, float]],
-    bias_controls: Mapping[str, object],
-    length_corroboration: Mapping[str, object],
+    bias_controls: BiasControls,
+    length_corroboration: LengthCorroboration,
 ) -> Resolution:
     """Return the frozen RESOLUTION verdict for the 0.8.4 GraphRAG-parity gate.
 
