@@ -1,0 +1,102 @@
+{
+  "schema": "0.8.3-resolution-verdict-v1",
+  "slice": 30,
+  "date": "2026-06-23",
+  "status": "CLOSED_AS_IS",
+  "hitl_ruling": {
+    "date": "2026-06-23",
+    "decision": "take_0.8.3_results_as_is",
+    "rationale": "Identical-answerer ACCURACY is highly retrieval-gated; the substantive 0.8.3 result is the retrieval-precision finding, not a fully-powered citable accuracy number. Characterize honestly, land, and close. No further priced spend (also blocked by an OpenAI gpt-5.4 project usage-limit).",
+    "no_further_priced_spend": true
+  },
+  "resolution": {
+    "headline": "Provisional parity-or-better with Mem0 via a retrieval-PRECISION lever (CE-rerank at tuned blend weight alpha=1.0). Taken AS-IS per the 2026-06-23 HITL ruling; NOT a fully-powered citable parity/surpass claim.",
+    "frozen_rule_status": "decide_083 = NOT_REACHED on the powered baseline (eu7-blocked + underpowered); the tuned alpha=1.0 arm is ABORTED_INCOMPLETE (completeness 0.5842 < 1.0, just-underpowered MDE 0.078 > eps 0.05). A strict REACHED is not available.",
+    "axis": "end-to-end agentic-memory answer accuracy vs Mem0-OSS, identical answerer (gpt-5.4), LongMemEval + LOCOMO, 4 classes; PerClassScorer.",
+    "lever": "in-footprint CE-rerank (TinyBERT, CPU) over the fused top-K with the CE-blend weight retuned from the production alpha=0.3 to alpha=1.0 (pool_n=10); recovered offline via the score=0 ce_norm trick, no Rust rebuild.",
+    "footprint": "in-footprint (CPU-only library query path; LLM answerer is EVAL-ONLY)."
+  },
+  "evidence_chain": [
+    {
+      "step": "D0b gap (Slice 10, n=606, $10.75)",
+      "artifact": "0.8.3-d0b-parity-n606.json",
+      "result": "FathomDB trailed Mem0 by -20..27pp accuracy (factoid -23.7, ku -27.3, multi_session -20.0; temporal -3.3 tie) at production blend alpha=0.3. decide_083 = NOT_REACHED (blocked_by eu7 + all classes underpowered)."
+    },
+    {
+      "step": "Gap-decomposition (n=606)",
+      "artifact": "0.8.3-gap-decomposition-n606.json",
+      "result": "Cause is RETRIEVAL PRECISION, not answer-formation: oracle (clean gold-only) context lifts FathomDB ABOVE Mem0 (R=+0.392 pooled); a blind LLM distiller HURTS (confounded by lossiness). Parity reachable in-footprint via precision levers."
+    },
+    {
+      "step": "CE-rerank accuracy arm, alpha=0.3 (n=606, citable)",
+      "artifact": "0.8.3-rerank-accuracy-n606.json",
+      "result": "lever PASS but marginal: +0.0495 pooled (powered, CI [+0.028,+0.073], MDE 0.032), closes only ~27% of the Mem0 gap (<0.50 GO bar). go=False. multi_session FAIL."
+    },
+    {
+      "step": "$0 tuning sweep (n=606)",
+      "artifact": "0.8.3-rerank-tune-FINDINGS.md",
+      "result": "The CE-blend weight alpha (hardcoded 0.3) is the dominant under-tuned knob. alpha=1.0/pool_n=10 maximizes top-rank gold concentration (MRR 0.347->0.587, r@1 x3.9) while preserving Recall@10."
+    },
+    {
+      "step": "CE-rerank accuracy arm, alpha=1.0 reblend (PARTIAL, n=354/606)",
+      "artifact": "0.8.3-rerank-accuracy-reblend-a1-n606.json",
+      "result": "ABORTED_INCOMPLETE (completeness 0.5842). Provisional SURPASS signal on the answered cells."
+    }
+  ],
+  "alpha1_provisional_numbers": {
+    "status": "PROVISIONAL / ABORTED_INCOMPLETE / just-underpowered — taken as-is, NOT citable.",
+    "n_answered": 354,
+    "completeness": 0.5842,
+    "per_arm_accuracy_on_answered_cells": {
+      "fathomdb_reranked_alpha1": 0.525424,
+      "mem0_oss": 0.323432,
+      "fathomdb_baseline": 0.136964
+    },
+    "surpass_margin_vs_mem0_on_answered_cells": "+0.21 (0.525 vs 0.323)",
+    "pooled_margin_reranked_minus_baseline": {
+      "point": 0.324859,
+      "ci_lo": 0.274011,
+      "ci_hi": 0.381356,
+      "mde": 0.078313,
+      "n": 354
+    },
+    "per_class_margin_reranked_minus_baseline": {
+      "factoid": {"point": 0.306931, "ci_lo": 0.207921, "ci_hi": 0.405941, "n": 101},
+      "knowledge_update": {"point": 0.391304, "ci_lo": 0.286957, "ci_hi": 0.486957, "n": 115},
+      "multi_session": {"point": 0.225, "ci_lo": 0.1125, "ci_hi": 0.3375, "n": 80},
+      "temporal": {"point": 0.362069, "ci_lo": 0.224138, "ci_hi": 0.5, "n": 58}
+    },
+    "paired_lift_alpha03_to_alpha1_identical_cells": "+0.241 (0.289 -> 0.530; 96 win / 12 lose / 241 tie)"
+  },
+  "honesty_caveats": [
+    "The alpha=1.0 run is ABORTED_INCOMPLETE (completeness 0.5842; the completeness guard correctly refused to cite it).",
+    "Just-underpowered: pooled MDE 0.078 > eps 0.05; per-class all underpowered.",
+    "SUBSET-BIAS DIRECTION: the 42% unanswered cells halted on an OpenAI gpt-5.4 project usage-limit; these skew toward the large-context multi_session/temporal cells, which are disproportionately FathomDB-retrieval-FAILURE cells (alpha=0.3 accuracy ~0.048) where Mem0 wins. So the answered-cell +0.21 surpass OVER-STATES the full-606 population; the decomposition-adjusted full-606 estimate is ~0.33-0.35 vs Mem0 0.323 = marginal PARITY, not a clean surpass.",
+    "The paired alpha=0.3->alpha=1.0 lift (+0.241) is on identical cells and so is NOT a subset-difficulty artifact — the alpha LEVER is real and large; only the absolute parity-vs-surpass magnitude on the full population is uncertain.",
+    "decide_083 strict REACHED is unavailable: eu7=0.896<0.90 (case-A/SUT, not CLS) blocks regardless of power, and the arm is incomplete + underpowered."
+  ],
+  "supporting_findings": {
+    "slice_15a_embedder": "NO embedder swap (recall lever spent).",
+    "slice_15b_d2": "proxy code only; full D2 deferred.",
+    "eu7_bisect": "0.937->0.896 = case-A (vector-stage/SUT), NOT CLS; Slice-20 recovery fork = quant-path (whitening->K>192->2-bit).",
+    "knowledge_update": "report-only (HITL-signed); gate scopes {factoid, multi_session, temporal}.",
+    "locomo": "2nd pinned corpus (EVAL-ONLY, gitignored)."
+  },
+  "surpass_option": {
+    "protocol": "Per the design surpass-before-sign-off protocol, the HITL chooses between SHIP-AT-PARITY and SPEND-TO-SURPASS.",
+    "where_surpass_lives": "The remaining ceiling is retrieval RECALL on multi_session/temporal (where Mem0's retrieval beats FathomDB's). Reranking/MMR only reorder what retrieval surfaced and cannot add missing gold, so they cannot lift those cells. Surpass requires a recall lever (D2 fielded enrichment at scale; index-key enrichment), which is 0.8.4-scoped work.",
+    "recommendation": "SHIP-AT-PARITY for 0.8.3: bank the in-footprint CE-rerank alpha=1.0 retune as the engine wire (Slice-20 5b), close 0.8.3 on provisional parity-or-better, and pursue surpass via recall in 0.8.4 alongside the GraphRAG track. Rationale: the priced surpass run is blocked (OpenAI usage-limit) and the surpass mechanism (recall) is a different lever than the one this version validated.",
+    "engine_wire": "Raise the CE-rerank blend weight from ALPHA=0.3 toward ~1.0 with a narrow pool (pool_n~10) in fathomdb-engine ce_rerank; lifts FathomDB ~0.186 -> ~0.33. Re-clear eu7 >=0.90 fresh on the vector_stage_only seam after any re-embed (quant-path fork if breach)."
+  },
+  "budget": {
+    "opening_balance_usd": 27.1,
+    "hard_cap_usd": 50.0,
+    "spent_usd": 38.16,
+    "remaining_usd": 11.84,
+    "note": "Binding constraint on completion was the OpenAI gpt-5.4 project USAGE-LIMIT, not the budget."
+  },
+  "forward": {
+    "version_transition": "HITL-gated to 0.8.4 (GraphRAG parity).",
+    "0_8_4_opening": "S1 community-summaries (Leiden -> LLM summaries -> map-reduce QA) PAIRED with G-HH-2 head-to-head vs running GraphRAG on AP-News/BenchmarkQED; HippoRAG parked (PPR-over-graph refuted twice). Recall levers for Mem0-surpass fold in here too."
+  }
+}

@@ -242,6 +242,11 @@ stays a HITL eval gate ([[fathomdb-recall-fidelity-vs-relevance]]); report the g
 multi-hop head-to-head is the 0.8.4 resolution ([`../roadmap/0.8.4.md`](../roadmap/0.8.4.md)).
 
 ### Slice 15 — $0 triage probes: embedder-ceiling (primary) ∥ D2 content-at-scale proxy · `[implementation (measurement, $0 LLM-free)]` · depends-on: 10 · gaps: 16–19
+> **✅ CLOSED AS-IS 2026-06-23.** **15a = NO embedder swap** — no candle-feasible candidate cleared
+> `probe_15a_pass` on the hard subset (recall lever spent; [[0.8.3-slice15a-embedder-probe-no-swap]]).
+> **15b = D2 proxy code only**; the full `--full` eligibility run was deferred (the chosen lever became
+> CE-rerank precision, not D2). Branch `0.8.3-slice-15a/15b` cherry-picked findings; codex §9 clean.
+
 **Objective (ADJ-6, ADJ-7).** Two $0, LLM-free probes that pick the Phase-B levers by expected
 gap-closure:
 - **(15a) Embedder-ceiling — PRIMARY.** A/B the CLS-corrected `bge-small` vs **genuinely stronger
@@ -265,6 +270,16 @@ package.
 field split if 15b is borderline.
 
 ### Slice 20 — D1 build: CLS-fix + chosen embedder (one re-embed) + eu7 re-clear + PRF-if-needed · `[implementation (engine + measurement)]` · depends-on: 15 · gaps: 21–24
+> **✅ CLOSED AS-IS 2026-06-23 — re-scoped from "D1 embedder build" to "the realizable PRECISION lever".**
+> The gap-decomposition (n=606) showed the lever is retrieval **precision**, not the embedder — so Slice 20
+> became the **CE-rerank accuracy arm**: α=0.3 (citable PASS, marginal NO-GO, `…-rerank-accuracy-n606.json`)
+> → $0 α-tuning sweep (α is the dominant knob) → **α=1.0 reblend** (provisional surpass, `ABORTED_INCOMPLETE`
+> n=354/606, `…-reblend-a1-n606.json`). **CE-batch reranker** (release+batched, 10-50×) + the **reblend
+> adapter** landed; codex §9 done (this session: 2×P2 remediated). The **engine wire** (raise `ALPHA`→~1.0 /
+> narrow pool in `ce_rerank`, re-embed, eu7 re-clear) is **deferred to 0.8.4** (no priced spend left; OpenAI
+> usage-limit). eu7 0.937→0.896 bisect = case-A/SUT not CLS → quant-path recovery fork. See the resolution
+> verdict (`runs/0.8.3-resolution-verdict.md`).
+
 **Objective.** Build the chosen D1 lever **once**: fix `CandleBgeEmbedder` CLS pooling and adopt the
 Slice-15a embedder (a single re-embed/index rebuild on the final vectors); **re-clear eu7 ≥0.90**;
 re-measure the corrected dense/fused baseline; **add deterministic vector PRF only if the embedder alone
@@ -291,6 +306,11 @@ surpass lever.**
 **Reserved follow-on (21–24):** PRF source ablation (reranked-f32 vs fused top-k) only if borderline.
 
 ### Slice 25 — D2 build: fielded-FTS/BM25F + tunable-`b` + enrichment (conditional) · `[implementation (engine + offline-build + measurement)]` · depends-on: 20, 15 · gaps: 26–29
+> **⏭️ NOT RUN (deferred) 2026-06-23.** Conditional slice; its gate did not fire — 15b's full eligibility
+> run was not completed and the chosen lever was CE-rerank precision (Slice 20), not D2 enrichment. D2
+> fielded enrichment is now a **0.8.4 recall lever** (the path to *surpass* Mem0). No schema migration on an
+> unvalidated/unneeded lever.
+
 **Gate.** Runs **only if** (a) Slice-15b passed, (b) the Slice-0 ruling promoted F5/tunable-`b`, **and**
 (c) Slice-20 left a Mem0 gap (or the HITL elected D2 as a surpass lever). Else D2 defers/drops — no schema
 migration on an unvalidated/unneeded lever.
@@ -311,6 +331,13 @@ gate.** Codex §9.
 weight vector is frozen; field-weight auto-tuning is OUT (would need a learned ranker).
 
 ### Slice 30 — Resolution verdict + surpass-option package · `[implementation (measurement)]` · depends-on: 25, 20 · gaps: 31–34
+> **✅ CLOSED AS-IS 2026-06-23 (HITL "take results as-is").** Resolution = **provisional parity-or-better
+> with Mem0 via retrieval precision** (CE-rerank α=1.0): +0.21 over Mem0 on the answered cells (paired
+> n=354), **taken as-is** — NOT a fully-powered citable claim (`decide_083` strict REACHED unavailable:
+> eu7-blocked + arm `ABORTED_INCOMPLETE` + just-underpowered). Accuracy is **retrieval-gated**. Surpass lives
+> in retrieval **recall** (0.8.4). Verdict: `runs/0.8.3-resolution-verdict.{md,json}`. **Steward
+> recommendation: SHIP-AT-PARITY**, surpass via recall in 0.8.4 — pending the HITL sign-off + version-gate.
+
 **Objective.** Compute the **final `FathomDB − {Mem0, Graphiti/Zep}` per-class delta** on the power-sized
 corpus, fused-stack, identical answerer; re-check eu7 ≥0.90 + latency on the final stack. Determine
 **parity reached?** per the frozen rule, and **assemble the surpass-option package**: any lever projected

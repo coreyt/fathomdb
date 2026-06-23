@@ -58,6 +58,13 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
 _DEFAULT_PRICE = (1.25, 5.00)
 
 
+#: Absolute ceiling (s) on a server-stated Retry-After sleep. The airlock quarantine
+#: cooldown is ~300s; this bounds a single honored cooldown so a pathological/huge
+#: Retry-After cannot hang a run, while still letting it exceed ``max_backoff`` (which
+#: caps only blind exponential backoff). codex §9 P2.
+_RETRY_AFTER_HARD_CAP: float = 600.0
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """A transient airlock failure worth retrying: an HTTP **429** (rate-limit) or
     **5xx** (proxy/upstream hiccup), or a connection-level :class:`URLError`. A 4xx
@@ -67,6 +74,34 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code == 429 or 500 <= exc.code < 600
     return isinstance(exc, urllib.error.URLError)
+
+
+def _retry_after_seconds(exc: BaseException) -> "float | None":
+    """Extract the cooldown the server asked us to wait, or ``None``.
+
+    The airlock provider-protection 429 says ``Retry after N seconds`` (its quarantine
+    cooldown) in the body, and may also set a ``Retry-After`` header. Honoring it is
+    REQUIRED to escape the quarantine RE-ARM spiral: a short blind retry re-observes
+    the 429, which resets ``quarantine_until = now+300`` — so a sequential run can
+    never outlast it. Sleeping the stated cooldown (once) lets the quarantine DRAIN
+    untouched, then the retry succeeds. Returns seconds (float) or ``None``."""
+    import re
+    import urllib.error
+
+    if not isinstance(exc, urllib.error.HTTPError):
+        return None
+    hdr = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
+    if hdr:
+        try:
+            return float(hdr)
+        except (TypeError, ValueError):
+            pass
+    try:
+        body = exc.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — body may be unreadable; fall back to backoff
+        return None
+    m = re.search(r"[Rr]etry after (\d+(?:\.\d+)?) ?seconds?", body)
+    return float(m.group(1)) if m else None
 
 
 class CostTrackingAnswerer(AirlockAnswerer):
@@ -139,7 +174,20 @@ class CostTrackingAnswerer(AirlockAnswerer):
                 break
             except Exception as exc:  # noqa: BLE001 - classify; retry only the transient ones
                 if attempt < self._max_retries and _is_retryable(exc):
-                    delay = min(self._backoff_base * (2.0**attempt), self._max_backoff)
+                    # Honor a server-stated cooldown (airlock quarantine "Retry after N
+                    # seconds") so we wait the quarantine OUT instead of re-arming it with
+                    # blind short retries. A server-stated cooldown must NOT be clamped by
+                    # max_backoff — that cap bounds only BLIND exponential backoff; clamping
+                    # an explicit 300s quarantine to a default 30s cap retries early and
+                    # re-arms the spiral for every caller that did not raise max_backoff
+                    # (codex §9 P2). Bound it only by a generous absolute ceiling so a
+                    # pathological Retry-After cannot hang the run. Fall back to exponential
+                    # backoff (still max_backoff-capped) when no cooldown is stated.
+                    cooldown = _retry_after_seconds(exc)
+                    if cooldown is not None:
+                        delay = min(cooldown + 5.0, _RETRY_AFTER_HARD_CAP)
+                    else:
+                        delay = min(self._backoff_base * (2.0**attempt), self._max_backoff)
                     with self._lock:
                         self.n_retries += 1
                         jitter = self._jitter.uniform(0.0, self._backoff_base)

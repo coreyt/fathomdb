@@ -73,6 +73,9 @@ dev/plans/runs/0.8.2-m1-verdict-*.checkpoint.json
 dev/plans/runs/0.8.3-d0a-*.checkpoint.json
 # 0.8.3 D0b parity-run checkpoint sidecars (runtime resume-state, not deliverables)
 dev/plans/runs/0.8.3-d0b-*.checkpoint.json
+# 0.8.3 rerank-tune raw CE-pass cache (per-query pools, ~6MB intermediate; the
+# tune .json + FINDINGS.md are the deliverables)
+dev/plans/runs/0.8.3-rerank-tune*.ce-pass.json
 
 # 0.8.3 Slice 15a — raw codex/full-run TUI logs (verbose diff dumps; concise records committed instead)
 dev/plans/runs/0.8.3-s15a-*review-*.log

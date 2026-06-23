@@ -1,0 +1,3545 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /tmp/fdb-slice-10-20260621T221212Z
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019eec87-3f8a-77e1-b0e5-87239dfa8da5
+--------
+user
+changes against 'a8ccb0da519937544064f06b09f2983db4ca4645'
+exec
+/bin/bash -lc 'ls && (cat MEMORY.md 2>/dev/null || true) && ls feedback_*.md 2>/dev/null' in /tmp/fdb-slice-10-20260621T221212Z
+ exited 2 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+site
+src
+test
+tests
+tools
+
+exec
+/bin/bash -lc "find .. -maxdepth 2 -name 'MEMORY.md' -o -name 'feedback_*.md' | sort" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-ModemManager.service-k2DxwF’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-fwupd.service-PlQjJs’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-systemd-logind.service-0NaI3i’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-power-profiles-daemon.service-N6dwdO’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-systemd-oomd.service-cv4zGD’: Permission denied
+find: ‘../containers-user-1001’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-colord.service-zCPFhx’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-upower.service-sCQBYB’: Permission denied
+find: ‘../snap-private-tmp’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-systemd-resolved.service-mp60Xw’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-polkit.service-zb5Cvj’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-systemd-timesyncd.service-ujDZ2R’: Permission denied
+find: ‘../systemd-private-7018a4a3654c41328eca837a10fd1f05-switcheroo-control.service-2icrTq’: Permission denied
+
+exec
+/bin/bash -lc 'git status --short && git diff --stat a8ccb0da519937544064f06b09f2983db4ca4645 && git diff --name-only a8ccb0da519937544064f06b09f2983db4ca4645' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+ .gitignore                                |   2 +
+ dev/design/0.8.3-slice-10-design.md       |  98 +++++
+ dev/plans/runs/0.8.3-d0b-cheapval.json    | 286 +++++++++++++
+ dev/plans/runs/0.8.3-d0b-pilot.json       | 286 +++++++++++++
+ dev/plans/runs/0.8.3-report.md            |  62 +++
+ dev/plans/runs/0.8.3-slice-10-output.json |  72 ++++
+ dev/plans/runs/STATUS-0.8.3.md            |  46 +++
+ src/python/eval/d0b_parity_run.py         | 657 ++++++++++++++++++++++++++++++
+ src/python/eval/r2_parity_eval.py         |  22 +-
+ src/python/tests/test_d0b_parity_run.py   | 297 ++++++++++++++
+ 10 files changed, 1827 insertions(+), 1 deletion(-)
+.gitignore
+dev/design/0.8.3-slice-10-design.md
+dev/plans/runs/0.8.3-d0b-cheapval.json
+dev/plans/runs/0.8.3-d0b-pilot.json
+dev/plans/runs/0.8.3-report.md
+dev/plans/runs/0.8.3-slice-10-output.json
+dev/plans/runs/STATUS-0.8.3.md
+src/python/eval/d0b_parity_run.py
+src/python/eval/r2_parity_eval.py
+src/python/tests/test_d0b_parity_run.py
+
+exec
+/bin/bash -lc 'git diff a8ccb0da519937544064f06b09f2983db4ca4645 -- src/python/eval/d0b_parity_run.py src/python/eval/r2_parity_eval.py src/python/tests/test_d0b_parity_run.py .gitignore' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+diff --git a/.gitignore b/.gitignore
+index 8b8862fe..03ad53f3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -71,3 +71,5 @@ credentials.*
+ dev/plans/runs/0.8.2-m1-verdict-*.checkpoint.json
+ # 0.8.3 D0a gold re-pin checkpoint sidecar (per-class augmentation resume-state)
+ dev/plans/runs/0.8.3-d0a-*.checkpoint.json
++# 0.8.3 D0b parity-run checkpoint sidecars (runtime resume-state, not deliverables)
++dev/plans/runs/0.8.3-d0b-*.checkpoint.json
+diff --git a/src/python/eval/d0b_parity_run.py b/src/python/eval/d0b_parity_run.py
+new file mode 100644
+index 00000000..5a21959b
+--- /dev/null
++++ b/src/python/eval/d0b_parity_run.py
+@@ -0,0 +1,657 @@
++"""0.8.3 D0b — per-class FathomDB − {Mem0, Graphiti/Zep, naive-RAG} parity runner.
++
++THE TARGET (design `0.8.3-mem0-parity.md` §2/§4): per memory class, the external
++``FathomDB − {mem0_oss, graphiti_zep, naive_rag}`` delta on **(a) strict full-gold
++Recall@K (LLM-free, $0)** and **(b) identical-answerer accuracy (PRICED)**, each with
++a paired 95% CI + a per-class paired MDE, on the re-pinned power-sized gold
++(``repin_hash 2916cace``). The accuracy deltas feed the frozen
++:func:`eval.decision_rule_083.decide_083` → REACHED / NOT_REACHED + per-class gap.
++
++Resilience ([[priced-runs-need-resilience-before-spend]]) — REUSES
++``m1_verdict_run``'s proven mechanisms, never a hand-rolled weaker one:
++
++* :func:`eval.m1_verdict_run._atomic_write_json` — temp-file + ``os.replace`` atomic
++  checkpoint; a kill mid-write can never corrupt the live sidecar.
++* :func:`eval.m1_verdict_run._resolve_resume` — auto-resume ON BY DEFAULT from the
++  ``<output>.checkpoint.json`` sidecar; a relaunch reuses every persisted ``(qid,arm)``
++  answer cell (key-present incl. ``None`` = a real abstention, reused; absent = a prior
++  failure, re-called) → zero re-spend.
++* The answerer is :class:`eval.m1_baseline_run.CostTrackingAnswerer` — exponential
++  backoff over transient 429/5xx; a cell fails only after ``max_retries`` are exhausted.
++* **failure ≠ abstention**: a retry-exhausted cell is MISSING (absent key), counted in
++  ``n_errors``, never persisted as a scored ``None`` (which would deflate the arm).
++* **completeness validity guard**: a pass is citable only at completeness ≥
++  :data:`VALID_COMPLETENESS_FLOOR`; below it the run is flagged INVALID.
++
++The only priced seam is the shared answerer (the R2 identical-answerer invariant);
++retrieval / recall / scoring / bootstrap is $0. Pure helpers (``paired_*`` /
++``class_delta`` / ``per_class_delta_table`` / ``external_per_class_for_decide`` /
++``answer_completeness``) are import-light + backend-free so the unit tests run with
++fake adapters + a fake answerer (no DB, no LLM, no ``mem0``).
++"""
++
++from __future__ import annotations
++
++import argparse
++import math
++import os
++import time
++from pathlib import Path
++from typing import Any, Mapping, Optional, Sequence
++
++from eval.decision_rule_083 import MEMORY_CLASSES, decide_083
++from eval.m1_power_sim import _percentile_ci_high, _percentile_ci_low
++from eval.m1_verdict_run import _atomic_write_json, _resolve_resume
++from eval.r2_parity_eval import (
++    BaseAnswerer,
++    GoldQuery,
++    PerClassScorer,
++    load_repin_gold,
++)
++
++# --------------------------------------------------------------------------- #
++# Frozen arm wiring (design §3).
++# --------------------------------------------------------------------------- #
++
++#: The treatment arm whose gap to every comparator is THE deliverable.
++TREATMENT_ARM = "fathomdb"
++#: The external comparators (design §3); Graphiti/Zep is the 2nd comparator (a
++#: recorded blocker, not a hard dependency, if its local stand-up is intractable).
++COMPARATOR_ARMS: tuple[str, ...] = ("mem0_oss", "graphiti_zep", "naive_rag")
++#: The full arm order reported (treatment first).
++ALL_ARMS: tuple[str, ...] = (TREATMENT_ARM, *COMPARATOR_ARMS)
++
++#: The priced reader (design §3) + the ~$0 cheap-validate reader. The airlock proxy
++#: serves these exact ids (verified at stand-up).
++STRONG_READER_DEFAULT = os.environ.get("D0B_STRONG_READER", "gpt-5.4")
++CHEAP_READER_DEFAULT = os.environ.get("D0B_CHEAP_READER", "gemini-flash-lite")
++
++#: Minimum answer-matrix completeness for a priced pass to be a citable verdict
++#: (mirrors ``m1_verdict_run.VALID_COMPLETENESS_FLOOR``).
++VALID_COMPLETENESS_FLOOR = 0.97
++
++#: Default paired-bootstrap resample count for the CI (deterministic given seed).
++DEFAULT_N_BOOT = 2000
++
++#: Normal-approx paired MDE z-multipliers: two-sided α=0.05 + 80% power.
++_Z_975 = 1.959963984540054
++_Z_80 = 0.8416212335729143
++
++
++# --------------------------------------------------------------------------- #
++# Pure stats helpers (backend-free; the TDD core).
++# --------------------------------------------------------------------------- #
++
++
++def paired_metric_deltas(
++    records: Sequence[Mapping[str, Any]],
++    *,
++    metric: str,
++    treatment: str,
++    comparator: str,
++    cls: str,
++) -> list[float]:
++    """Per-question paired ``treatment − comparator`` deltas for ``metric`` in ``cls``.
++
++    ``metric`` is ``"recall"`` or ``"acc"``. A question contributes a paired delta
++    ONLY when both arms carry a non-``None`` value for that metric on it — so a
++    missing/failed answerer cell (absent key) or an arm that did not run is excluded
++    from the paired sample (it cannot fabricate a 0 delta)."""
++    deltas: list[float] = []
++    for r in records:
++        if r.get("reporting_class") != cls:
++            continue
++        m = r.get(metric) or {}
++        tv = m.get(treatment)
++        cv = m.get(comparator)
++        if tv is not None and cv is not None:
++            deltas.append(float(tv) - float(cv))
++    return deltas
++
++
++def class_delta(deltas: Sequence[float], *, n_boot: int = DEFAULT_N_BOOT, seed: int = 0) -> dict[str, Any]:
++    """``{point, ci_lo, ci_hi, mde, n}`` for a paired-delta sample.
++
++    ``point`` = mean; ``ci_lo/ci_hi`` = percentile paired bootstrap (reuses the m1
++    helpers, seed-deterministic); ``mde`` = normal-approx paired minimum detectable
++    effect ``(z.975+z.80)·sd/√n`` (the §5 power quantity the rule gates on). ``n`` =
++    sample size. n==0 → all-``None``; n==1 → degenerate point CI, mde ``None``."""
++    import numpy as np
++
++    n = len(deltas)
++    if n == 0:
++        return {"point": None, "ci_lo": None, "ci_hi": None, "mde": None, "n": 0}
++    arr = np.asarray(deltas, dtype=float)
++    point = float(arr.mean())
++    if n == 1:
++        return {"point": round(point, 6), "ci_lo": round(point, 6), "ci_hi": round(point, 6), "mde": None, "n": 1}
++    rng = np.random.default_rng(seed)
++    lo = _percentile_ci_low(arr, rng, n_boot=n_boot)
++    hi = _percentile_ci_high(arr, rng, n_boot=n_boot)
++    sd = float(arr.std(ddof=1))
++    mde = (_Z_975 + _Z_80) * sd / math.sqrt(n)
++    return {
++        "point": round(point, 6),
++        "ci_lo": round(lo, 6),
++        "ci_hi": round(hi, 6),
++        "mde": round(mde, 6),
++        "n": n,
++    }
++
++
++def per_class_delta_table(
++    records: Sequence[Mapping[str, Any]],
++    *,
++    metric: str,
++    comparators: Sequence[str] = COMPARATOR_ARMS,
++    classes: Sequence[str] = MEMORY_CLASSES,
++    treatment: str = TREATMENT_ARM,
++    n_boot: int = DEFAULT_N_BOOT,
++    seed: int = 0,
++) -> dict[str, dict[str, dict[str, Any]]]:
++    """``{comparator: {class: class_delta}}`` for one ``metric`` over every class."""
++    out: dict[str, dict[str, dict[str, Any]]] = {}
++    for comp in comparators:
++        out[comp] = {}
++        for cls in classes:
++            d = paired_metric_deltas(
++                records, metric=metric, treatment=treatment, comparator=comp, cls=cls
++            )
++            out[comp][cls] = class_delta(d, n_boot=n_boot, seed=seed)
++    return out
++
++
++def external_per_class_for_decide(
++    acc_delta_table: Mapping[str, Mapping[str, Mapping[str, Any]]],
++    *,
++    comparator: str = "mem0_oss",
++    classes: Sequence[str] = MEMORY_CLASSES,
++) -> dict[str, dict[str, float]]:
++    """Build the :func:`decide_083` input from the ACCURACY ``fathomdb − <comparator>``
++    deltas (the priced gate; design §4).
++
++    ``decide_083`` requires a finite ``{point, ci_lo, ci_hi, mde}`` + int ``n`` for
++    every :data:`MEMORY_CLASSES` entry. A class with no usable delta (n==0/1 → mde
++    ``None`` — e.g. the comparator arm did not run) cannot be fed; raise loudly so the
++    caller records a blocker rather than fabricate a verdict."""
++    table = acc_delta_table.get(comparator, {})
++    ext: dict[str, dict[str, float]] = {}
++    for cls in classes:
++        cd = table.get(cls)
++        if cd is None or cd.get("point") is None or cd.get("mde") is None:
++            n = cd.get("n") if cd else "missing"
++            raise ValueError(
++                f"cannot build decide_083 input: class {cls!r} has no usable "
++                f"{comparator!r} accuracy delta (n={n}) — record a blocker, do not "
++                "fabricate a verdict"
++            )
++        ext[cls] = {
++            "point": float(cd["point"]),
++            "ci_lo": float(cd["ci_lo"]),
++            "ci_hi": float(cd["ci_hi"]),
++            "mde": float(cd["mde"]),
++            "n": int(cd["n"]),
++        }
++    return ext
++
++
++def project_full_cost(
++    *,
++    prompt_tokens: int,
++    completion_tokens: int,
++    n_calls: int,
++    price_in_per_1m: float,
++    price_out_per_1m: float,
++    n_questions_full: int,
++    n_priced_arms: int,
++    context_token_budget: Optional[int] = None,
++    overhead_tokens: int = 60,
++) -> dict[str, Any]:
++    """$0 linear cost projection from a measured pilot (the phase-gate number).
++
++    The answerer cost is input-token-dominated (long session bodies in context). Model
++    per-call prompt tokens as ``overhead_tokens`` (template+question) + the context
++    tokens, the latter capped at ``context_token_budget`` (the window-fit lever) when
++    given. ``projected_full_usd`` = per-call cost × ``n_questions_full`` ×
++    ``n_priced_arms`` (the full priced matrix). Pure arithmetic; no LLM call."""
++    n_calls = max(n_calls, 1)
++    avg_prompt = prompt_tokens / n_calls
++    avg_comp = completion_tokens / n_calls
++    ctx_tokens = max(avg_prompt - overhead_tokens, 0.0)
++    if context_token_budget is not None:
++        ctx_tokens = min(ctx_tokens, float(context_token_budget))
++    proj_prompt = overhead_tokens + ctx_tokens
++    cost_per_call = proj_prompt / 1e6 * price_in_per_1m + avg_comp / 1e6 * price_out_per_1m
++    full_calls = n_questions_full * n_priced_arms
++    return {
++        "context_token_budget": context_token_budget,
++        "projected_prompt_tokens_per_call": round(proj_prompt, 1),
++        "cost_per_call_usd": round(cost_per_call, 6),
++        "projected_full_calls": full_calls,
++        "projected_full_usd": round(cost_per_call * full_calls, 2),
++    }
++
++
++def answer_completeness(
++    records: Sequence[Mapping[str, Any]],
++    *,
++    arms: Sequence[str],
++    n_errors: int,
++    floor: float = VALID_COMPLETENESS_FLOOR,
++) -> dict[str, Any]:
++    """Completeness validity guard: fraction of expected answerer cells that did NOT
++    fail. Expected = number of ``(question-with-answers, retrieving-arm)`` cells.
++
++    ``n_errors`` is the retry-exhausted failure count (from the answerer). Below
++    ``floor`` the matrix is materially incomplete (a class endpoint is under-populated)
++    → ``run_valid=False`` (relaunch auto-resumes only the missing cells)."""
++    expected = sum(1 for r in records if r.get("has_answers") for _ in arms)
++    completeness = round(1.0 - n_errors / max(expected, 1), 4)
++    return {
++        "expected_calls": expected,
++        "n_errors": int(n_errors),
++        "completeness": completeness,
++        "floor": floor,
++        "run_valid": completeness >= floor,
++    }
++
++
++def resume_map(prior: Mapping[str, Any]) -> dict[tuple[str, str], Optional[str]]:
++    """``(qid, arm) -> answer`` from a prior checkpoint's ``records``.
++
++    Membership (not value-non-``None``) is the reuse signal: a key-present ``None`` is
++    a legitimate prior abstention (reused, scored, no re-call); an ABSENT key is a
++    prior failure (re-called). Empty map → a full from-scratch pass."""
++    out: dict[tuple[str, str], Optional[str]] = {}
++    for r in prior.get("records") or []:
++        qid = r.get("qid")
++        if qid is None:
++            continue
++        for arm, ans in (r.get("answers") or {}).items():
++            out[(str(qid), str(arm))] = ans
++    return out
++
++
++# --------------------------------------------------------------------------- #
++# The resilient run loop.
++# --------------------------------------------------------------------------- #
++
++
++def _select_subset(queries: Sequence[GoldQuery], *, per_class: int, classes: Sequence[str]) -> list[GoldQuery]:
++    """Stable per-class subset (cheap-validate / pilot): the first ``per_class``
++    queries of each class, in gold order — spans all classes, deterministic."""
++    out: list[GoldQuery] = []
++    for cls in classes:
++        out += [q for q in queries if q.reporting_class == cls][:per_class]
++    return out
++
++
++def fit_context(bodies: Sequence[str], budget_chars: Optional[int]) -> list[str]:
++    """Window-fit the answerer context to a total ``budget_chars`` cap
++    ([[priced-runs-need-resilience-before-spend]] — window-fit/chunk + the priced-cost
++    lever). Bodies are added in retrieval-rank order until the budget is reached; the
++    body that crosses it is truncated to the remaining budget (≥1 doc always kept).
++    Applied IDENTICALLY across every arm, so the R2 same-context-budget invariant
++    holds (any delta stays retrieval, not a per-arm context advantage). ``None`` /
++    non-positive budget = no truncation."""
++    if not budget_chars or budget_chars <= 0:
++        return list(bodies)
++    out: list[str] = []
++    used = 0
++    for b in bodies:
++        if used >= budget_chars:
++            break
++        remaining = budget_chars - used
++        if len(b) <= remaining:
++            out.append(b)
++            used += len(b)
++        else:
++            out.append(b[:remaining])
++            used = budget_chars
++            break
++    if not out and bodies:  # always keep at least the top doc (truncated)
++        out = [bodies[0][:budget_chars]]
++    return out
++
++
++def run_d0b(
++    *,
++    mode: str,
++    reader: str,
++    output: Path,
++    queries: Optional[Sequence[GoldQuery]] = None,
++    gold_path: Optional[Path] = None,
++    adapters: Optional[Mapping[str, Any]] = None,
++    answerer: Optional[BaseAnswerer] = None,
++    k: int = 10,
++    n_boot: int = DEFAULT_N_BOOT,
++    seed: int = 0,
++    per_class: Optional[int] = None,
++    checkpoint_path: Optional[Path] = None,
++    checkpoint_every: int = 10,
++    resume: Optional[Path] = None,
++    max_usd: float = 1.0,
++    eu7_recall: float = 0.896,
++    latency_ok: bool = True,
++    classes: Sequence[str] = MEMORY_CLASSES,
++    context_char_budget: Optional[int] = None,
++    on_progress: Optional[Any] = None,
++) -> dict[str, Any]:
++    """Run the D0b parity matrix resiliently and emit the per-class deltas + verdict.
++
++    ``adapters`` maps arm-name → an object exposing ``retrieve(question, k) -> [Hit]``
++    (inject fakes in tests / the live adapters from the CLI). ``answerer`` is the shared
++    :class:`BaseAnswerer` (inject a fake in tests / ``CostTrackingAnswerer`` from the
++    CLI). When omitted, ``queries`` is loaded from ``gold_path`` — but ``adapters`` /
++    ``answerer`` must always be supplied (this function builds no backend)."""
++    t0 = time.time()
++    if adapters is None:
++        raise ValueError("run_d0b requires `adapters` (the per-arm retrieve seam)")
++    if answerer is None:
++        raise ValueError("run_d0b requires `answerer` (the shared identical-answerer seam)")
++    if queries is None:
++        if gold_path is None:
++            raise ValueError("run_d0b requires `queries` or `gold_path`")
++        _ch, _qv, queries = load_repin_gold(gold_path)
++
++    if mode in ("cheap", "pilot") and per_class is not None:
++        queries = _select_subset(queries, per_class=per_class, classes=classes)
++
++    arms = [a for a in ALL_ARMS if a in adapters]
++    scorer = PerClassScorer()
++    answerer_available = bool(getattr(answerer, "available", False))
++
++    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
++    prior = _resolve_resume(output, resume, ckpt_path)
++    rmap: dict[tuple[str, str], Optional[str]] = {}
++    if prior is not None and prior.exists():
++        import json
++
++        rmap = resume_map(json.loads(prior.read_text(encoding="utf-8")))
++        print(
++            f"[D0b][AUTO-RESUME] reusing {len(rmap)} persisted (qid,arm) answer cells "
++            f"from {prior} (absent cells re-called; zero re-spend on reused)",
++            flush=True,
++        )
++
++    def _usd() -> float:
++        fn = getattr(answerer, "usd", None)
++        return float(fn()) if callable(fn) else 0.0
++
++    records: list[dict[str, Any]] = []
++    n_errors = 0
++    aborted_for_cap = False
++
++    def _checkpoint() -> None:
++        _atomic_write_json(ckpt_path, {"records": records, "mode": mode, "reader": reader})
++
++    for i, q in enumerate(queries, start=1):
++        rec: dict[str, Any] = {
++            "qid": q.query_id,
++            "reporting_class": q.reporting_class,
++            "gold": list(q.gold_doc_ids),
++            "has_answers": bool(q.answers),
++            "recall": {},
++            "answers": {},
++            "acc": {},
++        }
++        for arm in arms:
++            hits = adapters[arm].retrieve(q.question, k)
++            if q.gold_doc_ids:
++                retrieved = {h.doc_id for h in hits}
++                rec["recall"][arm] = 1.0 if all(g in retrieved for g in q.gold_doc_ids) else 0.0
++            if answerer_available and q.answers:
++                key = (q.query_id, arm)
++                if key in rmap:
++                    ans = rmap[key]  # reuse (incl. a None abstention) — $0
++                else:
++                    ctx = fit_context([h.body for h in hits if h.body], context_char_budget)
++                    try:
++                        ans = answerer.answer(q.question, ctx)
++                    except Exception:  # noqa: BLE001 — retry-exhausted = a MISSING cell
++                        n_errors += 1
++                        continue  # absent key → re-called on the next resume; not scored
++                rec["answers"][arm] = ans
++                rec["acc"][arm] = scorer.score_answer(list(q.answers), ans)
++        records.append(rec)
++
++        if i % checkpoint_every == 0 or i == len(queries):
++            _checkpoint()
++        if on_progress is not None:
++            on_progress(i, len(queries), _usd())
++        if answerer_available and _usd() > max_usd:
++            aborted_for_cap = True
++            _checkpoint()
++            print(
++                f"[D0b][CAP] spend ${_usd():.4f} exceeded hard cap ${max_usd} at "
++                f"question {i}/{len(queries)} — stopping (checkpoint saved; resume to continue)",
++                flush=True,
++            )
++            break
++
++    recall_table = per_class_delta_table(
++        records, metric="recall", comparators=COMPARATOR_ARMS, classes=classes, n_boot=n_boot, seed=seed
++    )
++    acc_table = (
++        per_class_delta_table(
++            records, metric="acc", comparators=COMPARATOR_ARMS, classes=classes, n_boot=n_boot, seed=seed
++        )
++        if answerer_available
++        else None
++    )
++
++    comp = answer_completeness(records, arms=arms, n_errors=n_errors)
++
++    decide_result: Any = None
++    decide_error: Optional[str] = None
++    if acc_table is not None:
++        try:
++            ext = external_per_class_for_decide(acc_table, comparator="mem0_oss", classes=classes)
++            decide_result = decide_083(ext, eu7_recall=eu7_recall, latency_ok=latency_ok)
++        except Exception as exc:  # noqa: BLE001 — record, do not crash the run
++            decide_error = str(exc)
++
++    cost_fn = getattr(answerer, "cost_block", None)
++    cost_block = cost_fn() if callable(cost_fn) else {"model": reader, "usd": _usd()}
++    cost_block.setdefault("n_errors", n_errors)
++
++    art: dict[str, Any] = {
++        "schema": "0.8.3-d0b-parity-v1",
++        "mode": mode,
++        "reader_model": reader,
++        "k": k,
++        "context_char_budget": context_char_budget,
++        "n_boot": n_boot,
++        "seed": seed,
++        "arms_run": arms,
++        "n_questions": len(records),
++        "n_per_class": {cls: sum(1 for r in records if r["reporting_class"] == cls) for cls in classes},
++        "treatment_arm": TREATMENT_ARM,
++        "comparator_arms": list(COMPARATOR_ARMS),
++        "recall_deltas": recall_table,
++        "accuracy_deltas": acc_table,
++        "decide_083": decide_result,
++        "decide_083_error": decide_error,
++        "answer_completeness": comp,
++        "run_valid": comp["run_valid"] and not aborted_for_cap,
++        "aborted_for_cap": aborted_for_cap,
++        "cost": cost_block,
++        "elapsed_s": round(time.time() - t0, 1),
++    }
++
++    output.parent.mkdir(parents=True, exist_ok=True)
++    import json
++
++    output.write_text(json.dumps(art, indent=2), encoding="utf-8")
++    print(
++        f"[D0b][{mode.upper()}] wrote {output} | {len(records)} Q, arms={arms}, "
++        f"${_usd():.4f}, completeness={comp['completeness']}, "
++        f"decide={(decide_result or {}).get('verdict') if decide_result else decide_error}",
++        flush=True,
++    )
++    return art
++
++
++# --------------------------------------------------------------------------- #
++# Live document / adapter stand-up (CLI only — not exercised by the unit tests).
++# --------------------------------------------------------------------------- #
++
++
++def build_documents_from_lme(
++    queries: Sequence[GoldQuery],
++    *,
++    dataset: str = "xiaowu0162/longmemeval-cleaned",
++    split: str = "oracle",
++    distractor_cap: int = 0,
++) -> dict[str, str]:
++    """Load LME sessions and restrict to the gold-relevant sessions of ``queries``
++    (footprint + Mem0 per-``add()`` cost), optionally padded with up to
++    ``distractor_cap`` extra sessions for retrieval realism. CLI-only."""
++    from eval.r2_parity_eval import load_longmemeval, session_id_of
++
++    documents, _q = load_longmemeval(dataset, split)
++    gold_sessions = {session_id_of(g) for q in queries for g in q.gold_doc_ids}
++    out: dict[str, str] = {sid: documents[sid] for sid in gold_sessions if sid in documents}
++    if distractor_cap > 0:
++        for sid in documents:
++            if sid in out:
++                continue
++            out[sid] = documents[sid]
++            if len(out) >= len(gold_sessions) + distractor_cap:
++                break
++    return out
++
++
++def build_live_adapters(
++    documents: dict[str, str],
++    *,
++    want_fathomdb: bool = True,
++    want_mem0: bool = True,
++    want_graphiti: bool = True,
++    db_path: str = "/tmp/d0b-fathomdb.sqlite",
++) -> tuple[dict[str, Any], list[dict[str, str]]]:
++    """Best-effort live adapter stand-up. Returns ``(adapters, blockers)``; a backend
++    that cannot stand up is a recorded blocker, never a crash (Graphiti especially —
++    2nd comparator, design §3). naive_rag is always available (pure-Python BM25)."""
++    from eval.r2_parity_eval import NaiveRAGAdapter
++
++    adapters: dict[str, Any] = {"naive_rag": NaiveRAGAdapter(documents)}
++    blockers: list[dict[str, str]] = []
++
++    if want_fathomdb:
++        from eval.r2_parity_eval import _build_fathomdb
++
++        fdb, blk = _build_fathomdb(documents, Path(db_path))
++        if fdb is not None:
++            adapters["fathomdb"] = fdb
++        if blk is not None:
++            blockers.append(blk)
++
++    if want_mem0:
++        from eval.r2_parity_eval import Mem0OSSAdapter
++
++        mem0 = Mem0OSSAdapter.try_build()
++        if mem0 is not None and mem0.available:
++            try:
++                mem0.ingest(documents)
++                adapters["mem0_oss"] = mem0
++            except Exception as exc:  # noqa: BLE001
++                blockers.append({"id": "mem0-ingest-failed", "description": f"mem0.ingest failed: {exc}"})
++        else:
++            blockers.append(
++                {
++                    "id": "mem0-oss-unavailable",
++                    "description": "mem0ai/backend not importable; install mem0ai+chromadb+sentence-transformers into the ISOLATED env",
++                }
++            )
++
++    if want_graphiti:
++        try:
++            from eval.graphiti_local import build_graphiti_adapter  # type: ignore[import-not-found]
++
++            g = build_graphiti_adapter(documents)
++            if g is not None:
++                adapters["graphiti_zep"] = g
++            else:
++                blockers.append({"id": "graphiti-zep-unavailable", "description": "graphiti adapter returned None"})
++        except Exception as exc:  # noqa: BLE001 — Graphiti is the 2nd comparator (not a hard dep)
++            blockers.append(
++                {
++                    "id": "graphiti-zep-unavailable",
++                    "description": f"Graphiti/Zep local stand-up not available ({exc}); running the gap with the arms present",
++                }
++            )
++
++    return adapters, blockers
++
++
++def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
++    import json
++
++    from eval.m1_baseline_run import CostTrackingAnswerer
++
++    ap = argparse.ArgumentParser(description="0.8.3 D0b parity runner (cheap-validate / pilot / full)")
++    ap.add_argument("--mode", choices=["cheap", "pilot", "full"], required=True)
++    ap.add_argument("--reader", default=None)
++    ap.add_argument("--gold", default="dev/plans/runs/0.8.3-d0a-memory-gold.json")
++    ap.add_argument("--output", required=True)
++    ap.add_argument("--k", type=int, default=10)
++    ap.add_argument("--context-char-budget", type=int, default=None,
++                    help="window-fit cap on total answerer context chars (priced-cost lever; "
++                    "applied identically across arms)")
++    ap.add_argument("--per-class", type=int, default=None, help="cheap/pilot per-class subset size")
++    ap.add_argument("--distractor-cap", type=int, default=0)
++    ap.add_argument("--max-usd", type=float, default=1.0)
++    ap.add_argument("--checkpoint", default=None)
++    ap.add_argument("--checkpoint-every", type=int, default=10)
++    ap.add_argument("--resume", default=None)
++    ap.add_argument("--no-fathomdb", action="store_true")
++    ap.add_argument("--no-mem0", action="store_true")
++    ap.add_argument("--no-graphiti", action="store_true")
++    ap.add_argument("--blockers-out", default=None)
++    args = ap.parse_args(argv)
++
++    reader = args.reader or (CHEAP_READER_DEFAULT if args.mode == "cheap" else STRONG_READER_DEFAULT)
++    _ch, _qv, queries = load_repin_gold(Path(args.gold))
++    if args.mode in ("cheap", "pilot") and args.per_class:
++        queries = _select_subset(queries, per_class=args.per_class, classes=MEMORY_CLASSES)
++
++    documents = build_documents_from_lme(queries, distractor_cap=args.distractor_cap)
++    print(f"[D0b][CLI] {len(queries)} queries, {len(documents)} sessions in corpus", flush=True)
++    adapters, blockers = build_live_adapters(
++        documents,
++        want_fathomdb=not args.no_fathomdb,
++        want_mem0=not args.no_mem0,
++        want_graphiti=not args.no_graphiti,
++    )
++    print(f"[D0b][CLI] adapters: {sorted(adapters)} | blockers: {[b['id'] for b in blockers]}", flush=True)
++    answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
++    if not answerer.available:
++        raise SystemExit(f"[D0b][STOP] answerer {reader!r} unavailable — do not fake answers")
++
++    art = run_d0b(
++        mode=args.mode,
++        reader=reader,
++        output=Path(args.output),
++        queries=queries,
++        adapters=adapters,
++        answerer=answerer,
++        k=args.k,
++        checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
++        checkpoint_every=args.checkpoint_every,
++        resume=Path(args.resume) if args.resume else None,
++        max_usd=args.max_usd,
++        context_char_budget=args.context_char_budget,
++        on_progress=lambda i, n, usd: print(f"[D0b][{args.mode}] {i}/{n} ${usd:.4f}", flush=True)
++        if (i == 1 or i % 5 == 0 or i == n)
++        else None,
++    )
++    art["blockers_encountered"] = blockers
++    Path(args.output).write_text(json.dumps(art, indent=2), encoding="utf-8")
++    if args.blockers_out:
++        Path(args.blockers_out).write_text(json.dumps(blockers, indent=2), encoding="utf-8")
++    return 0
++
++
++if __name__ == "__main__":  # pragma: no cover
++    raise SystemExit(main())
+diff --git a/src/python/eval/r2_parity_eval.py b/src/python/eval/r2_parity_eval.py
+index 71ef7bff..162c9b67 100644
+--- a/src/python/eval/r2_parity_eval.py
++++ b/src/python/eval/r2_parity_eval.py
+@@ -469,7 +469,27 @@ class Mem0OSSAdapter:
+     def retrieve(self, question: str, k: int) -> list[Hit]:
+         if self._memory is None:
+             raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+-        res = self._memory.search(query=question, user_id=self._user_id, limit=k)
++        # mem0's search() API drifted across versions: ≤1.x took ``user_id=`` +
++        # ``limit=``; 2.x rejects a top-level ``user_id`` (raises ValueError) and
++        # renamed ``limit`` → ``top_k``, scoping the user via ``filters={'user_id':…}``
++        # + a ``threshold`` cutoff. Introspect the bound method's signature and build
++        # the right kwargs so the adapter is version-robust (and the fake-backend
++        # conformance test, which keeps the ≤1.x shape, still passes).
++        import inspect
++
++        try:
++            params = inspect.signature(self._memory.search).parameters
++        except (TypeError, ValueError):
++            params = {}
++        kwargs: dict[str, Any] = {"query": question}
++        if "filters" in params:
++            kwargs["filters"] = {"user_id": self._user_id}
++        else:
++            kwargs["user_id"] = self._user_id
++        kwargs["top_k" if "top_k" in params else "limit"] = k
++        if "threshold" in params:
++            kwargs["threshold"] = 0.0  # return the top-k regardless of similarity floor
++        res = self._memory.search(**kwargs)
+         items = res.get("results", res) if isinstance(res, dict) else res
+         hits: list[Hit] = []
+         for item in items:
+diff --git a/src/python/tests/test_d0b_parity_run.py b/src/python/tests/test_d0b_parity_run.py
+new file mode 100644
+index 00000000..70ea5298
+--- /dev/null
++++ b/src/python/tests/test_d0b_parity_run.py
+@@ -0,0 +1,297 @@
++"""Slice 10 (0.8.3 / D0b) — per-class parity runner: deltas+CIs, resilient resume,
++decide_083 wiring, completeness guard. Backend-free: fake adapters + fake answerer
++(no DB, no LLM, no ``mem0``, no ``fathomdb`` extension build).
++
++Proves the resilience preconditions BEFORE any spend ([[priced-runs-need-resilience
++-before-spend]]): an atomic checkpoint per ≤10 cells, an auto-resume that reuses prior
++cells on a kill/restart (re-calling only ABSENT cells), failure ≠ abstention, and a
++completeness validity guard that rejects an incomplete matrix.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Optional
++
++import pytest
++
++from eval.d0b_parity_run import (
++    ALL_ARMS,
++    COMPARATOR_ARMS,
++    answer_completeness,
++    class_delta,
++    external_per_class_for_decide,
++    fit_context,
++    paired_metric_deltas,
++    project_full_cost,
++    resume_map,
++    run_d0b,
++)
++from eval.decision_rule_083 import MEMORY_CLASSES
++from eval.r2_parity_eval import BaseAnswerer, GoldQuery, Hit
++
++
++# --------------------------------------------------------------------------- #
++# Fakes — no backend.
++# --------------------------------------------------------------------------- #
++class _FakeAdapter:
++    """Returns a fixed hit list per question; deterministic."""
++
++    def __init__(self, name: str, hits_by_q: dict[str, list[Hit]]) -> None:
++        self.name = name
++        self._h = hits_by_q
++
++    def retrieve(self, question: str, k: int) -> list[Hit]:
++        return list(self._h.get(question, []))[:k]
++
++
++class _FakeAnswerer(BaseAnswerer):
++    """Deterministic answerer: returns a per-question scripted answer keyed by the
++    FIRST context body (so different arms' contexts yield different answers)."""
++
++    model_id = "fake-answerer-v1"
++
++    def __init__(self, script: dict[str, Optional[str]]) -> None:
++        self.script = script
++        self.n_calls = 0
++
++    @property
++    def available(self) -> bool:
++        return True
++
++    def answer(self, question: str, context: list[str]) -> Optional[str]:
++        self.n_calls += 1
++        key = context[0] if context else ""
++        return self.script.get(key)
++
++
++class _FlakyAnswerer(_FakeAnswerer):
++    """Raises on a designated set of (call-content) keys to simulate retry-exhausted
++    failures (failure ≠ abstention)."""
++
++    def __init__(self, script: dict[str, Optional[str]], fail_keys: set[str]) -> None:
++        super().__init__(script)
++        self.fail_keys = set(fail_keys)
++
++    def answer(self, question: str, context: list[str]) -> Optional[str]:
++        key = context[0] if context else ""
++        if key in self.fail_keys:
++            raise RuntimeError("simulated retry-exhausted 429")
++        return super().answer(question, context)
++
++
++def _gold(qid: str, cls: str, gold_ids: tuple[str, ...], answers: tuple[str, ...]) -> GoldQuery:
++    return GoldQuery(query_id=qid, question=f"q-{qid}", reporting_class=cls, answers=answers, gold_doc_ids=gold_ids)
++
++
++# --------------------------------------------------------------------------- #
++# Pure stats helpers.
++# --------------------------------------------------------------------------- #
++def test_paired_metric_deltas_excludes_missing_and_off_class() -> None:
++    recs = [
++        {"reporting_class": "factoid", "recall": {"fathomdb": 1.0, "mem0_oss": 0.0}},
++        {"reporting_class": "factoid", "recall": {"fathomdb": 1.0}},  # missing comparator -> excluded
++        {"reporting_class": "temporal", "recall": {"fathomdb": 0.0, "mem0_oss": 1.0}},  # off-class
++    ]
++    d = paired_metric_deltas(recs, metric="recall", treatment="fathomdb", comparator="mem0_oss", cls="factoid")
++    assert d == [1.0]
++
++
++def test_class_delta_point_ci_mde_and_degenerate_sizes() -> None:
++    empty = class_delta([])
++    assert empty == {"point": None, "ci_lo": None, "ci_hi": None, "mde": None, "n": 0}
++    one = class_delta([0.5])
++    assert one["n"] == 1 and one["point"] == 0.5 and one["mde"] is None
++    many = class_delta([1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0], n_boot=500, seed=0)
++    assert many["n"] == 8
++    assert many["ci_lo"] <= many["point"] <= many["ci_hi"]
++    assert many["mde"] is not None and many["mde"] > 0.0
++
++
++def test_class_delta_is_deterministic_given_seed() -> None:
++    s = [1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]
++    assert class_delta(s, n_boot=400, seed=0) == class_delta(s, n_boot=400, seed=0)
++
++
++def test_external_per_class_for_decide_raises_on_unusable_class() -> None:
++    table = {"mem0_oss": {c: class_delta([0.1] * 6, n_boot=200) for c in MEMORY_CLASSES}}
++    ext = external_per_class_for_decide(table, comparator="mem0_oss")
++    assert set(ext) == set(MEMORY_CLASSES)
++    # drop one class to n=0 -> must raise (no fabricated verdict)
++    table["mem0_oss"]["temporal"] = class_delta([])
++    with pytest.raises(ValueError):
++        external_per_class_for_decide(table, comparator="mem0_oss")
++
++
++# --------------------------------------------------------------------------- #
++# Completeness validity guard.
++# --------------------------------------------------------------------------- #
++def test_fit_context_window_fits_to_budget() -> None:
++    bodies = ["aaaa", "bbbb", "cccc"]  # 12 chars total
++    assert fit_context(bodies, None) == bodies  # no cap
++    assert fit_context(bodies, 0) == bodies  # non-positive = no cap
++    assert fit_context(bodies, 100) == bodies  # budget exceeds total
++    # budget 6 chars: full "aaaa" (4) + 2 chars of "bbbb"
++    assert fit_context(bodies, 6) == ["aaaa", "bb"]
++    # budget smaller than the first doc: always keep >=1 doc (truncated)
++    assert fit_context(bodies, 2) == ["aa"]
++    assert fit_context([], 5) == []
++
++
++def test_project_full_cost_scales_with_budget_and_arms() -> None:
++    # measured pilot: 36 calls, 773409 prompt tok, 500 completion, gpt-5.4 @ (1.25,5.00)
++    full = project_full_cost(
++        prompt_tokens=773409, completion_tokens=500, n_calls=36,
++        price_in_per_1m=1.25, price_out_per_1m=5.00,
++        n_questions_full=606, n_priced_arms=3,
++    )
++    assert full["projected_full_calls"] == 1818
++    assert full["projected_full_usd"] > 40.0  # full-body k=10 blows the $20 budget
++    # a window-fit context budget brings it down monotonically
++    capped = project_full_cost(
++        prompt_tokens=773409, completion_tokens=500, n_calls=36,
++        price_in_per_1m=1.25, price_out_per_1m=5.00,
++        n_questions_full=606, n_priced_arms=3, context_token_budget=8000,
++    )
++    assert capped["projected_full_usd"] < full["projected_full_usd"]
++    assert capped["projected_full_usd"] <= 20.0  # the ≤$20 path
++
++
++def test_completeness_guard_rejects_incomplete_matrix() -> None:
++    recs = [{"has_answers": True} for _ in range(10)]
++    arms = ["fathomdb", "mem0_oss", "naive_rag"]  # expected = 30 cells
++    ok = answer_completeness(recs, arms=arms, n_errors=0)
++    assert ok["run_valid"] is True and ok["completeness"] == 1.0
++    bad = answer_completeness(recs, arms=arms, n_errors=3)  # 27/30 = 0.9 < 0.97
++    assert bad["run_valid"] is False and bad["completeness"] == 0.9
++
++
++# --------------------------------------------------------------------------- #
++# resume_map membership semantics (key-present None reused; absent re-called).
++# --------------------------------------------------------------------------- #
++def test_resume_map_membership_semantics() -> None:
++    prior = {"records": [{"qid": "a", "answers": {"fathomdb": "x", "mem0_oss": None}}]}
++    m = resume_map(prior)
++    assert ("a", "fathomdb") in m and m[("a", "fathomdb")] == "x"
++    assert ("a", "mem0_oss") in m and m[("a", "mem0_oss")] is None  # abstention reused
++    assert ("a", "naive_rag") not in m  # absent -> re-called
++
++
++# --------------------------------------------------------------------------- #
++# End-to-end runner: deltas + CI + decide_083 emitted across all arms.
++# --------------------------------------------------------------------------- #
++def _build_full_fixture() -> tuple[list[GoldQuery], dict[str, _FakeAdapter], _FakeAnswerer]:
++    queries: list[GoldQuery] = []
++    hits: dict[str, dict[str, list[Hit]]] = {a: {} for a in ALL_ARMS}
++    script: dict[str, Optional[str]] = {}
++    for cls in MEMORY_CLASSES:
++        for j in range(4):
++            qid = f"{cls}-{j}"
++            gid = f"g-{qid}"
++            q = _gold(qid, cls, (gid,), (f"ans-{qid}",))
++            queries.append(q)
++            # fathomdb retrieves gold (recall 1) + a body that yields the right answer
++            hits["fathomdb"][q.question] = [Hit(doc_id=gid, body=f"body-fdb-{qid}", score=1.0)]
++            script[f"body-fdb-{qid}"] = f"ans-{qid}"  # correct
++            # mem0 retrieves a wrong doc (recall 0) + a body that yields a wrong answer
++            hits["mem0_oss"][q.question] = [Hit(doc_id=f"wrong-{qid}", body=f"body-mem0-{qid}", score=0.5)]
++            script[f"body-mem0-{qid}"] = "nope"
++            # graphiti retrieves gold (recall 1), correct answer
++            hits["graphiti_zep"][q.question] = [Hit(doc_id=gid, body=f"body-gz-{qid}", score=0.9)]
++            script[f"body-gz-{qid}"] = f"ans-{qid}"
++            # naive retrieves gold half the time
++            nid = gid if j % 2 == 0 else f"wrong-{qid}"
++            hits["naive_rag"][q.question] = [Hit(doc_id=nid, body=f"body-nr-{qid}", score=0.4)]
++            script[f"body-nr-{qid}"] = f"ans-{qid}" if j % 2 == 0 else "nope"
++    adapters = {a: _FakeAdapter(a, hits[a]) for a in ALL_ARMS}
++    return queries, adapters, _FakeAnswerer(script)
++
++
++def test_run_d0b_emits_per_class_deltas_cis_and_decide(tmp_path: Path) -> None:
++    queries, adapters, answerer = _build_full_fixture()
++    out = tmp_path / "d0b.json"
++    art = run_d0b(
++        mode="full", reader="fake", output=out, queries=queries,
++        adapters=adapters, answerer=answerer, n_boot=300, checkpoint_every=10,
++    )
++    assert art["arms_run"] == list(ALL_ARMS)
++    # recall + accuracy delta tables for every comparator x every class
++    for table_key in ("recall_deltas", "accuracy_deltas"):
++        tbl = art[table_key]
++        for comp in COMPARATOR_ARMS:
++            for cls in MEMORY_CLASSES:
++                cd = tbl[comp][cls]
++                assert cd["n"] == 4
++                assert cd["point"] is not None and cd["ci_lo"] is not None and cd["ci_hi"] is not None
++    # fathomdb beats mem0 on accuracy (1.0 - 0.0 = 1.0) for every class
++    for cls in MEMORY_CLASSES:
++        assert art["accuracy_deltas"]["mem0_oss"][cls]["point"] == 1.0
++    # decide_083 ran and emitted a mechanical verdict + per-class facts
++    dec = art["decide_083"]
++    assert dec is not None and dec["verdict"] in ("REACHED", "NOT_REACHED")
++    assert set(dec["per_class"]) == set(MEMORY_CLASSES)
++    assert art["run_valid"] is True
++
++
++# --------------------------------------------------------------------------- #
++# RESILIENCE: kill + restart reuses prior cells, re-calls only absent ones.
++# --------------------------------------------------------------------------- #
++def test_resume_reuses_prior_cells_and_recalls_only_absent(tmp_path: Path) -> None:
++    queries, adapters, _ = _build_full_fixture()
++    out = tmp_path / "d0b.json"
++    ckpt = out.with_suffix(".checkpoint.json")
++
++    # Pass 1: a flaky answerer that FAILS every naive_rag cell -> those cells are
++    # MISSING (absent), counted as errors, never persisted as a scored abstention.
++    script = _build_full_fixture()[2].script
++    fail_keys = {b for b in script if b.startswith("body-nr-")}
++    flaky = _FlakyAnswerer(script, fail_keys=fail_keys)
++    run_d0b(mode="full", reader="fake", output=out, queries=queries,
++            adapters=adapters, answerer=flaky, n_boot=200, checkpoint_every=2)
++    persisted = json.loads(ckpt.read_text())
++    rmap = resume_map(persisted)
++    # naive_rag cells absent (failed); fathomdb/mem0/graphiti present.
++    assert not any(arm == "naive_rag" for (_q, arm) in rmap)
++    assert any(arm == "fathomdb" for (_q, arm) in rmap)
++    n_reused_before = len(rmap)
++
++    # Pass 2 (restart): a healthy answerer with a call counter. Auto-resume must
++    # reuse every persisted cell and re-call ONLY the absent naive_rag cells.
++    healthy = _FakeAnswerer(script)
++    art2 = run_d0b(mode="full", reader="fake", output=out, queries=queries,
++                   adapters=adapters, answerer=healthy, n_boot=200, checkpoint_every=2)
++    # exactly the 16 naive_rag cells were (re)called this pass — zero re-spend on reused.
++    assert healthy.n_calls == 16
++    assert n_reused_before == 48  # 16 q x 3 healthy arms
++    # the run is now complete + valid; naive_rag accuracy delta now populated.
++    assert art2["run_valid"] is True
++    assert art2["accuracy_deltas"]["naive_rag"]["factoid"]["n"] == 4
++
++
++def test_failure_is_not_a_scored_abstention(tmp_path: Path) -> None:
++    queries, adapters, _ = _build_full_fixture()
++    out = tmp_path / "d0b.json"
++    script = _build_full_fixture()[2].script
++    fail_keys = {b for b in script if b.startswith("body-mem0-")}
++    flaky = _FlakyAnswerer(script, fail_keys=fail_keys)
++    art = run_d0b(mode="full", reader="fake", output=out, queries=queries,
++                  adapters=adapters, answerer=flaky, n_boot=200, checkpoint_every=5)
++    # mem0 answerer cells all failed -> MISSING, so the accuracy delta has n=0
++    # (NOT scored as 16 zeros), and completeness flags the run invalid.
++    assert art["accuracy_deltas"]["mem0_oss"]["factoid"]["n"] == 0
++    assert art["answer_completeness"]["run_valid"] is False
++    assert art["run_valid"] is False
++    # decide_083 cannot run on an unusable mem0 class -> recorded error, not a crash.
++    assert art["decide_083"] is None and art["decide_083_error"]
++
++
++def test_atomic_checkpoint_written_every_n(tmp_path: Path) -> None:
++    queries, adapters, answerer = _build_full_fixture()
++    out = tmp_path / "d0b.json"
++    ckpt = out.with_suffix(".checkpoint.json")
++    run_d0b(mode="full", reader="fake", output=out, queries=queries,
++            adapters=adapters, answerer=answerer, n_boot=100, checkpoint_every=4)
++    assert ckpt.exists()
++    data = json.loads(ckpt.read_text())
++    assert len(data["records"]) == 16  # final flush persists all
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/python/eval/d0b_parity_run.py && sed -n '260,560p' src/python/eval/d0b_parity_run.py && sed -n '560,720p' src/python/eval/d0b_parity_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+"""0.8.3 D0b — per-class FathomDB − {Mem0, Graphiti/Zep, naive-RAG} parity runner.
+
+THE TARGET (design `0.8.3-mem0-parity.md` §2/§4): per memory class, the external
+``FathomDB − {mem0_oss, graphiti_zep, naive_rag}`` delta on **(a) strict full-gold
+Recall@K (LLM-free, $0)** and **(b) identical-answerer accuracy (PRICED)**, each with
+a paired 95% CI + a per-class paired MDE, on the re-pinned power-sized gold
+(``repin_hash 2916cace``). The accuracy deltas feed the frozen
+:func:`eval.decision_rule_083.decide_083` → REACHED / NOT_REACHED + per-class gap.
+
+Resilience ([[priced-runs-need-resilience-before-spend]]) — REUSES
+``m1_verdict_run``'s proven mechanisms, never a hand-rolled weaker one:
+
+* :func:`eval.m1_verdict_run._atomic_write_json` — temp-file + ``os.replace`` atomic
+  checkpoint; a kill mid-write can never corrupt the live sidecar.
+* :func:`eval.m1_verdict_run._resolve_resume` — auto-resume ON BY DEFAULT from the
+  ``<output>.checkpoint.json`` sidecar; a relaunch reuses every persisted ``(qid,arm)``
+  answer cell (key-present incl. ``None`` = a real abstention, reused; absent = a prior
+  failure, re-called) → zero re-spend.
+* The answerer is :class:`eval.m1_baseline_run.CostTrackingAnswerer` — exponential
+  backoff over transient 429/5xx; a cell fails only after ``max_retries`` are exhausted.
+* **failure ≠ abstention**: a retry-exhausted cell is MISSING (absent key), counted in
+  ``n_errors``, never persisted as a scored ``None`` (which would deflate the arm).
+* **completeness validity guard**: a pass is citable only at completeness ≥
+  :data:`VALID_COMPLETENESS_FLOOR`; below it the run is flagged INVALID.
+
+The only priced seam is the shared answerer (the R2 identical-answerer invariant);
+retrieval / recall / scoring / bootstrap is $0. Pure helpers (``paired_*`` /
+``class_delta`` / ``per_class_delta_table`` / ``external_per_class_for_decide`` /
+``answer_completeness``) are import-light + backend-free so the unit tests run with
+fake adapters + a fake answerer (no DB, no LLM, no ``mem0``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import time
+from pathlib import Path
+from typing import Any, Mapping, Optional, Sequence
+
+from eval.decision_rule_083 import MEMORY_CLASSES, decide_083
+from eval.m1_power_sim import _percentile_ci_high, _percentile_ci_low
+from eval.m1_verdict_run import _atomic_write_json, _resolve_resume
+from eval.r2_parity_eval import (
+    BaseAnswerer,
+    GoldQuery,
+    PerClassScorer,
+    load_repin_gold,
+)
+
+# --------------------------------------------------------------------------- #
+# Frozen arm wiring (design §3).
+# --------------------------------------------------------------------------- #
+
+#: The treatment arm whose gap to every comparator is THE deliverable.
+TREATMENT_ARM = "fathomdb"
+#: The external comparators (design §3); Graphiti/Zep is the 2nd comparator (a
+#: recorded blocker, not a hard dependency, if its local stand-up is intractable).
+COMPARATOR_ARMS: tuple[str, ...] = ("mem0_oss", "graphiti_zep", "naive_rag")
+#: The full arm order reported (treatment first).
+ALL_ARMS: tuple[str, ...] = (TREATMENT_ARM, *COMPARATOR_ARMS)
+
+#: The priced reader (design §3) + the ~$0 cheap-validate reader. The airlock proxy
+#: serves these exact ids (verified at stand-up).
+STRONG_READER_DEFAULT = os.environ.get("D0B_STRONG_READER", "gpt-5.4")
+CHEAP_READER_DEFAULT = os.environ.get("D0B_CHEAP_READER", "gemini-flash-lite")
+
+#: Minimum answer-matrix completeness for a priced pass to be a citable verdict
+#: (mirrors ``m1_verdict_run.VALID_COMPLETENESS_FLOOR``).
+VALID_COMPLETENESS_FLOOR = 0.97
+
+#: Default paired-bootstrap resample count for the CI (deterministic given seed).
+DEFAULT_N_BOOT = 2000
+
+#: Normal-approx paired MDE z-multipliers: two-sided α=0.05 + 80% power.
+_Z_975 = 1.959963984540054
+_Z_80 = 0.8416212335729143
+
+
+# --------------------------------------------------------------------------- #
+# Pure stats helpers (backend-free; the TDD core).
+# --------------------------------------------------------------------------- #
+
+
+def paired_metric_deltas(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    metric: str,
+    treatment: str,
+    comparator: str,
+    cls: str,
+) -> list[float]:
+    """Per-question paired ``treatment − comparator`` deltas for ``metric`` in ``cls``.
+
+    ``metric`` is ``"recall"`` or ``"acc"``. A question contributes a paired delta
+    ONLY when both arms carry a non-``None`` value for that metric on it — so a
+    missing/failed answerer cell (absent key) or an arm that did not run is excluded
+    from the paired sample (it cannot fabricate a 0 delta)."""
+    deltas: list[float] = []
+    for r in records:
+        if r.get("reporting_class") != cls:
+            continue
+        m = r.get(metric) or {}
+        tv = m.get(treatment)
+        cv = m.get(comparator)
+        if tv is not None and cv is not None:
+            deltas.append(float(tv) - float(cv))
+    return deltas
+
+
+def class_delta(deltas: Sequence[float], *, n_boot: int = DEFAULT_N_BOOT, seed: int = 0) -> dict[str, Any]:
+    """``{point, ci_lo, ci_hi, mde, n}`` for a paired-delta sample.
+
+    ``point`` = mean; ``ci_lo/ci_hi`` = percentile paired bootstrap (reuses the m1
+    helpers, seed-deterministic); ``mde`` = normal-approx paired minimum detectable
+    effect ``(z.975+z.80)·sd/√n`` (the §5 power quantity the rule gates on). ``n`` =
+    sample size. n==0 → all-``None``; n==1 → degenerate point CI, mde ``None``."""
+    import numpy as np
+
+    n = len(deltas)
+    if n == 0:
+        return {"point": None, "ci_lo": None, "ci_hi": None, "mde": None, "n": 0}
+    arr = np.asarray(deltas, dtype=float)
+    point = float(arr.mean())
+    if n == 1:
+        return {"point": round(point, 6), "ci_lo": round(point, 6), "ci_hi": round(point, 6), "mde": None, "n": 1}
+    rng = np.random.default_rng(seed)
+    lo = _percentile_ci_low(arr, rng, n_boot=n_boot)
+    hi = _percentile_ci_high(arr, rng, n_boot=n_boot)
+    sd = float(arr.std(ddof=1))
+    mde = (_Z_975 + _Z_80) * sd / math.sqrt(n)
+    return {
+        "point": round(point, 6),
+        "ci_lo": round(lo, 6),
+        "ci_hi": round(hi, 6),
+        "mde": round(mde, 6),
+        "n": n,
+    }
+
+
+def per_class_delta_table(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    metric: str,
+    comparators: Sequence[str] = COMPARATOR_ARMS,
+    classes: Sequence[str] = MEMORY_CLASSES,
+    treatment: str = TREATMENT_ARM,
+    n_boot: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """``{comparator: {class: class_delta}}`` for one ``metric`` over every class."""
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for comp in comparators:
+        out[comp] = {}
+        for cls in classes:
+            d = paired_metric_deltas(
+                records, metric=metric, treatment=treatment, comparator=comp, cls=cls
+            )
+            out[comp][cls] = class_delta(d, n_boot=n_boot, seed=seed)
+    return out
+
+
+def external_per_class_for_decide(
+    acc_delta_table: Mapping[str, Mapping[str, Mapping[str, Any]]],
+    *,
+    comparator: str = "mem0_oss",
+    classes: Sequence[str] = MEMORY_CLASSES,
+) -> dict[str, dict[str, float]]:
+    """Build the :func:`decide_083` input from the ACCURACY ``fathomdb − <comparator>``
+    deltas (the priced gate; design §4).
+
+    ``decide_083`` requires a finite ``{point, ci_lo, ci_hi, mde}`` + int ``n`` for
+    every :data:`MEMORY_CLASSES` entry. A class with no usable delta (n==0/1 → mde
+    ``None`` — e.g. the comparator arm did not run) cannot be fed; raise loudly so the
+    caller records a blocker rather than fabricate a verdict."""
+    table = acc_delta_table.get(comparator, {})
+    ext: dict[str, dict[str, float]] = {}
+    for cls in classes:
+        cd = table.get(cls)
+        if cd is None or cd.get("point") is None or cd.get("mde") is None:
+            n = cd.get("n") if cd else "missing"
+            raise ValueError(
+                f"cannot build decide_083 input: class {cls!r} has no usable "
+                f"{comparator!r} accuracy delta (n={n}) — record a blocker, do not "
+                "fabricate a verdict"
+            )
+        ext[cls] = {
+            "point": float(cd["point"]),
+            "ci_lo": float(cd["ci_lo"]),
+            "ci_hi": float(cd["ci_hi"]),
+            "mde": float(cd["mde"]),
+            "n": int(cd["n"]),
+        }
+    return ext
+
+
+def project_full_cost(
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    n_calls: int,
+    price_in_per_1m: float,
+    price_out_per_1m: float,
+    n_questions_full: int,
+    n_priced_arms: int,
+    context_token_budget: Optional[int] = None,
+    overhead_tokens: int = 60,
+) -> dict[str, Any]:
+    """$0 linear cost projection from a measured pilot (the phase-gate number).
+
+    The answerer cost is input-token-dominated (long session bodies in context). Model
+    per-call prompt tokens as ``overhead_tokens`` (template+question) + the context
+    tokens, the latter capped at ``context_token_budget`` (the window-fit lever) when
+    given. ``projected_full_usd`` = per-call cost × ``n_questions_full`` ×
+    ``n_priced_arms`` (the full priced matrix). Pure arithmetic; no LLM call."""
+    n_calls = max(n_calls, 1)
+    avg_prompt = prompt_tokens / n_calls
+    avg_comp = completion_tokens / n_calls
+    ctx_tokens = max(avg_prompt - overhead_tokens, 0.0)
+    if context_token_budget is not None:
+        ctx_tokens = min(ctx_tokens, float(context_token_budget))
+    proj_prompt = overhead_tokens + ctx_tokens
+    cost_per_call = proj_prompt / 1e6 * price_in_per_1m + avg_comp / 1e6 * price_out_per_1m
+    full_calls = n_questions_full * n_priced_arms
+    return {
+        "context_token_budget": context_token_budget,
+        "projected_prompt_tokens_per_call": round(proj_prompt, 1),
+        "cost_per_call_usd": round(cost_per_call, 6),
+        "projected_full_calls": full_calls,
+        "projected_full_usd": round(cost_per_call * full_calls, 2),
+    }
+
+
+def answer_completeness(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    arms: Sequence[str],
+    n_errors: int,
+    floor: float = VALID_COMPLETENESS_FLOOR,
+) -> dict[str, Any]:
+    """Completeness validity guard: fraction of expected answerer cells that did NOT
+    fail. Expected = number of ``(question-with-answers, retrieving-arm)`` cells.
+
+    ``n_errors`` is the retry-exhausted failure count (from the answerer). Below
+    ``floor`` the matrix is materially incomplete (a class endpoint is under-populated)
+    → ``run_valid=False`` (relaunch auto-resumes only the missing cells)."""
+    expected = sum(1 for r in records if r.get("has_answers") for _ in arms)
+    completeness = round(1.0 - n_errors / max(expected, 1), 4)
+    return {
+        "expected_calls": expected,
+        "n_errors": int(n_errors),
+        "completeness": completeness,
+        "floor": floor,
+        "run_valid": completeness >= floor,
+    }
+
+
+def resume_map(prior: Mapping[str, Any]) -> dict[tuple[str, str], Optional[str]]:
+    """``(qid, arm) -> answer`` from a prior checkpoint's ``records``.
+    """``(qid, arm) -> answer`` from a prior checkpoint's ``records``.
+
+    Membership (not value-non-``None``) is the reuse signal: a key-present ``None`` is
+    a legitimate prior abstention (reused, scored, no re-call); an ABSENT key is a
+    prior failure (re-called). Empty map → a full from-scratch pass."""
+    out: dict[tuple[str, str], Optional[str]] = {}
+    for r in prior.get("records") or []:
+        qid = r.get("qid")
+        if qid is None:
+            continue
+        for arm, ans in (r.get("answers") or {}).items():
+            out[(str(qid), str(arm))] = ans
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# The resilient run loop.
+# --------------------------------------------------------------------------- #
+
+
+def _select_subset(queries: Sequence[GoldQuery], *, per_class: int, classes: Sequence[str]) -> list[GoldQuery]:
+    """Stable per-class subset (cheap-validate / pilot): the first ``per_class``
+    queries of each class, in gold order — spans all classes, deterministic."""
+    out: list[GoldQuery] = []
+    for cls in classes:
+        out += [q for q in queries if q.reporting_class == cls][:per_class]
+    return out
+
+
+def fit_context(bodies: Sequence[str], budget_chars: Optional[int]) -> list[str]:
+    """Window-fit the answerer context to a total ``budget_chars`` cap
+    ([[priced-runs-need-resilience-before-spend]] — window-fit/chunk + the priced-cost
+    lever). Bodies are added in retrieval-rank order until the budget is reached; the
+    body that crosses it is truncated to the remaining budget (≥1 doc always kept).
+    Applied IDENTICALLY across every arm, so the R2 same-context-budget invariant
+    holds (any delta stays retrieval, not a per-arm context advantage). ``None`` /
+    non-positive budget = no truncation."""
+    if not budget_chars or budget_chars <= 0:
+        return list(bodies)
+    out: list[str] = []
+    used = 0
+    for b in bodies:
+        if used >= budget_chars:
+            break
+        remaining = budget_chars - used
+        if len(b) <= remaining:
+            out.append(b)
+            used += len(b)
+        else:
+            out.append(b[:remaining])
+            used = budget_chars
+            break
+    if not out and bodies:  # always keep at least the top doc (truncated)
+        out = [bodies[0][:budget_chars]]
+    return out
+
+
+def run_d0b(
+    *,
+    mode: str,
+    reader: str,
+    output: Path,
+    queries: Optional[Sequence[GoldQuery]] = None,
+    gold_path: Optional[Path] = None,
+    adapters: Optional[Mapping[str, Any]] = None,
+    answerer: Optional[BaseAnswerer] = None,
+    k: int = 10,
+    n_boot: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+    per_class: Optional[int] = None,
+    checkpoint_path: Optional[Path] = None,
+    checkpoint_every: int = 10,
+    resume: Optional[Path] = None,
+    max_usd: float = 1.0,
+    eu7_recall: float = 0.896,
+    latency_ok: bool = True,
+    classes: Sequence[str] = MEMORY_CLASSES,
+    context_char_budget: Optional[int] = None,
+    on_progress: Optional[Any] = None,
+) -> dict[str, Any]:
+    """Run the D0b parity matrix resiliently and emit the per-class deltas + verdict.
+
+    ``adapters`` maps arm-name → an object exposing ``retrieve(question, k) -> [Hit]``
+    (inject fakes in tests / the live adapters from the CLI). ``answerer`` is the shared
+    :class:`BaseAnswerer` (inject a fake in tests / ``CostTrackingAnswerer`` from the
+    CLI). When omitted, ``queries`` is loaded from ``gold_path`` — but ``adapters`` /
+    ``answerer`` must always be supplied (this function builds no backend)."""
+    t0 = time.time()
+    if adapters is None:
+        raise ValueError("run_d0b requires `adapters` (the per-arm retrieve seam)")
+    if answerer is None:
+        raise ValueError("run_d0b requires `answerer` (the shared identical-answerer seam)")
+    if queries is None:
+        if gold_path is None:
+            raise ValueError("run_d0b requires `queries` or `gold_path`")
+        _ch, _qv, queries = load_repin_gold(gold_path)
+
+    if mode in ("cheap", "pilot") and per_class is not None:
+        queries = _select_subset(queries, per_class=per_class, classes=classes)
+
+    arms = [a for a in ALL_ARMS if a in adapters]
+    scorer = PerClassScorer()
+    answerer_available = bool(getattr(answerer, "available", False))
+
+    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
+    prior = _resolve_resume(output, resume, ckpt_path)
+    rmap: dict[tuple[str, str], Optional[str]] = {}
+    if prior is not None and prior.exists():
+        import json
+
+        rmap = resume_map(json.loads(prior.read_text(encoding="utf-8")))
+        print(
+            f"[D0b][AUTO-RESUME] reusing {len(rmap)} persisted (qid,arm) answer cells "
+            f"from {prior} (absent cells re-called; zero re-spend on reused)",
+            flush=True,
+        )
+
+    def _usd() -> float:
+        fn = getattr(answerer, "usd", None)
+        return float(fn()) if callable(fn) else 0.0
+
+    records: list[dict[str, Any]] = []
+    n_errors = 0
+    aborted_for_cap = False
+
+    def _checkpoint() -> None:
+        _atomic_write_json(ckpt_path, {"records": records, "mode": mode, "reader": reader})
+
+    for i, q in enumerate(queries, start=1):
+        rec: dict[str, Any] = {
+            "qid": q.query_id,
+            "reporting_class": q.reporting_class,
+            "gold": list(q.gold_doc_ids),
+            "has_answers": bool(q.answers),
+            "recall": {},
+            "answers": {},
+            "acc": {},
+        }
+        for arm in arms:
+            hits = adapters[arm].retrieve(q.question, k)
+            if q.gold_doc_ids:
+                retrieved = {h.doc_id for h in hits}
+                rec["recall"][arm] = 1.0 if all(g in retrieved for g in q.gold_doc_ids) else 0.0
+            if answerer_available and q.answers:
+                key = (q.query_id, arm)
+                if key in rmap:
+                    ans = rmap[key]  # reuse (incl. a None abstention) — $0
+                else:
+                    ctx = fit_context([h.body for h in hits if h.body], context_char_budget)
+                    try:
+                        ans = answerer.answer(q.question, ctx)
+                    except Exception:  # noqa: BLE001 — retry-exhausted = a MISSING cell
+                        n_errors += 1
+                        continue  # absent key → re-called on the next resume; not scored
+                rec["answers"][arm] = ans
+                rec["acc"][arm] = scorer.score_answer(list(q.answers), ans)
+        records.append(rec)
+
+        if i % checkpoint_every == 0 or i == len(queries):
+            _checkpoint()
+        if on_progress is not None:
+            on_progress(i, len(queries), _usd())
+        if answerer_available and _usd() > max_usd:
+            aborted_for_cap = True
+            _checkpoint()
+            print(
+                f"[D0b][CAP] spend ${_usd():.4f} exceeded hard cap ${max_usd} at "
+                f"question {i}/{len(queries)} — stopping (checkpoint saved; resume to continue)",
+                flush=True,
+            )
+            break
+
+    recall_table = per_class_delta_table(
+        records, metric="recall", comparators=COMPARATOR_ARMS, classes=classes, n_boot=n_boot, seed=seed
+    )
+    acc_table = (
+        per_class_delta_table(
+            records, metric="acc", comparators=COMPARATOR_ARMS, classes=classes, n_boot=n_boot, seed=seed
+        )
+        if answerer_available
+        else None
+    )
+
+    comp = answer_completeness(records, arms=arms, n_errors=n_errors)
+
+    decide_result: Any = None
+    decide_error: Optional[str] = None
+    if acc_table is not None:
+        try:
+            ext = external_per_class_for_decide(acc_table, comparator="mem0_oss", classes=classes)
+            decide_result = decide_083(ext, eu7_recall=eu7_recall, latency_ok=latency_ok)
+        except Exception as exc:  # noqa: BLE001 — record, do not crash the run
+            decide_error = str(exc)
+
+    cost_fn = getattr(answerer, "cost_block", None)
+    cost_block = cost_fn() if callable(cost_fn) else {"model": reader, "usd": _usd()}
+    cost_block.setdefault("n_errors", n_errors)
+
+    art: dict[str, Any] = {
+        "schema": "0.8.3-d0b-parity-v1",
+        "mode": mode,
+        "reader_model": reader,
+        "k": k,
+        "context_char_budget": context_char_budget,
+        "n_boot": n_boot,
+        "seed": seed,
+        "arms_run": arms,
+        "n_questions": len(records),
+        "n_per_class": {cls: sum(1 for r in records if r["reporting_class"] == cls) for cls in classes},
+        "treatment_arm": TREATMENT_ARM,
+        "comparator_arms": list(COMPARATOR_ARMS),
+        "recall_deltas": recall_table,
+        "accuracy_deltas": acc_table,
+        "decide_083": decide_result,
+        "decide_083_error": decide_error,
+        "answer_completeness": comp,
+        "run_valid": comp["run_valid"] and not aborted_for_cap,
+        "aborted_for_cap": aborted_for_cap,
+        "cost": cost_block,
+        "elapsed_s": round(time.time() - t0, 1),
+    }
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    import json
+
+    output.write_text(json.dumps(art, indent=2), encoding="utf-8")
+    print(
+        f"[D0b][{mode.upper()}] wrote {output} | {len(records)} Q, arms={arms}, "
+        f"${_usd():.4f}, completeness={comp['completeness']}, "
+        f"decide={(decide_result or {}).get('verdict') if decide_result else decide_error}",
+        flush=True,
+    )
+    return art
+
+
+# --------------------------------------------------------------------------- #
+# Live document / adapter stand-up (CLI only — not exercised by the unit tests).
+# --------------------------------------------------------------------------- #
+
+
+def build_documents_from_lme(
+    queries: Sequence[GoldQuery],
+    *,
+    dataset: str = "xiaowu0162/longmemeval-cleaned",
+    split: str = "oracle",
+    distractor_cap: int = 0,
+) -> dict[str, str]:
+    """Load LME sessions and restrict to the gold-relevant sessions of ``queries``
+    (footprint + Mem0 per-``add()`` cost), optionally padded with up to
+    ``distractor_cap`` extra sessions for retrieval realism. CLI-only."""
+    from eval.r2_parity_eval import load_longmemeval, session_id_of
+
+    documents, _q = load_longmemeval(dataset, split)
+    gold_sessions = {session_id_of(g) for q in queries for g in q.gold_doc_ids}
+    out: dict[str, str] = {sid: documents[sid] for sid in gold_sessions if sid in documents}
+    if distractor_cap > 0:
+        for sid in documents:
+            if sid in out:
+                continue
+            out[sid] = documents[sid]
+            if len(out) >= len(gold_sessions) + distractor_cap:
+                break
+    return out
+
+
+def build_live_adapters(
+    documents: dict[str, str],
+    *,
+    want_fathomdb: bool = True,
+    want_mem0: bool = True,
+    want_graphiti: bool = True,
+    db_path: str = "/tmp/d0b-fathomdb.sqlite",
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Best-effort live adapter stand-up. Returns ``(adapters, blockers)``; a backend
+    that cannot stand up is a recorded blocker, never a crash (Graphiti especially —
+    2nd comparator, design §3). naive_rag is always available (pure-Python BM25)."""
+    from eval.r2_parity_eval import NaiveRAGAdapter
+
+    adapters: dict[str, Any] = {"naive_rag": NaiveRAGAdapter(documents)}
+    blockers: list[dict[str, str]] = []
+
+    if want_fathomdb:
+        from eval.r2_parity_eval import _build_fathomdb
+
+        fdb, blk = _build_fathomdb(documents, Path(db_path))
+        if fdb is not None:
+            adapters["fathomdb"] = fdb
+        if blk is not None:
+            blockers.append(blk)
+
+    if want_mem0:
+        from eval.r2_parity_eval import Mem0OSSAdapter
+
+        mem0 = Mem0OSSAdapter.try_build()
+        if mem0 is not None and mem0.available:
+            try:
+                mem0.ingest(documents)
+                adapters["mem0_oss"] = mem0
+            except Exception as exc:  # noqa: BLE001
+                blockers.append({"id": "mem0-ingest-failed", "description": f"mem0.ingest failed: {exc}"})
+        else:
+        else:
+            blockers.append(
+                {
+                    "id": "mem0-oss-unavailable",
+                    "description": "mem0ai/backend not importable; install mem0ai+chromadb+sentence-transformers into the ISOLATED env",
+                }
+            )
+
+    if want_graphiti:
+        try:
+            from eval.graphiti_local import build_graphiti_adapter  # type: ignore[import-not-found]
+
+            g = build_graphiti_adapter(documents)
+            if g is not None:
+                adapters["graphiti_zep"] = g
+            else:
+                blockers.append({"id": "graphiti-zep-unavailable", "description": "graphiti adapter returned None"})
+        except Exception as exc:  # noqa: BLE001 — Graphiti is the 2nd comparator (not a hard dep)
+            blockers.append(
+                {
+                    "id": "graphiti-zep-unavailable",
+                    "description": f"Graphiti/Zep local stand-up not available ({exc}); running the gap with the arms present",
+                }
+            )
+
+    return adapters, blockers
+
+
+def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
+    import json
+
+    from eval.m1_baseline_run import CostTrackingAnswerer
+
+    ap = argparse.ArgumentParser(description="0.8.3 D0b parity runner (cheap-validate / pilot / full)")
+    ap.add_argument("--mode", choices=["cheap", "pilot", "full"], required=True)
+    ap.add_argument("--reader", default=None)
+    ap.add_argument("--gold", default="dev/plans/runs/0.8.3-d0a-memory-gold.json")
+    ap.add_argument("--output", required=True)
+    ap.add_argument("--k", type=int, default=10)
+    ap.add_argument("--context-char-budget", type=int, default=None,
+                    help="window-fit cap on total answerer context chars (priced-cost lever; "
+                    "applied identically across arms)")
+    ap.add_argument("--per-class", type=int, default=None, help="cheap/pilot per-class subset size")
+    ap.add_argument("--distractor-cap", type=int, default=0)
+    ap.add_argument("--max-usd", type=float, default=1.0)
+    ap.add_argument("--checkpoint", default=None)
+    ap.add_argument("--checkpoint-every", type=int, default=10)
+    ap.add_argument("--resume", default=None)
+    ap.add_argument("--no-fathomdb", action="store_true")
+    ap.add_argument("--no-mem0", action="store_true")
+    ap.add_argument("--no-graphiti", action="store_true")
+    ap.add_argument("--blockers-out", default=None)
+    args = ap.parse_args(argv)
+
+    reader = args.reader or (CHEAP_READER_DEFAULT if args.mode == "cheap" else STRONG_READER_DEFAULT)
+    _ch, _qv, queries = load_repin_gold(Path(args.gold))
+    if args.mode in ("cheap", "pilot") and args.per_class:
+        queries = _select_subset(queries, per_class=args.per_class, classes=MEMORY_CLASSES)
+
+    documents = build_documents_from_lme(queries, distractor_cap=args.distractor_cap)
+    print(f"[D0b][CLI] {len(queries)} queries, {len(documents)} sessions in corpus", flush=True)
+    adapters, blockers = build_live_adapters(
+        documents,
+        want_fathomdb=not args.no_fathomdb,
+        want_mem0=not args.no_mem0,
+        want_graphiti=not args.no_graphiti,
+    )
+    print(f"[D0b][CLI] adapters: {sorted(adapters)} | blockers: {[b['id'] for b in blockers]}", flush=True)
+    answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
+    if not answerer.available:
+        raise SystemExit(f"[D0b][STOP] answerer {reader!r} unavailable — do not fake answers")
+
+    art = run_d0b(
+        mode=args.mode,
+        reader=reader,
+        output=Path(args.output),
+        queries=queries,
+        adapters=adapters,
+        answerer=answerer,
+        k=args.k,
+        checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
+        checkpoint_every=args.checkpoint_every,
+        resume=Path(args.resume) if args.resume else None,
+        max_usd=args.max_usd,
+        context_char_budget=args.context_char_budget,
+        on_progress=lambda i, n, usd: print(f"[D0b][{args.mode}] {i}/{n} ${usd:.4f}", flush=True)
+        if (i == 1 or i % 5 == 0 or i == n)
+        else None,
+    )
+    art["blockers_encountered"] = blockers
+    Path(args.output).write_text(json.dumps(art, indent=2), encoding="utf-8")
+    if args.blockers_out:
+        Path(args.blockers_out).write_text(json.dumps(blockers, indent=2), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+
+exec
+/bin/bash -lc "nl -ba src/python/eval/d0b_parity_run.py | sed -n '220,250p;520,555p' && python -m py_compile src/python/eval/d0b_parity_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+   220	    ctx_tokens = max(avg_prompt - overhead_tokens, 0.0)
+   221	    if context_token_budget is not None:
+   222	        ctx_tokens = min(ctx_tokens, float(context_token_budget))
+   223	    proj_prompt = overhead_tokens + ctx_tokens
+   224	    cost_per_call = proj_prompt / 1e6 * price_in_per_1m + avg_comp / 1e6 * price_out_per_1m
+   225	    full_calls = n_questions_full * n_priced_arms
+   226	    return {
+   227	        "context_token_budget": context_token_budget,
+   228	        "projected_prompt_tokens_per_call": round(proj_prompt, 1),
+   229	        "cost_per_call_usd": round(cost_per_call, 6),
+   230	        "projected_full_calls": full_calls,
+   231	        "projected_full_usd": round(cost_per_call * full_calls, 2),
+   232	    }
+   233	
+   234	
+   235	def answer_completeness(
+   236	    records: Sequence[Mapping[str, Any]],
+   237	    *,
+   238	    arms: Sequence[str],
+   239	    n_errors: int,
+   240	    floor: float = VALID_COMPLETENESS_FLOOR,
+   241	) -> dict[str, Any]:
+   242	    """Completeness validity guard: fraction of expected answerer cells that did NOT
+   243	    fail. Expected = number of ``(question-with-answers, retrieving-arm)`` cells.
+   244	
+   245	    ``n_errors`` is the retry-exhausted failure count (from the answerer). Below
+   246	    ``floor`` the matrix is materially incomplete (a class endpoint is under-populated)
+   247	    → ``run_valid=False`` (relaunch auto-resumes only the missing cells)."""
+   248	    expected = sum(1 for r in records if r.get("has_answers") for _ in arms)
+   249	    completeness = round(1.0 - n_errors / max(expected, 1), 4)
+   250	    return {
+   520	            if len(out) >= len(gold_sessions) + distractor_cap:
+   521	                break
+   522	    return out
+   523	
+   524	
+   525	def build_live_adapters(
+   526	    documents: dict[str, str],
+   527	    *,
+   528	    want_fathomdb: bool = True,
+   529	    want_mem0: bool = True,
+   530	    want_graphiti: bool = True,
+   531	    db_path: str = "/tmp/d0b-fathomdb.sqlite",
+   532	) -> tuple[dict[str, Any], list[dict[str, str]]]:
+   533	    """Best-effort live adapter stand-up. Returns ``(adapters, blockers)``; a backend
+   534	    that cannot stand up is a recorded blocker, never a crash (Graphiti especially —
+   535	    2nd comparator, design §3). naive_rag is always available (pure-Python BM25)."""
+   536	    from eval.r2_parity_eval import NaiveRAGAdapter
+   537	
+   538	    adapters: dict[str, Any] = {"naive_rag": NaiveRAGAdapter(documents)}
+   539	    blockers: list[dict[str, str]] = []
+   540	
+   541	    if want_fathomdb:
+   542	        from eval.r2_parity_eval import _build_fathomdb
+   543	
+   544	        fdb, blk = _build_fathomdb(documents, Path(db_path))
+   545	        if fdb is not None:
+   546	            adapters["fathomdb"] = fdb
+   547	        if blk is not None:
+   548	            blockers.append(blk)
+   549	
+   550	    if want_mem0:
+   551	        from eval.r2_parity_eval import Mem0OSSAdapter
+   552	
+   553	        mem0 = Mem0OSSAdapter.try_build()
+   554	        if mem0 is not None and mem0.available:
+   555	            try:
+
+exec
+/bin/bash -lc "nl -ba src/python/eval/d0b_parity_run.py | sed -n '250,270p;550,575p'" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+   250	    return {
+   251	        "expected_calls": expected,
+   252	        "n_errors": int(n_errors),
+   253	        "completeness": completeness,
+   254	        "floor": floor,
+   255	        "run_valid": completeness >= floor,
+   256	    }
+   257	
+   258	
+   259	def resume_map(prior: Mapping[str, Any]) -> dict[tuple[str, str], Optional[str]]:
+   260	    """``(qid, arm) -> answer`` from a prior checkpoint's ``records``.
+   261	
+   262	    Membership (not value-non-``None``) is the reuse signal: a key-present ``None`` is
+   263	    a legitimate prior abstention (reused, scored, no re-call); an ABSENT key is a
+   264	    prior failure (re-called). Empty map → a full from-scratch pass."""
+   265	    out: dict[tuple[str, str], Optional[str]] = {}
+   266	    for r in prior.get("records") or []:
+   267	        qid = r.get("qid")
+   268	        if qid is None:
+   269	            continue
+   270	        for arm, ans in (r.get("answers") or {}).items():
+   550	    if want_mem0:
+   551	        from eval.r2_parity_eval import Mem0OSSAdapter
+   552	
+   553	        mem0 = Mem0OSSAdapter.try_build()
+   554	        if mem0 is not None and mem0.available:
+   555	            try:
+   556	                mem0.ingest(documents)
+   557	                adapters["mem0_oss"] = mem0
+   558	            except Exception as exc:  # noqa: BLE001
+   559	                blockers.append({"id": "mem0-ingest-failed", "description": f"mem0.ingest failed: {exc}"})
+   560	        else:
+   561	            blockers.append(
+   562	                {
+   563	                    "id": "mem0-oss-unavailable",
+   564	                    "description": "mem0ai/backend not importable; install mem0ai+chromadb+sentence-transformers into the ISOLATED env",
+   565	                }
+   566	            )
+   567	
+   568	    if want_graphiti:
+   569	        try:
+   570	            from eval.graphiti_local import build_graphiti_adapter  # type: ignore[import-not-found]
+   571	
+   572	            g = build_graphiti_adapter(documents)
+   573	            if g is not None:
+   574	                adapters["graphiti_zep"] = g
+   575	            else:
+
+exec
+/bin/bash -lc "grep -R \"class CostTrackingAnswerer\\|def cost_block\\|def _resolve_resume\\|def _atomic_write_json\\|class PerClassScorer\\|class GoldQuery\\|class Hit\\|class BaseAnswerer\\|class NaiveRAGAdapter\\|class Mem0OSSAdapter\" -n src/python/eval | head -80 && sed -n '1,140p' src/python/eval/r2_parity_eval.py && sed -n '430,520p' src/python/eval/r2_parity_eval.py && sed -n '1,140p' src/python/eval/m1_verdict_run.py && sed -n '1,140p' src/python/eval/m1_baseline_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+src/python/eval/r2_parity_eval.py:109:class Hit:
+src/python/eval/r2_parity_eval.py:119:class GoldQuery:
+src/python/eval/r2_parity_eval.py:138:class BaseAnswerer:
+src/python/eval/r2_parity_eval.py:366:class NaiveRAGAdapter:
+src/python/eval/r2_parity_eval.py:413:class Mem0OSSAdapter:
+src/python/eval/r2_parity_eval.py:548:class PerClassScorer:
+src/python/eval/m1_verdict_run.py:67:def _atomic_write_json(path: Path, obj: Any) -> None:
+src/python/eval/m1_verdict_run.py:81:def _resolve_resume(
+src/python/eval/m1_baseline_run.py:72:class CostTrackingAnswerer(AirlockAnswerer):
+src/python/eval/m1_baseline_run.py:161:    def cost_block(self) -> dict[str, Any]:
+"""R2 parity eval harness — identical-answerer protocol, per-class scoring.
+
+Binding spec: ``dev/adr/ADR-0.8.1-ir-measure-eval-design.md §3``. Design memo:
+``dev/design/slice-25-r2-design.md``.
+
+The load-bearing invariant (ADR §3.2): the **same answerer** (same prompt
+template, same context budget) answers questions retrieved by **all three**
+systems. Adapters expose only ``retrieve(question, k)`` — they cannot build a
+prompt — so a per-system prompt divergence is structurally impossible. The
+harness owns the single :class:`BaseAnswerer` and routes every system's context
+through it.
+
+Footprint (ADR §3.6): the answerer LLM and Mem0-OSS are **test-infra** (BYO/local,
+gated by ``R2_RUN``); FathomDB itself makes zero network calls (local SQLite).
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+from collections import defaultdict
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from fathomdb.engine import Engine
+
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+
+#: COR-2: the frozen corpus snapshot the parity numbers are pinned to.
+CORPUS_HASH_PREFIX = "fe973fcd"
+
+#: The five R2 query classes (ADR §3.4). Slice 30's go/no-go reads the middle
+#: three (``temporal``/``multi_hop``/``knowledge_update``).
+R2_CLASSES: tuple[str, ...] = (
+    "factoid",
+    "temporal",
+    "multi_hop",
+    "knowledge_update",
+    "multi_session",
+)
+
+#: Gold-set ``query_class`` → reporting class. The frozen FathomDB gold carries
+#: only ``exact_fact``/``exploratory``/``negative``; ``exact_fact`` maps onto the
+#: R2 ``factoid`` class, the other two are carried as report-only extras. The four
+#: memory classes have no gold in the frozen corpus (see the design memo §1).
+GOLD_CLASS_MAP: dict[str, str] = {
+    "exact_fact": "factoid",
+    "factoid": "factoid",
+    "exploratory": "exploratory",
+    "negative": "negative",
+    "temporal": "temporal",
+    "multi_hop": "multi_hop",
+    "knowledge_update": "knowledge_update",
+    "multi_session": "multi_session",
+    # LME entries (so _parse_gold works on LME-formatted gold files too):
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
+}
+
+#: LME question_type → R2 reporting class.
+LME_CLASS_MAP: dict[str, str] = {
+    "temporal-reasoning":            "temporal",
+    "knowledge-update":              "knowledge_update",
+    "multi-session":                 "multi_session",
+    "single-session-user":           "factoid",
+    "single-session-assistant":      "factoid",
+    "single-session-preference":     "factoid",
+    # abstention variants
+    "temporal-reasoning_abs":        "negative",
+    "knowledge-update_abs":          "negative",
+    "multi-session_abs":             "negative",
+    "single-session-user_abs":       "negative",
+    "single-session-assistant_abs":  "negative",
+    "single-session-preference_abs": "negative",
+}
+
+_R2_RUN_ENV = "R2_RUN"
+
+#: Maximum characters of a session body fed to the ELPS extractor.  LME sessions
+#: can be ~12 k chars; with max_tokens=4096 the LLM truncates mid-JSON and the
+#: extractor parse fails, eventually exhausting the Rust 300 s IO timeout and
+#: raising EngineError::Extractor.  FTS indexing uses the full body (pass 1).
+_ELPS_MAX_CHARS = 2000
+
+
+# --------------------------------------------------------------------------- #
+# Data model
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class Hit:
+    """A single retrieved candidate. ``doc_id`` is the *corpus* doc id (the join
+    key against the gold set), not an engine-internal row cursor."""
+
+    doc_id: str
+    body: str
+    score: float
+
+
+@dataclass(frozen=True)
+class GoldQuery:
+    query_id: str
+    question: str
+    reporting_class: str
+    answers: tuple[str, ...]
+    gold_doc_ids: tuple[str, ...]
+
+    @property
+    def has_answer(self) -> bool:
+        """True when an answer exists (positive query); False for the negative
+        class (no answer exists — answering it is a false positive)."""
+        return bool(self.answers) or bool(self.gold_doc_ids)
+
+
+# --------------------------------------------------------------------------- #
+# Answerer (identical across all systems)
+# --------------------------------------------------------------------------- #
+
+
+class BaseAnswerer:
+    """Shared answerer. The prompt template lives here, never on an adapter, so
+    every system answers through the identical template (ADR §3.2)."""
+    def available(self) -> bool:
+        return self._memory is not None
+
+    @staticmethod
+    def try_build() -> Optional["Mem0OSSAdapter"]:
+        """Best-effort LOCAL construction (0.8.3 Slice-5 stand-up). Returns None (not
+        raising) when ``mem0ai`` or its backend is unavailable, so the runner records
+        a clean blocker.
+
+        Uses the pinned footprint-safe local config
+        (:func:`eval.mem0_local.build_local_mem0_config`): airlock-local LLM + local
+        ``bge-small`` embedder + on-disk chroma — **never Mem0 cloud** (ADR §3.6). The
+        airlock key is read from ``R2_MEM0_API_KEY`` (falling back to
+        ``R2_ANSWERER_API_KEY``); the LLM model/base-url from ``R2_MEM0_MODEL`` /
+        ``R2_MEM0_BASE_URL`` when overriding the defaults."""
+        try:
+            from mem0 import Memory  # type: ignore[import-not-found]
+
+            from eval.mem0_local import build_local_mem0_config
+        except Exception:
+            return None
+        api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
+        kwargs: dict[str, str] = {"api_key": api_key}
+        if os.environ.get("R2_MEM0_MODEL"):
+            kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
+        if os.environ.get("R2_MEM0_BASE_URL"):
+            kwargs["base_url"] = os.environ["R2_MEM0_BASE_URL"]
+        try:
+            memory = Memory.from_config(build_local_mem0_config(**kwargs))
+        except Exception:
+            return None
+        return Mem0OSSAdapter(memory=memory)
+
+    def ingest(self, documents: dict[str, str]) -> None:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        for doc_id, body in documents.items():
+            self._memory.add(body, user_id=self._user_id, metadata={"doc_id": doc_id})
+
+    def retrieve(self, question: str, k: int) -> list[Hit]:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        # mem0's search() API drifted across versions: ≤1.x took ``user_id=`` +
+        # ``limit=``; 2.x rejects a top-level ``user_id`` (raises ValueError) and
+        # renamed ``limit`` → ``top_k``, scoping the user via ``filters={'user_id':…}``
+        # + a ``threshold`` cutoff. Introspect the bound method's signature and build
+        # the right kwargs so the adapter is version-robust (and the fake-backend
+        # conformance test, which keeps the ≤1.x shape, still passes).
+        import inspect
+
+        try:
+            params = inspect.signature(self._memory.search).parameters
+        except (TypeError, ValueError):
+            params = {}
+        kwargs: dict[str, Any] = {"query": question}
+        if "filters" in params:
+            kwargs["filters"] = {"user_id": self._user_id}
+        else:
+            kwargs["user_id"] = self._user_id
+        kwargs["top_k" if "top_k" in params else "limit"] = k
+        if "threshold" in params:
+            kwargs["threshold"] = 0.0  # return the top-k regardless of similarity floor
+        res = self._memory.search(**kwargs)
+        items = res.get("results", res) if isinstance(res, dict) else res
+        hits: list[Hit] = []
+        for item in items:
+            doc_id = str(item.get("metadata", {}).get("doc_id", item.get("id", "")))
+            hits.append(Hit(doc_id=doc_id, body=str(item.get("memory", "")), score=float(item.get("score", 0.0))))
+        return hits
+
+
+# --------------------------------------------------------------------------- #
+# Scoring
+# --------------------------------------------------------------------------- #
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+
+
+# Abstention strings treated as "no answer", computed THROUGH `_normalize` so the
+# comparison is self-consistent: `_normalize` turns "I don't know" into
+# "i don t know" (apostrophe -> space). A raw literal set like {"i dont know"}
+# silently misses the exact phrase the answerer prompt instructs the model to emit.
+_ABSTAIN: frozenset[str] = frozenset(
+    _normalize(s) for s in ("I don't know", "I dont know", "idk")
+) | {""}
+
+
+def normalize_answer(text: Optional[str]) -> Optional[str]:
+    """Raw reader answer -> ``None`` when empty or an abstention (apostrophe-safe).
+"""M1 adjudication VERDICT runner (Slice 20, stage 1) — cheap-validate + priced 5-arm pass.
+
+Budget discipline (design §8 / [[0.8.1-budget-discipline-cheap-validate-and-ledger]]):
+**cheap-validate** the 5-arm pipeline with the flash-lite reader over a tiny subset
+first; only then the **priced** 5-arm pass with the strong reader over the
+graph-covered answerable questions, **hard-capped at ~$10** (HITL-authorized stage-1
+budget on the current 299-graph). Reuses ``run_baseline`` /
+``CostTrackingAnswerer`` and the frozen ``decide()`` (imported, never redefined).
+
+The one priced seam is the shared answerer; retrieval / PPR / rerank / scoring are
+$0. Every artifact is pinned to ``musique_hash`` and never overwrites a prior run.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+from eval.m1_baseline import (
+    CHEAP_READER_DEFAULT,
+    MUSIQUE_HASH,
+    STRONG_READER_DEFAULT,
+    BGEEncoder,
+    FusedPoolReranker,
+    Question,
+)
+from eval.m1_baseline_run import CostTrackingAnswerer
+from eval.m1_verdict import (
+    VERDICT_ARMS,
+    load_graph_questions,
+    ppr_divergence,
+    prior_answers_from_artifact,
+    run_verdict,
+)
+from eval.r2_parity_eval import BaseAnswerer
+
+#: HARD stage-1 budget ceiling (USD). The HITL authorization is "~$10 on the
+#: current 299-graph". The pre-flight projection must clear this with the
+#: pilot-measured per-call cost before any priced call.
+HARD_CAP_USD = 10.0
+
+#: Pilot-measured strong-reader per (question×arm) call cost (runs/0.8.2-m1-baseline-pilot.json).
+PILOT_PER_CALL_USD = 0.00646
+
+#: Minimum answer-matrix completeness for a priced pass to be a citable verdict.
+#: Below this, too many calls degraded to abstention (endpoint outage / rate-limit)
+#: and the endpoint is deflated/biased — flag INVALID, do not report a verdict.
+VALID_COMPLETENESS_FLOOR = 0.97
+
+_DEFAULT_CORPUS = (
+    Path(__file__).resolve().parents[3] / "data" / "corpus-data" / "raw" / "musique_dev.jsonl"
+)
+_DEFAULT_EXTRACTIONS = (
+    Path(__file__).resolve().parents[3]
+    / "data" / "corpus-data" / "graph-cache" / "0.8.2-m1-v1" / "extractions.json"
+)
+
+
+def _load_extractions(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _atomic_write_json(path: Path, obj: Any) -> None:
+    """Atomically serialise ``obj`` to ``path`` (temp-file + :func:`os.replace`).
+
+    The JSON is written to a sibling ``<name>.tmp`` and ``os.replace``d into place —
+    a single atomic rename on the same filesystem. A process death **mid-write** can
+    only ever leave the (discardable) temp file partial; the live ``path`` is never a
+    half-written file (it keeps its prior contents until the rename commits). This is
+    the resilience guard for the incremental checkpoint."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _resolve_resume(
+    output: Path, resume: Optional[Path], checkpoint_path: Optional[Path]
+) -> Optional[Path]:
+    """The auto-resume source — **on by default, no manual flag required**.
+
+    Precedence: (1) an explicit ``--resume`` path (alternate source / override);
+    (2) the sidecar checkpoint this run writes — ``checkpoint_path`` if given, else
+    ``<output>.checkpoint.json`` — **auto-detected** when it already exists so any
+    relaunch (window-eviction / manual / crash) continues from it with zero re-spend;
+    (3) ``None`` → a clean from-scratch pass. Returns the path to load, or ``None``."""
+    if resume is not None:
+        return Path(resume)
+    sidecar = checkpoint_path or output.with_suffix(".checkpoint.json")
+    if sidecar.exists():
+        return sidecar
+    return None
+
+
+def run(
+    *,
+    mode: str,
+    reader: str,
+    corpus: Path,
+    extractions_path: Path,
+    output: Path,
+    k: int = 10,
+    n_boot: int = 2000,
+    seed: int = 0,
+    answer_workers: int = 4,
+    cheap_limit: int = 15,
+    max_usd: float = HARD_CAP_USD,
+    resume: Optional[Path] = None,
+    checkpoint_path: Optional[Path] = None,
+    checkpoint_every: int = 10,
+    answerer: Optional[BaseAnswerer] = None,
+    encoder: Any = None,
+    reranker: Any = None,
+    questions: Optional[list[Question]] = None,
+    extractions: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    t0 = time.time()
+    if extractions is None:
+        extractions = _load_extractions(extractions_path)
+    if questions is None:
+        questions = load_graph_questions(corpus, extractions)
+
+    # The sidecar checkpoint this run owns (resume source + atomic write target).
+    ckpt_path = checkpoint_path or output.with_suffix(".checkpoint.json")
+
+    # AUTO-RESUME (on by default — no manual flag). Detect the sidecar checkpoint (or
+    # an explicit --resume override) and reuse every already-answered (qid, arm) cell,
+    # re-calling ONLY the missing/failed cells. Any restart (eviction / manual / crash)
+    # then continues with ZERO re-spend and NO restart-from-scratch. The answerer is
+    # deterministic (temp0/seed0), so a fill-in of the missing cells is identical to a
+    # clean pass — but $0 for the cells that already succeeded.
+    prior_answers = None
+    resume_src = _resolve_resume(output, resume, ckpt_path)
+    if resume_src is not None and resume_src.exists():
+        prior = json.loads(resume_src.read_text(encoding="utf-8"))
+        prior_answers = prior_answers_from_artifact(prior)
+"""M1 strong-baseline runner (Slice 5) — cheap-validate + bounded priced pilot.
+
+Budget discipline ([[0.8.1-budget-discipline-cheap-validate-and-ledger]] / design
+§8): cheap-validate the full 4-arm pipeline with the flash-lite reader first,
+then a bounded priced pilot (HARD CAP N ≤ 100) with the strong reader to measure
+the pooled ≥3-hop baseline F1/EM **variance**, which sizes the whole-rule power
+simulation. **This runner never runs the full priced pass** — the orchestrator
+brings the projection to HITL.
+
+Every answerer call's token usage is captured so the $ is `tokens × price`, not a
+guess. The answerer LLM is the one priced seam; retrieval/rerank/scoring is $0.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import threading
+import time
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, Optional
+
+import numpy as np
+
+from eval.m1_baseline import (
+    ARM_NAMES,
+    CHEAP_READER_DEFAULT,
+    COMPARATOR_ARM,
+    MUSIQUE_HASH,
+    STRONG_READER_DEFAULT,
+    BGEEncoder,
+    FusedPoolReranker,
+    Question,
+    load_musique,
+    retrieval_recall,
+    run_baseline,
+)
+from eval.m1_power_sim import (
+    FLAT_POSITIVE_LIFT,
+    propose_material_f1_lift,
+    required_n,
+    simulate_p_go,
+)
+from eval.p0a_base_retrieval import AirlockAnswerer
+
+#: Documented price assumptions ($ per 1M tokens). The proxy does not return a
+#: price, so the projection applies this table to the *measured* token counts; it
+#: is recorded in the artifact and is the HITL-auditable lever. (gemini-3.1-pro ≈
+#: the 2.5-pro tier; flash-lite ≈ free-tier-cheap.)
+PRICE_PER_1M: dict[str, tuple[float, float]] = {
+    # model_id: (input_usd_per_1M, output_usd_per_1M)
+    "gemini-3.1-pro": (1.25, 5.00),
+    "gemini-3.1-flash-lite": (0.05, 0.20),
+    "gemini-flash-lite": (0.05, 0.20),
+}
+_DEFAULT_PRICE = (1.25, 5.00)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """A transient airlock failure worth retrying: an HTTP **429** (rate-limit) or
+    **5xx** (proxy/upstream hiccup), or a connection-level :class:`URLError`. A 4xx
+    other than 429 (e.g. 400/401) is a hard error — never retried."""
+    import urllib.error
+
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429 or 500 <= exc.code < 600
+    return isinstance(exc, urllib.error.URLError)
+
+
+class CostTrackingAnswerer(AirlockAnswerer):
+    """:class:`AirlockAnswerer` that accumulates token usage + call counts and
+    **retries transient HTTP 429 / 5xx with exponential backoff**.
+
+    The Slice-20 first priced pass was INVALIDATED by a 429 storm (``workers=10``
+    tripped the quota; every later call 429'd and degraded to an abstention,
+    deflating the ≥3-hop cell). Backoff lets a rate-limited cell recover instead of
+    being lost; a cell counts as failed only after ``max_retries`` are exhausted."""
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        timeout_s: float = 120.0,
+        max_retries: int = 4,
+        backoff_base: float = 1.0,
+        max_backoff: float = 30.0,
+        sleep: Any = time.sleep,
+    ) -> None:
+        super().__init__(model_id, timeout_s=timeout_s)
+        self.n_calls = 0
+        self.n_errors = 0
+        self.n_retries = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self._lock = threading.Lock()
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base
+        self._max_backoff = max_backoff
+        self._sleep = sleep
+        self._jitter = random.Random(0)
+
+    def _open(self, req: Any) -> Any:
+        """Seam over the raw POST (injectable in tests). Returns the urlopen ctx mgr."""
+        import urllib.request
+
+        return urllib.request.urlopen(req, timeout=self._timeout)  # noqa: S310
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        import urllib.request
+
+        from eval.r2_parity_eval import normalize_answer
+
+        payload = json.dumps(
+            {
+                "model": self.model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "seed": 0,
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url.rstrip("/") + "/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+        )
+        # Exponential backoff over transient 429 / 5xx: the initial try plus up to
+        # ``max_retries`` retries. A non-retryable error (or an exhausted budget)
+        # propagates; run_baseline's _do then counts it + degrades the cell to None.
+        attempt = 0
+        while True:
+            try:
+                with self._open(req) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                break
+            except Exception as exc:  # noqa: BLE001 - classify; retry only the transient ones
+
+exec
+/bin/bash -lc "sed -n '138,230p' src/python/eval/r2_parity_eval.py && sed -n '548,610p' src/python/eval/r2_parity_eval.py && sed -n '140,190p' src/python/eval/m1_baseline_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+class BaseAnswerer:
+    """Shared answerer. The prompt template lives here, never on an adapter, so
+    every system answers through the identical template (ADR §3.2)."""
+
+    PROMPT_TEMPLATE = (
+        "You are a precise question-answering assistant. Answer the question using "
+        "ONLY the provided context. If the context does not contain the answer, "
+        "reply with exactly: I don't know.\n\n"
+        "Context:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+    model_id: str = "<unset>"
+
+    @property
+    def available(self) -> bool:
+        """Whether this answerer can actually produce answers in this environment.
+        When False, the harness emits retrieval-only metrics (accuracy = null)."""
+        return True
+
+    def build_prompt(self, question: str, context: list[str]) -> str:
+        joined = "\n---\n".join(context) if context else "(no documents retrieved)"
+        return self.PROMPT_TEMPLATE.format(context=joined, question=question)
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        prompt = self.build_prompt(question, context)
+        return self._complete(prompt, question, context)
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        raise NotImplementedError
+
+
+class StubAnswerer(BaseAnswerer):
+    """Deterministic, LLM-free answerer for unit tests and stub runs: it echoes
+    the top retrieved passage, or abstains (``None``) when nothing was retrieved.
+    No network, no ``R2_RUN`` gate."""
+
+    model_id = "stub-deterministic-v1"
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        if not context:
+            return None
+        return context[0]
+
+
+@dataclass
+class _Record:
+    question: str
+    template: str
+    context: tuple[str, ...]
+
+
+class RecordingAnswerer(StubAnswerer):
+    """A :class:`StubAnswerer` that records every (question, template, context) it
+    is asked — used by the identical-answerer constraint test (RED-1)."""
+
+    model_id = "recording-stub-v1"
+
+    def __init__(self) -> None:
+        self.records: list[_Record] = []
+
+    def answer(self, question: str, context: list[str]) -> Optional[str]:
+        self.records.append(
+            _Record(question=question, template=self.PROMPT_TEMPLATE, context=tuple(context))
+        )
+        return super().answer(question, context)
+
+
+class NullAnswerer(BaseAnswerer):
+    """Retrieval-only sentinel: ``available`` is False, so the harness produces
+    Evidence Recall@K but leaves ``answerer_accuracy``/``abstention_rate`` null
+    (the §9 null-vs-zero distinction). Used when no answerer LLM is available."""
+
+    model_id = "unavailable — see blockers_encountered"
+
+    @property
+    def available(self) -> bool:
+        return False
+
+    def _complete(self, prompt: str, question: str, context: list[str]) -> Optional[str]:
+        raise RuntimeError("NullAnswerer cannot answer (no LLM available)")
+
+
+class LLMAnswerer(BaseAnswerer):
+    """BYO/local answerer over an OpenAI-compatible ``/chat/completions`` endpoint.
+
+    Gated by ``R2_RUN=1`` plus ``R2_ANSWERER_MODEL`` and ``R2_ANSWERER_BASE_URL``
+    (e.g. a local llama.cpp/ollama OpenAI shim). Temperature 0 + fixed seed for
+    replay-determinism (design memo §4). FathomDB never calls this — it is the
+    answerer for *all three* systems equally.
+    """
+
+    def __init__(self) -> None:
+        self.base_url = os.environ.get("R2_ANSWERER_BASE_URL", "")
+        self.api_key = os.environ.get("R2_ANSWERER_API_KEY", "")
+class PerClassScorer:
+    """Scores ``(ground_truth, system_answer)`` with abstention, stratified by
+    class. Abstention against a positive query is a miss (0.0); answering a
+    negative query is a false positive (0.0). Correct abstention on a negative
+    query scores 1.0."""
+
+    def __init__(self, extra_classes: tuple[str, ...] = ("exploratory", "negative")) -> None:
+        self.classes: set[str] = set(R2_CLASSES) | set(extra_classes)
+
+    def score_answer(
+        self, ground_truth: list[str] | tuple[str, ...] | None, system_answer: Optional[str]
+    ) -> float:
+        gt = list(ground_truth or [])
+        if gt:  # an answer exists
+            if system_answer is None:
+                return 0.0  # abstention miss — counted, never skipped
+            return 1.0 if _match(gt, system_answer) else 0.0
+        # negative class: no answer exists
+        return 0.0 if system_answer is not None else 1.0
+
+
+# --------------------------------------------------------------------------- #
+# Harness
+# --------------------------------------------------------------------------- #
+
+
+def _parse_gold(raw: dict[str, Any]) -> list[GoldQuery]:
+    out: list[GoldQuery] = []
+    for q in raw.get("queries", []):
+        gold_class = str(q.get("query_class", "")).strip()
+        reporting = GOLD_CLASS_MAP.get(gold_class, gold_class or "unknown")
+        answers = tuple(str(a) for a in (q.get("answers") or []))
+        doc_ids: list[str] = []
+        for ev in q.get("required_evidence") or []:
+            did = ev.get("doc_id")
+            if did:
+                doc_ids.append(str(did))
+        if not doc_ids:
+            doc_ids = [str(d) for d in (q.get("expected_top_k_doc_ids") or [])]
+        out.append(
+            GoldQuery(
+                query_id=str(q.get("query_id", "")),
+                question=str(q.get("query", "")),
+                reporting_class=reporting,
+                answers=answers,
+                gold_doc_ids=tuple(doc_ids),
+            )
+        )
+    return out
+
+
+def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+    """Load a 0.8.3 D0a re-pinned gold file → ``(corpus_hash, qrels_version, queries)``.
+
+    Used by :meth:`R2Harness.from_repin_gold` and the Slice-10 parity runner to
+    consume the power-sized memory-class gold. Does NOT enforce the COR-2 pin (the
+    re-pin is the LongMemEval corpus, design §3); it requires only that the file
+    declares a non-empty ``corpus_hash`` and at least one query.
+
+    Runtime corpus-validity guard (codex §9 [P2]): runs :func:`validate_repin`
+    over the gold itself (per-class counts derived from the file, ``n_min`` from
+    the file) and **RAISES** on any problem — an underfilled / N=0 / missing /
+    single-session-mislabeled class can never silently run to emit null (the
+            except Exception as exc:  # noqa: BLE001 - classify; retry only the transient ones
+                if attempt < self._max_retries and _is_retryable(exc):
+                    delay = min(self._backoff_base * (2.0**attempt), self._max_backoff)
+                    with self._lock:
+                        self.n_retries += 1
+                        jitter = self._jitter.uniform(0.0, self._backoff_base)
+                    self._sleep(delay + jitter)
+                    attempt += 1
+                    continue
+                raise
+        usage = body.get("usage") or {}
+        with self._lock:
+            self.prompt_tokens += int(usage.get("prompt_tokens", 0))
+            self.completion_tokens += int(usage.get("completion_tokens", 0))
+            self.n_calls += 1
+        return normalize_answer(body["choices"][0]["message"]["content"])
+
+    def usd(self) -> float:
+        pin, pout = PRICE_PER_1M.get(self.model_id, _DEFAULT_PRICE)
+        return round(self.prompt_tokens / 1e6 * pin + self.completion_tokens / 1e6 * pout, 4)
+
+    def cost_block(self) -> dict[str, Any]:
+        pin, pout = PRICE_PER_1M.get(self.model_id, _DEFAULT_PRICE)
+        return {
+            "model": self.model_id,
+            "n_calls": self.n_calls,
+            "n_errors": self.n_errors,
+            "n_retries": self.n_retries,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "price_per_1m_input_usd": pin,
+            "price_per_1m_output_usd": pout,
+            "usd": self.usd(),
+        }
+
+
+#: The available MuSiQue-Ans answerable pool per hop (the hard ceiling on any
+#: feasible cell). From the pinned corpus: 760 (3-hop) + 405 (4-hop) answerable.
+CORPUS_ANSWERABLE_GE3HOP = 1165
+CORPUS_ANSWERABLE_TOTAL = 2417
+
+#: Power-sim grid extended high enough to locate a required-N even at the wide
+#: measured baseline variance (per-question F1 is near-binary ⇒ sd≈0.45).
+_POWER_GRID = (50, 100, 150, 200, 300, 400, 600, 800, 1200, 1600, 2000, 3000, 5000, 8000)
+
+
+def build_power_block(paired_records: list[dict[str, Any]], cost: dict[str, Any]) -> dict[str, Any]:
+    """Whole-rule power sim + the full-pass $ projection, from a run's records.
+
+    Pure post-processing over the measured pooled ≥3-hop comparator F1/EM — **no
+    priced call** — so it can be re-derived from a saved artifact (the model was
+
+exec
+/bin/bash -lc "sed -n '360,490p' src/python/eval/r2_parity_eval.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+        for sh in result.results[:k]:
+            doc_id = str(self._doc_id_of(sh)) if self._doc_id_of is not None else str(sh.id)
+            hits.append(Hit(doc_id=doc_id, body=sh.body, score=float(sh.score)))
+        return hits
+
+
+class NaiveRAGAdapter:
+    """Floor baseline: flat BM25 over the same documents, no memory graph / update
+    logic (ADR §3.3). Pure-Python (no extra dependency); deterministic given the
+    corpus."""
+
+    name = "naive_rag"
+
+    def __init__(self, documents: dict[str, str], *, k1: float = 1.5, b: float = 0.75) -> None:
+        self._k1 = k1
+        self._b = b
+        n_docs = max(len(documents), 1)
+        self._doc_len: dict[str, int] = {}
+        self._bodies: dict[str, str] = {}
+        # Inverted index: term -> [(doc_id, term_freq)]. Scoring touches only docs
+        # that contain a query term (standard BM25 structure) — identical scores
+        # to a dense per-doc scan, but O(matching postings) not O(corpus) per query.
+        self._postings: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        df: dict[str, int] = defaultdict(int)
+        for doc_id, body in documents.items():
+            self._bodies[doc_id] = body
+            toks = _tokenize(body)
+            self._doc_len[doc_id] = len(toks)
+            counts: dict[str, int] = defaultdict(int)
+            for t in toks:
+                counts[t] += 1
+            for t, f in counts.items():
+                self._postings[t].append((doc_id, f))
+                df[t] += 1
+        self._avgdl = max(sum(self._doc_len.values()) / n_docs, 1e-9)
+        self._idf = {t: math.log(1 + (n_docs - n + 0.5) / (n + 0.5)) for t, n in df.items()}
+
+    def retrieve(self, question: str, k: int) -> list[Hit]:
+        q_terms = set(_tokenize(question))
+        scores: dict[str, float] = defaultdict(float)
+        for t in q_terms:
+            idf = self._idf.get(t)
+            if not idf:
+                continue
+            coeff = self._k1 + 1
+            for doc_id, f in self._postings.get(t, ()):
+                dl = self._doc_len[doc_id]
+                denom = f + self._k1 * (1 - self._b + self._b * dl / self._avgdl)
+                scores[doc_id] += idf * (f * coeff) / denom
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
+        return [Hit(doc_id=doc_id, body=self._bodies.get(doc_id, ""), score=score) for doc_id, score in ranked]
+
+
+class Mem0OSSAdapter:
+    """Local Mem0-OSS baseline (``pip install mem0ai`` — NOT the cloud API; cloud
+    is a footprint violation, ADR §3.6). ``mem0`` is imported lazily so the harness
+    and its unit tests do not require it; ``available`` is False until both the
+    library and a configured backend (LLM + embedder) exist.
+
+    Mem0's ``add()`` extraction and ``search()`` embedding both require an LLM /
+    embedding backend; with no local model available the adapter is inert and the
+    live comparison runs FathomDB vs naive-RAG only (recorded as a blocker)."""
+
+    name = "mem0_oss"
+
+    def __init__(self, memory: Optional[Any] = None, *, user_id: str = "r2-eval") -> None:
+        self._memory = memory
+        self._user_id = user_id
+
+    @property
+    def available(self) -> bool:
+        return self._memory is not None
+
+    @staticmethod
+    def try_build() -> Optional["Mem0OSSAdapter"]:
+        """Best-effort LOCAL construction (0.8.3 Slice-5 stand-up). Returns None (not
+        raising) when ``mem0ai`` or its backend is unavailable, so the runner records
+        a clean blocker.
+
+        Uses the pinned footprint-safe local config
+        (:func:`eval.mem0_local.build_local_mem0_config`): airlock-local LLM + local
+        ``bge-small`` embedder + on-disk chroma — **never Mem0 cloud** (ADR §3.6). The
+        airlock key is read from ``R2_MEM0_API_KEY`` (falling back to
+        ``R2_ANSWERER_API_KEY``); the LLM model/base-url from ``R2_MEM0_MODEL`` /
+        ``R2_MEM0_BASE_URL`` when overriding the defaults."""
+        try:
+            from mem0 import Memory  # type: ignore[import-not-found]
+
+            from eval.mem0_local import build_local_mem0_config
+        except Exception:
+            return None
+        api_key = os.environ.get("R2_MEM0_API_KEY") or os.environ.get("R2_ANSWERER_API_KEY", "")
+        kwargs: dict[str, str] = {"api_key": api_key}
+        if os.environ.get("R2_MEM0_MODEL"):
+            kwargs["llm_model"] = os.environ["R2_MEM0_MODEL"]
+        if os.environ.get("R2_MEM0_BASE_URL"):
+            kwargs["base_url"] = os.environ["R2_MEM0_BASE_URL"]
+        try:
+            memory = Memory.from_config(build_local_mem0_config(**kwargs))
+        except Exception:
+            return None
+        return Mem0OSSAdapter(memory=memory)
+
+    def ingest(self, documents: dict[str, str]) -> None:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        for doc_id, body in documents.items():
+            self._memory.add(body, user_id=self._user_id, metadata={"doc_id": doc_id})
+
+    def retrieve(self, question: str, k: int) -> list[Hit]:
+        if self._memory is None:
+            raise RuntimeError("Mem0OSSAdapter not available (mem0ai/backend missing)")
+        # mem0's search() API drifted across versions: ≤1.x took ``user_id=`` +
+        # ``limit=``; 2.x rejects a top-level ``user_id`` (raises ValueError) and
+        # renamed ``limit`` → ``top_k``, scoping the user via ``filters={'user_id':…}``
+        # + a ``threshold`` cutoff. Introspect the bound method's signature and build
+        # the right kwargs so the adapter is version-robust (and the fake-backend
+        # conformance test, which keeps the ≤1.x shape, still passes).
+        import inspect
+
+        try:
+            params = inspect.signature(self._memory.search).parameters
+        except (TypeError, ValueError):
+            params = {}
+        kwargs: dict[str, Any] = {"query": question}
+        if "filters" in params:
+            kwargs["filters"] = {"user_id": self._user_id}
+        else:
+            kwargs["user_id"] = self._user_id
+        kwargs["top_k" if "top_k" in params else "limit"] = k
+        if "threshold" in params:
+
+exec
+/bin/bash -lc 'PYTHONPATH=src/python pytest -q src/python/tests/test_d0b_parity_run.py' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 406ms:
+............                                                             [100%]
+12 passed in 0.24s
+
+exec
+/bin/bash -lc 'git diff a8ccb0da519937544064f06b09f2983db4ca4645 -- dev/design/0.8.3-slice-10-design.md dev/plans/runs/0.8.3-report.md dev/plans/runs/STATUS-0.8.3.md' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+diff --git a/dev/design/0.8.3-slice-10-design.md b/dev/design/0.8.3-slice-10-design.md
+new file mode 100644
+index 00000000..7a02a138
+--- /dev/null
++++ b/dev/design/0.8.3-slice-10-design.md
+@@ -0,0 +1,98 @@
++---
++title: 0.8.3 Slice 10 (D0b) — parity-gap runner + Mem0/Graphiti stand-up (Phase A)
++status: implementation-notes
++date: 2026-06-21
++slice: dev/plans/plan-0.8.3.md §4 Slice 10
++contract: dev/design/0.8.3-mem0-parity.md §2 (two-level), §3 (arms), §4 (endpoints),
++  §5 (frozen rule + power), §9 (decide_083), §10 (S10 ACs)
++consumes: src/python/eval/decision_rule_083.py (decide_083 — frozen, NOT modified);
++  src/python/eval/m1_verdict_run.py (_atomic_write_json / _resolve_resume — reused);
++  src/python/eval/m1_power_sim.py (_percentile_ci_low / _percentile_ci_high — reused)
++note: the prompt named `dev/design/slice-10-design.md`; that path is the UNRELATED
++  0.8.0-Slice-10 G9-RRF doc (tracked). To avoid clobbering history this 0.8.3 design
++  is namespaced `0.8.3-slice-10-design.md` (same loud deviation as Slice 5). (loud)
++---
++
++# Slice 10 (D0b) — measure the FathomDB − {Mem0, Graphiti/Zep, naive-RAG} parity gap
++
++PHASE A only (this spawn): build the resilient runner, prove it with backend-free
++TDD, cheap-validate the FULL pipeline at ~$0, run a ≤$1 pilot to measure
++cost/question, then STOP at the §PHASE-GATE. **No full priced pass here.**
++
++## 1. The target (design §2/§4)
++
++Per memory class `c ∈ {factoid, knowledge_update, multi_session, temporal}`, the
++external gap `FathomDB − {mem0_oss, graphiti_zep, naive_rag}` on:
++- **(a) strict full-gold Recall@K** — LLM-free, $0. A query scores 1 iff *every*
++  `gold_doc_id` is in the arm's top-K (the existing `R2Harness.run` recall rule).
++- **(b) identical-answerer accuracy** — PRICED. One answerer / one prompt / one
++  context budget across all arms (the R2 invariant); reader `gpt-5.4` (temp0/seed0),
++  cheap-validate `gemini-flash-lite`.
++
++Each delta carries a **paired 95% CI** (per-question paired bootstrap, reusing the
++m1 percentile helpers) and a per-class paired **MDE** (normal-approx
++`(z.975+z.80)·sd(dₚ)/√n`). The accuracy deltas feed `decide_083` → REACHED /
++NOT_REACHED + per-class gap + power verdict.
++
++## 2. Runner (`eval/d0b_parity_run.py`) — resilience first, before any spend
++
++Reuses `m1_verdict_run`'s proven mechanisms (do NOT hand-roll weaker ones):
++- **Atomic checkpoint** (`_atomic_write_json`: temp-file + `os.replace`) at least
++  every `checkpoint_every` (≤10) questions; the live checkpoint is never half-written.
++- **Auto-resume on by default** (`_resolve_resume`): the `<output>.checkpoint.json`
++  sidecar is detected automatically; a relaunch reuses every persisted `(qid,arm)`
++  cell (key-present incl. `None` = a real abstention, reused; absent = re-called) →
++  zero re-spend. Proven by a kill/restart unit test before any priced call.
++- **429/5xx backoff-and-recover**: the answerer is `CostTrackingAnswerer` (exponential
++  backoff over transient 429/5xx; a cell fails only after `max_retries`).
++- **failure ≠ abstention**: a retry-exhausted cell is MISSING (absent key), counted in
++  `n_errors`, never persisted as a scored `None`/0.
++- **Completeness validity guard**: a pass is citable only at completeness ≥ the M1
++  floor (0.97); below it the run is flagged INVALID (relaunch auto-resumes the missing
++  cells).
++
++The unit of work is a `(qid, arm)` cell. Recall is recomputed from retrieval ($0);
++the answerer (priced) is the only seam. Records persist `{qid, reporting_class,
++gold, recall:{arm:0/1}, answers:{arm:str|None}}`.
++
++## 3. Arms / adapters (design §3)
++
++- `naive_rag` — `NaiveRAGAdapter` (BM25, pure-Python, always available).
++- `fathomdb` — `FathomDBAdapter` over a local SQLite ingest of the LME sessions.
++- `mem0_oss` — `Mem0OSSAdapter.try_build()` → `build_local_mem0_config` (airlock
++  qwen3.6-27b LLM + local bge-small + on-disk chroma, per-run isolated; NO cloud).
++  Installed into an **isolated env** (`--target` dir on PYTHONPATH), never the
++  canonical `.venv`.
++- `graphiti_zep` — stood up locally behind the R2 adapter contract if tractable;
++  else a **clean recorded blocker** and the gap runs with {mem0, naive_rag}
++  (Graphiti is the 2nd comparator, not a blocker — design §3).
++
++Corpus = LongMemEval-cleaned `oracle` sessions (the gold's `doc_source`), restricted
++to the gold-relevant sessions for footprint + Mem0 per-`add()` cost. Gold via
++`load_repin_gold` (runtime corpus-validity guard) on `repin_hash 2916cace`.
++
++## 4. CI / MDE / decide_083 wiring
++
++- `paired_class_delta(treatment, comparator, class, metric)` → per-question paired
++  deltas `dₚ`; `point=mean`, `ci_lo/ci_hi` = m1 percentile bootstrap (seed 0,
++  n_boot 2000), `mde = (1.96+0.84)·sd(dₚ)/√n`, `n=len`.
++- `external_per_class_for_decide` builds the `decide_083` input from the **accuracy**
++  `fathomdb − mem0_oss` deltas (the priced gate); recall deltas reported alongside.
++- `decide_083(external, eu7_recall, latency_ok)` is imported and consumed verbatim.
++  Expected at N≈150: `NOT_REACHED` `underpowered:<class>` (manifest implied-N proxy
++  shows every class needs N≫150). The gap numbers LAND regardless (design §5) and the
++  under-power triggers the **HITL escalation** (grow N vs accept), not suppression.
++
++## 5. Cost model (the phase-gate deliverable)
++
++`cost_per_question` = pilot answerer USD / pilot answerer calls (one call per
++`(qid,arm)`; arm count = priced arms that ran). Projected full =
++`cost_per_question × 606 × n_priced_arms`. State whether ≤ $20 (aggregate program
++budget ≤ $30, design §7). Pilot is HARD-capped at $1; stop if it would exceed.
++
++## 6. Self-imposed guardrails
++
++EVAL-ONLY; no engine/Rust; `decision_rule_083.py` / `m1_decision_rule.py` / the gold
++artifact untouched; Mem0/Graphiti in an isolated env; no Mem0 cloud; unit tests
++backend-free (fake answerer + fake adapters); canonical repo working tree untouched;
++commit only on the slice branch.
+diff --git a/dev/plans/runs/0.8.3-report.md b/dev/plans/runs/0.8.3-report.md
+new file mode 100644
+index 00000000..e0b70c80
+--- /dev/null
++++ b/dev/plans/runs/0.8.3-report.md
+@@ -0,0 +1,62 @@
++# 0.8.3 — Mem0-parity resolution report
++
++> **Status: Slice 10 (D0b) PHASE A complete — pipeline built + validated; the
++> citable per-class priced gap awaits Phase-B authorization (orchestrator/HITL).**
++> The numbers below from the cheap-validate / pilot are *pipeline-proof* runs on tiny
++> subsets (8 and 12 questions), **not** the citable per-class parity verdict. The
++> power-sized priced pass (606 q) is Phase B.
++
++## Slice 10 (D0b) — the target: FathomDB − {Mem0, Graphiti/Zep, naive-RAG} per class
++
++Two-level measurement (design §2/§4): external per-class `FathomDB − {mem0_oss,
++graphiti_zep, naive_rag}` on (a) strict full-gold Recall@K ($0) and (b)
++identical-answerer accuracy (priced, gpt-5.4). Gold = re-pinned LME-derived,
++`repin_hash 2916cace`, all four classes ≥ 150. Runner: `eval/d0b_parity_run.py`
++(resilient: atomic checkpoint + auto-resume + backoff + completeness guard +
++window-fit); verdict via the frozen `decide_083`.
++
++### Phase-A pipeline validation (this spawn — NOT the citable gap)
++
++- **Pipeline works end-to-end.** Cheap-validate (gemini-flash-lite, 8 q × all 4
++  classes, 3 arms): all arms ran, recall + accuracy → per-class deltas + paired CI +
++  MDE, atomic checkpoint + live resume verified, `decide_083` emitted a mechanical
++  verdict. completeness 1.0. `runs/0.8.3-d0b-cheapval.json`.
++- **Priced path works.** Pilot (gpt-5.4, 12 q, 3 arms): 36 calls, 0 errors,
++  completeness 1.0, `decide_083` emitted. `runs/0.8.3-d0b-pilot.json`.
++- **Resume proven before spend** (kill/restart unit test: re-calls ONLY absent cells,
++  zero re-spend on reused; failure ≠ abstention; completeness guard rejects an
++  incomplete matrix).
++- `decide_083` on the cheap-validate = **NOT_REACHED, blocked_by="eu7"** — the honest
++  current eu7 point = 0.896 < the 0.90 floor (design §5). The eu7 hard-gate fires
++  before the power guard; this is the correct mechanical output, not the parity gap.
++
++### Cost gate (the phase-gate decision) — projected full run EXCEEDS $20 at the pilot config
++
++Per-(question×arm) call = **$0.026925** (input-token-dominated; ~21.5k prompt tokens
++from long LME sessions). **Projected full = $0.026925 × 606 × 3 ≈ $48.95 → NOT ≤ $20**
++(and over the aggregate $30 program budget). ≤$20 is reachable with a window-fit
++context budget ≤ ~32k chars (~$18) or k≤4 (~$20). See `STATUS-0.8.3.md` for the full
++lever table. **Phase B is BLOCKED on an orchestrator/HITL decision: authorize a
++reduced-context config or raise the budget.**
++
++### Comparator stand-up status
++
++- **Mem0-OSS: STOOD UP** (isolated env; `build_local_mem0_config` → airlock
++  qwen3.6-27b LLM + local bge-small + on-disk chroma, per-run isolated, no cloud).
++  Adapter made version-robust to mem0 2.x search API.
++- **Graphiti/Zep: BLOCKER (clean).** No local Neo4j/FalkorDB backend running and no
++  `graphiti_core` install; standing it up + a per-doc-extraction adapter is non-trivial.
++  Per design §3 Graphiti is the 2nd comparator (not a blocker on the Mem0 resolution);
++  the gap runs with {Mem0, naive-RAG}. Phase-B recipe in the Slice-10 output JSON.
++
++### Power note (expected at Phase B)
++
++The manifest implied-N proxy shows every class needs N ≫ 150 for paired MDE ≤ ε=0.05
++(factoid 524, knowledge_update 601, multi_session 768, temporal 752). At N=150 expect
++`decide_083 = NOT_REACHED underpowered:<class>` — **the per-class gap numbers still LAND
++(design §5) and the under-power triggers a HITL escalation (grow N vs accept), not
++suppression.**
++
++### The citable per-class gap (recall + accuracy, paired 95% CI) — **PENDING PHASE B**
++
++To be filled by the authorized resilient priced pass over the full 606-q gold.
+diff --git a/dev/plans/runs/STATUS-0.8.3.md b/dev/plans/runs/STATUS-0.8.3.md
+new file mode 100644
+index 00000000..47bb3c38
+--- /dev/null
++++ b/dev/plans/runs/STATUS-0.8.3.md
+@@ -0,0 +1,46 @@
++# 0.8.3 — running $ ledger + status
++
++Budget discipline ([[0.8.1-budget-discipline-cheap-validate-and-ledger]],
++[[priced-runs-need-resilience-before-spend]]). Aggregate program target ≤ $30
++(design `0.8.3-mem0-parity.md` §7): three priced runs — D0b parity (Slice 10),
++D1 confirmatory (Slice 20), D2 confirmatory (Slice 25, conditional).
++
++## $ ledger
++
++| date | slice | item | reader | calls | USD | running total |
++|---|---|---|---|---|---|---|
++| 2026-06-21 | 5 (D0a) | cheap-validate seam (2 q) | gemini-flash-lite | 2 | 0.0001 | 0.0001 |
++| 2026-06-21 | 10 (D0b, Phase A) | cheap-validate FULL pipeline (8 q × 3 arms) | gemini-flash-lite | 24 | 0.0275 | 0.0276 |
++| 2026-06-21 | 10 (D0b, Phase A) | priced PILOT (12 q × 3 arms) | gpt-5.4 | 36 | 0.9693 | 0.9969 |
++
++**Phase-A spend (Slice 10): $0.9968** (cheap-validate $0.0275 + pilot $0.9693) —
++within the ~$1 Phase-A cap. **No full priced pass run** (phase-gate STOP).
++
++## Slice 10 (D0b) Phase-A cost finding — projected full run EXCEEDS $20 at the pilot config
++
++Pilot (gpt-5.4, k=10, full LME session bodies in context): per-(question×arm) call =
++**$0.026925** (input-token-dominated: ~21,484 prompt tokens/call from long
++multi-turn sessions; ~14 completion tokens). 3 priced arms ran (fathomdb, mem0_oss,
++naive_rag; graphiti_zep blocked — see report).
++
++**Projected full run = $0.026925 × 606 q × 3 arms (1818 calls) ≈ $48.95 → NOT ≤ $20**
++(also blows the aggregate $30 program budget on D0b alone).
++
++$0 cost-reduction levers (analytic, from the measured pilot tokens — see
++`project_full_cost`):
++
++| config | per-call USD | projected full (1818 calls) | ≤ $20? |
++|---|---|---|---|
++| k=10, full bodies (pilot) | 0.02692 | **$48.95** | no |
++| context ≤ 48k chars (~12k tok) | 0.01514 | $27.53 | no |
++| context ≤ 32k chars (~8k tok) | 0.01014 | **$18.44** | **yes** |
++| context ≤ 24k chars (~6k tok) | 0.00764 | $13.90 | yes |
++| k=4, full bodies | 0.01086 | **$19.74** | **yes** |
++| k=3, full bodies | 0.00818 | $14.87 | yes |
++
++**Phase-B authorization options (HITL/orchestrator):** (a) run with a window-fit
++context budget ≤ ~32k chars (`--context-char-budget 32000`, projected ~$18) or k≤4
++(projected ~$20), trading some context for budget; or (b) raise the D0b budget ceiling.
++Reducing context may lower identical-answerer accuracy (a measurement-validity
++tradeoff) — flag for the HITL. The window-fit lever is applied identically across all
++arms, so the R2 same-context-budget invariant holds.
+
+exec
+/bin/bash -lc "python -m json.tool dev/plans/runs/0.8.3-d0b-pilot.json >/tmp/pilot.ok && python -m json.tool dev/plans/runs/0.8.3-d0b-cheapval.json >/tmp/cheap.ok && head -40 dev/plans/runs/0.8.3-d0b-pilot.json && grep -R 'blockers\\|arms_run\\|cost' -n dev/plans/runs/0.8.3-d0b-pilot.json | head -40" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+{
+  "schema": "0.8.3-d0b-parity-v1",
+  "mode": "pilot",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "n_boot": 2000,
+  "seed": 0,
+  "arms_run": [
+    "fathomdb",
+    "mem0_oss",
+    "naive_rag"
+  ],
+  "n_questions": 12,
+  "n_per_class": {
+    "factoid": 3,
+    "knowledge_update": 3,
+    "multi_session": 3,
+    "temporal": 3
+  },
+  "treatment_arm": "fathomdb",
+  "comparator_arms": [
+    "mem0_oss",
+    "graphiti_zep",
+    "naive_rag"
+  ],
+  "recall_deltas": {
+    "mem0_oss": {
+      "factoid": {
+        "point": -0.333333,
+        "ci_lo": -1.0,
+        "ci_hi": 0.0,
+        "mde": 0.933862,
+        "n": 3
+      },
+      "knowledge_update": {
+        "point": 0.0,
+        "ci_lo": 0.0,
+        "ci_hi": 0.0,
+        "mde": 0.0,
+        "n": 3
+8:  "arms_run": [
+268:  "cost": {
+280:  "blockers_encountered": [
+
+exec
+/bin/bash -lc "python - <<'PY'
+try:
+ import mem0, inspect
+ from mem0 import Memory
+ print('mem0', mem0)
+ print(inspect.signature(Memory.search))
+except Exception as e: print('no', type(e), e)
+PY" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+no <class 'ModuleNotFoundError'> No module named 'mem0'
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/eval/decision_rule_083.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+"""Frozen RESOLUTION decision rule for the 0.8.3 Mem0-parity gate.
+
+This module is the *executable core* of the 0.8.3 Slice-0 pre-registration. It
+freezes — before any number is seen, so a downstream slice (10/20/25/30) cannot
+post-hoc switch the endpoint — three things as code:
+
+1. :func:`decide_083` — the **REACHED / NOT_REACHED** resolution computation over
+   the external per-memory-class ``FathomDB − Mem0`` deltas, with the two hard
+   BLOCK gates (eu7 fidelity floor; latency budget), a per-class power guard, and
+   the near-parity band ε. **Slices 10/20/25/30 import this; they may not redefine
+   the rule.**
+2. :func:`probe_15a_pass` / :func:`probe_15b_pass` — the two $0, LLM-free triage
+   probe pass criteria (15a embedder-ceiling, PRIMARY; 15b D2 content-at-scale
+   proxy) from design §5.
+3. :func:`lint_preregistration_083` — the schema lint asserting the design doc
+   ``dev/design/0.8.3-mem0-parity.md`` carries every required frozen, dated
+   pre-registration field.
+
+The two-level reframe (design §2): the **external** Mem0 delta is THE GATE
+(decides *done*); internal lever deltas are attribution only. ``decide_083``
+consumes **already-computed summary statistics** — the parity harness runs the
+paired bootstrap; this function stays pure/deterministic (no RNG, no I/O).
+
+Binding spec: ``dev/design/0.8.3-mem0-parity.md`` §5 (frozen pre-registration) and
+§9 (this module's contract); ``dev/plans/plan-0.8.3.md`` §4 (Slice 0).
+
+Mirrors :mod:`eval.m1_decision_rule`'s style — pure stdlib, **no ``fathomdb`` /
+``scipy`` / ``numpy`` / ``networkx`` import** — so it (and its test) run anywhere,
+independent of the native-extension build or the ``.venv`` binding. Deterministic:
+no clock, no RNG, no I/O.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections.abc import Mapping
+from typing import Literal, TypedDict
+
+# --------------------------------------------------------------------------- #
+# Frozen constants (the rule must be auditable). See design §5 (frozen-field:
+# near-parity-band) + §4 (hard gates).
+# --------------------------------------------------------------------------- #
+
+#: Near-parity band ε (5 percentage points). "Near-parity-or-better" on a class =
+#: the external ``FathomDB − Mem0`` paired-CI **lower bound ≥ −ε**; "better" =
+#: lower bound **> 0**. Frozen 2026-06-21 (design §5; do NOT change downstream).
+EPS_NEAR_PARITY: float = 0.05
+
+#: The eu7 ANN-quantization fidelity recall@10 hard floor — any embedder/pooling
+#: change must re-clear this once (design §4 BLOCK gate / §5 eu7-break fork).
+EU7_FLOOR: float = 0.90
+
+#: The four agentic-memory classes scored independently (design §3). The
+#: resolution requires *every* class to clear the near-parity band.
+MEMORY_CLASSES: tuple[str, ...] = (
+    "factoid",
+    "knowledge_update",
+    "multi_session",
+    "temporal",
+)
+
+Verdict = Literal["REACHED", "NOT_REACHED"]
+_REACHED: Verdict = "REACHED"
+_NOT_REACHED: Verdict = "NOT_REACHED"
+
+BlockedBy = Literal["eu7", "latency"]
+
+
+class ClassFacts(TypedDict):
+    """Per-class echo of the input delta plus the three derived gate flags."""
+
+    point: float
+    ci_lo: float
+    ci_hi: float
+    mde: float
+    n: int
+    near_parity: bool
+    better: bool
+    underpowered: bool
+
+
+class Resolution(TypedDict):
+    """The frozen resolution verdict (design §9)."""
+
+    verdict: Verdict
+    per_class: dict[str, ClassFacts]
+    binding_constraint: str | None
+    surpass_candidates: list[str]
+    blocked_by: BlockedBy | None
+
+
+def _require_finite(value: float, name: str) -> float:
+    """Return ``float(value)``; raise ``ValueError`` if it is non-finite.
+
+    A ``NaN`` slips past every ``<`` / ``>=`` comparison (``nan < x`` and
+    ``nan >= x`` are both False), so without this guard a malformed endpoint could
+    silently yield a verdict. A malformed endpoint must fail loudly instead.
+    """
+    v = float(value)
+    if not math.isfinite(v):
+        raise ValueError(
+            f"non-finite {name}: {value!r} (a malformed endpoint must fail loudly)"
+        )
+    return v
+
+
+def decide_083(
+    external_per_class: Mapping[str, Mapping[str, float]],
+    eu7_recall: float,
+    latency_ok: bool,
+) -> Resolution:
+    """Return the frozen RESOLUTION verdict for the 0.8.3 Mem0-parity gate.
+
+    ``external_per_class`` maps **each** of :data:`MEMORY_CLASSES` to an
+    already-computed delta ``{"point", "ci_lo", "ci_hi", "mde", "n"}`` — the
+    external ``FathomDB − Mem0`` paired delta on that class with its 95% CI bounds,
+    the per-class paired MDE, and the class N. ``eu7_recall`` is the measured eu7
+    ANN-fidelity recall@10; ``latency_ok`` is the AC012/AC013/AC020 budget verdict.
+
+    The rule (design §5 decision-rule, §9 truth table) — in order:
+
+    1. **BLOCK (hard gates, checked first):** ``eu7_recall <`` :data:`EU7_FLOOR`
+       ⇒ ``NOT_REACHED`` with ``blocked_by="eu7"``; else ``not latency_ok`` ⇒
+       ``NOT_REACHED`` with ``blocked_by="latency"``. A block never makes a parity
+       claim (``binding_constraint`` stays ``None``; ``blocked_by`` carries it).
+    2. **Power guard:** any class with ``mde >`` :data:`EPS_NEAR_PARITY` ⇒
+       ``NOT_REACHED`` with ``binding_constraint="underpowered:<class>"`` (the
+       first such class in :data:`MEMORY_CLASSES` order) — no parity claim on an
+       under-powered class.
+    3. **Resolution:** ``REACHED`` iff *every* class clears the near-parity band
+       (``ci_lo >= -EPS_NEAR_PARITY``); otherwise ``NOT_REACHED`` with
+       ``binding_constraint="below_parity:<class>,<class>..."`` (the mechanical
+       failing-class identifier; the HITL names the *semantic* binding constraint —
+       embedder ceiling / reader / a class-specific lever — per design §5).
+
+    ``surpass_candidates`` is always the classes whose ``ci_lo > 0`` (strictly
+    better than Mem0). Deterministic: same input → same Resolution.
+
+    Raises :class:`KeyError` if a class or a delta key is missing, and
+    :class:`ValueError` if any float is non-finite (``NaN`` / ``±inf``) — a
+    malformed endpoint must fail loudly, never silently return a verdict.
+    """
+    eu7 = _require_finite(eu7_recall, "eu7_recall")
+    latency_intact = bool(latency_ok)
+
+    # Echo + derive every class up front (KeyError if a class/key is missing;
+    # ValueError if any float is non-finite) — fail loudly on a malformed endpoint.
+    per_class: dict[str, ClassFacts] = {}
+    for cls in MEMORY_CLASSES:
+        delta = external_per_class[cls]
+        point = _require_finite(delta["point"], f"{cls}.point")
+        ci_lo = _require_finite(delta["ci_lo"], f"{cls}.ci_lo")
+        ci_hi = _require_finite(delta["ci_hi"], f"{cls}.ci_hi")
+        mde = _require_finite(delta["mde"], f"{cls}.mde")
+        n = int(delta["n"])
+        per_class[cls] = ClassFacts(
+            point=point,
+            ci_lo=ci_lo,
+            ci_hi=ci_hi,
+            mde=mde,
+            n=n,
+            near_parity=ci_lo >= -EPS_NEAR_PARITY,
+            better=ci_lo > 0.0,
+            underpowered=mde > EPS_NEAR_PARITY,
+        )
+
+    surpass_candidates = [cls for cls in MEMORY_CLASSES if per_class[cls]["better"]]
+
+    def _result(
+        verdict: Verdict,
+        binding_constraint: str | None,
+        blocked_by: BlockedBy | None,
+    ) -> Resolution:
+        return Resolution(
+            verdict=verdict,
+            per_class=per_class,
+            binding_constraint=binding_constraint,
+            surpass_candidates=surpass_candidates,
+            blocked_by=blocked_by,
+        )
+
+    # 1 — hard-gate BLOCK (checked first; eu7 before latency).
+    if eu7 < EU7_FLOOR:
+        return _result(_NOT_REACHED, None, "eu7")
+    if not latency_intact:
+        return _result(_NOT_REACHED, None, "latency")
+
+    # 2 — power guard: no parity claim on an under-powered class.
+    for cls in MEMORY_CLASSES:
+        if per_class[cls]["underpowered"]:
+            return _result(_NOT_REACHED, f"underpowered:{cls}", None)
+
+    # 3 — resolution: every class must clear the near-parity band.
+    below = [cls for cls in MEMORY_CLASSES if not per_class[cls]["near_parity"]]
+    if below:
+        return _result(_NOT_REACHED, "below_parity:" + ",".join(below), None)
+
+    return _result(_REACHED, None, None)
+
+
+def probe_15a_pass(
+    cand: Mapping[str, float],
+    base: Mapping[str, float],
+) -> bool:
+    """15a embedder-ceiling probe (PRIMARY) — design §5.
+
+    A candidate embedder *clears* iff it beats the CLS-corrected ``bge-small``
+    reference on **both** eu8 relevance recall@10 and the ~596-q hard subset by a
+    margin whose paired-CI **lower bound > 0**, **and** is CPU-feasible, **and** is
+    1-bit-survivable (projected eu7 ≥ :data:`EU7_FLOOR`).
+
+    ``cand`` carries ``{"eu8", "hard"}`` (candidate point estimates),
+    ``{"eu8_margin_ci_lo", "hard_margin_ci_lo"}`` (the paired ``cand − base`` margin
+    CI lower bounds, already computed), ``cpu_feasible`` (bool), and
+    ``projected_eu7`` (float). ``base`` carries the CLS-corrected ``bge-small``
+    reference points ``{"eu8", "hard"}``.
+
+    Returns ``True`` only when every criterion holds. Non-finite floats raise.
+    """
+
+exec
+/bin/bash -lc 'PYTHONPATH=src/python ruff check src/python/eval/d0b_parity_run.py src/python/eval/r2_parity_eval.py src/python/tests/test_d0b_parity_run.py' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+All checks passed!
+
+exec
+/bin/bash -lc 'PYTHONPATH=src/python pyright src/python/eval/d0b_parity_run.py src/python/tests/test_d0b_parity_run.py' in /tmp/fdb-slice-10-20260621T221212Z
+ exited 1 in 1052ms:
+/tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:379:22 - error: Argument of type "object" cannot be assigned to parameter "x" of type "ConvertibleToFloat" in function "__new__"
+    Type "object" is not assignable to type "ConvertibleToFloat"
+      "object" is not assignable to "str"
+      "object" is incompatible with protocol "Buffer"
+        "__buffer__" is not present
+      "object" is incompatible with protocol "SupportsFloat"
+        "__float__" is not present
+      "object" is incompatible with protocol "SupportsIndex"
+        "__index__" is not present (reportArgumentType)
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:456:16 - error: Cannot access attribute "setdefault" for class "object"
+    Attribute "setdefault" is unknown (reportAttributeAccessIssue)
+2 errors, 0 warnings, 0 informations
+
+exec
+/bin/bash -lc "nl -ba src/python/eval/d0b_parity_run.py | sed -n '370,382p;448,460p'" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+   370	        rmap = resume_map(json.loads(prior.read_text(encoding="utf-8")))
+   371	        print(
+   372	            f"[D0b][AUTO-RESUME] reusing {len(rmap)} persisted (qid,arm) answer cells "
+   373	            f"from {prior} (absent cells re-called; zero re-spend on reused)",
+   374	            flush=True,
+   375	        )
+   376	
+   377	    def _usd() -> float:
+   378	        fn = getattr(answerer, "usd", None)
+   379	        return float(fn()) if callable(fn) else 0.0
+   380	
+   381	    records: list[dict[str, Any]] = []
+   382	    n_errors = 0
+   448	        try:
+   449	            ext = external_per_class_for_decide(acc_table, comparator="mem0_oss", classes=classes)
+   450	            decide_result = decide_083(ext, eu7_recall=eu7_recall, latency_ok=latency_ok)
+   451	        except Exception as exc:  # noqa: BLE001 — record, do not crash the run
+   452	            decide_error = str(exc)
+   453	
+   454	    cost_fn = getattr(answerer, "cost_block", None)
+   455	    cost_block = cost_fn() if callable(cost_fn) else {"model": reader, "usd": _usd()}
+   456	    cost_block.setdefault("n_errors", n_errors)
+   457	
+   458	    art: dict[str, Any] = {
+   459	        "schema": "0.8.3-d0b-parity-v1",
+   460	        "mode": mode,
+
+exec
+/bin/bash -lc ./scripts/agent-typecheck.sh in /tmp/fdb-slice-10-20260621T221212Z
+ exited 1 in 11504ms:
+FAIL typecheck-python (exit=1, 3749ms)
+----
+venv .venv subdirectory not found in venv path /tmp/fdb-slice-10-20260621T221212Z.
+/tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:379:22 - error: Argument of type "object" cannot be assigned to parameter "x" of type "ConvertibleToFloat" in function "__new__"
+    Type "object" is not assignable to type "ConvertibleToFloat"
+      "object" is not assignable to "str"
+      "object" is incompatible with protocol "Buffer"
+        "__buffer__" is not present
+      "object" is incompatible with protocol "SupportsFloat"
+        "__float__" is not present
+      "object" is incompatible with protocol "SupportsIndex"
+        "__index__" is not present (reportArgumentType)
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:456:16 - error: Cannot access attribute "setdefault" for class "object"
+    Attribute "setdefault" is unknown (reportAttributeAccessIssue)
+/tmp/fdb-slice-10-20260621T221212Z/src/python/eval/m1_ppr.py
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/m1_ppr.py:152:12 - warning: Import "networkx" could not be resolved from source (reportMissingModuleSource)
+  /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/m1_ppr.py:235:12 - warning: Import "networkx" could not be resolved from source (reportMissingModuleSource)
+2 errors, 2 warnings, 0 informations
+----
+full log: /tmp/fathomdb-agent-typecheck-python-3329655.log
+
+exec
+/bin/bash -lc "grep -R \"checkpoint_every\\|checkpoint.*cell\\|≤10\" -n dev/design/0.8.3-slice-10-design.md src/python/eval/d0b_parity_run.py src/python/tests/test_d0b_parity_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+dev/design/0.8.3-slice-10-design.md:41:  every `checkpoint_every` (≤10) questions; the live checkpoint is never half-written.
+src/python/eval/d0b_parity_run.py:331:    checkpoint_every: int = 10,
+src/python/eval/d0b_parity_run.py:418:        if i % checkpoint_every == 0 or i == len(queries):
+src/python/eval/d0b_parity_run.py:641:        checkpoint_every=args.checkpoint_every,
+src/python/tests/test_d0b_parity_run.py:6:-before-spend]]): an atomic checkpoint per ≤10 cells, an auto-resume that reuses prior
+src/python/tests/test_d0b_parity_run.py:216:        adapters=adapters, answerer=answerer, n_boot=300, checkpoint_every=10,
+src/python/tests/test_d0b_parity_run.py:251:            adapters=adapters, answerer=flaky, n_boot=200, checkpoint_every=2)
+src/python/tests/test_d0b_parity_run.py:263:                   adapters=adapters, answerer=healthy, n_boot=200, checkpoint_every=2)
+src/python/tests/test_d0b_parity_run.py:279:                  adapters=adapters, answerer=flaky, n_boot=200, checkpoint_every=5)
+src/python/tests/test_d0b_parity_run.py:294:            adapters=adapters, answerer=answerer, n_boot=100, checkpoint_every=4)
+
+exec
+/bin/bash -lc 'grep -R "n_errors" -n src/python/eval/m1_baseline*.py src/python/eval/m1_verdict*.py | head -40' in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+src/python/eval/m1_baseline.py:675:def _bump_n_errors(answerer: BaseAnswerer) -> None:
+src/python/eval/m1_baseline.py:676:    """Thread-safely increment a counting answerer's ``n_errors`` (a failed cell).
+src/python/eval/m1_baseline.py:680:    n_err = getattr(answerer, "n_errors", None)
+src/python/eval/m1_baseline.py:686:            answerer.n_errors = getattr(answerer, "n_errors", 0) + 1  # type: ignore[attr-defined]
+src/python/eval/m1_baseline.py:688:        answerer.n_errors = n_err + 1  # type: ignore[attr-defined]
+src/python/eval/m1_baseline.py:793:                _bump_n_errors(answerer)
+src/python/eval/m1_baseline_run.py:93:        self.n_errors = 0
+src/python/eval/m1_baseline_run.py:166:            "n_errors": self.n_errors,
+src/python/eval/m1_verdict_run.py:220:    # its optional accounting attributes (usd / n_calls / n_errors / cost_block)
+src/python/eval/m1_verdict_run.py:278:        "n_errors": int(getattr(ans_any, "n_errors", 0) or 0),
+src/python/eval/m1_verdict_run.py:297:    # scoring, never a spurious F1=0 abstention) and are counted in ``n_errors``. If
+src/python/eval/m1_verdict_run.py:303:    n_errors = int(cost_block.get("n_errors", 0) or 0)
+src/python/eval/m1_verdict_run.py:304:    completeness = round(1.0 - n_errors / max(expected, 1), 4)
+src/python/eval/m1_verdict_run.py:308:        "n_errors": n_errors,
+src/python/eval/m1_verdict_run.py:317:            f"{VALID_COMPLETENESS_FLOOR}: {n_errors}/{expected} answerer calls FAILED "
+src/python/eval/m1_verdict_run.py:331:        f"{int(getattr(ans_any, 'n_errors', 0) or 0)} errors)",
+src/python/eval/m1_verdict_run.py:364:            f"({comp.get('n_errors')}/{comp.get('expected_calls')} calls FAILED). The airlock "
+src/python/eval/m1_verdict_run.py:462:        f"({cost.get('n_errors')} errors), prompt={cost.get('prompt_tokens')} tok, "
+
+exec
+/bin/bash -lc "sed -n '660,700p;770,805p' src/python/eval/m1_baseline.py && sed -n '250,315p' src/python/eval/m1_verdict_run.py" in /tmp/fdb-slice-10-20260621T221212Z
+ succeeded in 0ms:
+
+
+@dataclass
+class QuestionResult:
+    qid: str
+    hop_count: int
+    answerable: bool
+    n_pool: int
+    n_paragraphs: int
+    answers: dict[str, Optional[str]] = field(default_factory=dict)  # arm -> answer
+    em: dict[str, float] = field(default_factory=dict)
+    f1: dict[str, float] = field(default_factory=dict)
+    confident: dict[str, bool] = field(default_factory=dict)
+
+
+def _bump_n_errors(answerer: BaseAnswerer) -> None:
+    """Thread-safely increment a counting answerer's ``n_errors`` (a failed cell).
+
+    No-op for answerers that do not track errors. Uses the answerer's ``_lock`` when
+    present so the concurrent (``answer_workers > 1``) path counts every failure."""
+    n_err = getattr(answerer, "n_errors", None)
+    if not isinstance(n_err, int):
+        return
+    lock = getattr(answerer, "_lock", None)
+    if lock is not None:
+        with lock:
+            answerer.n_errors = getattr(answerer, "n_errors", 0) + 1  # type: ignore[attr-defined]
+    else:
+        answerer.n_errors = n_err + 1  # type: ignore[attr-defined]
+
+
+def run_baseline(
+    questions: Sequence[Question],
+    answerer: BaseAnswerer,
+    *,
+    k: int = 10,
+    encoder: Optional[EncoderProtocol] = None,
+    reranker: Optional[FusedRerankerProtocol] = None,
+    arms: Sequence[str] = ARM_NAMES,
+    progress: Any = None,
+    answer_workers: int = 1,
+        # abstentions.  Only ABSENT keys (prior failures) are (re)called.  The
+        # answerer is deterministic (temp0/seed0), so a fill-in of the failed cells
+        # is identical to a clean single pass — but pays $0 for every cell that was
+        # already answered (including legitimate abstentions).
+        if prior_answers is not None:
+            _key = (task.q.id, task.arm)
+            if _key in prior_answers:
+                prev = prior_answers[_key]  # may be None (a successful abstention)
+                task.qr.answers[task.arm] = prev
+                if task.q.answerable:
+                    task.qr.em[task.arm] = em_score(prev, task.q.golds)
+                    task.qr.f1[task.arm] = f1_score(prev, task.q.golds)
+                else:
+                    task.qr.confident[task.arm] = is_confident_answer(prev)
+                return
+        ans: Optional[str] = None
+        if answerer_available:
+            try:
+                ans = answerer.answer(task.q.question, task.context)
+            except Exception:  # noqa: BLE001 — a FAILURE (never succeeded): mark MISSING.
+                # Count the error and leave the cell UNSET (no answer / no score) so it
+                # is excluded from the answered set + re-called on resume — never a
+                # spurious scored abstention. Do not abort the pass.
+                _bump_n_errors(answerer)
+                return
+        # SUCCESS (including a legitimate abstention where ``ans is None``): persist +
+        # score. A None here = the reader answered "I don't know" ⇒ scored 0, NOT
+        # retried, NOT missing.
+        task.qr.answers[task.arm] = ans
+        if task.q.answerable:
+            task.qr.em[task.arm] = em_score(ans, task.q.golds)
+            task.qr.f1[task.arm] = f1_score(ans, task.q.golds)
+        else:
+            task.qr.confident[task.arm] = is_confident_answer(ans)
+
+    # Best-effort incremental checkpoint: snapshot the answers filled so far in a
+            print(
+                f"[S20][{mode.upper()}] {done}/{total} "
+                f"calls={getattr(ans_any, 'n_calls', '?')} "
+                f"${_usd():.4f} ({round(time.time() - t0, 1)}s)",
+                flush=True,
+            )
+
+    art = run_verdict(
+        questions,
+        answerer,
+        extractions,
+        k=k,
+        encoder=encoder,
+        reranker=reranker,
+        n_boot=n_boot,
+        seed=seed,
+        progress=progress,
+        answer_workers=answer_workers,
+        power_ok=False,  # stage 1: N≈144 ≪ 1165 required
+        prior_answers=prior_answers,
+        checkpoint=_checkpoint,
+        checkpoint_every=checkpoint_every,
+    )
+
+    cost_fn = getattr(ans_any, "cost_block", None)
+    cost_block: Any = cost_fn() if callable(cost_fn) else {
+        "model": getattr(ans_any, "model_id", reader),
+        "n_calls": getattr(ans_any, "n_calls", None),
+        "n_errors": int(getattr(ans_any, "n_errors", 0) or 0),
+        "usd": _usd(),
+    }
+    art["cost"] = cost_block
+    art["ppr_divergence"] = div
+    art["mode"] = mode
+    art["reader_model"] = reader
+    art["reader_model_mapping_note"] = (
+        "slice prompt named gemini-3.1-pro-preview (strong) / gemini-2.5-flash-lite "
+        f"(cheap); the airlock proxy serves neither exact id — closest available used: "
+        f"strong={STRONG_READER_DEFAULT}, cheap={CHEAP_READER_DEFAULT}"
+    )
+    art["answer_workers"] = answer_workers
+    art["k"] = k
+    art["elapsed_s"] = round(time.time() - t0, 1)
+    art["musique_hash"] = MUSIQUE_HASH
+
+    # ---- answer-completeness validity guard ([[background-exit-masks-real-exit]]) ----
+    # Failures (retry-exhausted 429/5xx/timeout) are now MISSING cells (excluded from
+    # scoring, never a spurious F1=0 abstention) and are counted in ``n_errors``. If
+    # too many cells are missing the answer matrix is materially incomplete and the
+    # ≥3-hop endpoint is under-populated — flag the run INVALID rather than cite an
+    # under-powered verdict. Auto-resume re-calls exactly these missing cells, so a
+    # relaunch drives the run back to validity with zero re-spend on the answered set.
+    expected = len(questions) * len(VERDICT_ARMS)
+    n_errors = int(cost_block.get("n_errors", 0) or 0)
+    completeness = round(1.0 - n_errors / max(expected, 1), 4)
+    run_valid = completeness >= VALID_COMPLETENESS_FLOOR
+    art["answer_completeness"] = {
+        "expected_calls": expected,
+        "n_errors": n_errors,
+        "completeness": completeness,
+        "floor": VALID_COMPLETENESS_FLOOR,
+        "run_valid": run_valid,
+    }
+    art["run_valid"] = run_valid
+    if not run_valid:
+        art["INVALID"] = (
+
+codex
+The new Python runner fails the repository's pyright typecheck gate, so the patch is not currently shippable. There is also a smaller artifact-accounting issue for live retry-exhausted answerer failures.
+
+Full review comments:
+
+- [P2] Keep the new runner passing pyright — /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:377-379
+  With the repository typecheck gate enabled, `pyright src/python/eval/d0b_parity_run.py` fails because the dynamic `getattr` call is typed as returning `object` here; the same issue appears for `cost_block.setdefault` below. Since `agent-typecheck.sh` is a required gate, narrow/cast these dynamic helper results before calling `float()` or dict methods.
+
+- [P3] Preserve live answerer error counts in the cost block — /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:454-456
+  When the live `CostTrackingAnswerer` exhausts retries, this runner increments only the local `n_errors`; `CostTrackingAnswerer.cost_block()` already contains `n_errors: 0`, so `setdefault` will not replace it. In that failure scenario the artifact's `cost.n_errors` reports zero while `answer_completeness` reports failures, which breaks the run ledger; either bump the answerer's counter in the exception path or overwrite the cost block with the local count.
+The new Python runner fails the repository's pyright typecheck gate, so the patch is not currently shippable. There is also a smaller artifact-accounting issue for live retry-exhausted answerer failures.
+
+Full review comments:
+
+- [P2] Keep the new runner passing pyright — /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:377-379
+  With the repository typecheck gate enabled, `pyright src/python/eval/d0b_parity_run.py` fails because the dynamic `getattr` call is typed as returning `object` here; the same issue appears for `cost_block.setdefault` below. Since `agent-typecheck.sh` is a required gate, narrow/cast these dynamic helper results before calling `float()` or dict methods.
+
+- [P3] Preserve live answerer error counts in the cost block — /tmp/fdb-slice-10-20260621T221212Z/src/python/eval/d0b_parity_run.py:454-456
+  When the live `CostTrackingAnswerer` exhausts retries, this runner increments only the local `n_errors`; `CostTrackingAnswerer.cost_block()` already contains `n_errors: 0`, so `setdefault` will not replace it. In that failure scenario the artifact's `cost.n_errors` reports zero while `answer_completeness` reports failures, which breaks the run ledger; either bump the answerer's counter in the exception path or overwrite the cost block with the local count.

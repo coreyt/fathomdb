@@ -281,6 +281,39 @@ def test_resume_restores_ledger_spend_and_trips_cap(tmp_path: Path) -> None:
     assert art["go"] is False
 
 
+def test_resume_refuses_config_mismatch_and_missing_config(tmp_path: Path) -> None:
+    """codex §9 P1: a config-aware resume must refuse a checkpoint written under a
+    different retrieval_config — INCLUDING a pre-config-stamping checkpoint (None) —
+    so old engine-blend answers cannot splice into a reblend run + publish an invalid
+    paired margin. A matching config resumes normally."""
+    queries, reranked, reused = _run_fixtures(("factoid-0", "factoid-1"))
+    out = tmp_path / "out.json"
+    ckpt = out.with_suffix(".checkpoint.json")
+    cfg = {"arm_kind": "reblend", "alpha": 1.0, "pool_n": 10, "k": 10, "context_char_budget": 32000}
+
+    def _run(checkpoint_payload: dict[str, Any], retrieval_config: dict[str, Any]) -> Any:
+        ckpt.write_text(json.dumps(checkpoint_payload), encoding="utf-8")
+        ledger = BudgetLedger(opening_balance_usd=10.7479, hard_cap_usd=30.0, max_output_tokens=64)
+        return run_rerank_accuracy(
+            queries=queries, reused_cells=reused, reranked_adapter=reranked,
+            answerer=_SpyAnswerer(), ledger=ledger, reader="gpt-5.4", output=out,
+            n_boot=50, classes=("factoid",), checkpoint_path=ckpt, checkpoint_every=1,
+            retrieval_config=retrieval_config,
+        )
+
+    base_records = [{"qid": "factoid-0", "reporting_class": "factoid",
+                     "answers": {RERANK_ARM: "prior"}}]
+    # (1) pre-config-stamping checkpoint (no retrieval_config) + a non-empty run cfg ⇒ refuse.
+    with pytest.raises(ValueError, match="refusing to resume across configs"):
+        _run({"records": base_records, "mode": "run", "reader": "gpt-5.4"}, cfg)
+    # (2) a DIFFERENT stamped config ⇒ refuse.
+    with pytest.raises(ValueError, match="refusing to resume across configs"):
+        _run({"records": base_records, "retrieval_config": {**cfg, "alpha": 0.3}}, cfg)
+    # (3) the MATCHING config resumes (no raise) — factoid-0 reused from the checkpoint.
+    art = _run({"records": base_records, "retrieval_config": cfg}, cfg)
+    assert art["verdict"] in {"PASS", "FAIL", "INCONCLUSIVE", "ABORTED_INCOMPLETE"}
+
+
 def test_capped_run_is_non_citable_never_pass(tmp_path: Path) -> None:
     queries, reranked, _reused = _run_fixtures(tuple(f"factoid-{j}" for j in range(10)))
     # A reused-cell map that would make the COMPLETED prefix a clean PASS (reranked

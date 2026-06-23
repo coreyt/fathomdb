@@ -119,3 +119,47 @@ Offline archaeology — `runs/0.8.3-eu7-bisect-report.md` (+ `.json` / `-output.
 - Residual (definitive engine 0.7.x-vs-0.8.0 vector-stage A/B) blocked: no
   pre-embedded eu7-corpus DB. **$0 in API** (eu7 is LLM-free); needs an embed
   (minutes on GPU when util<5%, ~1h CPU) — schedule as a Slice-20 sub-task, not a blocker.
+
+## 0.8.3 CLOSED AS-IS (2026-06-23) — final ledger + resolution
+
+**HITL ruling (2026-06-23): take the 0.8.3 results AS-IS; no further priced spend.** Accuracy is
+retrieval-gated, so the substantive result is the retrieval-precision finding — characterized honestly,
+landed, closed. (Completion was also blocked by an OpenAI `gpt-5.4` project usage-limit, not budget.)
+
+### Final $ ledger
+
+| item | reader | USD | running total |
+|---|---|---|---|
+| (carried) Slice 10 D0b full priced pass | gpt-5.4 | 10.75 | 11.74 |
+| Slice 20 CE-rerank accuracy arm (α=0.3, 606 q, citable) | gpt-5.4 | ~5.21 | ~18.12 |
+| Slice 20 α=1.0 reblend arm (PARTIAL 354/606, incl. ~$3.6 discarded corrupted first fire) | gpt-5.4 | ~20.0 | **~38.16** |
+
+**Spent ≈ $38.16 of the raised $50 cap → ~$11.84 remaining.** Binding constraint on completion was the
+OpenAI **usage-limit**, not the budget.
+
+### Resolution (Slice 30 — `runs/0.8.3-resolution-verdict.{md,json}`)
+
+**Provisional parity-or-better with Mem0 via a retrieval-PRECISION lever (in-footprint CE-rerank at tuned
+blend weight α=1.0). Taken AS-IS — NOT a fully-powered citable parity/surpass claim.**
+
+- `decide_083` strict REACHED **unavailable**: eu7-blocked (0.896<0.90, case-A/SUT) + the α=1.0 arm is
+  `ABORTED_INCOMPLETE` (completeness 0.5842, n=354/606) + just-underpowered (pooled MDE 0.078 > ε 0.05).
+- α=1.0 on the **answered cells**: reranked **0.525** vs mem0 **0.323** vs baseline **0.137** = **+0.21**
+  surpass; pooled margin +0.325 [+0.274,+0.381]; per-class all positive (factoid +0.31, ku +0.39,
+  multi_session +0.23, temporal +0.36); paired α=0.3→α=1.0 +0.241 (96 W/12 L/241 T).
+- **Honest subset-bias caveat:** the unanswered 42% skew to retrieval-FAILURE cells where Mem0 wins, so the
+  full-606 estimate is ~0.33–0.35 vs 0.323 = **marginal PARITY**, not a clean surpass.
+
+### Slice closure
+
+- **Slice 10 (D0b):** CLOSED — gap measured (−20…27pp).
+- **Slice 15 (15a/15b):** CLOSED AS-IS — 15a no embedder swap; 15b proxy code only.
+- **Slice 20 (D1→precision lever):** CLOSED AS-IS — CE-batch reranker + reblend adapter landed; engine wire
+  deferred to 0.8.4. codex §9 this session = 2×P2 (Retry-After cap; tune-report max_pool), both remediated.
+- **Slice 25 (D2):** NOT RUN (deferred) — conditional gate did not fire; D2 = a 0.8.4 recall lever.
+- **Slice 30 (resolution):** CLOSED AS-IS — verdict written; **steward recommendation = SHIP-AT-PARITY**,
+  surpass via recall in 0.8.4. **Pending HITL sign-off + version-gate to 0.8.4.**
+
+### Forward
+0.8.4 = GraphRAG parity (S1 community-summaries + G-HH-2 head-to-head) + the Mem0-surpass recall levers.
+See `runs/0.8.3-parity-forward-plan.md` §B and `dev/roadmap/0.8.4.md`.

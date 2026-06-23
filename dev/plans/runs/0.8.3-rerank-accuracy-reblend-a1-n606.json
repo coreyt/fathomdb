@@ -1,0 +1,142 @@
+{
+  "schema": "0.8.3-rerank-accuracy-v1",
+  "mode": "full",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "pool_n": 10,
+  "rerank_depth": 10,
+  "ce_model_repo": "cross-encoder/ms-marco-TinyBERT-L2-v2",
+  "ce_model_name": "fathomdb-ms-marco-TinyBERT-L2-v2",
+  "corpus_hash": "1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df",
+  "context_char_budget": 32000,
+  "n_boot": 2000,
+  "seed": 0,
+  "rerank_arm": "fathomdb_reranked",
+  "baseline_arm": "fathomdb",
+  "reused_arms": [
+    "fathomdb",
+    "mem0_oss",
+    "oracle_raw"
+  ],
+  "retrieval_config": {
+    "arm_kind": "reblend",
+    "alpha": 1.0,
+    "pool_n": 10,
+    "k": 10,
+    "context_char_budget": 32000
+  },
+  "n_questions": 606,
+  "n_per_class": {
+    "factoid": 156,
+    "knowledge_update": 150,
+    "multi_session": 150,
+    "temporal": 150
+  },
+  "accuracy_margin": {
+    "rerank_arm": "fathomdb_reranked",
+    "baseline_arm": "fathomdb",
+    "per_class": {
+      "factoid": {
+        "margin": {
+          "point": 0.306931,
+          "ci_lo": 0.207921,
+          "ci_hi": 0.405941,
+          "mde": 0.14073,
+          "n": 101
+        },
+        "lever_realized": "ABORTED_INCOMPLETE",
+        "gap_to_mem0_closed": 1.5980689771481575,
+        "oracle_headroom_captured": null,
+        "go": false,
+        "reason": "answer_completeness:0.5842<1.0"
+      },
+      "knowledge_update": {
+        "margin": {
+          "point": 0.391304,
+          "ci_lo": 0.286957,
+          "ci_hi": 0.486957,
+          "mde": 0.14139,
+          "n": 115
+        },
+        "lever_realized": "ABORTED_INCOMPLETE",
+        "gap_to_mem0_closed": 1.5418864832036994,
+        "oracle_headroom_captured": null,
+        "go": false,
+        "reason": "answer_completeness:0.5842<1.0"
+      },
+      "multi_session": {
+        "margin": {
+          "point": 0.225,
+          "ci_lo": 0.1125,
+          "ci_hi": 0.3375,
+          "mde": 0.165106,
+          "n": 80
+        },
+        "lever_realized": "ABORTED_INCOMPLETE",
+        "gap_to_mem0_closed": 1.354165,
+        "oracle_headroom_captured": null,
+        "go": false,
+        "reason": "answer_completeness:0.5842<1.0"
+      },
+      "temporal": {
+        "margin": {
+          "point": 0.362069,
+          "ci_lo": 0.224138,
+          "ci_hi": 0.5,
+          "mde": 0.19119,
+          "n": 58
+        },
+        "lever_realized": "ABORTED_INCOMPLETE",
+        "gap_to_mem0_closed": 12.165631656316563,
+        "oracle_headroom_captured": null,
+        "go": false,
+        "reason": "answer_completeness:0.5842<1.0"
+      }
+    },
+    "pooled": {
+      "margin": {
+        "point": 0.324859,
+        "ci_lo": 0.274011,
+        "ci_hi": 0.381356,
+        "mde": 0.078313,
+        "n": 354
+      },
+      "lever_realized": "ABORTED_INCOMPLETE",
+      "gap_to_mem0_closed": 2.083252890576399,
+      "oracle_headroom_captured": null,
+      "go": false,
+      "reason": "answer_completeness:0.5842<1.0"
+    },
+    "per_arm_accuracy": {
+      "fathomdb_reranked": 0.525424,
+      "fathomdb": 0.136964,
+      "mem0_oss": 0.323432,
+      "oracle_raw": null
+    }
+  },
+  "verdict": "ABORTED_INCOMPLETE",
+  "go": false,
+  "citable": false,
+  "run_valid": false,
+  "answer_completeness": 0.5842,
+  "answer_completeness_min": 1.0,
+  "non_citable_reason": "answer_completeness:0.5842<1.0",
+  "answer_retention": {
+    "arm": "fathomdb_reranked",
+    "n": 606,
+    "retention": 0.2343
+  },
+  "ledger": {
+    "opening_balance_usd": 27.1,
+    "hard_cap_usd": 50.0,
+    "spent_usd": 38.156423,
+    "remaining_usd": 11.843577
+  },
+  "aborted_for_cap": false,
+  "elapsed_s": 2785.4,
+  "blockers_encountered": [],
+  "reblend_config": {
+    "alpha": 1.0,
+    "pool_n": 10
+  }
+}

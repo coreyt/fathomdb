@@ -251,6 +251,8 @@ def run_rerank_accuracy(
     checkpoint_path: Optional[Path] = None,
     checkpoint_every: int = 10,
     mode: str = "run",
+    retrieval_config: Optional[Mapping[str, Any]] = None,
+    pace_seconds: float = 0.0,
 ) -> dict[str, Any]:
     """Run the CE-rerank accuracy arm + emit the per-class + pooled accuracy margin,
     the frozen decision (PASS/FAIL/INCONCLUSIVE + GO), the per-arm accuracy, the $
@@ -268,9 +270,27 @@ def run_rerank_accuracy(
 
     # Resume the reranked-arm answers from a prior checkpoint (membership = reuse
     # signal) + carry forward the cumulative $ spend (cap is per-EXPERIMENT).
+    cfg = dict(retrieval_config or {})
     rmap: dict[tuple[str, str], Optional[str]] = {}
     if ckpt_path.exists():
         prior = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        # codex §9 P1: resume MUST be config-aware. The reranked-arm answers are keyed
+        # only by (qid, arm), so resuming a checkpoint written under a DIFFERENT
+        # retrieval config (engine-blend vs reblend, alpha, pool_n, k, context budget)
+        # would silently splice answers from a different ranking/context into this arm
+        # — invalidating the paired margin. Refuse loudly on mismatch. A checkpoint that
+        # PREDATES config-stamping (prior_cfg is None) is ALSO incompatible whenever this
+        # run carries a (non-empty) config — we cannot prove its cached answers came from
+        # the same ranking, and that "old checkpoint + --reblend-alpha" is exactly the
+        # splice path that produced an invalid margin (codex §9 P1, 2nd pass).
+        prior_cfg = prior.get("retrieval_config")
+        if cfg and prior_cfg != cfg:
+            raise ValueError(
+                f"[RERANK-ACC] checkpoint {ckpt_path} was written under retrieval_config "
+                f"{prior_cfg!r} (None ⇒ a pre-config-stamping checkpoint) but this run uses "
+                f"{cfg!r}; refusing to resume across configs (different ranking/context → "
+                f"invalid arm). Use a fresh --output, or delete the stale checkpoint to start over."
+            )
         prior_spent = prior.get("ledger_spent_usd")
         if prior_spent is not None:
             ledger.restore_spent(float(prior_spent))
@@ -279,18 +299,34 @@ def run_rerank_accuracy(
             if qid is None:
                 continue
             ans = (r.get("answers") or {}).get(RERANK_ARM)
-            if RERANK_ARM in (r.get("answers") or {}):
+            # Only a NON-EMPTY answer counts as done. A None/empty cell (a 200-with-empty
+            # from a flapping endpoint) is a FAILURE, not a 0.0 answer — leave it out of
+            # rmap so resume RE-ATTEMPTS it (mirrors the failed-cell-absent contract).
+            if ans:
                 rmap[(str(qid), RERANK_ARM)] = ans
 
     records: list[dict[str, Any]] = []
     aborted_for_cap = False
+    # Adaptive proactive pacing: a low OpenAI usage-tier surfaces a per-minute TPM cap
+    # as `insufficient_quota` under SUSTAINED load (a single call is healthy). Pace new
+    # reader calls to stay under the velocity ceiling; on any failure (429/quarantine)
+    # slow the rate further (×1.5, capped), and gently recover after a clean streak.
+    PACE_BUMP, PACE_CAP = 1.5, 60.0
+    cur_pace = max(0.0, float(pace_seconds))
+    ok_streak = 0
 
     def _checkpoint() -> None:
         # Persist the cumulative ledger spend ATOMICALLY with the records so a resume
         # restores the true per-experiment spend.
         _atomic_write_json(
             ckpt_path,
-            {"records": records, "mode": mode, "reader": reader, "ledger_spent_usd": ledger.spent},
+            {
+                "records": records,
+                "mode": mode,
+                "reader": reader,
+                "ledger_spent_usd": ledger.spent,
+                "retrieval_config": cfg,
+            },
         )
 
     for i, q in enumerate(queries, start=1):
@@ -320,6 +356,8 @@ def run_rerank_accuracy(
                 rec["answers"][RERANK_ARM] = ans
                 rec["acc"][RERANK_ARM] = scorer.score_answer(list(q.answers), ans)
             else:
+                if cur_pace > 0:
+                    time.sleep(cur_pace)  # proactive rate-limit pacing
                 try:
                     ans = answer_with_budget(
                         answerer, reader=reader, question=q.question, context=ctx, ledger=ledger
@@ -333,11 +371,26 @@ def run_rerank_accuracy(
                 except Exception:  # noqa: BLE001 — non-budget failure ≠ abstention
                     # A retry-exhausted 429/5xx or non-retryable HTTP error leaves this
                     # cell ABSENT (never fabricated); the run CONTINUES. The completeness
-                    # gate then marks the artifact non-citable.
+                    # gate then marks the artifact non-citable. Slow the rate (adaptive).
+                    ok_streak = 0
+                    cur_pace = min(max(cur_pace, 1.0) * PACE_BUMP, PACE_CAP)
                     pass
                 else:
-                    rec["answers"][RERANK_ARM] = ans
-                    rec["acc"][RERANK_ARM] = scorer.score_answer(list(q.answers), ans)
+                    # A 200-with-empty (ans is None/"" — a guardrail-stripped or truncated
+                    # completion) is a FAILED cell, NOT a wrong (0.0) answer: recording
+                    # acc=0.0 would both corrupt the accuracy AND cache the failure as
+                    # "done" (un-resumable). Leave it ABSENT (failure ≠ abstention) so the
+                    # completeness gate catches it + resume re-attempts. (flapping-endpoint fix)
+                    if ans:
+                        rec["answers"][RERANK_ARM] = ans
+                        rec["acc"][RERANK_ARM] = scorer.score_answer(list(q.answers), ans)
+                        # Gentle recovery: after a clean streak, ease the pace back up.
+                        ok_streak += 1
+                        if ok_streak >= 20 and cur_pace > float(pace_seconds):
+                            cur_pace = max(float(pace_seconds), cur_pace / PACE_BUMP)
+                            ok_streak = 0
+                    else:
+                        ok_streak = 0
 
         records.append(rec)
         if i % checkpoint_every == 0 or i == len(queries):
@@ -395,6 +448,7 @@ def run_rerank_accuracy(
         "rerank_arm": RERANK_ARM,
         "baseline_arm": BASELINE_ARM,
         "reused_arms": list(REUSED_ARMS),
+        "retrieval_config": cfg,
         "n_questions": len(records),
         "n_per_class": {c: sum(1 for r in records if r["reporting_class"] == c) for c in classes},
         "accuracy_margin": summary,
@@ -457,6 +511,18 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     ap.add_argument("--n-boot", type=int, default=DEFAULT_N_BOOT)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--fathomdb-db", default="/tmp/rerank-accuracy-fathomdb.sqlite")
+    ap.add_argument("--pace-seconds", type=float, default=0.0,
+                    help="proactive inter-call delay (s) to stay under a low OpenAI usage-tier "
+                    "TPM cap that surfaces as insufficient_quota under sustained load; adapts "
+                    "up ×1.5 on each 429 and eases back after a clean streak.")
+    ap.add_argument("--reblend-alpha", type=float, default=None,
+                    help="if set, the reranked arm reorders via a Python REBLEND at this "
+                    "CE-blend alpha (eval.rerank_tune_probe.ReblendRerankAdapter) instead of "
+                    "the engine's hardcoded 0.3 — tests a tuned alpha with NO Rust rebuild. "
+                    "alpha=1.0 = pure CE. Pair with --reblend-pool-n.")
+    ap.add_argument("--reblend-pool-n", type=int, default=None,
+                    help="pool size the reblend reorders (default --pool-n). The tuning sweep "
+                    "found alpha=1.0/pool_n=10 best-balanced.")
     args = ap.parse_args(argv)
 
     import fathomdb  # the real CE reranker (CPU; rerank_depth>0 loads TinyBERT once)
@@ -490,11 +556,29 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
         raise SystemExit(
             f"[RERANK-ACC][STOP] no fathomdb adapter (blockers={[b['id'] for b in blockers]})"
         )
-    reranked_adapter = FathomDBRerankAdapter(
-        base=base, rerank_fn=fathomdb.rerank, pool_n=args.pool_n, rerank_depth=args.pool_n,
-    )
+    # The reranked arm: either the engine's hardcoded-0.3 blend (FathomDBRerankAdapter)
+    # or — when --reblend-alpha is set — a Python reblend at a tuned alpha/pool_n (no
+    # Rust rebuild; the 0.8.3 tuning sweep found alpha=1.0/pool_n=10 best-balanced).
+    reblend_config: Optional[dict[str, Any]] = None
+    if args.reblend_alpha is not None:
+        from eval.rerank_tune_probe import ReblendRerankAdapter
 
-    answerer = CostTrackingAnswerer(reader, timeout_s=240.0)
+        reblend_pool_n = args.reblend_pool_n if args.reblend_pool_n is not None else args.pool_n
+        reranked_adapter = ReblendRerankAdapter(
+            base=base, rerank_fn=fathomdb.rerank, alpha=args.reblend_alpha, pool_n=reblend_pool_n,
+        )
+        reblend_config = {"alpha": args.reblend_alpha, "pool_n": reblend_pool_n}
+        # Reflect the reblend pool in the artifact metadata (honest pool_n / depth).
+        args.pool_n = reblend_pool_n
+        print(f"[RERANK-ACC][CLI] REBLEND arm: alpha={args.reblend_alpha} pool_n={reblend_pool_n}", flush=True)
+    else:
+        reranked_adapter = FathomDBRerankAdapter(
+            base=base, rerank_fn=fathomdb.rerank, pool_n=args.pool_n, rerank_depth=args.pool_n,
+        )
+
+    # Quarantine-aware retry: max_backoff > the airlock 300s cooldown so a single
+    # Retry-After sleep outlasts (and drains) the quarantine instead of re-arming it.
+    answerer = CostTrackingAnswerer(reader, timeout_s=240.0, max_retries=3, max_backoff=330.0)
     if not answerer.available:
         raise SystemExit(f"[RERANK-ACC][STOP] reader {reader!r} unavailable — do not fake answers")
 
@@ -504,13 +588,24 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
         max_output_tokens=args.max_output_tokens,
     )
 
+    # codex §9 P1: stamp the FULL retrieval config so a resume across a different
+    # ranking/context (engine-blend vs reblend, alpha, pool_n, k, budget) is refused.
+    retrieval_config = {
+        "arm_kind": "reblend" if reblend_config is not None else "engine_blend",
+        "alpha": (reblend_config or {}).get("alpha"),
+        "pool_n": args.pool_n,
+        "k": args.k,
+        "context_char_budget": args.context_char_budget,
+    }
     art = run_rerank_accuracy(
         queries=queries, reused_cells=reused_cells, reranked_adapter=reranked_adapter,
         answerer=answerer, ledger=ledger, reader=reader, output=Path(args.output),
         corpus_hash=corpus_hash, k=args.k, pool_n=args.pool_n, rerank_depth=args.pool_n,
         budget=args.context_char_budget, n_boot=args.n_boot, seed=args.seed, mode=args.mode,
+        retrieval_config=retrieval_config, pace_seconds=args.pace_seconds,
     )
     art["blockers_encountered"] = blockers
+    art["reblend_config"] = reblend_config  # None for the engine-blend arm
     Path(args.output).write_text(json.dumps(art, indent=2, default=str), encoding="utf-8")
     return 0
 

@@ -1,0 +1,2 @@
+[RERANK-ACC][CLI] 606 queries, 940 sessions | corpus_hash=1859817a32bc reused_cells=1212
+[RERANK-ACC][FULL] wrote dev/plans/runs/0.8.3-rerank-accuracy-n606.json | 606 Q | spent $23.3328/30 | citable=True compl=1.0 | verdict=PASS go=False

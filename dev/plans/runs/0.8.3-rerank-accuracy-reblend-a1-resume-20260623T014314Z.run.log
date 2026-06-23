@@ -1,0 +1,3 @@
+[RERANK-ACC][CLI] 606 queries, 940 sessions | corpus_hash=1859817a32bc reused_cells=1212
+[RERANK-ACC][CLI] REBLEND arm: alpha=1.0 pool_n=10
+[RERANK-ACC][FULL] wrote dev/plans/runs/0.8.3-rerank-accuracy-reblend-a1-n606.json | 606 Q | spent $33.7848/50 | citable=False compl=0.5759 | verdict=ABORTED_INCOMPLETE go=False

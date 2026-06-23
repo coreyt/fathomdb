@@ -1,0 +1,126 @@
+{
+  "schema": "0.8.3-rerank-accuracy-v1",
+  "mode": "full",
+  "reader_model": "gpt-5.4",
+  "k": 10,
+  "pool_n": 50,
+  "rerank_depth": 50,
+  "ce_model_repo": "cross-encoder/ms-marco-TinyBERT-L2-v2",
+  "ce_model_name": "fathomdb-ms-marco-TinyBERT-L2-v2",
+  "corpus_hash": "1859817a32bca532b1bbd5238be05b955b57620bcb5667517a5976765e9ec4df",
+  "context_char_budget": 32000,
+  "n_boot": 2000,
+  "seed": 0,
+  "rerank_arm": "fathomdb_reranked",
+  "baseline_arm": "fathomdb",
+  "reused_arms": [
+    "fathomdb",
+    "mem0_oss",
+    "oracle_raw"
+  ],
+  "n_questions": 606,
+  "n_per_class": {
+    "factoid": 156,
+    "knowledge_update": 150,
+    "multi_session": 150,
+    "temporal": 150
+  },
+  "accuracy_margin": {
+    "rerank_arm": "fathomdb_reranked",
+    "baseline_arm": "fathomdb",
+    "per_class": {
+      "factoid": {
+        "margin": {
+          "point": 0.051282,
+          "ci_lo": 0.0,
+          "ci_hi": 0.096154,
+          "mde": 0.071137,
+          "n": 156
+        },
+        "lever_realized": "INCONCLUSIVE",
+        "gap_to_mem0_closed": 0.21621553250695685,
+        "oracle_headroom_captured": null,
+        "go": false
+      },
+      "knowledge_update": {
+        "margin": {
+          "point": 0.08,
+          "ci_lo": 0.026667,
+          "ci_hi": 0.133333,
+          "mde": 0.077357,
+          "n": 150
+        },
+        "lever_realized": "INCONCLUSIVE",
+        "gap_to_mem0_closed": 0.2926822129702123,
+        "oracle_headroom_captured": null,
+        "go": false
+      },
+      "multi_session": {
+        "margin": {
+          "point": 0.02,
+          "ci_lo": -0.006667,
+          "ci_hi": 0.053333,
+          "mde": 0.041651,
+          "n": 150
+        },
+        "lever_realized": "FAIL",
+        "gap_to_mem0_closed": 0.09999999999999996,
+        "oracle_headroom_captured": null,
+        "go": false
+      },
+      "temporal": {
+        "margin": {
+          "point": 0.046667,
+          "ci_lo": 0.006667,
+          "ci_hi": 0.086833,
+          "mde": 0.061223,
+          "n": 150
+        },
+        "lever_realized": "INCONCLUSIVE",
+        "gap_to_mem0_closed": 1.4000240002400024,
+        "oracle_headroom_captured": null,
+        "go": false
+      }
+    },
+    "pooled": {
+      "margin": {
+        "point": 0.049505,
+        "ci_lo": 0.028053,
+        "ci_hi": 0.072607,
+        "mde": 0.032228,
+        "n": 606
+      },
+      "lever_realized": "PASS",
+      "gap_to_mem0_closed": 0.265487912135058,
+      "oracle_headroom_captured": null,
+      "go": false
+    },
+    "per_arm_accuracy": {
+      "fathomdb_reranked": 0.186469,
+      "fathomdb": 0.136964,
+      "mem0_oss": 0.323432,
+      "oracle_raw": null
+    }
+  },
+  "verdict": "PASS",
+  "go": false,
+  "citable": true,
+  "run_valid": true,
+  "answer_completeness": 1.0,
+  "answer_completeness_min": 1.0,
+  "non_citable_reason": null,
+  "answer_retention": {
+    "arm": "fathomdb_reranked",
+    "n": 606,
+    "retention": 0.1881
+  },
+  "ledger": {
+    "opening_balance_usd": 18.12,
+    "hard_cap_usd": 30.0,
+    "spent_usd": 23.332803,
+    "remaining_usd": 6.667197
+  },
+  "aborted_for_cap": false,
+  "elapsed_s": 2252.4,
+  "blockers_encountered": []
+}
