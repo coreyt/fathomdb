@@ -93,3 +93,5 @@ dev/plans/runs/0.8.3-s15b-design-consult-*.log
 dev/plans/runs/0.8.3-gapdecomp-*review*.log
 dev/plans/runs/0.8.3-gapdecomp-*consult*.log
 dev/plans/runs/0.8.4-tier1-fair-rerun.ckpt.json
+dev/plans/runs/0.8.4-scale-powered-run.ckpt.json
+dev/plans/runs/0.8.4-scale-d2-index.json

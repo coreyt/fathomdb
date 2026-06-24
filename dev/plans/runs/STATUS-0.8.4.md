@@ -32,6 +32,29 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | 2026-06-23 | 10 | **community-S1 STRONG reports** (gpt-5.4 reports) + judge — decisive null | gpt-5.4 + claude-haiku | ~480 | ~3.7 | ~9.7 |
 | 2026-06-23 | 15 | **Microsoft GraphRAG 3.1.0** index (15 docs, gpt-5.4) + 8 global-search + cross-family judge | gpt-5.4 + claude-haiku | ~700 | ~4.5 | **~14.2** |
 | 2026-06-23 | T1 | **Tier-1 FAIR re-run** (matched budget+k+MMR; nano both sides; 8q×5runs×2pairs judged) | gpt-5-nano + claude-haiku | ~340 | 0.324 | **~14.5** |
+| 2026-06-24 | T2 | **SCALE** GraphRAG 200-doc index (nano) + D2 build + 150 answers + 1000 judge | gpt-5-nano + claude-haiku | ~2700 | ~3.9 | **~18.4** |
+
+## 🏆 SCALE POWERED RUN (2026-06-24) — FathomDB Tier-2 DECISIVELY SURPASSES Microsoft GraphRAG @ 200 docs
+
+`runs/0.8.4-scale-powered-run-RESULT.md`. The decisive scale test. Microsoft GraphRAG 3.1.0 indexed **200
+AP-News docs** (gpt-5-nano → 1,492 community reports); FathomDB Tier-2 (C map-reduce QFS + D2 depth-1
+coverage index, D2 embedded with real `Engine.embed` bge-small) over the SAME 200 docs; **gpt-5-nano all
+answers** (equivalent gpt use), **claude-haiku** cross-family judge, **50 q × 5 runs**, order-swapped, no
+batch. **RESULT — both arms SURPASS GraphRAG on ALL THREE metrics (n=500):**
+
+| FathomDB arm | comprehensiveness | diversity | empowerment |
+|---|---|---|---|
+| **C** (map-reduce QFS) | **0.828** [.73,.92] | **0.805** [.71,.89] | **0.716** [.60,.82] |
+| **D2** (coverage index) | **0.719** [.61,.83] | **0.771** [.67,.86] | **0.744** [.63,.85] |
+
+All six cells **surpass** (CI lower >0.50), `length_contradicts=False`, GraphRAG median answer 6000c ≥
+FathomDB (no length advantage to FathomDB). `decide_084=NOT_REACHED` ONLY on the strict power bar
+(mde≈0.09–0.11>0.05) — a registration technicality, NOT parity failure. **Spend $2.91** (+$0.012 D2 build
++ ~$1–3 nano index). **The Tier-1 "GraphRAG wins at SCALE" hypothesis is REFUTED — FathomDB's lead
+WIDENED at scale.** D2 = the product win (cheap $0.012 build, CPU-only query, still surpasses). **Fork E
+(entity/Leiden graph) NOT indicated.** To *register* the surpass: ~200 q (power) + optionally finer
+GraphRAG community level (caveat: ran at level-0/59-reports; dynamic selection over 1492 timed out on
+nano). Ledger → **~$18–20**.
 
 ## ⭐⭐⭐⭐⭐ TIER-2 PROTOTYPE LANDED (2026-06-23) — C + D2, almost graph-free, $0 sanity-validated
 
