@@ -1,0 +1,65 @@
+{
+  "config": {
+    "reader": "gpt-5-nano",
+    "grag_query_model": "gpt-5-nano",
+    "judge": "claude-haiku",
+    "k": 15,
+    "max_tokens": 1500,
+    "mmr_lambda": 0.5,
+    "n_q": 8,
+    "n_runs": 5
+  },
+  "results": {
+    "fathomdb_mapreduce": {
+      "comprehensiveness": {
+        "win_rate": 0.8125,
+        "ci_lo": 0.5625,
+        "ci_hi": 1.0,
+        "mde": 0.21875,
+        "n": 80
+      },
+      "diversity": {
+        "win_rate": 0.875,
+        "ci_lo": 0.625,
+        "ci_hi": 1.0,
+        "mde": 0.1875,
+        "n": 80
+      },
+      "empowerment": {
+        "win_rate": 0.425,
+        "ci_lo": 0.125,
+        "ci_hi": 0.725,
+        "mde": 0.3,
+        "n": 80
+      },
+      "verdict": "NOT_REACHED",
+      "binding": "underpowered:comprehensiveness"
+    },
+    "fathomdb_vector": {
+      "comprehensiveness": {
+        "win_rate": 0.525,
+        "ci_lo": 0.275,
+        "ci_hi": 0.775,
+        "mde": 0.25,
+        "n": 80
+      },
+      "diversity": {
+        "win_rate": 0.66875,
+        "ci_lo": 0.374219,
+        "ci_hi": 0.91875,
+        "mde": 0.272266,
+        "n": 80
+      },
+      "empowerment": {
+        "win_rate": 0.3125,
+        "ci_lo": 0.0625,
+        "ci_hi": 0.625,
+        "mde": 0.28125,
+        "n": 80
+      },
+      "verdict": "NOT_REACHED",
+      "binding": "underpowered:comprehensiveness"
+    }
+  },
+  "spent_usd": 0.3242
+}

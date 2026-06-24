@@ -79,6 +79,53 @@ class VectorRagAdapter:
             for doc_id, score in scored[:k]
         ]
 
+    def retrieve_mmr(self, question: str, k: int, *, lambda_: float = 0.5) -> list[Hit]:
+        """Maximal-Marginal-Relevance retrieval (0.8.4 Tier-1 lever A).
+
+        Plain top-K (:meth:`retrieve`) ranks by query similarity alone, so for a
+        *global* sensemaking question the K slots fill with near-duplicates of the
+        single most query-similar theme (redundancy collapse) — comprehensiveness
+        craters. MMR greedily trades query relevance against novelty vs the
+        already-selected set, so the K slots cover *distinct* themes:
+
+            score(d) = λ·rel(q, d) − (1 − λ)·max_{s ∈ selected} sim(d, s)
+
+        ``lambda_`` ∈ [0, 1]: 1.0 == pure relevance (== :meth:`retrieve`); 0.0 ==
+        pure diversity. Default 0.5. Deterministic: ``rel`` desc, then ``doc_id`` asc
+        on ties, at every greedy step (matching :meth:`retrieve`'s tie-break). At
+        ``k >= len(corpus)`` MMR is moot (all docs returned in a stable order) — it
+        earns its keep when ``k << N`` (the powered full-corpus run), not the 15-doc
+        re-run. ``score`` on each returned Hit is its MMR score (relevance for rank 1).
+        """
+        qv = _embed(question, self._dim)
+        rel: dict[str, float] = {
+            doc_id: _cosine(qv, dv) for doc_id, dv in self._vectors.items()
+        }
+        remaining = sorted(self._vectors, key=lambda d: (-rel[d], d))
+        selected: list[tuple[str, float]] = []
+        while remaining and len(selected) < k:
+            if not selected:
+                best = remaining[0]
+                best_score = rel[best]
+            else:
+                best, best_score = None, -math.inf
+                for doc_id in remaining:
+                    max_sim = max(
+                        _cosine(self._vectors[doc_id], self._vectors[s]) for s, _ in selected
+                    )
+                    mmr = lambda_ * rel[doc_id] - (1.0 - lambda_) * max_sim
+                    # >: keep the first (lowest -rel, then doc_id) on ties, since
+                    # `remaining` is already sorted by that stable key.
+                    if mmr > best_score:
+                        best, best_score = doc_id, mmr
+                assert best is not None
+            selected.append((best, best_score))
+            remaining.remove(best)
+        return [
+            Hit(doc_id=doc_id, body=self._bodies.get(doc_id, ""), score=float(score))
+            for doc_id, score in selected
+        ]
+
 
 class LongContextAdapter:
     """The 'stuff-it-all-in' control: corpus packed to a window-fit char budget.

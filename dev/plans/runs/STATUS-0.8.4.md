@@ -31,8 +31,40 @@ price in `eval/gap_decomposition_run.py::PRICE_PER_1M` (currently unpinned → f
 | 2026-06-23 | 10 | **community-S1 build** (Qwen reports) + cross-family judge, 60-art/10q | gpt-5.4 + claude-haiku | ~480 | ~3.5 | ~6.0 |
 | 2026-06-23 | 10 | **community-S1 STRONG reports** (gpt-5.4 reports) + judge — decisive null | gpt-5.4 + claude-haiku | ~480 | ~3.7 | ~9.7 |
 | 2026-06-23 | 15 | **Microsoft GraphRAG 3.1.0** index (15 docs, gpt-5.4) + 8 global-search + cross-family judge | gpt-5.4 + claude-haiku | ~700 | ~4.5 | **~14.2** |
+| 2026-06-23 | T1 | **Tier-1 FAIR re-run** (matched budget+k+MMR; nano both sides; 8q×5runs×2pairs judged) | gpt-5-nano + claude-haiku | ~340 | 0.324 | **~14.5** |
 
-## ⭐⭐⭐ DEFINITIVE (2026-06-23) — LITERAL FathomDB vs RUNNING Microsoft GraphRAG: GraphRAG WINS
+## ⭐⭐⭐⭐⭐ TIER-2 PROTOTYPE LANDED (2026-06-23) — C + D2, almost graph-free, $0 sanity-validated
+
+`eval/tier2_coverage.py` (+ `tests/test_tier2_coverage.py` 6/6; run `runs/0.8.4-tier2-prototype.py`).
+Built the Tier-2 capability **prototype** (design `0.8.4-closing-graphrag-gap.md` §3), embedder/LLM-
+agnostic, engine-independent (numpy k-means, no sklearn): **C** = hierarchical map-reduce QFS reader;
+**D2** = depth-1 cluster-summary coverage index (cluster chunk embeddings → LLM-summarize each cluster
+→ retrieve over coverage nodes). **$0 sanity run** (15 docs → 21 chunks → 5 clusters; LOCAL Qwen3.6
+summaries; BoW embed): D2 + C both produce coherent GraphRAG-report-style multi-theme global answers
+(~4.7–4.9k c). **Pipeline proven.** Known prototype limits (fix before the scale MEASUREMENT): BoW
+embedder isolates a degenerate cluster (cov-2 = a lone "Editorial Roundup" title → empty summary) →
+**needs a real semantic embedder** (standing Slice-5 [P2]); and the decisive test is **at SCALE** (100s–
+1000s docs) vs a **scaled GraphRAG index**, powered + registered. NEXT (HITL): wire real embedder →
+re-index GraphRAG at scale (nano) → powered registered **C vs D2 vs GraphRAG** run.
+
+## ⭐⭐⭐⭐ TIER-1 FAIR RE-RUN (2026-06-23) — the "GraphRAG WINS" result was LARGELY A MEASUREMENT ARTIFACT
+
+`runs/0.8.4-tier1-fair-rerun-RESULT.md`. Re-ran the SAME head-to-head on the SAME preserved Microsoft
+GraphRAG index with the three **Tier-1 fairness levers** (design `0.8.4-closing-graphrag-gap.md` §2):
+matched generation budget (reader `max_tokens` 600→**1500**), raised k (8→**15**=full coverage), **MMR**
+diversification. Per HITL: **gpt-5-nano on BOTH sides** (FathomDB reader + GraphRAG global-search query
+LLM, equivalent gpt use), claude-haiku judge. **RESULT FLIPS:** `fathomdb_mapreduce` vs GraphRAG —
+comprehensiveness **0.062→0.812** [0.562,1.0], diversity 0.319→**0.875** [0.625,1.0] (both **surpass
+candidates**, ci_lo>0.5); `fathomdb_vector` comp **0.000→0.525**. `decide_084`=NOT_REACHED but binding =
+**underpowered** (n=8, mde≈0.22), NOT below-parity. **Spend $0.324** (nano ≈ free; judge dominates).
+**The decisive 0.00 was the 600-token cap + top-8, not a structural sensemaking deficit — at 15-doc
+scale.** Caveats: underpowered; both-nano (GraphRAG also dropped from gpt-5.4 synthesis → retains only
+its gpt-5.4 index); **15 docs is GraphRAG's weakest case** (its community advantage is a LARGE-corpus
+phenomenon); vector-arm short-answer noise. **Fork C ("record the GraphRAG win") WITHDRAWN — would have
+recorded an artifact.** Live question is now **SCALE** (does fair FathomDB hold at 100s–1000s docs?).
+Next: gpt-5.4-on-both confirmation (~$2–4) + scale-up powered registered run. Ledger → **~$14.5**.
+
+## ⭐⭐⭐ DEFINITIVE (2026-06-23) — LITERAL FathomDB vs RUNNING Microsoft GraphRAG: GraphRAG WINS [SUPERSEDED by the Tier-1 fair re-run above]
 
 `runs/0.8.4-vs-microsoft-graphrag-RESULT.md`. Stood up an **actual Microsoft GraphRAG 3.1.0** (real
 pipeline: entity/relationship/claim extraction → **Leiden hierarchical communities** → **115 LLM

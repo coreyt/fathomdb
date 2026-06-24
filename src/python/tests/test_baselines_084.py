@@ -58,6 +58,55 @@ def hits_scores_nonincreasing(hits: list[Hit]) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# VectorRagAdapter.retrieve_mmr — 0.8.4 Tier-1 lever A (diversification)
+# --------------------------------------------------------------------------- #
+
+# A corpus with a redundant cluster (three near-duplicate influenza docs) plus two
+# distinct themes — the case where plain top-K collapses onto one theme.
+_REDUNDANT_DOCS = {
+    "flu1": "influenza vaccine candidate shows progress in trials",
+    "flu2": "influenza vaccine candidate reports progress in clinical trials",
+    "flu3": "progress on an influenza vaccine candidate in new trials",
+    "bank": "the central bank raised interest rates to fight inflation",
+    "wheat": "drought conditions threaten the regional wheat harvest",
+}
+
+
+def test_mmr_returns_hit_list_respects_k_and_deterministic() -> None:
+    adapter = VectorRagAdapter(_REDUNDANT_DOCS)
+    a = adapter.retrieve_mmr("influenza vaccine", k=3)
+    b = adapter.retrieve_mmr("influenza vaccine", k=3)
+    assert _is_hit_list(a)
+    assert len(a) == 3
+    assert [(h.doc_id, h.score) for h in a] == [(h.doc_id, h.score) for h in b]
+    assert len(adapter.retrieve_mmr("influenza vaccine", k=100)) == len(_REDUNDANT_DOCS)
+
+
+def test_mmr_lambda_one_equals_plain_topk() -> None:
+    # λ=1.0 is pure relevance → identical doc ordering to plain top-K retrieval.
+    adapter = VectorRagAdapter(_REDUNDANT_DOCS)
+    plain = adapter.retrieve("influenza vaccine candidate", k=4)
+    mmr = adapter.retrieve_mmr("influenza vaccine candidate", k=4, lambda_=1.0)
+    assert [h.doc_id for h in plain] == [h.doc_id for h in mmr]
+
+
+def test_mmr_diversifies_vs_plain_topk() -> None:
+    # The redundancy-collapse demonstration: plain top-K for an influenza query
+    # fills its slots with the near-duplicate flu cluster; MMR (λ=0.5) pulls in a
+    # distinct theme (bank/wheat) within the same k, covering more of the corpus.
+    adapter = VectorRagAdapter(_REDUNDANT_DOCS)
+    plain_ids = {h.doc_id for h in adapter.retrieve("influenza vaccine candidate", k=3)}
+    mmr_ids = {h.doc_id for h in adapter.retrieve_mmr("influenza vaccine candidate", k=3, lambda_=0.5)}
+    flu = {"flu1", "flu2", "flu3"}
+    distinct = {"bank", "wheat"}
+    # plain top-K is dominated by the redundant flu cluster ...
+    assert len(plain_ids & flu) == 3
+    # ... while MMR sacrifices a redundant flu doc to cover a distinct theme.
+    assert len(mmr_ids & distinct) >= 1
+    assert len(mmr_ids & flu) < 3
+
+
+# --------------------------------------------------------------------------- #
 # LongContextAdapter
 # --------------------------------------------------------------------------- #
 
