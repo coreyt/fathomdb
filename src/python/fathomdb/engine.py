@@ -108,6 +108,17 @@ class Engine:
             dangling_edge_endpoints=receipt.dangling_edge_endpoints,
         )
 
+    def embed(self, text: str) -> list[float]:
+        """Embed ``text`` with the engine's pinned default embedder
+        (``fathomdb-bge-small-en-v1.5``) and return the raw vector.
+
+        Read-path primitive for callers that need vectors under the engine's
+        own embedder identity (e.g. coverage-index clustering) rather than a
+        parallel, possibly-divergent embedder. Raises
+        ``EmbedderNotConfiguredError`` if the engine was opened without an
+        embedder (``use_default_embedder=False``)."""
+        return list(self._native.embed(text))
+
     def search(
         self,
         query: str,

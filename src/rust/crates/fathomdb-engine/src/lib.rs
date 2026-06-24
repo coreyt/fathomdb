@@ -3692,6 +3692,27 @@ impl Engine {
         Ok(())
     }
 
+    /// Embed arbitrary text with the engine's configured runtime embedder,
+    /// returning the raw (un-centered) vector.
+    ///
+    /// This is the read-path embed primitive: it mirrors the search
+    /// query-embedding path — a single, direct [`Embedder::embed`] call. The
+    /// per-`embed()` watchdog/circuit-breaker guards only the bulk
+    /// projection/write path (many embeds, fault isolation), not single
+    /// read-side embeds, so a direct call is consistent with how a query is
+    /// embedded. Callers get vectors under the engine's *pinned* embedder
+    /// identity (`fathomdb-bge-small-en-v1.5` by default) rather than a
+    /// parallel, possibly-divergent embedder.
+    ///
+    /// Returns [`EngineError::EmbedderNotConfigured`] if the engine was opened
+    /// without an embedder (`use_default_embedder = false`).
+    pub fn embed_text(&self, text: &str) -> Result<Vec<f32>, EngineError> {
+        self.ensure_open()?;
+        let embedder =
+            self.runtime_embedder.as_ref().cloned().ok_or(EngineError::EmbedderNotConfigured)?;
+        embedder.embed(text).map_err(map_runtime_embedder_error)
+    }
+
     #[doc(hidden)]
     pub fn write_vector_for_test(
         &self,

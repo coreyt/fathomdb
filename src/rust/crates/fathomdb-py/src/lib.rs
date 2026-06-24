@@ -761,6 +761,17 @@ impl PyEngine {
         self.inner.set_slow_threshold_ms(value).map_err(engine_error_to_py)
     }
 
+    /// Embed arbitrary text with the engine's pinned default embedder
+    /// (`fathomdb-bge-small-en-v1.5`), returning the raw vector as a list of
+    /// floats. Raises `EmbedderNotConfiguredError` if the engine was opened
+    /// without an embedder (`use_default_embedder=False`).
+    fn embed(&self, py: Python<'_>, text: &str) -> PyResult<Vec<f32>> {
+        validate_ffi_string_py(text)?;
+        let engine = Arc::clone(&self.inner);
+        let text = text.to_string();
+        call_engine(py, move || engine.embed_text(&text))
+    }
+
     // EU-6 — test-hooks-gated vector write seam. Lets Python tests
     // exercise the 0.5/§7 mean-vec pin transition end-to-end through the
     // binding (the public Python surface does not yet expose typed
