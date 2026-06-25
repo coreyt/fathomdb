@@ -274,3 +274,29 @@ fn ce_rerank_empty_hits_returns_empty_immediately() {
         "rerank_fused with rerank_depth>0 and empty input must return empty immediately"
     );
 }
+
+/// 0.8.5 (codex §9 P2-1) — a non-finite α (NaN / ±inf) must NOT poison the blend.
+/// `f64::clamp(NaN)` returns NaN, which would make every blended score NaN and
+/// destroy the ranking. The engine falls back to the documented default α=0.3,
+/// so the result is byte-identical to the α=0.3 order with all-finite scores.
+#[test]
+fn nonfinite_alpha_falls_back_to_default() {
+    let (query, input) = berlin_fixture();
+    let out_default = rerank_fused(query, input.clone(), 3, 0.3, 3);
+    if !model_scored(&out_default) {
+        eprintln!("[SKIP] CE model unavailable — NaN-α fallback pin needs the cached reranker");
+        return;
+    }
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let out = rerank_fused(query, input.clone(), 3, bad, 3);
+        assert!(
+            out.iter().all(|h| h.score.is_finite()),
+            "α={bad} produced a non-finite blended score"
+        );
+        assert_eq!(
+            out.iter().map(|h| h.id).collect::<Vec<_>>(),
+            out_default.iter().map(|h| h.id).collect::<Vec<_>>(),
+            "α={bad} must fall back to the α=0.3 default order"
+        );
+    }
+}

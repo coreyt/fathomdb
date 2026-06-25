@@ -4995,7 +4995,12 @@ fn ce_rerank(
     // 0.8.5 (D3) — clamp α to [0,1] silently here so EVERY path (engine search,
     // `rerank_passages`, the bindings) is covered by one clamp, matching the
     // existing `pool_n.min(len)` clamp idiom.
-    let alpha = alpha.clamp(0.0, 1.0);
+    // codex §9 P2-1: `f64::clamp(NaN)` returns NaN (clamp does NOT map NaN into
+    // range) — a non-finite α would then make every blended score NaN and destroy
+    // the ranking. The high-level SDKs reject non-finite α, but the low-level
+    // `rerank()` / direct-Rust callers don't, so fall back to the documented
+    // default α=0.3 here for any non-finite input.
+    let alpha = if alpha.is_finite() { alpha.clamp(0.0, 1.0) } else { 0.3 };
     // fix-1 [P2]: short-circuit before touching the singleton when there is
     // nothing to rerank — avoids loading/downloading the ~17 MB model for an
     // empty result set and prevents memoizing a transient load failure.

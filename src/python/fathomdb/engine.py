@@ -11,6 +11,7 @@ wrapper converts native return values into the dataclasses in
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, cast
 
 from fathomdb._fathomdb import Engine as _NativeEngine
@@ -169,6 +170,24 @@ class Engine:
             raise TypeError(
                 f"use_graph_arm must be a bool, got {type(use_graph_arm).__name__!r}"
             )
+        # 0.8.5 (codex §9 P2-2) — validate the new α/pool_n knobs before the native
+        # call, mirroring the rerank_depth guard and the TS `search` validation
+        # (cross-SDK parity). bool is rejected explicitly (it is an int/float
+        # subclass that PyO3 would otherwise coerce silently).
+        if alpha is not None:
+            if isinstance(alpha, bool) or not isinstance(alpha, (int, float)):
+                raise TypeError(
+                    f"alpha must be a finite number, got {type(alpha).__name__!r}"
+                )
+            if not math.isfinite(alpha):
+                raise ValueError(f"alpha must be a finite number, got {alpha!r}")
+        if pool_n is not None:
+            if not isinstance(pool_n, int) or isinstance(pool_n, bool):
+                raise TypeError(
+                    f"pool_n must be a non-negative integer, got {type(pool_n).__name__!r}"
+                )
+            if pool_n < 0:
+                raise ValueError(f"pool_n must be >= 0, got {pool_n!r}")
         if filter is None:
             result = self._native.search(
                 query,

@@ -137,3 +137,41 @@ def test_default_alpha_preserves_default_order_and_null_ce_score(engine_with_doc
     ]
     for h in default_result.results:
         assert h.ce_score is None, "default-path (depth=0) hits carry ce_score=None"
+
+
+# --- 0.8.5 (codex §9 P2-2) — α/pool_n validation, cross-SDK parity with TS ---
+
+
+def test_search_pool_n_bool_raises(engine_with_docs):
+    """pool_n=True must raise: bool is an int subclass but semantically wrong
+    (PyO3 would coerce it to 1 and silently rerank a single candidate); TS rejects
+    it, so Python must too for X1 parity."""
+    eng = engine_with_docs
+    with pytest.raises(TypeError, match="non-negative integer"):
+        eng.search("cross encoder", rerank_depth=10, pool_n=True)
+
+
+def test_search_pool_n_float_raises(engine_with_docs):
+    eng = engine_with_docs
+    with pytest.raises(TypeError, match="non-negative integer"):
+        eng.search("cross encoder", rerank_depth=10, pool_n=2.5)  # type: ignore[arg-type]
+
+
+def test_search_pool_n_negative_raises(engine_with_docs):
+    eng = engine_with_docs
+    with pytest.raises(ValueError, match=">= 0"):
+        eng.search("cross encoder", rerank_depth=10, pool_n=-1)
+
+
+def test_search_alpha_nan_raises(engine_with_docs):
+    """Non-finite alpha must raise (parity with TS RangeError; prevents NaN
+    blended scores in the engine)."""
+    eng = engine_with_docs
+    with pytest.raises(ValueError, match="finite"):
+        eng.search("cross encoder", rerank_depth=10, alpha=float("nan"))
+
+
+def test_search_alpha_non_number_raises(engine_with_docs):
+    eng = engine_with_docs
+    with pytest.raises(TypeError, match="finite number"):
+        eng.search("cross encoder", rerank_depth=10, alpha="x")  # type: ignore[arg-type]
