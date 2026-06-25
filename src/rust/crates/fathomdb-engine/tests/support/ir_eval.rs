@@ -680,7 +680,7 @@ pub fn run_mode_bodies(
             // depth=0 → soft-fallback (identity). The RerankStub mode documents
             // the seam; produces the same order as RrfHybrid in the default build
             // (no default-reranker feature or model absent).
-            Ok(rerank_fused(query, res.results, 0).into_iter().map(|h| h.body).collect())
+            Ok(rerank_fused(query, res.results, 0, 0.3, 0).into_iter().map(|h| h.body).collect())
         }
         RetrievalMode::FtsWriteCursor | RetrievalMode::Bm25Fts => Err(format!(
             "mode `{}` deferred: TODO(COR-2-freeze) — needs harness FTS5 SQL + frozen corpus",

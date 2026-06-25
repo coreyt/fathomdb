@@ -171,6 +171,48 @@ test("reranker: positive rerankDepth returns results (soft-fallback in default b
 
 // --- FIX-5 RED tests: u32 overflow guard + consistent RangeError ---
 
+// --- 0.8.5: α / pool_n / ceScore exposure (smoke) ---
+
+test("reranker: search accepts alpha + poolN and each hit carries ceScore", async () => {
+  // 0.8.5 — the new opt-in knobs must be accepted; ceScore is an additive field
+  // on every hit. In the default napi build (no default-reranker feature) the CE
+  // path is compiled away → ceScore is null, but the FIELD must be present.
+  const engine = await openEngineWithDocs();
+  try {
+    const result = await engine.search("cross encoder reranker", undefined, 10, false, 1.0, 10);
+    assert.ok(result.results.length >= 0, "must not error with alpha/poolN set");
+    for (const h of result.results) {
+      assert.ok("ceScore" in h, "every hit must carry a ceScore field");
+      assert.ok(
+        h.ceScore === null || typeof h.ceScore === "number",
+        `ceScore must be number|null, got ${typeof h.ceScore}`,
+      );
+    }
+  } finally {
+    await engine.close();
+  }
+});
+
+test("reranker: default search (no alpha) leaves order byte-identical, ceScore null", async () => {
+  const engine = await openEngineWithDocs();
+  try {
+    const def = await searchWithRetry(engine, "cross encoder");
+    const withKnobs = (
+      await engine.search("cross encoder", undefined, 0, false, 0.3)
+    ).results;
+    assert.deepEqual(
+      withKnobs.map((h) => h.body),
+      def.map((h) => h.body),
+      "alpha=0.3 at depth=0 must preserve the default order",
+    );
+    for (const h of def) {
+      assert.equal(h.ceScore, null, "default-path hits carry null ceScore");
+    }
+  } finally {
+    await engine.close();
+  }
+});
+
 test("reranker: huge rerankDepth raises RangeError (u32 overflow guard)", async () => {
   // FIX-5: rerankDepth > 0xFFFFFFFF (u32::MAX) must raise RangeError.
   // Without the guard, 2**32 + 5 silently wraps mod 2^32 to 5 at the NAPI layer.

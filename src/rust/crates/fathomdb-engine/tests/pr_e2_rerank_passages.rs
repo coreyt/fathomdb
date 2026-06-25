@@ -49,7 +49,7 @@ fn rerank_passages_reorders_when_ce_disagrees_with_input_order() {
     assert_eq!(input[0].0, 1);
     assert_eq!(input[1].0, 2);
 
-    let out = rerank_passages(query, input.clone(), 3).unwrap();
+    let out = rerank_passages(query, input.clone(), 3, 0.3, 3).unwrap();
 
     let in_ids: Vec<u64> = input.iter().map(|p| p.0).collect();
     let out_ids: Vec<u64> = out.iter().map(|p| p.0).collect();
@@ -73,15 +73,48 @@ fn rerank_passages_reorders_when_ce_disagrees_with_input_order() {
 fn rerank_passages_depth_0_is_identity() {
     let input =
         vec![passage(10, "alpha", 0.05), passage(20, "beta", 0.04), passage(30, "gamma", 0.03)];
-    let out = rerank_passages("anything", input.clone(), 0).unwrap();
-    let expected: Vec<(u64, f64)> = input.iter().map(|p| (p.0, p.2)).collect();
-    assert_eq!(out, expected, "depth=0 must preserve input order AND scores byte-identical");
+    let out = rerank_passages("anything", input.clone(), 0, 0.3, 0).unwrap();
+    // depth=0 → identity: input order + input scores, and ce_score == None per tuple.
+    let expected: Vec<(u64, f64, Option<f64>)> = input.iter().map(|p| (p.0, p.2, None)).collect();
+    assert_eq!(out, expected, "depth=0 must preserve input order AND scores, ce_score == None");
+}
+
+/// α / pool_n plumb through `rerank_passages` to the engine blend: α=1.0 lifts the
+/// relevant passage (id=2) to the top and the returned tuples carry `ce_score`
+/// (`Some`) for the reranked pool.
+#[test]
+fn rerank_passages_threads_alpha_and_pool_n() {
+    let query = "How many people live in Berlin?";
+    let input = vec![
+        passage(
+            1,
+            "Berlin is famous for its vibrant art scene, nightlife, and historic architecture.",
+            0.500,
+        ),
+        passage(
+            2,
+            "Berlin has a population of about 3.7 million inhabitants, making it the most populous city in Germany.",
+            0.499,
+        ),
+        passage(3, "The quick brown fox jumps over the lazy dog near the river.", 0.001),
+    ];
+    let out = rerank_passages(query, input.clone(), 3, 1.0, 3).unwrap();
+    if out.iter().all(|t| t.2.is_none()) {
+        eprintln!("[SKIP] CE model unavailable — α/pool_n plumb test needs the cached reranker");
+        return;
+    }
+    assert_eq!(out[0].0, 2, "α=1.0 must lift the relevant passage to the top");
+    // α=1.0 over the full pool: blended score == ce_norm == ce_score per tuple.
+    for (_id, score, ce) in &out {
+        let ce = ce.expect("in-pool tuple carries ce_score");
+        assert!((score - ce).abs() < 1e-12, "α=1.0: tuple score must equal ce_score");
+    }
 }
 
 /// Empty passage list short-circuits to empty without driving the model load —
 /// pins the `rerank_fused`/`ce_rerank` empty guard through the helper.
 #[test]
 fn rerank_passages_empty_is_identity() {
-    let out = rerank_passages("any query", vec![], 10).unwrap();
+    let out = rerank_passages("any query", vec![], 10, 1.0, 10).unwrap();
     assert!(out.is_empty(), "empty passage list must return empty immediately");
 }

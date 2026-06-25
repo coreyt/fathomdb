@@ -98,6 +98,12 @@ export interface SearchHit {
    * for a graph-arm hit; `null` for every two-arm hit.
    */
   sourceId: string | null;
+  /**
+   * 0.8.5 (EXP-0) — per-candidate CE score (`ce_norm = sigmoid(ce_logit)`) for
+   * hits inside the reranked pool; `null` otherwise (out-of-pool, the identity
+   * path, or no CE model loaded).
+   */
+  ceScore: number | null;
 }
 
 /**
@@ -354,6 +360,8 @@ export class Engine {
     filter?: SearchFilter,
     rerankDepth?: number,
     useGraphArm?: boolean,
+    alpha?: number,
+    poolN?: number,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // G10 filter strings cross the FFI like `query` and must clear the same
@@ -392,8 +400,26 @@ export class Engine {
         `useGraphArm must be a boolean, got ${typeof useGraphArm}`,
       );
     }
+    // 0.8.5 (EXP-0): alpha is a finite number (clamped to [0,1] in the engine);
+    // poolN is a non-negative integer <= u32::MAX (mirrors the rerankDepth guard).
+    if (alpha !== undefined && (typeof alpha !== "number" || !Number.isFinite(alpha))) {
+      throw new RangeError(`alpha must be a finite number, got ${alpha}`);
+    }
+    if (poolN !== undefined) {
+      if (!Number.isInteger(poolN)) {
+        throw new RangeError(`poolN must be an integer, got ${typeof poolN}`);
+      }
+      if (poolN < 0) {
+        throw new RangeError(`poolN must be >= 0, got ${poolN}`);
+      }
+      if (poolN > 0xFFFFFFFF) {
+        throw new RangeError(
+          `poolN must be <= 4294967295 (u32 max), got ${poolN}`,
+        );
+      }
+    }
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth, useGraphArm),
+      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN),
     );
     const branch = r.softFallback?.branch;
     return {
@@ -411,6 +437,7 @@ export class Engine {
           ? (h.branch as SoftFallbackBranch)
           : "text",
         sourceId: h.sourceId ?? null,
+        ceScore: h.ceScore ?? null,
       })),
     };
   }
@@ -598,6 +625,8 @@ export const graph = {
           ? (h.branch as SoftFallbackBranch)
           : "text",
         sourceId: h.sourceId ?? null,
+        // 0.8.5 — searchExpand never reranks (depth=0) → ceScore is always null.
+        ceScore: h.ceScore ?? null,
       })),
       expanded: r.expanded.map((e) => ({
         node: e.node,

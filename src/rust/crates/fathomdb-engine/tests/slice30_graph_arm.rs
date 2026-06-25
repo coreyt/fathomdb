@@ -145,7 +145,7 @@ fn graph_arm_drops_invalidated_edges() {
     // FAILS at RED because use_graph_arm param doesn't exist yet.
     let result = opened
         .engine
-        .search_reranked("alice anchor", None, 0, true)
+        .search_reranked("alice anchor", None, 0, true, 0.3, 0)
         .expect("search with graph arm");
 
     let bob_in_results = result.results.iter().any(|h| h.body.contains("bob target"));
@@ -197,8 +197,10 @@ fn graph_arm_temporal_fallback_excluded_or_downweighted() {
     // body ("carol links to dave"). So carol is the seed and dave is graph-REACHED
     // via the live edge (not co-seeded as an edge-fact endpoint), keeping this a
     // clean test of temporal traversal filtering: dave (live) in, eve (fallback) out.
-    let result =
-        opened.engine.search_reranked("anchor text", None, 0, true).expect("search with graph arm");
+    let result = opened
+        .engine
+        .search_reranked("anchor text", None, 0, true, 0.3, 0)
+        .expect("search with graph arm");
 
     let bodies: Vec<&str> = result.results.iter().map(|h| h.body.as_str()).collect();
 
@@ -252,11 +254,11 @@ fn graph_arm_disabled_is_byte_identical_to_baseline() {
     // FAILS at RED because use_graph_arm param doesn't exist yet.
     let without_arm = opened
         .engine
-        .search_reranked("baseline search", None, 0, false)
+        .search_reranked("baseline search", None, 0, false, 0.3, 0)
         .expect("search without graph arm");
     let with_arm = opened
         .engine
-        .search_reranked("baseline search", None, 0, true)
+        .search_reranked("baseline search", None, 0, true, 0.3, 0)
         .expect("search with graph arm");
 
     // The two-arm result (use_graph_arm=false) must match the pre-Slice-30 output.

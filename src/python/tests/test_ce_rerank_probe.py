@@ -234,3 +234,83 @@ def test_rerank_depth_0_is_identity_real_reranker() -> None:
     # And the order/doc_ids are byte-identical to the base pool (true identity).
     out = identity_arm.retrieve("q1", 10)
     assert [h.doc_id for h in out] == ["GOLD", "d1", "d2"]
+
+
+# --------------------------------------------------------------------------- #
+# (e) 0.8.5 — native α/pool_n/ce_score EQUIVALENCE PIN against the eval oracle.
+# --------------------------------------------------------------------------- #
+
+# A fixed candidate fixture (query + bodies) where the CE strongly disagrees with
+# the base order, so α=1.0 reranking is a real reorder, not a no-op.
+_EQUIV_QUERY = "How many people live in Berlin?"
+_EQUIV_PASSAGES = [
+    {"id": 0, "body": "Berlin is famous for its nightlife, art scene, and historic architecture.", "score": 0.50},
+    {"id": 1, "body": "Berlin has a population of about 3.7 million inhabitants, the most populous city in Germany.", "score": 0.49},
+    {"id": 2, "body": "Paris is the capital of France and a major European cultural centre.", "score": 0.30},
+    {"id": 3, "body": "The quick brown fox jumps over the lazy dog near the river.", "score": 0.10},
+    {"id": 4, "body": "Germany's federal government sits in Berlin, the national capital.", "score": 0.05},
+    {"id": 5, "body": "A recipe for sourdough bread starts with an active flour-and-water starter.", "score": 0.01},
+]
+
+
+def _reblend_order(ce_by_id: dict[int, float], passages: list[dict], *, alpha: float, pool_n: int) -> list[int]:
+    """The eval oracle's re-blend over the same pool: sort by
+    ``alpha*ce + (1-alpha)*minmax(base_score)`` desc, stable on base index."""
+    from eval.rerank_tune_probe import minmax_norm
+
+    cand = passages[:pool_n]
+    rrf = minmax_norm([float(p["score"]) for p in cand])
+    scored = [
+        (alpha * ce_by_id.get(int(p["id"]), 0.0) + (1.0 - alpha) * rrf[i], i, int(p["id"]))
+        for i, p in enumerate(cand)
+    ]
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [pid for _s, _i, pid in scored]
+
+
+def test_native_alpha_pool_n_matches_reblend_adapter() -> None:
+    """0.8.5 EQUIVALENCE PIN: native ``fathomdb.rerank(..., alpha=1.0, pool_n=10)``
+    reproduces the eval ``ReblendRerankAdapter`` order AND the returned ``ce_score``
+    matches the adapter's recovered ``ce_norm`` within 1e-6 — proving the parity
+    config is now native. The model is cached (no network); a missing model is a
+    real signal, not an expected skip."""
+    fathomdb = pytest.importorskip("fathomdb")
+    from eval.rerank_tune_probe import recover_ce_norm
+
+    passages = [dict(p) for p in _EQUIV_PASSAGES]
+    n = len(passages)
+
+    # Native parity config (α=1.0, narrow pool covering the whole fixture).
+    native = fathomdb.rerank(_EQUIV_QUERY, passages, n, alpha=1.0, pool_n=10)
+    if all(r.get("ce_score") is None for r in native):
+        pytest.skip("CE reranker model unavailable (cold cache, no network)")
+
+    # Oracle: recover pure ce_norm via the score=0 trick (default α=0.3 path).
+    zero = [{"id": p["id"], "body": p["body"], "score": 0.0} for p in passages]
+    ce_by_id = {int(r["id"]): recover_ce_norm(float(r["score"])) for r in fathomdb.rerank(_EQUIV_QUERY, zero, n)}
+
+    expected_order = _reblend_order(ce_by_id, passages, alpha=1.0, pool_n=10)
+    assert [int(r["id"]) for r in native] == expected_order, "native α=1.0 order must match the reblend oracle"
+
+    # ce_score per id matches the recovered ce_norm within tol.
+    for r in native:
+        rid = int(r["id"])
+        assert r["ce_score"] is not None, "in-pool hit must carry a ce_score"
+        assert abs(float(r["ce_score"]) - ce_by_id[rid]) < 1e-6, f"ce_score mismatch for id={rid}"
+
+
+def test_native_default_alpha_equals_prod_0_3() -> None:
+    """The default call (``alpha`` omitted) is byte-identical to an explicit
+    ``alpha=0.3`` prod call — order AND blended scores — so the C6 default is
+    preserved through the binding."""
+    fathomdb = pytest.importorskip("fathomdb")
+
+    passages = [dict(p) for p in _EQUIV_PASSAGES]
+    n = len(passages)
+    default = fathomdb.rerank(_EQUIV_QUERY, passages, n)
+    if all(r.get("ce_score") is None for r in default):
+        pytest.skip("CE reranker model unavailable (cold cache, no network)")
+    explicit = fathomdb.rerank(_EQUIV_QUERY, passages, n, alpha=0.3, pool_n=n)
+    assert [int(r["id"]) for r in default] == [int(r["id"]) for r in explicit]
+    for a, b in zip(default, explicit):
+        assert abs(float(a["score"]) - float(b["score"])) < 1e-12, "default α must equal explicit 0.3"

@@ -390,6 +390,10 @@ pub struct SearchHit {
     /// G0 Phase-2 — source-document provenance (`sourceId` in JS). Set (to the
     /// traversed edge's `source_id`) only for graph-arm hits; `null` otherwise.
     pub source_id: Option<String>,
+    /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`
+    /// (`ceScore` in JS). Set only for hits inside the reranked pool; `null`
+    /// otherwise (out-of-pool, identity path, or no CE model loaded).
+    pub ce_score: Option<f64>,
 }
 
 impl SearchHit {
@@ -406,6 +410,7 @@ impl SearchHit {
                 SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
             source_id: h.source_id.clone(),
+            ce_score: h.ce_score,
         }
     }
 }
@@ -756,6 +761,7 @@ impl Engine {
     }
 
     #[napi]
+    #[allow(clippy::too_many_arguments)]
     pub async fn search(
         &self,
         query: String,
@@ -765,6 +771,11 @@ impl Engine {
         // from the top-10 fused hits and fuse the reachable nodes as a third RRF arm.
         // Default false → byte-identical to the pre-Slice-30 two-arm pipeline.
         use_graph_arm: Option<bool>,
+        // 0.8.5 (EXP-0) — CE-rerank knobs. `alpha` (default 0.3, clamped to [0,1] in
+        // the engine) is the CE-blend weight; `poolN` (default = rerankDepth) is the
+        // reranked-pool size. Omitting both reproduces the byte-identical default order.
+        alpha: Option<f64>,
+        pool_n: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -813,9 +824,15 @@ impl Engine {
         let depth = rerank_depth.unwrap_or(0) as usize;
         // 0.8.1 R3: use_graph_arm=None or false → two-arm byte-identical path.
         let graph_arm = use_graph_arm.unwrap_or(false);
+        // 0.8.5 (D4): resolve the binding defaults — α=0.3, pool_n=rerankDepth — so an
+        // unset call reproduces the pre-slice ranking. α is clamped in the engine.
+        let alpha = alpha.unwrap_or(0.3);
+        let pool_n = pool_n.map(|p| p as usize).unwrap_or(depth);
         let engine = Arc::clone(&self.inner);
-        let result =
-            call_engine(move || engine.search_reranked(&query, filter, depth, graph_arm)).await?;
+        let result = call_engine(move || {
+            engine.search_reranked(&query, filter, depth, graph_arm, alpha, pool_n)
+        })
+        .await?;
         Ok(SearchResult::from_rust(result))
     }
 
