@@ -95,3 +95,6 @@ dev/plans/runs/0.8.3-gapdecomp-*consult*.log
 dev/plans/runs/0.8.4-tier1-fair-rerun.ckpt.json
 dev/plans/runs/0.8.4-scale-powered-run.ckpt.json
 dev/plans/runs/0.8.4-scale-d2-index.json
+# 0.8.4 scale/gating runtime caches (rebuildable: answer ckpt + built D2 index)
+dev/plans/runs/0.8.4-*.ckpt.json
+dev/plans/runs/0.8.4-*-d2-index.json

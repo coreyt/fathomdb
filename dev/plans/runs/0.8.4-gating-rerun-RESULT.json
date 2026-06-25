@@ -1,0 +1,91 @@
+{
+  "config": {
+    "model": "gemini-3.5-flash",
+    "reasoning_effort": "minimal",
+    "judge": "claude-haiku",
+    "n_docs": 200,
+    "n_q": 200,
+    "n_runs": 5,
+    "k_d2": 8,
+    "max_tokens": 1500,
+    "community_level": 1,
+    "grag_root": "/tmp/grag-gemini",
+    "question_scopes": [
+      "global",
+      "linked"
+    ],
+    "judge_family": "anthropic",
+    "system_families": [
+      "google"
+    ]
+  },
+  "results": {
+    "fathomdb_d2": {
+      "comprehensiveness": {
+        "win_rate": 0.413,
+        "ci_lo": 0.348462,
+        "ci_hi": 0.473,
+        "mde": 0.062269,
+        "n": 2000
+      },
+      "diversity": {
+        "win_rate": 0.4455,
+        "ci_lo": 0.391744,
+        "ci_hi": 0.501513,
+        "mde": 0.054884,
+        "n": 2000
+      },
+      "empowerment": {
+        "win_rate": 0.59875,
+        "ci_lo": 0.544,
+        "ci_hi": 0.65275,
+        "mde": 0.054375,
+        "n": 2000
+      },
+      "verdict": "NOT_REACHED",
+      "binding": "underpowered:comprehensiveness",
+      "surpass": [
+        "empowerment"
+      ],
+      "blocked_by": null,
+      "length_contradicts": true
+    },
+    "fathomdb_c": {
+      "comprehensiveness": {
+        "win_rate": 0.72325,
+        "ci_lo": 0.6635,
+        "ci_hi": 0.78025,
+        "mde": 0.058375,
+        "n": 2000
+      },
+      "diversity": {
+        "win_rate": 0.6135,
+        "ci_lo": 0.562994,
+        "ci_hi": 0.665756,
+        "mde": 0.051381,
+        "n": 2000
+      },
+      "empowerment": {
+        "win_rate": 0.71875,
+        "ci_lo": 0.66725,
+        "ci_hi": 0.773256,
+        "mde": 0.053003,
+        "n": 2000
+      },
+      "verdict": "NOT_REACHED",
+      "binding": "underpowered:comprehensiveness",
+      "surpass": [
+        "comprehensiveness",
+        "diversity",
+        "empowerment"
+      ],
+      "blocked_by": null,
+      "length_contradicts": false
+    }
+  },
+  "spend": {
+    "fathomdb_usd": 21.6032,
+    "graphrag_usd": 20.7416,
+    "total_usd": 42.3447
+  }
+}
