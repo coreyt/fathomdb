@@ -258,3 +258,55 @@ win-rates. **HITL gate:** the resolution verdict + surpass-option package → HI
 - **Carry-forward from 0.8.3:** after recall improves, re-run the α/pool_n CE-rerank sweep on the improved
   pool ([`../roadmap/0.8.4.md`](../roadmap/0.8.4.md) §6) — a separate, recall-gated workstream, not part of
   the S1 ladder.
+
+---
+
+## 7. Post-scale-run sequencing (HITL 2026-06-24) — the gating re-run BEFORE we lock anything in
+
+> **Status of §§1–6 above:** the original Leiden-centric S1 ladder is **substantially superseded** by the
+> Tier-1/Tier-2 measurement arc ([`../design/0.8.4-closing-graphrag-gap.md`](../design/0.8.4-closing-graphrag-gap.md))
+> and the scale-powered run ([`runs/0.8.4-scale-powered-run-RESULT.md`](runs/0.8.4-scale-powered-run-RESULT.md)).
+> The current measured read is: at 200 docs, FathomDB's **almost-graph-free** Tier-2 (C map-reduce QFS, D2
+> depth-1 coverage index) **provisionally surpasses** a running Microsoft GraphRAG on all three sensemaking
+> metrics — but the run is `NOT_REACHED` on power (mde≈0.09–0.11>ε) **and** GraphRAG ran at
+> **community-level 0** (59 of 1,492 reports; finer/dynamic selection was intractable on nano). So GraphRAG
+> may have been measured **below its full strength** — we do **not** lock anything in on this result.
+
+### 7.1 The gating experiment (DO THIS FIRST)
+
+A **fair, at-power, full-strength-GraphRAG re-run** before any board/ledger lock-in. Requirements:
+
+1. **At power** — raise N to clear the frozen `decide_084` bar (mde ≤ ε=0.05; ≈200 questions). Converts the
+   provisional surpass *direction* into a **registered** verdict.
+2. **A corpus WITH ENTITIES (entity-rich)** — not just AP-News sensemaking. This is GraphRAG's claimed home
+   turf and the one regime where the entity/relationship/community machinery (and FathomDB's Fork E) could
+   still matter. Testing here is what makes a "FathomDB doesn't need the graph" conclusion credible.
+3. **A stronger model that does NOT collapse GraphRAG to community-level 0** — strong/fast enough to run
+   GraphRAG's **dynamic community selection / finer community levels** (the full Leiden hierarchy), so we
+   measure GraphRAG at full strength, not a root-only configuration. (The compute-tier escalation principle
+   permits a stronger/frontier model here; trade off vs latency.)
+4. **Arm strategy = D2 as product, C as fallback** — the re-run measures **D2** (depth-1 coverage index;
+   $0.012 one-time build, CPU-only cheap query) as the product path, with **C** (map-reduce QFS, no index)
+   as the always-available fallback. This is also the **going-forward product strategy**, not just the
+   re-run config.
+
+Keep all bias controls (cross-family judge, order-swap, ≥5 runs, length corroboration) and the resilient
+batched/checkpointed harness. Same `decide_084` gate — no endpoint switching.
+
+### 7.2 TODO — only AFTER the gating re-run confirms the result
+
+- **(a) [TODO]** Flip the Memex⇄FathomDB ledger **OPP-4** open item to the resolved decision — *D2 = product,
+  C = fallback, Leiden likely unneeded at personal-agent scale* — **once the entity-rich, full-strength,
+  at-power re-run holds.** (Do not flip it on the current community-level-0 result.)
+  (`~/projects/memex/dev/fathomdb/LEVERAGE-OPPORTUNITIES-LEDGER.md`)
+- **(b) [TODO]** Supersede `main`'s stale boards — `runs/0.8.4-COMPREHENSIVE-REPORT.md` (§3 head-to-head
+  table, §8 "fork A: fund a graph build") and `runs/STATUS-0.8.4.md` still tell the **refuted** "Microsoft
+  GraphRAG wins, FathomDB not at parity" story. Update them (and land the `0.8.4-tier2-embedder-graphrag-gap`
+  branch) **after** the re-run, so the source-of-truth flips on the *registered* result, not the provisional
+  one.
+
+**Why this ordering:** the 0.8.3/0.8.4 program has repeatedly been bitten by measurement artifacts (the
+15-doc "GraphRAG loss" was one). A provisional surpass with a known confound (community-level 0) is exactly
+the kind of result to confirm *before* propagating it into contracts and source-of-truth boards. Fork E
+(entity/Leiden graph) stays gated on this re-run: if D2/C still win on an entity-rich corpus vs a
+full-strength GraphRAG, Fork E is decisively not indicated; if the gap reappears there, Fork E re-enters.
