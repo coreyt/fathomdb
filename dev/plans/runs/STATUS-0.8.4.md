@@ -1,5 +1,28 @@
 # 0.8.4 — running $ ledger + status (GraphRAG-parity resolution)
 
+## CURRENT STATE (2026-06-25) — supersedes earlier "GraphRAG wins" entries below
+
+The sensemaking axis resolved via the **Tier** path (almost-graph-free), not the original Leiden-S1 ladder.
+Latest, decisive evidence = the **GATING re-run** (`0.8.4-gating-rerun-RESULT.md`): fair, **N=200**,
+entity-rich, **full-strength GraphRAG (level-1)**, same model both sides, four bias controls. **SPLIT verdict:**
+
+- **C (map-reduce QFS, fallback)** — **provisional SURPASS** on all three metrics (0.72/0.61/0.72), clean + concise.
+- **D2 (depth-1 coverage index, intended product)** — **FAILS** (loses comp + div); prior surpass was a
+  community-level-0 artifact. **Fork E (entity/Leiden graph) re-opens** for the cheap-product path.
+- Both `decide_084 = NOT_REACHED` on power (comprehensiveness mde 0.058/0.062 > ε; **N=200 = corpus max**,
+  not closable here) → strong **direction**, not a registered verdict.
+
+**Net:** almost-graph-free CAN match-or-beat full-strength GraphRAG, but only the **expensive** C; the **cheap
+D2 product is not at parity** as-is. Earlier sections (literal head-to-head "GraphRAG wins", the comprehensive
+report's one-line verdict) are **superseded** — see `0.8.4-COMPREHENSIVE-REPORT.md` (banner),
+`0.8.4-tier1-fair-rerun-RESULT.md`, `0.8.4-scale-powered-run-RESULT.md`. Strategy:
+`dev/design/0.8.4-closing-graphrag-gap.md`, `dev/design/0.8.x-parity-portfolio-strategy.md`.
+
+**Spend:** gating re-run **≥ $42.34** (lower bound — see RESULT caveat 5); ledger detail below.
+**Gated (plan §7.2, HITL):** the ledger OPP-4 flip, the full board conclusion-rewrite, and the Fork-E decision.
+
+---
+
 Resolution: **near-parity-or-better vs Microsoft GraphRAG** on global sensemaking,
 S1 (community-summary build) **paired with** G-HH-2 (measured S1-vs-running-GraphRAG
 head-to-head); HippoRAG-2 a secondary MuSiQue cross-check. Gate frozen as
