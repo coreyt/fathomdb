@@ -69,7 +69,7 @@ writer thread has accepted the batch.
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False) -> SearchResult`
+### `engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False, alpha=None, pool_n=None) -> SearchResult`
 
 Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**,
 with optional CPU cross-encoder reranking (0.8.1 R1) and optional graph-BFS
@@ -91,11 +91,23 @@ third arm (0.8.1 R3).
   nodes are fused as a third RRF arm (`RRF_WEIGHT_GRAPH = 1.0`). Default
   `False` produces byte-identical results to the pre-R3 two-arm pipeline.
   Must be a `bool`; non-bool raises `TypeError`.
+- `alpha` (`float | None`, default `None`) — 0.8.5 (EXP-0) CE-blend weight,
+  clamped to `[0, 1]` in the engine. `None` ⇒ `0.3` — the **C6 factoid-guard**
+  default that prevents a high-CE-but-wrong candidate from displacing a
+  BM25-correct factoid. **`alpha=1.0` is opt-in for the agentic-answer / memory
+  path** (the measured Mem0-parity config); the `0.3` default protects naive
+  factoid lookups. Only effective when `rerank_depth > 0` and the CE model is
+  loaded.
+- `pool_n` (`int | None`, default `None`) — 0.8.5 (EXP-0) reranked-pool size,
+  clamped to the hit count. `None` ⇒ `rerank_depth` (preserves the prior
+  pool == depth semantics). Note `rerank_depth == 0` is still the identity gate,
+  so `rerank_depth=0, pool_n=10` does **not** rerank.
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
-  `body`, the **RRF-fused** `score`, and the `branch` that produced it
-  (`"graph_arm"` for nodes surfaced only via graph traversal).
+  `body`, the **RRF-fused** `score`, the `branch` that produced it
+  (`"graph_arm"` for nodes surfaced only via graph traversal), and `ce_score`
+  (the per-candidate CE score for in-pool reranked hits, `None` otherwise).
 
 > **Ranking is RRF (behavior-compat event).** Results are ordered by Reciprocal
 > Rank Fusion (`Σ 1/(60 + rank)`) of the vector and text branches — a body the
@@ -332,12 +344,16 @@ class SearchHit:
     body: str
     score: float     # G9 RRF-fused relevance (Σ 1/(60+rank)); higher = better
     branch: SoftFallbackBranch  # Literal["vector", "text", "text_edge", "graph_arm"]
+    source_id: str | None = None  # G0 Phase-2 provenance; set only for graph-arm hits
+    ce_score: float | None = None  # 0.8.5 CE score (sigmoid logit) for in-pool reranked hits
 ```
 
 `score` is the **G9 RRF-fused** relevance (higher = more relevant), optionally
 recency-reweighted. Raw `vec_distance_l2` (vector) and `bm25()` (text) are fused
 on **rank**, never compared raw (they are not comparable). `branch` tags which
 branch produced the representative hit (vector-first when both surface a body).
+`ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
+(`sigmoid(ce_logit)`) for hits inside the reranked pool, `None` otherwise.
 
 ### `SearchFilter`
 
