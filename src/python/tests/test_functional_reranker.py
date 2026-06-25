@@ -111,3 +111,29 @@ def test_bool_rerank_depth_raises_type_error(engine_with_docs):
     eng = engine_with_docs
     with pytest.raises(TypeError, match="non-negative integer"):
         eng.search("cross encoder", rerank_depth=True)
+
+
+# --- 0.8.5 (EXP-0): α / pool_n / ce_score exposure (X1 parity with TS smoke) ---
+
+
+def test_search_accepts_alpha_pool_n_and_hits_carry_ce_score(engine_with_docs):
+    """The new opt-in knobs are accepted and every hit carries a ``ce_score``
+    field (None or float). Mirrors the TS smoke in functional-reranker.test.ts."""
+    eng = engine_with_docs
+    result = eng.search("cross encoder reranker", rerank_depth=10, alpha=1.0, pool_n=10)
+    for h in result.results:
+        assert hasattr(h, "ce_score"), "every hit must carry a ce_score field"
+        assert h.ce_score is None or isinstance(h.ce_score, float)
+
+
+def test_default_alpha_preserves_default_order_and_null_ce_score(engine_with_docs):
+    """At depth=0 the new knobs are inert: order is byte-identical to the default
+    search and ``ce_score`` is None on every (identity-path) hit."""
+    eng = engine_with_docs
+    default_result = eng.search("cross encoder")
+    knobs_result = eng.search("cross encoder", rerank_depth=0, alpha=0.3)
+    assert [h.body for h in knobs_result.results] == [
+        h.body for h in default_result.results
+    ]
+    for h in default_result.results:
+        assert h.ce_score is None, "default-path (depth=0) hits carry ce_score=None"

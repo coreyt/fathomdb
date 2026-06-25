@@ -368,6 +368,9 @@ struct PySearchHit {
     /// G0 Phase-2 — source-document provenance. Set (to the traversed edge's
     /// `source_id`) only for graph-arm hits; `None` for every two-arm hit.
     source_id: Option<String>,
+    /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`.
+    /// `Some` only for hits inside the reranked pool; `None` otherwise.
+    ce_score: Option<f64>,
 }
 
 impl PySearchHit {
@@ -384,6 +387,7 @@ impl PySearchHit {
                 SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
             },
             source_id: h.source_id.clone(),
+            ce_score: h.ce_score,
         }
     }
 }
@@ -646,7 +650,8 @@ impl PyEngine {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
-                     status=None, rerank_depth=0, use_graph_arm=false)
+                     status=None, rerank_depth=0, use_graph_arm=false,
+                     alpha=None, pool_n=None)
     )]
     fn search(
         &self,
@@ -661,6 +666,12 @@ impl PyEngine {
         // from the top-10 fused hits and fuse reachable nodes as a third RRF arm.
         // Default False → byte-identical to the pre-Slice-30 two-arm pipeline.
         use_graph_arm: bool,
+        // 0.8.5 (EXP-0) — CE-rerank knobs. `alpha` (default 0.3) is the CE-blend
+        // weight, clamped to [0,1] in the engine; `pool_n` (default = rerank_depth)
+        // is the reranked-pool size. Omitting both reproduces the byte-identical
+        // default ranking; `alpha=1.0, pool_n=10` is the measured-parity config.
+        alpha: Option<f64>,
+        pool_n: Option<usize>,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -685,8 +696,13 @@ impl PyEngine {
         // 0.8.1 R1: use search_reranked so rerank_depth=0 is a no-op (identity)
         // and rerank_depth>0 activates the CE path.
         // 0.8.1 R3: use_graph_arm=True activates the graph-BFS third arm.
+        // 0.8.5 (D4): resolve the binding-side defaults — α=0.3, pool_n=rerank_depth —
+        // so an unset call reproduces the pre-slice ranking exactly. α is clamped in
+        // the engine's `ce_rerank`.
+        let alpha = alpha.unwrap_or(0.3);
+        let pool_n = pool_n.unwrap_or(rerank_depth);
         let result = call_engine(py, move || {
-            engine.search_reranked(&query, filter, rerank_depth, use_graph_arm)
+            engine.search_reranked(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
         })?;
         Ok(PySearchResult::from_rust(result))
     }
@@ -1253,12 +1269,17 @@ fn dict_f64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<f64> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (query, passages, rerank_depth))]
+#[pyo3(signature = (query, passages, rerank_depth, alpha=None, pool_n=None))]
 fn rerank(
     py: Python<'_>,
     query: &str,
     passages: &Bound<'_, PyList>,
     rerank_depth: usize,
+    // 0.8.5 (EXP-0) — CE-blend weight (default 0.3, clamped to [0,1] in the engine)
+    // and reranked-pool size (default = rerank_depth). Omitting both reproduces the
+    // pre-slice α=0.3 blend; `alpha=1.0, pool_n=10` is the measured-parity config.
+    alpha: Option<f64>,
+    pool_n: Option<usize>,
 ) -> PyResult<Vec<Py<PyDict>>> {
     validate_ffi_string_py(query)?;
 
@@ -1279,6 +1300,9 @@ fn rerank(
         .collect::<PyResult<_>>()?;
 
     let query = query.to_string();
+    // 0.8.5 (D4): resolve the binding-side defaults — α=0.3, pool_n=rerank_depth.
+    let alpha = alpha.unwrap_or(0.3);
+    let pool_n = pool_n.unwrap_or(rerank_depth);
     // The helper is pure CPU (no engine handle); it may perform a one-time gated
     // model load on a cold cache, so release the GIL for the duration.
     // `catch_unwind` + `AssertUnwindSafe` mirror `call_engine` so the never-panic
@@ -1288,7 +1312,7 @@ fn rerank(
     let reranked = py
         .allow_threads(|| {
             catch_unwind(AssertUnwindSafe(move || {
-                rust_rerank_passages(&query, tuples, rerank_depth)
+                rust_rerank_passages(&query, tuples, rerank_depth, alpha, pool_n)
             }))
         })
         // outer Result: catch_unwind — any panic → PanicException (hard invariant).
@@ -1298,10 +1322,12 @@ fn rerank(
 
     reranked
         .into_iter()
-        .map(|(id, score)| {
+        .map(|(id, score, ce_score)| {
             let d = PyDict::new(py);
             d.set_item("id", id)?;
             d.set_item("score", score)?;
+            // 0.8.5 — additive CE score; None (Python `None`) outside the reranked pool.
+            d.set_item("ce_score", ce_score)?;
             Ok(d.unbind())
         })
         .collect()

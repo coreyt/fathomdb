@@ -24,6 +24,9 @@ class SearchHit:
     score: float
     branch: str
     source_id: str | None
+    # 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
+    # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
+    ce_score: float | None
 
 class SearchResult:
     projection_cursor: int
@@ -106,6 +109,8 @@ class Engine:
         status: str | None = ...,
         rerank_depth: int = ...,
         use_graph_arm: bool = ...,
+        alpha: float | None = ...,
+        pool_n: int | None = ...,
     ) -> SearchResult: ...
     def close(self) -> None: ...
     def drain(self, timeout_s: float = ...) -> None: ...
@@ -208,17 +213,24 @@ def rerank(
     query: str,
     passages: list[dict[str, Any]],
     rerank_depth: int,
+    alpha: float | None = ...,
+    pool_n: int | None = ...,
 ) -> list[dict[str, Any]]:
     """0.8.2 Slice E2 — standalone CE rerank over an arbitrary passage list.
 
     Each ``passages`` entry is ``{"id": int, "body": str, "score": float}``
     (``score`` = the caller's fused/RRF score). Returns the reranked order as
-    ``[{"id": int, "score": float}]`` where ``score`` is the CE-blended score.
-    ``rerank_depth == 0`` OR an empty list returns the input order with input
-    scores, byte-identical (no model load, no network). Unlike
-    ``Engine.search(rerank_depth=...)`` — which reranks the engine's own capped
-    text pool — this reranks the caller-supplied pool with the identical
-    cross-encoder.
+    ``[{"id": int, "score": float, "ce_score": float | None}]`` where ``score`` is
+    the CE-blended score and ``ce_score`` is the per-candidate ``sigmoid(ce_logit)``
+    (None outside the reranked pool). ``rerank_depth == 0`` OR an empty list returns
+    the input order with input scores, byte-identical (no model load, no network).
+
+    0.8.5 (EXP-0): ``alpha`` (default 0.3, clamped to [0,1]) is the CE-blend weight
+    and ``pool_n`` (default = ``rerank_depth``) is the reranked-pool size. Omitting
+    both reproduces the pre-slice α=0.3 blend; ``alpha=1.0, pool_n=10`` is the
+    measured-parity config. Unlike ``Engine.search(rerank_depth=...)`` — which
+    reranks the engine's own capped text pool — this reranks the caller-supplied
+    pool with the identical cross-encoder.
     """
     ...
 

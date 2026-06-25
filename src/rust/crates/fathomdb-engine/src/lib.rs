@@ -440,6 +440,12 @@ enum ReaderRequest {
         /// When `false` (the default), the graph arm pool is `vec![]` and
         /// results are byte-identical to the pre-Slice-30 two-arm pipeline.
         use_graph_arm: bool,
+        /// 0.8.5 (EXP-0) — CE-blend weight (clamped to `[0,1]` in `ce_rerank`).
+        /// `0.3` is the byte-identical default; `1.0` is the measured-parity config.
+        alpha: f64,
+        /// 0.8.5 (EXP-0) — reranked-pool size (clamped to the hit count). The
+        /// binding resolves `pool_n.unwrap_or(rerank_depth)` before dispatch.
+        pool_n: usize,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -706,6 +712,8 @@ fn reader_worker_loop(
                 raw_query,
                 rerank_depth,
                 use_graph_arm,
+                alpha,
+                pool_n,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -720,6 +728,8 @@ fn reader_worker_loop(
                     &raw_query,
                     rerank_depth,
                     use_graph_arm,
+                    alpha,
+                    pool_n,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -1058,6 +1068,13 @@ pub struct SearchHit {
     pub score: f64,
     pub branch: SoftFallbackBranch,
     pub source_id: Option<String>,
+    /// 0.8.5 (EXP-0) — per-candidate cross-encoder score `ce_norm =
+    /// sigmoid(ce_logit) ∈ [0,1]`. `Some` ONLY for hits inside the reranked pool
+    /// (the top `pool_n` when the CE model is loaded); `None` for the unreranked
+    /// remainder, the `rerank_depth == 0` identity path, an empty list, and the
+    /// no-CE-model soft-fallback. Additive + nullable: it never participates in
+    /// ranking, so default-path ordering/scores stay byte-stable.
+    pub ce_score: Option<f64>,
 }
 
 /// G0 Phase-2 (E0a / BLOCK-1) — graph-arm frontier instrumentation. A
@@ -2863,7 +2880,8 @@ impl Engine {
     ) -> Result<SearchResult, EngineError> {
         // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
-        self.search_reranked(query, filter, 0, false)
+        // 0.8.5: depth=0 is inert, so the α/pool_n defaults (0.3, 0) never reach the blend.
+        self.search_reranked(query, filter, 0, false, 0.3, 0)
     }
 
     /// 0.8.1 Slice 10 (R1) / Slice 30 (R3) — `search_reranked`: hybrid search
@@ -2886,10 +2904,12 @@ impl Engine {
         filter: Option<SearchFilter>,
         rerank_depth: usize,
         use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
     ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query, filter, rerank_depth, use_graph_arm);
+        let outcome = self.search_inner(query, filter, rerank_depth, use_graph_arm, alpha, pool_n);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -2967,8 +2987,10 @@ impl Engine {
         filter: Option<SearchFilter>,
         rerank_depth: usize,
         use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
     ) -> Result<SearchResult, EngineError> {
-        self.search_inner_with_stats(query, filter, rerank_depth, use_graph_arm)
+        self.search_inner_with_stats(query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
             .map(|(result, _stats)| result)
     }
 
@@ -2981,6 +3003,8 @@ impl Engine {
         filter: Option<SearchFilter>,
         rerank_depth: usize,
         use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
@@ -3046,6 +3070,8 @@ impl Engine {
             raw_query: Box::from(query), // FIX-4: Box<str> (16B) not String (24B)
             rerank_depth,
             use_graph_arm,
+            alpha,
+            pool_n,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -3074,7 +3100,7 @@ impl Engine {
         &self,
         query: &str,
     ) -> Result<GraphFrontierStats, EngineError> {
-        self.search_inner_with_stats(query, None, 0, true).map(|(_result, stats)| stats)
+        self.search_inner_with_stats(query, None, 0, true, 0.3, 0).map(|(_result, stats)| stats)
     }
 
     /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
@@ -3184,7 +3210,8 @@ impl Engine {
             });
         }
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
-        let search_result = self.search_inner(query, filter, 0, false)?;
+        // 0.8.5: depth=0 → no rerank, so α/pool_n (0.3, 0) are inert here.
+        let search_result = self.search_inner(query, filter, 0, false, 0.3, 0)?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -4842,14 +4869,26 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
 /// the remainder in their original RRF order.
 ///
 /// Score-blend (Decision 5): `α × sigmoid(ce_logit) + (1−α) × rrf_score_normalized`
-/// where `α = 0.3` and both CE and RRF scores are normalized to [0,1] over the
-/// reranked pool.
+/// where both CE and RRF scores are normalized to [0,1] over the reranked pool.
+///
+/// 0.8.5 (EXP-0): `alpha` (clamped to `[0,1]`) and `pool_n` (the reranked-pool
+/// size, clamped to `hits.len()`) are caller-supplied. The defaults
+/// `alpha = 0.3, pool_n = rerank_depth` reproduce the pre-slice blend exactly.
+/// `rerank_depth == 0` remains the identity gate regardless of `pool_n`.
 ///
 /// This is the rerank hook, **not** the dropped `fusion_mode` knob.
 #[doc(hidden)]
 #[must_use]
-pub fn rerank_fused(_query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> Vec<SearchHit> {
-    // Soft-fallback: depth=0 → identity (byte-identical to old stub).
+pub fn rerank_fused(
+    _query: &str,
+    hits: Vec<SearchHit>,
+    rerank_depth: usize,
+    alpha: f64,
+    pool_n: usize,
+) -> Vec<SearchHit> {
+    // Soft-fallback: depth=0 → identity (byte-identical to old stub). NOTE this
+    // early gate is independent of `pool_n`: `rerank_depth == 0, pool_n = 10`
+    // does NOT rerank (0.8.5 D4).
     if rerank_depth == 0 {
         return hits;
     }
@@ -4859,10 +4898,15 @@ pub fn rerank_fused(_query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> 
     // FIX-1: pass `&hits` (borrow) so `hits` remains owned for the soft-fallback path.
     #[cfg(feature = "default-reranker")]
     {
-        if let Some(reranked) = ce_rerank(_query, &hits, rerank_depth) {
+        if let Some(reranked) = ce_rerank(_query, &hits, rerank_depth, alpha, pool_n) {
             return reranked;
         }
     }
+
+    // 0.8.5: the bindings/default callers pass `alpha = 0.3, pool_n = rerank_depth`;
+    // referenced here so the no-feature build does not warn on unused params.
+    #[cfg(not(feature = "default-reranker"))]
+    let _ = (alpha, pool_n);
 
     // Model absent (feature off, weights not loaded, or CE returned None) →
     // soft-fallback: return input unchanged.
@@ -4878,7 +4922,7 @@ pub fn rerank_fused(_query: &str, hits: Vec<SearchHit>, rerank_depth: usize) -> 
 /// not just the engine's capped text-only pool. This adapts `(id, body, score)`
 /// passages into `SearchHit`s (`kind = "passage"`, `branch = Vector`,
 /// `source_id = None`; only `body` and `score` feed the blend), runs them
-/// through [`rerank_fused`], and projects back to `(id, score)` in the reranked
+/// through [`rerank_fused`], and projects back to `(id, score, ce_score)` in the reranked
 /// order.
 ///
 /// Contract (inherited verbatim from `rerank_fused`): `rerank_depth == 0` OR an
@@ -4895,7 +4939,9 @@ pub fn rerank_passages(
     query: &str,
     passages: Vec<(u64, String, f64)>,
     rerank_depth: usize,
-) -> Result<Vec<(u64, f64)>, String> {
+    alpha: f64,
+    pool_n: usize,
+) -> Result<Vec<(u64, f64, Option<f64>)>, String> {
     // [P2] guard: reject non-finite scores before they reach normalization/sort.
     // A NaN or ±inf score would produce NaN blended scores and an unstable sort
     // order — surface the error early as the typed WriteValidationError at the
@@ -4917,9 +4963,15 @@ pub fn rerank_passages(
             score,
             branch: SoftFallbackBranch::Vector,
             source_id: None,
+            ce_score: None,
         })
         .collect();
-    Ok(rerank_fused(query, hits, rerank_depth).into_iter().map(|h| (h.id, h.score)).collect())
+    // 0.8.5 — project `(id, score, ce_score)` so the binding can surface the CE
+    // score per candidate; `ce_score` is `None` for the identity / out-of-pool path.
+    Ok(rerank_fused(query, hits, rerank_depth, alpha, pool_n)
+        .into_iter()
+        .map(|h| (h.id, h.score, h.ce_score))
+        .collect())
 }
 
 /// 0.8.1 Slice 10 — score-blend reranking when CE model is loaded.
@@ -4936,8 +4988,14 @@ pub fn rerank_passages(
 fn ce_rerank(
     _query: &str,
     hits: &[SearchHit], // FIX-1: borrow, not move — caller retains ownership for soft-fallback
-    rerank_depth: usize,
+    _rerank_depth: usize, // 0.8.5: pool sizing moved to `pool_n`; depth gate stays in `rerank_fused`.
+    alpha: f64,
+    pool_n: usize,
 ) -> Option<Vec<SearchHit>> {
+    // 0.8.5 (D3) — clamp α to [0,1] silently here so EVERY path (engine search,
+    // `rerank_passages`, the bindings) is covered by one clamp, matching the
+    // existing `pool_n.min(len)` clamp idiom.
+    let alpha = alpha.clamp(0.0, 1.0);
     // fix-1 [P2]: short-circuit before touching the singleton when there is
     // nothing to rerank — avoids loading/downloading the ~17 MB model for an
     // empty result set and prevents memoizing a transient load failure.
@@ -4948,7 +5006,9 @@ fn ce_rerank(
     // Try to get the loaded model. Returns None when weights are absent.
     let model = CandleCrossEncoder::try_get_loaded()?;
 
-    let n = rerank_depth.min(hits.len());
+    // 0.8.5 (D4) — the reranked pool is the top `pool_n` (caller resolves the
+    // `unwrap_or(rerank_depth)` default at the binding), clamped to the hit count.
+    let n = pool_n.min(hits.len());
     let top = &hits[..n]; // no split_at_mut needed; borrow slices directly
     let rest = &hits[n..];
 
@@ -4970,9 +5030,13 @@ fn ce_rerank(
             let rrf_norm = if rrf_span > 0.0 { (h.score - rrf_min) / rrf_span } else { 1.0 };
             // Sigmoid for CE normalization: 1/(1+exp(-x)).
             let ce_norm = 1.0 / (1.0 + (-raw_logit).exp());
-            const ALPHA: f64 = 0.3;
-            let blended = ALPHA * ce_norm + (1.0 - ALPHA) * rrf_norm;
-            (blended, h.clone())
+            // 0.8.5 — α is the caller-supplied (clamped) blend weight; default 0.3
+            // reproduces the pre-slice `const ALPHA = 0.3` blend exactly.
+            let blended = alpha * ce_norm + (1.0 - alpha) * rrf_norm;
+            // 0.8.5 (D1) — expose the per-candidate CE score on in-pool hits.
+            let mut hit = h.clone();
+            hit.ce_score = Some(ce_norm);
+            (blended, hit)
         })
         .collect();
 
@@ -5293,6 +5357,8 @@ fn read_search_in_tx(
     raw_query: &str,
     rerank_depth: usize,
     use_graph_arm: bool,
+    alpha: f64,
+    pool_n: usize,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -5360,6 +5426,7 @@ fn read_search_in_tx(
                     score,
                     branch: SoftFallbackBranch::Vector,
                     source_id: None,
+                    ce_score: None,
                 });
             } else if let Ok(body) = edge_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
                 results.push(SearchHit {
@@ -5369,6 +5436,7 @@ fn read_search_in_tx(
                     score,
                     branch: SoftFallbackBranch::TextEdge,
                     source_id: None,
+                    ce_score: None,
                 });
             }
         }
@@ -5437,6 +5505,7 @@ fn read_search_in_tx(
                 score: row.get::<_, f64>(3)?,
                 branch: SoftFallbackBranch::Text,
                 source_id: None,
+                ce_score: None,
             })
         })?;
         rows.flatten().collect()
@@ -5481,6 +5550,7 @@ fn read_search_in_tx(
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::TextEdge,
                     source_id: None,
+                    ce_score: None,
                 })
             }) {
                 rows.flatten().collect()
@@ -5541,6 +5611,8 @@ fn read_search_in_tx(
                 recency_enabled,
             ),
             rerank_depth,
+            alpha,
+            pool_n,
         )
     } else {
         // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
@@ -5552,6 +5624,8 @@ fn read_search_in_tx(
             raw_query,
             apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled),
             rerank_depth,
+            alpha,
+            pool_n,
         )
     };
     Ok((cursor, soft_fallback, results, graph_stats))
@@ -5712,6 +5786,7 @@ fn bfs_graph_arm_candidates(
                             score,
                             branch: SoftFallbackBranch::GraphArm,
                             source_id,
+                            ce_score: None,
                         });
                     }
                 }
@@ -5803,6 +5878,7 @@ fn bfs_graph_arm_candidates(
                         branch: SoftFallbackBranch::GraphArm,
                         // BLOCK-2: the session this fact-edge was extracted from.
                         source_id: edge_source_id.clone(),
+                        ce_score: None,
                     });
                     if candidates.len() >= cap {
                         break;

@@ -30,6 +30,7 @@ fn hit(id: u64, body: &str, branch: SoftFallbackBranch) -> SearchHit {
         score: 0.0,
         branch,
         source_id: None,
+        ce_score: None,
     }
 }
 
@@ -123,7 +124,7 @@ fn rerank_fused_is_identity_stub() {
     // At depth=0 the soft-fallback path must return the input unchanged —
     // byte-identical to the old identity stub. Spirit of the original test preserved.
     let hits = vec![hit(1, "a", SoftFallbackBranch::Vector), hit(2, "b", SoftFallbackBranch::Text)];
-    assert_eq!(rerank_fused("", hits.clone(), 0), hits);
+    assert_eq!(rerank_fused("", hits.clone(), 0, 0.3, 0), hits);
 }
 
 /// Deterministic embedder so the e2e ordering is a pure function of the corpus.
@@ -386,12 +387,16 @@ for line in sys.stdin:
     // With use_graph_arm=true, Carol Ltd IS reachable (Alice->BobCorp->Carol Ltd at hop 2).
     //
     // FAILS at RED because search_reranked doesn't yet accept use_graph_arm.
-    let without_arm =
-        opened.engine.search_reranked("Alice", None, 0, false).expect("search without graph arm");
+    let without_arm = opened
+        .engine
+        .search_reranked("Alice", None, 0, false, 0.3, 0)
+        .expect("search without graph arm");
     let carol_without = without_arm.results.iter().any(|h| h.body.contains("Carol"));
 
-    let with_arm =
-        opened.engine.search_reranked("Alice", None, 0, true).expect("search with graph arm");
+    let with_arm = opened
+        .engine
+        .search_reranked("Alice", None, 0, true, 0.3, 0)
+        .expect("search with graph arm");
     let carol_with = with_arm.results.iter().any(|h| h.body.contains("Carol"));
 
     // When graph arm is enabled, Carol (reachable via BFS from Alice's node)

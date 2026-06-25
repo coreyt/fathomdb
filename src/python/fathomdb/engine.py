@@ -126,6 +126,8 @@ class Engine:
         *,
         rerank_depth: int = 0,
         use_graph_arm: bool = False,
+        alpha: float | None = None,
+        pool_n: int | None = None,
     ) -> SearchResult:
         """Hybrid search with optional CE reranking and optional graph-BFS arm.
 
@@ -140,9 +142,17 @@ class Engine:
                 from the top-10 fused hits and fuse reachable nodes as a third
                 RRF arm (Slice 30 R3). Default ``False`` → byte-identical to
                 the pre-Slice-30 two-arm pipeline.
+            alpha: 0.8.5 (EXP-0) CE-blend weight, clamped to ``[0, 1]`` in the
+                engine. ``None`` (default) ⇒ 0.3, the C6 factoid-guard default;
+                ``1.0`` is the measured Mem0-parity config. Opt-in for the
+                agentic-answer/memory path — the default protects naive lookups.
+            pool_n: 0.8.5 (EXP-0) reranked-pool size. ``None`` (default) ⇒
+                ``rerank_depth`` (preserves today's pool == depth semantics).
 
         Returns:
             ``SearchResult`` with RRF-fused (and optionally CE-reranked) hits.
+            Each hit carries ``ce_score`` (the CE score for in-pool reranked
+            hits, ``None`` otherwise).
         """
         # FIX-3: reject bool and non-int before the negative check.
         # bool is a subclass of int in Python so it passes isinstance(x, int);
@@ -161,7 +171,11 @@ class Engine:
             )
         if filter is None:
             result = self._native.search(
-                query, rerank_depth=rerank_depth, use_graph_arm=use_graph_arm
+                query,
+                rerank_depth=rerank_depth,
+                use_graph_arm=use_graph_arm,
+                alpha=alpha,
+                pool_n=pool_n,
             )
         else:
             result = self._native.search(
@@ -172,6 +186,8 @@ class Engine:
                 status=filter.status,
                 rerank_depth=rerank_depth,
                 use_graph_arm=use_graph_arm,
+                alpha=alpha,
+                pool_n=pool_n,
             )
         fallback = result.soft_fallback
         soft = (
@@ -190,6 +206,7 @@ class Engine:
                     score=hit.score,
                     branch=cast(SoftFallbackBranch, hit.branch),
                     source_id=hit.source_id,
+                    ce_score=hit.ce_score,
                 )
                 for hit in result.results
             ],

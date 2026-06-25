@@ -55,6 +55,10 @@ class SearchHit:
 
     `source_id` (G0 Phase-2) carries source-document provenance: the traversed
     edge's `source_id` for a graph-arm hit, `None` for every two-arm hit.
+
+    `ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
+    (`ce_norm = sigmoid(ce_logit)`), set only for hits inside the reranked pool;
+    `None` otherwise (out-of-pool, the identity path, or no CE model loaded).
     """
 
     id: int
@@ -63,6 +67,7 @@ class SearchHit:
     score: float
     branch: SoftFallbackBranch
     source_id: str | None = None
+    ce_score: float | None = None
 
 
 @dataclass(frozen=True)

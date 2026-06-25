@@ -67,6 +67,9 @@ interface NativeSearchHit {
   branch: string;
   /** G0 Phase-2 — source-document provenance; set only for graph-arm hits. */
   sourceId?: string | null;
+  /** 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
+   * reranked hits; null otherwise. */
+  ceScore?: number | null;
 }
 
 interface NativeSearchResult {
@@ -212,6 +215,8 @@ export interface NativeEngine {
     filter?: NativeSearchFilter,
     rerankDepth?: number,
     useGraphArm?: boolean,
+    alpha?: number,
+    poolN?: number,
   ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;

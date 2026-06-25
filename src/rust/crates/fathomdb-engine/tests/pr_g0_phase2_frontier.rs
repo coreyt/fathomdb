@@ -154,8 +154,10 @@ fn test_graph_arm_hit_carries_traversed_edge_source_id() {
     // Query matches ONLY carol's entity body ("anchor"), not the edge body
     // ("carol links to dave") — so carol is the seed and dave is graph-REACHED
     // (not co-seeded as an edge-fact endpoint), exercising the BLOCK-2 carry.
-    let result =
-        opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
+    let result = opened
+        .engine
+        .search_reranked("anchor", None, 0, true, 0.3, 0)
+        .expect("search with graph arm");
 
     let dave = result
         .results
@@ -193,7 +195,7 @@ fn test_two_arm_search_byte_stable_with_source_id_field() {
     let classic = opened.engine.search("stable search").expect("classic search");
     let without_arm = opened
         .engine
-        .search_reranked("stable search", None, 0, false)
+        .search_reranked("stable search", None, 0, false, 0.3, 0)
         .expect("search without graph arm");
 
     assert_eq!(
@@ -236,8 +238,10 @@ fn test_graph_arm_source_id_deterministic_with_multiple_edges() {
     // a coin-flip between docEarly/docLate, never lost.
     let mut seen: Vec<Option<String>> = Vec::new();
     for _ in 0..3 {
-        let result =
-            opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
+        let result = opened
+            .engine
+            .search_reranked("anchor", None, 0, true, 0.3, 0)
+            .expect("search with graph arm");
         let heidi = result
             .results
             .iter()
@@ -276,8 +280,10 @@ fn test_graph_hit_source_id_none_fallback() {
         ])
         .expect("write");
 
-    let result =
-        opened.engine.search_reranked("anchor", None, 0, true).expect("search with graph arm");
+    let result = opened
+        .engine
+        .search_reranked("anchor", None, 0, true, 0.3, 0)
+        .expect("search with graph arm");
 
     let frank = result
         .results

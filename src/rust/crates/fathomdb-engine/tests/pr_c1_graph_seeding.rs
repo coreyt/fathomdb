@@ -134,7 +134,7 @@ fn test_edge_only_match_emits_endpoint_entities_with_source() {
 
     let result = opened
         .engine
-        .search_reranked("acquisition agreement", None, 0, true)
+        .search_reranked("acquisition agreement", None, 0, true, 0.3, 0)
         .expect("search with graph arm");
 
     // Both endpoint entities must surface as graph-arm hits carrying the edge source.
@@ -259,8 +259,10 @@ fn test_graph_arm_emits_reachable_hit_from_entity_seed() {
 
     // "zephyr" matches only the entity (seed); the neighbor "neigh" is reached via
     // BFS over the edge and emitted as a graph-arm hit (carrying the edge source).
-    let result =
-        opened.engine.search_reranked("zephyr", None, 0, true).expect("search with graph arm");
+    let result = opened
+        .engine
+        .search_reranked("zephyr", None, 0, true, 0.3, 0)
+        .expect("search with graph arm");
     let neigh = result
         .results
         .iter()

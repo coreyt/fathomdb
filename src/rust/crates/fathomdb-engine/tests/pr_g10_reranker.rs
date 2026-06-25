@@ -18,6 +18,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         score,
         branch: SoftFallbackBranch::Vector,
         source_id: None,
+        ce_score: None,
     }
 }
 
@@ -31,7 +32,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
 #[test]
 fn rerank_fused_depth_gt0_soft_fallbacks_in_default_build() {
     let hits = vec![hit(1, "a", 0.05), hit(2, "b", 0.04)];
-    let out = rerank_fused("query", hits.clone(), 5);
+    let out = rerank_fused("query", hits.clone(), 5, 0.3, 5);
     // In the default build, depth>0 but model absent → soft-fallback (identity).
     assert_eq!(out, hits, "depth>0 without model must soft-fallback to identity");
 }
@@ -41,7 +42,7 @@ fn rerank_fused_depth_gt0_soft_fallbacks_in_default_build() {
 #[test]
 fn rerank_fused_soft_fallback_preserves_fused_order() {
     let hits = vec![hit(1, "alpha", 0.05), hit(2, "beta", 0.04), hit(3, "gamma", 0.03)];
-    let out = rerank_fused("what is the meaning of life", hits.clone(), 0);
+    let out = rerank_fused("what is the meaning of life", hits.clone(), 0, 0.3, 0);
     assert_eq!(out, hits, "rerank_depth=0 must return hits unchanged (byte-identical)");
 }
 
@@ -60,8 +61,8 @@ fn rerank_fused_deterministic() {
         hit(20, "document two", 0.025_000),
         hit(30, "document three", 0.016_667),
     ];
-    let first = rerank_fused("document query", hits.clone(), 0);
-    let second = rerank_fused("document query", hits.clone(), 0);
+    let first = rerank_fused("document query", hits.clone(), 0, 0.3, 0);
+    let second = rerank_fused("document query", hits.clone(), 0, 0.3, 0);
     assert_eq!(first, second, "repeated rerank_fused calls must be byte-identical");
 }
 
@@ -83,6 +84,7 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
             score: 0.0,
             branch: SoftFallbackBranch::Vector,
             source_id: None,
+            ce_score: None,
         },
         SearchHit {
             id: 2,
@@ -91,9 +93,10 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
             score: 0.0,
             branch: SoftFallbackBranch::Text,
             source_id: None,
+            ce_score: None,
         },
     ];
-    let out = rerank_fused("", hits.clone(), 0);
+    let out = rerank_fused("", hits.clone(), 0, 0.3, 0);
     assert_eq!(out, hits, "depth=0 returns input unchanged — identical to old identity stub");
 }
 
