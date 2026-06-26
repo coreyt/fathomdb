@@ -38,10 +38,12 @@ done
 hard "$([ -z "$BADFM" ]; echo $?)" "INV-3 frontmatter has name+description+type" "$BADFM"
 
 echo "[links]"
-# INV-4 every [[wikilink]] resolves to a defined name:
+# INV-4 every [[wikilink]] resolves. Links are written dotted (filename-style) or dashed
+# (name-style); resolve if <t>.md exists OR dots->dashes matches a name: field.
 grep -h '^name:' "$MEM"/*.md | sed 's/name: *//;s/[[:space:]]*$//' | sort -u > /tmp/_vfy_names.txt
-BROKEN=""; while read -r t; do [ -z "$t" ] && continue; grep -qx "$t" /tmp/_vfy_names.txt || BROKEN="$BROKEN $t"; done \
-  < <(grep -rhoE '\[\[[a-z0-9-]+\]\]' "$MEM"/*.md | sed 's/\[\[//;s/\]\]//' | sort -u)
+BROKEN=""; while read -r t; do [ -z "$t" ] && continue
+  { [ -f "$MEM/$t.md" ] || grep -qx "${t//./-}" /tmp/_vfy_names.txt; } || BROKEN="$BROKEN $t"
+done < <(grep -rhoE '\[\[[a-z0-9._-]+\]\]' "$MEM"/*.md | sed 's/\[\[//;s/\]\]//' | sort -u)
 hard "$([ -z "$BROKEN" ]; echo $?)" "INV-4 all [[wikilinks]] resolve" "$BROKEN"
 
 echo "[irreversibility]"

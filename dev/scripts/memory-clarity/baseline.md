@@ -1,4 +1,4 @@
-# Memory-clarity snapshot — `baseline` (2026-06-26T18:58:11Z, repo 5a30871c)
+# Memory-clarity snapshot — `baseline` (2026-06-26T19:10:33Z, repo d84facec)
 
 Memory dir: `/home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory` (NOT git-tracked → deletions irreversible; snapshot before pruning).
 Tokens est ceil(bytes/4). MEMORY.md loads every session = per-turn cost.
@@ -12,7 +12,7 @@ Tokens est ceil(bytes/4). MEMORY.md loads every session = per-turn cost.
 | integrity: dangling index rows | 0 ( ) |
 | integrity: invalid frontmatter (missing field) | 0 ( ) |
 | integrity: name≠filename (informational) | 0 |
-| **link health:** wikilinks total / distinct | 79 / 29 |
+| **link health:** wikilinks total / distinct | 107 / 40 |
 | link health: BROKEN wikilinks | 1 ( agent-memory-fit ) |
 | **redirects:** files w/ wikilink | 38 / 45 |
 | redirects: files citing repo paths | 28 |

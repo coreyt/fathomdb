@@ -48,13 +48,14 @@ for f in "${FILES[@]}"; do b=$(basename "$f" .md); ok=1
   [ "${nm//-/.}" = "${b//-/.}" ] || { NAME_MISMATCH=$((NAME_MISMATCH+1)); NAME_MISMATCH_LIST="$NAME_MISMATCH_LIST $b"; }
 done
 
-# --- link health (wikilinks) ---
+# --- link health (wikilinks; dotted filename-style OR dashed name-style) ---
 grep -h '^name:' "$MEM"/*.md | sed 's/name: *//;s/[[:space:]]*$//' | sort -u > /tmp/_mem_names.txt
-WL_TOTAL=$(grep -rhoE '\[\[[a-z0-9-]+\]\]' "$MEM"/*.md | wc -l)
-WL_DISTINCT=$(grep -rhoE '\[\[[a-z0-9-]+\]\]' "$MEM"/*.md | sort -u | wc -l)
+WL_TOTAL=$(grep -rhoE '\[\[[a-z0-9._-]+\]\]' "$MEM"/*.md | wc -l)
+WL_DISTINCT=$(grep -rhoE '\[\[[a-z0-9._-]+\]\]' "$MEM"/*.md | sort -u | wc -l)
 WL_BROKEN=0; WL_BROKEN_LIST=""
-while read -r t; do [ -z "$t" ] && continue; grep -qx "$t" /tmp/_mem_names.txt || { WL_BROKEN=$((WL_BROKEN+1)); WL_BROKEN_LIST="$WL_BROKEN_LIST $t"; }
-done < <(grep -rhoE '\[\[[a-z0-9-]+\]\]' "$MEM"/*.md | sed 's/\[\[//;s/\]\]//' | sort -u)
+while read -r t; do [ -z "$t" ] && continue
+  { [ -f "$MEM/$t.md" ] || grep -qx "${t//./-}" /tmp/_mem_names.txt; } || { WL_BROKEN=$((WL_BROKEN+1)); WL_BROKEN_LIST="$WL_BROKEN_LIST $t"; }
+done < <(grep -rhoE '\[\[[a-z0-9._-]+\]\]' "$MEM"/*.md | sed 's/\[\[//;s/\]\]//' | sort -u)
 
 # --- redirects (pointer-ness): files that defer to a durable source ---
 FILES_WITH_WIKILINK=$(grep -lE '\[\[[a-z0-9-]+\]\]' "${FILES[@]}" 2>/dev/null | wc -l)
