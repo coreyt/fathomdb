@@ -30,8 +30,8 @@ scripts/repo-prune/
 │   └── memory-clarity/{baseline,post}.{json,md}  + DELTA-2026-06-26.md
 ├── runs/
 │   └── doc-prune-CLEANUP-MAP.md       Phase-1 classification map of the first doc prune
-└── backups/
-    └── memory-snapshot-20260626/      pre-prune memory copy (the ONLY recovery path — see Safety)
+└── backups/                          local-only prune snapshots (git-ignored; see Safety)
+    └── memory-snapshot-20260626/      pre-prune memory copy (the ONLY recovery path; NOT committed)
 ```
 
 Durable outputs that live **outside** this project (they are repo state, not tooling):
@@ -106,6 +106,7 @@ across runs so deltas are valid.
 ## Safety / backups
 
 `backups/memory-snapshot-20260626/` is the **only** recovery path for the executed memory
-prune (the memory dir is not under git). Keep it until you're confident in the pruned state.
-Future memory snapshots go here too (timestamped). The doc prune is fully recoverable from git
-history at/below baseline `25541d88`.
+prune (the memory dir is not under git). It is **local-only / git-ignored** (`backups/.gitignore`)
+— snapshots are never committed. Keep it on disk until you're confident in the pruned state, then
+delete it. Future snapshots go here too (timestamped, also ignored). The doc prune is fully
+recoverable from git history at/below baseline `25541d88`.

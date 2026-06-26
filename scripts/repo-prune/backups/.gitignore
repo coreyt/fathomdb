@@ -1,0 +1,6 @@
+# Memory/doc prune snapshots are local-only backups — never commit them.
+# The memory dir is not git-tracked, so a snapshot is the only recovery path;
+# keep it on disk here but out of version control.
+*
+!.gitignore
+!README.md
