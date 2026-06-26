@@ -4,7 +4,7 @@
 > so the raw per-run artifacts (`dev/plans/runs/*-output.json`, codex review logs,
 > checkpoints) can be pruned without losing the result. One entry per experiment:
 > hypothesis · design/prereg · N & power · numbers+CI · verdict · what closed it · $ cost ·
-> sources. Built at the first ledger-prune (`dev/prune-docs.md`); every number was verified
+> sources. Built at the first ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`); every number was verified
 > against its source file at distillation time.
 >
 > **Raw-artifact recovery.** Files later `git rm`'d by the prune are recoverable from git

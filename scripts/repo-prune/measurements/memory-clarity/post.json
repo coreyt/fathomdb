@@ -1,0 +1,14 @@
+{
+  "label": "post", "captured_utc": "2026-06-26T19:32:15Z", "repo_sha": "bb64a2d4",
+  "memory_dir": "/home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/memory", "git_tracked": false, "token_estimate": "ceil(bytes/4)",
+  "size": { "files": 35, "all_bytes": 142802,
+            "index_bytes": 15084, "index_tokens_est": 3771, "index_rows": 35 },
+  "integrity": { "unindexed_files": 0, "dangling_index_rows": 0,
+                 "invalid_frontmatter": 0, "name_filename_mismatch": 0 },
+  "link_health": { "wikilinks_total": 79, "wikilinks_distinct": 31, "wikilinks_broken": 0 },
+  "redirects": { "files_with_wikilink": 31, "files_citing_repo": 23,
+                 "files_citing_experiments_ledger": 5 },
+  "staleness": { "dead_repo_refs": 0, "superseded_aging_markers_in_index": 10 },
+  "types": { "user": 0, "feedback": 11, "project": 22, "reference": 2 },
+  "overlap_clusters_in_index": { "0.8.0": 6, "0.7.2": 3, "0.8.3": 4, "0.8.4": 4, "eu7": 5 }
+}

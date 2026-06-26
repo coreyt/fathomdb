@@ -59,7 +59,7 @@ details may be STALE.** For distilled experiment results, read
 | 0.8.5 | **IN FLIGHT** | LIVE — `0.8.5-ce-rerank-alpha-expose-slice.md`, `plan-0.8.4.md`, `prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md` |
 
 Transient per-run artifacts (raw `*-output.json`, codex `*-review-*` logs, `.log`,
-checkpoints) under `runs/` were pruned by the ledger-prune (`dev/prune-docs.md`) and are
+checkpoints) under `runs/` were pruned by the ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`) and are
 recoverable from git history ≤ `25541d88`; their results live in `dev/experiments-ledger.md`.
 
 ## Rules
