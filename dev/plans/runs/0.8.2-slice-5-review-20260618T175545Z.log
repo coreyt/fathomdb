@@ -1,7 +1,0 @@
-error: unexpected argument '--cd' found
-
-  tip: to pass '--cd' as a value, use '-- --cd'
-
-Usage: codex exec review --base <BRANCH> [PROMPT]
-
-For more information, try '--help'.

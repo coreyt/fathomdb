@@ -14,8 +14,11 @@ historical record**, not a workspace that gets pruned per release.
 - `../progress/<version>.md` — chronological work log per release line.
 - `prompts/` — execution prompts used for slice/packet work, one file per
   slice (e.g. `0.7.2-PR-8-campaign-closure.md`).
-- `runs/` — slice logs, output JSONs, reviewer notes, and status boards
-  (e.g. `STATUS-release-hardening.md`, `0.7.2-PR-8-output.json`).
+- `runs/` — slice logs, reviewer notes, and status boards
+  (e.g. `STATUS-0.8.4.md`, `0.8.4-gating-rerun-RESULT.md`). Distilled experiment
+  results of record now live in `dev/experiments-ledger.md`; transient per-run
+  artifacts (raw `*-output.json`, codex `*-review-*` logs, `.log`) have been pruned
+  and are recoverable from git history.
 
 Directory split:
 

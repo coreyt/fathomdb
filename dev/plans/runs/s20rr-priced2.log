@@ -1,3 +1,0 @@
-[S20][LOAD] 300 graph-covered answerable Q (hop dist {2: 156, 3: 94, 4: 50}); musique_hash OK
-[S20][GUARD] ppr_fusion≠bm25 on 66/300 questions (fraction 0.22)
-[S20][PRICED] projected ≈ $9.69 (300 Q × 5 arms × $0.00646/call); cap=$10.0

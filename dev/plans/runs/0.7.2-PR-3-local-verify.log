@@ -1,8 +1,0 @@
-=== default suite (no AGENT_LONG): compile + always-on ===
-test ac_013_vector_read_path_smoke ... ok
-test result: ok. 9 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 9.57s
-=== AGENT_LONG 10k: AC-013 hard gate + AC-019 report-only ===
-test ac_013_vector_retrieval_latency ... AC013_NUMBERS n=10000 samples=1000 seed_ms=2524 p50_ms=23 p99_ms=27
-AC019_REPORT_ONLY n=10000 stress_p99_ms=1048 bound_ms=279 synthetic_meets_bound=false (report-only; verdict is the real-corpus eu7 harness — synthetic isotropic data cannot meet the baseline-relative bound, see ADR-0.7.0-text-query-latency-gates-revised)
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 214.20s
-=== DONEVERIFY ===

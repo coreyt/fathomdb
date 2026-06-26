@@ -1,7 +1,0 @@
-start_utc=2026-06-01T12:10:15Z
-loadavg_before=2.58 2.36 1.12 2/2688 3882196
-test ac_019_mixed_retrieval_stress_workload_tail ... AC019_NUMBERS n=10000 threads=8 per_thread=250 stress_ms=114116 seed_ms=2516 baseline_p99_ms=28 stress_p99_ms=1048 bound_ms=282
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 163.81s
-loadavg_after=6.19 3.73 1.82 1/2705 3894757
-end_utc=2026-06-01T12:12:59Z
-=== DONEAC019CLEAN ===

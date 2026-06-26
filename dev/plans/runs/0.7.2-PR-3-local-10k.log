@@ -1,8 +1,0 @@
-start_utc=2026-06-01T12:01:10Z
-  Executable tests/perf_gates.rs (target/release/deps/perf_gates-47d882c5926a4ac2)
---- N=10000 dim=384 ---
-dim=384 test ac_013_vector_retrieval_latency ... AC013_NUMBERS n=10000 samples=1000 seed_ms=2183 p50_ms=15 p99_ms=17
---- N=10000 dim=768 ---
-dim=768 test ac_013_vector_retrieval_latency ... AC013_NUMBERS n=10000 samples=1000 seed_ms=2267 p50_ms=22 p99_ms=27
-end_utc=2026-06-01T12:02:32Z
-=== DONE10K ===
