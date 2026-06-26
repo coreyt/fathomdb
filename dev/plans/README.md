@@ -43,9 +43,29 @@ historical run logs. Instead:
 - Do not delete or move shipped-release artifacts. If a path must change, update
   every inbound reference in the same change and leave a note in the ledger.
 
+## Staleness index (which lines are live vs archived-in-place)
+
+Per the archive convention above, completed-release plans/prompts stay in place.
+**Treat everything for a shipped line as historical — the project has moved on and
+details may be STALE.** For distilled experiment results, read
+`dev/experiments-ledger.md`; for current state, `dev/DOC-INDEX.md`.
+
+| Release line | Status | Plans/prompts here |
+|--------------|--------|--------------------|
+| 0.6.0, 0.6.1 | shipped | **ARCHIVED in place — stale** |
+| 0.7.0, 0.7.1, 0.7.2 | shipped | **ARCHIVED in place — stale** |
+| 0.8.0, 0.8.1, 0.8.2, 0.8.3 | shipped/closed | **ARCHIVED in place — stale** |
+| 0.8.4 | closed (GraphRAG SPLIT; Fork E re-opened) | **ARCHIVED in place** — see `dev/experiments-ledger.md` |
+| 0.8.5 | **IN FLIGHT** | LIVE — `0.8.5-ce-rerank-alpha-expose-slice.md`, `plan-0.8.4.md`, `prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md` |
+
+Transient per-run artifacts (raw `*-output.json`, codex `*-review-*` logs, `.log`,
+checkpoints) under `runs/` were pruned by the ledger-prune (`dev/prune-docs.md`) and are
+recoverable from git history ≤ `25541d88`; their results live in `dev/experiments-ledger.md`.
+
 ## Rules
 
 - Active source-of-truth and in-flight slice artifacts: keep in this directory.
-- Completed-release prompts and run logs: keep in place (see archive convention).
+- Completed-release prompts and run logs: keep in place (see archive convention);
+  their stale/archived status is the staleness index above, not their filesystem location.
 - Future-release backlog or deliberate deferral beyond the active line:
   `dev/roadmap/`.

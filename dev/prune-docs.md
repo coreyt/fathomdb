@@ -3,7 +3,14 @@
   update-docs.md  = keep docs in sync with CODE (epoch-diff).
   prune-docs.md   = THIS — separate CURRENT-STATE from HISTORICAL LEDGER,
                     preserve experiment fidelity, archive/delete the rest.
-  Last prune run: (none yet — first run records its closing SHA + date here.)
+  Last prune run: 2026-06-26 (baseline 25541d88). Phase 1 → dev/CLEANUP-MAP.md.
+    Phase 2: built dev/experiments-ledger.md (0.6.x→0.8.4 + research/); DELETEd 507 transient
+    run artifacts (recover ≤ 25541d88); ARCHIVE-relocated low-entanglement trees
+    (interface-inventory study, context-research, psd, reports) → dev/archive/ + manifest;
+    remaining ARCHIVE (plans/prompts, design slice-memos, runs STATUS boards) signaled
+    IN PLACE via staleness indexes (plans/README, design/README) to preserve ~120 by-path
+    refs and avoid editing accepted ADRs. Deferred: dev/research/ (R-2, untracked, HOLD —
+    distilled not deleted) + 0.7.0 AC-020 closure gap — see experiments-ledger Deferred section.
 -->
 
 # Prompt: Prune the FathomDB documentation ledger (current-state vs history)
