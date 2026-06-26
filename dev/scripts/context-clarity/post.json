@@ -1,0 +1,26 @@
+{
+  "label": "post",
+  "git_sha": "fe2734e9",
+  "captured_utc": "2026-06-26T18:45:17Z",
+  "token_estimate": "ceil(bytes/4)",
+  "dev_tree": { "all_files": 774, "all_bytes": 79574378,
+                "md_files": 627, "md_bytes": 7581165, "md_tokens_est": 1895292 },
+  "live_vs_archive": { "live_md_files": 578, "live_md_bytes": 6828008, "live_md_tokens_est": 1707002,
+                       "archive_md_files": 49, "archive_md_bytes": 753157 },
+  "runs_zone": { "all_files": 168, "all_bytes": 13275503,
+                 "md": 88, "json": 64, "log": 0, "txt": 0 },
+  "doc_index": { "bytes": 60371, "tokens_est": 15093, "table_rows": 171 },
+  "cold_start_orient_set": { "files": 33, "bytes": 346944, "tokens_est": 86736 },
+  "memory_surface": { "index_bytes": 18323, "index_tokens_est": 4581,
+                      "index_entries": 43, "memory_files": 46, "memory_all_bytes": 192430 },
+  "search_signal_to_noise": [
+    {"query": "CE-rerank", "total_files": 28, "ledger_zone": 10, "core": 18},
+    {"query": "rerank", "total_files": 174, "ledger_zone": 92, "core": 82},
+    {"query": "graphrag", "total_files": 67, "ledger_zone": 39, "core": 28},
+    {"query": "recall floor", "total_files": 53, "ledger_zone": 27, "core": 26},
+    {"query": "logical_id", "total_files": 86, "ledger_zone": 38, "core": 48},
+    {"query": "mem0", "total_files": 84, "ledger_zone": 39, "core": 45},
+    {"query": "RRF", "total_files": 115, "ledger_zone": 62, "core": 53},
+    {"query": "GraphRAG", "total_files": 67, "ledger_zone": 39, "core": 28}
+  ]
+}
