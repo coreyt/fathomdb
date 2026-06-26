@@ -83,6 +83,13 @@ or an accepted/cited ADR → CURRENT. A `*-output.json` whose numbers are the *o
 of an experiment result → REFERENCE (distill first), not DELETE. Unsure between ARCHIVE
 and DELETE → ARCHIVE.
 
+**Machine-read data files are never DELETE (R-3), regardless of extension.** Any file
+consumed by a tool, test, or binary at runtime is CURRENT/REFERENCE, never a transient.
+Known instances: `dev/perf-history/*.json` (append-only baselines read by the
+perf-regression-check binary), `dev/release/fixtures/**` and `dev/release/tests/**` (release-
+skew test infra — read-only per §0, out of doc-prune scope). Before classifying any `.json`
+DELETE, confirm nothing reads it programmatically.
+
 ---
 
 ## 3. PHASE 1 — produce the classification map (NO file moves)
@@ -131,19 +138,37 @@ fully committed before any deletion commit.
 2. **Set up the archive.** Ensure `dev/archive/README.md` exists as a **manifest**
    (table: archived path · original path · release · date archived · superseded-by ·
    one-line what-it-was). Subfolder per release: `dev/archive/<release>/`.
-3. **ARCHIVE moves.** `git mv` each ARCHIVE doc into `dev/archive/<release>/`, prepend a
-   banner:
+3. **ARCHIVE — two modes.** Prepend this banner to every ARCHIVE doc either way:
    ```
    > **SUPERSEDED / ARCHIVED <date>.** Historical — describes <release>. Current state: <link>.
-   > Preserved for history; not maintained. See dev/experiments-ledger.md for distilled results.
+   > Preserved for history; not maintained — the project has moved on; details may be STALE.
+   > See dev/experiments-ledger.md for distilled results.
    ```
-   Add its manifest row. Fix inbound links from CURRENT docs to point at the new path or
-   the ledger.
+   - **(default) Relocate:** `git mv` the doc into `dev/archive/<release>/`, add its row to
+     the `dev/archive/README.md` manifest, and fix inbound links from CURRENT docs to the
+     new path or the ledger (same commit).
+   - **(R-1) Archive-in-place** for directories whose files are cross-referenced *by path*
+     from elsewhere (ADRs / design / run logs) — **notably `dev/plans/prompts/` and
+     `dev/plans/*.md`** (~120 by-path references). Do **NOT** `git mv` these and do **NOT**
+     create a second archive manifest for them. Instead: add the banner in place, and record
+     their archived/stale status in the directory's **existing index, `dev/plans/README.md`**
+     (the single source of truth for that tree — do not duplicate into `dev/archive/README.md`
+     or duplicate DOC-INDEX rows). Update `dev/plans/README.md` to (i) state plainly that many
+     of its docs are **archived in place**, (ii) warn that archived docs may be **stale** (the
+     project has moved on), and (iii) serve as the **staleness index** — marking which
+     plans/prompts are archived/stale vs live. This keeps the ~120 by-path links intact.
 4. **DELETE.** Only after step 1's checklist confirms a **complete** ledger row exists
    (original path + recoverable SHA + mandatory fields) — or the file demonstrably carried
    no result: `git rm` the transient artifacts. Record the count per release **and the
    per-file checklist disposition** in the ledger/commit message so the deletion is fully
    auditable (not just spot-checkable).
+   - **(R-2) Untracked / git-ignored trees are HOLD-on-delete this pass.** `dev/research/`
+     is not in git, so `git rm` gives **no recovery** — a delete there is irreversible. For
+     this pass: **distil its results into the ledger and do NOT delete anything** under
+     `dev/research/` (leave all files in place). The open question — whether to (a) delete the
+     regenerable artifacts (e.g. `*.npy` vectors), (b) move the tree into an `archive/`
+     subdir, or (c) leave it — is **deferred**, not decided. Record it as a deferred item per
+     step 6. Apply the same HOLD to any other untracked tree you encounter.
 5. **Refresh the indexes** (keystone step):
    - `dev/DOC-INDEX.md` — remove rows for deleted files; re-point rows for archived files
      to their new path (or fold a release's archived set into one archive row); add the
@@ -153,9 +178,14 @@ fully committed before any deletion commit.
      at their stated path.
    - `dev/traceability.md` — if an archived doc held a trace pointer, re-point it; flag
      orphans honestly (`ORPHAN`/`PARTIAL`). Never invent IDs.
-6. **Stamp.** Update the "Last prune run" line at the top of this file (SHA + date +
-   one-line summary). Summarize: counts archived/deleted/distilled per release, every ADR
-   archived (with successor), every link repaired, anything flagged.
+6. **Stamp + deferred-items note.** Update the "Last prune run" line at the top of this
+   file (SHA + date + one-line summary). Summarize: counts archived/deleted/distilled per
+   release, every link repaired, anything flagged. **Append a `## Deferred / revisit` section
+   at the END of `dev/experiments-ledger.md`** listing decisions intentionally NOT made this
+   pass — at minimum the **R-2 `dev/research/` disposition** (distilled but not deleted;
+   delete-vs-archive-subdir still to be decided; confirm delete is the correct approach before
+   any future removal). Each deferred item: what was held, why, and what must be checked
+   before resolving it.
 
 ---
 
