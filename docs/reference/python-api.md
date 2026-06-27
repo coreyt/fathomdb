@@ -115,6 +115,17 @@ third arm (0.8.1 R3).
 > deliberate, documented 0.8.0 ranking change; pre-0.8.0 union-dedup ordering is
 > not retained. See [hybrid search guide](../guides/hybrid-search-filtering.md).
 
+### `engine.embed(text: str) -> list[float]`
+
+Embed `text` with the engine's pinned default embedder
+(`fathomdb-bge-small-en-v1.5`) and return the raw vector. Read-path
+primitive for callers that need vectors under the engine's **own**
+embedder identity (e.g. coverage-index clustering) rather than a
+parallel, possibly-divergent embedder. Raises
+`EmbedderNotConfiguredError` if the engine was opened without an
+embedder (`use_default_embedder=False`). Mirrored in TS as
+`engine.embed(text)`.
+
 ### `engine.close() -> None`
 
 Release SQLite handles, join the writer thread, drain the scheduler,

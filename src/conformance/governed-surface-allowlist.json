@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for the governed SDK surface allowlist (AC-074 / REQ-053). Both the Python suite (src/python/tests/test_surface.py) and the TypeScript suite (src/ts/tests/surface.test.ts) load THIS file — there is no per-binding duplicate literal, so the two bindings cannot carry divergent copies (cross-binding parity, P2). Each suite asserts its INTROSPECTED live command surface is a SUBSET of `allowlist` (P1, never equality) and that `core` is present and live. As of Slice 30 the four `read.*` members are LIVE: each suite introspects the `read` namespace and asserts the four verbs are present-in-the-live-surface (a removal fails), in addition to the subset check.",
+  "_comment": "Single source of truth for the governed SDK surface allowlist (AC-074 / REQ-053). Both the Python suite (src/python/tests/test_surface.py) and the TypeScript suite (src/ts/tests/surface.test.ts) load THIS file — there is no per-binding duplicate literal, so the two bindings cannot carry divergent copies (cross-binding parity, P2). Each suite asserts its INTROSPECTED live command surface is a SUBSET of `allowlist` (P1, never equality) and that `core` is present and live. As of Slice 30 the four `read.*` members are LIVE: each suite introspects the `read` namespace and asserts the four verbs are present-in-the-live-surface (a removal fails), in addition to the subset check. 0.8.6 Slice 10 (OPP-5): `embed` is a governed read-path primitive (Engine.embed, same name in Py+TS) — HITL-signed 2026-06-26; it was shipped Python-only in 0.8.4 and is now brought to Py↔TS parity.",
   "allowlist": [
     "Engine.open",
     "admin.configure",
@@ -16,7 +16,8 @@
     "graph.neighbors",
     "graph.search_expand",
     "graph.searchExpand",
-    "rerank"
+    "rerank",
+    "embed"
   ],
   "core": ["Engine.open", "admin.configure", "write", "search", "close"],
   "recovery_denylist": ["recover", "restore", "repair", "fix", "rebuild"]

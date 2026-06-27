@@ -230,6 +230,8 @@ export interface NativeEngine {
     cmd: string[],
     documents: NativeExtractDocument[],
   ): Promise<NativeIngestWithExtractorReceipt>;
+  // 0.8.6 Slice 10 — read-path embed primitive (Py↔TS parity for Engine.embed).
+  embed(text: string): Promise<number[]>;
   // EU-6 test-hooks-gated seam. Present only when the napi binding is
   // built with `--features test-hooks`; the TS surface forwards calls
   // unconditionally and the runtime fails fast if absent.

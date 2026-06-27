@@ -121,6 +121,17 @@ cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
 > deliberate, documented 0.8.0 ranking change; pre-0.8.0 union-dedup ordering is
 > not retained. See [hybrid search guide](../guides/hybrid-search-filtering.md).
 
+### `engine.embed(text) -> Promise<number[]>`
+
+Embed `text` with the engine's pinned default embedder
+(`fathomdb-bge-small-en-v1.5`) and return the raw vector. Read-path
+primitive for callers that need vectors under the engine's **own**
+embedder identity (e.g. coverage-index clustering) rather than a
+parallel, possibly-divergent embedder. Rejects with
+`EmbedderNotConfiguredError` if the engine was opened without an
+embedder (`useDefaultEmbedder: false`). Mirror of the Python
+`engine.embed(text)` (0.8.6 Slice 10 brought it to Py↔TS parity).
+
 ### `engine.close() -> Promise<void>`
 
 Release SQLite handles, join the writer thread, drain the scheduler.

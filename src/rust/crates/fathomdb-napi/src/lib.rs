@@ -897,6 +897,21 @@ impl Engine {
         Ok(IngestWithExtractorReceipt::from_rust(receipt))
     }
 
+    /// Embed `text` with the engine's pinned default embedder
+    /// (`fathomdb-bge-small-en-v1.5`) and return the raw vector.
+    ///
+    /// Read-path primitive (mirror of the Python `Engine.embed`) for callers
+    /// that need vectors under the engine's own embedder identity (e.g.
+    /// coverage-index clustering) rather than a parallel, possibly-divergent
+    /// embedder. Rejects with `FDB_EMBEDDER_NOT_CONFIGURED` if the engine was
+    /// opened without an embedder (`useDefaultEmbedder: false`).
+    #[napi]
+    pub async fn embed(&self, text: String) -> Result<Vec<f64>> {
+        let engine = Arc::clone(&self.inner);
+        let vector = call_engine(move || engine.embed_text(&text)).await?;
+        Ok(vector.into_iter().map(|x| x as f64).collect())
+    }
+
     #[napi]
     pub fn counters(&self) -> Result<CounterSnapshot> {
         let engine = Arc::clone(&self.inner);

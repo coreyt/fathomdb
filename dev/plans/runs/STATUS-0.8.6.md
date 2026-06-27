@@ -39,7 +39,7 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 |------:|-------|-----------|-------|----------|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ **CLOSED** — HITL-signed 2026-06-26 (board + 2 ADRs) | n/a |
 | **5** | Provider-protocol KEYSTONE | implementation | **IN FLIGHT** — Option A (seam-only, byte-identical ELPS) | — |
-| **10** | Coupling hygiene | implementation | **IN FLIGHT** — **revised: parity-harden** | — |
+| **10** | Coupling hygiene | implementation | ✅ **CLOSED** — embed→Py↔TS parity + governed; consumer-boundary conformance; 0.8.4 `embed` regression FIXED | X1 ✓ · X2 ✓ · X3 ✓ |
 | **15** | Release-enablement | implementation (CI) | ✅ **CLOSED** — VERIFIED GREEN, no code change (`runs/0.8.6-slice-15-release-verify.md`) | X1 n/a · X2 ✓ · X3 ✓ |
 | **20** | Backlog push (HITL) | release op | pending (15) — 186 commits `main`↑`origin` | — |
 | **40** | Verification + Release Readiness | verification | pending (5,10,15,20) | — |
@@ -67,5 +67,20 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 
 ## 6. Recent decisions (newest on top)
 
+- **2026-06-26** — **Slice 10 CLOSED.** Surfaced + fixed a real 0.8.4 regression: `Engine.embed` shipped
+  Python-only (ungoverned, not in TS) → `test_surface.py` RED on baseline. HITL chose **Option A** (govern
+  + bring to TS parity): added `embed` to napi (`fn embed`) + TS `engine.embed()` + the governed allowlist;
+  added Py & TS functional embed harnesses + a **cross-binding golden anchor** (`conformance/embed-anchor-golden.json`,
+  Py ≡ TS within 1e-3) + a consumer-boundary conformance test (R-CH-1) in both bindings; API-ref docs (X3).
+  Results: TS **8/8** new + surface **11/11**; Py **31/31** (test_surface now GREEN). **Build identity note:**
+  `.venv` `.so` = release (canonical golden); `.node` currently = 0.8.6 **debug/test-hooks** build (canonical
+  TS test target) — Slice 40 rebuilds release.
+- **2026-06-26** — **Slice 5 GATED (codex §9 clean).** Implementer landed the `ProviderTask`/`ProviderSession`
+  typed-task seam (extract byte-identical, `supported_tasks` negotiation). First codex pass flagged one [P1]
+  ("not provider.v1") — **stale-ADR artifact** (worktree cut before the per-task-naming amendment `cb0dc1f6`);
+  re-ran codex against the corrected ADR → **"no discrete correctness issue."** 352 pass / 2 pre-existing
+  baseline fails (schema-literal 14→15, NOT this slice → reserved-gap Slice 6). Branch `0.8.6-slice-5-provider-seam`
+  @ `c71be29e`, ready to merge.
+- **2026-06-26** — **Slice 15 CLOSED** (release machinery VERIFIED GREEN, no code change).
 - **2026-06-26** — Slice 0 opened. Verified 0.8.5 landed on main; cleaned stale `slice-085` worktree;
   verified release machinery + governed surface already built (reconciliation §1); drafted board + ADRs.
