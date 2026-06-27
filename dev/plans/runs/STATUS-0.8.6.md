@@ -10,13 +10,14 @@
 
 ## 1. Current state + next action
 
-- **STATE: ALL BUILD/VERIFY SLICES CLOSED — only the HITL push remains.** Slices 0/5/6/7/10/15/40 done.
-  Slice 40 verified all R-* + X1/X2/X3 GREEN on merged `main`: Rust workspace **517** pass / 0 fail,
-  Python **67** pass / 2 skip, TS **51** pass / 0 fail; release gates + mkdocs `--strict` clean.
-- **NEXT — ⛔ Slice 20 (HITL-GATED PUSH).** ≈197-commit clean fast-forward `main` → `origin/main`
-  (0 behind). Pre-push hook present (`cargo clippy -D warnings` + actionlint). **No `v*` tag → no registry
-  publish** (`release-publish-gotchas`). Awaiting HITL sign-off to push. This is the last step to
-  "complete 0.8.6."
+- **STATE: ✅ 0.8.6 COMPLETE — all slices closed, pushed to `origin/main`.** Slices 0/5/6/7/10/15/20/40
+  done. Slice 40 verified all R-* + X1/X2/X3 GREEN on merged `main`: Rust **517** / Python **67** /
+  TS **51** pass; release gates + mkdocs `--strict` + clippy `-D warnings` clean. **Slice 20 push landed
+  2026-06-27 (HITL-approved):** `c8ccbe6e..09027f4b main -> main`, pre-push clippy passed, `origin/main`
+  == local (0/0). **No `v*` tag → no registry publish** (0.8.x micro-releases are plan-level, not crate
+  tags). R-REL-3 satisfied. The 0.8.6→0.8.16 line now baselines off a pushed `main`.
+- **NEXT (out of 0.8.6 scope):** the experiment program + 0.8.7 (OOB GPU embedder) continue;
+  GitHub flagged 8 dependabot vulns on the default branch (2 high / 5 mod / 1 low) — triage separately.
 
 ### ◆ SCOPE RECONCILIATION (load-bearing — read before signing) ◆
 
@@ -46,7 +47,7 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 | **15** | Release-enablement | implementation (CI) | ✅ **CLOSED** — VERIFIED GREEN, no code change (`runs/0.8.6-slice-15-release-verify.md`) | X1 n/a · X2 ✓ · X3 ✓ |
 | **20** | Backlog push (HITL) | release op | pending (15) — 186 commits `main`↑`origin` | — |
 | **40** | Verification + Release Readiness | verification | ✅ **CLOSED** — all R-* + X1/X2/X3 GREEN on merged main (Rust 517 · Py 67 · TS 51); only R-REL-3 (push) remains | X1 ✓ · X2 ✓ · X3 ✓ |
-| **20** | Backlog push (HITL) | release op | ⛔ **AWAITING HITL** — ≈197-commit fast-forward `main`→`origin`; pre-push hook present; no `v*` tag (no publish) | — |
+| **20** | Backlog push (HITL) | release op | ✅ **CLOSED** — HITL-approved push `c8ccbe6e..09027f4b`; `origin/main`==local; pre-push clippy passed; no `v*` tag | — |
 
 ## 3. $ ledger
 
