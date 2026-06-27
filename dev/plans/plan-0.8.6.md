@@ -129,6 +129,24 @@ slices** (Slice 0 conformance, Slice 40 release-readiness), decided HITL.
 
 ## 9. Immediate next slice
 
-**Slice 0 — Setup + ADR Kickoff.** Stand up `runs/STATUS-0.8.6.md` (mirror STATUS-0.8.2 shape), draft
-the provider-protocol ADR (the load-bearing one — it gates 0.8.10), and confirm the release policy
-against `design/release.md`. Then fan out Slices 5 ∥ 10 ∥ 15.
+**Slice 0 — ✅ CLOSED (HITL-signed 2026-06-26).** Board `runs/STATUS-0.8.6.md` stood up; ADRs
+`ADR-0.8.6-generalized-provider-protocol.md` (OPP-8) + `ADR-0.8.6-governed-verb-coupling-hygiene.md`
+(OPP-5) ACCEPTED; release policy confirmed against `design/release.md` (gates pass — see reconciliation).
+
+> **◆ SCOPE RECONCILIATION (verified from git at Slice 0, supersedes §1's premise where they conflict).**
+> Two of the three tracks are **already built**, so the plan's "build" framing for them is stale:
+> - **#11-min / Slice 15:** `set-version.sh` is already full two-axis (`--check-files` passes, exit 0);
+>   `release.yml` already carries the complete 8-tier `verify→build→all-builds-passed→T1…T7→T8(pypi∥npm)→
+>   smoke→co-tag→github-release` pipeline with a `dry_run` input; all `scripts/release/*` helpers present.
+>   **Slice 15 = VERIFY (run gates green, RED→GREEN skewed fixture, `local-dry-run.sh`), not rewrite.**
+> - **#9 / Slice 10:** the governed read surface is already complete + LIVE in Py+TS on a shared
+>   allowlist; every Memex gap is resolved. **Slice 10 = PARITY-HARDEN** (cross-binding harness for ALL
+>   read verbs — today only `read.list` is anchored — + a consumer-boundary conformance assertion + docs
+>   reconcile), **not build a new surface.**
+> - **#8 / Slice 5:** the one genuine build. Scope = **Option A** (HITL-signed): generalize
+>   `fathomdb.extract.v1` → `fathomdb.provider.v1` transport seam only (rename + `task` discriminator with
+>   extract-only default + `supported_tasks` negotiation + `provider_session` refactor), proven by
+>   **byte-identical** ELPS golden output; task-specific payloads deferred to 0.8.10.
+
+**Now in flight:** Slices 5 ∥ 10 ∥ 15 in three independent worktrees off `main` `ad7c0bcf`. Then Slice 20
+(HITL-gated 186-commit push) → Slice 40 (verification + dry-run publish).
