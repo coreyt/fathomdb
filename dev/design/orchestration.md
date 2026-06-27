@@ -131,6 +131,15 @@ What it gates (all derived from disk; HARD = blocks the spawn):
 - **Build-isolation reminder (INFO).** Never `maturin develop` /
   `pip install -e` from a worktree — it rebinds the shared `.venv` to the
   worktree tree. GPU/maturin builds happen on the MAIN tree only.
+- **Gitignored inputs (INFO).** A worktree starts without the canonical
+  tree's gitignored files (eval corpora, caches, local configs — they are
+  untracked, so `git worktree add` does not carry them). If a slice needs
+  one, **copy it from the MAIN directory into the worktree** (e.g.
+  `cp <main>/dev/.../corpus.json <wt>/dev/.../`) and **keep it gitignored** —
+  it is a build/eval input, never a commit. Do not move or symlink the
+  canonical copy (a worktree run must not mutate the MAIN tree's inputs);
+  copy. EVAL-ONLY payloads under no-redistribute terms stay gitignored in
+  the worktree too.
 
 A HARD fail is an off-spine halt (§ 1.5 invariant 3): fix the cause, do
 not spawn around it.
