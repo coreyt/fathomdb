@@ -4,6 +4,11 @@
 > pyo3 `0.24.1 → 0.29.0` bump, where pyo3 0.28+ makes `#[pymodule]` free-threaded **by default** and
 > forces an explicit `gil_used` declaration.
 >
+> **Scheduling (master §6 F-5):** the EXP-FT ladder (FT-1…5) is folded into **0.8.15** (the forks/overflow
+> odd slot — `$0` eval, gated only on the 0.8.8 pyo3 0.29 landing), kept **inside 0.8.x**. Productization
+> (`gil_used = false` + the non-abi3 `*t` wheels) is a **0.8.15-readout contingency** → 0.8.16 #11-full or
+> a net-new 0.8.17. "Pre-decision" here is about the *outcome* (V1/V2, the GIL flip), not the slot.
+>
 > **Scope.** Should FathomDB's `fathomdb-py` binding *support* free-threaded CPython (declare
 > `#[pymodule(gil_used = false)]`), rather than merely *tolerate* it by pinning the GIL back on
 > (`gil_used = true`)? This doc sizes the value, sizes the lift, and proposes the experiments that turn
