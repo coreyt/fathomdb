@@ -33,10 +33,11 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    ExtractDocument as RustExtractDocument,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
-    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
+    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
@@ -482,6 +483,10 @@ pub struct SearchResult {
     pub projection_cursor: i64,
     pub soft_fallback: Option<SoftFallback>,
     pub results: Vec<SearchHit>,
+    /// 0.8.8 EXP-OBS (Slice 10) — opt-in retrieval explanation sidecar
+    /// (`explanation` in JS). Present only when `search(..., explain=true)`; `null`
+    /// (default) keeps the payload byte-identical to the pre-0.8.8 shape.
+    pub explanation: Option<Explanation>,
 }
 
 impl SearchResult {
@@ -497,6 +502,99 @@ impl SearchResult {
                 },
             }),
             results: r.results.iter().map(SearchHit::from_rust).collect(),
+            explanation: r.explanation.as_ref().map(Explanation::from_rust),
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace (mirror of engine
+/// `QueryTrace`). napi maps snake_case → camelCase JS (`queryChars`,
+/// `rerankDepth`, `useGraphArm`, `embedderId`, `ceActive`, `vectorHits`, …).
+#[napi(object)]
+pub struct QueryTrace {
+    pub query_chars: u32,
+    pub k: u32,
+    pub rerank_depth: u32,
+    pub pool_n: u32,
+    pub alpha: f64,
+    pub use_graph_arm: bool,
+    pub recency: bool,
+    pub embedder_id: String,
+    pub ce_active: bool,
+    pub vector_hits: u32,
+    pub text_hits: u32,
+    pub graph_hits: u32,
+}
+
+impl QueryTrace {
+    fn from_rust(t: &RustQueryTrace) -> Self {
+        Self {
+            query_chars: t.query_chars,
+            k: t.k,
+            rerank_depth: t.rerank_depth,
+            pool_n: t.pool_n,
+            alpha: t.alpha,
+            use_graph_arm: t.use_graph_arm,
+            recency: t.recency,
+            embedder_id: t.embedder_id.clone(),
+            ce_active: t.ce_active,
+            vector_hits: t.vector_hits,
+            text_hits: t.text_hits,
+            graph_hits: t.graph_hits,
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of
+/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (`as i64` → JS
+/// number; NO BigInt/string promotion, so `perHit[i].id === results[i].id`).
+/// napi maps snake_case → camelCase (`vectorRank`, `fusedScore`, `ceScore`).
+#[napi(object)]
+pub struct PerHitExplain {
+    pub id: i64,
+    pub arm: String,
+    pub vector_rank: Option<u32>,
+    pub text_rank: Option<u32>,
+    pub graph_rank: Option<u32>,
+    pub fused_score: f64,
+    pub ce_score: Option<f64>,
+    pub blended: f64,
+}
+
+impl PerHitExplain {
+    fn from_rust(p: &RustPerHitExplain) -> Self {
+        Self {
+            id: p.id as i64,
+            arm: match p.arm {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+            vector_rank: p.vector_rank,
+            text_rank: p.text_rank,
+            graph_rank: p.graph_rank,
+            fused_score: p.fused_score,
+            ce_score: p.ce_score,
+            blended: p.blended,
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — the explanation sidecar (mirror of engine
+/// `Explanation`): a query-level [`QueryTrace`] + a per-hit breakdown parallel to
+/// (and in the same order as) `SearchResult.results`.
+#[napi(object)]
+pub struct Explanation {
+    pub trace: QueryTrace,
+    pub per_hit: Vec<PerHitExplain>,
+}
+
+impl Explanation {
+    fn from_rust(e: &RustExplanation) -> Self {
+        Self {
+            trace: QueryTrace::from_rust(&e.trace),
+            per_hit: e.per_hit.iter().map(PerHitExplain::from_rust).collect(),
         }
     }
 }
@@ -776,6 +874,10 @@ impl Engine {
         // reranked-pool size. Omitting both reproduces the byte-identical default order.
         alpha: Option<f64>,
         pool_n: Option<u32>,
+        // 0.8.8 EXP-OBS (Slice 10) — when true, populate `SearchResult.explanation`
+        // with per-hit provenance + score breakdown + query trace. Default false
+        // returns `explanation=null` and a byte-identical result (R-OBS-2 zero-cost).
+        explain: Option<bool>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -828,9 +930,16 @@ impl Engine {
         // unset call reproduces the pre-slice ranking. α is clamped in the engine.
         let alpha = alpha.unwrap_or(0.3);
         let pool_n = pool_n.map(|p| p as usize).unwrap_or(depth);
+        // 0.8.8 EXP-OBS: explain=true routes to search_explained (same retrieval +
+        // the sidecar); default stays on search_reranked (byte-identical).
+        let explain = explain.unwrap_or(false);
         let engine = Arc::clone(&self.inner);
         let result = call_engine(move || {
-            engine.search_reranked(&query, filter, depth, graph_arm, alpha, pool_n)
+            if explain {
+                engine.search_explained(&query, filter, depth, graph_arm, alpha, pool_n)
+            } else {
+                engine.search_reranked(&query, filter, depth, graph_arm, alpha, pool_n)
+            }
         })
         .await?;
         Ok(SearchResult::from_rust(result))

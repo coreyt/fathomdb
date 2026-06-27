@@ -20,8 +20,11 @@ from fathomdb.config import EngineConfig
 from fathomdb.types import (
     CounterSnapshot,
     EmbedderIdentity,
+    Explanation,
     MigrationStepReport,
     OpenReport,
+    PerHitExplain,
+    QueryTrace,
     SearchFilter,
     SearchHit,
     SearchResult,
@@ -129,6 +132,7 @@ class Engine:
         use_graph_arm: bool = False,
         alpha: float | None = None,
         pool_n: int | None = None,
+        explain: bool = False,
     ) -> SearchResult:
         """Hybrid search with optional CE reranking and optional graph-BFS arm.
 
@@ -170,6 +174,12 @@ class Engine:
             raise TypeError(
                 f"use_graph_arm must be a bool, got {type(use_graph_arm).__name__!r}"
             )
+        # 0.8.8 EXP-OBS (Slice 10) — validate `explain` before the native call,
+        # mirroring use_graph_arm + the TS `search` guard (cross-SDK parity).
+        if not isinstance(explain, bool):
+            raise TypeError(
+                f"explain must be a bool, got {type(explain).__name__!r}"
+            )
         # 0.8.5 (codex §9 P2-2) — validate the new α/pool_n knobs before the native
         # call, mirroring the rerank_depth guard and the TS `search` validation
         # (cross-SDK parity). bool is rejected explicitly (it is an int/float
@@ -195,6 +205,7 @@ class Engine:
                 use_graph_arm=use_graph_arm,
                 alpha=alpha,
                 pool_n=pool_n,
+                explain=explain,
             )
         else:
             result = self._native.search(
@@ -207,11 +218,48 @@ class Engine:
                 use_graph_arm=use_graph_arm,
                 alpha=alpha,
                 pool_n=pool_n,
+                explain=explain,
             )
         fallback = result.soft_fallback
         soft = (
             SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
             if fallback is not None
+            else None
+        )
+        # 0.8.8 EXP-OBS (Slice 10) — convert the opt-in native explanation sidecar
+        # into dataclasses; `None` (default explain=False) stays `None`.
+        native_exp = result.explanation
+        explanation = (
+            Explanation(
+                trace=QueryTrace(
+                    query_chars=native_exp.trace.query_chars,
+                    k=native_exp.trace.k,
+                    rerank_depth=native_exp.trace.rerank_depth,
+                    pool_n=native_exp.trace.pool_n,
+                    alpha=native_exp.trace.alpha,
+                    use_graph_arm=native_exp.trace.use_graph_arm,
+                    recency=native_exp.trace.recency,
+                    embedder_id=native_exp.trace.embedder_id,
+                    ce_active=native_exp.trace.ce_active,
+                    vector_hits=native_exp.trace.vector_hits,
+                    text_hits=native_exp.trace.text_hits,
+                    graph_hits=native_exp.trace.graph_hits,
+                ),
+                per_hit=[
+                    PerHitExplain(
+                        id=p.id,
+                        arm=cast(SoftFallbackBranch, p.arm),
+                        vector_rank=p.vector_rank,
+                        text_rank=p.text_rank,
+                        graph_rank=p.graph_rank,
+                        fused_score=p.fused_score,
+                        ce_score=p.ce_score,
+                        blended=p.blended,
+                    )
+                    for p in native_exp.per_hit
+                ],
+            )
+            if native_exp is not None
             else None
         )
         return SearchResult(
@@ -229,6 +277,7 @@ class Engine:
                 )
                 for hit in result.results
             ],
+            explanation=explanation,
         )
 
     def close(self) -> None:

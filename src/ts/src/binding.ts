@@ -72,10 +72,43 @@ interface NativeSearchHit {
   ceScore?: number | null;
 }
 
+interface NativeQueryTrace {
+  queryChars: number;
+  k: number;
+  rerankDepth: number;
+  poolN: number;
+  alpha: number;
+  useGraphArm: boolean;
+  recency: boolean;
+  embedderId: string;
+  ceActive: boolean;
+  vectorHits: number;
+  textHits: number;
+  graphHits: number;
+}
+
+interface NativePerHitExplain {
+  id: number;
+  arm: string;
+  vectorRank?: number | null;
+  textRank?: number | null;
+  graphRank?: number | null;
+  fusedScore: number;
+  ceScore?: number | null;
+  blended: number;
+}
+
+interface NativeExplanation {
+  trace: NativeQueryTrace;
+  perHit: NativePerHitExplain[];
+}
+
 interface NativeSearchResult {
   projectionCursor: number;
   softFallback: NativeSoftFallback | null;
   results: NativeSearchHit[];
+  /** 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar; null by default. */
+  explanation?: NativeExplanation | null;
 }
 
 interface NativeSearchFilter {
@@ -217,6 +250,7 @@ export interface NativeEngine {
     useGraphArm?: boolean,
     alpha?: number,
     poolN?: number,
+    explain?: boolean,
   ): Promise<NativeSearchResult>;
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;

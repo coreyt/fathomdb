@@ -122,10 +122,65 @@ export interface SearchFilter {
   status?: string;
 }
 
+/**
+ * 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace (mirror of the Rust
+ * `QueryTrace`). Present only on the opt-in `search(..., { explain: true })` path,
+ * inside `Explanation.trace`. `queryChars` is the query LENGTH only (never the
+ * text); `embedderId` is `"name@rev (dim=N)"` (`""` when none). Field
+ * names/order mirror the Python `QueryTrace` (cross-binding parity).
+ */
+export interface QueryTrace {
+  queryChars: number;
+  k: number;
+  rerankDepth: number;
+  poolN: number;
+  alpha: number;
+  useGraphArm: boolean;
+  recency: boolean;
+  embedderId: string;
+  ceActive: boolean;
+  vectorHits: number;
+  textHits: number;
+  graphHits: number;
+}
+
+/**
+ * 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of the
+ * Rust `PerHitExplain`); parallel to (and same order as) `SearchResult.results`.
+ * `id` mirrors `SearchHit.id` exactly (`perHit[i].id === results[i].id`).
+ * `fusedScore` is the RAW post-recency, pre-CE RRF score (not normalized).
+ */
+export interface PerHitExplain {
+  id: number;
+  arm: SoftFallbackBranch;
+  vectorRank: number | null;
+  textRank: number | null;
+  graphRank: number | null;
+  fusedScore: number;
+  ceScore: number | null;
+  blended: number;
+}
+
+/**
+ * 0.8.8 EXP-OBS (Slice 10) — opt-in retrieval explanation sidecar (mirror of the
+ * Rust `Explanation`): a query-level `trace` + a per-hit breakdown. Returned on
+ * `SearchResult.explanation` only when `search(..., { explain: true })`; `null`
+ * (default) keeps the result byte-identical to the pre-0.8.8 shape.
+ */
+export interface Explanation {
+  trace: QueryTrace;
+  perHit: PerHitExplain[];
+}
+
 export interface SearchResult {
   projectionCursor: number;
   softFallback: SoftFallback | null;
   results: SearchHit[];
+  /**
+   * 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar; `null` unless
+   * `search(..., { explain: true })`.
+   */
+  explanation: Explanation | null;
 }
 
 export interface MigrationStepReport {
@@ -362,6 +417,7 @@ export class Engine {
     useGraphArm?: boolean,
     alpha?: number,
     poolN?: number,
+    explain?: boolean,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // G10 filter strings cross the FFI like `query` and must clear the same
@@ -418,10 +474,49 @@ export class Engine {
         );
       }
     }
+    // 0.8.8 EXP-OBS (Slice 10): explain validation (mirrors useGraphArm + the
+    // Python `search` guard, cross-SDK parity).
+    if (explain !== undefined && typeof explain !== "boolean") {
+      throw new TypeError(`explain must be a boolean, got ${typeof explain}`);
+    }
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN),
+      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN, explain),
     );
     const branch = r.softFallback?.branch;
+    const armOf = (a: string): SoftFallbackBranch =>
+      a === "vector" || a === "text" || a === "text_edge" || a === "graph_arm"
+        ? (a as SoftFallbackBranch)
+        : "text";
+    // 0.8.8 EXP-OBS: map the opt-in explanation sidecar; `null` (default) stays null.
+    const e = r.explanation;
+    const explanation: Explanation | null = e
+      ? {
+          trace: {
+            queryChars: e.trace.queryChars,
+            k: e.trace.k,
+            rerankDepth: e.trace.rerankDepth,
+            poolN: e.trace.poolN,
+            alpha: e.trace.alpha,
+            useGraphArm: e.trace.useGraphArm,
+            recency: e.trace.recency,
+            embedderId: e.trace.embedderId,
+            ceActive: e.trace.ceActive,
+            vectorHits: e.trace.vectorHits,
+            textHits: e.trace.textHits,
+            graphHits: e.trace.graphHits,
+          },
+          perHit: e.perHit.map((p) => ({
+            id: p.id,
+            arm: armOf(p.arm),
+            vectorRank: p.vectorRank ?? null,
+            textRank: p.textRank ?? null,
+            graphRank: p.graphRank ?? null,
+            fusedScore: p.fusedScore,
+            ceScore: p.ceScore ?? null,
+            blended: p.blended,
+          })),
+        }
+      : null;
     return {
       projectionCursor: r.projectionCursor,
       softFallback:
@@ -439,6 +534,7 @@ export class Engine {
         sourceId: h.sourceId ?? null,
         ceScore: h.ceScore ?? null,
       })),
+      explanation,
     };
   }
 

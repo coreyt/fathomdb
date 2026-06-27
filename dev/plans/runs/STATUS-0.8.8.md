@@ -12,9 +12,10 @@ keystone) are landing on `main` via this clean `0.8.8-slice5-close` worktree (th
 leaked onto the `0.8.9-ci-integrity-micro` branch; re-applied here off `origin/main` per the
 worktree-base preflight). The **`Explanation` field set is HITL-RATIFIED** (6-owner negotiation,
 `dev/plans/runs/0.8.8-explanation-fieldset-ratification.md`): landed shape confirmed architecturally
-correct, ADR amended to the code, only added engine delta = `#[non_exhaustive]` ×4. Slices 10
-(SDK parity) / 15 (telemetry) / 20 (gold) / 40 (verify) remain, with the ratification artifact as
-their input spec.
+correct, ADR amended to the code, only added engine delta = `#[non_exhaustive]` ×4. **Slice 10
+(SDK parity) DONE** (committed on `0.8.8-slice10-sdk`; TS 117 + Python 11 tests green; pending
+codex §9 + push). Slices 15 (telemetry) / 20 (gold) / 40 (verify) remain, with the ratification
+artifact as their input spec.
 
 ## Slice ladder
 
@@ -23,7 +24,7 @@ their input spec.
 | 0 | Setup + ADR / scope freeze | ✅ ADR `dev/design/0.8.8-explain-and-telemetry-adr.md` **RATIFIED** (6-owner negotiation); Part A field set + §A.4 Q1–Q3 closed; Part B telemetry/gold amendments folded for Slice 15/20 |
 | 1 *(reserved-gap)* | **pyo3 0.24.1 → 0.29.0 security bump** | ✅ on `origin/main` (`8c938bb7`); gated GREEN + codex §9 clean (see R-SEC-1) |
 | 5 | EXP-OBS KEYSTONE (`explain=True`) | ✅ **DONE** — `Engine::search_explained` + `Explanation`/`QueryTrace`/`PerHitExplain` (all `#[non_exhaustive]`); reader-protocol 5-tuple; byte-stable default path. R-OBS-1 golden + R-OBS-2-COV (depth>0, graph_arm) tests; governed-surface allowlist 29; clippy clean; codex §9 clean. Landing on `main` via clean worktree. SDK wiring = Slice 10 |
-| 10 | EXP-OBS SDK parity + zero-cost bench | ⏳ depends on 5 |
+| 10 | EXP-OBS SDK parity + zero-cost bench | ✅ **DONE** (worktree `0.8.8-slice10-sdk`, pending codex §9 + push) — `explain` + `Explanation`/`QueryTrace`/`PerHitExplain` + `SearchResult.explanation` wired through pyo3/napi/Py/TS; Python `SoftFallbackBranch` Literal `graph_arm` prereq fixed. X1 parity: **TS 117 tests green** (4 new), **Python 4 parity + 7 functional-search green**. `PerHitExplain.id`==`SearchHit.id` (no BigInt promote). Zero-cost (R-OBS-2) proven structurally by the engine R-OBS-2-COV byte-identity tests (explain=false → None, no alloc); latency micro-bench report-only. clippy `-D warnings` clean (engine+py+napi+facade). Python verified via an **isolated venv** (shared `.venv`/MAIN tree untouched) |
 | 15 | Telemetry capture | ⏳ not started |
 | 20 | Real-gold pipeline | ⏳ depends on 15 |
 | 40 | Verification + release readiness | ⏳ depends on 5,10,15,20 |
@@ -36,7 +37,7 @@ their input spec.
 | R-OBS-1 | per-hit arm-provenance + score-breakdown + query trace behind `explain=True` | ✅ engine: golden `r_obs_1_golden_field_fidelity_at_rerank_depth_gt0`; SDK parity → Slice 10 |
 | R-OBS-2 | `explain` zero-cost when off | ✅ engine: `None`/no-alloc default path; `r_obs_2_cov_*` byte-identity at depth>0 + graph_arm; bench → Slice 10 |
 | R-OBS-3 | reuses existing seams (`fuse_three_arms`/`ce_rerank`/`GraphFrontierStats` side-channel) | ✅ codex §9 confirmed no parallel machinery |
-| R-OBS-4 | Py + TS SDK parity | ⏳ Slice 10 (X1 harness) |
+| R-OBS-4 | Py + TS SDK parity | ✅ Slice 10 — X1 parity harness on both bindings (TS `exp-obs-explain.test.ts` 117 green; Python `test_exp_obs_explain_parity.py` green); snake↔camel only permitted diff |
 | R-TEL-1..3 | Telemetry + real-gold | ⏳ Slice 15/20 (ADR §B amendments folded) |
 
 ## Slice 1 — pyo3 0.24.1 → 0.29.0 (R-SEC-1) detail
