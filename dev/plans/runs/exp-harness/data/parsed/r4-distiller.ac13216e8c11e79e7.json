@@ -1,0 +1,32 @@
+{
+  "label": "r4-distiller",
+  "file": "data/transcripts/r4-distiller.ac13216e8c11e79e7.jsonl",
+  "segments": [
+    {
+      "label": "Read these three files IN FULL, t",
+      "input": 12273,
+      "cache_creation": 283529,
+      "cache_read": 453388,
+      "output": 966,
+      "assistant_turns": 16,
+      "first_ts": "2026-06-27T16:16:53.244Z",
+      "last_ts": "2026-06-27T16:20:19.582Z",
+      "total_input_processed": 749190,
+      "cache_hit_ratio": 0.6052,
+      "est_cost_usd": 6.252796
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 12273,
+    "cache_creation": 283529,
+    "cache_read": 453388,
+    "output": 966,
+    "assistant_turns": 16,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 749190,
+    "cache_hit_ratio": 0.6052,
+    "est_cost_usd": 6.252796
+  }
+}

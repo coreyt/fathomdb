@@ -1,0 +1,32 @@
+{
+  "label": "r2-e1-61k",
+  "file": "data/transcripts/r2-e1-61k.ab40b5b885e2fd4b4.jsonl",
+  "segments": [
+    {
+      "label": "Read this file IN FULL: /home/cor",
+      "input": 8918,
+      "cache_creation": 130524,
+      "cache_read": 199726,
+      "output": 1734,
+      "assistant_turns": 10,
+      "first_ts": "2026-06-27T15:31:14.227Z",
+      "last_ts": "2026-06-27T15:31:49.681Z",
+      "total_input_processed": 339168,
+      "cache_hit_ratio": 0.5889,
+      "est_cost_usd": 3.010734
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 8918,
+    "cache_creation": 130524,
+    "cache_read": 199726,
+    "output": 1734,
+    "assistant_turns": 10,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 339168,
+    "cache_hit_ratio": 0.5889,
+    "est_cost_usd": 3.010734
+  }
+}

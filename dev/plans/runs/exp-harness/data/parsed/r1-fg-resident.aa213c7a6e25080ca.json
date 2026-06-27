@@ -1,0 +1,45 @@
+{
+  "label": "r1-fg-resident",
+  "file": "data/transcripts/r1-fg-resident.aa213c7a6e25080ca.jsonl",
+  "segments": [
+    {
+      "label": "You are a resident worker in a co",
+      "input": 11167,
+      "cache_creation": 162010,
+      "cache_read": 132628,
+      "output": 1198,
+      "assistant_turns": 9,
+      "first_ts": "2026-06-27T14:51:18.110Z",
+      "last_ts": "2026-06-27T14:51:39.665Z",
+      "total_input_processed": 305805,
+      "cache_hit_ratio": 0.4337,
+      "est_cost_usd": 3.493984
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 232,
+      "cache_creation": 90462,
+      "cache_read": 12684,
+      "output": 439,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T14:51:52.682Z",
+      "last_ts": "2026-06-27T14:51:59.976Z",
+      "total_input_processed": 103378,
+      "cache_hit_ratio": 0.1227,
+      "est_cost_usd": 1.751594
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 11399,
+    "cache_creation": 252472,
+    "cache_read": 145312,
+    "output": 1637,
+    "assistant_turns": 11,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 409183,
+    "cache_hit_ratio": 0.3551,
+    "est_cost_usd": 5.245578
+  }
+}

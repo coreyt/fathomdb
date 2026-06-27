@@ -1,0 +1,71 @@
+{
+  "label": "r4-distilled-resident",
+  "file": "data/transcripts/r4-distilled-resident.a3c67385babef26d6.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident holdi",
+      "input": 5944,
+      "cache_creation": 87209,
+      "cache_read": 85022,
+      "output": 778,
+      "assistant_turns": 6,
+      "first_ts": "2026-06-27T16:20:20.989Z",
+      "last_ts": "2026-06-27T16:20:36.748Z",
+      "total_input_processed": 178175,
+      "cache_hit_ratio": 0.4772,
+      "est_cost_usd": 1.910212
+    },
+    {
+      "label": "[MSG] WARM-",
+      "input": 867,
+      "cache_creation": 30049,
+      "cache_read": 42794,
+      "output": 166,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T16:21:23.893Z",
+      "last_ts": "2026-06-27T16:21:31.187Z",
+      "total_input_processed": 73710,
+      "cache_hit_ratio": 0.5806,
+      "est_cost_usd": 0.653065
+    },
+    {
+      "label": "[MSG] From",
+      "input": 869,
+      "cache_creation": 2025,
+      "cache_read": 109549,
+      "output": 41,
+      "assistant_turns": 3,
+      "first_ts": "2026-06-27T16:21:48.552Z",
+      "last_ts": "2026-06-27T16:22:06.229Z",
+      "total_input_processed": 112443,
+      "cache_hit_ratio": 0.9743,
+      "est_cost_usd": 0.218402
+    },
+    {
+      "label": "[MSG] From",
+      "input": 867,
+      "cache_creation": 38400,
+      "cache_read": 38019,
+      "output": 374,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T16:29:30.572Z",
+      "last_ts": "2026-06-27T16:29:40.445Z",
+      "total_input_processed": 77286,
+      "cache_hit_ratio": 0.4919,
+      "est_cost_usd": 0.818083
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 8547,
+    "cache_creation": 157683,
+    "cache_read": 275384,
+    "output": 1359,
+    "assistant_turns": 13,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 441614,
+    "cache_hit_ratio": 0.6236,
+    "est_cost_usd": 3.599762
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "label": "r3-rw-highw-general",
+  "file": "data/transcripts/r3-rw-highw-general.ab876ed807426307d.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident worke",
+      "input": 10152,
+      "cache_creation": 131101,
+      "cache_read": 35540,
+      "output": 460,
+      "assistant_turns": 7,
+      "first_ts": "2026-06-27T16:04:46.546Z",
+      "last_ts": "2026-06-27T16:04:59.290Z",
+      "total_input_processed": 176793,
+      "cache_hit_ratio": 0.201,
+      "est_cost_usd": 2.698234
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 869,
+      "cache_creation": 3228,
+      "cache_read": 107274,
+      "output": 2154,
+      "assistant_turns": 3,
+      "first_ts": "2026-06-27T16:05:18.747Z",
+      "last_ts": "2026-06-27T16:05:51.739Z",
+      "total_input_processed": 111371,
+      "cache_hit_ratio": 0.9632,
+      "est_cost_usd": 0.396021
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 869,
+      "cache_creation": 10889,
+      "cache_read": 112407,
+      "output": 3214,
+      "assistant_turns": 3,
+      "first_ts": "2026-06-27T16:06:03.704Z",
+      "last_ts": "2026-06-27T16:06:55.894Z",
+      "total_input_processed": 124165,
+      "cache_hit_ratio": 0.9053,
+      "est_cost_usd": 0.626864
+    },
+    {
+      "label": "[MSG] NEW T",
+      "input": 2611,
+      "cache_creation": 8906,
+      "cache_read": 491375,
+      "output": 1349,
+      "assistant_turns": 11,
+      "first_ts": "2026-06-27T16:07:16.055Z",
+      "last_ts": "2026-06-27T16:07:52.722Z",
+      "total_input_processed": 502892,
+      "cache_hit_ratio": 0.9771,
+      "est_cost_usd": 1.04439
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 14501,
+    "cache_creation": 154124,
+    "cache_read": 746596,
+    "output": 7177,
+    "assistant_turns": 24,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 915221,
+    "cache_hit_ratio": 0.8158,
+    "est_cost_usd": 4.765509
+  }
+}

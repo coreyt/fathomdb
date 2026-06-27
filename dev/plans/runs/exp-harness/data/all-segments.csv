@@ -1,0 +1,39 @@
+label,agentId,seg,seg_label,assistant_turns,input,cache_creation,cache_read,output,cache_hit_ratio,est_cost_usd
+r1-bg-resident,a967909582618880d,0,You are a STAND-BY resident worke,15,13134,237973,332445,1619,0.5697,5.279096
+r1-bg-resident,a967909582618880d,1,[MSG] FOLLO,2,4,93962,12870,6,0.1205,1.781602
+r1-bg-resident,a967909582618880d,2,[MSG] FOLLO,2,4,2578,106832,6,0.9764,0.209095
+r1-control-fresh,a6c353575207e974e,0,You are a fresh worker. You have,11,11023,167517,211777,1647,0.5426,3.747479
+r1-fg-resident,aa213c7a6e25080ca,0,You are a resident worker in a co,9,11167,162010,132628,1198,0.4337,3.493984
+r1-fg-resident,aa213c7a6e25080ca,1,[MSG] FOLLO,2,232,90462,12684,439,0.1227,1.751594
+r2-e1-10k,a38a01a0c234bb4c4,0,Read this file IN FULL: /home/cor,6,5944,86510,84693,418,0.4781,1.869612
+r2-e1-154k,abcaa6025cf6817d0,0,Read this file IN FULL: /home/cor,23,6841,347997,1098172,3705,0.7558,8.552692
+r2-e1-1k,a918cd606bb1a412d,0,Read this file IN FULL: /home/cor,6,8047,83701,19331,741,0.174,1.77467
+r2-e1-61k,ab40b5b885e2fd4b4,0,Read this file IN FULL: /home/cor,10,8918,130524,199726,1734,0.5889,3.010734
+r2-e2e3-resident,a3c27f072e6707da5,0,You are a STAND-BY resident worke,6,5944,86941,85096,357,0.4781,1.873723
+r2-e2e3-resident,a3c27f072e6707da5,1,[MSG] FOLLO,2,867,29705,42463,153,0.5814,0.645143
+r2-e2e3-resident,a3c27f072e6707da5,2,[MSG] FOLLO,2,867,768,72456,302,0.9779,0.158739
+r2-e2e3-resident,a3c27f072e6707da5,3,[MSG] FOLLO,2,867,479,73703,98,0.9821,0.139891
+r2-e2e3-resident,a3c27f072e6707da5,4,[MSG] FOLLO,2,867,37704,37414,294,0.4924,0.798126
+r2-e2e3-resident,a3c27f072e6707da5,5,[MSG] FOLLO,2,867,487,75589,310,0.9824,0.15877
+r3-domain-fresh,ab04f77bea3f9708e,0,"Read whatever files you need, the",11,8057,49786,146855,622,0.7174,1.321275
+r3-highw-fresh,ad1c620c4e4d482df,0,Read this file IN FULL: /home/cor,7,6809,108749,100214,2268,0.4644,2.4616
+r3-rs-specialist,a0a90b9bbfd8f208c,0,You are a STAND-BY specialist res,11,23668,185151,213552,425,0.5056,4.178804
+r3-rs-specialist,a0a90b9bbfd8f208c,1,[MSG] FOLLO,3,869,96717,67540,67,0.409,1.932814
+r3-rs-specialist,a0a90b9bbfd8f208c,2,[MSG] FOLLO,9,881,12325,527860,1810,0.9756,1.171849
+r3-rs-specialist,a0a90b9bbfd8f208c,3,[MSG] QUICK,2,867,2538,121376,548,0.9727,0.283757
+r3-rw-highw-general,ab876ed807426307d,0,You are a STAND-BY resident worke,7,10152,131101,35540,460,0.201,2.698234
+r3-rw-highw-general,ab876ed807426307d,1,[MSG] FOLLO,3,869,3228,107274,2154,0.9632,0.396021
+r3-rw-highw-general,ab876ed807426307d,2,[MSG] FOLLO,3,869,10889,112407,3214,0.9053,0.626864
+r3-rw-highw-general,ab876ed807426307d,3,[MSG] NEW T,11,2611,8906,491375,1349,0.9771,1.04439
+r4-distilled-resident,a3c67385babef26d6,0,You are a STAND-BY resident holdi,6,5944,87209,85022,778,0.4772,1.910212
+r4-distilled-resident,a3c67385babef26d6,1,[MSG] WARM-,2,867,30049,42794,166,0.5806,0.653065
+r4-distilled-resident,a3c67385babef26d6,2,[MSG] From,3,869,2025,109549,41,0.9743,0.218402
+r4-distilled-resident,a3c67385babef26d6,3,[MSG] From,2,867,38400,38019,374,0.4919,0.818083
+r4-distiller,ac13216e8c11e79e7,0,"Read these three files IN FULL, t",16,12273,283529,453388,966,0.6052,6.252796
+r4r5-raw-resident-and-emit,a858ea43b4145cd9b,0,You are a STAND-BY resident holdi,13,13130,204946,273974,1483,0.5568,4.561873
+r4r5-raw-resident-and-emit,a858ea43b4145cd9b,1,[MSG] WARM-,2,867,48027,60755,197,0.5541,1.019419
+r4r5-raw-resident-and-emit,a858ea43b4145cd9b,2,[MSG] From,3,869,2668,163478,1567,0.9788,0.425802
+r4r5-raw-resident-and-emit,a858ea43b4145cd9b,3,[MSG] From,2,867,50534,63093,352,0.5511,1.081557
+r4r5-raw-resident-and-emit,a858ea43b4145cd9b,4,[MSG] From,9,1744,194274,395467,17759,0.6686,5.593923
+r5-piggyback-loaded,a130d192801d24338,0,You are a STAND-BY resident holdi,6,5944,98768,69496,540,0.3989,2.085804
+r5-piggyback-loaded,a130d192801d24338,1,[MSG] From,2,867,29261,41807,120,0.5812,0.633359

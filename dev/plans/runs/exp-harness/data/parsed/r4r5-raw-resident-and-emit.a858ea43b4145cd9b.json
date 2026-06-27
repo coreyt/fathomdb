@@ -1,0 +1,84 @@
+{
+  "label": "r4r5-raw-resident-and-emit",
+  "file": "data/transcripts/r4r5-raw-resident-and-emit.a858ea43b4145cd9b.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident holdi",
+      "input": 13130,
+      "cache_creation": 204946,
+      "cache_read": 273974,
+      "output": 1483,
+      "assistant_turns": 13,
+      "first_ts": "2026-06-27T16:20:25.052Z",
+      "last_ts": "2026-06-27T16:21:00.113Z",
+      "total_input_processed": 492050,
+      "cache_hit_ratio": 0.5568,
+      "est_cost_usd": 4.561873
+    },
+    {
+      "label": "[MSG] WARM-",
+      "input": 867,
+      "cache_creation": 48027,
+      "cache_read": 60755,
+      "output": 197,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T16:21:25.604Z",
+      "last_ts": "2026-06-27T16:21:31.141Z",
+      "total_input_processed": 109649,
+      "cache_hit_ratio": 0.5541,
+      "est_cost_usd": 1.019419
+    },
+    {
+      "label": "[MSG] From",
+      "input": 869,
+      "cache_creation": 2668,
+      "cache_read": 163478,
+      "output": 1567,
+      "assistant_turns": 3,
+      "first_ts": "2026-06-27T16:21:51.939Z",
+      "last_ts": "2026-06-27T16:22:12.697Z",
+      "total_input_processed": 167015,
+      "cache_hit_ratio": 0.9788,
+      "est_cost_usd": 0.425802
+    },
+    {
+      "label": "[MSG] From",
+      "input": 867,
+      "cache_creation": 50534,
+      "cache_read": 63093,
+      "output": 352,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T16:29:32.214Z",
+      "last_ts": "2026-06-27T16:29:40.709Z",
+      "total_input_processed": 114494,
+      "cache_hit_ratio": 0.5511,
+      "est_cost_usd": 1.081557
+    },
+    {
+      "label": "[MSG] From",
+      "input": 1744,
+      "cache_creation": 194274,
+      "cache_read": 395467,
+      "output": 17759,
+      "assistant_turns": 9,
+      "first_ts": "2026-06-27T16:34:15.350Z",
+      "last_ts": "2026-06-27T16:37:15.566Z",
+      "total_input_processed": 591485,
+      "cache_hit_ratio": 0.6686,
+      "est_cost_usd": 5.593923
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 17477,
+    "cache_creation": 500449,
+    "cache_read": 956767,
+    "output": 21358,
+    "assistant_turns": 29,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 1474693,
+    "cache_hit_ratio": 0.6488,
+    "est_cost_usd": 12.682574
+  }
+}

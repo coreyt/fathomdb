@@ -1,0 +1,58 @@
+{
+  "label": "r1-bg-resident",
+  "file": "data/transcripts/r1-bg-resident.a967909582618880d.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident worke",
+      "input": 13134,
+      "cache_creation": 237973,
+      "cache_read": 332445,
+      "output": 1619,
+      "assistant_turns": 15,
+      "first_ts": "2026-06-27T14:48:30.292Z",
+      "last_ts": "2026-06-27T14:49:06.885Z",
+      "total_input_processed": 583552,
+      "cache_hit_ratio": 0.5697,
+      "est_cost_usd": 5.279096
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 4,
+      "cache_creation": 93962,
+      "cache_read": 12870,
+      "output": 6,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T14:49:17.420Z",
+      "last_ts": "2026-06-27T14:49:28.809Z",
+      "total_input_processed": 106836,
+      "cache_hit_ratio": 0.1205,
+      "est_cost_usd": 1.781602
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 4,
+      "cache_creation": 2578,
+      "cache_read": 106832,
+      "output": 6,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T14:50:14.844Z",
+      "last_ts": "2026-06-27T14:50:25.172Z",
+      "total_input_processed": 109414,
+      "cache_hit_ratio": 0.9764,
+      "est_cost_usd": 0.209095
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 13142,
+    "cache_creation": 334513,
+    "cache_read": 452147,
+    "output": 1631,
+    "assistant_turns": 19,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 799802,
+    "cache_hit_ratio": 0.5653,
+    "est_cost_usd": 7.269794
+  }
+}

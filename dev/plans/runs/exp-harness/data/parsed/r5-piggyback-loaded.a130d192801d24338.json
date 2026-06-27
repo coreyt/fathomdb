@@ -1,0 +1,45 @@
+{
+  "label": "r5-piggyback-loaded",
+  "file": "data/transcripts/r5-piggyback-loaded.a130d192801d24338.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident holdi",
+      "input": 5944,
+      "cache_creation": 98768,
+      "cache_read": 69496,
+      "output": 540,
+      "assistant_turns": 6,
+      "first_ts": "2026-06-27T16:37:27.714Z",
+      "last_ts": "2026-06-27T16:37:41.757Z",
+      "total_input_processed": 174208,
+      "cache_hit_ratio": 0.3989,
+      "est_cost_usd": 2.085804
+    },
+    {
+      "label": "[MSG] From",
+      "input": 867,
+      "cache_creation": 29261,
+      "cache_read": 41807,
+      "output": 120,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T16:38:19.619Z",
+      "last_ts": "2026-06-27T16:38:26.639Z",
+      "total_input_processed": 71935,
+      "cache_hit_ratio": 0.5812,
+      "est_cost_usd": 0.633359
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 6811,
+    "cache_creation": 128029,
+    "cache_read": 111303,
+    "output": 660,
+    "assistant_turns": 8,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 246143,
+    "cache_hit_ratio": 0.4522,
+    "est_cost_usd": 2.719163
+  }
+}

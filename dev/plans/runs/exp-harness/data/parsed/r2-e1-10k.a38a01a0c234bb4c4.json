@@ -1,0 +1,32 @@
+{
+  "label": "r2-e1-10k",
+  "file": "data/transcripts/r2-e1-10k.a38a01a0c234bb4c4.jsonl",
+  "segments": [
+    {
+      "label": "Read this file IN FULL: /home/cor",
+      "input": 5944,
+      "cache_creation": 86510,
+      "cache_read": 84693,
+      "output": 418,
+      "assistant_turns": 6,
+      "first_ts": "2026-06-27T15:31:12.086Z",
+      "last_ts": "2026-06-27T15:31:35.852Z",
+      "total_input_processed": 177147,
+      "cache_hit_ratio": 0.4781,
+      "est_cost_usd": 1.869612
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 5944,
+    "cache_creation": 86510,
+    "cache_read": 84693,
+    "output": 418,
+    "assistant_turns": 6,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 177147,
+    "cache_hit_ratio": 0.4781,
+    "est_cost_usd": 1.869612
+  }
+}

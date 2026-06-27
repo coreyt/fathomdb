@@ -1,0 +1,32 @@
+{
+  "label": "r3-highw-fresh",
+  "file": "data/transcripts/r3-highw-fresh.ad1c620c4e4d482df.jsonl",
+  "segments": [
+    {
+      "label": "Read this file IN FULL: /home/cor",
+      "input": 6809,
+      "cache_creation": 108749,
+      "cache_read": 100214,
+      "output": 2268,
+      "assistant_turns": 7,
+      "first_ts": "2026-06-27T16:04:51.101Z",
+      "last_ts": "2026-06-27T16:05:33.650Z",
+      "total_input_processed": 215772,
+      "cache_hit_ratio": 0.4644,
+      "est_cost_usd": 2.4616
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 6809,
+    "cache_creation": 108749,
+    "cache_read": 100214,
+    "output": 2268,
+    "assistant_turns": 7,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 215772,
+    "cache_hit_ratio": 0.4644,
+    "est_cost_usd": 2.4616
+  }
+}

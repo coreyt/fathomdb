@@ -1,0 +1,32 @@
+{
+  "label": "r1-control-fresh",
+  "file": "data/transcripts/r1-control-fresh.a6c353575207e974e.jsonl",
+  "segments": [
+    {
+      "label": "You are a fresh worker. You have ",
+      "input": 11023,
+      "cache_creation": 167517,
+      "cache_read": 211777,
+      "output": 1647,
+      "assistant_turns": 11,
+      "first_ts": "2026-06-27T14:51:16.992Z",
+      "last_ts": "2026-06-27T14:51:52.928Z",
+      "total_input_processed": 390317,
+      "cache_hit_ratio": 0.5426,
+      "est_cost_usd": 3.747479
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 11023,
+    "cache_creation": 167517,
+    "cache_read": 211777,
+    "output": 1647,
+    "assistant_turns": 11,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 390317,
+    "cache_hit_ratio": 0.5426,
+    "est_cost_usd": 3.747479
+  }
+}

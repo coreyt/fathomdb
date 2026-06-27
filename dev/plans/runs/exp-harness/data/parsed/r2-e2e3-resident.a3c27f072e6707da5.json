@@ -1,0 +1,97 @@
+{
+  "label": "r2-e2e3-resident",
+  "file": "data/transcripts/r2-e2e3-resident.a3c27f072e6707da5.jsonl",
+  "segments": [
+    {
+      "label": "You are a STAND-BY resident worke",
+      "input": 5944,
+      "cache_creation": 86941,
+      "cache_read": 85096,
+      "output": 357,
+      "assistant_turns": 6,
+      "first_ts": "2026-06-27T15:31:19.260Z",
+      "last_ts": "2026-06-27T15:31:35.296Z",
+      "total_input_processed": 177981,
+      "cache_hit_ratio": 0.4781,
+      "est_cost_usd": 1.873723
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 867,
+      "cache_creation": 29705,
+      "cache_read": 42463,
+      "output": 153,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T15:31:59.482Z",
+      "last_ts": "2026-06-27T15:32:13.747Z",
+      "total_input_processed": 73035,
+      "cache_hit_ratio": 0.5814,
+      "est_cost_usd": 0.645143
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 867,
+      "cache_creation": 768,
+      "cache_read": 72456,
+      "output": 302,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T15:32:18.740Z",
+      "last_ts": "2026-06-27T15:32:24.830Z",
+      "total_input_processed": 74091,
+      "cache_hit_ratio": 0.9779,
+      "est_cost_usd": 0.158739
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 867,
+      "cache_creation": 479,
+      "cache_read": 73703,
+      "output": 98,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T15:32:37.104Z",
+      "last_ts": "2026-06-27T15:32:43.072Z",
+      "total_input_processed": 75049,
+      "cache_hit_ratio": 0.9821,
+      "est_cost_usd": 0.139891
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 867,
+      "cache_creation": 37704,
+      "cache_read": 37414,
+      "output": 294,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T15:39:20.985Z",
+      "last_ts": "2026-06-27T15:39:28.838Z",
+      "total_input_processed": 75985,
+      "cache_hit_ratio": 0.4924,
+      "est_cost_usd": 0.798126
+    },
+    {
+      "label": "[MSG] FOLLO",
+      "input": 867,
+      "cache_creation": 487,
+      "cache_read": 75589,
+      "output": 310,
+      "assistant_turns": 2,
+      "first_ts": "2026-06-27T15:39:40.458Z",
+      "last_ts": "2026-06-27T15:39:46.878Z",
+      "total_input_processed": 76943,
+      "cache_hit_ratio": 0.9824,
+      "est_cost_usd": 0.15877
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 10279,
+    "cache_creation": 156084,
+    "cache_read": 386721,
+    "output": 1514,
+    "assistant_turns": 16,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 553084,
+    "cache_hit_ratio": 0.6992,
+    "est_cost_usd": 3.774392
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "label": "r3-domain-fresh",
+  "file": "data/transcripts/r3-domain-fresh.ab04f77bea3f9708e.jsonl",
+  "segments": [
+    {
+      "label": "Read whatever files you need, the",
+      "input": 8057,
+      "cache_creation": 49786,
+      "cache_read": 146855,
+      "output": 622,
+      "assistant_turns": 11,
+      "first_ts": "2026-06-27T16:04:53.962Z",
+      "last_ts": "2026-06-27T16:05:30.422Z",
+      "total_input_processed": 204698,
+      "cache_hit_ratio": 0.7174,
+      "est_cost_usd": 1.321275
+    }
+  ],
+  "total": {
+    "label": "TOTAL",
+    "input": 8057,
+    "cache_creation": 49786,
+    "cache_read": 146855,
+    "output": 622,
+    "assistant_turns": 11,
+    "first_ts": null,
+    "last_ts": null,
+    "total_input_processed": 204698,
+    "cache_hit_ratio": 0.7174,
+    "est_cost_usd": 1.321275
+  }
+}
