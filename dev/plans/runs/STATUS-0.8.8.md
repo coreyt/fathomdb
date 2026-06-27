@@ -5,20 +5,24 @@
 > Carries an OOB security drop-in: the **pyo3 0.24.1 → 0.29.0** bump (RUSTSEC-2026-0176/0177)
 > as reserved-gap **Slice 1**, landing before the EXP-OBS Py surface (Slice 5).
 
-## Verdict — IN PROGRESS
+## Verdict — Slices 0/1/5 DONE; 10/15/20/40 remain
 
-Slice 0 (scope freeze + this tracker) and **Slice 1 (pyo3 security bump) — DONE, pending
-codex §9 + HITL sign-off / commit**. Feature slices 5/10/15/20 (EXP-OBS + telemetry) not yet
-started; Slice 5 requires HITL ratification of the `Explanation` payload schema with the
-M-work owner before code (plan §9).
+Slice 1 (pyo3 security bump) is on `origin/main` (`8c938bb7`). Slices 0 (ADR) + 5 (EXP-OBS engine
+keystone) are landing on `main` via this clean `0.8.8-slice5-close` worktree (the two commits had
+leaked onto the `0.8.9-ci-integrity-micro` branch; re-applied here off `origin/main` per the
+worktree-base preflight). The **`Explanation` field set is HITL-RATIFIED** (6-owner negotiation,
+`dev/plans/runs/0.8.8-explanation-fieldset-ratification.md`): landed shape confirmed architecturally
+correct, ADR amended to the code, only added engine delta = `#[non_exhaustive]` ×4. Slices 10
+(SDK parity) / 15 (telemetry) / 20 (gold) / 40 (verify) remain, with the ratification artifact as
+their input spec.
 
 ## Slice ladder
 
 | Slice | Title | State |
 |------:|-------|-------|
-| 0 | Setup + ADR / scope freeze | ✅ pyo3 migration approach + ACs frozen in `plan-0.8.8.md` §1/§2; STATUS stood up; **Explanation + telemetry/gold schema ADR DRAFTED** → `dev/design/0.8.8-explain-and-telemetry-adr.md` (⏳ awaiting HITL ratification w/ M-work owner before Slice 5 code) |
-| 1 *(reserved-gap)* | **pyo3 0.24.1 → 0.29.0 security bump** | ✅ migrated + gated GREEN (see R-SEC-1 below); **pending codex §9 + commit** |
-| 5 | EXP-OBS KEYSTONE (`explain=True`) | ✅ **engine carrier DONE** (sidecar HITL-ratified) — `Engine::search_explained` + `Explanation`/`QueryTrace`/`PerHitExplain`; reader-protocol 5-tuple; byte-stable default path. Engine 361 tests green, clippy clean, governed-surface allowlist 26→29. ⏳ pending codex §9 + field-set ratification (additive). SDK wiring = Slice 10 |
+| 0 | Setup + ADR / scope freeze | ✅ ADR `dev/design/0.8.8-explain-and-telemetry-adr.md` **RATIFIED** (6-owner negotiation); Part A field set + §A.4 Q1–Q3 closed; Part B telemetry/gold amendments folded for Slice 15/20 |
+| 1 *(reserved-gap)* | **pyo3 0.24.1 → 0.29.0 security bump** | ✅ on `origin/main` (`8c938bb7`); gated GREEN + codex §9 clean (see R-SEC-1) |
+| 5 | EXP-OBS KEYSTONE (`explain=True`) | ✅ **DONE** — `Engine::search_explained` + `Explanation`/`QueryTrace`/`PerHitExplain` (all `#[non_exhaustive]`); reader-protocol 5-tuple; byte-stable default path. R-OBS-1 golden + R-OBS-2-COV (depth>0, graph_arm) tests; governed-surface allowlist 29; clippy clean; codex §9 clean. Landing on `main` via clean worktree. SDK wiring = Slice 10 |
 | 10 | EXP-OBS SDK parity + zero-cost bench | ⏳ depends on 5 |
 | 15 | Telemetry capture | ⏳ not started |
 | 20 | Real-gold pipeline | ⏳ depends on 15 |
@@ -28,9 +32,12 @@ M-work owner before code (plan §9).
 
 | ID | Requirement | Result |
 |----|-------------|--------|
-| R-SEC-1 | pyo3 → 0.29.0 off the HIGH/moderate advisories; binding migrated (4 renames) + `#[pymodule(gil_used = true)]`; byte-stability + eu7 recall re-clear; build+import smoke; advisories no longer reported | ✅ see below |
-| R-OBS-1..4 | EXP-OBS `explain` surface | ⏳ not started |
-| R-TEL-1..3 | Telemetry + real-gold | ⏳ not started |
+| R-SEC-1 | pyo3 → 0.29.0 off the HIGH/moderate advisories; binding migrated (4 renames) + `#[pymodule(gil_used = true)]`; byte-stability + eu7 recall re-clear; build+import smoke; advisories no longer reported | ✅ on `origin/main` (`8c938bb7`) |
+| R-OBS-1 | per-hit arm-provenance + score-breakdown + query trace behind `explain=True` | ✅ engine: golden `r_obs_1_golden_field_fidelity_at_rerank_depth_gt0`; SDK parity → Slice 10 |
+| R-OBS-2 | `explain` zero-cost when off | ✅ engine: `None`/no-alloc default path; `r_obs_2_cov_*` byte-identity at depth>0 + graph_arm; bench → Slice 10 |
+| R-OBS-3 | reuses existing seams (`fuse_three_arms`/`ce_rerank`/`GraphFrontierStats` side-channel) | ✅ codex §9 confirmed no parallel machinery |
+| R-OBS-4 | Py + TS SDK parity | ⏳ Slice 10 (X1 harness) |
+| R-TEL-1..3 | Telemetry + real-gold | ⏳ Slice 15/20 (ADR §B amendments folded) |
 
 ## Slice 1 — pyo3 0.24.1 → 0.29.0 (R-SEC-1) detail
 

@@ -83,8 +83,8 @@ debug-only raw-SQL `execute_for_test` — were reachable. Per the signed Option 
 (codex [P1], HITL 2026-06-05) the **operator/recovery seam is feature-gated**:
 
 - **Default `fathomdb` facade (operator OFF)** — the governed runtime surface:
-  the 17 governed types + the application methods `Engine::open`/`write`/`search`/
-  `close` (+ the engine-attached instrumentation/control methods). It exposes
+  the 29 governed types + the application methods `Engine::open`/`write`/`search`/
+  `search_explained`/`close` (+ the engine-attached instrumentation/control methods). It exposes
   **no method whose name is in `{recover, restore, repair, fix, rebuild}`** and
   **no raw-SQL method**. This is enforced at the **method** level by
   `compile_fail` doctests in `fathomdb/src/lib.rs`

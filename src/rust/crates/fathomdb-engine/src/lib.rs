@@ -1158,6 +1158,10 @@ pub struct OpStoreRow {
 /// vector-first, dedup-on-body order. Derives `Clone, Debug, PartialEq` but
 /// **not `Eq`** — each hit carries a `score: f64`.
 #[derive(Clone, Debug, PartialEq)]
+// 0.8.8 EXP-OBS (field-set ratification): non_exhaustive so future additive fields
+// (e.g. the deferred QueryTrace.timings_ms, Q3) are non-breaking. All construction
+// is in-crate (engine + tests); external crates read fields only.
+#[non_exhaustive]
 pub struct SearchResult {
     pub projection_cursor: u64,
     pub soft_fallback: Option<SoftFallback>,
@@ -1182,6 +1186,7 @@ pub struct SearchResult {
 ///
 /// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive] // 0.8.8 field-set ratification — additive-safe sidecar
 pub struct Explanation {
     pub trace: QueryTrace,
     pub per_hit: Vec<PerHitExplain>,
@@ -1191,6 +1196,9 @@ pub struct Explanation {
 /// `search_reranked` knobs + the active embedder identity; timings are coarse
 /// per-stage wall-clock (monotonic) captured only on the explain path.
 #[derive(Clone, Debug, PartialEq)]
+// 0.8.8 field-set ratification — HARD: leaf absorbs the deferred `timings_ms` (Q3)
+// and any future trace field without a contract break.
+#[non_exhaustive]
 pub struct QueryTrace {
     /// Query LENGTH only (chars) — never the query text (privacy; ADR §C).
     pub query_chars: u32,
@@ -1218,6 +1226,8 @@ pub struct QueryTrace {
 ///
 /// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
 #[derive(Clone, Debug, PartialEq)]
+// 0.8.8 field-set ratification — HARD: leaf absorbs future arms / score components.
+#[non_exhaustive]
 pub struct PerHitExplain {
     pub id: u64,
     /// Winning arm after RRF dedup (vector-first), == `SearchHit.branch`.

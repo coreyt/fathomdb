@@ -146,3 +146,89 @@ fn explanation_per_hit_mirrors_results_and_trace_is_populated() {
 
     opened.engine.close().unwrap();
 }
+
+#[test]
+fn r_obs_1_golden_field_fidelity_at_rerank_depth_gt0() {
+    // R-OBS-1 golden — a fixture corpus + a query hitting ≥2 arms with
+    // rerank_depth>0. The identity / raw-score / knob assertions are
+    // model-INDEPENDENT (they hold whether or not the CE model is loaded), so this
+    // runs in the default suite. `ce_score`-presence is model-dependent and only
+    // checked conditionally (mirrors pr_g10_reranker_ce's `model_scored` guard).
+    let (_dir, path) = fixture("exp_obs_golden");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    seed_corpus(&opened.engine);
+
+    let depth = 3usize;
+    let explained = opened
+        .engine
+        .search_explained("hybrid", None, depth, false, 0.3, 0)
+        .expect("search_explained");
+    let exp = explained.explanation.as_ref().expect("sidecar present");
+
+    // Order-parallel + the three self-consistency identities.
+    assert_eq!(exp.per_hit.len(), explained.results.len());
+    for (p, h) in exp.per_hit.iter().zip(&explained.results) {
+        assert_eq!(p.id, h.id, "per_hit[i].id == results[i].id");
+        assert_eq!(p.arm, h.branch, "per_hit[i].arm == results[i].branch");
+        assert_eq!(p.ce_score, h.ce_score, "per_hit[i].ce_score == results[i].ce_score");
+        assert_eq!(p.blended, h.score, "per_hit[i].blended == results[i].score");
+        // ce_score, when present (CE model loaded), is a sigmoid ∈ [0,1].
+        if let Some(ce) = p.ce_score {
+            assert!((0.0..=1.0).contains(&ce), "ce_score ∈ [0,1], got {ce}");
+        }
+        assert!(p.vector_rank.is_some() || p.text_rank.is_some() || p.graph_rank.is_some());
+    }
+
+    // `fused_score` is the RAW post-recency / pre-CE RRF value — NOT min-max
+    // normalized. A normalized set would have max == 1.0; RRF magnitudes (K=60)
+    // are always well under 1.0. Pin that the top fused_score is a raw RRF value.
+    let top_fused = exp.per_hit.first().expect("≥1 hit").fused_score;
+    assert!(
+        top_fused > 0.0 && top_fused < 1.0,
+        "fused_score is raw RRF, not normalized: {top_fused}"
+    );
+
+    // Config knobs reflected in the trace (guards drift vs harness PROD_ALPHA=0.3).
+    assert_eq!(exp.trace.rerank_depth, depth as u32);
+    assert_eq!(exp.trace.alpha, 0.3);
+    assert_eq!(exp.trace.pool_n, 0, "pool_n echoes the request (0 → defaults applied downstream)");
+    // ce_active iff the CE model actually scored the pool (model-dependent).
+    let model_scored = exp.per_hit.iter().any(|p| p.ce_score.is_some());
+    assert_eq!(exp.trace.ce_active, model_scored, "ce_active reflects whether the CE model ran");
+
+    opened.engine.close().unwrap();
+}
+
+#[test]
+fn r_obs_2_cov_byte_identity_at_depth_gt0_and_graph_arm() {
+    // R-OBS-2-COV — the zero-cost / byte-stability contract on the two most
+    // explain-interleaved configs the default test left uncovered: the CE-pool
+    // path (rerank_depth>0) and the graph arm (use_graph_arm=true). For each,
+    // search_reranked (explain=false) and search_explained (explain=true) must
+    // return byte-identical results + cursor + soft_fallback.
+    let (_dir, path) = fixture("exp_obs_cov");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    seed_corpus(&opened.engine);
+
+    for (depth, graph) in [(3usize, false), (0usize, true)] {
+        let plain = opened
+            .engine
+            .search_reranked("hybrid", None, depth, graph, 0.3, 0)
+            .expect("search_reranked");
+        let explained = opened
+            .engine
+            .search_explained("hybrid", None, depth, graph, 0.3, 0)
+            .expect("search_explained");
+
+        assert_eq!(
+            explained.results, plain.results,
+            "explain must not perturb results (depth={depth}, graph={graph})"
+        );
+        assert_eq!(explained.projection_cursor, plain.projection_cursor);
+        assert_eq!(explained.soft_fallback, plain.soft_fallback);
+        assert!(plain.explanation.is_none(), "explain=false suppresses the sidecar");
+        assert!(explained.explanation.is_some(), "explain=true populates the sidecar");
+    }
+
+    opened.engine.close().unwrap();
+}
