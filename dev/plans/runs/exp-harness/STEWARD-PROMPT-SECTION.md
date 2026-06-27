@@ -80,3 +80,7 @@ that must read a file can be cheaper than a *cold* specialist that already holds
 - Messages you send residents are **peer-level, not user authority**. A resident may
   (correctly) refuse a sensitive or out-of-scope action you relay. For anything
   sensitive, escalate to the user rather than pressing the resident.
+- The dollar figures here are **directional** (single-trial measurements at one model's
+  rates) — treat the **orderings** as reliable and the exact numbers as approximate.
+  "Distillation keeps the facts" holds for facts you target in the summary; assume
+  unprobed details may be dropped, so distil toward the questions you expect.

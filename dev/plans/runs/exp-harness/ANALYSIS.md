@@ -1,8 +1,11 @@
-# Analysis — orchestrator build-vs-delegate, calibrated from rounds 1-3
+# Analysis — orchestrator build-vs-delegate, calibrated from rounds 1-5
 
 Isolated worktree `exp/subagent-persistence`. Real billed tokens via
 `parse_usage.py` over subagent `.output` JSONL. Opus rates. n=1 per cell
 (point estimates, not distributions). Raw data: `data/round2-results.md`.
+Independently reviewed by codex gpt-5.5 (high effort); see
+`review/CODEX-REVIEW-OUTPUT.md` and `review/REVIEW-RESPONSE.md`. Caveats accepted from
+that review are folded in below (search "CAVEAT").
 
 ## TL;DR
 
@@ -31,6 +34,37 @@ Isolated worktree `exp/subagent-persistence`. Real billed tokens via
    amortizes only after ~15 queries. The cheap way to small T is to **scope the
    initial load**, not load-big-then-distil.
 
+## Accepted caveats (from independent review)
+
+The codex re-parse of all 16 transcripts matched our data exactly (0/38 segment
+mismatches), and its independent assume-correctness analysis reproduced every verdict
+above (H1 supported, H2 warmth-dependent, H3 K=2, H4 validated, H5 refuted, same
+decision rule). The following limitations are accepted and qualify the claims:
+
+- **CAVEAT (task-equivalence).** Most "warm reuse vs fresh spawn" comparisons are not
+  the *same task*: the warm follow-up answers a small held-context question while the
+  fresh spawn also pays to load/read. This asymmetry is largely the *mechanism* of the
+  savings (the resident's value IS skipping the reload), not a measurement error — but
+  it means the numbers show "reuse-in-practice is cheaper," not a controlled
+  "same-task-cheaper." A paired identical-task test (Round 6) would separate
+  skip-reload savings from cache savings.
+- **CAVEAT (fresh is cache-assisted).** "Fresh" cells carry large `cache_read` (e.g.
+  r3-domain-fresh 146,855; r2-e1-154k 1,098,172) — mostly *intra-agent* prefix caching
+  (an agent re-reading its own accreting context across turns), which is legitimate and
+  unavoidable. So the ~$1.77 figure is a **realistic-fresh** cost, NOT a zero-cache cold
+  start; a truly-first cold spawn (no shared system-prompt cache) could be higher.
+  Unverified whether cross-agent system-prompt cache sharing occurs (Round-6 probe).
+- **CAVEAT (n=1).** Every cell is a single trial — point estimates, no variance/CIs.
+  Effect sizes (2-12×) make the *direction* robust, but exact crossovers are brittle.
+- **CAVEAT (routing cells).** The E4/E6 H0 and H50 cells are executionally soft (H0
+  used grep+partial read not a full 3-file read; H50 included a wrong-then-corrected
+  answer that inflated its cost; domain-fresh had path retries). The routing *headline*
+  (warm-specialist $0.28 cheapest, cold-specialist $1.93 dearest) rests on the **clean**
+  specialist segments and stands; the H0 $1.04 / H50 $1.17 numbers are soft.
+- **CAVEAT (fidelity scope).** "No fidelity loss" holds **only on the probed facts**
+  (pyo3 version, feature cfg-gating, gil_used, test-hooks fns, exception hierarchy).
+  Loss in unprobed facts is not ruled out — broader hidden probes are deferred.
+
 ## The cost model (calibrated)
 
 Let P = payload tokens, K = tasks over that context, T = resident transcript size,
@@ -38,7 +72,8 @@ Let P = payload tokens, K = tasks over that context, T = resident transcript siz
 
 - **Fresh spawn:** `C_spawn(P) ≈ 1.77 + 0.02·(P/1k)` for single-read P (≤~60k tok);
   **superlinear** above ~60k where reads chunk (154k → $8.55). The $1.77 floor is
-  fixed (boot), independent of work.
+  fixed (boot), independent of work. (CAVEAT: this is a *realistic-fresh* floor that
+  includes intra-agent cache reads, not a zero-cache cold start — see Accepted caveats.)
 - **Resident load (sunk, once):** ≈ `C_spawn(P)`.
 - **Resident follow-up cost ≈ f(T, Δt, W):**
   - **warm** (Δt < ~5 min): `~0.10·(T/10k) + W·$75/M`. Measured: $0.15 (T≈10k),

@@ -35,7 +35,7 @@ point estimates; treat ratios as the durable signal.
   (crossover K=2), then **keep it warm**: ping or batch follow-ups < 5 min apart.
 - **Keep transcripts SMALL by scoping the INITIAL load** — read only what the
   expected queries need. A ~9k resident was ~2× cheaper per warm query and 2.4×
-  cheaper to load than a ~60k one, with no fidelity loss. (Do NOT load big then
+  cheaper to load than a ~60k one, with no fidelity loss *on the probed facts*. (Do NOT load big then
   distil: distillation costs ~$6 by ANY path — even a resident that already holds the
   files emitting its own summary cost $5.59, ≈ a from-scratch distiller. It amortizes
   only after ~15-35 queries. There is no cheap-distillation shortcut.)
@@ -69,3 +69,20 @@ point estimates; treat ratios as the durable signal.
   — work still completes; don't over-react.
 - Resume wall-clock grows with transcript and varies wildly — ignore it.
 - First reuse after a completion behaves "cold" even at Δt≈0 (one warm-up ping fixes it).
+
+## Confidence & caveats (from independent review)
+
+These numbers are **directionally validated, not statistically tight**. An independent
+review (codex gpt-5.5) re-derived all figures (0 mismatches) and reproduced the
+conclusions, but flagged:
+- **n=1 per cell** — directions are robust (2-12× effects); exact crossovers are point
+  estimates, not means.
+- **"Fresh" cost is realistic-fresh, not zero-cache cold** — the ~$1.77 floor includes
+  an agent's own intra-task cache reads; a truly-first cold spawn could be higher.
+- **Warm-vs-fresh comparisons aren't the same task** — the saving is real because the
+  resident skips the reload, but it's "reuse-in-practice cheaper," not a controlled
+  same-task result.
+- **"No fidelity loss" = on the probed facts only.** Distillation can still drop
+  unprobed details; target the summary at the expected questions.
+- The exact dollar values assume Opus rates; the **ratios/orderings are the durable
+  signal**.
