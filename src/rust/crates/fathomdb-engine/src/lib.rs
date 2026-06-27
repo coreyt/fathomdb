@@ -2516,6 +2516,29 @@ impl Engine {
         cmd: &[&str],
         documents: &[ExtractDocument],
     ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        // 0.8.6 Slice 5 (ADR-0.8.6): the spawn + hello/ready handshake +
+        // request_id framing + error mapping now live in the reusable
+        // `provider_session` transport seam, parameterized by `ProviderTask`.
+        // `ingest_with_extractor` is the thin extract caller: it opens a session
+        // for `ProviderTask::Extract` then runs the extract-specific payload
+        // build + DB writes. The session owns child reaping via Drop.
+        let mut session = self.provider_session(ProviderTask::Extract, cmd)?;
+        self.run_extract_session(&mut session, documents)
+    }
+
+    /// 0.8.6 Slice 5 (ADR-0.8.6) — open a provider session: spawn the caller
+    /// subprocess, run the `hello`/`ready` handshake for `task`, and negotiate
+    /// `supported_tasks`. The transport (NDJSON over stdio, the detached stdout
+    /// drainer, the bounded-recv timeout, the `request_id` framing, and the
+    /// catch-all `EngineError::Extractor` mapping) is identical across tasks;
+    /// only the protocol string (`fathomdb.<task>.v1`) and the negotiated task
+    /// name differ. For `ProviderTask::Extract` the wire is byte-identical to the
+    /// pre-0.8.6 `fathomdb.extract.v1` path.
+    fn provider_session(
+        &self,
+        task: ProviderTask,
+        cmd: &[&str],
+    ) -> Result<ProviderSession, EngineError> {
         let (program, args) = cmd.split_first().ok_or(EngineError::Extractor)?;
         let mut child = Command::new(program)
             .args(args)
@@ -2525,40 +2548,22 @@ impl Engine {
             .spawn()
             .map_err(|_| EngineError::Extractor)?;
 
-        let child_stdin = child.stdin.take().ok_or_else(|| {
-            let _ = child.kill();
-            let _ = child.wait();
-            EngineError::Extractor
-        })?;
-        let child_stdout = child.stdout.take().ok_or_else(|| {
-            let _ = child.kill();
-            let _ = child.wait();
-            EngineError::Extractor
-        })?;
-
-        // Delegate to inner; always reap the child regardless of outcome.
-        // drop(writer) inside inner sends EOF → child exits; child.wait() here reaps.
-        // On error paths, inner's writer is dropped by Rust's auto-drop → EOF sent;
-        // child.kill() is a no-op if already exited.
-        let result = self.ingest_with_extractor_inner(child_stdin, child_stdout, documents);
-        let _ = child.kill();
-        let _ = child.wait();
-        result
-    }
-
-    fn ingest_with_extractor_inner(
-        &self,
-        child_stdin: std::process::ChildStdin,
-        child_stdout: std::process::ChildStdout,
-        documents: &[ExtractDocument],
-    ) -> Result<IngestWithExtractorReceipt, EngineError> {
-        // --- handshake: hello → ready ---
-        let hello = serde_json::json!({
-            "protocol": "fathomdb.extract.v1",
-            "type": "hello",
-            "schema_version": 1,
-        });
-        let mut writer = std::io::BufWriter::new(child_stdin);
+        let child_stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(EngineError::Extractor);
+            }
+        };
+        let child_stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(EngineError::Extractor);
+            }
+        };
 
         // fix-35 [P1/P2]: drain stdout on a dedicated thread so (a) every read can
         // be bounded with a timeout — a hung harness can no longer block ingest
@@ -2566,7 +2571,8 @@ impl Engine {
         // preventing a large-request deadlock (parent blocked writing stdin while
         // the child blocks writing a full stdout pipe). The handle is detached:
         // joining could hang if a misbehaving child holds stdout open past its
-        // stdin EOF, so the outer `child.kill()` is what guarantees thread exit.
+        // stdin EOF, so the session's `Drop` (child.kill()) is what guarantees
+        // thread exit.
         let io_timeout = extractor_io_timeout();
         let (line_tx, line_rx) = mpsc::channel::<std::io::Result<String>>();
         thread::spawn(move || {
@@ -2588,26 +2594,32 @@ impl Engine {
             }
         });
 
-        let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
-        writeln!(writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
-        writer.flush().map_err(|_| EngineError::Extractor)?;
+        let mut session = ProviderSession {
+            task,
+            child,
+            writer: std::io::BufWriter::new(child_stdin),
+            line_rx,
+            io_timeout,
+            model: None,
+            max_docs_per_request: 8,
+        };
+        // On any handshake/negotiation error the session is dropped here, which
+        // reaps the child (Drop) — matching the prior outer kill/wait semantics.
+        session.handshake()?;
+        Ok(session)
+    }
 
-        let line = recv_extractor_line(&line_rx, io_timeout)?;
-        let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
-        // fix-23 [P2]: validate protocol + schema_version in the ready message per ADR.
-        if ready.get("type").and_then(|v| v.as_str()) != Some("ready")
-            || ready.get("protocol").and_then(|v| v.as_str()) != Some("fathomdb.extract.v1")
-            || ready.get("schema_version").and_then(|v| v.as_u64()) != Some(1)
-        {
-            return Err(EngineError::Extractor);
-        }
-        let extractor_model_id = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let max_docs =
-            ready.get("max_docs_per_request").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
-        // fix-1 [P2]: reject zero max_docs_per_request to prevent chunks(0) panic.
-        if max_docs == 0 {
-            return Err(EngineError::Extractor);
-        }
+    /// 0.8.6 Slice 5 — extract-specific driver over a `ProviderSession`. The
+    /// payload build (documents → entities/edges) and DB writes are byte-identical
+    /// to the pre-0.8.6 inner loop; only the spawn/handshake/framing moved into
+    /// the shared session.
+    fn run_extract_session(
+        &self,
+        session: &mut ProviderSession,
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        let extractor_model_id = session.model.clone();
+        let max_docs = session.max_docs_per_request;
 
         // --- per-batch extract → write loop ---
         let mut nodes_written: u64 = 0;
@@ -2626,28 +2638,11 @@ impl Engine {
                 })
                 .collect();
 
-            let extract = serde_json::json!({
-                "protocol": "fathomdb.extract.v1",
-                "type": "extract",
-                "request_id": request_id,
-                "documents": docs_json,
-            });
-            let extract_line =
-                serde_json::to_string(&extract).map_err(|_| EngineError::Extractor)?;
-            writeln!(writer, "{extract_line}").map_err(|_| EngineError::Extractor)?;
-            writer.flush().map_err(|_| EngineError::Extractor)?;
-
-            let result_line = recv_extractor_line(&line_rx, io_timeout)?;
-            let result: Value =
-                serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
-
-            // fix-24 [P2]: require type=="result" AND matching request_id; any
-            // other envelope (error, wrong id, missing type) is a protocol fault.
-            let resp_type = result.get("type").and_then(|v| v.as_str());
-            let resp_id = result.get("request_id").and_then(|v| v.as_str());
-            if resp_type != Some("result") || resp_id != Some(request_id.as_str()) {
-                return Err(EngineError::Extractor);
-            }
+            // Send the framed extract request and receive its matching `result`.
+            // The session adds protocol/type/request_id and validates the
+            // type=="result" + matching request_id envelope (fix-24 [P2]).
+            let result = session
+                .request(&request_id, vec![("documents".to_string(), Value::Array(docs_json))])?;
 
             // --- map entities → PreparedWrite::Node with stable logical_id ---
             let entities =
@@ -2858,9 +2853,9 @@ impl Engine {
             }
         }
 
-        // Drop stdin → signal EOF to subprocess; outer shell waits for it.
-        drop(writer);
-
+        // The `ProviderSession` (and its writer/child) is dropped by the caller
+        // when `ingest_with_extractor` returns: Drop sends stdin EOF and reaps
+        // the child, matching the prior explicit drop(writer)+kill/wait.
         Ok(IngestWithExtractorReceipt { nodes_written, edges_written, docs_processed })
     }
 
@@ -8282,6 +8277,150 @@ fn dedup_prepared_by_logical_id(batch: Vec<PreparedWrite>) -> Vec<PreparedWrite>
             _ => true,
         })
         .collect()
+}
+
+/// 0.8.6 Slice 5 (ADR-0.8.6) — the family of caller-supplied provider tasks that
+/// ride the one NDJSON-over-stdio transport. Each task maps to a wire protocol
+/// string `fathomdb.<task>.v1` and a task discriminator name. Only `Extract`
+/// exists in 0.8.6; 0.8.10 adds `Consolidate`/`Summarize` on this same transport
+/// (and their own payload + `EngineError` leaf) WITHOUT a second handshake.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProviderTask {
+    Extract,
+}
+
+impl ProviderTask {
+    /// The wire task discriminator, e.g. `"extract"`. Used for `supported_tasks`
+    /// negotiation and as the request envelope `type`.
+    fn name(self) -> &'static str {
+        match self {
+            ProviderTask::Extract => "extract",
+        }
+    }
+
+    /// The protocol string FathomDB sends in `hello`/requests and requires in
+    /// `ready`. For `Extract` this is the UNCHANGED `fathomdb.extract.v1` —
+    /// byte-identical back-compat for existing ELPS harnesses (ADR-0.8.6 §2.1).
+    fn protocol(self) -> &'static str {
+        match self {
+            ProviderTask::Extract => "fathomdb.extract.v1",
+        }
+    }
+}
+
+/// 0.8.6 Slice 5 (ADR-0.8.6) — an open provider transport session: the spawned
+/// caller subprocess, the buffered stdin writer, the detached stdout-drain
+/// channel, the bounded-recv timeout, and the negotiated handshake state
+/// (`model` provenance + `max_docs_per_request`). One session serves one task
+/// family; the `request`/framing is identical across tasks. `Drop` reaps the
+/// child (sends stdin EOF via the writer field's own drop, then kill/wait),
+/// replacing the prior explicit outer kill/wait.
+struct ProviderSession {
+    task: ProviderTask,
+    child: std::process::Child,
+    writer: std::io::BufWriter<std::process::ChildStdin>,
+    line_rx: Receiver<std::io::Result<String>>,
+    io_timeout: Duration,
+    /// `ready.model`, recorded as output-row provenance (`extractor_model_id`).
+    model: Option<String>,
+    max_docs_per_request: usize,
+}
+
+impl Drop for ProviderSession {
+    fn drop(&mut self) {
+        // The detached stdout-drain thread exits when the child's stdout closes;
+        // kill() guarantees that even for a child that ignores stdin EOF. The
+        // `writer` field drops after this (declaration order) sending EOF too.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl ProviderSession {
+    /// Run the `hello` → `ready` handshake and `supported_tasks` negotiation.
+    /// Validates protocol + schema_version (fix-23 [P2]); rejects a zero
+    /// `max_docs_per_request` (fix-1 [P2]); and, when the harness advertises
+    /// `supported_tasks`, refuses to proceed unless this session's task is in it.
+    /// When `supported_tasks` is absent, the harness is assumed to serve the
+    /// requested task (back-compat: existing extract-only harnesses unchanged).
+    fn handshake(&mut self) -> Result<(), EngineError> {
+        let protocol = self.task.protocol();
+        let hello = serde_json::json!({
+            "protocol": protocol,
+            "type": "hello",
+            "schema_version": 1,
+        });
+        let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
+        writeln!(self.writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
+        self.writer.flush().map_err(|_| EngineError::Extractor)?;
+
+        let line = recv_extractor_line(&self.line_rx, self.io_timeout)?;
+        let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
+        // fix-23 [P2]: validate protocol + schema_version in the ready message per ADR.
+        if ready.get("type").and_then(|v| v.as_str()) != Some("ready")
+            || ready.get("protocol").and_then(|v| v.as_str()) != Some(protocol)
+            || ready.get("schema_version").and_then(|v| v.as_u64()) != Some(1)
+        {
+            return Err(EngineError::Extractor);
+        }
+
+        // 0.8.6 Slice 5 (ADR-0.8.6 §2.2): additive, optional `supported_tasks`
+        // negotiation. If present, the harness must advertise this session's task
+        // or FathomDB refuses to dispatch it. If absent, default to "serves the
+        // requested task" so extract-only harnesses keep working unchanged.
+        if let Some(supported) = ready.get("supported_tasks").and_then(|v| v.as_array()) {
+            let task_name = self.task.name();
+            let advertised = supported.iter().any(|t| t.as_str() == Some(task_name));
+            if !advertised {
+                return Err(EngineError::Extractor);
+            }
+        }
+
+        self.model = ready.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let max_docs =
+            ready.get("max_docs_per_request").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+        // fix-1 [P2]: reject zero max_docs_per_request to prevent chunks(0) panic.
+        if max_docs == 0 {
+            return Err(EngineError::Extractor);
+        }
+        self.max_docs_per_request = max_docs;
+        Ok(())
+    }
+
+    /// Send one framed request for this session's task and receive its matching
+    /// response. `payload` carries the task-specific fields; the envelope keys
+    /// (`protocol`, `type`, `request_id`) are added here. The response must have
+    /// `type == "result"` and a matching `request_id` (fix-24 [P2]); anything
+    /// else (error, wrong id, missing type) is a protocol fault. For `Extract`
+    /// the serialized request bytes are identical to the pre-0.8.6 path (serde_json
+    /// serializes map keys sorted, independent of insertion order).
+    fn request(
+        &mut self,
+        request_id: &str,
+        payload: Vec<(String, Value)>,
+    ) -> Result<Value, EngineError> {
+        let mut req = serde_json::Map::new();
+        req.insert("protocol".to_string(), Value::from(self.task.protocol()));
+        req.insert("type".to_string(), Value::from(self.task.name()));
+        req.insert("request_id".to_string(), Value::from(request_id));
+        for (k, v) in payload {
+            req.insert(k, v);
+        }
+        let req_line =
+            serde_json::to_string(&Value::Object(req)).map_err(|_| EngineError::Extractor)?;
+        writeln!(self.writer, "{req_line}").map_err(|_| EngineError::Extractor)?;
+        self.writer.flush().map_err(|_| EngineError::Extractor)?;
+
+        let result_line = recv_extractor_line(&self.line_rx, self.io_timeout)?;
+        let result: Value =
+            serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
+        let resp_type = result.get("type").and_then(|v| v.as_str());
+        let resp_id = result.get("request_id").and_then(|v| v.as_str());
+        if resp_type != Some("result") || resp_id != Some(request_id) {
+            return Err(EngineError::Extractor);
+        }
+        Ok(result)
+    }
 }
 
 /// fix-35 [P2]: BYO-LLM extractor I/O timeout. Defaults to 300s to accommodate
