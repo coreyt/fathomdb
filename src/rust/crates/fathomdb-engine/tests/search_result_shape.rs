@@ -9,12 +9,31 @@ fn search_result_carries_optional_soft_fallback() {
         projection_cursor: 0,
         soft_fallback: Some(SoftFallback { branch: SoftFallbackBranch::Text }),
         results: Vec::new(),
+        explanation: None,
     };
     assert!(r.soft_fallback.is_some());
 }
 
 #[test]
 fn search_result_default_has_no_soft_fallback() {
-    let r = SearchResult { projection_cursor: 0, soft_fallback: None, results: Vec::new() };
+    let r = SearchResult {
+        projection_cursor: 0,
+        soft_fallback: None,
+        results: Vec::new(),
+        explanation: None,
+    };
     assert!(r.soft_fallback.is_none());
+}
+
+#[test]
+fn search_result_carries_optional_explanation_sidecar() {
+    // 0.8.8 EXP-OBS (Slice 5) — the explanation is a sidecar: `None` by default,
+    // so the non-explain `SearchResult` shape is unchanged.
+    let r = SearchResult {
+        projection_cursor: 0,
+        soft_fallback: None,
+        results: Vec::new(),
+        explanation: None,
+    };
+    assert!(r.explanation.is_none());
 }

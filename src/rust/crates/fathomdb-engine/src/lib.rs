@@ -446,6 +446,12 @@ enum ReaderRequest {
         /// 0.8.5 (EXP-0) — reranked-pool size (clamped to the hit count). The
         /// binding resolves `pool_n.unwrap_or(rerank_depth)` before dispatch.
         pool_n: usize,
+        /// 0.8.8 EXP-OBS (Slice 5) — when `true`, capture per-arm ranks + the
+        /// fused/CE score breakdown + query trace into a `SearchResult`
+        /// `Explanation` sidecar. `false` (the default for `search`/`search_filtered`/
+        /// `search_reranked`) does ZERO extra work and returns `explanation = None`
+        /// (R-OBS-2 zero-cost; byte-identical `results`).
+        explain: bool,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -527,8 +533,18 @@ enum ReaderRequest {
 // meter (`GraphFrontierStats`). It rides the internal channel but is dropped before
 // `SearchResult` is built (kept OFF the governed surface); the
 // `_graph_frontier_stats_for_test` seam captures it. Default (all-zero) on non-graph paths.
-type ReaderResponse =
-    rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats)>;
+// 0.8.8 EXP-OBS (Slice 5): the Search response carries a 5th element — the opt-in
+// retrieval `Explanation` (`None` on every default `explain=false` path; `Some`
+// only on the `search_explained` path). Like the `GraphFrontierStats` 4th element
+// it rides the internal channel as a side-channel; unlike it, the explanation IS
+// surfaced (onto `SearchResult.explanation`) when requested.
+type ReaderResponse = rusqlite::Result<(
+    u64,
+    Option<SoftFallback>,
+    Vec<SearchHit>,
+    GraphFrontierStats,
+    Option<Explanation>,
+)>;
 
 /// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
 /// the debug-only `CacheStatus` broadcast path and the test accessor;
@@ -714,6 +730,7 @@ fn reader_worker_loop(
                 use_graph_arm,
                 alpha,
                 pool_n,
+                explain,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -730,6 +747,7 @@ fn reader_worker_loop(
                     use_graph_arm,
                     alpha,
                     pool_n,
+                    explain,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -1144,6 +1162,78 @@ pub struct SearchResult {
     pub projection_cursor: u64,
     pub soft_fallback: Option<SoftFallback>,
     pub results: Vec<SearchHit>,
+    /// 0.8.8 EXP-OBS (Slice 5) — opt-in retrieval explanation **sidecar**.
+    /// `Some` ONLY on the `search_explained` path; `None` for every default
+    /// (`explain=false`) search, so `results` + `projection_cursor` stay
+    /// byte-identical to the pre-0.8.8 shape (R-OBS-2 zero-cost contract,
+    /// HITL-ratified sidecar carrier — see
+    /// `dev/design/0.8.8-explain-and-telemetry-adr.md` §A.2). Field-set is
+    /// PROPOSED/ratification-pending; additive inside `Explanation` so later
+    /// amendments do not reshape `SearchResult`/`SearchHit`.
+    pub explanation: Option<Explanation>,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — the opt-in retrieval explanation payload returned
+/// behind `search_explained` (the `explain=true` surface). Built from the
+/// engine's OWN fusion/rerank machinery (`fuse_three_arms` per-arm ranks,
+/// `ce_rerank` blend components) — no parallel machinery (R-OBS-3). Carries a
+/// query-level [`QueryTrace`] plus a per-hit breakdown parallel to (and in the
+/// same order as) `SearchResult.results`.
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Explanation {
+    pub trace: QueryTrace,
+    pub per_hit: Vec<PerHitExplain>,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — query-level retrieval trace. Reuses the existing
+/// `search_reranked` knobs + the active embedder identity; timings are coarse
+/// per-stage wall-clock (monotonic) captured only on the explain path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryTrace {
+    /// Query LENGTH only (chars) — never the query text (privacy; ADR §C).
+    pub query_chars: u32,
+    /// Final result limit (`SEARCH_RERANK_LIMIT`-derived `final_limit`).
+    pub k: u32,
+    pub rerank_depth: u32,
+    pub pool_n: u32,
+    pub alpha: f64,
+    pub use_graph_arm: bool,
+    /// Recency reweight (the dedicated G12 flag) was applied.
+    pub recency: bool,
+    /// Active embedder identity `name@revision` (+ dim), or empty when none.
+    pub embedder_id: String,
+    /// The CE cross-encoder actually reranked the pool (model loaded + depth>0).
+    pub ce_active: bool,
+    /// Per-arm input hit counts (pre-fusion).
+    pub vector_hits: u32,
+    pub text_hits: u32,
+    pub graph_hits: u32,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — per-hit provenance + score breakdown. One entry per
+/// returned `SearchHit`, same order. `*_rank` is the 0-based rank the hit's body
+/// held in that arm's pre-fusion list (`None` = absent from that arm).
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PerHitExplain {
+    pub id: u64,
+    /// Winning arm after RRF dedup (vector-first), == `SearchHit.branch`.
+    pub arm: SoftFallbackBranch,
+    pub vector_rank: Option<u32>,
+    pub text_rank: Option<u32>,
+    pub graph_rank: Option<u32>,
+    /// Raw RRF fused score AFTER recency reweight, BEFORE CE blend (the value
+    /// `ce_rerank` normalizes). Faithful to the engine computation — downstream
+    /// may normalize. (ADR §A.4 Q1: raw exposed; normalization deferred.)
+    pub fused_score: f64,
+    /// In-pool cross-encoder score `sigmoid(ce_logit) ∈ [0,1]`, == the returned
+    /// `SearchHit.ce_score`; `None` outside the reranked pool / no-CE path.
+    pub ce_score: Option<f64>,
+    /// Final blended score, == the returned `SearchHit.score`.
+    pub blended: f64,
 }
 
 // ===== G4 filter grammar types (Slice 35) ===============================
@@ -2902,9 +2992,66 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
     ) -> Result<SearchResult, EngineError> {
+        // explain=false → `SearchResult.explanation == None`, byte-identical results.
+        self.search_reranked_with_explain(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            false,
+        )
+    }
+
+    /// 0.8.8 EXP-OBS (Slice 5) — `search_explained`: the opt-in `explain=true`
+    /// surface. Identical retrieval to [`search_reranked`][Engine::search_reranked]
+    /// (same fused/CE ranking, same `results`), additionally returning a
+    /// [`Explanation`] sidecar on `SearchResult.explanation` with per-hit arm
+    /// provenance + score breakdown + a query-level [`QueryTrace`]. The default
+    /// `search`/`search_filtered`/`search_reranked` paths are unaffected and stay
+    /// byte-identical (R-OBS-2).
+    ///
+    /// Governed surface: re-exported from `fathomdb` facade.
+    pub fn search_explained(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_explain(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            true,
+        )
+    }
+
+    /// Shared event-wrapped body for [`search_reranked`][Engine::search_reranked]
+    /// (`explain=false`) and [`search_explained`][Engine::search_explained]
+    /// (`explain=true`). Keeps the Started/Finished/Failed lifecycle emissions +
+    /// slow detection in one place.
+    #[allow(clippy::too_many_arguments)] // mirrors search_reranked + the explain flag
+    fn search_reranked_with_explain(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        explain: bool,
+    ) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome = self.search_inner(query, filter, rerank_depth, use_graph_arm, alpha, pool_n);
+        let outcome =
+            self.search_inner(query, filter, rerank_depth, use_graph_arm, alpha, pool_n, explain);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -2976,6 +3123,7 @@ impl Engine {
 
     /// Thin wrapper: the production search path that discards the G0 Phase-2
     /// frontier meter (it never reaches `SearchResult` / the governed surface).
+    #[allow(clippy::too_many_arguments)] // mirrors search_reranked + the explain flag
     fn search_inner(
         &self,
         query: &str,
@@ -2984,14 +3132,24 @@ impl Engine {
         use_graph_arm: bool,
         alpha: f64,
         pool_n: usize,
+        explain: bool,
     ) -> Result<SearchResult, EngineError> {
-        self.search_inner_with_stats(query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
-            .map(|(result, _stats)| result)
+        self.search_inner_with_stats(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+        )
+        .map(|(result, _stats)| result)
     }
 
     /// G0 Phase-2: the search body, additionally returning the graph-arm frontier
     /// meter. Only the `_graph_frontier_stats_for_test` seam consumes the stats;
     /// `search_inner` (and thus `search_reranked` / `search`) drops them.
+    #[allow(clippy::too_many_arguments)] // mirrors search_reranked + the explain flag
     fn search_inner_with_stats(
         &self,
         query: &str,
@@ -3000,6 +3158,7 @@ impl Engine {
         use_graph_arm: bool,
         alpha: f64,
         pool_n: usize,
+        explain: bool,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
@@ -3067,13 +3226,14 @@ impl Engine {
             use_graph_arm,
             alpha,
             pool_n,
+            explain,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
             return Err(EngineError::Closing);
         }
         let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
-        let (cursor, soft_fallback, results, graph_stats) = match search_result {
+        let (cursor, soft_fallback, results, graph_stats, explanation) = match search_result {
             Ok(result) => result,
             Err(err) => {
                 self.emit_sqlite_internal_error(&err);
@@ -3081,7 +3241,19 @@ impl Engine {
             }
         };
 
-        Ok((SearchResult { projection_cursor: cursor, soft_fallback, results }, graph_stats))
+        // The worker (`read_search_in_tx`) has no embedder identity; fill the
+        // trace's `embedder_id` here, where `self.runtime_embedder_identity` is in
+        // scope. Only on the explain path (`explanation` is `Some`).
+        let explanation = explanation.map(|mut exp| {
+            let id = &self.runtime_embedder_identity;
+            exp.trace.embedder_id = format!("{}@{} (dim={})", id.name, id.revision, id.dimension);
+            exp
+        });
+
+        Ok((
+            SearchResult { projection_cursor: cursor, soft_fallback, results, explanation },
+            graph_stats,
+        ))
     }
 
     /// G0 Phase-2 (BLOCK-1) test seam — runs the graph-arm retrieval path and
@@ -3095,7 +3267,8 @@ impl Engine {
         &self,
         query: &str,
     ) -> Result<GraphFrontierStats, EngineError> {
-        self.search_inner_with_stats(query, None, 0, true, 0.3, 0).map(|(_result, stats)| stats)
+        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false)
+            .map(|(_result, stats)| stats)
     }
 
     /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
@@ -3206,7 +3379,7 @@ impl Engine {
         }
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
         // 0.8.5: depth=0 → no rerank, so α/pool_n (0.3, 0) are inert here.
-        let search_result = self.search_inner(query, filter, 0, false, 0.3, 0)?;
+        let search_result = self.search_inner(query, filter, 0, false, 0.3, 0, false)?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -5359,7 +5532,8 @@ fn read_search_in_tx(
     use_graph_arm: bool,
     alpha: f64,
     pool_n: usize,
-) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats)> {
+    explain: bool,
+) -> ReaderResponse {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
@@ -5580,6 +5754,38 @@ fn read_search_in_tx(
     // G0 Phase-2 (BLOCK-1) side-channel meter — default (all-zero, rate 0.0) on
     // the non-graph-arm paths; populated by the BFS seed phase when graph-arm runs.
     let mut graph_stats = GraphFrontierStats::default();
+
+    // 0.8.8 EXP-OBS (Slice 5) — capture per-arm rank maps + counts BEFORE the arms
+    // are consumed by fusion. All reads; only when `explain` (else zero work).
+    // `body_rank_map` keeps the FIRST occurrence (== the rank `fuse_three_arms`
+    // uses, which dedups keeping the first). `*_fused_scores` is captured from the
+    // post-recency / pre-CE intermediate so `fused_score` is faithful to what
+    // `ce_rerank` normalizes.
+    let body_rank_map = |hits: &[SearchHit]| -> HashMap<String, u32> {
+        let mut m: HashMap<String, u32> = HashMap::new();
+        for (i, h) in hits.iter().enumerate() {
+            m.entry(h.body.clone()).or_insert(i as u32);
+        }
+        m
+    };
+    let body_score_map = |hits: &[SearchHit]| -> HashMap<String, f64> {
+        hits.iter().map(|h| (h.body.clone(), h.score)).collect()
+    };
+
+    let (exp_vector_ranks, exp_text_ranks, exp_vector_n, exp_text_n) = if explain {
+        (
+            Some(body_rank_map(&vector_results)),
+            Some(body_rank_map(&text_results)),
+            vector_results.len() as u32,
+            text_results.len() as u32,
+        )
+    } else {
+        (None, None, 0, 0)
+    };
+    let mut exp_graph_ranks: Option<HashMap<String, u32>> = None;
+    let mut exp_fused_scores: Option<HashMap<String, f64>> = None;
+    let mut exp_graph_n: u32 = 0;
+
     let results = if vector_stage_only {
         vector_results
     } else if use_graph_arm {
@@ -5604,31 +5810,74 @@ fn read_search_in_tx(
             50,
         )?;
         graph_stats = stats;
-        rerank_fused(
-            raw_query,
-            apply_recency_reweight(
-                fuse_three_arms(two_arm_fused, vec![], graph_candidates),
-                recency_enabled,
-            ),
-            rerank_depth,
-            alpha,
-            pool_n,
-        )
+        if explain {
+            exp_graph_ranks = Some(body_rank_map(&graph_candidates));
+            exp_graph_n = graph_candidates.len() as u32;
+        }
+        // Named intermediate (byte-identical to the prior nested call) so explain
+        // can read the pre-CE fused scores without perturbing the ranking.
+        let fused = apply_recency_reweight(
+            fuse_three_arms(two_arm_fused, vec![], graph_candidates),
+            recency_enabled,
+        );
+        if explain {
+            exp_fused_scores = Some(body_score_map(&fused));
+        }
+        rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
     } else {
         // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
         // tiebreak) into the unconditional new ranking, recency-reweight (gated,
         // off by default), then pass through the identity rerank seam. The
         // vector-empty `soft_fallback` signal was computed above, BEFORE this
         // branch-collapse.
-        rerank_fused(
-            raw_query,
-            apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled),
-            rerank_depth,
-            alpha,
-            pool_n,
-        )
+        let fused = apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled);
+        if explain {
+            exp_fused_scores = Some(body_score_map(&fused));
+        }
+        rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
     };
-    Ok((cursor, soft_fallback, results, graph_stats))
+
+    // 0.8.8 EXP-OBS — assemble the sidecar `Explanation` from the captured maps +
+    // the final `results`. `embedder_id` is left empty here (the worker has no
+    // identity) and filled by `search_inner_with_stats`.
+    let explanation = if explain {
+        let fused_scores = exp_fused_scores.unwrap_or_default();
+        let per_hit: Vec<PerHitExplain> = results
+            .iter()
+            .map(|h| PerHitExplain {
+                id: h.id,
+                arm: h.branch,
+                vector_rank: exp_vector_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                text_rank: exp_text_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                graph_rank: exp_graph_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
+                ce_score: h.ce_score,
+                blended: h.score,
+            })
+            .collect();
+        let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());
+        Some(Explanation {
+            trace: QueryTrace {
+                query_chars: raw_query.chars().count() as u32,
+                k: final_limit as u32,
+                rerank_depth: rerank_depth as u32,
+                pool_n: pool_n as u32,
+                alpha,
+                use_graph_arm,
+                recency: recency_enabled,
+                embedder_id: String::new(),
+                ce_active,
+                vector_hits: exp_vector_n,
+                text_hits: exp_text_n,
+                graph_hits: exp_graph_n,
+            },
+            per_hit,
+        })
+    } else {
+        None
+    };
+
+    Ok((cursor, soft_fallback, results, graph_stats, explanation))
 }
 
 /// R3 (Slice 30) + C1 (0.8.1 graph-arm seeding) — graph-arm BFS candidate generation.

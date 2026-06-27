@@ -18,12 +18,14 @@
 //             SearchFilter, TraversalDirection
 // + 2 new types from Slice 15 (G11 BYO-LLM ingest — fix-29):
 //   ExtractDocument, IngestWithExtractorReceipt
+// + 3 new types from 0.8.8 Slice 5 (EXP-OBS explain sidecar):
+//   Explanation, QueryTrace, PerHitExplain
 pub use fathomdb_engine::{
     ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
-    EngineError, EngineOpenError, ExtractDocument, IngestWithExtractorReceipt, NodeRecord,
-    OpenReport, OpenStage, OpenedEngine, Predicate, PreparedWrite, RecoveryHint, ScalarValue,
-    SearchExpandResult, SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, Subscription,
-    TraversalDirection, WriteReceipt,
+    EngineError, EngineOpenError, Explanation, ExtractDocument, IngestWithExtractorReceipt,
+    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
+    QueryTrace, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
+    SoftFallback, SoftFallbackBranch, Subscription, TraversalDirection, WriteReceipt,
 };
 
 // The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

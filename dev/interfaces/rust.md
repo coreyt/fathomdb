@@ -34,14 +34,20 @@ is the **typed governed application surface** this file owns. Three load-bearing
 properties hold (asserted by `src/rust/crates/fathomdb/tests/governed_surface.rs`,
 which binds AC-074 — not a new AC id):
 
-- **P1 — positive allowlist (`GOVERNED_SURFACE_ALLOWLIST`, 17 types):** the
-  facade re-exports exactly the curated governed application surface — `Engine`,
-  `OpenedEngine`, `OpenReport`, `WriteReceipt`, `SearchResult`, `PreparedWrite`,
-  `EngineError`, `EngineOpenError`, the open-path diagnostics (`CorruptionDetail`,
-  `CorruptionKind`, `CorruptionLocator`, `OpenStage`, `RecoveryHint`), the
-  retrieval soft-fallback shapes (`SoftFallback`, `SoftFallbackBranch`), and the
-  instrumentation handles (`CounterSnapshot`, `Subscription`). Each resolves
-  through the facade at compile time (`type_name::<…>()`). The recovery /
+- **P1 — positive allowlist (`GOVERNED_SURFACE_ALLOWLIST`, 29 types):** the
+  facade re-exports exactly the curated governed application surface — the
+  original 17: `Engine`, `OpenedEngine`, `OpenReport`, `WriteReceipt`,
+  `SearchResult`, `PreparedWrite`, `EngineError`, `EngineOpenError`, the open-path
+  diagnostics (`CorruptionDetail`, `CorruptionKind`, `CorruptionLocator`,
+  `OpenStage`, `RecoveryHint`), the retrieval soft-fallback shapes (`SoftFallback`,
+  `SoftFallbackBranch`), and the instrumentation handles (`CounterSnapshot`,
+  `Subscription`) — plus the additive groups: Slice 20 (G5/G6) graph-traversal
+  types (`TraversalDirection`, `NodeRecord`, `SearchExpandResult`, `SearchFilter`),
+  Slice 35 (G4) filter-grammar types (`Predicate`, `ScalarValue`, `ComparisonOp`),
+  Slice 15 (G11) BYO-LLM ingest types (`ExtractDocument`,
+  `IngestWithExtractorReceipt`), and 0.8.8 Slice 5 (EXP-OBS) explain-sidecar types
+  (`Explanation`, `QueryTrace`, `PerHitExplain`). Each resolves through the facade
+  at compile time (`type_name::<…>()`). The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
   CLI-only ergonomic symbols (the Rust analogue of "recovery is CLI-only, not an
@@ -103,6 +109,9 @@ Rust exposes:
 - `Engine::open(...) -> Result<OpenedEngine, EngineOpenError>`
 - `Engine::write(...) -> Result<WriteReceipt, EngineError>`
 - `Engine::search(...) -> Result<SearchResult, EngineError>`
+- `Engine::search_explained(...) -> Result<SearchResult, EngineError>` — 0.8.8
+  EXP-OBS: same retrieval as `search_reranked`, additionally returning the opt-in
+  `Explanation` sidecar (`SearchResult.explanation`); default paths are unchanged.
 - `Engine::close(...) -> Result<(), EngineError>`
 
 `OpenedEngine` contains:

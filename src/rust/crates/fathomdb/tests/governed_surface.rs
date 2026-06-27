@@ -89,6 +89,10 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     // Slice 15 (G11) — BYO-LLM ingest types (fix-29)
     "ExtractDocument",
     "IngestWithExtractorReceipt",
+    // 0.8.8 Slice 5 (EXP-OBS) — explain sidecar types
+    "Explanation",
+    "QueryTrace",
+    "PerHitExplain",
 ];
 
 /// The permanent five-name recovery denylist. Identical to the single shared
@@ -142,11 +146,15 @@ fn t_074_rust_governed_surface_resolves() {
     // Slice 15 (G11) — BYO-LLM ingest types (fix-29)
     let _ = type_name::<fathomdb::ExtractDocument>();
     let _ = type_name::<fathomdb::IngestWithExtractorReceipt>();
+    // 0.8.8 Slice 5 (EXP-OBS) — explain sidecar types
+    let _ = type_name::<fathomdb::Explanation>();
+    let _ = type_name::<fathomdb::QueryTrace>();
+    let _ = type_name::<fathomdb::PerHitExplain>();
 
     assert_eq!(
         GOVERNED_SURFACE_ALLOWLIST.len(),
-        26,
-        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 26 resolved governed types"
+        29,
+        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 29 resolved governed types"
     );
 }
 
