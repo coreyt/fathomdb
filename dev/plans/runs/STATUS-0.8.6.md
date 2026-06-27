@@ -40,7 +40,7 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 | **0** | Setup + ADR Kickoff | design-adr | ✅ **CLOSED** — HITL-signed 2026-06-26 (board + 2 ADRs) | n/a |
 | **5** | Provider-protocol KEYSTONE | implementation | **IN FLIGHT** — Option A (seam-only, byte-identical ELPS) | — |
 | **10** | Coupling hygiene | implementation | **IN FLIGHT** — **revised: parity-harden** | — |
-| **15** | Release-enablement | implementation (CI) | **IN FLIGHT** — **revised: verify (gates already pass)** | — |
+| **15** | Release-enablement | implementation (CI) | ✅ **CLOSED** — VERIFIED GREEN, no code change (`runs/0.8.6-slice-15-release-verify.md`) | X1 n/a · X2 ✓ · X3 ✓ |
 | **20** | Backlog push (HITL) | release op | pending (15) — 186 commits `main`↑`origin` | — |
 | **40** | Verification + Release Readiness | verification | pending (5,10,15,20) | — |
 
