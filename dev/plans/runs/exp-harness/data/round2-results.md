@@ -97,3 +97,57 @@ warm OR cold-spaced. Margin grows with K.
 ## Agent IDs (round 2)
 E1: 1k a918cd606bb1a412d · 10k a38a01a0c234bb4c4 · 61k ab40b5b885e2fd4b4 ·
 154k abcaa6025cf6817d0. Resident: a3c27f072e6707da5.
+
+---
+
+# Round 3 — high-W, E4 overlap, E6 specialist
+
+## High-W (large output W per task)
+
+Resident R-W holds p40k (10k payload); fresh control reads it from scratch.
+
+| op | turns | input | cwrite | cread | output(W) | hit% | $ |
+|---|---|---|---|---|---|---|---|
+| R-W load (sunk) | 7 | 10152 | 131101 | 35540 | 460 | 20.1 | 2.698 |
+| R-W high-W FU1 (reuse) | 3 | 869 | 3228 | 107274 | 2154 | 96.3 | 0.396 |
+| R-W high-W FU2 (reuse) | 3 | 869 | 10889 | 112407 | 3214 | 90.5 | 0.627 |
+| high-W FRESH (one shot) | 7 | 6809 | 108749 | 100214 | 2268 | 46.4 | 2.462 |
+
+- High-W reuse $0.40-0.63 vs fresh $2.46 → 4-6x cheaper. Same W (~2.2-3.2k output);
+  reuse skips the re-read + the $1.77 spawn floor.
+- High-W follow-ups cost more than trivial ones ($0.15) purely from output W
+  (~2-3k out x $75/M ≈ $0.15-0.24) on top of cache-read of held context.
+- Delegation's high-W value: that W lands in a disposable transcript, NOT in the
+  orchestrator context where it would be reprocessed every future turn.
+
+## E4 overlap (H) + E6 specialist vs general — domain-Q routing
+
+Domain question (pyo3 version + cfg-gated feature). Routed four ways + H50.
+
+| route | turns | cwrite | cread | output | hit% | $ | note |
+|---|---|---|---|---|---|---|---|
+| WARM specialist (H≈100) | 2 | 2538 | 121376 | 548 | 97.3 | 0.284 | answer from memory (seg3) |
+| COLD specialist 1st-reuse (H≈100) | 3 | 96717 | 67540 | 67 | 40.9 | 1.933 | cold rewrite of 60k transcript (seg1) |
+| WARM general misroute (H≈0) | 11 | 8906 | 491375 | 1349 | 97.7 | 1.044 | reads domain files; warm base |
+| FRESH spawn baseline | 11 | 49786 | 146855 | 622 | 71.7 | 1.321 | reads + answers |
+| specialist H≈50 (held + read Y) | 9 | 12325 | 527860 | 1810 | 97.6 | 1.172 | partial overlap (seg2) |
+| specialist load (sunk) | 11 | 185151 | 213552 | 425 | 50.6 | 4.179 | seg0 |
+
+Ranking (cheapest→dearest): warm-specialist $0.28 < warm-general-misroute $1.04
+< fresh $1.32 < cold-specialist-first-reuse $1.93.
+
+KEY FINDINGS:
+- **Warmth (Δt) is first-order; overlap (H) second-order.** A warm general resident
+  reading from scratch ($1.04) BEAT a cold specialist answering from memory ($1.93).
+- **A cold specialist costs MORE to wake than a fresh spawn does the whole job**
+  ($1.93 > $1.32): waking re-caches its entire held transcript. Held context is not
+  free — it is a liability when idle.
+- **Resident cost scales with transcript size T.** Warm reuse: $0.15 (10k payload
+  resident, round 2) vs $0.28 (60k-domain specialist). Cold-first-reuse: $0.40 (10k)
+  vs $1.93 (60k). => keep residents SMALL/distilled, and keep them WARM.
+- Specialist (high held overlap) wins ONLY when warm: warm-specialist $0.28 is the
+  cheapest of all routes (4.7x under fresh).
+
+## Agent IDs (round 3)
+R-W/general ab876ed807426307d · specialist a0a90b9bbfd8f208c ·
+high-W-fresh ad1c620c4e4d482df · domain-fresh ab04f77bea3f9708e.
