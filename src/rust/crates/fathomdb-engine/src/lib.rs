@@ -178,8 +178,34 @@ pub struct Engine {
     /// gate would force two open-locked return shapes.
     #[allow(dead_code)]
     reader_lookaside_rcs: Vec<i32>,
+    /// 0.8.8 Slice 15 (OPP-9) — opt-in telemetry sink. `None` (default) = OFF.
+    /// Local JSONL append; no network/egress. The OFF path never takes this lock —
+    /// it is gated by `telemetry_enabled` (below).
+    telemetry: Mutex<Option<TelemetrySink>>,
+    /// 0.8.8 Slice 15 — fast OFF-path guard. `false` (default) → search does ZERO
+    /// telemetry work: a single `Relaxed` atomic load, NO mutex acquisition (the
+    /// §B.1 footprint / zero-cost gate, codex §9 P2). Set `true` by
+    /// `enable_telemetry` after the sink is installed; the `telemetry` mutex is only
+    /// ever taken when this flag is set.
+    telemetry_enabled: AtomicBool,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
+}
+
+/// 0.8.8 Slice 15 (OPP-9) — opt-in telemetry capture state (per `enable_telemetry`).
+/// Records query→result→feedback events to a local JSONL sink. Ids are
+/// `SearchHit.id` — the interim identity carrier per
+/// `ADR-0.8.0-canonical-identity-substrate` (write_cursor today; swaps to
+/// `logical_id` at the G0 keystone with no carrier reshape), consistent with
+/// `PerHitExplain.id`. Query text and `source_id` are NEVER captured (privacy, ADR
+/// §C). `query_id = "q{nonce}-{seq}"` is fully deterministic; `ts_monotonic_ms` is
+/// monotonic since enable (NOT wall-clock).
+struct TelemetrySink {
+    path: PathBuf,
+    base: Instant,
+    nonce: u64,
+    seq: u64,
+    last_query_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -2326,6 +2352,8 @@ impl Engine {
                         provenance_row_cap: AtomicU64::new(DEFAULT_PROVENANCE_ROW_CAP),
                         profile_contexts: Mutex::new(profile_contexts),
                         reader_lookaside_rcs,
+                        telemetry: Mutex::new(None),
+                        telemetry_enabled: AtomicBool::new(false),
                         #[cfg(debug_assertions)]
                         force_next_commit_failure: AtomicBool::new(false),
                     },
@@ -3066,6 +3094,9 @@ impl Engine {
         match outcome {
             Ok(result) => {
                 self.counters.record_query();
+                // 0.8.8 Slice 15 (OPP-9) — opt-in telemetry capture. No-op + no
+                // allocation when telemetry is OFF (the default).
+                self.capture_telemetry(query, &result);
                 self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search, None);
                 Ok(result)
             }
@@ -3085,6 +3116,98 @@ impl Engine {
                 Err(err)
             }
         }
+    }
+
+    /// 0.8.8 Slice 15 (OPP-9) — enable opt-in telemetry capture to a local JSONL
+    /// `sink_path` (append-only). Off by default; once enabled, each `search`
+    /// records a query→result event and `record_feedback` appends agent labels.
+    /// Local file only — no network/egress. `query_id` + `ts_monotonic_ms` are
+    /// reset deterministically on enable. Idempotent re-enable resets the seq.
+    pub fn enable_telemetry(&self, sink_path: &str) -> Result<(), EngineError> {
+        // Touch the sink (create + validate writable) before arming capture, so a
+        // bad path fails loudly here rather than silently dropping events.
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(sink_path)
+            .map_err(|_| EngineError::Storage)?;
+        let mut guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+        *guard = Some(TelemetrySink {
+            path: PathBuf::from(sink_path),
+            base: Instant::now(),
+            nonce: 0,
+            seq: 0,
+            last_query_id: None,
+        });
+        // Arm the fast OFF-path guard LAST (after the sink is installed) so a
+        // concurrent search either sees telemetry fully off or fully on.
+        self.telemetry_enabled.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    /// 0.8.8 Slice 15 — the most-recent captured `query_id` (for `record_feedback`).
+    /// `None` when telemetry is off or no query has been captured yet.
+    pub fn last_telemetry_query_id(&self) -> Option<String> {
+        self.telemetry.lock().ok()?.as_ref().and_then(|s| s.last_query_id.clone())
+    }
+
+    /// 0.8.8 Slice 15 — capture a query→result telemetry event. No-op (no alloc,
+    /// no I/O) when telemetry is off (the default). Best-effort: a sink write error
+    /// never fails the search. Captures ONLY ids (stable `logical_id`), arms, and
+    /// the query LENGTH — never the query text or `source_id` (privacy, ADR §C).
+    fn capture_telemetry(&self, query: &str, result: &SearchResult) {
+        // Fast OFF path (codex §9 P2): a single atomic load when telemetry has
+        // never been enabled — NO mutex acquisition, NO contention with the search
+        // hot path.
+        if !self.telemetry_enabled.load(Ordering::Acquire) {
+            return;
+        }
+        let Ok(mut guard) = self.telemetry.lock() else { return };
+        let Some(sink) = guard.as_mut() else { return };
+        let query_id = format!("q{}-{}", sink.nonce, sink.seq);
+        let ts_monotonic_ms = sink.base.elapsed().as_millis() as u64;
+        let mut arm_of = serde_json::Map::new();
+        for h in &result.results {
+            arm_of.insert(h.id.to_string(), serde_json::Value::from(branch_str(h.branch)));
+        }
+        let event = serde_json::json!({
+            "type": "event",
+            "schema_version": 1,
+            "ts_monotonic_ms": ts_monotonic_ms,
+            "query_id": query_id,
+            "query_chars": query.chars().count() as u64,
+            "result_ids": result.results.iter().map(|h| h.id).collect::<Vec<u64>>(),
+            "arm_of": arm_of,
+        });
+        let _ = append_jsonl(&sink.path, &event);
+        sink.seq += 1;
+        sink.last_query_id = Some(query_id);
+    }
+
+    /// 0.8.8 Slice 15 — append an agent-supplied relevance-label record for a
+    /// previously-captured `query_id`. `label_source` is the only exogenous string
+    /// (caller-declared, e.g. `"agent:hermes"`). Ids are the stable `logical_id`.
+    /// Errors if telemetry is off.
+    pub fn record_feedback(
+        &self,
+        query_id: &str,
+        relevant_ids: &[u64],
+        irrelevant_ids: &[u64],
+        label_source: &str,
+    ) -> Result<(), EngineError> {
+        let guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+        let sink = guard
+            .as_ref()
+            .ok_or(EngineError::InvalidArgument { msg: "telemetry is not enabled".to_string() })?;
+        let record = serde_json::json!({
+            "type": "feedback",
+            "schema_version": 1,
+            "query_id": query_id,
+            "relevant_ids": relevant_ids,
+            "irrelevant_ids": irrelevant_ids,
+            "label_source": label_source,
+        });
+        append_jsonl(&sink.path, &record).map_err(|_| EngineError::Storage)
     }
 
     fn detect_slow(&self, started: Instant, category: lifecycle::EventCategory) {
@@ -4921,6 +5044,25 @@ pub const RRF_WEIGHT_GRAPH: f64 = 1.0;
 /// 0.8.1 Slice 10 fix: the previous value `0.5/RRF_K ≈ 0.01667` violated
 /// the test gap constraint (it exceeded 0.01). Lowered to 0.002.
 pub const RECENCY_WEIGHT: f64 = 0.002;
+
+/// 0.8.8 Slice 15 — the lowercase wire string for a retrieval arm (telemetry +
+/// the same spelling `SearchHit.branch` crosses every binding).
+fn branch_str(branch: SoftFallbackBranch) -> &'static str {
+    match branch {
+        SoftFallbackBranch::Vector => "vector",
+        SoftFallbackBranch::Text => "text",
+        SoftFallbackBranch::TextEdge => "text_edge",
+        SoftFallbackBranch::GraphArm => "graph_arm",
+    }
+}
+
+/// 0.8.8 Slice 15 — append one JSON value as a line to the telemetry sink
+/// (append-only, local file; no network). Best-effort caller handles the error.
+fn append_jsonl(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{value}")?;
+    Ok(())
+}
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
 ///
