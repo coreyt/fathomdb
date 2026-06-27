@@ -440,6 +440,14 @@ Returned by `graph.search_expand`. `all_logical_ids` contains the
 concrete leaf classes. See [errors reference](errors.md) for the full
 matrix and recovery-hint codes.
 
+## Embedder device (GPU)
+
+There is **no Python API** for selecting the embedder device — it is chosen by a
+build-time cargo feature (`embed-cuda` / `embed-metal`) plus the
+`FATHOMDB_EMBED_DEVICE` environment variable (`cpu` default · `cuda` · `cuda:N` ·
+`metal`), resolved when the engine opens. The default (CPU) behavior is
+unchanged. See [Default Embedder → GPU acceleration](../embedder.md#gpu-acceleration-opt-in).
+
 ## See also
 
 - [Quickstart](../getting-started/quickstart.md)

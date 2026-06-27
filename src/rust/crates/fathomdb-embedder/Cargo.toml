@@ -79,3 +79,11 @@ loader-test-hooks = ["default-embedder"]
 httpmock = "0.7"
 tempfile = "3"
 sha2 = "0.10"
+
+# 0.8.7 Slice 10 — GPU vs CPU embed speedup measurement. Needs a constructible
+# embedder, so it only builds when `default-embedder` (CPU) or `embed-cuda` is
+# active; without this guard `cargo build --examples` on the thin no-feature
+# build would fail to compile (R-GPU-2: default build unperturbed).
+[[example]]
+name = "gpu_speedup"
+required-features = ["default-embedder"]

@@ -439,6 +439,14 @@ Panics in the Rust runtime surface as `FathomDbPanicError` (not a
 `FathomDbError` subclass — panic carriers are deliberately outside
 the catch-all root).
 
+## Embedder device (GPU)
+
+There is **no TypeScript API** for selecting the embedder device — it is chosen
+by a build-time cargo feature (`embed-cuda` / `embed-metal`) plus the
+`FATHOMDB_EMBED_DEVICE` environment variable (`cpu` default · `cuda` · `cuda:N` ·
+`metal`), resolved when the engine opens. The default (CPU) behavior is
+unchanged. See [Default Embedder → GPU acceleration](../embedder.md#gpu-acceleration-opt-in).
+
 ## See also
 
 - [Quickstart](../getting-started/quickstart.md)
