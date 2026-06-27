@@ -53,7 +53,7 @@ one orchestrated micro-release that makes the gate surface honest.
 | R-037-2 | The gate is wired, not asserted-by-memory | A deliberately-egressing fixture trips the gate in CI (demonstrate the catch) |
 | R-050c-1 | AC-050c removal-detect baseline failure cleared | `ac_050c` passes on a clean baseline; the cause is documented |
 | R-DEP-1 | Remaining Dependabot alerts resolved (post-0.8.8 pyo3) | npm (`markdown-it`/`js-yaml`) + pip (`idna`/`torch`) lockfiles bumped off the open advisories; affected suites GREEN; `gh api .../dependabot/alerts` shows the npm/pip set closed (or low-sev `torch` dismissed-with-rationale) |
-| R-DEP-2 | `dependabot.yml` covers the manifests that actually carry alerts | version-update directories include the root `package-lock.json` + `python/uv.lock` (or the alert manifests are reconciled); no manifest with an open alert is left uncovered |
+| R-DEP-2 | `dependabot.yml` covers the manifests that actually carry alerts | a version-update directory is added for the root `package-lock.json` and for `python/uv.lock` (the alert manifests today's `/src/ts` + `/src/python` directories miss); after the fix, no manifest with an open alert is left without coverage |
 | R-DEP-3 | No mechanical auto-merge of security/version PRs | `allow_auto_merge=false` confirmed; no auto-merge workflow present; bumps land via gated slices only |
 
 New ACs: none expected (these *fix* existing gates); any new gate id is minted at Slice 0 only if HITL
@@ -72,7 +72,7 @@ elects, per the locked-acceptance policy.
 | **0** | Setup + audit — board; **map the current gate reality** (which of ac_012/013/013b/019/020 run where, asserting against which embedder/corpus); design the honest re-scope + the AC-037 CI-wiring approach; confirm the post-0.8.8 Dependabot backlog | design-adr | — |
 | **5** | **Perf-gate honesty (#12)** — re-scope/relabel `ac_013b` off the synthetic floor; run the cheap subset per-push; RED proof that the old vacuous-green is gone; update `design/perf-gates.md` | implementation (CI) | 0 |
 | **10** | **AC-037 wiring + AC-050c cleanup (#14)** — `security` job on `ubuntu-22.04` with a RED egress-trip proof; clear the AC-050c baseline failure | implementation (CI) | 0 |
-| **15** | **Dependency-vuln hygiene (Dependabot)** — bump npm (`markdown-it`/`js-yaml`) + pip (`idna`/`torch`) lockfiles off the open advisories; reconcile `dependabot.yml` directory coverage; re-run affected suites | implementation (deps) | 0 |
+| **15** | **Dependency-vuln hygiene (Dependabot)** — **manually** bump npm (`markdown-it`/`js-yaml`, root `package-lock.json`) + pip (`idna`/`torch`, `python/uv.lock`) off the open advisories (these have **no auto-PR** — their manifests aren't under a configured `dependabot.yml` directory); reconcile `.github/dependabot.yml` directory coverage (configured pip `/src/python` + npm `/src/ts` miss the alert manifests `python/uv.lock` + root `package-lock.json`); re-run affected suites | implementation (deps) | 0 |
 | **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c/R-DEP AC gate; confirm the honest gate map is reflected on every board | verification | 5,10,15 |
 
 **Keystones / hard gates.** **R-PG-2 demonstrate-the-catch is a hard gate** — the fix must include a RED

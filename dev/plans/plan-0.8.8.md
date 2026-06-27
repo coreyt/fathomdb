@@ -135,6 +135,9 @@ Slice 40), HITL-decided.
   fields and gold schema match what the experiments consume (this is the one release in the line that is
   *not* fully decoupled from the experiment track).
 - **0.8.9 (OOB) — CI integrity (#12/#14)** may run in parallel; no file overlap.
+- **0.8.7's deferred GPU maturin smoke rebuilds the binding at pyo3 0.29 after Slice 1.** Coordinate the
+  one deferred `maturin develop --features embed-cuda` + `cuda:0` confirmation (0.8.7 R-GPU-3) to run
+  with/after this release's Slice-1 pyo3 bump, not before — both touch the shared MAIN-tree `.venv`.
 
 ## 9. Immediate next slice
 

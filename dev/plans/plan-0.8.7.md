@@ -116,6 +116,11 @@ at gated slices, HITL-decided.
   `.so`, so 0.8.6's parity harness then runs against *that* build (CPU output is byte-identical per
   R-GPU-2 — but be explicit about which is installed). **GPU is uncontended** (2× idle 3090; 0.8.6 uses
   no GPU). Build-hygiene, not a dependency.
+- **⚠ Coordinate the deferred MAIN-tree maturin smoke with 0.8.8's pyo3 bump.** The single deferred
+  `maturin develop --features embed-cuda` + py `cuda:0` confirmation (R-GPU-3) will, once 0.8.8 Slice 1
+  lands, build the `fathomdb-py` binding at **pyo3 0.29**, not 0.24. Run it **with or after** the 0.8.8
+  pyo3 bump (not before), so it validates the binding the program is keeping, and serialize it against the
+  0.8.8 Slice-1 build — both touch the shared MAIN-tree `.venv` (the build-contention bullet above).
 - **Recommended-before** the re-embed-heavy releases (0.8.10 coverage, 0.8.12 EXP-S/F5, 0.8.14 ONNX
   probe) so their index rebuilds are minutes, not hours — soft acceleration, not a hard gate.
 - **Feeds 0.8.14 / 0.8.16:** the `resolve_device()` seam is the pattern the 0.8.14 ONNX backend extends,
