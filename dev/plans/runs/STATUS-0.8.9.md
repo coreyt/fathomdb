@@ -97,6 +97,32 @@ confirmed in CI because the `security` job dies at bootstrap first — but the c
 locally (offline layer green + RED-confirmed) and by `Analyze (rust)`. **Full PR green
 requires 0.8.8 (pyo3 link) + a bootstrap infra fix — both out of 0.8.9 scope.**
 
+## 6. Post-Slice-1 CI (commit 3d27f23f) — un-mask worked; exposed pre-existing failures
+
+Slice 1 fixed bootstrap → `security`/`verify` now run **past** bootstrap. What that revealed:
+
+- **WIN — R-037-2 proven IN CI:** on the `security` job (`ubuntu-22.04`), `AC-037 netns-deny-egress`
+  PASS **and** `AC-037 catch (demonstrate)` ran its **live netns** layer and flagged the deliberate
+  egress (`live netns: deliberate egress flagged … 8.8.8.8 ENETUNREACH`). AC-036/038/050a PASS.
+- **`security` — AC-050c BLOCKER** `fatal: bad revision 'v0.6.1..HEAD'`: the CI checkout was shallow
+  (no tags), so removal-detect couldn't resolve its base. **FIXED (in 0.8.9 scope, R-050c):**
+  `fetch-depth: 0` added to the `verify` + `security` checkouts in `ci.yml`.
+- **`verify` — fails at step=lint** on **pre-existing repo-wide markdownlint debt**: **7983 errors
+  across 300 files** (CHANGELOG, every `dev/adr/*`, every `dev/design/*`, **incl. 0.8.9's own
+  `perf-gates.md`**). Rules: MD049 (emphasis: expects `_`, repo uses `*`) + MD060 (table-column-style).
+  The gate is **unsatisfiable repo-wide** and was masked by the bootstrap failure. `agent-lint.sh:45`
+  → `agent-lint-md.sh` is the gate. **OUT OF 0.8.9 SCOPE — escalated to steward (decision needed):**
+  - A) relax `.markdownlint.jsonc` (MD049→asterisk, MD060→repo style) — 1-file, makes the gate honest
+       + satisfiable, matches existing convention;
+  - B) auto-format all 300 files (prettier `--write` + markdownlint `--fix`) — massive diff, conflict risk;
+  - C) defer to a separate markdown-cleanup effort; 0.8.9 completes on its own gates.
+- **`rust-macos`/`rust-windows` — pyo3 link error** at `cargo test --workspace` — still **0.8.8** (the
+  0.24→0.29 bump did not resolve the macOS/Windows extension-link); not 0.8.9.
+
+**0.8.9's own gates are green where reachable:** AC-037 (+catch live), AC-036/038/050a, `Analyze (rust)`
+(compiled `recall_gate_predicate`), `docs`, `default-embedder-tests`, all `wheel-size-gate`. The PR is
+blocked from full-green by the repo-wide markdown gate (decision pending) + 0.8.8 macOS/Windows link.
+
 ## 4. $ ledger
 
 $0.00 — no priced runs; CI/test-harness + lockfile work only.

@@ -20,7 +20,13 @@ jobs:
     timeout-minutes: 30
     steps:
       # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
+      # 0.8.9 Slice 1: fetch-depth 0 so the AC-050c removal-detect gate can
+      # resolve its base ref (v0.6.1 tag); the default shallow checkout has no
+      # tags, which made `git diff v0.6.1..HEAD` fail (`bad revision`) once the
+      # bootstrap un-mask let agent-security.sh actually reach AC-050c.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
       - name: Configure per-session TMPDIR
         shell: bash
         run: |
@@ -60,7 +66,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
+      # 0.8.9 Slice 1: fetch-depth 0 so AC-050c removal-detect can resolve its
+      # v0.6.1 base tag (see the verify job above for the same rationale).
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
       - name: Configure per-session TMPDIR
         shell: bash
         run: |
