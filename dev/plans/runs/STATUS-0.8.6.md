@@ -10,12 +10,13 @@
 
 ## 1. Current state + next action
 
-- **STATE: Slice 0 CLOSED — HITL-SIGNED 2026-06-26.** Both ADRs ACCEPTED; **Slice 5 scope = Option A**
-  ("land the seam now"); orchestration mode = **full autonomous** (orchestrator commits through slices,
-  hard-pause only at the Slice-20 push). Prerequisite met: 0.8.5 (EXP-0 CE-rerank α/pool_n) is landed on
-  `main` (`76bd2952` + codex-fix `0a8f3f1a`, both ancestors of `main`). Baseline = `main` `ad7c0bcf`.
-- **NEXT:** fan out the three tracks off Slice 0 in parallel worktrees — **Slice 5** (provider seam,
-  Option A) ∥ **Slice 10** (parity-harden) ∥ **Slice 15** (verify gates) — then Slice 20 (push) → 40.
+- **STATE: ALL BUILD/VERIFY SLICES CLOSED — only the HITL push remains.** Slices 0/5/6/7/10/15/40 done.
+  Slice 40 verified all R-* + X1/X2/X3 GREEN on merged `main`: Rust workspace **517** pass / 0 fail,
+  Python **67** pass / 2 skip, TS **51** pass / 0 fail; release gates + mkdocs `--strict` clean.
+- **NEXT — ⛔ Slice 20 (HITL-GATED PUSH).** ≈197-commit clean fast-forward `main` → `origin/main`
+  (0 behind). Pre-push hook present (`cargo clippy -D warnings` + actionlint). **No `v*` tag → no registry
+  publish** (`release-publish-gotchas`). Awaiting HITL sign-off to push. This is the last step to
+  "complete 0.8.6."
 
 ### ◆ SCOPE RECONCILIATION (load-bearing — read before signing) ◆
 
@@ -38,11 +39,14 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 | Slice | Title | Work-type | State | X1/X2/X3 |
 |------:|-------|-----------|-------|----------|
 | **0** | Setup + ADR Kickoff | design-adr | ✅ **CLOSED** — HITL-signed 2026-06-26 (board + 2 ADRs) | n/a |
-| **5** | Provider-protocol KEYSTONE | implementation | **IN FLIGHT** — Option A (seam-only, byte-identical ELPS) | — |
+| **5** | Provider-protocol KEYSTONE | implementation | ✅ **CLOSED** — merged `aabb8d10`; codex §9 clean; byte-identical ELPS | X1 ✓(no-op) · X2 n/a · X3 ✓ |
+| **6** | *(reserved-gap)* schema-literal cleanup (engine) | fix | ✅ **CLOSED** `bfc39383` — pr_g1_tokenizer tests assert `SCHEMA_VERSION` not stale `14` | — |
+| **7** | *(reserved-gap)* schema-literal cleanup (schema crate) | fix | ✅ **CLOSED** `54487fec` — migrations.rs + step14 tests track step-15 head (surfaced by Slice 40) | — |
 | **10** | Coupling hygiene | implementation | ✅ **CLOSED** — embed→Py↔TS parity + governed; consumer-boundary conformance; 0.8.4 `embed` regression FIXED | X1 ✓ · X2 ✓ · X3 ✓ |
 | **15** | Release-enablement | implementation (CI) | ✅ **CLOSED** — VERIFIED GREEN, no code change (`runs/0.8.6-slice-15-release-verify.md`) | X1 n/a · X2 ✓ · X3 ✓ |
 | **20** | Backlog push (HITL) | release op | pending (15) — 186 commits `main`↑`origin` | — |
-| **40** | Verification + Release Readiness | verification | pending (5,10,15,20) | — |
+| **40** | Verification + Release Readiness | verification | ✅ **CLOSED** — all R-* + X1/X2/X3 GREEN on merged main (Rust 517 · Py 67 · TS 51); only R-REL-3 (push) remains | X1 ✓ · X2 ✓ · X3 ✓ |
+| **20** | Backlog push (HITL) | release op | ⛔ **AWAITING HITL** — ≈197-commit fast-forward `main`→`origin`; pre-push hook present; no `v*` tag (no publish) | — |
 
 ## 3. $ ledger
 
@@ -67,6 +71,11 @@ the Slice-0 closing docs commit per `orchestration.md` §12.4 (board records the
 
 ## 6. Recent decisions (newest on top)
 
+- **2026-06-26** — **Slice 40 verification in progress.** Full `cargo test --workspace` surfaced 6
+  pre-existing stale schema-literal failures (`fathomdb-schema` migrations + step14; head is 15 since
+  `temporal_fallback` step-15, masked because schema gates aren't in per-push CI) → **reserved-gap
+  Slices 6 (engine) + 7 (schema)** fixed them (assert the `SCHEMA_VERSION` constant / current head).
+  Schema crate green in isolation; authoritative workspace re-run running. mkdocs `--strict` green (X2).
 - **2026-06-26** — **Slice 10 CLOSED.** Surfaced + fixed a real 0.8.4 regression: `Engine.embed` shipped
   Python-only (ungoverned, not in TS) → `test_surface.py` RED on baseline. HITL chose **Option A** (govern
   + bring to TS parity): added `embed` to napi (`fn embed`) + TS `engine.embed()` + the governed allowlist;
