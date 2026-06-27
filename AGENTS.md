@@ -102,7 +102,10 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 
 - **Decisions:** `dev/adr/ADR-0.6.0-decision-index.md`
 - **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
-- **Orchestration mechanics:** `dev/design/orchestration.md` (Claude+Codex spawn discipline)
+- **Method on-ramp:** `dev/agent-harness-bootstrap-prompt.md` (portable distillation — the plan-vs-runbook split, 7 principles, the operating loop)
+- **Orchestration mechanics:** `dev/design/orchestration.md` (cross-release runbook: Claude+Codex spawn discipline, § 1.6 preflight gate, § 13 failure catalog)
+- **Preflight gate:** `scripts/preflight.sh` (run before every worktree spawn — stale-base + dep-CLOSED + disk)
+- **Plan / slice templates:** `dev/plans/prompts/PLAN-TEMPLATE.md` (per-release plan + authoring checklist) · `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` (per-slice prompt)
 - **Progress log:** `dev/progress/0.6.0.md`
 - **Plans:** `dev/plans/`
 - **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)

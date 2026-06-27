@@ -1,8 +1,8 @@
 ---
-title: Multi-Agent Orchestration Pattern
+title: Multi-Agent Orchestration Pattern — the cross-release runbook
 date: 2026-05-17
-revised: 2026-05-31
-target_release: 0.6.0
+revised: 2026-06-26
+applies_to: all releases (this is the stable METHOD; per-release deliverables live in dev/plans/<release>-plan.md)
 desc: Canonical Claude-implementer + Codex-reviewer spawn discipline for orchestrated work
 blast_radius: dev/plans/prompts/*; .github/workflows/release.yml; release engineering; all multi-agent slices
 status: locked
@@ -21,6 +21,18 @@ code), Codex reviews (read-only verdict), main thread routes.**
 This is the source of truth. Per-phase prompts cite this doc rather
 than re-declaring invocation patterns. AGENTS.md § 7 owns the
 principles; this file owns the mechanics.
+
+> **This is the runbook, not a plan.** It is **release-independent** —
+> the *method* (roles, state spine, preflight, decision loop, failure
+> recovery) is stable across every release. Per-release **deliverables**
+> (scope, slice ladder, DoD, acceptance criteria) live in
+> `dev/plans/<release>-plan.md`, authored from
+> `dev/plans/prompts/PLAN-TEMPLATE.md`. **Lesson learned about *how* to
+> run work → edit this file. New deliverable → edit the plan.** Worked
+> examples below name specific historical phases (Phase 11, Pack 5,
+> phase12) only as illustrations of the stable method; do not read the
+> release numbers as the method's scope. A self-contained, portable
+> distillation of this method is `dev/agent-harness-bootstrap-prompt.md`.
 
 ## 1. Three-role separation
 
@@ -85,6 +97,44 @@ Four invariants (the entire added formality):
    continue at the first incomplete transition; a transition whose
    witness already exists is a verified no-op.
 
+## 1.6 Preflight gate (run before every worktree spawn)
+
+Every `WORKTREE_CREATED` transition is gated by a preflight. Witnesses
+beat belief (§ 1.5 invariant 1) *before* the spawn too: the orchestrator
+verifies the repo and the freshly-cut worktree on disk, never assumes
+they are sane. This exists because two slices were lost when a worktree
+was cut from a ~206-commit-stale base (`agent-worktree-stale-base-trap`)
+— a silent failure a one-command gate catches.
+
+```bash
+# After: git worktree add "$WT" -b "slice-<N>-<ts>" "$(git rev-parse main)"
+scripts/preflight.sh --worktree "$WT" --expect-closed <DEP> --plan dev/plans/<release>-plan.md
+# exit 0 = spawn; exit 1 = STOP, read the HARD lines, fix, re-run.
+```
+
+What it gates (all derived from disk; HARD = blocks the spawn):
+
+- **Stale-base guard (HARD).** The worktree HEAD must be current `main`
+  or a descendant of it. A worktree whose HEAD is *behind* main (main is
+  not its ancestor) means it was cut from a stale base → re-create off
+  `$(git rev-parse main)`. This is the load-bearing check.
+- **Dependency CLOSED (HARD).** `--expect-closed <N>` confirms the
+  declared dependency slice has a `CLOSED` witness in the plan before a
+  dependent spawns (§ 1.5 invariant 2 applied to cross-slice order).
+- **No mid-operation canonical repo (HARD).** Refuses to spawn while the
+  canonical checkout is mid-merge/rebase/cherry-pick.
+- **Disk headroom (HARD).** Each worktree carries its own `target/`;
+  `--min-disk-gb` (default 10) refuses to spawn into a near-full disk.
+- **Clean tracked source (WARN).** `dev/` doc churn is expected and
+  ignored; dirty `src/`/`scripts/`/`mkdocs.yml` warns (a worktree would
+  inherit the uncommitted-or-not state of the base commit).
+- **Build-isolation reminder (INFO).** Never `maturin develop` /
+  `pip install -e` from a worktree — it rebinds the shared `.venv` to the
+  worktree tree. GPU/maturin builds happen on the MAIN tree only.
+
+A HARD fail is an off-spine halt (§ 1.5 invariant 3): fix the cause, do
+not spawn around it.
+
 ## 2. Implementer (Claude writes code)
 
 > **Superseded 2026-05-31.** Implementers were previously launched as
@@ -104,6 +154,9 @@ WT=/tmp/fdb-${PHASE}-${TS}
 
 git -C /home/coreyt/projects/fathomdb worktree add "$WT" \
     -b "phase-${PHASE}-${TS}" <BASELINE_COMMIT_SHA>
+
+# Gate the spawn (§ 1.6) — STOP on exit 1, never spawn around a HARD fail:
+scripts/preflight.sh --worktree "$WT" --expect-closed <DEP> --plan dev/plans/<release>-plan.md
 ```
 
 Then one `Agent` call from the main thread:
@@ -565,7 +618,54 @@ If Pack 7 spins up, the dual-track structure (mainline + perf) means
 each track has its own STATUS board + decision loop but they share
 the plan doc, MEMORY, and AGENTS.md invariants.
 
-## 13. References
+## 13. Failure & recovery catalog
+
+Hard-won failure modes, consolidated here so a fresh orchestrator meets
+them in the runbook rather than rediscovering them. Each is a real
+incident captured in a `MEMORY` `feedback_*`/`project_*` entry; the
+memory holds the detail, this table is the index + the move.
+
+| When you observe | Likely cause | The move |
+| ---------------- | ------------ | -------- |
+| Implementer's commits are missing / based on old code; "main moved under me" | Worktree cut from a **stale base** (Agent-native isolation, or a hand-typed baseline that wasn't current `main`). | The § 1.6 preflight HARD-fails this. Re-create the worktree off `$(git rev-parse main)`; never use Agent `isolation` (§ 1, § 2). (`agent-worktree-stale-base-trap`) |
+| A wrapper/implementer agent spawned **another** agent; work vanished | Implementer read "spawn from main thread" as "spawn again"; agent had Agent/Task tools. | The `implementer` agent type omits Agent/Task — the physical guard. Never grant them. Main thread is the only orchestrator. (B.1 incident; § 1) |
+| A run reports green but a later step shows the real command failed (e.g. pytest "exit 0" was a wrapper's trailing `echo`) | A **background/wrapper exit masked the real command's exit**. | Read `PIPESTATUS`/`$?` of the *actual* command; cross-check the green claim against printed output; a collection/import error ≠ a code defect — check the harness's build flags first. (`background-exit-masks-real-exit`) |
+| A conformance/parity test rewrite **passes on first run** (suspiciously) | Vacuously-green test: hard-coded surface enumeration, or same-file duplicate "parity" so drift is undetectable. | Demonstrate the catch in RED first (real `dir()` introspection minus an exclusion set; a single shared allowlist both bindings read). Independent codex § 9 is load-bearing here. (`conformance-rewrite-vacuous-green-trap`) |
+| `output.json` absent, or result text reports a blocker | Implementer FAILED (no `IMPLEMENTED` witness). | Off-spine halt (§ 1.5 invariant 3): triage (fix-N or abandon), **never** cherry-pick a slice with no witness (§ 2). |
+| Codex returns BLOCK that fix-N cannot clear, or fix-N exceeds a small bound | Mis-scoped slice or a genuine spec problem. | Halt to HITL (§ 1.5 invariant 3, § 6). Do **not** loop fix-N indefinitely; do **not** override BLOCK (§ 7). |
+| A destructive bash call (bundled `rm`/`worktree remove`/`branch -D`) is denied | Permission model denies bundled destructive ops. | One destructive op per Bash call (§ 11). Never `find -delete`. Surface to HITL if still blocked — don't seek workarounds (AGENTS.md § 11). |
+| Slice prompt asserts "test X (does/does not) assert Y" and the mechanism depends on it | Prompt anchor drifted; the load-bearing claim is **false**. | Implementer must read test X in full at baseline and STOP+escalate if false (a defect report on the prompt, not over-scope). Authors: verify such claims before writing them. (`slice-prompt-verify-test-claims`) |
+| Same failure mode hit twice | Thrash. | Stop. Re-read the failing test + the relevant ADR/`feedback_*`. Do not loop a third time; externalize plan and `/clear` if needed (AGENTS.md § 5, § 8). |
+
+The general loop under any surprise: **notice → witness it on disk →
+classify (in-slice deviation vs cross-slice/spec) → smallest fix or
+escalate → never hide.** A clean halt with state captured on disk is a
+good outcome, not a failure.
+
+## 14. Reviewer topology & empirical resolution
+
+The default review is one codex pass per slice on the worktree branch
+(§ 3). Two refinements for harder cases:
+
+- **Topology — siloed vs joint.** Independent slices get **siloed**
+  reviewers (one per slice, parallel — reviewers don't share context).
+  When a set of slices share an invariant (a cross-binding contract, a
+  schema both touch), run **one joint review** over the combined diff so
+  the reviewer can see the interaction a siloed pass would miss. Choose
+  joint only for the genuine cross-cutting concern; default siloed.
+- **Empirical, not argued, resolution.** When a verdict turns on a
+  *behavior* question — "does this actually reproduce?", a reviewer and
+  implementer disagree on what the code does, a flaky test — do not
+  resolve it by argument or by trusting the orchestrator's model.
+  **Construct a minimal scratch test, run it, decide from the
+  observation, then delete the scratch** before the closing commit. Use
+  this for contradictions / unverified assumptions; skip it for API-design
+  or fully-specified-contract questions where there is nothing to observe.
+- **Cadence.** One pass per slice + at most one cross-slice joint pass.
+  Beyond that, review hits diminishing returns — spend the next cycle on
+  a falsifiable test, not a third read.
+
+## 15. References
 
 - `AGENTS.md` § 7 — principles (this doc owns mechanics).
 - `MEMORY.md` entries: `feedback_orchestrator_thread.md`,
