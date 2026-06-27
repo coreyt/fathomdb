@@ -35,6 +35,17 @@
   the low-sev `torch.jit.script` issue may be dismissed-with-rationale rather than chased. **No
   auto-merge** (`allow_auto_merge=false` confirmed; no auto-merge workflow) — every bump rides the normal
   TDD/gate discipline like any slice.
+- **Bootstrap un-mask (CI PREREQUISITE — found by the steward's diagnosis 2026-06-27).** `scripts/
+  bootstrap.sh`'s "Installing Python dev tooling" step exits 1 on **all** branches incl. `main`, so the
+  `verify`/`security` jobs **abort before any gate runs** — the AC-037 catch, the recall predicate, and
+  the perf gates never execute in CI (vacuously skipped, not green). Root cause (HIGH confidence): two
+  **unguarded `httpx` imports** (`eval/graph_arm_recall.py:36`, `eval/p0a_batch_e2e.py:287`; httpx is not
+  in the `[dev]` extras) fail `pyright` in a clean CI venv — and `pyright … >/dev/null` + pip `--quiet`
+  **mask** the diagnostics, so the failure is invisible. This is the 0.8.9 CI-integrity mandate applied to
+  bootstrap itself. **Not** the pyo3 0.29 work (the Rust build is healthy). Fix: **(A)** add `# type:
+  ignore[import-not-found]` to the two imports (matching the `gold_gen.py`/`elps_live_harness.py` siblings;
+  zero new deps, zero `.venv` impact) + **(C)** drop `>/dev/null` (line 22) and `--quiet` (lines 19–20) so
+  a future masked failure surfaces in seconds.
 
 *Why OOB / why paired:* both are mechanism-only CI hygiene with zero feature coupling and no upstream/
 downstream code deps; they belong off the experiment critical path. Pairing them is purely batching —
@@ -55,6 +66,8 @@ one orchestrated micro-release that makes the gate surface honest.
 | R-DEP-1 | Remaining Dependabot alerts resolved (post-0.8.8 pyo3) | npm (`markdown-it`/`js-yaml`) + pip (`idna`/`torch`) lockfiles bumped off the open advisories; affected suites GREEN; `gh api .../dependabot/alerts` shows the npm/pip set closed (or low-sev `torch` dismissed-with-rationale) |
 | R-DEP-2 | `dependabot.yml` covers the manifests that actually carry alerts | a version-update directory is added for the root `package-lock.json` and for `python/uv.lock` (the alert manifests today's `/src/ts` + `/src/python` directories miss); after the fix, no manifest with an open alert is left without coverage |
 | R-DEP-3 | No mechanical auto-merge of security/version PRs | `allow_auto_merge=false` confirmed; no auto-merge workflow present; bumps land via gated slices only |
+| R-BOOT-1 | `bootstrap.sh` dev-tooling step is green on a CLEAN `[dev]` venv | a fresh `[dev]`-only venv runs the python step to exit 0; `pyright -p src/python` passes (the two `httpx` imports no longer error); `verify`/`security` reach `agent-security.sh` |
+| R-BOOT-2 | bootstrap no longer MASKS failures (demonstrate the catch) | `>/dev/null` (line 22) + `--quiet` (19–20) removed; a deliberately-broken import fails `bootstrap.sh` **visibly** in CI logs (RED proof), per `conformance-rewrite-vacuous-green-trap` |
 
 New ACs: none expected (these *fix* existing gates); any new gate id is minted at Slice 0 only if HITL
 elects, per the locked-acceptance policy.
@@ -70,15 +83,19 @@ elects, per the locked-acceptance policy.
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
 | **0** | Setup + audit — board; **map the current gate reality** (which of ac_012/013/013b/019/020 run where, asserting against which embedder/corpus); design the honest re-scope + the AC-037 CI-wiring approach; confirm the post-0.8.8 Dependabot backlog | design-adr | — |
-| **5** | **Perf-gate honesty (#12)** — re-scope/relabel `ac_013b` off the synthetic floor; run the cheap subset per-push; RED proof that the old vacuous-green is gone; update `design/perf-gates.md` | implementation (CI) | 0 |
+| **1** *(reserved-gap)* | **Bootstrap un-mask (CI PREREQUISITE)** — Fix A (`# type: ignore[import-not-found]` on the two `httpx` imports) + Fix C (drop `>/dev/null` line 22 + `--quiet` lines 19–20); clean-`[dev]`-venv green proof + a demonstrate-the-catch RED. **Lands first — until it is green, none of Slices 5/10/15's gates actually run in CI.** | implementation (CI) | 0 |
+| **5** | **Perf-gate honesty (#12)** — re-scope/relabel `ac_013b` off the synthetic floor; run the cheap subset per-push; RED proof that the old vacuous-green is gone; update `design/perf-gates.md` | implementation (CI) | 0, 1 |
 | **10** | **AC-037 wiring + AC-050c cleanup (#14)** — `security` job on `ubuntu-22.04` with a RED egress-trip proof; clear the AC-050c baseline failure | implementation (CI) | 0 |
 | **15** | **Dependency-vuln hygiene (Dependabot)** — **manually** bump npm (`markdown-it`/`js-yaml`, root `package-lock.json`) + pip (`idna`/`torch`, `python/uv.lock`) off the open advisories (these have **no auto-PR** — their manifests aren't under a configured `dependabot.yml` directory); reconcile `.github/dependabot.yml` directory coverage (configured pip `/src/python` + npm `/src/ts` miss the alert manifests `python/uv.lock` + root `package-lock.json`); re-run affected suites | implementation (deps) | 0 |
 | **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c/R-DEP AC gate; confirm the honest gate map is reflected on every board | verification | 5,10,15 |
 
-**Keystones / hard gates.** **R-PG-2 demonstrate-the-catch is a hard gate** — the fix must include a RED
-test proving the previously-vacuous gate now fails when it should (`conformance-rewrite-vacuous-green-trap`:
-a green rewrite can be vacuously green). Same for R-037-2 (a real egress fixture must trip the gate). A
-fix that only flips labels without a demonstrated catch is NOT done.
+**Keystones / hard gates.** **Reserved-gap Slice 1 (bootstrap un-mask) is a hard prerequisite** — until
+`bootstrap.sh` reaches `agent-security.sh`, the AC-037 catch (R-037), the perf gates (R-PG-3), and the
+recall test never run in CI (they are vacuously skipped, not green); do Slice 1 first. **R-PG-2
+demonstrate-the-catch is a hard gate** — the fix must include a RED test proving the previously-vacuous
+gate now fails when it should (`conformance-rewrite-vacuous-green-trap`: a green rewrite can be vacuously
+green). Same for R-037-2 (a real egress fixture must trip the gate) and R-BOOT-2 (a broken import must
+fail bootstrap *visibly*). A fix that only flips labels without a demonstrated catch is NOT done.
 
 **Tracks (parallelizable).** Perf-gate track **5** ∥ security/cleanup track **10** ∥ dependency-hygiene
 track **15**, all off Slice 0.
