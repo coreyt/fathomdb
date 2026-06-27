@@ -56,9 +56,16 @@ single discriminator — the **task type** — so other typed tasks ride the sam
 - The request/response **payload** is task-specific and namespaced: extraction keeps exactly today's
   `{documents:[…]}` → `{entities:[…], edges:[…], warnings:[…]}`. Consolidation/summarize define their own
   payloads **at their own slices** (0.8.10), not here.
-- The protocol string moves `fathomdb.extract.v1` → `fathomdb.provider.v1`. The schema_version stays `1`.
-  A v1 harness that only knows extraction remains conformant: `task` defaults to `"extract"` when absent,
-  so **existing Memex ELPS harnesses keep working unchanged** (back-compat is a release requirement).
+- **Protocol naming = per-task family `fathomdb.<task>.v1`.** The extract task's wire string stays
+  **`fathomdb.extract.v1`, byte-identical** — this is deliberate and supersedes an earlier draft idea of a
+  flat `fathomdb.provider.v1` rename, because byte-identical extract wire (no break for existing Memex ELPS
+  harnesses, no churn to the golden stub) is a release requirement that a cosmetic rename would violate.
+  The "generalization" is the **internal parameterization**, not a new wire string for extract: a private
+  `provider_session(task, …)` formats `fathomdb.{task}.v1` (extract → the unchanged string; 0.8.10
+  consolidation → `fathomdb.consolidate.v1`). schema_version stays `1`.
+- `ready` MAY include `supported_tasks: [...]`; if present, FathomDB refuses to dispatch a task the
+  harness did not advertise. If **absent**, it defaults to the single task being requested (extract) —
+  so **existing extract-only harnesses keep working unchanged** (back-compat, pinned by a RED test).
 
 ### 2.3 Engine surface
 
@@ -105,9 +112,10 @@ schema. **Two options for the HITL:**
 
 ## 5. Consequences
 
-- 0.8.10's consolidation provider adds a **payload + error leaf**, not a transport. I-5 rework edge closed.
-- The protocol rename is a one-time, back-compatible churn done while the only consumer is our own ELPS
-  harness (lowest-risk moment).
+- 0.8.10's consolidation provider adds a **payload + error leaf** (and a `fathomdb.consolidate.v1` task
+  string), not a transport. I-5 rework edge closed.
+- Extract's wire is **unchanged** (per-task naming) — no rename churn, no harness break; the seam is the
+  internal `provider_session` parameterization plus the optional `supported_tasks` negotiation.
 - Community-summarize (OPP-4), if it survives its gate, rides the same seam for free.
 
 ## 6. Sources
