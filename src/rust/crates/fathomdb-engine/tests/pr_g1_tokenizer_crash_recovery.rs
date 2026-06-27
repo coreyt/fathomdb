@@ -14,7 +14,7 @@
 //! re-opens the engine and asserts the index is repaired and recall recovers.
 
 use fathomdb_engine::{Engine, PreparedWrite};
-use fathomdb_schema::{MIGRATIONS, SQLITE_SUFFIX};
+use fathomdb_schema::{MIGRATIONS, SCHEMA_VERSION, SQLITE_SUFFIX};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -86,14 +86,16 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
     let path = dir.path().join(format!("tok_crash{SQLITE_SUFFIX}"));
 
     // --- Build a fully-migrated (head) corpus the normal way. The reproject
-    // ran on this open, so recall is healthy. (Head is SCHEMA_VERSION 14 after
-    // the Slice-33 op-store collection index step; the tokenizer reproject is
-    // gated on its completion marker, not the step boundary, so this test is
-    // unchanged in intent — only the head version literal moves with each schema
-    // bump.) ---
+    // ran on this open, so recall is healthy. (Head is the current
+    // SCHEMA_VERSION; the tokenizer reproject is gated on its completion marker,
+    // not the step boundary, so this test is unchanged in intent — asserting
+    // against the SCHEMA_VERSION constant tracks each schema bump automatically.) ---
     {
         let opened = Engine::open(&path).expect("open head");
-        assert_eq!(opened.report.schema_version_after, 14, "must open at SCHEMA_VERSION 14");
+        assert_eq!(
+            opened.report.schema_version_after, SCHEMA_VERSION,
+            "must open at head SCHEMA_VERSION"
+        );
         ingest(&opened.engine);
         let recall = measure_recall(&opened.engine);
         assert!(recall >= FLOOR, "baseline v11 recall {recall:.3} below floor");
@@ -109,7 +111,7 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
         let raw = Connection::open(&path).expect("raw open");
         let user_version: u32 =
             raw.query_row("PRAGMA user_version", [], |r| r.get(0)).expect("user_version");
-        assert_eq!(user_version, 14, "precondition: durable schema is head (v14)");
+        assert_eq!(user_version, SCHEMA_VERSION, "precondition: durable schema is head");
 
         raw.execute("DELETE FROM search_index", []).expect("simulate empty fts index");
         raw.execute("DELETE FROM _fathomdb_open_state WHERE key = ?1", [REPROJECT_MARKER_KEY])
@@ -122,7 +124,7 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
         // user_version must remain at head — the crash did NOT roll back a step.
         let after: u32 =
             raw.query_row("PRAGMA user_version", [], |r| r.get(0)).expect("user_version");
-        assert_eq!(after, 14, "crash artifact must keep user_version = 14");
+        assert_eq!(after, SCHEMA_VERSION, "crash artifact must keep user_version at head");
         drop(raw);
     }
 
@@ -134,8 +136,8 @@ fn ac_fts_tokenizer_reproject_recovers_after_crash() {
         let opened = Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {})
             .expect("reopen after crash artifact");
         assert_eq!(
-            opened.report.schema_version_before, 14,
-            "reopen observes a durable v14 head (no boundary crossing)"
+            opened.report.schema_version_before, SCHEMA_VERSION,
+            "reopen observes a durable head (no boundary crossing)"
         );
         let recall = measure_recall(&opened.engine);
         opened.engine.close().unwrap();

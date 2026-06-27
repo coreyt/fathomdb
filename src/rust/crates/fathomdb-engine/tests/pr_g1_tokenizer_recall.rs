@@ -12,7 +12,7 @@
 //! real on-disk SQLite file at each schema version.
 
 use fathomdb_engine::Engine;
-use fathomdb_schema::{migrate_with_steps, Migration, MIGRATIONS, SQLITE_SUFFIX};
+use fathomdb_schema::{migrate_with_steps, Migration, MIGRATIONS, SCHEMA_VERSION, SQLITE_SUFFIX};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -140,8 +140,8 @@ fn ac_fts_tokenizer_floor_holds_across_migration() {
         let opened =
             Engine::open_with_migrations_for_test(&path, MIGRATIONS, |_| {}).expect("open head");
         assert_eq!(
-            opened.report.schema_version_after, 14,
-            "phase B must migrate to head SCHEMA_VERSION 14 (runs the step-11 tokenizer upgrade)"
+            opened.report.schema_version_after, SCHEMA_VERSION,
+            "phase B must migrate to head SCHEMA_VERSION (runs the step-11 tokenizer upgrade)"
         );
         assert!(
             opened.report.schema_version_before == 10,
