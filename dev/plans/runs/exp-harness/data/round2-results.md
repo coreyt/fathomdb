@@ -195,3 +195,44 @@ FINDINGS:
 ## Agent IDs (round 4)
 distiller ac13216e8c11e79e7 · distilled-resident a3c67385babef26d6 ·
 raw-resident a858ea43b4145cd9b.
+
+---
+
+# Round 5 — cheap-distillation break-even (hypothesis REFUTED)
+
+Hypothesis (from round 4 deferred): having a resident that ALREADY holds the raw
+files emit its own summary would be cheap (~$0.5, like a high-W follow-up), making
+distillation worthwhile. TEST: raw resident (held 60k + 4 prior follow-ups) wrote a
+33KB (~8k-tok) distilled summary FROM HELD MEMORY (no re-read); a fresh resident then
+loaded it.
+
+| op | $ | detail |
+|---|---|---|
+| piggyback EMIT (raw resident writes 33KB summary from memory) | **5.59** | output 17,759 tok; hit 66.9%; 9 turns |
+| fresh distiller (round 4, reads 60k from scratch) | 6.25 | for comparison |
+| piggyback summary load (fresh resident) | 2.09 | ~matches round-4 distilled $1.91 |
+| piggyback first query (cold-first) | 0.63 | warm would be ~$0.22 |
+| FIDELITY of piggyback summary | full | all probes correct incl. deep exception hierarchy |
+
+REFUTED: emit cost $5.59 ≈ the $6.25 fresh distiller, ~11× the $0.5 estimate.
+
+WHY distillation is ~$6 regardless of path (two unavoidable costs):
+1. **Generating the summary is high-W output** — ~8-9k output tokens × $75/M ≈ $1.3+
+   just for the text, plus the reasoning turns around it.
+2. **The full source must be in context to distil from** — either read fresh
+   (fresh-distiller) or reprocessed as a large held transcript (piggyback, cwrite
+   194k + cread 395k here). Piggybacking only saves the re-READ, a small fraction.
+
+BREAK-EVEN (Δq saving = $0.43 raw − $0.22 distilled = $0.21/query):
+- No raw resident yet, distil-from-scratch: premium $3.60 → **~17 queries**.
+- Raw resident already loaded (sunk), piggyback a smaller successor: cost $7.50
+  → **~36 queries** (WORSE — you re-pay to generate + load).
+
+CONCLUSION: there is no cheap-distillation shortcut. Distillation is a ~$6 capital
+expense that amortizes only under heavy reuse (>~15-35 queries). The cheap way to a
+small transcript remains: **scope the initial load** (read only what's needed).
+Distil only when (a) you will query many times, OR (b) the summary is a deliverable
+you needed anyway.
+
+## Agent IDs (round 5)
+emit on raw-resident a858ea43b4145cd9b (seg4) · piggyback-loaded a130d192801d24338.

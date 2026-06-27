@@ -36,8 +36,9 @@ point estimates; treat ratios as the durable signal.
 - **Keep transcripts SMALL by scoping the INITIAL load** — read only what the
   expected queries need. A ~9k resident was ~2× cheaper per warm query and 2.4×
   cheaper to load than a ~60k one, with no fidelity loss. (Do NOT load big then
-  distil: distilling-from-scratch cost ~$6.25 and only pays back after ~15 queries —
-  cheaper only if the summary falls out of work an agent already did.)
+  distil: distillation costs ~$6 by ANY path — even a resident that already holds the
+  files emitting its own summary cost $5.59, ≈ a from-scratch distiller. It amortizes
+  only after ~15-35 queries. There is no cheap-distillation shortcut.)
 - **Delegate high-W (large-output) work** so the output lands in a disposable
   transcript instead of permanently in your context.
 - **Track per-resident `last_active` and `transcript_tokens`** if orchestrating many.

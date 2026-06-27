@@ -55,8 +55,10 @@ re-cache the shared baseline; warm query 2× cheaper).
 
 Two consequences that drive everything below:
 - **Keep T small** (validated round 4: ~2× cheaper warm reuse, no fidelity loss) — but
-  achieve it by **scoping the initial load**, not by loading big then distilling
-  (distill-from-scratch cost $6.25 > a raw load; amortizes only after ~15 queries).
+  achieve it by **scoping the initial load**, not by loading big then distilling.
+  Distillation costs ~$6 by ANY path (round 5: a raw-holder emitting its own summary
+  cost $5.59, ≈ the $6.25 fresh distiller — no cheap shortcut), amortizing only after
+  ~15-35 queries.
 - **Keep Δt small** (ping < 5 min or batch): cold reuse costs ~5× warm and, for big
   T, exceeds a fresh spawn.
 
@@ -135,10 +137,18 @@ no fidelity loss with targeted distillation; but distill-from-scratch ($6.25) on
 amortizes past ~15 queries — so scope the initial load rather than post-distil. Full
 numbers in `data/round2-results.md` (Round 4).
 
+## Cheap-distillation break-even (round 5) — HYPOTHESIS REFUTED
+Having a resident that already holds the raw files emit its own summary was expected
+to be cheap (~$0.5). Measured: **$5.59** — ≈ the $6.25 fresh distiller. Distillation
+is a ~$6 capital expense regardless of path, because (1) generating the summary is
+high-W output (~$1.3+) and (2) the source must be in context to distil from
+(read fresh OR reprocess a big transcript); piggybacking only saves the re-read.
+Break-even: distil-from-scratch ~17 queries; distilling an already-loaded raw resident
+~36 queries (worse). Fidelity of the piggyback summary was full. => no cheap shortcut;
+**scope the initial load** instead. Full numbers in `data/round2-results.md` (Round 5).
+
 ## Deferred (next rounds)
 - E5: orchestrator-context shadow price — $ of a /compact event (the benefit side of
   delegation, still only argued analytically).
 - n>1 per cell for distributions; current cells are point estimates.
 - Finer Δt sweep around the TTL (bracketed 0 vs 6 min only); 1h-ephemeral-cache behavior.
-- Cheap-distillation path: have a raw-holding resident emit its own summary as one
-  follow-up (~$0.5) vs the $6.25 fresh-distiller — measure the real amortization break-even.
