@@ -284,7 +284,7 @@ class AirlockBatchClient:
         self._timeout = timeout
 
     def _client(self):  # pragma: no cover - thin httpx wrapper
-        import httpx
+        import httpx  # type: ignore[import-not-found]  # httpx not in [dev] extras (eval-only)
 
         return httpx.Client(timeout=self._timeout)
 

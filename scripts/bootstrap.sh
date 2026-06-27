@@ -16,10 +16,14 @@ scripts/install-hooks.sh
 if [ -f src/python/pyproject.toml ]; then
   echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."
   python3 -m venv .venv
-  .venv/bin/python -m pip install --quiet --upgrade pip
-  .venv/bin/python -m pip install --quiet -e 'src/python[dev]'
+  # 0.8.9 Slice 1 (R-BOOT-2): no output masking — a future dev-tooling failure
+  # (pip resolution, an unguarded import that fails pyright) must be VISIBLE in
+  # the CI log, not swallowed. Dropping `--quiet`/`>/dev/null` is what surfaced
+  # the httpx import-not-found error that was silently failing bootstrap on main.
+  .venv/bin/python -m pip install --upgrade pip
+  .venv/bin/python -m pip install -e 'src/python[dev]'
   .venv/bin/python -c 'import pytest, hypothesis'
-  .venv/bin/pyright -p src/python >/dev/null
+  .venv/bin/pyright -p src/python
 fi
 
 # TypeScript dev tooling.

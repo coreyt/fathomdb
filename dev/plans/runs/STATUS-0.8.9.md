@@ -40,6 +40,7 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 | Slice | Title | State | Notes |
 |------:|-------|-------|-------|
 | **0** | Setup + audit; map gate reality | **CLOSED (this doc)** | scope reconciled; residue identified |
+| **1** *(reserved-gap)* | Bootstrap un-mask (R-BOOT) | **CLOSED** | Fix A `# type: ignore[import-not-found]` on the two httpx imports → `pyright -p src/python` 0/0; Fix C dropped `--quiet`/`>/dev/null` masking; R-BOOT-1 clean `[dev]` venv green; R-BOOT-2 demonstrate-the-catch proven (broken import → visible error + exit 1; old masked path hid it) |
 | **5** | Perf-gate honesty (R-PG-1/2) | **CLOSED** | `perf-gates.md` per-AC map; `recall_gate_predicate.rs` catch test (3/3 green, RED-confirmed) |
 | **10** | AC-037 catch + AC-050c (R-037-2/R-050c) | **CLOSED** | shared `lib-egress-allowlist.sh`; `check-netns-deny-egress-catch.sh` (offline catch green + RED-confirmed, live netns CI-only); R-050c cause documented |
 | **15** | Dependency hygiene (R-DEP) | **CLOSED** | npm overrides → markdown-it 14.2.0/js-yaml 4.2.0, `npm audit`=0; dependabot.yml npm `/` added; pip idna/torch = orphaned (dismiss pending HITL) |
