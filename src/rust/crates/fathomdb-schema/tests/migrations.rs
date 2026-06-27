@@ -39,7 +39,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 13);
+    assert_eq!(report.migration_steps.len(), 14);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
@@ -52,7 +52,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
@@ -69,7 +69,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }
@@ -275,7 +275,7 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
     }
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 14);
+    assert_eq!(SCHEMA_VERSION, 15);
 }
 
 // Slice 33 (G3 / F4-READ) — the step-13 additive index makes the op-store
@@ -321,7 +321,7 @@ fn s13_op_store_collection_index_present_after_migrate() {
     assert!(cn < id_pos, "collection_name must lead id in the composite index, got: {idx_sql}");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 14);
+    assert_eq!(SCHEMA_VERSION, 15);
 }
 
 // Slice 33 — the step-13 SQL is a pure `CREATE INDEX` (additive index, no table

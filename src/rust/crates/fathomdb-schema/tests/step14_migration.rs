@@ -104,13 +104,19 @@ fn s14_legacy_rows_null_safe_for_g11_columns() {
     assert!(row.4.is_none(), "extractor_model_id must be NULL for legacy row");
 }
 
-/// ADR §6 criterion 3 — `PRAGMA user_version` returns 14 after step-14.
+/// ADR §6 criterion 3 — a fresh migrate reaches head `SCHEMA_VERSION` (was 14
+/// at step-14; 15 since step-15 added `temporal_fallback`). Asserting the
+/// constant keeps `user_version` robust to future bumps; the explicit head pin
+/// below is the deliberate "update me on a schema bump" tripwire.
 #[test]
 fn s14_schema_version_is_14() {
     let conn = Connection::open_in_memory().unwrap();
     migrate_fresh(&conn);
-    assert_eq!(user_version(&conn), 14, "SCHEMA_VERSION must be 14 after step-14");
-    assert_eq!(SCHEMA_VERSION, 14, "SCHEMA_VERSION constant must be 14");
+    assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
+    assert_eq!(
+        SCHEMA_VERSION, 15,
+        "SCHEMA_VERSION constant must be 15 (step-15 temporal_fallback)"
+    );
 }
 
 /// Step-14 SQL contains the MIGRATION-ACCRETION-EXEMPTION marker (ADD COLUMN requires it).
