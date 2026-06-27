@@ -16,7 +16,7 @@ M-work owner before code (plan §9).
 
 | Slice | Title | State |
 |------:|-------|-------|
-| 0 | Setup + ADR / scope freeze | ✅ Migration approach + ACs frozen in `plan-0.8.8.md` §1/§2; this STATUS stood up |
+| 0 | Setup + ADR / scope freeze | ✅ pyo3 migration approach + ACs frozen in `plan-0.8.8.md` §1/§2; STATUS stood up; **Explanation + telemetry/gold schema ADR DRAFTED** → `dev/design/0.8.8-explain-and-telemetry-adr.md` (⏳ awaiting HITL ratification w/ M-work owner before Slice 5 code) |
 | 1 *(reserved-gap)* | **pyo3 0.24.1 → 0.29.0 security bump** | ✅ migrated + gated GREEN (see R-SEC-1 below); **pending codex §9 + commit** |
 | 5 | EXP-OBS KEYSTONE (`explain=True`) | ⏳ blocked on HITL schema ratification |
 | 10 | EXP-OBS SDK parity + zero-cost bench | ⏳ depends on 5 |
