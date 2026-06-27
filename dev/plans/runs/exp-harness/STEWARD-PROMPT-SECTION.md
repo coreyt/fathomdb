@@ -48,8 +48,13 @@ warm*. Two variables govern cost:
 that must read a file can be cheaper than a *cold* specialist that already holds it.
 
 ### Managing residents
-- **Keep transcripts small.** Ask residents to hold *distilled* context (summaries,
-  extracted facts), not raw large files. Cost scales with T on every reuse.
+- **Keep transcripts small by scoping what a resident loads up front.** Have it read
+  only the context the expected questions need — cost scales with transcript size on
+  every reuse (a ~9k-token resident was ~2× cheaper per query than a ~60k one, with no
+  loss of accuracy). Do NOT load everything and then distil: producing a summary from
+  scratch costs about as much as a fresh spawn and only pays back after ~15 reuses.
+  Distil only when the summary is a cheap by-product of work a resident already did,
+  or when you know you'll query it many times.
 - **Track each resident:** id, what context it holds, `last_active` (warmth), and
   approximate `transcript_tokens` (T). Prefer routing to warm, high-overlap, small-T
   residents. Maintain this registry **outside your context** (a status file) only if

@@ -24,6 +24,12 @@ Isolated worktree `exp/subagent-persistence`. Real billed tokens via
 7. **High-W (large output) delegation:** reuse $0.40-0.63 vs fresh $2.46 (4-6×), and
    the work output W lands in a disposable transcript instead of polluting the
    orchestrator context permanently.
+8. **"Keep T small" VALIDATED but nuanced (round 4):** a ~9k distilled resident vs a
+   ~60k raw one was 2.4× cheaper to load, 2× cheaper per warm query, 1.3× cheaper to
+   cold-wake — with NO fidelity loss (targeted distillation kept every probed fact).
+   BUT distilling-from-scratch cost $6.25 (> a raw load), so post-hoc distillation
+   amortizes only after ~15 queries. The cheap way to small T is to **scope the
+   initial load**, not load-big-then-distil.
 
 ## The cost model (calibrated)
 
@@ -42,8 +48,15 @@ Let P = payload tokens, K = tasks over that context, T = resident transcript siz
   - **first-reuse after a completion** behaves cold (~the cold number), even at Δt≈0.
 - **Wall-clock:** high variance (8-187 s), uncorrelated with cost. Do not use it.
 
+A fixed **~80k boot baseline** (system prompt + tool schemas) rides in every resident
+and is re-cached on every cold wake — so per-op savings from shrinking the payload are
+real but bounded (round 4: cold-wake only 1.3× cheaper at T=9k vs 60k because both
+re-cache the shared baseline; warm query 2× cheaper).
+
 Two consequences that drive everything below:
-- **Keep T small** (distil, don't hoard raw files): every reuse pays ∝ T.
+- **Keep T small** (validated round 4: ~2× cheaper warm reuse, no fidelity loss) — but
+  achieve it by **scoping the initial load**, not by loading big then distilling
+  (distill-from-scratch cost $6.25 > a raw load; amortizes only after ~15 queries).
 - **Keep Δt small** (ping < 5 min or batch): cold reuse costs ~5× warm and, for big
   T, exceeds a fresh spawn.
 
@@ -116,10 +129,16 @@ one-off; a warm general resident can beat a cold specialist.
 - **No re-addressing failures, no silent context loss** across ~20 resumes.
 - **Wall-clock variance** (8-187 s) makes latency useless as a control signal.
 
+## Distillation test (round 4) — DONE
+"Keep T small" validated for per-op cost (2.4× load, 2× warm query, 1.3× cold-wake),
+no fidelity loss with targeted distillation; but distill-from-scratch ($6.25) only
+amortizes past ~15 queries — so scope the initial load rather than post-distil. Full
+numbers in `data/round2-results.md` (Round 4).
+
 ## Deferred (next rounds)
 - E5: orchestrator-context shadow price — $ of a /compact event (the benefit side of
   delegation, still only argued analytically).
 - n>1 per cell for distributions; current cells are point estimates.
 - Finer Δt sweep around the TTL (bracketed 0 vs 6 min only); 1h-ephemeral-cache behavior.
-- Distillation test: resident holding a 10k DISTILLED summary vs 60k raw files, same
-  queries — quantify the "keep T small" lever directly.
+- Cheap-distillation path: have a raw-holding resident emit its own summary as one
+  follow-up (~$0.5) vs the $6.25 fresh-distiller — measure the real amortization break-even.

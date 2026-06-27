@@ -151,3 +151,47 @@ KEY FINDINGS:
 ## Agent IDs (round 3)
 R-W/general ab876ed807426307d · specialist a0a90b9bbfd8f208c ·
 high-W-fresh ad1c620c4e4d482df · domain-fresh ab04f77bea3f9708e.
+
+---
+
+# Round 4 — distillation test ("keep T small" lever)
+
+Same domain content held two ways: DISTILLED (~9k-token targeted summary) vs RAW
+(~60k original files). Identical warm-up → warm query → 6.2-min idle → cold-wake.
+Distilled summary produced by a one-time distiller agent.
+
+| op | DISTILLED (T~9k) $ | RAW (T~60k) $ | ratio | hit% D/R |
+|---|---|---|---|---|
+| load (sunk) | 1.910 | 4.562 | 2.4x | 47.7 / 55.7 |
+| warm-up (cold first-reuse) | 0.653 | 1.019 | 1.6x | 58.1 / 55.4 |
+| warm query (measured) | 0.218 | 0.426 | 2.0x | 97.4 / 97.9 |
+| cold-wake (after 6.2min idle) | 0.818 | 1.082 | 1.3x | 49.2 / 55.1 |
+
+One-time distiller cost (fresh agent reads 60k + writes 36KB summary): **$6.25**.
+
+FIDELITY: both answered ALL probes correctly, incl. the deep two-level exception
+hierarchy (KindNotVectorIndexedError←VectorError, EmbedderNotConfiguredError←
+EmbedderError), gil_used=true, the 3 test-hooks fns, all features + cfg-gating.
+=> targeted distillation lost nothing the queries needed.
+
+AMORTIZATION (distill-from-scratch):
+- Raw path:      4.56 (load) + K·0.43
+- Distilled path: 6.25 (distil) + 1.91 (load) + K·0.22
+- Upfront premium = (6.25+1.91) − 4.56 = $3.60; per-query saving ≈ $0.21 warm / $0.26 cold.
+- Crossover ≈ K=14–17 queries. So POST-HOC distillation pays only under heavy reuse.
+
+FINDINGS:
+- "Keep T small" VALIDATED for per-op cost: ~2.4x cheaper load, ~2x cheaper warm
+  query, ~1.3x cheaper cold-wake — and NO fidelity loss with targeted distillation.
+- BUT a fixed ~80k boot baseline rides in every resident, so the savings are bounded
+  (cold-wake ratio only 1.3x because both re-cache the shared baseline).
+- Distilling-from-scratch is EXPENSIVE ($6.25 > a raw load). The cheap way to get
+  small T is to SCOPE THE INITIAL LOAD (read only what's needed), not load-big-then-
+  distil. Post-hoc distillation is worth it only with >~15 downstream queries, OR when
+  the summary is produced as a cheap by-product of an agent that already holds the raw.
+- Risk: a query needing a detail the distillation dropped forces a re-read (expensive)
+  or a wrong answer. Distillation must target the expected query distribution.
+
+## Agent IDs (round 4)
+distiller ac13216e8c11e79e7 · distilled-resident a3c67385babef26d6 ·
+raw-resident a858ea43b4145cd9b.

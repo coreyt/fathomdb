@@ -33,8 +33,11 @@ point estimates; treat ratios as the durable signal.
 - **Reuse a WARM resident** that already holds the context — cheapest option (~$0.15).
 - **Spawn a resident when ≥2 tasks** will hit the same large/polluting context
   (crossover K=2), then **keep it warm**: ping or batch follow-ups < 5 min apart.
-- **Keep transcripts SMALL**: have residents hold *distilled* context, not raw 60k
-  files — every reuse and every wake-up cost scales with T.
+- **Keep transcripts SMALL by scoping the INITIAL load** — read only what the
+  expected queries need. A ~9k resident was ~2× cheaper per warm query and 2.4×
+  cheaper to load than a ~60k one, with no fidelity loss. (Do NOT load big then
+  distil: distilling-from-scratch cost ~$6.25 and only pays back after ~15 queries —
+  cheaper only if the summary falls out of work an agent already did.)
 - **Delegate high-W (large-output) work** so the output lands in a disposable
   transcript instead of permanently in your context.
 - **Track per-resident `last_active` and `transcript_tokens`** if orchestrating many.
