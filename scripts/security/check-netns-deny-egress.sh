@@ -14,6 +14,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Shared egress classifier (EGRESS_ALLOW_RE + egress_violations) — the SAME
+# logic the demonstrate-the-catch test (check-netns-deny-egress-catch.sh)
+# exercises, so the gate and its catch-proof cannot drift.
+# shellcheck source=scripts/security/lib-egress-allowlist.sh
+. "$SCRIPT_DIR/lib-egress-allowlist.sh"
+
 if ! command -v strace >/dev/null 2>&1; then
     echo "AC-037 BLOCKER: strace not installed. Add to scripts/bootstrap.sh" >&2
     exit 2
@@ -66,13 +72,12 @@ if ! unshare -rUn -- bash -c '
     exit 1
 fi
 
-# Any connect() outside loopback is a violation. AF_UNIX paths show
-# as connect(fd, {sa_family=AF_UNIX, sun_path="..."}). AF_INET shows
-# as sin_addr=inet_addr("...") or sin_addr=htonl(0x7f000001).
-# Allowlisted patterns: AF_UNIX, 127.x.x.x, ::1, AF_NETLINK (kernel
-# RTNL chatter for ip link), AF_UNSPEC.
-VIOLATIONS="$(grep -E 'connect\(' "$TRACE" | \
-    grep -vE 'AF_UNIX|AF_UNSPEC|AF_NETLINK|127\.|sin_addr=htonl\(0x7f000001\)|inet_pton\(AF_INET6,\s*"::1"|inet6_addr.*::1' || true)"
+# Any connect() outside loopback is a violation. The allowlist + classifier
+# live in lib-egress-allowlist.sh (egress_violations / EGRESS_ALLOW_RE), shared
+# with the demonstrate-the-catch test. AF_UNIX paths show as
+# connect(fd, {sa_family=AF_UNIX, sun_path="..."}); AF_INET shows as
+# sin_addr=inet_addr("...") or sin_addr=htonl(0x7f000001).
+VIOLATIONS="$(egress_violations "$TRACE")"
 
 if [ -n "$VIOLATIONS" ]; then
     echo "AC-037 VIOLATION: off-loopback connect() observed:" >&2

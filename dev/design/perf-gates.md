@@ -15,6 +15,38 @@ green devloop run is never mistaken for a ship verdict (or vice versa).
 
 ---
 
+## Honest per-AC gate map (where each gate runs, and what it asserts)
+
+> Added in **0.8.9 (R-PG-1)** so the board never implies a floor CI does not
+> actually check. The recall-floor masking it documents was *exposed and fixed*
+> at **0.8.0 Slice 40 (AC-075)** — this table records the post-fix reality, not
+> a TODO. Verify against the cited test before trusting any "0.90 floor holds"
+> claim elsewhere (`perf-recall-gates-masked-and-ac013b-conflation`).
+
+| AC | Test (file::fn) | Runs | Embedder / corpus | Asserts? | Catch / notes |
+|---|---|---|---|---|---|
+| **013** (text+vector latency, devloop) | `perf_gates_devloop.rs` | **per-push** (`cargo test`) | synthetic `VaryingEmbedder`, ≈1000-doc `CorpusFixture` | **BLOCK** on catastrophic ceiling (p50>500ms / p99>1500ms); soft p50≤50/p99≤150 **notify-only** | synthetic isolates *retrieval* latency; catches the `53a270d` scanner regression |
+| **013** (latency, canonical) | `perf_gates.rs::ac_013_vector_retrieval_latency` | **`AGENT_LONG` only** (release) | synthetic, 10k binding / 100k / 1M | tiered ADR budget (10k binding) | the ship verdict; real-embed N=1M is infeasible on CI (~166 h) |
+| **013b** (recall@10 floor, synthetic) | `perf_gates.rs::ac_013b_recall_at_10_floor` | `AGENT_LONG` only | synthetic *isotropic* `VaryingEmbedder` | **REPORT-ONLY** (prints `RECALL_FIDELITY_INFO`; **no hard assert**) since AC-075 | isotropic noise is the worst case for sign-bit ANN (~0.35–0.89 < 0.90) — a fixture property, not a product defect. The floor constant `AC013B_RECALL_FLOOR=0.90` and its sentinel `ac_013b_floor_matches_adr` are retained |
+| **013b** (recall@10 floor, **asserting**) | `eu7_real_corpus_ac.rs` (real BGE, vector-stage) | `AGENT_LONG` + `default-embedder` (release) | real bge-small, real eu7 corpus | **BLOCK** — one-sided CI: PASS iff `recall_ci_hi ≥ 0.90` (`recall_gate::recall_ci_clears_floor`) | the actual recall verdict (AC-075). N=7667: point 0.8960, CI [0.8640, 0.9250] → ci_hi 0.925 ≥ 0.90 ⇒ PASS |
+| **013b** (catch logic, **per-push**) | `recall_gate_predicate.rs` | **per-push** (`cargo test`) | none (pure predicate) | **BLOCK** — asserts the predicate FAILS below floor, PASSES within-uncertainty | 0.8.9 R-PG-2 demonstrate-the-catch: a regression that makes the floor predicate a tautology RED-fails here every push, not once-per-release |
+| **013b** (recall WARN, devloop) | `perf_gates_devloop.rs` (`DEVLOOP_REAL_EMBEDDER=1`) | opt-in per-push | real BGE | **notify-only** recall@10 ≥ 0.85 WARN; synthetic recall **report-only** | inner-loop fidelity-drift signal; the binding verdict is the eu7 gate above |
+| **012** (FTS5 text-query latency) | `perf_gates.rs::ac_012_text_query_latency_on_fts5_path` | `AGENT_LONG` only | synthetic English-like, tiered N | tiered ADR budget | canonical latency on the FTS path |
+| **019** (concurrency stress) | `perf_gates.rs` (AC-019) + `perf_gates_devloop.rs` | canonical `AGENT_LONG`; devloop per-push (stress-tail **report-only**) | synthetic | canonical asserts; devloop report-only | `DEVLOOP_AC019_DETAIL` line carries thread shape |
+| **020** (latency under load) | `perf_gates.rs` (AC-020) | `AGENT_LONG` only | synthetic | tiered budget | release-only |
+| **037** (netns-deny-egress) | `scripts/security/check-netns-deny-egress.sh` | **per-push** in CI `security` job (`ubuntu-22.04`, userns-permissive) | n/a (strace `connect()` trace) | **BLOCK**; `STRICT=1` makes a toolchain blocker hard-fail (no vacuous pass) | catch demonstrated by `scripts/security/check-netns-deny-egress-catch.sh` (0.8.9 R-037-2) |
+
+**The throughline:** the 0.90 recall floor is a **release-tier** gate (real BGE
+embed = minutes–hours; it *cannot* run per-push), enforced by the eu7
+real-embedder one-sided-CI test — **not** by the synthetic `ac_013b`, which is
+report-only. The per-push half is the devloop recall WARN (notify) plus the
+`recall_gate_predicate` catch-logic unit test (block). Any board that quotes
+"0.90 floor enforced in per-push CI" is wrong: per-push enforces the *catch
+logic* and the *catastrophic latency ceiling*; the *floor value* is a
+once-per-release real-corpus verdict.
+
+---
+
 ## Why two tiers
 
 The canonical gates are slow: the real-embedder N=1M measurement is infeasible

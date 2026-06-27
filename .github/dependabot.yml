@@ -15,6 +15,16 @@ updates:
     schedule:
       interval: "weekly"
 
+  # 0.8.9 R-DEP-2: the root package-lock.json (repo-wide markdown dev tooling:
+  # markdownlint-cli2 + prettier) carried open advisories (markdown-it
+  # GHSA-6v5v-wf23-fmfq, js-yaml GHSA-h67p-54hq-rp68) but was under NO configured
+  # directory, so its security PRs never auto-opened. The "/src/ts" entry above
+  # covers only the TypeScript binding, not the root manifest.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
