@@ -108,6 +108,14 @@ at gated slices, HITL-decided.
 ## 8. Out-of-band / parallel notes
 
 - **Runs in parallel to 0.8.6** and shares no files with the provider/CI foundation work.
+- **⚠ Shared-build contention with 0.8.6 — worktrees do NOT isolate it (by design).** Both releases are
+  source-isolated in their own worktrees, but the `embed-cuda` `maturin develop` here and 0.8.6's
+  provider-seam rebuild **both land on the single shared MAIN tree + `.venv`** (R-GPU-3 / §7.2 — never a
+  worktree). **Serialize MAIN-tree builds (one `maturin develop` at a time), and remember the `.venv`
+  carries one feature-set at a time:** after an `embed-cuda` build the shared env holds the GPU-feature
+  `.so`, so 0.8.6's parity harness then runs against *that* build (CPU output is byte-identical per
+  R-GPU-2 — but be explicit about which is installed). **GPU is uncontended** (2× idle 3090; 0.8.6 uses
+  no GPU). Build-hygiene, not a dependency.
 - **Recommended-before** the re-embed-heavy releases (0.8.10 coverage, 0.8.12 EXP-S/F5, 0.8.14 ONNX
   probe) so their index rebuilds are minutes, not hours — soft acceleration, not a hard gate.
 - **Feeds 0.8.14 / 0.8.16:** the `resolve_device()` seam is the pattern the 0.8.14 ONNX backend extends,

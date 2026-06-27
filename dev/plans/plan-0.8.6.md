@@ -124,6 +124,16 @@ slices** (Slice 0 conformance, Slice 40 release-readiness), decided HITL.
 
 - **0.8.7 (OOB) — GPU embedder (#3)** runs in parallel to this release; it is byte-stable/opt-in and
   shares no files with 0.8.6's provider/CI work.
+- **⚠ Shared-build contention — the one thing the worktrees do NOT isolate.** 0.8.6 and 0.8.7 each run
+  in their own worktree, so source / branches / files never collide. But **both route `maturin develop`
+  to the single shared MAIN tree + shared `.venv`** (never a worktree — `agent-worktree-stale-base-trap`).
+  That shared native-extension build is a mutable resource shared across the two releases:
+  **(1) serialize MAIN-tree builds — only one `maturin develop` at a time;** **(2) the `.venv` holds one
+  feature-set at a time** — before running 0.8.6's Py/TS parity harness, confirm the `.venv` carries
+  0.8.6's default build, not 0.8.7's `embed-cuda` build (CPU results are byte-identical per 0.8.7 R-GPU-2,
+  but be explicit about which `.so` is installed). **No GPU contention** (0.8.6 is $0/CPU mechanism work;
+  2× 3090 idle). This is build-hygiene, **not** a dependency — the parallel-safe verdict (master §2b /
+  §7-Q1) holds.
 - This entire release is **$0** and mechanism-only — it can run on a separate agent track concurrent
   with the experiment program without spending priced-run budget.
 

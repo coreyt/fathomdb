@@ -21,6 +21,7 @@
 | `archive/interface-inventory/prompts/interface-inventory-option{1,2,3}.md` | `dev/agents/interface-inventory-option{1,2,3}.md` | interface-inventory study | 2026-06-26 | prompts that drove the closed option study |
 | `archive/notes/context-research/set{1,2,3}/` | `dev/notes/context-research/set{1,2,3}/` | 0.6.0-era agentic-context research | 2026-06-26 | context-research that fed now-closed agentic-context decisions |
 | `archive/psd/0.6.0-system-psd.md` | `dev/psd/0.6.0-system-psd.md` | 0.6.0 | 2026-06-26 | 0.6.0 product/system design doc |
+| `archive/psd/planner-router-psd-draft.md` | `dev/design/planner-router-psd.md` | planner-router 0.8.x | 2026-06-26 | colleague's draft "planning/composition shim" PSD; superseded by `dev/design/planner-router-psd-0.8.x.md` (its audit lives in `planner-router-psd-audit-notes.md`) |
 | `archive/reports/development-state-0.6.0-to-0.7.2.md` | `dev/reports/development-state-0.6.0-to-0.7.2.md` | 0.6.0→0.7.2 | 2026-06-26 | closed cross-release development-state report |
 
 See also: the DELETE pass removed ~507 transient run artifacts (per-run `*-output.json`,

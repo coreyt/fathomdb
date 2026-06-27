@@ -1,6 +1,6 @@
 # Audit Notes — Planner/Router PSD
 
-**Audited:** `dev/design/planner-router-psd.md` (the colleague's "planning/composition shim" PSD)
+**Audited:** the colleague's "planning/composition shim" PSD draft — now archived at `dev/archive/psd/planner-router-psd-draft.md` (was `dev/design/planner-router-psd.md`); superseded by `dev/design/planner-router-psd-0.8.x.md`
 **Audited against:** FathomDB's in-repo, measured/decided ground truth —
 `dev/design/initial-arch-planner-router-0.8.x.md` (FathomDB's own router/observability stance, load-bearing),
 `dev/design/0.8.x-portfolio-features-and-experiment-tree.md` (features/functions, experiment tree, stacking matrix),

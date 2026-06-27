@@ -25,6 +25,16 @@
   security gate on a **userns-permissive runner** (`ubuntu-22.04`) — it was machine-confirmed GREEN
   **once** on windchill3 (2026-06-02) but is not durably in per-push CI. Separately, fix the pre-existing
   **AC-050c removal-detect** baseline failure (a standalone cleanup, not a regression).
+- **Dependency-vulnerability hygiene (Dependabot backlog).** Resolve the remaining open GitHub Dependabot
+  alerts **after 0.8.8 takes pyo3 (the 2 HIGH)**: **npm** `markdown-it` + `js-yaml` (moderate,
+  quadratic-complexity DoS; transitive/tooling), and **pip** `idna` (moderate) + `torch` (low) in the
+  eval env (`python/uv.lock`). Bump the lockfiles, re-run the affected suites, and **reconcile
+  `.github/dependabot.yml` directory coverage** — the root `package-lock.json` and `python/uv.lock` are
+  not under any configured version-update directory today, so their security PRs never auto-open.
+  Footprint: npm = CI/tooling; `torch`/`idna` = **EVAL-ONLY** (not in the shipped library query path) —
+  the low-sev `torch.jit.script` issue may be dismissed-with-rationale rather than chased. **No
+  auto-merge** (`allow_auto_merge=false` confirmed; no auto-merge workflow) — every bump rides the normal
+  TDD/gate discipline like any slice.
 
 *Why OOB / why paired:* both are mechanism-only CI hygiene with zero feature coupling and no upstream/
 downstream code deps; they belong off the experiment critical path. Pairing them is purely batching —
@@ -42,6 +52,9 @@ one orchestrated micro-release that makes the gate surface honest.
 | R-037-1 | AC-037 `netns-deny-egress` runs durably in CI | `ci.yml` `security` job on `ubuntu-22.04` (userns-permissive) runs the no-egress proof; it can fail (RED proof) |
 | R-037-2 | The gate is wired, not asserted-by-memory | A deliberately-egressing fixture trips the gate in CI (demonstrate the catch) |
 | R-050c-1 | AC-050c removal-detect baseline failure cleared | `ac_050c` passes on a clean baseline; the cause is documented |
+| R-DEP-1 | Remaining Dependabot alerts resolved (post-0.8.8 pyo3) | npm (`markdown-it`/`js-yaml`) + pip (`idna`/`torch`) lockfiles bumped off the open advisories; affected suites GREEN; `gh api .../dependabot/alerts` shows the npm/pip set closed (or low-sev `torch` dismissed-with-rationale) |
+| R-DEP-2 | `dependabot.yml` covers the manifests that actually carry alerts | version-update directories include the root `package-lock.json` + `python/uv.lock` (or the alert manifests are reconciled); no manifest with an open alert is left uncovered |
+| R-DEP-3 | No mechanical auto-merge of security/version PRs | `allow_auto_merge=false` confirmed; no auto-merge workflow present; bumps land via gated slices only |
 
 New ACs: none expected (these *fix* existing gates); any new gate id is minted at Slice 0 only if HITL
 elects, per the locked-acceptance policy.
@@ -51,22 +64,24 @@ elects, per the locked-acceptance policy.
 ## 3. Slice ladder (mod-5)
 
 ```
-0 → 5 → 10 → 40
+0 → 5 → 10 → 15 → 40
 ```
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | Setup + audit — board; **map the current gate reality** (which of ac_012/013/013b/019/020 run where, asserting against which embedder/corpus); design the honest re-scope + the AC-037 CI-wiring approach | design-adr | — |
+| **0** | Setup + audit — board; **map the current gate reality** (which of ac_012/013/013b/019/020 run where, asserting against which embedder/corpus); design the honest re-scope + the AC-037 CI-wiring approach; confirm the post-0.8.8 Dependabot backlog | design-adr | — |
 | **5** | **Perf-gate honesty (#12)** — re-scope/relabel `ac_013b` off the synthetic floor; run the cheap subset per-push; RED proof that the old vacuous-green is gone; update `design/perf-gates.md` | implementation (CI) | 0 |
 | **10** | **AC-037 wiring + AC-050c cleanup (#14)** — `security` job on `ubuntu-22.04` with a RED egress-trip proof; clear the AC-050c baseline failure | implementation (CI) | 0 |
-| **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c AC gate; confirm the honest gate map is reflected on every board | verification | 5,10 |
+| **15** | **Dependency-vuln hygiene (Dependabot)** — bump npm (`markdown-it`/`js-yaml`) + pip (`idna`/`torch`) lockfiles off the open advisories; reconcile `dependabot.yml` directory coverage; re-run affected suites | implementation (deps) | 0 |
+| **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c/R-DEP AC gate; confirm the honest gate map is reflected on every board | verification | 5,10,15 |
 
 **Keystones / hard gates.** **R-PG-2 demonstrate-the-catch is a hard gate** — the fix must include a RED
 test proving the previously-vacuous gate now fails when it should (`conformance-rewrite-vacuous-green-trap`:
 a green rewrite can be vacuously green). Same for R-037-2 (a real egress fixture must trip the gate). A
 fix that only flips labels without a demonstrated catch is NOT done.
 
-**Tracks (parallelizable).** Perf-gate track **5** ∥ security/cleanup track **10**, off Slice 0.
+**Tracks (parallelizable).** Perf-gate track **5** ∥ security/cleanup track **10** ∥ dependency-hygiene
+track **15**, all off Slice 0.
 
 ---
 
@@ -110,5 +125,5 @@ ac_013b's 0.90-on-synthetic conflation is the known defect).
 ## 9. Immediate next slice
 
 **Slice 0 — map the gate reality.** Stand up `runs/STATUS-0.8.9.md`; produce the honest table of where
-each perf gate runs and what it asserts against; design the AC-037 CI wiring + the AC-050c fix. Then fan
-out Slices 5 ∥ 10.
+each perf gate runs and what it asserts against; design the AC-037 CI wiring + the AC-050c fix; confirm
+the post-0.8.8 Dependabot backlog (pyo3 already taken by 0.8.8). Then fan out Slices 5 ∥ 10 ∥ 15.

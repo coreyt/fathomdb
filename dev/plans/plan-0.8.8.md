@@ -34,6 +34,16 @@
 trace, telemetry captures the *outcome* trace; together they are the legibility substrate for M-work
 attribution and (downstream, out of scope here) learned routing.
 
+**Security exception carried by this release (OOB drop-in) — pyo3 bump.** GitHub Dependabot flags two
+HIGH + two moderate advisories on **pyo3 0.24.1** in the shipped `fathomdb-py` binding
+(`GHSA-36hh-v3qg-5jq4` — OOB read in `nth`/`nth_back` for `PyList`/`PyTuple`; `GHSA-chgr-c6px-7xpp` —
+missing `Sync` bound on `PyCFunction::new_closure`). Because **Slice 5 EXP-OBS adds Py-SDK `explain`
+surface directly on top of pyo3**, the bump is pulled forward into 0.8.8 — ahead of the 0.8.9
+CI-integrity release that carries the rest of the Dependabot backlog — so the new Py surface lands on a
+patched binding. **IN-LIBRARY footprint**; it touches the binding crate, so it **must re-clear the
+byte-stability + eu7 recall gates**. It lands as **Slice 1 (reserved-gap) before Slice 5**, and runs the
+normal TDD / gate / codex-§9 discipline — **no auto-merge**.
+
 ---
 
 ## 2. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
@@ -47,6 +57,7 @@ attribution and (downstream, out of scope here) learned routing.
 | R-TEL-1 | Opt-in local telemetry: query→result→feedback events | Events recorded deterministically; **off by default**; no network egress (footprint test) |
 | R-TEL-2 | Real-gold capture pipeline | Telemetry → a labeled gold record schema; a fixture run produces a valid gold row consumable by the eval harness |
 | R-TEL-3 | Privacy/footprint honesty | Telemetry payload documented; no content leaves the box; agent-supplied relevance labels are the only exogenous signal |
+| R-SEC-1 | pyo3 bumped off the HIGH/moderate advisories **before** EXP-OBS Py surface lands | `Cargo.toml` + `Cargo.lock` on a patched pyo3; byte-stability + eu7 recall gates re-clear GREEN; build+import smoke on the bumped binding passes; `GHSA-36hh-v3qg-5jq4` + `GHSA-chgr-c6px-7xpp` no longer reported |
 
 New ACs: candidates at Slice 0 (explain-contract) and the telemetry/real-gold gate.
 
@@ -61,15 +72,18 @@ New ACs: candidates at Slice 0 (explain-contract) and the telemetry/real-gold ga
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
 | **0** | Setup + ADR — `Explanation` payload schema ADR (the §6 `initial-arch` spec); telemetry-event + real-gold schema ADR; privacy/footprint contract | design-adr | — |
-| **5** | **EXP-OBS KEYSTONE** — per-hit arm-provenance + score-breakdown + query trace behind `explain=True`; generalize the graph-`EXPLAIN`/`TraceReport` seam | implementation | 0 |
+| **1** *(reserved-gap)* | **pyo3 security bump (OOB drop-in)** — bump off `GHSA-36hh-v3qg-5jq4` / `GHSA-chgr-c6px-7xpp`; re-clear byte-stability + eu7 recall; build+import smoke. **Lands before Slice 5.** | implementation (deps) | 0 |
+| **5** | **EXP-OBS KEYSTONE** — per-hit arm-provenance + score-breakdown + query trace behind `explain=True`; generalize the graph-`EXPLAIN`/`TraceReport` seam | implementation | 0, 1 |
 | **10** | **EXP-OBS SDK + zero-cost proof** — Py+TS `explain` parity harness; hot-path no-cost bench (RED if regression) | implementation | 5 |
 | **15** | **Telemetry capture** — opt-in local query→result→feedback event channel (deterministic, no egress) | implementation | 0 |
 | **20** | **Real-gold pipeline** — telemetry → labeled gold schema → eval-harness ingestion; fixture-validated | implementation (eval) | 15 |
 | **40** | **Verification + Release Readiness (0.8.8)** — X1/X2/X3 + R-OBS/R-TEL AC gate + zero-cost bench | verification | 5,10,15,20 |
 
-**Keystones / hard gates.** Slice 5 (EXP-OBS) is the keystone. **R-OBS-2 zero-cost is a hard gate** —
-the explain path must not perturb the AC-013 hot-path latency envelope; a regression BLOCKS. Telemetry
-**off-by-default + no-egress** is a hard footprint gate at Slice 15.
+**Keystones / hard gates.** Slice 5 (EXP-OBS) is the keystone. **Reserved-gap Slice 1 (pyo3 bump) lands
+before Slice 5** and must re-clear byte-stability + eu7 recall (binding-crate change) — a recall or
+byte-stability regression BLOCKS→HITL. **R-OBS-2 zero-cost is a hard gate** — the explain path must not
+perturb the AC-013 hot-path latency envelope; a regression BLOCKS. Telemetry **off-by-default + no-egress**
+is a hard footprint gate at Slice 15.
 
 **Tracks (parallelizable).** EXP-OBS track **5 → 10** ∥ telemetry track **15 → 20**, both off Slice 0.
 
@@ -108,4 +122,6 @@ Slice 40), HITL-decided.
 
 **Slice 0 — `Explanation` + telemetry/real-gold schema ADRs.** Ratify the §6 `initial-arch` explain
 payload shape and the gold-record schema with the M-work owner before code; stand up
-`runs/STATUS-0.8.8.md`. Then fan out Slices 5 ∥ 15.
+`runs/STATUS-0.8.8.md`. Then land **reserved-gap Slice 1 (pyo3 bump)** — re-clearing byte-stability +
+eu7 recall — **before** fanning out Slices 5 ∥ 15 (so the new Py `explain` surface builds on the patched
+binding).
