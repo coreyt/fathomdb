@@ -72,11 +72,29 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 
 - [x] Working-tree changes reviewed (codex §9) — **clean PASS, 0 findings**
 - [x] Memory reconciliation — `perf-recall-gates-masked-and-ac013b-conflation` updated (RESOLVED header)
-- [ ] Commit 0.8.9 residue (9 files; branch-first per repo policy) — **needs HITL OK**
-- [ ] Dismiss orphaned Dependabot alerts: idna #2 + torch #9 (manifest `python/uv.lock`
-      removed at `39ee2712`; torch unpatched/low/eval-only) — **needs HITL OK** (outward action)
-- [ ] Version-bump / tag decision — 0.8.9 has **no library change** (X1); a crates.io/PyPI/npm
-      publish may be unwarranted for a CI-only micro — **HITL decision**
+- [x] Commit 0.8.9 residue — **HITL: branch + PR.** Branch `0.8.9-ci-integrity-micro`,
+      commit `d5a68d17`, **PR #93** (10 files; unrelated working-tree changes excluded).
+- [x] Dismiss orphaned idna/torch alerts — **HITL: leave open** (documented as orphaned).
+- [x] Version-bump / tag — **HITL: no version bump** (zero library-surface change).
+- [ ] Merge PR #93 — HITL action (blocked on pre-existing CI red; see §5)
+
+## 5. CI status on PR #93 — pre-existing red on main, NOT caused by 0.8.9
+
+Verified from git (main's last 3 runs are red on the SAME 4 jobs, on docs-only commits):
+
+| Job | Fails at step | Cause | Owner |
+|---|---|---|---|
+| `verify` | **Bootstrap dev tooling** | `bootstrap.sh` Python-tooling `.venv` install dies (~4 min → exit 1) — infra | not 0.8.9 |
+| `security` | **Bootstrap dev tooling** | same bootstrap failure — aborts **before** `agent-security.sh`, so my AC-037 catch + recall test never execute in CI | not 0.8.9 |
+| `rust-macos` | `cargo test --workspace` | pyo3 link error (`_PyDict_GetItemWithError`, `_PyExc_*` undefined) | **0.8.8** (pyo3 0.24→0.29) |
+| `rust-windows` | `cargo test --workspace` | same pyo3 link error | **0.8.8** |
+
+**0.8.9 adds zero failures.** Every CI job that reaches the 0.8.9 changes is green:
+`Analyze (rust)` (compiled `recall_gate_predicate.rs`), `docs`, `default-embedder-tests`,
+`wheel-size-gate (linux-x64)`. The AC-037 catch live-run on `ubuntu-22.04` could not be
+confirmed in CI because the `security` job dies at bootstrap first — but the catch is proven
+locally (offline layer green + RED-confirmed) and by `Analyze (rust)`. **Full PR green
+requires 0.8.8 (pyo3 link) + a bootstrap infra fix — both out of 0.8.9 scope.**
 
 ## 4. $ ledger
 
