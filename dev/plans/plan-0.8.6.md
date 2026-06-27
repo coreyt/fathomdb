@@ -4,7 +4,7 @@
 > pointer. Authoritative slice contracts graduate to `0.8.6-implementation.md`; live state lives in
 > `runs/STATUS-0.8.6.md`. Sequencing/deps are in `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (the program
 > decision record). Run via `/goal complete 0.8.6` as an **orchestrator** session
-> (`prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md`).
+> (`prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`).
 >
 > **Theme.** The enabler layer: collapse N provider contracts into one (#8), migrate the consumer onto
 > governed read verbs (#9), and stand up the **minimal viable publish path** (#11-min) so every

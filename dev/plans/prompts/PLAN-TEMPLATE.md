@@ -5,7 +5,7 @@ Copy to dev/plans/plan-<release>.md and replace every {{PLACEHOLDER}}.
 This is the *deliverable* side of the system; the *method* is the
 release-independent runbook dev/design/orchestration.md. A plan written
 from this template is meant to be driven by `/goal complete <release>`
-as an orchestrator session (prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md).
+as an orchestrator session (prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md).
 
 Required fills:
   {{RELEASE}}      e.g. 0.8.6
@@ -60,7 +60,7 @@ discovers mid-release.)
 > Method (roles, state spine, preflight, decision loop, recovery) is the
 > release-independent runbook `dev/design/orchestration.md`. Run via
 > `/goal complete {{RELEASE}}` as an **orchestrator** session
-> (`prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md`).
+> (`prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`).
 >
 > **Theme.** {{THEME — one paragraph: what this release is for and why now.}}
 >

@@ -66,7 +66,7 @@ most common drift: a plan bloated with method, or a runbook pinned to one releas
 | Plan-with-DoD (per-release) | `dev/plans/plan-<release>.md` from `dev/plans/prompts/PLAN-TEMPLATE.md` |
 | Pack/implementer prompt (per-slice) | `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` |
 | Live STATUS board (cache of witness state) | `dev/plans/runs/STATUS-<release>.md` (shape: `STATUS-0.8.2.md`) |
-| Multi-pack / program handoff | `dev/plans/prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md` |
+| Multi-pack / program handoff | `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` |
 | Closure artifact (per-slice witness) | `dev/plans/runs/<slice>-output.json` (`orchestration.md § 8`) |
 | Promoted review verdict | `dev/plans/runs/<slice>-review-<ts>.md` (`orchestration.md § 4`) |
 | Traceability matrix | `dev/traceability.md`, `dev/DOC-INDEX.md` |
@@ -156,7 +156,7 @@ file. Compaction-safe: everything that must survive `/compact` lives on disk
 3. **Plan** — copy `PLAN-TEMPLATE.md` → `plan-<release>.md`; fill scope → requirements →
    ladder → registers → DoD; get an independent design review at Slice 0.
 4. **STATUS board + program handoff** — `STATUS-<release>.md` (mirror `STATUS-0.8.2`) +
-   the `0.8.x-PROGRAM-STEWARD-HANDOFF.md` entry point.
+   the `0.8.x-STEWARD-HANDOFF.md` entry point.
 5. **Per-slice loop** — author each slice from `0.8.0-SLICE-TEMPLATE.md`; run the loop above.
 6. **Docs reconciliation** — `dev/update-docs.md` with the epoch marker + the
    `mkdocs --strict` / version-consistency verify gate.

@@ -56,7 +56,7 @@ details may be STALE.** For distilled experiment results, read
 | 0.7.0, 0.7.1, 0.7.2 | shipped | **ARCHIVED in place — stale** |
 | 0.8.0, 0.8.1, 0.8.2, 0.8.3 | shipped/closed | **ARCHIVED in place — stale** |
 | 0.8.4 | closed (GraphRAG SPLIT; Fork E re-opened) | **ARCHIVED in place** — see `dev/experiments-ledger.md` |
-| 0.8.5 | **IN FLIGHT** | LIVE — `0.8.5-ce-rerank-alpha-expose-slice.md`, `plan-0.8.4.md`, `prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md` |
+| 0.8.5 | **IN FLIGHT** | LIVE — `0.8.5-ce-rerank-alpha-expose-slice.md`, `plan-0.8.4.md`, `prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` |
 
 Transient per-run artifacts (raw `*-output.json`, codex `*-review-*` logs, `.log`,
 checkpoints) under `runs/` were pruned by the ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`) and are

@@ -3,7 +3,7 @@
 > **Plan-as-state-machine.** Mod-5 slice ladder + reserved-gap policy + "Immediate Next Slice".
 > Authoritative contracts → `0.8.7-implementation.md`; live state → `runs/STATUS-0.8.7.md`;
 > deps/decision record → `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (§3 OOB, §5 Q1). Run via
-> `/goal complete 0.8.7` as an **orchestrator** session (`prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md`).
+> `/goal complete 0.8.7` as an **orchestrator** session (`prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`).
 >
 > **OUT-OF-BAND (odd micro).** This release runs **in parallel** to the even main line and gates nothing
 > and is gated by nothing. It is the textbook drop-in: the default build stays CPU, GPU is opt-in via a
