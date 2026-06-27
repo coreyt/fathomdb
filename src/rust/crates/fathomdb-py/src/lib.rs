@@ -12,7 +12,7 @@
 //! FFI safety contract (mirrored by Phase 11b napi-rs):
 //!
 //! 1. Every method that may block inside the engine wraps the call in
-//!    `py.allow_threads(...)` so the GIL is released for the duration.
+//!    `py.detach(...)` so the GIL is released for the duration.
 //! 2. Engine entry points return typed errors via [`engine_error_to_py`] /
 //!    [`engine_open_error_to_py`] — single-switch mapping with no
 //!    catch-all arm; the binding fails to compile when the Rust variant
@@ -160,7 +160,7 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
             let exc = EmbedderDimensionMismatchError::new_err(format!(
                 "embedder vector dimension mismatch: stored {expected}, supplied {actual}",
             ));
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let v = exc.value(py);
                 let _ = v.setattr("stored", expected);
                 let _ = v.setattr("supplied", actual);
@@ -208,7 +208,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
                 Some(pid) => format!("database is locked by process {pid}"),
                 None => "database is locked by another engine instance".to_string(),
             });
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let _ = exc.value(py).setattr("holder_pid", holder_pid);
             });
             exc
@@ -231,7 +231,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
                 "embedder identity mismatch: stored {}@{}, supplied {}@{}",
                 stored.name, stored.revision, supplied.name, supplied.revision,
             ));
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let v = exc.value(py);
                 let _ = v.setattr("stored_name", stored.name);
                 let _ = v.setattr("stored_revision", stored.revision);
@@ -244,7 +244,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
             let exc = EmbedderDimensionMismatchError::new_err(format!(
                 "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
             ));
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let v = exc.value(py);
                 let _ = v.setattr("stored", stored);
                 let _ = v.setattr("supplied", supplied);
@@ -266,7 +266,7 @@ fn corruption_to_py(detail: CorruptionDetail) -> PyErr {
     let exc = CorruptionError::new_err(format!(
         "corruption {kind} at stage {stage} ({recovery_hint_code})"
     ));
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let v = exc.value(py);
         let _ = v.setattr("kind", kind);
         let _ = v.setattr("stage", stage);
@@ -276,7 +276,7 @@ fn corruption_to_py(detail: CorruptionDetail) -> PyErr {
     exc
 }
 
-/// Run the engine call inside `py.allow_threads` and `catch_unwind`;
+/// Run the engine call inside `py.detach` and `catch_unwind`;
 /// translate any escaping panic to `EngineError`.
 ///
 /// `AssertUnwindSafe` wraps the caller's closure so we do not need to
@@ -288,7 +288,7 @@ fn call_engine<R: Send>(
     f: impl FnOnce() -> Result<R, RustEngineError> + Send,
 ) -> PyResult<R> {
     let wrapped = AssertUnwindSafe(f);
-    let result = py.allow_threads(|| catch_unwind(wrapped));
+    let result = py.detach(|| catch_unwind(wrapped));
     match result {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(err)) => Err(engine_error_to_py(err)),
@@ -298,7 +298,13 @@ fn call_engine<R: Send>(
 
 // ===== Data classes ===================================================
 
-#[pyclass(module = "fathomdb._fathomdb", name = "WriteReceipt", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "WriteReceipt",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PyWriteReceipt {
     cursor: u64,
@@ -320,7 +326,13 @@ impl PyWriteReceipt {
 }
 
 /// G11 (Slice 15) — BYO-LLM ingest receipt.
-#[pyclass(module = "fathomdb._fathomdb", name = "IngestWithExtractorReceipt", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "IngestWithExtractorReceipt",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PyIngestWithExtractorReceipt {
     nodes_written: u64,
@@ -338,7 +350,13 @@ impl PyIngestWithExtractorReceipt {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "SoftFallback", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "SoftFallback",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PySoftFallback {
     branch: String,
@@ -357,7 +375,7 @@ impl PySoftFallback {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all)]
+#[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PySearchHit {
     id: u64,
@@ -392,7 +410,13 @@ impl PySearchHit {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "SearchResult", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "SearchResult",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PySearchResult {
     projection_cursor: u64,
@@ -410,7 +434,7 @@ impl PySearchResult {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "NodeRecord", frozen, get_all)]
+#[pyclass(module = "fathomdb._fathomdb", name = "NodeRecord", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PyNodeRecord {
     logical_id: String,
@@ -430,7 +454,7 @@ impl PyNodeRecord {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all)]
+#[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PyOpStoreRow {
     id: i64,
@@ -456,7 +480,13 @@ impl PyOpStoreRow {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "CounterSnapshot", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "CounterSnapshot",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PyCounterSnapshot {
     queries: u64,
@@ -467,7 +497,13 @@ struct PyCounterSnapshot {
     cache_miss: u64,
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "MigrationStepReport", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "MigrationStepReport",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PyMigrationStepReport {
     step_id: u32,
@@ -481,7 +517,13 @@ impl PyMigrationStepReport {
     }
 }
 
-#[pyclass(module = "fathomdb._fathomdb", name = "EmbedderIdentity", frozen, get_all)]
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "EmbedderIdentity",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
 #[derive(Clone)]
 struct PyEmbedderIdentity {
     name: String,
@@ -512,7 +554,7 @@ struct PyOpenReport {
     /// Each item is a `dict` keyed by `"kind"` with variant-specific
     /// payload keys. See [`embedder_event_to_py`] for the per-variant
     /// shape.
-    embedder_events: Vec<PyObject>,
+    embedder_events: Vec<Py<PyAny>>,
     /// Static identity capability — true when the configured default
     /// embedder requires mean-centering (e.g. bge-small).
     embedder_mean_centering_required: bool,
@@ -550,7 +592,7 @@ impl PyOpenReport {
 /// carry the variant payload in snake_case. We pick a dict (rather than
 /// a per-variant `#[pyclass]`) so callers can pattern-match on the
 /// `"kind"` discriminant without importing leaf classes.
-fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> PyObject {
+fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> Py<PyAny> {
     let dict = PyDict::new(py);
     match ev {
         RustEmbedderEvent::DefaultEmbedderDownload {
@@ -605,7 +647,7 @@ impl PyEngine {
     fn open(py: Python<'_>, path: String, use_default_embedder: bool) -> PyResult<Self> {
         validate_ffi_string_py(&path)?;
         let opened = py
-            .allow_threads(|| {
+            .detach(|| {
                 catch_unwind(AssertUnwindSafe(|| {
                     // EU-6: True → `EmbedderChoice::Default` (engine
                     // materialises the pinned bge-small embedder via the
@@ -743,7 +785,7 @@ impl PyEngine {
             .iter()
             .map(|item| {
                 let dict = item
-                    .downcast::<PyDict>()
+                    .cast::<PyDict>()
                     .map_err(|_| WriteValidationError::new_err("document must be a dict"))?;
                 let source_doc_id = dict_str_required(dict, "source_doc_id")?;
                 let body = dict_str_required(dict, "body")?;
@@ -1028,7 +1070,7 @@ fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
 
 fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| WriteValidationError::new_err("write item must be a dict"))?;
 
     if let Some(inner) = dict_get(dict, "edge")? {
@@ -1051,7 +1093,7 @@ fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
 
 fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| WriteValidationError::new_err("node write item must be a dict"))?;
     let kind = dict_str_required(dict, "kind")?;
     let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
@@ -1062,7 +1104,7 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
 
 fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| WriteValidationError::new_err("edge write item must be a dict"))?;
     let kind = dict_str_required(dict, "kind")?;
     let from = dict_str_required(dict, "from")?;
@@ -1093,7 +1135,7 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
 
 fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| WriteValidationError::new_err("op_store write item must be a dict"))?;
     let collection = dict_str_required(dict, "collection")?;
     let record_key = dict_str_required(dict, "record_key")?;
@@ -1104,7 +1146,7 @@ fn translate_op_store(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
 
 fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| PyTypeError::new_err("admin_schema write item must be a dict"))?;
     let name = dict_str_required(dict, "name")?;
     let kind = dict_str_required(dict, "kind")?;
@@ -1116,7 +1158,7 @@ fn translate_admin_schema(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
 // ===== Slice 20 (G5/G6) — graph_neighbors + search_expand ============
 
 /// Slice 20 — one expanded node entry in [`PySearchExpandResult`].
-#[pyclass(name = "ExpandedNode")]
+#[pyclass(name = "ExpandedNode", skip_from_py_object)]
 #[derive(Clone)]
 struct PyExpandedNode {
     #[pyo3(get)]
@@ -1129,7 +1171,7 @@ struct PyExpandedNode {
 /// original RRF-scored hits; `expanded` is the list of nodes reachable by
 /// graph traversal that are NOT in `search_hits`. `all_logical_ids` is the
 /// deduplicated union.
-#[pyclass(name = "SearchExpandResult")]
+#[pyclass(name = "SearchExpandResult", skip_from_py_object)]
 #[derive(Clone)]
 struct PySearchExpandResult {
     #[pyo3(get)]
@@ -1290,7 +1332,7 @@ fn rerank(
         .iter()
         .map(|item| {
             let dict = item
-                .downcast::<PyDict>()
+                .cast::<PyDict>()
                 .map_err(|_| WriteValidationError::new_err("passage must be a dict"))?;
             let id = dict_u64_required(dict, "id")?;
             let body = dict_str_required(dict, "body")?;
@@ -1310,7 +1352,7 @@ fn rerank(
     // E2 fix-1 [P2]: `rust_rerank_passages` now returns `Result<Vec<…>, String>`;
     // the inner `Err` (non-finite score) surfaces as `WriteValidationError`.
     let reranked = py
-        .allow_threads(|| {
+        .detach(|| {
             catch_unwind(AssertUnwindSafe(move || {
                 rust_rerank_passages(&query, tuples, rerank_depth, alpha, pool_n)
             }))
@@ -1346,7 +1388,12 @@ fn force_panic_for_test() -> PyResult<()> {
 
 // ===== Module =========================================================
 
-#[pymodule]
+// `gil_used = true` preserves current GIL semantics: pyo3 0.28 makes
+// `#[pymodule]` free-threaded by default, but this binding is `abi3-py310`
+// and the whole FFI contract assumes the GIL is held. Opting into
+// free-threading (`gil_used = false`) is a separate, larger correctness
+// campaign — see dev/design/free-threaded-python-value-lift-and-experiments.md.
+#[pymodule(gil_used = true)]
 fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
