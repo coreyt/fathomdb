@@ -36,13 +36,31 @@ attribution and (downstream, out of scope here) learned routing.
 
 **Security exception carried by this release (OOB drop-in) — pyo3 bump.** GitHub Dependabot flags two
 HIGH + two moderate advisories on **pyo3 0.24.1** in the shipped `fathomdb-py` binding
-(`GHSA-36hh-v3qg-5jq4` — OOB read in `nth`/`nth_back` for `PyList`/`PyTuple`; `GHSA-chgr-c6px-7xpp` —
-missing `Sync` bound on `PyCFunction::new_closure`). Because **Slice 5 EXP-OBS adds Py-SDK `explain`
-surface directly on top of pyo3**, the bump is pulled forward into 0.8.8 — ahead of the 0.8.9
-CI-integrity release that carries the rest of the Dependabot backlog — so the new Py surface lands on a
-patched binding. **IN-LIBRARY footprint**; it touches the binding crate, so it **must re-clear the
-byte-stability + eu7 recall gates**. It lands as **Slice 1 (reserved-gap) before Slice 5**, and runs the
-normal TDD / gate / codex-§9 discipline — **no auto-merge**.
+(`GHSA-36hh-v3qg-5jq4` / RUSTSEC-2026-0176 — OOB read in `nth`/`nth_back` for `PyList`/`PyTuple`;
+`GHSA-chgr-c6px-7xpp` / RUSTSEC-2026-0177 — missing `Sync` bound on `PyCFunction::new_closure`). Both are
+first patched only at **pyo3 0.29.0** (the fix is NOT within 0.24.x), so this is a five-minor jump, not a
+lockfile bump — confirmed by Dependabot PR #89 (`0.24.1 → 0.29.0`; close the stale dup PR #78). Because
+**Slice 5 EXP-OBS adds Py-SDK `explain` surface directly on top of pyo3**, the bump is pulled forward into
+0.8.8 — ahead of the 0.8.9 CI-integrity release that carries the rest of the Dependabot backlog — so the
+new Py surface lands on a patched binding. **IN-LIBRARY footprint**; it touches the binding crate, so it
+**must re-clear the byte-stability + eu7 recall gates**. It lands as **Slice 1 (reserved-gap) before
+Slice 5**, and runs the normal TDD / gate / codex-§9 discipline — **no auto-merge**.
+
+*Migration approach (frozen at Slice 0; executed at Slice 1).* The entire pyo3 surface is **one file** —
+`src/rust/crates/fathomdb-py/src/lib.rs` (~1442 lines); no `build.rs`, no other crate uses pyo3. It is
+already on the modern `Bound` API (last migrated for 0.22), so 0.24→0.29 is the free-threading **rename
+wave**, not a structural rewrite. The crate is on a clippy `-D warnings` gate, so every moved API must be
+migrated even where a deprecated alias still exists. Concrete edits: `Python::with_gil` → `Python::attach`
+(0.25, 5 sites); `py.allow_threads` → `py.detach` (0.25, 5 sites); `.downcast::<T>()` → `.cast::<T>()`
+(0.27, 7 sites); `PyObject` → `Py<PyAny>` (0.25, 2 sites). `get_type::<T>()` (22 sites) is unchanged.
+**One design decision, not mechanical:** 0.28 makes `#[pymodule]` free-threaded by default — **the safe
+move is to add `#[pymodule(gil_used = true)]` to preserve current semantics** (the binding is `abi3-py310`
+and the whole FFI contract assumes the GIL is held); opting *into* free-threading is a separate, larger
+correctness campaign and is explicitly out of scope here. No `Vec<u8>`→`PyBytes` (0.26), no
+`str::Utf8Error`→`PyErr` `?` (removed 0.29), no `pyo3-build-config` inlining reliance (no `build.rs`) —
+none present, so none bite. **Lift = LOW–MEDIUM, compiler-driven** (`cargo build` flags each rename; the
+AC-060a no-catch-all error switch is a compile-time guard that fails on drift). No reusable prior plan
+exists — the old `pyo3-0.28-upgrade-plan.md` was deleted as a stale pre-0.6.0 artifact.
 
 ---
 
@@ -57,7 +75,7 @@ normal TDD / gate / codex-§9 discipline — **no auto-merge**.
 | R-TEL-1 | Opt-in local telemetry: query→result→feedback events | Events recorded deterministically; **off by default**; no network egress (footprint test) |
 | R-TEL-2 | Real-gold capture pipeline | Telemetry → a labeled gold record schema; a fixture run produces a valid gold row consumable by the eval harness |
 | R-TEL-3 | Privacy/footprint honesty | Telemetry payload documented; no content leaves the box; agent-supplied relevance labels are the only exogenous signal |
-| R-SEC-1 | pyo3 bumped off the HIGH/moderate advisories **before** EXP-OBS Py surface lands | `Cargo.toml` + `Cargo.lock` on a patched pyo3; byte-stability + eu7 recall gates re-clear GREEN; build+import smoke on the bumped binding passes; `GHSA-36hh-v3qg-5jq4` + `GHSA-chgr-c6px-7xpp` no longer reported |
+| R-SEC-1 | pyo3 bumped to **0.29.0** off the HIGH/moderate advisories **before** EXP-OBS Py surface lands; binding migrated for the 0.25→0.29 renames with **`#[pymodule(gil_used = true)]`** preserving GIL semantics (free-threading explicitly out of scope) | `Cargo.toml` + `Cargo.lock` on pyo3 **0.29.0**; the four renames applied in `fathomdb-py/src/lib.rs` (`with_gil`→`attach`, `allow_threads`→`detach`, `downcast`→`cast`, `PyObject`→`Py<PyAny>`); `#[pymodule(gil_used = true)]` set; byte-stability + eu7 recall gates re-clear GREEN; build+import smoke passes; `GHSA-36hh-v3qg-5jq4` + `GHSA-chgr-c6px-7xpp` no longer reported |
 
 New ACs: candidates at Slice 0 (explain-contract) and the telemetry/real-gold gate.
 
@@ -72,7 +90,7 @@ New ACs: candidates at Slice 0 (explain-contract) and the telemetry/real-gold ga
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
 | **0** | Setup + ADR — `Explanation` payload schema ADR (the §6 `initial-arch` spec); telemetry-event + real-gold schema ADR; privacy/footprint contract | design-adr | — |
-| **1** *(reserved-gap)* | **pyo3 security bump (OOB drop-in)** — bump off `GHSA-36hh-v3qg-5jq4` / `GHSA-chgr-c6px-7xpp`; re-clear byte-stability + eu7 recall; build+import smoke. **Lands before Slice 5.** | implementation (deps) | 0 |
+| **1** *(reserved-gap)* | **pyo3 security bump (OOB drop-in)** — `0.24.1 → 0.29.0` off `GHSA-36hh-v3qg-5jq4` / `GHSA-chgr-c6px-7xpp`; single-file `Bound`-API rename wave in `fathomdb-py/src/lib.rs` (`with_gil`→`attach`, `allow_threads`→`detach`, `downcast`→`cast`, `PyObject`→`Py<PyAny>`) + `#[pymodule(gil_used = true)]` to preserve GIL semantics; re-clear byte-stability + eu7 recall; build+import smoke. **Lands before Slice 5.** | implementation (deps) | 0 |
 | **5** | **EXP-OBS KEYSTONE** — per-hit arm-provenance + score-breakdown + query trace behind `explain=True`; generalize the graph-`EXPLAIN`/`TraceReport` seam | implementation | 0, 1 |
 | **10** | **EXP-OBS SDK + zero-cost proof** — Py+TS `explain` parity harness; hot-path no-cost bench (RED if regression) | implementation | 5 |
 | **15** | **Telemetry capture** — opt-in local query→result→feedback event channel (deterministic, no egress) | implementation | 0 |
@@ -122,6 +140,8 @@ Slice 40), HITL-decided.
 
 **Slice 0 — `Explanation` + telemetry/real-gold schema ADRs.** Ratify the §6 `initial-arch` explain
 payload shape and the gold-record schema with the M-work owner before code; stand up
-`runs/STATUS-0.8.8.md`. Then land **reserved-gap Slice 1 (pyo3 bump)** — re-clearing byte-stability +
-eu7 recall — **before** fanning out Slices 5 ∥ 15 (so the new Py `explain` surface builds on the patched
-binding).
+`runs/STATUS-0.8.8.md`; **freeze the §1 pyo3 migration approach** (target 0.29.0, single-file rename wave,
+`#[pymodule(gil_used = true)]`, free-threading out of scope) as part of the scope-freeze. Then land
+**reserved-gap Slice 1 (pyo3 bump)** — applying the four renames + `gil_used = true`, re-clearing
+byte-stability + eu7 recall — **before** fanning out Slices 5 ∥ 15 (so the new Py `explain` surface
+builds on the patched binding).
