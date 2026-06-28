@@ -201,6 +201,53 @@
       },
       "sha256": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
       "acquired_at": "2026-06-16"
+    },
+    "beir_touche2020": {
+      "script": "acquire_beir_touche2020.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "corpus_id": "BeIR/webis-touche2020",
+        "qrels_id": "BeIR/webis-touche2020-qrels",
+        "revision": null
+      },
+      "license": "CC-BY-4.0",
+      "license_notes": "CC BY 4.0 (Zenodo 6862281, Bondarenko et al. 2020).  HF BeIR wrapper label (cc-by-sa-4.0) is a blanket tag \u2014 not authoritative.  Research/eval + redistribution: permitted with attribution.",
+      "distribution": "cache",
+      "output_dir": "data/corpus-data/raw/beir/touche2020/",
+      "corpus_doc_count": 382545,
+      "query_count": 49,
+      "qrel_count": 2214,
+      "corpus_sha256": "3b6353332d057b0f37466a98838ae723610b748c47b0ae9ad8546cd8c0a6aa9b",
+      "queries_sha256": "be4d52ee9a025d16985f1ba076e4121084f8579187c4ab4ba140853f6758d27d",
+      "qrels_sha256": "831959d5c028585119d3f522409a9a08aff4b09949578e72749da43eefbe864e",
+      "acquired_at": "2026-06-28"
+    },
+    "beir_fiqa": {
+      "script": "acquire_beir_fiqa.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "corpus_id": "BeIR/fiqa",
+        "qrels_id": "BeIR/fiqa-qrels",
+        "revision": null
+      },
+      "license": "LicenseRef-FiQA-NonCommercial",
+      "license_notes": "Non-commercial research only (FiQA 2018 challenge website).  Source data: StackExchange posts (CC BY-SA 3.0) and Reddit/StockTwits financial comments.  HF BeIR wrapper label (cc-by-sa-4.0) is a blanket tag \u2014 not authoritative.  EVAL-ONLY, gitignored.",
+      "distribution": "cache",
+      "output_dir": "data/corpus-data/raw/beir/fiqa/",
+      "corpus_doc_count": 57638,
+      "query_count": 6648,
+      "qrel_counts": {
+        "train": 14166,
+        "dev": 0,
+        "test": 1706
+      },
+      "corpus_sha256": "52383dd63c4638766613a2f70ab4c10cc8e7201eaa6364a7e26c1eb603634664",
+      "queries_sha256": "8d813eb7b7c24283a887a9470b23963f0e9cfc36b720b2ed2263a7cb55fd3b75",
+      "qrels_sha256": {
+        "train": "e5825d6e657874ab2e4e622784deab3351a24c4f853d0dcaf6e1730f4e1cee00",
+        "test": "4b2d189aaba14f4892c5b4966b374e06705b1b9f7c52684ac44c114f013b613f"
+      },
+      "acquired_at": "2026-06-28"
     }
   }
 }
