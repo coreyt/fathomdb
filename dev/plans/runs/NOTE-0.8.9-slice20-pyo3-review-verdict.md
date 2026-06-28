@@ -39,3 +39,11 @@ Every path producing an importable extension routes through maturin (sources the
 2. **Functional** — CI `rust-macos`/`rust-windows` flip green (orchestrator's watch). Once green → HITL sign-off → merge → on-main re-verify closes 0.8.9.
 
 *Reviews commissioned + verified by the Program Steward, 2026-06-28 (bisect + root-cause subagents, git-confirmed).*
+
+## UPDATE 2026-06-28 — MERGED; final scope + honest-green verified
+
+PR #104 **MERGED** (origin/main `1cb1c7ac`); `rust-macos` + `rust-windows` **GREEN** (first-ever Windows green). **The merged fix grew beyond the one-line drop this note was first scoped to:** dropping `extension-module` made the Windows suite finally LINK, exposing **5 cross-platform test gaps** previously masked because the suite never compiled. Slice 20 closed them: two principled `#[cfg(unix)]`/`#![cfg(unix)]` gates (`durability_soak` SIGKILL/re-exec power-cut harness; `migrations` bash-linter exec — the core accretion-guard test stays ungated), benign portability fixes (`reader_pool` bounded worker wait, `lifecycle_observability` relative-path artifact check, `qd_envelope_deserialize`/`stub_harness.py` UTF-8 stdio), and a contract-preserving macOS de-flake (one change corrects a test back toward its documented `drain` contract).
+
+**Steward adversarial honesty-review (commissioned + git-spot-checked):** HONEST and coverage-preserving, high confidence — no core-engine product behavior gated off Windows; ci.yml has no `continue-on-error`/allow-failure (`--no-fail-fast` enumerates failures but still fails the job). **Caveat:** `compatibility.rs` relaxes only the `holder_pid` diagnostic on Windows (LockFileEx blocks PID readback); the load-bearing lock-rejection/close-release semantics stay fully asserted; unverified on a real Windows host.
+
+**Both PR #104 gates satisfied** (functional green + safety/honest). **0.8.9 fully complete.**
