@@ -62,6 +62,11 @@ _INSTRUMENTATION = frozenset(
         "set_profiling",
         "set_slow_threshold_ms",
         "attach_logging_subscriber",
+        # 0.8.8 Slice 15 (OPP-9) — opt-in telemetry capture is observability,
+        # NOT an application command (mirrors set_profiling/attach_subscriber).
+        "enable_telemetry",
+        "last_telemetry_query_id",
+        "record_feedback",
     }
 )
 
@@ -189,6 +194,9 @@ def test_engine_exposes_instrumentation_methods() -> None:
         "set_profiling",
         "set_slow_threshold_ms",
         "attach_logging_subscriber",
+        "enable_telemetry",
+        "last_telemetry_query_id",
+        "record_feedback",
     ):
         assert hasattr(Engine, instr), f"Engine must expose {instr}"
 

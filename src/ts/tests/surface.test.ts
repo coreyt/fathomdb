@@ -63,6 +63,11 @@ const INSTRUMENTATION = [
   "setProfiling",
   "setSlowThresholdMs",
   "attachSubscriber",
+  // 0.8.8 Slice 15 (OPP-9) — opt-in telemetry capture is observability, NOT an
+  // application command (mirrors setProfiling/attachSubscriber).
+  "enableTelemetry",
+  "lastTelemetryQueryId",
+  "recordFeedback",
 ] as const;
 
 // Other public `Engine` members that are NOT application commands: the

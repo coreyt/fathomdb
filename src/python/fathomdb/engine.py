@@ -39,6 +39,26 @@ _KWARG_FIELDS = {
 }
 
 
+def _validate_id_list(name: str, value: object) -> list[int]:
+    """0.8.8 Slice 15 — validate a relevance-label id list before the native
+    call (mirrors the TS ``validateIdArray`` guard for cross-SDK parity). Ids
+    are non-negative ints (the stable ``SearchHit.id`` identity carrier);
+    ``bool`` is rejected explicitly (it is an int subclass that PyO3 would
+    otherwise coerce silently)."""
+    if not isinstance(value, list):
+        raise TypeError(
+            f"{name} must be a list of non-negative ints, got {type(value).__name__!r}"
+        )
+    for item in value:
+        if not isinstance(item, int) or isinstance(item, bool):
+            raise TypeError(
+                f"{name} must contain only non-negative ints, got {type(item).__name__!r}"
+            )
+        if item < 0:
+            raise ValueError(f"{name} must contain only non-negative ints, got {item!r}")
+    return value
+
+
 class Engine:
     """Python handle that wraps the native PyO3 engine."""
 
@@ -230,6 +250,48 @@ class Engine:
                 for hit in result.results
             ],
         )
+
+    def enable_telemetry(self, sink_path: str) -> None:
+        """0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a
+        JSONL ``sink_path``. Off by default; local file only (no egress). Once
+        enabled, each ``search`` records a query→result event keyed on the
+        stable id, and ``record_feedback`` appends correlated agent labels.
+        The query text and ``source_id`` are NEVER written (privacy, ADR §C)."""
+        if not isinstance(sink_path, str):
+            raise TypeError(
+                f"sink_path must be a str, got {type(sink_path).__name__!r}"
+            )
+        self._native.enable_telemetry(sink_path)
+
+    def last_telemetry_query_id(self) -> str | None:
+        """0.8.8 Slice 15 — the most-recent captured ``query_id`` (for
+        ``record_feedback``), or ``None`` when telemetry is off / no query has
+        been captured yet."""
+        return self._native.last_telemetry_query_id()
+
+    def record_feedback(
+        self,
+        query_id: str,
+        relevant_ids: list[int],
+        irrelevant_ids: list[int],
+        label_source: str,
+    ) -> None:
+        """0.8.8 Slice 15 — attach agent relevance labels for a previously
+        captured ``query_id``. ``relevant_ids`` / ``irrelevant_ids`` are the
+        stable identity carrier (== ``SearchHit.id``); ``label_source`` is the
+        caller-declared label origin (e.g. ``"agent:hermes"``). Raises when
+        telemetry is off."""
+        if not isinstance(query_id, str):
+            raise TypeError(
+                f"query_id must be a str, got {type(query_id).__name__!r}"
+            )
+        if not isinstance(label_source, str):
+            raise TypeError(
+                f"label_source must be a str, got {type(label_source).__name__!r}"
+            )
+        relevant = _validate_id_list("relevant_ids", relevant_ids)
+        irrelevant = _validate_id_list("irrelevant_ids", irrelevant_ids)
+        self._native.record_feedback(query_id, relevant, irrelevant, label_source)
 
     def close(self) -> None:
         self._native.close()

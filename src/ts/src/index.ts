@@ -335,6 +335,29 @@ function interceptSync<T>(fn: () => T): T {
   }
 }
 
+/**
+ * 0.8.8 Slice 15 — validate a relevance-label id array before the native call
+ * (mirrors the Python `_validate_id_list` guard for cross-SDK parity). Ids are
+ * non-negative integers (the stable `SearchHit.id` identity carrier).
+ */
+function validateIdArray(name: string, value: number[]): void {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${name} must be an array of non-negative integers`);
+  }
+  for (const item of value) {
+    if (!Number.isInteger(item)) {
+      throw new RangeError(
+        `${name} must contain only integers, got ${typeof item}`,
+      );
+    }
+    if (item < 0) {
+      throw new RangeError(
+        `${name} must contain only non-negative integers, got ${item}`,
+      );
+    }
+  }
+}
+
 export class Engine {
   readonly #native: NativeEngine;
   readonly config: EngineConfig;
@@ -490,6 +513,47 @@ export class Engine {
   async embed(text: string): Promise<number[]> {
     validateFfiString(text);
     return intercept(() => this.#native.embed(text));
+  }
+
+  /**
+   * 0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a JSONL
+   * `sinkPath`. Off by default; local file only (no egress). Once enabled, each
+   * `search` records a query→result event keyed on the stable id, and
+   * `recordFeedback` appends correlated agent labels. The query text and
+   * `sourceId` are NEVER written (privacy, ADR §C).
+   */
+  async enableTelemetry(sinkPath: string): Promise<void> {
+    validateFfiString(sinkPath);
+    await intercept(() => this.#native.enableTelemetry(sinkPath));
+  }
+
+  /**
+   * 0.8.8 Slice 15 — the most-recent captured `queryId` (for `recordFeedback`),
+   * or `null` when telemetry is off / no query has been captured yet.
+   */
+  lastTelemetryQueryId(): string | null {
+    return interceptSync(() => this.#native.lastTelemetryQueryId());
+  }
+
+  /**
+   * 0.8.8 Slice 15 — attach agent relevance labels for a previously captured
+   * `queryId`. `relevantIds` / `irrelevantIds` are the stable identity carrier
+   * (== `SearchHit.id`); `labelSource` is the caller-declared label origin
+   * (e.g. `"agent:hermes"`). Rejects when telemetry is off.
+   */
+  async recordFeedback(
+    queryId: string,
+    relevantIds: number[],
+    irrelevantIds: number[],
+    labelSource: string,
+  ): Promise<void> {
+    validateFfiString(queryId);
+    validateFfiString(labelSource);
+    validateIdArray("relevantIds", relevantIds);
+    validateIdArray("irrelevantIds", irrelevantIds);
+    await intercept(() =>
+      this.#native.recordFeedback(queryId, relevantIds, irrelevantIds, labelSource),
+    );
   }
 
   counters(): CounterSnapshot {
