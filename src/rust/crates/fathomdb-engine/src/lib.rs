@@ -3199,6 +3199,20 @@ impl Engine {
         let sink = guard
             .as_ref()
             .ok_or(EngineError::InvalidArgument { msg: "telemetry is not enabled".to_string() })?;
+        // codex §9 [P1] (privacy): `query_id` is an exogenous caller string. Only a
+        // deterministic id that `capture_telemetry` has ALREADY emitted may be
+        // persisted — otherwise a caller could smuggle query text / a `source_id`
+        // into the sink under the `query_id` key. Require the canonical
+        // `q{nonce}-{seq}` form with `nonce == sink.nonce` AND `seq < sink.seq`
+        // (a seq the capture path has issued). Reject (writing nothing) otherwise.
+        let is_issued_id = query_id
+            .strip_prefix('q')
+            .and_then(|rest| rest.split_once('-'))
+            .and_then(|(nonce, seq)| Some((nonce.parse::<u64>().ok()?, seq.parse::<u64>().ok()?)))
+            .is_some_and(|(nonce, seq)| nonce == sink.nonce && seq < sink.seq);
+        if !is_issued_id {
+            return Err(EngineError::InvalidArgument { msg: "unknown query_id".to_string() });
+        }
         let record = serde_json::json!({
             "type": "feedback",
             "schema_version": 1,

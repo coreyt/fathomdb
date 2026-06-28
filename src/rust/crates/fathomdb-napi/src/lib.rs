@@ -130,6 +130,24 @@ fn validate_ffi_string_napi(value: &str) -> Result<()> {
         .map_err(|msg| typed_error(CODE_WRITE_VALIDATION, msg, JsonValue::Null))
 }
 
+/// codex §9 [P2] — convert a napi `i64` id list to the engine's `u64`, rejecting
+/// any negative id (which `as u64` would silently wrap). Mirrors the TS/Python
+/// wrapper `validateIdArray`/`_validate_id_list` guards so a raw-napi caller
+/// cannot smuggle a wrapped id past the boundary.
+fn checked_ids_napi(name: &str, ids: &[i64]) -> Result<Vec<u64>> {
+    ids.iter()
+        .map(|&x| {
+            u64::try_from(x).map_err(|_| {
+                typed_error(
+                    CODE_WRITE_VALIDATION,
+                    format!("{name} must contain only non-negative integers, got {x}"),
+                    JsonValue::Null,
+                )
+            })
+        })
+        .collect()
+}
+
 // ===== Error mapping ==================================================
 
 /// Translate every `EngineError` variant to its typed JS counterpart.
@@ -878,9 +896,13 @@ impl Engine {
     ) -> Result<()> {
         validate_ffi_string_napi(&query_id)?;
         validate_ffi_string_napi(&label_source)?;
+        // codex §9 [P2] (parity): ids are non-negative `u64` (the stable
+        // `SearchHit.id` carrier). A direct napi caller bypassing the TS wrapper
+        // could pass a negative `i64` which `as u64` would wrap to a huge value;
+        // reject it here to match the TS/Python wrapper guards.
+        let rel = checked_ids_napi("relevantIds", &relevant_ids)?;
+        let irr = checked_ids_napi("irrelevantIds", &irrelevant_ids)?;
         let engine = Arc::clone(&self.inner);
-        let rel: Vec<u64> = relevant_ids.iter().map(|&x| x as u64).collect();
-        let irr: Vec<u64> = irrelevant_ids.iter().map(|&x| x as u64).collect();
         call_engine(move || engine.record_feedback(&query_id, &rel, &irr, &label_source)).await
     }
 

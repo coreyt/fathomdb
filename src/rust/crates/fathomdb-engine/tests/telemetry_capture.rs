@@ -111,3 +111,51 @@ fn telemetry_captures_event_and_feedback_deterministically() {
     // `source_id` is never a key in the sink (leak vector).
     assert!(!body.contains("source_id"), "source_id must NOT be captured");
 }
+
+#[test]
+fn record_feedback_rejects_unissued_query_id_and_writes_nothing() {
+    // codex §9 [P1] (privacy): `record_feedback` must only persist a `query_id`
+    // the capture path has ALREADY emitted. A caller-smuggled string (e.g. query
+    // text, a `source_id`, or an out-of-range deterministic id) is rejected and
+    // NOTHING is appended to the sink — closing the leak vector where private text
+    // could be persisted under the `query_id` key.
+    let (dir, opened) = opened("tel_bogus");
+    seed(&opened.engine);
+    let sink = dir.path().join("telemetry.jsonl");
+    opened.engine.enable_telemetry(sink.to_str().unwrap()).expect("enable");
+
+    // One real query → emits "q0-0" (sink.seq advances to 1). One event line.
+    let r0 = opened.engine.search("hybrid").expect("search");
+    assert!(!r0.results.is_empty());
+    assert_eq!(opened.engine.last_telemetry_query_id().as_deref(), Some("q0-0"));
+
+    // Bogus query_ids must all error: query text, an out-of-range seq, a
+    // wrong-nonce id, and a non-parsing string.
+    for bogus in ["hybrid", "q0-99", "q1-0", "not-an-id", ""] {
+        assert!(
+            opened.engine.record_feedback(bogus, &[r0.results[0].id], &[], "agent:test").is_err(),
+            "record_feedback must reject unissued query_id {bogus:?}"
+        );
+    }
+
+    // The previously-issued id still works (regression guard).
+    opened
+        .engine
+        .record_feedback("q0-0", &[r0.results[0].id], &[], "agent:test")
+        .expect("issued id accepted");
+
+    opened.engine.close().unwrap();
+
+    let body = std::fs::read_to_string(&sink).expect("sink readable");
+    let lines: Vec<&str> = body.lines().collect();
+    // Exactly 1 event + 1 feedback (the issued-id call); NONE of the bogus calls wrote.
+    assert_eq!(lines.len(), 2, "bogus feedback must not append: {body}");
+    let ev: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(ev["type"], "event");
+    let fb: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(fb["type"], "feedback");
+    assert_eq!(fb["query_id"], "q0-0");
+    // No bogus string leaked into the sink.
+    assert!(!body.contains("hybrid"), "rejected query text must NOT appear");
+    assert!(!body.contains("not-an-id"), "rejected string must NOT appear");
+}
