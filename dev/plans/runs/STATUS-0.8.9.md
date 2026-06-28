@@ -44,7 +44,7 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 | **5** | Perf-gate honesty (R-PG-1/2) | **CLOSED** | `perf-gates.md` per-AC map; `recall_gate_predicate.rs` catch test (3/3 green, RED-confirmed) |
 | **10** | AC-037 catch + AC-050c (R-037-2/R-050c) | **CLOSED** | shared `lib-egress-allowlist.sh`; `check-netns-deny-egress-catch.sh` (offline catch green + RED-confirmed, live netns CI-only); R-050c cause documented |
 | **15** | Dependency hygiene (R-DEP) | **CLOSED** | npm overrides → markdown-it 14.2.0/js-yaml 4.2.0, `npm audit`=0; dependabot.yml npm `/` added; pip idna/torch = orphaned (dismiss pending HITL) |
-| **40** | Verify + release readiness | in progress | cargo test, mkdocs, codex §9, HITL |
+| **40** | Verify + release readiness | **CLOSED (verification) — awaiting HITL push/merge** | re-verified on the rebased `089-orchestrator` (§2a); codex §9 re-run over the new R-BOOT/R-050c commits = clean PASS; X1 N/A, X2/X3 done. PR + merge gated on HITL (§7) |
 
 ## 2. Cross-cutting DoD (X1/X2/X3)
 
@@ -69,6 +69,27 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 - **codex §9 review (`--uncommitted`)** → **clean PASS, 0 findings**: "No discrete
   correctness issues … The added security catch and recall predicate test both pass."
 
+### 2a-bis. Re-verification on the rebased `089-orchestrator` (2026-06-28, canonical branch)
+
+The CLEAN canonical branch (`089-orchestrator`, off origin/main, no 0.8.8 contamination) was
+**rebased onto origin/main** (`d1f2181f`): now **0 behind / 4 ahead**; `git range-diff` confirms
+all 4 commits content-identical (`=`) post-rebase; 14-file diff = exactly the 0.8.9 scope. All
+checks re-run with **real exit codes** (`PIPESTATUS`, not a trailing echo):
+
+| Check | Result | Exit |
+|---|---|---|
+| `cargo test -p fathomdb-engine --test recall_gate_predicate` | 3/3 (below/exact/within-floor) | 0 |
+| `cargo test -p fathomdb-engine --test perf_gates_devloop` | 3/3 (ac_013/013b/019) | 0 |
+| `check-netns-deny-egress-catch.sh` (offline) | 2 off-loopback egress flagged | 0 |
+| `npm audit` | 0 vulnerabilities | 0 |
+| `mkdocs build --strict` | built clean (X2) | 0 |
+| **codex §9 (`--base origin/main`, covers the new R-BOOT/R-050c commits)** | **clean PASS, 0 findings** | 0 |
+
+codex §9 verbatim: *"I did not identify any discrete, introduced correctness issues in the diff.
+The added security catch script, recall predicate test, npm overrides, and CI checkout changes
+appear consistent with their intended behavior."* This **supersedes** the earlier `--uncommitted`
+pass (which predated commits `3d27f23f`/`a40c7cd7`, now rebased to `75c5939a`/`16bdd1ee`).
+
 ## 3. HITL sign-off ledger (commits/pushes/outward actions are HITL-gated)
 
 - [x] Working-tree changes reviewed (codex §9) — **clean PASS, 0 findings**
@@ -77,18 +98,28 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
       commit `d5a68d17`, **PR #93** (10 files; unrelated working-tree changes excluded).
 - [x] Dismiss orphaned idna/torch alerts — **HITL: leave open** (documented as orphaned).
 - [x] Version-bump / tag — **HITL: no version bump** (zero library-surface change).
-- [ ] Merge PR #93 — HITL action (blocked on pre-existing CI red; see §5)
+- [ ] Merge PR #93 — HITL action. **MERGE-READY** (rebased onto `6d92aebd`). Both remaining CI
+      reds are external/non-regressions: markdown = DEFER→0.8.16 (F-7); pyo3 macOS/Windows =
+      unowned-external (steward-tracked). **Steward recommends HITL merge now** (heals main's
+      security/bootstrap red); admin-merge accepting the two documented external reds (§5 + §7).
 
-## 5. CI status on PR #93 — pre-existing red on main, NOT caused by 0.8.9
+## 5. CI status on PR #93 — only EXTERNAL reds remain; 0.8.9 turned `security` GREEN
 
-Verified from git (main's last 3 runs are red on the SAME 4 jobs, on docs-only commits):
+**Updated 2026-06-28 from the latest PR #93 run** (`gh pr checks 93`, run `28298992713`). The
+bootstrap un-mask (Slice 1, `3d27f23f`) + R-050c tag-fetch (`a40c7cd7`) **fixed the `security`
+job** — it was red at bootstrap on the original board; it now **PASSES** (8m20s, full
+`agent-security.sh` battery incl. the AC-037 live-netns catch). **Three** jobs remain red, all
+external/out-of-scope:
 
-| Job | Fails at step | Cause | Owner |
-|---|---|---|---|
-| `verify` | **Bootstrap dev tooling** | `bootstrap.sh` Python-tooling `.venv` install dies (~4 min → exit 1) — infra | not 0.8.9 |
-| `security` | **Bootstrap dev tooling** | same bootstrap failure — aborts **before** `agent-security.sh`, so my AC-037 catch + recall test never execute in CI | not 0.8.9 |
-| `rust-macos` | `cargo test --workspace` | pyo3 link error (`_PyDict_GetItemWithError`, `_PyExc_*` undefined) | **0.8.8** (pyo3 0.24→0.29) |
-| `rust-windows` | `cargo test --workspace` | same pyo3 link error | **0.8.8** |
+| Job | Fails at step | Cause | Owner | Latest |
+|---|---|---|---|---|
+| `security` | — | bootstrap un-mask + R-050c fixed it; AC-037 catch ran LIVE | **0.8.9 (fixed)** | **PASS** |
+| `verify` | **lint** | repo-wide markdownlint debt (7983 errors / 304 prettier-fail) — masked until bootstrap fixed; **unsatisfiable repo-wide** | not 0.8.9 → **RESOLVED: DEFER→0.8.16 (F-7)** | fail (documented debt, non-blocking) |
+| `rust-macos` | `cargo test --workspace` | pyo3 0.29 cross-platform test-link (`_PyDict_GetItemWithError`, `_PyExc_*` undefined) | **UNOWNED-EXTERNAL (steward-tracked)** — 0.8.8 did NOT fix it; steward escalating for an owner. Not a 0.8.9 regression. | fail |
+| `rust-windows` | `cargo test --workspace` | same pyo3 0.29 test-link | **UNOWNED-EXTERNAL (steward-tracked)** — same. Not 0.8.9. | fail |
+
+All other jobs PASS: `Analyze (actions/javascript/python/rust)`, `CodeQL`, `default-embedder-tests`,
+`docs`, all five `wheel-size-gate` matrix legs.
 
 **0.8.9 adds zero failures.** Every CI job that reaches the 0.8.9 changes is green:
 `Analyze (rust)` (compiled `recall_gate_predicate.rs`), `docs`, `default-embedder-tests`,
@@ -111,17 +142,57 @@ Slice 1 fixed bootstrap → `security`/`verify` now run **past** bootstrap. What
   across 300 files** (CHANGELOG, every `dev/adr/*`, every `dev/design/*`, **incl. 0.8.9's own
   `perf-gates.md`**). Rules: MD049 (emphasis: expects `_`, repo uses `*`) + MD060 (table-column-style).
   The gate is **unsatisfiable repo-wide** and was masked by the bootstrap failure. `agent-lint.sh:45`
-  → `agent-lint-md.sh` is the gate. **OUT OF 0.8.9 SCOPE — escalated to steward (decision needed):**
-  - A) relax `.markdownlint.jsonc` (MD049→asterisk, MD060→repo style) — 1-file, makes the gate honest
-       + satisfiable, matches existing convention;
-  - B) auto-format all 300 files (prettier `--write` + markdownlint `--fix`) — massive diff, conflict risk;
-  - C) defer to a separate markdown-cleanup effort; 0.8.9 completes on its own gates.
+  → `agent-lint-md.sh` is the gate. **R-LINT — RESOLVED: DEFER (HITL 2026-06-28) → 0.8.16, master F-7.**
+  PR #94 (`b3bf6f52`) landed the decision: the "1-file config relax" (option A) was **verified
+  insufficient** (leaves ~2860 lint errors + the whole prettier wall — measured 7983 markdownlint
+  errors + 304 prettier-failing files on main). Disposition = **DEFER + DOCUMENT**: a one-shot
+  `prettier --write` + `markdownlint --fix` bulk cleanup is sequenced to **0.8.16** (after release work
+  lands, to avoid colliding with live orchestrators). **The `verify` lint-step red is documented known
+  debt, NOT a 0.8.9 regression — it does NOT gate 0.8.9's merge.** No markdown lint/format fixes enter
+  0.8.9 scope.
 - **`rust-macos`/`rust-windows` — pyo3 link error** at `cargo test --workspace` — still **0.8.8** (the
   0.24→0.29 bump did not resolve the macOS/Windows extension-link); not 0.8.9.
 
 **0.8.9's own gates are green where reachable:** AC-037 (+catch live), AC-036/038/050a, `Analyze (rust)`
-(compiled `recall_gate_predicate`), `docs`, `default-embedder-tests`, all `wheel-size-gate`. The PR is
-blocked from full-green by the repo-wide markdown gate (decision pending) + 0.8.8 macOS/Windows link.
+(compiled `recall_gate_predicate`), `docs`, `default-embedder-tests`, all `wheel-size-gate`. The repo-wide
+markdown gate is now **resolved as documented-deferred debt (F-7 → 0.8.16, non-blocking)**; the only
+remaining external red is the 0.8.8 macOS/Windows pyo3 link.
+
+## 7. Landing path — PR #93 is NOT contaminated (verify-from-git, 2026-06-28)
+
+The orchestrator handoff said to **supersede** PR #93 because its branch was "contaminated with
+duplicate 0.8.8 commits." **Git does not bear this out.** `git fetch origin 0.8.9-ci-integrity-micro`
++ `git log origin/main..FETCH_HEAD` shows PR #93's pushed branch is **content-identical** to
+`089-orchestrator` (pre-rebase): the **same 4 commits** (`58e12802`/`2a770788`/`3d27f23f`/`a40c7cd7`),
+1-behind/4-ahead, and **zero 0.8.8/EXP-OBS/explain/telemetry commits** in its unique history. The
+contamination (per the `shared-checkout-branch-can-be-stale` memory) was in the *local shared
+checkout's working state*, not the *pushed* PR-#93 branch.
+
+**Consequence:** opening a new PR + closing #93 would be unjustified churn. Two clean options for HITL:
+
+- **(A — recommended) Update PR #93 in place.** Force-push the rebased `089-orchestrator`
+  (0-behind + the closing-docs commit) to `0.8.9-ci-integrity-micro`. Keeps PR #93, its number,
+  and its discussion; the only change is a clean rebase onto current origin/main + the Slice-40
+  closing docs. No new PR, no close.
+- **(B) New branch + new PR + close #93.** The handoff's original plan; now unnecessary since the
+  contamination premise is disproven. More churn, no benefit.
+
+Either way the **closing-docs commit** (this board + `dev/DOC-INDEX.md` 0.8.9 entry; 2 files,
+currently uncommitted) needs HITL authorization to commit, and the **push** itself is HITL-gated.
+
+**Merge readiness (updated 2026-06-28 — rebased onto `6d92aebd`, MERGE-READY):** PR #93 is rebased
+onto current origin/main (`6d92aebd` = 0.8.8 telemetry landed + F-7 + F-8); 0-behind / 5-ahead. 0.8.9's
+own gates are green (incl. the now-passing `security` job). The two remaining CI reds are both **external,
+not 0.8.9 regressions**:
+- `verify`/lint = repo-wide markdown debt — **RESOLVED as documented-deferred (F-7 → 0.8.16), non-blocking.**
+- `rust-macos`/`rust-windows` = pyo3 0.29 cross-platform test-link — **UNOWNED-EXTERNAL, steward-tracked**
+  (0.8.8 did not fix it; steward escalating for an owner).
+
+0.8.9's release verdict is **COMPLETE on its own gates** (perf-gate honesty, AC-037 live-proven, dependency
+hygiene). **The steward recommends HITL merge now** — merging heals main's own `security`/bootstrap red
+(0.8.9 *is* the fix for that) and neither external red will clear soon. Merge = admin-merge accepting the
+two documented external reds, **pending HITL sign-off**. (Context unchanged: no version bump; idna/torch
+alerts left open.)
 
 ## 4. $ ledger
 
