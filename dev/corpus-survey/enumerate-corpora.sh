@@ -140,7 +140,11 @@ check "IR gold (eu8 relevance)"   "eval/ir_gold/all.gold.json"
 check "LOCOMO memory gold"        "eval/0.8.3-locomo-memory-gold.json"
 check "memex-ELPS golden"         "external/memex-elps/memex_elps_golden.jsonl"
 check "LongMemEval (xiaowu0162/longmemeval-cleaned)" ""
+check "BEIR Touché-2020 (exploratory)" "raw/beir/touche2020/corpus.jsonl"
+check "BEIR FiQA-2018 (dense wins)"    "raw/beir/fiqa/corpus.jsonl"
+check "BEIR NFCorpus (BM25 wins)"      "raw/beir/nfcorpus/corpus.jsonl"
+check "BEIR ArguAna (anti-example)"    "raw/beir/arguana/corpus.jsonl"
 
 echo
-echo "Done. For candidate-NEW corpora (BEIR, MS MARCO, NQ, HotpotQA, 2Wiki, etc.)"
+echo "Done. For candidate-NEW corpora (MS MARCO, NQ, HotpotQA, 2Wiki, etc.)"
 echo "see dev/corpus-survey/corpus-map.md and corpus-search-ledger.md."
