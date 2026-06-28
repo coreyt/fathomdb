@@ -98,3 +98,7 @@ dev/plans/runs/0.8.4-scale-d2-index.json
 # 0.8.4 scale/gating runtime caches (rebuildable: answer ckpt + built D2 index)
 dev/plans/runs/0.8.4-*.ckpt.json
 dev/plans/runs/0.8.4-*-d2-index.json
+
+# 0.8.9.1 baseline raw spills (regenerable; large)
+dev/plans/runs/0.8.9.1-mdlint-*.txt
+dev/plans/runs/0.8.9.1-prettier-*.txt
