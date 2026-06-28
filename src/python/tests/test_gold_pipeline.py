@@ -195,3 +195,84 @@ def test_build_gold_records_relevant_not_in_candidates() -> None:
     # Of labeled-returned candidates [1] (2 and 3 are unlabeled/absent), all relevant.
     assert metrics["precision"] == 1.0
     assert metrics["n_relevant_labels"] == 2
+
+
+def test_build_gold_records_malformed_typed_rows_skipped(tmp_path: Path) -> None:
+    """codex §9 [P2-a]: a scalar/null where a list is expected must not abort the
+    whole capture — the bad rows are coerced to empty / skipped and later valid
+    gold still builds."""
+    sink = tmp_path / "typed.jsonl"
+    sink.write_text(
+        "\n".join(
+            [
+                # Bad: result_ids is a scalar (would TypeError if iterated raw).
+                # It still has feedback, so it pairs but yields empty candidate_ids.
+                '{"type":"event","schema_version":1,"query_id":"q-bad-event",'
+                '"query_chars":2,"result_ids":123,"arm_of":{}}',
+                # Bad: relevant_ids is null (would TypeError if iterated raw).
+                '{"type":"feedback","schema_version":1,"query_id":"q-bad-event",'
+                '"relevant_ids":null,"irrelevant_ids":[5],"label_source":"agent:x"}',
+                # Good record AFTER the bad rows — proves capture did not abort.
+                '{"type":"event","schema_version":1,"query_id":"q-good",'
+                '"query_chars":4,"result_ids":[7,8],"arm_of":{}}',
+                '{"type":"feedback","schema_version":1,"query_id":"q-good",'
+                '"relevant_ids":[7],"irrelevant_ids":[],"label_source":"agent:x"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    records = build_gold_records(str(sink))
+    assert len(records) == 2, "both pairs build; the malformed one must not abort capture"
+    by_id = {r.query_id: r for r in records}
+
+    # The malformed-typed pair: scalar result_ids → empty candidates; null
+    # relevant_ids → empty relevant; irrelevant 5 → label 0.
+    bad = by_id["q-bad-event"]
+    assert bad.candidate_ids == ()
+    assert bad.labels == {5: 0}
+
+    # The later valid pair built normally.
+    good = by_id["q-good"]
+    assert good.candidate_ids == (7, 8)
+    assert good.labels == {7: 1}
+
+
+def test_build_gold_records_repeated_query_id_two_sessions(tmp_path: Path) -> None:
+    """codex §9 [P2-b]: an append-only sink can hold the SAME query_id from two
+    sessions (query_id restarts at q0-0 per enable_telemetry). Occurrence-based
+    correlation pairs each feedback with its own preceding event, yielding TWO
+    distinct GoldRecords — not one collapsed record."""
+    sink = tmp_path / "two_sessions.jsonl"
+    sink.write_text(
+        "\n".join(
+            [
+                # Session 1: q0-0 event then its feedback.
+                '{"type":"event","schema_version":1,"query_id":"q0-0",'
+                '"query_chars":6,"result_ids":[100,101],"arm_of":{}}',
+                '{"type":"feedback","schema_version":1,"query_id":"q0-0",'
+                '"relevant_ids":[100],"irrelevant_ids":[],"label_source":"agent:s1"}',
+                # Session 2: q0-0 AGAIN (new session) then its own feedback.
+                '{"type":"event","schema_version":1,"query_id":"q0-0",'
+                '"query_chars":9,"result_ids":[200,201,202],"arm_of":{}}',
+                '{"type":"feedback","schema_version":1,"query_id":"q0-0",'
+                '"relevant_ids":[202],"irrelevant_ids":[200],"label_source":"agent:s2"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    records = build_gold_records(str(sink))
+    assert len(records) == 2, "two sessions sharing q0-0 must NOT collapse to one record"
+
+    # Emitted in feedback-encounter order: session 1 first, then session 2.
+    s1, s2 = records
+    assert s1.query_id == "q0-0" and s2.query_id == "q0-0"
+    # Session 1 kept its own candidate pool + labels.
+    assert s1.candidate_ids == (100, 101)
+    assert s1.labels == {100: 1}
+    assert s1.query_chars == 6
+    # Session 2 kept its own, distinct, candidate pool + labels.
+    assert s2.candidate_ids == (200, 201, 202)
+    assert s2.labels == {202: 1, 200: 0}
+    assert s2.query_chars == 9

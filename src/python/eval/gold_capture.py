@@ -86,6 +86,21 @@ class GoldRecord:
     provenance: str
 
 
+def _as_int_list(value: object) -> list[int]:
+    """Coerce a sink field expected to be a list-of-ids into ``list[int]``.
+
+    Robustness (codex §9 [P2-a]): a truncated or hand-edited sink can put a
+    scalar/``null`` where a list belongs (e.g. ``"result_ids": 123`` or
+    ``"relevant_ids": null``). Iterating that value directly would raise
+    ``TypeError`` and abort the WHOLE capture. We treat any non-list as empty
+    and drop non-int elements, so one malformed row never prevents later valid
+    gold records from building. ``bool`` is excluded (``True``/``False`` are not
+    ids even though ``bool`` subclasses ``int``)."""
+    if not isinstance(value, list):
+        return []
+    return [int(i) for i in value if isinstance(i, int) and not isinstance(i, bool)]
+
+
 def _iter_jsonl(text: str) -> list[dict]:
     """Parse JSONL text into dict rows, skipping blank/malformed lines.
 
@@ -111,24 +126,36 @@ def build_gold_records(sink_path: str | Path, embedder_id: str = "") -> list[Gol
     """Read a telemetry JSONL sink and emit one :class:`GoldRecord` per *labeled*
     query.
 
-    Correlation (§B.2): ``event`` rows and ``feedback`` rows are joined by
-    ``query_id``. For each query that has BOTH an event and a feedback row we
-    emit a GoldRecord whose
+    Correlation (§B.2; occurrence/order-based, codex §9 [P2-b]). The
+    deterministic ``query_id`` restarts at ``q0-0`` on every
+    ``enable_telemetry`` (each new session), and the sink is append-only, so the
+    SAME ``query_id`` can recur across sessions in one file. A global
+    last-wins dict would collapse those distinct captures (or pair a session-2
+    event with session-1 feedback). Instead we walk rows in FILE ORDER and pair
+    each ``feedback`` row with the most recent preceding **un-paired** ``event``
+    row sharing its ``query_id`` (LIFO per ``query_id``), emitting one
+    GoldRecord per paired ``(event, feedback)``. Records are emitted in
+    feedback-encounter order. Within a single sink the engine writes a session's
+    event(s) before that session's feedback, so this recovers each session's own
+    capture. For each pair the GoldRecord carries:
 
-    - ``candidate_ids`` = the event's ``result_ids`` (the frozen returned pool),
-    - ``query_chars``   = the event's ``query_chars``,
+    - ``candidate_ids`` = the paired event's ``result_ids`` (frozen returned pool),
+    - ``query_chars``   = the paired event's ``query_chars``,
     - ``labels``        = ``{id: 1 for id in relevant_ids}`` unioned with
       ``{id: 0 for id in irrelevant_ids}``. On the (contradictory) overlap of an
       id in both lists, ``irrelevant`` wins (the conservative 0 — a contested
       candidate is not counted as relevant gold).
 
-    Events WITHOUT feedback are dropped (no unlabeled gold): an unlabeled query
-    carries no exogenous relevance signal, so it cannot be scored by the offline
-    frozen-candidate scorer and is not gold. (This is the documented "no record"
-    branch of the spec's "no record / unlabeled record — your call" choice.)
+    Events WITHOUT a feedback row (left un-paired at end of file) are dropped (no
+    unlabeled gold): an unlabeled query carries no exogenous relevance signal, so
+    it cannot be scored by the offline frozen-candidate scorer and is not gold.
+    (This is the documented "no record" branch of the spec's "no record /
+    unlabeled record — your call" choice.)
 
-    Malformed lines, rows missing ``query_id``/``type``, and feedback rows with
-    no matching event are all skipped gracefully.
+    Robustness: malformed lines, rows missing ``query_id``/``type``, rows with a
+    scalar/``null`` where a list belongs (coerced to empty via
+    :func:`_as_int_list`), and feedback rows with no preceding un-paired event
+    are all skipped gracefully — one bad row never aborts the capture.
 
     ``embedder_id`` is caller-supplied (the telemetry sink does not capture it);
     it defaults to the ``""`` sentinel.
@@ -136,54 +163,49 @@ def build_gold_records(sink_path: str | Path, embedder_id: str = "") -> list[Gol
     text = Path(sink_path).read_text(encoding="utf-8")
     rows = _iter_jsonl(text)
 
-    # Index the LAST event per query_id (a re-fired query_id keeps the latest
-    # returned pool) and the LAST feedback per query_id (latest labels win).
-    events: dict[str, dict] = {}
-    feedbacks: dict[str, dict] = {}
-    order: list[str] = []  # preserve first-seen event order for stable output
+    # Per query_id, a LIFO stack of un-paired event rows seen so far (in file
+    # order). A feedback row pops the most recent un-paired event for its id.
+    pending_events: dict[str, list[dict]] = {}
+    records: list[GoldRecord] = []
+
     for row in rows:
         qid = row.get("query_id")
         if not isinstance(qid, str) or not qid:
             continue
         row_type = row.get("type")
         if row_type == "event":
-            if qid not in events:
-                order.append(qid)
-            events[qid] = row
+            pending_events.setdefault(qid, []).append(row)
         elif row_type == "feedback":
-            feedbacks[qid] = row
+            stack = pending_events.get(qid)
+            if not stack:
+                # Feedback with no preceding un-paired event → skipped (orphan).
+                continue
+            ev = stack.pop()  # most recent preceding un-paired event (LIFO)
+            fb = row
 
-    records: list[GoldRecord] = []
-    for qid in order:
-        ev = events[qid]
-        fb = feedbacks.get(qid)
-        if fb is None:
-            # No feedback → no exogenous label → not gold (dropped).
-            continue
+            candidate_ids = tuple(_as_int_list(ev.get("result_ids")))
+            # Build labels: relevant→1 first, then irrelevant→0 (overlap → 0 wins).
+            labels: dict[int, int] = {i: 1 for i in _as_int_list(fb.get("relevant_ids"))}
+            for i in _as_int_list(fb.get("irrelevant_ids")):
+                labels[i] = 0
 
-        candidate_ids = tuple(
-            int(i) for i in ev.get("result_ids", []) if isinstance(i, (int, bool))
-        )
-        relevant = [int(i) for i in fb.get("relevant_ids", []) if isinstance(i, (int, bool))]
-        irrelevant = [int(i) for i in fb.get("irrelevant_ids", []) if isinstance(i, (int, bool))]
-        # Build labels: relevant→1 first, then irrelevant→0 (overlap → 0 wins).
-        labels: dict[int, int] = {i: 1 for i in relevant}
-        for i in irrelevant:
-            labels[i] = 0
-
-        query_chars = ev.get("query_chars", 0)
-        query_chars = int(query_chars) if isinstance(query_chars, (int, bool)) else 0
-
-        records.append(
-            GoldRecord(
-                schema_version=SCHEMA_VERSION,
-                query_id=qid,
-                id_space=ID_SPACE,
-                query_chars=query_chars,
-                candidate_ids=candidate_ids,
-                labels=labels,
-                embedder_id=embedder_id,
-                provenance=PROVENANCE,
+            query_chars = ev.get("query_chars", 0)
+            query_chars = (
+                int(query_chars)
+                if isinstance(query_chars, int) and not isinstance(query_chars, bool)
+                else 0
             )
-        )
+
+            records.append(
+                GoldRecord(
+                    schema_version=SCHEMA_VERSION,
+                    query_id=qid,
+                    id_space=ID_SPACE,
+                    query_chars=query_chars,
+                    candidate_ids=candidate_ids,
+                    labels=labels,
+                    embedder_id=embedder_id,
+                    provenance=PROVENANCE,
+                )
+            )
     return records
