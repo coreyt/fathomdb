@@ -17,6 +17,16 @@
 //!     blocker and the trial loop returns early. See
 //!     `dev/plans/runs/12-D-durability-harnesses-output.json`.
 
+// 0.8.9 Slice 20 (F-9): this harness is inherently POSIX — it simulates a power
+// cut by re-exec'ing the test binary as a victim and `libc::kill(pid, SIGKILL)`-ing
+// it; there is no Windows equivalent (and the bodies are `AGENT_LONG`-gated, so they
+// never run in per-push CI regardless). The unguarded `libc::kill`/`SIGKILL` used to
+// compile only because the pyo3 link error aborted `cargo test --workspace` before
+// this target built; once that gate was fixed the missing Unix symbols surfaced as a
+// hard Windows compile error. Gate the whole target on `unix` so it compiles to an
+// empty test binary on Windows (0 tests) while staying byte-identical on Unix.
+#![cfg(unix)]
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};

@@ -235,6 +235,71 @@ main.** This section is the owed re-verify so the board does not claim a green 4
 **fully complete** (remaining `verify` red stays F-7-deferred, non-blocking). Until then the board status is
 **"0.8.9 substantially complete; Slice 20 + mac/win re-verify outstanding."**
 
+### 8a. Slice 20 PR #104 CI (run `28327158138`) — link fix WORKED, but unmasked a deeper red
+
+The fix did its job: **macOS now compiles, links, and RUNS the full workspace** — the
+`_PyDict_GetItemWithError`/`_PyExc_*` undefined-symbol link error is **gone** (hundreds of mac tests
+pass). But mac/win did **NOT** go all-green; two *different* failures surfaced, **neither caused by the
+Cargo.toml change** (`fathomdb-engine` has no dependency on `fathomdb-py`, so there is no causal path):
+
+- **`rust-windows` = transient network flake.** `download of ahash failed — curl failed — Connection was
+  reset` during cargo dep-fetch; Windows never reached compile/test. Infra, not code → re-run.
+- **`rust-macos` = a pre-existing, previously-MASKED flaky timing test.** `ac_029_canonical_writes_
+  complete_under_projection_stall` panics at `projection_runtime.rs:232`: `assert!(stalled <=
+  baseline.mul_f32(1.5))` — a **wall-clock ratio** (1000 writes with the projection scheduler frozen vs.
+  baseline) with only a 1.5× tolerance. On a noisy shared CI mac runner this ratio is fragile. **The link
+  red was masking this** — the test never executed on mac before. This is the "lying gate" one layer
+  deeper: Slice 20 unmasked it, exactly as intended; it is now visible and owned, not hidden.
+
+**Re-run `28327158138 --failed` (2026-06-28) — the unmasked cluster is bigger than one test:**
+
+- **`rust-macos`: multiple FLAKY timing tests in `projection_runtime.rs`.** On re-run `ac_029` **passed**
+  (confirming it is flaky, not deterministic), but a *different* timing test then failed: `ac_032b_drain_
+  returns_typed_timeout_when_work_does_not_finish` at `projection_runtime.rs:361`. These are wall-clock /
+  timeout assertions fragile on shared CI mac runners — a **calibration** problem, all masked until the
+  link fix let them run on mac.
+- **`rust-windows`: a REAL, deterministic non-portability compile error** (the network flake cleared and
+  revealed it). `cannot find function 'kill' / value 'SIGKILL' in crate 'libc'` → the `durability_soak`
+  test uses **Unix-only** `libc::kill`/`libc::SIGKILL` with no `#[cfg(unix)]` guard, so it never compiled
+  on Windows. Masked because the pyo3 link error previously aborted `cargo test --workspace` *before*
+  `durability_soak` compiled.
+
+**This is the "lying gate" fully vindicated:** the always-on `extension-module` link error was hiding an
+entire cluster of pre-existing mac/win test problems. Slice 20's *link* mechanism is **done and correct**
+(strict improvement: lying red → honest reds). But **"mac/win green" is now a larger, separate work item**
+than dropping one feature flag:
+  1. **Windows** — `#[cfg(unix)]`-guard (or Windows-equivalent) the `durability_soak` signal use. Real,
+     deterministic, smallish.
+  2. **macOS** — de-flake `projection_runtime.rs` timing assertions (`ac_029`/`ac_032b`/possibly more):
+     widen tolerances / make perf-robust / gate off shared runners.
+
+**HALT → HITL (`characterize-underperformance-then-hitl`).** Surfaced as a decision package; **HITL chose
+"expand #104 to fully green mac/win"** (2026-06-28).
+
+### 8b. Slice 20 EXPANDED — the unmasked cluster, fixed (HITL: expand)
+
+Per the HITL decision, PR #104 now also fixes both unmasked items so mac/win can go *genuinely* green:
+
+- **Windows (`durability_soak`)** — file-level `#![cfg(unix)]`. The harness is inherently POSIX (re-execs
+  the test binary as a victim and `libc::kill(pid, SIGKILL)`s it; bodies are `AGENT_LONG`-gated, never run
+  per-push). On Windows it now compiles to an empty test binary (0 tests); byte-identical on Unix. Verified:
+  compiles on Linux; `codex` separately confirmed a `cfg(any())` test target builds to "0 tests".
+- **macOS (`projection_runtime.rs` flaky timing)** — de-flaked **without weakening the locked
+  `dev/acceptance.md` contracts** (a `codex` §9 [P2] caught an initial attempt that relaxed the gates —
+  the exact lying-gate trap 0.8.9 exists to end; reverted):
+  - **AC-029** keeps `P-STALL-TOL = 1.5x`; the measurement is hardened with a **best-of-K=3 minimum** on
+    both 1,000-write loops, so a single noisy sample can't inflate the ratio. The minimum reflects true
+    throughput; a real back-pressure regression (frozen-scheduler coupling = hang) still blows the ratio.
+  - **AC-032b** keeps `P-DRAIN-TOL = 1.5x`; the test now uses the **documented `T = 1s`** (acceptance.md
+    measures `drain(timeout=1s)`) instead of an ad-hoc 100ms, with a per-embed sleep > T so the drain
+    reliably times out regardless of worker-pool size. The `1.5 x 1s = 1.5s` bound is robust to CI jitter.
+- **codex §9 (re-run) → clean PASS, 0 findings.** Linux: `projection_runtime` 12/12; `durability_soak`
+  compiles. **mac/win GREEN to be confirmed on PR #104 CI** (the de-flake's real proof is mac CI).
+
+**Net:** Slice 20 = (a) link fix + (b) Windows `cfg(unix)` + (c) macOS contract-preserving de-flake. Merge
+of #104 remains HELD until PR #104 CI shows `rust-macos` + `rust-windows` **green** (user's condition), then
+HITL merge → the §8 on-main re-verify closes 0.8.9.
+
 ## 4. $ ledger
 
 $0.00 — no priced runs; CI/test-harness + lockfile work only.
