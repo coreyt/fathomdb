@@ -42,6 +42,7 @@ run_gate() {
 
 run_gate "AC-036 no-listen-syscall"     bash "$SEC/check-no-listen.sh"
 run_gate "AC-037 netns-deny-egress"     bash "$SEC/check-netns-deny-egress.sh"
+run_gate "AC-037 catch (demonstrate)"   bash "$SEC/check-netns-deny-egress-catch.sh"
 run_gate "AC-038 FTS5-injection-safe"   cargo test -p fathomdb-engine --test fts5_injection_safety --quiet
 run_gate "AC-050a ast-scan rust"        python3 "$SEC/ast_scan.py" --language rust
 run_gate "AC-050a ast-scan python"      python3 "$SEC/ast_scan.py" --language python

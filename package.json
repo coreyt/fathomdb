@@ -10,5 +10,10 @@
   "devDependencies": {
     "markdownlint-cli2": "^0.22.1",
     "prettier": "^3.4.0"
+  },
+  "comment-overrides": "0.8.9 R-DEP-1: force transitive security patches for markdown-it (GHSA-6v5v-wf23-fmfq) and js-yaml (GHSA-h67p-54hq-rp68). markdownlint-cli2@0.22.1 pins the vulnerable 14.1.1/4.1.1 exactly and has no patched release yet; `npm audit fix --force` would downgrade markdownlint-cli2 (breaking). Both are backward-compatible minor bumps. Remove when markdownlint-cli2 ships patched deps.",
+  "overrides": {
+    "markdown-it": "14.2.0",
+    "js-yaml": "4.2.0"
   }
 }

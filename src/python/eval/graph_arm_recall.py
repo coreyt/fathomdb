@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-import httpx
+import httpx  # type: ignore[import-not-found]  # httpx not in [dev] extras (eval-only)
 
 from eval.p0a_base_retrieval import (
     DEFAULT_DATASET,
