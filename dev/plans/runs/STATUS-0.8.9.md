@@ -4,11 +4,13 @@
 > query-path change, no priced runs. Verify-from-git discipline throughout.
 > Opened: 2026-06-27 (`/goal complete 0.8.9`, orchestrator session).
 
-> **OVERALL STATUS (2026-06-28): SUBSTANTIALLY COMPLETE — NOT fully closed.** Slices 0/1/5/10/15/40
-> merged in PR #93 (`f20059e9`); main's `security`/bootstrap red is **healed** (confirmed). **Reserved-gap
-> Slice 20 (F-9, pyo3 mac/win link) is the last open item** — its own $0 PR, lands after #93. 0.8.9 is
-> **fully complete only after Slice 20 merges AND `rust-macos`/`rust-windows` are re-confirmed green on
-> main** (the Slice-40 re-verify owed in §8). The `verify`/markdown red stays F-7-deferred (non-blocking).
+> **OVERALL STATUS (2026-06-28): ✅ COMPLETE.** Slices 0/1/5/10/15/40 merged in PR #93 (`f20059e9`);
+> reserved-gap Slice 20 (F-9, pyo3 mac/win link + the unmasked cross-platform cluster) merged in PR #104
+> (`1cb1c7ac`). **On-main re-verify PASSED** (main CI run `28329505447` on `1cb1c7ac`): `rust-macos` +
+> `rust-windows` both **GREEN on main** — the first-ever green Windows test suite for this repo — so the
+> Slice-40 re-verify owed in §8 is satisfied and the 40 verdict is final. The **only** remaining CI red is
+> `verify`/markdown, which is **F-7-deferred → 0.8.16** (documented non-blocker, not a 0.8.9 regression).
+> `security`/bootstrap red is healed. No `v*` tag, no version bump (zero library-surface change).
 
 ---
 
@@ -50,8 +52,8 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 | **5** | Perf-gate honesty (R-PG-1/2) | **CLOSED** | `perf-gates.md` per-AC map; `recall_gate_predicate.rs` catch test (3/3 green, RED-confirmed) |
 | **10** | AC-037 catch + AC-050c (R-037-2/R-050c) | **CLOSED** | shared `lib-egress-allowlist.sh`; `check-netns-deny-egress-catch.sh` (offline catch green + RED-confirmed, live netns CI-only); R-050c cause documented |
 | **15** | Dependency hygiene (R-DEP) | **CLOSED** (merged #93) | npm overrides → markdown-it 14.2.0/js-yaml 4.2.0, `npm audit`=0; dependabot.yml npm `/` added; pip idna/torch = orphaned (dismiss pending HITL) |
-| **20** *(reserved-gap, F-9)* | pyo3 mac/win cargo-test link fix | **IN PROGRESS — own PR, lands after #93** | drop always-on `extension-module` from `fathomdb-py/Cargo.toml` (keep `abi3-py310`); Linux re-verified GREEN (baseline 4/4 → post-fix `fathomdb-py` test pass + explicit-feature wheel path builds + full `cargo test --workspace --no-run` links); codex §9 clean PASS; **mac/win GREEN confirmation pending in CI** |
-| **40** | Verify + release readiness | **PARTIAL — verdict shipped in #93 over a WAIVED red; RE-VERIFY OWED (see §8)** | the verification verdict merged in #93 (`f20059e9`) **with the `rust-macos`/`rust-windows` pyo3 red documented as external/waived**. Per F-9 (40 depends on 20) this verdict is **not final** until Slice 20 lands AND mac/win are re-confirmed green on main. |
+| **20** *(reserved-gap, F-9)* | pyo3 mac/win link + unmasked cross-platform cluster | **CLOSED (merged #104 `1cb1c7ac`)** | (a) drop always-on `extension-module` (keep `abi3-py310`) → mac/win compile+link; (b) macOS de-flake AC-029/032b **without weakening the locked tolerances** (best-of-K min; documented `T=1s`); (c) `--no-fail-fast` enumerated the full Windows cluster (6 fails/~5 causes) then fixed all: lock `holder_pid` cfg-gate, python stub UTF-8 stdio (×2), AC-002 most-specific-root, reader_pool wait, migrations cfg(unix), durability_soak cfg(unix). **rust-macos + rust-windows GREEN on PR + on main.** codex §9 caught 3 [P2] gate-weakenings → all fixed → clean PASS |
+| **40** | Verify + release readiness | **CLOSED — verdict FINAL (re-verify passed)** | verdict first shipped in #93 (`f20059e9`) with the mac/win red waived; per F-9 (40 depends on 20) it was held non-final until Slice 20. **Slice 20 merged (#104) and the on-main re-verify (run `28329505447`) confirmed `rust-macos` + `rust-windows` GREEN on main** → 40 verdict is now final, 0.8.9 fully complete (only F-7 markdown `verify` red remains, deferred). |
 
 ## 2. Cross-cutting DoD (X1/X2/X3)
 
@@ -230,10 +232,10 @@ main.** This section is the owed re-verify so the board does not claim a green 4
 - codex §9 (`--uncommitted`) → **clean PASS, 0 findings** (independently re-confirmed the explicit-feature
   wheel/CI/editable paths and re-ran the link).
 
-**RE-VERIFY GATE (owed before 0.8.9 closes):** after Slice 20 merges to main, re-run main CI and confirm
-`rust-macos` + `rust-windows` are **green on main**. Only then is Slice 40's verdict final and 0.8.9
-**fully complete** (remaining `verify` red stays F-7-deferred, non-blocking). Until then the board status is
-**"0.8.9 substantially complete; Slice 20 + mac/win re-verify outstanding."**
+**RE-VERIFY GATE — ✅ PASSED (2026-06-28).** Slice 20 merged to main (PR #104, `1cb1c7ac`); main CI run
+**`28329505447`** on the merge commit confirmed **`rust-macos` + `rust-windows` GREEN on main**. Slice 40's
+verdict is therefore final and **0.8.9 is fully complete** — the only remaining CI red is `verify`/markdown
+(F-7-deferred → 0.8.16, non-blocking). The first-ever green Windows test suite for the repo.
 
 ### 8a. Slice 20 PR #104 CI (run `28327158138`) — link fix WORKED, but unmasked a deeper red
 
@@ -294,11 +296,32 @@ Per the HITL decision, PR #104 now also fixes both unmasked items so mac/win can
     measures `drain(timeout=1s)`) instead of an ad-hoc 100ms, with a per-embed sleep > T so the drain
     reliably times out regardless of worker-pool size. The `1.5 x 1s = 1.5s` bound is robust to CI jitter.
 - **codex §9 (re-run) → clean PASS, 0 findings.** Linux: `projection_runtime` 12/12; `durability_soak`
-  compiles. **mac/win GREEN to be confirmed on PR #104 CI** (the de-flake's real proof is mac CI).
+  compiles. macOS went **green** on PR #104 CI (the de-flake's real proof).
 
-**Net:** Slice 20 = (a) link fix + (b) Windows `cfg(unix)` + (c) macOS contract-preserving de-flake. Merge
-of #104 remains HELD until PR #104 CI shows `rust-macos` + `rust-windows` **green** (user's condition), then
-HITL merge → the §8 on-main re-verify closes 0.8.9.
+### 8c. Slice 20 Windows greening — the full unmasked cluster, fixed (HITL: fully green)
+
+macOS went green from §8b, but Windows kept surfacing pre-existing failures **one per run** (default
+fail-fast). HITL: enumerate first. A `--no-fail-fast` diagnostic run revealed the **complete** set —
+**6 failures / ~5 root causes**, all pre-existing Windows-portability gaps **unrelated to pyo3** (the link
+gate had masked Windows test execution entirely; Windows almost certainly never had a green suite). HITL:
+fully green Windows in #104. Fixes:
+
+| Test | Root cause | Fix |
+|---|---|---|
+| `compatibility::second_live_open_is_locked…` | Windows `File::try_lock`=`LockFileEx` blocks reading the locked region → `holder_pid` None | cfg-gate the `Some(_)` assertion (Unix unchanged); lock still works |
+| `qd_envelope…` + `elps_golden…` (case d5) | python stub stdout = cp1252 on Windows → non-ASCII (`Café 🚀 Renée`) corrupted | `sys.stdout.reconfigure(encoding='utf-8')` in both stubs |
+| `lifecycle…ac_002_no_log_files…` | absolute-path match hit the CI temp dir named `fathomdb-<run-id>` | check path relative to the **most-specific** measurement root |
+| `reader_pool::…exit_on_drop…` | sampled live worker count before workers published | bounded-wait (mirrors its sibling test) |
+| `migrations::ac_049_repo_linter…` | execs bash `agent-lint-migrations.sh` → `Os 193` on Windows | `#[cfg(unix)]` (logic covered by `ac_049_accretion_guard_*`) |
+| `durability_soak` (compile) | POSIX `libc::kill`/`SIGKILL` unguarded | file-level `#![cfg(unix)]` (§8b) |
+
+**codex §9 was load-bearing:** it caught **three** [P2] gate-weakenings across this slice (AC-029/032b
+tolerance relaxations; then AC-002 name-only-too-weak, then first-match-root). Each fixed; final reviews
+clean. Kept `--no-fail-fast` on `rust-windows` (anti-masking, on-mission for 0.8.9).
+
+**Net:** Slice 20 = link fix + macOS contract-preserving de-flake + the 6-fix Windows cluster. PR #104
+admin-merged (`1cb1c7ac`) on the user's "mac/win green" approval; the §8 on-main re-verify **PASSED**
+(run `28329505447`) → **0.8.9 CLOSED**, first-ever green Windows test suite.
 
 ## 4. $ ledger
 
