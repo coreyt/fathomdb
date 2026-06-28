@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# fathomdb-tracked-hook: scripts/hooks (managed by scripts/install-hooks.sh)
 # pre-push: full agent-verify gate (lint -> typecheck -> test).
 # Mirrors what an agent runs locally before declaring work done; catches
 # CI-fail-but-local-pass drift.

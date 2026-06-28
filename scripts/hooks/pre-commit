@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# fathomdb-tracked-hook: scripts/hooks (managed by scripts/install-hooks.sh)
 # pre-commit: fast format/lint checks on staged files only.
 # Heavy gates (clippy, typecheck, tests) run in pre-push via agent-verify.sh.
 set -euo pipefail
