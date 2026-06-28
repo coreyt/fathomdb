@@ -77,7 +77,7 @@ elects, per the locked-acceptance policy.
 ## 3. Slice ladder (mod-5)
 
 ```
-0 → 5 → 10 → 15 → 40
+0 → 5 → 10 → 15 → 20 → 40
 ```
 
 | Slice | Title | Work-type | Depends-on |
@@ -87,7 +87,8 @@ elects, per the locked-acceptance policy.
 | **5** | **Perf-gate honesty (#12)** — re-scope/relabel `ac_013b` off the synthetic floor; run the cheap subset per-push; RED proof that the old vacuous-green is gone; update `design/perf-gates.md` | implementation (CI) | 0, 1 |
 | **10** | **AC-037 wiring + AC-050c cleanup (#14)** — `security` job on `ubuntu-22.04` with a RED egress-trip proof; clear the AC-050c baseline failure | implementation (CI) | 0 |
 | **15** | **Dependency-vuln hygiene (Dependabot)** — **manually** bump npm (`markdown-it`/`js-yaml`, root `package-lock.json`) + pip (`idna`/`torch`, `python/uv.lock`) off the open advisories (these have **no auto-PR** — their manifests aren't under a configured `dependabot.yml` directory); reconcile `.github/dependabot.yml` directory coverage (configured pip `/src/python` + npm `/src/ts` miss the alert manifests `python/uv.lock` + root `package-lock.json`); re-run affected suites | implementation (deps) | 0 |
-| **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c/R-DEP AC gate; confirm the honest gate map is reflected on every board | verification | 5,10,15 |
+| **20** *(reserved-gap, F-9)* | **pyo3 mac/win cargo-test link fix (#lying-gate)** — the `rust-macos`/`rust-windows` `cargo test --workspace` red is **pre-existing since `80ffa6bd` (2026-05-21), NOT a 0.8.8 regression**: `fathomdb-py/Cargo.toml` hard-codes `pyo3` `extension-module` **always-on**, so the standalone workspace test binary links libpython-less and strict macOS/Windows linkers fail (Linux tolerates it). Fix = drop `extension-module` from the always-on `[dependencies]` features (keep `abi3-py310`). **Verified safe:** wheels (`release.yml:103`, `ci.yml:287/296`), `maturin develop` (`Cargo.toml:30`), and the pytest editable rebuild (`conftest.py`) all pass `--features pyo3/extension-module` **explicitly** → shipped artifact + dev/test flow unchanged. RED = mac/win link-fail today; GREEN = links (CI-confirmed). Lands **after #93** as its own $0 PR so #93 stays CI-only. | implementation (CI) | 0 |
+| **40** | **Verification + Release Readiness (0.8.9)** — X1/X2/X3 + R-PG/R-037/R-050c/R-DEP AC gate; confirm the honest gate map is reflected on every board | verification | 5,10,15,20 |
 
 **Keystones / hard gates.** **Reserved-gap Slice 1 (bootstrap un-mask) is a hard prerequisite** — until
 `bootstrap.sh` reaches `agent-security.sh`, the AC-037 catch (R-037), the perf gates (R-PG-3), and the
@@ -99,6 +100,13 @@ fail bootstrap *visibly*). A fix that only flips labels without a demonstrated c
 
 **Tracks (parallelizable).** Perf-gate track **5** ∥ security/cleanup track **10** ∥ dependency-hygiene
 track **15**, all off Slice 0.
+
+**Slice 20 landed AFTER Slice 40 — honesty note (F-9).** Slice 40's verification verdict already shipped
+in PR #93 (merged `f20059e9`) with the `rust-macos`/`rust-windows` pyo3 red **documented as external and
+waived**. Because 40 logically depends on 20, Slice 20 cannot close under an already-"done" 40: it carries
+a **Slice 40 re-verify addendum** — after Slice 20 lands on main, re-confirm `rust-macos`/`rust-windows`
+are *actually green on main* (the thing 40 waived), and the board must show **0.8.9 is NOT fully complete
+until Slice 20 + that re-verify land**. Otherwise the board claims a green 40 over a red only 20 clears.
 
 ---
 

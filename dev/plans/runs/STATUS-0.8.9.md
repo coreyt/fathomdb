@@ -4,6 +4,12 @@
 > query-path change, no priced runs. Verify-from-git discipline throughout.
 > Opened: 2026-06-27 (`/goal complete 0.8.9`, orchestrator session).
 
+> **OVERALL STATUS (2026-06-28): SUBSTANTIALLY COMPLETE — NOT fully closed.** Slices 0/1/5/10/15/40
+> merged in PR #93 (`f20059e9`); main's `security`/bootstrap red is **healed** (confirmed). **Reserved-gap
+> Slice 20 (F-9, pyo3 mac/win link) is the last open item** — its own $0 PR, lands after #93. 0.8.9 is
+> **fully complete only after Slice 20 merges AND `rust-macos`/`rust-windows` are re-confirmed green on
+> main** (the Slice-40 re-verify owed in §8). The `verify`/markdown red stays F-7-deferred (non-blocking).
+
 ---
 
 ## 0. Headline — the plan was substantially stale; most of 0.8.9 already shipped
@@ -43,8 +49,9 @@ them**. The honest deliverable (R-PG-1) is this map, not a fabricated five-slice
 | **1** *(reserved-gap)* | Bootstrap un-mask (R-BOOT) | **CLOSED** | Fix A `# type: ignore[import-not-found]` on the two httpx imports → `pyright -p src/python` 0/0; Fix C dropped `--quiet`/`>/dev/null` masking; R-BOOT-1 clean `[dev]` venv green; R-BOOT-2 demonstrate-the-catch proven (broken import → visible error + exit 1; old masked path hid it) |
 | **5** | Perf-gate honesty (R-PG-1/2) | **CLOSED** | `perf-gates.md` per-AC map; `recall_gate_predicate.rs` catch test (3/3 green, RED-confirmed) |
 | **10** | AC-037 catch + AC-050c (R-037-2/R-050c) | **CLOSED** | shared `lib-egress-allowlist.sh`; `check-netns-deny-egress-catch.sh` (offline catch green + RED-confirmed, live netns CI-only); R-050c cause documented |
-| **15** | Dependency hygiene (R-DEP) | **CLOSED** | npm overrides → markdown-it 14.2.0/js-yaml 4.2.0, `npm audit`=0; dependabot.yml npm `/` added; pip idna/torch = orphaned (dismiss pending HITL) |
-| **40** | Verify + release readiness | **CLOSED (verification) — awaiting HITL push/merge** | re-verified on the rebased `089-orchestrator` (§2a); codex §9 re-run over the new R-BOOT/R-050c commits = clean PASS; X1 N/A, X2/X3 done. PR + merge gated on HITL (§7) |
+| **15** | Dependency hygiene (R-DEP) | **CLOSED** (merged #93) | npm overrides → markdown-it 14.2.0/js-yaml 4.2.0, `npm audit`=0; dependabot.yml npm `/` added; pip idna/torch = orphaned (dismiss pending HITL) |
+| **20** *(reserved-gap, F-9)* | pyo3 mac/win cargo-test link fix | **IN PROGRESS — own PR, lands after #93** | drop always-on `extension-module` from `fathomdb-py/Cargo.toml` (keep `abi3-py310`); Linux re-verified GREEN (baseline 4/4 → post-fix `fathomdb-py` test pass + explicit-feature wheel path builds + full `cargo test --workspace --no-run` links); codex §9 clean PASS; **mac/win GREEN confirmation pending in CI** |
+| **40** | Verify + release readiness | **PARTIAL — verdict shipped in #93 over a WAIVED red; RE-VERIFY OWED (see §8)** | the verification verdict merged in #93 (`f20059e9`) **with the `rust-macos`/`rust-windows` pyo3 red documented as external/waived**. Per F-9 (40 depends on 20) this verdict is **not final** until Slice 20 lands AND mac/win are re-confirmed green on main. |
 
 ## 2. Cross-cutting DoD (X1/X2/X3)
 
@@ -193,6 +200,40 @@ hygiene). **The steward recommends HITL merge now** — merging heals main's own
 (0.8.9 *is* the fix for that) and neither external red will clear soon. Merge = admin-merge accepting the
 two documented external reds, **pending HITL sign-off**. (Context unchanged: no version bump; idna/torch
 alerts left open.)
+
+> **Superseded by F-9 (see §8).** The above was the pre-Slice-20 framing where the pyo3 mac/win red was
+> "external/unowned." HITL has since placed that fix **in-band as Slice 20** — so 0.8.9 is **not fully
+> complete** until Slice 20 lands and mac/win re-confirm green on main. PR #93 was merged on this basis
+> (it healed `security`); the pyo3 red is now owned by Slice 20, not waived indefinitely.
+
+## 8. Slice 20 + Slice-40 RE-VERIFY addendum — 0.8.9 is NOT fully complete yet (F-9)
+
+**Honest status:** Slice 40's verification verdict **already shipped in PR #93** (merged `f20059e9`)
+**before Slice 20 existed**, with the `rust-macos`/`rust-windows` pyo3 red **documented as external and
+waived**. Slice 20 is the fix for that waived red. Because 40 logically depends on 20, **the 40 verdict
+is not final, and 0.8.9 is not fully complete, until Slice 20 lands AND mac/win are re-confirmed green on
+main.** This section is the owed re-verify so the board does not claim a green 40 over a red only 20 clears.
+
+**Post-#93 main CI (run `28326850926`, merge `f20059e9`) — measured:**
+- ✅ `security` **HEALED** (`success`) — 0.8.9's bootstrap un-mask + R-050c fixed main's own
+  security/bootstrap red (the steward's stated reason to merge #93 now). Confirmed, not asserted.
+- ❌ `verify` — markdown debt, F-7 deferred → 0.8.16 (non-blocking, not a 0.8.9 regression).
+- ❌ `rust-macos` / `rust-windows` — pyo3 link, **the exact red Slice 20 fixes.**
+- ✅ everything else (`docs`, `default-embedder-tests`, all `wheel-size-gate`).
+
+**Slice 20 (this branch `0.8.9-slice20-pyo3-link`) — local verification (Linux; mac/win = CI-only):**
+- Baseline (extension-module ON): `cargo test -p fathomdb-py` → **4/4 pass** (Linux tolerates the link).
+- Fix (drop always-on `extension-module`, keep `abi3-py310`):
+  - `cargo test -p fathomdb-py` → **pass** (no Linux regression);
+  - `cargo build -p fathomdb-py --features pyo3/extension-module` → **builds** (wheel/maturin path intact);
+  - `cargo test --workspace --no-run` → **links** (mirrors the `ci.yml` rust job).
+- codex §9 (`--uncommitted`) → **clean PASS, 0 findings** (independently re-confirmed the explicit-feature
+  wheel/CI/editable paths and re-ran the link).
+
+**RE-VERIFY GATE (owed before 0.8.9 closes):** after Slice 20 merges to main, re-run main CI and confirm
+`rust-macos` + `rust-windows` are **green on main**. Only then is Slice 40's verdict final and 0.8.9
+**fully complete** (remaining `verify` red stays F-7-deferred, non-blocking). Until then the board status is
+**"0.8.9 substantially complete; Slice 20 + mac/win re-verify outstanding."**
 
 ## 4. $ ledger
 
