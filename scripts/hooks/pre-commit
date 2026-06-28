@@ -35,3 +35,30 @@ if echo "$STAGED" | grep -qE '\.py$'; then
     echo "[pre-commit] skipping ruff (not installed; run scripts/bootstrap.sh)"
   fi
 fi
+
+# Markdown: AST-guarded auto-fix on staged *.md, then enforce markdownlint-clean.
+# scripts/md-safe-fix.sh runs `markdownlint-cli2 --fix` but reverts (and blocks) any fix that
+# changes meaning — see dev/tools/md-fix-corruption-ledger.md. prettier is intentionally not used.
+if echo "$STAGED" | grep -qE '\.md$'; then
+  echo "[pre-commit] md-safe-fix (AST-guarded markdownlint --fix on staged .md)"
+  scripts/md-safe-fix.sh
+  # Enforce structural cleanliness of the staged markdown (catches non-auto-fixable findings
+  # like MD040 bare fences). markdownlint-cli2 ignores file args (it globs the whole repo from
+  # its config), so run it once and match its findings against the staged .md set.
+  for c in ./node_modules/.bin/markdownlint-cli2 \
+           /home/coreyt/projects/fathomdb/node_modules/.bin/markdownlint-cli2; do
+    [ -x "$c" ] || continue
+    ml_out="$("$c" 2>&1 || true)"
+    bad=""
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if printf '%s\n' "$ml_out" | grep -qE "^$f:[0-9]"; then bad="$bad $f"; fi
+    done < <(echo "$STAGED" | grep '\.md$')
+    if [ -n "$bad" ]; then
+      echo "[pre-commit] markdownlint findings in staged markdown:$bad" >&2
+      echo "[pre-commit] resolve via scripts/md-safe-fix.sh (auto) or by hand, then re-stage." >&2
+      exit 1
+    fi
+    break
+  done
+fi
