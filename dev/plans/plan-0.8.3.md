@@ -133,7 +133,7 @@ Slice 0 freezes both in code (`eval/decision_rule_083.py`, extending `eval/m1_de
 
 ## 3. Critical path (resolution-driven: measure the gap → close it cheapest-first → stop at parity)
 
-```
+```text
 0  Design + pre-register the resolution gate (two-level), power-sized N, $0-probe criteria,
    eu7-break fork, surpass-option protocol, F5/tunable-b scope ruling
         │

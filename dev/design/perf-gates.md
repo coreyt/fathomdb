@@ -155,7 +155,7 @@ tier's switch and the devloop tier must run unconditionally.
 
 Each test emits one stable, parseable trend line on stderr:
 
-```
+```text
 DEVLOOP_NUMBERS ac=013 n=1000 samples=100 p50_ms=14 p99_ms=18 recall_at_10=NA cache=na embedder=synthetic
 DEVLOOP_NUMBERS ac=013b n=1000 samples=100 p50_ms=0 p99_ms=0 recall_at_10=0.3470 cache=na embedder=synthetic
 DEVLOOP_NUMBERS ac=019 n=1000 samples=200 p50_ms=12 p99_ms=154 recall_at_10=NA cache=na embedder=synthetic
@@ -170,7 +170,7 @@ stays uniform.
 
 Breach notifications (notify-only, do not fail):
 
-```
+```text
 DEVLOOP_PERF_WARN ac=013 metric=p50 value_ms=60 budget_ms=50 status=OVER
 DEVLOOP_PERF_WARN ac=013b metric=recall_at_10 value=0.83 floor=0.85 status=UNDER   # real embedder only
 DEVLOOP_PERF_INFO ac=013b metric=recall_at_10 disposition=report_only embedder=synthetic

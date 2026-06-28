@@ -45,7 +45,7 @@ Everything else router-shaped is $0 eval and rides the **odd** releases around t
 
 ## 2. Dependency graph
 
-```
+```text
   EVEN releases (non-planner-router plan)            ODD releases (planner-router work)
   ─────────────────────────────────────             ──────────────────────────────────
   0.8.5  EXP-0  CE α/pool_n/ce_score  ── LANDED ───►  (banked precision win)

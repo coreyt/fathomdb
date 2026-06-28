@@ -49,7 +49,7 @@ deferred).
      known-quirks-of-the-source.
    - Declare deps via PEP-723 inline metadata (`# /// script ...
 
-     # ///`) — no requirements.txt, no pyproject.toml
+     ## ///`) — no requirements.txt, no pyproject.toml
 
    - Hard-code the upstream revision/SHA as a top-level constant
      AND list it in `manifest.json`. Don't take revision from an

@@ -133,7 +133,7 @@ graph multi-hop is already refuted).
 
 ## 3. Critical path (resolution-driven: build S1 + a running GraphRAG → judge → stop at parity)
 
-```
+```text
 0  Design + pre-register (endpoints, judge model + bias controls, win-rate band, N, surpass protocol;
    freeze eval/decision_rule_084.py)  → codex §9 PASS → HITL design gate
         │   (build slices below do NOT start until this gate is signed)

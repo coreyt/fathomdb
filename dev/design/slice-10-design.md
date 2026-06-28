@@ -38,7 +38,7 @@ raw score. This is the standard hybrid-retrieval result (Zep/Mem0/Azure;
 `RRF_K = 60.0` (the standard `k≈60`). For a body `b` surfaced by branch with
 1-based rank `r` in that branch:
 
-```
+```text
 score(b) = Σ_branch 1 / (RRF_K + rank_branch(b))
 ```
 
@@ -74,7 +74,7 @@ The `soft_fallback` "vector branch could not contribute" signal is computed from
 
 ### `rerank_fused` identity stub (the rerank seam)
 
-```
+```rust
 fn rerank_fused(hits: Vec<SearchHit>) -> Vec<SearchHit> { hits }  // identity, for now
 ```
 

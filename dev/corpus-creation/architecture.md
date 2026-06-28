@@ -651,7 +651,7 @@ present on disk (or the tests skip).
 
 ## 10. Layout summary
 
-```
+```text
 fathomdb/
 ├── dev/
 │   ├── corpus-creation/                ← you are here
@@ -690,7 +690,7 @@ fathomdb/
 
 The minimum dependency graph between packs:
 
-```
+```text
 Pack-1 acquire_*.py + generate_synthetic_notes.py
   └── produces data/corpus-data/raw/*.jsonl
        └── Pack-2 generate_chain_corpus.py

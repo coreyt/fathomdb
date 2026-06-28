@@ -60,7 +60,7 @@ Per `dev/adr/ADR-0.6.0-text-query-latency-gates.md` L40-75 +
 
 Raw harness output (from `perf-canonical-ac012.log`):
 
-```
+```text
 AC012_NUMBERS n=1000000 samples=1000 seed_ms=33618 p50_ms=140 p99_ms=458
 thread 'ac_012_text_query_latency_on_fts5_path' (2594) panicked at src/rust/crates/fathomdb-engine/tests/perf_gates.rs:474:5:
 AC-012 failed: p50=140.947602ms > budget 20ms at n=1000000

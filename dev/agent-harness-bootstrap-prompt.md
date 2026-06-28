@@ -127,7 +127,7 @@ Record answers on `STATUS-<release>.md` and the plan § 10.
 
 ## The operating loop
 
-```
+```text
 Kickoff HITL (K1–K4) → author plan from PLAN-TEMPLATE → independent design review (Slice 0 ADR)
 → per-slice loop:
     preflight (orchestration.md § 1.6: stale-base + dep-CLOSED + disk)

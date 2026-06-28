@@ -93,7 +93,7 @@ release/slice it is deferred to. Deferral is a deliberate decision, not "too har
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 

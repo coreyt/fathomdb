@@ -19,7 +19,7 @@ read it fully before acting.
 > sweeps** before a GA gate, or any time you suspect `dev/`↔`docs/`↔code have
 > diverged. It is a whole-tree reconciliation, not a substitute for the per-slice
 > discipline.
-
+>
 > **Scope guardrail.** This is a documentation task. **Do not modify any source
 > code under `src/`.** **Test files are read-only here** (per `AGENTS.md` §5). If the
 > diff reveals a code bug or a code/doc contradiction, record it in the owning
@@ -27,7 +27,7 @@ read it fully before acting.
 > status board (`dev/plans/runs/STATUS-0.8.x.md`); **do not fix it**. Surface it —
 > per `AGENTS.md` §1, a wrong doc is worse than its absence, but silently patching
 > code from a docs pass is worse than both.
-
+>
 > **The locked-acceptance guardrail (FathomDB-specific).** `dev/acceptance.md` is
 > `status:locked` and `dev/requirements.md` IDs are a contract. **Never mint, renumber,
 > or withdraw REQ-*/AC-* IDs from this prompt.** New ACs are minted only at gated
@@ -61,7 +61,7 @@ authoritative map of every doc — path · purpose · owning slice/AC · last-to
 is **`dev/DOC-INDEX.md`**. Read it first; it is your cold-start index and the thing
 you must leave accurate.
 
-```
+```text
 dev/   (engineering docs — source of truth; NOT shipped in the wheel)
 ├── DOC-INDEX.md           THE agentic doc map — one row per doc; YOU keep it accurate
 ├── update-docs.md         THIS prompt + the docs-epoch marker
@@ -126,7 +126,7 @@ A change to public surface needs an ADR or an interface-doc update **in the same
 
 ### Step 1 — Establish the epoch and read the diff
 
-```
+```bash
 git log --oneline $EPOCH..$HEAD
 git diff --stat $EPOCH..$HEAD -- src/ Cargo.toml Cargo.lock src/python/pyproject.toml src/ts/package.json
 git diff --name-status $EPOCH..$HEAD -- src/

@@ -147,7 +147,7 @@ fully committed before any deletion commit.
    one-line what-it-was). Subfolder per release: `dev/archive/<release>/`.
 3. **ARCHIVE — two modes.** Prepend this banner to every ARCHIVE doc either way:
 
-   ```
+   ```text
    > **SUPERSEDED / ARCHIVED <date>.** Historical — describes <release>. Current state: <link>.
    > Preserved for history; not maintained — the project has moved on; details may be STALE.
    > See dev/experiments-ledger.md for distilled results.

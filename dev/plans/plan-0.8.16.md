@@ -57,7 +57,7 @@ New ACs: candidates at Slice 0 (vector-equivalence contract) and Slice 40 (GA re
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 

@@ -27,7 +27,7 @@ specifying the exact schema step, column names, and the Slice 15 implementation 
 At SCHEMA_VERSION 13 (after step-13 adds the `operational_mutations(collection_name,id)` index),
 `canonical_edges` has the following columns:
 
-```
+```text
 write_cursor INTEGER NOT NULL
 kind         TEXT NOT NULL
 from_id      TEXT NOT NULL

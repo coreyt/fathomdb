@@ -15,12 +15,13 @@ else
   skip_notice lint-md-structure "markdownlint-cli2 not installed (run scripts/bootstrap.sh)"
 fi
 
-# prettier --check — format check
-if [ -d node_modules/.bin ] && [ -x node_modules/.bin/prettier ]; then
-  run_capped lint-md-format ./node_modules/.bin/prettier --check '**/*.md' --log-level warn
-else
-  skip_notice lint-md-format "prettier not installed (run scripts/bootstrap.sh)"
-fi
+# NOTE: prettier --check was REMOVED from the markdown gate (0.8.9.1, HITL 2026-06-28).
+# prettier's markdown formatter is non-configurable for emphasis style and its *->_ reflow
+# CORRUPTS multi-line / nested / adjacent-to-`code` emphasis spans (broken spans, snake_case
+# `_` loss, word-joins that change tokenization). markdownlint-cli2 (AST/token-aware) above is
+# the sole structural formatter; it does not have this failure mode. Neutrality of any future
+# bulk markdown reformat is verified out-of-band by dev/tools/md-neutrality-guard (markdown-it-py
+# AST visible-text diff), not by re-introducing prettier.
 
 # lychee — link integrity. Offline by default; pass AGENT_LINK_CHECK=online to hit the network.
 if command -v lychee >/dev/null 2>&1; then

@@ -12,7 +12,7 @@ a machine-checked gate and before/after metrics.
 
 ## Layout
 
-```
+```text
 scripts/repo-prune/
 ├── README.md                         ← this file: requirements + design
 ├── prompts/

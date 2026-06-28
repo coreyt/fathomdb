@@ -83,7 +83,7 @@ The Slice 30 graph-retrieval arm (R3, the third RRF arm) fuses fact-edge nodes i
 retrieval result. Confidence weighting would modify the graph arm's contribution to the
 RRF rank:
 
-```
+```text
 graph_rrf_score(edge) = confidence(edge) × 1/(K + bfs_rank(edge))
 ```
 

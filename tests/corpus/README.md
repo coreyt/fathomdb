@@ -11,7 +11,7 @@ semantics, see
 
 ## Layout
 
-```
+```text
 tests/corpus/
 ├── corpus-card.md       # source catalogue, licenses, schema, checksums
 ├── chains/              # committed eval-only cross-doc chain specs
@@ -110,7 +110,7 @@ Use [`dev/corpus-creation/extending.md`](../../dev/corpus-creation/extending.md)
 for source additions, chain-shape additions, and validation gates. Keep
 `source_type` within the locked vocabulary:
 
-```
+```text
 email, meeting, paper, article, note, todo
 ```
 

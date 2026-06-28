@@ -158,7 +158,7 @@ node's `kind` in `canonical_nodes`. Therefore, `kind = "unknown"` is a reliable 
 
 **Penalty:** Multiply BFS-decay score by **0.3** (<=0.5 per spec, conservative).
 
-```
+```text
 decay_final = decay_base * (if kind == "unknown" { 0.3 } else { 1.0 })
 ```
 
@@ -183,7 +183,7 @@ Status: The cap information is currently discarded at ingest time. Deferred to r
 
 **Call path:**
 
-```
+```text
 Engine::search_reranked(query, filter, rerank_depth, use_graph_arm: bool)
   -> Engine::search_inner(query, filter, rerank_depth, use_graph_arm: bool)
        -> ReaderRequest::Search { ..., use_graph_arm: bool, ... }

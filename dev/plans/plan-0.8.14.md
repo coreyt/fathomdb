@@ -52,7 +52,7 @@ New ACs: candidates at Slice 0 (F9 ranking contract) and the ONNX-equivalence me
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 40
 ```
 

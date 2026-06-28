@@ -23,7 +23,7 @@ directly by the IR-B harness (`tests/support/ir_eval.rs::load_gold_set` →
 
 ## 0. Pin (fill these in at run time from the frozen snapshot)
 
-```
+```text
 corpus_hash    = fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e   # tests/corpus/snapshot.json
 corpus_version = 0.8.x-B
 qrels_version  = ir-c-<source-or-batch>-v1        # bump on any change

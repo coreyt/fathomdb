@@ -76,7 +76,7 @@ Parameters: `?1` = root_logical_id, `?2` = now (datetime ISO-8601 string), `?3` 
 
 ## 2. How G6 (search_expand) composes G1 + G5
 
-```
+```text
 search_expand(query, filter, depth):
   1. search_filtered(query, filter) -> SearchResult (G1+G9 hybrid)
   2. For each search hit: resolve logical_id via canonical_nodes WHERE write_cursor = hit.id

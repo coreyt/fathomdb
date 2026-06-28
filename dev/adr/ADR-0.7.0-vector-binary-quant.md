@@ -54,7 +54,7 @@ design (the re-pin is itself the Pack 2 RED gate).
 **Root cause.** The hot SQL at
 `src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323`
 
-```
+```text
 SELECT rowid FROM vector_default
 WHERE embedding MATCH vec_f32(?1)
 ORDER BY distance

@@ -255,7 +255,7 @@ where possible; no network.
 
 ## 7. Decision rule (how the data resolves the question)
 
-```
+```text
 run EXP-FT-1 (hours) and EXP-FT-3 (day):
   if V2 (EXP-FT-1/2) small AND V1 (EXP-FT-3) small:
       → keep gil_used = true indefinitely; revisit only when a V3 feature lands or FT adoption forces it.

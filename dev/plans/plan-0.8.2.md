@@ -14,7 +14,7 @@
 > - **0.8.3 — M2:** the full multi-hop study (+2Wiki +MultiHop-RAG, +IRCoT iterative arm, +R5 PRF).
 > - **0.8.4 — S1:** the GraphRAG **sensemaking** paradigm (Leiden communities + community summaries,
 >   BenchmarkQED-style LLM-judge eval) — a *different* structure on data suited to it.
-
+>
 > **✅ OUTCOME — M1 EXECUTED → verdict NO-GO (robust), HITL-signed 2026-06-19.** This plan ran to
 > completion (Slices 0→4→{5∥10}→15→20, plus engine slices **E1/E2** that implemented a real CE reranker
 > after the signed `fused+rerank` comparator was found to be a stub, and a resilient-by-construction

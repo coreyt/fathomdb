@@ -55,7 +55,7 @@ re-open.
 
 ## (b) Verb shape
 
-```
+```text
 fathomdb doctor dump-mutations <collection> [--after-id <n>] [--limit <n>] [--json] <db_path>
 ```
 

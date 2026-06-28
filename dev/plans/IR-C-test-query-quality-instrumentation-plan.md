@@ -13,7 +13,7 @@ feature-gated dense path compiles.
 ephemeral container):** (1) regenerate gold to `ir-c-reused-v2`; (2) run the
 diagnostics to emit the actual measures.
 
-### Producing the measures (runbook — where the corpus lives)
+## Producing the measures (runbook — where the corpus lives)
 
 Prereqs: the frozen corpus present at `data/corpus-data/` matching
 `snapshot.json`'s `corpus_hash` (else the dense/lexical run self-skips on the

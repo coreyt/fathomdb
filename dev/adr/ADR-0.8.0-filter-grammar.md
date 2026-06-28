@@ -18,7 +18,7 @@ code or schema change follows from this ADR** — it scopes the *deferred* 0.8.x
 > **will be done** and **will affect both G4 and G10** (it requires touching the shipped
 > G10 `SearchFilter` struct + its compilation). Tracked as **reserved-gap 37** /
 > `dev/roadmap/0.8.1.md` — not an "if needed" item.
-
+>
 > **Decides:** the shape of the deferred G4 filtered-list grammar — F3's
 > `read.list(kind, filter?, limit)`. The decision is **data-independent** (proven
 > v0.5.6 prior art + the 2025 industry standard the triage already validated), so
@@ -79,7 +79,7 @@ optionally narrowed by a typed filter.
 
 G4 exposes exactly this **closed** enum (no open DSL, no caller-supplied SQL):
 
-```
+```text
 Predicate (closed):
   JsonPathEq      { path: <allowlisted>, value: ScalarValue }
   JsonPathCompare { path: <allowlisted>, op: ComparisonOp, value: ScalarValue }

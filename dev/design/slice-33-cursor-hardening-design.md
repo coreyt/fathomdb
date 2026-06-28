@@ -38,7 +38,7 @@ Measured against a migrated in-memory DB seeded with a multi-collection log
 (`small` = every 100th row, `bulk` = the rest), the read_collection SELECT plans
 as:
 
-```
+```text
 SEARCH operational_mutations USING INTEGER PRIMARY KEY (rowid>?)
 ```
 
@@ -71,7 +71,7 @@ B-tree.
 
 **EXPLAIN AFTER** (same seed, with the index present):
 
-```
+```text
 SEARCH operational_mutations USING INDEX operational_mutations_collection_id_idx (collection_name=? AND id>?)
 ```
 

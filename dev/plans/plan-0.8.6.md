@@ -59,7 +59,7 @@ New ACs (if minted): candidates **AC-078+** at Slice 0 (provider-protocol confor
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 
