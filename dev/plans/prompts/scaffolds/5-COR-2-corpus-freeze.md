@@ -1,11 +1,13 @@
 # COR-2 — corpus freeze / versioned SHA-256 snapshot · track:Corpus · type:work
 
 ## Purpose (1–2 sentences)
+
 Assemble the agreed Version-B source set, reconcile its checksums, **freeze a versioned, reproducible,
 SHA-256-pinned snapshot**, and record it so the IR-eval fact-level gold set (IR-B) is built against an immutable
 corpus. Owner-managed, out-of-band; **does not gate GA** (already shipped) — it gates IR-C (the experiments).
 
 ## HITL freeze-target ruling (2026-06-09, coreyt — supersedes the "~10K must" lock)
+
 - The **~10K doc target is WAIVED.** Freeze the **current 8 datasets + QAConv + QASPER ≈ 10.1K docs**.
 - **QAConv (BSD-3) + QASPER (CC-BY) MUST be loaded before the freeze** — they are already scripted and
   commit-eligible, QASPER is the **only `paper`-class source**, and QASPER+QAConv ship ~10,296 eval-QA pairs
@@ -16,6 +18,7 @@ corpus. Owner-managed, out-of-band; **does not gate GA** (already shipped) — i
   **gold-set labeling (to measure)**.
 
 ## ⚠️ Network requirement (why this is owner/CI work, not sandbox work)
+
 The acquisitions pull from **HuggingFace** (cnn_dailymail, enronqa), **CMU** (enron), and **AWS S3** (qasper).
 GitHub-only egress policies **403** on those hosts — verified 2026-06-09: 5/9 sources build in a GitHub-allowlisted
 sandbox (qmsum, qaconv, synthetic_notes, landes_todos, bahmutov — all reproduce their pins exactly), but
@@ -24,7 +27,8 @@ cnn_dailymail/enronqa/enron/qasper cannot. **Run the freeze where network is ope
 with open egress.
 
 ## Prerequisites (verify ALL before freezing — do not freeze if any is unmet)
-- [ ] **Open network egress** to huggingface.co + www.cs.cmu.edu + qasper-dataset.s3 (see above), and
+
+- [ ] **Open network egress** to `huggingface.co` + `www.cs.cmu.edu` + `qasper-dataset.s3` (see above), and
   `pip install "datasets>=3.0,<4.0"` (the only non-stdlib dep; used by the two HF scripts).
 - [ ] Corpus data present on disk (`data/corpus-data/` is gitignored and EMPTY in a fresh checkout). — verify:
   `ls data/corpus-data/raw/*.jsonl` after acquisition.
@@ -37,6 +41,7 @@ with open egress.
   the manifest pin `19a2e5b4…` exactly; the on-disk `717e9fb5…` was stale leftover data. Re-acquire fixes it.)
 
 ## Work to-do (the steps — all via `tests/corpus/scripts/freeze_corpus.py`)
+
 Run these where the corpus data actually lives (owner machine / CI runner), `--release`/isolated for any measure:
 
 0. **Easiest path: dispatch `.github/workflows/corpus-freeze.yml`** (Actions → corpus-freeze → Run). It does
@@ -65,6 +70,7 @@ Run these where the corpus data actually lives (owner machine / CI runner), `--r
    gitignored). Report the snapshot record to the board.
 
 ## Output to the orchestrator (how this session reports back)
+
 - Artifact(s): `tests/corpus/snapshot.json` (committed) + the reconciled `manifest.json`; a freeze record on the
   board (`STATUS-0.8.0.md` §7).
 - Schema: snapshot record = {snapshot_id, corpus_version, corpus_hash, total_docs, source_count,
@@ -76,7 +82,9 @@ Run these where the corpus data actually lives (owner machine / CI runner), `--r
   of release artifacts; board is orchestrator-owned. Owner-paced ([[fathomdb-consumer-agents]]).
 
 ## After the freeze → what unblocks (the real IR critical path)
+
 The freeze unblocks, but is NOT, the measurement. Next, in order:
+
 1. **Gold-set labeling (IR-C / Phase 3)** — fact-level `required_evidence` labels on the FROZEN corpus
    (human/HITL; QASPER+QAConv eval-QA are the source material). Must be post-freeze — labeling on an unfrozen
    corpus is the label-drift that moved the GA recall number.
@@ -86,5 +94,6 @@ The freeze unblocks, but is NOT, the measurement. Next, in order:
 3. **IR-D** mint AC-077 (grounded by the experiments) → **IR-2 / IR-gate** (HITL thresholds).
 
 ## Full prompt / next
+
 - This runbook IS the starter; the freeze itself is mechanical via `freeze_corpus.py`. The gold-set labeling
   (step 1 above) is the substantial human/HITL pole and gets its own IR-C prompt.

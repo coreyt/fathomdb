@@ -73,6 +73,7 @@ Turso database (the from-scratch Rust rewrite of SQLite, formerly **Limbo**, rep
    sqlite-vec-vs-native-vector recall spike).
 
 ## Output contract
+
 - One new dated file in `dev/turso-watch/`.
 - Every Turso status claim carries a source URL.
 - Verdict uses the 🔴/🟡/🟢 scheme and explicitly says whether to hold or act.

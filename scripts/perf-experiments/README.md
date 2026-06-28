@@ -6,7 +6,7 @@ required to lock HITL Q1 / Q2 / Q4 in
 
 ## Layout
 
-```
+```text
 scripts/perf-experiments/
   README.md                         (this file)
   run-experiment.sh                 (driver; takes EXP_ID + LEVER_ID)

@@ -115,6 +115,7 @@ freshness for supersession correctness in the interim (it filters on canonical
 ## 8. Test plan
 
 Schema (`fathomdb-schema/tests/migrations.rs`):
+
 - extend `ac_046*` step-id pins (`…, 11` → `…, 11, 12`; counts +1);
 - mirror `ac_049` accretion-guard: step-12 SQL passes **only** with the exemption marker;
 - `s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index`: apply step 12,
@@ -122,6 +123,7 @@ Schema (`fathomdb-schema/tests/migrations.rs`):
   G4/G5 indexes, and `user_version == 12`.
 
 Engine (`fathomdb-engine/tests/pr_g0_identity.rs`, NEW):
+
 - (a) idempotent supersession upsert — re-writing the same `logical_id` leaves exactly one
   active row;
 - (b) **partial-unique NULL-safety** — many NULL-`logical_id` rows coexist active;

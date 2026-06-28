@@ -10,6 +10,7 @@ understand or revisit a parameter without trawling six ADRs and a
 research notebook.
 
 **Companion documents.**
+
 - `dev/design/embedder.md` — the architectural design (dispatch pool,
   warmup, timeout, loader EMB-5 sub-design).
 - `dev/adr/ADR-0.6.0-default-embedder.md` — the model + runtime
@@ -28,6 +29,7 @@ research notebook.
   including the isotropic-vs-real direction correction.
 
 **Lock status legend.**
+
 - 🔒 **Locked** — set in an accepted ADR or via explicit HITL decision;
   changing requires an ADR amendment with HITL sign-off.
 - 🟡 **Recommended** — current best understanding; HITL has reviewed
@@ -62,6 +64,7 @@ because bge-small already cleared the floor with mean-centering and
 escalation cost was not justified.
 
 **Why bge-small wins**:
+
 - Empirical Pareto-best on (recall, latency, storage) once K can move.
 - Cleanest binary-quant retention of the 384d candidates tested.
 - BGE family's MTEB Retrieval score (51.68) is close to bge-base
@@ -89,6 +92,7 @@ escalation cost was not justified.
 | **Locked by** | `dev/adr/ADR-0.6.0-default-embedder.md` § 2; `dev/adr/ADR-0.6.0-subprocess-bridge-deferral.md` |
 
 **Considered**:
+
 - candle in-process *(picked)*
 - sentence-transformers in-process — dropped from default path per
   `dev/deps/sentence-transformers.md`; available to callers via their
@@ -132,6 +136,7 @@ candle ecosystem dep.
 | **Research anchor** | EU-0 § 1.3 step 1 ("not unconditional mean across pad tokens") |
 
 **Considered alternatives**:
+
 - **CLS pooling** — critic-EMB-1 originally argued for CLS. HITL
   overrode because "fathomdb's vectors store canonical information for
   agentic search; mean-pool empirically gives better search accuracy
@@ -151,6 +156,7 @@ candle ecosystem dep.
 | **Research anchor** | EU-0 § 6.7 self-review checklist |
 
 **Why L2-norm post-pool pre-quant**:
+
 - Embedder protocol Invariant 1 requires unit-norm output.
 - Sign-bit quantization is rotation-invariant on the hypersphere, so
   pre-quant normalization is the canonical form expected by the rerank
@@ -214,6 +220,7 @@ bge-small+mc is ~0.945.
 | **Owning slice** | 0.7.1 EU-2 (design) + EU-5a2 (schema migration) — **both closed on `origin/main`** |
 
 **Considered alternatives**:
+
 - Per-source-type mean (one mean per `source_type` partition_key) —
   rejected as scope creep; corpus-wide mean is the standard approach.
 - Don't store; recompute on every open — rejected because corpus-mean
@@ -233,6 +240,7 @@ bge-small+mc is ~0.945.
 
 **Drift policy (ratified by HITL 2026-05-30; describes the DEFERRED 0.8.x
 auto path, NOT shipped in 0.7.2):**
+
 - `MEAN_DRIFT_COS_THRESHOLD = 0.95`. Calibrated from PR-2a's evidence: a
   pathological topic-skewed pinned mean sits ~0.82 cosine to the true
   corpus mean (the EU-7 -10.9pp recall failure); a representative/healthy
@@ -258,6 +266,7 @@ cap on the automatic path; the unbounded case (the doctor verb at very large
 N) is an explicit operator action.
 
 **Considered but rejected (0.7.1 — re-examined for PR-2b):**
+
 - **> 25% row-count delta heuristic** — still rejected as the *trigger*:
   row-count delta is a proxy; the real signal is distribution shift. PR-2b
   triggers on the distribution signal DIRECTLY (cosine drift of a running
@@ -293,6 +302,7 @@ reindex and per-source means remain deferred.
 | **Bit column** | `embedding_bin bit[384]` (dim-parameterized via `migrate_vector_partition_to_pack1`) |
 
 **Considered alternatives** (per the same ADR § 3):
+
 - Vectorlite HNSW SQLite extension — rejected (stale upstream, no 1M
   benchmark, additional architectural lever).
 - sqlite-vec ANN alpha — rejected (alpha-tagged).
@@ -312,6 +322,7 @@ reindex and per-source means remain deferred.
 | **Locked by** | `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 2; Pack 2 SQL at `fathomdb-engine/src/lib.rs:2879-2895` (post-EU-5a2 + EU-5b shift; grep `vec_distance_l2` to find current location) |
 
 **Considered alternatives**:
+
 - `vec_distance_cosine` — equivalent on unit vectors (which we
   guarantee per § 2.3); L2 chosen because it matches the pre-Pack-2
   implicit MATCH distance default and minimizes behavior change for
@@ -350,6 +361,7 @@ estimate) clears the 0.90 floor.
 | 256 | 0.945 (0.926–0.961) | Maximum recall on bge-small+mc | Diminishing returns; mc lift n.s.; rerank cost grows |
 
 **Why K=192 over K=128**:
+
 - Measured K=128 mc point estimate clears 0.90 by only 0.7 pp, **but
   the lower 95% CI bound (0.877) sits below the floor**. K=192's lower
   CI bound (0.912) clears the floor statistically — meaningful
@@ -364,6 +376,7 @@ estimate) clears the 0.90 floor.
   switching to bge-base.
 
 **Why not K=256**:
+
 - mc lift at K=256 is non-significant (+1.2 pp); past K=192 we're
   buying rerank cost for noise.
 - ~0.945 is the practical ceiling for bge-small+mc; if the team
@@ -406,6 +419,7 @@ number (corrected ANN-fidelity recall@10 = 0.937, CI 0.913–0.957) still
 clears 0.90 comfortably, so the floor holds.
 
 **What the (now-completed) decision process was**:
+
 1. EU-7 measured recall@10 on real bge-small+mc at K=192. (The first
    dev-box number, ~0.83, was later root-caused as a measurement-harness
    artifact, not a real-data shortfall.)
@@ -451,6 +465,7 @@ both:
   across releases" — the same reasoning applies to the identity name.
 
 **Considered but not picked**:
+
 - **Release-axis revision (`"0.7.1"`)** — would force a profile-pin
   re-derivation on every 0.7.x release even when weights are unchanged.
   Bad for workspaces that survive releases.
@@ -461,6 +476,7 @@ both:
   identity gets the full SHA.
 
 **Consequences**:
+
 - A future bge-small-en-v1.5 SHA bump on HuggingFace (e.g. v1.5.1)
   changes `DEFAULT_EMBEDDER_REVISION` and triggers fail-closed re-pin
   on every existing workspace per ADR-0.6.0-vector-identity-embedder-owned.
@@ -542,6 +558,7 @@ both:
 | **Locked by** | `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` § EU-6 |
 
 **Recommended ergonomics** (per EU-6):
+
 - Python: `use_default_embedder: bool = False` on `Engine.open(...)`.
 - TypeScript: `useDefaultEmbedder?: boolean` on `OpenOptions`.
 

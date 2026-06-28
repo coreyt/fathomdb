@@ -24,10 +24,21 @@
   // as an H1 would make every such file a false positive.
   "MD025": { "front_matter_title": "" },
 
-  // MD049/MD050 emphasis-style: align with prettier's default (underscore for
-  // _emphasis_, double-asterisk for **strong**) so the two formatters don't
-  // fight. Prettier writes `_emphasis_`; without this override markdownlint
-  // would re-flag every prettier-formatted file.
-  "MD049": { "style": "underscore" },
-  "MD050": { "style": "asterisk" }
+  // MD049/MD050 emphasis-style: DISABLED (0.8.9.1). These are purely cosmetic
+  // (which char marks _emphasis_ / **strong**) with zero semantic value, and they
+  // were the single largest debt bucket (~3,300 findings) AND the direct driver of
+  // formatter corruption: enforcing a single emphasis char forces a bulk *->_ rewrite
+  // that prettier's (now-removed) non-configurable reflow mangled on multi-line /
+  // nested / adjacent-to-`code` spans (broken spans, snake_case `_` loss, word-joins
+  // that change tokenization). The repo no longer runs prettier on markdown
+  // (scripts/agent-lint-md.sh), so there is nothing to "align" with; both `*` and `_`
+  // emphasis are accepted. HITL-approved 2026-06-28.
+  "MD049": false,
+  "MD050": false,
+
+  // MD060 table-column-style: DISABLED (0.8.9.1). Cosmetic (leading/trailing pipe +
+  // delimiter-dash padding style), ~1,857 findings, and NOT safely auto-fixable by
+  // markdownlint (only prettier reformatted tables, and prettier is removed as a
+  // corruptor). No semantic value; leave authors' table layout as-is. HITL-approved.
+  "MD060": false
 }

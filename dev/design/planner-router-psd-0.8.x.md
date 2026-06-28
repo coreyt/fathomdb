@@ -31,6 +31,7 @@ The **recommended target** for "agent-side **or** in-library dispatcher?" is **b
 *Provisional:* primary surface is a **typed tool-calling JSON schema** (the consumers are LLM tool-callers), with a **GraphQL** option for structured non-LLM clients. `[TBD: confirm primary surface with consumer teams — this choice reshapes §I and §II.D.]`
 
 Sample input (illustrative):
+
 ```json
 { "intent": "retrieve",
   "query": "architectural decisions about the SINE module in Q1",
@@ -64,6 +65,7 @@ The agent is **part of the solution, not just the caller.** FathomDB owns gettin
 The loop: **route → return data (+ optional telemetry) → agent judges relevance → (optionally) signals back → route re-plan / route-prior update.** This *refines* the purely-internal closed loop of §II.C by adding the second signal source; it does not replace it.
 
 *Provisional:* this is grounded in four strands of theory, each tied to a concrete design choice and a FathomDB node (detail in §II.C, §III.D, §V.C):
+
 - **IR relevance feedback (Rocchio / interactive IR):** the agent is a *real* relevance judge, the principled superset of pseudo-relevance feedback (PRF) — and it **removes PRF's circularity** that FathomDB flagged (`PRF × CE-rerank` CONFLICT-risk: "PRF presumes the precision the rerank adds," `portfolio` §3.5).
 - **Value of Information / decision theory:** asking the agent costs a round-trip, so *ask-vs-decide-internally* is a VoI break-even — the same discipline the PSD applies to re-plan (§V.C), and it honors the $0 boundary (the agent call is the agent's spend; §V.B).
 - **Contextual bandits / RL:** route selection over arms is explore-exploit over a context; the agent relevance signal is exactly the **missing reward signal** the deferred-learned-routing ADR waits on (§V.E).
@@ -96,6 +98,7 @@ The earlier draft closed the loop on **one** signal: a mid-execution `ce`-confid
 3. **Hybrid via VoI (the recommended target shape — *Provisional:*).** Internal `ce_score` runs by default; the **ask-or-not VoI policy** escalates to an agent signal only under uncertainty (active-learning trigger). The agent signal can **confirm** (cheap validation), **override** (veto a route Fathom was confident in), or **pre-empt** (supply intent up front so the route is right first time — the provider-callback case).
 
 **VoI ask-or-not policy (sketch — all thresholds *Provisional:* until measured):**
+
 - **Decide internally** when `ce_score` is high **and** the margin to the runner-up route is wide (`initial-arch` §6 surfaces both).
 - **Ask the agent** when `ce_score` is low **or** the route margin is narrow (active learning) **and** the expected mis-route cost saved exceeds the round-trip cost (VoI).
 - **Mis-route cost is asymmetric and partly measured:** routing a needle to `C` (map-reduce) summarizes the needle away — **−0.362 + an LLM call** (`portfolio` §3.5; EXP-Fr-acc owns this cost matrix). So the "ask" threshold is **not symmetric**: be far more willing to pay a round-trip when the candidate route risks a high-cost cross-wire than when it risks a cheap same-tier miss.
@@ -108,6 +111,7 @@ Note the recall × CE-rerank interaction this loop sits on top of is a **constra
 ### D. Provenance & metadata packaging — the retrieval-`EXPLAIN` surface (`EXP-OBS`)
 
 When `explain=True`, the router returns the **retrieval-`EXPLAIN` object** (`initial-arch` §6):
+
 - **Per-hit provenance:** which arm(s) surfaced this hit (vector-ANN / FTS-BM25 / graph), rank in each. `[TBD: EXP-OBS deliverable]`
 - **Per-hit score breakdown:** `rrf_norm`, `ce_score` (shipped), the blended `score`, and which filters excluded candidates. `[TBD: EXP-OBS deliverable — only ce_score exists today]`
 - **Query-level trace:** k, `pool_n`, α, MMR, embedder identity, timings (reuse `counters()`/profiling).
@@ -160,6 +164,7 @@ The earlier draft's 10-experiment ladder largely **duplicates landed/named work*
 | 4/5/8/9 — topology / estimator / determinism / e2e | feed EXP-B′, EXP-Fr-acc, EXP-S, and the parity runs | reconcile, don't greenfield. |
 
 **Prerequisites and net-new nodes:**
+
 - **EXP-OBS (extend).** The retrieval-`EXPLAIN` surface of §II.D **plus a reward-signal logger** (executed plan, chosen+runner-up stack, confidence, `ce_score`, and — when returned — the agent relevance label keyed to the route). This is the "logs + reward signal" the deferred-learned-routing ADR requires (§V.E). Prerequisite for the agent-signal arm and any future bandit/RL router.
 - **EXP-Fr-acc (extend).** Keep classifier accuracy + asymmetric mis-route cost + router-locus decision; **add** (a) *value-of-signal* — does an agent relevance signal beat internal `ce_score` alone? (b) *ask-or-not VoI policy* — at what `ce_score`/route-margin does asking pay for its round-trip? (c) *asymmetric weighting* — does it cut the high-cost cross-wire mis-routes (needle→C) more than cheap ones?
 - **EXP-AF (new, optional).** Dedicated agent-feedback node: lift vs `ce_score`-only on the **existing** substrate (no fresh 50–100-query build); round-trip cost + realized VoI break-even; one-shot vs iterative within the `[TBD: 1–2]` depth bound; mis-route reduction. **Prerequisite: EXP-OBS.** May live inside EXP-Fr-acc or split out (steward's call). **KILL path:** if the agent signal does not beat `ce_score`-only net of round-trip cost → drop the agent-signal loop; router stays on internal `ce_score` (mirrors EXP-S's KILL discipline).

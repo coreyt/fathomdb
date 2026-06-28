@@ -108,7 +108,7 @@ need a new `BM25fQueryPlan` path alongside the existing OR-token path.
 
 ### 3.3 RRF fusion impact
 
-The lexical arm score currently uses `bm25()` (single-column). Switching to `bm25(v2, ...)` 
+The lexical arm score currently uses `bm25()` (single-column). Switching to `bm25(v2, ...)`
 changes the score magnitude but not the RRF fusion logic (RRF ranks, not scores). RRF
 fusion in `pr_g9_rrf_fusion.rs` is byte-deterministic on the current scoring; BM25F would
 require the determinism pins to be extended and re-verified.

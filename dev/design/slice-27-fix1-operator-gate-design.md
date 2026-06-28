@@ -29,7 +29,7 @@ runtime surface is recovery-clean, and the CLI opts in.
 ## 1. The feature: `operator`
 
 - **`fathomdb-engine`**: new `[features] operator = []`. The operator/recovery methods
-  + their operator-exclusive private helpers are `#[cfg(feature = "operator")]`. Default
+  - their operator-exclusive private helpers are `#[cfg(feature = "operator")]`. Default
   build: absent. With the feature: present and **byte-for-byte behavior-identical**
   (gate, never delete).
 - **`fathomdb` (facade)**: new `[features] operator = ["fathomdb-engine/operator"]`. The
@@ -112,6 +112,7 @@ otherwise → escalate, do not force.)
 The scanner (`scripts/security/check_removal_changelog.py`) matches removed
 `pub fn|struct|enum|trait|const|type|static|mod` lines in a `v0.6.1..HEAD` diff. Empirics
 of this fix:
+
 - Gating a method **adds** a `#[cfg(feature = "operator")]` attribute line; the `pub fn …`
   line is unchanged → **not** a removal. `pub use` re-export changes are not matched by the
   regex at all. So **this fix introduces no new AC-050c removals** (confirmed by running the

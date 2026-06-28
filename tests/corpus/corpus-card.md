@@ -202,7 +202,8 @@ lands.
 
 Authoritative copy lives in
 [`scripts/manifest.json`](./scripts/manifest.json) (machine-readable
-+ verified by the build pipeline). Summary table:
+
+- verified by the build pipeline). Summary table:
 
 | Source | Upstream ID | Snapshot | Output SHA-256 |
 |---|---|---|---|

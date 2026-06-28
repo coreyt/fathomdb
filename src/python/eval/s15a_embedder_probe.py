@@ -1481,6 +1481,7 @@ def write_outputs(result: dict[str, Any], *, out_json: Path, out_md: Path) -> No
     lines.append(result["stage_split"])
     lines.append("")
     lines.append("### Caveats")
+    lines.append("")  # MD022/MD032: blank line between heading and the list below
     for c in result["caveats"]:
         lines.append(f"- {c}")
     out_md.parent.mkdir(parents=True, exist_ok=True)

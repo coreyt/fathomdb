@@ -18,6 +18,7 @@ v0.5.x.
 component again.
 
 ### Why (the now-argued rationale — see substrate ADR Decision 5)
+
 - **Silent identity-fork bug (high severity).** Node + edge supersession was
   `UPDATE … WHERE logical_id = ? AND kind = ? …`; re-ingesting one `logical_id`
   with a *changed* `kind` matched no prior active row, and the compound unique

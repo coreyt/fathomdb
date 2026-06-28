@@ -30,6 +30,7 @@ content-OR compilation (`compile_content_or`) to avoid AND-join near-zero recall
 on natural-language questions.
 
 **Query pattern:**
+
 ```sql
 SELECT body FROM search_index
   WHERE search_index MATCH <content_OR_expression>
@@ -53,9 +54,11 @@ writes both FTS and vector projections.
 RRF fusion, giving a dense-only ranking.
 
 Before any query on the dense arm, call:
+
 ```rust
 engine.set_search_limit_for_test(1000);
 ```
+
 This raises the KNN fanout to 1000 so that top-1000 dense results are actually
 available. Without this, the default fanout cap would truncate at a lower K.
 
@@ -82,6 +85,7 @@ query — an upper bound on reranker recall at any given depth.
 
 **Implementation:** Compute from the two ranked lists. For each K in {50, 100,
 200, 500, 1000}:
+
 - `bm25_found = any required gold doc in bm25_text_results[:K]`
 - `dense_found = any required gold doc in dense_results[:K]`
 - `oracle_found = bm25_found OR dense_found`
@@ -158,6 +162,7 @@ back to sentence-transformers if FlashRank is unavailable. Both provide
 cross-encoder scoring.
 
 **Models:**
+
 - TinyBERT-L-2 (~4 MB): `cross-encoder/ms-marco-TinyBERT-L-2`
 - MiniLM-L6 (~22.7 MB): `cross-encoder/ms-marco-MiniLM-L6-v2`
 

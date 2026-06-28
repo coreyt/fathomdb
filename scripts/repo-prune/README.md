@@ -12,7 +12,7 @@ a machine-checked gate and before/after metrics.
 
 ## Layout
 
-```
+```text
 scripts/repo-prune/
 ├── README.md                         ← this file: requirements + design
 ├── prompts/
@@ -41,6 +41,7 @@ docs + manifest), and the per-doc map `dev/DOC-INDEX.md`.
 ## Requirements
 
 **Functional**
+
 - R1. Classify every doc/memory into exactly one verdict and act on it: doc prune =
   CURRENT / REFERENCE / ARCHIVE / DELETE; memory prune = KEEP / CONSOLIDATE / REPOINT / RETIRE.
 - R2. Preserve every experiment result with fidelity — distil into `dev/experiments-ledger.md`
@@ -51,6 +52,7 @@ docs + manifest), and the per-doc map `dev/DOC-INDEX.md`.
   signal-to-noise, memory index tokens/session, redirects, staleness, link health).
 
 **Safety invariants (hard)**
+
 - S1. No source/test code touched (`git status --porcelain src/` clean).
 - S2. Reversibility: doc prune uses `git mv`/`git rm` (history recovers). Memory dir is **not
   git** → a full snapshot to `backups/` is mandatory before any memory delete/rewrite (gate INV-5).

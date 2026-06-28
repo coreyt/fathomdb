@@ -71,6 +71,7 @@ Note also: FathomDB's 0.8.x retrieval baselines (BM25 ground truth, recall floor
 **Recommendation: Not now, not as a swap.** Cheapest real signal = a spike on the single most-coupled, least-replaceable pillar — the **sqlite-vec ANN path** — testing whether Turso native vector reproduces binary-quantized recall at FathomDB's floor. If that fails, the rest is moot.
 
 **Revisit triggers (any source clearing all three → re-evaluate seriously):**
+
 1. Turso ships **ANN vector indexing** (not just exact search).
 2. Turso exits **beta** → GA / production reliability claim.
 3. Turso supports **`WITH RECURSIVE`** — OR FathomDB has already moved graph traversal out of SQL.
@@ -78,8 +79,9 @@ Note also: FathomDB's 0.8.x retrieval baselines (BM25 ground truth, recall floor
 ---
 
 ## Sources
-- https://github.com/tursodatabase/turso
-- https://raw.githubusercontent.com/tursodatabase/turso/main/COMPAT.md
-- https://turso.tech/blog/beyond-fts5
-- https://turso.tech/blog/turso-0.5.0
-- https://docs.turso.tech/features/sqlite-extensions (libSQL — older fork, for contrast)
+
+- <https://github.com/tursodatabase/turso>
+- <https://raw.githubusercontent.com/tursodatabase/turso/main/COMPAT.md>
+- <https://turso.tech/blog/beyond-fts5>
+- <https://turso.tech/blog/turso-0.5.0>
+- <https://docs.turso.tech/features/sqlite-extensions> (libSQL — older fork, for contrast)

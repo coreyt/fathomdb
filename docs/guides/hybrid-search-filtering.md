@@ -11,7 +11,7 @@ Each branch produces its own ranked list. RRF scores every result by the sum of
 `1 / (60 + rank)` over the branches that surfaced it (rank is 1-based within a
 branch):
 
-```
+```text
 score(body) = Σ_branch  1 / (60 + rank_branch(body))
 ```
 

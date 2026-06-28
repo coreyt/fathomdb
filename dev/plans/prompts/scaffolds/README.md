@@ -26,6 +26,7 @@
 | 9 | [`9-IR-gate.md`](9-IR-gate.md) | ◆ IR-gate — set AC-077 thresholds | IR-eval | HITL-gate | decision package | — (HITL gate) |
 
 ## How to use
+
 - **Step 0 (now, in parallel):** GA-1 (1) ∥ IR-A (6) ∥ COR-1→COR-2 (5). No cross-deps.
 - **GA critical path:** 1 → ◆2 → 3 → ◆Slice-40 merge → ◆4 → ★ 0.8.0 GA.
 - **IR-eval path:** 6 (now) ∥ 5 (freeze) → 7 (needs ◆2 + ⬛5 + 6 merged; Ph4 needs Slice-40 merged) → 8 → ◆9 → ★ AC-077 LIVE.

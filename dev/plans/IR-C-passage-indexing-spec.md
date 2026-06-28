@@ -9,6 +9,7 @@ in the hybrid (R@20 0.725→0.850, R@50 0.887→0.925). This spec scopes turning
 harness result into a real engine feature.
 
 ## Validated recipe (from the sweep)
+
 - **Chunk geometry**: word windows, ~128 words / 96 stride is the best single
   compromise (64/48 wins exact_fact, 128/96 wins exploratory; 256/whole lose both).
 - **Pooling**: **max** (doc = its single best passage). Mean re-dilutes; top-2 ≈ max.
@@ -17,8 +18,10 @@ harness result into a real engine feature.
   config fused a *passage-max-pooled* vector arm with a *doc-level* lexical arm.
 
 ## Current architecture (the 1-node-1-vector assumption)
+
 Identity unit is the canonical node, keyed by `write_cursor` (interim id) and
 optionally `logical_id` (stable, supersession). "1 node = 1 vector" is enforced at:
+
 1. `_fathomdb_vector_rows.write_cursor UNIQUE` (schema) — one vector row per node.
 2. `vector_default.rowid = write_cursor` — the vec0 rowid *is* the node cursor.
 3. `fuse_rrf()` dedups on `body` — a body surfaces once; no multi-passage routing.
@@ -31,6 +34,7 @@ BM25 over `search_index` (text), fused by `fuse_rrf` (RRF_K=60), `SearchHit.id =
 write_cursor`.
 
 ## Recommended design — Option A: passages as a projection-internal fan-out
+
 Keep the node as the identity/return unit. Only the **vector projection** fans out
 (1 node → N passage vectors); passages are index artifacts, not first-class nodes.
 Retrieval max-pools passages back to their parent node before fusion. This leaves
@@ -42,6 +46,7 @@ grouping column. Touches identity, supersession, dedup, and read paths everywher
 much heavier for no retrieval gain over A.)
 
 ### Schema changes
+
 - New map table `_fathomdb_passages(passage_rowid INTEGER PK, write_cursor INTEGER,
   passage_idx INTEGER)` — passage → parent node.
 - `vector_default.rowid` becomes a **passage_rowid** (new monotonic counter), no
@@ -52,6 +57,7 @@ much heavier for no retrieval gain over A.)
 - **`search_index` (FTS) unchanged** — stays document-level, one row per node.
 
 ### Write / projection path
+
 - `run_projection_job`: chunk `body` (`chunk_words`, 128/96 default; see open Q1),
   embed each passage, emit N vector outcomes.
 - `commit_projection_outcomes`: insert N `vector_default` rows + N `_fathomdb_passages`
@@ -61,6 +67,7 @@ much heavier for no retrieval gain over A.)
   computed over passage vectors (correct for a passage index). Minor.
 
 ### Search path
+
 - Bit-KNN + L2 rerank now return **passage** hits.
 - **New fold step (before `fuse_rrf`)**: join passage hits → parent `write_cursor`
   via `_fathomdb_passages`, **max-pool** to one hit per node (best passage rank/
@@ -69,6 +76,7 @@ much heavier for no retrieval gain over A.)
 - `SearchHit.id` stays `write_cursor` → downstream `read_get` unchanged.
 
 ## Open questions / decisions
+
 1. **Granularity is class-dependent but query class isn't visible at serve time.**
    Pick 128/96 (best compromise) as default; optionally per-`kind` config. (64/48 if
    a kind is exact-fact-dominated.)
@@ -86,12 +94,14 @@ much heavier for no retrieval gain over A.)
    backfill job re-running the projection over `canonical_nodes`).
 
 ## Effort
+
 Medium, multi-day, touching schema + write + search but mostly mechanical. The
 identity/supersession edge cases (Q3) and candidate-budget tuning (Q2) are where the
 real care goes. The text arm and node-identity model are untouched, which is what
 keeps Option A tractable.
 
 ## References
+
 - Dense-arm evidence: `dev/plans/runs/performance-output-and-compare.md` (2026-06-10d/e)
 - Harness implementing the recipe: `src/rust/crates/fathomdb-engine/tests/ir_c_fusion_experiment.rs`
 - Engine seams: `lib.rs` (`run_projection_job` ~4371, `commit_projection_outcomes`

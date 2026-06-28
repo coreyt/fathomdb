@@ -43,6 +43,7 @@ exclude_path = [
   "dev/tmp3",
   "dev/adr",
   "dev/agents",
+  "dev/archive",
   "dev/deps",
   "dev/design",
   "dev/interfaces",
@@ -62,8 +63,11 @@ exclude_path = [
   ".claude",
 ]
 
-# Don't check fragments — most md anchors are heading-derived.
-include_fragments = false
+# Fragments (`#anchor`) are NOT checked: that is lychee's default (opt in with
+# --include-fragments), and most md anchors here are heading-derived. The explicit
+# `include_fragments = false` key was removed in 0.8.9.1 — current lychee (0.24.x) rejects
+# the bool form ("wanted string or table") and breaks config parsing; the default already
+# gives the intended behavior.
 
 # Skip mailto links.
 include_mail = false

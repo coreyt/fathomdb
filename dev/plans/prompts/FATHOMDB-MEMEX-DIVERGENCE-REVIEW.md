@@ -8,6 +8,7 @@ FathomDB surface yourself, then **spawn and interview a Memex liaison agent** to
 reconcile.
 
 ## Why this exists
+
 Memex is FathomDB's primary consumer ([[fathomdb-consumer-agents]]); the integration surface spans four
 layers and they can silently drift. **One divergence is already known and load-bearing:** Memex installs
 `fathomdb` as a `uv` **path dependency on `../fathomdb/python`** — a **recovered, sourceless `0.1.0`
@@ -16,6 +17,7 @@ predates everything in 0.8.x (no `ingest_with_extractor`, no graph verbs). Treat
 this as a primary objective, and look for others like it.
 
 ## Roles & rules
+
 - **You (reviewer):** inventory the FathomDB surface from the repo + git (authoritative over any doc),
   run the interview, reconcile, write the report. Cite `file:line`. Do not edit code; do not push.
 - **Memex liaison (you spawn it):** answers for Memex's *needs and usage* from the Memex repo + ratified
@@ -25,6 +27,7 @@ this as a primary objective, and look for others like it.
 ---
 
 ## Phase A — Inventory the FathomDB stack surface (do this FIRST, from the repo)
+
 Build a layer-by-layer inventory of *what FathomDB actually exposes today on `main`*. For each layer
 capture the concrete surface (names, signatures, columns, version) with `file:line` — this is the
 "supply" side you'll reconcile against Memex's "demand."
@@ -57,6 +60,7 @@ Record Phase A as inventory tables before interviewing — you'll diff against t
 ---
 
 ## Phase B — Spawn & interview the Memex liaison
+
 Spawn a subagent (general-purpose) that **adopts the role prompt at
 `~/projects/memex/dev/fathomdb/MEMEX-LIAISON-AGENT.md`** and operates in `~/projects/memex`. Tell it to
 read and follow that prompt, then answer the interview below from the Memex repo + ratified records
@@ -64,6 +68,7 @@ read and follow that prompt, then answer the interview below from the Memex repo
 files. Use follow-up messages (SendMessage) to drill into any answer that reveals a divergence.
 
 **Interview question set (maps to the stack layers + known risks):**
+
 1. **Install/version.** How is `fathomdb` installed (confirm the `uv` path dep on `../fathomdb/python`)?
    What FathomDB **version/surface does Memex assume**? Is Memex aware its installed binding is the
    **sourceless `0.1.0` shim**, not 0.8.x? Does Memex's code call anything (`ingest_with_extractor`,
@@ -89,10 +94,12 @@ files. Use follow-up messages (SendMessage) to drill into any answer that reveal
 ---
 
 ## Phase C — Reconcile → divergence report
+
 Diff Phase A (FathomDB supply) against Phase B (Memex demand). Build a **divergence matrix**: for each
 Memex usage/need → one of **MET / DIVERGENT / GAP / UNUSED**, with severity (P1 breaks integration · P2
 will break on a known-planned change · P3 cosmetic/cleanup) and a recommended action. Specifically
 resolve:
+
 - **Version divergence (the `0.1.0` shim vs 0.8.x)** — quantify: which Memex call sites need 0.8.x surface
   the shim lacks; is Memex currently running against a binding that can't satisfy its own code? Recommend
   the **`maturin build` of `src/python` → 0.8.x wheel** cutover and who does it.
@@ -112,6 +119,7 @@ one-paragraph **verdict**: are FathomDB and Memex aligned, drifting, or diverged
 important action to keep them converged.
 
 ## Guardrails
+
 - Read-only / report-only; **no code changes, no push, no contract changes.** The review *recommends*;
   HITL and the slice process *act*.
 - Trust **repo + git over any doc** (including this prompt) when they disagree; cite `file:line`.

@@ -146,11 +146,13 @@ fully committed before any deletion commit.
    (table: archived path · original path · release · date archived · superseded-by ·
    one-line what-it-was). Subfolder per release: `dev/archive/<release>/`.
 3. **ARCHIVE — two modes.** Prepend this banner to every ARCHIVE doc either way:
-   ```
+
+   ```text
    > **SUPERSEDED / ARCHIVED <date>.** Historical — describes <release>. Current state: <link>.
    > Preserved for history; not maintained — the project has moved on; details may be STALE.
    > See dev/experiments-ledger.md for distilled results.
    ```
+
    - **(default) Relocate:** `git mv` the doc into `dev/archive/<release>/`, add its row to
      the `dev/archive/README.md` manifest, and fix inbound links from CURRENT docs to the
      new path or the ledger (same commit).

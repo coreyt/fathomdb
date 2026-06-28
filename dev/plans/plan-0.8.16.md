@@ -34,7 +34,7 @@
 *Why last:* #5 is only meaningful once ≥2 backends can read each other's index (0.8.7 + 0.8.14), and is
 deliberately deferred out of the high-re-embed experimentation phase (PROGRAM-SEQUENCING §5 Q2). #13 is
 heavy net-new authorship with low near-term ROI whose substrate partly accretes from earlier perf work.
-#11-full is the GA publish that the whole line builds toward.
+\#11-full is the GA publish that the whole line builds toward.
 
 ---
 
@@ -57,7 +57,7 @@ New ACs: candidates at Slice 0 (vector-equivalence contract) and Slice 40 (GA re
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 

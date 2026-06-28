@@ -36,6 +36,7 @@ not sampling — counts reconcile to each directory total). Authored docs are en
 tightly grouped by release.
 
 ### `dev/plans/runs/` — 660 files (+A3-evidence 6, +__pycache__)
+
 | Group | Verdict | Reason / fidelity |
 |-------|---------|-------------------|
 | `STATUS-0.8.4.md`, `0.8.4-COMPREHENSIVE-REPORT.md` | **CURRENT** (2) | newest board + closing report of just-closed release; cited |
@@ -52,6 +53,7 @@ tightly grouped by release.
 | **subtotal** | | CURRENT 2 · REFERENCE 118 · ARCHIVE 37 · DELETE 503 (+A3 6 +pycache) |
 
 ### `dev/plans/*.md` + `prompts/` + `scaffolds/` — 240 files
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | `plan-0.8.4.md`, `0.8.5-ce-rerank-alpha-expose-slice.md`, `plans/README.md`, `prompts/0.8.x-PROGRAM-STEWARD-HANDOFF.md` | **CURRENT** (4) | current-release plan + live slice + steward entry |
@@ -61,6 +63,7 @@ tightly grouped by release.
 | **subtotal** | | CURRENT 4 · REFERENCE 26 · ARCHIVE 210 · DELETE 0 |
 
 ### `dev/design/` — 66 files
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | 18 cross-cutting specs (`engine/lifecycle/scheduler/recovery/errors/embedder/retrieval/vector/ann-index-vec0/op-store/migrations/projections/bindings/orchestration/perf-gates/perf-regression-detection/release/README`) | **CURRENT** (18) | live system specs |
@@ -70,6 +73,7 @@ tightly grouped by release.
 | **subtotal** | | CURRENT 21 · REFERENCE 17 · ARCHIVE 28 · DELETE 0 |
 
 ### `dev/adr/` — 53 files (NEVER archived/deleted — guardrail §0)
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | 51 in-force ADRs + README + decision-index | **CURRENT** (51) | live decisions in force |
@@ -77,12 +81,14 @@ tightly grouped by release.
 | **subtotal** | | CURRENT 51 · REFERENCE 2 · ARCHIVE 0 · DELETE 0 |
 
 ### `dev/deps/` — 36 files
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | `index.md` (status:living), `README.md` | **CURRENT** (2) | live dep-audit index (dep-auditor agent update target) |
 | 34 per-crate keep/drop/replace evaluations | **REFERENCE** (34) | decisions in force; cited by index + 0.6.0 ADRs |
 
 ### `dev/notes/` — 55 files
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | `README.md` | **CURRENT** (1) | dir index |
@@ -91,6 +97,7 @@ tightly grouped by release.
 | 9 `perf/ac020-*.svg/.folded` flamegraph dumps | **DELETE** (9) | result in ADR-0.7.0-ac020 + whitepaper-notes (verify first) |
 
 ### root `dev/*.md` + remaining subdirs — 157 files
+
 | Group | Verdict | Reason |
 |-------|---------|--------|
 | 12 root docs (`acceptance`✦, `requirements`✦, `security-review`✦, `architecture`, `DOC-INDEX`, `learnings`, `update-docs`, `prune-docs`, `prune-docs-acceptance-tests`, `README`, `test-plan`, `traceability`) | **CURRENT** (12) | ✦ = sole home of REQ/AC/SR IDs |
@@ -162,6 +169,7 @@ DELETEd** despite the `.json` extension. Ensure no Phase-2 rule sweeps them.
 
 **R-4 · DOC-INDEX bundled rows must be split.** DOC-INDEX line ~94 bundles
 `engine/lifecycle/.../0.7.0-vector-quant-pack1/0.7.1-EU-6-FIX-*` into one row mixing CURRENT
+
 + ARCHIVE files. Splitting is required when those ARCHIVE files move (gate-m).
 
 **R-5 · Stale DOC-INDEX / ADR labels (out of prune scope, flag for update-docs).**

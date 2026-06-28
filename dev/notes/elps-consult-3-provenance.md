@@ -7,13 +7,16 @@
 > (round-2 additive fields), round-1 (`options.instructions`).
 
 ## The question
+
 Is an additive **OPTIONAL** `ready.provenance` object within the ratified
 `fathomdb.extract.v1` envelope at `schema_version 1`, or does it need a
 `schema_version` bump / re-ratification?
 
-## The answer — ◆ ACCEPT at `schema_version 1`. No bump, no re-ratification.
+## The answer — ◆ ACCEPT at `schema_version 1`. No bump, no re-ratification
+
 FathomDB's default is correct: treat `ready.provenance` as **optional at v1**; no
 Memex change is required for FathomDB to start reading it. Rationale:
+
 1. **Forward-compat posture the contract already guarantees (FR-V2):** an optional
    field where *absent ⇒ ignored* is non-breaking by construction in both directions.
 2. **Direct precedent:** same principle as the round-2 additive fields ratified at v1
@@ -25,6 +28,7 @@ Memex change is required for FathomDB to start reading it. Rationale:
    (golden asserts `result` bytes, not `ready`).
 
 ## Load-bearing clarifications
+
 - **`ready.model` stays authoritative** (FR-H3) — it keys the determinism cache and
   MUST change when the logical model family changes. The richer `provenance` object
   (resolved model, effort, temperature, `prompt_version`, …) is an informational
@@ -40,6 +44,7 @@ Memex change is required for FathomDB to start reading it. Rationale:
   has no production-ELPS counterpart.
 
 ## Deferred (agreed)
+
 - **E4 grounding context as a protocol *input* field WOULD touch `extract.v1` →
   real re-ratify** (a request field the provider must honor + fold into the
   determinism cache key, like round-1 `options.instructions`). Flag when it firms up.
@@ -48,6 +53,7 @@ Memex change is required for FathomDB to start reading it. Rationale:
   backoff would be an internal, protocol-invisible enhancement.)
 
 ## Net for FathomDB
+
 **Proceed with PRE-3 as designed** — read/emit `ready.provenance` as optional at
 `schema_version 1`; no Memex dependency. Memex will fold the "sanctioned optional v1
 field" note into their `EXTRACTION_PROTOCOL.md`. **E4 is the only item that will

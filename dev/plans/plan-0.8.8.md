@@ -83,7 +83,7 @@ New ACs: candidates at Slice 0 (explain-contract) and the telemetry/real-gold ga
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 

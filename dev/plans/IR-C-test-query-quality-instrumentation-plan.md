@@ -13,10 +13,12 @@ feature-gated dense path compiles.
 ephemeral container):** (1) regenerate gold to `ir-c-reused-v2`; (2) run the
 diagnostics to emit the actual measures.
 
-### Producing the measures (runbook — where the corpus lives)
+## Producing the measures (runbook — where the corpus lives)
+
 Prereqs: the frozen corpus present at `data/corpus-data/` matching
 `snapshot.json`'s `corpus_hash` (else the dense/lexical run self-skips on the
 hash guard), and embedder weights for the dense pass.
+
 ```bash
 # 1. regenerate gold with the v2 tracers + spans (needed for the IoU metric)
 python3 tests/corpus/scripts/build_ir_gold.py
@@ -29,6 +31,7 @@ IRC_RUN=1 cargo test -p fathomdb-engine \
 IRC_RUN=1 IRC_DIAG_DENSE=1 cargo test --release -p fathomdb-engine \
   --features default-embedder --test ir_c_gold_diagnostics -- --nocapture
 ```
+
 Both write `data/corpus-data/eval/ir_gold/all.gold.diagnostics.json` (gitignored).
 Headlines print as `DIAG_SUMMARY` (lexical: `bm25_rank1_frac` per class) and
 `DIAG_DENSE_SUMMARY` (`bucket_counts` — the **semantic** count is the answer to
@@ -60,6 +63,7 @@ gets its own plan once 1–3 land; this plan leaves a hook for it.
 ## Goals / non-goals
 
 **Goals**
+
 - Turn "is the benchmark lexically biased?" into committed numbers, recomputable
   and pinned to the frozen corpus.
 - Zero change to the *production* retrieval/index path. All new metadata is
@@ -68,6 +72,7 @@ gets its own plan once 1–3 land; this plan leaves a hook for it.
   guarantee; keep model-dependent diagnostics out of the gold.
 
 **Non-goals**
+
 - No production chunking / index-schema change. #3 is the *measurement* half of the
   parked locator item (#8); the *product* half stays deferred with the chunking
   decision (it must not be prejudged by this work).
@@ -119,6 +124,7 @@ ranks won't be comparable. Refactor the experiment's proven helpers
 stopword/IDF tokenizers) out of `tests/ir_c_fusion_experiment.rs` into
 `tests/support/ir_retrieval.rs`, and have both the experiment and a new
 `tests/ir_c_gold_diagnostics.rs` consume them. The diagnostics harness:
+
 - **default (lexical)**: seed corpus → for each gold query, content-OR FTS rank of
   each required gold doc → write/refresh the lexical section. No embedder.
 - **`IRC_DIAG_DENSE=1`**: also embed (whole + 128/96), compute dense gold ranks,
@@ -128,6 +134,7 @@ stopword/IDF tokenizers) out of `tests/ir_c_fusion_experiment.rs` into
 ### Data model
 
 **Gold additions (`ir_eval.rs` structs + `build_ir_gold.py` emit):**
+
 ```jsonc
 {
   "query_id": "...", "query": "...", "query_class": "exploratory",
@@ -143,6 +150,7 @@ stopword/IDF tokenizers) out of `tests/ir_c_fusion_experiment.rs` into
 ```
 
 **Sidecar (`all.gold.diagnostics.json`):**
+
 ```jsonc
 {
   "corpus_hash": "fe973fcd…",            // must match snapshot.json or refuse
@@ -193,6 +201,7 @@ Let `Qc` = query content tokens (`content_tokens()` — ≥3 chars, stopwords re
   not just right doc.* Mean reported over exact_fact (where spans are dense).
 
 ### Determinism & validity invariants
+
 - Lexical sidecar is bit-reproducible given `corpus_hash`; the tool refuses to run
   if the on-disk corpus hash ≠ `snapshot.json` (mirrors `build_ir_gold.py`).
 - Dense sidecar is reproducible given corpus + serialized embedder; always carries
@@ -203,6 +212,7 @@ Let `Qc` = query content tokens (`content_tokens()` — ≥3 chars, stopwords re
   `query_origin`/`spans` still parses.
 
 ### Touched files
+
 - `src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs` — `GoldQuery`
   {`source`,`answer_type`,`query_origin`}, `Locator.spans`, parse + validate.
 - `src/rust/crates/fathomdb-engine/tests/support/ir_retrieval.rs` — NEW, extracted
@@ -226,6 +236,7 @@ defaulting to `human_dataset` for the reuse tier. `validate_gold_set` warns (not
 fails) on missing `query_origin` to stay back-compat.
 
 **Tests first** (`ir_eval.rs` unit tests):
+
 - `parse_promotes_source_and_answer_type` — a gold row with `source`/`answer_type`
   populates the struct; a legacy row with `_source`/`_answer_type` still parses via
   fallback.
@@ -251,6 +262,7 @@ regressed.
 `locator.spans`. `ir_eval.rs` `Locator` gains `Option<Vec<Span>>`.
 
 **Tests first:**
+
 - `parse_locator_spans` — a `span` locator round-trips its offsets; a `whole_body`
   locator has `spans: None`.
 - `validate_span_bounds` — `end ≥ start ≥ 0` and `span.doc_id == evidence.doc_id`,
@@ -272,6 +284,7 @@ guarded by the existing experiment test still passing). New
 summary, and writes the `lexical` section pinned to `corpus_hash`.
 
 **Tests first:**
+
 - `ir_retrieval` refactor: assert extracted `compile_content_or`/`fts_bodies`/
   `chunk_words` behave identically (golden-string + the experiment test staying
   green is the regression guard).
@@ -298,9 +311,11 @@ each passage tuple carries its span (the harness-side "passage locator"). In the
 diagnostics harness under `IRC_DIAG_DENSE=1`, compute `dense_gold_rank_{whole,
 128_96}`, the `bucket`, and — for span-locator queries — `passage_evidence_iou`
 against the WI-3a spans. Write the `dense` section tagged with `embedder_identity`
-+ `scope`. Reuse the same embeddings the fusion experiment already builds.
+
+- `scope`. Reuse the same embeddings the fusion experiment already builds.
 
 **Tests first:**
+
 - `chunk_words_reports_offsets` — offsets are monotonic, cover the body, and slice
   back to the chunk text (`body[start..end] == chunk`), including the short-body
   single-chunk and `usize::MAX` whole-doc cases.
@@ -322,6 +337,7 @@ scope-labeled, and the `semantic` bucket count gives the empirical answer to "do
 this benchmark contain queries that *need* vector?"
 
 ## Sequencing, rollout, CI
+
 1. WI-2 + WI-3a together → one gold regen, one `qrels_version` bump.
 2. WI-1L (refactor seams first, then lexical harness) → cheap full-corpus lexical
    sidecar; wire into CI (fast, no embedder).
@@ -332,6 +348,7 @@ this benchmark contain queries that *need* vector?"
    much of "lexical-bound" is the test set.
 
 ## Risks / open questions
+
 - **Refactor risk (ir_retrieval extraction):** the experiment test is the
   regression guard — extract with it green, no logic edits in the same step.
 - **Dense-rank cost:** full-corpus dense ranks remain an embed-bound job; mitigated
@@ -343,6 +360,7 @@ this benchmark contain queries that *need* vector?"
   tokenizer (reuse `content_tokens`) so `idf_overlap` is reproducible.
 
 ## Deferred — item 4 hook
+
 The sidecar's per-query records (especially `bm25_gold_rank` + the dense ranks) are
 exactly the pool the unlabeled-positive / pooling-augmentation audit (item 4) will
 judge. Item 4 will add a `label_quality` section to the same sidecar

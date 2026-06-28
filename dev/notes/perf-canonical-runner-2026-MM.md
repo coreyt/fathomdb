@@ -23,8 +23,7 @@ Per `dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md`
   to the GitHub Actions runner slice).
 - **Core count / threads:** 4 (per `nproc`).
 - **OS:** Ubuntu 24.04.4 LTS.
-- **Kernel:** `Linux runnervmg397c 6.17.0-1013-azure
-#13~24.04.1-Ubuntu SMP Wed Apr 15 16:52:17 UTC 2026 x86_64`.
+- **Kernel:** `Linux runnervmg397c 6.17.0-1013-azure #13~24.04.1-Ubuntu SMP Wed Apr 15 16:52:17 UTC 2026 x86_64`.
 - **glibc version:** GLIBC 2.39 (Ubuntu).
 - **SQLite version:** bundled via `libsqlite3-sys 0.28.0` in
   `Cargo.lock`; ships SQLite 3.45.x. Exact patch version was not
@@ -61,7 +60,7 @@ Per `dev/adr/ADR-0.6.0-text-query-latency-gates.md` L40-75 +
 
 Raw harness output (from `perf-canonical-ac012.log`):
 
-```
+```text
 AC012_NUMBERS n=1000000 samples=1000 seed_ms=33618 p50_ms=140 p99_ms=458
 thread 'ac_012_text_query_latency_on_fts5_path' (2594) panicked at src/rust/crates/fathomdb-engine/tests/perf_gates.rs:474:5:
 AC-012 failed: p50=140.947602ms > budget 20ms at n=1000000

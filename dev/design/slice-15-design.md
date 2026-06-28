@@ -95,6 +95,7 @@ On error: write `[WARN] fathomdb: extractor returned error code=…` to stderr (
 Algorithm: `sha256(type.to_lowercase() + ":" + name.to_lowercase())` — hex-encoded lowercase string.
 
 Rationale:
+
 - Deterministic: same (name, type) → same logical_id across runs
 - Collision-resistant: sha256 (2^256 space)
 - Type-scoped: different entity types with same name get different logical_ids
@@ -120,6 +121,7 @@ Check: `Cargo.toml` workspace deps for `sha2`.
 **Decision: Option B (separate table).**
 
 Rationale:
+
 - Option A requires ALTER TABLE on FTS5 virtual table (not supported; would need drop+recreate,
   losing all indexed data and requiring re-projection — same as step-11, but worse here since
   we'd need to re-tokenize all existing node bodies)
@@ -134,12 +136,14 @@ Edge FTS hits are distinguishable: they come from `search_index_edges`, so `bran
 **Decision: extend the projection scheduler to also process edge bodies.**
 
 Mechanism:
+
 - When an edge with non-null body is written, do NOT call `record_projection_terminal`; instead
   call nothing (let the scheduler pick it up via the UNION query)
 - Add `"edge_fact"` to `resolve_source_type()`: returns `"edge_fact"`
 - Auto-register `"edge_fact"` in `_fathomdb_vector_kinds` when engine opens (similar to how node
   kinds are registered via `_configure_vector_kind`)
 - Extend `next_pending_projection_jobs` with UNION:
+
   ```sql
   SELECT canonical_edges.write_cursor, 'edge_fact' AS kind, canonical_edges.body
   FROM canonical_edges
@@ -158,6 +162,7 @@ first edge with body is written (in `commit_batch`), or at engine open time if a
 rows with body exist.
 
 Actually simpler: register it in `commit_batch` when we write an edge with non-null body:
+
 ```sql
 INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
 VALUES('edge_fact', 'default', ?)
@@ -184,6 +189,7 @@ WHERE from_id = ?from_id
 Then insert the new row.
 
 **Distinguishing BYO-LLM edges from regular edges:**
+
 - Regular edges (written via `PreparedWrite::Edge` with `body: None`) retain the existing G0
   `logical_id`-based supersession semantics
 - Fact-edges (written with `body: Some(...)`) trigger the `(from_id, to_id, kind)` invalidation
@@ -242,12 +248,14 @@ ingestWithExtractor(
 Location: `src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/stub_harness.py`
 
 The stub harness:
+
 1. Reads NDJSON lines from stdin
 2. On `hello` → writes `ready` with `model="stub-v1"`, `max_docs_per_request=8`
 3. On `extract` → returns deterministic fixture from `fixture_result.json` (keyed by request_id)
 4. On unknown type → writes `error` response
 
 The fixture covers:
+
 - Simple fact: `{from: "Alice", to: "Project X", relation: "owns", body: "Alice owns the project"}`
 - Temporal fact: same triple with `t_valid`/`t_invalid`
 - Multi-entity sentence: multiple entities + edges
@@ -272,6 +280,7 @@ cross-process/cross-session stability.
 ### 8.2 `search_filtered` vs `search` extension
 
 The current `Engine::search_filtered` handles the text branch. Adding edge FTS results:
+
 - Run `SELECT body, kind, write_cursor, bm25(search_index_edges) FROM search_index_edges WHERE search_index_edges MATCH ?1`
 - Combine with node FTS results, return with `branch = "text_edge"`
 - The combined results are returned in the `SearchResult.results` list

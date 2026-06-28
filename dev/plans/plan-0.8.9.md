@@ -76,7 +76,7 @@ elects, per the locked-acceptance policy.
 
 ## 3. Slice ladder (mod-5)
 
-```
+```text
 0 → 5 → 10 → 15 → 20 → 40
 ```
 

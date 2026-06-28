@@ -27,7 +27,7 @@ specifying the exact schema step, column names, and the Slice 15 implementation 
 At SCHEMA_VERSION 13 (after step-13 adds the `operational_mutations(collection_name,id)` index),
 `canonical_edges` has the following columns:
 
-```
+```text
 write_cursor INTEGER NOT NULL
 kind         TEXT NOT NULL
 from_id      TEXT NOT NULL
@@ -109,6 +109,7 @@ projectability, the graph arm cannot contribute candidates to retrieval.
 
 This ADR commits to the **capability**: edge `body` text (when non-null) SHALL be retrievable via
 both:
+
 1. **FTS full-text search** — an edge body is returned by a text-match query over the edge body's
    content, distinguishable from node bodies in query results.
 2. **Vector (semantic) search** — an edge body is embeddable and returned by a KNN query, with

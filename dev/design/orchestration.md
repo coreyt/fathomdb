@@ -183,11 +183,13 @@ Then one `Agent` call from the main thread:
   control and § 11 cleanup.
 - Prompt body carries the per-spawn facts the subagent cannot infer:
 
-      worktree: <ABS_WT_PATH>          (operate only here; not your cwd)
-      branch:   phase-<id>-<ts>
-      baseline: <BASELINE_COMMIT_SHA>
-      output:   <ABS_PATH to <phase>-output.json>   (§ 8 schema)
-      <then the slice spec: ## Mandate / ## What to do / commit policy>
+  ```text
+  worktree: <ABS_WT_PATH>          (operate only here; not your cwd)
+  branch:   phase-<id>-<ts>
+  baseline: <BASELINE_COMMIT_SHA>
+  output:   <ABS_PATH to <phase>-output.json>   (§ 8 schema)
+  <then the slice spec: ## Mandate / ## What to do / commit policy>
+  ```
 
 Invocation rules:
 
@@ -346,11 +348,13 @@ remediation prompt `dev/plans/prompts/<id>-fix-1.md`, then re-spawn a
 `git worktree add`, `baseline` set to the prior head, and an
 `address:` line pointing at the promoted verdict .md:
 
-      worktree: <ABS_EXISTING_WT_PATH>    (operate only here)
-      branch:   phase-<id>-<ts>           (existing — build on top)
-      baseline: <PRIOR_HEAD_SHA>          (the head the fix extends)
-      output:   <ABS_PATH to <phase>-output.json>
-      address:  dev/plans/runs/<phase>-review-<rts>.md   (the findings)
+```text
+  worktree: <ABS_EXISTING_WT_PATH>    (operate only here)
+  branch:   phase-<id>-<ts>           (existing — build on top)
+  baseline: <PRIOR_HEAD_SHA>          (the head the fix extends)
+  output:   <ABS_PATH to <phase>-output.json>
+  address:  dev/plans/runs/<phase>-review-<rts>.md   (the findings)
+```
 
 Commits are additive; never rewrite landed commits.
 

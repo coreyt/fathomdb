@@ -60,7 +60,7 @@ use the un-centered, L2-normed vector that comes off the embedder.
 
 One new nullable column on `_fathomdb_embedder_profiles`:
 
-```
+```text
 mean_vec BLOB NULL
 ```
 
@@ -207,7 +207,7 @@ recorded here, not a re-statement of an earlier number.
 (`fathomdb-engine/src/lib.rs:2507`), immediately before the `sign_quantize`
 step:
 
-```
+```rust
 let f32_vec = embedder.embed(text)?;          // unit-norm, un-centered
 let bits = if let Some(mean) = pinned_mean {  // SELECT mean_vec FROM ...
     sign_quantize(&subtract(&f32_vec, &mean))
@@ -221,7 +221,7 @@ let bits = if let Some(mean) = pinned_mean {  // SELECT mean_vec FROM ...
 (`fathomdb-engine/src/lib.rs:1469`), the query vector is embedded once
 and then sign-quantized with the same conditional:
 
-```
+```rust
 let q = embedder.embed(query_text)?;
 let q_bits = if let Some(mean) = pinned_mean {
     sign_quantize(&subtract(&q, &mean))
@@ -394,7 +394,7 @@ permits and nothing more.
 
 **HF resolve URL pattern**:
 
-```
+```text
 https://huggingface.co/<repo>/resolve/<revision>/<file>
 ```
 
@@ -429,7 +429,7 @@ the default embedder).
 **Per-file sha256 pins** are exposed as `&'static str` constants in
 `fathomdb-embedder`:
 
-```
+```rust
 pub(crate) const BGE_SMALL_CONFIG_SHA256:     &str = "<64 hex>";
 pub(crate) const BGE_SMALL_TOKENIZER_SHA256:  &str = "<64 hex>";
 pub(crate) const BGE_SMALL_WEIGHTS_SHA256:    &str = "<64 hex>";
@@ -508,7 +508,7 @@ On all-attempts-exhausted, the loader returns
 The loader reads `HF_TOKEN` from the process environment at load time.
 If present and non-empty, every HTTP request adds:
 
-```
+```text
 Authorization: Bearer <token>
 ```
 
@@ -536,7 +536,7 @@ at engine open time only."
 
 **Primary path:**
 
-```
+```text
 <dirs::cache_dir>()/fathomdb/embedders/<model-sha-prefix>/<file>
 ```
 
@@ -556,7 +556,7 @@ at engine open time only."
 **HF-hub compat probe (best-effort, read-only).** Before issuing any
 network request, the loader checks:
 
-```
+```text
 $HF_HOME/hub/models--<repo-encoded>/snapshots/<revision>/<file>
 ```
 
@@ -711,7 +711,8 @@ this design are the contract with EU-3 and EU-5 implementation.
 
 Workspace targets in 0.7.1 are little-endian: `x86_64` and `aarch64` on
 all three supported OSes. The safetensors weight format encodes a `dtype`
-+ raw byte payload; HF's published bge-small weights are little-endian.
+
+- raw byte payload; HF's published bge-small weights are little-endian.
 
 **Invariant.** `CandleBgeEmbedder::new` SHALL include:
 

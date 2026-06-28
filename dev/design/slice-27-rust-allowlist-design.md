@@ -157,7 +157,7 @@ conformance discipline); the GREEN commit removes the injection.
 
 - `dev/interfaces/rust.md`: rewrite § Support posture + add a § governed-surface
   contract so it states the **landed** governed Rust allowlist + parity-in-intent
-  + denylist-absence as binding (replacing "pin lands at reserved-gap Slice 27
+  - denylist-absence as binding (replacing "pin lands at reserved-gap Slice 27
   (not yet executed here)"). `rust.md` stays the OWNER of the Rust surface set.
 - `dev/acceptance.md` AC-074 `:906`: replace "Rust-facade measurement is defined
   at Slice 27" with the actual measurement (facade re-exports exactly the governed

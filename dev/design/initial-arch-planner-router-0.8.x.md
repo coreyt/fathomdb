@@ -62,6 +62,7 @@ arm, and (as of EXP-0, landed 2026-06-25) the CE blend `alpha`/`pool_n`. So Meme
 known-anchor walks, not as a primary routing arm; see the §2 L1 note.)
 
 **Observability (today): weak — the real gap.** Retrieval is largely a black box at the result level:
+
 - `SearchHit` returned the **blended `score` only**; EXP-0 added **`ce_score`** (= `sigmoid(ce_logit)`) — the
   **first retrieval-observability field**, now shipped.
 - There is **no per-arm provenance** (did this hit come from vector-ANN, FTS/BM25, or the graph arm?), **no

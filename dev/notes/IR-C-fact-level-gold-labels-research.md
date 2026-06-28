@@ -113,6 +113,7 @@ The IR-B harness is **already built** and defines the exact input format IR-C mu
 
 - **Loader/schema:** `src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs`
   (`load_gold_set` / `parse_gold_set`). A gold set file is:
+
   ```jsonc
   {
     "corpus_hash": "<frozen snapshot hash>",   // pinning principle §(f)
@@ -121,7 +122,9 @@ The IR-B harness is **already built** and defines the exact input format IR-C mu
     "queries": [ GoldQuery, ... ]
   }
   ```
+
   and each `GoldQuery` is:
+
   ```jsonc
   {
     "query": "...",                    // SAME key eu8 reads (additive-superset invariant)
@@ -138,6 +141,7 @@ The IR-B harness is **already built** and defines the exact input format IR-C mu
     "chain_shape": "..."
   }
   ```
+
 - **Driver/runner:** `src/rust/crates/fathomdb-engine/tests/ir_recall_eval.rs` (the wired
   experiment test) calls `run_experiment` over `RUNNABLE_NOW_MODES`.
 - **Fixture (schema illustration only, NOT real labels):**
@@ -238,6 +242,7 @@ documented **over-rating / inflation** of relevance:
   [Principles & Guidelines for LLM Judges, ICTIR'25](https://dl.acm.org/doi/10.1145/3731120.3744588)).
 
 **Mitigations FathomDB should adopt:**
+
 1. **Generation ≠ judging.** Use the LLM to *generate* a query + cite verbatim evidence **from a
    given doc** (a constrained generation task with a verifiable answer), **not** to score
    "is X relevant?" over retrieval output. This sidesteps the embedder-circularity and
@@ -326,6 +331,7 @@ the **corpus hash + qrels version** with every reported number (the GA-halt less
 
 **Tier 1 — REUSE the resolved dataset annotations as the seed denominator (no LLM, highest trust).**
 Transform the existing eval rows into `GoldQuery` via the mechanical mapping in A.4:
+
 - **enronqa** 710 → `exact_fact` (span answers over single email); evidence → one `required` unit.
 - **qaconv** ~2178 non-abstain → `exact_fact` (span) / `exploratory` (free_form); 125 `abstain`
   rows → **negative-class candidates** (empty denominator).
@@ -350,6 +356,7 @@ QA — **cnn_dailymail (2500 article), enron (2000 email), bahmutov_dailylogs (3
 landes_todos (500 todo), synthetic_notes (1200 note)**, and **qasper if not repaired** — need fresh
 fact-level labels. Use the companion generation prompt
 (`dev/plans/prompts/IR-C-fact-level-gold-label-generation.md`):
+
 - **LLM generates, never judges** (B.2): given a corpus doc, produce 1–3 grounded queries + a
   verbatim evidence span; the model never sees or scores retrieval output.
 - **Anti-hallucination is mechanical:** evidence `doc_id` must exist in the snapshot; span must be a
@@ -398,21 +405,21 @@ than thousands of skewed ones.
 
 ## Sources
 
-- Thomas et al., *Large Language Models can Accurately Predict Searcher Preferences*, SIGIR'24 — https://arxiv.org/pdf/2309.10621
-- *Judging the Judges* (UMBRELA / LLM-generated qrels) — https://arxiv.org/pdf/2502.13908
-- *When LLM Judges Inflate Scores* — https://arxiv.org/pdf/2602.17170
-- *Benchmarking LLM-based Relevance Judgment Methods* — https://arxiv.org/pdf/2504.12558
-- *Don't Use LLMs to Make Relevance Judgments* — https://arxiv.org/html/2409.15133 (PMC: https://pmc.ncbi.nlm.nih.gov/articles/PMC11984504/)
-- *Topic-Specific Classifiers are Better Relevance Judges than Prompted LLMs* — https://arxiv.org/pdf/2510.04633
-- *LLM-Assisted Relevance Assessments: When Should We Ask LLMs for Help?* — https://arxiv.org/pdf/2411.06877
-- *Principles and Guidelines for the Use of LLM Judges*, ICTIR'25 — https://dl.acm.org/doi/10.1145/3731120.3744588
-- Pooling bias for large collections — https://link.springer.com/article/10.1007/s10791-007-9032-x
-- Rau & Kamps, *Recall Aspects of Transformers for Text Ranking*, TREC-30 — https://trec.nist.gov/pubs/trec30/papers/UAmsterdam-DL.pdf
-- BEIR — https://arxiv.org/pdf/2104.08663 ; Resources for Brewing BEIR — https://arxiv.org/pdf/2306.07471
-- *Benchmarking IR Models on Complex Retrieval Tasks* (answer-leakage over-easiness) — https://arxiv.org/html/2509.07253v1
-- RAG evaluation 2026 / span-level — https://futureagi.com/blog/what-is-rag-evaluation-2026 ; Braintrust RAG metrics — https://www.braintrust.dev/articles/rag-evaluation-metrics
-- Graded vs binary / DCG@k–NDCG@k — https://towardsdatascience.com/how-to-evaluate-retrieval-quality-in-rag-pipelines-part-3-dcgk-and-ndcgk/
-- The LLM-judge controversy — https://mlfrontiers.substack.com/p/the-llm-judge-controversy
+- Thomas et al., *Large Language Models can Accurately Predict Searcher Preferences*, SIGIR'24 — <https://arxiv.org/pdf/2309.10621>
+- *Judging the Judges* (UMBRELA / LLM-generated qrels) — <https://arxiv.org/pdf/2502.13908>
+- *When LLM Judges Inflate Scores* — <https://arxiv.org/pdf/2602.17170>
+- *Benchmarking LLM-based Relevance Judgment Methods* — <https://arxiv.org/pdf/2504.12558>
+- *Don't Use LLMs to Make Relevance Judgments* — <https://arxiv.org/html/2409.15133> (PMC: <https://pmc.ncbi.nlm.nih.gov/articles/PMC11984504/>)
+- *Topic-Specific Classifiers are Better Relevance Judges than Prompted LLMs* — <https://arxiv.org/pdf/2510.04633>
+- *LLM-Assisted Relevance Assessments: When Should We Ask LLMs for Help?* — <https://arxiv.org/pdf/2411.06877>
+- *Principles and Guidelines for the Use of LLM Judges*, ICTIR'25 — <https://dl.acm.org/doi/10.1145/3731120.3744588>
+- Pooling bias for large collections — <https://link.springer.com/article/10.1007/s10791-007-9032-x>
+- Rau & Kamps, *Recall Aspects of Transformers for Text Ranking*, TREC-30 — <https://trec.nist.gov/pubs/trec30/papers/UAmsterdam-DL.pdf>
+- BEIR — <https://arxiv.org/pdf/2104.08663> ; Resources for Brewing BEIR — <https://arxiv.org/pdf/2306.07471>
+- *Benchmarking IR Models on Complex Retrieval Tasks* (answer-leakage over-easiness) — <https://arxiv.org/html/2509.07253v1>
+- RAG evaluation 2026 / span-level — <https://futureagi.com/blog/what-is-rag-evaluation-2026> ; Braintrust RAG metrics — <https://www.braintrust.dev/articles/rag-evaluation-metrics>
+- Graded vs binary / DCG@k–NDCG@k — <https://towardsdatascience.com/how-to-evaluate-retrieval-quality-in-rag-pipelines-part-3-dcgk-and-ndcgk/>
+- The LLM-judge controversy — <https://mlfrontiers.substack.com/p/the-llm-judge-controversy>
 
 ## Internal references
 

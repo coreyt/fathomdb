@@ -149,6 +149,7 @@ EOF
   echo "| memory/ dir (all .md) | $MEM_FILES files, $MEM_ALL_B bytes |"
   echo
   echo "## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)"
+  echo  # MD022/MD058: blank line between the heading and the table below
   echo "| Query | Total files | Ledger-zone | Core |"
   echo "|---|---|---|---|"
   for q in "${QUERIES[@]}"; do

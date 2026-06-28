@@ -133,7 +133,7 @@ Slice 0 freezes both in code (`eval/decision_rule_083.py`, extending `eval/m1_de
 
 ## 3. Critical path (resolution-driven: measure the gap → close it cheapest-first → stop at parity)
 
-```
+```text
 0  Design + pre-register the resolution gate (two-level), power-sized N, $0-probe criteria,
    eu7-break fork, surpass-option protocol, F5/tunable-b scope ruling
         │
@@ -169,8 +169,10 @@ by expected gap-closure × cheapness: embedder (highest-leverage per the report)
 ## 4. Per-slice contracts
 
 ### Slice 0 — Design + pre-registration (resolution gate + surpass protocol + F5 scope) · `[design-adr]` · depends-on: — · gaps: 1–4
+>
 > **✅ CLOSED on main 2026-06-21 (codex §9 PASS after fix-1).** Frozen rule `eval/decision_rule_083.py`
-> + `dev/design/0.8.3-mem0-parity.md` (`decision-ready`). Commits: `c611535c`(RED) `424752f8`(GREEN)
+>
+> - `dev/design/0.8.3-mem0-parity.md` (`decision-ready`). Commits: `c611535c`(RED) `424752f8`(GREEN)
 > `705bf515`(design) `e38868c8`(F5-ADR/DOC-INDEX) + fix-1 `15ae7735`(RED) `9da63574`(GREEN). Review #1 =
 > CONCERN 2×[P2] (probes stricter than frozen §5 — raw-point gates); fix-1 dropped them to CI-lower-only;
 > re-review PASS. Verdicts: `runs/0.8.3-slice-0-review-20260621T201312Z.md`,
@@ -192,6 +194,7 @@ F5 ruling + the surpass protocol are part of this gate.
 **Reserved follow-on (1–4):** power re-estimate if Slice-10 variance is wider than assumed.
 
 ### Slice 5 — D0a: power-sized gold re-pin + answerer seam + Mem0-OSS de-risk & stand-up · `[implementation (eval-infra)]` · depends-on: 0 · gaps: 6–9
+>
 > **✅ CLOSED on main 2026-06-21 (codex §9 PASS after fix-1 + fix-2).** Re-pinned gold: `corpus_hash`
 > `1859817a` (stable LME corpus) + gold `repin_hash` `2916cace`; per-class counts factoid 156 /
 > knowledge_update 150 / multi_session 150 / temporal 150 (all ≥ n_min=150 — the Slice-25 N=0 defect fixed).
@@ -211,7 +214,8 @@ Slice 0; the prerequisite that made every class delta null in Slice 25); wire th
 behind the shared R2 adapter. Reuse `r2_parity_eval.py`.
 **TDD.** RED: a corpus-validity test (each class ≥ N_min gold, no silent N=0); an answerer-seam smoke test;
 a Mem0 adapter-conformance test (returns top-K under the shared metric contract). GREEN: the re-pin builder
-+ wired seam + Mem0 backend. Cheap-validate the seam before any priced call. Output →
+
+- wired seam + Mem0 backend. Cheap-validate the seam before any priced call. Output →
 `runs/0.8.3-d0a-corpus-manifest.json` (new `corpus_hash`).
 **DoD.** EVAL-ONLY. Determinism: pinned `corpus_hash`, frozen qrels. Codex §9 (corpus validity — no
 vacuous/empty gold; this is eval infra, not a product AC — [[acceptance-md-locked-no-feature-acs]]).
@@ -219,6 +223,7 @@ vacuous/empty gold; this is eval infra, not a product AC — [[acceptance-md-loc
 escalation**, not a silent deferral (the resolution depends on this number existing).
 
 ### Slice 10 — D0b: measure the FathomDB − Mem0 gap (= the target) · `[implementation (measurement)]` · depends-on: 5 · gaps: 11–14
+>
 > **✅ CLOSED on main 2026-06-22.** The per-class `FathomDB − Mem0` gap LANDED (priced 606 q, $10.75,
 > `runs/0.8.3-d0b-parity-n606.json`): `decide_083 = NOT_REACHED` (eu7-blocked + underpowered),
 > **−20…27 pp accuracy** behind Mem0 on 3 classes (temporal a tie), with the **accuracy gap ≫ recall
@@ -242,6 +247,7 @@ stays a HITL eval gate ([[fathomdb-recall-fidelity-vs-relevance]]); report the g
 multi-hop head-to-head is the 0.8.4 resolution ([`../roadmap/0.8.4.md`](../roadmap/0.8.4.md)).
 
 ### Slice 15 — $0 triage probes: embedder-ceiling (primary) ∥ D2 content-at-scale proxy · `[implementation (measurement, $0 LLM-free)]` · depends-on: 10 · gaps: 16–19
+>
 > **✅ CLOSED AS-IS 2026-06-23.** **15a = NO embedder swap** — no candle-feasible candidate cleared
 > `probe_15a_pass` on the hard subset (recall lever spent; [[0.8.3-slice15a-embedder-probe-no-swap]]).
 > **15b = D2 proxy code only**; the full `--full` eligibility run was deferred (the chosen lever became
@@ -249,6 +255,7 @@ multi-hop head-to-head is the 0.8.4 resolution ([`../roadmap/0.8.4.md`](../roadm
 
 **Objective (ADJ-6, ADJ-7).** Two $0, LLM-free probes that pick the Phase-B levers by expected
 gap-closure:
+
 - **(15a) Embedder-ceiling — PRIMARY.** A/B the CLS-corrected `bge-small` vs **genuinely stronger
   CPU/ONNX embedders** (`bge-base`, `gte-base`, `e5-base`, a retrieval/memory-tuned candidate) on eu8 +
   the ~596-q hard subset + (where cheaply derivable) the memory-class recall, within the candle/ONNX
@@ -270,6 +277,7 @@ package.
 field split if 15b is borderline.
 
 ### Slice 20 — D1 build: CLS-fix + chosen embedder (one re-embed) + eu7 re-clear + PRF-if-needed · `[implementation (engine + measurement)]` · depends-on: 15 · gaps: 21–24
+>
 > **✅ CLOSED AS-IS 2026-06-23 — re-scoped from "D1 embedder build" to "the realizable PRECISION lever".**
 > The gap-decomposition (n=606) showed the lever is retrieval **precision**, not the embedder — so Slice 20
 > became the **CE-rerank accuracy arm**: α=0.3 (citable PASS, marginal NO-GO, `…-rerank-accuracy-n606.json`)
@@ -306,6 +314,7 @@ surpass lever.**
 **Reserved follow-on (21–24):** PRF source ablation (reranked-f32 vs fused top-k) only if borderline.
 
 ### Slice 25 — D2 build: fielded-FTS/BM25F + tunable-`b` + enrichment (conditional) · `[implementation (engine + offline-build + measurement)]` · depends-on: 20, 15 · gaps: 26–29
+>
 > **⏭️ NOT RUN (deferred) 2026-06-23.** Conditional slice; its gate did not fire — 15b's full eligibility
 > run was not completed and the chosen lever was CE-rerank precision (Slice 20), not D2 enrichment. D2
 > fielded enrichment is now a **0.8.4 recall lever** (the path to *surpass* Mem0). No schema migration on an
@@ -331,6 +340,7 @@ gate.** Codex §9.
 weight vector is frozen; field-weight auto-tuning is OUT (would need a learned ranker).
 
 ### Slice 30 — Resolution verdict + surpass-option package · `[implementation (measurement)]` · depends-on: 25, 20 · gaps: 31–34
+>
 > **✅ CLOSED AS-IS 2026-06-23 (HITL "take results as-is").** Resolution = **provisional parity-or-better
 > with Mem0 via retrieval precision** (CE-rerank α=1.0): +0.21 over Mem0 on the answered cells (paired
 > n=354), **taken as-is** — NOT a fully-powered citable claim (`decide_083` strict REACHED unavailable:

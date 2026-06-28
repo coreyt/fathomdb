@@ -45,7 +45,7 @@ Everything else router-shaped is $0 eval and rides the **odd** releases around t
 
 ## 2. Dependency graph
 
-```
+```text
   EVEN releases (non-planner-router plan)            ODD releases (planner-router work)
   ─────────────────────────────────────             ──────────────────────────────────
   0.8.5  EXP-0  CE α/pool_n/ce_score  ── LANDED ───►  (banked precision win)
@@ -134,6 +134,7 @@ but they are already placed in the even (non-planner-router) plan; the router me
 enough in-product (`tree` §4 EXP-S KILL; `initial-arch` §8).
 
 **If KILL fires:**
+
 - The **in-library dispatcher is off the table** for now — "router stays agent-side, indexes stay eval-side."
 - **0.8.13 ships the agent-side router + L1 hardening instead**, not the in-library dispatcher.
 - The in-library version becomes a later upgrade, re-gated on a fixed substrate.
@@ -152,6 +153,7 @@ Pareto-blocked, so F1 and F2 need *different* `(index, retrieval, α, pool_n, MM
 "Pareto-blocked → per-intent stacks diverge → Fr").
 
 **If divergence fires:**
+
 - Per-intent **parity-or-better for F1/F2 can no longer ship without the router** — a single global config can't realize
   both wins, so the router stops being a "capstone" and becomes the **gate for the parity product claim**.
 - EXP-Fr's **priority rises** (it's now blocking a headline competitor result), **but it still cannot precede EXP-S

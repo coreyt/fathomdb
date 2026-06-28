@@ -75,7 +75,10 @@ def render(recs: list[dict[str, Any]]) -> str:
         verdict = rec.get("verdict", "PENDING")
         dev = fmt_dev(rec)
         canon = fmt_canonical(rec)
-        url = (rec.get("canonical_ci") or {}).get("workflow_url") or rec.get("canonical_ci_url") or "—"
+        url_raw = (rec.get("canonical_ci") or {}).get("workflow_url") or rec.get("canonical_ci_url") or ""
+        # Wrap real URLs as an autolink (<...>) so the emitted table cell does not
+        # trip MD034/no-bare-urls; keep the em-dash placeholder when absent.
+        url = f"<{url_raw}>" if url_raw else "—"
         branch = (rec.get("canonical_ci") or rec.get("dev_box_pre_screen") or {}).get("branch") or "—"
         sha = ((rec.get("canonical_ci") or rec.get("dev_box_pre_screen") or {}).get("head_sha") or "—")[:8]
         lines.append(f"| {exp} | {lever} | {verdict} | {dev} | {canon} | {url} | {branch} | {sha} |")

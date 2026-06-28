@@ -38,7 +38,7 @@ Measured against a migrated in-memory DB seeded with a multi-collection log
 (`small` = every 100th row, `bulk` = the rest), the read_collection SELECT plans
 as:
 
-```
+```text
 SEARCH operational_mutations USING INTEGER PRIMARY KEY (rowid>?)
 ```
 
@@ -63,6 +63,7 @@ CREATE INDEX IF NOT EXISTS operational_mutations_collection_id_idx
 
 The composite `(collection_name, id)` index is the correct shape because the
 query's leading predicate is `collection_name = ?1` (equality) and the ordering
+
 + cursor are both on `id`. With `collection_name` fixed by the equality, the
 index's second column `id` is already in ascending order, so the index serves
 **both** the `id > ?2` cursor range **and** the `ORDER BY id` with no temp
@@ -70,7 +71,7 @@ B-tree.
 
 **EXPLAIN AFTER** (same seed, with the index present):
 
-```
+```text
 SEARCH operational_mutations USING INDEX operational_mutations_collection_id_idx (collection_name=? AND id>?)
 ```
 
@@ -96,8 +97,9 @@ v12 DBs gain the index on first open at v13; v13 DBs already have it.
 ## (c) Clamp + cursor edge cases to harden
 
 `read_collection_in_tx` (`fathomdb-engine/src/lib.rs:3998`) already:
-- returns an empty `Vec` (no SELECT) for `limit == 0`;
-- clamps the SQL `LIMIT` to `min(limit, READ_COLLECTION_MAX_LIMIT)` (~1M).
+
++ returns an empty `Vec` (no SELECT) for `limit == 0`;
++ clamps the SQL `LIMIT` to `min(limit, READ_COLLECTION_MAX_LIMIT)` (~1M).
 
 The cursor `after = after_id.unwrap_or(0)` is correct for the happy path (ids are
 ≥ 1, autoincrement), but the edge cases to **pin** (and harden where needed) are:
@@ -114,6 +116,7 @@ The cursor `after = after_id.unwrap_or(0)` is correct for the happy path (ids ar
 
 **Hardening applied:** normalize the cursor with `after_id.unwrap_or(0).max(0)`
 so a negative `after_id` is explicitly clamped to the start of the log (defensive
+
 + self-documenting; semantically identical to today for ids ≥ 1 but removes the
 "is a negative cursor a sentinel or a row id?" ambiguity). The SELECT shape is
 unchanged so it continues to ride the new index. No signature change.

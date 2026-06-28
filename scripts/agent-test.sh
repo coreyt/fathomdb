@@ -25,6 +25,14 @@ run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # actionlint binary present + rejects deliberately-broken fixture.
 run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 
+# Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+# gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+# from the Python generators) are markdownlint-ignored, so the normal md gate never
+# sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
+# s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
+# in the pytest step below.
+run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+
 # AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
 run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_capped test-pip-skew bash dev/release/tests/pip_skew.sh

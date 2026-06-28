@@ -227,7 +227,7 @@ Per-source specifics:
   alphabetically-sorted users in a second pass to fill exactly
   2,000.
 - Body cleaning: signature strip cuts at the first standalone
-  `-- ` line.
+  `--` line.
 - Date parsing: `email.utils.parsedate_to_datetime`; fallback
   `2001-01-01T00:00:00Z` if the Date header is missing or
   malformed.
@@ -651,7 +651,7 @@ present on disk (or the tests skip).
 
 ## 10. Layout summary
 
-```
+```text
 fathomdb/
 ├── dev/
 │   ├── corpus-creation/                ← you are here
@@ -690,7 +690,7 @@ fathomdb/
 
 The minimum dependency graph between packs:
 
-```
+```text
 Pack-1 acquire_*.py + generate_synthetic_notes.py
   └── produces data/corpus-data/raw/*.jsonl
        └── Pack-2 generate_chain_corpus.py

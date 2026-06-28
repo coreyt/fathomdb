@@ -19,7 +19,7 @@ read it fully before acting.
 > sweeps** before a GA gate, or any time you suspect `dev/`↔`docs/`↔code have
 > diverged. It is a whole-tree reconciliation, not a substitute for the per-slice
 > discipline.
-
+>
 > **Scope guardrail.** This is a documentation task. **Do not modify any source
 > code under `src/`.** **Test files are read-only here** (per `AGENTS.md` §5). If the
 > diff reveals a code bug or a code/doc contradiction, record it in the owning
@@ -27,7 +27,7 @@ read it fully before acting.
 > status board (`dev/plans/runs/STATUS-0.8.x.md`); **do not fix it**. Surface it —
 > per `AGENTS.md` §1, a wrong doc is worse than its absence, but silently patching
 > code from a docs pass is worse than both.
-
+>
 > **The locked-acceptance guardrail (FathomDB-specific).** `dev/acceptance.md` is
 > `status:locked` and `dev/requirements.md` IDs are a contract. **Never mint, renumber,
 > or withdraw REQ-*/AC-* IDs from this prompt.** New ACs are minted only at gated
@@ -61,7 +61,7 @@ authoritative map of every doc — path · purpose · owning slice/AC · last-to
 is **`dev/DOC-INDEX.md`**. Read it first; it is your cold-start index and the thing
 you must leave accurate.
 
-```
+```text
 dev/   (engineering docs — source of truth; NOT shipped in the wheel)
 ├── DOC-INDEX.md           THE agentic doc map — one row per doc; YOU keep it accurate
 ├── update-docs.md         THIS prompt + the docs-epoch marker
@@ -107,12 +107,14 @@ docs/   (user-facing; mkdocs — nav in tools/docs/mkdocs.yml; plain language; l
 ```
 
 ### Per-slice design-memo shape (`dev/design/slice-*-design.md`)
+
 Objective · approach + exact SQL/migration step (with `SCHEMA_VERSION` deltas where
 relevant) · the gap(s) it closes · SDK shapes (Python + TypeScript parity) · test
 plan · open issues. Re-verify every `file:line`, symbol, default, and `SCHEMA_VERSION`
 against the live tree at `$HEAD`.
 
 ### Interface-doc shape (`dev/interfaces/*.md`) — CONTRACT
+
 Concrete symbol/flag spelling · governed-surface allowlist + parity statement ·
 exit-code classes (CLI) · what is feature-gated (e.g. the `operator` cargo feature).
 A change to public surface needs an ADR or an interface-doc update **in the same PR**
@@ -123,15 +125,18 @@ A change to public surface needs an ADR or an interface-doc update **in the same
 ## 2. Procedure (follow in order — later steps depend on earlier ones)
 
 ### Step 1 — Establish the epoch and read the diff
-```
+
+```bash
 git log --oneline $EPOCH..$HEAD
 git diff --stat $EPOCH..$HEAD -- src/ Cargo.toml Cargo.lock src/python/pyproject.toml src/ts/package.json
 git diff --name-status $EPOCH..$HEAD -- src/
 ```
+
 Note new/removed modules, schema-migration steps (`grep` for `SCHEMA_VERSION`), new
 SDK methods, new/changed CLI flags, and any new crate/dependency.
 
 ### Step 2 — Classify the completed work
+
 For each change decide which docs it touches:
 
 | Change observed in `$EPOCH..$HEAD` | Docs to update |
@@ -153,7 +158,9 @@ For each change decide which docs it touches:
 If `$SCOPE` is set, restrict to docs matching that subsystem.
 
 ### Step 3 — Update developer docs FIRST (dependency root)
+
 Order within `dev/` matters because user docs and traces derive from it:
+
 1. **`requirements.md` / `acceptance.md` / `needs.md`** — read-only for IDs (locked). Adjust only *prose* describing an already-shipped, already-IDed behaviour. New need? → log it, don't ID it.
 2. **`interfaces/rust.md`, `interfaces/cli.md`** — the public-surface contract. Re-verify every symbol/flag/exit-code against `$HEAD`.
 3. **`architecture.md`** — module map, data flow, reader-pool/projection/surface, dependency list, `SCHEMA_VERSION`.
@@ -162,7 +169,9 @@ Order within `dev/` matters because user docs and traces derive from it:
 6. **`test-plan.md`, `learnings.md`** — only if tiers/strategy changed or you logged a gap/bug.
 
 ### Step 4 — Update user docs (derived from `dev/`)
+
 After `dev/` is correct:
+
 - `docs/reference/python-api.md` ⟵ the Python SDK surface.
 - `docs/reference/typescript-api.md` ⟵ the TS SDK surface — **confirm parity with Python** (SDK-parity is a shipped position; `docs/positions/sdk-parity.md`).
 - `docs/reference/cli.md` ⟵ `dev/interfaces/cli.md`; confirm against `--help`.
@@ -172,20 +181,24 @@ After `dev/` is correct:
 - Root `README.md` stays a slim overview + doc map; push detail into `docs/`.
 
 ### Step 5 — Update cross-cutting indexes & traceability (depends on Steps 3–4)
+
 - **`dev/DOC-INDEX.md`** — the keystone of this step. Every doc you added/renamed/materially changed gets its row refreshed (path · purpose · owning slice/AC · `last-touched` = today). A stale or missing row is the **Slice-40 gate-m** failure condition; leave the index a true map of the shipped surface.
 - **`dev/traceability.md`** — re-chain REQ↔AC↔test for shipped work; flag orphans/dangling honestly (`ORPHAN`, `PARTIAL`). Re-point only; do not invent IDs.
 - **`dev/README.md`, `dev/design/README.md`, `dev/adr/...decision-index.md`, `dev/archive/README.md`, `docs/index.md`** — list only files that exist.
 - **`tools/docs/mkdocs.yml`** `nav` — every new `docs/` page is in nav; no orphaned pages.
 
 ### Step 6 — Verify (gate before declaring done)
+
 - **Factual:** every `file:line`, symbol, flag, default, `SCHEMA_VERSION`, and citation matches `$HEAD` source; dependency claims match `Cargo.toml`/`pyproject.toml`/`package.json`.
 - **Parity:** Python and TypeScript API references describe the same surface; the governed-surface allowlist in `dev/interfaces/rust.md` still matches the code.
 - **CLI parity:** the FathomDB CLI `--help` flags/verbs == `dev/interfaces/cli.md` == `docs/reference/cli.md`.
 - **Links & nav:** intra-doc links resolve; `dev/DOC-INDEX.md` references only existing files; `mkdocs.yml` nav has no orphans.
 - **No code touched:** `git status --porcelain src/` is empty (aside from pre-existing changes); no test file modified.
-- **Build green:** docs build via `./tools/docs/build.sh` (or `./scripts/check.sh`, which adds the mkdocs build); markdown lint via `./scripts/agent-lint.sh` (auto-fix: `npm run format:md` + `markdownlint-cli2 --fix`). Run `./scripts/agent-verify.sh` as a sanity check that nothing leaked into source.
+- **Build green:** docs build via `./tools/docs/build.sh` (or `./scripts/check.sh`, which adds the mkdocs build).
+- **Docs markdown lint (HARD GATE — run after every regeneration):** `mkdocs build --strict` does **not** enforce markdownlint *style*, and the repo `.markdownlint-cli2.jsonc` **ignores `docs/**`** — so regenerating `docs/**` can silently re-introduce markdown debt (missing fence languages, list-indent, blank-line framing). Run **`./scripts/agent-lint-docs.sh`** and it MUST exit 0 before you declare done. (It also runs as `lint-md-docs` inside `./scripts/agent-lint-md.sh` / `agent-verify.sh`.) The repo-wide markdown lint is `./scripts/agent-lint-md.sh` (markdownlint-cli2 + lychee). **`prettier` was removed** from the markdown gate (it corrupts fragile emphasis — do not reintroduce it). For auto-fixable findings use **`./scripts/md-safe-fix.sh`** (it AST-guards every `markdownlint-cli2 --fix` edit and reverts any that change meaning); never run a bare `markdownlint-cli2 --fix` across the repo. Note `--fix` cannot reach `docs/**` (the cli2 config ignores it), so docs findings are fixed by hand and verified AST-neutral with `python3 dev/tools/md_neutrality_guard.py diff <old> <new>`. Run `./scripts/agent-verify.sh` as a sanity check that nothing leaked into source.
 
 ### Step 7 — Stamp the new epoch
+
 Update the **DOCS EPOCH MARKER** at the top of this file to `$HEAD`'s short SHA and
 today's date, with a one-line note on what the run reconciled. Commit the docs as a
 single `docs(...)` commit (per the repo's conventional-commit + one-docs-commit-per-
@@ -195,6 +208,7 @@ you flagged (with where you logged it).
 ---
 
 ## 3. Conventions
+
 - **Cite code as `` `src/relative/path:line` ``** (clickable). Names, flags, and defaults must be exact — re-read the source, do not recall.
 - **Stale > missing** (`AGENTS.md` §1): if you cannot make a doc correct, delete it or banner it rather than leave it wrong.
 - **Prefer editing** an existing doc over creating a parallel one; fold superseded material into `dev/archive/` with a banner instead of leaving stale duplicates.
@@ -204,6 +218,7 @@ you flagged (with where you logged it).
 - **No `CLAUDE.md`** — `AGENTS.md` is the canonical agent-instruction file.
 
 ## 4. Execution model (optional, for large diffs)
+
 A small diff is a single pass. For a large diff, fan out: one context-bounded subagent
 per affected doc (or per subsystem) — give each only its target source module(s), the
 relevant `dev/design/*` memo, the matching interface contract, and the section of

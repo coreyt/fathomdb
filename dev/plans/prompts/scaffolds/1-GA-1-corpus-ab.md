@@ -1,11 +1,13 @@
 # GA-1 — OLD-vs-NEW corpus recall A/B · track:GA · type:work
 
 ## Purpose (1–2 sentences)
+
 Run an eu7-style real-embedder recall@10 A/B on the OLD (pre-expansion, ~0.7.2) corpus snapshot vs the
 current NEW corpus (~7,667 docs) so HITL can tell **harder/larger corpus** apart from a **real regression**
 or a **corpus-quality defect** at the ◆ B-1 ruling. Produces evidence only — **not** a corpus-basis recommendation.
 
 ## Prerequisites (verify ALL before starting — do not start if any is unmet)
+
 - [ ] Step-0 item — runs **now**, no upstream gate. — verify: roadmap §"Step 0" lists GA-1 with `Depends on: nothing`
   (`grep -n "GA-1" dev/plans/0.8.0-GA-and-IR-eval-roadmap.md`).
 - [ ] The real **bge-small** embedder is available for eu7 (NOT the synthetic `VaryingEmbedder`). — verify: the eu7
@@ -18,6 +20,7 @@ or a **corpus-quality defect** at the ◆ B-1 ruling. Produces evidence only —
   canonical perf path, not `check.sh`/`cargo test --workspace` ([[perf-recall-gates-masked-and-ac013b-conflation]]).
 
 ## Work to-do (the steps)
+
 1. Pin the **exact eu7 code path** (real bge-small, recall@10, bit-KNN+f32-rerank vs exact-f32 top-10) and confirm
    it is **byte-identical between the two runs** — only the corpus input differs.
 2. Run eu7 recall@10 on the **OLD** snapshot, `--release`, isolated. Capture `recall@10`, bootstrap CI, σ, N.
@@ -32,6 +35,7 @@ or a **corpus-quality defect** at the ◆ B-1 ruling. Produces evidence only —
    evidence + the classification only.
 
 ## Output to the orchestrator (how this session reports back)
+
 - Artifact(s): `dev/plans/runs/GA-1-corpus-ab-<ts>.md` (narrative + methodology) **and**
   `dev/plans/runs/GA-1-corpus-ab-<ts>-output.json`.
 - Schema/contract: `output.json` keys — `old_recall`, `old_ci`, `old_sigma`, `old_n`, `new_recall`, `new_ci`,
@@ -44,6 +48,7 @@ or a **corpus-quality defect** at the ◆ B-1 ruling. Produces evidence only —
   orchestrator-owned. **Do NOT lower the floor or weaken the eu7 assert** ([[0.8.0-ga-blocked-recall-corpus]]).
 
 ## Full prompt / next
+
 - Authoritative prompt: none yet — **THIS scaffold is the starter; expand into a full prompt before running**
   (delegated / `perf-canonical`, never main-thread). Context: `dev/plans/prompts/0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md`
   (recall background) + `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md` (fidelity-vs-relevance).

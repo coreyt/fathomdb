@@ -208,6 +208,7 @@ fault-isolation, and 512-token truncation landed in EU-5f (see
 `dev/plans/runs/0.7.1-EU-7-findings.md`).
 
 Status of the two items that were carried into the 0.7.2 RELEASE-HARDENING campaign:
+
 - **`AC013B_RECALL_FLOOR` — RESOLVED (PR-2bc-S3, 2026-05-31).** The EU-7 ~0.83
   dev-box number was root-caused as a measurement-harness artifact, not a
   real-data shortfall; corrected ANN-fidelity recall@10 = 0.937 (CI 0.913–0.957).
