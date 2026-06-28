@@ -174,7 +174,13 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: cargo test --workspace
+      # 0.8.9 Slice 20 (F-9): --no-fail-fast surfaces the FULL set of Windows test
+      # failures in one run rather than stopping at the first. The pyo3 link gate had
+      # masked Windows test execution entirely; once it lifted, failures appear one per
+      # run with a default (fail-fast) invocation. Enumerate them all so the
+      # cross-platform remediation scope is known, not discovered whack-a-mole. (Aligned
+      # with 0.8.9's anti-masking mandate — a first failure must not hide the rest.)
+      - run: cargo test --workspace --no-fail-fast
 
   rust-macos:
     runs-on: macos-latest
