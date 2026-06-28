@@ -109,6 +109,7 @@ projectability, the graph arm cannot contribute candidates to retrieval.
 
 This ADR commits to the **capability**: edge `body` text (when non-null) SHALL be retrievable via
 both:
+
 1. **FTS full-text search** — an edge body is returned by a text-match query over the edge body's
    content, distinguishable from node bodies in query results.
 2. **Vector (semantic) search** — an edge body is embeddable and returned by a KNN query, with

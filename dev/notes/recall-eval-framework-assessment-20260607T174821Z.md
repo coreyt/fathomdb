@@ -23,6 +23,7 @@ two of which run on the *same* SQLite + sqlite-vec / FTS5 substrate FathomDB is
 requirement surface.
 
 **Retrieval stack.**
+
 - **FTS:** SQLite FTS5 with `tokenize = 'porter unicode61 remove_diacritics 2'`
   (`src/rust/crates/fathomdb-schema/src/lib.rs:276`, migration 011), scored with `bm25()`.
 - **Vector:** sqlite-vec `vec0` virtual table, two-phase **bit-KNN (sign-quant, K=192) → f32
@@ -141,6 +142,7 @@ the same thing**, and the framework, read literally, would replace or supplement
 fidelity gate with relevance gates.
 
 Mapping the framework's layers onto FathomDB:
+
 - **Retrieval recall (layer 1):** FathomDB *already has a partial implementation* — eu8 is a
   qrels-based Recall@10/precision/MRR/NDCG harness (`eu8_ir_validation.rs:309-364`). It is
   report-only and capped at the embedder's ~0.571 ceiling.
@@ -287,6 +289,7 @@ Distinguish two gates throughout: the **fidelity gate** (eu7/AC-075 — *keep*, 
 and a future **evidence/task gate** (the framework's real subject — *the product question*).
 
 **Adopt now (0.8.0 GA path — cheap, no engine change):**
+
 1. **Keep eu7/AC-075 as the fidelity gate, pinned to a versioned corpus snapshot.** Resolve B-1
    by pinning the floor's corpus basis (option 1 or 3) after the OLD-vs-NEW A/B; document
    explicitly in the ADR that this floor is *fidelity, not relevance*. (The ADR already says
@@ -330,6 +333,7 @@ already correctly understood in `ADR-0.7.0-vector-binary-quant.md` § 2.
 ---
 
 ## Things I could not verify
+
 - Whether any chunking is planned beyond the engine (I checked the engine source + 0.8.1 roadmap
   ADRs; no chunker found, but I did not exhaustively read every design doc).
 - Whether eu8's chain qrels carry graded (vs binary) relevance — the harness uses binary

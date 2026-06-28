@@ -133,10 +133,10 @@ it rules out the Neo4j-class engines Zep and (graph-) Mem0 assume.
 - **Ingest = coherence-first overwrite.** The paper's `add()` runs an LLM that
   emits **ADD / UPDATE / DELETE / NOOP** against the top-similar existing
   memories — contradictions are **deleted**, not versioned
-  (https://arxiv.org/html/2504.19413v1). *Drift to flag:* current OSS `main` (the
+  (<https://arxiv.org/html/2504.19413v1>). *Drift to flag:* current OSS `main` (the
   "v3" pipeline) is actually **ADD-only + exact-hash dedup** — the LLM
   update/delete reconciliation is no longer on the default path
-  (https://docs.mem0.ai/migration/oss-v2-to-v3).
+  (<https://docs.mem0.ai/migration/oss-v2-to-v3>).
 - **Graph variant (Mem0g) was REMOVED from current OSS** (v3); when it existed it
   used Neo4j/Memgraph triples and was **single-axis, not bi-temporal** — the paper
   claimed soft-invalidation but the shipped code hard-`DELETE`d. Its reported lift
@@ -188,7 +188,7 @@ reference for the *memory* use case that LongMemEval scores.
   metadata incl. `start_date`/`end_date`/`status`. Conceptually a property graph,
   but stored as **parquet tables + an in-memory NetworkX graph** (no native graph
   DB), not a queryable engine
-  (https://microsoft.github.io/graphrag/index/outputs/).
+  (<https://microsoft.github.io/graphrag/index/outputs/>).
 - **Indexing** (heavy, index-time-LLM-bound; README warns it "can be an expensive
   operation"): chunk → LLM entity+relationship extraction with multi-round
   "gleanings" → **Leiden hierarchical community detection** (MECE partition per
@@ -388,18 +388,18 @@ E0+E1 produce a real, non-data-limited per-class delta.
 `-canonical-identity-substrate.md`; `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md`;
 `dev/design/0.8.0-agent-memory-fit.md`, `slice-15-design.md`, `slice-30-design.md`,
 `slice-31-identity-rescope-design.md`; `dev/plans/runs/IR-C-roadmap.md` (R2/R3, C3).
-**External — Mem0:** arXiv 2504.19413 (https://arxiv.org/html/2504.19413v1);
-OSS https://github.com/mem0ai/mem0 ; migration https://docs.mem0.ai/migration/oss-v2-to-v3 .
-**External — Zep/Graphiti:** arXiv 2501.13956 (https://arxiv.org/pdf/2501.13956);
-https://github.com/getzep/graphiti ;
-https://blog.getzep.com/how-do-you-search-a-knowledge-graph/ ;
-https://blog.getzep.com/state-of-the-art-agent-memory/ .
-**External — GraphRAG (Microsoft):** arXiv 2404.16130 (https://arxiv.org/abs/2404.16130);
-https://github.com/microsoft/graphrag ; https://microsoft.github.io/graphrag/
+**External — Mem0:** arXiv 2504.19413 (<https://arxiv.org/html/2504.19413v1>);
+OSS <https://github.com/mem0ai/mem0> ; migration <https://docs.mem0.ai/migration/oss-v2-to-v3> .
+**External — Zep/Graphiti:** arXiv 2501.13956 (<https://arxiv.org/pdf/2501.13956>);
+<https://github.com/getzep/graphiti> ;
+<https://blog.getzep.com/how-do-you-search-a-knowledge-graph/> ;
+<https://blog.getzep.com/state-of-the-art-agent-memory/> .
+**External — GraphRAG (Microsoft):** arXiv 2404.16130 (<https://arxiv.org/abs/2404.16130>);
+<https://github.com/microsoft/graphrag> ; <https://microsoft.github.io/graphrag/>
 (index/default_dataflow, query/global_search, query/local_search, query/drift_search) —
 query-focused summarization over a static corpus; **no temporal model**; not evaluated
 on LongMemEval/LOCOMO (different task).
-**Benchmark disputes (read methodology):** https://github.com/getzep/zep-papers/issues/5 ;
-https://blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/ —
+**Benchmark disputes (read methodology):** <https://github.com/getzep/zep-papers/issues/5> ;
+<https://blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/> —
 all peer numbers are end-to-end LLM-judged QA, **not** first-stage recall, and are
 not mutually comparable across answerer/judge/version.

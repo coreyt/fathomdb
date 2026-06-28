@@ -535,10 +535,10 @@ items the implementing agent should escalate to HITL".
 - `src/rust/crates/fathomdb-engine/Cargo.toml:18`
   (`sqlite-vec = "=0.1.7"`).
 - sqlite-vec binary quantization guide:
-  https://alexgarcia.xyz/sqlite-vec/guides/binary-quant.html
+  <https://alexgarcia.xyz/sqlite-vec/guides/binary-quant.html>
 - sqlite-vec API reference (DeepWiki):
-  https://deepwiki.com/asg017/sqlite-vec/3-api-reference
+  <https://deepwiki.com/asg017/sqlite-vec/3-api-reference>
 - sqlite-vec metadata + partition release:
-  https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html
+  <https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html>
 - Kyle Howells binary-quant benchmark:
-  https://ikyle.me/blog/2025/binary-quantized-embeddings
+  <https://ikyle.me/blog/2025/binary-quantized-embeddings>

@@ -56,6 +56,7 @@ published config (CLS pooling + query prompt) and **FathomDB's exact config**
 | NFCorpus (hard medical, short-q→long-doc) | 0.343 / **0.162** | **0.350 / 0.170** | ~0.34 ✓ |
 
 **Two conclusions, both load-bearing:**
+
 1. **The mean-pool / no-prefix "usage penalty" is ~zero** (≤0.7 nDCG pts, sign
    varies). This independently confirms the internal CLS-vs-mean A/B: pooling is a
    wash, the low exploratory number is *not* a usage bug.
@@ -232,6 +233,7 @@ blog.getzep.com (Mem0-SOTA critique) · github.com/getzep/zep-papers/issues/5 (8
 · arXiv 2504.19413 (Mem0) · atlan.com/know/zep-vs-mem0.
 
 ## Confidence & provenance
+
 - **HIGH:** the expected-ceiling verdict (empirical anchor reproduces leaderboard +
   NFCorpus ≈ our exploratory; 3 papers agree on the discourse-hard pattern); pooling
   penalty ≈ 0; factoid at lexical ceiling; peers use hybrid+graph+reranking;

@@ -15,6 +15,7 @@ origin: ADR-0.8.0-agent-memory-retrieval-and-identity Q2 (Option 2A recommendati
 > **HITL sign-off 2026-06-03 (substrate gate package — completes the partial sign-off of 2026-06-02).**
 > The 2026-06-02 session signed Q2 (=Option 2A) and Q4 (=edges carry temporal columns). The three
 > remaining substrate items are now **signed** at the §3 keystone gate:
+>
 > - **Decision 4 — op-store cascade under supersession: RATIFIED as-is.** Supersession + cascade
 >   in one transaction (atomic tombstone-then-insert with the write batch); `latest_state` updates
 >   to the new active row; `append_only_log` accretes; vec0/FTS5 projection shadows NOT cascaded by
@@ -264,7 +265,7 @@ Slice 15 appends a single migration step. The SQL below is the **authorized
 delta**; it MUST carry the accretion-exemption marker because
 `check_migration_accretion` (`fathomdb-schema/src/lib.rs:362-373`) rejects
 `CREATE TABLE`/`ADD COLUMN` SQL that names no `DROP` and carries no
-`-- MIGRATION-ACCRETION-EXEMPTION: ` marker.
+`-- MIGRATION-ACCRETION-EXEMPTION:` marker.
 
 ```rust
 // Append AFTER the step-11 Migration (fathomdb-schema/src/lib.rs:269-280).
@@ -374,6 +375,7 @@ gate with no correctness benefit. Rejected.
 > This is a **recorded, deliberate deviation**, surfaced here for HITL — it is
 > **not silently reconciled** and is **not dropped**. Trade-off summary for the
 > sign-off decision:
+>
 > - **For `write_cursor`-as-row-id (what Slice 15 ships):** the cursor already
 >   exists on every canonical row, is already monotonic and unique-per-write, and
 >   needs no new column or offset budget; it satisfies the by-id read (G2) and the

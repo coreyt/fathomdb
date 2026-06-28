@@ -9,6 +9,7 @@ directly by the IR-B harness (`tests/support/ir_eval.rs::load_gold_set` →
 **Measure:** `dev/design/ir-recall-measure.md`.
 
 **Methodology stance (load-bearing — do NOT deviate):**
+
 - You **GENERATE labels from a given document; you do NOT judge retrieval output.** You never see,
   rank, or score any retriever's results. This avoids embedder-circularity / self-preference and
   keyword-stuffing bias documented for LLM-as-judge (research note §B.2).
@@ -27,6 +28,7 @@ corpus_hash    = fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4
 corpus_version = 0.8.x-B
 qrels_version  = ir-c-<source-or-batch>-v1        # bump on any change
 ```
+
 Every output file records `corpus_hash` + `qrels_version`. If `corpus_hash` is the
 `TODO(COR-2-freeze)` placeholder, STOP — the set is not pinned and the validator will reject it.
 
@@ -103,6 +105,7 @@ Emit a single JSON object. **This is the schema `parse_gold_set` reads — match
 ```
 
 **Field rules (the harness-binding subset):**
+
 - `query` — non-empty. `query_id` — globally unique in the file. `query_class` — one of the six.
 - `required_evidence[].evidence_id` — unique **within the query**. `.doc_id` — non-empty, **must
   exist in the frozen snapshot**. `.necessity` — `required` puts the doc in the recall denominator;
@@ -115,6 +118,7 @@ Emit a single JSON object. **This is the schema `parse_gold_set` reads — match
   anti-hallucination proof and become load-bearing if FathomDB ever chunks.
 
 **Class/denominator coherence (validator will reject violations):**
+
 - A **non-`negative`** query MUST have a **non-empty** `required` denominator (≥1 unit with
   `necessity=required`).
 - A **`negative`** query MUST have an **EMPTY** `required_evidence` and empty `expected_top_k_doc_ids`
@@ -126,6 +130,7 @@ Emit a single JSON object. **This is the schema `parse_gold_set` reads — match
 ## 3. Grounding / anti-hallucination rules (absolute)
 
 For **every** non-negative query:
+
 1. Pick **one specific document** as the evidence source. Its `doc_id` goes in
    `required_evidence[].doc_id` and **must be a real `doc_id` in the frozen snapshot**.
 2. The answer must be **fully supported by that document's `body`.** Do not use outside knowledge.

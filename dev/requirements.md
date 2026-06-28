@@ -587,7 +587,7 @@ finding with a user-visible falsifiable outcome.
   `design/errors.md` `MigrationError`.
 
 - **REQ-067 — Agentic IR / evidence recall (PLACEHOLDER — target 0.8.1; measure
-  + numbers TBD by the IR-eval `IR-1`/`IR-2` initiative).** When the agent needs a
+  - numbers TBD by the IR-eval `IR-1`/`IR-2` initiative).** When the agent needs a
   stored memory to answer or act, the retrieved context contains the evidence
   required — measured on the **IR / agentic-relevance** axis (qrels / fact-level
   gold labels), NOT the ANN-fidelity axis that REQ-011 / AC-075 already gate.

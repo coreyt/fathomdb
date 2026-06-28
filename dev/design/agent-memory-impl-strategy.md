@@ -35,6 +35,7 @@ surface*, and *AC-057a-clean* vs *read-surface verb (now **governed under
 ADR-0.8.0-supersede-five-verb-surface-cap**, not blocked — see below)*.
 
 **Pure-additive over existing mechanisms (no AC-057a interaction, no HITL gate):**
+
 - **G1** structured hits — enriches the existing `search` return payload.
 - **G9** RRF fusion — pure-internal rewrite of the `read_search_in_tx` merge.
 - **G10** filtered KNN — optional `filter` arg on the existing `search` verb
@@ -46,6 +47,7 @@ ADR-0.8.0-supersede-five-verb-surface-cap**, not blocked — see below)*.
   constraint* on the deferred G0 substrate, deliverable = an ADR.
 
 **Needs new schema (additive ALTER + index; no-data-migration honored):**
+
 - **G0** record identity — the keystone: `logical_id` + `superseded_at` columns +
   partial unique index on `canonical_nodes`/`canonical_edges`, plus per-row ids in
   `WriteReceipt`.
@@ -83,6 +85,7 @@ artifact (PR-N convention). Order: AC-057a-clean schema-free read-path work firs
 governed read-surface verbs (under ADR-supersede) in dependency order.
 
 ### Slice A — G1: Structured search hits *(AC-057a-clean, no migration)*
+
 - **Migration:** none; reads columns already on disk. SCHEMA_VERSION stays 10.
 - **AC-057a:** untouched — enriches the *return shape* of `search`, not a new
   verb. Still a breaking data-class change requiring **simultaneous Py + TS parity**.
@@ -111,6 +114,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Effort:** S.
 
 ### Slice B — G9: RRF fusion + rerank seam *(AC-057a-clean, no migration)*
+
 - Land adjacent to A (G1's `score` field is RRF's natural home).
 - **Files:** `read_search_in_tx` merge (3275-3309); new `RRF_K: f64 = 60.0` +
   `rerank_fused(...)` seam ~3025; optional `fusion_mode: AtomicU8` on
@@ -129,9 +133,11 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Effort:** S.
 
 ### Slice C — G0: Canonical identity substrate *(KEYSTONE — migration, AC-057a-clean)*
+
 - **Prerequisite:** `ADR-0.8.0-canonical-identity-substrate` drafted + HITL-signed
   (settles column shape, whether edges carry identity + temporal — ADR Q2/Q4).
 - **Migration:** **step 11, SCHEMA_VERSION 10→11.** Template = migration 8:
+
   ```sql
   ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT;
   ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
@@ -142,6 +148,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
   CREATE INDEX IF NOT EXISTS canonical_nodes_logical_id_idx ON canonical_nodes(logical_id);
   -- + edge equivalents
   ```
+
   Pure ALTER ADD + CREATE INDEX, no DROP ⇒ **requires a
   `-- MIGRATION-ACCRETION-EXEMPTION:` marker** (`check_migration_accretion`,
   schema lib.rs:362-373; migration-8 already flagged the next pack owes the offset
@@ -176,6 +183,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Effort:** M.
 
 ### Slice D — G8: Optional edge referential check *(AC-057a-clean; no G8-owned migration)*
+
 - **Hard dependency: G0 (Slice C)** — no node-identity key to validate against
   until `logical_id` exists. Reuses G0's `(logical_id, kind)` index.
 - **Files:** `commit_batch` post-loop hook ~5194, Edge arm 5139-5146; `WriteReceipt`
@@ -197,6 +205,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Effort:** S (G0 does the heavy lifting).
 
 ### Slice E — G10: Metadata-filtered KNN *(AC-057a-clean via search args; Rust vec0 reshape, no SQL migration)*
+
 - Independent of G0; composes with G9.
 - **Migration:** **no `fathomdb-schema` entry** — `vector_default` is reshaped in
   Rust (`ensure_vector_partition`), not the SQL registry; accretion guard never
@@ -240,6 +249,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Effort:** M.
 
 ### Slice F — G12: Recency/importance signals *(recency AC-057a-clean; importance vec0 reshape)*
+
 - Lands with G9 (Slice B) for recency; importance defers until G9's scoring
   contract + G1's `score` field exist.
 - **Migration:** none in `fathomdb-schema`. `importance REAL` is a vec0 reshape
@@ -284,6 +294,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 > are DEFER-0.8.x.
 
 **Slice G2-read — by-id (`read.get`/`read.get_many`) — ADD-0.8.0**
+
 - `ReaderRequest::GetById` alongside `Search` (`lib.rs:350`); point lookup on
   `canonical_nodes.logical_id` (after G0 column + partial-unique index),
   active-only default (`superseded_at IS NULL`). Reference: v0.5.x
@@ -293,6 +304,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
   denylist. Effort S.
 
 **Slice G3-read — operational read-back (`read.collection`/`read.mutations`) — ADD-0.8.0 (READ)**
+
 - `ReaderRequest::ReadCollection` + worker-loop arm + `OpStoreRow` +
   `Engine::read_collection` on the ReaderWorkerPool/DEFERRED-tx path. Engine seam
   is **dormant-shippable now**; the SDK verb is **hard-gated on ADR-supersede
@@ -304,6 +316,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
   — not table-stakes (Mem0/Zep leave TTL to the app). Effort S.
 
 ### Slice G(deferred) — remaining gated read verbs *(DEFER-0.8.x, governance path clear)*
+
 - **Gaps:** G2, G3, G4, G5, G7. **Single hard gate:** HITL resolution of fit-doc §7
   Q1 (is AC-057a negotiable for reads) + Q2 (namespace: `admin.*` vs `read.*` vs
   top-level). Build **engine seams now as dormant internal code** (S each); hold the
@@ -311,7 +324,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
 - **Engine seams (all reuse `ReaderWorkerPool` + DEFERRED tx + owned-row results —
   NOT the writer `connection.lock()`):**
   - **G3 `read_collection` / G7 `mutations(collection)`:** `ReaderRequest::ReadCollection`
-    + `reader_worker_loop` arm + `OpStoreRow` + `Engine::read_collection`. Verbatim
+    - `reader_worker_loop` arm + `OpStoreRow` + `Engine::read_collection`. Verbatim
     promotion of the `_for_test` op-store SELECTs (2245-2297). No migration, no G0
     dep. **Mandatory `limit` + after-id cursor for `append_only_log`**
     (`operational_mutations` caps ~1M — don't materialize a huge Vec across FFI).
@@ -346,6 +359,7 @@ governed read-surface verbs (under ADR-supersede) in dependency order.
   conformance).
 
 ### Slice H — G6: Retrieve + expand *(capstone; governed via search args; depends on G0/G1/G4/G5)*
+
 - **G6 = G1 + G4 + G5 + G9 composed.** Not independently buildable. (G9 = the RRF
   fusion the G1 retrieve path already applies; made explicit here to match the
   authoritative composition in the triage + `ADR-0.8.0-graph-traversal-scope`. The

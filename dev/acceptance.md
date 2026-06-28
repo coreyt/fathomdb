@@ -900,6 +900,7 @@ the only test-plan.md responsibility for this section.)
 **Test id:** T-074 (`test_public_surface_is_allowlist`, `test_surface_parity_py_matches_ts`)
 **Supersedes:** AC-057a (the "exactly five" scope cap).
 **Assertion:** The SDK application-command surface is **governed, not capped** — a curated allowlist with cross-binding parity, a permanent recovery-name denylist, and the typed/no-raw-SQL boundary. Concretely, four falsifiable properties hold:
+
 1. **Allowlist-membership (P1):** every *live* public application command in the Python and TypeScript SDKs is a member of the governed allowlist `{Engine.open, admin.configure, write, search, close, read.get, read.get_many, read.collection, read.mutations}` (B1 `read.*` namespace). The `read.*` members are documented-allowlist members shipping in 0.8.0 but go **live at Slice 30**; until then the live surface is a subset, so membership (not equality) is the binding check. Public data types, config types, error classes, and the engine-attached instrumentation/control methods (`drain`, `counters`, `set_profiling`/`setProfiling`, `set_slow_threshold_ms`/`setSlowThresholdMs`, `attach_logging_subscriber`/`attachSubscriber`) are **not** application commands and are not allowlist members.
 2. **Cross-binding parity (P2):** the Python governed allowlist equals the TypeScript governed allowlist (membership-identical) — a verb appears in every SDK binding or in none.
 3. **Recovery-denylist empty-intersection (P3):** the allowlist contains no name in `{recover, restore, repair, fix, rebuild}`. `doctor` is SDK-absent by **non-membership in the positive allowlist** (it is a CLI verb), **not** via this recovery denylist. The byte-frozen `test_no_recovery_surface.{py,ts}` / `no_recovery_surface.rs` remain the live enforcement of recovery unreachability (AC-035d / AC-058 unchanged).
@@ -1117,6 +1118,7 @@ Added 2026-05-02 as an HITL amendment to the locked corpus per
 **Test id:** T-013 (`perf_gates::ac_013_vector_retrieval_latency`) + per-push canary `perf_gates::ac_013_vector_read_path_smoke`
 **Supersedes:** the AC-013 numeric budget (legacy `ADR-0.6.0-retrieval-latency-gates`: p50 ≤ 50 / p99 ≤ 200 ms). HITL-locked 2026-06-01 (0.7.2 PR-3) per `ADR-0.7.0-text-query-latency-gates-revised`.
 **Assertion (tiered by corpus size N; the binding release gate for the 0.x and 1.x lines is the 10k tier):**
+
 - **10,000-row tier — BINDING:** p50 ≤ 80 ms AND p99 ≤ 300 ms over ≥ P-PERF-SAMPLES samples. MET (real bge p50 36 / p99 49 ms at N≈7,667; synthetic 384-d 15/17 ms).
 - **100,000 / 1,000,000 tiers — TRACKED, not gated:** same 80/300 target, deferred to post-1.0 (pre-2.1) ANN-index work — the vec0 bit-KNN is a per-query O(N) linear scan. Measured 100k ≈ 147 ms p50; 1M ≈ 1.5 s (O(N) extrapolation). See `dev/design/ann-index-vec0.md`.
 **Measurement:** LOCAL once-per-release exercise (real-embedder canonical N=1M is infeasible on CI — ~166 h seed at 1.67 docs/s vs a 240-min timeout); per-push CI runs only the FTS-isolated read-path smoke. In code the budget is asserted only at `n ≤ AC013_GATE_N` (10,000); larger N is reported (`AC013_TIER_INFO`). Full data: `dev/plans/runs/0.7.2-PR-3-perf-data.md`.
@@ -1148,6 +1150,7 @@ Added 2026-05-02 as an HITL amendment to the locked corpus per
 **Test id:** T-012 (`perf_gates::ac_012_text_query_latency_on_fts5_path`, tiered) + per-push canary `perf_gates::ac_013_vector_read_path_smoke`.
 **Supersedes:** the AC-012 unconditional 100k budget (legacy: p50 ≤ 20 / p99 ≤ 150 ms asserted at `AC012_DEFAULT_N = 100_000`). HITL-ruled 2026-06-07; minted at the 0.8.0 GA gated slice (Slice 40). AC-012 retained as the legacy budget basis.
 **Assertion (tiered by corpus size N; the binding release gate for the 0.x and 1.x lines is the 10k tier):**
+
 - **10,000-row tier — BINDING:** p50 ≤ 20 ms AND p99 ≤ 150 ms over ≥ P-PERF-SAMPLES samples.
 - **100,000 / 1,000,000 tiers — TRACKED, not gated:** same 20/150 target, deferred to post-1.0 — the FTS5 MATCH scan + `bm25()` + matched-row materialization is O(N) (the SELECT is unbounded). HITL accepts the ~1 ms-over at the tracked 100k tier.
 **Measurement:** LOCAL once-per-release / `perf-canonical.yml` dispatch (`--release`, isolated). In code the budget is asserted only at `n ≤ AC012_GATE_N` (10,000); larger N is reported (`AC012_TIER_INFO`), mirroring `ac_013`'s `AC013_GATE_N` branch. The latency is O(N) corpus-scaling, **not** the porter tokenizer — Slice 6 engine A/B showed porter ≈ unicode61 within noise, so the Slice-5 tokenizer upgrade is kept. Full data: `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-20260607T003001Z.md`.

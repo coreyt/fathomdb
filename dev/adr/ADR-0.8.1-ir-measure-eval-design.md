@@ -56,6 +56,7 @@ top-K candidates — for:
   - Fused production arm (RRF-hybrid, the unconditional ranking FathomDB ships)
 
 Additionally measure:
+
 - **CPU cross-encoder latency (ms/pair)** at two model sizes: TinyBERT-L-2 (~4 MB) and
   MiniLM-L6 (~22.7 MB), on this corpus's passage distribution (random sample of ≥ 1,000 pairs)
 
@@ -115,7 +116,8 @@ The rerank depth knob (R1) must be set from the **measured CDF** before implemen
 ### 2.5 Falsifiable bar
 
 The committed `IR-C-recall-cdf.json` carries all 5 K-values + both query classes + all 4 arms
-+ both latency models. A test can assert:
+
+- both latency models. A test can assert:
 
 ```python
 import json
@@ -150,6 +152,7 @@ isolates the retrieval signal from the model signal. Any comparison that uses di
 or different prompts for different systems is NOT R2.
 
 This constraint is non-negotiable:
+
 - Vendor-reported parity claims (e.g. Mem0 92.5% self-reported, Zep 63.8% vs Mem0 49.0% in the
   LoCoMo dispute) use different answerers, prompts, and context compositions — they are **not
   comparable** to a Recall@K number and **not acceptable** as a baseline. Only R2 (same answerer)

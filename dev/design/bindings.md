@@ -47,7 +47,7 @@ check is allowlist-membership, not set-equality.) The invariant has three
 permanent clauses:
 
 - **Cross-binding parity.** The claim is symmetric _across SDK bindings_ (Python
-  + TypeScript): a verb appears in every SDK binding or in none. Adding a verb
+  - TypeScript): a verb appears in every SDK binding or in none. Adding a verb
   requires updating all SDK bindings together; per-SDK-binding surface sets are
   not allowed to drift. Enforced as allowlist-equality (membership + cross-binding
   equality), not a count.

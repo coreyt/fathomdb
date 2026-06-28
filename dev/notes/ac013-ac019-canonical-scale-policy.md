@@ -74,6 +74,7 @@ AC-019, the path is:
 ## If the canonical runner hardware changes
 
 Several factors that drive the long runtime are 4-core-specific:
+
 - 8-thread AC-019 stress on 4 cores = heavy oversubscription.
 - ANN search through 1M-row vec0 without an index is per-query
   linear; 4 cores serialise the 1000-query measurement passes.

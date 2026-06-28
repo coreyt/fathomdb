@@ -15,6 +15,7 @@ Token counts are estimates: ceil(bytes/4). Re-run `scripts/repo-prune/bin/contex
 | memory/ dir (all .md) | 46 files, 192430 bytes |
 
 ## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)
+
 | Query | Total files | Ledger-zone | Core |
 |---|---|---|---|
 | CE-rerank | 25 | 11 | 14 |

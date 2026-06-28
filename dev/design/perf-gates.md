@@ -189,6 +189,6 @@ change to that contract.
 - `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md` — the tiered canonical
   budget (10k binding; 100k/1M post-1.0 ANN work).
 - `crates/fathomdb-engine/tests/support/corpus_harness.rs` — PR-5 `CorpusFixture`
-  + embed cache the devloop tier consumes.
+  - embed cache the devloop tier consumes.
 - `dev/perf-history/` + the perf-regression check (PR-7) — turns the
   `DEVLOOP_NUMBERS` trend into a regression gate.

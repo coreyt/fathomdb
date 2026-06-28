@@ -342,7 +342,7 @@ disagreement):**
 
 **codex consult (round 3) — one substantive methodology finding, accepted:**
 
-4. **[P2] qrels must seed known positives independent of pooling (§(f)).** Codex observed that a
+1. **[P2] qrels must seed known positives independent of pooling (§(f)).** Codex observed that a
    *pooling-only* qrels drops required evidence that no mode surfaces, so the Recall@K denominator
    would omit the exact misses the eval exists to catch — self-confirming on hard queries,
    overstating recall. **Resolved:** §(f) rewritten to **seed-then-pool** — the denominator is the
@@ -352,17 +352,17 @@ disagreement):**
 
 **codex consult (round 4) — two schema/scoring consistency findings, accepted:**
 
-5. **[P2] schema must use the eu8 `query` key (b).** The draft's `query_text` would break the
+1. **[P2] schema must use the eu8 `query` key (b).** The draft's `query_text` would break the
    "additive superset" claim — the eu8 parser reads `q.get("query")` (`corpus_subset.rs:239`).
    **Resolved:** schema now uses `query` (+ additive `query_id`).
-6. **[P2] graded recall denominator was self-contradictory (a)/(b).** (a) defined graded over
+2. **[P2] graded recall denominator was self-contradictory (a)/(b).** (a) defined graded over
    `required`; (b) said `supporting` feeds graded. **Resolved:** graded recall is over the
    `required` set **only** (same denominator as strict); `supporting` is removed from both recall
    numbers and reported as a separate supporting-coverage diagnostic. (a) and (b) now agree.
 
 **codex consult (round 5) — one denominator-purity finding, accepted:**
 
-7. **[P2] §(f) must seed ONE unit of relevance, not mix evidence units with legacy doc-ids.** The
+1. **[P2] §(f) must seed ONE unit of relevance, not mix evidence units with legacy doc-ids.** The
    round-3 wording "`required_evidence` + `expected_top_k_doc_ids`" would double-count / require
    non-necessary legacy doc-ids. **Resolved:** §(f) now seeds **one** unit per query —
    `required_evidence` is the denominator when present; `expected_top_k_doc_ids` map **exactly
@@ -371,7 +371,7 @@ disagreement):**
 
 **codex consult (round 7) — one production-surface accuracy finding, accepted:**
 
-8. **[P2] §(c) anchored @10 to a nonexistent API `LIMIT`.** `search()` does not truncate to 10;
+1. **[P2] §(c) anchored @10 to a nonexistent API `LIMIT`.** `search()` does not truncate to 10;
    only the vector phase-2 rerank is capped at `SEARCH_RERANK_LIMIT`=10 and the fused result is
    returned untruncated. **Resolved:** §(c) reframes @10 as the **eval/reporting convention**
    (aligned with the vector-rerank depth + eu7/eu8 K=10), with an explicit note that the API does
@@ -379,11 +379,11 @@ disagreement):**
 
 **codex consult (round 8) — two harness-precision findings, accepted:**
 
-9. **[P2] §(c) vector fanout for K>10.** Production reranks only `SEARCH_RERANK_LIMIT`=10, so
+1. **[P2] §(c) vector fanout for K>10.** Production reranks only `SEARCH_RERANK_LIMIT`=10, so
    @20/@50 vector depths need the rerank fanout raised. **Resolved:** §(c) requires the eval to
    raise the vector fanout (via `set_search_limit_for_test`) to ≥ the deepest ladder K and record
    it; a harness setting, not a production change.
-10. **[P2] §(e) BM25 ordering direction.** FTS5 `bm25()` is smaller-is-better, opposite the
+2. **[P2] §(e) BM25 ordering direction.** FTS5 `bm25()` is smaller-is-better, opposite the
     `SearchHit.score` convention. **Resolved:** §(e) pins `ORDER BY bm25(search_index) ASC` for the
     BM25 baseline and warns against a descending-score sort.
 
@@ -391,7 +391,8 @@ disagreement):**
 round 1 = §(e) FTS accuracy + cleanups; round 2 = doc coherent; round 3 = §(f) seed-then-pool;
 round 4 = schema/scoring consistency; round 5 = single-unit-of-relevance denominator; round 6 =
 ledger alignment; round 7 = §(c) @10 reframed as a reporting convention; round 8 = vector-fanout
-+ BM25-ordering harness precision. Every finding accepted and resolved; no definitional reversal.
+
+- BM25-ordering harness precision. Every finding accepted and resolved; no definitional reversal.
 
 **Residual disagreements escalated to HITL:** **none.** (The substantive product decisions —
 actual threshold numbers, the exact corpus snapshot, whether/when this becomes a *gate* — are

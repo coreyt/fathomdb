@@ -150,12 +150,14 @@ expansion requiring escalation (§6); it is unnecessary and avoided.
 ## Test plan (RED first)
 
 **`tests/parser.rs`** (parser surface):
+
 - `dump-mutations <collection> <db_path>` parses; `--after-id`, `--limit`, `--json`
   parse; defaults are `after_id=None`, `limit=None`, `json=false`.
 - `dump-mutations` rejects `--accept-data-loss` (owned by `recover`).
 
 **`tests/operator_cli.rs`** (binary-level, real engine, no mocks; seed via
 `fathomdb::PreparedWrite::{AdminSchema, OpStore}`):
+
 - (i) `--json` emits one object `verb=="dump-mutations"`, `rows` ordered by `id`,
   carrying the `OpStoreRow` fields;
 - (ii) `--limit k` caps `count` at `k`, `next_after_id` = page's last id;

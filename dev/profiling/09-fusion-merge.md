@@ -50,6 +50,7 @@ G9 its justification.
 ## Scaling expectation
 
 Merge/fusion is in-memory over a bounded candidate set (≈ `TOP_K_BIT_CANDIDATES`
-+ FTS5 hits), so it is ~constant w.r.t. corpus N and tiny relative to the vec0
+
+- FTS5 hits), so it is ~constant w.r.t. corpus N and tiny relative to the vec0
 phase-1 scan. Its value is almost entirely **quality**, not latency — which is
 exactly why the profiler must measure ordering/recall here, not just ms.

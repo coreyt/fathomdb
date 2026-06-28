@@ -143,7 +143,7 @@ typed report structs; the CLI serializes them under a `verb` discriminator.
 - `doctor dump-mutations` (0.8.0) serializes as `{ "verb": "dump-mutations",
   "collection", "after_id" (or null), "limit", "count", "rows": [ { "id",
   "collection", "record_key", "op_kind", "payload", "schema_id", "write_cursor" }
-  … ordered by `id` ], "next_after_id" }`. The CLI serializes the engine
+  … ordered by`id`], "next_after_id" }`. The CLI serializes the engine
   `OpStoreRow` rows inline; `next_after_id` is the last row's `id` iff a full page
   was returned (resume with `--after-id <next_after_id>`, exclusive cursor → no
   overlap), else `null`.

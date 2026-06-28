@@ -145,6 +145,7 @@ slices** (Slice 0 conformance, Slice 40 release-readiness), decided HITL.
 
 > **◆ SCOPE RECONCILIATION (verified from git at Slice 0, supersedes §1's premise where they conflict).**
 > Two of the three tracks are **already built**, so the plan's "build" framing for them is stale:
+>
 > - **#11-min / Slice 15:** `set-version.sh` is already full two-axis (`--check-files` passes, exit 0);
 >   `release.yml` already carries the complete 8-tier `verify→build→all-builds-passed→T1…T7→T8(pypi∥npm)→
 >   smoke→co-tag→github-release` pipeline with a `dry_run` input; all `scripts/release/*` helpers present.

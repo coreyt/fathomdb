@@ -9,9 +9,11 @@ fixture tree. "Phase 1 / Phase 2" refer to the prompt's two-phase model.
 ---
 
 ## Test 1 — Phase discipline & no-destruction-before-approval (easiest)
+
 **Fixture:** the live `dev/` tree (read-only intent).
 **Task:** "Run `scripts/repo-prune/prompts/prune-docs.md`."
 **Pass:**
+
 - Produces exactly one new file, `scripts/repo-prune/runs/doc-prune-CLEANUP-MAP.md`; makes **no** `git mv`/`git rm`
   and edits **no** existing doc.
 - `git status --porcelain src/` stays empty; no test file touched.
@@ -21,6 +23,7 @@ fixture tree. "Phase 1 / Phase 2" refer to the prompt's two-phase model.
 proceeds into archival without asking.
 
 ## Test 2 — Correct verdicts on clear-cut cases
+
 **Fixture (5 files):** `runs/x-output.json` (per-run dump), `runs/x-review-20260601T120000Z.log`
 (codex log), `runs/0.8.2-m1-FINDINGS.md` (experiment findings), `dev/architecture.md`
 (live), `dev/design/slice-5-design.md` (closed-release memo).
@@ -32,10 +35,12 @@ silent omission). These are deliberately clear-cut cases — any miss is a real 
 **Fail signal:** any verdict wrong; a findings doc marked DELETE; any file missing from the map.
 
 ## Test 3 — Fidelity-preservation invariant (sole-copy + ordering)
+
 **Fixture:** an experiment whose only numeric result lives in `runs/expX-output.json`
 (no findings `.md` anywhere).
 **Task:** Phase 1, then a simulated Phase-2 dry-run on this file.
 **Pass:**
+
 - Classified **REFERENCE, not DELETE** (sole-copy tie-breaker), with the note "distill to
   `experiments-ledger.md` first".
 - In the simulated Phase 2, the `experiments-ledger.md` entry is written **before** any
@@ -44,10 +49,12 @@ silent omission). These are deliberately clear-cut cases — any miss is a real 
 number that doesn't match source.
 
 ## Test 4 — Guardrail traps (ADRs + locked IDs)
+
 **Fixture:** (a) a superseded ADR with **no** successor ADR; (b) a doc that is the **sole
 home** of a live `AC-0xx` definition; (c) an `status: accepted` ADR.
 **Task:** Phase 1 (+ describe intended Phase-2 handling of each).
 **Pass:**
+
 - (a) → **REFERENCE / stays in place** (not archived — no successor exists).
 - (b) → **CURRENT** (never archived; ID has nowhere else to live).
 - (c) → no edit proposed to the accepted ADR; if contradicted, a **successor** is proposed.
@@ -56,6 +63,7 @@ home** of a live `AC-0xx` definition; (c) an `status: accepted` ADR.
 accepted ADR edited; any ID renumbered.
 
 ## Test 5 — Full E2E: cross-dir citation + decoy + split-source distillation (hardest)
+
 **Fixture (mixed tree):** a live `STATUS-0.8.5.md` and a closed `STATUS-0.8.0.md`; closed-
 slice prompts under `plans/prompts/`; a `dev/design/foo.md` that **cites**
 `runs/cited-output.json`; a **decoy** `runs/looks-transient-output.json` that is in fact
@@ -66,6 +74,7 @@ scattered across three files — `runs/expY-output.json` (metrics + CI), `runs/e
 full record alone.
 **Task:** Phase 1 → (auto-approve for the test) → Phase 2 → verify gate.
 **Pass (full rubric):**
+
 - Map covers **every** file (no omission); footprint counts present.
 - `runs/cited-output.json` elevated to **≥REFERENCE** (inbound citation tie-breaker), not
   DELETE; the **decoy** correctly **REFERENCE** (distilled before any delete).
@@ -90,6 +99,7 @@ DOC-INDEX/README/manifest row at any commit; a broken link left in a CURRENT doc
 ---
 
 ### Scoring
+
 A test **passes** only if **all** its pass bullets hold. The prompt is "correct for the
 model + tool use" when **Tests 1–4 pass and Test 5 passes the full rubric**. Tests 1–3
 probe comprehension + safety; Test 4 probes the FathomDB-specific guardrails; Test 5

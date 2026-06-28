@@ -23,8 +23,7 @@ Per `dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md`
   to the GitHub Actions runner slice).
 - **Core count / threads:** 4 (per `nproc`).
 - **OS:** Ubuntu 24.04.4 LTS.
-- **Kernel:** `Linux runnervmg397c 6.17.0-1013-azure
-#13~24.04.1-Ubuntu SMP Wed Apr 15 16:52:17 UTC 2026 x86_64`.
+- **Kernel:** `Linux runnervmg397c 6.17.0-1013-azure #13~24.04.1-Ubuntu SMP Wed Apr 15 16:52:17 UTC 2026 x86_64`.
 - **glibc version:** GLIBC 2.39 (Ubuntu).
 - **SQLite version:** bundled via `libsqlite3-sys 0.28.0` in
   `Cargo.lock`; ships SQLite 3.45.x. Exact patch version was not

@@ -1,11 +1,13 @@
 # IR-A — IR-1 Phase 1 (measure + Claude↔codex consensus) · track:IR-eval · type:work
 
 ## Purpose (1–2 sentences)
+
 Define the IR/agentic-**relevance** measure (the product-value recall axis FathomDB lacks — distinct from the eu7
 fidelity floor) and reach a **Claude↔codex consensus** on the methodology, producing a signed
 `dev/design/ir-recall-measure.md`. Pure design; runs now with no prerequisites.
 
 ## Prerequisites (verify ALL before starting — do not start if any is unmet)
+
 - [ ] Step-0 item — runs **now**, blocks nothing on GA. — verify: roadmap §"Step 0" lists IR-A with `Depends on:
   nothing` (`grep -n "IR-A" dev/plans/0.8.0-GA-and-IR-eval-roadmap.md`).
 - [ ] codex is runnable here (consensus reviewer). — verify: `codex exec review` is available with
@@ -14,8 +16,10 @@ fidelity floor) and reach a **Claude↔codex consensus** on the methodology, pro
   and [[fathomdb-recall-fidelity-vs-relevance]].
 
 ## Work to-do (the steps)
+
 **Follow the authoritative prompt `dev/plans/prompts/0.8.x-IR-1-phase1-measure-consensus.md` — this scaffold is the
 launcher.** Key reminders:
+
 1. **Definition + methodology only** — define the IR/agentic-relevance measure (evidence/task recall); reach a
    genuine **Claude↔codex consensus** on it.
 2. **No AC, no gold set, no experiments** in this phase (those are IR-B/C/D) — and **don't commit to a specific corpus
@@ -24,6 +28,7 @@ launcher.** Key reminders:
    ([[fathomdb-recall-fidelity-vs-relevance]]).
 
 ## Output to the orchestrator (how this session reports back)
+
 - Artifact(s): signed `dev/design/ir-recall-measure.md` + the codex consult/consensus log
   (`dev/plans/runs/` review artifact) + merge to local `main` (no push).
 - Schema/contract: the measure doc = {definition of IR/agentic-relevance recall, methodology (K-ladder / pooling /
@@ -36,5 +41,6 @@ launcher.** Key reminders:
   orchestrator-owned.
 
 ## Full prompt / next
+
 - Authoritative prompt: `dev/plans/prompts/0.8.x-IR-1-phase1-measure-consensus.md`.
 - On completion → orchestrator codex-reviews the measure; output feeds **IR-B/C/D** (after ◆ B-1 + ⬛ COR-2) and **IR-E**.

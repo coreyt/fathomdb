@@ -41,6 +41,7 @@ LLM and speaks FathomDB's Extraction Provider Protocol v1.**
 ## What to build
 
 A standalone **extraction provider** ("the harness") that:
+
 1. FathomDB launches/connects to locally (no network egress *from FathomDB*; the harness alone
    owns LLM connectivity — local model, your own API key, whatever Memex already uses).
 2. Receives FathomDB-authored extraction *requests* and returns schema-valid *fact-edge
@@ -68,16 +69,20 @@ All messages are single-line UTF-8 JSON. Every message has `protocol: "fathomdb.
 `type`. Unknown fields are ignored (forward-compatible); unknown `type` → an `error` response.
 
 ### 1. Handshake (FathomDB → harness on startup; harness replies once)
+
 Request `{"protocol":"fathomdb.extract.v1","type":"hello"}` →
 Response:
+
 ```json
 {"protocol":"fathomdb.extract.v1","type":"ready",
  "provider":"memex","model":"<id>","supports":{"deterministic":true,"batch":true,"max_docs_per_request":32},
  "schema_version":1}
 ```
+
 FathomDB aborts if `protocol`/`schema_version` mismatch.
 
 ### 2. Extraction request (FathomDB → harness)
+
 ```json
 {"protocol":"fathomdb.extract.v1","type":"extract","request_id":"<uuid>",
  "documents":[{"doc_id":"<id>","kind":"email|meeting|note|todo|...","body":"<text>","created_at":"<ISO-8601>"}],
@@ -86,6 +91,7 @@ FathomDB aborts if `protocol`/`schema_version` mismatch.
  "options":{"deterministic":true,"max_facts_per_doc":24,"language":"en",
             "instructions":"<optional: authoritative extra extraction guidance from FathomDB>"}}
 ```
+
 FathomDB owns this shape and the extraction semantics; you fulfill it. **`options.instructions`
 (optional, ratified 2026-06-12 / Q1):** absent ⇒ the provider authors the prompt freely; when
 present ⇒ the provider **MUST incorporate it as binding guidance** (MAY adapt phrasing to its model)
@@ -93,6 +99,7 @@ present ⇒ the provider **MUST incorporate it as binding guidance** (MAY adapt 
 owns the output schema + semantics + this optional steer.
 
 ### 3. Extraction response (harness → FathomDB)
+
 ```json
 {"protocol":"fathomdb.extract.v1","type":"result","request_id":"<uuid>",
  "entities":[{"name":"Alice Chen","type":"person","aliases":["Alice"]}],
@@ -105,6 +112,7 @@ owns the output schema + semantics + this optional steer.
  }],
  "warnings":[]}
 ```
+
 - **`entities`** → FathomDB nodes, deduped to a stable `logical_id` (you provide `name`+`type`+`aliases`;
   FathomDB owns the id assignment). `from_entity`/`to_entity` reference entities by `name`. **Dangling
   endpoints (ratified 2026-06-13 / QA):** if an edge references a `name` the model didn't list, the
@@ -124,7 +132,7 @@ owns the output schema + semantics + this optional steer.
   **`validation_failed`** (carries `source_doc_id`), **`temporal_fallback`** (QB — `t_valid` defaulted
   to `created_at`; carries `source_doc_id` + `substituted_t_valid` + `raw_t_valid` [null ⇒ omitted,
   string ⇒ unparseable]), **`capped`** (DI-3 — `max_facts_per_doc` truncation; carries `source_doc_id`
-  + `kept` + `dropped`). Any document dropped from a `result` (no facts, or a per-doc validation
+  - `kept` + `dropped`). Any document dropped from a `result` (no facts, or a per-doc validation
   failure while infra is healthy — D4) **MUST** emit a warning carrying its `source_doc_id`. Extra
   fields are additive; FathomDB ignores unknown `kind`s and keeps the `result`.
 - **`confidence`** ∈ [0,1]: your calibrated extraction confidence; FathomDB may threshold/weight on it.
@@ -134,10 +142,12 @@ owns the output schema + semantics + this optional steer.
   measuring). Omit (null) rather than emit a guessed span. (FathomDB's store is Rust/byte-indexed.)
 
 ### 4. Error (harness → FathomDB, instead of a result)
+
 ```json
 {"protocol":"fathomdb.extract.v1","type":"error","request_id":"<uuid>",
  "code":"llm_unavailable|invalid_request|extraction_failed|timeout","message":"<human text>","retriable":true}
 ```
+
 A crash/blank line/non-JSON on stdout is treated as a fatal provider error — never do that; always
 emit a `result` or `error` for every `request_id`.
 
@@ -187,6 +197,7 @@ emit a `result` or `error` for every `request_id`.
    harness owns all model access").
 
 ## Acceptance
+
 - FathomDB can spawn the harness, complete the `hello`→`ready` handshake, send a batch `extract`,
   and get schema-valid `result`s for every `request_id`.
 - The golden fixture reproduces byte-identically under `deterministic=true`.
@@ -194,6 +205,7 @@ emit a `result` or `error` for every `request_id`.
 - Temporal facts carry correct `t_valid`/`t_invalid`; superseding facts surface a `supersedes_hint`.
 
 ## Out of scope (FathomDB's side, not yours)
+
 Entity→`logical_id` resolution, the `canonical_edges` migration, BFS/RRF retrieval, the
 invalidate-not-accumulate edge bookkeeping, and the embedding/1-bit-quant of edge text. You produce
 entities + dated fact-edges; FathomDB stores, links, and retrieves them.

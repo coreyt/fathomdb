@@ -127,18 +127,23 @@ asserts `SearchFilter` has exactly the four existing fields (`source_type`, `kin
 | `scalar_value_and_comparison_op_are_shared_types` | `ScalarValue`/`ComparisonOp` accessible at `fathomdb_engine::ScalarValue` |
 
 ### Python (src/python/tests/test_read_list.py)
+
 - `test_read_list_filter_py` — seed nodes, call `read.list`, assert results
 - `test_read_list_non_allowlisted_path_raises` — verify typed error on bad path
 
 ### TypeScript (src/ts/tests/functional-read-list.test.ts)
+
 - Same fixtures as Python; `read.list` returns equivalent results
 
 ### Cross-binding equivalence
+
 Same DB + same predicates → `read.list` (Python) ≡ `read.list` (TS) — confirmed by seeding
 identical data and comparing results.
 
 ### Injection-safety test modeling
+
 Modeled on `fts5_injection_safety.rs` + `dev/design/agent-memory-impl-strategy.md :414`:
+
 - Construct `Predicate::json_path_eq("$.status", ScalarValue::Text("'; DROP TABLE canonical_nodes;--"))`.
 - Call `engine.read_list("test", &[pred], 100)`.
 - Assert no error → the injection string was bound as a parameter, never executed as SQL.
@@ -149,6 +154,7 @@ Modeled on `fts5_injection_safety.rs` + `dev/design/agent-memory-impl-strategy.m
 ## 6. Python / TS API shapes
 
 ### Python
+
 ```python
 # read.py addition
 def list(
@@ -172,6 +178,7 @@ the PyO3 binding. Path validation happens in Rust (at `Predicate` construction t
 receives an `InvalidFilterError` (a new leaf of `EngineError`) on a non-allowlisted path.
 
 ### TypeScript
+
 ```typescript
 export interface Predicate {
   type: 'eq' | 'gt' | 'gte' | 'lt' | 'lte'

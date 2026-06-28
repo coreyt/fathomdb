@@ -99,12 +99,14 @@ expensive at large scale). Decision deferred until consumer graph scale is measu
 
 **4.3 API surface (speculative)**
 A future `read_list` or `search_with_expand` option:
+
 ```rust
 pub struct GraphRetrievalOptions {
     pub confidence_weight: Option<f64>,  // None = equal weight
     pub importance_weight: Option<f64>,  // None = equal weight
 }
 ```
+
 Or folded into the existing `Predicate` filter (filter by `confidence > 0.8`, for example).
 
 ---

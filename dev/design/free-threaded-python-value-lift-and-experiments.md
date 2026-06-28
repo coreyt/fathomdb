@@ -137,13 +137,16 @@ as a hot-path library inside other people's free-threaded agents.
 Three layers, smallest to largest assurance cost.
 
 ### 5.1 Mechanical (trivial)
+
 - Flip the module marker to `#[pymodule(gil_used = false)]` (one line). This is the *only* code change to
   *claim* support — everything else is verification + packaging.
 - (Already required by the 0.8.8 bump regardless: the `with_gil→attach`, `allow_threads→detach`,
   `downcast→cast`, `PyObject→Py<PyAny>` renames. Those are orthogonal to FT and land in 0.8.8 Slice 1.)
 
 ### 5.2 Correctness / assurance (the real lift — MEDIUM)
+
 The claim `gil_used = false` is only honest if verified. Required work:
+
 1. **Build a free-threaded CPython toolchain** (`python3.13t` / `3.14t`) into a dev + CI lane.
 2. **Run the full existing Py suite (67 tests) under `3.13t`** — must be green.
 3. **Author a concurrency stress suite** (new): N threads (N=2..16) sharing one `Engine`, issuing mixed
@@ -159,6 +162,7 @@ Risk note: the engine core is believed FT-safe by construction (§3), but "belie
 a no-GIL interpreter." EXP-FT-4 converts belief into evidence and is the **hard gate**.
 
 ### 5.3 Packaging (MEDIUM — easy to under-estimate)
+
 - **Free-threaded wheels are not abi3.** The binding ships `abi3-py310` (one wheel, many versions). The
   free-threaded ABI is version-specific (`cp313t`, `cp314t`, …) and *not* covered by the abi3 wheel. FT
   support therefore means **adding per-version `*t` wheels to the build matrix** alongside the abi3 wheel
@@ -167,6 +171,7 @@ a no-GIL interpreter." EXP-FT-4 converts belief into evidence and is the **hard 
   gate FT support to a later release purely on packaging readiness, independent of correctness.
 
 ### 5.4 Lift summary
+
 | Layer | Size | Notes |
 |-------|------|-------|
 | Mechanical (claim) | **XS** | one line |
@@ -183,6 +188,7 @@ free-threaded CPython 3.13t, `gil_used = false`**, off the same engine commit. L
 where possible; no network.
 
 ### EXP-FT-1 — GIL-held fraction profiling (cheapest; run first)
+
 - **Question:** what fraction of each op's wall-time is spent GIL-held (marshalling) vs GIL-released
   (engine)? This is the ceiling on V2.
 - **Method:** instrument the binding to timestamp around the `detach`/`attach` boundary for a
@@ -195,6 +201,7 @@ where possible; no network.
   `write` marshalling, `rerank` dict construction), V2 is real *there* → quantify in EXP-FT-2.
 
 ### EXP-FT-2 — Multi-thread throughput scaling (A vs B)
+
 - **Question:** does FT actually raise aggregate throughput, beyond what GIL CPython already gets from
   `allow_threads`?
 - **Method:** fixed harness, K Python threads (K ∈ {1,2,4,8,16}) sharing one `Engine`, each driving a
@@ -207,6 +214,7 @@ where possible; no network.
   Cross-check against EXP-FT-1: a high multiplier should be explained by a high GIL-held fraction.
 
 ### EXP-FT-3 — The GIL-poisoning cost (the V1 number)
+
 - **Question:** how much *application-level* parallelism does FathomDB's `gil_used = true` destroy on an
   FT interpreter?
 - **Method:** synthetic agent-loop workload on **3.13t**: P threads doing realistic Python-side work
@@ -221,6 +229,7 @@ where possible; no network.
   argues for prioritizing FT support; a small ratio weakens V1.
 
 ### EXP-FT-4 — Concurrency safety under no-GIL (HARD GATE for any `gil_used = false`)
+
 - **Question:** is the binding+engine actually race/deadlock-free without the GIL?
 - **Method:** on **3.13t**, run the full Py suite + the new stress suite (§5.2.3): M iterations of
   N-thread mixed `write`/`search`/`read`/`drain` on a shared `Engine`, plus a multi-`Engine`-instance
@@ -232,6 +241,7 @@ where possible; no network.
   is where §3's "FT-safe by construction" belief is empirically confirmed or refuted.
 
 ### EXP-FT-5 — Wheel-matrix feasibility (packaging)
+
 - **Question:** what does shipping FT wheels actually cost, and is abi3 reuse possible?
 - **Method:** prototype a maturin/cibuildwheel matrix adding `cp313t`(/`cp314t`) targets beside the
   abi3-py310 wheel; build them; measure added CI wall-time, artifact count, and whether the abi3 wheel
@@ -296,6 +306,7 @@ architecture matches the projects that succeeded (Rust core + real locks + GIL r
 shape of the projects that struggled (concurrent access to Python objects / mutable `#[pyclass]`).**
 
 ### A.1 Landscape & timeline
+
 - **pyo3** first grew real FT support in **0.23.3 (Dec 2024)**; **0.28** flipped the default to
   "FT-assumed" with `#[pymodule(gil_used = true)]` as the opt-out (the exact knob driving this doc).
 - **CPython:** 3.13t was experimental (2024); **3.14 (Oct 2025) made the free-threaded build a supported
@@ -310,6 +321,7 @@ shape of the projects that struggled (concurrent access to Python objects / muta
   [danilchenko; py-free-threading porting guide]
 
 ### A.2 Project case studies
+
 | Project | Stack | FT status (2026) | Lesson for FathomDB |
 |---|---|---|---|
 | **HF `tokenizers`** | pyo3 / Rust core | **Ships `cp314t` wheels; declares `Py_MOD_GIL_NOT_USED`; inner state in `std::sync::RwLock`, concurrent `encode` takes a read guard** | **Near-exact analog.** Same recipe FathomDB already follows (Rust core, `ReaderWorkerPool`, `Mutex`/`OnceLock`, GIL released). Strongest evidence the pattern works. |
@@ -319,6 +331,7 @@ shape of the projects that struggled (concurrent access to Python objects / muta
 | **PyTorch + custom inference** (Trent Nelson) | C++/native + pyo3 deps | Realized **parallel transformer inference for the first time**; **no deadlocks/races** in the workload; main pain = ecosystem (had to manually rebuild `tiktoken` bumping pyo3 0.22.2→0.23.3; pydantic/Jupyter incompatible) | The dominant cost was the **dependency/packaging lift**, not own-code safety — matches our §5.3 framing. |
 
 ### A.3 Were the benefits realized? (and where they were *not*)
+
 - **CPU-parallel Python work scales near-linearly:** danilchenko's 3.14 benchmarks show **~3.5× on 4
   cores** for prime counting and SHA-256, **3.28×** for matmul, while the **GIL build gained ~6% from
   threads (i.e. nothing).** PyTorch saw real parallel-inference gains.
@@ -330,6 +343,7 @@ shape of the projects that struggled (concurrent access to Python objects / muta
   measure — not the engine work FathomDB already parallelizes today.
 
 ### A.4 Documented pyo3 footguns, mapped to FathomDB's actual exposure
+
 | Footgun (from pyo3 guide / issue #4738 / LWN) | FathomDB exposure |
 |---|---|
 | **Deadlock on 3.13t** when a thread re-attaches to the interpreter while another holds it (stop-the-world to immortalize objects on first background thread); fix = `allow_threads`/`detach` around `join()`/`barrier.wait()` | **Low.** FathomDB already wraps every engine call in `detach`; `ingest_with_extractor` spawns a **subprocess**, not a Python thread. EXP-FT-4 must still stress the multi-`Engine` + `drain`/`join` paths. |
@@ -339,6 +353,7 @@ shape of the projects that struggled (concurrent access to Python objects / muta
 | **Single-thread penalty (~5–10%) + ~2× per-object memory** if you run on the FT interpreter | Mitigated by shipping **both** abi3 + FT wheels — users opt in; no cost imposed on default GIL users. |
 
 ### A.5 What the survey implies for FathomDB
+
 1. **The success pattern is FathomDB's existing pattern.** `tokenizers` (Rust core, `RwLock`, GIL
    released, `Py_MOD_GIL_NOT_USED`) shipped FT support without drama. FathomDB's engine
    (`ReaderWorkerPool` + `Mutex`/`OnceLock`, every call under `detach`, `frozen` pyclasses) is the same
@@ -356,15 +371,16 @@ shape of the projects that struggled (concurrent access to Python objects / muta
    making EXP-FT-4 a hard, high-iteration gate rather than a smoke test.
 
 ### A.6 Sources
-- PyO3 user guide — *Supporting Free-Threaded Python* — https://pyo3.rs/main/free-threading
-- PyO3 — *Thread Safety and Free-Threading* (DeepWiki) — https://deepwiki.com/PyO3/pyo3/5.5-thread-safety-and-free-threading
-- PyO3 issue #4265 — *Tracking issue for no-gil/freethreaded work* — https://github.com/PyO3/pyo3/issues/4265
-- PyO3 discussion #4738 — *3.13 freethreaded deadlock* — https://github.com/PyO3/pyo3/discussions/4738
-- Python Free-Threading Guide — *Compatibility Status Tracking* — https://py-free-threading.github.io/tracking/
-- Python Free-Threading Guide — *Porting / Updating Extension Modules* — https://py-free-threading.github.io/porting-extensions/
-- CPython docs — *Python support for free threading* — https://docs.python.org/3/howto/free-threading-python.html
-- danilchenko.dev — *Python 3.14 Free-Threading: Real Benchmarks, Real Breakage* — https://www.danilchenko.dev/posts/python-314-free-threading/
-- Trent Nelson — *PyTorch and Python Free-Threading* — https://trent.me/articles/pytorch-and-python-free-threading/
-- TechNet — *Polars Compatibility with Python Free-Threading* — https://www.technetexperts.com/polars-python-free-threading-compatibility/
-- pydantic-core issue #1555 — *Plan to support free-threaded Python* — https://github.com/pydantic/pydantic-core/issues/1555
-- LWN — *Getting extensions to work with free-threaded Python* — https://lwn.net/Articles/1025893/
+
+- PyO3 user guide — *Supporting Free-Threaded Python* — <https://pyo3.rs/main/free-threading>
+- PyO3 — *Thread Safety and Free-Threading* (DeepWiki) — <https://deepwiki.com/PyO3/pyo3/5.5-thread-safety-and-free-threading>
+- PyO3 issue #4265 — *Tracking issue for no-gil/freethreaded work* — <https://github.com/PyO3/pyo3/issues/4265>
+- PyO3 discussion #4738 — *3.13 freethreaded deadlock* — <https://github.com/PyO3/pyo3/discussions/4738>
+- Python Free-Threading Guide — *Compatibility Status Tracking* — <https://py-free-threading.github.io/tracking/>
+- Python Free-Threading Guide — *Porting / Updating Extension Modules* — <https://py-free-threading.github.io/porting-extensions/>
+- CPython docs — *Python support for free threading* — <https://docs.python.org/3/howto/free-threading-python.html>
+- danilchenko.dev — *Python 3.14 Free-Threading: Real Benchmarks, Real Breakage* — <https://www.danilchenko.dev/posts/python-314-free-threading/>
+- Trent Nelson — *PyTorch and Python Free-Threading* — <https://trent.me/articles/pytorch-and-python-free-threading/>
+- TechNet — *Polars Compatibility with Python Free-Threading* — <https://www.technetexperts.com/polars-python-free-threading-compatibility/>
+- pydantic-core issue #1555 — *Plan to support free-threaded Python* — <https://github.com/pydantic/pydantic-core/issues/1555>
+- LWN — *Getting extensions to work with free-threaded Python* — <https://lwn.net/Articles/1025893/>

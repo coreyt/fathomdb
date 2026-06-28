@@ -6,6 +6,7 @@ exploratory — median gold rank 99 over 10,506 docs). Question: are we at
 bge-small's limit, or misusing it, and what are the options?
 
 > ## ⚠️ UPDATE (2026-06-11) — the pooling hypothesis was REFUTED by experiment
+>
 > The TL;DR below hypothesized the median-99 was a **mean-pooling bug**. We then
 > ran the actual A/B (full corpus, dense diagnostic, CLS pooling + query prefix vs
 > mean/no-prefix). **CLS did NOT fix exploratory — it was marginally *worse*:**
@@ -30,17 +31,17 @@ model swap.
 1. **bge-small-en-v1.5 is CLS-pooled; FathomDB mean-pools it.** Verified against the
    model's own `1_Pooling/config.json` (`pooling_mode_cls_token: true`,
    `pooling_mode_mean_tokens: false`,
-   https://huggingface.co/BAAI/bge-small-en-v1.5). FathomDB mean-pools
+   <https://huggingface.co/BAAI/bge-small-en-v1.5>). FathomDB mean-pools
    (`src/rust/crates/fathomdb-embedder/src/candle_bge.rs:178-185`;
    `dev/design/embedder.md §0.4`). BGE's own docs warn mean-pooling causes "a
    **significant decrease** in performance"
-   (https://bge-model.com/tutorial/1_Embedding/1.2.3.html). A correctly-used
+   (<https://bge-model.com/tutorial/1_Embedding/1.2.3.html>). A correctly-used
    bge-small puts the relevant doc in the top handful, not median rank ~99 — so the
    IR-C result is consistent with a near-broken embedding space from wrong pooling,
    not the model's documented ceiling (~51-54 MTEB Retrieval).
 2. **Compounded by 512-token truncation** of long transcripts (production doesn't
    chunk; everything past ~400 words is discarded) and a **missing query prefix**
-   (minor for v1.5 — "slight degradation", https://bge-model.com/bge/bge_v1_v1.5.html).
+   (minor for v1.5 — "slight degradation", <https://bge-model.com/bge/bge_v1_v1.5.html>).
 3. **Existing gates can't catch it:** the 0.90 recall floor is *ANN fidelity*
    (binary+ANN vs the *same model's* f32 top-10), self-consistent regardless of
    whether pooling is correct. The pooling bug has therefore been latent.
@@ -81,16 +82,16 @@ EU-0 selection (`dev/notes/0.7.1-default-embedder-research.md`):
 5. **>512-token context** is the lever most directly targeting the long-transcript
    truncation finding — *if* candle-compatible.
 
-## §1 — Is bge-small at its limit? No.
+## §1 — Is bge-small at its limit? No
 
 - bge-small-en-v1.5: 33M params, 384-d, **512-token** max, CLS-pooled, MIT; MTEB
-  Retrieval ~51.7 (v1, https://huggingface.co/BAAI/bge-small-en-v1.5). Sept 2023.
+  Retrieval ~51.7 (v1, <https://huggingface.co/BAAI/bge-small-en-v1.5>). Sept 2023.
 - Short-context (512-tok) dense retrievers lose the most on **long documents**;
   truncation degradation scales with the fraction of relevant content past the
-  cutoff (LongEmbed, https://arxiv.org/pdf/2404.12096; Late Chunking,
-  https://arxiv.org/html/2409.04701). BGE's own guidance: for short-query→long-doc,
+  cutoff (LongEmbed, <https://arxiv.org/pdf/2404.12096>; Late Chunking,
+  <https://arxiv.org/html/2409.04701>). BGE's own guidance: for short-query→long-doc,
   add the query instruction; for long inputs use **BGE-M3** (8192 tok), not
-  bge-small (https://huggingface.co/BAAI/bge-base-en-v1.5).
+  bge-small (<https://huggingface.co/BAAI/bge-base-en-v1.5>).
 - **Verdict:** median-rank-99 on long-transcript summary queries is far below
   bge-small's documented ceiling and points to **mean-pool mismatch + truncation**,
   not the model. (No bge-small-specific "summary-query" ablation was found; the
@@ -101,7 +102,7 @@ EU-0 selection (`dev/notes/0.7.1-default-embedder-research.md`):
 `candle-transformers/src/models/mod.rs` (main, June 2026) has dedicated modules for:
 `bert`, `modernbert`, `xlm_roberta`, `jina_bert`, `nomic_bert`, `distilbert`,
 `stella_en_v5`, `nvembed_v2`
-(https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/mod.rs).
+(<https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/mod.rs>).
 Runnable embedding **examples** exist for bert, modernbert, nomic-bert, jina-bert,
 stella, gte-qwen, nvembed.
 
@@ -120,7 +121,7 @@ GTE encoder); **gte-modernbert-base** is in (it's ModernBERT, not the gte encode
 ## §3 — Binary-quantization robustness (corroborates the e5 rejection)
 
 Per HF "Binary and Scalar Embedding Quantization" (Mar 2024,
-https://huggingface.co/blog/embedding-quantization), % of fp32 retrieval retained
+<https://huggingface.co/blog/embedding-quantization>), % of fp32 retrieval retained
 under **1-bit binary**:
 
 | model | binary retention |
@@ -139,8 +140,8 @@ under **1-bit binary**:
 - **MRL front-loads information into early dims** → binary-robust, and MRL is
   *orthogonal* to quantization (truncate then binarize, ~2% loss). MRL/quant-friendly
   families: nomic-embed-v1.5, Snowflake arctic-embed-m-v1.5/v2.0, mxbai
-  (https://huggingface.co/blog/matryoshka;
-  https://www.snowflake.com/en/blog/engineering/arctic-embed-m-v1-5-enterprise-retrieval/).
+  (<https://huggingface.co/blog/matryoshka>;
+  <https://www.snowflake.com/en/blog/engineering/arctic-embed-m-v1-5-enterprise-retrieval/>).
 - **Implication:** any replacement should ideally be **MRL-trained** to be safe under
   FathomDB's 1-bit quantization. bge-small is *not* MRL but empirically survived; a
   CLS-pooling change could alter that — re-validate.
@@ -175,7 +176,7 @@ Note: drop-in 384-d swaps (arctic-embed-s, gte-small) are **marginal** over a
 
 Long-context models remove the 512-truncation penalty, **but a single mean-pooled
 vector over 8192 tokens dilutes the "needle"** and underperforms chunking (LongEmbed,
-https://arxiv.org/pdf/2404.12096; Late Chunking, https://arxiv.org/html/2409.04701).
+<https://arxiv.org/pdf/2404.12096>; Late Chunking, <https://arxiv.org/html/2409.04701>).
 The win is using a long-context model to produce **context-aware chunk** embeddings
 (late chunking), not one giant vector. FathomDB's experiment already chunks; the
 upgrade path is *long-context model + chunking*, not *long-context model alone*.
@@ -183,6 +184,7 @@ upgrade path is *long-context model + chunking*, not *long-context model alone*.
 ## §6 — Recommendation (phased)
 
 **Phase 0 — fix usage, then re-measure (free; do before anything else).**
+
 - CLS pooling (`output[0][:,0]`) instead of mean-pool in `candle_bge.rs`; add the
   query instruction prefix for queries; chunk long docs to ≤512 tokens in production
   (the experiment already does). Re-run `ir_c_gold_diagnostics` (dense) — the harness
@@ -213,6 +215,7 @@ heavier and no long-context benefit.
 jina-v3 (non-commercial license).
 
 ## Confidence & flags
+
 - **High confidence:** the pooling mismatch (verified against config.json + source);
   candle module support (read from candle source); e5 binary fragility (HF blog).
 - **Medium / to-verify:** exact MTEB sub-scores for modernbert-embed-base,
@@ -237,6 +240,7 @@ same 128/96 geometry, bge-small.
 | exact_fact | top-10 / top-50 | 69% / 78% | **70% / 80%** | slightly better |
 
 **Conclusions:**
+
 1. **Pooling hypothesis refuted.** CLS (the model-native mode, + prefix) does not
    recover exploratory; it is marginally worse there and marginally better on
    exact_fact — a wash. The BGE docs' "significant decrease from mean-pooling" did
@@ -275,6 +279,7 @@ Speed (measured, same chunks): nomic ~310 ms/passage @ ~245% CPU vs bge ~225 ms 
 ~150% — **~1.4× wall-clock, ~2.2× CPU**, ~4× weights on disk (522 MB vs 133 MB).
 
 **Conclusions:**
+
 1. **Stronger ≠ better here.** Nomic (MTEB retrieval 62.28 vs bge 51.68) is clearly
    better on **exact_fact** (median rank 1, +6 pts top-50) but **worse on
    exploratory** (median 99→135). So the exploratory weakness is **not** a

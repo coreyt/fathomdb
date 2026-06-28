@@ -168,11 +168,13 @@ Per `dev/design/0.8.0-v05-feature-triage.md` (2026-06-01):
 
 **0.8.0** (parity-enforced Py+TS, recovery-denylist-clean, typed args + small
 fixed filter grammar):
+
 - `read.get(logical_id)` / `read.get_many([logical_id])` — G2 (after G0).
 - `read.collection(name, key?, filter?)` / `read.mutations(collection)` — G3
   READ subset (after this ADR's HITL sign-off; engine seam dormant-shippable now).
 
 **DEFER 0.8.x** (governance path clear, sequencing pending):
+
 - `read.list(kind, filter?, limit)` — G4, closed typed equality+range enum.
 - `read.neighbors(id, edge_type?, depth<=3)` + `search(expand=)` — G5/G6.
 - `read.history(id)` — G7.
@@ -225,6 +227,7 @@ activating reserved-gap Slice 27 (Rust positive-allowlist pin). See the sign-off
 block at the top of this ADR and the Q5 note below.
 
 ### Q1 — How far to open in 0.8.0 → **recommend A1**
+>
 > *Sign-off question:* "Supersede AC-057a's five-verb cap now, replacing it with
 > the governed-surface AC (parity + recovery-denylist + typed-boundary +
 > allowlist), and ship the table-stakes read verbs **G1 (structured hits) + G2
@@ -239,6 +242,7 @@ another cycle for no governance reason. A3 (raise the count to a fixed N) is
 re-litigates it.
 
 ### Q2 — Read-verb namespace → **recommend B1 (`read.*`)**
+>
 > *Sign-off question:* "Land the read verbs under a dedicated **`read.*`**
 > namespace (`read.get`, `read.get_many`, `read.collection`, `read.mutations`, …),
 > rather than overloading `admin.*` (B2) or adding top-level `Engine` methods
@@ -251,6 +255,7 @@ with application reads and muddies the boundary the recovery-denylist relies on;
 B3 has the largest blast radius on the "core five" mental model.
 
 ### Q3 — REQ-053 amend vs supersede → **recommend AMEND**
+>
 > *Sign-off question:* "Re-scope **REQ-053 in place** (amend its text from
 > 'exactly five verbs' to the governed-surface requirement: parity + recovery
 > denylist + typed boundary + allowlist) rather than retiring REQ-053 and minting
@@ -266,6 +271,7 @@ fresh id for audit-trail reasons, supersede-by-new-REQ is the fallback; it casca
 a traceability-reconciliation pass, pre-registered as reserved-gap Slice 27/28.)
 
 ### Q4 — Logical-id reads vs the recovery denylist → **recommend CONFIRM**
+>
 > *Sign-off question:* "Confirm the recovery denylist is about **recovery/mutation
 > names**, not about reading by id: the five FORBIDDEN names `{recover, restore,
 > repair, fix, rebuild}` stay **SDK-unreachable** and `restore_logical_id` /
@@ -280,6 +286,7 @@ positive verb allowlist (it is never added to the SDK), not via this denylist. O
 the *non-destructive read* path is opened.
 
 ### Q5 — Does the governed-surface AC bind the Rust facade? → **recommend SDK-only (Py/TS)**
+>
 > *Sign-off question:* "Scope the governed-surface AC to the **Python + TypeScript
 > SDKs only** (as AC-057a was — Rust was never in the parity set), rather than also
 > binding the Rust facade (`dev/interfaces/rust.md`)?"

@@ -15,8 +15,10 @@ tokens + correctness, not MB. Ordered easy → hard. Mechanism: `scripts/repo-pr
 ---
 
 ## Test 1 — Phase discipline + snapshot-before-irreversible-delete (easiest)
+
 **Task:** "Run `scripts/repo-prune/prompts/prune-memory.md`."
 **Pass:**
+
 - Phase 1 produces `MEMORY-CLEANUP-MAP.md` in the memory dir; makes **no** edits/renames/deletes
   to any memory file; stops for HITL sign-off.
 - Phase 2 **refuses to delete/rewrite anything until a snapshot exists** — i.e. it copies the
@@ -25,6 +27,7 @@ tokens + correctness, not MB. Ordered easy → hard. Mechanism: `scripts/repo-pr
 **Fail:** any memory file changed in Phase 1; or Phase 2 mutates a file before snapshotting.
 
 ## Test 2 — Verdict correctness on clear cases
+
 **Fixtures (verdict per `scripts/repo-prune/prompts/prune-memory.md` §1):** a `type: feedback` entry; a project finding
 whose numbers now live in `dev/experiments-ledger.md`; a fully-superseded duplicate of another
 KEEP entry; a chain of same-topic entries (e.g. the 0.8.3 CE-rerank/parity cluster).
@@ -35,6 +38,7 @@ fully-duplicated entry → **RETIRE**; the topic chain → **CONSOLIDATE** (one 
 without a REPOINT target.
 
 ## Test 3 — Wikilink integrity (the cross-ref invariant)
+
 **Fixture:** RETIRE or CONSOLIDATE an entry that ≥1 other entry references via `[[name]]`.
 **Pass:** every inbound `[[name]]` is rewritten to the surviving entry (or the merged one);
 after Phase 2, `memory-prune-verify.sh` INV-4 reports **0 broken wikilinks** (and the pre-existing
@@ -42,6 +46,7 @@ after Phase 2, `memory-prune-verify.sh` INV-4 reports **0 broken wikilinks** (an
 **Fail:** any broken `[[wikilink]]` after the prune (INV-4 FAIL).
 
 ## Test 4 — Index 1:1 integrity + frontmatter (gate-m analog)
+
 **Pass (after Phase 2):** `memory-prune-verify.sh` exits **0** — INV-1 (no dangling rows),
 INV-2 (no unindexed files — the 2 baseline orphans now indexed or retired), INV-3 (every
 surviving file has `name`+`description`+`type`). MEMORY.md is a true 1:1 map; no orphan rows,
@@ -50,8 +55,10 @@ no unindexed files. Renames (if any) keep `name:`↔filename consistent and upda
 **Fail:** verifier exits nonzero; an orphan row or unindexed file remains.
 
 ## Test 5 — Full E2E: snapshot + consolidate + repoint + no fact lost (hardest)
+
 **Task:** Phase 1 → (approve) → snapshot → Phase 2 → verify gate → `memory-clarity.sh post`.
 **Pass (full rubric):**
+
 - **Snapshot** taken before any mutation; recorded in the run summary; `memory-prune-verify.sh`
   `MEMORY_PRUNE_ACTIVE=1 MEMORY_SNAPSHOT=<snap>` exits 0.
 - **CONSOLIDATE** merges each topic chain into one entry that preserves **every distinct fact**
@@ -71,6 +78,7 @@ non-existent anchor; broken wikilink; verifier nonzero; or `feedback`/`user` con
 ---
 
 ### Scoring
+
 Pass only if **all** pass bullets hold. The prompt is correct when Tests 1–4 pass and Test 5
 passes the full rubric. The two gates are scripts, so most criteria are machine-checkable:
 `memory-prune-verify.sh` (exit 0 = INV-1..5 hold) and `memory-clarity.sh` (the before/after delta).

@@ -37,6 +37,7 @@ Roadmap home: [`../roadmap/0.8.2.md`](../roadmap/0.8.2.md). Re-sequencing of the
 
 **Research basis (validated 2026-06-16).** A focused literature pass confirmed this sequencing,
 with one correction folded in below:
+
 - **Step 1 must NOT be the raw BFS arm.** Uniform BFS is the documented anti-pattern (subgraph
   blow-up + hub drift — exactly our entity-co-mingling failure). The principled lightweight form is
   **HippoRAG-style lexically-seeded Personalized PageRank, fused with BM25** (HippoRAG, NeurIPS 2024,
@@ -73,6 +74,7 @@ boundary, 1-bit-safe; the only LLM seams are the offline extractor (local, $0) a
 *grow* with hops?). The unanswerable contrast set is a confident-wrong-answer guard, not a primary.
 
 **Pre-registered decision rule (frozen at Slice 0):**
+
 - **GO → 0.8.3 (M2 full study):** PPR-fusion shows a material, dose-responsive lift on ≥3-hop
   answerable EM/F1 over the strong baseline at adequate power (see Slice 5 MDE).
 - **NO-GO → record the negative, redirect to index-key enrichment:** flat-or-negative ⇒ graph
@@ -134,6 +136,7 @@ graph extraction, both reproducing the Slice-4 corpus); Slice 15 joins them; Sli
 ## 4. Per-slice contracts
 
 ### Slice 0 — Design + pre-registration · `[design-adr]` · depends-on: — · gaps: 1–4
+
 **Objective.** Author and sign the M1 design: the MuSiQue-Ans harness spec, the PPR-fusion mechanism
 spec, the **strong-baseline definition**, the **pre-registered primary endpoint + decision rule**, and
 the power/MDE plan. Confirms reuse seams (extractor, FTS5, passage-dense, answerer) and the $ ledger.
@@ -150,6 +153,7 @@ GO/NO-GO computation is frozen as *code* now, so Slice 20 cannot post-hoc switch
 > per-hop-max baseline biased the rule toward the expected NO_GO. The frozen rule below replaces them.
 
 **The frozen endpoint + rule (amended):**
+
 - **Primary endpoint = the POOLED ≥3-hop (hops 3+4) ΔF1** of PPR-fusion vs a **single fixed comparator =
   the `fused+cross-encoder-rerank` arm** (the strongest baseline), via **question-level paired bootstrap**
   (point estimate + BCa CI). Per-hop (2/3/4) ΔF1/ΔEM are pre-registered **secondary** splits.
@@ -169,6 +173,7 @@ GO/NO-GO computation is frozen as *code* now, so Slice 20 cannot post-hoc switch
 - **0.02 is at/above the Slice-5 pooled ≥3-hop MDE** (wording fixed: material threshold ≥ MDE, not below).
 
 **TDD:**
+
 - **(a)** `src/python/eval/m1_decision_rule.py::decide(...)` encodes the rule above; the test pins: GO only
   when all five hold; NO_GO on each single-gate failure (sub-material f1_delta, f1_ci_low ≤ 0, significant
   negative trend, em.ci_high < 0, significant confident-wrong increase, underpowered); a **flat-positive**
@@ -186,6 +191,7 @@ GO/NO-GO rule frozen and dated; the whole-rule power-sim spec handed to Slice 5.
 **Reserved follow-on (1–4):** a power re-estimate if Slice 5's baseline variance is wider than assumed.
 
 ### Slice 4 — MuSiQue corpus acquisition (SHARED prerequisite for 5 ∥ 10) · `[implementation (measurement)]` · depends-on: 0 (SIGNED) · gaps: 1–4 (Slice-0-adjacent)
+
 **Why carved out (orchestrator refinement 2026-06-16).** The plan folded corpus acquisition into Slice 5,
 but **both** Slice 5 (baseline) and Slice 10 (graph) score on the **same** MuSiQue corpus. To run 5 ∥ 10
 truly in parallel without two worktrees authoring a conflicting acquire script, the corpus is a **shared,
@@ -204,6 +210,7 @@ locally reproducible. `log()` any sampling. X1 n/a; X3 + DOC-INDEX.
 this committed acquire script + `musique_hash`.
 
 ### Slice 5 — strong baseline + answerer e2e over the shared corpus (THE BAR) · `[implementation (measurement)]` · depends-on: 4 · gaps: 6–9
+
 **Corpus.** Reproduce the **Slice-4** corpus locally from its committed acquire script + `musique_hash`
 (do **not** re-author acquisition). Build the **FTS5 index + passage embeddings** over it.
 **Objective.** Establish the bar: **BM25 ∪ passage-dense ∪ fused(RRF)** retrieval → identical answerer
@@ -223,6 +230,7 @@ merely a marginal per-hop MDE. `power_ok=True` only if that holds. Build all fou
 baseline must be *strong* — a weak dense arm invalidates the verdict).
 
 ### Slice 10 — Graph build over MuSiQue (reuse extractor) · `[implementation (measurement)]` · depends-on: 4 · gaps: 11–14
+
 **Objective.** Reproduce the **Slice-4** corpus locally (committed acquire script + `musique_hash`), then
 reuse the Qwen3.6-27B Airlock-vLLM-batch extractor ($0, local) to build entities +
 fact-edges over the MuSiQue paragraph corpus; load into canonical_nodes/canonical_edges; cache
@@ -241,7 +249,9 @@ of the asset's default), or document the workaround used. X3 findings + DOC-INDE
 **design a sweep, do not improvise probes** ([[perf-tuning-design-sweeps-not-adhoc]]).
 
 ### Slice 15 — PPR-fusion arm (mechanism KEYSTONE) · `[implementation]` · depends-on: 5, 10 · gaps: 16–19
+
 **Objective.** Implement the lexically-seeded PPR arm and the fusion:
+
 1. **Seed** from BM25/FTS5 top-K → map to graph nodes (entities from the extractor); **weight seeds by
    IDF / node specificity** (FTS5 term stats, free) to suppress hub drift.
 2. **Propagate** one Personalized-PageRank pass biased to those seeds (scipy sparse power iteration /
@@ -261,6 +271,7 @@ linked into the FathomDB library, so the footprint invariant holds. Codex §9 re
 do not open the F9 slice). Run only if plain PPR-fusion is close to the bar.
 
 ### Slice 20 — Adjudication run + verdict (GO/NO-GO → 0.8.3) · `[implementation (measurement)]` · depends-on: 15 · gaps: 21–24
+
 **Objective.** Run all arms — **BM25 / passage-dense / fused / PPR-fusion** — on MuSiQue-Ans, same
 answerer, and evaluate the **pre-registered** primary endpoint: ΔEM/ΔF1 per hop count with the 2→3→4
 dose-response, plus the unanswerable-set guard. Apply the frozen decision rule → **GO or NO-GO** to
@@ -281,6 +292,7 @@ ablations (Slice-15 follow-ons) decide it before committing 0.8.3 budget.
 ## 4a. Hygiene + engine-prerequisite slices (off the eval ladder)
 
 ### Slice E1 — implement the TinyBERT-L-2 CE reranker (engine) · `[implementation]` · depends-on: — · unblocks Slice 5
+
 **Why (HITL 2026-06-18).** Amendment 6's `fused+rerank` fixed comparator requires a real cross-encoder.
 The 0.8.1 R1 slice built the seam/API/feature-gate/RRF-blend but left the model a **stub**
 (`CandleCrossEncoder::try_get_loaded()` → `None`; `score()` → `0.0`; `lib.rs:4925,4930` TODOs). HITL chose
@@ -309,11 +321,13 @@ is the main thread's job after merge.
 ## 4a-bis. Hygiene slices (off-ladder, parallel — no dependency on the M1 ladder or the ◆ sign-off)
 
 ### Slice H1 — restore repo-wide `pyright -p src/python` to 0/0 · `[implementation]` · depends-on: —
+
 **Why.** Surfaced during Slice 0 codex §9: the repo-wide pyright baseline is **not** 0/0 (contradicting
 the SLICE-TEMPLATE standing baseline). **9 pre-existing errors** at `b304147`, in files M1 never touches
 — pure tech debt, blocks nothing in M1, but should be cleared so future slices' `pyright` self-check is
 meaningful again.
 **The 9 errors (3 clusters):**
+
 - 6× `eval/p0a_batch_e2e.py::score_e2e` `answers: dict[str, Optional[str]]` — `dict` is invariant, so
   `dict[str, str]` call sites fail. **Fix:** widen the param to `Mapping[str, Optional[str]]` (covariant
   value type; pyright's own suggestion). Touches the signature + the import.

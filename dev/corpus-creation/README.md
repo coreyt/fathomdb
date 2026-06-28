@@ -35,7 +35,7 @@ The shipped artifacts referenced here:
 - `src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs` —
   Rust CLI ingest harness.
 - `src/rust/crates/fathomdb-engine/tests/corpus_{fts,vector,graph}.rs`
-  + `tests/support/corpus_subset.rs` — Pack-4 validation gates.
+  - `tests/support/corpus_subset.rs` — Pack-4 validation gates.
 - `dev/notes/0.7.0-engine-batch-vec0-collapse.md` — open engine bug
   surfaced during this work; affects how the harness batches.
 

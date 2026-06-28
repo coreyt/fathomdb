@@ -18,6 +18,7 @@ uncertainty.
 ## Step 1 — Review the dossier (adversarial)
 
 Before recommending anything, audit Prompt A's dossier:
+
 - **Correctness:** spot-check the load-bearing numbers against the cited sources (the
   dossier's §4 verification log + the underlying files). Flag any number that is unsupported,
   internally inconsistent, or where MEASURED/CLAIMED/INFERRED is mislabeled.
@@ -69,6 +70,7 @@ the one measurement that would most reduce uncertainty. Carry the metric-compara
 needs an end-to-end eval, and treat any single peer benchmark number as vendor-contested.
 
 ## Quality bar
+
 - Every probability and effect-size claim carries a citation (dossier data and/or external
   URL). No bare assertions.
 - Quantitative and bounded — respect the candidate-recall ceiling; don't promise gains the

@@ -10,6 +10,7 @@
 ### 1.1 Anchor: ADR Conflict Resolution
 
 Two ADRs disagree on the traversal filter:
+
 - `ADR-0.8.0-graph-traversal-scope.md` D-G2: `superseded_at IS NULL` only (G11 valid-time deferred)
 - `ADR-0.8.1-graph-substrate-g11-migration.md` §5.2: filter includes `t_invalid IS NULL OR t_invalid > now`
 
@@ -91,6 +92,7 @@ Implementation note: step 2 resolves the `write_cursor` (the `SearchHit.id`) bac
 ## 3. Result deduplication/merging strategy for G6
 
 `SearchExpandResult` fields:
+
 - `search_hits: Vec<SearchHit>` — original RRF-scored results (with scores)
 - `expanded: Vec<(NodeRecord, u32)>` — (node, hop_count) for nodes NOT in search hits
 - `all_logical_ids: Vec<String>` — union of search hit logical_ids + expanded logical_ids
@@ -167,6 +169,7 @@ declare function searchExpand(engine: Engine, query: string, depth: number, filt
 **Test**: `explain_plan_uses_indexes` in `tests/slice20_graph_traversal.rs`.
 
 **Approach**: Run `EXPLAIN QUERY PLAN <BFS CTE SQL>` via rusqlite. The plan returns multiple rows with columns `(id INTEGER, parent INTEGER, notused INTEGER, detail TEXT)`. Collect all `detail` strings, assert:
+
 1. At least one row contains `"USING INDEX"` referencing `canonical_edges`.
 2. No row contains `"SCAN canonical_edges"` without `"USING INDEX"`.
 

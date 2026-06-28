@@ -20,6 +20,7 @@ matter more than prose.
 ## Grounding sources (READ these first — they are the source of truth)
 
 Measured results & analysis:
+
 - `dev/plans/runs/IR-C-retrieval-findings.md` — full-corpus lexical+dense measures, the
   Nomic A/B, the "exploratory is structural" conclusion.
 - `dev/notes/IR-C-bge-small-literature-benchmark.md` — BEIR empirical anchor, literature
@@ -39,6 +40,7 @@ Measured results & analysis:
   (`IR-C-retrieval-findings.md` §provenance).
 
 Code (extract exact knobs/values — do not trust the docs blindly, confirm against code):
+
 - `src/rust/crates/fathomdb-engine/src/lib.rs` — RRF fusion: `RRF_K` (≈ line 3604),
   `fuse_rrf` (3633) / `rerank_fused` (3707, currently an **identity stub** — the rerank
   seam), `RRF_WEIGHT_TEXT`/`RRF_WEIGHT_VECTOR` (=3:1, lib.rs:3611-3612), the vector stage
@@ -46,11 +48,12 @@ Code (extract exact knobs/values — do not trust the docs blindly, confirm agai
   `set_vector_stage_only_for_test` seam (lib.rs:2917), whole-doc embedding path.
   (NB: `RrfHybrid` is a **test-harness** enum in `tests/support/ir_eval.rs`, not a lib.rs symbol.)
 - `src/rust/crates/fathomdb-query/src/lib.rs` — `compile_text_query` (content-OR compile)
-  + `bm25()` ordering.
+  - `bm25()` ordering.
 - The fusion harness `src/rust/crates/fathomdb-engine/tests/ir_c_fusion_experiment.rs` and
   the gold diagnostics `…/tests/ir_c_gold_diagnostics.rs` (the weights/geometries swept).
 
 Graph design (for §3):
+
 - `dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md` — the binary property-graph
   substrate, corpus(GraphRAG)-vs-memory(Graphiti fact-on-edge) ontologies, opaque-id edge
   addressing, fact-on-edge vs fact-on-node.
@@ -124,6 +127,7 @@ Graph design (for §3):
    a fair comparison (an end-to-end QA eval over its corpus).
 
 ## Constraints & quality bar
+
 - Cite or flag every number. Distinguish MEASURED (our files) from CLAIMED (external) from
   INFERRED. No silent assumptions.
 - Respect the footprint: any option that needs an API, a GPU, or breaks 1-bit quantization

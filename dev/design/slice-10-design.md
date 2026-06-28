@@ -66,6 +66,7 @@ is the RRF-fused value.
 The `soft_fallback` "vector branch could not contribute" signal is computed from
 `vector_results.is_empty()` **before** the fusion merges the branches — exactly as
 0.7.2 does. Fusion must not erase that signal. Order in `read_search_in_tx`:
+
 1. run the vector phase-1/phase-2 → `vector_results`;
 2. `vector_rows_visible = !vector_results.is_empty()`; compute `soft_fallback`;
 3. run the text branch;
@@ -111,7 +112,7 @@ delegates with `None` (public Rust surface unchanged for existing callers).
 - **Vector branch (authoritative, pinned):** the present predicates are appended
   to the **single** phase-1 candidates statement inside the CTE `WHERE`:
   `... MATCH vec_quantize_binary(vec_f32(?1)){clause} ORDER BY distance LIMIT
-  top_k`, where `{clause}` is ` AND source_type=?n AND kind=?n AND created_at>=?n
+  top_k`, where `{clause}` is `AND source_type=?n AND kind=?n AND created_at>=?n
   AND status=?n` for **only the present** fields, numbered from `?3` (`?1` = bin
   vector, `?2` = f32 query vector). `status` is a plain vec0 metadata column so it
   is constrainable under the KNN `WHERE` (aux columns hard-error there — see

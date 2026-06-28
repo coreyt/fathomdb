@@ -59,6 +59,7 @@ candidate pool. Seed nodes are already ranked in the vector/text arms — adding
 double-counting without new signal.
 
 **Temporal filter:** The BFS excludes:
+
 - Edges with `t_invalid IS NOT NULL AND datetime(t_invalid) <= datetime('now')` (invalidated)
 - Edges with `superseded_at IS NOT NULL` (superseded)
 
@@ -84,6 +85,7 @@ This sorted order is passed as `graph_hits: Vec<SearchHit>` to `fuse_three_arms`
 
 **RRF compatibility:** In `fuse_three_arms`, the graph arm uses position-based RRF (same as
 vector/text arms):
+
 - Position 0 -> `RRF_WEIGHT_GRAPH / (RRF_K + 1) = 0.032`
 - Position 1 -> `RRF_WEIGHT_GRAPH / (RRF_K + 2) = 0.031`
 
@@ -108,6 +110,7 @@ pub enum SoftFallbackBranch {
 ```
 
 **Match arms to update:**
+
 1. `fathomdb-napi/src/lib.rs` — two match arms converting to string: add
    `SoftFallbackBranch::GraphArm => "graph_arm"` (x2)
 2. `fathomdb-py/src/lib.rs` — two match arms: add
@@ -132,6 +135,7 @@ exists only in the ELPS extraction result as `warnings[].kind = "temporal_fallba
 persisted to any DB column by the current ingest pipeline (Slice 15).
 
 **Detection options evaluated:**
+
 - **Sentinel `t_valid` detection**: The fallback `t_valid` equals the document's `created_at`. We
   do not store `created_at` in `canonical_edges`, so there is no sentinel to compare against.
 - **Schema change**: Add `temporal_fallback BOOLEAN NOT NULL DEFAULT 0` to `canonical_edges`. This
@@ -189,6 +193,7 @@ Engine::search_reranked(query, filter, rerank_depth, use_graph_arm: bool)
 ```
 
 **Struct changes:**
+
 - `ReaderRequest::Search`: add `use_graph_arm: bool` field
 - `read_search_in_tx`: add `use_graph_arm: bool` parameter (11th parameter total)
 
@@ -197,6 +202,7 @@ Engine::search_reranked(query, filter, rerank_depth, use_graph_arm: bool)
 empty -> `fuse_rrf(v, t)` path (byte-identical to pre-Slice-30).
 
 **Bindings:**
+
 - PyO3 (`fathomdb-py`): add `use_graph_arm: bool = false` to `search` signature
 - NAPI (`fathomdb-napi`): add `use_graph_arm: Option<bool>` to `search` signature
 - Python wrapper: add `use_graph_arm: bool = False` as keyword-only arg; validate

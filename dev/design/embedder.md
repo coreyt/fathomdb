@@ -711,7 +711,8 @@ this design are the contract with EU-3 and EU-5 implementation.
 
 Workspace targets in 0.7.1 are little-endian: `x86_64` and `aarch64` on
 all three supported OSes. The safetensors weight format encodes a `dtype`
-+ raw byte payload; HF's published bge-small weights are little-endian.
+
+- raw byte payload; HF's published bge-small weights are little-endian.
 
 **Invariant.** `CandleBgeEmbedder::new` SHALL include:
 
