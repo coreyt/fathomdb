@@ -8,11 +8,11 @@ native Rust runtime. Wheels for the GA release will be platform-tagged
 
 - Python **3.10**, **3.11**, or **3.12**
 - One of the supported platforms (per `release.yml` matrix):
-    - Linux `x86_64-unknown-linux-gnu` (manylinux 2_28)
-    - Linux `aarch64-unknown-linux-gnu` (manylinux 2_28)
-    - macOS `x86_64-apple-darwin`
-    - macOS `aarch64-apple-darwin`
-    - Windows `x86_64-pc-windows-msvc`
+  - Linux `x86_64-unknown-linux-gnu` (manylinux 2_28)
+  - Linux `aarch64-unknown-linux-gnu` (manylinux 2_28)
+  - macOS `x86_64-apple-darwin`
+  - macOS `aarch64-apple-darwin`
+  - Windows `x86_64-pc-windows-msvc`
 - SQLite with the [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
   extension available to the loader (statically linked into the wheel
   for supported platforms).

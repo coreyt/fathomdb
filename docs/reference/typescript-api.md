@@ -42,8 +42,8 @@ Open or create a FathomDB database at `path`.
 
 - `path` (`string`).
 - `options` (`EngineOpenOptions`):
-    - `engineConfig` (`EngineConfig`) — engine knobs in camelCase.
-      See [config](config.md).
+  - `engineConfig` (`EngineConfig`) — engine knobs in camelCase.
+    See [config](config.md).
 
 Rejects with a `FathomDbError` subclass on failure:
 `DatabaseLockedError`, `CorruptionError`,

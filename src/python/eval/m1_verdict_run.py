@@ -357,9 +357,14 @@ def write_report(art: dict[str, Any], path: Path, *, cheap_art: Optional[dict[st
     lines.append("")
     if not art.get("run_valid", True):
         comp = art.get("answer_completeness", {})
+        # Rendered as a bold paragraph block (NOT a `> ##` heading-in-blockquote):
+        # markdownlint MD022 forbids a heading with no blank line below, and a blank
+        # line cannot live inside a blockquote (MD028) — so the old `> ## …` form was
+        # un-fixable in place. MD036 (emphasis-as-heading) is disabled, so the bold
+        # lead carries the same emphasis with no semantic change.
         lines.append(
-            "> ## ⛔ INVALID PRICED PASS — NOT A CITABLE VERDICT\n"
-            f"> The priced answerer pass is **corrupted**: only "
+            "**⛔ INVALID PRICED PASS — NOT A CITABLE VERDICT**\n\n"
+            f"The priced answerer pass is **corrupted**: only "
             f"**{comp.get('completeness')}** of the answer matrix completed "
             f"({comp.get('n_errors')}/{comp.get('expected_calls')} calls FAILED). The airlock "
             "endpoint **rate-limited (HTTP 429)** mid-run under concurrent load; every failed "
@@ -370,7 +375,6 @@ def write_report(art: dict[str, Any], path: Path, *, cheap_art: Optional[dict[st
             "with low concurrency (workers ≤4) + the answer-completeness guard is required."
         )
         lines.append("")
-    lines.append("")
     lines.append(
         f"> **Stage 1** — HITL-authorized ~$10 run on the current **{art.get('n_questions')}**-question "
         "graph (answerable only; **no unanswerable contrast set** → the confident-wrong guard is "
@@ -439,12 +443,14 @@ def write_report(art: dict[str, Any], path: Path, *, cheap_art: Optional[dict[st
     # ---- verdict ----
     lines.append("## 4. Verdict (mechanical, from the imported frozen `decide()`)")
     lines.append("")
-    lines.append(f"```\ndecide_inputs = {json.dumps(art['decide_inputs'], indent=2)}\n```")
+    lines.append(f"```text\ndecide_inputs = {json.dumps(art['decide_inputs'], indent=2)}\n```")
     lines.append("")
     lines.append(f"**`decide()` = {art['verdict']}** — via the **power gate** ({art['power_status']}).")
     lines.append("")
+    # One blockquote with an internal `>` separator line: two adjacent blockquotes
+    # split by a bare blank line trips MD028 (blank line inside blockquote).
     lines.append(f"> {art['decision_rule_note']}")
-    lines.append("")
+    lines.append(">")
     lines.append(f"> Confident-wrong guard: {art['confident_wrong_status']}")
     lines.append("")
 

@@ -15,10 +15,10 @@ platform-tagged `.node` binary at load time.
 
 - Node **18** or later (release.yml runs CI on Node 22).
 - One of the supported platforms (per `release.yml` matrix):
-    - Linux `x86_64-unknown-linux-gnu`
-    - macOS `x86_64-apple-darwin`
-    - macOS `aarch64-apple-darwin`
-    - Windows `x86_64-pc-windows-msvc`
+  - Linux `x86_64-unknown-linux-gnu`
+  - macOS `x86_64-apple-darwin`
+  - macOS `aarch64-apple-darwin`
+  - Windows `x86_64-pc-windows-msvc`
 - SQLite + `sqlite-vec` (statically linked into the platform binary).
 
 ## Install (post-GA)

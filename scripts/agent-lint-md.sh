@@ -15,6 +15,13 @@ else
   skip_notice lint-md-structure "markdownlint-cli2 not installed (run scripts/bootstrap.sh)"
 fi
 
+# docs/** structural lint. The repo .markdownlint-cli2.jsonc IGNORES docs/** (it is
+# otherwise gated only by `mkdocs build --strict`, which does NOT enforce markdownlint
+# style). agent-lint-docs.sh lints docs/** with the same .markdownlint.jsonc rules via
+# an out-of-tree copy (so the ignore does not apply). It self-skips if the binary is
+# absent, so run it unconditionally.
+run_capped lint-md-docs "$SCRIPT_DIR/agent-lint-docs.sh"
+
 # NOTE: prettier --check was REMOVED from the markdown gate (0.8.9.1, HITL 2026-06-28).
 # prettier's markdown formatter is non-configurable for emphasis style and its *->_ reflow
 # CORRUPTS multi-line / nested / adjacent-to-`code` emphasis spans (broken spans, snake_case
