@@ -38,7 +38,7 @@ primary checkout). Confirmed present:
 - **Multi-hop:** MuSiQue (`raw/musique_dev.jsonl`, 4,834 rows, CC-BY-4.0) + graph
   cache (`graph-cache/0.8.2-m1-v1/`).
 - **Sensemaking:** AP-News BenchmarkQED (`raw/apnews_benchmarkqed/`, 1,397 articles
-  + AutoQ questions, MS-Research license, NON-REDISTRIBUTABLE EVAL-ONLY).
+  - AutoQ questions, MS-Research license, NON-REDISTRIBUTABLE EVAL-ONLY).
 - **IR relevance / fidelity (FathomDB self-corpora):** IR gold / eu8
   (`eval/ir_gold/all.gold.json`, 301 labeled queries); eu7 fidelity corpus (derived
   from the 0.7.0 test corpus); the ~10k 0.7.0 test corpus (Enron, EnronQA, QMSum,
