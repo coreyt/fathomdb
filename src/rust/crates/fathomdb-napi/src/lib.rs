@@ -849,6 +849,41 @@ impl Engine {
         call_engine(move || engine.drain(ms)).await
     }
 
+    /// 0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a JSONL
+    /// `sinkPath`. Off by default; local file only (no egress).
+    #[napi]
+    pub async fn enable_telemetry(&self, sink_path: String) -> Result<()> {
+        validate_ffi_string_napi(&sink_path)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.enable_telemetry(&sink_path)).await
+    }
+
+    /// 0.8.8 Slice 15 — the most-recent captured `queryId` (for `recordFeedback`),
+    /// or `null` when telemetry is off / no query captured yet.
+    #[napi]
+    pub fn last_telemetry_query_id(&self) -> Option<String> {
+        self.inner.last_telemetry_query_id()
+    }
+
+    /// 0.8.8 Slice 15 — attach agent relevance labels for a captured `queryId`.
+    /// Ids are the stable identity carrier (== `SearchHit.id`). Errors if telemetry
+    /// is off.
+    #[napi]
+    pub async fn record_feedback(
+        &self,
+        query_id: String,
+        relevant_ids: Vec<i64>,
+        irrelevant_ids: Vec<i64>,
+        label_source: String,
+    ) -> Result<()> {
+        validate_ffi_string_napi(&query_id)?;
+        validate_ffi_string_napi(&label_source)?;
+        let engine = Arc::clone(&self.inner);
+        let rel: Vec<u64> = relevant_ids.iter().map(|&x| x as u64).collect();
+        let irr: Vec<u64> = irrelevant_ids.iter().map(|&x| x as u64).collect();
+        call_engine(move || engine.record_feedback(&query_id, &rel, &irr, &label_source)).await
+    }
+
     /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn (first
     /// element = program, rest = args). `documents` is an array of objects
     /// with `sourceDocId` and `body` string properties.
