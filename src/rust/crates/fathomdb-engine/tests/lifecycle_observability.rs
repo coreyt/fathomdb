@@ -197,11 +197,25 @@ fn ac_002_no_log_files_without_subscriber() {
             continue;
         }
 
-        // Part 2: no fathomdb-signature file appears anywhere in the
-        // measurement roots.
-        let lossy = path.to_string_lossy().to_lowercase();
+        // Part 2: no fathomdb-signature file appears anywhere in the measurement
+        // roots. Check the path RELATIVE to its measurement root, not the absolute
+        // path: the root prefix is incidental — CI sets TMPDIR to
+        // `.../fathomdb-<run-id>/...`, which would false-positive every file under
+        // it — while anything the engine creates *below* a root (including a
+        // signature-bearing subdirectory, not just the leaf name) is still caught.
+        // (0.8.9 Slice 20, F-9.)
+        // Strip the MOST SPECIFIC (longest) matching root — i.e. the shortest
+        // remaining relative path — so an incidental signature in an overlapping
+        // outer root (e.g. $HOME ⊃ $XDG_CACHE_HOME=.../fathomdb-ci) is not left in
+        // the checked path.
+        let relative = roots
+            .iter()
+            .filter_map(|root| path.strip_prefix(root).ok())
+            .min_by_key(|rel| rel.components().count())
+            .unwrap_or(path.as_path());
+        let rel_lossy = relative.to_string_lossy().to_lowercase();
         assert!(
-            !lossy.contains("fathomdb") && !lossy.contains("fathom_"),
+            !rel_lossy.contains("fathomdb") && !rel_lossy.contains("fathom_"),
             "engine created a fathomdb-named artifact outside the DB path: {}",
             path.display(),
         );

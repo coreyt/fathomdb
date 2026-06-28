@@ -206,7 +206,12 @@ fn case5_byte_span_is_renee() {
 //    stub harness that returns the EXACT sample entities/edges/warnings.
 // ---------------------------------------------------------------------------
 fn write_stub(dir: &TempDir) -> std::path::PathBuf {
-    let mut src = String::from("import json,sys\nRESULTS={\n");
+    // Force UTF-8 stdio: the canonical bytes include non-ASCII (case d5 = "Café 🚀 Renée
+    // Zürich"), and `print(..., ensure_ascii=False)` would otherwise encode via the platform
+    // default (cp1252 on Windows) and corrupt the extractor output. (0.8.9 Slice 20, F-9.)
+    let mut src = String::from(
+        "import json,sys\nsys.stdout.reconfigure(encoding='utf-8')\nsys.stdin.reconfigure(encoding='utf-8')\nRESULTS={\n",
+    );
     for c in CASES {
         src.push('"');
         src.push_str(c.id);

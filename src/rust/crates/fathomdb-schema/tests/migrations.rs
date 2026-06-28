@@ -3,6 +3,8 @@ use fathomdb_schema::{
     MigrationAccretionError, MigrationError, SCHEMA_VERSION,
 };
 use rusqlite::Connection;
+// Only used by the Unix-gated repo-linter test below.
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::Once;
 
@@ -342,6 +344,11 @@ fn s13_op_store_index_passes_accretion_guard_without_marker() {
         .expect("step 13 (CREATE INDEX only) must pass the accretion guard with no marker");
 }
 
+// Exercises the repo's `scripts/agent-lint-migrations.sh` bash linter — Unix dev/CI
+// tooling. Windows cannot exec a `.sh` directly (Os 193) and the script is not a Windows
+// artifact, so the test is Unix-only (the accretion-guard logic itself is covered by the
+// platform-independent `ac_049_accretion_guard_*` test above). (0.8.9 Slice 20, F-9.)
+#[cfg(unix)]
 #[test]
 fn ac_049_repo_linter_accepts_actual_migrations_and_names_violator() {
     let repo =

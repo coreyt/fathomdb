@@ -80,6 +80,17 @@ fn reader_workers_exit_on_close_and_drop_connections() {
 fn reader_workers_exit_on_drop_without_explicit_close() {
     let live = {
         let (_dir, opened) = fresh_engine("reader_pool_drop");
+        // Workers may take a brief moment to enter their loops and publish into
+        // the live counter on slow CI (notably Windows); give them a bounded
+        // window before sampling, mirroring
+        // `reader_pool_spawns_eight_worker_threads_at_open`. (0.8.9 Slice 20,
+        // F-9 — sampling immediately raced worker startup on Windows: live == 0.)
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while opened.engine.live_reader_worker_count_for_test() < READER_POOL_SIZE
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(5));
+        }
         let live = opened.engine.live_reader_worker_count_for_test();
         // Drop the engine without calling close().
         drop(opened);

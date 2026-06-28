@@ -197,7 +197,15 @@ fn second_live_open_is_locked_and_close_releases_lock() {
 
     let opened = Engine::open(&path).unwrap();
     let err = Engine::open(&path).expect_err("second open must be locked");
+    // The lock is always detected. `holder_pid` is read back from the lock file, which works
+    // under Unix advisory locks but not on Windows: `File::try_lock` maps to `LockFileEx`,
+    // whose exclusive byte-range lock blocks other processes from READING the locked region,
+    // so `read_holder_pid` returns None. The lock itself still works (concurrent open is
+    // rejected) — only the diagnostic PID is unavailable on Windows. (0.8.9 Slice 20, F-9.)
+    #[cfg(unix)]
     assert!(matches!(err, EngineOpenError::DatabaseLocked { holder_pid: Some(_) }));
+    #[cfg(not(unix))]
+    assert!(matches!(err, EngineOpenError::DatabaseLocked { .. }));
 
     opened.engine.close().unwrap();
     let reopened = Engine::open(&path).expect("close must release lock");
