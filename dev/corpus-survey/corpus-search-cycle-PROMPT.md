@@ -1,12 +1,5 @@
 # PROMPT — run another FathomDB corpus-search cycle
 
-Copy this whole file as the task for a fresh agent. It is self-contained: it points
-at the on-disk artifacts, tells you how to re-orient fast, what is already covered
-(don't redo it), and how to EXTEND the map + APPEND the ledger. The goal is to
-DEEPEN the survey each cycle, not rebuild it.
-
----
-
 ## Mission
 
 Extend FathomDB's data-corpus survey: connect every user-need and feature/function
@@ -17,15 +10,12 @@ Web access available (WebSearch/WebFetch). Work against **current `origin/main`*
 ## Setup (do this first)
 
 ```bash
-cd /home/coreyt/projects/fathomdb && git fetch origin
-git worktree add /home/coreyt/projects/fathomdb-corpus-wt origin/main
-cd /home/coreyt/projects/fathomdb-corpus-wt
+cd /home/coreyt/projects/fathomdb && git fetch origin && git merge --ff-only origin/main
 ```
 
-The plain checkout has been stale before — only trust `origin/main`. Corpus
-payloads under `data/corpus-data/` are **`.gitignored`** and live physically in the
-primary checkout (`/home/coreyt/projects/fathomdb/data/corpus-data/`), so a fresh
-worktree will NOT contain them.
+The plain checkout has been stale before — verify you are on current `origin/main`
+before reading any files. Corpus payloads under `data/corpus-data/` are
+**`.gitignored`** and live physically at `/home/coreyt/projects/fathomdb/data/corpus-data/`.
 
 ## Re-orient FAST (read these, in order)
 
@@ -70,9 +60,9 @@ The Cycle-1 confirmed gaps + open questions are the live worklist. High-value
 directions:
 
 - **Close a confirmed gap** — e.g. resolve whether BEIR ArguAna/Touché is a real
-  "exploratory / discovery-in-k" proxy (the #1 gap), or stand up a few commit-clean
-  BEIR subsets so FathomDB can report a standard external nDCG@10, or run CE-rerank
-  on MS MARCO/TREC-DL (its native benchmark).
+  "exploratory / discovery-in-k" proxy (the #1 gap), or stand up BEIR subsets so
+  FathomDB can report a standard external nDCG@10, or run CE-rerank on MS
+  MARCO/TREC-DL (its native benchmark).
 - **Resolve an open question** — license posture of LongMemEval / MultiHop-RAG / MS
   MARCO; eu7/eu8 rebuildability; MSC source terms.
 - **Add a new need/function** if the capability frame has grown since the last cycle
@@ -119,12 +109,11 @@ git add dev/corpus-survey/
 git commit -m "docs(corpus): corpus-survey cycle N — <one-line summary>"
 git push -u origin corpus-survey-cycleN
 gh pr create --base main --title "docs(corpus): corpus-survey cycle N" --body "..."
-git worktree remove /home/coreyt/projects/fathomdb-corpus-wt   # when done
 ```
 
 If a step is blocked by policy, STOP and report it rather than working around it.
 
-## Return
+## Done
 
-The PR URL + the changed file paths + a tight summary: needs/functions touched,
+Tell the user: the PR URL, the changed file paths, needs/functions touched,
 corpora added (on-disk vs candidate), gaps closed, and the top remaining gaps.

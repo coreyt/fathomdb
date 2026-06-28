@@ -90,6 +90,7 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 - **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
 - **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
 - **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **Valid agent types (Claude Code `subagent_type`):** `claude`, `claude-code-guide`, `Explore`, `general-purpose`, `implementer`, `Plan`, `statusline-setup`. Never guess or invent a type — if none fits, omit `subagent_type` (defaults to `claude`). A wrong type is a hard error that cascades to every child.
 - **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (agent-def anti-chaining, main-thread-owned worktrees, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the spawn discipline.
 
 ## 8. Iteration discipline
