@@ -266,6 +266,16 @@ export interface NativeEngine {
   ): Promise<NativeIngestWithExtractorReceipt>;
   // 0.8.6 Slice 10 — read-path embed primitive (Py↔TS parity for Engine.embed).
   embed(text: string): Promise<number[]>;
+  // 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture. enable/record are
+  // async (napi `async fn`); lastTelemetryQueryId is a sync getter.
+  enableTelemetry(sinkPath: string): Promise<void>;
+  lastTelemetryQueryId(): string | null;
+  recordFeedback(
+    queryId: string,
+    relevantIds: number[],
+    irrelevantIds: number[],
+    labelSource: string,
+  ): Promise<void>;
   // EU-6 test-hooks-gated seam. Present only when the napi binding is
   // built with `--features test-hooks`; the TS surface forwards calls
   // unconditionally and the runtime fails fast if absent.

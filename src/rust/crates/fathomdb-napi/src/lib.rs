@@ -131,6 +131,24 @@ fn validate_ffi_string_napi(value: &str) -> Result<()> {
         .map_err(|msg| typed_error(CODE_WRITE_VALIDATION, msg, JsonValue::Null))
 }
 
+/// codex §9 [P2] — convert a napi `i64` id list to the engine's `u64`, rejecting
+/// any negative id (which `as u64` would silently wrap). Mirrors the TS/Python
+/// wrapper `validateIdArray`/`_validate_id_list` guards so a raw-napi caller
+/// cannot smuggle a wrapped id past the boundary.
+fn checked_ids_napi(name: &str, ids: &[i64]) -> Result<Vec<u64>> {
+    ids.iter()
+        .map(|&x| {
+            u64::try_from(x).map_err(|_| {
+                typed_error(
+                    CODE_WRITE_VALIDATION,
+                    format!("{name} must contain only non-negative integers, got {x}"),
+                    JsonValue::Null,
+                )
+            })
+        })
+        .collect()
+}
+
 // ===== Error mapping ==================================================
 
 /// Translate every `EngineError` variant to its typed JS counterpart.
@@ -956,6 +974,45 @@ impl Engine {
         let engine = Arc::clone(&self.inner);
         let ms = timeout_ms as u64;
         call_engine(move || engine.drain(ms)).await
+    }
+
+    /// 0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a JSONL
+    /// `sinkPath`. Off by default; local file only (no egress).
+    #[napi]
+    pub async fn enable_telemetry(&self, sink_path: String) -> Result<()> {
+        validate_ffi_string_napi(&sink_path)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.enable_telemetry(&sink_path)).await
+    }
+
+    /// 0.8.8 Slice 15 — the most-recent captured `queryId` (for `recordFeedback`),
+    /// or `null` when telemetry is off / no query captured yet.
+    #[napi]
+    pub fn last_telemetry_query_id(&self) -> Option<String> {
+        self.inner.last_telemetry_query_id()
+    }
+
+    /// 0.8.8 Slice 15 — attach agent relevance labels for a captured `queryId`.
+    /// Ids are the stable identity carrier (== `SearchHit.id`). Errors if telemetry
+    /// is off.
+    #[napi]
+    pub async fn record_feedback(
+        &self,
+        query_id: String,
+        relevant_ids: Vec<i64>,
+        irrelevant_ids: Vec<i64>,
+        label_source: String,
+    ) -> Result<()> {
+        validate_ffi_string_napi(&query_id)?;
+        validate_ffi_string_napi(&label_source)?;
+        // codex §9 [P2] (parity): ids are non-negative `u64` (the stable
+        // `SearchHit.id` carrier). A direct napi caller bypassing the TS wrapper
+        // could pass a negative `i64` which `as u64` would wrap to a huge value;
+        // reject it here to match the TS/Python wrapper guards.
+        let rel = checked_ids_napi("relevantIds", &relevant_ids)?;
+        let irr = checked_ids_napi("irrelevantIds", &irrelevant_ids)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.record_feedback(&query_id, &rel, &irr, &label_source)).await
     }
 
     /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn (first

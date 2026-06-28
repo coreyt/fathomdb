@@ -884,6 +884,40 @@ impl PyEngine {
         call_engine(py, move || engine.drain(ms))
     }
 
+    /// 0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a JSONL
+    /// `sink_path`. Off by default; local file only (no egress).
+    fn enable_telemetry(&self, py: Python<'_>, sink_path: &str) -> PyResult<()> {
+        validate_ffi_string_py(sink_path)?;
+        let engine = Arc::clone(&self.inner);
+        let path = sink_path.to_string();
+        call_engine(py, move || engine.enable_telemetry(&path))
+    }
+
+    /// 0.8.8 Slice 15 — the most-recent captured `query_id` (for `record_feedback`),
+    /// or `None` when telemetry is off / no query captured yet.
+    fn last_telemetry_query_id(&self) -> Option<String> {
+        self.inner.last_telemetry_query_id()
+    }
+
+    /// 0.8.8 Slice 15 — attach agent relevance labels for a captured `query_id`.
+    /// Ids are the stable identity carrier (== `SearchHit.id`). Errors if telemetry
+    /// is off.
+    fn record_feedback(
+        &self,
+        py: Python<'_>,
+        query_id: &str,
+        relevant_ids: Vec<u64>,
+        irrelevant_ids: Vec<u64>,
+        label_source: &str,
+    ) -> PyResult<()> {
+        validate_ffi_string_py(query_id)?;
+        validate_ffi_string_py(label_source)?;
+        let engine = Arc::clone(&self.inner);
+        let qid = query_id.to_string();
+        let ls = label_source.to_string();
+        call_engine(py, move || engine.record_feedback(&qid, &relevant_ids, &irrelevant_ids, &ls))
+    }
+
     /// G11 (Slice 15) — BYO-LLM ingest. `cmd` is the argv to spawn
     /// (first element = program, rest = args). `documents` is a list of
     /// dicts with `source_doc_id` and `body` keys.
