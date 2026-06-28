@@ -5,17 +5,33 @@
 > Carries an OOB security drop-in: the **pyo3 0.24.1 → 0.29.0** bump (RUSTSEC-2026-0176/0177)
 > as reserved-gap **Slice 1**, landing before the EXP-OBS Py surface (Slice 5).
 
-## Verdict — Slices 0/1/5 DONE; 10/15/20/40 remain
+## Verdict — ALL SLICES DONE + VERIFIED; integrated on `0.8.8-integration`, pending HITL push
 
-Slice 1 (pyo3 security bump) is on `origin/main` (`8c938bb7`). Slices 0 (ADR) + 5 (EXP-OBS engine
-keystone) are landing on `main` via this clean `0.8.8-slice5-close` worktree (the two commits had
-leaked onto the `0.8.9-ci-integrity-micro` branch; re-applied here off `origin/main` per the
-worktree-base preflight). The **`Explanation` field set is HITL-RATIFIED** (6-owner negotiation,
-`dev/plans/runs/0.8.8-explanation-fieldset-ratification.md`): landed shape confirmed architecturally
-correct, ADR amended to the code, only added engine delta = `#[non_exhaustive]` ×4. **Slice 10
-(SDK parity) DONE** (committed on `0.8.8-slice10-sdk`; TS 117 + Python 11 tests green; pending
-codex §9 + push). Slices 15 (telemetry) / 20 (gold) / 40 (verify) remain, with the ratification
-artifact as their input spec.
+Slices 0/1/5 are on `origin/main`. Slices **10 (EXP-OBS SDK parity), 15 (telemetry capture), 20
+(real-gold pipeline)** are built, codex-§9-clean, and **integrated cleanly** onto current
+`origin/main` (`b3bf6f52`, incl. F-7) on branch `0.8.8-integration` (no conflicts). **Slice 40
+verification GREEN** on the integrated branch (below). Awaiting HITL sign-off to push the integrated
+release to `main`. The `Explanation` field set is HITL-RATIFIED (6-owner negotiation,
+`dev/plans/runs/0.8.8-explanation-fieldset-ratification.md`).
+
+### Slice 40 — integrated verification (branch `0.8.8-integration`, off `b3bf6f52`)
+- **X2** `mkdocs build --strict` → GREEN.
+- **Rust** `cargo clippy --workspace --all-targets -- -D warnings` → GREEN; `cargo test`
+  (engine + facade) → **370 passed, 0 failed** (explain + telemetry + governed-surface together).
+- **X1 / R-OBS-4** TS `npm test` → **119 passed** (explain parity + telemetry parity); Python
+  (isolated venv) → **33 passed** (explain parity + telemetry parity + gold pipeline + surface +
+  functional-search).
+- **R-OBS-2 (zero-cost, HARD GATE)** → GREEN: the engine R-OBS-2-COV byte-identity tests prove the
+  `explain=false` default path is byte-identical (results+cursor+soft_fallback); telemetry is
+  off-by-default (atomic fast-path, no alloc/file-handle when off).
+- **R-TEL footprint** → GREEN: telemetry off-by-default + no-egress (local JSONL only); privacy
+  tests assert no query text / no `source_id` in the sink.
+- **eu7 recall** → NOT runnable locally (no pre-embedded eu7 DB; `$0`-API). All 0.8.8 binding
+  changes are **additive + opt-in** (explain/telemetry off by default) and do not touch the
+  retrieval/quant path, so they cannot perturb eu7 recall — consistent with Slices 1/5. Flagged for
+  the HITL package; the standing eu7 gate runs on the MAIN tree at release.
+- **codex §9** → clean per slice (10/15/20), incl. the round-2 fixes (15: query_id privacy + napi
+  negative-id; 20: malformed-row skip + occurrence-based correlation).
 
 ## Slice ladder
 
@@ -25,9 +41,9 @@ artifact as their input spec.
 | 1 *(reserved-gap)* | **pyo3 0.24.1 → 0.29.0 security bump** | ✅ on `origin/main` (`8c938bb7`); gated GREEN + codex §9 clean (see R-SEC-1) |
 | 5 | EXP-OBS KEYSTONE (`explain=True`) | ✅ **DONE** — `Engine::search_explained` + `Explanation`/`QueryTrace`/`PerHitExplain` (all `#[non_exhaustive]`); reader-protocol 5-tuple; byte-stable default path. R-OBS-1 golden + R-OBS-2-COV (depth>0, graph_arm) tests; governed-surface allowlist 29; clippy clean; codex §9 clean. Landing on `main` via clean worktree. SDK wiring = Slice 10 |
 | 10 | EXP-OBS SDK parity + zero-cost bench | ✅ **DONE** (worktree `0.8.8-slice10-sdk`, pending codex §9 + push) — `explain` + `Explanation`/`QueryTrace`/`PerHitExplain` + `SearchResult.explanation` wired through pyo3/napi/Py/TS; Python `SoftFallbackBranch` Literal `graph_arm` prereq fixed. X1 parity: **TS 117 tests green** (4 new), **Python 4 parity + 7 functional-search green**. `PerHitExplain.id`==`SearchHit.id` (no BigInt promote). Zero-cost (R-OBS-2) proven structurally by the engine R-OBS-2-COV byte-identity tests (explain=false → None, no alloc); latency micro-bench report-only. clippy `-D warnings` clean (engine+py+napi+facade). Python verified via an **isolated venv** (shared `.venv`/MAIN tree untouched) |
-| 15 | Telemetry capture | ⏳ not started |
-| 20 | Real-gold pipeline | ⏳ depends on 15 |
-| 40 | Verification + release readiness | ⏳ depends on 5,10,15,20 |
+| 15 | Telemetry capture | ✅ **DONE** — opt-in `Engine::enable_telemetry`/`record_feedback`/`last_telemetry_query_id`; off-by-default atomic fast-path (zero-cost); local JSONL sink, no egress; ids == `SearchHit.id`, never query text / `source_id`. Wired through pyo3/napi/Py/TS. Engine + parity tests green; codex §9 clean (round-2: query_id privacy validation + napi negative-id rejection). Design: `dev/design/0.8.8-telemetry-design.md` |
+| 20 | Real-gold pipeline | ✅ **DONE** — `eval/gold_capture.py` (telemetry JSONL → `GoldRecord` per §B.2/§3d) + `eval/frozen_candidate_scorer.py` (offline, no search re-run); fixture-validated (5 tests). codex §9 clean (round-2: malformed-row skip + occurrence-based query_id correlation). EVAL-ONLY. id-contract caveat flagged (interim `write_cursor` carrier; within-session consistent) |
+| 40 | Verification + release readiness | ✅ **DONE** — integrated on `0.8.8-integration` (off `b3bf6f52`, clean); full verification GREEN (see Verdict above): Rust 370 / TS 119 / Python 33; mkdocs strict; workspace clippy; R-OBS-2 zero-cost + R-TEL no-egress gates. Pending HITL push |
 
 ## Acceptance criteria
 
@@ -37,8 +53,10 @@ artifact as their input spec.
 | R-OBS-1 | per-hit arm-provenance + score-breakdown + query trace behind `explain=True` | ✅ engine: golden `r_obs_1_golden_field_fidelity_at_rerank_depth_gt0`; SDK parity → Slice 10 |
 | R-OBS-2 | `explain` zero-cost when off | ✅ engine: `None`/no-alloc default path; `r_obs_2_cov_*` byte-identity at depth>0 + graph_arm; bench → Slice 10 |
 | R-OBS-3 | reuses existing seams (`fuse_three_arms`/`ce_rerank`/`GraphFrontierStats` side-channel) | ✅ codex §9 confirmed no parallel machinery |
-| R-OBS-4 | Py + TS SDK parity | ✅ Slice 10 — X1 parity harness on both bindings (TS `exp-obs-explain.test.ts` 117 green; Python `test_exp_obs_explain_parity.py` green); snake↔camel only permitted diff |
-| R-TEL-1..3 | Telemetry + real-gold | ⏳ Slice 15/20 (ADR §B amendments folded) |
+| R-OBS-4 | Py + TS SDK parity | ✅ Slice 10 — X1 parity harness on both bindings (integrated: TS 119 incl. `exp-obs-explain.test.ts`; Python `test_exp_obs_explain_parity.py`); snake↔camel only permitted diff |
+| R-TEL-1 | opt-in local telemetry: query→result→feedback events; off by default; no network egress | ✅ Slice 15 — `telemetry_capture.rs` (off-by-default, event+feedback JSONL, deterministic `query_id`); SDK parity `test_telemetry_parity.py` / `telemetry-parity.test.ts` |
+| R-TEL-2 | real-gold capture pipeline (telemetry → labeled gold; fixture-validated) | ✅ Slice 20 — `eval/gold_capture.py` + offline `frozen_candidate_scorer.py`; `test_gold_pipeline.py` (5 tests, fixture-validated) |
+| R-TEL-3 | privacy/footprint honesty (no content egress; agent labels only) | ✅ Slice 15 — sink carries ids/length/labels only; privacy tests assert no query text / `source_id`; no-egress (local file); `record_feedback` validates `query_id` is a captured id (codex §9 [P1]) |
 
 ## Slice 1 — pyo3 0.24.1 → 0.29.0 (R-SEC-1) detail
 
