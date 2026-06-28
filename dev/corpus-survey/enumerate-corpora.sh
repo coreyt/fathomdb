@@ -20,7 +20,7 @@
 set -uo pipefail
 
 # --- locate repo root + data dir ------------------------------------------
-REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null || pwd)"
+REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null || cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 probe_data_dir() {
   local candidates=(
@@ -57,9 +57,13 @@ if [ -d "$CORPUS_DIR" ]; then
     [ -f "$p" ] && printf '  [present] %-26s %s\n' "$f" "$(human "$p")"
   done
   n_chains=$(find "${CORPUS_DIR}/chains" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
-  echo "  [present] chains/                    ${n_chains} chain definitions"
+  [ -d "${CORPUS_DIR}/chains" ] \
+    && echo "  [present] chains/                    ${n_chains} chain definitions" \
+    || echo "  [MISS]    chains/                    (directory absent)"
   n_acq=$(find "${CORPUS_DIR}/scripts" -name 'acquire_*.py' 2>/dev/null | wc -l | tr -d ' ')
-  echo "  [present] scripts/acquire_*.py       ${n_acq} acquisition scripts:"
+  [ -d "${CORPUS_DIR}/scripts" ] \
+    && echo "  [present] scripts/acquire_*.py       ${n_acq} acquisition scripts:" \
+    || echo "  [MISS]    scripts/acquire_*.py       (directory absent)"
   find "${CORPUS_DIR}/scripts" -name 'acquire_*.py' 2>/dev/null | sort | sed 's|.*/|      |'
 else
   echo "  <tests/corpus not found>"
@@ -90,7 +94,7 @@ if [ -n "${DATA_DIR}" ]; then
   # license markers
   echo
   echo "  ### license markers found under data/corpus-data/"
-  find "${DATA_DIR}" -maxdepth 3 \( -iname '*LICENSE*' -o -iname '*COPYING*' \) 2>/dev/null | sort | sed "s|${DATA_DIR}/|    |"
+  find "${DATA_DIR}" -maxdepth 3 \( -iname '*LICENSE*' -o -iname '*COPYING*' \) 2>/dev/null | sort | sed "s|$(printf '%s' "${DATA_DIR}" | sed 's|[\\&|]|\\&|g')/|    |"
 else
   echo "  <data dir not found — corpus payloads may live only in the primary checkout>"
   echo "  Rebuild reproducibly via tests/corpus/scripts/acquire_*.py (see corpus-card.md)."
@@ -111,7 +115,7 @@ echo
 echo "## 4. MAP-EXPECTS vs ON-DISK (reconcile against corpus-map.md)"
 echo "  legend: [HAVE] present  ·  [MISS] expected by map but not found  ·  [HF] HuggingFace-streamed (cached, not a static file)"
 check() { # $1 = label, $2 = relative path under DATA_DIR ("" if HF-streamed)
-  local label="$1" rel="$2"
+  local label="$1" rel="${2:-}"
   if [ -z "$rel" ]; then printf '  [HF]   %s\n' "$label"; return; fi
   if [ -n "${DATA_DIR}" ] && [ -e "${DATA_DIR}/${rel}" ]; then
     printf '  [HAVE] %-26s %s\n' "$label" "$rel"
