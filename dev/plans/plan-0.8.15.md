@@ -200,13 +200,19 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
 2. **EXP-Fr-acc results present.** Intent-classifier accuracy, asymmetric mis-route cost matrix, and locus
    recommendation all recorded. Verify the locus recommendation document exists before writing the Slice 0
    ADR. The route-accuracy threshold for the Slice 40 gate comes from this document.
+   **CORRECTION (master F-11):** EXP-Fr-acc was originally floated to run by 0.8.9/0.8.12 — it **never ran**.
+   It is now **produced by 0.8.11's folded-in experiment ladder (F-11)**, NOT a pre-existing float artifact.
+   Verify the EXP-Fr-acc results as **a 0.8.11 deliverable**.
 3. **EXP-B′ joint-tuning results present.** Per-intent `(alpha, pool_n, k, recency)` config tuples — or
    the unified tuple if stacks converged — available in their results doc. The stacks-unify vs
    stacks-diverge verdict (DP-B) must be recorded in `0.8.15-implementation.md` at Slice 0.
+   **CORRECTION (master F-11):** like Fr-acc, EXP-B′ **never ran as float** (the assumption that 0.8.7/0.8.9
+   produced it was FALSE); it is now **produced by 0.8.11's folded-in experiment ladder (F-11)**. Verify the
+   EXP-B′ results as **a 0.8.11 deliverable**.
 4. **EXP-OBS landed @ 0.8.8 and green.** Per-arm provenance + score breakdown exist on
    `SearchResult.explanation`; `exp_obs_explain.rs` and `exp-obs-explain.test.ts` green on `origin/main`.
    The routed path must carry full provenance through `search_routed`; the EXPLAIN surface is a prerequisite
-   for a transparent router per `initial-arch` §6.
+   for a transparent router per `initial-arch` §6. **(Satisfied on `origin/main` — master F-6.)**
 5. **0.8.11 OOB closed.** Agent-side L2 router prototype and per-intent config tuples pre-staged. The
    agent-side prototype is the KILL-path contingency (DP-A) and the config-tuple seed for Slice 5.
    Verify the 0.8.11 pre-stage document exists.
@@ -222,6 +228,12 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
    parity tests (Slice 15) and the Slice 40 full suite require the MAIN tree's `maturin develop` build.
    Only one `maturin develop` at a time on the MAIN tree (`0.8.6-0.8.7-parallel-build-venv-mutex`).
 
+> **Net (per master F-11): the only remaining upstream *experiment* gate for 0.8.15 is EXP-S (0.8.12), the
+> long pole.** EXP-OBS is already satisfied on `origin/main` (F-6), and the EXP-B′ + EXP-Fr-acc experiment
+> base is **de-risked / produced by 0.8.11's folded-in ladder** rather than by the never-run 0.8.7/0.8.9
+> float. The prereq verifications above for items 2/3 therefore check **0.8.11 deliverables**, not stale
+> float artifacts.
+
 ---
 
 ## 8. Dependencies / sequencing
@@ -232,8 +244,8 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
 | --- | --- | --- | --- |
 | **EXP-S** (0.8.12) | even @0.8.12 | In-library dispatcher code over kind-tagged indexes | **HARD (I-2); long pole** |
 | **EXP-OBS** (0.8.8) | even @0.8.8 | Routed path must carry full EXP-OBS provenance; transparent router requires the EXPLAIN surface | **HARD (I-1 consumer)** |
-| **EXP-Fr-acc** | done by 0.8.12 | Locus decision + mis-route matrix + route-accuracy threshold → Slice 0 ADR | feeds Slice 0 |
-| **EXP-B′** | done by 0.8.12 | Per-intent `(alpha, pool_n, k, recency)` config tuples → Slice 5 route table | feeds Slice 5 |
+| **EXP-Fr-acc** | **produced by 0.8.11 (F-11)** — never ran as float | Locus decision + mis-route matrix + route-accuracy threshold → Slice 0 ADR | feeds Slice 0 |
+| **EXP-B′** | **produced by 0.8.11 (F-11)** — never ran as float | Per-intent `(alpha, pool_n, k, recency)` config tuples → Slice 5 route table | feeds Slice 5 |
 | **0.8.11 pre-stage** | @0.8.11 | Per-intent config tuple seed; agent-side L2 prototype (DP-A KILL hedge) | feeds Slices 0 + 5 + KILL path |
 | **#17 filter grammar** (0.8.11) | @0.8.11 | Typed `SearchFilter` / constraints surface → Slice 10 wiring | feeds Slice 10 |
 
