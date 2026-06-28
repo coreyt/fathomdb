@@ -28,10 +28,43 @@ class SearchHit:
     # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
     ce_score: float | None
 
+class QueryTrace:
+    # 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace.
+    query_chars: int
+    k: int
+    rerank_depth: int
+    pool_n: int
+    alpha: float
+    use_graph_arm: bool
+    recency: bool
+    embedder_id: str
+    ce_active: bool
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+class PerHitExplain:
+    # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.
+    id: int
+    arm: str
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+class Explanation:
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar.
+    trace: QueryTrace
+    per_hit: list[PerHitExplain]
+
 class SearchResult:
     projection_cursor: int
     soft_fallback: SoftFallback | None
     results: list[SearchHit]
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in; None unless search(..., explain=True).
+    explanation: Explanation | None
 
 class CounterSnapshot:
     queries: int
@@ -111,6 +144,7 @@ class Engine:
         use_graph_arm: bool = ...,
         alpha: float | None = ...,
         pool_n: int | None = ...,
+        explain: bool = ...,
     ) -> SearchResult: ...
     def close(self) -> None: ...
     def drain(self, timeout_s: float = ...) -> None: ...

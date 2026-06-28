@@ -37,10 +37,11 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp, CorruptionDetail,
     CorruptionKind, EmbedderChoice, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, ExtractDocument as RustExtractDocument,
+    EngineOpenError, Explanation as RustExplanation, ExtractDocument as RustExtractDocument,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
-    Predicate as RustPredicate, PreparedWrite, ScalarValue as RustScalarValue,
+    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
@@ -422,6 +423,10 @@ struct PySearchResult {
     projection_cursor: u64,
     soft_fallback: Option<PySoftFallback>,
     results: Vec<PySearchHit>,
+    /// 0.8.8 EXP-OBS (Slice 10) — opt-in retrieval explanation sidecar. `Some`
+    /// only when `search(..., explain=True)`; `None` (default) keeps the payload
+    /// byte-identical to the pre-0.8.8 shape.
+    explanation: Option<PyExplanation>,
 }
 
 impl PySearchResult {
@@ -430,6 +435,113 @@ impl PySearchResult {
             projection_cursor: r.projection_cursor,
             soft_fallback: r.soft_fallback.as_ref().map(PySoftFallback::from_rust),
             results: r.results.iter().map(PySearchHit::from_rust).collect(),
+            explanation: r.explanation.as_ref().map(PyExplanation::from_rust),
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace (mirror of engine
+/// `QueryTrace`). New fields append with the binding evolution rule
+/// (`frozen, get_all, skip_from_py_object`).
+#[pyclass(module = "fathomdb._fathomdb", name = "QueryTrace", frozen, get_all, skip_from_py_object)]
+#[derive(Clone)]
+struct PyQueryTrace {
+    query_chars: u32,
+    k: u32,
+    rerank_depth: u32,
+    pool_n: u32,
+    alpha: f64,
+    use_graph_arm: bool,
+    recency: bool,
+    embedder_id: String,
+    ce_active: bool,
+    vector_hits: u32,
+    text_hits: u32,
+    graph_hits: u32,
+}
+
+impl PyQueryTrace {
+    fn from_rust(t: &RustQueryTrace) -> Self {
+        Self {
+            query_chars: t.query_chars,
+            k: t.k,
+            rerank_depth: t.rerank_depth,
+            pool_n: t.pool_n,
+            alpha: t.alpha,
+            use_graph_arm: t.use_graph_arm,
+            recency: t.recency,
+            embedder_id: t.embedder_id.clone(),
+            ce_active: t.ce_active,
+            vector_hits: t.vector_hits,
+            text_hits: t.text_hits,
+            graph_hits: t.graph_hits,
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of
+/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (no BigInt/string
+/// promotion); `arm` crosses as the same lowercase string as `SearchHit.branch`.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "PerHitExplain",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyPerHitExplain {
+    id: u64,
+    arm: String,
+    vector_rank: Option<u32>,
+    text_rank: Option<u32>,
+    graph_rank: Option<u32>,
+    fused_score: f64,
+    ce_score: Option<f64>,
+    blended: f64,
+}
+
+impl PyPerHitExplain {
+    fn from_rust(p: &RustPerHitExplain) -> Self {
+        Self {
+            id: p.id,
+            arm: match p.arm {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+            vector_rank: p.vector_rank,
+            text_rank: p.text_rank,
+            graph_rank: p.graph_rank,
+            fused_score: p.fused_score,
+            ce_score: p.ce_score,
+            blended: p.blended,
+        }
+    }
+}
+
+/// 0.8.8 EXP-OBS (Slice 10) — the explanation sidecar (mirror of engine
+/// `Explanation`): a query-level [`PyQueryTrace`] + a per-hit breakdown parallel
+/// to (and in the same order as) `SearchResult.results`.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "Explanation",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyExplanation {
+    trace: PyQueryTrace,
+    per_hit: Vec<PyPerHitExplain>,
+}
+
+impl PyExplanation {
+    fn from_rust(e: &RustExplanation) -> Self {
+        Self {
+            trace: PyQueryTrace::from_rust(&e.trace),
+            per_hit: e.per_hit.iter().map(PyPerHitExplain::from_rust).collect(),
         }
     }
 }
@@ -693,7 +805,7 @@ impl PyEngine {
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
                      status=None, rerank_depth=0, use_graph_arm=false,
-                     alpha=None, pool_n=None)
+                     alpha=None, pool_n=None, explain=false)
     )]
     fn search(
         &self,
@@ -714,6 +826,10 @@ impl PyEngine {
         // default ranking; `alpha=1.0, pool_n=10` is the measured-parity config.
         alpha: Option<f64>,
         pool_n: Option<usize>,
+        // 0.8.8 EXP-OBS (Slice 10) — when True, populate `SearchResult.explanation`
+        // with per-hit provenance + score breakdown + query trace. Default False
+        // returns `explanation=None` and a byte-identical result (R-OBS-2 zero-cost).
+        explain: bool,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -743,8 +859,14 @@ impl PyEngine {
         // the engine's `ce_rerank`.
         let alpha = alpha.unwrap_or(0.3);
         let pool_n = pool_n.unwrap_or(rerank_depth);
+        // 0.8.8 EXP-OBS: `explain=True` routes to `search_explained` (same retrieval,
+        // plus the sidecar); `explain=False` (default) stays on `search_reranked`.
         let result = call_engine(py, move || {
-            engine.search_reranked(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
+            if explain {
+                engine.search_explained(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
+            } else {
+                engine.search_reranked(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
+            }
         })?;
         Ok(PySearchResult::from_rust(result))
     }
@@ -1401,6 +1523,10 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftFallback>()?;
     m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
+    // 0.8.8 EXP-OBS (Slice 10) — explanation sidecar types.
+    m.add_class::<PyQueryTrace>()?;
+    m.add_class::<PyPerHitExplain>()?;
+    m.add_class::<PyExplanation>()?;
     m.add_class::<PyCounterSnapshot>()?;
     m.add_class::<PyMigrationStepReport>()?;
     m.add_class::<PyEmbedderIdentity>()?;

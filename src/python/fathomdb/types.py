@@ -10,8 +10,10 @@ from typing import Literal, TypedDict, TypeGuard, Union
 
 #: Typed soft-fallback branch values per `dev/design/retrieval.md`.
 #: ``"text_edge"`` added in Slice 15 (G11) for edge-body hits from
-#: ``search_index_edges`` FTS or vector-projected edge facts.
-SoftFallbackBranch = Literal["vector", "text", "text_edge"]
+#: ``search_index_edges`` FTS or vector-projected edge facts. ``"graph_arm"``
+#: added in 0.8.8 (Slice 10) to match Rust/TS — it surfaces via
+#: ``PerHitExplain.arm`` (and, for graph-arm hits, ``SearchHit.branch``).
+SoftFallbackBranch = Literal["vector", "text", "text_edge", "graph_arm"]
 
 
 @dataclass(frozen=True)
@@ -126,12 +128,74 @@ class SearchFilter:
 
 
 @dataclass(frozen=True)
+class QueryTrace:
+    """0.8.8 EXP-OBS — query-level retrieval trace (mirror of engine `QueryTrace`).
+
+    Present only on the opt-in ``search(..., explain=True)`` path, inside
+    ``Explanation.trace``. ``query_chars`` is the query LENGTH only (never the
+    text). ``embedder_id`` is ``"name@rev (dim=N)"`` (``""`` when none).
+    Field-order/names mirror the TypeScript ``QueryTrace`` (cross-binding parity).
+    """
+
+    query_chars: int
+    k: int
+    rerank_depth: int
+    pool_n: int
+    alpha: float
+    use_graph_arm: bool
+    recency: bool
+    embedder_id: str
+    ce_active: bool
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+
+@dataclass(frozen=True)
+class PerHitExplain:
+    """0.8.8 EXP-OBS — per-hit provenance + score breakdown (mirror of engine
+    `PerHitExplain`); parallel to (and same order as) ``SearchResult.results``.
+
+    ``id`` mirrors ``SearchHit.id`` exactly. ``arm`` is the winning arm
+    (``== SearchHit.branch``). ``fused_score`` is the RAW post-recency, pre-CE RRF
+    score (not normalized). ``ce_score`` (``== SearchHit.ce_score``) is the in-pool
+    sigmoid ∈ [0,1] or ``None``. ``blended`` ``== SearchHit.score``.
+    """
+
+    id: int
+    arm: SoftFallbackBranch
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """0.8.8 EXP-OBS — opt-in retrieval explanation sidecar (mirror of engine
+    `Explanation`): a query-level ``trace`` + a per-hit breakdown.
+
+    Returned on ``SearchResult.explanation`` only when ``search(..., explain=True)``;
+    ``None`` (default) keeps the result byte-identical to the pre-0.8.8 shape.
+    """
+
+    trace: QueryTrace
+    per_hit: list[PerHitExplain] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class SearchResult:
     """Result returned by `engine.search`."""
 
     projection_cursor: int
     soft_fallback: SoftFallback | None = None
     results: list[SearchHit] = field(default_factory=list)
+    #: 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar; ``None`` unless
+    #: ``search(..., explain=True)``. New optional field appended with a default
+    #: (the Python evolution rule), so the non-explain shape is unchanged.
+    explanation: Explanation | None = None
 
 
 @dataclass(frozen=True)
@@ -343,11 +407,14 @@ __all__ = [
     "EmbedderEvent",
     "EmbedderIdentity",
     "ExpandedNode",
+    "Explanation",
     "MeanVecPinnedEvent",
     "MigrationStepReport",
     "NodeRecord",
     "OpStoreRow",
     "OpenReport",
+    "PerHitExplain",
+    "QueryTrace",
     "SearchExpandResult",
     "SearchFilter",
     "SearchHit",
