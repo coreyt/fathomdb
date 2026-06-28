@@ -199,37 +199,59 @@ fn ac_029_canonical_writes_complete_under_projection_stall() {
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
 
-    let baseline_started = Instant::now();
-    for i in 0..1_000 {
-        opened
-            .engine
-            .write(&[PreparedWrite::Node {
-                kind: "doc".to_string(),
-                body: format!("baseline {i}"),
-                source_id: None,
-                logical_id: None,
-            }])
-            .expect("baseline write");
+    // Denoise both 1,000-write wall-clock measurements with a best-of-K minimum: a single
+    // noisy sample on a shared CI runner must not inflate the ratio. (0.8.9 Slice 20, F-9 —
+    // this acceptance test first executed on macOS only once the pyo3 link gate was removed,
+    // exposing a latent flake.) The locked P-STALL-TOL = 1.5x contract (dev/acceptance.md
+    // AC-029) is UNCHANGED — only the measurement is hardened. The minimum reflects each loop's
+    // true least-interfered throughput; a real back-pressure regression couples canonical
+    // writes to the frozen scheduler and blows the ratio out (an effective hang of tens of
+    // seconds), which the minimum still catches.
+    const K: usize = 3;
+
+    let mut baseline = Duration::MAX;
+    for trial in 0..K {
+        let started = Instant::now();
+        for i in 0..1_000 {
+            opened
+                .engine
+                .write(&[PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: format!("baseline {trial}-{i}"),
+                    source_id: None,
+                    logical_id: None,
+                }])
+                .expect("baseline write");
+        }
+        baseline = baseline.min(started.elapsed());
+        opened.engine.drain(30_000).expect("baseline drain");
     }
-    let baseline = baseline_started.elapsed();
-    opened.engine.drain(30_000).expect("baseline drain");
 
     opened.engine.set_projection_scheduler_frozen_for_test(true);
-    let stalled_started = Instant::now();
-    for i in 0..1_000 {
-        opened
-            .engine
-            .write(&[PreparedWrite::Node {
-                kind: "doc".to_string(),
-                body: format!("stalled {i}"),
-                source_id: None,
-                logical_id: None,
-            }])
-            .expect("stalled write");
-    }
-    let stalled = stalled_started.elapsed();
 
-    assert!(stalled <= baseline.mul_f32(1.5), "baseline={baseline:?} stalled={stalled:?}");
+    let mut stalled = Duration::MAX;
+    for trial in 0..K {
+        let started = Instant::now();
+        for i in 0..1_000 {
+            opened
+                .engine
+                .write(&[PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: format!("stalled {trial}-{i}"),
+                    source_id: None,
+                    logical_id: None,
+                }])
+                .expect("stalled write");
+        }
+        stalled = stalled.min(started.elapsed());
+    }
+
+    // P-STALL-TOL = 1.5x (dev/acceptance.md AC-029): a frozen projection scheduler must not
+    // back-pressure canonical writes.
+    assert!(
+        stalled <= baseline.mul_f32(1.5),
+        "P-STALL-TOL violated: baseline={baseline:?} stalled={stalled:?}"
+    );
 }
 
 #[test]
@@ -338,7 +360,11 @@ fn ac_032a_drain_succeeds_when_timeout_is_sufficient() {
 #[test]
 fn ac_032b_drain_returns_typed_timeout_when_work_does_not_finish() {
     let (_dir, path) = fixture_path("drain_timeout");
-    let embedder = Arc::new(SleepingEmbedder::success(Duration::from_millis(250)));
+    // Each embed sleeps longer than the drain timeout T (below), so the queued work cannot
+    // finish within T regardless of worker-pool size — the drain must time out. (Using a
+    // per-embed sleep > T keeps the timeout deterministic where a fixed small doc count + a
+    // sub-T embed would race a wider pool.)
+    let embedder = Arc::new(SleepingEmbedder::success(Duration::from_secs(2)));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
 
@@ -354,11 +380,22 @@ fn ac_032b_drain_returns_typed_timeout_when_work_does_not_finish() {
             .expect("write");
     }
 
+    // P-DRAIN-TOL = 1.5x (dev/acceptance.md AC-032b): with timeout T, a typed timeout must be
+    // returned within 1.5 x T. Use the DOCUMENTED T = 1s (acceptance.md uses drain(timeout=1s))
+    // rather than an ad-hoc 100ms; the per-embed sleep (2s) exceeds T so the drain reliably
+    // times out, and the 1.5s bound tolerates shared-CI scheduling jitter. The earlier 100ms T
+    // (→ 150ms bound, 50ms slack) flaked on macOS once the pyo3 link gate was removed
+    // (0.8.9 Slice 20, F-9). Contract UNCHANGED — only T is set to its documented value.
+    const DRAIN_TIMEOUT_MS: u64 = 1_000;
     let started = Instant::now();
-    let err = opened.engine.drain(100).expect_err("drain must time out");
+    let err = opened.engine.drain(DRAIN_TIMEOUT_MS).expect_err("drain must time out");
     let elapsed = started.elapsed();
     assert_eq!(err, EngineError::Scheduler);
-    assert!(elapsed <= Duration::from_millis(150), "elapsed={elapsed:?}");
+    // 1.5 x T, computed as T * 3 / 2 to avoid float rounding.
+    assert!(
+        elapsed <= Duration::from_millis(DRAIN_TIMEOUT_MS * 3 / 2),
+        "P-DRAIN-TOL violated: elapsed={elapsed:?}"
+    );
 }
 
 #[test]

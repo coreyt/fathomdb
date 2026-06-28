@@ -37,5 +37,11 @@ fathomdb-embedder.workspace = true
 fathomdb-embedder-api.workspace = true
 fathomdb-engine.workspace = true
 fathomdb-schema.workspace = true
-pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
+# 0.8.9 Slice 20 (F-9): `extension-module` is NOT always-on. It tells pyo3 to link
+# libpython-less (symbols resolved by the host interpreter at import), which makes the
+# standalone `cargo test --workspace` test binary fail to link under strict macOS/Windows
+# linkers (Linux tolerates it). Wheels + `maturin develop` pass it back explicitly via
+# `--features pyo3/extension-module` (release.yml, ci.yml, the Cargo.toml:30 dev command),
+# so the shipped artifact and dev flow are unchanged; only the workspace test link is fixed.
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
 serde_json = "1"

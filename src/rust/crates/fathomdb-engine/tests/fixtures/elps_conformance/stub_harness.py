@@ -18,6 +18,12 @@ import json
 import sys
 from pathlib import Path
 
+# Force UTF-8 stdio: golden responses include non-ASCII and are emitted with
+# `ensure_ascii=False`, which would otherwise encode via the platform default
+# (cp1252 on Windows) and corrupt the NDJSON the engine reads. (0.8.9 Slice 20, F-9.)
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stdin.reconfigure(encoding="utf-8")
+
 GOLDEN_FILE = Path(__file__).parent / "golden.jsonl"
 
 
