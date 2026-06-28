@@ -35,33 +35,51 @@ else
 fi
 [ -z "$FILES" ] && exit 0
 
-# Snapshot pre-fix content of the target files.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-for f in $FILES; do
-  [ -f "$f" ] || continue
-  mkdir -p "$TMP/$(dirname "$f")"
-  cp "$f" "$TMP/$f"
-done
 
-# markdownlint-cli2 ignores CLI globs when the config sets `globs`, so this is whole-repo;
-# it is idempotent (a no-op on already-clean files), so in practice only dirty files change.
+snapshot() {  # $1 = path -> save a pre-fix copy under $TMP
+  [ -f "$1" ] || return 0
+  mkdir -p "$TMP/$(dirname "$1")"
+  cp "$1" "$TMP/$1"
+}
+
+# Snapshot the TARGET files AND every other .md that --fix could touch. markdownlint-cli2
+# ignores CLI globs (it globs the whole repo from its config), so `--fix` runs repo-wide; we
+# must therefore be able to UNDO its edits to any NON-target file (md-safe-fix must only ever
+# modify the targets). The realistic change set is the targets plus whatever is already dirty,
+# but we snapshot all tracked+untracked .md so a fix to an unexpectedly-"clean" file is caught.
+is_target() { case " $FILES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+for f in $FILES; do snapshot "$f"; done
+while IFS= read -r f; do snapshot "$f"; done < <(
+  { git ls-files '*.md'; git ls-files --others --exclude-standard '*.md'; } | sort -u
+)
+
+# It is idempotent (a no-op on already-clean files), so in practice only dirty files change.
 "$BIN" --fix >/dev/null 2>&1 || true
 
 corrupt=0
 restage=""
-for f in $FILES; do
+# Walk every .md that changed vs its snapshot. Targets: guard (revert-on-corruption, else keep
+# + re-stage). Non-targets: ALWAYS restore the snapshot — md-safe-fix does not touch files the
+# caller did not ask for, and an unguarded --fix edit to them must not leak into the tree.
+while IFS= read -r f; do
   [ -f "$f" ] || continue
-  if ! cmp -s "$TMP/$f" "$f"; then
-    if python3 "$GUARD" diff "$TMP/$f" "$f"; then
-      restage="$restage $f"            # neutral fix — keep it
+  snap="$TMP/$f"
+  if [ -f "$snap" ] && ! cmp -s "$snap" "$f"; then
+    if is_target "$f"; then
+      if python3 "$GUARD" diff "$snap" "$f"; then
+        restage="$restage $f"
+      else
+        cp "$snap" "$f"
+        echo "[md-safe-fix] ^ reverted markdownlint --fix on $f (it changed meaning)." >&2
+        corrupt=1
+      fi
     else
-      cp "$TMP/$f" "$f"                 # corruption — REVERT to pre-fix
-      echo "[md-safe-fix] ^ reverted markdownlint --fix on $f (it changed meaning)." >&2
-      corrupt=1
+      cp "$snap" "$f"   # non-target side effect of repo-wide --fix — undo it
     fi
   fi
-done
+done < <({ git ls-files '*.md'; git ls-files --others --exclude-standard '*.md'; } | sort -u)
 
 # Re-stage the neutral fixes if we are in a staged context (no explicit file args).
 if [ "$#" -eq 0 ] && [ -n "$restage" ]; then

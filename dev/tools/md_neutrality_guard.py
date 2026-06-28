@@ -72,7 +72,7 @@ def _walk_inline(children, text_out, code_out, link_out):
 def fingerprint(text):
     """Tokenizer-stable meaning fingerprint: visible words + inline-code + link targets + fences."""
     tokens = MD.parse(text)
-    text_parts, code_parts, link_parts, fences = [], [], [], []
+    text_parts, code_parts, link_parts, fences, htmls = [], [], [], [], []
     pending_heading = False
     for tok in tokens:
         if tok.type == "heading_open":
@@ -80,6 +80,12 @@ def fingerprint(text):
         elif tok.type in ("fence", "code_block"):
             body = "\n".join(x.rstrip() for x in tok.content.split("\n"))
             fences.append(body.strip("\n"))
+            text_parts.append("\n")
+        elif tok.type == "html_block":
+            # block-level raw HTML (MD033 is enabled — admonitions, <details>, HTML tables):
+            # its reader-visible content is meaning. Capture it (ws-collapsed) so tampering
+            # inside a <div>…</div> is not silently neutral.
+            htmls.append(WS.sub(" ", tok.content).strip())
             text_parts.append("\n")
         elif tok.type == "inline":
             seg_text, seg_code, seg_link = [], [], []
@@ -100,20 +106,24 @@ def fingerprint(text):
         "codes": code_parts,
         "links": [x for x in link_parts if x],
         "fences": fences,
+        "html": htmls,
     }
+
+
+DIMS = ("words", "codes", "links", "fences", "html")
 
 
 def diff(old_text, new_text):
     """Return list of changed dimensions ([] == neutral)."""
     fo, fn = fingerprint(old_text), fingerprint(new_text)
-    return [k for k in ("words", "codes", "links", "fences") if fo.get(k) != fn.get(k)]
+    return [k for k in DIMS if fo.get(k) != fn.get(k)]
 
 
 def _report(name, old_text, new_text):
     import difflib
 
     fo, fn = fingerprint(old_text), fingerprint(new_text)
-    changed = [k for k in ("words", "codes", "links", "fences") if fo.get(k) != fn.get(k)]
+    changed = [k for k in DIMS if fo.get(k) != fn.get(k)]
     if not changed:
         return True
     sys.stderr.write("MEANING CHANGED: %s  [%s]\n" % (name, ",".join(changed)))
