@@ -285,34 +285,56 @@ REQUIRED_FROZEN_FIELDS_083: tuple[str, ...] = (
     "surpass-option protocol",
 )
 
-#: The design must self-declare a FROZEN pre-registration status. The doc began
-#: at ``decision-ready`` and was later HITL-SIGNED at the Slice-0 gate
-#: (``status: SIGNED (HITL Slice-0 gate signed ...)``). SIGNED is a strictly
-#: stronger freeze than decision-ready — the pre-registration is locked AND
-#: ratified — so either token satisfies the lint. A ``draft`` / ``proposed`` /
-#: ``in-progress`` status (or none) is NOT frozen and must still fail.
+#: The design must self-declare a FROZEN pre-registration status, enforced as a
+#: MONOTONIC FLOOR: the status must be ``decision-ready`` OR any more-advanced
+#: frozen state. The 0.8.3 design began at ``decision-ready`` and progressed
+#: FORWARD to ``SIGNED`` (HITL Slice-0 gate) and the parity work was then
+#: CLOSED AS-IS — both are above the floor, not downgrades. A status BELOW the
+#: floor (``draft`` / ``proposed`` / ``in-progress``) or a missing status fails.
 REQUIRED_STATUS_TOKEN: str = "status: decision-ready"
-ACCEPTED_STATUS_TOKENS: tuple[str, ...] = (REQUIRED_STATUS_TOKEN, "status: SIGNED")
+#: Status values AT or BEYOND the decision-ready floor. Matched case-insensitively
+#: against the leading token of the doc's ``status:`` line value, so a forward
+#: state like ``SIGNED (HITL ...)`` or ``closed-as-is`` clears the floor while
+#: ``draft``/``proposed`` do not.
+STATUS_FLOOR_TOKENS: tuple[str, ...] = (
+    "decision-ready",
+    "signed",
+    "closed-as-is",
+    "closed",
+)
 
 _DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
+
+
+def _status_meets_floor(doc_text: str) -> bool:
+    """True if the doc's ``status:`` line is at or beyond the decision-ready
+    floor (see :data:`STATUS_FLOOR_TOKENS`). Reads the value of the first
+    ``status:`` line and checks its leading token case-insensitively, so a
+    forward state (``SIGNED``, ``closed-as-is``) clears the floor and a genuine
+    downgrade (``draft``) does not."""
+
+    for line in doc_text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("status:"):
+            value = stripped.split(":", 1)[1].strip().lower()
+            return any(value.startswith(token) for token in STATUS_FLOOR_TOKENS)
+    return False
 
 
 def _collect_prereg_problems(doc_text: str) -> list[str]:
     """Return a list of pre-registration problems (empty == clean).
 
-    Flags a missing/downgraded status (it must be one of
-    :data:`ACCEPTED_STATUS_TOKENS` — ``decision-ready`` or the stronger
-    HITL-``SIGNED``), any missing ``frozen-field: <key>`` line, or such a line
-    present but undated. The lint is non-vacuous: every required field is checked
-    for both presence and a date.
+    Flags a missing or below-floor status (it must be ``decision-ready`` or a
+    more-advanced frozen status — see :func:`_status_meets_floor`), any missing
+    ``frozen-field: <key>`` line, or such a line present but undated. The lint is
+    non-vacuous: every required field is checked for both presence and a date.
     """
     problems: list[str] = []
 
-    if not any(token in doc_text for token in ACCEPTED_STATUS_TOKENS):
+    if not _status_meets_floor(doc_text):
         problems.append(
-            "missing or downgraded status (expected one of: "
-            + ", ".join(repr(t) for t in ACCEPTED_STATUS_TOKENS)
-            + ")"
+            "missing or downgraded status (expected 'status: decision-ready' "
+            "or a more-advanced frozen status, e.g. SIGNED / CLOSED)"
         )
 
     lines = doc_text.splitlines()

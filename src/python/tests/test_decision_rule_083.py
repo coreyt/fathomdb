@@ -392,16 +392,25 @@ def test_prereg_083_lint_flags_downgraded_status() -> None:
         lint_preregistration_083(text)
 
 
-def test_prereg_083_lint_accepts_either_frozen_status() -> None:
-    # Non-vacuity: BOTH frozen tokens satisfy the lint — the real (SIGNED) doc and
-    # the historical decision-ready form. Swapping SIGNED -> decision-ready keeps
-    # the doc frozen, so the lint must still pass (proves the OR is real, not a
-    # SIGNED-only accept that would reject a decision-ready pre-registration).
+def test_prereg_083_lint_status_floor_is_monotonic() -> None:
+    # The status check is a MONOTONIC FLOOR, not a literal match. decision-ready
+    # and every more-advanced frozen state (the real doc is SIGNED; the parity
+    # work is CLOSED AS-IS) clear the floor; states below it must still fail.
     real = _DESIGN_DOC.read_text(encoding="utf-8")
-    lint_preregistration_083(real)  # SIGNED — clean
-    decision_ready = real.replace("status: SIGNED", "status: decision-ready")
-    assert "status: decision-ready" in decision_ready
-    lint_preregistration_083(decision_ready)  # decision-ready — also clean
+    lint_preregistration_083(real)  # SIGNED (real doc) — clean
+
+    def _with_status(token: str) -> str:
+        # Swap the real `status: SIGNED (...)` line value for `token`.
+        return real.replace("status: SIGNED", f"status: {token}", 1)
+
+    # At/above the floor — must pass.
+    for ok in ("decision-ready", "SIGNED (HITL ...)", "closed-as-is", "CLOSED (as-is)"):
+        lint_preregistration_083(_with_status(ok))  # no raise
+
+    # Below the floor — must fail.
+    for bad in ("draft", "proposed", "in-progress"):
+        with pytest.raises(AssertionError):
+            lint_preregistration_083(_with_status(bad))
 
 
 def test_prereg_083_lint_flags_missing_frozen_field() -> None:
