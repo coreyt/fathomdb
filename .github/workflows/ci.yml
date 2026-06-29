@@ -116,7 +116,7 @@ jobs:
       # revision invalidates the cache cleanly.
       - name: Restore BGE embedder weight cache
         id: bge-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/fathomdb/embedders
           key: ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
