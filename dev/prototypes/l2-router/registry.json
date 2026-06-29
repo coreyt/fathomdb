@@ -1,0 +1,479 @@
+{
+  "schema": "0.8.11-l2-router-registry-v1",
+  "slice": "0.8.11/slice-35",
+  "generated_from": {
+    "per_intent_tuples": "dev/plans/runs/expb-joint-tune-output.json",
+    "cost_tiers": "dev/plans/runs/gate2-oracle-output.json"
+  },
+  "confidence_header": "SCREENING DATA \u2014 NOT VALIDATED CONFIG. These per-intent tuples are 0.8.11 screening results: a SINGLE-CORPUS LME measurement (needle/multi_session/temporal), rerank knobs DERIVED from the 0.8.3 CE-pass (the in-session .venv build had the CE block gated OFF), 2 of 5 classes (global, multi_hop) PROVISIONAL EXP-0-global pins with no per-class measurement, and a LEXICAL fallback classifier (lower-bound proxy, macro 0.768). The 0.8.15 dispatcher MUST re-validate every tuple (fresh default-reranker CE build, LOCOMO/MuSiQue corroboration, AP-News decide_084 win-rate for global) before relying on it.",
+  "intents_measured": [
+    "multi_session",
+    "needle",
+    "temporal"
+  ],
+  "intents_provisional": [
+    "global",
+    "multi_hop"
+  ],
+  "feedback_arm": false,
+  "feedback_arm_rationale": "EXP-AF (Slice 30) verdict = KILL: even a stronger agent (claude-sonnet) on the break-even cells did NOT beat internal ce_score net of round-trip (depth-1 reranking lift NET of one round-trip c_rt=0.02 = -0.0126 [-0.0274,0.0022], GO=False). The router stays on internal ce_score; the agent-signal escalation loop is DROPPED; record_feedback stays instrumentation (overrides any F-8b promote).",
+  "intents": {
+    "needle": {
+      "intent": "needle",
+      "provenance": "measured",
+      "provisional": false,
+      "stack": [
+        "fts_bm25",
+        "vector_ann",
+        "rrf",
+        "ce_rerank"
+      ],
+      "config": {
+        "index": "vector_default",
+        "retrieval": {
+          "candidate_k": 200,
+          "final_K": 10
+        },
+        "alpha": 0.7,
+        "pool_n": 50,
+        "mmr": {
+          "enabled": false,
+          "lambda": null
+        },
+        "recency": {
+          "enabled": false,
+          "half_life_days": null
+        },
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "cost_tier": "medium",
+      "cost_tier_breakdown": {
+        "fts_bm25": {
+          "tier": "low",
+          "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+        },
+        "vector_ann": {
+          "tier": "low-medium",
+          "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+        },
+        "rrf": {
+          "tier": "low",
+          "evidence": "CPU rank-merge; negligible over the arms it fuses"
+        },
+        "ce_rerank": {
+          "tier": "medium",
+          "evidence": "TinyBERT-L-2 1.54ms/pair \u2192 308ms @K=200 (fits budget; IR-C R0). MiniLM-L12 16.82ms/pair \u2192 3364ms @K=200 = HIGH (exceeds)."
+        }
+      },
+      "source_exp": "EXP-B'",
+      "ci": {
+        "metric": "r@10",
+        "point": 0.6438,
+        "lo": 0.5882,
+        "hi": 0.6961,
+        "n": 306
+      }
+    },
+    "multi_session": {
+      "intent": "multi_session",
+      "provenance": "measured",
+      "provisional": false,
+      "stack": [
+        "fts_bm25",
+        "vector_ann",
+        "rrf",
+        "ce_rerank"
+      ],
+      "config": {
+        "index": "vector_default",
+        "retrieval": {
+          "candidate_k": 300,
+          "final_K": 10
+        },
+        "alpha": 1.0,
+        "pool_n": 100,
+        "mmr": {
+          "enabled": false,
+          "lambda": null
+        },
+        "recency": {
+          "enabled": false,
+          "half_life_days": null
+        },
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "cost_tier": "medium",
+      "cost_tier_breakdown": {
+        "fts_bm25": {
+          "tier": "low",
+          "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+        },
+        "vector_ann": {
+          "tier": "low-medium",
+          "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+        },
+        "rrf": {
+          "tier": "low",
+          "evidence": "CPU rank-merge; negligible over the arms it fuses"
+        },
+        "ce_rerank": {
+          "tier": "medium",
+          "evidence": "TinyBERT-L-2 1.54ms/pair \u2192 308ms @K=200 (fits budget; IR-C R0). MiniLM-L12 16.82ms/pair \u2192 3364ms @K=200 = HIGH (exceeds)."
+        }
+      },
+      "source_exp": "EXP-B'",
+      "ci": {
+        "metric": "r@10",
+        "point": 0.4667,
+        "lo": 0.3867,
+        "hi": 0.5467,
+        "n": 150
+      }
+    },
+    "temporal": {
+      "intent": "temporal",
+      "provenance": "measured",
+      "provisional": false,
+      "stack": [
+        "fts_bm25",
+        "vector_ann",
+        "rrf",
+        "ce_rerank"
+      ],
+      "config": {
+        "index": "vector_default",
+        "retrieval": {
+          "candidate_k": 500,
+          "final_K": 10
+        },
+        "alpha": 1.0,
+        "pool_n": 20,
+        "mmr": {
+          "enabled": false,
+          "lambda": null
+        },
+        "recency": {
+          "enabled": false,
+          "half_life_days": null
+        },
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "cost_tier": "medium",
+      "cost_tier_breakdown": {
+        "fts_bm25": {
+          "tier": "low",
+          "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+        },
+        "vector_ann": {
+          "tier": "low-medium",
+          "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+        },
+        "rrf": {
+          "tier": "low",
+          "evidence": "CPU rank-merge; negligible over the arms it fuses"
+        },
+        "ce_rerank": {
+          "tier": "medium",
+          "evidence": "TinyBERT-L-2 1.54ms/pair \u2192 308ms @K=200 (fits budget; IR-C R0). MiniLM-L12 16.82ms/pair \u2192 3364ms @K=200 = HIGH (exceeds)."
+        }
+      },
+      "source_exp": "EXP-B'",
+      "ci": {
+        "metric": "r@10",
+        "point": 0.5133,
+        "lo": 0.4333,
+        "hi": 0.5933,
+        "n": 150
+      }
+    },
+    "global": {
+      "intent": "global",
+      "provenance": "provisional",
+      "provisional": true,
+      "stack": [
+        "fts_bm25",
+        "vector_ann",
+        "rrf",
+        "map_reduce_qfs",
+        "community_summary"
+      ],
+      "config": {
+        "index": "vector_default",
+        "retrieval": {
+          "candidate_k": 200,
+          "final_K": 10
+        },
+        "alpha": 0.3,
+        "pool_n": 10,
+        "mmr": {
+          "enabled": false,
+          "lambda": null
+        },
+        "recency": {
+          "enabled": false,
+          "half_life_days": null
+        },
+        "forbidden_ops": []
+      },
+      "cost_tier": "high",
+      "cost_tier_breakdown": {
+        "fts_bm25": {
+          "tier": "low",
+          "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+        },
+        "vector_ann": {
+          "tier": "low-medium",
+          "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+        },
+        "rrf": {
+          "tier": "low",
+          "evidence": "CPU rank-merge; negligible over the arms it fuses"
+        },
+        "map_reduce_qfs": {
+          "tier": "high",
+          "evidence": "LLM tier, reads everything; per-query LLM call ($). 0.8.4 C-arm run >= $21. F4(global)-only; router-isolated from needle paths."
+        },
+        "community_summary": {
+          "tier": "high",
+          "evidence": "LLM-tier sensemaking op (no separate measurement; rides map_reduce_qfs)"
+        }
+      },
+      "source_exp": "EXP-0-global",
+      "ci": {
+        "metric": "r@10",
+        "point": null,
+        "lo": null,
+        "hi": null,
+        "n": 0
+      }
+    },
+    "multi_hop": {
+      "intent": "multi_hop",
+      "provenance": "provisional",
+      "provisional": true,
+      "stack": [
+        "fts_bm25",
+        "vector_ann",
+        "rrf",
+        "ce_rerank"
+      ],
+      "config": {
+        "index": "vector_default",
+        "retrieval": {
+          "candidate_k": 200,
+          "final_K": 10
+        },
+        "alpha": 0.3,
+        "pool_n": 10,
+        "mmr": {
+          "enabled": false,
+          "lambda": null
+        },
+        "recency": {
+          "enabled": false,
+          "half_life_days": null
+        },
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "cost_tier": "medium",
+      "cost_tier_breakdown": {
+        "fts_bm25": {
+          "tier": "low",
+          "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+        },
+        "vector_ann": {
+          "tier": "low-medium",
+          "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+        },
+        "rrf": {
+          "tier": "low",
+          "evidence": "CPU rank-merge; negligible over the arms it fuses"
+        },
+        "ce_rerank": {
+          "tier": "medium",
+          "evidence": "TinyBERT-L-2 1.54ms/pair \u2192 308ms @K=200 (fits budget; IR-C R0). MiniLM-L12 16.82ms/pair \u2192 3364ms @K=200 = HIGH (exceeds)."
+        }
+      },
+      "source_exp": "EXP-0-global",
+      "ci": {
+        "metric": "r@10",
+        "point": null,
+        "lo": null,
+        "hi": null,
+        "n": 0
+      }
+    }
+  },
+  "forbidden_composition_guard": {
+    "router_isolation_rule": {
+      "needle": {
+        "allowed_sensemaking_ops": [],
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "multi_session": {
+        "allowed_sensemaking_ops": [],
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "temporal": {
+        "allowed_sensemaking_ops": [],
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      },
+      "global": {
+        "allowed_sensemaking_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ],
+        "forbidden_ops": []
+      },
+      "multi_hop": {
+        "allowed_sensemaking_ops": [],
+        "forbidden_ops": [
+          "map_reduce_qfs",
+          "community_summary"
+        ]
+      }
+    },
+    "router_isolation_note": "map_reduce_qfs + community_summary are valid ONLY for `global` (sensemaking) and FORBIDDEN on needle/multi_session/temporal/multi_hop \u2014 the \u00a7II.B blind-distiller -0.362 cross-wire. This is the forbidden-composition the 0.8.15 plan validator consumes.",
+    "empirical_cross_application": [
+      {
+        "source_intent": "needle",
+        "config_from_source": {
+          "candidate_k": 200,
+          "pool_n": 50,
+          "alpha": 0.7
+        },
+        "applied_to_intent": "needle",
+        "r_at_10_applied": 0.6438,
+        "r_at_10_dst_optimum": 0.6438,
+        "delta": 0.0,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "needle",
+        "config_from_source": {
+          "candidate_k": 200,
+          "pool_n": 50,
+          "alpha": 0.7
+        },
+        "applied_to_intent": "multi_session",
+        "r_at_10_applied": 0.4,
+        "r_at_10_dst_optimum": 0.4667,
+        "delta": -0.0667,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "needle",
+        "config_from_source": {
+          "candidate_k": 200,
+          "pool_n": 50,
+          "alpha": 0.7
+        },
+        "applied_to_intent": "temporal",
+        "r_at_10_applied": 0.5133,
+        "r_at_10_dst_optimum": 0.5133,
+        "delta": 0.0,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "multi_session",
+        "config_from_source": {
+          "candidate_k": 300,
+          "pool_n": 100,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "needle",
+        "r_at_10_applied": 0.4967,
+        "r_at_10_dst_optimum": 0.6438,
+        "delta": -0.1471,
+        "regresses_beyond_noise": true
+      },
+      {
+        "source_intent": "multi_session",
+        "config_from_source": {
+          "candidate_k": 300,
+          "pool_n": 100,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "multi_session",
+        "r_at_10_applied": 0.4667,
+        "r_at_10_dst_optimum": 0.4667,
+        "delta": 0.0,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "multi_session",
+        "config_from_source": {
+          "candidate_k": 300,
+          "pool_n": 100,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "temporal",
+        "r_at_10_applied": 0.5,
+        "r_at_10_dst_optimum": 0.5133,
+        "delta": -0.0133,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "temporal",
+        "config_from_source": {
+          "candidate_k": 500,
+          "pool_n": 20,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "needle",
+        "r_at_10_applied": 0.5686,
+        "r_at_10_dst_optimum": 0.6438,
+        "delta": -0.0752,
+        "regresses_beyond_noise": true
+      },
+      {
+        "source_intent": "temporal",
+        "config_from_source": {
+          "candidate_k": 500,
+          "pool_n": 20,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "multi_session",
+        "r_at_10_applied": 0.46,
+        "r_at_10_dst_optimum": 0.4667,
+        "delta": -0.0067,
+        "regresses_beyond_noise": false
+      },
+      {
+        "source_intent": "temporal",
+        "config_from_source": {
+          "candidate_k": 500,
+          "pool_n": 20,
+          "alpha": 1.0
+        },
+        "applied_to_intent": "temporal",
+        "r_at_10_applied": 0.5133,
+        "r_at_10_dst_optimum": 0.5133,
+        "delta": 0.0,
+        "regresses_beyond_noise": false
+      }
+    ],
+    "any_optimum_regresses_another_intent": true
+  }
+}
