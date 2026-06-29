@@ -55,6 +55,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_GATES_HEAD_REF: refs/remotes/origin/main
+      - name: Axis-E published-API drift guard
+        # Catches the v0.8.9 partial-publish class BEFORE any tier uploads:
+        # if fathomdb-embedder-api's pinned Axis-E version is already on
+        # crates.io but its local source surface differs, a consumer
+        # (engine/cli/...) may call an API absent from the published crate,
+        # which only `cargo publish` verify would otherwise surface — after
+        # earlier tiers have uploaded immutably. The release dry-run uses
+        # --no-verify, so this guard is what makes that case fail pre-tag.
+        # Queries crates.io directly (read-only, fail-closed on any error).
+        run: bash scripts/release/verify-embedder-api-no-drift.sh
 
   # Multi-platform Python wheels via PyO3/maturin-action. Produces manylinux,
   # macOS (x86_64 + arm64), and Windows wheels for Python 3.10-3.12. The

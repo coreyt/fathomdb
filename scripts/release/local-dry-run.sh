@@ -9,10 +9,14 @@
 # What this script does (mirrors .github/workflows/release.yml):
 #   1. scripts/verify-release-gates.sh    (preflight: tag↔manifest lockstep,
 #                                          CHANGELOG section, axis-W/E gates)
-#   2. cargo build --release --workspace  (matches build-rust step 1)
-#   3. cargo package --no-verify on the three leaf crates
+#   2. scripts/release/verify-embedder-api-no-drift.sh
+#                                         (Axis-E published-API drift guard —
+#                                          prevents the v0.8.9 partial publish;
+#                                          mirrors the release.yml preflight)
+#   3. cargo build --release --workspace  (matches build-rust step 1)
+#   4. cargo package --no-verify on the three leaf crates
 #                                         (matches build-rust steps 2-4)
-#   4. cargo publish --dry-run --no-verify on the three leaf crates
+#   5. cargo publish --dry-run --no-verify on the three leaf crates
 #                                         (matches T1-T3 dry-run path)
 #
 # What this script does NOT validate (matches CI dry-run, which is also
@@ -35,19 +39,22 @@ LEAVES=(fathomdb-embedder-api fathomdb-schema fathomdb-query)
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
-log "Step 1/4: scripts/verify-release-gates.sh"
+log "Step 1/5: scripts/verify-release-gates.sh"
 bash scripts/verify-release-gates.sh
 
-log "Step 2/4: cargo build --release --workspace"
+log "Step 2/5: scripts/release/verify-embedder-api-no-drift.sh"
+bash scripts/release/verify-embedder-api-no-drift.sh
+
+log "Step 3/5: cargo build --release --workspace"
 cargo build --release --workspace
 
-log "Step 3/4: cargo package --no-verify (leaves)"
+log "Step 4/5: cargo package --no-verify (leaves)"
 for crate in "${LEAVES[@]}"; do
   printf -- '--- cargo package -p %s ---\n' "$crate"
   cargo package --no-verify -p "$crate"
 done
 
-log "Step 4/4: cargo publish --dry-run --no-verify (leaves)"
+log "Step 5/5: cargo publish --dry-run --no-verify (leaves)"
 for crate in "${LEAVES[@]}"; do
   printf -- '--- cargo publish --dry-run -p %s ---\n' "$crate"
   cargo publish --dry-run --no-verify -p "$crate"
