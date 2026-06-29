@@ -16,7 +16,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | Slice | Title | Track | State | Notes |
 | ---: | --- | :---: | --- | --- |
 | **0** | ADRs + ladder pre-registration + STATUS standup | — | **DONE** | contracts ✅; STATUS ✅; ADR-0.8.11 ✅ (`a9ba8a5a`); ledger scaffold ✅ (F-11 rows REGISTERED); 2 HITL Slice-0 decisions ✅ (A / conditional) |
-| 5 | Gate-0 + Gate-2 (eval foundation) | E | pending | blocked-by 0 |
+| 5 | Gate-0 + Gate-2 (eval foundation) | E | **DONE** | $0; Gate-0 re-scope + Gate-2 oracle ceiling (+0.392 reconciled); ledger rows RESOLVED |
 | 10 | EXP-A ‖ EXP-M4 | E | pending | blocked-by 5 |
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | pending | blocked-by 10 (A∧M4) |
 | 20 | EXP-Fr-acc base | E | pending | blocked-by 5 |
@@ -72,6 +72,18 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
   SDK-exposed** (0.8.0) → Slice 40 is a type-unification + dispatch **refactor**, not greenfield.
   Unified type: `Filter { terms: Vec<FilterTerm> }` (implicit AND); one impl-level TBD (kind
   redundancy/constant-fold) left for Slice 40.
+- 2026-06-28: **Slice 5 DONE ($0).** Gate-0 re-scope (`gate0-rescope-output.{md,json}`,
+  `eval/gate0_rescope.py`): 4 corpora (LME 606Q · LOCOMO 1443Q · AP-News 1397 art/350 AutoQ ·
+  MuSiQue 2417 answerable) cover all 5 intents; node-level labels present/derivable for
+  needle+multi_hop, not needed for global (win-rate), and the ONE scoped gap = LOCOMO
+  multi_session/temporal session→node (≤$1, unspent). EXP-D excluded → 0.8.17. Gate-2 oracle
+  ceiling (`gate2-oracle.md` + `gate2-oracle-output.json`, `eval/gate2_oracle_run.py`):
+  oracle-CONTEXT pooled **+0.392 [0.346,0.436]** (reconciles exactly with the 0.8.3 ledger; fresh
+  recompute is priced → deferred). KILL check: NO KILL on the context axis (huge headroom), but
+  static arm-selection buys ≈0 (within recall noise; multi_session 0.00) → router value =
+  config-carrying per-intent tuning (EXP-A/B′), not arm routing. Ledger Gate-0/Gate-2 rows RESOLVED.
+  *(Gate-0 committed in parallel @`a370ae86`/`3e3c5585`; this session corrected the script's
+  label-gap to match the authoritative .md (global needs no labels) and added the JSON companion.)*
 
 ## Experiments-ledger (F-11 closure tracker)
 

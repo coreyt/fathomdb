@@ -1,0 +1,207 @@
+{
+  "schema": "0.8.11-gate2-oracle-v1",
+  "slice": 5,
+  "cost_usd": 0.0,
+  "method": "Reuse the already-paid n606 oracle-context decomposition (fresh recompute would be priced \u2192 deferred) + compute the $0 recall-arm-selection oracle from existing per-arm recall runs. Attach per-arm cost tiers from prior latency/$ measurements.",
+  "oracle_context_bound": {
+    "factoid": {
+      "intent": "needle",
+      "point": 0.371795,
+      "ci_lo": 0.294872,
+      "ci_hi": 0.448718,
+      "mde": 0.108753,
+      "n": 156
+    },
+    "knowledge_update": {
+      "intent": "needle",
+      "point": 0.530435,
+      "ci_lo": 0.434783,
+      "ci_hi": 0.626087,
+      "mde": 0.139798,
+      "n": 115
+    },
+    "multi_session": {
+      "intent": "multi_session",
+      "point": 0.411765,
+      "ci_lo": 0.294118,
+      "ci_hi": 0.529412,
+      "mde": 0.168448,
+      "n": 68
+    },
+    "temporal": {
+      "intent": "temporal",
+      "point": 0.247423,
+      "ci_lo": 0.164948,
+      "ci_hi": 0.340206,
+      "mde": 0.130037,
+      "n": 97
+    },
+    "pooled": {
+      "intent": "pooled",
+      "point": 0.392202,
+      "ci_lo": 0.34633,
+      "ci_hi": 0.435837,
+      "mde": 0.06745,
+      "n": 436
+    },
+    "_source": "dev/plans/runs/0.8.3-gap-decomposition-n606.json (gpt-5.4 reader, n606, already paid)",
+    "_metric": "answer-accuracy lift from perfect (gold-doc) retrieval"
+  },
+  "oracle_arm_selection_bound": {
+    "lme_recall_at_10": {
+      "factoid": {
+        "intent": "needle",
+        "recall_at_10_per_arm": {
+          "naive_bm25": 0.7,
+          "fathomdb_fts_only": 0.65,
+          "fathomdb_fused": 0.65
+        },
+        "fused_rrf": 0.65,
+        "best_arm": "naive_bm25",
+        "best_recall_at_10": 0.7,
+        "oracle_arm_headroom": 0.05
+      },
+      "knowledge_update": {
+        "intent": "needle",
+        "recall_at_10_per_arm": {
+          "naive_bm25": 0.875,
+          "fathomdb_fts_only": 0.8,
+          "fathomdb_fused": 0.825
+        },
+        "fused_rrf": 0.825,
+        "best_arm": "naive_bm25",
+        "best_recall_at_10": 0.875,
+        "oracle_arm_headroom": 0.05
+      },
+      "multi_session": {
+        "intent": "multi_session",
+        "recall_at_10_per_arm": {
+          "naive_bm25": 0.275,
+          "fathomdb_fts_only": 0.2,
+          "fathomdb_fused": 0.325
+        },
+        "fused_rrf": 0.325,
+        "best_arm": "fathomdb_fused",
+        "best_recall_at_10": 0.325,
+        "oracle_arm_headroom": 0.0
+      },
+      "temporal": {
+        "intent": "temporal",
+        "recall_at_10_per_arm": {
+          "naive_bm25": 0.65,
+          "fathomdb_fts_only": 0.6,
+          "fathomdb_fused": 0.625
+        },
+        "fused_rrf": 0.625,
+        "best_arm": "naive_bm25",
+        "best_recall_at_10": 0.65,
+        "oracle_arm_headroom": 0.025
+      }
+    },
+    "multi_hop_f1": {
+      "intent": "multi_hop",
+      "metric": "answer F1 (>=3-hop pooled, n=144)",
+      "f1_per_arm": {
+        "bm25": 0.370026,
+        "passage_dense": 0.486597,
+        "fused": 0.450214,
+        "fused_rerank": 0.415241,
+        "ppr_fusion": 0.409745
+      },
+      "fused_rrf": 0.450214,
+      "best_arm": "passage_dense",
+      "best_f1": 0.486597,
+      "oracle_arm_headroom": 0.0364,
+      "_note": "m1 primary endpoint ppr_fusion-vs-fused was a tie (\u0394F1 -0.0405, CI[-0.116,+0.031]); dense > fused held the multi-hop signal"
+    },
+    "_metric": "best static arm minus fused-RRF (class-level; lower bound on per-query oracle)",
+    "_caveat": "per-query per-arm cells not persisted in source runs \u2192 class-level best-arm only",
+    "_sources": [
+      "dev/plans/runs/0.8.1-p0a-fused-recall-n160.json (LME n160)",
+      "dev/plans/runs/0.8.2-m1-verdict-gpt54.json (MuSiQue >=3hop n144)"
+    ]
+  },
+  "per_arm_cost_tiers": {
+    "fts_bm25": {
+      "tier": "low",
+      "evidence": "CPU; p50<1ms / p99 4ms @10k (0.8.0 tokenizer experiment)"
+    },
+    "vector_ann": {
+      "tier": "low-medium",
+      "evidence": "1-bit quant + f32 rerank; p50 25ms / p99 40ms (eu7, 0.7.x)"
+    },
+    "rrf": {
+      "tier": "low",
+      "evidence": "CPU rank-merge; negligible over the arms it fuses"
+    },
+    "ce_rerank": {
+      "tier": "medium",
+      "evidence": "TinyBERT-L-2 1.54ms/pair \u2192 308ms @K=200 (fits budget; IR-C R0). MiniLM-L12 16.82ms/pair \u2192 3364ms @K=200 = HIGH (exceeds)."
+    },
+    "map_reduce_qfs": {
+      "tier": "high",
+      "evidence": "LLM tier, reads everything; per-query LLM call ($). 0.8.4 C-arm run >= $21. F4(global)-only; router-isolated from needle paths."
+    },
+    "graph_bfs": {
+      "tier": "low-compute / ~0-value",
+      "evidence": "CPU but measured-REFUTED x2 (\u0394F1 -0.0405); default-OFF"
+    }
+  },
+  "kill_check": {
+    "oracle_context": {
+      "per_class": {
+        "factoid": {
+          "point": 0.371795,
+          "ci_lo": 0.294872,
+          "outside_noise": true
+        },
+        "knowledge_update": {
+          "point": 0.530435,
+          "ci_lo": 0.434783,
+          "outside_noise": true
+        },
+        "multi_session": {
+          "point": 0.411765,
+          "ci_lo": 0.294118,
+          "outside_noise": true
+        },
+        "temporal": {
+          "point": 0.247423,
+          "ci_lo": 0.164948,
+          "outside_noise": true
+        },
+        "pooled": {
+          "point": 0.392202,
+          "ci_lo": 0.34633,
+          "outside_noise": true
+        }
+      },
+      "all_classes_outside_fused_noise": true,
+      "kill": false
+    },
+    "oracle_arm_selection": {
+      "headroom_per_class": {
+        "factoid": 0.05,
+        "knowledge_update": 0.05,
+        "multi_session": 0.0,
+        "temporal": 0.025,
+        "multi_hop": 0.0364
+      },
+      "within_fused_noise": {
+        "factoid": true,
+        "knowledge_update": true,
+        "multi_session": true,
+        "temporal": true,
+        "multi_hop": true
+      },
+      "all_within_noise": true
+    },
+    "verdict": "NO KILL on the oracle-CONTEXT axis: the perfect-retrieval ceiling is +0.25..+0.53 per class (pooled +0.392, CI lower 0.346 >> 0) \u2014 far outside fused-RRF noise; large routing-relevant headroom EXISTS. BUT static ARM-SELECTION headroom is small (recall +0.00..+0.05; multi_session = 0.00 since fused is already best; multi-hop +0.037 F1) and within the recall noise band for every class. CONCLUSION: the realizable headroom is in recall/precision GENERATION (EXP-A wider candidate gen, EXP-B' per-intent \u03b1/pool_n/candidate_k), captured by a CONFIG-CARRYING router \u2014 NOT by switching which static arm runs. The program is not killed; its value locus is config-carrying per-intent tuning, not arm routing."
+  },
+  "reconciliation": {
+    "prior_pooled_retrieval": "+0.392 [0.346, 0.436] (0.8.3 ledger, n606)",
+    "this_pooled_retrieval": "+0.3922 [0.3463, 0.4358]",
+    "reconciles": true,
+    "why_exact": "same n606 artifact reused (a fresh gpt-5.4 recompute is deferred under the $0 constraint), so the oracle-context number is identical by construction, not an independent re-measurement."
+  }
+}

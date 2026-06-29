@@ -174,20 +174,36 @@ def build() -> dict[str, Any]:
     class_map["multi_hop"] += ["MuSiQue (answerable, is_supporting)"]
 
     # Label gap: which intent classes lack node-level retrieval labels.
+    # NOTE: `global` is sensemaking, judged reference-free by decide_084 win-rate — it needs
+    # NO node-level retrieval labels by design. The genuine gap is LOCOMO multi_session/temporal,
+    # whose `required_evidence.doc_id` is SESSION-level (e.g. `conv-26:session_1`), not node-level.
     label_gap = {
-        "needle": {"node_labels": True, "source": "LME/LOCOMO required_evidence"},
-        "multi_session": {"node_labels": True, "source": "LME/LOCOMO required_evidence"},
-        "temporal": {"node_labels": True, "source": "LME/LOCOMO required_evidence"},
-        "multi_hop": {"node_labels": "derivable", "source": "MuSiQue is_supporting"},
+        "needle": {"node_labels": True, "source": "IR gold qrels + LME/LOCOMO required_evidence"},
+        "multi_hop": {"node_labels": "derivable", "source": "MuSiQue is_supporting (no LLM)"},
         "global": {
-            "node_labels": False,
-            "gap": True,
+            "node_labels": "not_needed",
+            "gap": False,
             "source": None,
             "disposition": (
-                "AP-News sensemaking is reference-free win-rate (decide_084); a node-level "
-                "labeling pass for `global` is exactly the ~269-Q F4/M6 build — EXCLUDED here, "
-                "stays 0.8.17 (EXP-D). Do NOT run a labeling pass at Gate-0."
+                "AP-News sensemaking is judged reference-free by decide_084 answer-quality "
+                "win-rate, NOT retrieval recall → no node-level retrieval labels needed by design."
             ),
+        },
+        "multi_session": {
+            "node_labels": False,
+            "gap": True,
+            "source": "LOCOMO (281) — session-level evidence only",
+            "disposition": (
+                "LOCOMO names the gold SESSION (conv-N:session_M), not the node; a scoped pass "
+                "refines session→node (deterministic answer/turn match first, cheap-LLM residual "
+                "only; ≤$1). This is the ONLY scoped gap — far smaller than a fresh golden set."
+            ),
+        },
+        "temporal": {
+            "node_labels": False,
+            "gap": True,
+            "source": "LOCOMO (321) — session-level evidence only",
+            "disposition": "same as multi_session: refine LOCOMO session→node (scoped, ≤$1).",
         },
     }
 
@@ -227,9 +243,11 @@ def build() -> dict[str, Any]:
             "note": "~269-Q entity-rich F4/M6 corpus acquisition (EXP-D) excluded per §1 KILL/scope guard",
         },
         "verdict": (
-            "RE-SCOPED: 4 existing corpora cover all 5 intent classes; 4/5 carry (or derive) "
-            "node-level retrieval labels. Only `global` lacks node-level labels and that gap = "
-            "the excluded 0.8.17 F4/M6 build. No labeling pass run ($0). decide_083 governs the "
+            "RE-SCOPED: 4 existing corpora cover all 5 intent classes. needle has node-level "
+            "qrels; multi_hop derives node-level labels from MuSiQue is_supporting; global needs "
+            "none (sensemaking → decide_084 win-rate). The ONLY gap = LOCOMO multi_session/temporal "
+            "session-level evidence → one scoped session→node refinement pass (≤$1, unspent at "
+            "Gate-0). No fresh golden set; EXP-D (F4/M6) excluded → 0.8.17. decide_083 governs the "
             "Mem0 axis; decide_084 the GraphRAG/global axis (corpus-capped N=200)."
         ),
     }

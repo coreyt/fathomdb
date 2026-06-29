@@ -334,7 +334,7 @@
 | Tag | Question (short) | KILL | $ ceiling | Slice | Status |
 | --- | --- | --- | ---: | :---: | --- |
 | Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | **RESOLVED** — re-scope holds; 1 scoped gap (LOCOMO node-labels, $0 exp/≤$1); EXP-D excluded → detail below |
-| Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | REGISTERED — pending |
+| Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | **RESOLVED** — oracle-CONTEXT pooled **+0.392 [0.346,0.436]** (reconciles exactly; fresh recompute=priced→deferred); arm-selection headroom within recall noise → value = config-carrying tuning, not arm routing → detail below |
 | EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | REGISTERED — pending |
 | EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | REGISTERED — pending |
 | EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | REGISTERED — pending |
@@ -348,7 +348,37 @@
 - **Assets (inspected, EVAL-ONLY gitignored):** IR gold `eval/ir_gold/all.gold.json` 4,597 Q / 4,472 with `expected_top_k_doc_ids` (exact_fact 2,888 · exploratory 1,584 · negative 125; src enronqa/qaconv/qmsum); LOCOMO `eval/0.8.3-locomo-memory-gold.json` 1,443 Q (factoid 841 · temporal 321 · multi_session 281, CC-BY-NC-4.0); MuSiQue `raw/musique_dev.jsonl` 4,834 total / **2,417 answerable** (2/3/4-hop = 1,252/760/405; `is_supporting` paras, mean 2.65); AP-News BenchmarkQED 1,397 articles + 350 AutoQ (MS-Research NON-REDISTRIBUTABLE); LME memex-elps (8 golden + 60 personal.gold, extraction gold).
 - **Result — node-level retrieval labels by class:** **needle** = doc-qrels ✅ (IR gold, derivable); **multi_hop** = paragraph `is_supporting` ✅ (MuSiQue, derivable, no labeling); **global** = none needed (sensemaking → `decide_084` answer-quality, not retrieval recall); **multi_session/temporal** = LOCOMO carries **session-level only** (`conv-N:session_M`) → the single GAP. Rule adoption: `decide_083` (MDE ≤ 0.05) governs needle/multi_session/temporal vs Mem0; `decide_084` (win-rate ε=0.05, question-clustered, **N=200 cap**) governs global vs GraphRAG; MuSiQue/HippoRAG-2 = `[TBD: decide_08x]` (out of scope). Measured discrepancy flagged: PSD "4,834 answerable" is total — usable multi_hop = **2,417**.
 - **Verdict:** Re-scope HOLDS. One scoped labeling pass = refine LOCOMO temporal+multi_session (≤602 Q) from session→node-level (deterministic answer/turn match first, cheap-LLM residual only). **EXP-D (~269-Q F4/M6 acquisition) EXCLUDED → stays 0.8.17**; corpus-cap confirmed (`decide_084` N=200 AP-News max, comp MDE 0.058 > ε; question-clustered ⇒ more runs can't tighten, only more questions). No fresh golden set.
-- **$:** **$0** (inventory/mapping; labeling pass projected $0 expected, ≤$1 hard cap, unspent at Gate-0). **Sources:** `dev/plans/runs/gate0-rescope-output.md`; PSD §II.A/§III.A; `dev/plans/0.8.11-implementation.md` §1; rules `src/python/eval/decision_rule_083.py`, `decision_rule_084.py`.
+- **$:** **$0** (inventory/mapping; labeling pass projected $0 expected, ≤$1 hard cap, unspent at Gate-0). **Sources:** `dev/plans/runs/gate0-rescope-output.md` + `gate0-rescope-output.json` (`src/python/eval/gate0_rescope.py`, $0 re-runnable); PSD §II.A/§III.A; `dev/plans/0.8.11-implementation.md` §1; rules `src/python/eval/decision_rule_083.py`, `decision_rule_084.py`.
+
+### Gate-2 — oracle-routing upper bound (Slice 5, RESOLVED 2026-06-28)
+
+- **Method ($0).** A fresh oracle-context decomposition needs the priced gpt-5.4 reader
+  (`gap_decomposition_run.py`) → **deferred** under the $0 constraint; Gate-2 **reuses** the
+  already-paid n606 artifact for the oracle-CONTEXT ceiling and **computes at $0** the
+  recall-ARM-selection ceiling from existing per-arm recall runs (`gate2_oracle_run.py`).
+- **Oracle-CONTEXT ceiling** (`acc_oracle_raw − acc_fathomdb`, value of perfect retrieval):
+  factoid(→needle) +0.372 [0.295,0.449]; knowledge_update(→needle) +0.530 [0.435,0.626];
+  multi_session +0.412 [0.294,0.529]; temporal +0.247 [0.165,0.340]; **pooled +0.392
+  [0.346,0.436]** (n436). **Reconciles exactly** with the 0.8.3 ledger +0.392 — by construction
+  (same n606 artifact; not an independent re-measurement).
+- **Oracle-ARM-selection ceiling** (best static arm − fused-RRF; class-level = lower bound on
+  per-query oracle): LME recall@10 headroom factoid +0.05, knowledge_update +0.05, multi_session
+  **0.00** (fused already best), temporal +0.025; MuSiQue ≥3-hop F1 headroom **+0.036**
+  (passage_dense 0.487 > fused 0.450; ppr-vs-fused was a tie). All below the per-class recall MDE
+  (~0.11–0.17 at n=40) → within noise.
+- **Per-arm cost tiers:** `fts_bm25` low (p50<1ms@10k), `vector_ann` low-med (p50 25/p99 40ms),
+  `rrf` low, `ce_rerank` med (TinyBERT 308ms@K=200; MiniLM high), `map_reduce_qfs` high (LLM tier,
+  reads everything, ≥$21; F4-only), `graph_bfs` ~0-value (REFUTED ×2, default-OFF).
+- **KILL check.** **NO KILL on the oracle-CONTEXT axis** — ceiling +0.25..+0.53/class (CI lower
+  0.346 ≫ 0), far outside fused-RRF noise: large routing-relevant headroom exists. **Arm-switching
+  alone buys ≈0** (within noise every class; multi_session 0.00).
+- **Verdict:** Program **not killed**; realizable headroom is in recall/precision **generation**
+  (EXP-A wider candidate-gen; EXP-B′ per-intent α/pool_n/candidate_k) captured by a
+  **config-carrying** router — NOT static-arm routing. Consistent with the refuted graph arm +
+  CE-rerank-is-the-lever findings.
+- **$:** **$0.** **Sources:** `dev/plans/runs/gate2-oracle.md` + `gate2-oracle-output.json`
+  (`src/python/eval/gate2_oracle_run.py`, $0 re-runnable); reuses `runs/0.8.3-gap-decomposition-n606.json`,
+  `runs/0.8.1-p0a-fused-recall-n160.json`, `runs/0.8.2-m1-verdict-gpt54.json`.
 
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
