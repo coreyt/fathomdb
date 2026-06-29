@@ -21,7 +21,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | **DONE** | $0; per-intent optima DIVERGE (3 distinct → NO KILL, routing has value); crux reproduced (pooled α=1.0 ck200 pn10→50 r@10 0.540→0.498, needle-specific); B′.5 catches real regressions (multi_session opt→needle −0.147); global+multi_hop provisional; build-blocker (CE feature OFF→0.8.3 CE-pass); ledger EXP-B′/B′.5 rows RESOLVED |
 | 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
 | 25 | EXP-Fr-acc/VoI finalize | E | **DONE** | $0.0151; CE reranker ACTIVE (guarded). Value-of-signal: cheap agent (`gemini-flash-lite`) relevance **DOMINATED by free `ce_score`** — lift −0.138 [−0.189,−0.087] (n=450), AUC ce 0.667 vs 0.545 → **QUALIFIED KILL (cheap agent)**: ask-or-not buys nothing, route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio, c_rt\* 0.30 vs 0.05; cross-wire rare 4/606). VoI landscape (low-ce+narrow-margin) → EXP-AF (Slice 30). Ledger row RESOLVED |
-| 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #4 |
+| 30 | EXP-AF value test (KILL/GO) | E | **DONE** | $3.66/$5; **KILL** (HITL #4). Stronger agent (`claude-sonnet`) on Slice-25 break-even cells (ce_top<0.2, n=406) does NOT beat `ce_score` net of round-trip: depth-1 reranking lift +0.0074 [−0.0074,+0.0222] (CI spans 0 even @c_rt=0); NET @c_rt=0.02 −0.0126 [−0.0274,+0.0022]. Realized 6% of the 0.118 headroom (promoted 6/demoted 3) → signal-bound. Detection −0.0296 [−0.0715,+0.0123] (closes most of cheap-agent −0.138 gap, still loses). Depth-2 gross+ but net-neg → one-shot. → L2 prototype (Slice 35) drops feedback arm; `record_feedback` STAYS instrumentation (overrides F-8b promote). Ledger row RESOLVED |
 | 35 | L2 router prototype + pre-stage | E | pending | blocked-by 15∧25∧30 |
 | 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
 | 45 | Verification + release readiness | — | pending | blocked-by 5–40 |
@@ -40,7 +40,13 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
    cpu_feasible; gte-base measurement-failed). No ceiling escalation triggered (no passer). Swap
    stays out-of-0.8.11.
 4. **EXP-AF KILL/GO** (Slice 30 readout) — agent signal beats `ce_score` net of round-trip?
-   Gates the L2 feedback arm + F-8b promotion. — PENDING.
+   Gates the L2 feedback arm + F-8b promotion. — **RESOLVED 2026-06-28: KILL.** A stronger agent
+   (`claude-sonnet`, $3.66/$5) seeing the full top-20 pool, targeted at the Slice-25 break-even
+   cells (ce_top<0.2, n=406), does NOT beat internal `ce_score` net of round-trip (depth-1
+   reranking lift NET @c_rt=0.02 = −0.0126 [−0.0274,+0.0022], GO=False; lift CI spans 0 even at a
+   free round-trip). **L2 prototype (Slice 35) drops the agent-signal loop** (`feedback_arm=False`);
+   **`record_feedback` STAYS instrumentation** — the EXP-AF KILL overrides any F-8b promote (no
+   Slice-40 reserved-gap patch, no allowlist change). This also closes HITL #1 (F-8b) negatively.
 
 ## Budget — running `$` tally (ceiling ~$20)
 
@@ -50,9 +56,9 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | EXP-B′ judge | $6 | $0 | **DONE — $0** (judge not spent; gold sufficient, global provisional) |
 | EXP-Fr-acc base | $3 | ~$0.05 | **DONE** (gemini-flash-lite; local vLLM down) |
 | EXP-Fr-acc/VoI | $3 | $0.0151 | **DONE** (gemini-flash-lite; 450 calls; CE-active build) |
-| EXP-AF | $5 | $0 | not started |
+| EXP-AF | $5 | $3.66 | **DONE — KILL** (claude-sonnet; 624 calls; CE-active build) |
 | Reserve | $2 | $0 | — |
-| **Total** | **$20** | **~$0.07** | EXP-Fr-acc base + VoI spent (≪ ceiling) |
+| **Total** | **$20** | **~$3.73** | EXP-Fr-acc base + VoI + EXP-AF spent (≪ ceiling) |
 
 Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pre-registration
 (`0.8.11-implementation.md §1`) is committed; cheap-validate (gemini-flash-lite) before each spend.
@@ -66,6 +72,25 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
 
 ## Verification log
 
+- 2026-06-28: **Slice 30 DONE ($3.66/$5) — KILL (HITL #4).** EXP-AF agent-feedback value test
+  (`expaf-value-output.json` + `expaf-value.md`, `eval/expaf_value_run.py`; pricing alias pinned in
+  `eval/gap_decomposition_run.py`). **CE-active guard PASS** (same as Slice 25). The decisive test:
+  does a STRONGER agent (`claude-sonnet`) seeing the **full top-20 ce-reranked pool** (not just
+  top-1, fixing the Slice-25 caveat) and used to **actually re-rank** beat internal `ce_score` net of
+  round-trip, focused on the Slice-25 break-even cells (ce_top<0.2, n=406 LME)? **$0 headroom
+  pre-gate:** depth-1 ceiling 0.118 / depth-2 0.209 (room exists). **Arm 1 (primary) reranking lift
+  +0.0074 [−0.0074,+0.0222]** — CI spans 0 even at a free round-trip; realized only ~6% of the 0.118
+  ceiling (promoted 6 gold / demoted 3 → signal-bound, not headroom-bound); **NET @c_rt=0.02
+  −0.0126 [−0.0274,+0.0022], GO=False.** **Arm 2 detection −0.0296 [−0.0715,+0.0123]** (closes most
+  of the cheap-agent −0.138 gap but still loses to the free `ce_score`). **Arm 3 depth-2** (one
+  re-plan, trigger 0.537) gross-positive +0.0222 [0.0049,+0.0395] but net-negative at any c_rt>0 →
+  **one-shot, not iterative** (depth question moot under KILL). **Verdict KILL** → L2 prototype
+  (Slice 35) drops the agent-signal loop (`feedback_arm=False`); **`record_feedback` STAYS
+  instrumentation** (overrides any F-8b promote — no Slice-40 reserved-gap patch / no allowlist
+  change). Root cause: in low-`ce` cells the engine is uncertain because the answer genuinely is not
+  cleanly present (recall-bound) — the agent does not manufacture recall the substrate never produced
+  (PSD §II.C). Resilient harness (per-item checkpoint / `--resume` / `BudgetLedger --max-usd 5.0`
+  pre-call guard; 624 calls, 0 errors); cheap-validated (3 calls) first. Ledger EXP-AF row RESOLVED.
 - 2026-06-28: branch `0.8.11` cut off `origin/main` (`80c6b8b8`); plan rewrite + F-11 sequencing +
   BEIR manifest committed; merged `origin/main`. Working tree clean at Slice 0 start.
 - 2026-06-28: Slice 0 closed. ADR-0.8.11 filter-grammar (`a9ba8a5a`) found **NO reserved-gap
