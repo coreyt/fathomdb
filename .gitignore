@@ -102,3 +102,13 @@ dev/plans/runs/0.8.4-*-d2-index.json
 # 0.8.9.1 baseline raw spills (regenerable; large)
 dev/plans/runs/0.8.9.1-mdlint-*.txt
 dev/plans/runs/0.8.9.1-prettier-*.txt
+
+# Eval-run resume-state / raw-pool sidecars (churning runtime intermediates, not
+# deliverables — the matching -output.json summaries + .md reports are tracked).
+# Broad glob supersedes the per-experiment patterns above for future runs.
+dev/plans/runs/*.checkpoint.json
+dev/plans/runs/*.ckpt.json
+dev/plans/runs/*.ce-pass.json
+
+# Agent/tool scratch cache (regenerable)
+.cache/
