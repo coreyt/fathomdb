@@ -285,8 +285,14 @@ REQUIRED_FROZEN_FIELDS_083: tuple[str, ...] = (
     "surpass-option protocol",
 )
 
-#: The design must self-declare it is decision-ready.
+#: The design must self-declare a FROZEN pre-registration status. The doc began
+#: at ``decision-ready`` and was later HITL-SIGNED at the Slice-0 gate
+#: (``status: SIGNED (HITL Slice-0 gate signed ...)``). SIGNED is a strictly
+#: stronger freeze than decision-ready — the pre-registration is locked AND
+#: ratified — so either token satisfies the lint. A ``draft`` / ``proposed`` /
+#: ``in-progress`` status (or none) is NOT frozen and must still fail.
 REQUIRED_STATUS_TOKEN: str = "status: decision-ready"
+ACCEPTED_STATUS_TOKENS: tuple[str, ...] = (REQUIRED_STATUS_TOKEN, "status: SIGNED")
 
 _DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 
@@ -294,15 +300,19 @@ _DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 def _collect_prereg_problems(doc_text: str) -> list[str]:
     """Return a list of pre-registration problems (empty == clean).
 
-    Flags a missing/downgraded ``status: decision-ready``, any missing
-    ``frozen-field: <key>`` line, or such a line present but undated. The lint is
-    non-vacuous: every required field is checked for both presence and a date.
+    Flags a missing/downgraded status (it must be one of
+    :data:`ACCEPTED_STATUS_TOKENS` — ``decision-ready`` or the stronger
+    HITL-``SIGNED``), any missing ``frozen-field: <key>`` line, or such a line
+    present but undated. The lint is non-vacuous: every required field is checked
+    for both presence and a date.
     """
     problems: list[str] = []
 
-    if REQUIRED_STATUS_TOKEN not in doc_text:
+    if not any(token in doc_text for token in ACCEPTED_STATUS_TOKENS):
         problems.append(
-            f"missing or downgraded status (expected '{REQUIRED_STATUS_TOKEN}')"
+            "missing or downgraded status (expected one of: "
+            + ", ".join(repr(t) for t in ACCEPTED_STATUS_TOKENS)
+            + ")"
         )
 
     lines = doc_text.splitlines()

@@ -374,16 +374,34 @@ def test_design_doc_exists() -> None:
 
 
 def test_prereg_083_lint_passes_on_real_design_doc() -> None:
-    # No raise == clean (the doc is finalized to decision-ready in Slice 0).
+    # No raise == clean. The doc is frozen at the Slice-0 gate: it began
+    # `decision-ready` and is now HITL-`SIGNED` (a stronger freeze); the lint
+    # accepts either (ACCEPTED_STATUS_TOKENS).
     lint_preregistration_083(_DESIGN_DOC.read_text(encoding="utf-8"))
 
 
 def test_prereg_083_lint_flags_downgraded_status() -> None:
-    text = _DESIGN_DOC.read_text(encoding="utf-8").replace(
-        "status: decision-ready", "status: draft"
+    # Downgrade whichever frozen status the doc currently carries (SIGNED today,
+    # decision-ready historically) to a non-frozen `draft`; the lint must flag it.
+    text = (
+        _DESIGN_DOC.read_text(encoding="utf-8")
+        .replace("status: SIGNED", "status: draft")
+        .replace("status: decision-ready", "status: draft")
     )
     with pytest.raises(AssertionError):
         lint_preregistration_083(text)
+
+
+def test_prereg_083_lint_accepts_either_frozen_status() -> None:
+    # Non-vacuity: BOTH frozen tokens satisfy the lint — the real (SIGNED) doc and
+    # the historical decision-ready form. Swapping SIGNED -> decision-ready keeps
+    # the doc frozen, so the lint must still pass (proves the OR is real, not a
+    # SIGNED-only accept that would reject a decision-ready pre-registration).
+    real = _DESIGN_DOC.read_text(encoding="utf-8")
+    lint_preregistration_083(real)  # SIGNED — clean
+    decision_ready = real.replace("status: SIGNED", "status: decision-ready")
+    assert "status: decision-ready" in decision_ready
+    lint_preregistration_083(decision_ready)  # decision-ready — also clean
 
 
 def test_prereg_083_lint_flags_missing_frozen_field() -> None:
