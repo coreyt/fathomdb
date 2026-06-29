@@ -272,6 +272,182 @@ The BEIR GitHub wiki and dataset-origin pages are the authoritative sources.
 
 ---
 
+## Cycle 3 — 2026-06-29
+
+**Operator:** corpus-survey agent · **Base:** `origin/main` @ `e986acfe`.
+
+### Scope targeted this cycle
+
+Five overlapping need-areas (agent-memory + sensemaking families), with a hard
+preference for corpora that ship Q&A / validation gold:
+
+1. **multi_session** — memory across multiple conversation sessions.
+2. **temporal** — time-sensitive reasoning / dated facts / recency.
+3. **global-sensemaking** — corpus-global "what's been happening across everything"
+   QFS (the GraphRAG shape).
+4. **episodic memory** — event/experience recall over a personal history.
+5. **daily-life** — personal-assistant / everyday-activity logs and timelines.
+
+Decision rule: strongly prefer Q&A-gold-bearing corpora; still record strong
+topical fits that ship NO gold, annotated `[NO-GOLD]` with what would make them
+evaluable.
+
+### On-disk delta since last cycle (ran `enumerate-corpora.sh`)
+
+**Drift found and reconciled.** The four BEIR subsets are now physically ON-DISK
+under `data/corpus-data/raw/beir/` (723 MB total), acquired AFTER Cycle 2's ledger
+was written (commits `97e2e8f3` "add BEIR acquisition scripts" + `efa8d102`
+"acquire NFCorpus + ArguAna"). Cycle 2 had recorded "on-disk delta: none." All
+four ship qrels gold:
+
+| Subset | corpus.jsonl | queries.jsonl | qrels |
+|---|---|---|---|
+| touche2020 | 382,545 | 49 | test.tsv |
+| fiqa | 57,638 | 6,648 | train/test.tsv |
+| nfcorpus | 3,633 | 3,237 | train/validation/test.tsv |
+| arguana | 8,674 | 1,406 | test.tsv |
+
+`corpus-map.md` §B rows for these four flipped `[CANDIDATE]` → `[ON-DISK]` with
+storage paths + acquire-script names. `enumerate-corpora.sh` already listed them in
+its §4 reconciliation (added with the acquire scripts), so no script change was
+needed. No new payloads were acquired by THIS cycle (all new finds are
+`[CANDIDATE]`).
+
+### What was searched (queries / sources)
+
+Three parallel verification passes (WebSearch/WebFetch), each over a named
+candidate shortlist for the target need-areas; for every dataset: crisp
+description, representative example, license + redistributability (authoritative
+source — GitHub LICENSE / HF card / paper / datasheet), size, HF id / GH URL, and
+explicit Q&A-gold status/form.
+
+1. **multi_session + episodic memory:** Conversation Chronicles, DialSim, PerLTQA,
+   EpiK-Eval, MemoryBank/SiliconFriend, MADial-Bench (discovered).
+2. **temporal:** TimeQA, SituatedQA, StreamingQA, TempReason, ComplexTempQA,
+   MenatQA, TimeBench, TempTabQA, plus discovered TORQUE, TRAM, Test of Time.
+3. **global-sensemaking QFS + daily-life:** SummHay, ODSum, SQuALITY, QMSum
+   (confirm query-focused), Multi-News, WCEP, DUC/TAC; TimelineQA, LaMP, PerLTQA,
+   OpenLifelogQA, EgoSchema, DailyDialog.
+
+### What was found / added to the map
+
+**Added to `corpus-map.md` §A (16 new rows) and §D (4 new rows).** All ship Q&A /
+eval gold EXCEPT Conversation Chronicles (`[NO-GOLD]`).
+
+multi_session / episodic (§A):
+
+- **Conversation Chronicles** `[CANDIDATE — NO-GOLD]` — 200k multi-session episodes
+  w/ time-gaps + relationship labels; CC-BY-4.0; **corpus only, no QA**.
+- **DialSim** — time-stamped long-term dialogue QA over TV scripts; gold YES
+  (MC + open-ended); **license UNCLEAR + TV-script copyright → NON-REDISTRIBUTABLE,
+  EVAL-ONLY**.
+- **MADial-Bench** — memory-augmented dialogue; MIT; gold = retrieval labels +
+  reference responses.
+- **PerLTQA** — personal semantic+episodic memory QA (Chinese); CC-BY-NC-4.0; gold
+  = answer + retrieval + classification.
+- **EpiK-Eval** — distributed-narrative consolidation/recall; MIT; gold = reference
+  answers (consolidation-style, not retrieval-over-corpus).
+- **MemoryBank / SiliconFriend** — MIT; small gold (100 bilingual probes).
+
+temporal (§A):
+
+- **TimeQA** (BSD-3, ~40k QA, Easy/Hard + unanswerable), **SituatedQA**
+  (CC-BY-SA-4.0, temporal+geo), **StreamingQA** (CC-BY-4.0, recency over a dated
+  news stream, 145,719 QA), **TempReason** (CC-BY-SA-3.0, L1/L2/L3 leveled probe),
+  **ComplexTempQA** (CC0, ~100M QA, compare/count/multi-hop), **Test of Time**
+  (CC-BY-4.0, contamination-free synthetic). All ship scored gold.
+
+daily-life (§A):
+
+- **TimelineQA** — synthetic lifelog timeline QA (~600k atomic QA); CC-BY-NC-4.0;
+  the strongest pure personal-timeline / daily-life fit; locally generated.
+- **LaMP** — personalization benchmark (7 tasks); CC-BY-NC-SA-4.0; **LaMP-6
+  LDC-gated**.
+
+global-sensemaking / QFS (§D):
+
+- **SummHay (Summary of a Haystack)** — Apache-2.0; the closest public analog to
+  FathomDB's "across-everything" shape (~100-doc haystack → cited bulleted summary,
+  Coverage+Citation gold). Best new sensemaking candidate.
+- **ODSum** — MIT; open-domain retrieve-then-summarize QFS; dual gold (reference
+  summaries + retrieval relevant-doc set).
+- **SQuALITY** — multi-reference single-doc QFS; Gutenberg + CC-BY summaries.
+- **QMSum** `[ON-DISK]` — confirmed genuinely query-focused (`general_query_list` +
+  `specific_query_list`); surfaced as the on-disk QFS row (already in the 0.7.0
+  corpus at `raw/qmsum.jsonl` + `eval/qmsum_qa.jsonl`).
+
+**Logged in ledger only (secondary / not map rows):** temporal — TempTabQA
+(CC-BY-4.0, table-QA), TimeBench (MIT, aggregated suite), TORQUE (Apache-2.0,
+ordering RC), TRAM (MIT, 526k MCQ); MenatQA (**no LICENSE → all-rights-reserved**,
+kept out of the map despite good gold). sensemaking — Multi-News (custom
+non-commercial, generic MDS), WCEP (MIT, generic MDS), DUC/TAC (NIST-gated, the
+canonical query-focused MDS but not openly redistributable). daily-life —
+OpenLifelogQA (real wearable lifelog, gated + multimodal), EgoSchema (video-grounded
+daily-activity MCQA, Ego4D DUA). no-gold dialogue — DailyDialog, MSC, DuLeMon.
+
+### Gaps closed
+
+- **Episodic-memory and daily-life need-areas now have mapped, gold-bearing
+  candidates** (previously absent from the need column). TimelineQA (daily-life) and
+  PerLTQA/EpiK-Eval/MADial-Bench (episodic) are the leads.
+- **Dedicated multi-session corpus beyond MSC** — Conversation Chronicles (corpus
+  scale, NO-GOLD) and DialSim (gold, license-encumbered) added; MADial-Bench adds
+  retrieval-grounding gold.
+- **Temporal need-area deepened** from "LongMemEval/LOCOMO slices only" to six
+  external, gold-bearing, mostly-permissive benchmarks (TimeQA / Test of Time /
+  TempReason easiest to acquire).
+- **Global-sensemaking gained an openly-licensed external benchmark** — SummHay
+  (Apache-2.0), removing the prior dependence on the non-redistributable AP-News
+  BenchmarkQED for the QFS shape. QMSum confirmed query-focused.
+- **BEIR on-disk drift reconciled** (see on-disk delta).
+
+### Gaps still open
+
+1. **No acquisition performed for the five target need-areas** — every new find is
+   `[CANDIDATE]`. The highest-value, lowest-friction acquisitions (HF-hosted,
+   permissive, ready gold): **SummHay** (`Salesforce/summary-of-a-haystack`,
+   sensemaking), **Test of Time** (`baharef/ToT`, temporal), **TimeQA** (BSD-3,
+   temporal), **TimelineQA** (locally generated, daily-life).
+2. **Exploratory-proxy empirical confirmation** (carried from Cycle 2) — Touché-2020
+   is now ON-DISK with qrels, so the remaining sub-task is purely to RUN FathomDB's
+   retrieval stack against it and confirm the dense-fails failure mode reproduces.
+3. **CE-rerank on MS MARCO / TREC-DL** — unchanged; not on disk.
+4. **No-gold corpora need synthetic gold** — Conversation Chronicles (large, clean
+   CC-BY-4.0) would need synthesized QA over its time-interval/relationship labels.
+
+### Open questions (resolved / new)
+
+Resolved this cycle (licenses/gold verified): TimeQA (BSD-3), SituatedQA
+(CC-BY-SA-4.0 per datasheet — HF mirror `siyue/SituatedQA` mislabels MIT; trust
+datasheet), StreamingQA (dataset CC-BY-4.0; corpus must be rebuilt from WMT, not
+redistributed), TempReason (CC-BY-SA-3.0), ComplexTempQA (CC0), Test of Time
+(CC-BY-4.0), SummHay (Apache-2.0), ODSum (MIT), QMSum (MIT, confirmed
+query-focused), TimelineQA (CC-BY-NC-4.0), PerLTQA (CC-BY-NC-4.0, Chinese), EpiK-Eval
+(MIT, EMNLP 2023 not ACL 2024), MADial-Bench (MIT), MemoryBank (MIT), LaMP
+(CC-BY-NC-SA-4.0; LaMP-6 LDC-gated).
+
+New / unresolved:
+
+- **DialSim redistributability** — no repo LICENSE; data via Google Drive; TV-script
+  copyright. Treat NON-REDISTRIBUTABLE, EVAL-ONLY until clarified.
+- **MenatQA license** — repo has no LICENSE (all-rights-reserved default); not mapped.
+- **SQuALITY exact summary-license tag** — CC-BY confirmed in spirit; exact version
+  unverified.
+- **ComplexTempQA HF viewer** — schema bug on the viewer; data present, use the
+  sample or regenerate.
+- **PerLTQA sub-counts / HF id** — partially unverified (GH is authoritative).
+
+### Machinery changes
+
+- `corpus-map.md` — v3: §B BEIR rows reconciled to `[ON-DISK]`; §A +16 rows
+  (multi_session / episodic / temporal / daily-life); §D +4 rows (SummHay, ODSum,
+  SQuALITY, QMSum-as-QFS); Quick-stats updated (15 user-needs, ~44 corpora,
+  per-cycle license + gold posture).
+- `enumerate-corpora.sh` — no change needed; its §4 already lists the four BEIR
+  subsets, and this cycle acquired no new payloads.
+
+---
+
 ## Cycle N — YYYY-MM-DD (template)
 
 **Operator:** … · **Base:** `origin/main` @ `<sha>`.
