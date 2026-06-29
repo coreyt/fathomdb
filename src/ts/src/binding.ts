@@ -314,6 +314,13 @@ export interface NativeModule {
     predicates?: NativePredicateInput[],
     limit?: number,
   ): Promise<NativeNodeRecord[]>;
+  // 0.8.11 Slice 40 (#17) — unified Filter → read.list backend.
+  readListFilter(
+    engine: NativeEngine,
+    kind: string,
+    terms?: NativeFilterTermInput[],
+    limit?: number,
+  ): Promise<NativeNodeRecord[]>;
   // Slice 20 — G5/G6 graph traversal fns.
   graphNeighbors(
     engine: NativeEngine,
@@ -343,6 +350,17 @@ export interface NativePredicateInput {
   valueStr?: string | null;
   valueInt?: number | null;
   valueBool?: boolean | null;
+}
+
+/// 0.8.11 Slice 40 (#17) — one term of the unified `Filter` grammar. Mirrors the
+/// napi `FilterTermInput` struct. `term` ∈ `{"source_type","kind",
+/// "created_after","status","json"}`; the four shorthand terms set
+/// `valueStr`/`valueInt`, the `json` term sets `predicate`.
+export interface NativeFilterTermInput {
+  term: string;
+  valueStr?: string | null;
+  valueInt?: number | null;
+  predicate?: NativePredicateInput | null;
 }
 
 export const native = loadNative() as NativeModule;

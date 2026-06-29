@@ -19,13 +19,14 @@
 
 import {
   native,
+  type NativeFilterTermInput,
   type NativeNodeRecord,
   type NativeOpStoreRow,
   type NativePredicateInput,
 } from "./binding.js";
 import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import { validateFfiString } from "./validation.js";
-import type { Engine } from "./index.js";
+import type { Engine, Filter, FilterTerm } from "./index.js";
 
 /** Slice 30 (G2) — an active canonical node row from `read.get`/`read.getMany`. */
 export interface NodeRecord {
@@ -120,6 +121,35 @@ function toNativePredicate(pred: Predicate): NativePredicateInput {
   return native;
 }
 
+/**
+ * 0.8.11 Slice 40 (#17) — convert a unified `FilterTerm` to the native
+ * `NativeFilterTermInput` shape. String values clear the FFI surrogate guard;
+ * the engine performs the authoritative total dispatch (constant-folds +
+ * `json_extract`).
+ */
+function toNativeFilterTerm(t: FilterTerm): NativeFilterTermInput {
+  switch (t.term) {
+    case "source_type":
+      validateFfiString(t.value);
+      return { term: "source_type", valueStr: t.value };
+    case "kind":
+      validateFfiString(t.value);
+      return { term: "kind", valueStr: t.value };
+    case "created_after":
+      if (!Number.isInteger(t.value)) {
+        throw new InvalidArgumentError(
+          `created_after must be an integer (unix seconds); got ${t.value}`,
+        );
+      }
+      return { term: "created_after", valueInt: t.value };
+    case "status":
+      validateFfiString(t.value);
+      return { term: "status", valueStr: t.value };
+    case "json":
+      return { term: "json", predicate: toNativePredicate(t.predicate) };
+  }
+}
+
 export const read = {
   /**
    * `read.get` — return the ACTIVE node carrying `logicalId`, or `null` if
@@ -189,9 +219,29 @@ export const read = {
     kind: string,
     predicates?: Predicate[],
     limit = 100,
+    filter?: Filter,
   ): Promise<NodeRecord[]> {
     validateFfiString(kind);
     validateLimit(limit);
+    // 0.8.11 Slice 40 (#17): the additive unified-grammar path. Passing `filter`
+    // routes to the engine's authoritative total dispatch (`json` →
+    // `json_extract`; `status`/`created_after` → allowlisted json-paths;
+    // `kind`/`source_type` constant-fold vs the partition `kind` — a
+    // contradicting fold returns `[]` without touching SQL). `predicates` and
+    // `filter` are mutually exclusive. This stays the SAME governed `read.list`
+    // verb (no new surface member). Mirrors the Python `read.list(filter=...)`.
+    if (filter !== undefined) {
+      if (predicates !== undefined && predicates.length > 0) {
+        throw new InvalidArgumentError(
+          "read.list: pass either `predicates` or `filter`, not both",
+        );
+      }
+      const terms = filter.terms.map(toNativeFilterTerm);
+      const rows = await intercept(() =>
+        native.readListFilter(engine._native, kind, terms, limit),
+      );
+      return rows.map(toNodeRecord);
+    }
     const nativePredicates = predicates?.map(toNativePredicate);
     const rows = await intercept(() =>
       native.readList(engine._native, kind, nativePredicates, limit),

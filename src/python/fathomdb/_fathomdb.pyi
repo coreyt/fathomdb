@@ -220,6 +220,12 @@ def read_list(
     predicates: list[dict[str, Any]] | None = ...,
     limit: int = ...,
 ) -> list[NodeRecord]: ...
+def read_list_filter(
+    engine: Engine,
+    kind: str,
+    terms: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
 def graph_neighbors(
     engine: Engine,
     logical_id: str,

@@ -38,6 +38,7 @@ use fathomdb_engine::{
     rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp, CorruptionDetail,
     CorruptionKind, EmbedderChoice, Engine as RustEngine, EngineError as RustEngineError,
     EngineOpenError, Explanation as RustExplanation, ExtractDocument as RustExtractDocument,
+    Filter as RustFilter, FilterTerm as RustFilterTerm,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
@@ -1197,6 +1198,53 @@ fn read_list(
     Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
 }
 
+// 0.8.11 Slice 40 (#17) — unified `Filter` → `read.list` backend. Each term dict:
+//   { "term": "source_type"|"kind"|"created_after"|"status", "value": str|int }
+//   { "term": "json", "predicate": { "type", "path", "value" } }
+// The engine performs the authoritative total dispatch (Json json_extract;
+// SourceType/Kind constant-fold vs the partition kind via resolve_source_type).
+fn py_filter_term_to_rust(term: &Bound<'_, PyAny>) -> PyResult<RustFilterTerm> {
+    let term_kind_item = term.get_item("term")?;
+    let term_kind = extract_validated_str(&term_kind_item)?;
+    match term_kind.as_str() {
+        "source_type" => {
+            Ok(RustFilterTerm::SourceType(extract_validated_str(&term.get_item("value")?)?))
+        }
+        "kind" => Ok(RustFilterTerm::Kind(extract_validated_str(&term.get_item("value")?)?)),
+        "created_after" => {
+            Ok(RustFilterTerm::CreatedAfter(term.get_item("value")?.extract::<i64>()?))
+        }
+        "status" => Ok(RustFilterTerm::Status(extract_validated_str(&term.get_item("value")?)?)),
+        "json" => Ok(RustFilterTerm::Json(py_predicate_to_rust(&term.get_item("predicate")?)?)),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown filter term '{other}'; expected source_type/kind/created_after/status/json"
+        ))),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, kind, terms=None, limit=100))]
+fn read_list_filter(
+    py: Python<'_>,
+    engine: &PyEngine,
+    kind: &Bound<'_, PyAny>,
+    terms: Option<&Bound<'_, PyList>>,
+    limit: u64,
+) -> PyResult<Vec<PyNodeRecord>> {
+    let kind = extract_validated_str(kind)?;
+    let mut rust_terms: Vec<RustFilterTerm> = Vec::new();
+    if let Some(tlist) = terms {
+        for item in tlist.iter() {
+            rust_terms.push(py_filter_term_to_rust(&item)?);
+        }
+    }
+    let filter = RustFilter { terms: rust_terms };
+    let limit = limit as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.read_list_filter(&kind, &filter, limit))?;
+    Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
+}
+
 // ===== Batch translation ==============================================
 
 fn translate_batch(batch: &Bound<'_, PyList>) -> PyResult<Vec<PreparedWrite>> {
@@ -1578,6 +1626,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
     // Slice 35 — G4 read.list with Predicate filter.
     m.add_function(wrap_pyfunction!(read_list, &m)?)?;
+    // 0.8.11 Slice 40 — unified Filter → read.list backend (#17).
+    m.add_function(wrap_pyfunction!(read_list_filter, &m)?)?;
     // Slice 20 — G5/G6 graph traversal fns.
     m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
     m.add_function(wrap_pyfunction!(search_expand, &m)?)?;

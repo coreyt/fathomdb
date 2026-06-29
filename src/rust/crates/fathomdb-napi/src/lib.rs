@@ -33,10 +33,10 @@ use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    Explanation as RustExplanation, ExtractDocument as RustExtractDocument,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
-    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
+    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
@@ -1296,6 +1296,73 @@ pub async fn read_list(
     let limit = limit.unwrap_or(100).max(0) as usize;
     let inner = Arc::clone(&engine.inner);
     let rows = call_engine(move || inner.read_list(&kind, &rust_predicates, limit)).await?;
+    Ok(rows.iter().map(NodeRecord::from_rust).collect())
+}
+
+/// 0.8.11 Slice 40 (#17) — one term of the unified `Filter` grammar. `term` ∈
+/// `{"source_type","kind","created_after","status","json"}`. For the four
+/// shorthand terms set `valueStr`/`valueInt`; for `json` set `predicate`.
+#[napi(object)]
+pub struct FilterTermInput {
+    /// Discriminator: source_type | kind | created_after | status | json.
+    pub term: String,
+    /// String value for source_type/kind/status terms.
+    pub value_str: Option<String>,
+    /// Integer value for the created_after term (unix seconds).
+    pub value_int: Option<i64>,
+    /// The G4 predicate for a `json` term.
+    pub predicate: Option<PredicateInput>,
+}
+
+fn napi_filter_term_to_rust(term: FilterTermInput) -> Result<RustFilterTerm> {
+    match term.term.as_str() {
+        "source_type" => term.value_str.map(RustFilterTerm::SourceType).ok_or_else(|| {
+            typed_error(CODE_INVALID_FILTER, "source_type term requires valueStr", JsonValue::Null)
+        }),
+        "kind" => term.value_str.map(RustFilterTerm::Kind).ok_or_else(|| {
+            typed_error(CODE_INVALID_FILTER, "kind term requires valueStr", JsonValue::Null)
+        }),
+        "created_after" => term.value_int.map(RustFilterTerm::CreatedAfter).ok_or_else(|| {
+            typed_error(CODE_INVALID_FILTER, "created_after term requires valueInt", JsonValue::Null)
+        }),
+        "status" => term.value_str.map(RustFilterTerm::Status).ok_or_else(|| {
+            typed_error(CODE_INVALID_FILTER, "status term requires valueStr", JsonValue::Null)
+        }),
+        "json" => {
+            let pred = term.predicate.ok_or_else(|| {
+                typed_error(CODE_INVALID_FILTER, "json term requires predicate", JsonValue::Null)
+            })?;
+            Ok(RustFilterTerm::Json(napi_predicate_to_rust(pred)?))
+        }
+        other => Err(typed_error(
+            CODE_INVALID_FILTER,
+            format!("unknown filter term '{other}'; expected source_type/kind/created_after/status/json"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+/// 0.8.11 Slice 40 (#17) — unified `Filter` → `read.list` backend. The engine
+/// performs the authoritative total dispatch (Json `json_extract`;
+/// SourceType/Kind constant-fold vs the partition kind).
+#[napi(js_name = "readListFilter")]
+pub async fn read_list_filter(
+    engine: &Engine,
+    kind: String,
+    terms: Option<Vec<FilterTermInput>>,
+    limit: Option<i64>,
+) -> Result<Vec<NodeRecord>> {
+    validate_ffi_string_napi(&kind)?;
+    let mut rust_terms: Vec<RustFilterTerm> = Vec::new();
+    if let Some(tlist) = terms {
+        for t in tlist {
+            rust_terms.push(napi_filter_term_to_rust(t)?);
+        }
+    }
+    let filter = RustFilter { terms: rust_terms };
+    let limit = limit.unwrap_or(100).max(0) as usize;
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.read_list_filter(&kind, &filter, limit)).await?;
     Ok(rows.iter().map(NodeRecord::from_rust).collect())
 }
 

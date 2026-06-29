@@ -30,11 +30,13 @@ from fathomdb._fathomdb import read_collection as _native_collection
 from fathomdb._fathomdb import read_get as _native_get
 from fathomdb._fathomdb import read_get_many as _native_get_many
 from fathomdb._fathomdb import read_list as _native_list
+from fathomdb._fathomdb import read_list_filter as _native_list_filter
 from fathomdb._fathomdb import read_mutations as _native_mutations
 from fathomdb.types import NodeRecord, OpStoreRow
 
 if TYPE_CHECKING:
     from fathomdb.engine import Engine
+    from fathomdb.filter import Filter
 
 
 def _to_node_record(native: _NativeNodeRecord) -> NodeRecord:
@@ -125,6 +127,7 @@ def list(  # noqa: A001 — shadows builtin; public API requires this name
     predicates: builtins.list[builtins.dict[str, Any]] | None = None,
     *,
     limit: int = 100,
+    filter: "Filter | None" = None,
 ) -> builtins.list[NodeRecord]:
     """G4 (Slice 35) — list active ``canonical_nodes`` of the given ``kind``.
 
@@ -137,11 +140,26 @@ def list(  # noqa: A001 — shadows builtin; public API requires this name
 
     Empty ``predicates`` (or ``None``) returns all active nodes of the kind up to
     ``limit`` (unfiltered path). ``limit`` defaults to 100.
+
+    0.8.11 Slice 40 (#17): pass ``filter=`` (a unified :class:`fathomdb.Filter`)
+    for the additive unified grammar instead of ``predicates``. The engine then
+    performs the authoritative total dispatch (``Json`` → allowlisted
+    ``json_extract``; ``Status``/``CreatedAfter`` → allowlisted json-paths;
+    ``Kind``/``SourceType`` constant-fold vs the partition ``kind`` — a
+    contradicting fold returns ``[]`` without touching SQL). ``predicates`` and
+    ``filter`` are mutually exclusive. This stays the **same** governed
+    ``read.list`` verb (no new surface member).
     """
 
     if limit < 0:
         raise ValueError("read.list limit must be non-negative")
-    rows = _native_list(engine._native, kind, predicates or None, limit)
+    if filter is not None:
+        if predicates:
+            raise ValueError("read.list: pass either `predicates` or `filter`, not both")
+        terms = filter.to_native_terms()
+        rows = _native_list_filter(engine._native, kind, terms or None, limit)
+    else:
+        rows = _native_list(engine._native, kind, predicates or None, limit)
     return [_to_node_record(row) for row in rows]
 
 
