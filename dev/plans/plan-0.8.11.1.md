@@ -10,10 +10,13 @@
 > `dev/plans/runs/NOTE-2026-06-29-library-sweep-to-0.8.x-steward.md` (Steward hand-off). Method runbook:
 > `dev/design/orchestration.md`. Live state: stand up `runs/STATUS-0.8.11.1.md`.
 >
-> **Label caveat (HITL 2026-06-29).** `0.8.11.1` is a **one-time pico exception, explicitly NOT a
-> precedent** — pico (`x.y.z.p`) is decanonized; the standing sweep-label convention is non-pico and
-> TBD (and `13` is forbidden). This sweep is **transitory + label-only**: NO manifest version bump, NO
-> `v*` tag, NO publish.
+> **Label note (HITL 2026-06-29; two-tier model, F-13).** `0.8.11.1` is a **normal pico, NOT a
+> one-time exception.** Under the standing two-tier numbering model: `x.y.z` = real, publishable
+> releases (manifest bump + `v*` tag + registry publish; publishing is always a separate explicit HITL
+> call), and `x.y.z.p` **picos** = label-only, never-published work-completion increments for
+> OOB/transitory work — **a Library Sweep IS a pico.** This sweep is therefore **transitory +
+> label-only**: NO manifest version bump, NO `v*` tag, NO publish. (`13` stays forbidden as minor and
+> micro — no `0.13.x`, no `0.8.13`.)
 >
 > **Theme.** Clear the *contained, low-risk* dependency bumps from the post-0.8.11 Dependabot backlog
 > under the new LBS program, so the desk is clean before the heavy even-line work resumes. Migration-
@@ -57,8 +60,8 @@ In scope — the **contained** bumps (one LBO per group/singleton; LBO rates bla
 - **`dependabot.yml` reconciliation** — confirm coverage matches real manifests so orphan PRs stop
   being generated.
 
-**Out of scope (deferred):** `napi` 2→3 (#90 + #102) and `rusqlite` 0.31→0.40 + `sqlite-vec` (#103 +
-#99) → **0.8.20** (engine/migration, `plan-0.8.20.md`). Already handled: #96 prettier (merged), the 7
+**Out of scope (deferred):** `napi` 2→3 (#90 + #102) and `rusqlite` 0.31→0.40 + `sqlite-vec`
+(#103 + #99) → **0.8.20** (engine/migration, `plan-0.8.20.md`). Already handled: #96 prettier (merged), the 7
 orphans + #59 (closed). The 2 Dependabot security alerts (`idna`/`torch`) are **noise** (gitignored
 local eval env `python/uv.lock`, not shipped code) — do not chase them here.
 
@@ -151,7 +154,8 @@ type-narrowing that changes emitted JS), it **escalates** — that bump leaves t
 ## 10. Decisions taken (recorded)
 
 - 2026-06-29 — Library Sweep program + this split established · F-12, HITL.
-- 2026-06-29 — `0.8.11.1` pico label is a **one-time exception**, not the sweep model · HITL.
+- 2026-06-29 — `0.8.11.1` is a **normal pico** under the standing two-tier model (a Library Sweep IS a
+  pico); re-reconciled from the earlier "one-time exception" wording · HITL, F-13.
 - 2026-06-29 — The 2 Dependabot security alerts are **noise** (gitignored eval env) · do not chase.
 
 ---

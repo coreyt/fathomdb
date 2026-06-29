@@ -66,15 +66,21 @@ forcing gate** — never float, never a buffer (respects F-10 self-completion, F
 
 ## Cadence — the Library Sweep
 
-- A **Library Sweep** is a transitory, **label-only** OOB micro — its mechanics are: **NO version
-  bump, NO `v*` tag, NO publish** (the four manifests do not move; it lives only as a branch/PR label).
-  It runs **between even releases**, owned by LBS with a DoD and a forcing gate.
-- **Sweep labeling (HITL 2026-06-29).** `x.y.z.p` *pico* labels are **decanonized** — pico is **NOT**
-  the sweep model and **NOT** a repeatable pattern. **Library Sweep #1 ships under a ONE-TIME pico
-  exception, `0.8.11.1`** (HITL allowed this once) — frame it explicitly as a **one-time exception,
-  NOT a precedent.** Go-forward sweep labeling is **non-pico** and **must not use `13`** (`13` is
-  HITL-forbidden as both minor and micro — no `0.13.x`, no `0.8.13`); the exact convention is
-  **TBD by PDS/HITL** (do not invent a new canonical scheme here).
+- A **Library Sweep** is a transitory, **label-only** OOB pico — its mechanics are: **NO manifest
+  version bump, NO `v*` tag, NO publish** (the four manifests do not move; it lives only as a branch/PR
+  label). It runs **between even releases**, owned by LBS with a DoD and a forcing gate.
+- **Sweep labeling — the standing two-tier model (HITL 2026-06-29, re-reconciled; F-13 supersedes the
+  earlier "pico decanonized / one-time exception" wording).** Two numbering tiers stand:
+  - **`x.y.z` = real releases** (planned even/odd line). Publishable — even micros with HITL approval,
+    odd not expected — carrying a manifest bump + `v*` tag + registry publish. **Publishing is always a
+    separate explicit HITL call on a real `x.y.z`.**
+  - **`x.y.z.p` picos** = **label-only, NEVER-published** work-completion increments (no manifest bump
+    / `v*` tag / registry publish) for OOB/transitory work that lands on `main` without consuming a real
+    slot.
+  - **A Library Sweep IS a pico.** **Library Sweep #1 ships as the normal pico `0.8.11.1`** — a
+    **normal pico, NOT a one-time exception** (the standard sweep label, not a carve-out). Pico work
+    that must reach registries gets a later HITL-cut publishable `x.y.z`.
+  - **`13` stays HITL-forbidden** as both minor and micro (no `0.13.x`, no `0.8.13`).
 - Each sweep also **reconciles `dependabot.yml`** so its coverage matches real manifests (stops
   orphan PRs being generated).
 - Majors that are too risky for a quick micro are **deferred with an explicit re-open trigger**
