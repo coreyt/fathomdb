@@ -11,8 +11,8 @@
   as a recurring, owned program (charter + LBO template under `dev/plans/prompts/`). It does **not**
   touch your release roadmap; it runs **transitory OOB micros between even releases**.
 - The 21 open Dependabot PRs were triaged to **4 merged, 8 closed, 9 open**. The 9 open are **not
-  urgent** (no security driver — see below) and are **split** into a 0.8.11.1 sweep micro (contained)
-  and a net-new **0.8.20** (major migrations, timing-gated).
+  urgent** (no security driver — see below) and are **split** into Library Sweep #1, a label-only
+  sweep micro (contained), and a net-new **0.8.20** (major migrations, timing-gated).
 - The master sequencing doc now carries **F-12** + a **0.8.20** row + a Library-Sweep note on the
   0.8.11 row. These were reconciled in by this session; flag them in your next pass if you want to
   re-word, but the disposition is HITL-approved.
@@ -29,9 +29,11 @@
 
 ## What is still open (9) and where it is routed
 
-- **Library Sweep #1 — transitory 0.8.11.1 micro (contained):** `sha2` 0.10→0.11, `typescript` 5→6 +
+- **Library Sweep #1 — transitory, label-only micro (contained):** `sha2` 0.10→0.11, `typescript` 5→6 +
   `@types/node` 25→26, `actions/checkout` 6→7, `action-gh-release` 2→3 (release dry-run), plus a
-  `dependabot.yml` reconciliation. Label-only (no version bump / `v*` tag / publish), 0.8.9.1-shape.
+  `dependabot.yml` reconciliation. **Label-only mechanics: no version bump / no `v*` tag / no publish.**
+  Ships under a **one-time pico exception `0.8.11.1`** (HITL 2026-06-29, NOT a precedent — pico is
+  decanonized; go-forward sweep labels are non-pico, must avoid `13`, convention TBD by PDS/HITL).
 - **0.8.20 (net-new, owned engine slices):** `napi` 2→3 (napi + napi-derive + @napi-rs/cli) and
   `rusqlite` 0.31→0.40 + `sqlite-vec` (coupled). **Deferred-with-trigger.** **Its timing is NOT
   confirmed — it must be strongly reviewed for timing-correctness before proceeding** (do not force a

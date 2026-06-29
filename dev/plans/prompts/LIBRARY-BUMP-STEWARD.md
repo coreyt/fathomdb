@@ -66,8 +66,15 @@ forcing gate** — never float, never a buffer (respects F-10 self-completion, F
 
 ## Cadence — the Library Sweep
 
-- A **Library Sweep** is a transitory, label-only OOB micro (the 0.8.9.1 shape: NO version bump /
-  `v*` tag / publish), run **between even releases**, owned by LBS with a DoD and a forcing gate.
+- A **Library Sweep** is a transitory, **label-only** OOB micro — its mechanics are: **NO version
+  bump, NO `v*` tag, NO publish** (the four manifests do not move; it lives only as a branch/PR label).
+  It runs **between even releases**, owned by LBS with a DoD and a forcing gate.
+- **Sweep labeling (HITL 2026-06-29).** `x.y.z.p` *pico* labels are **decanonized** — pico is **NOT**
+  the sweep model and **NOT** a repeatable pattern. **Library Sweep #1 ships under a ONE-TIME pico
+  exception, `0.8.11.1`** (HITL allowed this once) — frame it explicitly as a **one-time exception,
+  NOT a precedent.** Go-forward sweep labeling is **non-pico** and **must not use `13`** (`13` is
+  HITL-forbidden as both minor and micro — no `0.13.x`, no `0.8.13`); the exact convention is
+  **TBD by PDS/HITL** (do not invent a new canonical scheme here).
 - Each sweep also **reconciles `dependabot.yml`** so its coverage matches real manifests (stops
   orphan PRs being generated).
 - Majors that are too risky for a quick micro are **deferred with an explicit re-open trigger**
