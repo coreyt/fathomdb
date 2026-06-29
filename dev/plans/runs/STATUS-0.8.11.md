@@ -15,8 +15,14 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 > filter Option A; keep bge-small; EXP-AF KILL). Total spend **~$3.73 / $20**. **All results are
 > PROVISIONAL SCREENING DATA** — confidence ledger + the **Pre-0.8.15 Validation Gate (V-1..V-7)**
 > live in **`runs/0.8.11-handoff-to-0.8.15.md`**; nothing downstream may treat the tuples as a
-> contract until that gate passes. Remaining (post-40, outside this goal): the `origin/main` sync to
-> clear the one orthogonal pre-existing red (`test_decision_rule_083`, fixed on main) + Slice 45 verification.
+> contract until that gate passes.
+>
+> **✅ POST-40 + SLICE 45 COMPLETE (2026-06-28).** `origin/main` synced (`19a36c34`) — the orthogonal
+> `test_decision_rule_083` red is cleared. **Release-readiness: substantive gates GREEN** (lint-rust,
+> pyright, security-STRICT, Rust all-suites, Py 667/6, TS 126/0, mkdocs --strict). **Only red =
+> the HITL-deferred F-7 markdown gate (→0.8.16)** — accepted, not a blocker. The `operator_cli`
+> lock test is a parallel-load flake (passes isolated); a stray untracked `typescript/node_modules`
+> inflates the F-7 count. **0.8.11 (Slices 0–40 + 36 + 45) is complete and verified.**
 
 ## Slice board
 
@@ -32,7 +38,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 35 | L2 router prototype + pre-stage | E | **DONE** | $0, CALLER-SIDE (commit `523fca3d`). `recommend(query,*,agent_hint=None)->Recommendation` recommends a stack WITHOUT executing; registry built from EXP-B′+Gate-2. Smoke test **42/0**. **R-L2-1..4 met**: all 5 classes route (1); each carries a registered tuple + cost_tier (2); `agent_hint` verbatim conf 1.0, no fallback, unknown raises (3); ZERO diff to `src/rust`/`src/python/fathomdb`/`src/ts`, `fathomdb` never imported (4). Provenance honest: 3 measured (needle/multi_session/temporal) + 2 provisional (global/multi_hop); confidence header = SCREENING DATA, 0.8.15 re-validates. `feedback_arm=False` hard-wired (EXP-AF KILL); EXP-B′.5 forbidden-composition validator seam (`check_forbidden`) inherited by 0.8.15. `dev/prototypes/l2-router/` + handoff `runs/slice-35-l2-prototype.md` |
 | **36** | default-off feedback-arm seam on the L2 prototype | E | **DONE** | $0, CALLER-SIDE. `L2Router(*, feedback_arm=False)` + no-op `_maybe_escalate()` escalation hook (the **V-3 wiring point**); `recommend()` sources `feedback_arm` from the flag (no longer a hard-coded literal) and calls the stub before returning. **Default stays False (EXP-AF KILL unchanged)** — `True` returns the valid base-plan Recommendation (no raise). Smoke **85/0** (orig 42 + 43 new): default==explicit-off byte-identical regression + on-path `feedback_arm=True` reaches the no-op stub with base plan/stack unchanged. **R-L2-4 still empty** (zero diff to `src/rust`/`src/python/fathomdb`/`src/ts`). Handoff V-3 row + README updated |
 | 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
-| 45 | Verification + release readiness | — | pending | blocked-by 5–40 |
+| 45 | Verification + release readiness | — | **DONE** | post-40 `origin/main` sync (`19a36c34`, clears the F-7-adjacent prereg-083 red); substantive gates GREEN — lint-rust, pyright typecheck (eval scripts fixed `2893e81f`), security STRICT, **Rust** all suites, **Py 667/6**, **TS 126/0**, **mkdocs --strict**; F-11 closed (8 ledger rows); pre-stage registry + 0.8.15 hand-off present. **Accepted-deferred:** lint-md-structure = HITL F-7 (→0.8.16); `operator_cli` parallel-load flake (passes isolated); stray untracked `typescript/node_modules` inflates the md count |
 
 ## HITL decision points (four; owner: steward → HITL)
 
