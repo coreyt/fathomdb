@@ -6,17 +6,24 @@ exclusive file lock, so reusing one path across tests in the same
 process would surface as `DatabaseLockedError`). `db_path` yields a
 fresh per-test `Path` under pytest's `tmp_path` fixture.
 
-EU-6 FIX-1: a session-scoped autouse fixture rebuilds the editable
-binding with the dev-only `test-hooks` Cargo feature before any test
-imports `fathomdb._fathomdb` — `pyproject.toml [tool.maturin] features`
-ships only `default-embedder` (parity with the released wheel), so
-without this fixture `Engine._write_vector_for_test` and friends are
-missing and tests like `test_use_default_embedder.py`,
-`test_ffi_safety.py`, the AC-067 force-panic probe, etc. break. The
-fixture short-circuits if the test-hooks symbol is already present
-(developer pre-warmed the build with `maturin develop --features
-...,test-hooks,...`), so the latency cost (~5-60s for the
-`maturin develop` invocation) is paid at most once per pytest session.
+EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
+`test-hooks` Cargo feature before any test module is imported —
+`pyproject.toml [tool.maturin] features` ships only `default-embedder`
+(parity with the released wheel), so without this `Engine._write_vector_for_test`
+and friends are missing and tests like `test_use_default_embedder.py`,
+`test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
+
+This rebuild runs at conftest IMPORT time (module level below), NOT as a
+session-scoped fixture. A fixture runs during test *setup*, which is too late
+for a test module that imports a test-hooks symbol at MODULE level
+(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
+that import is evaluated during *collection*, before any fixture runs, so the
+binding must already carry the symbol. conftest.py top-level code is the
+earliest hook that still runs before sibling test modules are collected. The
+rebuild short-circuits if the test-hooks symbol is already present (developer
+pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
+session in the same venv built it), so the `maturin develop` cost (~5-60s) is
+paid at most once per venv.
 """
 
 from __future__ import annotations
@@ -37,33 +44,46 @@ def db_path(tmp_path: Path) -> str:
 _PYTHON_SRC_DIR = Path(__file__).resolve().parent.parent  # src/python
 
 
+_PROBE_SRC = (
+    "import sys\n"
+    "try:\n"
+    "    from fathomdb import _fathomdb\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+    "engine = getattr(_fathomdb, 'Engine', None)\n"
+    "sys.exit(0 if engine is not None and hasattr(engine, '_write_vector_for_test') else 1)\n"
+)
+
+
 def _binding_has_test_hooks() -> bool:
-    """Return True if the imported `Engine` already exposes the
-    test-hooks surface (`_write_vector_for_test`). Used to skip the
-    fixture's `maturin develop` when the developer pre-built locally."""
+    """Return True if the installed `Engine` already exposes the test-hooks
+    surface (`_write_vector_for_test`).
 
-    try:
-        from fathomdb import _fathomdb  # noqa: PLC0415 — import-on-demand
-    except ImportError:
-        # Binding not installed yet — definitely need to build.
-        return False
-    engine = getattr(_fathomdb, "Engine", None)
-    if engine is None:
-        return False
-    return hasattr(engine, "_write_vector_for_test")
+    The probe runs in a CHILD process and must NOT import
+    `fathomdb._fathomdb` into this (the pytest) process. Importing the
+    hook-less extension here dlopen()s it; a subsequent `maturin develop`
+    that overwrites the `.so` on disk cannot be re-imported in the same
+    process — the dynamic loader returns the already-mapped library, so the
+    rebuilt symbols never become visible and collection still fails on the
+    missing `force_panic_for_test`. Probing out-of-process keeps this
+    interpreter pristine so pytest's first import sees the FRESH `.so`."""
+
+    return subprocess.run(
+        [sys.executable, "-c", _PROBE_SRC],
+        cwd=str(_PYTHON_SRC_DIR),
+    ).returncode == 0
 
 
-@pytest.fixture(scope="session", autouse=True)
 def _ensure_test_hooks_binding() -> None:
     """Rebuild the editable binding with `test-hooks` enabled before
-    the test session runs, unless it is already present.
+    sibling test modules are collected, unless it is already present.
 
     Skipped when not invoked from the source tree (e.g. running the
     test files against a pip-installed wheel for release-surface
     verification) — detected by the absence of `pyproject.toml` next
     to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
     is set (developer escape hatch: prebuild once, iterate without
-    paying the fixture cost)."""
+    paying the rebuild cost)."""
 
     if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
         return
@@ -79,9 +99,18 @@ def _ensure_test_hooks_binding() -> None:
 
     print(
         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
-        "with test-hooks feature (one-time per session; ~5-60s) ...",
+        "with test-hooks feature (one-time per venv; ~5-60s) ...",
         flush=True,
     )
+    # `maturin develop` requires an activated virtualenv: it looks for
+    # $VIRTUAL_ENV / $CONDA_PREFIX / a `.venv` in cwd-or-parents. A bare
+    # subprocess inherits neither when pytest was launched via an absolute
+    # interpreter path (e.g. `.venv/bin/python -m pytest`, or any venv not
+    # named `.venv`), so it fails with "Couldn't find a virtualenv". Point it
+    # at THIS interpreter's environment root (`sys.prefix` is the venv dir for
+    # a venv interpreter) so the rebuilt `.so` lands in the venv we are running.
+    env = dict(os.environ)
+    env["VIRTUAL_ENV"] = sys.prefix
     subprocess.check_call(
         [
             sys.executable,
@@ -92,9 +121,18 @@ def _ensure_test_hooks_binding() -> None:
             "pyo3/extension-module,test-hooks,default-embedder,default-reranker",
         ],
         cwd=str(_PYTHON_SRC_DIR),
+        env=env,
     )
-    # Force the re-import on next access — pytest collection may have
-    # already imported the old module pre-fixture.
+    # Belt-and-suspenders: drop any cached `fathomdb*` modules so the first
+    # post-rebuild import re-reads from disk. (The out-of-process probe above
+    # means this interpreter has NOT yet dlopen()ed the extension, so the fresh
+    # `.so` is what pytest collection loads.)
     for mod_name in list(sys.modules):
         if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
             del sys.modules[mod_name]
+
+
+# Run the rebuild at conftest IMPORT time (before sibling test modules are
+# collected), not as a fixture — see the module docstring for why a fixture is
+# too late for module-level test-hooks imports (e.g. test_ffi_safety.py).
+_ensure_test_hooks_binding()
