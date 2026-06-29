@@ -333,7 +333,7 @@
 
 | Tag | Question (short) | KILL | $ ceiling | Slice | Status |
 | --- | --- | --- | ---: | :---: | --- |
-| Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | REGISTERED — pending |
+| Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | **RESOLVED** — re-scope holds; 1 scoped gap (LOCOMO node-labels, $0 exp/≤$1); EXP-D excluded → detail below |
 | Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | REGISTERED — pending |
 | EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | REGISTERED — pending |
 | EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | REGISTERED — pending |
@@ -342,6 +342,13 @@
 | EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | REGISTERED — pending |
 | EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | REGISTERED — pending |
 | EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | REGISTERED — pending |
+
+### Gate-0 — golden-set re-scope (Slice 5, RESOLVED 2026-06-28)
+
+- **Assets (inspected, EVAL-ONLY gitignored):** IR gold `eval/ir_gold/all.gold.json` 4,597 Q / 4,472 with `expected_top_k_doc_ids` (exact_fact 2,888 · exploratory 1,584 · negative 125; src enronqa/qaconv/qmsum); LOCOMO `eval/0.8.3-locomo-memory-gold.json` 1,443 Q (factoid 841 · temporal 321 · multi_session 281, CC-BY-NC-4.0); MuSiQue `raw/musique_dev.jsonl` 4,834 total / **2,417 answerable** (2/3/4-hop = 1,252/760/405; `is_supporting` paras, mean 2.65); AP-News BenchmarkQED 1,397 articles + 350 AutoQ (MS-Research NON-REDISTRIBUTABLE); LME memex-elps (8 golden + 60 personal.gold, extraction gold).
+- **Result — node-level retrieval labels by class:** **needle** = doc-qrels ✅ (IR gold, derivable); **multi_hop** = paragraph `is_supporting` ✅ (MuSiQue, derivable, no labeling); **global** = none needed (sensemaking → `decide_084` answer-quality, not retrieval recall); **multi_session/temporal** = LOCOMO carries **session-level only** (`conv-N:session_M`) → the single GAP. Rule adoption: `decide_083` (MDE ≤ 0.05) governs needle/multi_session/temporal vs Mem0; `decide_084` (win-rate ε=0.05, question-clustered, **N=200 cap**) governs global vs GraphRAG; MuSiQue/HippoRAG-2 = `[TBD: decide_08x]` (out of scope). Measured discrepancy flagged: PSD "4,834 answerable" is total — usable multi_hop = **2,417**.
+- **Verdict:** Re-scope HOLDS. One scoped labeling pass = refine LOCOMO temporal+multi_session (≤602 Q) from session→node-level (deterministic answer/turn match first, cheap-LLM residual only). **EXP-D (~269-Q F4/M6 acquisition) EXCLUDED → stays 0.8.17**; corpus-cap confirmed (`decide_084` N=200 AP-News max, comp MDE 0.058 > ε; question-clustered ⇒ more runs can't tighten, only more questions). No fresh golden set.
+- **$:** **$0** (inventory/mapping; labeling pass projected $0 expected, ≤$1 hard cap, unspent at Gate-0). **Sources:** `dev/plans/runs/gate0-rescope-output.md`; PSD §II.A/§III.A; `dev/plans/0.8.11-implementation.md` §1; rules `src/python/eval/decision_rule_083.py`, `decision_rule_084.py`.
 
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
