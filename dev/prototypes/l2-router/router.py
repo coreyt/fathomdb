@@ -233,6 +233,15 @@ class L2Router:
         (low ce_top + narrow route-margin) say escalation pays net of
         round-trip. Until V-3 lands this MUST remain a no-op and MUST return a
         valid Recommendation (the base plan) — never raise — so V-3 can iterate.
+
+        0.8.15 generalization (hand-off §2b): the ``feedback_arm`` boolean becomes
+        a per-intent ``iteration_policy ∈ {single_shot, parallel_decompose,
+        sequential_iterate}`` and this hook hosts TWO loop kinds, not just (a):
+          (a) feedback/re-rank — reshuffle a capped pool (EXP-AF/EXP-AF-MH);
+          (b) decomposition — form NEW sub-queries to MANUFACTURE recall, either
+              sequential (EXP-ITER-D) or parallel fan-out (EXP-ITER-P).
+        Registered at-power experiments + default ``single_shot`` (preserves the
+        needle EXP-AF KILL) are specified in the hand-off §2b.
         """
         if not self.feedback_arm:
             return rec
