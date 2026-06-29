@@ -310,8 +310,28 @@ four ship qrels gold:
 `corpus-map.md` §B rows for these four flipped `[CANDIDATE]` → `[ON-DISK]` with
 storage paths + acquire-script names. `enumerate-corpora.sh` already listed them in
 its §4 reconciliation (added with the acquire scripts), so no script change was
-needed. No new payloads were acquired by THIS cycle (all new finds are
-`[CANDIDATE]`).
+needed.
+
+**Acquisitions performed this cycle (follow-up pass).** The four highest-value,
+lowest-friction gold-bearing candidates were acquired with reproducible
+`tests/corpus/scripts/acquire_*.py` scripts (inline license headers; payloads
+written under the gitignored `data/corpus-data/`; manifest entries recorded).
+All four flipped `[CANDIDATE]` → `[ON-DISK]`, and `enumerate-corpora.sh` §4 gained
+four `check` lines:
+
+| Corpus | Script | On-disk | Gold confirmed |
+|---|---|---|---|
+| SummHay | `acquire_summhay.py` | `raw/summhay/summhay.jsonl` (10 haystacks, 92 subtopics, 1,000 docs) | reference `insights` + per-doc `insights_included` citation gold + per-bullet coverage labels |
+| Test of Time | `acquire_tot.py` | `raw/tot/{tot_semantic,tot_arithmetic,tot_semantic_large}.jsonl` (51,130 examples) | explicit `label` gold on every example |
+| TimeQA | `acquire_timeqa.py` | `raw/timeqa/{dev,test}.{easy,hard}.json` (12,183 eval QA) | `targets` gold answer list (+ unanswerable) |
+| TimelineQA | `acquire_timelineqa.py` | `raw/timelineqa/{sparse,medium,dense}/persona-NNN/` (30 personas, ~1.1M atomic QA) | `atomic_qa_pairs` NL gold per event + evidence text |
+
+License posture: SummHay Apache-2.0, ToT CC-BY-4.0, TimeQA BSD-3-Clause (all
+gitignored by project default); TimelineQA **CC-BY-NC-4.0 — NON-COMMERCIAL,
+EVAL-ONLY**, gitignored, never committed/shipped. TimelineQA is generated locally
+from `facebookresearch/TimelineQA`'s `generateDB.py` (pinned); its SQL multi-hop
+gold (`multihopQA.py`, needs `pandasql`) is an optional step not run here — the
+embedded atomic gold is sufficient for the daily-life eval.
 
 ### What was searched (queries / sources)
 
@@ -403,11 +423,13 @@ daily-activity MCQA, Ego4D DUA). no-gold dialogue — DailyDialog, MSC, DuLeMon.
 
 ### Gaps still open
 
-1. **No acquisition performed for the five target need-areas** — every new find is
-   `[CANDIDATE]`. The highest-value, lowest-friction acquisitions (HF-hosted,
-   permissive, ready gold): **SummHay** (`Salesforce/summary-of-a-haystack`,
-   sensemaking), **Test of Time** (`baharef/ToT`, temporal), **TimeQA** (BSD-3,
-   temporal), **TimelineQA** (locally generated, daily-life).
+1. **Four target corpora acquired** (SummHay, Test of Time, TimeQA, TimelineQA —
+   see the "Acquisitions performed this cycle" table above; all `[ON-DISK]` with
+   gold confirmed). Remaining un-acquired candidates in the five need-areas are
+   still `[CANDIDATE]`: multi-session/episodic (Conversation Chronicles NO-GOLD,
+   DialSim license-encumbered, MADial-Bench, PerLTQA, EpiK-Eval, MemoryBank);
+   temporal (SituatedQA, StreamingQA, TempReason, ComplexTempQA); daily-life
+   (LaMP); sensemaking (ODSum, SQuALITY).
 2. **Exploratory-proxy empirical confirmation** (carried from Cycle 2) — Touché-2020
    is now ON-DISK with qrels, so the remaining sub-task is purely to RUN FathomDB's
    retrieval stack against it and confirm the dense-fails failure mode reproduces.
@@ -443,8 +465,12 @@ New / unresolved:
   (multi_session / episodic / temporal / daily-life); §D +4 rows (SummHay, ODSum,
   SQuALITY, QMSum-as-QFS); Quick-stats updated (15 user-needs, ~44 corpora,
   per-cycle license + gold posture).
-- `enumerate-corpora.sh` — no change needed; its §4 already lists the four BEIR
-  subsets, and this cycle acquired no new payloads.
+- `enumerate-corpora.sh` — §4 gained four `check` lines for the corpora acquired
+  this cycle (SummHay, Test of Time, TimeQA, TimelineQA); the four BEIR subsets
+  were already listed.
+- `tests/corpus/scripts/` — four new reproducible acquire scripts
+  (`acquire_summhay.py`, `acquire_tot.py`, `acquire_timeqa.py`,
+  `acquire_timelineqa.py`) + matching `manifest.json` entries.
 
 ---
 

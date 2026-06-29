@@ -297,6 +297,159 @@
       "qrels_sha256": "c4b7812940a0d5de22293173361d88bce651e903bc6696d094591e7479b398e1",
       "acquired_at": "2026-06-28",
       "role_note": "ANTI-EXAMPLE: dense beats BM25 here (inverted vs FathomDB exploratory failure mode).  Low-priority.  Use Touch\u00e9-2020 for the exploratory proxy."
+    },
+    "summhay": {
+      "script": "acquire_summhay.py",
+      "upstream": {
+        "kind": "huggingface_dataset_parquet_file",
+        "id": "Salesforce/summary-of-a-haystack",
+        "file": "summhay.parquet",
+        "revision": null
+      },
+      "license": "Apache-2.0",
+      "license_notes": "Apache-2.0 (Laban et al. 2024, SummHay, EMNLP 2024, arXiv:2407.01370).  Redistribution permitted with attribution.  Project default keeps the payload out of git (gitignored).",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/summhay/summhay.jsonl",
+      "topic_count": 10,
+      "subtopic_count": 92,
+      "document_count": 1000,
+      "sha256": "b89ee38511c6dc307b688081544915a2cc074ef973fc4ea93bf5733723e13796",
+      "acquired_at": "2026-06-29",
+      "role_note": "Global-sensemaking / query-focused-summarization (QFS) proxy \u2014 the closest public analog to FathomDB's across-everything shape.  Coverage + Citation joint-score gold."
+    },
+    "test_of_time": {
+      "script": "acquire_tot.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "baharef/ToT",
+        "configs": [
+          "tot_semantic",
+          "tot_arithmetic",
+          "tot_semantic_large"
+        ],
+        "split": "test",
+        "revision": null
+      },
+      "license": "CC-BY-4.0",
+      "license_notes": "CC BY 4.0 (Fatemi et al. 2024, Test of Time, arXiv:2406.09170, Google).  Redistribution permitted with attribution.  Project default keeps the payload out of git (gitignored).",
+      "distribution": "cache",
+      "output_dir": "data/corpus-data/raw/tot/",
+      "total_examples": 51130,
+      "configs": {
+        "tot_semantic": {
+          "examples": 2800,
+          "with_gold_label": 2800,
+          "output": "data/corpus-data/raw/tot/tot_semantic.jsonl",
+          "sha256": "1c3df70b798264cceec6ee3b4fa8bec702e0508ce0cb1bc02b0f9e886274f2cd"
+        },
+        "tot_arithmetic": {
+          "examples": 1850,
+          "with_gold_label": 1850,
+          "output": "data/corpus-data/raw/tot/tot_arithmetic.jsonl",
+          "sha256": "6a6431ed50a28d86c3092526f271e126d5df5fff935a2c1a2bcca0b1be6abde3"
+        },
+        "tot_semantic_large": {
+          "examples": 46480,
+          "with_gold_label": 46480,
+          "output": "data/corpus-data/raw/tot/tot_semantic_large.jsonl",
+          "sha256": "e01a3be733d6ffd6e0c3090e05ac315d0b608083b20edfa1407684f719a79e5e"
+        }
+      },
+      "acquired_at": "2026-06-29",
+      "role_note": "Contamination-free synthetic temporal-reasoning probe (semantics/logic vs arithmetic).  Leaf-level temporal complement to the conversational LongMemEval/LOCOMO temporal slices."
+    },
+    "timeqa": {
+      "script": "acquire_timeqa.py",
+      "upstream": {
+        "kind": "github_repo_raw_files",
+        "id": "wenhuchen/Time-Sensitive-QA",
+        "path": "dataset/",
+        "files": [
+          "dev.easy.json",
+          "dev.hard.json",
+          "test.easy.json",
+          "test.hard.json"
+        ]
+      },
+      "license": "BSD-3-Clause",
+      "license_notes": "BSD-3-Clause (Chen et al. 2021, TimeQA, NeurIPS 2021 D&B, arXiv:2108.06314; UCSB NLP group, stated in repo README + LICENSE).  Redistribution permitted with attribution.  Project default keeps the payload out of git (gitignored).",
+      "distribution": "cache",
+      "output_dir": "data/corpus-data/raw/timeqa/",
+      "total_qa": 12183,
+      "files": {
+        "dev.easy.json": {
+          "qa_count": 3021,
+          "with_targets": 3021,
+          "bytes": 64416837,
+          "sha256": "17548543a259dfed5a0bb69778079e5e84600d27110411578f0a0c3cdc74ac3c",
+          "output": "data/corpus-data/raw/timeqa/dev.easy.json"
+        },
+        "dev.hard.json": {
+          "qa_count": 3087,
+          "with_targets": 3087,
+          "bytes": 65821332,
+          "sha256": "de3d9f714ed4656f967847470e07180cb08b9339bc4ac365f8a7f9b621b789f0",
+          "output": "data/corpus-data/raw/timeqa/dev.hard.json"
+        },
+        "test.easy.json": {
+          "qa_count": 2997,
+          "with_targets": 2997,
+          "bytes": 64757400,
+          "sha256": "3ed9fc4d80bfa4f64c678e1f39617d1b3bbbe71cdeab040405e4786ffd7f5727",
+          "output": "data/corpus-data/raw/timeqa/test.easy.json"
+        },
+        "test.hard.json": {
+          "qa_count": 3078,
+          "with_targets": 3078,
+          "bytes": 66541626,
+          "sha256": "e4df93f2c988ede5e3c24fd509653212d196f4d2d439139581ec2e2eebd0107f",
+          "output": "data/corpus-data/raw/timeqa/test.hard.json"
+        }
+      },
+      "acquired_at": "2026-06-29",
+      "role_note": "Time-sensitive reading-comprehension QA (Easy/Hard + unanswerable). Temporal-reasoning gold; complements Test-of-Time (synthetic leaf) and LongMemEval/LOCOMO temporal (conversational)."
+    },
+    "timelineqa": {
+      "script": "acquire_timelineqa.py",
+      "upstream": {
+        "kind": "github_generator_local_run",
+        "id": "facebookresearch/TimelineQA",
+        "revision": "e0ff14f707ce07b1f656e61b2921059c3fc98168",
+        "generator": "src/generateDB.py",
+        "params": {
+          "final_year": 2022,
+          "seed_base": 12345,
+          "n_personas_per_density": 10,
+          "densities": [
+            "sparse",
+            "medium",
+            "dense"
+          ]
+        }
+      },
+      "license": "CC-BY-NC-4.0",
+      "license_notes": "CC-BY-NC-4.0 \u2014 NON-COMMERCIAL (Tan et al. 2023, TimelineQA, Findings of ACL 2023, arXiv:2306.01069; Meta).  EVAL-ONLY, gitignored, NEVER committed or shipped.  Locally generated from the repo's generateDB.py.",
+      "distribution": "cache",
+      "output_dir": "data/corpus-data/raw/timelineqa/",
+      "total_personas": 30,
+      "total_atomic_qa": 2458339,
+      "per_density": {
+        "sparse": {
+          "personas": 10,
+          "atomic_qa": 282643
+        },
+        "medium": {
+          "personas": 10,
+          "atomic_qa": 640935
+        },
+        "dense": {
+          "personas": 10,
+          "atomic_qa": 1534761
+        }
+      },
+      "acquired_at": "2026-06-29",
+      "note": "Locally generated (non-deterministic hashes \u2014 seed-pinned content, but per-run file layout). Multi-hop SQL gold (multihopQA.py, needs pandasql) NOT generated here; atomic_qa_pairs gold is embedded.",
+      "role_note": "Daily-life / personal-timeline QA \u2014 strongest pure daily-life fit."
     }
   }
 }
