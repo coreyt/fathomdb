@@ -11,6 +11,13 @@ spine, Slices 5–35) plus **Track G** (#17 filter-grammar + F-8b, Slice 40), co
 Slice 0 (this) freezes the pre-registrations + ADRs + HITL decisions. **Budget: ~$20 priced-LLM
 ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 
+> **✅ SLICES 0–40 COMPLETE (2026-06-28).** All four HITL gates resolved (F-8b keep-instrumentation;
+> filter Option A; keep bge-small; EXP-AF KILL). Total spend **~$3.73 / $20**. **All results are
+> PROVISIONAL SCREENING DATA** — confidence ledger + the **Pre-0.8.15 Validation Gate (V-1..V-7)**
+> live in **`runs/0.8.11-handoff-to-0.8.15.md`**; nothing downstream may treat the tuples as a
+> contract until that gate passes. Remaining (post-40, outside this goal): the `origin/main` sync to
+> clear the one orthogonal pre-existing red (`test_decision_rule_083`, fixed on main) + Slice 45 verification.
+
 ## Slice board
 
 | Slice | Title | Track | State | Notes |

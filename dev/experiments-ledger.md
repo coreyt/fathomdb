@@ -330,6 +330,12 @@
 > (hypothesis · KILL · corpus · cost ceiling · script) → `dev/plans/0.8.11-implementation.md §1`;
 > live `$` tally → `runs/STATUS-0.8.11.md`. The rows below are **REGISTERED at Slice 0**; each is
 > filled with numbers+CI+verdict when its slice lands (R-LEDGER-1). Ladder cap: **~$20 priced-LLM**.
+>
+> ⚠️ **These results are PROVISIONAL SCREENING DATA, not validated config.** Confidence ledger +
+> the **Pre-0.8.15 Validation Gate (V-1..V-7)** that must pass before anything downstream consumes
+> them → **`runs/0.8.11-handoff-to-0.8.15.md`**. Notably: EXP-B′ tuples were derived on 0.8.3 CE-pass
+> data (live build had CE off) and 2 of 5 intents are provisional → re-run on the CE-active engine
+> (V-1); the EXP-AF KILL and the arm-switching read are single-corpus / current-substrate (V-2/V-3).
 
 | Tag | Question (short) | KILL | $ ceiling | Slice | Status |
 | --- | --- | --- | ---: | :---: | --- |
