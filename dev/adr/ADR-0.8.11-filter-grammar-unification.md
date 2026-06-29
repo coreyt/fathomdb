@@ -6,7 +6,7 @@ desc: Unify the two SHIPPED filter surfaces — G4 `Predicate` (json-path predic
 blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs (SearchFilter struct + vec0 compilation; Predicate enum + read_list compilation; the two are joined under one Filter type + dispatch); src/rust/crates/fathomdb-py/src/lib.rs + src/rust/crates/fathomdb-napi/src/lib.rs (SDK lowering); src/python/fathomdb/{types.py,read.py} + src/ts/src/{index.ts,read.ts} (public SearchFilter + Predicate re-expressed as sugar; no behavior change); tests/pr_g10_filtered_knn.rs + tests/slice35_filter_grammar.rs (parity fixture + RED→GREEN). The slice-10 `filter=None → byte-identical 0.7.2 SQL` pin MUST keep holding.
 status: proposed (Slice 0 deliverable; provisional pending HITL confirmation of Option A)
 origin: dev/plans/plan-0.8.11.md Track G / Slice 40 (#17 filter-grammar unification); ADR-0.8.0-filter-grammar.md reserved-gap 37 (HITL 2026-06-06: "unification is NEEDED, not optional"); MEMORY planner-router-experiment-ladder → folded into 0.8.11
-inherits: ADR-0.8.0-filter-grammar (G4 closed Predicate enum D-F1..D-F5; EXCLUDE list — no DSL/no-fused/no-_unchecked/parameterized-only/allowlisted-paths); dev/design/slice-10-design.md (G10 SearchFilter, shipped Slice 10; filter=None byte-identity pin); ADR-0.8.0-canonical-identity-substrate (folded canonical_nodes(kind) index; active = superseded_at IS NULL on logical_id-alone)
+inherits: ADR-0.8.0-filter-grammar (G4 closed Predicate enum D-F1..D-F5; EXCLUDE list — no DSL/no-fused/no-_unchecked/parameterized-only/allowlisted-paths); dev/design/slice-10-design.md (G10 SearchFilter, shipped Slice 10; filter=None byte-identity pin); ADR-0.8.0-canonical-identity-substrate (folded canonical_nodes(kind) index; active = superseded_at IS NULL on logical_id-alone); dev/design/0.8.11-analysis-G10-G4-searchfilt.md (Slice-0 requirements & User-Needs trace-up; R-FIL-1/R-FIL-2, R-X-1, 0.8.15 router constraints block)
 ---
 
 # ADR-0.8.11 — Filter-grammar unification (G4 + G10)
@@ -69,6 +69,57 @@ So: **the TYPE unifies; the COMPILATION dispatches** to one of two backends.
 paths, implicit-AND); slice-10 `filter=None → byte-identical 0.7.2 SQL` pin
 (`slice-10-design.md:122-130,204-211`); the folded `canonical_nodes(kind)` index +
 `superseded_at IS NULL` active-row rule.
+
+---
+
+## 1b. Requirements & User-Needs trace-up
+
+The unification is justified by **distinct User Needs**, not only code mechanics. Full
+trace in **`dev/design/0.8.11-analysis-G10-G4-searchfilt.md`** (Slice-0 analysis);
+summarized here so the design decision is grounded in the needs of the named
+local-first consumers (**Memex / Hermes / OpenClaw**, SQLite + sqlite-vec/FTS5).
+
+**Two needs, two stores, two execution models — both must be preserved:**
+
+- **G10 `search_filtered`** serves *"find relevant memories about X, but only from
+  source Y / kind K / after Z / status S"* — a **constraint on a ranked
+  hybrid/semantic search** (vector-KNN + RRF, optional CE-rerank), executed as an
+  **indexed pre-KNN** scope over vec0 metadata. It is the concrete filter mechanism
+  behind **F2 multi_session** (source/kind scoping) and **F3 temporal**
+  (`created_after`), and part of the **F0 RRF-fused stack**.
+- **G4 `read.list`** serves *"list all my open to-dos" / "all products rated >4★"* —
+  a **typed enumeration** over active `canonical_nodes(kind)` (no ranking, no
+  vectors), via `json_extract`. It is **F3 filtered-list**, table-stakes equality +
+  range.
+
+These are **not** the same need: one narrows *relevance ranking*, the other
+*enumerates by structured predicate*. The requirement is therefore a unified
+**type/contract**, explicitly **NOT** a unified SQL/storage path (this is exactly
+why Option A = one type, two backends, and why D3's total-dispatch + typed-rejection
+and D2's field matrix are load-bearing — they keep "one type" from degrading either
+need).
+
+**Requirements the unification must honor (from the analysis §3):**
+
+1. **R-FIL-1 / R-FIL-2** — one typed `Filter` contract serving both paths; the
+   shipped G10 re-expressed **byte-identically** (RED→GREEN G10 parity; the
+   `filter=None → 0.7.2 SQL` pin holds). → D1, D4, D5.
+2. **R-X-1 (X1 SDK parity)** — Py + TS expose the *identical* unified contract
+   (`test_surface.py` / `surface.test.ts`). → D5.
+3. **0.8.15 router `constraints` block (the downstream consumer — the reason #17
+   exists)** — the dispatcher must reason over **one** typed-constraint surface, not
+   two. This forward-looking requirement is *why* "unified type" beats "thin
+   adapter," and confirms Option A. → §6 consequences.
+4. **Inherited ADR-0.8.0 safety constraints** — closed grammar: no DSL, no fused, no
+   `*_unchecked`, parameterized `json_extract` only, server-side path allowlist,
+   injection-safety, implicit-AND. → D1, §4 EXCLUDE.
+5. **G0 substrate** — `canonical_nodes(kind)` index; active = `superseded_at IS NULL`
+   on logical_id-alone (the partition G4 enumerates). → D3.
+6. **G10 pre-KNN performance guarantee** — a metadata-eligible predicate in a search
+   context **must** compile to the indexed pre-KNN path; **never** demoted to a
+   post-KNN `json_extract`. → D3 (hard dispatch rule + typed rejection).
+7. **`acceptance.md` locked** — no new AC ids; track by G-gap / feature tags only
+   (the parity/byte-identity pins are tests, not new ACs). → D5.
 
 ---
 
@@ -294,6 +345,11 @@ NAMED unresolvable field is rejected at review.
 - **For 0.8.11 Slice 40:** one unified `Filter` type + a total dispatch over the two
   existing compilation backends; the public `SearchFilter` + `Predicate` SDK shapes
   survive as sugar; reserved-gap 37 closed.
+- **For 0.8.15 (the downstream consumer):** the dispatcher's `constraints` block now
+  has **one** typed-constraint surface to reason over instead of two — the
+  forward-looking requirement (§1b R-3) that motivates "unified type" over "thin
+  adapter." The single `FilterTerm` enum is the one extension point the router and
+  future additive grammar both build on.
 - **Reserved-additive (no reshape):** `JsonPathIn`, OR/nested boolean — clean future
   `FilterTerm` additions on the unified enum (now a single extension point).
 - **Still reserved:** `status` real population (gap candidate 13).
@@ -338,7 +394,9 @@ active unique index). SDK: `src/python/fathomdb/types.py:111-127` (SearchFilter)
 `src/python/fathomdb/read.py` (Predicate/read.list), `src/ts/src/index.ts:118-123`
 (SearchFilter), `src/ts/src/read.ts:68-72` (Predicate); napi lowering
 `src/rust/crates/fathomdb-py/src/lib.rs:850,1422`,
-`src/rust/crates/fathomdb-napi/src/lib.rs`. Design/ADR: `dev/design/slice-10-design.md:96-130,196-211`
+`src/rust/crates/fathomdb-napi/src/lib.rs`. Design/ADR: `dev/design/0.8.11-analysis-G10-G4-searchfilt.md`
+(Slice-0 User-Needs trace-up; R-FIL-1/R-FIL-2, R-X-1, 0.8.15 router constraints
+block, the seven requirements §1b folds in); `dev/design/slice-10-design.md:96-130,196-211`
 (G10 SearchFilter, byte-identity pin, test plan); `dev/adr/ADR-0.8.0-filter-grammar.md`
 (D-F1..D-F5, EXCLUDE list, reserved-gap 37). Tests touched: `tests/pr_g10_filtered_knn.rs`,
 `tests/slice35_filter_grammar.rs`.
