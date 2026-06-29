@@ -144,6 +144,10 @@ check "BEIR Touché-2020 (exploratory)" "raw/beir/touche2020/corpus.jsonl"
 check "BEIR FiQA-2018 (dense wins)"    "raw/beir/fiqa/corpus.jsonl"
 check "BEIR NFCorpus (BM25 wins)"      "raw/beir/nfcorpus/corpus.jsonl"
 check "BEIR ArguAna (anti-example)"    "raw/beir/arguana/corpus.jsonl"
+check "SummHay (global QFS)"           "raw/summhay/summhay.jsonl"
+check "Test of Time (temporal)"        "raw/tot/tot_semantic.jsonl"
+check "TimeQA (temporal QA)"           "raw/timeqa/test.hard.json"
+check "TimelineQA (daily-life, gen)"   "raw/timelineqa/index.json"
 
 echo
 echo "Done. For candidate-NEW corpora (MS MARCO, NQ, HotpotQA, 2Wiki, etc.)"
