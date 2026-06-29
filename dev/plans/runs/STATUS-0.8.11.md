@@ -30,6 +30,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 25 | EXP-Fr-acc/VoI finalize | E | **DONE** | $0.0151; CE reranker ACTIVE (guarded). Value-of-signal: cheap agent (`gemini-flash-lite`) relevance **DOMINATED by free `ce_score`** — lift −0.138 [−0.189,−0.087] (n=450), AUC ce 0.667 vs 0.545 → **QUALIFIED KILL (cheap agent)**: ask-or-not buys nothing, route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio, c_rt\* 0.30 vs 0.05; cross-wire rare 4/606). VoI landscape (low-ce+narrow-margin) → EXP-AF (Slice 30). Ledger row RESOLVED |
 | 30 | EXP-AF value test (KILL/GO) | E | **DONE** | $3.66/$5; **KILL** (HITL #4). Stronger agent (`claude-sonnet`) on Slice-25 break-even cells (ce_top<0.2, n=406) does NOT beat `ce_score` net of round-trip: depth-1 reranking lift +0.0074 [−0.0074,+0.0222] (CI spans 0 even @c_rt=0); NET @c_rt=0.02 −0.0126 [−0.0274,+0.0022]. Realized 6% of the 0.118 headroom (promoted 6/demoted 3) → signal-bound. Detection −0.0296 [−0.0715,+0.0123] (closes most of cheap-agent −0.138 gap, still loses). Depth-2 gross+ but net-neg → one-shot. → L2 prototype (Slice 35) drops feedback arm; `record_feedback` STAYS instrumentation (overrides F-8b promote). Ledger row RESOLVED |
 | 35 | L2 router prototype + pre-stage | E | **DONE** | $0, CALLER-SIDE (commit `523fca3d`). `recommend(query,*,agent_hint=None)->Recommendation` recommends a stack WITHOUT executing; registry built from EXP-B′+Gate-2. Smoke test **42/0**. **R-L2-1..4 met**: all 5 classes route (1); each carries a registered tuple + cost_tier (2); `agent_hint` verbatim conf 1.0, no fallback, unknown raises (3); ZERO diff to `src/rust`/`src/python/fathomdb`/`src/ts`, `fathomdb` never imported (4). Provenance honest: 3 measured (needle/multi_session/temporal) + 2 provisional (global/multi_hop); confidence header = SCREENING DATA, 0.8.15 re-validates. `feedback_arm=False` hard-wired (EXP-AF KILL); EXP-B′.5 forbidden-composition validator seam (`check_forbidden`) inherited by 0.8.15. `dev/prototypes/l2-router/` + handoff `runs/slice-35-l2-prototype.md` |
+| **36** | default-off feedback-arm seam on the L2 prototype | E | **DONE** | $0, CALLER-SIDE. `L2Router(*, feedback_arm=False)` + no-op `_maybe_escalate()` escalation hook (the **V-3 wiring point**); `recommend()` sources `feedback_arm` from the flag (no longer a hard-coded literal) and calls the stub before returning. **Default stays False (EXP-AF KILL unchanged)** — `True` returns the valid base-plan Recommendation (no raise). Smoke **85/0** (orig 42 + 43 new): default==explicit-off byte-identical regression + on-path `feedback_arm=True` reaches the no-op stub with base plan/stack unchanged. **R-L2-4 still empty** (zero diff to `src/rust`/`src/python/fathomdb`/`src/ts`). Handoff V-3 row + README updated |
 | 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
 | 45 | Verification + release readiness | — | pending | blocked-by 5–40 |
 
@@ -79,6 +80,24 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
 
 ## Verification log
 
+- 2026-06-28: **Slice 36 DONE ($0, CALLER-SIDE) — default-off feedback-arm seam on the L2
+  prototype.** Added the extension point for the Pre-0.8.15 Validation Gate **V-3** (re-test EXP-AF
+  on improved-recall + multi_hop) WITHOUT re-architecting: `L2Router.__init__(self,
+  registry_path=REGISTRY_PATH, *, feedback_arm: bool = False)` stores `self.feedback_arm`;
+  `recommend()` now emits `Recommendation(feedback_arm=self.feedback_arm, ...)` (flag-driven, not the
+  hard-coded literal) and calls a new **documented no-op stub** `_maybe_escalate(query, rec)` just
+  before returning. `_maybe_escalate` returns `rec` unchanged when off AND when on (the on-path is
+  the clearly-marked V-3 wiring point for the agent-signal / `ce_score`-VoI re-plan loop, intentional
+  no-op until V-3; never raises → returns a valid base-plan Recommendation so V-3 can iterate).
+  **Shipped default unchanged: `feedback_arm=False` (EXP-AF KILL).** Smoke test **85 passed / 0
+  failed (exit 0)** — the existing 42 assertions hold unchanged PLUS 43 new: (a) byte-identical-when-
+  off regression `L2Router() == L2Router(feedback_arm=False)` across all 5 classes + 3 classifier
+  queries with `feedback_arm is False`; (b) on-path `L2Router(feedback_arm=True).recommend(...)`
+  returns a valid Recommendation with `feedback_arm=True`, reaches the no-op stub, base
+  plan/stack/config/confidence/cost_tier unchanged from the off case; (c) `_maybe_escalate` is an
+  identity no-op on both arms. **R-L2-4 holds:** `git diff --stat HEAD -- src/rust src/python/fathomdb
+  src/ts/src` EMPTY; `fathomdb` never imported. Docs: `dev/prototypes/l2-router/{router,test_smoke}.py`
+  + `README.md` (feedback_arm flag) + handoff `runs/0.8.11-handoff-to-0.8.15.md` V-3 row.
 - 2026-06-28: **Slice 35 DONE ($0, CALLER-SIDE) — L2 router prototype + dispatcher pre-stage**
   (commit `523fca3d`; `dev/prototypes/l2-router/{router,build_registry,test_smoke}.py` +
   `registry.json` + `README.md`; hand-off `runs/slice-35-l2-prototype.md`). `recommend(query, *,

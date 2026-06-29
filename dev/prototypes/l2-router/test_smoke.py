@@ -8,7 +8,10 @@ Covers the four requirements from the §4 contract:
   R-L2-3  agent_hint override is respected VERBATIM, with NO classifier fallback
   R-L2-4  no engine mutation — `fathomdb` is never imported; recommend() executes
           no retrieval
-Plus the EXP-B'.5 forbidden-composition refusal and feedback_arm=False (EXP-AF KILL).
+Plus the EXP-B'.5 forbidden-composition refusal and the Slice-36 default-off
+feedback_arm seam: default == explicit-off (byte-identical regression, EXP-AF
+KILL stays shipped) and the feedback_arm=True on-path reaches the no-op
+escalation stub with the base plan unchanged (the V-3 wiring point).
 """
 from __future__ import annotations
 
@@ -101,6 +104,53 @@ def main() -> int:
     print("R-L2-4: caller-side — `fathomdb` engine/SDK is never imported (no retrieval run)")
     check("  fathomdb not in sys.modules", "fathomdb" not in sys.modules,
           [m for m in sys.modules if m == "fathomdb" or m.startswith("fathomdb.")])
+
+    print("Slice 36: default-off feedback_arm seam (EXP-AF KILL stays the shipped default)")
+    # Byte-identical-when-off regression: L2Router() == L2Router(feedback_arm=False).
+    default_router = L2Router()
+    off_router = L2Router(feedback_arm=False)
+    check("  default feedback_arm is False", default_router.feedback_arm is False,
+          default_router.feedback_arm)
+    off_queries = [
+        ("placeholder query", "needle"),
+        ("placeholder query", "multi_session"),
+        ("placeholder query", "temporal"),
+        ("placeholder query", "global"),
+        ("placeholder query", "multi_hop"),
+        ("what is the capital of france", None),
+        ("across the dataset what are the main themes", None),
+        ("which company employs the person who founded the charity", None),
+    ]
+    for q, hint in off_queries:
+        rec_default = default_router.recommend(q, agent_hint=hint)
+        rec_off = off_router.recommend(q, agent_hint=hint)
+        check(f"  default == explicit-off :: {q[:24]!r}/{hint}", rec_default == rec_off,
+              f"{rec_default!r} != {rec_off!r}")
+        check(f"  feedback_arm is False off :: {q[:24]!r}/{hint}",
+              rec_default.feedback_arm is False, rec_default.feedback_arm)
+
+    # On-path: feedback_arm=True returns a valid Recommendation, reaches the no-op
+    # stub, and leaves the base plan/stack unchanged (the stub is a no-op today).
+    on_router = L2Router(feedback_arm=True)
+    for q, hint in off_queries:
+        rec_on = on_router.recommend(q, agent_hint=hint)
+        rec_off = off_router.recommend(q, agent_hint=hint)
+        check(f"  on-path returns Recommendation :: {q[:24]!r}/{hint}",
+              isinstance(rec_on, Recommendation), repr(rec_on))
+        check(f"  on-path feedback_arm is True :: {q[:24]!r}/{hint}",
+              rec_on.feedback_arm is True, rec_on.feedback_arm)
+        check(f"  on-path base plan unchanged :: {q[:24]!r}/{hint}",
+              (rec_on.intent, rec_on.stack, rec_on.config, rec_on.confidence,
+               rec_on.cost_tier) ==
+              (rec_off.intent, rec_off.stack, rec_off.config, rec_off.confidence,
+               rec_off.cost_tier),
+              f"{rec_on!r} vs {rec_off!r}")
+    # _maybe_escalate is reached and is a no-op when on (returns the same object).
+    base = on_router.recommend("placeholder query", agent_hint="needle")
+    check("  _maybe_escalate no-op when on", on_router._maybe_escalate("q", base) is base,
+          "stub mutated the recommendation")
+    check("  _maybe_escalate no-op when off", off_router._maybe_escalate("q", base) is base,
+          "off stub mutated the recommendation")
 
     print("\nProvenance split (honest hand-off):")
     for intent in CLASSES:

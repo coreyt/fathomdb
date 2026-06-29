@@ -34,12 +34,26 @@ Lives **outside** the shipped library. Imports **nothing** from `fathomdb`
 2. internal lexical TF-IDF nearest-centroid classifier (mirrors Slice-20; a
    lower-bound proxy, measured macro 0.768) — fallback only.
 
-## feedback_arm = False (EXP-AF KILL)
+## feedback_arm seam (default OFF = EXP-AF KILL; ON = V-3 re-test, no-op today)
+
+`L2Router(*, feedback_arm: bool = False)`. **The default is off** and is the
+shipped behavior:
 
 EXP-AF (Slice 30) = **KILL**: even a stronger agent did not beat internal
 `ce_score` net of round-trip (depth-1 lift net of one round-trip = −0.0126
-[−0.0274, 0.0022]). The router stays on internal `ce_score`; there is **no**
-agent-signal escalation loop. `record_feedback` stays instrumentation.
+[−0.0274, 0.0022]). With `feedback_arm=False` the router stays on internal
+`ce_score`; there is **no** agent-signal escalation loop. `record_feedback`
+stays instrumentation.
+
+`feedback_arm=True` (Slice 36 seam) enables the escalation hook
+`_maybe_escalate()`, which is an **intentional no-op stub today** — it returns
+the base-plan `Recommendation` unchanged (it never raises). It is the wiring
+point for the Pre-0.8.15 Validation Gate item **V-3** (re-run EXP-AF on the
+improved-recall substrate + multi_hop; see
+`../../plans/runs/0.8.11-handoff-to-0.8.15.md`). V-3 implements the actual
+agent-signal / `ce_score`-VoI re-plan loop inside `_maybe_escalate()` without
+re-architecting the prototype. Until then, flipping the flag is byte-identical
+in behavior except that emitted `Recommendation.feedback_arm` reads `True`.
 
 ## Run
 

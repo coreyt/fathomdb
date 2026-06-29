@@ -17,8 +17,16 @@ Intent resolution preference order (PSD §II.A):
       prototype). Provider-callback (preference #2 in the PSD) is out of scope
       for a $0 caller-side prototype.
 
-feedback_arm is ALWAYS False (EXP-AF KILL, Slice 30): the router stays on
-internal ce_score; there is no agent-signal escalation loop.
+feedback_arm seam (default-OFF, Slice 36): the shipped default is
+``feedback_arm=False`` (EXP-AF KILL, Slice 30) — the router stays on internal
+ce_score and there is NO agent-signal escalation loop. ``feedback_arm=True``
+enables an escalation *seam* (``_maybe_escalate``) that is an intentional NO-OP
+today; it is the wiring point the Pre-0.8.15 Validation Gate item **V-3**
+(re-run EXP-AF on the improved-recall substrate + multi_hop, see
+``dev/plans/runs/0.8.11-handoff-to-0.8.15.md``) uses to iterate the
+agent-signal / ce_score-VoI re-plan loop WITHOUT re-architecting the prototype.
+Flipping the flag must never change the shipped behavior or raise — it returns
+the valid base-plan Recommendation so V-3 can iterate on a live seam.
 """
 from __future__ import annotations
 
@@ -183,12 +191,15 @@ class _LexicalClassifier:
 class L2Router:
     """Loads the committed registry and recommends a plan per query."""
 
-    def __init__(self, registry_path: Path = REGISTRY_PATH):
+    def __init__(self, registry_path: Path = REGISTRY_PATH, *, feedback_arm: bool = False):
         self.registry = json.loads(Path(registry_path).read_text(encoding="utf-8"))
         self.intents = self.registry["intents"]
         self.classes = tuple(self.intents)
         self.guard = self.registry["forbidden_composition_guard"]["router_isolation_rule"]
         self._clf = _LexicalClassifier(_SEED_PHRASES)
+        # Default-OFF feedback-arm seam (Slice 36). False = shipped behavior
+        # (EXP-AF KILL); True enables the no-op escalation seam for the V-3 re-test.
+        self.feedback_arm = feedback_arm
 
     # -- forbidden-composition validator (EXP-B'.5 seam; R-L2 §3) ------------- #
     def check_forbidden(self, intent: str, stack: list[str]) -> None:
@@ -204,6 +215,29 @@ class L2Router:
                 f"intent {intent!r} forbids {bad} (router-isolation: map_reduce_qfs/"
                 f"community_summary are valid only for `global`); offending stack={stack}"
             )
+
+    # -- feedback-arm escalation seam (default-OFF; V-3 wiring point) --------- #
+    def _maybe_escalate(self, query: str, rec: Recommendation) -> Recommendation:
+        """Agent-signal escalation hook — a DOCUMENTED NO-OP stub (Slice 36).
+
+        When ``self.feedback_arm`` is False (the shipped default, EXP-AF KILL)
+        this returns ``rec`` unchanged: there is no agent-signal loop and the
+        router stays on internal ``ce_score``.
+
+        When ``self.feedback_arm`` is True this is the **V-3 wiring point**. It
+        STILL returns ``rec`` unchanged today (an intentional no-op) so the seam
+        is exercisable without changing behavior. V-3
+        (``dev/plans/runs/0.8.11-handoff-to-0.8.15.md``) implements the actual
+        EXP-AF agent-signal / ``ce_score``-VoI re-plan loop HERE: re-rank or
+        re-plan the base ``rec`` from the agent signal when the VoI thresholds
+        (low ce_top + narrow route-margin) say escalation pays net of
+        round-trip. Until V-3 lands this MUST remain a no-op and MUST return a
+        valid Recommendation (the base plan) — never raise — so V-3 can iterate.
+        """
+        if not self.feedback_arm:
+            return rec
+        # feedback_arm=True: V-3 re-test seam. NO-OP until V-3 wires the loop.
+        return rec
 
     def _resolve_intent(self, query: str, agent_hint: Optional[str]):
         if agent_hint is not None:
@@ -247,19 +281,28 @@ class L2Router:
             + f"final_K={cfg['retrieval']['final_K']}. "
             + f"source_exp={rec['source_exp']}. "
             + f"forbidden_ops={cfg['forbidden_ops']}. "
-            + "feedback_arm=False (EXP-AF KILL: agent signal does not beat ce_score "
-            + "net of round-trip). SCREENING DATA — 0.8.15 must re-validate"
+            + (
+                "feedback_arm=False (EXP-AF KILL: agent signal does not beat "
+                "ce_score net of round-trip). "
+                if not self.feedback_arm
+                else "feedback_arm=True (escalation seam ENABLED — V-3 re-test; "
+                "currently a no-op stub). "
+            )
+            + "SCREENING DATA — 0.8.15 must re-validate"
             + (" (PROVISIONAL pin)." if rec["provisional"] else ".")
         )
-        return Recommendation(
+        recommendation = Recommendation(
             intent=intent,
             stack=stack,
             config=cfg,
             confidence=confidence,
             cost_tier=rec["cost_tier"],
             rationale=rationale,
-            feedback_arm=False,  # EXP-AF KILL — never True in this prototype.
+            feedback_arm=self.feedback_arm,  # flag-driven; default False (EXP-AF KILL).
         )
+        # Default-OFF feedback-arm seam: no-op when feedback_arm is False (V-3 wires
+        # the agent-signal / ce_score-VoI re-plan loop into _maybe_escalate).
+        return self._maybe_escalate(query, recommendation)
 
 
 __all__ = [
