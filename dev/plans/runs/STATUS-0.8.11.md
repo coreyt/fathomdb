@@ -19,7 +19,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 5 | Gate-0 + Gate-2 (eval foundation) | E | **DONE** | $0; Gate-0 re-scope + Gate-2 oracle ceiling (+0.392 reconciled); ledger rows RESOLVED |
 | 10 | EXP-A ‖ EXP-M4 | E | **DONE** | $0; EXP-A **GO** (multi_session gold-in-pool @10→@200 +0.45/+0.40, CI clears floor; candidate_k=200, not saturated); EXP-M4 **KEEP bge-small** (no swap-candidate clears eu7 re-clear+cost; GPU device-invariance ✅); ledger rows RESOLVED |
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | pending | blocked-by 10 (A∧M4) |
-| 20 | EXP-Fr-acc base | E | pending | blocked-by 5 |
+| 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
 | 25 | EXP-Fr-acc/VoI finalize | E | pending | blocked-by 20 |
 | 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #3 |
 | 35 | L2 router prototype + pre-stage | E | pending | blocked-by 15∧25∧30 |
@@ -48,11 +48,11 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | --- | ---: | ---: | --- |
 | Gate-0 (scoped labeling) | $1 | $0 | not started |
 | EXP-B′ judge | $6 | $0 | not started |
-| EXP-Fr-acc base | $3 | $0 | not started |
+| EXP-Fr-acc base | $3 | ~$0.05 | **DONE** (gemini-flash-lite; local vLLM down) |
 | EXP-Fr-acc/VoI | $3 | $0 | not started |
 | EXP-AF | $5 | $0 | not started |
 | Reserve | $2 | $0 | — |
-| **Total** | **$20** | **$0** | — |
+| **Total** | **$20** | **~$0.05** | EXP-Fr-acc base spent (≪ ceiling) |
 
 Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pre-registration
 (`0.8.11-implementation.md §1`) is committed; cheap-validate (gemini-flash-lite) before each spend.
@@ -104,6 +104,19 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
   eu-0 raw r@10 (K=256) bge-small 0.933 / bge-base 0.964 / e5 0.664 — confirms ordering, revises the
   swap decision (bge-base's raw edge dies under 1-bit eu7). HITL #3 RESOLVED (no escalation; swap
   out-of-0.8.11). Ledger EXP-A/EXP-M4 rows RESOLVED.
+- 2026-06-28: **Slice 20 DONE (~$0.05/$3).** EXP-Fr-acc base (`fracc-base-output.json` +
+  `fracc-base.md`, `eval/fracc_classifier_run.py`). **Classifier ($0):** pure-numpy lexical TF-IDF
+  nearest-centroid (Rocchio), stratified 5-fold CV, balanced 100/class — macro **0.768
+  [0.732,0.802]**, all 5 classes > 0.20 chance → **NO KILL** (needle weakest 0.500; global 1.000;
+  multi_hop 0.940). *(No torch/sklearn → lexical fallback proxy, likely a lower bound.)*
+  **Mis-route matrix (gemini-flash-lite; local vLLM qwen3.6-27b/gemma-4 were HTTP-500 down):**
+  oracle-context answer-quality, C(map-reduce/QFS) vs retrieval, same judge both arms, paired
+  bootstrap. **needle is the ONLY negative Δ_C** (others +0.04). Load-bearing needle→C **scales with
+  map-reduce breadth**: −0.080 [−0.28,+0.12] @3-distractor → **−0.300 [−0.47,−0.10] @8-distractor**
+  (CI excludes 0; ≈ prior −0.362 — itself a weak-distiller artifact per 0.8.3 ledger). Router-isolation
+  (C forbidden on needle) supported → EXP-B′.5 `forbidden_ops`; asymmetry feeds Slice-25 VoI.
+  Resilient harness (checkpoint/resume/`BudgetLedger` $3 guard); cheap-validated. Ledger EXP-Fr-acc
+  row RESOLVED.
 
 ## Experiments-ledger (F-11 closure tracker)
 

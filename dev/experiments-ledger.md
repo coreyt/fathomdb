@@ -339,7 +339,7 @@
 | EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | **RESOLVED — KEEP bge-small.** No swap-candidate clears the gate net of eu7 re-clear+cost (s15a FULL n=10506): bge-base eu8 +0.024 but projected_eu7 0.786<0.90; e5-base-v2 0.896<0.90; nomic 0.932 but not cpu_feasible; gte-base measurement-failed. eu-0 raw r@10 confirms ordering, revises decision. GPU device-invariance ✅ (cosine 1.0, RTX 3090). Swap out-of-0.8.11 → HITL #2 → detail below |
 | EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | REGISTERED — pending |
 | EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | REGISTERED — pending |
-| EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | REGISTERED — pending |
+| EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | **RESOLVED — NO KILL.** Internal-fallback classifier macro **0.768 [0.732,0.802]**, all 5 classes > 0.20 chance (needle weakest 0.500). Mis-route asymmetry confirmed: **needle is the ONLY negative Δ_C**; needle→C **scales with map-reduce breadth** −0.080 [−0.28,+0.12] @3-distractor → **−0.300 [−0.47,−0.10] @8-distractor** (CI excludes 0; ≈ prior −0.362). $0.05/$3 → detail below |
 | EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | REGISTERED — pending |
 | EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | REGISTERED — pending |
 
@@ -436,6 +436,46 @@
 - **$:** **$0.** **Sources:** `dev/plans/runs/expm4-ceiling-output.json` + `expm4-ceiling.md`
   (`src/python/eval/expm4_embedder_ceiling_run.py`); reuses `runs/0.8.3-s15a-embedder.json`
   (`eval.s15a_embedder_probe`) + `research/eu-0/result_*.json`.
+
+### EXP-Fr-acc base — classifier accuracy + asymmetric mis-route cost (Slice 20, RESOLVED 2026-06-28)
+
+- **Deliverable 1 — classifier ($0, no LLM).** The *internal-fallback* intent classifier (PSD
+  §II.A pref #3; agent-label #1, provider-callback #2 are preferred and not measured here). Pure-numpy
+  **lexical TF-IDF nearest-centroid (Rocchio)**, **stratified 5-fold CV**, **balanced 100/class**
+  (chance 0.20; global caps the balanced N). *(No torch/sklearn in env → embedding variant
+  unavailable; lexical = honest $0 fallback proxy, likely a lower bound.)* Bootstrap CI 2000×.
+- **Per-class accuracy [CI]:** needle **0.500** [0.40,0.60]; multi_session **0.630** [0.54,0.72];
+  temporal **0.770** [0.69,0.85]; global **1.000** [1.00,1.00]; multi_hop **0.940** [0.89,0.98];
+  **macro 0.768 [0.732,0.802]**. Confusion = the three memory/compositional classes leak into each
+  other (needle → multi_session 20 / multi_hop 16 / temporal 14); global + multi_hop near-separable.
+- **KILL check (classifier):** **NO KILL** — 0 classes at chance (weakest CI-lo 0.40 ≫ 0.20). The
+  internal classifier is a usable low-confidence fallback; prototype keeps the agent-label-first order.
+- **Deliverable 2 — asymmetric mis-route matrix (priced).** Oracle-context **answer-quality** delta,
+  route `C` (map-reduce/QFS: per-chunk QFS → reduce → answer) vs the correct `retrieval` route; both
+  arms see identical chunks (gold evidence + distractors), same `gemini-flash-lite` judge grades both
+  (paired bootstrap CI 2000×). LOCOMO (needle/multi_session/temporal) + MuSiQue (multi_hop). Base
+  25/class, 3 distractors. **Δ_C (C − retrieval, judge):** needle **−0.080** [−0.28,+0.12];
+  multi_session +0.040; temporal +0.040; multi_hop +0.040. **needle is the UNIQUE negative cell**
+  (the predicted high-cost cross-wire); others neutral-to-slightly-positive (temporal/multi_hop on a
+  low absolute floor 0.16–0.20).
+- **Load-bearing needle→C (the −0.362 claim).** The penalty **scales with map-reduce breadth**: a
+  sensitivity arm (needle, n=40, **8 distractors** = a QFS that reads more) gives **−0.300
+  [−0.47,−0.10]** (judge; CI **excludes 0**) / −0.225 (containment), with retrieval 0.750 → C 0.450.
+  **−0.300 ≈ the prior −0.362** — which the 0.8.3 gap-decomposition ledger flagged as a
+  weak-distiller (gpt-5-nano) artifact; reproduced here with a competent cheap summarizer once the
+  map-reduce reads enough chunks. → Encode `map_reduce_qfs`/`community_summary` as `forbidden_ops`
+  on `needle` (EXP-B′.5 forbidden-composition matrix); the asymmetry feeds the Slice-25 VoI policy.
+- **Deferred cells.** `global` (both routes) → reference-free `decide_084` win-rate axis (EXP-B′
+  priced judge, Slice 15), not gold-answer accuracy. Within-retrieval config cells (needle→
+  multi_session *stack*) differ by config (α/pool_n), not route → owned by EXP-B′.5, not measured.
+- **Models + $.** Classifier $0. Mis-route = `gemini-flash-lite` (local vLLM qwen3.6-27b/gemma-4
+  were HTTP-500 down; cheap hosted tier used; same model both arms → fair delta). Committed runs
+  **$0.041** (base $0.0236, 886 calls + needle-deep $0.0173) + ~$0.013 discarded first attempt +
+  $0.0004 cheap-validate ≈ **$0.054 total**, ≪ $3. Resilient harness (per-item checkpoint, idempotent
+  `--resume`, `BudgetLedger --max-usd 3.0` guard); cheap-validated (2-Q) before spend.
+- **$:** **≈ $0.05** (of $3). **Sources:** `dev/plans/runs/fracc-base-output.json` + `fracc-base.md`
+  (`src/python/eval/fracc_classifier_run.py`, base mode; reproducible). PSD §II.A/§II.D/§III.D;
+  `dev/plans/0.8.11-implementation.md` §1. Prior −0.362 context: ledger 0.8.3 gap-decomposition row.
 
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
