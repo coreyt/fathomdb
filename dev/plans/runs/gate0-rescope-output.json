@@ -1,0 +1,184 @@
+{
+  "schema": "0.8.11-gate0-rescope-v1",
+  "slice": 5,
+  "cost_usd": 0.0,
+  "intent_classes": [
+    "needle",
+    "multi_session",
+    "temporal",
+    "global",
+    "multi_hop"
+  ],
+  "corpora": [
+    {
+      "corpus": "LME (LongMemEval-cleaned)",
+      "gold_path": "dev/plans/runs/0.8.3-d0a-memory-gold.json",
+      "corpus_payload_path": "data/corpus-data/external/memex-elps/ (ELPS extractions; gitignored)",
+      "n_queries": 606,
+      "by_query_class": {
+        "factoid": 156,
+        "knowledge_update": 150,
+        "multi_session": 150,
+        "temporal": 150
+      },
+      "intent_coverage": {
+        "needle": 306,
+        "multi_session": 150,
+        "temporal": 150
+      },
+      "node_level_labels": {
+        "present": true,
+        "field": "required_evidence[].doc_id (+ qrels_hash)",
+        "n_with_labels": 606
+      },
+      "license": "research corpus; gitignored EVAL-ONLY payload"
+    },
+    {
+      "corpus": "LOCOMO",
+      "gold_path": "data/corpus-data/eval/0.8.3-locomo-memory-gold.json",
+      "corpus_payload_path": "data/corpus-data/raw/locomo10.json (CC-BY-NC; gitignored)",
+      "n_conversations": 10,
+      "n_queries": 1443,
+      "by_query_class": {
+        "temporal": 321,
+        "multi_session": 281,
+        "factoid": 841
+      },
+      "intent_coverage": {
+        "temporal": 321,
+        "multi_session": 281,
+        "needle": 841
+      },
+      "node_level_labels": {
+        "present": true,
+        "field": "required_evidence[].doc_id (+ _locomo_category)",
+        "n_with_labels": 1443
+      },
+      "license": "CC-BY-NC; gitignored EVAL-ONLY payload"
+    },
+    {
+      "corpus": "AP-News (BenchmarkQED)",
+      "gold_path": "data/corpus-data/raw/apnews_benchmarkqed/generated_questions_v1 (+ generated_questions_v2)",
+      "corpus_payload_path": "data/corpus-data/raw/apnews_benchmarkqed/raw_data.zip (MS-Research, non-redistributable; gitignored)",
+      "n_articles": 1397,
+      "n_questions_v1": 200,
+      "questions_v1": {
+        "activity_global_questions_text.json": 50,
+        "activity_local_questions_text.json": 50,
+        "data_global_questions_text.json": 50,
+        "data_local_questions_text.json": 50
+      },
+      "questions_v2": {
+        "data_global_questions_assertions.json": 50,
+        "data_linked_questions_assertions.json": 50,
+        "data_local_questions_assertions.json": 50
+      },
+      "intent_coverage": {
+        "global": "activity_global+data_global (~100 v1)",
+        "local": "activity_local+data_local (~100 v1)"
+      },
+      "node_level_labels": {
+        "present": false,
+        "field": null,
+        "note": "reference-free LLM-judge win-rate (decide_084); v2 = claim/assertion-level, NOT FathomDB-node-level retrieval labels"
+      },
+      "license": "Microsoft Research License \u2014 NON-COMMERCIAL, NON-REDISTRIBUTABLE, EVAL-ONLY"
+    },
+    {
+      "corpus": "MuSiQue (dev)",
+      "gold_path": "data/corpus-data/raw/musique_dev.jsonl",
+      "corpus_payload_path": "data/corpus-data/raw/musique_dev.jsonl (gitignored)",
+      "n_records": 4834,
+      "n_answerable": 2417,
+      "answerable_hop_dist": {
+        "2": 1252,
+        "3": 760,
+        "4": 405
+      },
+      "intent_coverage": {
+        "multi_hop": 2417
+      },
+      "node_level_labels": {
+        "present": true,
+        "field": "paragraphs[].is_supporting (paragraph-level supporting facts)",
+        "n_answerable_with_supporting": 2417,
+        "note": "derive FathomDB-node-level labels from is_supporting (no LLM needed)"
+      },
+      "license": "MuSiQue (CC-BY); gitignored EVAL-ONLY payload"
+    }
+  ],
+  "reused_asset_map": {
+    "needle": [
+      "LME (factoid+knowledge_update)",
+      "LOCOMO (factoid)"
+    ],
+    "multi_session": [
+      "LME",
+      "LOCOMO"
+    ],
+    "temporal": [
+      "LME",
+      "LOCOMO"
+    ],
+    "global": [
+      "AP-News (sensemaking; win-rate only)"
+    ],
+    "multi_hop": [
+      "MuSiQue (answerable, is_supporting)"
+    ]
+  },
+  "decision_rule_adoption": {
+    "decide_083": {
+      "impl": "src/python/eval/decision_rule_083.py",
+      "axis": "Mem0 memory-class (needle/multi_session/temporal/knowledge_update)",
+      "form": "paired-delta FathomDB-Mem0, per-class CI lower >= -EPS_NEAR_PARITY, MDE<=0.05 power guard",
+      "epsilon": 0.05
+    },
+    "decide_084": {
+      "impl": "src/python/eval/decision_rule_084.py (+ baselines_084.py)",
+      "axis": "GraphRAG sensemaking (global)",
+      "form": "LLM-judge win-rate near-parity: CI lower >= 0.5 - EPS_WIN_RATE; question-clustered bootstrap, >=5 runs",
+      "epsilon_wr": 0.05,
+      "corpus_cap": "N=200 (AP-News max); more runs cannot tighten MDE, only more questions can"
+    },
+    "musique_multihop": {
+      "impl": "src/python/eval/m1_decision_rule.py",
+      "axis": "multi_hop vs HippoRAG-2",
+      "form": "TBD: decide_08x (competitor unbuilt) \u2014 OUT OF SCOPE for Gate-0"
+    }
+  },
+  "label_gap_report": {
+    "needle": {
+      "node_labels": true,
+      "source": "IR gold qrels + LME/LOCOMO required_evidence"
+    },
+    "multi_hop": {
+      "node_labels": "derivable",
+      "source": "MuSiQue is_supporting (no LLM)"
+    },
+    "global": {
+      "node_labels": "not_needed",
+      "gap": false,
+      "source": null,
+      "disposition": "AP-News sensemaking is judged reference-free by decide_084 answer-quality win-rate, NOT retrieval recall \u2192 no node-level retrieval labels needed by design."
+    },
+    "multi_session": {
+      "node_labels": false,
+      "gap": true,
+      "source": "LOCOMO (281) \u2014 session-level evidence only",
+      "disposition": "LOCOMO names the gold SESSION (conv-N:session_M), not the node; a scoped pass refines session\u2192node (deterministic answer/turn match first, cheap-LLM residual only; \u2264$1). This is the ONLY scoped gap \u2014 far smaller than a fresh golden set."
+    },
+    "temporal": {
+      "node_labels": false,
+      "gap": true,
+      "source": "LOCOMO (321) \u2014 session-level evidence only",
+      "disposition": "same as multi_session: refine LOCOMO session\u2192node (scoped, \u2264$1)."
+    }
+  },
+  "f4_m6_build_excluded": {
+    "excluded": true,
+    "target_release": "0.8.17",
+    "note": "~269-Q entity-rich F4/M6 corpus acquisition (EXP-D) excluded per \u00a71 KILL/scope guard"
+  },
+  "verdict": "RE-SCOPED: 4 existing corpora cover all 5 intent classes. needle has node-level qrels; multi_hop derives node-level labels from MuSiQue is_supporting; global needs none (sensemaking \u2192 decide_084 win-rate). The ONLY gap = LOCOMO multi_session/temporal session-level evidence \u2192 one scoped session\u2192node refinement pass (\u2264$1, unspent at Gate-0). No fresh golden set; EXP-D (F4/M6) excluded \u2192 0.8.17. decide_083 governs the Mem0 axis; decide_084 the GraphRAG/global axis (corpus-capped N=200)."
+}

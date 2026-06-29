@@ -1504,6 +1504,185 @@ impl SearchFilter {
     }
 }
 
+// ===== 0.8.11 Slice 40 (#17) — unified filter grammar (G4 + G10) =========
+
+/// 0.8.11 Slice 40 (#17) — a single closed `FilterTerm` of the **unified**
+/// filter grammar (ADR-0.8.11-filter-grammar-unification, Option A; closes
+/// reserved-gap 37). Exactly **five** variants: the four G10 shorthand metadata
+/// fields (`SourceType`/`Kind`/`CreatedAfter`/`Status`) plus the general G4
+/// json-path [`Predicate`] (`Json`). The shorthand fields are dedicated typed
+/// variants — NOT `Json(Predicate)` over `$.source_type` etc. — precisely so the
+/// vec0 search backend can lower them to the *indexed* pre-KNN metadata columns
+/// while typed-rejecting an arbitrary `Json` term (D3: no demotion to post-KNN
+/// `json_extract`).
+///
+/// The grammar stays **closed** (inherits ADR-0.8.0 D-F1/D-F2/D-F4/D-F5): no
+/// DSL, no caller SQL, no `JsonPathFused*`, no `*_unchecked`, no OR/nesting
+/// (implicit AND only); `Json` terms are built ONLY via the validated
+/// [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`] constructors
+/// (path allowlist enforced at construction). The shipped `ScalarValue` /
+/// `ComparisonOp` / `Predicate` vocabulary is reused verbatim — no new grammar.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FilterTerm {
+    /// vec0 partition-key metadata column `source_type` (pre-KNN). On
+    /// `read.list` it **constant-folds** against `resolve_source_type(kind)`
+    /// (the column does not exist in `canonical_nodes`).
+    SourceType(String),
+    /// `kind` — the vec0 metadata column (pre-KNN). On `read.list` it
+    /// constant-folds against the partition `kind` argument (D1 impl decision:
+    /// constant-fold, the simpler total option vs a redundant column clause).
+    Kind(String),
+    /// `created_at >= bound` (unix seconds). vec0 metadata column (pre-KNN);
+    /// lowers to `json_extract(body,'$.created_at') >= ?` on `read.list`.
+    CreatedAfter(i64),
+    /// vec0 metadata column `status` (pre-KNN); lowers to
+    /// `json_extract(body,'$.status') = ?` on `read.list`.
+    Status(String),
+    /// The general G4 json-path predicate (unchanged shipped grammar). Resolves
+    /// **only** on the `read.list` (canonical_nodes) backend; **typed-rejected**
+    /// on `search_filtered` because it would require a post-KNN `json_extract`
+    /// that defeats the indexed pre-KNN filter (D3 no-demotion guarantee).
+    Json(Predicate),
+}
+
+/// 0.8.11 Slice 40 (#17) — the unified closed `Filter` contract. ONE superset
+/// type with implicit-AND [`FilterTerm`]s, dispatched to one of **two** internal
+/// compilation backends (Option A — the TYPE unifies, the COMPILATION
+/// dispatches): the vec0-metadata indexed pre-KNN `WHERE` for `search_filtered`,
+/// and `json_extract` over `canonical_nodes.body` for `read.list`. The shipped
+/// `SearchFilter` (G10) and `Predicate` lists (G4) re-express as sugar that
+/// lowers into this type (D4); the `filter=None` byte-identical-0.7.2-SQL pin is
+/// preserved because the vec0 lowering routes back through the shipped
+/// `vector_filter_clause` compilation verbatim.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Filter {
+    /// AND-combined terms (implicit AND, inherits D-F5). Empty = unfiltered.
+    pub terms: Vec<FilterTerm>,
+}
+
+impl From<&SearchFilter> for Filter {
+    /// D4 sugar lowering — the shipped G10 [`SearchFilter`] re-expressed as the
+    /// unified [`Filter`]. Field → term in the **canonical** order
+    /// (`source_type`, `kind`, `created_after`, `status`) so the round-trip back
+    /// to a `SearchFilter` (and thus the produced vec0 SQL) is byte-identical.
+    fn from(sf: &SearchFilter) -> Self {
+        let mut terms = Vec::new();
+        if let Some(s) = &sf.source_type {
+            terms.push(FilterTerm::SourceType(s.clone()));
+        }
+        if let Some(k) = &sf.kind {
+            terms.push(FilterTerm::Kind(k.clone()));
+        }
+        if let Some(c) = sf.created_after {
+            terms.push(FilterTerm::CreatedAfter(c));
+        }
+        if let Some(s) = &sf.status {
+            terms.push(FilterTerm::Status(s.clone()));
+        }
+        Filter { terms }
+    }
+}
+
+impl Filter {
+    /// Backend dispatch for `search_filtered` (vec0 — indexed pre-KNN). Lowers
+    /// the metadata subset `{SourceType, Kind, CreatedAfter, Status}` back into a
+    /// [`SearchFilter`] (which the shipped `vector_filter_clause` compiles to the
+    /// pre-KNN `WHERE`), and **typed-rejects** a [`FilterTerm::Json`] term with
+    /// [`EngineError::InvalidFilter`] — the explicit no-demotion guarantee (D3).
+    /// Field-by-variant assignment makes the output canonical-order-independent
+    /// of `terms` ordering (hand-built router filters included). A later
+    /// duplicate metadata term overwrites the earlier (last-wins).
+    pub fn to_search_filter(&self) -> Result<SearchFilter, EngineError> {
+        let mut sf = SearchFilter::default();
+        for term in &self.terms {
+            match term {
+                FilterTerm::SourceType(s) => sf.source_type = Some(s.clone()),
+                FilterTerm::Kind(k) => sf.kind = Some(k.clone()),
+                FilterTerm::CreatedAfter(c) => sf.created_after = Some(*c),
+                FilterTerm::Status(s) => sf.status = Some(s.clone()),
+                FilterTerm::Json(_) => {
+                    return Err(EngineError::InvalidFilter {
+                        reason: "arbitrary json-path predicate not supported on search_filtered; \
+                                 it would require a post-KNN json_extract that defeats the \
+                                 indexed pre-KNN filter (ADR-0.8.11 D3 no-demotion guarantee)"
+                            .to_string(),
+                    });
+                }
+            }
+        }
+        Ok(sf)
+    }
+
+    /// Backend dispatch for `read.list` (canonical_nodes — `json_extract`). The
+    /// full set resolves here. Returns:
+    /// - `Ok(Some(preds))` — the implicit-AND [`Predicate`] list to run; or
+    /// - `Ok(None)` — a constant-folded **guaranteed-empty** result (a `Kind` or
+    ///   `SourceType` term that cannot match this partition), so the caller
+    ///   returns an empty `Vec` without touching SQL; or
+    /// - `Err(InvalidFilter)` — a non-allowlisted path (defense-in-depth; the
+    ///   shorthand lowerings only ever use allowlisted paths).
+    ///
+    /// Lowering (D3): `Json(p)` → `p`; `Status(s)` →
+    /// `json_path_eq("$.status", Text(s))`; `CreatedAfter(b)` →
+    /// `json_path_compare("$.created_at", Gte, Integer(b))`; `Kind(k)` →
+    /// constant-fold vs the partition `kind` arg (no-op if equal, empty if not);
+    /// `SourceType(s)` → constant-fold vs `resolve_source_type(kind)` (no-op if
+    /// equal, empty otherwise — the column does not exist in `body`).
+    fn lower_for_read_list(&self, kind: &str) -> Result<Option<Vec<Predicate>>, EngineError> {
+        let mut preds = Vec::new();
+        for term in &self.terms {
+            match term {
+                FilterTerm::Json(p) => preds.push(p.clone()),
+                FilterTerm::Status(s) => {
+                    preds.push(Predicate::json_path_eq("$.status", ScalarValue::Text(s.clone()))?);
+                }
+                FilterTerm::CreatedAfter(b) => {
+                    preds.push(Predicate::json_path_compare(
+                        "$.created_at",
+                        ComparisonOp::Gte,
+                        ScalarValue::Integer(*b),
+                    )?);
+                }
+                FilterTerm::Kind(k) => {
+                    // Constant-fold vs the partition argument (D1 impl decision).
+                    if k != kind {
+                        return Ok(None);
+                    }
+                }
+                FilterTerm::SourceType(s) => {
+                    // source_type is NOT a canonical_nodes column; it is a pure
+                    // function of `kind`. Constant-fold (D2/D3).
+                    match resolve_source_type(kind) {
+                        Ok(resolved) if resolved == s.as_str() => {}
+                        _ => return Ok(None),
+                    }
+                }
+            }
+        }
+        Ok(Some(preds))
+    }
+
+    /// 0.8.11 Slice 40 — test seam: expose the vec0 backend dispatch so the
+    /// unification suite can pin the typed-rejection (RED→GREEN) and that a
+    /// metadata-only Filter lowers losslessly. Returns the lowered
+    /// [`SearchFilter`] (or `InvalidFilter` for a `Json` term).
+    #[doc(hidden)]
+    pub fn to_search_filter_for_test(&self) -> Result<SearchFilter, EngineError> {
+        self.to_search_filter()
+    }
+
+    /// 0.8.11 Slice 40 — test seam: expose the `read.list` backend lowering so
+    /// the unification suite can pin total dispatch incl. the `SourceType`/`Kind`
+    /// constant-folds. `Ok(None)` == constant-folded-empty.
+    #[doc(hidden)]
+    pub fn lower_for_read_list_for_test(
+        &self,
+        kind: &str,
+    ) -> Result<Option<Vec<Predicate>>, EngineError> {
+        self.lower_for_read_list(kind)
+    }
+}
+
 /// G11 (Slice 15) — a document sent to a BYO-LLM extraction harness via
 /// [`Engine::ingest_with_extractor`].
 #[derive(Clone, Debug)]
@@ -3001,10 +3180,29 @@ impl Engine {
         query: &str,
         filter: Option<SearchFilter>,
     ) -> Result<SearchResult, EngineError> {
+        // 0.8.11 Slice 40 (R-FIL-2): re-express the shipped G10 `SearchFilter`
+        // sugar through the unified `Filter` type, then lower back to the vec0
+        // backend's `SearchFilter` (D4). The round-trip is lossless +
+        // canonical-order-preserving, so the produced phase-1 SQL stays
+        // byte-identical to 0.7.2 on the `None`/all-`None` path. `SearchFilter`
+        // never carries a `Json` term, so `to_search_filter` never rejects here.
+        let lowered = filter.map(|sf| Filter::from(&sf).to_search_filter()).transpose()?;
         // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
         // 0.8.5: depth=0 is inert, so the α/pool_n defaults (0.3, 0) never reach the blend.
-        self.search_reranked(query, filter, 0, false, 0.3, 0)
+        self.search_reranked(query, lowered, 0, false, 0.3, 0)
+    }
+
+    /// 0.8.11 Slice 40 (#17) — unified-`Filter` entry point for the vec0 search
+    /// backend. Lowers the metadata subset to the indexed pre-KNN `WHERE` and
+    /// **typed-rejects** a [`FilterTerm::Json`] term with
+    /// [`EngineError::InvalidFilter`] (D3 no-demotion guarantee). This is the
+    /// unified surface the 0.8.15 router `constraints` block reasons over; the
+    /// shipped [`Engine::search_filtered`]`(query, Option<SearchFilter>)` stays
+    /// as sugar over the same path.
+    pub fn search_filter(&self, query: &str, filter: &Filter) -> Result<SearchResult, EngineError> {
+        let sf = filter.to_search_filter()?;
+        self.search_reranked(query, Some(sf), 0, false, 0.3, 0)
     }
 
     /// 0.8.1 Slice 10 (R1) / Slice 30 (R3) — `search_reranked`: hybrid search
@@ -3679,6 +3877,28 @@ impl Engine {
                 self.emit_sqlite_internal_error(&err);
                 Err(EngineError::Storage)
             }
+        }
+    }
+
+    /// 0.8.11 Slice 40 (#17) — unified-`Filter` entry point for the
+    /// canonical_nodes `read.list` backend. Accepts the **full** [`FilterTerm`]
+    /// set (D3): `Json` runs the shipped allowlisted `json_extract` path;
+    /// `Status`/`CreatedAfter` lower to allowlisted json-paths; `Kind`/`SourceType`
+    /// **constant-fold** against the partition `kind` (a guaranteed-empty fold
+    /// returns an empty `Vec` without touching SQL). Dispatches to the same
+    /// [`Engine::read_list`] machinery the shipped `Predicate` surface uses, so
+    /// every inherited invariant (`superseded_at IS NULL`, `json_valid(body)`,
+    /// the `canonical_nodes(kind)` index, parameterized binds) is preserved.
+    pub fn read_list_filter(
+        &self,
+        kind: &str,
+        filter: &Filter,
+        limit: usize,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        match filter.lower_for_read_list(kind)? {
+            None => Ok(Vec::new()),
+            Some(preds) => self.read_list(kind, &preds, limit),
         }
     }
 

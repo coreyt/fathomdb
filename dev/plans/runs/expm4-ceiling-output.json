@@ -1,0 +1,149 @@
+{
+  "experiment": "EXP-M4",
+  "slice": "0.8.11/slice-10",
+  "cost": "$0 (GPU local + reuse of byte-verified offline measurements; Gate-2 reuse precedent)",
+  "method": "Embedder ceiling is a device-invariant model-weights property; consolidate the FULL s15a probe (eu7 re-clear + eu8 + hard subset + paired-bootstrap CI + cpu cost) and the eu-0 raw-recall sweep, and confirm device-invariance on the GPU.",
+  "gpu_confirmation": {
+    "status": "ok",
+    "device": "NVIDIA GeForce RTX 3090",
+    "torch": "2.10.0+cu128",
+    "mean_row_cosine_gpu_vs_cpu": 1.0,
+    "max_abs_elt_diff": 1.1920928955078125e-07,
+    "conclusion": "GPU and CPU vectors are f32-equivalent -> the ceiling is device-invariant; the reused CPU measurement holds on GPU."
+  },
+  "s15a_full_probe": {
+    "source": "dev/plans/runs/0.8.3-s15a-embedder.json",
+    "corpus_docs": 10506,
+    "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+    "qrels_version": "ir-c-reused-v1",
+    "hard_count": 825,
+    "runtime": {
+      "numpy": "2.4.6",
+      "torch": "2.12.0+cpu",
+      "transformers": "5.9.0"
+    },
+    "base": {
+      "name": "bge-small",
+      "eu8": 0.3994,
+      "hard_r10": 0.0194,
+      "ms_per_query": 11.2
+    },
+    "candidates": {
+      "bge-base": {
+        "status": "ok",
+        "eu8": 0.4235,
+        "eu8_margin_ci": [
+          0.015,
+          0.0335
+        ],
+        "hard_r10": 0.023,
+        "hard_margin_ci_lo": -0.0036,
+        "projected_eu7": 0.7855,
+        "projected_eu7_clears_floor": false,
+        "cpu_feasible": true,
+        "ms_per_query": 26.1,
+        "in_library_feasible": true,
+        "probe_15a_pass": false
+      },
+      "e5-base-v2": {
+        "status": "ok",
+        "eu8": 0.4674,
+        "eu8_margin_ci": [
+          0.0568,
+          0.0789
+        ],
+        "hard_r10": 0.0267,
+        "hard_margin_ci_lo": -0.0061,
+        "projected_eu7": 0.896,
+        "projected_eu7_clears_floor": false,
+        "cpu_feasible": true,
+        "ms_per_query": 23.7,
+        "in_library_feasible": true,
+        "probe_15a_pass": false
+      },
+      "gte-base": {
+        "status": "failed",
+        "error": "IndexError: index 126396013669456 is out of bounds for dimension 0 with size 512",
+        "in_library_feasible": false
+      },
+      "nomic": {
+        "status": "ok",
+        "eu8": 0.451,
+        "eu8_margin_ci": [
+          0.0416,
+          0.0624
+        ],
+        "hard_r10": 0.0218,
+        "hard_margin_ci_lo": -0.0085,
+        "projected_eu7": 0.9317,
+        "projected_eu7_clears_floor": true,
+        "cpu_feasible": false,
+        "ms_per_query": 36.1,
+        "in_library_feasible": true,
+        "probe_15a_pass": false
+      }
+    },
+    "chosen_embedder": "bge-small",
+    "no_swap": true,
+    "ranking": [
+      "bge-base",
+      "e5-base-v2",
+      "nomic",
+      "gte-base"
+    ]
+  },
+  "eu0_sweep": {
+    "source": "dev/research/eu-0",
+    "models": {
+      "bge-small": {
+        "dim": 384,
+        "n_docs": 7667,
+        "n_queries": 100,
+        "recall_at_10_by_fanout_k": {
+          "32": 0.683,
+          "64": 0.793,
+          "96": 0.849,
+          "128": 0.882,
+          "256": 0.933
+        }
+      },
+      "bge-base": {
+        "dim": 768,
+        "n_docs": 7667,
+        "n_queries": 100,
+        "recall_at_10_by_fanout_k": {
+          "32": 0.783,
+          "64": 0.885,
+          "96": 0.914,
+          "128": 0.928,
+          "256": 0.964
+        }
+      },
+      "e5-small-v2": {
+        "dim": 384,
+        "n_docs": 7667,
+        "n_queries": 100,
+        "recall_at_10_by_fanout_k": {
+          "32": 0.362,
+          "64": 0.448,
+          "96": 0.495,
+          "128": 0.544,
+          "256": 0.664
+        }
+      }
+    }
+  },
+  "verdict": {
+    "default": "keep CLS-corrected bge-small",
+    "passers": [],
+    "verdict": "KEEP bge-small. No candidate clears the swap gate net of re-whiten/eu7 re-clear + cost. A productized swap is out of 0.8.11 (HITL #2).",
+    "per_candidate_block_reason": {
+      "bge-base": "projected_eu7 0.7855 < 0.9 (fails 1-bit eu7 re-clear); hard-subset margin CI-lo -0.0036 <= 0 (no clearance)",
+      "e5-base-v2": "projected_eu7 0.896 < 0.9 (fails 1-bit eu7 re-clear); hard-subset margin CI-lo -0.0061 <= 0 (no clearance)",
+      "gte-base": "measurement FAILED (IndexError: index 126396013669456 is out of bounds); not in-library feasible",
+      "nomic": "hard-subset margin CI-lo -0.0085 <= 0 (no clearance); not cpu_feasible (36.1ms/q > 3x base)"
+    },
+    "eu0_reconciliation": "eu-0 raw recall@10 (fanout K=256): bge-small=0.933, bge-base=0.964, e5-small-v2=0.664. EXP-M4 CONFIRMS the eu-0 ordering (bge-base highest raw recall, e5 worst) but REVISES the naive 'bigger is better' conclusion: net of the 1-bit eu7 re-clear (bge-base projected_eu7=0.7855 < 0.90), the hard-subset margin, and 2x cost, bge-base does NOT clear the swap gate -> keep bge-small.",
+    "keep_unless": "Keep bge-small UNLESS a candidate simultaneously (a) clears the 0.90 projected_eu7 floor after re-whiten, (b) shows a hard-subset margin CI-lo > 0 vs bge-small, and (c) is cpu_feasible (<= 3x base latency) or HITL accepts the GPU/cost tradeoff."
+  }
+}

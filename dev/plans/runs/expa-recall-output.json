@@ -1,0 +1,3996 @@
+{
+  "experiment": "EXP-A",
+  "slice": "0.8.11/slice-10",
+  "mode": "full",
+  "cost": "$0 (LLM-free, deterministic)",
+  "dataset": "xiaowu0162/longmemeval-cleaned",
+  "split": "longmemeval_s_cleaned",
+  "seed": 20260614,
+  "n_questions": 160,
+  "class_counts": {
+    "factoid": 40,
+    "knowledge_update": 40,
+    "multi_session": 40,
+    "temporal": 40
+  },
+  "arms": [
+    "fathomdb_fts_only",
+    "naive_bm25"
+  ],
+  "union_docs": 7154,
+  "blockers": [],
+  "expa": {
+    "k_grid": [
+      10,
+      20,
+      50,
+      100,
+      200
+    ],
+    "classes": [
+      "factoid",
+      "knowledge_update",
+      "multi_session",
+      "temporal"
+    ],
+    "sweep": {
+      "naive_bm25": {
+        "factoid": {
+          "10": {
+            "point": 0.7,
+            "lo": 0.55,
+            "hi": 0.825,
+            "n": 40
+          },
+          "20": {
+            "point": 0.725,
+            "lo": 0.575,
+            "hi": 0.85,
+            "n": 40
+          },
+          "50": {
+            "point": 0.85,
+            "lo": 0.725,
+            "hi": 0.95,
+            "n": 40
+          },
+          "100": {
+            "point": 0.875,
+            "lo": 0.775,
+            "hi": 0.975,
+            "n": 40
+          },
+          "200": {
+            "point": 0.9,
+            "lo": 0.8,
+            "hi": 0.975,
+            "n": 40
+          }
+        },
+        "knowledge_update": {
+          "10": {
+            "point": 0.875,
+            "lo": 0.775,
+            "hi": 0.975,
+            "n": 40
+          },
+          "20": {
+            "point": 0.9,
+            "lo": 0.8,
+            "hi": 0.975,
+            "n": 40
+          },
+          "50": {
+            "point": 0.975,
+            "lo": 0.925,
+            "hi": 1.0,
+            "n": 40
+          },
+          "100": {
+            "point": 1.0,
+            "lo": 1.0,
+            "hi": 1.0,
+            "n": 40
+          },
+          "200": {
+            "point": 1.0,
+            "lo": 1.0,
+            "hi": 1.0,
+            "n": 40
+          }
+        },
+        "multi_session": {
+          "10": {
+            "point": 0.275,
+            "lo": 0.125,
+            "hi": 0.425,
+            "n": 40
+          },
+          "20": {
+            "point": 0.375,
+            "lo": 0.225,
+            "hi": 0.525,
+            "n": 40
+          },
+          "50": {
+            "point": 0.475,
+            "lo": 0.3,
+            "hi": 0.625,
+            "n": 40
+          },
+          "100": {
+            "point": 0.5,
+            "lo": 0.325,
+            "hi": 0.65,
+            "n": 40
+          },
+          "200": {
+            "point": 0.675,
+            "lo": 0.525,
+            "hi": 0.8,
+            "n": 40
+          }
+        },
+        "temporal": {
+          "10": {
+            "point": 0.65,
+            "lo": 0.5,
+            "hi": 0.8,
+            "n": 40
+          },
+          "20": {
+            "point": 0.775,
+            "lo": 0.625,
+            "hi": 0.9,
+            "n": 40
+          },
+          "50": {
+            "point": 0.825,
+            "lo": 0.7,
+            "hi": 0.925,
+            "n": 40
+          },
+          "100": {
+            "point": 0.875,
+            "lo": 0.75,
+            "hi": 0.975,
+            "n": 40
+          },
+          "200": {
+            "point": 0.95,
+            "lo": 0.875,
+            "hi": 1.0,
+            "n": 40
+          }
+        }
+      },
+      "fathomdb_fts_only": {
+        "factoid": {
+          "10": {
+            "point": 0.65,
+            "lo": 0.5,
+            "hi": 0.8,
+            "n": 40
+          },
+          "20": {
+            "point": 0.75,
+            "lo": 0.6,
+            "hi": 0.875,
+            "n": 40
+          },
+          "50": {
+            "point": 0.85,
+            "lo": 0.725,
+            "hi": 0.95,
+            "n": 40
+          },
+          "100": {
+            "point": 0.875,
+            "lo": 0.75,
+            "hi": 0.975,
+            "n": 40
+          },
+          "200": {
+            "point": 0.875,
+            "lo": 0.75,
+            "hi": 0.975,
+            "n": 40
+          }
+        },
+        "knowledge_update": {
+          "10": {
+            "point": 0.8,
+            "lo": 0.675,
+            "hi": 0.9006,
+            "n": 40
+          },
+          "20": {
+            "point": 0.875,
+            "lo": 0.775,
+            "hi": 0.975,
+            "n": 40
+          },
+          "50": {
+            "point": 0.875,
+            "lo": 0.775,
+            "hi": 0.975,
+            "n": 40
+          },
+          "100": {
+            "point": 0.9,
+            "lo": 0.8,
+            "hi": 0.975,
+            "n": 40
+          },
+          "200": {
+            "point": 0.925,
+            "lo": 0.825,
+            "hi": 1.0,
+            "n": 40
+          }
+        },
+        "multi_session": {
+          "10": {
+            "point": 0.2,
+            "lo": 0.075,
+            "hi": 0.325,
+            "n": 40
+          },
+          "20": {
+            "point": 0.325,
+            "lo": 0.175,
+            "hi": 0.475,
+            "n": 40
+          },
+          "50": {
+            "point": 0.4,
+            "lo": 0.25,
+            "hi": 0.55,
+            "n": 40
+          },
+          "100": {
+            "point": 0.525,
+            "lo": 0.375,
+            "hi": 0.675,
+            "n": 40
+          },
+          "200": {
+            "point": 0.65,
+            "lo": 0.5,
+            "hi": 0.775,
+            "n": 40
+          }
+        },
+        "temporal": {
+          "10": {
+            "point": 0.6,
+            "lo": 0.45,
+            "hi": 0.75,
+            "n": 40
+          },
+          "20": {
+            "point": 0.7,
+            "lo": 0.55,
+            "hi": 0.825,
+            "n": 40
+          },
+          "50": {
+            "point": 0.825,
+            "lo": 0.7,
+            "hi": 0.925,
+            "n": 40
+          },
+          "100": {
+            "point": 0.85,
+            "lo": 0.725,
+            "hi": 0.95,
+            "n": 40
+          },
+          "200": {
+            "point": 0.925,
+            "lo": 0.85,
+            "hi": 1.0,
+            "n": 40
+          }
+        }
+      }
+    },
+    "per_query_log": [
+      {
+        "qid": "1903aded",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_hA7AkP3_0": 12
+            },
+            "min_gold_rank": 12,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_hA7AkP3_0": 9
+            },
+            "min_gold_rank": 9,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "1a1907b4",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_719502eb": 44
+            },
+            "min_gold_rank": 44,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_719502eb": 42
+            },
+            "min_gold_rank": 42,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "1de5cff2",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_440262": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_440262": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "29f2956b",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_7cc5362f": 26
+            },
+            "min_gold_rank": 26,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_7cc5362f": 7
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2bf43736",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_2kpncbX_13": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_2kpncbX_13": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "32260d93",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_0250ae1c": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_0250ae1c": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "3249768e",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_CaxTGYP_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_CaxTGYP_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "35a27287",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9b182436": 61
+            },
+            "min_gold_rank": 61,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9b182436": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "36580ce8",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_93e1bd22": 35
+            },
+            "min_gold_rank": 35,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_93e1bd22": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "37d43f65",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_55161935": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_55161935": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "3b6f954b",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_94030872": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_94030872": 9
+            },
+            "min_gold_rank": 9,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "3f1e9474",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_57fc1954": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_57fc1954": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "4100d0a0",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_83c13ff9": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_83c13ff9": 18
+            },
+            "min_gold_rank": 18,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "41275add",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_81riySf_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_81riySf_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "4388e9dd",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_qTi81nS_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_qTi81nS_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "58bf7951",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_355c48bb": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_355c48bb": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "5d3d2817",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_235eb6fb": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_235eb6fb": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "6b168ec8",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e623ae87": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e623ae87": 28
+            },
+            "min_gold_rank": 28,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "70b3e69b",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_334948": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_334948": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "71a3fd6b",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_417348": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_417348": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "778164c6",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_399000": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_399000": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "86b68151",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_dc11c1eb": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_dc11c1eb": 15
+            },
+            "min_gold_rank": 15,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "89527b6b",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_YkWn1Ne_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_YkWn1Ne_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "8a137a7f",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_15d63a22": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_15d63a22": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "8b9d4367",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_289157": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_289157": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "8cf51dda",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_HFMn2ZX_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_HFMn2ZX_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "a82c026e",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_787e6a6d": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_787e6a6d": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "ac031881",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_GYqnAhC_190": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_GYqnAhC_190": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b0479f84",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_30f63ddb": 45
+            },
+            "min_gold_rank": 45,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_30f63ddb": 40
+            },
+            "min_gold_rank": 40,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b320f3f8",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_5cc9b056": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_5cc9b056": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b6025781",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_8414cc57": 47
+            },
+            "min_gold_rank": 47,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_8414cc57": 15
+            },
+            "min_gold_rank": 15,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b759caee",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_2BSXlAr_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_2BSXlAr_0": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "ceb54acb",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_sharegpt_cGdjmYo_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_sharegpt_cGdjmYo_0": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "d24813b1",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_7c0ade93": 121
+            },
+            "min_gold_rank": 121,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_7c0ade93": 68
+            },
+            "min_gold_rank": 68,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "dc439ea3",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_459954": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_459954": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e47becba",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_280352e9": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_280352e9": 19
+            },
+            "min_gold_rank": 19,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e48988bc",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ultrachat_174360": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ultrachat_174360": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "ec81a493",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ed1982fc": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ed1982fc": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "faba32e5",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_39b12014": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_39b12014": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "fca70973",
+        "reporting_class": "factoid",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a1e169b1": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a1e169b1": 25
+            },
+            "min_gold_rank": 25,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "06db6396",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_da72b1b4_1": 0,
+              "answer_da72b1b4_2": 72
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_da72b1b4_1": 1,
+              "answer_da72b1b4_2": 11
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "07741c44",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_7e9ad7b4_1": 5,
+              "answer_7e9ad7b4_2": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_7e9ad7b4_1": 7,
+              "answer_7e9ad7b4_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "07741c45",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_7e9ad7b4_1": 5,
+              "answer_7e9ad7b4_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_7e9ad7b4_1": 6,
+              "answer_7e9ad7b4_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "08e075c7",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_cdbe2250_1": 17,
+              "answer_cdbe2250_2": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_cdbe2250_1": 21,
+              "answer_cdbe2250_2": 14
+            },
+            "min_gold_rank": 14,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "0ddfec37",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a22b654d_1": 3,
+              "answer_a22b654d_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a22b654d_1": 5,
+              "answer_a22b654d_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "0e4e4c46",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_f2f998c7_1": 0,
+              "answer_f2f998c7_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_f2f998c7_1": 0,
+              "answer_f2f998c7_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "184da446",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e2f4f947_1": 3,
+              "answer_e2f4f947_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e2f4f947_1": 1,
+              "answer_e2f4f947_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "18bc8abd",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_fff743f5_1": 32,
+              "answer_fff743f5_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_fff743f5_1": 37,
+              "answer_fff743f5_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "1cea1afa",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_79c395a9_1": 33,
+              "answer_79c395a9_2": 9
+            },
+            "min_gold_rank": 9,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_79c395a9_1": 35,
+              "answer_79c395a9_2": 17
+            },
+            "min_gold_rank": 17,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2133c1b5",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_52382508_1": 13,
+              "answer_52382508_2": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_52382508_1": 1,
+              "answer_52382508_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2133c1b5_abs",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_52382508_abs_1": 19,
+              "answer_52382508_abs_2": null
+            },
+            "min_gold_rank": 19,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_52382508_abs_1": null,
+              "answer_52382508_abs_2": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "22d2cb42",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_bcce0b73_1": 0,
+              "answer_bcce0b73_2": 5
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_bcce0b73_1": 0,
+              "answer_bcce0b73_2": 3
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2698e78f",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9282283d_1": 10,
+              "answer_9282283d_2": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9282283d_1": 9,
+              "answer_9282283d_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2698e78f_abs",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9282283d_abs_1": 74,
+              "answer_9282283d_abs_2": 27
+            },
+            "min_gold_rank": 27,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9282283d_abs_1": null,
+              "answer_9282283d_abs_2": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "42ec0761",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e3892371_1": 1,
+              "answer_e3892371_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e3892371_1": 1,
+              "answer_e3892371_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "4b24c848",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_2cec623b_1": 24,
+              "answer_2cec623b_2": 27
+            },
+            "min_gold_rank": 24,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_2cec623b_1": 141,
+              "answer_2cec623b_2": null
+            },
+            "min_gold_rank": 141,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "50635ada",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_dcd74827_1": 1,
+              "answer_dcd74827_2": 13
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_dcd74827_1": 1,
+              "answer_dcd74827_2": 15
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "5a4f22c0",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_b0f3dfff_1": 0,
+              "answer_b0f3dfff_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_b0f3dfff_1": 1,
+              "answer_b0f3dfff_2": 2
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "5c40ec5b",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_1cb52d0a_1": 1,
+              "answer_1cb52d0a_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_1cb52d0a_1": 2,
+              "answer_1cb52d0a_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "69fee5aa",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d6028d6e_1": 0,
+              "answer_d6028d6e_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d6028d6e_1": 1,
+              "answer_d6028d6e_2": 3
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "6a27ffc2",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_77f32504_1": 1,
+              "answer_77f32504_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_77f32504_1": 1,
+              "answer_77f32504_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "6aeb4375",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_3f9693b7_1": 2,
+              "answer_3f9693b7_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_3f9693b7_1": 1,
+              "answer_3f9693b7_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "6aeb4375_abs",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_3f9693b7_abs_1": 38,
+              "answer_3f9693b7_abs_2": 25
+            },
+            "min_gold_rank": 25,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_3f9693b7_abs_1": null,
+              "answer_3f9693b7_abs_2": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "7401057b",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_94650bfa_1": 0,
+              "answer_94650bfa_2": 4
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_94650bfa_1": 0,
+              "answer_94650bfa_2": 6
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "7a87bd0c",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d08a934d_1": 0,
+              "answer_d08a934d_2": 3
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d08a934d_1": 1,
+              "answer_d08a934d_2": 11
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "7e974930",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c9f5693c_1": 1,
+              "answer_c9f5693c_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c9f5693c_1": 1,
+              "answer_c9f5693c_2": 3
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "852ce960",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_3a6f1e82_1": 1,
+              "answer_3a6f1e82_2": 8
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_3a6f1e82_1": 1,
+              "answer_3a6f1e82_2": 8
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "9bbe84a2",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c6a0c6c2_1": 1,
+              "answer_c6a0c6c2_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c6a0c6c2_1": 1,
+              "answer_c6a0c6c2_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "9ea5eabc",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_02e66dec_1": 7,
+              "answer_02e66dec_2": 16
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_02e66dec_1": 7,
+              "answer_02e66dec_2": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "a1eacc2a",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_0eb23770_1": 0,
+              "answer_0eb23770_2": 3
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_0eb23770_1": 0,
+              "answer_0eb23770_2": 3
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b01defab",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_8c0712af_1": 1,
+              "answer_8c0712af_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_8c0712af_1": 5,
+              "answer_8c0712af_2": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "c4ea545c",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d3bf812b_1": 67,
+              "answer_d3bf812b_2": null
+            },
+            "min_gold_rank": 67,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d3bf812b_1": 52,
+              "answer_d3bf812b_2": 161
+            },
+            "min_gold_rank": 52,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "cc5ded98",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a5b68517_1": 1,
+              "answer_a5b68517_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a5b68517_1": 1,
+              "answer_a5b68517_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "ce6d2d27",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_73540165_1": 6,
+              "answer_73540165_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_73540165_1": 21,
+              "answer_73540165_2": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "dad224aa",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_4a97ae40_1": 8,
+              "answer_4a97ae40_2": 27
+            },
+            "min_gold_rank": 8,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_4a97ae40_1": 3,
+              "answer_4a97ae40_2": 14
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "dfde3500",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_35d6c0be_1": 0,
+              "answer_35d6c0be_2": 20
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_35d6c0be_1": 1,
+              "answer_35d6c0be_2": 17
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e493bb7c",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_1a374afa_1": 15,
+              "answer_1a374afa_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_1a374afa_1": 9,
+              "answer_1a374afa_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e61a7584",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_f25c32f5_1": 5,
+              "answer_f25c32f5_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_f25c32f5_1": 2,
+              "answer_f25c32f5_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e66b632c",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ac0140ce_1": 16,
+              "answer_ac0140ce_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ac0140ce_1": 41,
+              "answer_ac0140ce_2": 10
+            },
+            "min_gold_rank": 10,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "ed4ddc30",
+        "reporting_class": "knowledge_update",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_babbaccb_1": 0,
+              "answer_babbaccb_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_babbaccb_1": 1,
+              "answer_babbaccb_2": 2
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "0100672e",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_35c9798c_2": 0,
+              "answer_35c9798c_1": 10
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_35c9798c_2": 3,
+              "answer_35c9798c_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "0ea62687",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_dc5e537d_1": 2,
+              "answer_dc5e537d_2": 8
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_dc5e537d_1": 7,
+              "answer_dc5e537d_2": 12
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "1a8a66a6",
+        "reporting_class": "multi_session",
+        "n_gold": 4,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_2bd23659_3": 5,
+              "answer_2bd23659_2": null,
+              "answer_2bd23659_4": null,
+              "answer_2bd23659_1": 30
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_2bd23659_3": 15,
+              "answer_2bd23659_2": 66,
+              "answer_2bd23659_4": null,
+              "answer_2bd23659_1": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "2311e44b_abs",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_bf633415_abs_1": 2,
+              "answer_bf633415_abs_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_bf633415_abs_1": 2,
+              "answer_bf633415_abs_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2318644b",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_eaa8e3ef_1": null,
+              "answer_eaa8e3ef_2": 22
+            },
+            "min_gold_rank": 22,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_eaa8e3ef_1": null,
+              "answer_eaa8e3ef_2": 17
+            },
+            "min_gold_rank": 17,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "27016adc",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a37bdf22_2": 7,
+              "answer_a37bdf22_1": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a37bdf22_2": 10,
+              "answer_a37bdf22_1": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "36b9f61e",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ef74281f_2": 15,
+              "answer_ef74281f_1": 2,
+              "answer_ef74281f_3": 30
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ef74281f_2": 22,
+              "answer_ef74281f_1": 8,
+              "answer_ef74281f_3": 33
+            },
+            "min_gold_rank": 8,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "3a704032",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c2204106_2": 103,
+              "answer_c2204106_3": 90,
+              "answer_c2204106_1": 18
+            },
+            "min_gold_rank": 18,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c2204106_2": 14,
+              "answer_c2204106_3": 73,
+              "answer_c2204106_1": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "4f54b7c9",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_50940cb7_2": 7,
+              "answer_50940cb7_1": 22
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_50940cb7_2": 13,
+              "answer_50940cb7_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "5025383b",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_688f9a3f_1": null,
+              "answer_688f9a3f_2": 44
+            },
+            "min_gold_rank": 44,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_688f9a3f_1": null,
+              "answer_688f9a3f_2": 57
+            },
+            "min_gold_rank": 57,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "51c32626",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_58820c75_1": 4,
+              "answer_58820c75_2": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_58820c75_1": 0,
+              "answer_58820c75_2": 4
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "5a7937c8",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_4cef8a3c_3": 23,
+              "answer_4cef8a3c_1": 126,
+              "answer_4cef8a3c_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_4cef8a3c_3": 67,
+              "answer_4cef8a3c_1": 26,
+              "answer_4cef8a3c_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "60036106",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e552e1f9_1": 8,
+              "answer_e552e1f9_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e552e1f9_1": 53,
+              "answer_e552e1f9_2": null
+            },
+            "min_gold_rank": 53,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "60472f9c",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e7fe8c8b_1": 0,
+              "answer_e7fe8c8b_2": 5,
+              "answer_e7fe8c8b_3": null
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e7fe8c8b_1": 0,
+              "answer_e7fe8c8b_2": 5,
+              "answer_e7fe8c8b_3": null
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "6456829e_abs",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_743f03a1_abs_1": 2,
+              "answer_743f03a1_abs_2": null
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_743f03a1_abs_1": null,
+              "answer_743f03a1_abs_2": 30
+            },
+            "min_gold_rank": 30,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "67e0d0f2",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_3a5010af_2": 115,
+              "answer_3a5010af_1": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_3a5010af_2": 34,
+              "answer_3a5010af_1": 101
+            },
+            "min_gold_rank": 34,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "6cb6f249",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a4204937_2": 148,
+              "answer_a4204937_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a4204937_2": 163,
+              "answer_a4204937_1": 8
+            },
+            "min_gold_rank": 8,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "73d42213",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_1881e7db_1": 175,
+              "answer_1881e7db_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_1881e7db_1": null,
+              "answer_1881e7db_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "7405e8b1",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_80323f3f_1": 0,
+              "answer_80323f3f_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_80323f3f_1": 0,
+              "answer_80323f3f_2": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "81507db6",
+        "reporting_class": "multi_session",
+        "n_gold": 5,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_da3c1266_3": null,
+              "answer_da3c1266_4": 73,
+              "answer_da3c1266_1": 12,
+              "answer_da3c1266_5": 7,
+              "answer_da3c1266_2": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_da3c1266_3": null,
+              "answer_da3c1266_4": 24,
+              "answer_da3c1266_1": 13,
+              "answer_da3c1266_5": 33,
+              "answer_da3c1266_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "85fa3a3f",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_dcb18b9b_2": 0,
+              "answer_dcb18b9b_1": 10
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_dcb18b9b_2": 1,
+              "answer_dcb18b9b_1": 18
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "88432d0a_abs",
+        "reporting_class": "multi_session",
+        "n_gold": 4,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_733e443a_abs_1": null,
+              "answer_733e443a_abs_3": null,
+              "answer_733e443a_abs_2": null,
+              "answer_733e443a_abs_4": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_733e443a_abs_1": 35,
+              "answer_733e443a_abs_3": null,
+              "answer_733e443a_abs_2": null,
+              "answer_733e443a_abs_4": null
+            },
+            "min_gold_rank": 35,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "8cf4d046",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e2278b24_1": 61,
+              "answer_e2278b24_2": 12
+            },
+            "min_gold_rank": 12,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e2278b24_1": 74,
+              "answer_e2278b24_2": 7
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "91b15a6e",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_5404a208_1": 0,
+              "answer_5404a208_2": 6
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_5404a208_1": 2,
+              "answer_5404a208_2": 5
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "9ee3ecd6",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_66c23110_1": 5,
+              "answer_66c23110_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_66c23110_1": 4,
+              "answer_66c23110_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "a08a253f",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_47152166_2": null,
+              "answer_47152166_1": 7
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_47152166_2": null,
+              "answer_47152166_1": 10
+            },
+            "min_gold_rank": 10,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "a96c20ee_abs",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ef84b994_abs_1": 67,
+              "answer_ef84b994_abs_2": 116
+            },
+            "min_gold_rank": 67,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ef84b994_abs_1": 73,
+              "answer_ef84b994_abs_2": 143
+            },
+            "min_gold_rank": 73,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b5ef892d",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a8b4290f_3": 8,
+              "answer_a8b4290f_1": null,
+              "answer_a8b4290f_2": 32
+            },
+            "min_gold_rank": 8,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a8b4290f_3": 16,
+              "answer_a8b4290f_1": 69,
+              "answer_a8b4290f_2": 109
+            },
+            "min_gold_rank": 16,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "bb7c3b45",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_de64539a_1": 0,
+              "answer_de64539a_2": 2
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_de64539a_1": 1,
+              "answer_de64539a_2": 3
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e56a43b9",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_430d0a87_1": 3,
+              "answer_430d0a87_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_430d0a87_1": 4,
+              "answer_430d0a87_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e831120c",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_86c505e7_1": 8,
+              "answer_86c505e7_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_86c505e7_1": 11,
+              "answer_86c505e7_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "edced276",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_60e8941a_2": 1,
+              "answer_60e8941a_1": 26
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_60e8941a_2": 13,
+              "answer_60e8941a_1": 21
+            },
+            "min_gold_rank": 13,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "efc3f7c2",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_fc81d1a2_1": 10,
+              "answer_fc81d1a2_2": 20
+            },
+            "min_gold_rank": 10,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_fc81d1a2_1": 2,
+              "answer_fc81d1a2_2": 64
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "f0e564bc",
+        "reporting_class": "multi_session",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_cfcf5340_1": 14,
+              "answer_cfcf5340_2": 16
+            },
+            "min_gold_rank": 14,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_cfcf5340_1": null,
+              "answer_cfcf5340_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_15e38248",
+        "reporting_class": "multi_session",
+        "n_gold": 4,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_8858d9dc_3": null,
+              "answer_8858d9dc_1": null,
+              "answer_8858d9dc_4": 75,
+              "answer_8858d9dc_2": 127
+            },
+            "min_gold_rank": 75,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_8858d9dc_3": null,
+              "answer_8858d9dc_1": null,
+              "answer_8858d9dc_4": 18,
+              "answer_8858d9dc_2": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_2f91af09",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_669318cf_2": 7,
+              "answer_669318cf_1": 15,
+              "answer_669318cf_3": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_669318cf_2": 21,
+              "answer_669318cf_1": 18,
+              "answer_669318cf_3": 17
+            },
+            "min_gold_rank": 17,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_31ff4165",
+        "reporting_class": "multi_session",
+        "n_gold": 5,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_02b63d04_1": 11,
+              "answer_02b63d04_5": null,
+              "answer_02b63d04_2": null,
+              "answer_02b63d04_3": 28,
+              "answer_02b63d04_4": null
+            },
+            "min_gold_rank": 11,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_02b63d04_1": 41,
+              "answer_02b63d04_5": null,
+              "answer_02b63d04_2": null,
+              "answer_02b63d04_3": 123,
+              "answer_02b63d04_4": null
+            },
+            "min_gold_rank": 41,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_7fce9456",
+        "reporting_class": "multi_session",
+        "n_gold": 5,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_a679a86a_5": 0,
+              "answer_a679a86a_4": 4,
+              "answer_a679a86a_2": null,
+              "answer_a679a86a_3": 85,
+              "answer_a679a86a_1": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_a679a86a_5": 0,
+              "answer_a679a86a_4": 2,
+              "answer_a679a86a_2": null,
+              "answer_a679a86a_3": 16,
+              "answer_a679a86a_1": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_e05b82a6",
+        "reporting_class": "multi_session",
+        "n_gold": 4,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_6350aa4f_1": 6,
+              "answer_6350aa4f_2": 180,
+              "answer_6350aa4f_3": 154,
+              "answer_6350aa4f_4": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_6350aa4f_1": 8,
+              "answer_6350aa4f_2": 4,
+              "answer_6350aa4f_3": 126,
+              "answer_6350aa4f_4": 5
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_f2262a51",
+        "reporting_class": "multi_session",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_55a6940c_3": null,
+              "answer_55a6940c_1": null,
+              "answer_55a6940c_2": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_55a6940c_3": 15,
+              "answer_55a6940c_1": 55,
+              "answer_55a6940c_2": 90
+            },
+            "min_gold_rank": 15,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "0db4c65d",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_b9e32ff8_1": 32,
+              "answer_b9e32ff8_2": 29
+            },
+            "min_gold_rank": 29,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_b9e32ff8_1": 45,
+              "answer_b9e32ff8_2": 27
+            },
+            "min_gold_rank": 27,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "2ebe6c90",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c9d35c00_1": 17,
+              "answer_c9d35c00_2": 7
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c9d35c00_1": 14,
+              "answer_c9d35c00_2": 13
+            },
+            "min_gold_rank": 13,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "370a8ff4",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_61d1be50_1": 0,
+              "answer_61d1be50_2": 3
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_61d1be50_1": 1,
+              "answer_61d1be50_2": 6
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "71017276",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_0b4a8adc_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_0b4a8adc_1": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "71017277",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_0b4a8adc_1": 82
+            },
+            "min_gold_rank": 82,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_0b4a8adc_1": 115
+            },
+            "min_gold_rank": 115,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "8c18457d",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_124f5dc3_2": 51,
+              "answer_124f5dc3_1": 15
+            },
+            "min_gold_rank": 15,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_124f5dc3_2": 82,
+              "answer_124f5dc3_1": 27
+            },
+            "min_gold_rank": 27,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "9a707b82",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_dba89488_2": null,
+              "answer_dba89488_1": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_dba89488_2": null,
+              "answer_dba89488_1": 156
+            },
+            "min_gold_rank": 156,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "af082822",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_b51b6115_1": 19
+            },
+            "min_gold_rank": 19,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_b51b6115_1": 10
+            },
+            "min_gold_rank": 10,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "b29f3365",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_436d4309_2": 2,
+              "answer_436d4309_1": 3
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_436d4309_2": 3,
+              "answer_436d4309_1": 7
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "c8090214",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_70dc7d08_2": 1,
+              "answer_70dc7d08_1": 39
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_70dc7d08_2": 12,
+              "answer_70dc7d08_1": 14
+            },
+            "min_gold_rank": 12,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "e4e14d04",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_cf425855_1": 1,
+              "answer_cf425855_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_cf425855_1": 4,
+              "answer_cf425855_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "f0853d11",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_932ea3bf_2": 4,
+              "answer_932ea3bf_1": 9
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_932ea3bf_2": 4,
+              "answer_932ea3bf_1": null
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_0b2f1d21",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c4e5d969_2": 0,
+              "answer_c4e5d969_1": 24
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c4e5d969_2": 1,
+              "answer_c4e5d969_1": 23
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_1916e0ea",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_447052a5_2": 3,
+              "answer_447052a5_1": 8
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_447052a5_2": 2,
+              "answer_447052a5_1": 14
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_1a1dc16d",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_faad7d7a_2": 11,
+              "answer_faad7d7a_1": 51
+            },
+            "min_gold_rank": 11,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_faad7d7a_2": 0,
+              "answer_faad7d7a_1": null
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_1e4a8aeb",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_16bd5ea5_1": 4,
+              "answer_16bd5ea5_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_16bd5ea5_1": 7,
+              "answer_16bd5ea5_2": 1
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_2487a7cb",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_1c6b85ea_2": 7,
+              "answer_1c6b85ea_1": 141
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_1c6b85ea_2": 22,
+              "answer_1c6b85ea_1": 54
+            },
+            "min_gold_rank": 22,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_2655b836",
+        "reporting_class": "temporal",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_4be1b6b4_1": 101,
+              "answer_4be1b6b4_2": 4,
+              "answer_4be1b6b4_3": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_4be1b6b4_1": 104,
+              "answer_4be1b6b4_2": 9,
+              "answer_4be1b6b4_3": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_2f584639",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_11a8f823_2": 0,
+              "answer_11a8f823_1": 17
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_11a8f823_2": 0,
+              "answer_11a8f823_1": 15
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_468eb063",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9b09d95b_1": 105
+            },
+            "min_gold_rank": 105,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9b09d95b_1": 42
+            },
+            "min_gold_rank": 42,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_483dd43c",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_fb793c87_1": 1,
+              "answer_fb793c87_2": 2
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_fb793c87_1": 3,
+              "answer_fb793c87_2": 6
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_4cd9eba1",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_5fcca8bc_2": 1,
+              "answer_5fcca8bc_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_5fcca8bc_2": 0,
+              "answer_5fcca8bc_1": 1
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_59149c78",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d00ba6d1_1": 196,
+              "answer_d00ba6d1_2": 177
+            },
+            "min_gold_rank": 177,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d00ba6d1_1": null,
+              "answer_d00ba6d1_2": 131
+            },
+            "min_gold_rank": 131,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_68e94287",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9793daa3_2": 16,
+              "answer_9793daa3_1": 114
+            },
+            "min_gold_rank": 16,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9793daa3_2": 11,
+              "answer_9793daa3_1": 15
+            },
+            "min_gold_rank": 11,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_68e94288",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_9793daa4_2": null,
+              "answer_9793daa4_1": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_9793daa4_2": null,
+              "answer_9793daa4_1": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_6dc9b45b",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_c4df007f_1": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_c4df007f_1": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_6ed717ea",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d50a8a33_1": 6,
+              "answer_d50a8a33_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d50a8a33_1": null,
+              "answer_d50a8a33_2": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_70e84552_abs",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_b3070ec4_abs_2": 46,
+              "answer_b3070ec4_abs_1": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_b3070ec4_abs_2": 5,
+              "answer_b3070ec4_abs_1": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_78cf46a3",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_5a78688d_1": 49,
+              "answer_5a78688d_2": 6
+            },
+            "min_gold_rank": 6,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_5a78688d_1": 24,
+              "answer_5a78688d_2": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_7bc6cf22",
+        "reporting_class": "temporal",
+        "n_gold": 1,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e22d6aef_1": 7
+            },
+            "min_gold_rank": 7,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e22d6aef_1": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_88806d6e",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_e60a93ff_1": 2,
+              "answer_e60a93ff_2": 57
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_e60a93ff_1": 3,
+              "answer_e60a93ff_2": null
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_93f6379c",
+        "reporting_class": "temporal",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_544fe66c_2": 0,
+              "answer_544fe66c_1": null,
+              "answer_544fe66c_3": 6
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_544fe66c_2": 1,
+              "answer_544fe66c_1": null,
+              "answer_544fe66c_3": 47
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_98f46fc6",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_5850de18_2": 6,
+              "answer_5850de18_1": 3
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_5850de18_2": 9,
+              "answer_5850de18_1": 5
+            },
+            "min_gold_rank": 5,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_9a159967",
+        "reporting_class": "temporal",
+        "n_gold": 3,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_8a42fedf_1": null,
+              "answer_8a42fedf_3": 7,
+              "answer_8a42fedf_2": 2
+            },
+            "min_gold_rank": 2,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_8a42fedf_1": 8,
+              "answer_8a42fedf_3": 3,
+              "answer_8a42fedf_2": 6
+            },
+            "min_gold_rank": 3,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_c27434e8_abs",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d8e33f5c_abs_1": 1,
+              "answer_d8e33f5c_abs_2": 3
+            },
+            "min_gold_rank": 1,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d8e33f5c_abs_1": null,
+              "answer_d8e33f5c_abs_2": 4
+            },
+            "min_gold_rank": 4,
+            "all_gold_found": false
+          }
+        }
+      },
+      {
+        "qid": "gpt4_d31cdae3",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_8464304d_1": 32,
+              "answer_8464304d_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_8464304d_1": 53,
+              "answer_8464304d_2": 0
+            },
+            "min_gold_rank": 0,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_f420262d",
+        "reporting_class": "temporal",
+        "n_gold": 5,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_d8a1af6c_1": 38,
+              "answer_d8a1af6c_2": 17,
+              "answer_d8a1af6c_5": 10,
+              "answer_d8a1af6c_4": 92,
+              "answer_d8a1af6c_3": null
+            },
+            "min_gold_rank": 10,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_d8a1af6c_1": 33,
+              "answer_d8a1af6c_2": 22,
+              "answer_d8a1af6c_5": 26,
+              "answer_d8a1af6c_4": 35,
+              "answer_d8a1af6c_3": 23
+            },
+            "min_gold_rank": 22,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_fa19884d",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_ff201787_1": null,
+              "answer_ff201787_2": 47
+            },
+            "min_gold_rank": 47,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_ff201787_1": 143,
+              "answer_ff201787_2": 82
+            },
+            "min_gold_rank": 82,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_fe651585",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_65600ff6_2": 114,
+              "answer_65600ff6_1": null
+            },
+            "min_gold_rank": 114,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_65600ff6_2": 9,
+              "answer_65600ff6_1": 158
+            },
+            "min_gold_rank": 9,
+            "all_gold_found": true
+          }
+        }
+      },
+      {
+        "qid": "gpt4_fe651585_abs",
+        "reporting_class": "temporal",
+        "n_gold": 2,
+        "arms": {
+          "naive_bm25": {
+            "gold_ranks": {
+              "answer_65600ff6_abs_1": null,
+              "answer_65600ff6_abs_2": 80
+            },
+            "min_gold_rank": 80,
+            "all_gold_found": false
+          },
+          "fathomdb_fts_only": {
+            "gold_ranks": {
+              "answer_65600ff6_abs_1": null,
+              "answer_65600ff6_abs_2": null
+            },
+            "min_gold_rank": null,
+            "all_gold_found": false
+          }
+        }
+      }
+    ]
+  },
+  "kill_check": {
+    "focus_class": "multi_session",
+    "k_floor": 10,
+    "per_arm": {
+      "naive_bm25": {
+        "recall_at_floor": {
+          "point": 0.275,
+          "lo": 0.125,
+          "hi": 0.425,
+          "n": 40
+        },
+        "best_k": 200,
+        "recall_at_best_k": {
+          "point": 0.675,
+          "lo": 0.525,
+          "hi": 0.8,
+          "n": 40
+        },
+        "lift_over_floor": 0.4,
+        "ci_clears_floor_noise": true
+      },
+      "fathomdb_fts_only": {
+        "recall_at_floor": {
+          "point": 0.2,
+          "lo": 0.075,
+          "hi": 0.325,
+          "n": 40
+        },
+        "best_k": 200,
+        "recall_at_best_k": {
+          "point": 0.65,
+          "lo": 0.5,
+          "hi": 0.775,
+          "n": 40
+        },
+        "lift_over_floor": 0.45,
+        "ci_clears_floor_noise": true
+      }
+    },
+    "any_material_lift": true,
+    "verdict": "GO \u2014 wider candidate generation lifts gold-in-pool with CI clearing the K=10 floor; EXP-B' should rerank a widened pool."
+  },
+  "best_candidate_k_for_expb": {
+    "arm": "fathomdb_fts_only",
+    "candidate_k": 200
+  },
+  "elapsed_s": 91.5
+}

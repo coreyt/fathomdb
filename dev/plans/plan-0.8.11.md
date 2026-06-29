@@ -1,174 +1,233 @@
-# FathomDB 0.8.11 — Plan (state-machine ladder) · **Agent-feedback + agent router**
+# FathomDB 0.8.11 — Plan (state-machine ladder) · **Planner-router experiment ladder (discharge) + agent-feedback + agent router**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `0.8.11-implementation.md` (authored at Slice 0); live state → `runs/STATUS-0.8.11.md`;
-> deps/decision record → `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.11` as an
-> **orchestrator** session.
+> deps/decision record → `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (**F-11**). Run via `/goal complete 0.8.11`
+> as an **orchestrator** session.
 >
-> **Theme.** Four workstreams converge on a single deliverable: an evidence-backed, agent-side L2 router
-> prototype that ships regardless of EXP-S's outcome. (1) **EXP-AF** tests whether the agent relevance
-> signal is worth the round-trip cost. (2) **EXP-Fr-acc/VoI finalize** adds the ask-or-not policy and
-> asymmetric mis-route cost to the 0.8.9 classifier work. (3) The **agent-side L2 router prototype**
-> carries per-intent config tuples and hedges the EXP-S KILL path (DP-A). (4) **#17 filter-grammar**
-> (G4↔G10 unification, gap-37) delivers the typed-constraint surface the router will consume, now
-> de-coupled from the 0.8.12 long pole.
+> **Why this release grew (F-11 / HITL 2026-06-28).** The original 0.8.11 plan assumed its upstream
+> experiment ladder — `Gate-0/2 → EXP-A/M4 → EXP-B′ → EXP-Fr-acc base` — had already run as $0 "float"
+> co-hosted on 0.8.7/0.8.9. A git-grounded steward finding (**F-11**) proved it **never ran**: 0.8.7
+> closed on its GPU-embedder DoD only, 0.8.9 on CI-integrity only, the experiments-ledger has **zero**
+> planner-router rows, and there are **no** `runs/` artifacts. Unowned, ungated float does not get done.
+> **HITL ruling (2026-06-28):** 0.8.11 **owns and discharges the full missed ladder AND its
+> originally-allocated work** — each experiment gets an explicit owning slice + DoD + gate (not floated
+> again, not a separate precursor). This makes 0.8.11 a **large, multi-track release** (sizing tradeoff
+> accepted, §8). The "$0 float rides the odd line" scheduling model is retired for these experiments.
 >
-> **Footprint.** Two footprint classes coexist here: the eval tracks (EXP-AF / Fr-acc/VoI) are
-> **CALLER-SIDE-BYO-LLM / EVAL-ONLY**; the filter-grammar (#17) is **IN-LIBRARY**; the L2 prototype
-> and dispatcher pre-stage are **CALLER-SIDE-BYO-LLM** (no engine changes). The library query path
-> stays CPU-only, 1-bit/Hamming, deterministic throughout. Tag every technique.
+> **Theme.** Two tracks converge on the evidence-and-artifact base the router needs. **Track E (eval
+> spine)** discharges the experiment ladder end-to-end (`Gate-0/2 → EXP-A ‖ EXP-M4 → EXP-B′ → EXP-Fr-acc
+> base → Fr-acc/VoI finalize → EXP-AF`) and then builds the **agent-side L2 router prototype + dispatcher
+> pre-stage** on that evidence — the DP-A hedge that ships a router regardless of EXP-S's 0.8.12 outcome.
+> **Track G (engineering)** ships **#17 filter-grammar** (G4↔G10 unification, IN-LIBRARY) + the **F-8b
+> `record_feedback` governance** decision, independent of the eval spine.
+>
+> **Footprint.** Track E experiments are **EVAL-ONLY / CALLER-SIDE-BYO-LLM** (EXP-M4 has an
+> **OFFLINE-BUILD/GPU** arm); the L2 prototype + dispatcher pre-stage are **CALLER-SIDE-BYO-LLM** (no
+> engine changes); the filter-grammar (#17) is **IN-LIBRARY**. The library query path stays CPU-only,
+> 1-bit/Hamming, deterministic throughout. Tag every technique.
+>
+> **Budget (HITL 2026-06-28).** Strict $0 is **no longer required** — the experiment ladder has a
+> **~$20 total priced-LLM ceiling** for the release. Keep it low: most arms are $0 compute (Gate-0/2,
+> EXP-A, EXP-M4 GPU, the classifier); the priced arms (EXP-B′ judge, EXP-Fr-acc, EXP-AF round-trips)
+> draw on the ~$20 pool. Maintain a running `$` tally in `runs/STATUS-0.8.11.md`
+> (`0.8.1-budget-discipline-cheap-validate-and-ledger`); cheap-validate each priced run before spend and
+> use the resilient harness (`priced-runs-need-resilience-before-spend`). Flag to HITL if the ladder
+> projects over ~$20.
 
 ---
 
 ## 1. Goal & scope
 
-- **EXP-AF — Agent-feedback value test.** Using the `record_feedback` telemetry pipeline (landed
-  0.8.8 Slice 15, I-1 satisfied), measure whether an agent relevance signal beats `ce_score`-only
-  routing net of round-trip cost. Scope: existing substrate, no fresh 50–100-query rebuild; one-shot
-  vs iterative (within the 1–2 depth bound from PSD §II.C). **KILL path:** if the agent signal does
-  not beat `ce_score`-only net of round-trip → drop the feedback loop from the prototype; router
-  stays on internal `ce_score` (mirrors EXP-S's KILL discipline). Prerequisite: EXP-OBS and real-gold
-  pipeline (both landed, I-1 met).
+### 1a. Track E — the missed experiment ladder (now owned here; closes F-11)
 
-- **EXP-Fr-acc/VoI finalize.** Extend the 0.8.9 EXP-Fr-acc results (classifier accuracy + initial
-  mis-route cost matrix) with the three agent-signal additions specified in PSD §III.C: (a)
-  _value-of-signal_ — does agent relevance beat `ce_score`-alone on routed queries? (b) _ask-or-not
+These four were scheduled as 0.8.7/0.8.9 float and never ran (F-11). They are the prerequisites the
+**original** 0.8.11 eval work (Fr-acc/VoI finalize, EXP-AF, the per-intent tuples) silently assumed.
+
+- **Gate-0 / Gate-2 (foundation, $0 EVAL-ONLY).** **Gate-0** = golden-set **re-scope** (PSD §III.A):
+  reuse existing LME/LOCOMO/AP-News/MuSiQue assets + the `decide_083`/`decide_084` rules; a **small,
+  scoped gold-supporting-node labeling pass** only where a reused corpus lacks node-level retrieval
+  labels for an intent class. **Gate-2** = the **oracle-routing upper bound** (PSD §III.B): exhaustive
+  best-plan-per-query ceiling, reconciled with FathomDB's existing oracle bounds (recall@K_deep,
+  per-feature CE numbers, the measured oracle +0.39 over Mem0), fed the measured per-arm cost tiers.
+  **Out of scope here:** the ~269-Q F4/M6 corpus acquisition (EXP-D) stays at 0.8.17.
+
+- **EXP-A — recall generation (`$0` EVAL-ONLY).** Wider candidate-generation recall lift for F2
+  (recall@K_deep, gold-in-pool). Feeds EXP-B′ and the Gate-2 bound.
+
+- **EXP-M4 — embedder-ceiling escape (`$0` / GPU; OFFLINE-BUILD/EVAL).** **Measure** the embedder
+  ceiling (swap-candidate → re-whiten → eu7 re-clear → re-tune α; OD-7) on the 0.8.7 GPU seam. **Scope
+  guard:** this is a **ceiling measurement**, not a productized swap — the standing decision is **keep
+  CLS-corrected bge-small** (`0.8.3-mem0-parity-closed`); any productized embedder swap remains a
+  separately-gated decision, **out of 0.8.11**. **KILL path:** if no candidate beats bge-small net of
+  re-whiten/re-clear cost → register the ceiling and move on.
+
+- **EXP-B′ — 3-stage joint tuning (`$0` + `$` judge; EVAL-ONLY).** The `candidate_k × pool_n × α ×
+  final_K` joint optimization (PSD §II.C crux: α=1.0 @ pool_n=50 *drops* r@10 0.548→0.498). Hard-blocked
+  by EXP-A ∧ EXP-M4. **Output = the per-intent `(index, retrieval, α, pool_n, MMR, recency)` config
+  tuples** + the **EXP-B′.5 router-stack joint-regression guard** (a config for feature X must not
+  regress feature Y). These tuples are what the dispatcher pre-stage registers (DP-B mitigation).
+
+- **EXP-Fr-acc base (`$0` + small `$`; EVAL-ONLY).** The work that should have been 0.8.9: 5-class
+  intent classifier accuracy over `{needle | multi_session | temporal | global | multi_hop}` + the
+  **initial asymmetric mis-route cost matrix** (needle→`C` map-reduce = −0.362 + an LLM call). This is
+  the **base** that the original-0.8.11 "finalize" (Slice 25) extends.
+
+### 1b. The originally-allocated 0.8.11 work (unchanged in intent; now built on the real base)
+
+- **EXP-Fr-acc/VoI finalize.** Extend the EXP-Fr-acc base (Slice 20) with PSD §III.C's three additions:
+  (a) _value-of-signal_ — does agent relevance beat `ce_score`-alone on routed queries? (b) _ask-or-not
   VoI policy_ — at which (`ce_score`, route-margin) pairs does the agent round-trip break even? (c)
-  _asymmetric weighting_ — does the policy preferentially suppress the high-cost needle→global
-  cross-wire (−0.362 measured) over cheap same-tier misses? These thresholds feed the prototype's
-  VoI escalation logic and the 0.8.15 dispatcher design.
+  _asymmetric weighting_ — does the policy preferentially suppress the high-cost needle→global cross-wire
+  over cheap same-tier misses? These thresholds feed the prototype and the 0.8.15 dispatcher.
 
-- **Agent-side L2 router prototype + EXP-Fr dispatcher pre-stage.** Build an agent-side prototype
-  (CALLER-SIDE, Python, no EXP-S substrate dependency) that: routes queries over the 5-class intent
-  taxonomy (`{needle | multi_session | temporal | global | multi_hop}`) using the per-intent config
-  tuples from the pre-stage; exposes a recommendation API (intent, stack, confidence, cost tier)
-  without executing; and accepts an agent hint or override. The per-intent config tuple registry
-  (the _dispatcher pre-stage_) is the 0.8.11 design artifact the 0.8.15 EXP-Fr build integrates
-  rather than invents (DP-B mitigation). The prototype is the DP-A hedge: a working agent-side
-  router ships regardless of EXP-S's 0.8.12 locus verdict.
+- **EXP-AF — agent-feedback value test.** Using the `record_feedback` telemetry pipeline (landed 0.8.8
+  Slice 15; I-1 satisfied, F-6), measure whether an agent relevance signal beats `ce_score`-only net of
+  round-trip cost on the **existing** substrate (no fresh 50–100-query rebuild); one-shot vs iterative
+  within the 1–2 depth bound (PSD §II.C). **KILL path:** if the agent signal does not beat `ce_score`
+  net of round-trip → drop the feedback loop from the prototype; router stays on internal `ce_score`.
 
-- **#17 filter-grammar — G4↔G10 unification (gap-37, IN-LIBRARY).** Unify the G4 typed filter
-  grammar (`Predicate { JsonPathEq, JsonPathCompare, ScalarValue }` on `read.list`) and the shipped
-  G10 `SearchFilter { source_type, kind, created_after, status }` on `search_filtered` into
-  **one typed filter contract**. The unified type serves both compilation paths (vec0 metadata
-  pre-filter for G10; json-path-over-allowlist for G4). The shipped G10 surface shape is touched;
-  re-express it on the new contract without behavior change. Py + TS SDK parity required (X1). This
-  typed constraint surface is what the 0.8.15 router's `constraints` block (`initial-arch` §5;
-  PSD §I.B) leans on.
+- **Agent-side L2 router prototype + dispatcher pre-stage.** A CALLER-SIDE Python prototype (no engine
+  changes) that routes the 5-class taxonomy using the EXP-B′ per-intent tuples; exposes a recommendation
+  API (intent, stack, confidence, cost_tier, rationale) without executing; and accepts an agent hint /
+  override. The **per-intent config tuple registry** is the 0.8.15 design artifact (DP-B). The prototype
+  is the **DP-A hedge** — a working agent-side router ships regardless of EXP-S's 0.8.12 locus verdict.
 
-- **F-8b — `record_feedback` governance re-classification (review + decision + execution).** The
-  0.8.8 HITL ruling (F-8b, sequencing §6) mandates a reclassification review at 0.8.11 (EXP-AF).
-  Determine whether `record_feedback` remains observability instrumentation or graduates to a
-  **first-class governed application command** (allowlist entry in
-  `src/conformance/governed-surface-allowlist.json` + Rust facade + X1 surface suites). The trigger
-  criterion: does EXP-AF make `record_feedback` a load-bearing agent-facing input to a
-  learned/active-feedback loop rather than passive local telemetry? If promoted, execute the
-  migration in this release. `enable_telemetry` and `last_telemetry_query_id` stay instrumentation
-  unless EXP-AF evidence compels otherwise.
+- **#17 filter-grammar — G4↔G10 unification (gap-37, IN-LIBRARY).** Unify the G4 typed filter grammar
+  (`Predicate { JsonPathEq, JsonPathCompare, ScalarValue }` on `read.list`) and the shipped G10
+  `SearchFilter { source_type, kind, created_after, status }` on `search_filtered` into **one typed
+  filter contract** serving both compilation paths (vec0 metadata pre-filter for G10; json-path-over-
+  allowlist for G4). The shipped G10 surface is touched; re-express without behavior change. Py + TS SDK
+  parity (X1). This is the typed-constraint surface the 0.8.15 router's `constraints` block leans on.
 
-_Why this order in the line:_ I-1 (EXP-OBS) is met; the 0.8.9 Fr-acc classifier base is done;
-real-gold pipeline exists. The agent-side prototype has no EXP-S dep → builds now, hedges the 0.8.12
-KILL path. Filter-grammar was de-coupled from 0.8.12 by F-10; it lands here ahead of the dispatcher
-so the 0.8.15 build inherits one constraint contract.
+- **F-8b — `record_feedback` governance re-classification.** Per the 0.8.8 HITL ruling (F-8b), decide
+  at Slice 0 and execute at Slice 40 whether `record_feedback` stays observability instrumentation or
+  graduates to a **governed application command** (allowlist + Rust facade + X1 surface suites). Trigger
+  criterion: does EXP-AF make it a load-bearing agent-facing input to an active-feedback loop?
+  `enable_telemetry` / `last_telemetry_query_id` stay instrumentation unless EXP-AF compels otherwise.
+
+_Why this is the right order:_ I-1 (EXP-OBS) is met (F-6, on `origin/main`). The eval spine discharges
+the ladder in dependency order so each result is real before the next consumes it; the agent-side
+prototype has no EXP-S dep → it builds here and hedges the 0.8.12 KILL path; filter-grammar (Track G)
+is independent and runs concurrently from Slice 0.
 
 ---
 
 ## 2. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
 
-_Track by experiment tag / G-gap / OPP-id / TDD name. No invented AC ids; new ACs at gated slices
-only per §6._
+_Track by experiment tag / G-gap / OPP-id / TDD name. No invented AC ids; new ACs at gated slices only
+per §6. Every Track-E experiment result is committed to **both** `dev/experiments-ledger.md` (closing
+the F-11 "zero rows" gap) and `runs/STATUS-0.8.11.md`._
 
 | ID | Requirement | Acceptance signal |
 | --- | --- | --- |
-| R-FA-1 | VoI thresholds measured and registered | Slice 5: numeric (`ce_score`, route-margin) break-even points delivered; result committed to `runs/STATUS-0.8.11.md` and sequencing §6 finding |
-| R-FA-2 | Asymmetric mis-route cost matrix extended | Slice 5: per (intent-class, route) mis-route cost updated; needle→global cross-wire cost confirmed measurable |
-| R-FA-3 | Value-of-signal comparison complete | Slice 5: agent-signal vs `ce_score`-only lift/delta on routed query sample; CI-bounded |
-| R-AF-1 | EXP-AF KILL/GO verdict + depth-bound decision | Slice 10 HITL readout: verdict recorded in experiments ledger; one-shot vs iterative settled (within 1–2 bound) |
-| R-AF-2 | EXP-AF is pre-registered before any priced run | Slice 0: hypothesis + KILL path + cost ceiling in `runs/STATUS-0.8.11.md`; no priced queries before registration |
-| R-L2-1 | Agent-side L2 prototype routes all 5 intent classes | Slice 15: smoke test covers `{needle, multi_session, temporal, global, multi_hop}`; recommendation returned without execution |
-| R-L2-2 | Prototype carries and exposes per-intent config tuples | Slice 15: each class has a registered `(index, retrieval, α, pool_n, MMR, recency)` tuple; tuple registry is the pre-stage artifact for 0.8.15 |
-| R-L2-3 | Prototype accepts agent hint / override without error | Slice 15: override test passes; override is respected without a fallback-to-internal route |
-| R-L2-4 | Prototype footprint is CALLER-SIDE; no engine changes | Slice 15 codex §9: zero changes to `fathomdb-engine` / `fathomdb-py` crates; prototype lives outside the library |
-| R-FIL-1 | One unified typed filter contract covers G4 and G10 paths | Slice 20: a single type serves both `read.list` (json-path compilation) and `search_filtered` (vec0 metadata compilation); parity test: same filter expression on both paths returns consistent results on a shared fixture |
-| R-FIL-2 | Shipped G10 paths re-expressed on the new contract without behavior change | Slice 20: the G10 parity test is RED-first, then GREEN; no regression on existing `SearchFilter`-using test suite |
-| R-GOV-1 | F-8b classification decision committed and executed | Slice 0 HITL decision recorded; Slice 20 execution: if promoted, `record_feedback` appears in the governed allowlist + Rust facade + X1 surface assertions; if kept, ADR note commits the "stay-instrumentation" evidence |
-| R-GOV-2 | Governed surface count and X1 suites updated consistently | Slice 20: if F-8b promotes, `test_surface.py` and `surface.test.ts` assertions updated; if not, no change to the allowlist |
-| R-X-1 | Py + TS SDK parity on the unified filter contract (and `record_feedback` if promoted) | X1 cross-binding harness green; `test_telemetry_parity.py` + `surface.test.ts` updated |
+| R-G0-1 | Gate-0 golden-set re-scope delivered | Slice 5: reused-asset map + decide_083/084 rule adoption + any scoped node-label pass recorded; ledger row written |
+| R-G2-1 | Gate-2 oracle-routing upper bound delivered | Slice 5: best-plan-per-query ceiling + per-arm cost tiers, reconciled with existing oracle bounds; ledger row written |
+| R-EXPA-1 | EXP-A recall-generation result registered | Slice 10: recall@K_deep / gold-in-pool lift for F2 with CI; ledger row written |
+| R-M4-1 | EXP-M4 embedder-ceiling measured; swap KILL/GO recorded | Slice 10: ceiling vs bge-small with CI; **no productized swap**; ledger row + explicit "keep bge-small unless…" verdict |
+| R-BP-1 | EXP-B′ joint-tuning result → per-intent config tuples | Slice 15: `(index, retrieval, α, pool_n, MMR, recency)` tuple per intent class + EXP-B′.5 joint-regression guard result; ledger row written |
+| R-FRACC-1 | EXP-Fr-acc **base**: 5-class classifier accuracy + asymmetric mis-route cost matrix | Slice 20: per-class accuracy + per (intent, route) mis-route cost (incl. needle→C −0.362) with CI; ledger row written |
+| R-FA-1 | VoI thresholds measured and registered | Slice 25: numeric (`ce_score`, route-margin) break-even points; committed to STATUS + sequencing §6 finding |
+| R-FA-2 | Asymmetric mis-route cost matrix extended | Slice 25: matrix extended from the Slice-20 base; needle→global cross-wire cost confirmed measurable |
+| R-FA-3 | Value-of-signal comparison complete | Slice 25: agent-signal vs `ce_score`-only lift on routed sample; CI-bounded |
+| R-AF-1 | EXP-AF KILL/GO verdict + depth-bound decision | Slice 30 HITL readout: verdict in experiments ledger; one-shot vs iterative settled (1–2 bound) |
+| R-AF-2 | Every priced run pre-registered before spend; ladder stays under the ~$20 ceiling | Slice 0: hypothesis + KILL path + per-experiment cost ceiling (EXP-B′, Fr-acc, EXP-AF) in STATUS; running `$` tally maintained; no priced run before registration; HITL flag if projected total > ~$20 |
+| R-L2-1 | Agent-side L2 prototype routes all 5 intent classes | Slice 35: smoke test covers all 5; recommendation returned without execution |
+| R-L2-2 | Prototype carries and exposes per-intent config tuples | Slice 35: each class has a registered EXP-B′ tuple; tuple registry is the 0.8.15 pre-stage artifact |
+| R-L2-3 | Prototype accepts agent hint / override without error | Slice 35: override respected without fallback-to-internal route |
+| R-L2-4 | Prototype footprint is CALLER-SIDE; no engine changes | Slice 35 codex §9: zero changes to `fathomdb-engine` / `fathomdb-py`; prototype lives outside the library |
+| R-FIL-1 | One unified typed filter contract covers G4 and G10 paths | Slice 40: single type serves both `read.list` (json-path) and `search_filtered` (vec0 metadata); parity test on a shared fixture |
+| R-FIL-2 | Shipped G10 paths re-expressed on the new contract without behavior change | Slice 40: G10 parity test RED-first → GREEN; no regression on existing `SearchFilter` suite |
+| R-GOV-1 | F-8b classification decision committed and executed | Slice 0 HITL decision recorded; Slice 40 execution: if promoted → allowlist + Rust facade + X1; if kept → ADR note with evidence |
+| R-GOV-2 | Governed surface count + X1 suites updated consistently | Slice 40: if promoted, `test_surface.py` + `surface.test.ts` updated; if not, no allowlist change |
+| R-X-1 | Py + TS SDK parity on the unified filter contract (and `record_feedback` if promoted) | X1 harness green; `test_telemetry_parity.py` + `surface.test.ts` updated |
+| R-LEDGER-1 | F-11 closed: every Track-E experiment has a ledger row + reproducible script | Slice 45: `dev/experiments-ledger.md` carries Gate-0/2, EXP-A, EXP-M4, EXP-B′, EXP-Fr-acc, EXP-AF rows (no longer zero) |
 
 New ACs: candidates at Slice 0 (filter-grammar contract) and at the EXP-AF/Fr-acc readout (if the
 agent-signal result warrants a new gate). HITL decides.
 
-**HITL decision points (three):**
+**HITL decision points (four):**
 
-1. **F-8b** (Slice 0) — `record_feedback` instrumentation → governed command? Before Slice 20
-   execution. Owner: steward.
-2. **EXP-AF KILL/GO** (Slice 10 readout) — agent signal beats `ce_score`-only net of round-trip? If
-   KILL: prototype drops the feedback arm; `record_feedback` stays instrumentation (overrides F-8b
-   promotion). Owner: steward.
-3. **Filter-grammar unification shape** (Slice 0 ADR) — unified single type or a thin adapter that
-   routes to two compilation paths? (The two backing stores — vec0 metadata columns for G10;
-   json-extract over allowlist for G4 — are structurally different; the ADR must settle whether the
-   public type is unified or the internal compilation is routed behind a shared facade.)
+1. **F-8b** (Slice 0) — `record_feedback` instrumentation → governed command? Before Slice 40 execution.
+2. **EXP-M4 swap KILL/GO** (Slice 10 readout) — does any candidate beat bge-small? Default = keep
+   bge-small; a productized swap is out of 0.8.11 and separately gated.
+3. **EXP-AF KILL/GO** (Slice 30 readout) — agent signal beats `ce_score`-only net of round-trip? If
+   KILL: prototype drops the feedback arm; `record_feedback` stays instrumentation (overrides F-8b promote).
+4. **Filter-grammar unification shape** (Slice 0 ADR) — unified single type vs thin adapter over two
+   compilation paths (vec0 metadata columns for G10; json-extract over allowlist for G4).
+
+Owner of all four: steward.
 
 ---
 
 ## 3. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 15 → 20 → 40
-         ↑             ↑
-      (eval track)  (engineering track — 15 ∥ 20 off Slice 0)
+Track E (eval spine — sequential):   0 → 5 → 10 → 15 → 20 → 25 → 30 → 35
+Track G (engineering — ∥ from 0):                                   40
+Verification:                                                          45
 ```
 
-| Slice | Title | Work-type | Footprint | Depends-on |
-| ---: | --- | --- | --- | --- |
-| **0** | Setup + ADRs — EXP-AF pre-registration; VoI extension design; filter-grammar unification ADR (compilation routing vs unified type — HITL F-8b decision before Slice 20); L2 prototype scope; stand up `runs/STATUS-0.8.11.md` | design-adr | — | — |
-| **5** | **EXP-Fr-acc/VoI finalize (KEYSTONE eval)** — value-of-signal + ask-or-not VoI thresholds + asymmetric mis-route cost matrix extension; uses EXP-OBS telemetry + real-gold from 0.8.8 (I-1); HITL-gated cost spend | eval (EVAL-ONLY / CALLER-SIDE-BYO-LLM, small $) | CALLER-SIDE-BYO-LLM / EVAL-ONLY | 0 |
-| **10** | **EXP-AF value test** — agent relevance signal vs `ce_score`-only; round-trip cost + VoI break-even; one-shot vs iterative; KILL/GO verdict → HITL readout; mis-route reduction | eval (EVAL-ONLY / CALLER-SIDE-BYO-LLM, small $) | CALLER-SIDE-BYO-LLM / EVAL-ONLY | 5 (VoI framework needed for comparison baseline) |
-| **15** | **Agent-side L2 router prototype + dispatcher pre-stage** — Python CALLER-SIDE prototype; 5-class intent taxonomy; per-intent config tuple registry; recommendation API; hint/override contract; pre-stage artifact committed | implementation (CALLER-SIDE) | CALLER-SIDE-BYO-LLM | 0 (can start in parallel with eval track; soft dep on Slice 5 for VoI escalation thresholds — see note) |
-| **20** | **#17 filter-grammar unification + F-8b execution** — unified typed filter contract on `read.list` (G4) + `search_filtered` (G10); RED→GREEN parity test; re-express shipped G10 paths; execute F-8b classification decision; Py + TS parity (X1) | implementation (IN-LIBRARY + governance) | IN-LIBRARY | 0 (F-8b HITL decision from Slice 0; filter-grammar ADR from Slice 0) |
-| **40** | **Verification + Release Readiness (0.8.11)** — X1/X2/X3 + R-FA/R-AF/R-L2/R-FIL/R-GOV AC gate; experiments-ledger update (EXP-AF + Fr-acc/VoI); dispatcher pre-stage artifact reviewed; hand-off note for 0.8.15 committed | verification | — | 5, 10, 15, 20 |
+| Slice | Title | Track | Work-type | Footprint | Depends-on |
+| ---: | --- | :---: | --- | --- | --- |
+| **0** | Setup + ADRs — pre-register the **whole** ladder (Gate-0/2, EXP-A, EXP-M4, EXP-B′, EXP-Fr-acc, EXP-AF: hypothesis/KILL/cost-ceiling each); filter-grammar unification ADR; F-8b decision; L2 prototype scope; stand up `runs/STATUS-0.8.11.md` | — | design-adr | — | — |
+| **5** | **Gate-0 + Gate-2 (eval FOUNDATION)** — golden-set re-scope + oracle-routing upper bound; reconcile with existing oracle bounds; per-arm cost tiers | E | eval ($0 EVAL-ONLY) | EVAL-ONLY | 0 |
+| **10** | **EXP-A ‖ EXP-M4** — recall generation (F2) ‖ embedder-ceiling measurement (GPU); EXP-M4 swap KILL/GO readout (keep bge-small unless beaten) | E | eval ($0 / GPU) | EVAL-ONLY / OFFLINE-BUILD | 5 |
+| **15** | **EXP-B′ — 3-stage joint tuning (KEYSTONE)** — `candidate_k × pool_n × α × final_K`; per-intent config tuples + EXP-B′.5 joint-regression guard; HITL-gated `$` judge | E | eval ($0 + $ judge) | EVAL-ONLY | 10 (EXP-A ∧ EXP-M4) |
+| **20** | **EXP-Fr-acc base** — 5-class classifier accuracy + asymmetric mis-route cost matrix (the missed 0.8.9 work) | E | eval ($0 + small $) | EVAL-ONLY / CALLER-SIDE-BYO-LLM | 5 |
+| **25** | **EXP-Fr-acc/VoI finalize** — value-of-signal + ask-or-not VoI thresholds + asymmetric-weighting extension; uses EXP-OBS telemetry (I-1) | E | eval ($0 + small $) | EVAL-ONLY / CALLER-SIDE-BYO-LLM | 20 |
+| **30** | **EXP-AF value test** — agent relevance signal vs `ce_score`-only; round-trip VoI break-even; one-shot vs iterative; KILL/GO → HITL readout | E | eval ($0 + small $) | EVAL-ONLY / CALLER-SIDE-BYO-LLM | 25 |
+| **35** | **Agent-side L2 router prototype + dispatcher pre-stage** — Python CALLER-SIDE; 5-class taxonomy; per-intent tuple registry (from EXP-B′); recommendation API; hint/override; pre-stage artifact committed | E | implementation (CALLER-SIDE) | CALLER-SIDE-BYO-LLM | 15 (tuples) ∧ 25 (VoI) ∧ 30 (AF verdict) |
+| **40** | **#17 filter-grammar unification + F-8b execution** — unified typed filter contract on `read.list` (G4) + `search_filtered` (G10); RED→GREEN parity; re-express shipped G10; execute F-8b; Py + TS parity (X1). **∥ from Slice 0 — independent of the eval spine** | G | implementation (IN-LIBRARY + governance) | IN-LIBRARY | 0 (NOT gated by 5–35) |
+| **45** | **Verification + Release Readiness (0.8.11)** — X1/X2/X3 + full AC gate; experiments-ledger carries all Track-E rows (F-11 closed); dispatcher pre-stage artifact reviewed; hand-off note for 0.8.15 | — | verification | — | 5,10,15,20,25,30,35,40 |
 
 **Keystones / hard gates.**
 
-- **Slice 5 is the eval keystone.** Its VoI thresholds are the comparison baseline for EXP-AF (Slice
-  10) and the escalation logic the L2 prototype (Slice 15) encodes. Slice 5 does not hard-block 15
-  (the prototype can be built to provisional thresholds and updated), but the codex §9 review of
-  Slice 15 must confirm VoI thresholds are consistent with Slice 5's output.
-- **Slice 10 EXP-AF KILL/GO is a hard gate on the L2 prototype's feedback arm.** If KILL, the
-  prototype drops the agent-signal loop before Slice 40 (a reserved-gap patch slice if needed).
-- **F-8b HITL decision at Slice 0 gates Slice 20's governance execution.** Do not implement
-  reclassification before the decision is recorded.
+- **Slice 15 (EXP-B′) is the eval keystone** — its per-intent tuples are the dispatcher pre-stage and
+  the L2 prototype's routing table. Hard-blocked by EXP-A ∧ EXP-M4 (Slice 10).
+- **Slice 20 (EXP-Fr-acc base) hard-gates Slice 25** — there is no VoI "finalize" without the classifier
+  accuracy + mis-route base. (This is the edge the old plan got wrong — F-11.)
+- **Slice 30 (EXP-AF KILL/GO) hard-gates the L2 prototype's feedback arm** — if KILL, the prototype drops
+  the agent-signal loop before Slice 45 (reserved-gap patch if needed).
+- **F-8b HITL decision (Slice 0) gates Slice 40's governance execution.**
 - **All priced eval runs use the resilient harness** (incremental checkpoint, `--resume`, 429/5xx
-  backoff, completeness guard, $ ledger) — `priced-runs-need-resilience-before-spend`.
+  backoff, completeness guard, `$` ledger) — `priced-runs-need-resilience-before-spend`. EXP-B′ /
+  EXP-Fr-acc / EXP-AF are the priced ones; pre-register each (R-AF-2) before any spend and draw on the
+  shared **~$20 ceiling** (Budget, above) with a running tally — flag HITL before exceeding it.
 
 **Tracks (parallelizable after Slice 0).**
 
-- Eval track: **5 → 10** (Fr-acc/VoI finalize → EXP-AF). Sequential within the track.
-- Engineering track: **15 ∥ 20** (L2 prototype and filter-grammar are independent; both unblock at
-  Slice 0). Slice 15 has a _soft_ dep on Slice 5's thresholds; run both tracks concurrently and
-  reconcile at Slice 40 if the prototype precedes the eval readout.
+- **Track E (eval spine):** strictly sequential `5 → 10 → 15 → 20 → 25 → 30 → 35` (each result feeds the
+  next). Slice 20 (Fr-acc base) and Slices 10/15 (A/M4/B′) both branch off Slice 5 and can overlap until
+  they converge at Slice 25/35.
+- **Track G (engineering):** Slice 40 (filter-grammar + F-8b) is independent — it unblocks at Slice 0
+  and runs concurrently with the entire eval spine; its number reflects ladder position, not a dependency
+  on 5–35.
 
 ---
 
 ## 4. Reserved-gap policy
 
-Carried unchanged from `0.8.1-plan.md §Numbering`. If the Slice 0 filter-grammar ADR reveals the
-unification is heavier than a single slice (e.g., the two compilation paths diverge enough to require
-separate migration tests), a reserved-gap slice is inserted between 20 and 40 as a fully-orchestrated
-follow-on off a fresh `main` baseline — never an ad-hoc patch. Similarly, if EXP-AF KILL triggers a
-prototype feedback-arm removal, a reserved-gap patch slice handles the delta before Slice 40.
+Carried unchanged from `0.8.1-plan.md §Numbering`. Likely insertion points this release:
+
+- If the Slice 0 filter-grammar ADR reveals the two compilation paths cannot share a single type cleanly,
+  a reserved-gap slice is inserted between 40 and 45 (separate migration tests), off a fresh `main`.
+- If **EXP-M4** surfaces a swap candidate that beats bge-small, that does **not** trigger in-release
+  productization (out of scope, §1a) — it is registered and escalated to HITL as a separate gated decision.
+- If **EXP-AF KILL** triggers a prototype feedback-arm removal, a reserved-gap patch slice handles the
+  delta before Slice 45.
+- Every reserved-gap slice is fully orchestrated off a fresh `main` baseline — never an ad-hoc patch.
 
 ---
 
 ## 5. Cross-cutting DoD (X1/X2/X3 — bind EVERY slice)
 
 X1 SDK parity + harnesses (Py↔TS) · X2 `mkdocs build --strict` green · X3 docs + DOC-INDEX entry per
-slice. `runs/STATUS-0.8.11.md` carries the per-slice X column. For the eval slices (5, 10) the
-"shippable" DoD is the **landed result doc + reproducible script** (not a published artifact);
-X1/X2/X3 still apply to any surface change those slices incidentally touch.
+slice. `runs/STATUS-0.8.11.md` carries the per-slice X column. For the eval slices (5/10/15/20/25/30) the
+"shippable" DoD is the **landed result doc + reproducible script + a row in `dev/experiments-ledger.md`**
+(not a published artifact); X1/X2/X3 still apply to any surface change those slices incidentally touch.
 
-The filter-grammar slice (20) triggers a DOC-INDEX update for: `docs/reference/python-api.md`,
+The filter-grammar slice (40) triggers a DOC-INDEX update for: `docs/reference/python-api.md`,
 `docs/reference/typescript-api.md`, `docs/guides/hybrid-search-filtering.md`, and
 `src/conformance/governed-surface-allowlist.json` (if F-8b promotes).
 
@@ -178,44 +237,49 @@ The filter-grammar slice (20) triggers a DOC-INDEX update for: `docs/reference/p
 
 `dev/acceptance.md` is locked (max AC-074); do not invent AC ids. Track by:
 
-- Experiment tags (`EXP-AF`, `EXP-Fr-acc`), OPP-id (`OPP-9` for telemetry/real-gold), G-gap (`G4`,
-  `G10`, gap-37), and TDD test names (`test_gold_pipeline.py`, `test_surface.py`,
-  `surface.test.ts`, `test_telemetry_parity.py`).
-- New ACs (if warranted) proposed at Slice 0 (filter-grammar contract) or Slice 10 readout (EXP-AF
-  gate). HITL decides; none are pre-issued here.
+- Experiment tags (`Gate-0`, `Gate-2`, `EXP-A`, `EXP-M4`, `EXP-B′`, `EXP-Fr-acc`, `EXP-AF`), OPP-id
+  (`OPP-9` telemetry/real-gold), G-gap (`G4`, `G10`, gap-37), and TDD names (`test_gold_pipeline.py`,
+  `test_surface.py`, `surface.test.ts`, `test_telemetry_parity.py`).
+- New ACs (if warranted) proposed at Slice 0 (filter-grammar contract) or the EXP-AF/Fr-acc readout.
+  HITL decides; none are pre-issued here.
 
 ---
 
 ## 7. Prerequisites
 
 1. **I-1 satisfied (verified on `origin/main`).** EXP-OBS landed at 0.8.8 Slices 0/1/5 (commits
-   `170c5109`, `8c938bb7`, `eec4ddb0`, `5c7b9f31`); field set ratified; `Explanation`/`QueryTrace`/
-   `PerHitExplain` exist on main. The per-arm provenance + score breakdown the agent-signal track
-   judges against physically exists.
-2. **0.8.9 EXP-Fr-acc base complete.** The 5-class classifier accuracy + initial mis-route cost
-   matrix landed in 0.8.9. 0.8.11 _extends_ this with agent-signal + VoI; it does not re-derive the
-   classifier from scratch.
-3. **Real-gold pipeline operational (OPP-9 / 0.8.8 Slice 15).** `record_feedback` appending to a
-   local JSONL sink, `enable_telemetry` + `last_telemetry_query_id` tested in
-   `test_gold_pipeline.py`. EXP-AF relies on real-gold rows captured during the 0.8.9 eval runs.
-   Confirm local gold sink has a sufficient query sample before Slice 10; if not, a short cheap
-   eval run at Slice 5 generates the sample (gated by R-AF-2 pre-registration).
-4. **Worktrees off `$(git rev-parse main)`.** Every implementation slice uses a pre-created worktree
-   off a fresh `main` baseline; see `agent-worktree-stale-base-trap`.
-5. **0.8.10 not a gate.** 0.8.11 is OOB; it does not depend on 0.8.10 closing (odd/even
-   tracks are independent except at hard edges, and there is no I-5 edge to 0.8.11).
+   `170c5109`, `8c938bb7`, `eec4ddb0`, `5c7b9f31`); `Explanation`/`QueryTrace`/`PerHitExplain` exist on
+   main. The per-arm provenance + score breakdown the agent-signal track judges against physically exists.
+2. **Real-gold pipeline operational (OPP-9 / 0.8.8 Slice 15).** `record_feedback` appending to a local
+   JSONL sink; `enable_telemetry` + `last_telemetry_query_id` tested in `test_gold_pipeline.py`. EXP-AF
+   relies on real-gold rows; if the local sink lacks a sufficient sample, a short cheap run at Slice 5/20
+   generates it (gated by R-AF-2 pre-registration).
+3. **0.8.7 GPU seam present.** `parse_device_request` / `resolve_device()` shipped (0.8.7, `02297cb3`);
+   EXP-M4's GPU sweeps ride it. EXP-0 CE-rerank α/pool_n knobs are in-engine (landed 2026-06-25) — the
+   EXP-B′ joint-tuning surface.
+4. **~~0.8.9 EXP-Fr-acc base complete — FALSE (F-11).~~** **CORRECTED:** the EXP-Fr-acc base, plus
+   Gate-0/2, EXP-A, EXP-M4, and EXP-B′, were scheduled as 0.8.7/0.8.9 float and **never ran** (zero
+   ledger rows, no `runs/` artifacts). **0.8.11 now OWNS building all of them** (Track E, Slices 5–20).
+   This is the change that grew the release (F-11 / HITL 2026-06-28).
+5. **EXP-S is NOT a 0.8.11 prerequisite.** EXP-S (kind-tag index substrate) is 0.8.12; EXP-B′'s hard
+   blockers are EXP-A ∧ EXP-M4 only. The agent-side L2 prototype is deliberately substrate-free (DP-A).
+6. **Worktrees off `$(git rev-parse main)`.** Every implementation slice uses a pre-created worktree off
+   a fresh `main` baseline; no `maturin develop` from a worktree (`agent-worktree-stale-base-trap`).
+7. **0.8.10 not a gate.** 0.8.11 is OOB; no I-5 edge to it.
 
-**What 0.8.11 hands to 0.8.15 (the dispatcher build):**
+**What 0.8.11 hands to 0.8.15 (the dispatcher build) — now backed by real experiments:**
 
 | Artifact | Consumer at 0.8.15 |
 | --- | --- |
-| Fr-acc/VoI thresholds (`ce_score`, route-margin break-even) | EXP-Fr escalation logic |
-| Asymmetric mis-route cost matrix (updated) | EXP-Fr forbidden-composition validator |
-| EXP-AF KILL/GO verdict + depth bound (1 vs 2) | Whether 0.8.15 integrates agent-signal loop |
-| Per-intent config tuple registry (pre-stage artifact) | EXP-Fr integrates rather than invents these; DP-B mitigation |
-| Agent-side L2 prototype (working code) | If EXP-S KILL at 0.8.12, this _is_ the 0.8.15 router (DP-A hedge) |
-| Unified filter contract (#17, IN-LIBRARY) | The `constraints` block the 0.8.15 dispatcher leans on |
-| F-8b classification (committed) | 0.8.15 knows whether `record_feedback` is a governed command before wiring it |
+| Gate-2 oracle ceiling + per-arm cost tiers | EXP-Fr routing-value justification |
+| EXP-A recall + EXP-M4 ceiling | the recall/embedder envelope the stacks tune within |
+| EXP-B′ per-intent config tuples + joint-regression guard | EXP-Fr integrates rather than invents (DP-B); forbidden-composition validator |
+| EXP-Fr-acc accuracy + asymmetric mis-route matrix | EXP-Fr classifier-accuracy gate + escalation logic |
+| Fr-acc/VoI thresholds (`ce_score`, route-margin break-even) | EXP-Fr ask-or-not escalation |
+| EXP-AF KILL/GO verdict + depth bound (1 vs 2) | whether 0.8.15 integrates the agent-signal loop |
+| Agent-side L2 prototype (working code) | if EXP-S KILL at 0.8.12, this _is_ the 0.8.15 router (DP-A hedge) |
+| Unified filter contract (#17, IN-LIBRARY) | the `constraints` block the dispatcher leans on |
+| F-8b classification (committed) | whether `record_feedback` is governed before wiring it |
 
 ---
 
@@ -223,74 +287,84 @@ The filter-grammar slice (20) triggers a DOC-INDEX update for: `docs/reference/p
 
 **Upstream (must be done before 0.8.11 can start):**
 
-- I-1 edge: EXP-OBS (@0.8.8) — **satisfied** (F-6 in sequencing doc).
-- 0.8.9 EXP-Fr-acc base — **satisfied** (0.8.9 closed, F-9 confirmed in sequencing doc).
+- I-1 edge: EXP-OBS (@0.8.8) — **satisfied** (F-6).
+- ~~0.8.9 EXP-Fr-acc base~~ — **NOT satisfied (F-11)**; absorbed into Track E here.
 
 **Within-release ordering (hard):**
 
-1. Slice 0 before all others (ADRs gate Slice 20's execution and set the pre-registration for Slice 5).
-2. Slice 5 before Slice 10 (VoI framework is the comparison baseline).
-3. Slice 0 F-8b HITL decision before Slice 20 execution.
-4. Slices 5/10/15/20 all before Slice 40.
+1. Slice 0 before all others (pre-registration gates every priced run; ADRs gate Slice 40 + Slice 5 scope).
+2. Track E is strictly sequential `5 → 10 → 15 → 20 → 25 → 30 → 35`.
+3. Slice 0 F-8b HITL decision before Slice 40 execution.
+4. All of 5/10/15/20/25/30/35/40 before Slice 45.
 
 **Parallelizable:**
 
-- Slice 15 and Slice 20 are independent and can run concurrently after Slice 0.
-- Slice 15 and Slice 5 can run concurrently (with the soft reconciliation note above).
+- Track G (Slice 40, filter-grammar + F-8b) runs concurrently with the entire eval spine after Slice 0.
+- Within Track E, the Fr-acc base (Slice 20) branch and the A/M4/B′ branch both start off Slice 5 and
+  can overlap until Slice 25/35.
 
 **Downstream (0.8.11 must complete before these consume its artifacts):**
 
-- **0.8.12 EXP-S readout** uses the Fr-acc/VoI thresholds + L2 prototype to make the formal locus
-  decision (agent-side vs in-library). The locus decision is _not_ made in 0.8.11; 0.8.11 supplies
-  the evidence.
-- **0.8.15 EXP-Fr** is hard-gated on EXP-B′ ∧ EXP-S ∧ Fr-acc ∧ EXP-OBS — 0.8.11 closes the
-  Fr-acc and pre-stage legs of that conjunction. EXP-B′ deadline is 0.8.12 (by-when table).
-- **0.8.17 router hardening** builds on the 0.8.15 dispatcher and on EXP-AF productization. If
-  EXP-AF is GO, 0.8.17 productizes the agent-signal loop; if KILL, it skips that arm.
+- **0.8.12 EXP-S readout** uses the Fr-acc/VoI thresholds + L2 prototype for the formal locus decision
+  (agent-side vs in-library). 0.8.11 supplies the evidence; the locus call is made at 0.8.12.
+- **0.8.15 EXP-Fr** is hard-gated on EXP-B′ ∧ EXP-S ∧ Fr-acc ∧ EXP-OBS — **0.8.11 now closes EXP-B′,
+  Fr-acc, the pre-stage, and (with 0.8.8) EXP-OBS**; only EXP-S (0.8.12) remains. _This is the broader
+  impact of F-11: before this release, the 0.8.15 dispatcher rested on experiments that had never run._
+- **0.8.17 router hardening** builds on the 0.8.15 dispatcher + EXP-AF productization (GO → productize
+  the agent-signal loop; KILL → skip that arm).
 
-**Interlock with master sequencing (F-10):**
+**Interlock with master sequencing (F-11 / F-10):**
 
-0.8.11 is a net-new OOB slot (F-10, sequencing §6). The odd line skips 13; no x.y.13 release.
-EXP-B′ was to be done by 0.8.12 (sequencing §5b); 0.8.11 does not execute EXP-B′ (that belongs in
-the 0.8.9/0.8.11 window; confirm at Slice 0 whether it is already in the ledger or needs a
-reserved-gap slot here). If EXP-B′ is not yet landed, it must be done before Slice 40 as a
-pre-condition for the dispatcher pre-stage tuples to be valid across joint-tuning stacks.
+0.8.11 is a net-new OOB slot (F-10). The odd line skips 13. **F-11 ruling:** the missed experiment ladder
+is discharged here as owned, gated slices; the "$0 float rides the odd line" model is retired for these
+experiments. The master §4 0.8.11 row + §5b by-when table + the F-11 disposition are reconciled by the
+steward (this plan is the owning artifact).
 
-**Size flag.** This release is assessed as _well-sized_: two eval slices (EVAL-ONLY, no engine
-changes), one CALLER-SIDE prototype slice, one IN-LIBRARY engine slice (filter-grammar, moderate
-complexity), and one governance action folded across Slices 0 and 20. The only scope-creep risk is
-the filter-grammar unification: if the Slice 0 ADR reveals the two compilation paths cannot share a
-single type cleanly, a reserved-gap slice is inserted (see §4). Flag to HITL if that occurs.
+**Size flag — HONEST.** This release is **no longer "well-sized"** — folding the full experiment ladder
+into 0.8.11 (HITL ruling on F-11) makes it the **largest release in the 0.8.x line**: five owned
+experiments (Gate-0/2, EXP-A, EXP-M4, EXP-B′, EXP-Fr-acc base) + three original eval workstreams
+(Fr-acc/VoI finalize, EXP-AF, L2 prototype) + one IN-LIBRARY engine slice (filter-grammar) + a governance
+action — ~10 slices across two tracks. **The tradeoff was accepted deliberately:** these are low-cost
+experiments (a **~$20** priced-LLM ceiling for the whole ladder; the failure was ownership, not cost),
+discharging them in one owned release is cheaper than re-floating them, and it de-risks the entire 0.8.15
+router track in a single place. **Scope-creep
+hotspots to watch:** (a) EXP-M4 — keep it a *measurement*; a productized embedder swap is out of scope
+and separately gated; (b) Gate-0 — keep the gold-labeling pass *scoped to gaps*, not a fresh golden set
+(the ~269-Q F4 build stays at 0.8.17); (c) filter-grammar — if the two compilation paths can't share one
+type, a reserved-gap slice is inserted (§4). Flag any of these to HITL if they grow.
 
 ---
 
 ## 9. Immediate next slice
 
-**Slice 0 — ADRs + pre-registration + HITL F-8b.** Stand up `runs/STATUS-0.8.11.md`. In parallel:
+**Slice 0 — ADRs + full ladder pre-registration + HITL F-8b.** Stand up `runs/STATUS-0.8.11.md`. In parallel:
 
-1. Author the **filter-grammar unification ADR** (the Slice 0 deliverable for #17): settle whether
-   the unified `Filter` type is a single enum that routes internally to the two compilation paths, or
-   a thin adapter over the two distinct types. Read `dev/adr/ADR-0.8.0-filter-grammar.md` and
-   `dev/design/slice-10-design.md` as inputs. The ADR must state: (a) the new type's shape and name,
-   (b) how it compiles to vec0 metadata columns (G10) vs json-extract (G4), (c) the parity test
-   fixture, and (d) whether the existing `SearchFilter` struct is renamed/extended or replaced. Any
-   `[TBD]` in the ADR is a blocker for Slice 20.
+1. **Pre-register the whole Track-E ladder** (R-AF-2, generalized): for each of Gate-0/2, EXP-A, EXP-M4,
+   EXP-B′, EXP-Fr-acc, EXP-AF — hypothesis, KILL criteria, corpus/assets, cost ceiling (`$0` vs priced),
+   and the reproducible script. **Block every priced run** (EXP-B′ judge, Fr-acc, EXP-AF) until its
+   registration is in `STATUS-0.8.11.md`. Read PSD §III + the master §5b by-when table as inputs.
 
-2. **Pre-register EXP-AF**: hypothesis, KILL criteria (`ce_score`-only is the baseline; the agent
-   signal must beat it net of round-trip cost), corpus (real-gold from 0.8.8 OPP-9 pipeline), cost
-   ceiling ($), and the reproducible script. Block any priced run until this is in `STATUS-0.8.11.md`.
+2. **Author the filter-grammar unification ADR** (#17, Track G): settle whether the unified `Filter`
+   type is a single enum routing internally to the two compilation paths, or a thin adapter over two
+   distinct types. Inputs: `dev/adr/ADR-0.8.0-filter-grammar.md`, `dev/design/slice-10-design.md`. State
+   (a) the new type's shape/name, (b) vec0-metadata (G10) vs json-extract (G4) compilation, (c) the
+   parity-test fixture, (d) whether `SearchFilter` is renamed/extended or replaced. Any `[TBD]` blocks Slice 40.
 
-3. **EXP-Fr-acc/VoI extension design**: specify the three additions (value-of-signal comparison
-   method, VoI break-even calculation, asymmetric-weighting test) that extend the 0.8.9 Fr-acc
-   results. State the output format that will feed the L2 prototype's VoI escalation logic.
+3. **Gate-0 re-scope plan**: enumerate the reusable LME/LOCOMO/AP-News/MuSiQue assets + the applicable
+   `decide_083`/`decide_084` rules; identify exactly which intent classes lack FathomDB-node-level
+   retrieval labels (→ the scoped labeling pass). Confirm the ~269-Q F4/M6 build is **excluded** (0.8.17).
 
-4. **L2 prototype scope spec**: confirm the prototype is a Python CALLER-SIDE harness (no crate
-   changes); specify the recommendation API shape consistent with `initial-arch` §5 (intent, stack,
-   confidence, cost_tier, rationale); list which per-intent config tuples are provisional (from
-   EXP-B′ if landed) vs pinned from EXP-0.
+4. **EXP-B′ / Fr-acc / EXP-AF extension design**: specify the per-intent tuple output format (feeds the
+   L2 prototype + 0.8.15 pre-stage), the EXP-B′.5 joint-regression guard, the three Fr-acc/VoI additions
+   (value-of-signal, VoI break-even, asymmetric weighting), and the EXP-AF comparison method.
 
-5. **F-8b HITL decision**: bring the reclassification checklist from
-   `dev/plans/runs/NOTE-0.8.8-to-orchestrator-record-feedback-reclassify.md` to HITL; record the
-   decision in `STATUS-0.8.11.md` before Slice 20 begins.
+5. **L2 prototype scope spec**: confirm CALLER-SIDE Python harness (no crate changes); recommendation API
+   shape per `initial-arch` §5 (intent, stack, confidence, cost_tier, rationale); which tuples are pinned
+   from EXP-0 vs to-be-filled from EXP-B′.
 
-After Slice 0, fan out: eval track (Slice 5) and engineering track (Slices 15 ∥ 20) in parallel.
+6. **F-8b HITL decision**: bring the reclassification checklist from
+   `dev/plans/runs/NOTE-0.8.8-to-orchestrator-record-feedback-reclassify.md` to HITL; record in
+   `STATUS-0.8.11.md` before Slice 40 begins.
+
+After Slice 0, fan out: **Track E** runs the sequential eval spine (5 → 10 → 15 → 20 → 25 → 30 → 35);
+**Track G** runs Slice 40 (filter-grammar + F-8b) concurrently. Converge at Slice 45.

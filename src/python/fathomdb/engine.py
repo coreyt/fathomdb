@@ -32,6 +32,7 @@ from fathomdb.types import (
     SoftFallbackBranch,
     WriteReceipt,
 )
+from fathomdb.filter import Filter
 
 _KWARG_FIELDS = {
     "embedder_pool_size",
@@ -146,7 +147,7 @@ class Engine:
     def search(
         self,
         query: str,
-        filter: SearchFilter | None = None,
+        filter: SearchFilter | Filter | None = None,
         *,
         rerank_depth: int = 0,
         use_graph_arm: bool = False,
@@ -218,6 +219,10 @@ class Engine:
                 )
             if pool_n < 0:
                 raise ValueError(f"pool_n must be >= 0, got {pool_n!r}")
+        # 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search
+        # path; lower to the SearchFilter sugar (typed-rejects a Json term, D3).
+        if isinstance(filter, Filter):
+            filter = filter.to_search_filter()
         if filter is None:
             result = self._native.search(
                 query,

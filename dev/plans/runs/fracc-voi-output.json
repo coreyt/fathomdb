@@ -1,0 +1,554 @@
+{
+  "schema": "0.8.11-fracc-voi-v1",
+  "slice": 25,
+  "experiment": "EXP-Fr-acc / VoI finalize",
+  "ce_active_guard": {
+    "max_ce_norm": 0.999944,
+    "spread": 0.999935,
+    "alpha1_order": [
+      0,
+      1,
+      2
+    ],
+    "active": true
+  },
+  "cost_model": {
+    "COST_CROSSWIRE_needle_to_C": -0.3,
+    "COST_SAMETIER": -0.05,
+    "COST_WRONG": 1.0,
+    "source": "Slice-20 fracc-base mis-route matrix (needle\u2192C deep \u22120.30 [\u22120.47,\u22120.10]); EXP-B\u2032 same-tier cross-application regressions"
+  },
+  "classifier_context": {
+    "method": "TF-IDF nearest-centroid, leakage-free stratified 5-fold OOF over the full labeled union (mirrors the Slice-20 registered classifier; each scored query held out of its training fold)",
+    "lme_routing_accuracy": 0.6419,
+    "n_lme": 606,
+    "costly_crosswire_rate_needle_to_global": 1.0,
+    "costly_crosswire_n": 4
+  },
+  "deliverable_1_value_of_signal": {
+    "status": "OK",
+    "method": "agent relevance (gemini-flash-lite on top-1 reranked passage) vs internal ce_score at predicting retrieval-correct (gold-in-top-10, strict)",
+    "model": "gemini-flash-lite",
+    "n": 450,
+    "by_intent_n": {
+      "needle": 150,
+      "multi_session": 150,
+      "temporal": 150
+    },
+    "base_rate_retrieval_correct": 0.5289,
+    "ce_threshold_best": 0.0336,
+    "balanced_acc_ce_best": 0.6675,
+    "balanced_acc_agent": 0.5445,
+    "acc_ce_best": {
+      "point": 0.6622,
+      "lo": 0.6178,
+      "hi": 0.7044,
+      "n": 450
+    },
+    "acc_agent": {
+      "point": 0.5244,
+      "lo": 0.4778,
+      "hi": 0.5689,
+      "n": 450
+    },
+    "lift_agent_minus_ce_acc": {
+      "point": -0.1378,
+      "lo": -0.1889,
+      "hi": -0.0867,
+      "n": 450
+    },
+    "auc_ce": 0.6668,
+    "auc_agent_binary": 0.5445,
+    "ce_05_balanced_acc": 0.6383,
+    "agent_relevance_rate": 0.1556,
+    "cost": {
+      "n_calls": 450,
+      "prompt_tokens": 295447,
+      "completion_tokens": 1727
+    },
+    "spent_usd": 0.0151,
+    "p_catch_estimate": 0.5445,
+    "caveat": "Conservative LOWER BOUND on agent value: (1) the ce_score baseline gets an in-sample oracle threshold (favors ce); (2) the eval agent sees only the top-1 passage, NOT the user-intent context a deployed agent holds (PSD \u00a7I.D \u2014 the agent's value is the intent FathomDB lacks). A cheap general LLM re-judging relevance is exactly the task the engine's specialized cross-encoder already does well, so it losing here is expected. EXP-AF (Slice 30) is the dedicated stronger-agent / record_feedback test."
+  },
+  "deliverable_2_voi_breakeven": {
+    "ce_bins": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.01
+    ],
+    "margin_bins": [
+      0.0,
+      0.05,
+      0.1,
+      0.2,
+      0.4,
+      1.01
+    ],
+    "p_catch": 1.0,
+    "cost_wrong": 1.0,
+    "c_rt_grid": [
+      0.0,
+      0.02,
+      0.05,
+      0.1
+    ],
+    "cells": [
+      {
+        "ce_bin": [
+          0.0,
+          0.2
+        ],
+        "margin_bin": [
+          0.0,
+          0.05
+        ],
+        "n": 280,
+        "p_retrieval_incorrect": 0.5464,
+        "e_misroute_cost": 0.0212,
+        "e_crosswire_cost": 0.0011,
+        "e_sametier_cost": 0.0202,
+        "e_loss_if_proceed": 0.5677,
+        "expected_cost_saved_by_asking": 0.5677,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.0,
+          0.2
+        ],
+        "margin_bin": [
+          0.05,
+          0.1
+        ],
+        "n": 100,
+        "p_retrieval_incorrect": 0.5,
+        "e_misroute_cost": 0.0135,
+        "e_crosswire_cost": 0.003,
+        "e_sametier_cost": 0.0105,
+        "e_loss_if_proceed": 0.5135,
+        "expected_cost_saved_by_asking": 0.5135,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.0,
+          0.2
+        ],
+        "margin_bin": [
+          0.1,
+          0.2
+        ],
+        "n": 25,
+        "p_retrieval_incorrect": 0.68,
+        "e_misroute_cost": 0.042,
+        "e_crosswire_cost": 0.024,
+        "e_sametier_cost": 0.018,
+        "e_loss_if_proceed": 0.722,
+        "expected_cost_saved_by_asking": 0.722,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.0,
+          0.2
+        ],
+        "margin_bin": [
+          0.2,
+          0.4
+        ],
+        "n": 1,
+        "p_retrieval_incorrect": 1.0,
+        "e_misroute_cost": 0.0,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0,
+        "e_loss_if_proceed": 1.0,
+        "expected_cost_saved_by_asking": 1.0,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.2,
+          0.4
+        ],
+        "margin_bin": [
+          0.0,
+          0.05
+        ],
+        "n": 15,
+        "p_retrieval_incorrect": 0.2,
+        "e_misroute_cost": 0.0167,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0167,
+        "e_loss_if_proceed": 0.2167,
+        "expected_cost_saved_by_asking": 0.2167,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.2,
+          0.4
+        ],
+        "margin_bin": [
+          0.05,
+          0.1
+        ],
+        "n": 6,
+        "p_retrieval_incorrect": 0.1667,
+        "e_misroute_cost": 0.025,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.025,
+        "e_loss_if_proceed": 0.1917,
+        "expected_cost_saved_by_asking": 0.1917,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.2,
+          0.4
+        ],
+        "margin_bin": [
+          0.1,
+          0.2
+        ],
+        "n": 1,
+        "p_retrieval_incorrect": 1.0,
+        "e_misroute_cost": 0.0,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0,
+        "e_loss_if_proceed": 1.0,
+        "expected_cost_saved_by_asking": 1.0,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.4,
+          0.6
+        ],
+        "margin_bin": [
+          0.0,
+          0.05
+        ],
+        "n": 17,
+        "p_retrieval_incorrect": 0.4706,
+        "e_misroute_cost": 0.0176,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0176,
+        "e_loss_if_proceed": 0.4882,
+        "expected_cost_saved_by_asking": 0.4882,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.4,
+          0.6
+        ],
+        "margin_bin": [
+          0.05,
+          0.1
+        ],
+        "n": 9,
+        "p_retrieval_incorrect": 0.0,
+        "e_misroute_cost": 0.0167,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0167,
+        "e_loss_if_proceed": 0.0167,
+        "expected_cost_saved_by_asking": 0.0167,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": false,
+          "0.05": false,
+          "0.10": false
+        }
+      },
+      {
+        "ce_bin": [
+          0.4,
+          0.6
+        ],
+        "margin_bin": [
+          0.1,
+          0.2
+        ],
+        "n": 1,
+        "p_retrieval_incorrect": 0.0,
+        "e_misroute_cost": 0.0,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0,
+        "e_loss_if_proceed": 0.0,
+        "expected_cost_saved_by_asking": 0.0,
+        "ask_at_c_rt": {
+          "0.00": false,
+          "0.02": false,
+          "0.05": false,
+          "0.10": false
+        }
+      },
+      {
+        "ce_bin": [
+          0.6,
+          0.8
+        ],
+        "margin_bin": [
+          0.0,
+          0.05
+        ],
+        "n": 13,
+        "p_retrieval_incorrect": 0.2308,
+        "e_misroute_cost": 0.0115,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0115,
+        "e_loss_if_proceed": 0.2423,
+        "expected_cost_saved_by_asking": 0.2423,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.6,
+          0.8
+        ],
+        "margin_bin": [
+          0.05,
+          0.1
+        ],
+        "n": 6,
+        "p_retrieval_incorrect": 0.3333,
+        "e_misroute_cost": 0.025,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.025,
+        "e_loss_if_proceed": 0.3583,
+        "expected_cost_saved_by_asking": 0.3583,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.6,
+          0.8
+        ],
+        "margin_bin": [
+          0.1,
+          0.2
+        ],
+        "n": 1,
+        "p_retrieval_incorrect": 0.0,
+        "e_misroute_cost": 0.05,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.05,
+        "e_loss_if_proceed": 0.05,
+        "expected_cost_saved_by_asking": 0.05,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": false,
+          "0.10": false
+        }
+      },
+      {
+        "ce_bin": [
+          0.8,
+          1.01
+        ],
+        "margin_bin": [
+          0.0,
+          0.05
+        ],
+        "n": 86,
+        "p_retrieval_incorrect": 0.2209,
+        "e_misroute_cost": 0.018,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.018,
+        "e_loss_if_proceed": 0.239,
+        "expected_cost_saved_by_asking": 0.239,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.8,
+          1.01
+        ],
+        "margin_bin": [
+          0.05,
+          0.1
+        ],
+        "n": 37,
+        "p_retrieval_incorrect": 0.1081,
+        "e_misroute_cost": 0.0162,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0162,
+        "e_loss_if_proceed": 0.1243,
+        "expected_cost_saved_by_asking": 0.1243,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      },
+      {
+        "ce_bin": [
+          0.8,
+          1.01
+        ],
+        "margin_bin": [
+          0.1,
+          0.2
+        ],
+        "n": 8,
+        "p_retrieval_incorrect": 0.125,
+        "e_misroute_cost": 0.0188,
+        "e_crosswire_cost": 0.0,
+        "e_sametier_cost": 0.0188,
+        "e_loss_if_proceed": 0.1437,
+        "expected_cost_saved_by_asking": 0.1437,
+        "ask_at_c_rt": {
+          "0.00": true,
+          "0.02": true,
+          "0.05": true,
+          "0.10": true
+        }
+      }
+    ],
+    "breakeven_contour": {
+      "0.00": {
+        "ask_region_query_fraction": 0.9983,
+        "n_ask_cells": 15,
+        "ce_breakeven_by_margin_bin": {
+          "[0.0,0.05)": 1.01,
+          "[0.05,0.1)": 1.01,
+          "[0.1,0.2)": 1.01,
+          "[0.2,0.4)": 0.2
+        }
+      },
+      "0.02": {
+        "ask_region_query_fraction": 0.9835,
+        "n_ask_cells": 14,
+        "ce_breakeven_by_margin_bin": {
+          "[0.0,0.05)": 1.01,
+          "[0.05,0.1)": 1.01,
+          "[0.1,0.2)": 1.01,
+          "[0.2,0.4)": 0.2
+        }
+      },
+      "0.05": {
+        "ask_region_query_fraction": 0.9818,
+        "n_ask_cells": 13,
+        "ce_breakeven_by_margin_bin": {
+          "[0.0,0.05)": 1.01,
+          "[0.05,0.1)": 1.01,
+          "[0.1,0.2)": 1.01,
+          "[0.2,0.4)": 0.2
+        }
+      },
+      "0.10": {
+        "ask_region_query_fraction": 0.9818,
+        "n_ask_cells": 13,
+        "ce_breakeven_by_margin_bin": {
+          "[0.0,0.05)": 1.01,
+          "[0.05,0.1)": 1.01,
+          "[0.1,0.2)": 1.01,
+          "[0.2,0.4)": 0.2
+        }
+      }
+    },
+    "p_catch_note": "oracle upper bound (p_catch=1.0): the MAX loss an agent that returns a correct signal could save. Realized value with the measured cheap agent is bounded by deliverable 1 (negative).",
+    "measured_agent_p_catch": 0.5445
+  },
+  "deliverable_3_asymmetric_weighting": {
+    "p_catch": 1.0,
+    "measured_cost_ratio_crosswire_over_sametier": 6.0,
+    "ask_threshold_c_rt_star": {
+      "crosswire_to_C": 0.3,
+      "same_tier": 0.05,
+      "interpretation": "For any round-trip cost c_rt in (0.05, 0.3] the mis-route VoI policy ASKS to block a cross-wire but DECLINES to pay for a same-tier miss \u2192 6.0\u00d7 preferential suppression of the needle\u2192C cross-wire."
+    },
+    "realized_misroutes": {
+      "n_crosswire_to_C": 4,
+      "n_same_tier": 213,
+      "crosswire_share": 0.0184
+    },
+    "runner_up_crosswire_exposure": {
+      "n_cross_risk_runnerup_global": 2,
+      "n_same_tier_risk": 604,
+      "marginal_ask_incentive_crosswire": 0.3,
+      "marginal_ask_incentive_sametier": 0.05
+    },
+    "confirmed": true,
+    "note": "Asymmetric weighting CONFIRMED via the measured 6\u00d7 cost ratio: the ask-threshold for a cross-wire-exposed query is 6\u00d7 more lenient than for a same-tier miss, so the policy suppresses needle\u2192C preferentially. (NB: the dominant VoI term overall is retrieval-failure detection via low ce_top \u2014 the cross-wire is rare but, when exposed, carries the heaviest single ask-incentive.)"
+  },
+  "kill_check": {
+    "rule": "KILL the agent-signal loop if the agent relevance signal does NOT beat internal ce_score (PSD \u00a7III.D / EXP-AF). The (ce_score,route-margin) VoI break-even region only matters if some agent can realize it.",
+    "measured_agent": "gemini-flash-lite",
+    "agent_beats_ce_score_measured": false,
+    "measured_lift_agent_minus_ce": {
+      "point": -0.1378,
+      "lo": -0.1889,
+      "hi": -0.0867,
+      "n": 450
+    },
+    "realized_voi_positive_with_cheap_agent": false,
+    "potential_region_exists_for_stronger_agent": true,
+    "kill": true,
+    "disposition": "QUALIFIED KILL (cheap agent) \u2014 gemini-flash-lite relevance is DOMINATED by the free internal ce_score (negative lift); ask-or-not buys nothing with this agent, so route on internal ce_score only. The break-even LANDSCAPE (low-ce + needle\u2192C cross-wire cells) shows where a STRONGER agent's round-trip could pay \u2014 hand that shape to EXP-AF (Slice 30) to test a stronger agent / record_feedback before committing the agent-signal loop."
+  },
+  "p_catch_grid_oracle": 1.0,
+  "measured_agent_p_catch": 0.5445,
+  "total_spent_usd": 0.0151,
+  "elapsed_s": 6.1
+}

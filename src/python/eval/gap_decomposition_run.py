@@ -109,6 +109,13 @@ PRICE_PER_1M: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-opus-4-8": (5.00, 25.00),
+    # Airlock proxy aliases (litellm `claude-sonnet`/`claude-haiku`/`claude-opus` →
+    # the dated ids above). Pinned at the SAME authoritative rates so price_for does
+    # not fail closed when the EXP-AF (Slice 30) stronger-agent arm calls the proxy by
+    # its alias id. USD / 1M (input, output).
+    "claude-sonnet": (3.00, 15.00),
+    "claude-haiku": (1.00, 5.00),
+    "claude-opus": (5.00, 25.00),
 }
 
 #: The D0b spend carried as this ledger's opening balance (design §4).

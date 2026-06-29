@@ -322,6 +322,305 @@
 - **Verdict:** **SPLIT.** C (expensive, reads everything) surpasses full-strength GraphRAG; D2 (the cheap product) LOSES comprehensiveness+diversity → prior surpass was a level-0 artifact. Do NOT flip OPP-4; **Fork E (entity/Leiden graph) RE-OPENS**. HITL-gated. *(live; current 0.8.4 verdict.)*
 - **$:** ≥ **$42.34** LOWER BOUND (fathomdb $21.60 + graphrag $20.74; meter undercounts, answer data unaffected). **Sources:** `runs/0.8.4-gating-rerun-RESULT.{md,json}`, `runs/0.8.4-COMPREHENSIVE-REPORT.md`.
 
+## 0.8.11 — planner-router experiment ladder (Track E; F-11 discharge)
+
+> **F-11 closure.** Before 0.8.11 this ledger had **zero** planner-router rows — the
+> `Gate-0/2 → EXP-A/M4 → EXP-B′ → EXP-Fr-acc → EXP-AF` ladder was scheduled as 0.8.7/0.8.9 `$0`
+> float and never ran. 0.8.11 owns and discharges it (HITL 2026-06-28). **Pre-registration**
+> (hypothesis · KILL · corpus · cost ceiling · script) → `dev/plans/0.8.11-implementation.md §1`;
+> live `$` tally → `runs/STATUS-0.8.11.md`. The rows below are **REGISTERED at Slice 0**; each is
+> filled with numbers+CI+verdict when its slice lands (R-LEDGER-1). Ladder cap: **~$20 priced-LLM**.
+>
+> ⚠️ **These results are PROVISIONAL SCREENING DATA, not validated config.** Confidence ledger +
+> the **Pre-0.8.15 Validation Gate (V-1..V-7)** that must pass before anything downstream consumes
+> them → **`runs/0.8.11-handoff-to-0.8.15.md`**. Notably: EXP-B′ tuples were derived on 0.8.3 CE-pass
+> data (live build had CE off) and 2 of 5 intents are provisional → re-run on the CE-active engine
+> (V-1); the EXP-AF KILL and the arm-switching read are single-corpus / current-substrate (V-2/V-3).
+
+| Tag | Question (short) | KILL | $ ceiling | Slice | Status |
+| --- | --- | --- | ---: | :---: | --- |
+| Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | **RESOLVED** — re-scope holds; 1 scoped gap (LOCOMO node-labels, $0 exp/≤$1); EXP-D excluded → detail below |
+| Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | **RESOLVED** — oracle-CONTEXT pooled **+0.392 [0.346,0.436]** (reconciles exactly; fresh recompute=priced→deferred); arm-selection headroom within recall noise → value = config-carrying tuning, not arm routing → detail below |
+| EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | **RESOLVED — GO.** F2 multi_session gold-in-pool @10=0.20–0.275 → @candidate_k=200=0.65–0.675 (lift **+0.45/+0.40**; best-K CI-lo 0.50/0.525 clears the @10 floor); all 4 classes lift. Max at candidate_k=200 (not saturated → EXP-B′ test ≥200); per-query arm-log persisted (Slice-5 oracle enabler) → detail below |
+| EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | **RESOLVED — KEEP bge-small.** No swap-candidate clears the gate net of eu7 re-clear+cost (s15a FULL n=10506): bge-base eu8 +0.024 but projected_eu7 0.786<0.90; e5-base-v2 0.896<0.90; nomic 0.932 but not cpu_feasible; gte-base measurement-failed. eu-0 raw r@10 confirms ordering, revises decision. GPU device-invariance ✅ (cosine 1.0, RTX 3090). Swap out-of-0.8.11 → HITL #2 → detail below |
+| EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | **RESOLVED — NO KILL ($0).** Optima DIVERGE (3 distinct over LME 606Q): needle (ck200,pn50,α0.7, r@10 **0.644** [0.59,0.70]) · multi_session (ck300,pn100,α1.0, **0.467** [0.39,0.55]) · temporal (ck500,pn20,α1.0, **0.513** [0.43,0.59]). **Crux reproduced** pooled: α=1.0 ck200 pool_n=10→50 r@10 0.540→0.498 (Δ−0.041) — but **needle-specific** (multi_session/temporal do NOT drop). global+multi_hop pinned provisional. Judge **not spent** (gold sufficient). **Build-blocker:** CE feature gated OFF in .venv → rerank tuple from landed 0.8.3 CE-pass (same gold+weights), recall envelope fresh → detail below |
+| EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | **RESOLVED.** Forbidden-composition matrix emitted (map_reduce_qfs+community_summary `global`-only, forbidden elsewhere). Empirical cross-application: **multi_session optimum → needle r@10 −0.147** + **temporal optimum → needle −0.075** (both clear noise) — real joint regressions the 0.8.15 validator must block → detail below |
+| EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | **RESOLVED — NO KILL.** Internal-fallback classifier macro **0.768 [0.732,0.802]**, all 5 classes > 0.20 chance (needle weakest 0.500). Mis-route asymmetry confirmed: **needle is the ONLY negative Δ_C**; needle→C **scales with map-reduce breadth** −0.080 [−0.28,+0.12] @3-distractor → **−0.300 [−0.47,−0.10] @8-distractor** (CI excludes 0; ≈ prior −0.362). $0.05/$3 → detail below |
+| EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | **RESOLVED — QUALIFIED KILL (cheap agent).** CE reranker ACTIVE (guarded). Value-of-signal: a cheap agent (`gemini-flash-lite`) relevance signal is **DOMINATED by the free internal `ce_score`** — lift **−0.138 [−0.189,−0.087]** (n=450), AUC ce **0.667** vs agent 0.545 → ask-or-not buys nothing with this agent; route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio; ask-threshold c_rt\* 0.30 cross-wire vs 0.05 same-tier; cross-wire rare 4/606 but heaviest per-incident). VoI loss-landscape (oracle bound) concentrates in low-ce(<0.2)+narrow-margin cells → hands the shape to **EXP-AF (Slice 30)** for a stronger agent. **$0.0151/$3** → detail below |
+| EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | **RESOLVED — KILL (HITL #4).** A STRONGER agent (`claude-sonnet`) seeing the full top-20 pool, on the Slice-25 break-even cells (ce_top<0.2, n=406 LME), does NOT beat internal `ce_score` net of round-trip. Depth-1 reranking lift **+0.0074 [−0.0074,+0.0222]** (CI spans 0 even at $0 round-trip); **NET at c_rt=0.02 −0.0126 [−0.0274,+0.0022], GO=False**. Realized only +0.0074 of the 0.118 headroom ceiling (promoted 6 / demoted 3) → signal-bound (substrate-limited, PSD §II.C). Detection lift −0.0296 [−0.0715,+0.0123] (closes most of the cheap-agent −0.138 gap but still loses). Depth-2 (one re-plan) gross-positive +0.0222 [0.0049,0.0395] but net-negative at any c_rt>0 → **one-shot, not iterative**. **$3.66/$5** → L2 prototype drops the agent-signal loop; `record_feedback` STAYS instrumentation (overrides F-8b promote) → detail below |
+
+### Gate-0 — golden-set re-scope (Slice 5, RESOLVED 2026-06-28)
+
+- **Assets (inspected, EVAL-ONLY gitignored):** IR gold `eval/ir_gold/all.gold.json` 4,597 Q / 4,472 with `expected_top_k_doc_ids` (exact_fact 2,888 · exploratory 1,584 · negative 125; src enronqa/qaconv/qmsum); LOCOMO `eval/0.8.3-locomo-memory-gold.json` 1,443 Q (factoid 841 · temporal 321 · multi_session 281, CC-BY-NC-4.0); MuSiQue `raw/musique_dev.jsonl` 4,834 total / **2,417 answerable** (2/3/4-hop = 1,252/760/405; `is_supporting` paras, mean 2.65); AP-News BenchmarkQED 1,397 articles + 350 AutoQ (MS-Research NON-REDISTRIBUTABLE); LME memex-elps (8 golden + 60 personal.gold, extraction gold).
+- **Result — node-level retrieval labels by class:** **needle** = doc-qrels ✅ (IR gold, derivable); **multi_hop** = paragraph `is_supporting` ✅ (MuSiQue, derivable, no labeling); **global** = none needed (sensemaking → `decide_084` answer-quality, not retrieval recall); **multi_session/temporal** = LOCOMO carries **session-level only** (`conv-N:session_M`) → the single GAP. Rule adoption: `decide_083` (MDE ≤ 0.05) governs needle/multi_session/temporal vs Mem0; `decide_084` (win-rate ε=0.05, question-clustered, **N=200 cap**) governs global vs GraphRAG; MuSiQue/HippoRAG-2 = `[TBD: decide_08x]` (out of scope). Measured discrepancy flagged: PSD "4,834 answerable" is total — usable multi_hop = **2,417**.
+- **Verdict:** Re-scope HOLDS. One scoped labeling pass = refine LOCOMO temporal+multi_session (≤602 Q) from session→node-level (deterministic answer/turn match first, cheap-LLM residual only). **EXP-D (~269-Q F4/M6 acquisition) EXCLUDED → stays 0.8.17**; corpus-cap confirmed (`decide_084` N=200 AP-News max, comp MDE 0.058 > ε; question-clustered ⇒ more runs can't tighten, only more questions). No fresh golden set.
+- **$:** **$0** (inventory/mapping; labeling pass projected $0 expected, ≤$1 hard cap, unspent at Gate-0). **Sources:** `dev/plans/runs/gate0-rescope-output.md` + `gate0-rescope-output.json` (`src/python/eval/gate0_rescope.py`, $0 re-runnable); PSD §II.A/§III.A; `dev/plans/0.8.11-implementation.md` §1; rules `src/python/eval/decision_rule_083.py`, `decision_rule_084.py`.
+
+### Gate-2 — oracle-routing upper bound (Slice 5, RESOLVED 2026-06-28)
+
+- **Method ($0).** A fresh oracle-context decomposition needs the priced gpt-5.4 reader
+  (`gap_decomposition_run.py`) → **deferred** under the $0 constraint; Gate-2 **reuses** the
+  already-paid n606 artifact for the oracle-CONTEXT ceiling and **computes at $0** the
+  recall-ARM-selection ceiling from existing per-arm recall runs (`gate2_oracle_run.py`).
+- **Oracle-CONTEXT ceiling** (`acc_oracle_raw − acc_fathomdb`, value of perfect retrieval):
+  factoid(→needle) +0.372 [0.295,0.449]; knowledge_update(→needle) +0.530 [0.435,0.626];
+  multi_session +0.412 [0.294,0.529]; temporal +0.247 [0.165,0.340]; **pooled +0.392
+  [0.346,0.436]** (n436). **Reconciles exactly** with the 0.8.3 ledger +0.392 — by construction
+  (same n606 artifact; not an independent re-measurement).
+- **Oracle-ARM-selection ceiling** (best static arm − fused-RRF; class-level = lower bound on
+  per-query oracle): LME recall@10 headroom factoid +0.05, knowledge_update +0.05, multi_session
+  **0.00** (fused already best), temporal +0.025; MuSiQue ≥3-hop F1 headroom **+0.036**
+  (passage_dense 0.487 > fused 0.450; ppr-vs-fused was a tie). All below the per-class recall MDE
+  (~0.11–0.17 at n=40) → within noise.
+- **Per-arm cost tiers:** `fts_bm25` low (p50<1ms@10k), `vector_ann` low-med (p50 25/p99 40ms),
+  `rrf` low, `ce_rerank` med (TinyBERT 308ms@K=200; MiniLM high), `map_reduce_qfs` high (LLM tier,
+  reads everything, ≥$21; F4-only), `graph_bfs` ~0-value (REFUTED ×2, default-OFF).
+- **KILL check.** **NO KILL on the oracle-CONTEXT axis** — ceiling +0.25..+0.53/class (CI lower
+  0.346 ≫ 0), far outside fused-RRF noise: large routing-relevant headroom exists. **Arm-switching
+  alone buys ≈0** (within noise every class; multi_session 0.00).
+- **Verdict:** Program **not killed**; realizable headroom is in recall/precision **generation**
+  (EXP-A wider candidate-gen; EXP-B′ per-intent α/pool_n/candidate_k) captured by a
+  **config-carrying** router — NOT static-arm routing. Consistent with the refuted graph arm +
+  CE-rerank-is-the-lever findings.
+- **$:** **$0.** **Sources:** `dev/plans/runs/gate2-oracle.md` + `gate2-oracle-output.json`
+  (`src/python/eval/gate2_oracle_run.py`, $0 re-runnable); reuses `runs/0.8.3-gap-decomposition-n606.json`,
+  `runs/0.8.1-p0a-fused-recall-n160.json`, `runs/0.8.2-m1-verdict-gpt54.json`.
+
+### EXP-A — recall generation / candidate breadth (Slice 10, RESOLVED 2026-06-28)
+
+- **Method ($0, LLM-free, deterministic).** LME class-balanced n=160 (40/class: factoid ·
+  knowledge_update · multi_session · temporal; seed 20260614; 7,154-session union). Reuse the P0-A
+  loader + retrieval variants; sweep candidate breadth `K∈{10,20,50,100,200}`; score **gold-in-pool**
+  at each K (multi_session full-gold-set rule); per-(class,arm,K) percentile bootstrap CI (2000
+  resamples, seed 0xEA); persist per-query per-arm gold ranks.
+- **F2 multi_session gold-in-pool (point [CI]):** `fathomdb_fts_only` @10 **0.20** [0.075,0.325] →
+  @50 0.40 → @100 0.525 → @200 **0.65** [0.50,0.775]; `naive_bm25` @10 **0.275** [0.125,0.425] →
+  @200 **0.675** [0.525,0.80]. **Lift @200−@10 = +0.45 / +0.40**, and the @200 CI-lo (0.50 / 0.525)
+  clears the @10 point estimate → **CI clears noise**.
+- **All classes lift** with breadth (fts_only / bm25 @10→@200): factoid 0.65→0.875 / 0.70→0.90;
+  knowledge_update 0.80→0.925 / 0.875→1.00; temporal 0.60→0.925 / 0.65→0.95. multi_session is the
+  hardest and gains the most absolute headroom — the recall the shipped final_K=10 view misses but a
+  widened candidate pool recovers, which a CE-rerank stage (EXP-B′) can then surface.
+- **KILL check:** **NOT killed → GO.** Wider candidate generation lifts gold-in-pool with the CI
+  clearing the K=10 floor on the F2 focus class (and every class). This is the exact
+  config-carrying lever Gate-2 pointed to (recall *generation*, not arm routing).
+- **candidate_k that maximizes gold-in-pool (feeds EXP-B′):** **200** (top of the grid; recall is
+  still rising at 200 — NOT saturated → EXP-B′ should also probe candidate_k ≥ 200).
+- **Per-query arm-selection oracle (deferred at Slice-5 Gate-2):** now computable — `per_query_log`
+  (160 questions) carries, per arm, each gold session's 0-based rank, the min gold rank, and
+  all-gold-found@200. Lexical arms (bm25, fts_only) measured at $0; the **fused-RRF** arm (the
+  shipped candidate set; CPU embedder, GPU idle by design) corroborates and is anchored by Gate-2's
+  measured multi_session fused≈bm25 (fused r@10 0.325 ≥ bm25 0.275) — the breadth lift is a
+  pool-depth property the fused arm shares.
+- **$:** **$0.** **Sources:** `dev/plans/runs/expa-recall-output.json` + `expa-recall.md`
+  (`src/python/eval/expa_recall_run.py`, $0 re-runnable: `--with-fused` adds the dense arm).
+
+### EXP-M4 — embedder-ceiling measurement (Slice 10, RESOLVED 2026-06-28)
+
+- **Method ($0 / GPU).** The embedder ceiling is a **device-invariant model-weights property**
+  (CPU↔GPU vectors are f32-equivalent), so EXP-M4 **consolidates** two already-paid byte-verified
+  offline measurements (the Gate-2 reuse precedent) and **confirms device-invariance on the GPU**:
+  the FULL `s15a` probe (eu7 1-bit re-clear + eu8 strict doc-id recall + BM25 hard subset +
+  paired-bootstrap margin CIs + cpu cost) over the 10,506-doc frozen IR snapshot, and the `eu-0`
+  raw-recall sweep. **GPU confirmation (RTX 3090, cuda:0):** bge-small GPU-vs-CPU mean row cosine
+  **1.000000**, max abs elt diff 1.2e-7 → the reused CPU ceiling holds on GPU.
+- **s15a candidate verdicts vs CLS-corrected bge-small (base eu8 0.3994, hard@10 0.0194, 11.2ms/q):**
+  bge-base eu8 0.4235 (margin +0.024) but **projected_eu7 0.7855 < 0.90** (fails 1-bit re-clear) +
+  hard-margin CI-lo −0.0036; e5-base-v2 eu8 0.4674 but **proj_eu7 0.896 < 0.90** + hard CI-lo
+  −0.0061; nomic proj_eu7 0.9317 (clears 0.90) but **not cpu_feasible** (36.1ms > 3× base) + hard
+  CI-lo −0.0085; gte-base **measurement FAILED** (transformers IndexError; no candle-native encoder
+  → not in-library). **No candidate clears `probe_15a_pass`.**
+- **eu-0 reconciliation:** raw recall@10 (1-bit Hamming→f32, n=100, 7,667 docs, fanout K=256)
+  bge-small **0.933** · bge-base **0.964** · e5-small-v2 **0.664** (bge-small K=192 = 0.933
+  [0.912,0.953]). EXP-M4 **CONFIRMS** the eu-0 ordering (bge-base highest raw recall, e5 worst) but
+  **REVISES** the naive "bigger is better": net of the 1-bit eu7 re-clear (bge-base proj_eu7 0.786 <
+  0.90), the hard-subset margin, and 2× cost, bge-base does **not** clear the swap gate.
+- **KILL/GO (HITL #2):** **KEEP CLS-corrected bge-small.** A productized swap is **out of 0.8.11**;
+  no ceiling escalation triggered (no passer). Keep-unless: a candidate simultaneously clears the
+  0.90 projected_eu7 floor after re-whiten, shows a hard-subset margin CI-lo > 0 vs bge-small, and
+  is cpu_feasible (or HITL accepts the GPU/cost tradeoff).
+- **$:** **$0.** **Sources:** `dev/plans/runs/expm4-ceiling-output.json` + `expm4-ceiling.md`
+  (`src/python/eval/expm4_embedder_ceiling_run.py`); reuses `runs/0.8.3-s15a-embedder.json`
+  (`eval.s15a_embedder_probe`) + `research/eu-0/result_*.json`.
+
+### EXP-B′ + EXP-B′.5 — 3-stage joint tuning (Slice 15 KEYSTONE, RESOLVED 2026-06-28)
+
+- **Method ($0, LLM-free, deterministic).** Joint sweep `candidate_k {200,300,500} × pool_n
+  {10,20,50,100,200} × alpha {0,0.3,0.5,0.7,1.0} × final_K=10` per intent, over LME 606Q
+  node-level gold (factoid+knowledge_update→**needle** 306Q; **multi_session** 150Q; **temporal**
+  150Q). Rerank metric r@10/MRR re-blends `α·ce_norm+(1−α)·minmax(base)` over the top-`pool_n`
+  (mirrors engine `ce_rerank`); per-intent percentile bootstrap CI (2000×, seed 0xB5). Recall
+  envelope (gold-in-pool@candidate_k, base order) measured FRESH on the current engine (depth 500).
+- **Per-intent optima DIVERGE (KILL = NO):** needle `candidate_k=200, pool_n=50, α=0.7` → r@10
+  **0.644** [0.588,0.696]; multi_session `300/100/1.0` → **0.467** [0.387,0.547]; temporal
+  `500/20/1.0` → **0.513** [0.433,0.593]. 3 distinct signatures → the config-carrying router has
+  measured value (EXP-Fr routing-value case supported; DP-B registry is real, not a global pin).
+- **The §II.C crux — reproduced + refined.** Pooled α=1.0 candidate_k=200: pool_n=10→50 r@10
+  **0.540→0.498 (Δ−0.041)** — the constrained joint optimization (CE-confident distractors displace
+  base-favored gold). **New finding: it is needle-specific** — needle drops (0.641→0.510, Δ−0.131)
+  but multi_session (+0.08) and temporal (+0.02) do NOT (deeper pools help them). This is *why*
+  per-intent tuning beats a global config.
+- **Recall envelope confirms EXP-A:** gold-in-pool keeps rising past final_K=10 — needle @10 0.637 →
+  @200 0.899 → @500 0.915; multi_session @10 0.380 → @300 0.840; temporal @10 0.480 → @500 0.800.
+  candidate_k set per intent by cost-bounded saturation (smallest depth within 0.02 of max).
+- **EXP-B′.5 forbidden-composition guard.** (a) Static router-isolation rule emitted:
+  `map_reduce_qfs`+`community_summary` valid ONLY for `global`, `forbidden_ops` on
+  needle/multi_session/temporal/multi_hop (the §II.B blind-distiller, corroborated by EXP-Fr-acc's
+  needle→C −0.300). (b) **Empirical cross-application** (each optimum applied to the others):
+  **multi_session optimum → needle r@10 −0.147** and **temporal optimum → needle −0.075** both clear
+  noise (applied point < dst optimum CI-lo) — real joint regressions the 0.8.15 plan validator must
+  block. `any_optimum_regresses_another_intent = True`.
+- **Provisional tuples.** `global` (AP-News win-rate / decide_084; no node-level retrieval labels by
+  design) pinned EXP-0-global α=0.3/pool_n=10, sensemaking ops ALLOWED. `multi_hop` (MuSiQue) has
+  node-level gold but a fresh per-question fused+CE pass is blocked by the same build-blocker; pinned
+  provisional EXP-0-global pending a default-reranker build.
+- **Build-blocker (justified deviation, LOUD).** The installed `.venv` build compiled `rerank_fused`
+  with the CE inference block gated OFF (`#[cfg(feature="default-reranker")]` → identity passthrough;
+  `fathomdb.rerank` returns base order for all α/pool_n; the score=0 ce_norm trick yields all-zero
+  CE). Rebuild is forbidden by the slice prompt. **Resolution:** rerank tuple+crux measured on the
+  LANDED `0.8.3-rerank-tune.ce-pass.json` (same LME gold, same TinyBERT weights cached, feature-ON
+  build; real ce_norm max 0.9993); recall envelope measured fresh (CE-independent). A degeneracy
+  guard (`ce_norm_is_active`) refuses to derive a tuple from a feature-off pass. Reproduce fresh CE:
+  `maturin develop --features default-reranker`.
+- **$:** **$0** (of $6). LLM judge NOT spent — gold sufficient for the measured intents; `global` is
+  provisional by design. **Sources:** `dev/plans/runs/expb-joint-tune-output.json` +
+  `expb-joint-tune.md` (`src/python/eval/expb_joint_tune_run.py`, reproducible). PSD §II.B/§II.C, §3.
+
+### EXP-Fr-acc base — classifier accuracy + asymmetric mis-route cost (Slice 20, RESOLVED 2026-06-28)
+
+- **Deliverable 1 — classifier ($0, no LLM).** The *internal-fallback* intent classifier (PSD
+  §II.A pref #3; agent-label #1, provider-callback #2 are preferred and not measured here). Pure-numpy
+  **lexical TF-IDF nearest-centroid (Rocchio)**, **stratified 5-fold CV**, **balanced 100/class**
+  (chance 0.20; global caps the balanced N). *(No torch/sklearn in env → embedding variant
+  unavailable; lexical = honest $0 fallback proxy, likely a lower bound.)* Bootstrap CI 2000×.
+- **Per-class accuracy [CI]:** needle **0.500** [0.40,0.60]; multi_session **0.630** [0.54,0.72];
+  temporal **0.770** [0.69,0.85]; global **1.000** [1.00,1.00]; multi_hop **0.940** [0.89,0.98];
+  **macro 0.768 [0.732,0.802]**. Confusion = the three memory/compositional classes leak into each
+  other (needle → multi_session 20 / multi_hop 16 / temporal 14); global + multi_hop near-separable.
+- **KILL check (classifier):** **NO KILL** — 0 classes at chance (weakest CI-lo 0.40 ≫ 0.20). The
+  internal classifier is a usable low-confidence fallback; prototype keeps the agent-label-first order.
+- **Deliverable 2 — asymmetric mis-route matrix (priced).** Oracle-context **answer-quality** delta,
+  route `C` (map-reduce/QFS: per-chunk QFS → reduce → answer) vs the correct `retrieval` route; both
+  arms see identical chunks (gold evidence + distractors), same `gemini-flash-lite` judge grades both
+  (paired bootstrap CI 2000×). LOCOMO (needle/multi_session/temporal) + MuSiQue (multi_hop). Base
+  25/class, 3 distractors. **Δ_C (C − retrieval, judge):** needle **−0.080** [−0.28,+0.12];
+  multi_session +0.040; temporal +0.040; multi_hop +0.040. **needle is the UNIQUE negative cell**
+  (the predicted high-cost cross-wire); others neutral-to-slightly-positive (temporal/multi_hop on a
+  low absolute floor 0.16–0.20).
+- **Load-bearing needle→C (the −0.362 claim).** The penalty **scales with map-reduce breadth**: a
+  sensitivity arm (needle, n=40, **8 distractors** = a QFS that reads more) gives **−0.300
+  [−0.47,−0.10]** (judge; CI **excludes 0**) / −0.225 (containment), with retrieval 0.750 → C 0.450.
+  **−0.300 ≈ the prior −0.362** — which the 0.8.3 gap-decomposition ledger flagged as a
+  weak-distiller (gpt-5-nano) artifact; reproduced here with a competent cheap summarizer once the
+  map-reduce reads enough chunks. → Encode `map_reduce_qfs`/`community_summary` as `forbidden_ops`
+  on `needle` (EXP-B′.5 forbidden-composition matrix); the asymmetry feeds the Slice-25 VoI policy.
+- **Deferred cells.** `global` (both routes) → reference-free `decide_084` win-rate axis (EXP-B′
+  priced judge, Slice 15), not gold-answer accuracy. Within-retrieval config cells (needle→
+  multi_session *stack*) differ by config (α/pool_n), not route → owned by EXP-B′.5, not measured.
+- **Models + $.** Classifier $0. Mis-route = `gemini-flash-lite` (local vLLM qwen3.6-27b/gemma-4
+  were HTTP-500 down; cheap hosted tier used; same model both arms → fair delta). Committed runs
+  **$0.041** (base $0.0236, 886 calls + needle-deep $0.0173) + ~$0.013 discarded first attempt +
+  $0.0004 cheap-validate ≈ **$0.054 total**, ≪ $3. Resilient harness (per-item checkpoint, idempotent
+  `--resume`, `BudgetLedger --max-usd 3.0` guard); cheap-validated (2-Q) before spend.
+- **$:** **≈ $0.05** (of $3). **Sources:** `dev/plans/runs/fracc-base-output.json` + `fracc-base.md`
+  (`src/python/eval/fracc_classifier_run.py`, base mode; reproducible). PSD §II.A/§II.D/§III.D;
+  `dev/plans/0.8.11-implementation.md` §1. Prior −0.362 context: ledger 0.8.3 gap-decomposition row.
+
+### EXP-Fr-acc / VoI finalize — value-of-signal + ask-or-not VoI + asymmetric weighting (Slice 25, RESOLVED 2026-06-28)
+
+- **CE-active FIRST STEP (mandated).** Degeneracy guard PASS before any measurement: engine
+  `rerank` returns real `ce_score` (max ce_norm 0.99994, spread 0.99994; alpha=1.0 reorders the
+  relevant passage adversarially-scored last → rank-1). The CE reranker is genuinely ACTIVE (not the
+  identity passthrough that blocked Slice 15's fresh-CE arm) → VoI measured against real `ce_score`.
+- **Substrate ($0 stages).** ce_score + retrieval-correct over the **606-query LME real-CE pass**
+  (`0.8.3-rerank-tune.ce-pass.json`, regenerated-identical by this active build): per query, reblend
+  the pool at the EXP-B′ per-intent alpha → `ce_top` (rank-1 ce_norm), `ce_margin`, and
+  `retrieval_correct` = strict gold-in-top-10 (base rate 0.529). **Route-margin** from a leakage-free
+  stratified 5-fold OOF TF-IDF nearest-centroid (mirrors the Slice-20 registered classifier; LME
+  routing acc **0.642**). Asymmetric costs from the Slice-20 matrix (needle→C **−0.30**, same-tier
+  −0.05, retrieval-failure 1.0).
+- **Deliverable 1 — value-of-signal (priced, n=450 = 150×{needle,multi_session,temporal}).** A cheap
+  agent (`gemini-flash-lite`) judges relevance of the top reranked passage; compared to internal
+  `ce_score` at predicting `retrieval_correct`. **Agent is DOMINATED by the free `ce_score`:** agent
+  acc 0.524 [0.478,0.569] vs ce@best-threshold 0.662 [0.618,0.704]; **lift −0.138 [−0.189,−0.087]**
+  (paired); **AUC ce 0.667 vs agent 0.545**. (Conservative lower bound: ce got an in-sample oracle
+  threshold; the eval agent sees only the top-1 passage, NOT the user-intent context a deployed agent
+  holds — re-judging relevance is exactly the engine cross-encoder's job. Stronger-agent test = EXP-AF.)
+- **Deliverable 2 — ask-or-not VoI break-even.** Reported as the **oracle upper-bound** loss-landscape
+  (p_catch=1.0): ask iff p_catch·E[loss if proceed] > c_rt over the `(ce_top × route_margin)` grid.
+  Value concentrates in **low-ce (ce_top<0.2) + narrow-margin** cells (E[loss] up to 0.72); ~98% of
+  queries sit in a positive-VoI cell at c_rt≤0.05 **for a perfect agent**. The realized value with the
+  measured cheap agent is ≤0 (deliverable 1), so this landscape is the shape a *better* agent would
+  exploit, not a realized win.
+- **Deliverable 3 — asymmetric weighting (CONFIRMED).** Isolating the mis-route term, each type has
+  ask-threshold c_rt\* = p_catch·|cost|: **cross-wire→C 0.30 vs same-tier 0.05 = 6.0× asymmetry**. For
+  any round-trip cost in (0.05, 0.30] the policy **asks to block a needle→C cross-wire but declines to
+  pay for a same-tier miss** → preferential suppression of the high-cost cross-wire. The classifier
+  rarely *produces* the cross-wire (4/606 realized; 2 runner-up-exposed) — rare but heaviest per
+  incident; the dominant VoI term overall is retrieval-failure detection via low `ce_top`.
+- **KILL check.** Rule = KILL the agent-signal loop if the agent relevance signal does not beat
+  internal `ce_score` (PSD §III.D / EXP-AF discipline). **QUALIFIED KILL (cheap agent):**
+  `gemini-flash-lite` loses to `ce_score` → **ask-or-not buys nothing with this agent; route on
+  internal `ce_score` only.** A potential break-even region exists for a stronger agent → the
+  thresholds (low-ce + needle→C cross-wire) feed **EXP-AF (Slice 30)** (stronger agent /
+  `record_feedback`) and the 0.8.15 dispatcher.
+- **Models + $.** $0 stages (numpy + cached real-CE pass). Agent arm `gemini-flash-lite` (priced),
+  450 calls, ~296K in / 2.3K out tok → **$0.0151 / $3** (cheap-validated 6 calls first; resilient
+  per-item checkpoint + idempotent `--resume` + `BudgetLedger --max-usd 3.0` guard).
+- **$:** **$0.0151** (of $3). **Sources:** `dev/plans/runs/fracc-voi-output.json` + `fracc-voi.md`
+  (`src/python/eval/fracc_voi_run.py`; reproducible: `python -m eval.fracc_voi_run --sample-per-class
+  150`). PSD §II.C/§III.D; `dev/plans/0.8.11-implementation.md` §1.
+
+### EXP-AF — agent-feedback value test (Slice 30, RESOLVED 2026-06-28, KILL → HITL #4)
+
+- **The decisive test (PSD §III.D).** Does an agent relevance/intent signal beat internal
+  `ce_score`-only routing **net of round-trip cost**, on the existing substrate (no fresh rebuild),
+  within the 1–2 re-plan depth bound? Slice 25 showed a CHEAP agent (`gemini-flash-lite`) re-judging
+  the *top-1* passage is dominated by `ce_score` (lift −0.138) and located any residual value in the
+  **break-even cells** (low `ce_top`<0.2). EXP-AF tests a **STRONGER agent** (`claude-sonnet`) that
+  sees the **full top-20 ce-reranked pool** (not just top-1) and is used to **actually re-rank** (a
+  real Rocchio-style relevance-feedback signal), focused on those cells.
+- **CE-active FIRST STEP (mandated).** Same degeneracy guard PASS as Slice 25 (max ce_norm 0.99994,
+  spread 0.99994, alpha=1.0 reorders adversarial probe → rank-1) — measured against real `ce_score`.
+- **$0 headroom pre-gate (decisive bound).** On the n=406 break-even cells (base retrieval-success
+  0.456), the MAX lift ANY reranker could realize (all-gold reachable in the shown window but not
+  top-10 under ce): **depth-1 ceiling 0.118** (top-20→top-10), **depth-2 ceiling 0.209**
+  (top-40→top-10). So there *is* room — the question is whether the agent can capture it.
+- **Arm 1 — reranking lift (PRIMARY, priced, n=406).** Promote agent-flagged-relevant passages above
+  ce order; measure strict all-gold-in-top-10. **Lift agent−ce +0.0074 [−0.0074,+0.0222]** (paired
+  bootstrap) — CI spans 0 **even at a free round-trip (c_rt=0)**. Mechanism: promoted **6** gold into
+  top-10, demoted **3** out → realized only ~+0.0074 of the 0.118 ceiling (≈6%). NET of one
+  round-trip: **c_rt=0.02 → −0.0126 [−0.0274,+0.0022]**; c_rt=0.05 → −0.0426 [−0.0574,−0.0278]. By
+  intent: needle +0.0103 [−0.0103,+0.0309], multi_session +0.0097 [−0.0291,+0.0488], temporal **0.0**
+  — none clears noise.
+- **Arm 2 — detection lift (Slice-25-comparable).** Stronger agent's top-1 relevance flag vs `ce_top`
+  at predicting retrieval-success: **−0.0296 [−0.0715,+0.0123]** (balanced-acc agent 0.497 vs ce@best
+  0.526; AUC ce 0.452 vs agent 0.497). The stronger agent **closes most of the cheap-agent −0.138
+  gap** but still does **not** beat the free `ce_score` (CI spans 0, point negative).
+- **Arm 3 — one-shot vs iterative (depth 1 vs 2).** Depth-2 = one re-plan expanding to top-40 on
+  depth-1 failures (trigger rate 0.537, ~1.54 round-trips/query, recovered 6 extra gold). Incremental
+  **+0.0148 [0.0049,+0.0271]** and gross total **+0.0222 [0.0049,+0.0395]** are CI-positive at $0
+  cost — but **net-negative at any c_rt>0** (c_rt=0.02 → −0.0085 [−0.0258,+0.0088]). So *if* an arm
+  shipped, depth-2 dominates depth-1 gross, but neither pays net → **the depth question is moot under
+  KILL; recommend one-shot (depth 1) if ever revisited.**
+- **KILL/GO verdict — KILL.** GO rule = depth-1 reranking-lift CI lower bound, NET of one round-trip
+  (c_rt=0.02), > 0 → **−0.0274 < 0 → KILL.** Even a strong frontier agent, given the full pool and
+  targeted at the precise cells where value was hypothesized, cannot beat the free internal
+  `ce_score` net of round-trip. Root cause: in low-`ce` cells the engine is uncertain because the
+  passages genuinely don't clearly contain the answer (hard/recall-bound queries) — the agent does
+  not manufacture recall the substrate never produced (PSD §II.C). **Implications:** the L2 prototype
+  (Slice 35) **DROPS the agent-signal loop** (`feedback_arm=False`; router stays on internal
+  `ce_score`); **`record_feedback` STAYS instrumentation** — the EXP-AF KILL overrides any F-8b
+  promote (no Slice-40 reserved-gap patch, no allowlist change).
+- **Models + $.** Stronger agent `claude-sonnet` (airlock alias → claude-sonnet-4-6, pinned $3/$15
+  per 1M; added to `PRICE_PER_1M`). 624 calls (406 depth-1 + 218 depth-2 re-plans), 0 errors,
+  ~1.84K in / ~14 out tok/call → **$3.66 / $5** (cheap-validated 3 calls first; resilient per-item
+  checkpoint + idempotent `--resume` + `BudgetLedger --max-usd 5.0` pre-call guard).
+- **$:** **$3.6642** (of $5). **Sources:** `dev/plans/runs/expaf-value-output.json` + `expaf-value.md`
+  (`src/python/eval/expaf_value_run.py`; reproducible: `python -m eval.expaf_value_run --model
+  claude-sonnet --depth2 --max-usd 5.0`). PSD §III.D; `dev/plans/0.8.11-implementation.md` §1/§5
+  (F-8b).
+
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
 ### research/eu-0 — eu7 embedder + quantization-path sweep (RESOLVED)
