@@ -7,8 +7,15 @@
 # Exits:
 #   0 — clean trace (no off-loopback connect attempts).
 #   1 — at least one off-loopback connect observed.
-#   2 — toolchain blocker (strace missing, unprivileged userns
-#       disabled, binary missing).
+#   2 — toolchain blocker an operator must FIX (strace / unshare(1) / the
+#       example binary missing). STRICT-fatal in every job.
+#   3 — ENVIRONMENTAL: unprivileged userns is unavailable on this host (e.g.
+#       ubuntu-latest/24.04 AppArmor blocks it), so the live netns layer
+#       cannot run here. Distinct from rc=2 so the caller can narrow the
+#       STRICT exception to exactly this proven-environmental case (see
+#       scripts/security/lib-gate-policy.sh). The dedicated ubuntu-22.04
+#       `security` CI job, where userns IS available, remains the
+#       authoritative AC-037-live gate.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,12 +35,27 @@ if ! command -v unshare >/dev/null 2>&1; then
     echo "AC-037 BLOCKER: unshare(1) not available" >&2
     exit 2
 fi
+
+# Environmental capability checks come BEFORE the cargo build: a host that
+# can't create a rootless userns (e.g. ubuntu-latest/24.04 AppArmor) should
+# surface the environmental downgrade fast, without paying for a build it can
+# never use. These exit 3 (environmental), distinct from the rc=2 toolchain
+# blockers above/below, so the caller can narrow the STRICT exception to
+# exactly this case (lib-gate-policy.sh).
 if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then
     if [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" != "1" ]; then
-        echo "AC-037 BLOCKER: unprivileged user namespaces disabled by kernel" >&2
-        echo "  sysctl kernel.unprivileged_userns_clone=1 required" >&2
-        exit 2
+        echo "AC-037 ENVIRONMENTAL: unprivileged user namespaces disabled by kernel" >&2
+        echo "  (sysctl kernel.unprivileged_userns_clone=1 would enable the live layer)" >&2
+        exit 3
     fi
+fi
+# Probe rootless userns+netns up-front. On ubuntu-latest/24.04 AppArmor blocks
+# this even though unprivileged_userns_clone is absent/1 — the probe is the
+# authoritative environmental gate.
+if ! unshare -rUn true >/dev/null 2>&1; then
+    echo "AC-037 ENVIRONMENTAL: unshare -rUn failed; rootless userns+netns unavailable on this host" >&2
+    echo "  (the live netns layer runs on the dedicated ubuntu-22.04 security CI job)" >&2
+    exit 3
 fi
 
 BIN="$REPO_ROOT/target/debug/examples/security_cycle"
@@ -49,14 +71,6 @@ TMPDIR="$(mktemp -d -t fdb-ac037-XXXXXX)"
 trap 'rm -rf "$TMPDIR"' EXIT
 TRACE="$TMPDIR/strace.log"
 DB="$TMPDIR/cycle.sqlite"
-
-# Probe unprivileged userns+netns up-front. If unshare fails the
-# kernel-level capability is missing — surface as a toolchain blocker
-# rather than letting the wrapper raise a confusing strace error.
-if ! unshare -rUn true >/dev/null 2>&1; then
-    echo "AC-037 BLOCKER: unshare -rUn failed; rootless userns+netns unavailable" >&2
-    exit 2
-fi
 
 # unshare -rUn: rootless user namespace + fresh network namespace.
 # Inside the netns we bring loopback up so the engine's intra-process

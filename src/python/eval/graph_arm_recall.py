@@ -33,7 +33,10 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-import httpx  # type: ignore[import-not-found]  # httpx not in [dev] extras (eval-only)
+# NOTE: `httpx` is an EVAL-ONLY dependency (not in `[dev]` extras) and is imported
+# lazily inside extract_graph(), the only function that uses it. A module-level
+# import broke `[dev]` test collection (test_m1_graph_build.py imports the offline
+# `_norm`/`extract_graph` helpers and never makes an HTTP call) — 0.8.9.2.
 
 from eval.p0a_base_retrieval import (
     DEFAULT_DATASET,
@@ -95,6 +98,10 @@ def extract_graph(
 ) -> dict[str, dict]:
     """Batch-extract entities/relations for each session. Returns
     {session_id: {"entities":[...], "relations":[...]}}. Salvages truncations."""
+    # httpx is eval-only (not in `[dev]`); imported lazily so `[dev]` collection
+    # of the offline graph-build helpers doesn't require it (0.8.9.2).
+    import httpx  # noqa: PLC0415  # pyright: ignore[reportMissingImports]  # eval-only dep
+
     items = list(documents.items())
     H = {"Authorization": f"Bearer {_KEY}"}
     P = {"custom_llm_provider": _PROV}
