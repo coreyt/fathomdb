@@ -20,10 +20,10 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 10 | EXP-A ‖ EXP-M4 | E | **DONE** | $0; EXP-A **GO** (multi_session gold-in-pool @10→@200 +0.45/+0.40, CI clears floor; candidate_k=200, not saturated); EXP-M4 **KEEP bge-small** (no swap-candidate clears eu7 re-clear+cost; GPU device-invariance ✅); ledger rows RESOLVED |
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | **DONE** | $0; per-intent optima DIVERGE (3 distinct → NO KILL, routing has value); crux reproduced (pooled α=1.0 ck200 pn10→50 r@10 0.540→0.498, needle-specific); B′.5 catches real regressions (multi_session opt→needle −0.147); global+multi_hop provisional; build-blocker (CE feature OFF→0.8.3 CE-pass); ledger EXP-B′/B′.5 rows RESOLVED |
 | 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
-| 25 | EXP-Fr-acc/VoI finalize | E | pending | blocked-by 20 |
-| 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #3 |
+| 25 | EXP-Fr-acc/VoI finalize | E | **in progress** | running on CE-active build |
+| 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #4 |
 | 35 | L2 router prototype + pre-stage | E | pending | blocked-by 15∧25∧30 |
-| 40 | #17 filter-grammar + F-8b exec | G | pending | blocked-by 0 only (∥ spine) |
+| 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
 | 45 | Verification + release readiness | — | pending | blocked-by 5–40 |
 
 ## HITL decision points (four; owner: steward → HITL)
