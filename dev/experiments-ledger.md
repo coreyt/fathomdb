@@ -335,8 +335,8 @@
 | --- | --- | --- | ---: | :---: | --- |
 | Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | **RESOLVED** — re-scope holds; 1 scoped gap (LOCOMO node-labels, $0 exp/≤$1); EXP-D excluded → detail below |
 | Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | **RESOLVED** — oracle-CONTEXT pooled **+0.392 [0.346,0.436]** (reconciles exactly; fresh recompute=priced→deferred); arm-selection headroom within recall noise → value = config-carrying tuning, not arm routing → detail below |
-| EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | REGISTERED — pending |
-| EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | REGISTERED — pending |
+| EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | **RESOLVED — GO.** F2 multi_session gold-in-pool @10=0.20–0.275 → @candidate_k=200=0.65–0.675 (lift **+0.45/+0.40**; best-K CI-lo 0.50/0.525 clears the @10 floor); all 4 classes lift. Max at candidate_k=200 (not saturated → EXP-B′ test ≥200); per-query arm-log persisted (Slice-5 oracle enabler) → detail below |
+| EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | **RESOLVED — KEEP bge-small.** No swap-candidate clears the gate net of eu7 re-clear+cost (s15a FULL n=10506): bge-base eu8 +0.024 but projected_eu7 0.786<0.90; e5-base-v2 0.896<0.90; nomic 0.932 but not cpu_feasible; gte-base measurement-failed. eu-0 raw r@10 confirms ordering, revises decision. GPU device-invariance ✅ (cosine 1.0, RTX 3090). Swap out-of-0.8.11 → HITL #2 → detail below |
 | EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | REGISTERED — pending |
 | EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | REGISTERED — pending |
 | EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | REGISTERED — pending |
@@ -379,6 +379,63 @@
 - **$:** **$0.** **Sources:** `dev/plans/runs/gate2-oracle.md` + `gate2-oracle-output.json`
   (`src/python/eval/gate2_oracle_run.py`, $0 re-runnable); reuses `runs/0.8.3-gap-decomposition-n606.json`,
   `runs/0.8.1-p0a-fused-recall-n160.json`, `runs/0.8.2-m1-verdict-gpt54.json`.
+
+### EXP-A — recall generation / candidate breadth (Slice 10, RESOLVED 2026-06-28)
+
+- **Method ($0, LLM-free, deterministic).** LME class-balanced n=160 (40/class: factoid ·
+  knowledge_update · multi_session · temporal; seed 20260614; 7,154-session union). Reuse the P0-A
+  loader + retrieval variants; sweep candidate breadth `K∈{10,20,50,100,200}`; score **gold-in-pool**
+  at each K (multi_session full-gold-set rule); per-(class,arm,K) percentile bootstrap CI (2000
+  resamples, seed 0xEA); persist per-query per-arm gold ranks.
+- **F2 multi_session gold-in-pool (point [CI]):** `fathomdb_fts_only` @10 **0.20** [0.075,0.325] →
+  @50 0.40 → @100 0.525 → @200 **0.65** [0.50,0.775]; `naive_bm25` @10 **0.275** [0.125,0.425] →
+  @200 **0.675** [0.525,0.80]. **Lift @200−@10 = +0.45 / +0.40**, and the @200 CI-lo (0.50 / 0.525)
+  clears the @10 point estimate → **CI clears noise**.
+- **All classes lift** with breadth (fts_only / bm25 @10→@200): factoid 0.65→0.875 / 0.70→0.90;
+  knowledge_update 0.80→0.925 / 0.875→1.00; temporal 0.60→0.925 / 0.65→0.95. multi_session is the
+  hardest and gains the most absolute headroom — the recall the shipped final_K=10 view misses but a
+  widened candidate pool recovers, which a CE-rerank stage (EXP-B′) can then surface.
+- **KILL check:** **NOT killed → GO.** Wider candidate generation lifts gold-in-pool with the CI
+  clearing the K=10 floor on the F2 focus class (and every class). This is the exact
+  config-carrying lever Gate-2 pointed to (recall *generation*, not arm routing).
+- **candidate_k that maximizes gold-in-pool (feeds EXP-B′):** **200** (top of the grid; recall is
+  still rising at 200 — NOT saturated → EXP-B′ should also probe candidate_k ≥ 200).
+- **Per-query arm-selection oracle (deferred at Slice-5 Gate-2):** now computable — `per_query_log`
+  (160 questions) carries, per arm, each gold session's 0-based rank, the min gold rank, and
+  all-gold-found@200. Lexical arms (bm25, fts_only) measured at $0; the **fused-RRF** arm (the
+  shipped candidate set; CPU embedder, GPU idle by design) corroborates and is anchored by Gate-2's
+  measured multi_session fused≈bm25 (fused r@10 0.325 ≥ bm25 0.275) — the breadth lift is a
+  pool-depth property the fused arm shares.
+- **$:** **$0.** **Sources:** `dev/plans/runs/expa-recall-output.json` + `expa-recall.md`
+  (`src/python/eval/expa_recall_run.py`, $0 re-runnable: `--with-fused` adds the dense arm).
+
+### EXP-M4 — embedder-ceiling measurement (Slice 10, RESOLVED 2026-06-28)
+
+- **Method ($0 / GPU).** The embedder ceiling is a **device-invariant model-weights property**
+  (CPU↔GPU vectors are f32-equivalent), so EXP-M4 **consolidates** two already-paid byte-verified
+  offline measurements (the Gate-2 reuse precedent) and **confirms device-invariance on the GPU**:
+  the FULL `s15a` probe (eu7 1-bit re-clear + eu8 strict doc-id recall + BM25 hard subset +
+  paired-bootstrap margin CIs + cpu cost) over the 10,506-doc frozen IR snapshot, and the `eu-0`
+  raw-recall sweep. **GPU confirmation (RTX 3090, cuda:0):** bge-small GPU-vs-CPU mean row cosine
+  **1.000000**, max abs elt diff 1.2e-7 → the reused CPU ceiling holds on GPU.
+- **s15a candidate verdicts vs CLS-corrected bge-small (base eu8 0.3994, hard@10 0.0194, 11.2ms/q):**
+  bge-base eu8 0.4235 (margin +0.024) but **projected_eu7 0.7855 < 0.90** (fails 1-bit re-clear) +
+  hard-margin CI-lo −0.0036; e5-base-v2 eu8 0.4674 but **proj_eu7 0.896 < 0.90** + hard CI-lo
+  −0.0061; nomic proj_eu7 0.9317 (clears 0.90) but **not cpu_feasible** (36.1ms > 3× base) + hard
+  CI-lo −0.0085; gte-base **measurement FAILED** (transformers IndexError; no candle-native encoder
+  → not in-library). **No candidate clears `probe_15a_pass`.**
+- **eu-0 reconciliation:** raw recall@10 (1-bit Hamming→f32, n=100, 7,667 docs, fanout K=256)
+  bge-small **0.933** · bge-base **0.964** · e5-small-v2 **0.664** (bge-small K=192 = 0.933
+  [0.912,0.953]). EXP-M4 **CONFIRMS** the eu-0 ordering (bge-base highest raw recall, e5 worst) but
+  **REVISES** the naive "bigger is better": net of the 1-bit eu7 re-clear (bge-base proj_eu7 0.786 <
+  0.90), the hard-subset margin, and 2× cost, bge-base does **not** clear the swap gate.
+- **KILL/GO (HITL #2):** **KEEP CLS-corrected bge-small.** A productized swap is **out of 0.8.11**;
+  no ceiling escalation triggered (no passer). Keep-unless: a candidate simultaneously clears the
+  0.90 projected_eu7 floor after re-whiten, shows a hard-subset margin CI-lo > 0 vs bge-small, and
+  is cpu_feasible (or HITL accepts the GPU/cost tradeoff).
+- **$:** **$0.** **Sources:** `dev/plans/runs/expm4-ceiling-output.json` + `expm4-ceiling.md`
+  (`src/python/eval/expm4_embedder_ceiling_run.py`); reuses `runs/0.8.3-s15a-embedder.json`
+  (`eval.s15a_embedder_probe`) + `research/eu-0/result_*.json`.
 
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
