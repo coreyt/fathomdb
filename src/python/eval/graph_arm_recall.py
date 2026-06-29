@@ -100,7 +100,7 @@ def extract_graph(
     {session_id: {"entities":[...], "relations":[...]}}. Salvages truncations."""
     # httpx is eval-only (not in `[dev]`); imported lazily so `[dev]` collection
     # of the offline graph-build helpers doesn't require it (0.8.9.2).
-    import httpx  # noqa: PLC0415 — intentional on-demand import
+    import httpx  # noqa: PLC0415  # pyright: ignore[reportMissingImports]  # eval-only dep
 
     items = list(documents.items())
     H = {"Authorization": f"Bearer {_KEY}"}
