@@ -44,20 +44,34 @@ def db_path(tmp_path: Path) -> str:
 _PYTHON_SRC_DIR = Path(__file__).resolve().parent.parent  # src/python
 
 
-def _binding_has_test_hooks() -> bool:
-    """Return True if the imported `Engine` already exposes the
-    test-hooks surface (`_write_vector_for_test`). Used to skip the
-    fixture's `maturin develop` when the developer pre-built locally."""
+_PROBE_SRC = (
+    "import sys\n"
+    "try:\n"
+    "    from fathomdb import _fathomdb\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+    "engine = getattr(_fathomdb, 'Engine', None)\n"
+    "sys.exit(0 if engine is not None and hasattr(engine, '_write_vector_for_test') else 1)\n"
+)
 
-    try:
-        from fathomdb import _fathomdb  # noqa: PLC0415 — import-on-demand
-    except ImportError:
-        # Binding not installed yet — definitely need to build.
-        return False
-    engine = getattr(_fathomdb, "Engine", None)
-    if engine is None:
-        return False
-    return hasattr(engine, "_write_vector_for_test")
+
+def _binding_has_test_hooks() -> bool:
+    """Return True if the installed `Engine` already exposes the test-hooks
+    surface (`_write_vector_for_test`).
+
+    The probe runs in a CHILD process and must NOT import
+    `fathomdb._fathomdb` into this (the pytest) process. Importing the
+    hook-less extension here dlopen()s it; a subsequent `maturin develop`
+    that overwrites the `.so` on disk cannot be re-imported in the same
+    process — the dynamic loader returns the already-mapped library, so the
+    rebuilt symbols never become visible and collection still fails on the
+    missing `force_panic_for_test`. Probing out-of-process keeps this
+    interpreter pristine so pytest's first import sees the FRESH `.so`."""
+
+    return subprocess.run(
+        [sys.executable, "-c", _PROBE_SRC],
+        cwd=str(_PYTHON_SRC_DIR),
+    ).returncode == 0
 
 
 def _ensure_test_hooks_binding() -> None:
@@ -88,6 +102,15 @@ def _ensure_test_hooks_binding() -> None:
         "with test-hooks feature (one-time per venv; ~5-60s) ...",
         flush=True,
     )
+    # `maturin develop` requires an activated virtualenv: it looks for
+    # $VIRTUAL_ENV / $CONDA_PREFIX / a `.venv` in cwd-or-parents. A bare
+    # subprocess inherits neither when pytest was launched via an absolute
+    # interpreter path (e.g. `.venv/bin/python -m pytest`, or any venv not
+    # named `.venv`), so it fails with "Couldn't find a virtualenv". Point it
+    # at THIS interpreter's environment root (`sys.prefix` is the venv dir for
+    # a venv interpreter) so the rebuilt `.so` lands in the venv we are running.
+    env = dict(os.environ)
+    env["VIRTUAL_ENV"] = sys.prefix
     subprocess.check_call(
         [
             sys.executable,
@@ -98,9 +121,12 @@ def _ensure_test_hooks_binding() -> None:
             "pyo3/extension-module,test-hooks,default-embedder,default-reranker",
         ],
         cwd=str(_PYTHON_SRC_DIR),
+        env=env,
     )
-    # Force the re-import on next access — conftest import or a sibling
-    # module may have already imported the old (hook-less) module.
+    # Belt-and-suspenders: drop any cached `fathomdb*` modules so the first
+    # post-rebuild import re-reads from disk. (The out-of-process probe above
+    # means this interpreter has NOT yet dlopen()ed the extension, so the fresh
+    # `.so` is what pytest collection loads.)
     for mod_name in list(sys.modules):
         if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
             del sys.modules[mod_name]
