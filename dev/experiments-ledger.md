@@ -322,6 +322,27 @@
 - **Verdict:** **SPLIT.** C (expensive, reads everything) surpasses full-strength GraphRAG; D2 (the cheap product) LOSES comprehensiveness+diversity → prior surpass was a level-0 artifact. Do NOT flip OPP-4; **Fork E (entity/Leiden graph) RE-OPENS**. HITL-gated. *(live; current 0.8.4 verdict.)*
 - **$:** ≥ **$42.34** LOWER BOUND (fathomdb $21.60 + graphrag $20.74; meter undercounts, answer data unaffected). **Sources:** `runs/0.8.4-gating-rerun-RESULT.{md,json}`, `runs/0.8.4-COMPREHENSIVE-REPORT.md`.
 
+## 0.8.11 — planner-router experiment ladder (Track E; F-11 discharge)
+
+> **F-11 closure.** Before 0.8.11 this ledger had **zero** planner-router rows — the
+> `Gate-0/2 → EXP-A/M4 → EXP-B′ → EXP-Fr-acc → EXP-AF` ladder was scheduled as 0.8.7/0.8.9 `$0`
+> float and never ran. 0.8.11 owns and discharges it (HITL 2026-06-28). **Pre-registration**
+> (hypothesis · KILL · corpus · cost ceiling · script) → `dev/plans/0.8.11-implementation.md §1`;
+> live `$` tally → `runs/STATUS-0.8.11.md`. The rows below are **REGISTERED at Slice 0**; each is
+> filled with numbers+CI+verdict when its slice lands (R-LEDGER-1). Ladder cap: **~$20 priced-LLM**.
+
+| Tag | Question (short) | KILL | $ ceiling | Slice | Status |
+| --- | --- | --- | ---: | :---: | --- |
+| Gate-0 | Re-scope golden set to reused assets + decide_083/084; scoped node-labels for gaps only | labeling exceeds the gap (→ fresh golden set) | $1 | 5 | REGISTERED — pending |
+| Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | REGISTERED — pending |
+| EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | REGISTERED — pending |
+| EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | REGISTERED — pending |
+| EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | REGISTERED — pending |
+| EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | REGISTERED — pending |
+| EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | REGISTERED — pending |
+| EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | REGISTERED — pending |
+| EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | REGISTERED — pending |
+
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 
 ### research/eu-0 — eu7 embedder + quantization-path sweep (RESOLVED)

@@ -15,7 +15,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 
 | Slice | Title | Track | State | Notes |
 | ---: | --- | :---: | --- | --- |
-| **0** | ADRs + ladder pre-registration + STATUS standup | — | **IN PROGRESS** | contracts doc ✅; STATUS ✅; filter-grammar ADR (delegated) ⏳; 2 HITL Slice-0 decisions ✅ (A / conditional) |
+| **0** | ADRs + ladder pre-registration + STATUS standup | — | **DONE** | contracts ✅; STATUS ✅; ADR-0.8.11 ✅ (`a9ba8a5a`); ledger scaffold ✅ (F-11 rows REGISTERED); 2 HITL Slice-0 decisions ✅ (A / conditional) |
 | 5 | Gate-0 + Gate-2 (eval foundation) | E | pending | blocked-by 0 |
 | 10 | EXP-A ‖ EXP-M4 | E | pending | blocked-by 5 |
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | pending | blocked-by 10 (A∧M4) |
@@ -65,6 +65,13 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
 
 - 2026-06-28: branch `0.8.11` cut off `origin/main` (`80c6b8b8`); plan rewrite + F-11 sequencing +
   BEIR manifest committed; merged `origin/main`. Working tree clean at Slice 0 start.
+- 2026-06-28: Slice 0 closed. ADR-0.8.11 filter-grammar (`a9ba8a5a`) found **NO reserved-gap
+  trigger** — all 4 G10 fields resolve in both stores (`source_type` constant-folds via
+  `resolve_source_type(kind)`); arbitrary json-paths are typed-rejected by `search_filtered` (a
+  defined dispatch outcome). **Correction:** G4 `read.list`/`Predicate` is **already built +
+  SDK-exposed** (0.8.0) → Slice 40 is a type-unification + dispatch **refactor**, not greenfield.
+  Unified type: `Filter { terms: Vec<FilterTerm> }` (implicit AND); one impl-level TBD (kind
+  redundancy/constant-fold) left for Slice 40.
 
 ## Experiments-ledger (F-11 closure tracker)
 
