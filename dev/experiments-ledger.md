@@ -340,7 +340,7 @@
 | EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | **RESOLVED — NO KILL ($0).** Optima DIVERGE (3 distinct over LME 606Q): needle (ck200,pn50,α0.7, r@10 **0.644** [0.59,0.70]) · multi_session (ck300,pn100,α1.0, **0.467** [0.39,0.55]) · temporal (ck500,pn20,α1.0, **0.513** [0.43,0.59]). **Crux reproduced** pooled: α=1.0 ck200 pool_n=10→50 r@10 0.540→0.498 (Δ−0.041) — but **needle-specific** (multi_session/temporal do NOT drop). global+multi_hop pinned provisional. Judge **not spent** (gold sufficient). **Build-blocker:** CE feature gated OFF in .venv → rerank tuple from landed 0.8.3 CE-pass (same gold+weights), recall envelope fresh → detail below |
 | EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | **RESOLVED.** Forbidden-composition matrix emitted (map_reduce_qfs+community_summary `global`-only, forbidden elsewhere). Empirical cross-application: **multi_session optimum → needle r@10 −0.147** + **temporal optimum → needle −0.075** (both clear noise) — real joint regressions the 0.8.15 validator must block → detail below |
 | EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | **RESOLVED — NO KILL.** Internal-fallback classifier macro **0.768 [0.732,0.802]**, all 5 classes > 0.20 chance (needle weakest 0.500). Mis-route asymmetry confirmed: **needle is the ONLY negative Δ_C**; needle→C **scales with map-reduce breadth** −0.080 [−0.28,+0.12] @3-distractor → **−0.300 [−0.47,−0.10] @8-distractor** (CI excludes 0; ≈ prior −0.362). $0.05/$3 → detail below |
-| EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | REGISTERED — pending |
+| EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | **RESOLVED — QUALIFIED KILL (cheap agent).** CE reranker ACTIVE (guarded). Value-of-signal: a cheap agent (`gemini-flash-lite`) relevance signal is **DOMINATED by the free internal `ce_score`** — lift **−0.138 [−0.189,−0.087]** (n=450), AUC ce **0.667** vs agent 0.545 → ask-or-not buys nothing with this agent; route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio; ask-threshold c_rt\* 0.30 cross-wire vs 0.05 same-tier; cross-wire rare 4/606 but heaviest per-incident). VoI loss-landscape (oracle bound) concentrates in low-ce(<0.2)+narrow-margin cells → hands the shape to **EXP-AF (Slice 30)** for a stronger agent. **$0.0151/$3** → detail below |
 | EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | REGISTERED — pending |
 
 ### Gate-0 — golden-set re-scope (Slice 5, RESOLVED 2026-06-28)
@@ -519,6 +519,51 @@
 - **$:** **≈ $0.05** (of $3). **Sources:** `dev/plans/runs/fracc-base-output.json` + `fracc-base.md`
   (`src/python/eval/fracc_classifier_run.py`, base mode; reproducible). PSD §II.A/§II.D/§III.D;
   `dev/plans/0.8.11-implementation.md` §1. Prior −0.362 context: ledger 0.8.3 gap-decomposition row.
+
+### EXP-Fr-acc / VoI finalize — value-of-signal + ask-or-not VoI + asymmetric weighting (Slice 25, RESOLVED 2026-06-28)
+
+- **CE-active FIRST STEP (mandated).** Degeneracy guard PASS before any measurement: engine
+  `rerank` returns real `ce_score` (max ce_norm 0.99994, spread 0.99994; alpha=1.0 reorders the
+  relevant passage adversarially-scored last → rank-1). The CE reranker is genuinely ACTIVE (not the
+  identity passthrough that blocked Slice 15's fresh-CE arm) → VoI measured against real `ce_score`.
+- **Substrate ($0 stages).** ce_score + retrieval-correct over the **606-query LME real-CE pass**
+  (`0.8.3-rerank-tune.ce-pass.json`, regenerated-identical by this active build): per query, reblend
+  the pool at the EXP-B′ per-intent alpha → `ce_top` (rank-1 ce_norm), `ce_margin`, and
+  `retrieval_correct` = strict gold-in-top-10 (base rate 0.529). **Route-margin** from a leakage-free
+  stratified 5-fold OOF TF-IDF nearest-centroid (mirrors the Slice-20 registered classifier; LME
+  routing acc **0.642**). Asymmetric costs from the Slice-20 matrix (needle→C **−0.30**, same-tier
+  −0.05, retrieval-failure 1.0).
+- **Deliverable 1 — value-of-signal (priced, n=450 = 150×{needle,multi_session,temporal}).** A cheap
+  agent (`gemini-flash-lite`) judges relevance of the top reranked passage; compared to internal
+  `ce_score` at predicting `retrieval_correct`. **Agent is DOMINATED by the free `ce_score`:** agent
+  acc 0.524 [0.478,0.569] vs ce@best-threshold 0.662 [0.618,0.704]; **lift −0.138 [−0.189,−0.087]**
+  (paired); **AUC ce 0.667 vs agent 0.545**. (Conservative lower bound: ce got an in-sample oracle
+  threshold; the eval agent sees only the top-1 passage, NOT the user-intent context a deployed agent
+  holds — re-judging relevance is exactly the engine cross-encoder's job. Stronger-agent test = EXP-AF.)
+- **Deliverable 2 — ask-or-not VoI break-even.** Reported as the **oracle upper-bound** loss-landscape
+  (p_catch=1.0): ask iff p_catch·E[loss if proceed] > c_rt over the `(ce_top × route_margin)` grid.
+  Value concentrates in **low-ce (ce_top<0.2) + narrow-margin** cells (E[loss] up to 0.72); ~98% of
+  queries sit in a positive-VoI cell at c_rt≤0.05 **for a perfect agent**. The realized value with the
+  measured cheap agent is ≤0 (deliverable 1), so this landscape is the shape a *better* agent would
+  exploit, not a realized win.
+- **Deliverable 3 — asymmetric weighting (CONFIRMED).** Isolating the mis-route term, each type has
+  ask-threshold c_rt\* = p_catch·|cost|: **cross-wire→C 0.30 vs same-tier 0.05 = 6.0× asymmetry**. For
+  any round-trip cost in (0.05, 0.30] the policy **asks to block a needle→C cross-wire but declines to
+  pay for a same-tier miss** → preferential suppression of the high-cost cross-wire. The classifier
+  rarely *produces* the cross-wire (4/606 realized; 2 runner-up-exposed) — rare but heaviest per
+  incident; the dominant VoI term overall is retrieval-failure detection via low `ce_top`.
+- **KILL check.** Rule = KILL the agent-signal loop if the agent relevance signal does not beat
+  internal `ce_score` (PSD §III.D / EXP-AF discipline). **QUALIFIED KILL (cheap agent):**
+  `gemini-flash-lite` loses to `ce_score` → **ask-or-not buys nothing with this agent; route on
+  internal `ce_score` only.** A potential break-even region exists for a stronger agent → the
+  thresholds (low-ce + needle→C cross-wire) feed **EXP-AF (Slice 30)** (stronger agent /
+  `record_feedback`) and the 0.8.15 dispatcher.
+- **Models + $.** $0 stages (numpy + cached real-CE pass). Agent arm `gemini-flash-lite` (priced),
+  450 calls, ~296K in / 2.3K out tok → **$0.0151 / $3** (cheap-validated 6 calls first; resilient
+  per-item checkpoint + idempotent `--resume` + `BudgetLedger --max-usd 3.0` guard).
+- **$:** **$0.0151** (of $3). **Sources:** `dev/plans/runs/fracc-voi-output.json` + `fracc-voi.md`
+  (`src/python/eval/fracc_voi_run.py`; reproducible: `python -m eval.fracc_voi_run --sample-per-class
+  150`). PSD §II.C/§III.D; `dev/plans/0.8.11-implementation.md` §1.
 
 ## research/ (UNTRACKED — git-ignored; results live ONLY here)
 

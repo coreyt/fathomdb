@@ -20,7 +20,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 10 | EXP-A ‖ EXP-M4 | E | **DONE** | $0; EXP-A **GO** (multi_session gold-in-pool @10→@200 +0.45/+0.40, CI clears floor; candidate_k=200, not saturated); EXP-M4 **KEEP bge-small** (no swap-candidate clears eu7 re-clear+cost; GPU device-invariance ✅); ledger rows RESOLVED |
 | 15 | EXP-B′ joint tuning (KEYSTONE) | E | **DONE** | $0; per-intent optima DIVERGE (3 distinct → NO KILL, routing has value); crux reproduced (pooled α=1.0 ck200 pn10→50 r@10 0.540→0.498, needle-specific); B′.5 catches real regressions (multi_session opt→needle −0.147); global+multi_hop provisional; build-blocker (CE feature OFF→0.8.3 CE-pass); ledger EXP-B′/B′.5 rows RESOLVED |
 | 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
-| 25 | EXP-Fr-acc/VoI finalize | E | **in progress** | running on CE-active build |
+| 25 | EXP-Fr-acc/VoI finalize | E | **DONE** | $0.0151; CE reranker ACTIVE (guarded). Value-of-signal: cheap agent (`gemini-flash-lite`) relevance **DOMINATED by free `ce_score`** — lift −0.138 [−0.189,−0.087] (n=450), AUC ce 0.667 vs 0.545 → **QUALIFIED KILL (cheap agent)**: ask-or-not buys nothing, route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio, c_rt\* 0.30 vs 0.05; cross-wire rare 4/606). VoI landscape (low-ce+narrow-margin) → EXP-AF (Slice 30). Ledger row RESOLVED |
 | 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #4 |
 | 35 | L2 router prototype + pre-stage | E | pending | blocked-by 15∧25∧30 |
 | 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
@@ -49,10 +49,10 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | Gate-0 (scoped labeling) | $1 | $0 | not started |
 | EXP-B′ judge | $6 | $0 | **DONE — $0** (judge not spent; gold sufficient, global provisional) |
 | EXP-Fr-acc base | $3 | ~$0.05 | **DONE** (gemini-flash-lite; local vLLM down) |
-| EXP-Fr-acc/VoI | $3 | $0 | not started |
+| EXP-Fr-acc/VoI | $3 | $0.0151 | **DONE** (gemini-flash-lite; 450 calls; CE-active build) |
 | EXP-AF | $5 | $0 | not started |
 | Reserve | $2 | $0 | — |
-| **Total** | **$20** | **~$0.05** | EXP-Fr-acc base spent (≪ ceiling) |
+| **Total** | **$20** | **~$0.07** | EXP-Fr-acc base + VoI spent (≪ ceiling) |
 
 Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pre-registration
 (`0.8.11-implementation.md §1`) is committed; cheap-validate (gemini-flash-lite) before each spend.
@@ -104,6 +104,26 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
   eu-0 raw r@10 (K=256) bge-small 0.933 / bge-base 0.964 / e5 0.664 — confirms ordering, revises the
   swap decision (bge-base's raw edge dies under 1-bit eu7). HITL #3 RESOLVED (no escalation; swap
   out-of-0.8.11). Ledger EXP-A/EXP-M4 rows RESOLVED.
+- 2026-06-28: **Slice 25 DONE ($0.0151/$3).** EXP-Fr-acc/VoI finalize (`fracc-voi-output.json` +
+  `fracc-voi.md`, `eval/fracc_voi_run.py`). **CE-active FIRST STEP guarded PASS** (engine `rerank`
+  real `ce_score`, max ce_norm 0.99994, alpha=1.0 reorders adversarial probe → rank-1; not the
+  Slice-15 identity passthrough). Three deliverables (PSD §III.D): **(1) value-of-signal** — a cheap
+  agent (`gemini-flash-lite`) relevance signal is **DOMINATED by the free internal `ce_score`** at
+  predicting retrieval-correct (gold-in-top-10) over n=450 (150×{needle,ms,temporal}): lift **−0.138
+  [−0.189,−0.087]** (paired), **AUC ce 0.667 vs agent 0.545** (conservative LB — ce got an oracle
+  threshold; agent saw only the top-1 passage, not deployed user-intent). **(2) ask-or-not VoI** —
+  oracle-upper-bound `(ce_top×route_margin)` loss-landscape; value concentrates in **low-ce(<0.2) +
+  narrow-margin** cells (E[loss]→0.72). **(3) asymmetric weighting CONFIRMED** — 6× cost ratio,
+  ask-threshold c_rt\* **0.30 cross-wire vs 0.05 same-tier**; for c_rt∈(0.05,0.30] the policy asks to
+  block needle→C but declines a same-tier miss; cross-wire rare (4/606 realized) but heaviest per
+  incident. **KILL = QUALIFIED KILL (cheap agent):** ask-or-not buys nothing with `gemini-flash-lite`
+  → route on internal `ce_score`; the break-even landscape (low-ce + cross-wire) is the shape a
+  STRONGER agent would exploit → **feeds EXP-AF (Slice 30)** + the 0.8.15 dispatcher. Route-margin via
+  leakage-free 5-fold OOF classifier (LME routing acc 0.642). Resilient harness (per-item checkpoint /
+  `--resume` / `BudgetLedger` $3 guard); cheap-validated (6 calls) first. Ledger EXP-Fr-acc/VoI row
+  RESOLVED. **§6 sequencing finding:** the agent-signal loop is NOT yet justified (cheap agent loses to
+  `ce_score`); Slice 30 EXP-AF must clear the agent-beats-`ce_score` bar with a stronger agent before
+  the L2 prototype (Slice 35) wires any escalation — else the dispatcher ships on internal `ce_score`.
 - 2026-06-28: **Slice 20 DONE (~$0.05/$3).** EXP-Fr-acc base (`fracc-base-output.json` +
   `fracc-base.md`, `eval/fracc_classifier_run.py`). **Classifier ($0):** pure-numpy lexical TF-IDF
   nearest-centroid (Rocchio), stratified 5-fold CV, balanced 100/class — macro **0.768
