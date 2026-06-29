@@ -1,0 +1,313 @@
+{
+  "schema": "0.8.11-expaf-value-v1",
+  "slice": 30,
+  "experiment": "EXP-AF \u2014 agent-feedback value test (KILL/GO \u2192 HITL #4)",
+  "ce_active_guard": {
+    "max_ce_norm": 0.999944,
+    "spread": 0.999935,
+    "alpha1_order": [
+      0,
+      1,
+      2
+    ],
+    "active": true
+  },
+  "design": {
+    "hypothesis": "an agent relevance/intent signal beats internal ce_score-only routing NET of round-trip cost, on the existing substrate, within the 1-2 re-plan depth bound (PSD \u00a7III.D).",
+    "break_even_cells": "low ce_top (<0.2) \u2014 where Slice-25 located the potential VoI (cheap agent there was dominated by ce_score).",
+    "mechanism": "stronger agent (claude-sonnet) sees the top-20 ce-reranked pool (NOT just top-1) and flags relevant passages; promote them above ce order; measure strict retrieval-success (all-gold-in-top-10) lift, then subtract round-trip cost. Depth-2 expands to top-40 on depth-1 failures (the single allowed re-plan).",
+    "final_K": 10,
+    "N1": 20,
+    "N2": 40,
+    "pool_n": 50,
+    "c_rt_grid": [
+      0.0,
+      0.02,
+      0.05,
+      0.1
+    ]
+  },
+  "headroom_breakeven": {
+    "overall": {
+      "n": 406,
+      "base_retrieval_success": 0.4557,
+      "depth1_ceiling_top20_into_top10": 0.1182,
+      "depth2_ceiling_top40_into_top10": 0.2094
+    },
+    "by_intent": {
+      "needle": {
+        "n": 194,
+        "base_retrieval_success": 0.5515,
+        "depth1_ceiling": 0.1186,
+        "depth2_ceiling": 0.2216
+      },
+      "multi_session": {
+        "n": 103,
+        "base_retrieval_success": 0.3301,
+        "depth1_ceiling": 0.1359,
+        "depth2_ceiling": 0.2136
+      },
+      "temporal": {
+        "n": 109,
+        "base_retrieval_success": 0.4037,
+        "depth1_ceiling": 0.1009,
+        "depth2_ceiling": 0.1835
+      }
+    }
+  },
+  "headroom_full_corpus": {
+    "overall": {
+      "n": 606,
+      "base_retrieval_success": 0.566,
+      "depth1_ceiling_top20_into_top10": 0.1023,
+      "depth2_ceiling_top40_into_top10": 0.1749
+    },
+    "by_intent": {
+      "needle": {
+        "n": 306,
+        "base_retrieval_success": 0.6438,
+        "depth1_ceiling": 0.1013,
+        "depth2_ceiling": 0.1797
+      },
+      "multi_session": {
+        "n": 150,
+        "base_retrieval_success": 0.46,
+        "depth1_ceiling": 0.1067,
+        "depth2_ceiling": 0.16
+      },
+      "temporal": {
+        "n": 150,
+        "base_retrieval_success": 0.5133,
+        "depth1_ceiling": 0.1,
+        "depth2_ceiling": 0.18
+      }
+    }
+  },
+  "agent_arm": {
+    "status": "OK",
+    "model": "claude-sonnet",
+    "n_sample": 406,
+    "spent_usd": 3.6642,
+    "n_calls": 624,
+    "n_errors": 0,
+    "n_evaluated": 406,
+    "by_intent_n": {
+      "needle": 194,
+      "multi_session": 103,
+      "temporal": 109
+    },
+    "base_retrieval_success_ce": 0.4557,
+    "agent_retrieval_success_depth1": 0.4631,
+    "primary_reranking_lift_depth1": {
+      "point": 0.0074,
+      "lo": -0.0074,
+      "hi": 0.0222,
+      "n": 406
+    },
+    "net_lift_depth1_by_c_rt": {
+      "0.00": {
+        "c_rt_per_call": 0.0,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": 0.0074,
+        "net_lift_lo": -0.0074,
+        "net_lift_hi": 0.0222,
+        "go": false
+      },
+      "0.02": {
+        "c_rt_per_call": 0.02,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": -0.0126,
+        "net_lift_lo": -0.0274,
+        "net_lift_hi": 0.0022,
+        "go": false
+      },
+      "0.05": {
+        "c_rt_per_call": 0.05,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": -0.0426,
+        "net_lift_lo": -0.0574,
+        "net_lift_hi": -0.0278,
+        "go": false
+      },
+      "0.10": {
+        "c_rt_per_call": 0.1,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": -0.0926,
+        "net_lift_lo": -0.1074,
+        "net_lift_hi": -0.0778,
+        "go": false
+      }
+    },
+    "promoted_gold_into_topk": 6,
+    "demoted_gold_out_of_topk": 3,
+    "depth1_by_intent": {
+      "needle": {
+        "n": 194,
+        "ce_rc": 0.5515,
+        "d1_rc": 0.5619,
+        "lift": {
+          "point": 0.0103,
+          "lo": -0.0103,
+          "hi": 0.0309,
+          "n": 194
+        }
+      },
+      "multi_session": {
+        "n": 103,
+        "ce_rc": 0.3301,
+        "d1_rc": 0.3398,
+        "lift": {
+          "point": 0.0097,
+          "lo": -0.0291,
+          "hi": 0.0488,
+          "n": 103
+        }
+      },
+      "temporal": {
+        "n": 109,
+        "ce_rc": 0.4037,
+        "d1_rc": 0.4037,
+        "lift": {
+          "point": 0.0,
+          "lo": 0.0,
+          "hi": 0.0,
+          "n": 109
+        }
+      }
+    },
+    "detection_slice25_comparable": {
+      "n": 406,
+      "method": "agent top-1 relevance flag vs internal ce_top (oracle threshold) at predicting retrieval-success (all-gold-in-top-10). Directly comparable to Slice-25 cheap-agent lift (\u22120.138).",
+      "agent_relevance_rate_top1": 0.1379,
+      "ce_threshold_best": 0.0336,
+      "balanced_acc_agent_top1": 0.4974,
+      "balanced_acc_ce_best": 0.5255,
+      "acc_agent_top1": {
+        "point": 0.5296,
+        "lo": 0.4803,
+        "hi": 0.5764,
+        "n": 406
+      },
+      "acc_ce_best": {
+        "point": 0.5591,
+        "lo": 0.5123,
+        "hi": 0.6059,
+        "n": 406
+      },
+      "lift_agent_minus_ce_acc": {
+        "point": -0.0296,
+        "lo": -0.0715,
+        "hi": 0.0123,
+        "n": 406
+      },
+      "auc_ce_top": 0.4515,
+      "auc_agent_top1_binary": 0.4974,
+      "slice25_cheap_agent_lift": -0.1378
+    },
+    "depth2_iterative": {
+      "n": 406,
+      "replan_trigger_rate": 0.5369,
+      "agent_retrieval_success_depth2": 0.4778,
+      "incremental_lift_depth2_vs_depth1": {
+        "point": 0.0148,
+        "lo": 0.0049,
+        "hi": 0.0271,
+        "n": 406
+      },
+      "total_lift_depth2_vs_ce": {
+        "point": 0.0222,
+        "lo": 0.0049,
+        "hi": 0.0395,
+        "n": 406
+      },
+      "net_lift_depth2_by_c_rt": {
+        "0.00": {
+          "c_rt_per_call": 0.0,
+          "round_trips_per_query": 1.537,
+          "net_lift_point": 0.0222,
+          "net_lift_lo": 0.0049,
+          "net_lift_hi": 0.0395,
+          "go": true
+        },
+        "0.02": {
+          "c_rt_per_call": 0.02,
+          "round_trips_per_query": 1.537,
+          "net_lift_point": -0.0085,
+          "net_lift_lo": -0.0258,
+          "net_lift_hi": 0.0088,
+          "go": false
+        },
+        "0.05": {
+          "c_rt_per_call": 0.05,
+          "round_trips_per_query": 1.537,
+          "net_lift_point": -0.0546,
+          "net_lift_lo": -0.0719,
+          "net_lift_hi": -0.0373,
+          "go": false
+        },
+        "0.10": {
+          "c_rt_per_call": 0.1,
+          "round_trips_per_query": 1.537,
+          "net_lift_point": -0.1315,
+          "net_lift_lo": -0.1488,
+          "net_lift_hi": -0.1142,
+          "go": false
+        }
+      },
+      "extra_gold_recovered_by_replan": 6,
+      "round_trips_per_query": 1.537
+    }
+  },
+  "verdict": {
+    "decision": "KILL",
+    "decisive_number": {
+      "primary_reranking_lift_depth1": {
+        "point": 0.0074,
+        "lo": -0.0074,
+        "hi": 0.0222,
+        "n": 406
+      },
+      "net_lift_at_c_rt_0.02": {
+        "c_rt_per_call": 0.02,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": -0.0126,
+        "net_lift_lo": -0.0274,
+        "net_lift_hi": 0.0022,
+        "go": false
+      },
+      "net_lift_at_c_rt_0.05": {
+        "c_rt_per_call": 0.05,
+        "round_trips_per_query": 1.0,
+        "net_lift_point": -0.0426,
+        "net_lift_lo": -0.0574,
+        "net_lift_hi": -0.0278,
+        "go": false
+      },
+      "rule": "GO iff the depth-1 reranking-lift CI lower bound, NET of one round-trip (c_rt=0.02 accuracy-equivalent), exceeds 0."
+    },
+    "depth_decision": {
+      "incremental_lift_depth2_vs_depth1": {
+        "point": 0.0148,
+        "lo": 0.0049,
+        "hi": 0.0271,
+        "n": 406
+      },
+      "incremental_positive_ci": true,
+      "depth2_net_beats_depth1_at_c_rt_0.02": true,
+      "recommended_depth": 2,
+      "rationale": "depth-2 (one re-plan) recovers gold beyond depth-1 net of its doubled round-trip"
+    },
+    "detection_comparison": {
+      "stronger_agent_detection_lift": {
+        "point": -0.0296,
+        "lo": -0.0715,
+        "hi": 0.0123,
+        "n": 406
+      },
+      "slice25_cheap_agent_lift": -0.1378
+    },
+    "implications": "KILL \u2014 even a stronger agent on the break-even cells does NOT beat ce_score net of round-trip. The L2 prototype (Slice 35) DROPS the agent-signal loop (feedback_arm=False; router stays on internal ce_score); record_feedback STAYS instrumentation (overrides any F-8b promote)."
+  },
+  "total_spent_usd": 3.6642,
+  "elapsed_s": 1171.3
+}
