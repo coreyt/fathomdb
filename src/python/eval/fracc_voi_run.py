@@ -40,7 +40,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 
 import numpy as np
 
@@ -210,7 +210,7 @@ def load_stage_a() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in recs:
         intent = LME_CLASS_TO_INTENT.get(r["reporting_class"], r["reporting_class"])
-        alpha = INTENT_ALPHA.get(intent, DEFAULT_ALPHA)
+        alpha = INTENT_ALPHA.get(cast(str, intent), DEFAULT_ALPHA)
         gold = [str(g) for g in r["gold"]]
         ranked = reblend(r["pool"], alpha=alpha, pool_n=50)
         # tail beyond pool_n keeps base order (engine contract) for honest top-K
@@ -437,11 +437,11 @@ def run_value_of_signal(
 
     # ce_score thresholded predictor: best-balanced-accuracy threshold + a pinned 0.5.
     def bal_acc(pred: Sequence[int], lab: Sequence[int]) -> float:
-        pred, lab = np.asarray(pred), np.asarray(lab)
-        pos = lab == 1
-        neg = lab == 0
-        tpr = float(pred[pos].mean()) if pos.any() else 0.0
-        tnr = float((1 - pred[neg]).mean()) if neg.any() else 0.0
+        pred_a, lab_a = np.asarray(pred), np.asarray(lab)
+        pos = lab_a == 1
+        neg = lab_a == 0
+        tpr = float(pred_a[pos].mean()) if pos.any() else 0.0
+        tnr = float((1 - pred_a[neg]).mean()) if neg.any() else 0.0
         return (tpr + tnr) / 2.0
 
     thr_grid = sorted(set(round(c, 4) for c in ce))
@@ -729,7 +729,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     # The REALIZED value of THIS measured cheap agent is a separate, decisive number
     # (deliverable 1): does the agent beat the FREE internal ce_score? It does not.
     measured_p_catch = vos.get("p_catch_estimate") if isinstance(vos, dict) else None
-    agent_lift = (vos.get("lift_agent_minus_ce_acc") if isinstance(vos, dict) else None) or {}
+    agent_lift = cast(
+        "dict[str, Any]",
+        (vos.get("lift_agent_minus_ce_acc") if isinstance(vos, dict) else None) or {},
+    )
     agent_beats_ce = bool(agent_lift.get("hi") is not None and agent_lift.get("lo") is not None
                           and agent_lift["lo"] > 0)
 
@@ -798,7 +801,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "kill_check": kill,
         "p_catch_grid_oracle": 1.0,
         "measured_agent_p_catch": measured_p_catch,
-        "total_spent_usd": round(vos.get("spent_usd", 0.0) or 0.0, 4) if isinstance(vos, dict) else 0.0,
+        "total_spent_usd": round(cast(float, vos.get("spent_usd", 0.0) or 0.0), 4) if isinstance(vos, dict) else 0.0,
         "elapsed_s": round(time.time() - t0, 1),
     }
     Path(args.out).write_text(json.dumps(out, indent=2, default=str), encoding="utf-8")

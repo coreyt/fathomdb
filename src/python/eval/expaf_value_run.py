@@ -50,7 +50,7 @@ import re
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 
 import numpy as np
 
@@ -110,7 +110,7 @@ def load_pool_records() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in recs:
         intent = LME_CLASS_TO_INTENT.get(r["reporting_class"], r["reporting_class"])
-        alpha = INTENT_ALPHA.get(intent, DEFAULT_ALPHA)
+        alpha = INTENT_ALPHA.get(cast(str, intent), DEFAULT_ALPHA)
         gold = [str(g) for g in r["gold"]]
         ranked = reblend(r["pool"], alpha=alpha, pool_n=POOL_N)
         ranked_ids = [str(p["doc_id"]) for p in ranked]
@@ -349,10 +349,10 @@ def analyse(records: dict[str, dict[str, Any]], sample: list[dict[str, Any]],
     agent_top1 = [r["d1_top1_relevant"] for r in rows]
 
     def bal_acc(pred: Sequence[int], lab: Sequence[int]) -> float:
-        pred, lab = np.asarray(pred), np.asarray(lab)
-        pos, neg = lab == 1, lab == 0
-        tpr = float(pred[pos].mean()) if pos.any() else 0.0
-        tnr = float((1 - pred[neg]).mean()) if neg.any() else 0.0
+        pred_a, lab_a = np.asarray(pred), np.asarray(lab)
+        pos, neg = lab_a == 1, lab_a == 0
+        tpr = float(pred_a[pos].mean()) if pos.any() else 0.0
+        tnr = float((1 - pred_a[neg]).mean()) if neg.any() else 0.0
         return (tpr + tnr) / 2.0
 
     thr_grid = sorted(set(round(c, 4) for c in ce_top))
@@ -376,8 +376,8 @@ def analyse(records: dict[str, dict[str, Any]], sample: list[dict[str, Any]],
         "acc_agent_top1": boot_ci(ag_corr, seed=BOOT_SEED),
         "acc_ce_best": boot_ci(ce_corr, seed=BOOT_SEED),
         "lift_agent_minus_ce_acc": boot_paired_diff(ag_corr, ce_corr, seed=BOOT_SEED),
-        "auc_ce_top": round(auc(ce_top, y), 4) if auc(ce_top, y) is not None else None,
-        "auc_agent_top1_binary": round(auc(agent_top1, y), 4) if auc(agent_top1, y) is not None else None,
+        "auc_ce_top": round(cast(float, auc(ce_top, y)), 4) if auc(ce_top, y) is not None else None,
+        "auc_agent_top1_binary": round(cast(float, auc(agent_top1, y)), 4) if auc(agent_top1, y) is not None else None,
         "slice25_cheap_agent_lift": -0.1378,
     }
 

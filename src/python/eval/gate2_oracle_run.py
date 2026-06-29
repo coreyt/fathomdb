@@ -77,7 +77,7 @@ def arm_selection_bound() -> dict[str, Any]:
     for cls in classes:
         per = {a: rl[a]["per_class"][cls]["recall_at_10"] for a in arms}
         fused = per["fathomdb_fused"]
-        best_arm = max(per, key=per.get)
+        best_arm = max(per, key=lambda a: per[a])
         best = per[best_arm]
         lme[cls] = {
             "intent": GAP_TO_INTENT.get(cls, cls),
@@ -92,7 +92,7 @@ def arm_selection_bound() -> dict[str, Any]:
     fa = m1["five_arm_pooled_ge3hop"]
     f1 = {k: v["f1"] for k, v in fa.items()}
     fused_f1 = f1["fused"]
-    best_arm_mh = max(f1, key=f1.get)
+    best_arm_mh = max(f1, key=lambda k: f1[k])
     multihop = {
         "intent": "multi_hop",
         "metric": "answer F1 (>=3-hop pooled, n=144)",

@@ -43,7 +43,7 @@ import json
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 
 import numpy as np
 
@@ -140,7 +140,7 @@ def _intent_of(record: dict[str, Any]) -> Optional[str]:
     if record.get("intent"):
         return record["intent"]
     cls = record.get("reporting_class")
-    return LME_CLASS_TO_INTENT.get(cls, cls)
+    return LME_CLASS_TO_INTENT.get(cast(str, cls), cls)
 
 
 def recall_at_k_deep_for_pool(pool: Sequence[dict[str, Any]], gold: Sequence[str], k: int) -> float:
