@@ -9,8 +9,8 @@
 // `rethrowTyped`.
 
 import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
-import { InvalidArgumentError, rethrowTyped } from "./errors.js";
-import type { NodeRecord } from "./read.js";
+import { InvalidArgumentError, InvalidFilterError, rethrowTyped } from "./errors.js";
+import type { NodeRecord, Predicate } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
@@ -120,6 +120,80 @@ export interface SearchFilter {
   kind?: string;
   createdAfter?: number;
   status?: string;
+}
+
+/**
+ * 0.8.11 Slice 40 (#17) — one term of the unified `Filter` grammar (G4 + G10),
+ * a discriminated union mirroring `fathomdb_engine::FilterTerm`
+ * (ADR-0.8.11, Option A). Exactly five variants: the four G10 shorthand metadata
+ * fields plus the general G4 json-path `Predicate` (`json`). The `json` term is
+ * accepted on `read.listFilter` but **typed-rejected** on `search` (D3: an
+ * arbitrary json-path predicate is never demoted to a post-KNN `json_extract`).
+ */
+export type FilterTerm =
+  | { term: "source_type"; value: string }
+  | { term: "kind"; value: string }
+  | { term: "created_after"; value: number }
+  | { term: "status"; value: string }
+  | { term: "json"; predicate: Predicate };
+
+/**
+ * 0.8.11 Slice 40 (#17) — the unified, closed `Filter` contract. ONE typed
+ * surface (implicit-AND `terms`) dispatched to two backends: the vec0-metadata
+ * indexed pre-KNN `WHERE` for `search`, and `json_extract` over
+ * `canonical_nodes.body` for `read.listFilter`. The shipped `SearchFilter` (G10)
+ * and `Predicate` lists (G4) re-express as sugar that lowers into this type (D4).
+ * Mirrors the Python `fathomdb.filter.Filter` (cross-binding parity, X1).
+ */
+export interface Filter {
+  terms: FilterTerm[];
+}
+
+const VEC0_JSON_REJECT =
+  "arbitrary json-path predicate not supported on search_filtered; it would " +
+  "require a post-KNN json_extract that defeats the indexed pre-KNN filter " +
+  "(ADR-0.8.11 D3 no-demotion guarantee)";
+
+function isUnifiedFilter(f: SearchFilter | Filter | undefined): f is Filter {
+  return f !== undefined && Array.isArray((f as Filter).terms);
+}
+
+/**
+ * vec0 (`search`) backend lowering of the unified `Filter` to the shipped
+ * `SearchFilter` sugar. Typed-rejects a `json` term with `InvalidFilterError`
+ * (D3 no-demotion guarantee); the lowering is canonical-order-independent.
+ */
+export function filterToSearchFilter(filter: Filter): SearchFilter {
+  const sf: SearchFilter = {};
+  for (const t of filter.terms) {
+    switch (t.term) {
+      case "source_type":
+        sf.sourceType = t.value;
+        break;
+      case "kind":
+        sf.kind = t.value;
+        break;
+      case "created_after":
+        sf.createdAfter = t.value;
+        break;
+      case "status":
+        sf.status = t.value;
+        break;
+      case "json":
+        throw new InvalidFilterError(VEC0_JSON_REJECT);
+    }
+  }
+  return sf;
+}
+
+/** D4 sugar: re-express a shipped `SearchFilter` as the unified `Filter`. */
+export function searchFilterToFilter(sf: SearchFilter): Filter {
+  const terms: FilterTerm[] = [];
+  if (sf.sourceType !== undefined) terms.push({ term: "source_type", value: sf.sourceType });
+  if (sf.kind !== undefined) terms.push({ term: "kind", value: sf.kind });
+  if (sf.createdAfter !== undefined) terms.push({ term: "created_after", value: sf.createdAfter });
+  if (sf.status !== undefined) terms.push({ term: "status", value: sf.status });
+  return { terms };
 }
 
 /**
@@ -435,7 +509,7 @@ export class Engine {
 
   async search(
     query: string,
-    filter?: SearchFilter,
+    filter?: SearchFilter | Filter,
     rerankDepth?: number,
     useGraphArm?: boolean,
     alpha?: number,
@@ -443,6 +517,11 @@ export class Engine {
     explain?: boolean,
   ): Promise<SearchResult> {
     validateFfiString(query);
+    // 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search path;
+    // lower to the SearchFilter sugar (typed-rejects a `json` term, D3).
+    if (isUnifiedFilter(filter)) {
+      filter = filterToSearchFilter(filter);
+    }
     // G10 filter strings cross the FFI like `query` and must clear the same
     // AC-068a/AC-068b guard. napi-rs lossily replaces lone UTF-16 surrogates
     // with U+FFFD before the Rust-side guard runs (see validation.ts), so —

@@ -14,6 +14,7 @@ from fathomdb._fathomdb import IngestWithExtractorReceipt
 from fathomdb._fathomdb import rerank
 from fathomdb.config import EngineConfig
 from fathomdb.engine import Engine
+from fathomdb.filter import Filter
 from fathomdb.types import (
     CounterSnapshot,
     ExpandedNode,
@@ -35,6 +36,7 @@ __all__ = [
     "CounterSnapshot",
     "Engine",
     "EngineConfig",
+    "Filter",
     "IngestWithExtractorReceipt",
     "ExpandedNode",
     "Explanation",
