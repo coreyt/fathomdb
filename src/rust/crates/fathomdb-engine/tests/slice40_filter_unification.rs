@@ -13,6 +13,7 @@
 //!   - a **shared-fixture parity** assertion: one DB, one logical predicate,
 //!     asserted on BOTH `search_filter` (vec0 pre-KNN) and `read_list_filter`
 //!     (canonical_nodes json_extract).
+//!
 //! No mocking of the database.
 
 use std::sync::Arc;

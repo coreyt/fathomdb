@@ -229,6 +229,7 @@ the explicit no-demotion guarantee.
 
 **`read.list` (canonical_nodes backend — `json_extract`):** accepts the **full**
 set. Lowering:
+
 - `Json(p)` → `p.to_sql_clause(param_idx)` (`lib.rs:1389-1426`), the shipped path.
 - `Status(s)` → `Predicate::json_path_eq("$.status", Text(s))`.
 - `CreatedAfter(b)` → `Predicate::json_path_compare("$.created_at", Gte, Integer(b))`.
@@ -383,7 +384,7 @@ Engine: `src/rust/crates/fathomdb-engine/src/lib.rs` — `SearchFilter` `:1487-1
 `is_unfiltered` `:1499-1504`; vec0 compilation `vector_filter_clause` `:5469-5494`,
 `vector_filter_values` `:5499-5521`, `build_vector_phase1_sql` `:5528-5545`,
 `vector_phase1_sql_for_test` `:5552-5554`, `text_hit_passes_filter` `:5556+`;
-`status='' ` sentinel INSERTs `:4136-4138,4952-4954,7815-7817`; vec0 Pack-2 shape
+`status=''` sentinel INSERTs `:4136-4138,4952-4954,7815-7817`; vec0 Pack-2 shape
 `vector_partition_create_sql` `:8439-8451`; `PREDICATE_PATH_ALLOWLIST` `:1310-1311`;
 `Predicate` enum `:1325-1330` + constructors `:1337,1349` + `to_sql_clause`
 `:1389-1426` + `bind_value` `:1429-1439`; `Engine::read_list` `:501-506`, dispatch

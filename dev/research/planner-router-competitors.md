@@ -124,14 +124,14 @@ core thesis without an LLM in the loop.
 
 ## Sources
 
-- Adaptive-RAG: https://arxiv.org/abs/2403.14403 / https://arxiv.org/html/2403.14403v2 (NAACL 2024)
-- Self-RAG: https://arxiv.org/abs/2310.11511 (ICLR 2024) / https://selfrag.github.io/
-- FLARE: https://arxiv.org/abs/2305.06983 (EMNLP 2023) / https://github.com/jzbjyb/FLARE
-- DRAGIN: https://arxiv.org/abs/2403.10081 (ACL 2024)
-- Self-Route (RAG vs Long-Context): https://arxiv.org/abs/2407.16833 / https://aclanthology.org/2024.emnlp-industry.66/
-- RouterRetriever: https://arxiv.org/abs/2409.02685
-- RAGRouter-Bench: https://arxiv.org/abs/2602.00296 ; baseline study https://arxiv.org/abs/2604.03455
-- IRCoT: https://arxiv.org/abs/2212.10509 (ACL 2023) / https://github.com/StonyBrookNLP/ircot
-- HippoRAG: https://arxiv.org/abs/2405.14831 (NeurIPS 2024); HippoRAG 2: https://www.emergentmind.com/topics/hipporag-2
-- LlamaIndex routers: https://docs.llamaindex.ai/en/stable/module_guides/querying/router/
-- LongMemEval / LOCOMO: https://www.emergentmind.com/topics/locomo-and-longmemeval-_s-benchmarks
+- Adaptive-RAG: <https://arxiv.org/abs/2403.14403> / <https://arxiv.org/html/2403.14403v2> (NAACL 2024)
+- Self-RAG: <https://arxiv.org/abs/2310.11511> (ICLR 2024) / <https://selfrag.github.io/>
+- FLARE: <https://arxiv.org/abs/2305.06983> (EMNLP 2023) / <https://github.com/jzbjyb/FLARE>
+- DRAGIN: <https://arxiv.org/abs/2403.10081> (ACL 2024)
+- Self-Route (RAG vs Long-Context): <https://arxiv.org/abs/2407.16833> / <https://aclanthology.org/2024.emnlp-industry.66/>
+- RouterRetriever: <https://arxiv.org/abs/2409.02685>
+- RAGRouter-Bench: <https://arxiv.org/abs/2602.00296> ; baseline study <https://arxiv.org/abs/2604.03455>
+- IRCoT: <https://arxiv.org/abs/2212.10509> (ACL 2023) / <https://github.com/StonyBrookNLP/ircot>
+- HippoRAG: <https://arxiv.org/abs/2405.14831> (NeurIPS 2024); HippoRAG 2: <https://www.emergentmind.com/topics/hipporag-2>
+- LlamaIndex routers: <https://docs.llamaindex.ai/en/stable/module_guides/querying/router/>
+- LongMemEval / LOCOMO: <https://www.emergentmind.com/topics/locomo-and-longmemeval-_s-benchmarks>
