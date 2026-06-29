@@ -1,0 +1,312 @@
+{
+  "schema": "0.8.11-fracc-base-v1",
+  "slice": 20,
+  "experiment": "EXP-Fr-acc base",
+  "intent_classes": [
+    "needle",
+    "multi_session",
+    "temporal",
+    "global",
+    "multi_hop"
+  ],
+  "classifier": {
+    "method": "lexical TF-IDF nearest-centroid (Rocchio), pure-numpy, stratified 5-fold CV",
+    "note_env": "no torch/sklearn in venv; embedding-based variant unavailable \u2192 lexical $0 fallback proxy measured",
+    "cost_usd": 0.0,
+    "chance": 0.2,
+    "n_per_class": 100,
+    "n_total": 500,
+    "pool_sizes": {
+      "needle": 1136,
+      "multi_session": 431,
+      "temporal": 471,
+      "global": 100,
+      "multi_hop": 2412
+    },
+    "k_folds": 5,
+    "seed": 0,
+    "per_class_accuracy": {
+      "needle": {
+        "point": 0.5,
+        "lo": 0.4,
+        "hi": 0.6,
+        "n": 100
+      },
+      "multi_session": {
+        "point": 0.63,
+        "lo": 0.54,
+        "hi": 0.72,
+        "n": 100
+      },
+      "temporal": {
+        "point": 0.77,
+        "lo": 0.68975,
+        "hi": 0.85,
+        "n": 100
+      },
+      "global": {
+        "point": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "n": 100
+      },
+      "multi_hop": {
+        "point": 0.94,
+        "lo": 0.89,
+        "hi": 0.98,
+        "n": 100
+      }
+    },
+    "macro_accuracy": {
+      "point": 0.768,
+      "lo": 0.732,
+      "hi": 0.802,
+      "n": 500
+    },
+    "confusion_matrix": {
+      "needle": {
+        "needle": 50,
+        "multi_session": 20,
+        "multi_hop": 16,
+        "temporal": 14
+      },
+      "multi_session": {
+        "multi_session": 63,
+        "needle": 24,
+        "global": 2,
+        "temporal": 5,
+        "multi_hop": 6
+      },
+      "temporal": {
+        "temporal": 77,
+        "multi_session": 4,
+        "needle": 10,
+        "multi_hop": 9
+      },
+      "global": {
+        "global": 100
+      },
+      "multi_hop": {
+        "multi_hop": 94,
+        "temporal": 3,
+        "needle": 1,
+        "multi_session": 2
+      }
+    },
+    "kill_check": {
+      "rule": "accuracy at chance (CI lo <= 0.200) for >=2 classes",
+      "classes_at_chance": [],
+      "kill": false,
+      "disposition": "PASS: classifier usable as a fallback above chance for >=4 classes."
+    }
+  },
+  "misroute": {
+    "method": "oracle-context answer-quality: retrieval(direct) vs C(map-reduce/QFS); same judge both arms",
+    "model": "gemini-flash-lite",
+    "n_per_class": 25,
+    "distractors": 3,
+    "seed": 0,
+    "classes_measured": [
+      "needle",
+      "multi_session",
+      "temporal",
+      "multi_hop"
+    ],
+    "deferred_cells": {
+      "global": "reference-free sensemaking \u2192 decide_084 win-rate (EXP-B' priced arm), not gold-answer accuracy; global\u00d7retrieval (mis-route) + global\u00d7C (correct) deferred to the decide_084 axis",
+      "within_retrieval_config": "needle\u2192multi_session/temporal stacks differ by CONFIG (alpha/pool_n), not route \u2192 low-cost same-tier; the EXP-B'.5 forbidden-composition matrix owns those"
+    },
+    "matrix": {
+      "needle": {
+        "correct_route": "retrieval",
+        "route_retrieval_acc_judge": {
+          "point": 0.64,
+          "lo": 0.44,
+          "hi": 0.84,
+          "n": 25
+        },
+        "route_C_acc_judge": {
+          "point": 0.56,
+          "lo": 0.36,
+          "hi": 0.76,
+          "n": 25
+        },
+        "route_retrieval_acc_contains": {
+          "point": 0.36,
+          "lo": 0.2,
+          "hi": 0.56,
+          "n": 25
+        },
+        "route_C_acc_contains": {
+          "point": 0.24,
+          "lo": 0.08,
+          "hi": 0.44,
+          "n": 25
+        },
+        "delta_C_minus_retrieval_judge": {
+          "point": -0.08,
+          "lo": -0.28,
+          "hi": 0.12
+        }
+      },
+      "multi_session": {
+        "correct_route": "retrieval",
+        "route_retrieval_acc_judge": {
+          "point": 0.68,
+          "lo": 0.5190000000000001,
+          "hi": 0.84,
+          "n": 25
+        },
+        "route_C_acc_judge": {
+          "point": 0.72,
+          "lo": 0.5590000000000002,
+          "hi": 0.88,
+          "n": 25
+        },
+        "route_retrieval_acc_contains": {
+          "point": 0.12,
+          "lo": 0.0,
+          "hi": 0.24,
+          "n": 25
+        },
+        "route_C_acc_contains": {
+          "point": 0.16,
+          "lo": 0.04,
+          "hi": 0.32,
+          "n": 25
+        },
+        "delta_C_minus_retrieval_judge": {
+          "point": 0.04,
+          "lo": -0.12,
+          "hi": 0.24
+        }
+      },
+      "temporal": {
+        "correct_route": "retrieval",
+        "route_retrieval_acc_judge": {
+          "point": 0.16,
+          "lo": 0.04,
+          "hi": 0.32,
+          "n": 25
+        },
+        "route_C_acc_judge": {
+          "point": 0.2,
+          "lo": 0.08,
+          "hi": 0.36,
+          "n": 25
+        },
+        "route_retrieval_acc_contains": {
+          "point": 0.04,
+          "lo": 0.0,
+          "hi": 0.12,
+          "n": 25
+        },
+        "route_C_acc_contains": {
+          "point": 0.04,
+          "lo": 0.0,
+          "hi": 0.12,
+          "n": 25
+        },
+        "delta_C_minus_retrieval_judge": {
+          "point": 0.04,
+          "lo": -0.08,
+          "hi": 0.2
+        }
+      },
+      "multi_hop": {
+        "correct_route": "retrieval",
+        "route_retrieval_acc_judge": {
+          "point": 0.16,
+          "lo": 0.04,
+          "hi": 0.32,
+          "n": 25
+        },
+        "route_C_acc_judge": {
+          "point": 0.2,
+          "lo": 0.04,
+          "hi": 0.36,
+          "n": 25
+        },
+        "route_retrieval_acc_contains": {
+          "point": 0.16,
+          "lo": 0.04,
+          "hi": 0.32,
+          "n": 25
+        },
+        "route_C_acc_contains": {
+          "point": 0.2,
+          "lo": 0.04,
+          "hi": 0.36,
+          "n": 25
+        },
+        "delta_C_minus_retrieval_judge": {
+          "point": 0.04,
+          "lo": -0.12,
+          "hi": 0.2
+        }
+      }
+    },
+    "load_bearing_needle_to_C": {
+      "prior": -0.362,
+      "measured_delta": -0.08,
+      "ci": [
+        -0.28,
+        0.12
+      ],
+      "confirmed_negative": false,
+      "base_3distractors": {
+        "delta": -0.08,
+        "ci": [
+          -0.28,
+          0.12
+        ],
+        "confirmed_negative": false
+      },
+      "deep_8distractors": {
+        "delta": -0.3,
+        "ci": [
+          -0.475,
+          -0.1
+        ],
+        "confirmed_negative": true
+      },
+      "interpretation": "needle is the UNIQUE class with a negative delta_C (router-isolation confirmed); the penalty SCALES with map-reduce breadth: -0.080 [-0.28,+0.12] at 3 distractors (CI crosses 0) \u2192 -0.300 [-0.47,-0.10] at 8 distractors (CI excludes 0; \u2248 the prior -0.362). The prior -0.362 was a weak-distiller (gpt-5-nano) artifact (0.8.3 ledger); reproduced here with a competent cheap summarizer once the QFS reads enough chunks."
+    },
+    "cost": {
+      "n_calls": 886,
+      "prompt_tokens": 441348,
+      "completion_tokens": 7856
+    },
+    "spent_usd": 0.0236,
+    "status": "OK",
+    "sensitivity_needle_deep": {
+      "rationale": "needle\u2192C penalty scales with map-reduce breadth (chunks the QFS must distill); base arm uses 3 distractors, this probes 8 (a map-reduce that reads more)",
+      "n_per_class": 40,
+      "distractors": 8,
+      "model": "gemini-flash-lite",
+      "route_retrieval_acc_judge": {
+        "point": 0.75,
+        "lo": 0.625,
+        "hi": 0.875,
+        "n": 40
+      },
+      "route_C_acc_judge": {
+        "point": 0.45,
+        "lo": 0.3,
+        "hi": 0.6006249999999965,
+        "n": 40
+      },
+      "delta_C_minus_retrieval_judge": {
+        "point": -0.3,
+        "lo": -0.475,
+        "hi": -0.1
+      },
+      "delta_C_minus_retrieval_contains": {
+        "point": -0.225
+      },
+      "spent_usd": 0.0173,
+      "reproduce": "python -m eval.fracc_classifier_run --classes needle --misroute-n 40 --distractors 8"
+    }
+  },
+  "total_spent_usd": 0.0409
+}
