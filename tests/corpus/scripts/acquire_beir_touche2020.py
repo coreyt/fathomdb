@@ -79,7 +79,7 @@ MANIFEST_PATH = Path(__file__).resolve().parent / "manifest.json"
 # ── expected sizes (warn if upstream changes) ──────────────────────────────────
 EXPECT_CORPUS = 382_545
 EXPECT_QUERIES = 49
-EXPECT_QRELS = 2_858   # total relevance judgments in test split
+EXPECT_QRELS = 2_214   # total relevance judgments in test split (HF; source has 2858 but 644 pairs missing)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
