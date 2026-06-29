@@ -265,13 +265,14 @@
       "query_count": 3237,
       "qrel_counts": {
         "train": 110575,
-        "dev": 0,
+        "validation": 11385,
         "test": 12334
       },
       "corpus_sha256": "8b543fe84cd63b7bed21b8a73c8f038a503a909542510f27925ea5a363311cbc",
       "queries_sha256": "b248055bbafa821fef71633d90c0c1cc03b863b8c001ce4097c1200159ac4abc",
       "qrels_sha256": {
         "train": "f0c3156d92336e979dca5e5226055a3709f5e543426e5ea99eb353c7136502c3",
+        "validation": "4f1032ac390dd4b7f428581c9361cefaaf69cfb7e9875dc8d60fc95e749cab8a",
         "test": "d32d000be0bc8259f5e358a35219abf575099ae7b00c9a918dab0cc3a5c6cfd7"
       },
       "acquired_at": "2026-06-28"
