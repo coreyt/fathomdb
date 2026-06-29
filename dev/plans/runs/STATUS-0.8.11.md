@@ -22,7 +22,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
 | 25 | EXP-Fr-acc/VoI finalize | E | **DONE** | $0.0151; CE reranker ACTIVE (guarded). Value-of-signal: cheap agent (`gemini-flash-lite`) relevance **DOMINATED by free `ce_score`** — lift −0.138 [−0.189,−0.087] (n=450), AUC ce 0.667 vs 0.545 → **QUALIFIED KILL (cheap agent)**: ask-or-not buys nothing, route on internal `ce_score`. Asymmetric weighting **CONFIRMED** (6× cost ratio, c_rt\* 0.30 vs 0.05; cross-wire rare 4/606). VoI landscape (low-ce+narrow-margin) → EXP-AF (Slice 30). Ledger row RESOLVED |
 | 30 | EXP-AF value test (KILL/GO) | E | **DONE** | $3.66/$5; **KILL** (HITL #4). Stronger agent (`claude-sonnet`) on Slice-25 break-even cells (ce_top<0.2, n=406) does NOT beat `ce_score` net of round-trip: depth-1 reranking lift +0.0074 [−0.0074,+0.0222] (CI spans 0 even @c_rt=0); NET @c_rt=0.02 −0.0126 [−0.0274,+0.0022]. Realized 6% of the 0.118 headroom (promoted 6/demoted 3) → signal-bound. Detection −0.0296 [−0.0715,+0.0123] (closes most of cheap-agent −0.138 gap, still loses). Depth-2 gross+ but net-neg → one-shot. → L2 prototype (Slice 35) drops feedback arm; `record_feedback` STAYS instrumentation (overrides F-8b promote). Ledger row RESOLVED |
-| 35 | L2 router prototype + pre-stage | E | pending | blocked-by 15∧25∧30 |
+| 35 | L2 router prototype + pre-stage | E | **DONE** | $0, CALLER-SIDE (commit `523fca3d`). `recommend(query,*,agent_hint=None)->Recommendation` recommends a stack WITHOUT executing; registry built from EXP-B′+Gate-2. Smoke test **42/0**. **R-L2-1..4 met**: all 5 classes route (1); each carries a registered tuple + cost_tier (2); `agent_hint` verbatim conf 1.0, no fallback, unknown raises (3); ZERO diff to `src/rust`/`src/python/fathomdb`/`src/ts`, `fathomdb` never imported (4). Provenance honest: 3 measured (needle/multi_session/temporal) + 2 provisional (global/multi_hop); confidence header = SCREENING DATA, 0.8.15 re-validates. `feedback_arm=False` hard-wired (EXP-AF KILL); EXP-B′.5 forbidden-composition validator seam (`check_forbidden`) inherited by 0.8.15. `dev/prototypes/l2-router/` + handoff `runs/slice-35-l2-prototype.md` |
 | 40 | #17 filter-grammar + F-8b exec | G | **DONE** | merged `slice-40`→`0.8.11`; unified `Filter`+2 backends (no reserved-gap); Rust 6/0 + G10 byte-identity pin 6/0; **X1 GREEN** Py 31 (filter-unif 23 + read.list 8) + TS 26; F-8b = KEEP instrumentation (no allowlist change; revisit iff EXP-AF GO); rebuilt `.venv` w/ `default-reranker`+`default-embedder`+`test-hooks` |
 | 45 | Verification + release readiness | — | pending | blocked-by 5–40 |
 
@@ -72,6 +72,24 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
 
 ## Verification log
 
+- 2026-06-28: **Slice 35 DONE ($0, CALLER-SIDE) — L2 router prototype + dispatcher pre-stage**
+  (commit `523fca3d`; `dev/prototypes/l2-router/{router,build_registry,test_smoke}.py` +
+  `registry.json` + `README.md`; hand-off `runs/slice-35-l2-prototype.md`). `recommend(query, *,
+  agent_hint=None) -> Recommendation` (frozen dataclass `intent/stack/config/confidence/cost_tier/
+  rationale/feedback_arm`) **recommends a stack WITHOUT executing retrieval**. Intent resolution
+  (PSD §II.A): `agent_hint` verbatim (conf 1.0, **no** classifier fallback) else internal lexical
+  Rocchio classifier (Slice-20 mirror, lower-bound proxy). Registry generated from
+  `expb-joint-tune-output.json` (per-intent tuples + B′.5 guard) + `gate2-oracle-output.json`
+  (per-arm cost tiers → bucketed `cost_tier`); provenance honest: **3 measured** (needle/
+  multi_session/temporal) + **2 provisional** (global/multi_hop EXP-0 pins); `confidence_header` =
+  SCREENING DATA, **0.8.15 must re-validate**. `feedback_arm=False` hard-wired (EXP-AF KILL — router
+  stays on internal `ce_score`, no agent-signal loop). EXP-B′.5 **forbidden-composition validator
+  seam** (`check_forbidden` → `ForbiddenCompositionError`; map_reduce_qfs/community_summary
+  `global`-only) the 0.8.15 plan validator inherits. **Smoke test 42 passed / 0 failed (exit 0).**
+  **R-L2-1..4 met:** all 5 classes route (1); each carries a registered tuple + valid cost_tier (2);
+  `agent_hint` verbatim/conf 1.0/overrides query text/unknown raises — no silent fallback (3);
+  **zero diff to `src/rust` / `src/python/fathomdb` / `src/ts`**, `fathomdb` never in `sys.modules`,
+  no retrieval executed (4). Ledger: Track-E L2-prototype row closed (Slice 35 = last Track-E slice).
 - 2026-06-28: **Slice 30 DONE ($3.66/$5) — KILL (HITL #4).** EXP-AF agent-feedback value test
   (`expaf-value-output.json` + `expaf-value.md`, `eval/expaf_value_run.py`; pricing alias pinned in
   `eval/gap_decomposition_run.py`). **CE-active guard PASS** (same as Slice 25). The decisive test:
