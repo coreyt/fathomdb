@@ -34,7 +34,7 @@ Output layout (BEIR standard):
     queries.jsonl         — one query per line: {"_id", "text"}
     qrels/
       train.tsv           — tab-sep: query-id \\t corpus-id \\t score
-      dev.tsv
+      validation.tsv
       test.tsv
 """
 
@@ -70,8 +70,8 @@ QUERIES_PATH = OUT_DIR / "queries.jsonl"
 MANIFEST_PATH = Path(__file__).resolve().parent / "manifest.json"
 
 EXPECT_CORPUS = 3_633
-EXPECT_QUERIES = 3_237   # total queries across all splits (train+dev+test)
-QREL_SPLITS = ["train", "dev", "test"]
+EXPECT_QUERIES = 3_237   # total queries across all splits (train+validation+test)
+QREL_SPLITS = ["train", "validation", "test"]
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

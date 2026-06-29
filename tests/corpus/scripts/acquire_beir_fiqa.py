@@ -25,8 +25,8 @@ Role:     BM25 vs dense DISCRIMINATOR — "dense wins" leg.  Dense nDCG@10 ≥29
           the recommended discriminator pair for FathomDB's external nDCG@10
           reporting.
 
-Corpus:   57,638 documents; 648 test queries; Rel D/Q = 2.6.
-          Splits: train/dev/test queries + qrels.
+Corpus:   57,638 documents; 6,648 queries total (train/validation/test); 648 test queries.
+          Splits: train/validation/test queries + qrels.
 
 Output layout (BEIR standard):
   data/corpus-data/raw/beir/fiqa/
@@ -34,7 +34,7 @@ Output layout (BEIR standard):
     queries.jsonl         — one query per line: {"_id", "text"}
     qrels/
       train.tsv           — tab-sep: query-id \\t corpus-id \\t score
-      dev.tsv
+      validation.tsv
       test.tsv
 """
 
@@ -70,8 +70,8 @@ QUERIES_PATH = OUT_DIR / "queries.jsonl"
 MANIFEST_PATH = Path(__file__).resolve().parent / "manifest.json"
 
 EXPECT_CORPUS = 57_638
-EXPECT_QUERIES = 648     # total across all splits
-QREL_SPLITS = ["train", "dev", "test"]
+EXPECT_QUERIES = 6_648   # total across all splits (train+validation+test)
+QREL_SPLITS = ["train", "validation", "test"]
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
