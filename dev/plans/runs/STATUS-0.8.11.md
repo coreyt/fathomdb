@@ -18,7 +18,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | **0** | ADRs + ladder pre-registration + STATUS standup | — | **DONE** | contracts ✅; STATUS ✅; ADR-0.8.11 ✅ (`a9ba8a5a`); ledger scaffold ✅ (F-11 rows REGISTERED); 2 HITL Slice-0 decisions ✅ (A / conditional) |
 | 5 | Gate-0 + Gate-2 (eval foundation) | E | **DONE** | $0; Gate-0 re-scope + Gate-2 oracle ceiling (+0.392 reconciled); ledger rows RESOLVED |
 | 10 | EXP-A ‖ EXP-M4 | E | **DONE** | $0; EXP-A **GO** (multi_session gold-in-pool @10→@200 +0.45/+0.40, CI clears floor; candidate_k=200, not saturated); EXP-M4 **KEEP bge-small** (no swap-candidate clears eu7 re-clear+cost; GPU device-invariance ✅); ledger rows RESOLVED |
-| 15 | EXP-B′ joint tuning (KEYSTONE) | E | pending | blocked-by 10 (A∧M4) |
+| 15 | EXP-B′ joint tuning (KEYSTONE) | E | **DONE** | $0; per-intent optima DIVERGE (3 distinct → NO KILL, routing has value); crux reproduced (pooled α=1.0 ck200 pn10→50 r@10 0.540→0.498, needle-specific); B′.5 catches real regressions (multi_session opt→needle −0.147); global+multi_hop provisional; build-blocker (CE feature OFF→0.8.3 CE-pass); ledger EXP-B′/B′.5 rows RESOLVED |
 | 20 | EXP-Fr-acc base | E | **DONE** | ~$0.05; classifier macro 0.768 (NO KILL, all 5 > chance); needle→C asymmetry confirmed (only negative Δ_C; −0.300 [−0.47,−0.10] @8-distractor ≈ prior −0.362); ledger row RESOLVED |
 | 25 | EXP-Fr-acc/VoI finalize | E | pending | blocked-by 20 |
 | 30 | EXP-AF value test (KILL/GO) | E | pending | blocked-by 25; HITL #3 |
@@ -47,7 +47,7 @@ ceiling** (raised from $0, HITL 2026-06-28); running tally below.
 | Experiment | Ceiling | Spent | Status |
 | --- | ---: | ---: | --- |
 | Gate-0 (scoped labeling) | $1 | $0 | not started |
-| EXP-B′ judge | $6 | $0 | not started |
+| EXP-B′ judge | $6 | $0 | **DONE — $0** (judge not spent; gold sufficient, global provisional) |
 | EXP-Fr-acc base | $3 | ~$0.05 | **DONE** (gemini-flash-lite; local vLLM down) |
 | EXP-Fr-acc/VoI | $3 | $0 | not started |
 | EXP-AF | $5 | $0 | not started |
@@ -117,6 +117,22 @@ Gate-2 / EXP-A / EXP-M4 are $0 (local / GPU). No priced run starts before its pr
   (C forbidden on needle) supported → EXP-B′.5 `forbidden_ops`; asymmetry feeds Slice-25 VoI.
   Resilient harness (checkpoint/resume/`BudgetLedger` $3 guard); cheap-validated. Ledger EXP-Fr-acc
   row RESOLVED.
+- 2026-06-28: **Slice 15 DONE — KEYSTONE ($0/$6).** EXP-B′ + EXP-B′.5 (`expb-joint-tune-output.json`
+  + `expb-joint-tune.md`, `eval/expb_joint_tune_run.py`). Joint sweep candidate_k{200,300,500} ×
+  pool_n{10,20,50,100,200} × α{0,0.3,0.5,0.7,1.0} × final_K=10 over LME 606Q node-level gold.
+  **NO KILL — per-intent optima DIVERGE (3 distinct):** needle (200/50/0.7, r@10 **0.644**),
+  multi_session (300/100/1.0, **0.467**), temporal (500/20/1.0, **0.513**) → config-carrying router
+  has measured value. **Crux reproduced** (pooled α=1.0 ck200 pool_n 10→50 r@10 0.540→0.498,
+  Δ−0.041) and refined: **needle-specific** (multi_session/temporal do NOT drop). **B′.5:** static
+  router-isolation rule (`map_reduce_qfs`/`community_summary` global-only) + empirical
+  cross-application — **multi_session opt→needle r@10 −0.147**, temporal opt→needle −0.075 (clear
+  noise) → real joint regressions the 0.8.15 validator blocks. global+multi_hop pinned provisional
+  (global = decide_084 win-rate, no node labels; multi_hop = build-blocker). **Build-blocker (loud,
+  justified deviation):** .venv build compiled `rerank_fused` CE inference gated OFF
+  (`#[cfg(feature="default-reranker")]`→identity); rebuild forbidden → rerank tuple+crux from landed
+  0.8.3 CE-pass (same gold+weights, feature-ON), recall envelope fresh; `ce_norm_is_active` guard
+  added. **Judge $0** (gold sufficient). Ledger EXP-B′/EXP-B′.5 rows RESOLVED. *(24MB recall-pool
+  checkpoint not committed — regenerable; envelope preserved in output JSON.)*
 
 ## Experiments-ledger (F-11 closure tracker)
 

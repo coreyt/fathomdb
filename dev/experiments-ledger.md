@@ -337,8 +337,8 @@
 | Gate-2 | Oracle best-plan-per-query ceiling; per-arm cost tiers; reconcile +0.39-over-Mem0 | ceiling within noise of fused-RRF for all classes (routing buys ≈0) | $0 | 5 | **RESOLVED** — oracle-CONTEXT pooled **+0.392 [0.346,0.436]** (reconciles exactly; fresh recompute=priced→deferred); arm-selection headroom within recall noise → value = config-carrying tuning, not arm routing → detail below |
 | EXP-A | Wider candidate-gen lifts F2 recall@K_deep / gold-in-pool | no breadth lifts gold-in-pool (CI clears noise) | $0 | 10 | **RESOLVED — GO.** F2 multi_session gold-in-pool @10=0.20–0.275 → @candidate_k=200=0.65–0.675 (lift **+0.45/+0.40**; best-K CI-lo 0.50/0.525 clears the @10 floor); all 4 classes lift. Max at candidate_k=200 (not saturated → EXP-B′ test ≥200); per-query arm-log persisted (Slice-5 oracle enabler) → detail below |
 | EXP-M4 | Embedder swap-candidate beats bge-small net of re-whiten/re-clear (ceiling, GPU) | none beats bge-small (default keep; swap out-of-0.8.11) | $0 | 10 | **RESOLVED — KEEP bge-small.** No swap-candidate clears the gate net of eu7 re-clear+cost (s15a FULL n=10506): bge-base eu8 +0.024 but projected_eu7 0.786<0.90; e5-base-v2 0.896<0.90; nomic 0.932 but not cpu_feasible; gte-base measurement-failed. eu-0 raw r@10 confirms ordering, revises decision. GPU device-invariance ✅ (cosine 1.0, RTX 3090). Swap out-of-0.8.11 → HITL #2 → detail below |
-| EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | REGISTERED — pending |
-| EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | REGISTERED — pending |
+| EXP-B′ | Per-intent `(idx,retr,α,pool_n,MMR,recency)` optimum diverges; α=1.0@pool_n=50 drops r@10 | optima collapse to one global config | $6 | 15 | **RESOLVED — NO KILL ($0).** Optima DIVERGE (3 distinct over LME 606Q): needle (ck200,pn50,α0.7, r@10 **0.644** [0.59,0.70]) · multi_session (ck300,pn100,α1.0, **0.467** [0.39,0.55]) · temporal (ck500,pn20,α1.0, **0.513** [0.43,0.59]). **Crux reproduced** pooled: α=1.0 ck200 pool_n=10→50 r@10 0.540→0.498 (Δ−0.041) — but **needle-specific** (multi_session/temporal do NOT drop). global+multi_hop pinned provisional. Judge **not spent** (gold sufficient). **Build-blocker:** CE feature gated OFF in .venv → rerank tuple from landed 0.8.3 CE-pass (same gold+weights), recall envelope fresh → detail below |
+| EXP-B′.5 | A config for feature X must not regress feature Y (joint-regression guard) | — (guard output) | (incl) | 15 | **RESOLVED.** Forbidden-composition matrix emitted (map_reduce_qfs+community_summary `global`-only, forbidden elsewhere). Empirical cross-application: **multi_session optimum → needle r@10 −0.147** + **temporal optimum → needle −0.075** (both clear noise) — real joint regressions the 0.8.15 validator must block → detail below |
 | EXP-Fr-acc | 5-class classifier accuracy + asymmetric mis-route matrix (needle→C −0.362) | classifier at chance for ≥2 classes | $3 | 20 | **RESOLVED — NO KILL.** Internal-fallback classifier macro **0.768 [0.732,0.802]**, all 5 classes > 0.20 chance (needle weakest 0.500). Mis-route asymmetry confirmed: **needle is the ONLY negative Δ_C**; needle→C **scales with map-reduce breadth** −0.080 [−0.28,+0.12] @3-distractor → **−0.300 [−0.47,−0.10] @8-distractor** (CI excludes 0; ≈ prior −0.362). $0.05/$3 → detail below |
 | EXP-Fr-acc/VoI | value-of-signal + ask-or-not VoI break-even + asymmetric weighting | no `(ce_score,margin)` region with positive VoI | $3 | 25 | REGISTERED — pending |
 | EXP-AF | Agent relevance signal beats `ce_score`-only net of round-trip (1–2 depth) | signal does not beat `ce_score` net of round-trip (KILL → drop arm) | $5 | 30 | REGISTERED — pending |
@@ -436,6 +436,49 @@
 - **$:** **$0.** **Sources:** `dev/plans/runs/expm4-ceiling-output.json` + `expm4-ceiling.md`
   (`src/python/eval/expm4_embedder_ceiling_run.py`); reuses `runs/0.8.3-s15a-embedder.json`
   (`eval.s15a_embedder_probe`) + `research/eu-0/result_*.json`.
+
+### EXP-B′ + EXP-B′.5 — 3-stage joint tuning (Slice 15 KEYSTONE, RESOLVED 2026-06-28)
+
+- **Method ($0, LLM-free, deterministic).** Joint sweep `candidate_k {200,300,500} × pool_n
+  {10,20,50,100,200} × alpha {0,0.3,0.5,0.7,1.0} × final_K=10` per intent, over LME 606Q
+  node-level gold (factoid+knowledge_update→**needle** 306Q; **multi_session** 150Q; **temporal**
+  150Q). Rerank metric r@10/MRR re-blends `α·ce_norm+(1−α)·minmax(base)` over the top-`pool_n`
+  (mirrors engine `ce_rerank`); per-intent percentile bootstrap CI (2000×, seed 0xB5). Recall
+  envelope (gold-in-pool@candidate_k, base order) measured FRESH on the current engine (depth 500).
+- **Per-intent optima DIVERGE (KILL = NO):** needle `candidate_k=200, pool_n=50, α=0.7` → r@10
+  **0.644** [0.588,0.696]; multi_session `300/100/1.0` → **0.467** [0.387,0.547]; temporal
+  `500/20/1.0` → **0.513** [0.433,0.593]. 3 distinct signatures → the config-carrying router has
+  measured value (EXP-Fr routing-value case supported; DP-B registry is real, not a global pin).
+- **The §II.C crux — reproduced + refined.** Pooled α=1.0 candidate_k=200: pool_n=10→50 r@10
+  **0.540→0.498 (Δ−0.041)** — the constrained joint optimization (CE-confident distractors displace
+  base-favored gold). **New finding: it is needle-specific** — needle drops (0.641→0.510, Δ−0.131)
+  but multi_session (+0.08) and temporal (+0.02) do NOT (deeper pools help them). This is *why*
+  per-intent tuning beats a global config.
+- **Recall envelope confirms EXP-A:** gold-in-pool keeps rising past final_K=10 — needle @10 0.637 →
+  @200 0.899 → @500 0.915; multi_session @10 0.380 → @300 0.840; temporal @10 0.480 → @500 0.800.
+  candidate_k set per intent by cost-bounded saturation (smallest depth within 0.02 of max).
+- **EXP-B′.5 forbidden-composition guard.** (a) Static router-isolation rule emitted:
+  `map_reduce_qfs`+`community_summary` valid ONLY for `global`, `forbidden_ops` on
+  needle/multi_session/temporal/multi_hop (the §II.B blind-distiller, corroborated by EXP-Fr-acc's
+  needle→C −0.300). (b) **Empirical cross-application** (each optimum applied to the others):
+  **multi_session optimum → needle r@10 −0.147** and **temporal optimum → needle −0.075** both clear
+  noise (applied point < dst optimum CI-lo) — real joint regressions the 0.8.15 plan validator must
+  block. `any_optimum_regresses_another_intent = True`.
+- **Provisional tuples.** `global` (AP-News win-rate / decide_084; no node-level retrieval labels by
+  design) pinned EXP-0-global α=0.3/pool_n=10, sensemaking ops ALLOWED. `multi_hop` (MuSiQue) has
+  node-level gold but a fresh per-question fused+CE pass is blocked by the same build-blocker; pinned
+  provisional EXP-0-global pending a default-reranker build.
+- **Build-blocker (justified deviation, LOUD).** The installed `.venv` build compiled `rerank_fused`
+  with the CE inference block gated OFF (`#[cfg(feature="default-reranker")]` → identity passthrough;
+  `fathomdb.rerank` returns base order for all α/pool_n; the score=0 ce_norm trick yields all-zero
+  CE). Rebuild is forbidden by the slice prompt. **Resolution:** rerank tuple+crux measured on the
+  LANDED `0.8.3-rerank-tune.ce-pass.json` (same LME gold, same TinyBERT weights cached, feature-ON
+  build; real ce_norm max 0.9993); recall envelope measured fresh (CE-independent). A degeneracy
+  guard (`ce_norm_is_active`) refuses to derive a tuple from a feature-off pass. Reproduce fresh CE:
+  `maturin develop --features default-reranker`.
+- **$:** **$0** (of $6). LLM judge NOT spent — gold sufficient for the measured intents; `global` is
+  provisional by design. **Sources:** `dev/plans/runs/expb-joint-tune-output.json` +
+  `expb-joint-tune.md` (`src/python/eval/expb_joint_tune_run.py`, reproducible). PSD §II.B/§II.C, §3.
 
 ### EXP-Fr-acc base — classifier accuracy + asymmetric mis-route cost (Slice 20, RESOLVED 2026-06-28)
 
