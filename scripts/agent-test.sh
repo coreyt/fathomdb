@@ -17,6 +17,11 @@ run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gate
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
 
+# Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
+# partial-publish — embedder-api surface moved without an Axis-E bump).
+# Offline via a fixture http router; never hits crates.io.
+run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+
 # Scripts (bash): structural shape of the post-publish smoke scripts.
 # NOT integration — see test header for why behavior is exercised at tag
 # time by the release workflow, not here.

@@ -119,9 +119,9 @@ bump** on `main`. The canonical sequence for either kind of tag:
    on this heading.
 4. `bash scripts/release/local-dry-run.sh` — runs the validatable
    subset of `release.yml` on the developer host: gates preflight,
-   workspace build, leaf-crate package + dry-run publish. This is
-   the primary debug loop; CI dry-run dispatch becomes a final
-   confirmation.
+   Axis-E published-API drift guard, workspace build, leaf-crate
+   package + dry-run publish. This is the primary debug loop; CI
+   dry-run dispatch becomes a final confirmation.
 5. Single commit on `main`: `chore(release): bump to <version>`.
 6. Annotated tag at the bump commit: `git tag -a v<version>` and
    `git push origin v<version>`.
@@ -144,6 +144,31 @@ short-circuits dependent crates in `--dry-run` mode with an "skipped"
 diagnostic + exit 0; the real publish path is exercised by the actual
 tag push. Manifest correctness for dependent crates is enforced at
 real publish time inside `cargo publish`.
+
+### Axis-E published-API drift guard (prevents the v0.8.9 partial publish)
+
+`--no-verify` leaves one class of bug undetected until the real
+publish: a mismatch against an **already-published, version-unchanged**
+dependency. The `Embedder` trait
+(`src/rust/crates/fathomdb-embedder-api`, Axis E) gained a defaulted
+`embed_batch` method that `fathomdb-engine` started calling, but Axis E
+was not bumped. The published `fathomdb-embedder-api@0.6.0` therefore
+lacked the method, so the real `v0.8.9` publish failed at the engine
+tier's verify-compile (`error[E0599]: no method named embed_batch`)
+**after** schema/query/embedder had already uploaded immutably — a
+partial publish. Recovery was an Axis-E bump `0.6.0 -> 0.6.1`.
+
+`scripts/release/verify-embedder-api-no-drift.sh` closes this gap
+without needing the unpublished workspace siblings: if the local
+Axis-E version is already on crates.io, the local embedder-api source
+surface must match the published crate at that version; otherwise it
+fails pre-tag and tells the author to run `scripts/set-version.sh
+--embedder-api <next>`. A not-yet-published Axis-E version passes (it
+is verify-compiled for real at the T1 leaf publish). The guard runs in
+the `verify-release` preflight job and as step 2 of
+`scripts/release/local-dry-run.sh`; it is fail-closed (a missing tool
+or registry error is a hard failure, never a silent skip). Offline
+coverage: `scripts/tests/test_verify_embedder_api_no_drift.sh`.
 
 ### Idempotency contract (WF-FIX-1, 2026-05-25)
 
