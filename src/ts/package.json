@@ -1,6 +1,6 @@
 {
   "name": "fathomdb",
-  "version": "0.8.0",
+  "version": "0.8.9",
   "description": "TypeScript SDK for FathomDB — napi-rs binding to fathomdb-engine",
   "license": "Apache-2.0",
   "repository": {

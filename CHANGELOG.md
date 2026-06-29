@@ -8,7 +8,45 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
-(rolls into the next cut after 0.8.0 GA.)
+(rolls into the next cut after 0.8.9.)
+
+## 0.8.9 — 2026-06-28
+
+First publish since 0.8.0. The 0.8.1–0.8.9 work landed on `main` as a
+label-only line (manifests held at 0.8.0); this cut bumps the Axis-W version
+to 0.8.9 and ships the accumulated 0.8.x line to crates.io / PyPI / npm so
+downstream consumers can pin a real `0.8.9`. Axis E (`fathomdb-embedder-api`)
+intentionally stays at 0.6.0 (unchanged; the release pipeline's idempotency
+guard skips the already-published 0.6.0 at publish time). Engine behavior and
+the Python/TypeScript SDK surface are additive over 0.8.0; no public symbols
+were removed.
+
+### Added
+
+- **`embed` Python↔TypeScript parity (0.8.6).** Restores cross-binding `embed`
+  parity that had regressed to Python-only in 0.8.4; both SDKs now expose the
+  same surface.
+- **Per-task provider seam (0.8.6, OPP-8).** Per-task `fathomdb.<task>.v1`
+  provider identity; the extract path is byte-identical to 0.8.0.
+- **CE-rerank α exposed (0.8.5, EXP-0).** Cross-encoder rerank lever
+  (`alpha` / `pool_n` / `ce_score`) is exposed on the search path. Default
+  blend stays conservative (a product decision); the lever is opt-in.
+- **GPU embedder device seam (0.8.7).** `parse_device_request` + device
+  selection allow opt-in CUDA embedding (user-controlled spend). The default
+  remains CPU and is byte-identical to 0.8.0; CPU↔CUDA 1-bit codes are
+  identical.
+- **Explain sidecar + opt-in telemetry + real-gold eval (0.8.8, EXP-OBS).**
+  An explanation sidecar on the retrieval path; opt-in, no-egress telemetry
+  (off by default); and a real-gold evaluation path on the eval side.
+- **CI-integrity hardening (0.8.9).** Honest unmasking and fixing of
+  pre-existing masked gates (AC-037 environment-scoping, live-surface
+  conformance, pyo3 macOS/Windows link + Windows-portability fixes yielding
+  first-ever green `rust-macos` + `rust-windows` on `main`, dependency and
+  bootstrap checks). No gate tolerances were weakened.
+
+### Removed
+
+(none)
 
 ## 0.8.0 — 2026-06-08
 

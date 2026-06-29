@@ -81,10 +81,12 @@ jobs:
           set -euo pipefail
           python tests/corpus/scripts/freeze_corpus.py --freeze --corpus-version "${{ inputs.corpus_version }}"
           python tests/corpus/scripts/freeze_corpus.py --reproduce tests/corpus/snapshot.json
-          echo "### COR-2 snapshot" >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          cat tests/corpus/snapshot.json >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### COR-2 snapshot"
+            echo '```json'
+            cat tests/corpus/snapshot.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cache the frozen corpus data (distribution path)
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
