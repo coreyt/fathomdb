@@ -6112,11 +6112,26 @@ fn read_search_in_tx(
         // `h:` content-hash. This keeps old-schema search byte-identical to the
         // pre-Cause-A behaviour (the prepare of the plain SQL is the exact prior
         // statement). Columns are qualified because both tables expose `write_cursor`.
+        // CORRECTNESS (0.8.11.2 pico): `AND cn.superseded_at IS NULL` drops
+        // superseded node versions. Node supersession is tombstone-then-insert
+        // (`commit_batch`): the prior `canonical_nodes` row is UPDATEd to set
+        // `superseded_at` (row kept, same write_cursor) and a NEW `search_index`
+        // row is inserted for the new cursor — the OLD `search_index` row is
+        // never deleted, so without this filter both versions stay live in FTS
+        // and the stale one is returned. The other arms already filter this way
+        // (edge branch, graph-arm node seed, point-recall `read_get_by_id`);
+        // only this default node-text branch was missing it. The `LEFT JOIN` is
+        // KEPT (not switched to inner): an active row joins to its `cn` with
+        // `superseded_at = NULL` (kept); a superseded row joins to its tombstoned
+        // `cn` with `superseded_at` NOT NULL (dropped); a legacy/orphan
+        // `search_index` row with no `cn` gets `superseded_at = NULL` via the
+        // LEFT JOIN (KEPT — preserves prior behaviour for ownerless rows).
         let join_sql = format!(
             "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
              bm25(search_index), cn.logical_id FROM search_index \
              LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
              WHERE search_index MATCH ?1 \
+               AND cn.superseded_at IS NULL \
              ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
         );
         if let Ok(mut statement) = tx.prepare(&join_sql) {
@@ -6136,6 +6151,13 @@ fn read_search_in_tx(
             })?;
             rows.flatten().collect()
         } else {
+            // No `superseded_at IS NULL` filter here (and none is possible): this
+            // fallback fires only on pre-step-12 schemas whose `canonical_nodes`
+            // lacks `logical_id` — and step-12 adds `logical_id` and
+            // `superseded_at` in the SAME migration, so this schema has neither
+            // column. Supersession (`commit_batch`) is a no-op without
+            // `logical_id`, so no superseded node rows can exist on this path.
+            // Left byte-identical to preserve old-schema compatibility.
             let plain_sql = format!(
                 "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
                  WHERE search_index MATCH ?1 \

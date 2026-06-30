@@ -327,6 +327,74 @@ fn cause_a_logical_id_node_is_l_tagged() {
     opened.engine.close().unwrap();
 }
 
+/// Supersession correctness (0.8.11.2 pico): a node rewritten via the same
+/// `logical_id` must NOT surface its superseded version in default `search`.
+///
+/// Node supersession is tombstone-then-insert: the prior `canonical_nodes` row
+/// is tombstoned (`superseded_at` set, row + its OLD `search_index` row kept)
+/// and a NEW `search_index` row is inserted for the new body. Before the fix,
+/// the default node-text branch `LEFT JOIN`ed `canonical_nodes` only to decorate
+/// the hit with `logical_id` and had no `superseded_at IS NULL` filter, so a
+/// query for a term unique to the OLD body still returned the stale version.
+///
+/// Asserts: (1) a term unique to the OLD body returns ZERO hits (the superseded
+/// version is excluded and the new body lacks the term); (2) a term unique to
+/// the NEW body returns exactly the active version, `l:`-tagged with the shared
+/// logical id. Against the unpatched query, assertion (1) fails (one stale hit).
+#[test]
+fn supersession_search_excludes_superseded_node_version() {
+    let (_dir, path) = fixture("supersede_search");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let logical_id = "entity-supersede-7";
+
+    // V1: original body carrying a term unique to the OLD version.
+    opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "person".to_string(),
+            body: "alpha obsoleteoldterm original biography".to_string(),
+            source_id: None,
+            logical_id: Some(logical_id.to_string()),
+        }])
+        .expect("write v1");
+    opened.engine.drain(10_000).expect("drain v1");
+
+    // V2: rewrite via the SAME logical_id → V1 is superseded (tombstone-then-
+    // insert). The new body carries a DIFFERENT unique term.
+    let receipt = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "person".to_string(),
+            body: "beta freshactiveterm replacement biography".to_string(),
+            source_id: None,
+            logical_id: Some(logical_id.to_string()),
+        }])
+        .expect("write v2");
+    opened.engine.drain(10_000).expect("drain v2");
+
+    // Positive: the active version surfaces for a NEW-body term (also blocks on
+    // projection so the FTS index is fully populated).
+    let active = search_after_projection(&opened.engine, "freshactiveterm", receipt.cursor);
+    assert_eq!(active.results.len(), 1, "active version must surface for the new-body term");
+    assert_eq!(
+        active.results[0].stable_id.as_deref(),
+        Some("l:entity-supersede-7"),
+        "the surfaced hit must be the active (l:-tagged) version"
+    );
+
+    // Regression: the OLD-body term must surface NOTHING — the superseded
+    // search_index row is still live in FTS, so the SQL `superseded_at IS NULL`
+    // filter is the only thing excluding it. Direct `search` (no projection
+    // wait) since we assert emptiness.
+    let stale = opened.engine.search("obsoleteoldterm").expect("search stale term");
+    assert!(
+        stale.results.is_empty(),
+        "a term unique to the superseded version must return no hits, got {:?}",
+        stale.results.iter().map(|h| (&h.body, &h.stable_id)).collect::<Vec<_>>()
+    );
+    opened.engine.close().unwrap();
+}
+
 /// Distinct bodies → distinct content-hash stable ids (no collisions on the
 /// dominant doc-node path).
 #[test]
