@@ -1,7 +1,7 @@
 {
   "schema": "0.8.2-m1-corpus-manifest-v1",
   "generated_by": "tests/corpus/scripts/acquire_musique.py",
-  "musique_hash": "3cff37fd7221506a343a125cf7ca20aab7cd09877e376122da9627e1b935b26f",
+  "musique_hash": "83e0e49856b21d9b8259efb39497ec03b7b08df15dd987c140c1692c56a1234d",
   "source": {
     "hf_id": "bdsaglam/musique",
     "revision": "22873a405dd809893b22ada0b499299fb612d2df",

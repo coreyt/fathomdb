@@ -31,8 +31,17 @@ Materialized output format per question:
     "answerable": bool,
     "paragraphs": [
       {"idx": int, "title": str, "text": str, "is_supporting": bool}
+    ],
+    "question_decomposition": [
+      {"question": str, "answer": str, "paragraph_support_idx": int | None}
     ]
   }
+
+The native per-hop decomposition (question_decomposition) is retained verbatim
+from MuSiQue: each entry is one single-hop sub-question with its gold sub-answer
+and the index of the supporting paragraph (paragraph_support_idx; None for the
+unanswerable contrast set). No labels are synthesized — only the fields MuSiQue
+natively provides are carried through. This unblocks oracle-decompose (OPP-1 A3).
 
 Hop count is parsed from the ID prefix (e.g. '2hop__…' → 2, '3hop1__…' → 3,
 '4hop3__…' → 4). For answerable questions hop_count equals the number of
@@ -99,6 +108,17 @@ def materialize_row(raw: dict) -> dict:
         }
         for p in raw["paragraphs"]
     ]
+    # Retain MuSiQue's native per-hop decomposition verbatim (no synthesis):
+    # one entry per single-hop sub-question with its gold sub-answer and the
+    # supporting-paragraph index (None for the unanswerable contrast set).
+    question_decomposition = [
+        {
+            "question": d["question"],
+            "answer": d["answer"],
+            "paragraph_support_idx": d["paragraph_support_idx"],
+        }
+        for d in (raw.get("question_decomposition") or [])
+    ]
     return {
         "id": raw["id"],
         "question": raw["question"],
@@ -107,6 +127,7 @@ def materialize_row(raw: dict) -> dict:
         "answer_aliases": list(raw.get("answer_aliases") or []),
         "answerable": bool(raw["answerable"]),
         "paragraphs": paragraphs,
+        "question_decomposition": question_decomposition,
     }
 
 
