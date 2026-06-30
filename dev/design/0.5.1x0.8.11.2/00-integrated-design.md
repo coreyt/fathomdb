@@ -4,7 +4,7 @@
 > API. This is the integration view that the two per-repo designs (#1.7) derive from. It is
 > grounded in three artifacts (read those for the line-level contracts):
 >
-> - FathomDB contract-of-record: `runs/B-1-fathomdb-answer-sheet.md`
+> - FathomDB contract-of-record: `dev/plans/runs/B-1-fathomdb-answer-sheet.md`
 > - Identity/recall model: `dev/design/0.5.1x0.8.11.2/identity-recall-model.md` (audit-confirmed)
 > - Memex refit plan: `memex/dev/fathomdb/memex-0.5.1-fathom-0.8.11.2-option-b-tasklist.md`
 >
@@ -31,7 +31,7 @@ FathomDB 0.8.x engine  (one Engine per DB file, exclusive .lock)
 | Concern | Governed 0.8.x surface | Replaces (flat, retired) |
 |---|---|---|
 | Write | `engine.write([{node｜edge｜op_store｜admin_schema}]) → WriteReceipt{cursor,row_cursors,dangling_edge_endpoints}` | `WriteRequest`/`NodeInsert`/`EdgeInsert`/`new_id`/`new_row_id`/`ProvenanceMode` |
-| Point recall | `read.get(logical_id)` / `read.get_many([logical_id])` (active-only); op-store: `read.collection(record_key)` | by-id reads |
+| Point recall | `read.get(logical_id)` / `read.get_many([logical_id])` (active-only); op-store: `read.collection(collection) → rows, then locate by record_key within results` | by-id reads |
 | Within-kind list | `read.list_filter(kind, Filter{terms})` — AND-only, allowlisted paths, `limit` only (no cursor) | `engine.nodes(kind)…` |
 | Mutations/audit | `read.mutations` (op-store cursor) | — |
 | Graph | `graph.neighbors` / `graph.search_expand` | `TraverseDirection` |
