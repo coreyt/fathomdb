@@ -132,7 +132,8 @@ fn fused_and_unchecked_absent_from_surface() {
 /// A path from the allowlist (`$.status`) is accepted without error.
 #[test]
 fn allowlisted_path_accepted() {
-    let allowed_paths = ["$.status", "$.priority", "$.tags", "$.kind", "$.created_at"];
+    let allowed_paths =
+        ["$.status", "$.priority", "$.tags", "$.kind", "$.created_at", "$.action_kind"];
     for path in allowed_paths {
         let result = Predicate::json_path_eq(path, ScalarValue::Text("test".to_string()));
         assert!(result.is_ok(), "Expected allowlisted path {path} to be accepted, got {result:?}");
@@ -158,6 +159,37 @@ fn non_allowlisted_path_rejected() {
     assert!(
         matches!(result2, Err(EngineError::InvalidFilter { .. })),
         "Expected InvalidFilter for non-allowlisted path in compare, got {result2:?}"
+    );
+}
+
+/// 0.8.11.2 A-1 — `$.action_kind` is allowlisted so Memex's WMAction
+/// discriminator can be filtered server-side. The constructors must accept it
+/// for both string and bool values (the discriminator may be string OR bool),
+/// while a clearly-non-allowlisted path (`$.secret`) is STILL rejected — a
+/// guard against a blanket-accept regression.
+#[test]
+fn action_kind_path_allowlisted() {
+    // Equality on a string discriminator value constructs.
+    let eq_text = Predicate::json_path_eq("$.action_kind", ScalarValue::Text("create".to_string()));
+    assert!(eq_text.is_ok(), "Expected $.action_kind (Text) to be accepted, got {eq_text:?}");
+
+    // Equality on a bool discriminator value constructs (ScalarValue::Bool).
+    let eq_bool = Predicate::json_path_eq("$.action_kind", ScalarValue::Bool(true));
+    assert!(
+        matches!(eq_bool, Ok(Predicate::JsonPathEq { value: ScalarValue::Bool(true), .. })),
+        "Expected $.action_kind (Bool) to construct a JsonPathEq Bool predicate, got {eq_bool:?}"
+    );
+
+    // Compare on the new path also constructs.
+    let cmp =
+        Predicate::json_path_compare("$.action_kind", ComparisonOp::Gt, ScalarValue::Integer(0));
+    assert!(cmp.is_ok(), "Expected $.action_kind compare to be accepted, got {cmp:?}");
+
+    // Regression guard: a non-allowlisted path is STILL rejected (no blanket accept).
+    let secret = Predicate::json_path_eq("$.secret", ScalarValue::Text("x".to_string()));
+    assert!(
+        matches!(secret, Err(EngineError::InvalidFilter { .. })),
+        "Expected InvalidFilter for non-allowlisted $.secret, got {secret:?}"
     );
 }
 

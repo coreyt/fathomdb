@@ -1319,7 +1319,7 @@ pub enum ComparisonOp {
 /// To extend: add an entry here. No API change is needed; the constructor
 /// accepts the new path string once it appears in this array.
 const PREDICATE_PATH_ALLOWLIST: &[&str] =
-    &["$.status", "$.priority", "$.tags", "$.kind", "$.created_at"];
+    &["$.status", "$.priority", "$.tags", "$.kind", "$.created_at", "$.action_kind"];
 
 /// G4 (Slice 35) — closed typed predicate for [`Engine::read_list`] filter.
 ///
