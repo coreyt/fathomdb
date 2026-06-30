@@ -320,6 +320,7 @@ def collect_ce_records(
     max_pool: int,
     checkpoint_path: Path,
     checkpoint_every: int = 25,
+    ce_depth: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     """One CE pass per query → ``[{qid, reporting_class, gold, pool:[{doc_id,
     base_score, ce_norm}]}]``, resumable from ``checkpoint_path`` (keyed by qid).
@@ -355,9 +356,14 @@ def collect_ce_records(
             continue
         hits = base_adapter.retrieve(q.question, max_pool)
         passages = [{"id": j, "body": h.body, "score": 0.0} for j, h in enumerate(hits)]
+        # ce_depth caps the CE pass to the top-`ce_depth` candidates. The offline sweep
+        # only reblends the top-`pool_n` (<= max(POOL_NS)); CE on deeper ranks is never
+        # read, so capping at ce_depth >= max(POOL_NS) is EXACT for the grid (not an
+        # approximation) while cutting the slow CE cost. None = score the whole pool.
+        ce_passages = passages[:ce_depth] if ce_depth else passages
         ce_by_id: dict[int, float] = {}
-        if passages:
-            for r in rerank_fn(q.question, passages, len(passages)):
+        if ce_passages:
+            for r in rerank_fn(q.question, ce_passages, len(ce_passages)):
                 ce_by_id[int(r["id"])] = recover_ce_norm(float(r["score"]))
         pool = [
             {"doc_id": h.doc_id, "base_score": float(h.score), "ce_norm": ce_by_id.get(j, 0.0)}

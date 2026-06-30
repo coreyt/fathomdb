@@ -408,7 +408,7 @@ def forbidden_composition_matrix(
 # --------------------------------------------------------------------------- #
 
 
-def run_lme_recall_pool(*, per_class: Optional[int], max_pool: int, db_path: str, checkpoint: Path) -> list[dict[str, Any]]:
+def run_lme_recall_pool(*, per_class: Optional[int], max_pool: int, db_path: str, checkpoint: Path, ce_depth: Optional[int] = None) -> list[dict[str, Any]]:
     """Fresh BASE-ORDER candidate pool to depth ``max_pool`` (the recall stage).
 
     Records ``{qid, reporting_class, gold, pool:[{doc_id, base_score, ce_norm}]}`` — but
@@ -433,7 +433,7 @@ def run_lme_recall_pool(*, per_class: Optional[int], max_pool: int, db_path: str
     print(f"[expb][lme] {len(queries)} queries, {len(docs)} sessions, recall depth={max_pool}", flush=True)
     return collect_ce_records(
         queries=queries, base_adapter=base, rerank_fn=fathomdb.rerank,
-        max_pool=max_pool, checkpoint_path=checkpoint,
+        max_pool=max_pool, checkpoint_path=checkpoint, ce_depth=ce_depth,
     )
 
 
@@ -451,6 +451,9 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     ap = argparse.ArgumentParser(description="EXP-B' 3-stage joint tuning (0.8.11 Slice 15, $0 retrieval arm)")
     ap.add_argument("--per-class", type=int, default=None, help="cap LME queries per memory class (default: all 606)")
     ap.add_argument("--max-pool", type=int, default=CANDIDATE_K_MAX)
+    ap.add_argument("--ce-depth", type=int, default=None,
+                    help="cap the CE pass to the top-N candidates (EXACT for the grid when "
+                         ">= max(POOL_NS); the sweep never reads CE beyond pool_n). None = whole pool.")
     ap.add_argument("--lme-db", default="/tmp/expb-lme.sqlite")
     ap.add_argument("--recall-pool-ckpt", default=str(RUNS / "expb-lme.ce-pass.json"),
                     help="fresh deep BASE-ORDER candidate pool (current engine; for the recall envelope)")
@@ -467,6 +470,7 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI
     recall_records = run_lme_recall_pool(
         per_class=args.per_class, max_pool=args.max_pool,
         db_path=args.lme_db, checkpoint=Path(args.recall_pool_ckpt),
+        ce_depth=args.ce_depth,
     )
     # (2) Real-CE pass → rerank tuple + crux. GUARD against a feature-off (degenerate) pass.
     rerank_records = json.loads(Path(args.rerank_ce_pass).read_text(encoding="utf-8")).get("records", [])
