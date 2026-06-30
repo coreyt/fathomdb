@@ -102,42 +102,11 @@ pub struct CandleBgeEmbedder {
     pooling: Pooling,
 }
 
-/// A parsed `FATHOMDB_EMBED_DEVICE` request, independent of which backends are
-/// compiled in. Keeping the env-grammar parse PURE (no `Device` construction, no
-/// `#[cfg]` gating, no I/O) makes it unit-testable without a GPU or a feature
-/// build — see `resolve_device` for the (feature- and hardware-dependent) mapping
-/// from a request to an actual [`Device`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum DeviceRequest {
-    /// Default — explicit `cpu`, empty/unset, or whitespace-only.
-    Cpu,
-    /// `cuda` (index 0) or `cuda:N`. A non-numeric index (`cuda:x`) clamps to 0,
-    /// matching the original `.unwrap_or(0)` behavior.
-    Cuda(usize),
-    /// `metal`.
-    Metal,
-    /// Anything else — honored as a loud CPU fallback, never silently.
-    Unknown(String),
-}
-
-/// Parse `FATHOMDB_EMBED_DEVICE` into a [`DeviceRequest`]. Pure + total:
-/// case-insensitive, trims surrounding whitespace, and never panics.
-fn parse_device_request(raw: &str) -> DeviceRequest {
-    let requested = raw.trim().to_ascii_lowercase();
-    if requested.is_empty() || requested == "cpu" {
-        return DeviceRequest::Cpu;
-    }
-    if requested == "cuda" {
-        return DeviceRequest::Cuda(0);
-    }
-    if let Some(idx) = requested.strip_prefix("cuda:") {
-        return DeviceRequest::Cuda(idx.parse::<usize>().unwrap_or(0));
-    }
-    if requested == "metal" {
-        return DeviceRequest::Metal;
-    }
-    DeviceRequest::Unknown(requested)
-}
+// 0.8.12 — the device-request grammar (`DeviceRequest` + `parse_device_request`)
+// moved to the shared `crate::device` module so the embedder and reranker resolve
+// `cpu`|`cuda`|`cuda:N`|`metal` through ONE pure parser. `resolve_device` below
+// (the feature- and hardware-dependent request→`Device` mapping) stays here.
+use crate::device::{parse_device_request, DeviceRequest};
 
 /// Resolve the candle device from `FATHOMDB_EMBED_DEVICE` (default CPU).
 ///
@@ -409,60 +378,6 @@ impl CandleBgeEmbedder {
     }
 }
 
-#[cfg(test)]
-mod device_request_tests {
-    //! R-GPU-1 — pin the `FATHOMDB_EMBED_DEVICE` grammar. These exercise the
-    //! PURE parse (`parse_device_request`), not `resolve_device`, so they run on
-    //! the default (CPU) build with no GPU and no `embed-cuda`/`embed-metal`
-    //! feature. The request→`Device` mapping is feature- and hardware-dependent
-    //! and is covered by the GPU validation harness (Slice 10), not unit tests.
-    use super::{parse_device_request, DeviceRequest};
-
-    #[test]
-    fn unset_or_empty_is_cpu() {
-        // unset env decodes through `unwrap_or_default()` to "" at the call site.
-        assert_eq!(parse_device_request(""), DeviceRequest::Cpu);
-        assert_eq!(parse_device_request("   "), DeviceRequest::Cpu);
-    }
-
-    #[test]
-    fn explicit_cpu_is_cpu_case_and_space_insensitive() {
-        assert_eq!(parse_device_request("cpu"), DeviceRequest::Cpu);
-        assert_eq!(parse_device_request("CPU"), DeviceRequest::Cpu);
-        assert_eq!(parse_device_request("  Cpu  "), DeviceRequest::Cpu);
-    }
-
-    #[test]
-    fn bare_cuda_is_device_zero() {
-        assert_eq!(parse_device_request("cuda"), DeviceRequest::Cuda(0));
-        assert_eq!(parse_device_request("CUDA"), DeviceRequest::Cuda(0));
-    }
-
-    #[test]
-    fn cuda_n_selects_the_index() {
-        assert_eq!(parse_device_request("cuda:0"), DeviceRequest::Cuda(0));
-        assert_eq!(parse_device_request("cuda:1"), DeviceRequest::Cuda(1));
-        assert_eq!(parse_device_request(" cuda:2 "), DeviceRequest::Cuda(2));
-    }
-
-    #[test]
-    fn cuda_with_garbage_index_clamps_to_zero() {
-        // Preserves the original `.unwrap_or(0)` behavior — a malformed index
-        // is a GPU-0 request, never a panic.
-        assert_eq!(parse_device_request("cuda:x"), DeviceRequest::Cuda(0));
-        assert_eq!(parse_device_request("cuda:"), DeviceRequest::Cuda(0));
-    }
-
-    #[test]
-    fn metal_is_metal() {
-        assert_eq!(parse_device_request("metal"), DeviceRequest::Metal);
-        assert_eq!(parse_device_request("Metal"), DeviceRequest::Metal);
-    }
-
-    #[test]
-    fn unrecognized_is_a_named_unknown() {
-        // Honored as a loud CPU fallback in `resolve_device`, never silent.
-        assert_eq!(parse_device_request("rocm"), DeviceRequest::Unknown("rocm".to_string()));
-        assert_eq!(parse_device_request("gpu"), DeviceRequest::Unknown("gpu".to_string()));
-    }
-}
+// 0.8.12 — the pure-parse R-GPU-1 grammar tests moved with the parser to the
+// shared `crate::device` module (`device_request_tests`); they now cover both
+// `FATHOMDB_EMBED_DEVICE` and `FATHOMDB_RERANK_DEVICE` from one place.

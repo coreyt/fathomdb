@@ -31,6 +31,12 @@ default-reranker = ["fathomdb-engine/default-reranker"]
 # FATHOMDB_EMBED_DEVICE=cuda. See dev/design/0.8.1-embedder-gpu-and-portability.md.
 embed-cuda = ["default-embedder", "fathomdb-engine/embed-cuda"]
 embed-metal = ["default-embedder", "fathomdb-engine/embed-metal"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; forwards to the engine;
+# default wheel stays CPU). Build: `maturin develop --features
+# pyo3/extension-module,rerank-cuda`; activate via FATHOMDB_RERANK_DEVICE=cuda.
+# The shipped wheel keeps this OFF (release.yml/ci.yml pin explicit feature lists).
+rerank-cuda = ["default-reranker", "fathomdb-engine/rerank-cuda"]
+rerank-metal = ["default-reranker", "fathomdb-engine/rerank-metal"]
 
 [dependencies]
 fathomdb-embedder.workspace = true

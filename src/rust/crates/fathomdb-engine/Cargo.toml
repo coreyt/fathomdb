@@ -47,6 +47,11 @@ embed-metal = ["default-embedder", "fathomdb-embedder/embed-metal"]
 # owns the Candle + tokenizers CE stack (`CandleTinyBertReranker`). The default
 # engine build enables neither, staying ML-free + no-network.
 default-reranker = ["fathomdb-embedder/default-reranker"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; forwards to the
+# embedder; default stays CPU). Activate at runtime via the separate knob
+# FATHOMDB_RERANK_DEVICE=cuda|metal. Mirrors the embed-cuda passthrough.
+rerank-cuda = ["default-reranker", "fathomdb-embedder/rerank-cuda"]
+rerank-metal = ["default-reranker", "fathomdb-embedder/rerank-metal"]
 
 # The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
 # only builds when the `operator` feature is enabled (skipped on default builds).

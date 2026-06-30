@@ -68,6 +68,15 @@ default-reranker = [
 # dev/design/0.8.1-embedder-gpu-and-portability.md.
 embed-cuda = ["default-embedder", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 embed-metal = ["default-embedder", "candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; default build stays CPU
+# so Decision 2 / byte-stability are unaffected). Mirrors `embed-cuda` exactly
+# but pulls in `default-reranker` (not `default-embedder`) and is activated at
+# runtime via the SEPARATE knob FATHOMDB_RERANK_DEVICE=cuda|cuda:N|metal. The CE
+# stack is the same Candle bert path, so enabling the cuda backend on the shared
+# candle crates is the only build-side change. Cross-vendor (AMD/Intel) is not a
+# candle backend — out of scope, same as the embedder.
+rerank-cuda = ["default-reranker", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+rerank-metal = ["default-reranker", "candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
 # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
 # integration tests (or downstream test harnesses) can substitute base URLs,
 # cache roots, and pinned shas. Production callers MUST NOT enable this

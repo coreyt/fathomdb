@@ -45,6 +45,72 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokenizers::{Tokenizer, TruncationParams};
 
+// 0.8.12 — the device grammar (`cpu`|`cuda`|`cuda:N`|`metal`) is shared with the
+// embedder via `crate::device`; the reranker reads its OWN env knob
+// (`FATHOMDB_RERANK_DEVICE`) and gates GPU on its OWN features
+// (`rerank-cuda`/`rerank-metal`), so embedder and reranker placement stay
+// independent. `DeviceRequest` is used by `resolve_device` only under a GPU
+// feature; allow it to be unused on the default CPU build.
+#[cfg_attr(not(any(feature = "rerank-cuda", feature = "rerank-metal")), allow(unused_imports))]
+use crate::device::{parse_device_request, DeviceRequest};
+
+/// Env var selecting the reranker compute device (default CPU). Mirrors the
+/// embedder's `FATHOMDB_EMBED_DEVICE` but is a SEPARATE knob so the CE reranker
+/// and the embedder can target different devices independently.
+pub(crate) const ENV_RERANK_DEVICE: &str = "FATHOMDB_RERANK_DEVICE";
+
+/// Resolve the candle device for the CE reranker from `FATHOMDB_RERANK_DEVICE`
+/// (default CPU). Accepts `cpu` | `cuda` | `cuda:N` | `metal`. GPU variants are
+/// only honored when the corresponding feature (`rerank-cuda` / `rerank-metal`)
+/// is compiled in; otherwise (or on init failure) it falls back to CPU and emits
+/// a LOUD stderr warning rather than silently running on CPU when GPU was
+/// requested (the silent-slow-fallback trap). Mirrors the embedder's
+/// `resolve_device` exactly, differing only in the env var + feature gates.
+///
+/// When neither GPU feature is on, this compiles down to "always CPU" — so the
+/// default `default-reranker` build is byte-identical to the prior hard-coded
+/// `Device::Cpu` (Decision 2 default preserved).
+#[allow(clippy::print_stderr)] // construction-time error path only (not in `score()`)
+fn resolve_device() -> Device {
+    match parse_device_request(&std::env::var(ENV_RERANK_DEVICE).unwrap_or_default()) {
+        DeviceRequest::Cpu => Device::Cpu,
+        DeviceRequest::Cuda(_idx) => {
+            #[cfg(feature = "rerank-cuda")]
+            match Device::new_cuda(_idx) {
+                Ok(d) => return d,
+                Err(e) => eprintln!(
+                    "fathomdb-reranker: FATHOMDB_RERANK_DEVICE=cuda:{_idx} but CUDA init failed ({e}); using CPU"
+                ),
+            }
+            #[cfg(not(feature = "rerank-cuda"))]
+            eprintln!(
+                "fathomdb-reranker: FATHOMDB_RERANK_DEVICE=cuda requested but this build lacks the `rerank-cuda` feature; using CPU"
+            );
+            Device::Cpu
+        }
+        DeviceRequest::Metal => {
+            #[cfg(feature = "rerank-metal")]
+            match Device::new_metal(0) {
+                Ok(d) => return d,
+                Err(e) => eprintln!(
+                    "fathomdb-reranker: FATHOMDB_RERANK_DEVICE=metal but Metal init failed ({e}); using CPU"
+                ),
+            }
+            #[cfg(not(feature = "rerank-metal"))]
+            eprintln!(
+                "fathomdb-reranker: FATHOMDB_RERANK_DEVICE=metal requested but this build lacks the `rerank-metal` feature; using CPU"
+            );
+            Device::Cpu
+        }
+        DeviceRequest::Unknown(req) => {
+            eprintln!(
+                "fathomdb-reranker: FATHOMDB_RERANK_DEVICE={req} not recognized (expected cpu|cuda|cuda:N|metal); using CPU"
+            );
+            Device::Cpu
+        }
+    }
+}
+
 // ----- Pinned identity (Decision 2 + 3) -------------------------------------
 
 /// Hugging Face repo hosting the pinned cross-encoder weights.
@@ -188,9 +254,14 @@ impl CandleTinyBertReranker {
             .map_err(|e| RerankerLoadError::TokenizerLoad(e.to_string()))?;
 
         // 3. mmap safetensors → BertModel (bert.* prefix via model_type
-        //    fallback) + pooler dense + classifier head. CPU only (the
-        //    reranker is latency-budgeted for CPU per Decision 2).
-        let device = Device::Cpu;
+        //    fallback) + pooler dense + classifier head. Default CPU — the
+        //    reranker is latency-budgeted for CPU per Decision 2, and that
+        //    stays the default. 0.8.12 makes GPU an ADDITIVE opt-in knob:
+        //    `FATHOMDB_RERANK_DEVICE=cuda|cuda:N|metal` is honored ONLY when the
+        //    matching `rerank-cuda`/`rerank-metal` feature is compiled in;
+        //    otherwise `resolve_device()` returns `Device::Cpu`, so the default
+        //    build is byte-identical to the prior hard-coded `Device::Cpu`.
+        let device = resolve_device();
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
                 &[w.model_safetensors_path.as_path() as &Path],
@@ -239,8 +310,10 @@ impl CandleTinyBertReranker {
 
         // (1, L, H) sequence output.
         let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask))?;
-        // [CLS] at position 0 → (1, H).
-        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?;
+        // [CLS] at position 0 → (1, H). `.contiguous()` because `narrow` yields a
+        // strided view and the CUDA matmul backend (the pooler's `dense`) rejects
+        // non-contiguous operands; a no-op on CPU / when already contiguous.
+        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?.contiguous()?;
         // Pooler: tanh(dense(cls)).
         let pooled = self.pooler.forward(&cls)?.tanh()?;
         // Classifier: (1, 1) logit.
@@ -347,7 +420,10 @@ impl CandleTinyBertReranker {
 
         // (N, L_max, H) sequence output → [CLS] at position 0 → (N, H).
         let hidden = self.model.forward(&input_ids, &token_type_ids, Some(&attn_mask))?;
-        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?;
+        // `.contiguous()`: for N>1 the narrowed CLS slice is strided (rows L_max*H
+        // apart) and the CUDA matmul backend (the pooler's `dense`) rejects
+        // non-contiguous operands; a no-op on CPU / when already contiguous.
+        let cls = hidden.narrow(1, 0, 1)?.squeeze(1)?.contiguous()?;
         // Pooler: tanh(dense(cls)) → classifier → (N, 1) → (N,).
         let pooled = self.pooler.forward(&cls)?.tanh()?;
         let logits = self.classifier.forward(&pooled)?.squeeze(1)?;
@@ -474,6 +550,99 @@ mod tests {
         let Some(model) = load_or_skip() else { return };
         let out = model.score_batch(QUERY, &[]).expect("empty batch");
         assert!(out.is_empty(), "empty passages → empty output");
+    }
+}
+
+// ----- GPU smoke + CPU↔GPU closeness (rerank-cuda only) ---------------------
+
+/// 0.8.12 — these only build/run under `--features rerank-cuda` on a CUDA host;
+/// the default CPU test suite never compiles them. They prove (1) the GPU device
+/// resolves + a forward runs end-to-end returning a FINITE logit, and (2) the
+/// GPU port is numerically faithful: GPU logits match the CPU logits within a
+/// tolerance, so the opt-in does not silently change scores. If the pinned model
+/// is not cached the tests skip (no network in CI), exactly like the CPU suite.
+#[cfg(all(test, feature = "rerank-cuda"))]
+mod gpu_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    const Q: &str = "What is the capital of France?";
+    const PASSAGES: [&str; 3] = [
+        "Paris.",
+        "Paris is the capital and most populous city of France.",
+        "France is a country in Western Europe; its capital and largest city is \
+         Paris, a major global center for art, fashion, and culture.",
+    ];
+
+    /// `FATHOMDB_RERANK_DEVICE` is process-global, and `cargo test` runs `#[test]`
+    /// fns in parallel within one binary. Each test takes this lock for its WHOLE
+    /// body so the env var it sets cannot be observed/overwritten by a sibling
+    /// test's load (which would resolve the wrong device and either compare the
+    /// wrong backends or build a CPU model where CUDA was expected). `unwrap_or_else
+    /// (into_inner)` so one panicking test does not poison-cascade into the other
+    /// (the real failure still surfaces in the test that panicked).
+    static DEVICE_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Load a reranker with `FATHOMDB_RERANK_DEVICE` set to `dev` for the duration
+    /// of construction, then RESTORE the previous value (not blindly remove it).
+    /// The device is read once at load time and stored in the struct, so the env
+    /// only needs to be stable across this call. Caller MUST hold `DEVICE_ENV_LOCK`.
+    /// Returns None (skip) if the model is uncached.
+    fn load_on(dev: &str) -> Option<CandleTinyBertReranker> {
+        let prev = std::env::var_os(ENV_RERANK_DEVICE);
+        std::env::set_var(ENV_RERANK_DEVICE, dev);
+        let m = match CandleTinyBertReranker::try_load() {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("SKIP gpu_tests: reranker model unavailable ({e})");
+                None
+            }
+        };
+        match prev {
+            Some(v) => std::env::set_var(ENV_RERANK_DEVICE, v),
+            None => std::env::remove_var(ENV_RERANK_DEVICE),
+        }
+        m
+    }
+
+    /// Smoke: the reranker loads on cuda:0 and scores one pair to a finite logit.
+    #[test]
+    fn gpu_loads_and_scores_finite() {
+        let _guard = DEVICE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(model) = load_on("cuda:0") else { return };
+        assert!(
+            model.device.is_cuda(),
+            "FATHOMDB_RERANK_DEVICE=cuda:0 must resolve to a CUDA device"
+        );
+        let logit = model.score(Q, PASSAGES[1]).expect("gpu score");
+        assert!(logit.is_finite(), "gpu logit must be finite, got {logit}");
+        eprintln!("gpu_loads_and_scores_finite: cuda:0 logit = {logit}");
+    }
+
+    /// CPU↔GPU numeric closeness: the same pairs scored on CPU and on cuda:0 must
+    /// agree within tolerance (different BLAS/kernels → not bit-identical, but the
+    /// port must not change the ranking-relevant logit). Tolerance is generous
+    /// relative to the ~unit-scale logits but far tighter than any score gap that
+    /// would flip a ranking.
+    #[test]
+    fn cpu_gpu_logits_close() {
+        let _guard = DEVICE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(cpu) = load_on("cpu") else { return };
+        let Some(gpu) = load_on("cuda:0") else { return };
+        assert!(!cpu.device.is_cuda() && gpu.device.is_cuda());
+
+        let cpu_logits: Vec<f32> =
+            PASSAGES.iter().map(|p| cpu.score(Q, p).expect("cpu score")).collect();
+        let gpu_logits: Vec<f32> =
+            PASSAGES.iter().map(|p| gpu.score(Q, p).expect("gpu score")).collect();
+
+        let mut max_abs = 0f32;
+        for (i, (c, g)) in cpu_logits.iter().zip(gpu_logits.iter()).enumerate() {
+            let d = (c - g).abs();
+            max_abs = max_abs.max(d);
+            assert!(d < 1e-2, "pair {i}: cpu {c} vs gpu {g} differ by {d} (>1e-2)");
+        }
+        eprintln!("cpu_gpu_logits_close: max abs diff = {max_abs:e}");
     }
 }
 

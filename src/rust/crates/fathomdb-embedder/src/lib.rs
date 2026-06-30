@@ -73,6 +73,14 @@ impl MeanRecomputeTrigger {
     }
 }
 
+// 0.8.12 — shared device-request parser for the Candle backends. Compiled
+// whenever EITHER the embedder or reranker Candle path is on, so the embedder's
+// `FATHOMDB_EMBED_DEVICE` and the reranker's `FATHOMDB_RERANK_DEVICE` resolve
+// through one grammar (no duplicate parse logic) even though they sit behind
+// independent features.
+#[cfg(any(feature = "default-embedder", feature = "default-reranker"))]
+mod device;
+
 #[cfg(feature = "default-embedder")]
 mod candle_bge;
 #[cfg(feature = "default-embedder")]
