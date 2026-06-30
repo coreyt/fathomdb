@@ -493,7 +493,9 @@ fn cache_dir() -> Result<PathBuf, RerankerLoadError> {
     };
     let mut h = Sha256::new();
     h.update(format!("{RERANKER_REPO}@{RERANKER_REVISION}").as_bytes());
-    let prefix = format!("{:x}", h.finalize());
+    // digest 0.11's `Array` output drops the `LowerHex` impl `GenericArray`
+    // had; format explicitly to the same lowercase, zero-padded hex.
+    let prefix: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
     Ok(root.join("fathomdb").join("reranker").join(&prefix[..12]))
 }
 
@@ -668,5 +670,6 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // digest 0.11 `Array` output: format to identical lowercase, zero-padded hex.
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }

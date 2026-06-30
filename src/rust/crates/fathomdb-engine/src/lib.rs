@@ -8895,7 +8895,11 @@ fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
     let input = format!("{}:{}", kind.to_lowercase(), name.to_lowercase());
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    Ok(format!("{:x}", hasher.finalize()))
+    // digest 0.11 returns `hybrid_array::Array`, which (unlike the old
+    // `GenericArray`) does not implement `LowerHex`. Format the bytes
+    // explicitly — byte-identical lowercase, zero-padded hex to the prior
+    // `{:x}` rendering, preserving the load-bearing logical-id derivation.
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// fix-34 [P2]: dedup a batch of [`PreparedWrite`]s by `logical_id`, keeping the

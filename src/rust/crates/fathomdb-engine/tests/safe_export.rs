@@ -32,7 +32,7 @@ fn ac_039a_manifest_digest_matches_export_bytes() {
     assert!(manifest_path.exists(), "manifest missing");
 
     let bytes = std::fs::read(&out_path).expect("read export");
-    let expected = format!("{:x}", Sha256::digest(&bytes));
+    let expected: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(artifact.manifest_sha256, expected);
 
     let manifest: serde_json::Value =
@@ -67,6 +67,6 @@ fn ac_039b_one_byte_tamper_detected_by_recompute() {
     bytes[last] ^= 0x01;
     std::fs::write(&out_path, &bytes).expect("rewrite");
 
-    let recomputed = format!("{:x}", Sha256::digest(&bytes));
+    let recomputed: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     assert_ne!(recomputed, artifact.manifest_sha256, "tamper not detected");
 }

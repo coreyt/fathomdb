@@ -14,7 +14,7 @@ fathomdb-embedder-api.workspace = true
 # per dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md §EU-3 so callers
 # who never opt in pay zero dependency cost.
 ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
-sha2 = { version = "0.10", optional = true }
+sha2 = { version = "0.11", optional = true }
 dirs = { version = "5", optional = true }
 fs2 = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
@@ -78,7 +78,7 @@ loader-test-hooks = ["default-embedder"]
 [dev-dependencies]
 httpmock = "0.7"
 tempfile = "3"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # 0.8.7 Slice 10 — GPU vs CPU embed speedup measurement. Needs a constructible
 # embedder, so it only builds when `default-embedder` (CPU) or `embed-cuda` is
