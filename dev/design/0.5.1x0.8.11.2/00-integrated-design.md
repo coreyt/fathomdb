@@ -31,8 +31,8 @@ FathomDB 0.8.x engine  (one Engine per DB file, exclusive .lock)
 | Concern | Governed 0.8.x surface | Replaces (flat, retired) |
 |---|---|---|
 | Write | `engine.write([{node｜edge｜op_store｜admin_schema}]) → WriteReceipt{cursor,row_cursors,dangling_edge_endpoints}` | `WriteRequest`/`NodeInsert`/`EdgeInsert`/`new_id`/`new_row_id`/`ProvenanceMode` |
-| Point recall | `read.get(logical_id)` / `read.get_many([logical_id])` (active-only); op-store: `read.collection(collection) → rows, then locate by record_key within results` | by-id reads |
-| Within-kind list | `read.list_filter(kind, Filter{terms})` — AND-only, allowlisted paths, `limit` only (no cursor) | `engine.nodes(kind)…` |
+| Point recall | `read.get(logical_id)` / `read.get_many([logical_id])` (active-only); op-store: `read.collection(collection)` is pagination-only (`ORDER BY id`, mandatory `limit`, no filter terms) → locate `record_key` by client-side filter over the returned `OpStoreRow[]` | by-id reads |
+| Within-kind list | `read.list(kind, predicates=… ｜ filter=Filter{terms})` — AND-only, allowlisted paths, `limit` only (no cursor) (read.list is the public verb; read_list / read_list_filter are its underlying pyo3 bindings) | `engine.nodes(kind)…` |
 | Mutations/audit | `read.mutations` (op-store cursor) | — |
 | Graph | `graph.neighbors` / `graph.search_expand` | `TraverseDirection` |
 | Rerank/score | `SearchHit.ce_score = sigmoid(ce_logit)∈[0,1]`; knobs `alpha`/`pool_n` | — |
@@ -59,8 +59,11 @@ recalls by them) → dropped; all 14 `NodeRetire` sites already key on `logical_
 supersede-by-rewrite, requirement already met); edges resolve `from`/`to` to `logical_id`. The one
 public `row_id` method `get_conversation_context` is a no-op stub with **zero product callers**; the
 working windowing already exists keyed on `logical_id` + client-side body-timestamp sort → fix is a
-**signature alignment only**, and **A-3 (read.list ordering) is NOT required** (stays deferred; the
-T2.11 paging audit only revisits it if a single session can exceed the `read.list` ~10k cap).
+**signature alignment only**, and **A-3 (read.list ordering) is NOT required** (stays deferred).
+A-3 un-defers if Memex needs stable/deep pagination beyond a single bounded `read.list` call — there
+is NO engine cap (`read.list` honors any caller `limit` but returns rows in unspecified order with no
+`ORDER BY`/cursor); the `10000` is Memex's own `limit` param in `get_conversation_context`'s underlying
+read, where unordered truncation would drop in-window turns.
 
 ## 3. FTS / projection model — the one open risk (R-I4-parity)
 
@@ -130,7 +133,7 @@ the Steward's checkout. HITL hard-stops only at OPP-1 Adopt-GO and any publishab
 | Item | State |
 |---|---|
 | **R-I4-parity** (FTS field-weights/tokenizer loss) | **OPEN — the only hard risk.** Front-loaded spike (§4); escalate irrecoverable drift (Q-B5) |
-| A-3 (read.list paging) | **DEFERRED** — timestamp windowing suffices; revisit only if a session exceeds the ~10k `read.list` cap (T2.11) |
+| A-3 (read.list paging) | **DEFERRED** — timestamp windowing suffices. A-3 un-defers if Memex needs stable/deep pagination beyond a single bounded `read.list` call — there is NO engine cap (`read.list` honors any caller `limit` but returns rows in unspecified order with no `ORDER BY`/cursor); the `10000` is Memex's own `limit` param in `get_conversation_context`'s underlying read, where unordered truncation would drop in-window turns (T2.11) |
 | Cause-A merge / `stable_id` | pending Cause-A verify → 0.8.11.2 merge; inert slot until then |
 | Q-B1 no-migration / Q-B2 keep-0.5.1 / Q-B3 Slice-15-core GO | **decided** |
 | Re-baseline + re-SIGN of plan-0.5.1 | pending (#3, after the per-repo designs) — auto-SIGN if no HITL fork |

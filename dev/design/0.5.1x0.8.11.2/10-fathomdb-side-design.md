@@ -20,7 +20,9 @@
 > is already the contract; this document pins each shape the refit binds to, guarantees they stay
 > additive/stable for the refit window, and tracks the four FathomDB-owned action items (A-1 LANDED,
 > A-2 resolved, A-3 deferred, Cause-A `stable_id` merge-gated) plus the $0/local experiment-support
-> deliverables that gate V-1/V-3/V-7. This is a **label-only pico** — no manifest bump, no tag, no
+> deliverables, each scoped to a specific verification (P0-3 MuSiQue re-pull → OPP-1 at V-3; P0-4
+> `margin` + distractor/gold-rank knobs → OPP-3 at V-7; per-corpus `decide_08x` → OPP-6 / general
+> harness). This is a **label-only pico** — no manifest bump, no tag, no
 > publish.
 
 ## 1. The governed-contract invariants the refit depends on
@@ -32,8 +34,8 @@ may be added but existing fields/semantics do not move). Each row cites the answ
 | Contract | Governed shape (the guarantee) | Stability cite |
 |---|---|---|
 | **Write-receipt** | `engine.write(batch: list[dict]) → WriteReceipt{cursor: u64, row_cursors: list[u64] (1:1 input order), dangling_edge_endpoints: u64}`. Closed `PreparedWrite` variant set `{node, edge, op_store, admin_schema}`. Row id = server-assigned `write_cursor`; no `new_id`/`new_row_id`. | B-1 §I-5 (py 795, engine 2719/1034/1728; py 311/1280) |
-| **Read-verbs (point)** | `read.get(logical_id) → Option<NodeRecord>` (active-only) and `read.get_many([logical_id]) → [Option<NodeRecord>]` (request-order, partial). Op-store recall = `read.collection(collection) → rows`, then locate by `record_key` within results (`after_id` cursor for ranges). | B-1 §I-5; identity-recall-model.md §"Does recall still exist? YES" (engine 3661, pyo3 1077; `read.collection` engine 492/3824) |
-| **Read-verbs (list)** | `read.list_filter(kind, Filter{terms}) → [NodeRecord{logical_id,kind,body,write_cursor}]`. AND-only, allowlisted predicate paths, `limit` only (no cursor/`ORDER BY`/`after_id`). Anonymous rows excluded. | B-1 §I-2 (py 1230, engine 1537/1174/6779) |
+| **Read-verbs (point)** | `read.get(logical_id) → Option<NodeRecord>` (active-only) and `read.get_many([logical_id]) → [Option<NodeRecord>]` (request-order, partial). Op-store recall = `read.collection(collection)` is pagination-only (`ORDER BY id`, mandatory `limit`, no filter terms) → locate `record_key` by client-side filter over the returned `OpStoreRow[]`. | B-1 §I-5; identity-recall-model.md §"Does recall still exist? YES" (engine 3661, pyo3 1077; `read.collection` engine 492/3824) |
+| **Read-verbs (list)** | `read.list(kind, predicates=… ｜ filter=Filter{terms}) → [NodeRecord{logical_id,kind,body,write_cursor}]` (`read.list` is the public verb; `read_list` / `read_list_filter` are its underlying pyo3 bindings). AND-only, allowlisted predicate paths, `limit` only (no cursor/`ORDER BY`/`after_id`). Anonymous rows excluded. | B-1 §I-2 (py 1230, engine 1537/1174/6779) |
 | **FTS / projection (fixed)** | **No consumer FTS/projection API.** Engine-owned fixed projection: single indexed `body` column per node/edge, tokenizer `porter unicode61 remove_diacritics 2`, uniform BM25, built at store-open by immutable internal migrations. JSON subfields filter-only via `json_extract(body,'$.x')`. | B-1 §I-4 (schema 158/268/347, engine bm25 6116, py 1036/engine 9456) |
 | **Embed** | `engine.embed(text) → list[float]`, default embedder `fathomdb-bge-small-en-v1.5`; raises `EmbedderNotConfiguredError` when `use_default_embedder=False`. `BuiltinEmbedder` + `VectorRegenerationConfig` removed tree-wide. | B-1 §I-6 (py 988, TS binding.ts:272) |
 | **Rerank/score** | `SearchHit.ce_score: Option<f64> = sigmoid(ce_logit) ∈ [0,1]` (mirrored on `PerHitExplain.ce_score`); `Some` only for in-pool reranked hits, never participates in ranking. Knobs `alpha` (clamp [0,1], default 0.3; `1.0`/`pool_n=10` = measured-parity) and `pool_n`. | B-1 §I-3 (engine 1121/1281, py 833/1523/393) |
@@ -65,9 +67,11 @@ Four items, from B-1 §"FathomDB-side action items". State as of this design:
 - **A-3 — stable paging on `read.list`. DEFERRED (precise trigger below).**
   `read.list` exposes `limit` only — no `ORDER BY`, no cursor, no `after_id` (engine 6779); the
   `after_id` cursor lives only on the op-store `read.collection` surface (engine 492/3824).
-  **Exact trigger to un-defer:** a single Memex session whose within-kind partition exceeds the
-  ~10k `read.list` cap, such that timestamp-windowing no longer suffices and deep/stable paging is
-  required (integrated design §2/§8, T2.11 paging audit). **The fix (pre-specified):** add a
+  **Exact trigger to un-defer:** A-3 un-defers if Memex needs stable/deep pagination beyond a single
+  bounded `read.list` call — there is NO engine cap (`read.list` honors any caller `limit` but returns
+  rows in unspecified order with no `ORDER BY`/cursor); the `10000` is Memex's own `limit` param in
+  `get_conversation_context`'s underlying read, where unordered truncation would drop in-window turns
+  (integrated design §2/§8, T2.11 paging audit). **The fix (pre-specified):** add a
   deterministic `write_cursor` order + an `after_cursor` parameter to `read.list`, mirroring the
   op-store `read.collection` cursor pattern (small, additive). Until the Memex paging audit confirms
   such a call site, A-3 stays deferred and client-side timestamp windowing is the path.
@@ -93,7 +97,7 @@ Memex-on-0.8.x (and those remain a HITL Adopt-GO hard-stop).
 - **P0-3 — MuSiQue re-pull preserving `question_decomposition`.** Re-pull the MuSiQue corpus
   preserving the `question_decomposition` field (2,417 rows). This is the multi-hop decomposition
   signal the OPP-1 build arms and the V-* multi-hop checks read; without it the decomposition-aware
-  arms cannot be scored. FathomDB deliverable; **gates V-1/V-3/V-7** multi-hop coverage.
+  arms cannot be scored. FathomDB deliverable; **gates OPP-1 (at V-3)** multi-hop coverage.
 
 - **P0-4 — eval-support primitives.** Three measurement/knob deliverables on the FathomDB side:
   1. **Expose `margin` as a measurement** — surface the score margin (top-hit vs. next) as an
@@ -102,8 +106,10 @@ Memex-on-0.8.x (and those remain a HITL Adopt-GO hard-stop).
      and demote gold rank, so the V-* arms can probe robustness under degraded retrieval.
   3. **Per-corpus `decide_08x`** — a per-corpus decision hook so each corpus carries its own
      screening verdict rather than a single global gate.
-  All three are FathomDB-side, $0/local, and **gate V-1/V-3/V-7** (the experiments cannot reach a
-  decision without `margin`/the knobs/`decide_08x` in place).
+  All three are FathomDB-side and $0/local, scoped per verification: **`margin` + the
+  distractor/gold-rank knobs bear on OPP-3 (at V-7)**; **per-corpus `decide_08x` feeds OPP-6 / the
+  general harness**. The experiments cannot reach a decision without `margin`/the knobs/`decide_08x`
+  in place.
 
 **Sequencing note.** These prereqs are owned and delivered before the experiments run, but the
 run-order itself is preserved: Phase A (refit substrate ready) → V-1 (keystone) → V-3 → V-7.

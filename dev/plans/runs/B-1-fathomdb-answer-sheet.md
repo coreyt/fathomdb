@@ -70,7 +70,9 @@
 
 ### I-2 — read.list Filter grammar + paging  ⚠️ no stable paging (FathomDB gap A-3)
 - `read_list_filter(engine, kind, terms, limit=100)` (py 1230). `FilterTerm` ∈ {`source_type`, `kind`, `created_after`, `status`, `json`(allowlisted Predicate)} (engine 1537). **AND-only**, no OR/nesting/DSL/SQL. Allowlisted paths = the A-1 set. Result rows `NodeRecord{logical_id,kind,body,write_cursor}` (engine 1174); anonymous rows excluded.
+- **Public verb:** the public consumer verb = `read.list(engine, kind, predicates=… ｜ filter=Filter(…))`; `read_list` / `read_list_filter` are the underlying pyo3 bindings (`read.list` dispatches to the filter binding when `filter=` is passed).
 - **Paging:** `limit` only — **no `ORDER BY`, no cursor, no `after_id`** on `read.list` (engine 6779). The `after_id` cursor exists only on `read.collection` (op-store, engine 492/3824).
+- **Op-store recall:** `read.collection` is pagination-only (`ORDER BY id`, mandatory `limit`, no filter terms); a `record_key` lookup filters client-side over `OpStoreRow[]`.
 
 ---
 
