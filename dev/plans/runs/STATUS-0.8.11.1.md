@@ -12,31 +12,34 @@
 |------:|-------|-------|
 | 0 | LBS setup + re-triage + raise HITL §11 | **DONE — HITL cleared 2026-06-30** |
 | 5 | LBO: `sha2` 0.10→0.11 (#77) | **DONE → PR #138 GREEN (17 pass/1 skip), MERGEABLE.** Blast=**contained**; 1 breaking change (digest 0.11 dropped `LowerHex` on `Array` output → fixed 7 `{:x}` sites byte-identically); MERGE-recommended |
-| 10 | LBO: `typescript` 5→6 (#67) + `@types/node` 25→26 (#92) | DISPATCHED — worktree `0.8.11.1-ts-tooling`, branch `lbo/ts-tooling-20260630` |
-| 15 | LBO: `actions/checkout` 6→7 (#97) + `action-gh-release` 2→3 (#98) | **LBO DONE.** #97→**PR #136 GREEN** (17 pass/1 skip), 26 pins bumped (v6 SHA gone, v7 ×26, gh-release reverted to v2.6.1), MERGE-recommended. #98→**ESCALATE to 0.8.20** (dry-run skips the gh-release job → vacuous proof; only real validation = forbidden publish) |
-| 20 | `dependabot.yml` reconciliation | **DONE — PR #135 GREEN, MERGEABLE** (comment-only; coverage already correct, exclusions documented) |
-| 40 | Sweep verification + closure | pending — awaiting Slice 10 (ts-tooling) LBO; then merge gate + DoD |
+| 10 | LBO: `typescript` 5→6 (#67) + `@types/node` 25→26 (#92) | **LBO DONE → PR #137 GREEN, MERGEABLE. HELD for HITL review (user choice 2026-06-30).** Blast=**contained**; TS6 dropped auto-`@types` discovery → 96 errs root-caused to TS6 alone (`@types/node` 26 innocent); fix = 1 line `"types": ["node"]` in tsconfig, **no source edits, byte-identical `.js`+`.d.ts` emit**; 126/126 tests; one unrelated rust-macos flake re-ran green |
+| 15 | LBO: `actions/checkout` 6→7 (#97) + `action-gh-release` 2→3 (#98) | **DONE.** #97→**PR #136 MERGED** (`fede9fd4`), 26 pins. #98→**DEFERRED to 0.8.20** (dry-run vacuous; comment posted on #98) |
+| 20 | `dependabot.yml` reconciliation | **DONE — PR #135 MERGED** (`1c73d3f6`) |
+| 40 | Sweep verification + closure | **PARTIAL** — 3 landed + #98 disposed; **blocked on the #137 HITL decision** before final DoD readback |
 
-## Merge-gate readiness (3 of 4 ready; ts-tooling pending)
-| PR | Bump | CI | Lockfile touched | LBS recommendation |
-|----|------|----|------------------|--------------------|
-| #138 | sha2 0.10→0.11 | GREEN | `Cargo.lock` | **MERGE** (blast contained) |
-| #136 | actions/checkout v6→v7 | GREEN | none (workflows) | **MERGE** |
-| #135 | dependabot.yml reconcile | GREEN | none | **MERGE** |
-| #98 | action-gh-release v2→v3 | — | — | **DEFER → 0.8.20** (HITL rule unmet: dry-run vacuous) |
-| (ts) | typescript 6 + @types/node 26 | pending LBO | `package-lock.json` | TBD |
+## Landed state (2026-06-30, origin/main `1c73d3f6`)
+| PR | Bump | State | Merge commit |
+|----|------|-------|--------------|
+| #138 | sha2 0.10→0.11 | **MERGED** | `ff397708` |
+| #136 | actions/checkout v6→v7 | **MERGED** | `fede9fd4` |
+| #135 | dependabot.yml reconcile | **MERGED** | `1c73d3f6` |
+| #98 | action-gh-release v2→v3 | **DEFERRED → 0.8.20** (open, commented) | — |
+| #137 | typescript 6 + @types/node 26 | **OPEN — HELD for HITL review** | — |
 
-No lockfile overlap among #138/#136/#135/(ts) → merge order is free, no serialization needed.
+R-SW-6 verified on merged commits: no `version=`/`"version":` change, no `v*` tag created. Label-only honored.
 
 ## Worktree / branch / PR namespace (LBS-owned)
-| Slice | Worktree | Branch | PR |
-|------:|----------|--------|----|
-| 5 | `fathomdb-worktrees/0.8.11.1-sha2` | `lbo/sha2-20260630` | pending LBO |
-| 10 | `fathomdb-worktrees/0.8.11.1-ts-tooling` | `lbo/ts-tooling-20260630` | pending LBO |
-| 15 | `fathomdb-worktrees/0.8.11.1-ci-actions` | `lbo/ci-actions-20260630` | pending LBO |
-| 20 | `fathomdb-worktrees/0.8.11.1-dependabot` | `lbo/dependabot-reconcile-20260630` | **#135** |
+| Slice | Worktree | Branch | PR | State |
+|------:|----------|--------|----|-------|
+| 5 | (removed, merged) | (deleted) | #138 | MERGED |
+| 10 | `fathomdb-worktrees/0.8.11.1-ts-tooling` | `lbo/ts-tooling-20260630` | #137 | HELD |
+| 15 | (removed, merged) | (deleted) | #136 | MERGED |
+| 20 | (removed, merged) | (deleted) | #135 | MERGED |
+| LBS | `fathomdb-worktrees/0.8.11.1-lbs` | `lbs/ledger-0.8.11.1` | (ledger) | live |
 
-All four worktrees cut from verified `origin/main` tip `7929d1a7`. Merges stay HITL/Steward-gated.
+All worktrees cut from verified `origin/main` tip `7929d1a7`. Merges stay HITL/Steward-gated (no self-merge).
+
+> **Note — shared-checkout hazard (observed, not mine):** the concurrent 0.8.11.2 session committed to local `main` in the **primary checkout** (`34af4bbd`), diverging it from `origin/main`. This sweep was unaffected — all LBO/LBS work ran in isolated worktrees and landed via origin. Left their checkout untouched.
 
 ## HITL §11 answers (2026-06-30)
 1. **#98 action-gh-release** — accept **iff release dry-run green** (else defer 0.8.20).
