@@ -1,4 +1,18 @@
 version: 2
+#
+# Coverage reconciled 0.8.11.1 (Library Sweep #1, R-SW-5). The five entries below
+# cover every SHIPPED/tracked manifest:
+#   - pip  /src/python        (shipped Python package)
+#   - cargo /                 (workspace root — covers all src/rust/crates/* members)
+#   - npm  /src/ts            (TypeScript binding)
+#   - npm  /                  (root markdown dev tooling — see R-DEP-2 note below)
+#   - github-actions /        (all .github/workflows/*)
+#
+# Deliberately NOT covered (do NOT add — adding any of these reintroduces noise/orphans):
+#   - /python  (uv-managed EVAL ENV; python/uv.lock is gitignored, not shipped). This is
+#     the source of the idna/torch security-alert noise — keeping it uncovered is intentional.
+#   - dev/research/**, data/corpus-data/** requirements*.txt  (eval/corpus fetch artifacts).
+#   - dev/release/fixtures/cargo-skew/**  (intentional mock crates for release-skew tests).
 updates:
   - package-ecosystem: "pip"
     directory: "/src/python"
