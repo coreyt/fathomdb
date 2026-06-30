@@ -457,6 +457,12 @@ advance to <next>`.
 8. Never override BLOCK. Override CONCERN only when structural or
    prompt-induced.
 9. Worktree cleanup after phase family closes (§ 11).
+10. **One writer per checkout.** Never run more than one file-mutating
+    session or subagent in the same working tree at once — each concurrent
+    writer gets its own worktree (cut off `origin/main`), or they are
+    serialized. Read-only subagents may share a checkout. Push explicit
+    branch refs (HEAD-independent); verify-from-git after concurrent work
+    (§ 13).
 
 ## 11. Worktree cleanup (after phase family closes)
 
@@ -642,6 +648,7 @@ memory holds the detail, this table is the index + the move.
 | ---------------- | ------------ | -------- |
 | Implementer's commits are missing / based on old code; "main moved under me" | Worktree cut from a **stale base** (Agent-native isolation, or a hand-typed baseline that wasn't current `main`). | The § 1.6 preflight HARD-fails this. Re-create the worktree off `$(git rev-parse main)`; never use Agent `isolation` (§ 1, § 2). (`agent-worktree-stale-base-trap`) |
 | A wrapper/implementer agent spawned **another** agent; work vanished | Implementer read "spawn from main thread" as "spawn again"; agent had Agent/Task tools. | The `implementer` agent type omits Agent/Task — the physical guard. Never grant them. Main thread is the only orchestrator. (B.1 incident; § 1) |
+| Two sessions/subagents edit the **same checkout** concurrently; a commit lands on the wrong branch, or one writer's edits surface on another's branch / `HEAD` switches under you | **Shared checkout across concurrent writers** — they race on `HEAD`, branch-switch, and uncommitted state. | One writer per checkout (§ 10 rule 10): each concurrent writer gets its own worktree off `origin/main`, else serialize. Read-only subagents may share. Recover: `git branch -f` the stray commit onto its intended branch, reset the shared branch to `origin`, verify-from-git, push explicit branch refs. (`orchestration-execution-traps` item 7; incident 2026-06-29) |
 | A run reports green but a later step shows the real command failed (e.g. pytest "exit 0" was a wrapper's trailing `echo`) | A **background/wrapper exit masked the real command's exit**. | Read `PIPESTATUS`/`$?` of the *actual* command; cross-check the green claim against printed output; a collection/import error ≠ a code defect — check the harness's build flags first. (`background-exit-masks-real-exit`) |
 | A conformance/parity test rewrite **passes on first run** (suspiciously) | Vacuously-green test: hard-coded surface enumeration, or same-file duplicate "parity" so drift is undetectable. | Demonstrate the catch in RED first (real `dir()` introspection minus an exclusion set; a single shared allowlist both bindings read). Independent codex § 9 is load-bearing here. (`conformance-rewrite-vacuous-green-trap`) |
 | `output.json` absent, or result text reports a blocker | Implementer FAILED (no `IMPLEMENTED` witness). | Off-spine halt (§ 1.5 invariant 3): triage (fix-N or abandon), **never** cherry-pick a slice with no witness (§ 2). |
