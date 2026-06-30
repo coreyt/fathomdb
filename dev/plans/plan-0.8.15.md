@@ -349,3 +349,44 @@ declaration surface that 0.6.0 removed, so each also carries a separate HITL gov
 tokenizer) **with these as known deferred gaps.** Per the standing R-I4 / Q-B5 resolution (HITL
 2026-06-30), FathomDB owes **no** FTS extension for 0.8.x; this adjacency exists for the high-bar,
 value-test-gated future case (~0.8.15+) where content-modeling into `body` proves insufficient.
+
+---
+
+## 11. Adjacent (candidate, off-default until scoped) — op-store `latest_state` read-back verbs, paired with Memex 0.5.3
+
+> **Scope note.** Like §10, this does **not** add to the dispatcher ladder. It is a forward pointer so
+> the op-store read-back gap lands in the right place and is not re-discovered cold. **Candidate, not
+> committed** — off-default until scoped at a Slice 0, same posture as the §10 FTS items.
+
+**The gap.** The op-store has an `operational_state` table (latest-state, PK by `record_key`, upserted
+at every write, NEVER FIFO-evicted) but **no governed read-back verb**. `read.collection` /
+`read.mutations` read only `operational_mutations` (the append log). The server-side `operational_state`
+read-back promised by `dev/adr/ADR-0.6.0-op-store-same-file.md` (§"Two collection kinds": "reads come
+directly from `operational_state`") is **unfinished**. Memex therefore reconstructs latest-state with a
+client-side log-collapse workaround over the append log.
+
+**The footgun this closes.** There is no per-collection retention/compaction — `retention_json` is
+persisted on `operational_collections` but never enforced. The only enforcement is a **global ~1M-row
+FIFO cap over ALL `operational_mutations`** (`DEFAULT_PROVENANCE_ROW_CAP`, test-only setter). Because the
+cap is per-database and cross-collection, it can evict a cold key's live latest-state append for any
+consumer that derives latest-state via the log; tombstone deletes only grow the log. This is a
+**theoretical** corruption risk at Memex's single-user-local scale (needs ~1M monotonic op-store rows to
+trigger). The nearer-term real concern is **latency**, not corruption: the client-side workaround re-reads
+the entire growing log per call — but that is mitigable consumer-side and is **not** a FathomDB ask.
+
+**The durable fix — two additive verbs (A-1-shaped, purely additive):**
+
+- **`read.state(collection, record_key?)`** — keyed read-back, a pure `SELECT` over the already-collapsed
+  `operational_state` table.
+- **latest-state list/scan** — list/scan over `operational_state`, also a pure `SELECT` over the
+  collapsed table.
+
+With both, Memex registers latest-state collections as `latest_state`, reads via the new verbs, and
+**deletes its client-side collapse machinery in one localized edit**.
+
+**Why ~0.8.15, not 0.8.11.2.** A new governed verb requires a **publishable micro** plus the full
+binding / allowlist / parity-test governance — not a label-only pico. Hence it is sequenced here as a
+candidate, **paired with Memex 0.5.3**.
+
+**Memex 0.5.1 ships on the log-collapse workaround** as a known, accepted, scale-limited gap (the
+corruption footgun is theoretical at single-user-local scale). HITL 2026-06-30 **DEFER** decision.

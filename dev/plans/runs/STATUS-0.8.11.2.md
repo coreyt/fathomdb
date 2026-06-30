@@ -93,3 +93,18 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
   tokenizers (m006) off-table for 0.8.x. **T3.4 splits into two tests:** recall/coverage drift
   (multi-field → single-`body`) AND ranking drift (per-column weights → uniform BM25 + CE-rerank). A-3
   stays deferred. Recorded across 00/10 designs + B-1 answer-sheet.
+- 2026-06-30 — **HITL: DEFER op-store `latest_state` read-back to ~0.8.15 / Memex 0.5.3.** The op-store has
+  `operational_state` (latest-state, upserted, never FIFO-evicted) but **no governed read-back verb**;
+  `read.collection`/`read.mutations` read only the `operational_mutations` append log, so the server-side
+  read-back promised by `ADR-0.6.0-op-store-same-file` is unfinished and Memex collapses the log client-side.
+  Durable fix = **two additive verbs** — keyed `read.state(collection, record_key?)` **and** a latest-state
+  **list/scan** over `operational_state` (both pure SELECTs over the already-collapsed table, A-1-shaped) —
+  letting Memex read via the verbs and delete its collapse machinery in one edit. A governed verb needs a
+  **publishable micro** + binding/allowlist/parity-test governance (not a label-only pico) → ~0.8.15, not
+  0.8.11.2. **Footgun recorded:** no per-collection retention (`retention_json` persisted, never enforced);
+  only a **global ~1M-row FIFO cap** over ALL `operational_mutations` (`DEFAULT_PROVENANCE_ROW_CAP`) can
+  evict a cold key's live latest-state append for any latest-state-via-log consumer — but it is
+  **theoretical at Memex single-user-local scale** (needs ~1M monotonic rows). Nearer-term real concern is
+  **latency** (workaround re-reads the growing log per call), mitigable consumer-side, not a FathomDB ask.
+  **Memex 0.5.1 ships on the log-collapse workaround** as a known/accepted scale-limited gap. Recorded in
+  `plan-0.8.15.md` §11 + a forward-note on `ADR-0.6.0-op-store-same-file.md`.

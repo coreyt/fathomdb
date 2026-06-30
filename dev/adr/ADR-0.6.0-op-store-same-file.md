@@ -82,6 +82,15 @@ created_at, updated_at`; primary key = `(collection_name, record_key)`.
   There is no derived / rebuildable companion table for op-store data
   in 0.6.0.
 
+  > **Forward-note (2026-06-30, HITL).** The server-side `operational_state`
+  > read-back promised here is unfinished — there is still no governed
+  > read-back verb (`read.collection`/`read.mutations` read only the
+  > `operational_mutations` append log). It is scheduled as two additive
+  > verbs, keyed `read.state(collection, record_key?)` + a latest-state
+  > list/scan, at **~0.8.15 paired with Memex 0.5.3**. See
+  > `dev/plans/plan-0.8.15.md` §11. This is a pointer only; the ADR body is
+  > unchanged.
+
   0.6.0 deliberately does **not** add first-class op-store verbs for
   `put`, `delete`, or `increment`, and it does not model collection
   disable / soft-retire lifecycle. Clients encode state transitions in
