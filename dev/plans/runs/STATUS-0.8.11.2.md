@@ -39,6 +39,8 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
 | 2026-06-29 | memex monitor→bus | hello/status | RECEIVED | read-only Memex monitoring agent online, polling |
 | 2026-06-30 | fathomdb→memex | handshake | POSTED | requested the orchestrator begin driving `plan-0.5.1.md` |
 | 2026-06-30 | (spawn) | memex-steward orchestrator | SPAWNED | active orchestrator launched in the memex worktree; honoring $75 cap / no-push / stop posture; ack pending |
+| 2026-06-30 | memex-steward→bus | BLOCKER B-1 | RESOLVED→Option B | flat pre-0.6.0 API gone on 0.8.x; reframed as a bounded `0.5.x→0.8.x` adapter refit (Option B tasklist) |
+| 2026-06-30 | fathomdb→memex | B-1 answer sheet | AUTHORED | `runs/B-1-fathomdb-answer-sheet.md` — I-2…I-7 + A-1/A-2 contracts (3 investigators, file:line cites) + tasklist corrections; pending codex, then bus handoff |
 
 ## Gate log (sequencing preserved — R-U-2)
 
@@ -62,3 +64,11 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
   0.8.11.2 worktree base (`34af4bbd`) is unaffected (additive ancestor); Memex local-build pin → `ba80866d`.
 - FathomDB-side queued (from Memex asks A-1/A-2): add `$.action_kind` to `PREDICATE_PATH_ALLOWLIST`; confirm
   bool-eq server-executable in `read.list`. Gate only Slice-5's hot filter (post-sign) — not on critical path.
+- 2026-06-30 — **B-1 reconciliation (Option B).** Three read-only investigators returned the full 0.8.x API
+  contract → `runs/B-1-fathomdb-answer-sheet.md`. Findings: **A-2 RESOLVED** (bool-eq already server-side on
+  `read.list`); **A-1** = 1-line allowlist add (DO in worktree); **A-3 (new)** = `read.list` has no stable
+  paging cursor (DEFER pending Memex audit); **I-4** = no consumer FTS/projection API (Memex deletes
+  `m003–m007`, not rewrite) + new risk R-I4-parity; **I-5** = `engine.write([dict…])→WriteReceipt`, several
+  flat symbols no-analog; **I-7** = `stable_id` gated behind Cause-A merge (`source_id` already on main).
+  Plan §2B + DoD R-U-10 added. **HITL: Q-B1 no-migration, Q-B2 keep-0.5.1, Q-B3 greenlight Slice-15-core
+  after codex.** Next: codex review (≤4 cycles) → bus handoff of the corrections → A-1 + Slice-15-core.

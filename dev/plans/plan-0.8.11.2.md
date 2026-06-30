@@ -186,6 +186,45 @@ Everything else (eval verdicts, $0 arms, Cause-A size→cut, V-gate re-validatio
 
 ---
 
+## 2B. B-1 reconciliation — Memex 0.5.1 onto the 0.8.x governed API
+
+Memex Slice-0 surfaced **BLOCKER B-1**: Memex's store is built on the retired pre-0.6.0 *flat*
+fathomdb API (`WriteRequest`/`NodeInsert`/`Operational*`/`new_id`/`ProjectionTarget`/…), which the
+0.8.x line deleted; the governed `read.*` verbs never coexisted with it. The Memex side absorbs this
+as **Option B** — a bounded `0.5.x→0.8.x` API-generation refit of its fathomdb adapter (≈90%
+contained in `fathom_store.py`/`fathom_facade.py`), **not** a greenfield storage cutover (the
+sqlite→fathomdb cutover already shipped). Tasklist: `memex/dev/fathomdb/memex-0.5.1-fathom-0.8.11.2-option-b-tasklist.md`.
+
+**FathomDB-side contract-of-record:** `runs/B-1-fathomdb-answer-sheet.md` answers every interaction
+point (I-2…I-7, A-1/A-2) from the 0.8.x source with `file:line` cites, and lists the tasklist
+corrections. Three load-bearing facts: **(I-4)** there is *no consumer FTS/projection declaration
+API* — FTS is an engine-owned fixed projection of the single `body` field, so Memex *deletes*
+`m003–m007` rather than rewriting them (new risk **R-I4-parity**: multi-field/weighted/custom-tokenizer
+FTS is gone); **(I-5)** one write path `engine.write([dict…]) → WriteReceipt`, with `ChunkInsert`/
+`ChunkPolicy`/`NodeRetire`/`LastAccessTouchRequest`/`new_id` having *no analog* (chunk client-side;
+retire = supersede-by-rewrite keyed on `logical_id`); **(I-2)** `read.list` has *no cursor/`ORDER
+BY`* — only `limit` (stable paging is FathomDB gap **A-3**, deferred pending a Memex paging audit).
+
+**FathomDB-side deliverables for the refit** (this Steward owns these; full table in the answer sheet):
+
+| ID | Action | Disposition |
+|----|--------|-------------|
+| **A-1** | add `"$.action_kind"` to `PREDICATE_PATH_ALLOWLIST` + guard test | **DO** in this worktree (1-line, additive; gates only Slice-5's hot filter, client-side fallback exists) |
+| **A-2** | bool-eq server-side on `read.list` | **RESOLVED** (already server-side; no work) |
+| **A-3** | add `write_cursor` order + `after_cursor` to `read.list` for stable paging | **DEFER** pending Memex confirming a deep-paging `read.list` call site |
+| **I-7** | merge Cause-A so `stable_id` reaches `origin/main` | part of 0.8.11.2; Memex wires the `source_id` slot inert until the merge lands |
+
+**Experiment-timeline split (confirms I-8).** B-1 gates **only** the as-Memex / real-gold ADOPTION
+arms (OPP-1 Adopt-GO, OPP-3 adoption re-measure, OPP-6 real-gold confirm) — which Cause-A `stable_id`
+keys, and which are already a HITL Adopt-GO hard-stop. The academic/screening arms (OPP-6 EXP-COV,
+OPP-3 characterization, OPP-1 build arms, V-1/V-3/V-7) run FathomDB-side **regardless of B-1**.
+
+**HITL decisions (2026-06-30).** **Q-B1** = no DB migration (consistent with I-4 — nothing to
+forward-migrate). **Q-B2** = keep the `0.5.1` label for the refit. **Q-B3** = greenlight Slice-15-core
+(the B-1-independent intent_hint classifier) *after* the codex pass.
+
+---
+
 ## 3. Requirements + acceptance criteria (DoD)
 
 | ID | Requirement | Acceptance signal (falsifiable) |
@@ -199,6 +238,7 @@ Everything else (eval verdicts, $0 arms, Cause-A size→cut, V-gate re-validatio
 | R-U-7 | Priced runs respect the pooled **`$75`** envelope + resilience preconditions | running `$` ledger ≤ `$75` across all passes; checkpoint/resume/backoff verified before spend; auto-stop at cap |
 | R-U-8 | Cross-repo via the bus; **no Memex pushes** | Memex arms driven by the Memex orchestrator on `plan-0.5.1.md`; all coordination via `fathom-memex-chat.jsonl`; `git log` of Memex shows no push from this Steward |
 | R-U-9 | Autonomous stop posture honored | Steward auto-proceeds the V-gates; the only HITL hard-stops recorded are OPP-1 Adopt-GO and any publishable cut |
+| R-U-10 | B-1 reconciled against the real 0.8.x surface | `runs/B-1-fathomdb-answer-sheet.md` answers every interaction point with `file:line` cites; the Option-B tasklist corrections (I-4 delete-not-rewrite, I-5 no-analog symbols, I-2 paging gap) are applied; A-1 landed in this worktree; A-3 dispositioned |
 
 ---
 
