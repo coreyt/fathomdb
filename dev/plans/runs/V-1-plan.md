@@ -28,8 +28,10 @@ V-1-blocking** (`0.8.11-handoff-to-0.8.15.md` §1 row "EXP-B′", §4 table). V-
 Three deltas over the 0.8.11 run (the V-1 gate line, handoff §2):
 
 1. **Live CE** — re-derive the rerank tuples on a `--features default-reranker` build (not 0.8.3 data).
-2. **Fill the thin classes** — give `multi_hop` a **measured** tuple (MuSiQue, now carrying
-   `question_decomposition` per P0-3) instead of the EXP-0 provisional pin; characterize `global`.
+2. **Fill the thin classes** — give `multi_hop` a **measured** tuple on **MuSiQue + HotpotQA** (both, per
+   HITL; MuSiQue carries `question_decomposition` per P0-3, HotpotQA carries native `supporting_facts`)
+   instead of the EXP-0 provisional pin, plus **LOCOMO** corroboration for multi_session/temporal;
+   characterize `global` (which stays provisional — its real fill is the priced OPP-6/V-7 judge axis).
 3. **Add MMR + recency** — the two knobs the handoff flags **unmeasured** (`§5` function ledger: MMR
    "unmeasured", recency "unmeasured / not isolated").
 
@@ -120,25 +122,35 @@ Mapping uses the harness intent map `LME_CLASS_TO_INTENT` (L84-89) and the corpu
 | class | corpus → gold | present? | how filled |
 |-------|---------------|----------|------------|
 | **needle** | LME factoid + knowledge_update; gold `0.8.3-d0a-memory-gold.json` | ✅ (`longmemeval-cleaned` HF cache + gold file) | measured (as 0.8.11) |
-| **multi_session** | LME multi_session (+ LOCOMO corroboration) | ✅ LME; LOCOMO **needs acquire** (`acquire_locomo.py` present, raw not built) | measured on LME; LOCOMO is a $0 corroboration add (handoff §2 V-5 corpus), optional for V-1 |
-| **temporal** | LME temporal (+ LOCOMO) | ✅ LME; LOCOMO as above | measured on LME; recency knob targets this class |
-| **multi_hop** | **MuSiQue** (2,417 answerable, `question_decomposition` retained per P0-3) **+ HotpotQA** | ✅ MuSiQue (`data/corpus-data/raw/musique_dev.jsonl`, P0-3 verified: 2,417 rows carry `question_decomposition`); **HotpotQA ABSENT** | **fill on MuSiQue for V-1** (replaces the EXP-0 provisional pin with a measured tuple); **HotpotQA deferred — see blocker B3** |
-| **global** | AP-News BenchmarkQED, **win-rate / `decide_084` axis** | acquire script present (`acquire_apnews_benchmarkqed.py`), raw not built | **NO node-level retrieval gold by design** — global has no r@10 axis; **stays provisional in V-1** (see flag below) |
+| **multi_session** | LME multi_session **+ LOCOMO corroboration** | ✅ LME; ✅ **LOCOMO acquired** (`acquire_locomo.py` → `data/corpus-data/raw/locomo10.json`, 10 conv / 1,986 QA, gitignored EVAL-ONLY) | measured on LME **with LOCOMO corroboration** (HITL: LOCOMO included for multi_session/temporal corroboration, no longer optional) |
+| **temporal** | LME temporal **+ LOCOMO corroboration** | ✅ LME; ✅ LOCOMO as above | measured on LME with LOCOMO corroboration; recency knob targets this class |
+| **multi_hop** | **MuSiQue + HotpotQA** (both — HITL decision) | ✅ MuSiQue (`data/corpus-data/raw/musique_dev.jsonl`, P0-3 verified: 2,417 answerable rows carry `question_decomposition`); ✅ **HotpotQA acquired** (`acquire_hotpotqa.py` → `data/corpus-data/raw/hotpotqa_dev.jsonl`, distractor/validation, 7,405 rows, all carry native `supporting_facts` multi-hop gold, gitignored) | **fill on MuSiQue + HotpotQA for V-1** (replaces the EXP-0 provisional pin with a measured tuple per corpus, decided per-corpus, never pooled) |
+| **global** | AP-News BenchmarkQED, **win-rate / `decide_084` axis** | acquire script present (`acquire_apnews_benchmarkqed.py`), raw not built | **NO node-level retrieval gold by design** — global has no r@10 axis; **stays PROVISIONAL in V-1** — an accepted, documented carry, real fill is the priced OPP-6/V-7 judge axis (see flag below) |
 
-**How `multi_hop` gets filled.** MuSiQue is present and P0-3-complete (verified: `answerable` subset =
-2,417, all carry `question_decomposition`). V-1 runs a **fresh fused+CE pass** on MuSiQue (the 0.8.11 run
-deferred it — "no prior MuSiQue CE-pass exists → pinned provisional", `expb_joint_tune_run.py` L567-571)
-and emits a **measured** `multi_hop` tuple. HotpotQA is the intended 2nd multi_hop corpus (handoff §2b
-EXP-ITER-D power target) but is **not acquirable today** (blocker B3) — V-1 lands multi_hop on MuSiQue
-alone and flags HotpotQA for V-3/V-5.
+**How `multi_hop` gets filled (HITL: MuSiQue + HotpotQA, both).** Both multi_hop corpora are now present
+and verified:
 
-**Flag — `global` has no adequate corpus for the V-1 $0 axis.** `global` (sensemaking) is scored on the
-**win-rate / `decide_084`** axis with an **LLM judge**, *not* node-level retrieval gold
-(`expb_joint_tune_run.py` L572-574, `make_tuple` keeps it provisional L321-334). Filling it properly is a
-**priced** pass (draws the $75 pool) and belongs to **OPP-6 / V-7**, not the $0 V-1 keystone. V-1 keeps
+- **MuSiQue** — P0-3-complete (`answerable` subset = 2,417, all carry `question_decomposition`).
+- **HotpotQA** — acquired via `acquire_hotpotqa.py` (`hotpotqa/hotpot_qa` @ `1908d6af`, `distractor`
+  config / `validation` split, **7,405 rows**, every row carries non-empty native `supporting_facts`
+  = the multi-hop support gold, the HotpotQA analog of MuSiQue's `question_decomposition` /
+  `paragraph_support_idx`). EVAL-ONLY, gitignored, never committed.
+
+V-1 runs a **fresh fused+CE pass** on **each** corpus (the 0.8.11 run deferred MuSiQue — "no prior MuSiQue
+CE-pass exists → pinned provisional", `expb_joint_tune_run.py` L567-571) and emits a **measured**
+`multi_hop` tuple **per corpus**, decided per-corpus and **never pooled** (`decide_per_corpus`). MuSiQue +
+HotpotQA together are the EXP-ITER-D power target (handoff §2b); having both removes the prior single-corpus
+caveat.
+
+**Flag — `global` stays PROVISIONAL in V-1 (accepted, documented carry).** `global` (sensemaking) is scored
+on the **win-rate / `decide_084`** axis with an **LLM judge**, *not* node-level retrieval gold
+(`expb_joint_tune_run.py` L572-574, `make_tuple` keeps it provisional L321-334). It therefore has **no
+node-level retrieval gold in V-1**, so its tuple **stays provisional** — this is an **accepted, documented
+carry, not a silent gap**. Filling it properly is a **priced** pass (draws the $75 pool) and is the
+**real fill = the OPP-6 / V-7 LLM-judge axis**, explicitly out of the $0 V-1 keystone scope. V-1 keeps
 `global` **provisional-pinned** (EXP-0-global tuple `alpha=0.3, pool_n=10, candidate_k=200`, L98-100) and
-records that as a known gap. MMR may still be *measured* on global if a retrieval proxy gold is available;
-otherwise global's MMR row is reported as N/A.
+records that as a known, accepted gap. MMR may still be *measured* on global if a retrieval proxy gold is
+available; otherwise global's MMR row is reported as N/A.
 
 ---
 
@@ -215,6 +227,8 @@ fetch — see B1).
 
 - ✅ **LME** corpus (`longmemeval-cleaned` HF cache) + gold (`dev/plans/runs/0.8.3-d0a-memory-gold.json`).
 - ✅ **MuSiQue** corpus with `question_decomposition` (P0-3, 2,417 rows).
+- ✅ **HotpotQA** corpus with native `supporting_facts` (`acquire_hotpotqa.py`, 7,405 rows, distractor/val).
+- ✅ **LOCOMO** corpus (`acquire_locomo.py`, 10 conv / 1,986 QA) for multi_session/temporal corroboration.
 - ✅ **bge-small** embedder (`models--BAAI--bge-small-en-v1.5`).
 - ✅ The **harness** (`expb_joint_tune_run.py`) and **P0-4 eval-support** are landed and importable.
 
@@ -233,12 +247,15 @@ fetch — see B1).
   not this worktree** (`scripts/preflight.sh` L100; memory: worktree maturin breaks the `.venv` binding).
   This rebuild **is itself the V-7 packaging question** (shipped wheel has `default-reranker` OFF) — V-1
   surfaces it first.
-- **B3 — HotpotQA absent (partial, non-blocking for V-1).** No HF cache, **no acquire script** in
-  `tests/corpus/scripts/` (only musique/locomo/apnews exist). V-1 lands `multi_hop` on **MuSiQue alone**;
-  HotpotQA needs an acquire script and is deferred to V-3/V-5.
-- **B4 — LOCOMO / AP-News raw not built (non-blocking).** Acquire scripts present
-  (`acquire_locomo.py`, `acquire_apnews_benchmarkqed.py`); LOCOMO corroboration is an optional $0 add,
-  AP-News/global is priced-judge (out of V-1 $0 scope).
+- **B3 — HotpotQA absent — RESOLVED.** `acquire_hotpotqa.py` added (models on `acquire_musique.py`:
+  HF load → `materialize_row` → manifest sha pin → byte-stability) and **acquired**: `hotpotqa/hotpot_qa`
+  @ `1908d6af`, `distractor`/`validation`, **7,405 rows**, every row carries non-empty native
+  `supporting_facts` (multi-hop support gold). EVAL-ONLY, gitignored. multi_hop now lands on
+  **MuSiQue + HotpotQA** (both), per the HITL decision.
+- **B4 — LOCOMO raw not built — RESOLVED; AP-News still deferred.** **LOCOMO acquired** via
+  `acquire_locomo.py` → `data/corpus-data/raw/locomo10.json` (10 conv / 1,986 QA, gitignored EVAL-ONLY,
+  CC-BY-NC), and is **included** (HITL) for multi_session/temporal corroboration. AP-News/global remains
+  priced-judge (out of V-1 $0 scope; the `global`-provisional carry, B5).
 - **B5 — `global` has no node-level retrieval gold (inherent).** Stays provisional in V-1 (§3).
 
 ---
@@ -271,12 +288,13 @@ fetch — see B1).
    (the V-7 question)? Who owns the rebuild?
 2. **CE model fetch (B1).** Is one-time network access to pull `cross-encoder/ms-marco-TinyBERT-L-2`
    authorized in this eval env?
-3. **multi_hop scope.** Accept landing `multi_hop` on **MuSiQue alone** for V-1, deferring HotpotQA (needs
-   a new acquire script) to V-3/V-5? Or block V-1 until HotpotQA is acquirable?
-4. **global.** Accept `global` **staying provisional** in V-1 (its proper fill is the priced `decide_084`
-   axis = OPP-6/V-7), keeping V-1 strictly $0?
+3. **multi_hop scope — RESOLVED (HITL).** `multi_hop` = **MuSiQue + HotpotQA** (both). HotpotQA acquire
+   script added + acquired (7,405 rows, native `supporting_facts`); decided per-corpus, never pooled.
+4. **global — RESOLVED (HITL).** `global` **stays PROVISIONAL** in V-1 — an accepted, documented carry
+   (no node-level retrieval gold in V-1); its real fill is the **priced `decide_084` LLM-judge axis =
+   OPP-6/V-7**. V-1 stays strictly $0.
 5. **MMR/recency mechanism.** Approve measuring MMR/recency as **offline transforms** (no engine code,
    keeps V-1 $0/code-free), with productization deferred to a separately-gated engine change? Confirm the
    target classes (recency→temporal, MMR→multi_session/global) and the **+0.04 CI-lo** lever bar.
-6. **LOCOMO corroboration.** Include the $0 LOCOMO corroboration of multi_session/temporal in V-1, or
-   defer to V-5 (multi-corpus)?
+6. **LOCOMO corroboration — RESOLVED (HITL).** Include the $0 LOCOMO corroboration of multi_session/
+   temporal in V-1 (LOCOMO acquired: 10 conv / 1,986 QA, gitignored EVAL-ONLY).

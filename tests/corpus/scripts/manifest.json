@@ -450,6 +450,32 @@
       "acquired_at": "2026-06-29",
       "note": "Locally generated (non-deterministic hashes \u2014 seed-pinned content, but per-run file layout). Multi-hop SQL gold (multihopQA.py, needs pandasql) NOT generated here; atomic_qa_pairs gold is embedded.",
       "role_note": "Daily-life / personal-timeline QA \u2014 strongest pure daily-life fit."
+    },
+    "hotpotqa": {
+      "script": "acquire_hotpotqa.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "hotpotqa/hotpot_qa",
+        "note": "Canonical HotpotQA v1.1 (Yang et al. 2018). The 'distractor' config pairs each question with 10 paragraphs (2 gold + 8 distractors) \u2014 the standard multi-hop eval setting. Native supporting_facts (title + sentence index) retained as the multi-hop support gold.",
+        "config": "distractor",
+        "split": "validation",
+        "revision": "1908d6afbbead072334abe2965f91bd2709910ab",
+        "last_modified": "2025-08-11T10:16:27Z"
+      },
+      "license": "CC-BY-SA-4.0",
+      "license_notes": "CC-BY-SA-4.0 (per the hotpotqa/hotpot_qa HF dataset-card license tag; Yang et al. 2018, HotpotQA, EMNLP arXiv:1809.09600). License posture: commit-clean (produced JSONL is gitignored).",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/hotpotqa_dev.jsonl",
+      "doc_count": 7405,
+      "doc_count_breakdown": {
+        "type_comparison": 1487,
+        "type_bridge": 5918,
+        "level_easy": 0,
+        "level_medium": 0,
+        "level_hard": 7405
+      },
+      "sha256": "b98e5af356e886eb72015cedb42fc3c41d64714e061e3485d435666e2a0a8680",
+      "acquired_at": "2026-06-30"
     }
   }
 }
