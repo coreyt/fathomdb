@@ -9,7 +9,10 @@ echo "Internal engineering docs live in dev/."
 echo "Rust workspace members live under src/rust/crates/."
 echo "Run scripts/agent-verify.sh during the agent loop, scripts/check.sh as the broader CI gate."
 
-# Repo-tracked git hooks (pre-commit fmt/lint, pre-push agent-verify).
+# Repo-tracked git hooks: activate via core.hooksPath (repo-relative, so linked
+# worktrees inherit it too). pre-commit = fast fmt/ruff + AST-guarded markdown
+# auto-fix/enforce; pre-push = fast clippy/actionlint (full verify opt-in via
+# FATHOMDB_PREPUSH_FULL=1). See scripts/install-hooks.sh.
 scripts/install-hooks.sh
 
 # Python dev tooling — pytest, hypothesis, ruff, pyright.

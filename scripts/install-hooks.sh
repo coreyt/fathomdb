@@ -1,61 +1,44 @@
 #!/usr/bin/env bash
-# Install repo-tracked git hooks by symlinking .git/hooks/* -> scripts/hooks/*.
-# Idempotent + self-healing: it replaces an existing hook when that hook is one of
-# OURS (a symlink, or a regular file carrying the SENTINEL below — e.g. a stale
-# hand-copied older version), but refuses to clobber a genuine developer-authored
-# hook (a regular file WITHOUT the sentinel) unless --force is given.
+# Activate the repo-tracked git hooks (scripts/hooks/*) for THIS clone by
+# pointing git's core.hooksPath at them. Idempotent.
 #
-#   scripts/install-hooks.sh            # install / refresh tracked hooks
-#   scripts/install-hooks.sh --force    # also replace a non-sentinel custom hook
+#   scripts/install-hooks.sh    # activate / refresh tracked-hook activation
+#
+# WHY core.hooksPath instead of symlinking into .git/hooks:
+#   * Zero "remember to run it": once bootstrap.sh sets this, every actor in
+#     this clone runs the tracked pre-commit (md auto-fix/enforce, fmt, ruff)
+#     and pre-push automatically — there is no per-file adoption decision that
+#     could silently leave a stale legacy hook in place (the failure mode that
+#     left the markdown guard dormant in every checkout).
+#   * Worktrees: core.hooksPath lives in the SHARED common config (.git/config),
+#     so linked worktrees inherit it; the value is REPO-RELATIVE (scripts/hooks),
+#     which git resolves against each worktree's own root — so a linked worktree
+#     activates its own tracked hooks instead of silently having none.
+#
+# Velocity note: the tracked pre-push is FAST by default (clippy + actionlint);
+# the heavy full-verify gate is opt-in via FATHOMDB_PREPUSH_FULL=1. So enabling
+# core.hooksPath does NOT make every push slow. See scripts/hooks/pre-push.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-REPO_ROOT="$(pwd)"
-HOOKS_SRC="$REPO_ROOT/scripts/hooks"
-HOOKS_DST="$(git rev-parse --git-path hooks)"
-SENTINEL="fathomdb-tracked-hook"
-FORCE=0
-[ "${1:-}" = "--force" ] && FORCE=1
+DESIRED="scripts/hooks"
 
-# If core.hooksPath points somewhere OTHER than this repo's .git/hooks, git uses THAT
-# directory and ignores symlinks we'd create in .git/hooks — install into it instead, and
-# warn so a dead hook is explainable.
-HOOKS_PATH_CFG="$(git config --get core.hooksPath || true)"
-if [ -n "$HOOKS_PATH_CFG" ]; then
-  abs_cfg="$(cd "$HOOKS_PATH_CFG" 2>/dev/null && pwd || echo "$HOOKS_PATH_CFG")"
-  abs_dst="$(cd "$HOOKS_DST" 2>/dev/null && pwd || echo "$HOOKS_DST")"
-  if [ "$abs_cfg" != "$abs_dst" ]; then
-    echo "install-hooks: note core.hooksPath=$HOOKS_PATH_CFG; installing there." >&2
-    HOOKS_DST="$HOOKS_PATH_CFG"
-  fi
+# Keep the tracked hooks executable (a fresh clone can land them mode 0644 on
+# some filesystems / archive extractions).
+chmod +x scripts/hooks/pre-commit scripts/hooks/pre-push 2>/dev/null || true
+
+CURRENT="$(git config --get core.hooksPath || true)"
+if [ "$CURRENT" = "$DESIRED" ]; then
+  echo "install-hooks: core.hooksPath already '$DESIRED' (tracked hooks active)."
+  exit 0
 fi
 
-mkdir -p "$HOOKS_DST"
+if [ -n "$CURRENT" ] && [ "$CURRENT" != "$DESIRED" ]; then
+  echo "install-hooks: replacing core.hooksPath '$CURRENT' -> '$DESIRED'." >&2
+fi
 
-for hook in pre-commit pre-push; do
-  src="$HOOKS_SRC/$hook"
-  dst="$HOOKS_DST/$hook"
-
-  if [ ! -f "$src" ]; then
-    echo "install-hooks: missing $src" >&2
-    exit 1
-  fi
-  chmod +x "$src"
-
-  # Absolute symlink target — works for worktrees where .git is a file.
-  if [ -L "$dst" ] || [ ! -e "$dst" ]; then
-    ln -snf "$src" "$dst"
-    echo "install-hooks: linked $dst -> $src"
-  elif grep -q "$SENTINEL" "$dst" 2>/dev/null; then
-    # a stale hand-copied version of OUR hook — safe to replace with the live symlink
-    ln -snf "$src" "$dst"
-    echo "install-hooks: refreshed stale tracked hook $dst -> $src"
-  elif [ "$FORCE" -eq 1 ]; then
-    ln -snf "$src" "$dst"
-    echo "install-hooks: --force replaced $dst -> $src"
-  else
-    echo "install-hooks: $dst is a non-symlink without the '$SENTINEL' marker;" >&2
-    echo "install-hooks: leaving it (looks developer-authored). Re-run with --force to adopt the tracked hook." >&2
-  fi
-done
+git config core.hooksPath "$DESIRED"
+echo "install-hooks: set core.hooksPath='$DESIRED'."
+echo "install-hooks: tracked pre-commit (md auto-fix/enforce, fmt, ruff) + pre-push"
+echo "install-hooks: (fast clippy/actionlint; full gate opt-in via FATHOMDB_PREPUSH_FULL=1) are now active."
