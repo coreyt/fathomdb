@@ -13,9 +13,37 @@ permissions:
   contents: read
 
 jobs:
+  # Docs-only fast-path detector. Computes whether the diff touches ANY
+  # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
+  # `markdownlint` job (plus the always-on `docs` mkdocs gate) and skips the heavy
+  # verify / security / embedder / cross-OS / wheel jobs — so a trivial docs edit
+  # no longer burns the full matrix (and a single md finding no longer reds main
+  # via the heavy gate). The md gate itself is PRESERVED on the fast path; this is
+  # not a `paths-ignore` drop. paths-filter handles base-ref resolution for both
+  # push (before SHA) and pull_request (base branch).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # docs_only = true when NO changed file is outside markdown (i.e. every
+      # changed path is *.md). `nonmd` is true when at least one non-md file
+      # changed; docs_only is its negation. The bias is safe: a misread can only
+      # make heavy jobs RUN on a docs change (slower), never SKIP on a code change.
+      docs_only: ${{ steps.filter.outputs.nonmd == 'false' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          filters: |
+            nonmd:
+              - '!**/*.md'
+
   # Single agent-loop gate. Mirrors what scripts/agent-verify.sh does locally,
   # so a green CI run = `verify` is green on the same toolchain set.
   verify:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -63,6 +91,8 @@ jobs:
   # failure — a blocker here means AC-037 did NOT run, which must fail the
   # gate rather than pass vacuously.
   security:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -96,6 +126,8 @@ jobs:
   # cleanly with a log line instead of failing the job. On the happy path
   # the env var stays unset and the tests run normally — fast on warm cache.
   default-embedder-tests:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -158,6 +190,8 @@ jobs:
   # Platform-sensitive engine code regresses on Windows/macOS often enough
   # that pre-0.6.0 carried these matrix legs. Keep them.
   rust-windows:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -183,6 +217,8 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
 
   rust-macos:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -223,6 +259,8 @@ jobs:
   # IN FIRST CI RUN — bump in a follow-up commit once the first run
   # emits real `::notice title=wheel-size::` values.
   wheel-size-gate:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -331,7 +369,31 @@ jobs:
             exit 1
           fi
 
+  # Docs-only fast-path md gate. Runs ONLY when the diff is markdown-only (the
+  # heavy `verify` job — which runs scripts/agent-verify.sh -> agent-lint-md.sh —
+  # is the md gate on every non-docs diff, so this avoids double-linting). Uses
+  # the SAME .markdownlint-cli2.jsonc config as local + CI, so the real markdown
+  # gate is preserved on the fast path (this is NOT a silent `paths-ignore` drop).
+  markdownlint:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install markdown tooling (markdownlint-cli2)
+        run: npm ci
+      - name: markdownlint-cli2 (repo markdown; same config as local + verify)
+        run: ./node_modules/.bin/markdownlint-cli2
+      - name: markdownlint docs/** (mirrors agent-lint-md.sh docs leg)
+        run: bash scripts/agent-lint-docs.sh
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
+  # Intentionally NOT gated on docs_only: it must run for docs/** changes (the
+  # fast path) AND alongside code changes, exactly as before.
   docs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
