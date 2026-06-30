@@ -18,6 +18,11 @@
    ensures searchable text lands in each record's `body`. The real risk moves from "migration
    data-safety" to **FTS-capability parity** (multi-field paths / custom tokenizer / BM25 weights
    are all gone).
+   - **Resolution (HITL 2026-06-30):** no FathomDB FTS extension. Un-conflate retrieval vs ranking —
+     multi-field/payload = a **recall** concern (Memex content-model into `body`), **recall-gated**
+     (CE-rerank cannot recover a recall miss); per-column BM25 weights = a **ranking** concern,
+     won't-add, recovery via **CE-rerank** (ranking-gated); custom tokenizers off-table. T3.4 splits
+     into a recall/coverage drift test and a ranking drift test.
 2. **I-5 (write shape) — one path: `engine.write([dict…]) → WriteReceipt`.** Several flat symbols
    have **no analog**: `ChunkInsert`/`ChunkPolicy` (chunk client-side), `NodeRetire` (emulate via
    tombstone-bodied re-write keyed on `logical_id`), `LastAccessTouchRequest` (gone), `new_id`

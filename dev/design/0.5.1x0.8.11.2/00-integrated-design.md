@@ -78,6 +78,18 @@ FTS is gone. Mitigation sequence (front-loaded — see §4): inventory the `m003
 if Memex's ranking leans on field weights / multiple paths, content-model them into `body` and prove
 ranking drift is acceptable (T3.4 parity check); escalate any irrecoverable loss to HITL (Q-B5).
 
+**RESOLVED (HITL 2026-06-30) — no FathomDB FTS extension; Memex content-model + CE-rerank; T3.4 measures
+drift.** Path = measure-first, proceed with the swap. Un-conflate retrieval from ranking:
+**multi-field/recursive-payload indexing is a RECALL concern** (what enters the candidate pool),
+recoverable Memex-side via content-modeling into `body`; its gate is a **recall/coverage test +
+Memex needs**, **not** "CE-rerank dominated" (CE-rerank only re-orders the pool and cannot recover a
+recall miss — wrong gate). Any FathomDB-side multi-field provision is gated on that recall test —
+deferred, high bar. **Per-column BM25 weights are a RANKING concern: FathomDB will not add them** —
+ranking recovery is **CE-rerank** (`ce_score`); gate = ranking-drift test. Custom per-kind tokenizers
+(m006): **off the table for 0.8.x.** **T3.4 splits into two tests:** recall/coverage drift
+(multi-field → single-`body`) and ranking drift (per-column weights → uniform BM25 + CE-rerank); A-3
+stays deferred.
+
 ## 4. Migration sequence across both repos
 
 ```text
@@ -132,7 +144,7 @@ the Steward's checkout. HITL hard-stops only at OPP-1 Adopt-GO and any publishab
 
 | Item | State |
 |---|---|
-| **R-I4-parity** (FTS field-weights/tokenizer loss) | **OPEN — the only hard risk.** Front-loaded spike (§4); escalate irrecoverable drift (Q-B5) |
+| **R-I4-parity** (FTS field-weights/tokenizer loss) | **RESOLVED (HITL 2026-06-30)** — no FathomDB FTS extension. Multi-field/payload = a **recall** concern, recovered via Memex content-model, **recall-gated** (not CE-rerank). Per-column BM25 weights = a **ranking** concern, won't-add; recovery = **CE-rerank** (`ce_score`), ranking-gated. Custom tokenizers off-table for 0.8.x. T3.4 = two tests (recall drift + ranking drift) |
 | A-3 (read.list paging) | **DEFERRED** — timestamp windowing suffices. A-3 un-defers if Memex needs stable/deep pagination beyond a single bounded `read.list` call — there is NO engine cap (`read.list` honors any caller `limit` but returns rows in unspecified order with no `ORDER BY`/cursor); the `10000` is Memex's own `limit` param in `get_conversation_context`'s underlying read, where unordered truncation would drop in-window turns (T2.11) |
 | Cause-A merge / `stable_id` | pending Cause-A verify → 0.8.11.2 merge; inert slot until then |
 | Q-B1 no-migration / Q-B2 keep-0.5.1 / Q-B3 Slice-15-core GO | **decided** |

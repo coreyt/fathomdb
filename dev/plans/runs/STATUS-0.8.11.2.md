@@ -83,3 +83,13 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
 - 2026-06-30 — **Bus handoff posted** (05:02Z): answer-sheet + corrections + Slice-15-core GREENLIT (Q-B3) +
   Q-B1/Q-B2 to memex-steward. Orchestration immediate items DONE; awaiting memex-steward ack. **Experiment
   phase (Phase A → V-1 keystone) ready to start; holding priced arms for HITL info + bus announce vs $75 pool.**
+- 2026-06-30 — **R-I4 / Q-B5 RESOLVED (HITL).** Path = measure-first; the **Memex refit swap is greenlit**
+  (Phase 1 + A-slices started). **No FathomDB FTS extension.** Un-conflate retrieval vs ranking:
+  **multi-field/recursive-payload indexing = a RECALL concern** (recoverable Memex-side via
+  content-modeling into `body`), **recall-gated** (recall/coverage test + Memex needs — CE-rerank only
+  re-orders and cannot recover a recall miss, so it is the wrong gate; any FathomDB-side multi-field
+  provision is gated on that recall test, deferred/high bar). **Per-column BM25 weights = a RANKING
+  concern,** won't-add — ranking recovery = **CE-rerank** (`ce_score`), ranking-gated. Custom per-kind
+  tokenizers (m006) off-table for 0.8.x. **T3.4 splits into two tests:** recall/coverage drift
+  (multi-field → single-`body`) AND ranking drift (per-column weights → uniform BM25 + CE-rerank). A-3
+  stays deferred. Recorded across 00/10 designs + B-1 answer-sheet.

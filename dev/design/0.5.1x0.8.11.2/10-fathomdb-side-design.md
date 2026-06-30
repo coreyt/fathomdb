@@ -154,6 +154,26 @@ substrate safe for the refit and keep the default product path unchanged:
   weighted / custom-tokenizer FTS surface for this refit; the parity risk is resolved Memex-side by
   content-modeling searchable text into `body`. This is a stated FathomDB **non-deliverable** (the
   boundary is fixed by design), recorded so the refit does not wait on a FathomDB FTS change.
+
+### R-I4 / Q-B5 — RESOLVED (HITL 2026-06-30)
+
+Path = **measure-first, proceed with the Memex refit swap.** FathomDB owes **NO FTS extension** for
+0.8.x. The four dispositions:
+
+- **Multi-field + recursive-payload indexing → a RETRIEVAL/RECALL concern** (what enters the
+  candidate pool). Recovery = Memex-side content-modeling searchable text into `body`. Its gate is a
+  **recall/coverage test** (does single-`body` indexing miss matches multi-field would surface?)
+  **+ Memex needs** — **NOT** "CE-rerank dominated." CE-rerank only re-orders the pool and cannot
+  recover a recall miss, so it is the **wrong gate** for this feature. Any FathomDB-side multi-field
+  provision, if ever needed, is gated on that recall test — deferred, **high bar**.
+- **Per-column BM25 weights → a RANKING concern** (ordering within the pool). **FathomDB will NOT
+  add them.** Ranking recovery is **CE-rerank** (`ce_score`), not engine field-weights; gate =
+  ranking-drift test.
+- **Custom per-kind tokenizers (m006) → off the table for 0.8.x** (no tests, not pursued; any
+  per-kind normalization is Memex-side, not a 0.8.x concern).
+- **Net:** no FathomDB FTS extension planned. **T3.4 splits into two measurements:** a
+  **recall/coverage drift test** (multi-field → single-`body`) AND a **ranking-drift test**
+  (per-column weights → uniform BM25 + CE-rerank). A-3 stays deferred.
 - **A-3 un-defer trigger** (§2) — revisited only on the Memex paging audit (T2.11).
 - **Cause-A verify → merge** (§2) — main-tree `maturin develop` + py/TS import smoke before merge.
 
