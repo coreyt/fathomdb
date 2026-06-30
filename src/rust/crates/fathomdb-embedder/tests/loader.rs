@@ -66,7 +66,7 @@ impl Fixture {
     fn sha_hex(bytes: &[u8]) -> String {
         let mut h = Sha256::new();
         h.update(bytes);
-        format!("{:x}", h.finalize())
+        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
 
     fn config_sha(&self) -> String {

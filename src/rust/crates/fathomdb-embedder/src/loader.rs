@@ -129,7 +129,9 @@ fn model_sha_prefix() -> &'static str {
     PREFIX.get_or_init(|| {
         let mut h = Sha256::new();
         h.update(format!("{HF_REPO}@{HF_REVISION}").as_bytes());
-        let hex = format!("{:x}", h.finalize());
+        // digest 0.11's `Array` output drops the `LowerHex` impl `GenericArray`
+        // had; format explicitly to the same lowercase, zero-padded hex.
+        let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
         hex[..12].to_string()
     })
 }
@@ -869,5 +871,6 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // digest 0.11 `Array` output: format to identical lowercase, zero-padded hex.
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
