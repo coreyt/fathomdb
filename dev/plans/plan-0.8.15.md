@@ -442,12 +442,12 @@ fused graph arm — scope it as an entity-relationship-retrieval surface, not a 
 
 ---
 
-## 14. Held (NOT scheduled) — governed physical-purge verb (gap #1), pending a post-Phase-2 privacy/product decision
+## 14. Adjacent (committed, deferred to a later sync) — governed physical-purge verb (gap #1), GDPR-style on-disk deletion
 
-> **Posture — distinct from §12/§13.** This is **HELD, not a roadmap candidate.** It is **NOT scheduled
-> for ~0.8.15** and is **NOT** off-default-until-scoped like §10–§13. It is parked pending a HITL
-> **product / privacy decision** taken after Phase-2, and is recorded here only so it is not lost. Do not
-> open a Slice 0 for it; do not fold it into the §12/§13 scoping.
+> **Posture — DECIDED, not held (HITL 2026-06-30).** The privacy/product question is now **resolved: the
+> verb WILL be added.** This is a **committed roadmap item**, no longer parked pending a decision. Like
+> §11–§13 it is **off-default until scoped at a Slice 0** and does **not** add to the dispatcher ladder;
+> unlike them its **timing is deferred to a later FathomDB↔Memex sync** rather than pinned to ~0.8.15.
 
 **The gap (surfaced by the Memex 0.5.1 Phase-2 swap).** There is **no governed physical-purge verb** on
 the 0.8.x surface. The flat pre-0.6.0 `engine.admin.purge_logical_id` (physical delete) has **no
@@ -456,14 +456,17 @@ recovery-tooling-only and unreachable from the runtime SDK by design. On 0.8.x, 
 / `forget` now perform **tombstone-retire ONLY**: the row is marked superseded and reads never resurface
 it, **but the data stays on disk**.
 
-**The open question (privacy-pertinent — for HITL).** Is **tombstone-only acceptable** semantics for a
-user-facing "purge / forget", or does privacy compliance (e.g. a true right-to-erasure / GDPR-style
-delete) **require a FathomDB physical-purge verb** that removes the bytes from disk? This is a
-**product / privacy decision**, not an engineering-scoping decision, which is why it is held rather than
-scheduled.
+**The decision (HITL 2026-06-30).** Tombstone-only is **not** sufficient for a user-facing "purge /
+forget" where privacy compliance (a true right-to-erasure / GDPR-style delete) requires the bytes to
+leave disk. A FathomDB **physical-purge verb** — true on-disk deletion, **distinct from the
+tombstone-retire that Memex 0.5.1 ships** — **WILL be added.** This is now a committed surface, not an
+open question.
 
-**Disposition.** **HELD — pending a post-Phase-2 product/privacy decision (HITL 2026-06-30).** Memex
-0.5.1 ships on tombstone-retire as the accepted semantics for now. Revisit after Phase-2; if the product
-decision lands on "physical purge required", *then* scope it as a governed verb (publishable micro +
-governance + a deliberate recovery-tooling-vs-runtime-surface boundary review). Until then it is
-explicitly **not** on the 0.8.15 roadmap.
+**Roadmap item (committed, timing deferred to a later FathomDB↔Memex sync).** The physical-purge verb is
+a **candidate alongside the ~0.8.15 op-store `read.state` work / Memex 0.5.3 window, or a later sync** —
+the exact sync is deferred, not pinned. Off-default until scoped; a governed physical-delete verb
+requires a **publishable micro** plus the full binding / allowlist / parity-test governance (not a
+label-only pico), and crosses the deliberate **recovery-tooling-vs-runtime-surface boundary** (the
+physical-delete capability today lives only in recovery tooling) — so it carries a HITL governance
+sign-off when scoped. **Interim:** Memex 0.5.1 ships on **tombstone-retire** as the accepted interim
+semantics, and Memex's `purge` / `forget` tests stay **xfail-pending** until the verb lands.

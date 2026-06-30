@@ -119,3 +119,9 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
   decision** (is tombstone-only acceptable for "purge/forget", or does privacy compliance require a physical-
   purge verb?) — **NOT scheduled for ~0.8.15**, recorded as held in `plan-0.8.15.md` §14, explicitly distinct
   from the scheduled #2/#3.
+- 2026-06-30 — **gap #1 physical-purge — HITL DECISION: verb committed but DEFERRED to a later sync.** The
+  privacy/product question is resolved: a FathomDB **physical-purge verb** (true GDPR-style on-disk deletion,
+  distinct from tombstone-retire) **WILL be added** — now a committed roadmap item, no longer held. Timing is
+  **deferred to a later FathomDB↔Memex sync** (candidate alongside the ~0.8.15 op-store `read.state` window /
+  Memex 0.5.3, or a later sync). **Tombstone-retire is the Memex 0.5.1 interim**; Memex's `purge` / `forget`
+  tests stay **xfail-pending** until the verb lands. `plan-0.8.15.md` §14 reframed Held→committed-deferred.
