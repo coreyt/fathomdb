@@ -108,11 +108,18 @@ _ELPS_MAX_CHARS = 2000
 @dataclass(frozen=True)
 class Hit:
     """A single retrieved candidate. ``doc_id`` is the *corpus* doc id (the join
-    key against the gold set), not an engine-internal row cursor."""
+    key against the gold set), not an engine-internal row cursor.
+
+    ``ce_score`` carries the engine ``SearchHit.ce_score`` (per-candidate CE,
+    ``Some`` only inside the reranked pool, else ``None``) THROUGH the harness so
+    a measurement like :func:`eval.opp3_eval_support.margins_from_triples` can
+    read it; it is already engine-emitted (no engine change) and defaults to
+    ``None`` so every existing ``Hit(...)`` call site is unaffected."""
 
     doc_id: str
     body: str
     score: float
+    ce_score: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -359,7 +366,15 @@ class FathomDBAdapter:
         hits: list[Hit] = []
         for sh in result.results[:k]:
             doc_id = str(self._doc_id_of(sh)) if self._doc_id_of is not None else str(sh.id)
-            hits.append(Hit(doc_id=doc_id, body=sh.body, score=float(sh.score)))
+            ce = getattr(sh, "ce_score", None)
+            hits.append(
+                Hit(
+                    doc_id=doc_id,
+                    body=sh.body,
+                    score=float(sh.score),
+                    ce_score=None if ce is None else float(ce),
+                )
+            )
         return hits
 
 
