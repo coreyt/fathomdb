@@ -12,7 +12,7 @@ fathomdb-embedder.workspace = true
 fathomdb-embedder-api.workspace = true
 fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 jsonschema = { version = "0.18", default-features = false }
 serde_json = "1"
 sha2 = "0.11"
@@ -136,7 +136,7 @@ name = "pr_e2_rerank_nonfinite"
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"
