@@ -27,6 +27,9 @@ class SearchHit:
     # 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
     # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
     ce_score: float | None
+    # Cause-A (0.8.11.2) — additive cross-session-stable hit id; None for
+    # synthetic passages. Never participates in ranking.
+    stable_id: str | None
 
 class QueryTrace:
     # 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace.
