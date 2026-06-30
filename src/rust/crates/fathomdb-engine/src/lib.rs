@@ -9056,7 +9056,10 @@ fn derive_stable_id(logical_id: Option<&str>, body: &str) -> String {
         _ => {
             let mut hasher = Sha256::new();
             hasher.update(body.as_bytes());
-            format!("h:{:x}", hasher.finalize())
+            format!(
+                "h:{}",
+                hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
+            )
         }
     }
 }
