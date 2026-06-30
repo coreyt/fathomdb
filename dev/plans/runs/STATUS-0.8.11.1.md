@@ -11,11 +11,22 @@
 | Slice | Title | State |
 |------:|-------|-------|
 | 0 | LBS setup + re-triage + raise HITL §11 | **DONE — HITL cleared 2026-06-30** |
-| 5 | LBO: `sha2` 0.10→0.11 (#77) | **LBO DONE → PR #138, CI running.** Blast=**contained**; 1 breaking change (digest 0.11 dropped `LowerHex` on `Array` output → fixed 7 `{:x}` sites byte-identically); local tests green; LBO recommends MERGE pending CI |
+| 5 | LBO: `sha2` 0.10→0.11 (#77) | **DONE → PR #138 GREEN (17 pass/1 skip), MERGEABLE.** Blast=**contained**; 1 breaking change (digest 0.11 dropped `LowerHex` on `Array` output → fixed 7 `{:x}` sites byte-identically); MERGE-recommended |
 | 10 | LBO: `typescript` 5→6 (#67) + `@types/node` 25→26 (#92) | DISPATCHED — worktree `0.8.11.1-ts-tooling`, branch `lbo/ts-tooling-20260630` |
 | 15 | LBO: `actions/checkout` 6→7 (#97) + `action-gh-release` 2→3 (#98) | **LBO DONE.** #97→**PR #136 GREEN** (17 pass/1 skip), 26 pins bumped (v6 SHA gone, v7 ×26, gh-release reverted to v2.6.1), MERGE-recommended. #98→**ESCALATE to 0.8.20** (dry-run skips the gh-release job → vacuous proof; only real validation = forbidden publish) |
-| 20 | `dependabot.yml` reconciliation | **DONE — PR #135 open** (comment-only; coverage already correct, exclusions documented) |
-| 40 | Sweep verification + closure | pending — awaiting Slices 5/10/15 LBO reports |
+| 20 | `dependabot.yml` reconciliation | **DONE — PR #135 GREEN, MERGEABLE** (comment-only; coverage already correct, exclusions documented) |
+| 40 | Sweep verification + closure | pending — awaiting Slice 10 (ts-tooling) LBO; then merge gate + DoD |
+
+## Merge-gate readiness (3 of 4 ready; ts-tooling pending)
+| PR | Bump | CI | Lockfile touched | LBS recommendation |
+|----|------|----|------------------|--------------------|
+| #138 | sha2 0.10→0.11 | GREEN | `Cargo.lock` | **MERGE** (blast contained) |
+| #136 | actions/checkout v6→v7 | GREEN | none (workflows) | **MERGE** |
+| #135 | dependabot.yml reconcile | GREEN | none | **MERGE** |
+| #98 | action-gh-release v2→v3 | — | — | **DEFER → 0.8.20** (HITL rule unmet: dry-run vacuous) |
+| (ts) | typescript 6 + @types/node 26 | pending LBO | `package-lock.json` | TBD |
+
+No lockfile overlap among #138/#136/#135/(ts) → merge order is free, no serialization needed.
 
 ## Worktree / branch / PR namespace (LBS-owned)
 | Slice | Worktree | Branch | PR |
