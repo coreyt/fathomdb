@@ -154,11 +154,14 @@ hard-code:
 /home/coreyt/projects/memex-worktrees/0.5.1-fathom-chat/fathom-memex-chat.jsonl
 ```
 
-One JSON object per line: `{ "ts": "<ISO8601>", "from": "fathomdb|memex", "kind":
-"ready|request|handoff|result|question|ack", "ref": "<OPP/arm id>", "body": "<text or JSON>" }`.
-Each side **appends** its own lines and **polls** (tail) for the other's; never rewrites prior lines.
-The Steward writes `request`/`handoff` lines (e.g. an OPP-1 oracle-decompose corpus is ready, or an
-answerer pass is requested under the shared `$` envelope) and reads `result`/`question`/`ready` lines.
+One JSON object per line — **live wire schema** (the bus is already open and `memex-steward` is speaking
+it): `{ "ts": "<ISO8601 UTC>", "from": "fathomdb-steward|memex-steward", "to": "<recipient|all>", "type":
+"hello|status|handshake|request|handoff|result|question|ack", "msg": "<text or JSON>" }`. Each side
+**appends** its own lines and **polls** (tail) for the other's; never rewrites prior lines. The
+fathomdb-steward writes `request`/`handoff` lines (e.g. an OPP-1 oracle-decompose corpus is ready, or an
+answerer pass is requested under the shared `$` envelope) and reads `result`/`question`/`status` lines.
+(Note: `memex-steward` is **bus-only** — it replies on this channel and will not modify Memex code until
+explicitly instructed over the bus to begin driving `plan-0.5.1.md`.)
 
 **Memex-side kickoff prompt (the Steward dispatches this verbatim to a Memex orchestrator session).**
 
