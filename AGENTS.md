@@ -12,7 +12,7 @@ Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
 - **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
 - **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
 - **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
-- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits.
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits; **one writer per checkout** — concurrent file-mutating sessions/agents each get their own worktree, or are serialized.
 
 ---
 
@@ -90,6 +90,7 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 - **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
 - **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
 - **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **One writer per checkout — NEVER share a checkout across concurrent file-mutating sessions or subagents.** Two writers in one working tree race on `HEAD`/branch-switch/uncommitted edits — commits land on the wrong branch and one writer's edits surface on another's. Each concurrent writer MUST have its own git worktree (cut off `origin/main`); if you can't isolate, **serialize** (run one, let it finish + verify, then the next). Read-only subagents (audit, search, review) MAY share a checkout and run concurrently. After any concurrent run, verify-from-git and push **explicit branch refs** (HEAD-independent), never relying on current HEAD. (incident 2026-06-29)
 - **Valid agent types (Claude Code `subagent_type`):** `claude`, `claude-code-guide`, `Explore`, `general-purpose`, `implementer`, `Plan`, `statusline-setup`. Never guess or invent a type — if none fits, omit `subagent_type` (defaults to `claude`). A wrong type is a hard error that cascades to every child.
 - **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (agent-def anti-chaining, main-thread-owned worktrees, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the spawn discipline.
 
@@ -125,6 +126,7 @@ Pulled from MEMORY `feedback_*.md`. Violations are correctness bugs, not style p
 - **No `yaml.safe_load` as workflow validator** — use `actionlint`. (`feedback_workflow_validation.md`)
 - **No "fix in 0.7"** for reliability bugs. Net-negative LoC on reliability releases. (`feedback_reliability_principles.md`)
 - **No "green CI = done"** for releases — install the published wheel and run end-to-end open/close/exit before declaring done. (`feedback_release_verification.md`)
+- **No shared checkout across concurrent writers.** Never run more than one file-mutating session/subagent in the same working tree at once — worktree-isolate each writer (off `origin/main`) or serialize them (§7). (incident 2026-06-29)
 - **Vector identity belongs to the embedder.** (`project_vector_identity_invariant.md`)
 
 ## 11. Permission model (for the Claude Code harness)
