@@ -52,8 +52,8 @@ In scope — two **migration/wide** upgrades, each its own LBO, each its own wor
   split) in `fathomdb-napi`, and `@napi-rs/cli` 2→3 in `src/ts`. Follow the napi-rs v3 migration guide
   (build-system + macro changes); rebuild the native addon; run the **TS + Py binding** suites and
   cross-language equivalence. Blast: **migration**.
-- **rusqlite 0.31 → 0.40 + sqlite-vec (group: #103 + #99).** Bump `rusqlite` (across `fathomdb-engine`
-  + `fathomdb-schema`, `bundled`) and **un-pin/raise** `sqlite-vec` (`=0.1.7` → 0.1.9) **together** —
+- **rusqlite 0.31 → 0.40 + sqlite-vec (group: #103 + #99).** Bump `rusqlite` (across `fathomdb-engine` +
+  `fathomdb-schema`, `bundled`) and **un-pin/raise** `sqlite-vec` (`=0.1.7` → 0.1.9) **together** —
   they are coupled through the bundled SQLite version. Resolve the API jump (9 minors); confirm the
   bundled-SQLite change does not regress FTS5/vector behavior. Blast: **wide**.
 
