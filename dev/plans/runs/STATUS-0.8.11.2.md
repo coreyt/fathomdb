@@ -72,3 +72,14 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
   flat symbols no-analog; **I-7** = `stable_id` gated behind Cause-A merge (`source_id` already on main).
   Plan §2B + DoD R-U-10 added. **HITL: Q-B1 no-migration, Q-B2 keep-0.5.1, Q-B3 greenlight Slice-15-core
   after codex.** Next: codex review (≤4 cycles) → bus handoff of the corrections → A-1 + Slice-15-core.
+- 2026-06-30 — **codex review of B-1 docs: CLEAN (0/4 fix cycles).** `codex exec review --commit 3be2bc57`
+  found no actionable defect; spot-verified the two highest-stakes claims from source (PREDICATE_PATH_ALLOWLIST
+  contents @ engine 1321; `read.list`/`read_list_filter` take no `after_id` — cursor only on `read.collection`).
+- 2026-06-30 — **A-1 LANDED** (commit `9e0a3459`, branch `0.8.11.2-pico-umbrella`, NOT pushed): `$.action_kind`
+  added to `PREDICATE_PATH_ALLOWLIST` + guard test (`action_kind_path_allowlisted`: accepts Text+Bool, still
+  rejects `$.secret`). Tests 25/0 (`slice35_filter_grammar` 19, `slice40_filter_unification` 6). **Merge-gate:**
+  like Cause-A/`stable_id`, A-1 reaches Memex's pinned `origin/main` build only when 0.8.11.2 merges — until
+  then Memex keeps the client-side `action_kind` split. A-2 resolved; A-3 deferred (Memex paging audit).
+- 2026-06-30 — **Bus handoff posted** (05:02Z): answer-sheet + corrections + Slice-15-core GREENLIT (Q-B3) +
+  Q-B1/Q-B2 to memex-steward. Orchestration immediate items DONE; awaiting memex-steward ack. **Experiment
+  phase (Phase A → V-1 keystone) ready to start; holding priced arms for HITL info + bus announce vs $75 pool.**
