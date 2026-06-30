@@ -1,15 +1,41 @@
 #!/usr/bin/env bash
 # fathomdb-tracked-hook: scripts/hooks (managed by scripts/install-hooks.sh)
-# pre-push: full agent-verify gate (lint -> typecheck -> test).
-# Mirrors what an agent runs locally before declaring work done; catches
-# CI-fail-but-local-pass drift.
+# pre-push: FAST by default — clippy + actionlint only, so a normal `git push`
+# stays quick. This preserves push velocity now that the tracked hooks are
+# activated repo-wide via core.hooksPath (scripts/install-hooks.sh).
+#
+# Heavy verification (the full lint -> typecheck -> security -> test gate, plus
+# version-axis consistency) is the agent-loop gate run explicitly via
+# scripts/agent-verify.sh and enforced in CI. It is INTENTIONALLY NOT run on
+# every push. Opt in for a pre-push full gate with:
+#
+#     FATHOMDB_PREPUSH_FULL=1 git push
+#
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# Axis W / Axis E version consistency (dev/design/release.md § Version axes).
-# Runs before agent-verify so version drift surfaces with an actionable
-# message even if lint/typecheck would also catch downstream symptoms.
-scripts/set-version.sh --check-files
+if [ "${FATHOMDB_PREPUSH_FULL:-0}" = "1" ]; then
+  # Opt-in heavy gate: mirror exactly what an agent runs before declaring work
+  # done, so CI-fail-but-local-pass drift is caught before the push.
+  echo "[pre-push] FATHOMDB_PREPUSH_FULL=1 — running full verify gate"
+  # Axis W / Axis E version consistency (dev/design/release.md § Version axes).
+  scripts/set-version.sh --check-files
+  exec scripts/agent-verify.sh
+fi
 
-exec scripts/agent-verify.sh
+# Fast default path.
+# Rust: clippy (workspace, all targets) — matches the CI lint surface.
+echo "[pre-push] cargo clippy --workspace --all-targets"
+cargo clippy --workspace --all-targets -- -D warnings -A missing-docs
+
+# Workflows: actionlint. Catches release.yml / ci.yml regressions (SC2002, schema
+# drift, expression typos) before they burn a CI cycle. Dev bootstrap installs
+# actionlint v1.7.12 via `go install`. Soft-skip with a hint if missing rather
+# than blocking — same posture as agent-lint.sh.
+if command -v actionlint >/dev/null 2>&1; then
+  echo "[pre-push] actionlint .github/workflows/*.yml"
+  actionlint .github/workflows/*.yml
+else
+  echo "[pre-push] actionlint not on PATH — skipping. Run scripts/bootstrap.sh and ensure \$(go env GOPATH)/bin is on PATH." >&2
+fi
