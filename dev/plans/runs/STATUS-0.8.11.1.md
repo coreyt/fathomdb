@@ -15,18 +15,26 @@
 | 10 | LBO: `typescript` 5→6 (#67) + `@types/node` 25→26 (#92) | **LBO DONE → PR #137 GREEN, MERGEABLE. HELD for HITL review (user choice 2026-06-30).** Blast=**contained**; TS6 dropped auto-`@types` discovery → 96 errs root-caused to TS6 alone (`@types/node` 26 innocent); fix = 1 line `"types": ["node"]` in tsconfig, **no source edits, byte-identical `.js`+`.d.ts` emit**; 126/126 tests; one unrelated rust-macos flake re-ran green |
 | 15 | LBO: `actions/checkout` 6→7 (#97) + `action-gh-release` 2→3 (#98) | **DONE.** #97→**PR #136 MERGED** (`fede9fd4`), 26 pins. #98→**DEFERRED to 0.8.20** (dry-run vacuous; comment posted on #98) |
 | 20 | `dependabot.yml` reconciliation | **DONE — PR #135 MERGED** (`1c73d3f6`) |
-| 40 | Sweep verification + closure | **PARTIAL** — 3 landed + #98 disposed; **blocked on the #137 HITL decision** before final DoD readback |
+| 40 | Sweep verification + closure | **DONE** — all 4 bumps landed + #98 deferred; DoD R-SW-1..6 met (below) |
 
-## Landed state (2026-06-30, origin/main `1c73d3f6`)
+## Landed state (2026-06-30, origin/main `3c695971`)
 | PR | Bump | State | Merge commit |
 |----|------|-------|--------------|
 | #138 | sha2 0.10→0.11 | **MERGED** | `ff397708` |
 | #136 | actions/checkout v6→v7 | **MERGED** | `fede9fd4` |
 | #135 | dependabot.yml reconcile | **MERGED** | `1c73d3f6` |
-| #98 | action-gh-release v2→v3 | **DEFERRED → 0.8.20** (open, commented) | — |
-| #137 | typescript 6 + @types/node 26 | **OPEN — HELD for HITL review** | — |
+| #137 | typescript 6 + @types/node 26 | **MERGED** (HITL-reviewed) | `3c695971` |
+| #98 | action-gh-release v2→v3 | **DEFERRED → 0.8.20** (open, commented; added to `plan-0.8.20.md` §1) | — |
 
-R-SW-6 verified on merged commits: no `version=`/`"version":` change, no `v*` tag created. Label-only honored.
+## Slice 40 — DoD readback (R-SW-1..6)
+- **R-SW-1** — every in-scope bump dispositioned: #138/#136/#135/#137 **merged-green**; #98 **escalated-to-0.8.20** (recorded in `plan-0.8.20.md` §1 + comment on PR #98). No dangling PR. ✅
+- **R-SW-2** — each merged bump green on its full CI matrix before merge (17 pass / 1 correct skip each; verified from `gh pr checks` on the merge commit). ✅
+- **R-SW-3** — `sha2` blast evidenced: LBO posted call-site grep + `digest` 0.11 CHANGELOG; rated **contained** (only breaking change = `LowerHex` drop on `Array`, fixed byte-identically). Not assumed. ✅
+- **R-SW-4** — `action-gh-release` v3 NOT merged unproven: the dry-run path is vacuous (skips the gated job), so it was **deferred, not forced**. The HITL "accept iff green dry-run" rule held. ✅
+- **R-SW-5** — `dependabot.yml` coverage matches tracked manifests; no orphan ecosystems; deliberate exclusions documented (#135). ✅
+- **R-SW-6** — label-only: no `version=`/`"version":` change in any shipped manifest (verified `7929d1a7..3c695971`), no `v*` tag created. ✅
+
+**All 6 met. Sweep #1 COMPLETE.** Label-only pico: manifests unmoved, no tag, no publish.
 
 ## Worktree / branch / PR namespace (LBS-owned)
 | Slice | Worktree | Branch | PR | State |

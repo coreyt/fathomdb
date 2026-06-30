@@ -10,6 +10,17 @@ AC-050c) gates merges against this invariant.
 
 (rolls into the next cut after 0.8.9.)
 
+### Maintenance
+
+- **Library Sweep #1 (0.8.11.1, label-only).** Contained dependency-hygiene bumps,
+  no public-symbol change and no manifest version bump: `sha2` 0.10→0.11 (RustCrypto
+  `digest` 0.11; 7 hex-format sites updated, hash output byte-identical), `typescript`
+  5→6 + `@types/node` 25→26 in the TS binding dev toolchain (tsconfig `types: ["node"]`
+  for TS6's dropped `@types` auto-discovery; emitted `.js`/`.d.ts` byte-identical),
+  `actions/checkout` v6→v7 (26 pins), and a `dependabot.yml` coverage reconciliation.
+  `action-gh-release` v2→v3 was deferred to 0.8.20 (release-path; cannot be validated
+  without a real publish). No `Removed` entries.
+
 ## 0.8.9 — 2026-06-28
 
 First publish since 0.8.0. The 0.8.1–0.8.9 work landed on `main` as a
