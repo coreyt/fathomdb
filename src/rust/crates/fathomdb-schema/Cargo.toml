@@ -18,4 +18,4 @@ proptest = "1"
 # Pack 1 migration step 9 creates a vec0 virtual table; the schema
 # crate's migration tests need the extension loaded to exercise it.
 # Pin matches fathomdb-engine.
-sqlite-vec = "=0.1.7"
+sqlite-vec = "=0.1.9"
