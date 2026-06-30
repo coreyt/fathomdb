@@ -329,3 +329,23 @@ Then write `dev/plans/0.8.15-implementation.md` containing:
 
 Stand up `dev/plans/runs/STATUS-0.8.15.md` with Slice 0 OPEN. After HITL ratification of the locus
 decision, open Slice 5 (dispatcher core).
+
+---
+
+## 10. Adjacent (NOT this release's theme) — joint FathomDB↔Memex FTS experiments, paired with Memex 0.5.3
+
+> **Scope note.** This section does **not** add to the dispatcher ladder above. It seeds a forward
+> pointer so the FTS feature work lands in the right place and is not re-discovered cold.
+
+**FTS feature work** — **multi-field + recursive-payload** FTS (≥0.9.x design-on-spec
+`dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md`) **AND per-kind precision tokenizer**
+(`dev/design/0.5.1x0.8.11.2/30-perkind-tokenizer-fts-design.md`) — are **JOINT FathomDB↔Memex
+experiments to be addressed WITH Memex, paired with Memex 0.5.3**. **Run the on/off value-tests jointly
+before building** (multi-field: `20-...md` §8; per-kind tokenizer: `30-...md` §4) — each feature is
+gated by its own value test on real Memex data, and neither is greenlit. Both revive a per-kind
+declaration surface that 0.6.0 removed, so each also carries a separate HITL governance sign-off.
+
+**Memex 0.5.1 adopts the governed 0.8.x FTS as-is** (single `body` projection, one global `porter`
+tokenizer) **with these as known deferred gaps.** Per the standing R-I4 / Q-B5 resolution (HITL
+2026-06-30), FathomDB owes **no** FTS extension for 0.8.x; this adjacency exists for the high-bar,
+value-test-gated future case (~0.8.15+) where content-modeling into `body` proves insufficient.
