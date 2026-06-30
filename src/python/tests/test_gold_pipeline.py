@@ -166,6 +166,46 @@ def test_build_gold_records_malformed_and_no_feedback(tmp_path: Path) -> None:
     assert metrics["n_relevant_labels"] == 1
 
 
+def test_build_gold_records_cause_a_parallel_stable_ids(tmp_path: Path) -> None:
+    """Cause-A (0.8.11.2): the additive ``result_stable_ids`` parallel array is
+    surfaced as ``GoldRecord.candidate_stable_ids`` (same length/order as
+    ``candidate_ids``), while ``candidate_ids`` and ``id_space`` stay UNCHANGED
+    (no in-place flip). A pre-Cause-A sink (no ``result_stable_ids``) yields an
+    empty tuple — backward-compatible."""
+    sink = tmp_path / "cause_a.jsonl"
+    sink.write_text(
+        "\n".join(
+            [
+                # Cause-A sink: result_stable_ids parallel to result_ids
+                # (h: content-hash, l: logical-id, null for no-stable-id hits).
+                '{"type":"event","schema_version":1,"query_id":"q-ca",'
+                '"query_chars":5,"result_ids":[10,11,12],'
+                '"result_stable_ids":["h:abc","l:bob",null],"arm_of":{}}',
+                '{"type":"feedback","schema_version":1,"query_id":"q-ca",'
+                '"relevant_ids":[10],"irrelevant_ids":[12],"label_source":"agent:x"}',
+                # Pre-Cause-A sink: NO result_stable_ids field.
+                '{"type":"event","schema_version":1,"query_id":"q-old",'
+                '"query_chars":3,"result_ids":[7,8],"arm_of":{}}',
+                '{"type":"feedback","schema_version":1,"query_id":"q-old",'
+                '"relevant_ids":[7],"irrelevant_ids":[],"label_source":"agent:x"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    records = build_gold_records(str(sink))
+    assert len(records) == 2
+    ca, old = records
+    # Cause-A record: parallel stable ids, same length/order; ids unchanged.
+    assert ca.candidate_ids == (10, 11, 12)
+    assert ca.candidate_stable_ids == ("h:abc", "l:bob", None)
+    assert len(ca.candidate_stable_ids) == len(ca.candidate_ids)
+    assert ca.id_space == "engine-logical-id"  # RETAINED — no in-place flip
+    # Pre-Cause-A record: empty stable ids, ids unchanged → backward-compatible.
+    assert old.candidate_ids == (7, 8)
+    assert old.candidate_stable_ids == ()
+
+
 def test_build_gold_records_relevant_not_in_candidates() -> None:
     """A relevant label outside the frozen pool drives recall below 1.0."""
     sink_dir = Path(__file__).parent

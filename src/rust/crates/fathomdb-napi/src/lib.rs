@@ -413,6 +413,10 @@ pub struct SearchHit {
     /// (`ceScore` in JS). Set only for hits inside the reranked pool; `null`
     /// otherwise (out-of-pool, identity path, or no CE model loaded).
     pub ce_score: Option<f64>,
+    /// Cause-A (0.8.11.2) — additive cross-session-stable hit id (`stableId` in
+    /// JS): the `"l:"`-tagged `logical_id`, or an `"h:"` content-hash for doc
+    /// nodes; `null` only for synthetic passages. Never participates in ranking.
+    pub stable_id: Option<String>,
 }
 
 impl SearchHit {
@@ -430,6 +434,7 @@ impl SearchHit {
             },
             source_id: h.source_id.clone(),
             ce_score: h.ce_score,
+            stable_id: h.stable_id.clone(),
         }
     }
 }

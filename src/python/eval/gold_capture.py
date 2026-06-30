@@ -67,9 +67,20 @@ class GoldRecord:
     - ``id_space`` — namespace tag, always ``"engine-logical-id"``.
     - ``query_chars`` — query length only (never the text; §C).
     - ``candidate_ids`` — the frozen returned hit ids, in rank order (the
-      telemetry event's ``result_ids``).
+      telemetry event's ``result_ids``). UNCHANGED interim ``write_cursor`` space.
+    - ``candidate_stable_ids`` — Cause-A (0.8.11.2) additive PARALLEL array, same
+      length/order as ``candidate_ids``, carrying the cross-session-stable id
+      (``SearchHit.stable_id``: ``"l:"`` logical_id or ``"h:"`` content-hash;
+      ``None`` for a hit with no stable id). Read from the event's
+      ``result_stable_ids``; empty when the sink predates Cause-A. This is the
+      additive landing of the F-8a remap — ``candidate_ids`` / ``id_space`` are
+      RETAINED unchanged (no in-place flip; the conscious ``id_space`` switch is a
+      separate later step, ``NOTE-0.8.8-to-steward-id-contract.md``).
     - ``labels`` — ``{id: relevance}`` with ``relevance`` in ``{0, 1}``, derived
-      from the correlated feedback row (relevant→1, irrelevant→0).
+      from the correlated feedback row (relevant→1, irrelevant→0). Keyed in the
+      same ``write_cursor`` space as ``candidate_ids`` (the feedback row's
+      ``*_ids``); map to stable ids via the ``candidate_ids`` ↔
+      ``candidate_stable_ids`` positional correspondence.
     - ``embedder_id`` — caller-supplied embedder identity (``""`` sentinel when
       unknown, never ``None`` — mirrors the engine's ``embedder_id`` sentinel
       convention in the explain field set).
@@ -84,6 +95,9 @@ class GoldRecord:
     labels: dict[int, int]
     embedder_id: str
     provenance: str
+    #: Cause-A (0.8.11.2) — additive parallel cross-session-stable ids, same
+    #: length/order as ``candidate_ids``. Defaults to ``()`` (pre-Cause-A sinks).
+    candidate_stable_ids: tuple[str | None, ...] = ()
 
 
 def _as_int_list(value: object) -> list[int]:
@@ -99,6 +113,18 @@ def _as_int_list(value: object) -> list[int]:
     if not isinstance(value, list):
         return []
     return [int(i) for i in value if isinstance(i, int) and not isinstance(i, bool)]
+
+
+def _as_opt_str_list(value: object) -> list[str | None]:
+    """Coerce a sink ``result_stable_ids`` field into ``list[str | None]``.
+
+    Cause-A (0.8.11.2). Mirrors :func:`_as_int_list`'s robustness: a non-list
+    (truncated/old sink) yields ``[]``; ``None`` entries (a hit with no stable
+    id — synthetic passages) are preserved as ``None``; any non-str/non-null
+    element is dropped so one malformed row never aborts the capture."""
+    if not isinstance(value, list):
+        return []
+    return [v if isinstance(v, str) else None for v in value]
 
 
 def _iter_jsonl(text: str) -> list[dict]:
@@ -184,6 +210,8 @@ def build_gold_records(sink_path: str | Path, embedder_id: str = "") -> list[Gol
             fb = row
 
             candidate_ids = tuple(_as_int_list(ev.get("result_ids")))
+            # Cause-A: additive parallel stable ids (empty for pre-Cause-A sinks).
+            candidate_stable_ids = tuple(_as_opt_str_list(ev.get("result_stable_ids")))
             # Build labels: relevant→1 first, then irrelevant→0 (overlap → 0 wins).
             labels: dict[int, int] = {i: 1 for i in _as_int_list(fb.get("relevant_ids"))}
             for i in _as_int_list(fb.get("irrelevant_ids")):
@@ -206,6 +234,7 @@ def build_gold_records(sink_path: str | Path, embedder_id: str = "") -> list[Gol
                     labels=labels,
                     embedder_id=embedder_id,
                     provenance=PROVENANCE,
+                    candidate_stable_ids=candidate_stable_ids,
                 )
             )
     return records

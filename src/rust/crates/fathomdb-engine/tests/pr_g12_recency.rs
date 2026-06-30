@@ -25,6 +25,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         branch: SoftFallbackBranch::Vector,
         source_id: None,
         ce_score: None,
+        stable_id: None,
     }
 }
 

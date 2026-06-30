@@ -391,6 +391,10 @@ struct PySearchHit {
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`.
     /// `Some` only for hits inside the reranked pool; `None` otherwise.
     ce_score: Option<f64>,
+    /// Cause-A (0.8.11.2) — additive cross-session-stable hit id (`logical_id`
+    /// `"l:"`-tagged, or an `"h:"` content-hash for doc nodes). `None` only for
+    /// synthetic passages. Never participates in ranking.
+    stable_id: Option<String>,
 }
 
 impl PySearchHit {
@@ -408,6 +412,7 @@ impl PySearchHit {
             },
             source_id: h.source_id.clone(),
             ce_score: h.ce_score,
+            stable_id: h.stable_id.clone(),
         }
     }
 }

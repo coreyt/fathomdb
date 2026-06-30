@@ -31,6 +31,7 @@ fn hit(id: u64, body: &str, branch: SoftFallbackBranch) -> SearchHit {
         branch,
         source_id: None,
         ce_score: None,
+        stable_id: None,
     }
 }
 

@@ -67,6 +67,11 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
             # is None for every two-arm hit (only graph-arm hits carry it).
             assert hasattr(hit, "source_id")
             assert hit.source_id is None
+            # Cause-A (0.8.11.2) — `stable_id` crosses the FFI. Doc-seeded corpus
+            # nodes carry NULL logical_id, so the stable id is the `"h:"`
+            # content-hash of the body (never None for a real node hit).
+            assert hasattr(hit, "stable_id")
+            assert isinstance(hit.stable_id, str) and hit.stable_id.startswith("h:")
     finally:
         engine.close()
 

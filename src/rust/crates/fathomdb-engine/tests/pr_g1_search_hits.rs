@@ -205,3 +205,158 @@ fn ac_g1_no_eq_but_partial_eq() {
     assert_eq!(a, b, "SearchResult must retain PartialEq");
     opened.engine.close().unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// Cause-A (0.8.11.2) — additive stable hit-id for cross-session real-gold
+// keying. The field is `stable_id: Option<String>`: the active node's
+// `logical_id` (`"l:"`-tagged) when present, else an `"h:"` content-hash of the
+// body (doc-seeded nodes carry NULL `logical_id`). It never participates in
+// ranking — proven additive by the unchanged ordering/score assertions above.
+// ---------------------------------------------------------------------------
+
+/// A doc node (NULL `logical_id`, the dominant corpus case) surfaces a
+/// content-hash stable id: `"h:" + 64 hex chars`, deterministic across repeated
+/// searches.
+#[test]
+fn cause_a_doc_node_stable_id_is_content_hash() {
+    let (_dir, path) = fixture("cause_a_doc_hash");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let receipt = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "note".to_string(),
+            body: "cause-a content hash probe".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("write");
+    opened.engine.drain(10_000).expect("drain");
+
+    let result = search_after_projection(&opened.engine, "probe", receipt.cursor);
+    let hit = &result.results[0];
+    let sid = hit.stable_id.as_deref().expect("doc node must carry a content-hash stable id");
+    assert!(sid.starts_with("h:"), "doc node stable id must be content-hash tagged, got {sid}");
+    assert_eq!(sid.len(), 2 + 64, "h: + sha256 hex (64 chars)");
+    assert!(
+        sid["h:".len()..].chars().all(|c| c.is_ascii_hexdigit()),
+        "content-hash must be lowercase hex, got {sid}"
+    );
+
+    // Deterministic across a second search (no re-ingest).
+    let again = search_after_projection(&opened.engine, "probe", receipt.cursor);
+    assert_eq!(again.results[0].stable_id.as_deref(), Some(sid), "stable id must be deterministic");
+    opened.engine.close().unwrap();
+}
+
+/// Cross-session stability — the WHOLE point of Cause-A. The interim `id`
+/// (`write_cursor`) is reassigned on re-ingest, but the content-hash stable id
+/// of the same body is byte-identical across two independent databases.
+#[test]
+fn cause_a_doc_node_stable_id_survives_reingest() {
+    let body = "cause-a reingest survival document";
+
+    let capture = |name: &str| -> String {
+        let (_dir, path) = fixture(name);
+        let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+        // Write a throwaway node first so the second DB's write_cursor differs.
+        if name.ends_with("_b") {
+            opened
+                .engine
+                .write(&[PreparedWrite::Node {
+                    kind: "note".to_string(),
+                    body: "padding so cursors diverge".to_string(),
+                    source_id: None,
+                    logical_id: None,
+                }])
+                .expect("pad");
+        }
+        let receipt = opened
+            .engine
+            .write(&[PreparedWrite::Node {
+                kind: "note".to_string(),
+                body: body.to_string(),
+                source_id: None,
+                logical_id: None,
+            }])
+            .expect("write");
+        opened.engine.drain(10_000).expect("drain");
+        let result = search_after_projection(&opened.engine, "survival", receipt.cursor);
+        let hit = &result.results[0];
+        let sid = hit.stable_id.clone().expect("stable id");
+        // Record the interim id too, to prove it is NOT what gives stability.
+        let interim = hit.id;
+        opened.engine.close().unwrap();
+        format!("{sid}|{interim}")
+    };
+
+    let a = capture("cause_a_reingest_a");
+    let b = capture("cause_a_reingest_b");
+    let (sid_a, id_a) = a.split_once('|').unwrap();
+    let (sid_b, id_b) = b.split_once('|').unwrap();
+    assert_eq!(sid_a, sid_b, "content-hash stable id must survive re-ingest");
+    assert_ne!(
+        id_a, id_b,
+        "interim write_cursor diverges across sessions (the reason stable_id exists)"
+    );
+}
+
+/// A node WITH a `logical_id` surfaces an `"l:"`-tagged stable id carrying that
+/// exact logical id (the post-G0 supersession-stable identity).
+#[test]
+fn cause_a_logical_id_node_is_l_tagged() {
+    let (_dir, path) = fixture("cause_a_logical");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let receipt = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "person".to_string(),
+            body: "cause-a logical identity entity".to_string(),
+            source_id: None,
+            logical_id: Some("entity-cause-a-42".to_string()),
+        }])
+        .expect("write");
+    opened.engine.drain(10_000).expect("drain");
+
+    let result = search_after_projection(&opened.engine, "entity", receipt.cursor);
+    let hit = &result.results[0];
+    assert_eq!(
+        hit.stable_id.as_deref(),
+        Some("l:entity-cause-a-42"),
+        "a node with a logical_id must carry the l:-tagged stable id"
+    );
+    opened.engine.close().unwrap();
+}
+
+/// Distinct bodies → distinct content-hash stable ids (no collisions on the
+/// dominant doc-node path).
+#[test]
+fn cause_a_distinct_bodies_distinct_stable_ids() {
+    let (_dir, path) = fixture("cause_a_distinct");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let r1 = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "note".to_string(),
+            body: "cause-a distinct alpha unique".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("w1");
+    let r2 = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "note".to_string(),
+            body: "cause-a distinct beta unique".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("w2");
+    opened.engine.drain(10_000).expect("drain");
+
+    let result = search_after_projection(&opened.engine, "unique", r1.cursor.max(r2.cursor));
+    let ids: std::collections::HashSet<_> =
+        result.results.iter().filter_map(|h| h.stable_id.clone()).collect();
+    assert!(ids.len() >= 2, "two distinct bodies must yield two distinct stable ids, got {ids:?}");
+    assert!(ids.iter().all(|s| s.starts_with("h:")), "all doc-node ids are content-hash tagged");
+    opened.engine.close().unwrap();
+}

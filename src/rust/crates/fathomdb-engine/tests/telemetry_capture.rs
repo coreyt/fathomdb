@@ -99,6 +99,17 @@ fn telemetry_captures_event_and_feedback_deterministically() {
     assert_eq!(ev0["query_chars"], "hybrid".chars().count() as u64);
     assert!(ev0["result_ids"].as_array().is_some_and(|a| !a.is_empty()));
     assert!(ev0["arm_of"].is_object());
+    // Cause-A (0.8.11.2): a NEW PARALLEL `result_stable_ids` rides alongside the
+    // RETAINED `result_ids` (write_cursor). Same length, same order; doc-corpus
+    // hits carry the `"h:"` content-hash stable id (additive — the existing
+    // write_cursor keys are unchanged, so pre-Cause-A gold stays valid).
+    let result_ids = ev0["result_ids"].as_array().unwrap();
+    let stable_ids = ev0["result_stable_ids"].as_array().expect("result_stable_ids present");
+    assert_eq!(stable_ids.len(), result_ids.len(), "stable ids parallel result_ids 1:1");
+    assert!(
+        stable_ids.iter().all(|v| v.as_str().is_some_and(|s| s.starts_with("h:"))),
+        "doc-corpus hits carry content-hash stable ids: {stable_ids:?}"
+    );
 
     let fb: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
     assert_eq!(fb["type"], "feedback");

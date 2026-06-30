@@ -299,6 +299,7 @@ class Engine:
                     branch=cast(SoftFallbackBranch, hit.branch),
                     source_id=hit.source_id,
                     ce_score=hit.ce_score,
+                    stable_id=hit.stable_id,
                 )
                 for hit in result.results
             ],

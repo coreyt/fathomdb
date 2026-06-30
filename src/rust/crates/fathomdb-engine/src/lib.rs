@@ -1119,6 +1119,17 @@ pub struct SearchHit {
     /// no-CE-model soft-fallback. Additive + nullable: it never participates in
     /// ranking, so default-path ordering/scores stay byte-stable.
     pub ce_score: Option<f64>,
+    /// Cause-A (0.8.11.2) — additive **stable hit-id** for cross-session
+    /// real-gold keying. Unlike `id` (the interim `write_cursor`, reassigned on
+    /// every re-projection/re-ingest), this carries a re-ingest-survivable key
+    /// derived by [`derive_stable_id`]: the active canonical node's `logical_id`
+    /// (id-space `"l:"`) when present, else an `"h:"` content-hash of the body
+    /// (the doc-seeded node case — the dominant corpus hit type today). `None`
+    /// ONLY for synthetic `rerank_passages` hits, which have no canonical
+    /// identity. Additive + nullable, prefix-tagged by id-space, and it NEVER
+    /// participates in ranking — default-path ordering/scores stay byte-stable
+    /// (same posture as `source_id` / `ce_score`).
+    pub stable_id: Option<String>,
 }
 
 /// G0 Phase-2 (E0a / BLOCK-1) — graph-arm frontier instrumentation. A
@@ -3351,8 +3362,19 @@ impl Engine {
 
     /// 0.8.8 Slice 15 — capture a query→result telemetry event. No-op (no alloc,
     /// no I/O) when telemetry is off (the default). Best-effort: a sink write error
-    /// never fails the search. Captures ONLY ids (stable `logical_id`), arms, and
-    /// the query LENGTH — never the query text or `source_id` (privacy, ADR §C).
+    /// never fails the search. Captures ONLY ids, arms, and the query LENGTH —
+    /// never the query text or `source_id` (privacy, ADR §C).
+    ///
+    /// ID-SPACES (Cause-A, 0.8.11.2 — honest record). `result_ids` is the interim
+    /// `SearchHit.id` == `write_cursor`: within-session consistent but NOT
+    /// cross-session-stable (reassigned on re-projection/re-ingest). `arm_of` is
+    /// keyed by that same `write_cursor`. Cause-A adds a NEW PARALLEL field
+    /// `result_stable_ids` carrying the cross-session-stable id
+    /// ([`SearchHit::stable_id`], `logical_id` / content-hash) in the SAME order as
+    /// `result_ids`; the existing `write_cursor` keys are RETAINED unchanged so
+    /// pre-Cause-A gold and sink byte-output stay valid (the F-8a `id_space` flip
+    /// is a separate, conscious step — see
+    /// `dev/plans/runs/NOTE-0.8.8-to-steward-id-contract.md`).
     fn capture_telemetry(&self, query: &str, result: &SearchResult) {
         // Fast OFF path (codex §9 P2): a single atomic load when telemetry has
         // never been enabled — NO mutex acquisition, NO contention with the search
@@ -3375,6 +3397,14 @@ impl Engine {
             "query_id": query_id,
             "query_chars": query.chars().count() as u64,
             "result_ids": result.results.iter().map(|h| h.id).collect::<Vec<u64>>(),
+            // Cause-A: parallel cross-session-stable ids, SAME order as result_ids;
+            // `null` for a hit that has no stable id (synthetic passages). Additive
+            // — result_ids (write_cursor) is retained unchanged.
+            "result_stable_ids": result
+                .results
+                .iter()
+                .map(|h| h.stable_id.clone())
+                .collect::<Vec<Option<String>>>(),
             "arm_of": arm_of,
         });
         let _ = append_jsonl(&sink.path, &event);
@@ -3384,7 +3414,15 @@ impl Engine {
 
     /// 0.8.8 Slice 15 — append an agent-supplied relevance-label record for a
     /// previously-captured `query_id`. `label_source` is the only exogenous string
-    /// (caller-declared, e.g. `"agent:hermes"`). Ids are the stable `logical_id`.
+    /// (caller-declared, e.g. `"agent:hermes"`).
+    ///
+    /// ID-SPACE (Cause-A, 0.8.11.2 — honest record). `relevant_ids` /
+    /// `irrelevant_ids` are the interim `SearchHit.id` == `write_cursor` (the same
+    /// space as the captured event's `result_ids`), NOT `logical_id`. The
+    /// signature is left byte-stable: the gold pipeline maps these `write_cursor`
+    /// keys to the cross-session-stable id via the capture event's parallel
+    /// `result_ids` ↔ `result_stable_ids` arrays (`eval/gold_capture.py`), so no
+    /// new feedback parameter — and no binding-signature churn — is required.
     /// Errors if telemetry is off.
     pub fn record_feedback(
         &self,
@@ -5518,6 +5556,8 @@ pub fn rerank_passages(
             branch: SoftFallbackBranch::Vector,
             source_id: None,
             ce_score: None,
+            // Cause-A: synthetic passages have no canonical identity → no stable id.
+            stable_id: None,
         })
         .collect();
     // 0.8.5 — project `(id, score, ce_score)` so the binding can surface the CE
@@ -5969,16 +6009,25 @@ fn read_search_in_tx(
         // canonical_nodes. Try canonical_nodes first; fall back to canonical_edges
         // for edge-fact hits so they are not silently dropped.
         let mut results = Vec::new();
-        let mut node_stmt =
-            tx.prepare("SELECT kind, body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        // Cause-A: the two node/edge SELECTs additively fetch `logical_id` so the
+        // hit can carry a stable cross-session id (derive_stable_id). Read-only
+        // additive column — ordering/scores are untouched.
+        let mut node_stmt = tx.prepare(
+            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+        )?;
         let mut edge_stmt = tx.prepare(
-            "SELECT body FROM canonical_edges \
+            "SELECT body, logical_id FROM canonical_edges \
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
         )?;
         for (rowid, score) in rowids {
-            if let Ok((kind, body)) = node_stmt
-                .query_row([rowid], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
-            {
+            if let Ok((kind, body, logical_id)) = node_stmt.query_row([rowid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            }) {
+                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
                 results.push(SearchHit {
                     id: rowid as u64,
                     kind,
@@ -5987,8 +6036,12 @@ fn read_search_in_tx(
                     branch: SoftFallbackBranch::Vector,
                     source_id: None,
                     ce_score: None,
+                    stable_id,
                 });
-            } else if let Ok(body) = edge_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+            } else if let Ok((body, logical_id)) = edge_stmt.query_row([rowid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            }) {
+                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
                 results.push(SearchHit {
                     id: rowid as u64,
                     kind: "edge_fact".to_string(),
@@ -5997,6 +6050,7 @@ fn read_search_in_tx(
                     branch: SoftFallbackBranch::TextEdge,
                     source_id: None,
                     ce_score: None,
+                    stable_id,
                 });
             }
         }
@@ -6047,28 +6101,63 @@ fn read_search_in_tx(
         // better, so ascending puts best matches first; `write_cursor` is the
         // deterministic tiebreak. The filter is applied as a Rust post-filter so
         // the unfiltered path is untouched.
-        let sql = match perf_limit {
-            Some(k) => format!(
+        let limit_clause = perf_limit.map(|k| format!(" LIMIT {k}")).unwrap_or_default();
+        // Cause-A: PREFER a logical_id-bearing query — LEFT JOIN canonical_nodes so
+        // node hits carry the `l:`-tagged stable id. The join is 1:1 on
+        // `write_cursor` (search_index holds node bodies only; edge bodies live in
+        // search_index_edges), so the row-set and the `bm25(search_index),
+        // write_cursor` ordering are byte-unchanged — only `cn.logical_id` is added.
+        // FALL BACK to the original (logical_id-free) query on pre-step-12 schemas
+        // (v10) whose `canonical_nodes` lacks `logical_id`: those hits key by the
+        // `h:` content-hash. This keeps old-schema search byte-identical to the
+        // pre-Cause-A behaviour (the prepare of the plain SQL is the exact prior
+        // statement). Columns are qualified because both tables expose `write_cursor`.
+        let join_sql = format!(
+            "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
+             bm25(search_index), cn.logical_id FROM search_index \
+             LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
+             WHERE search_index MATCH ?1 \
+             ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
+        );
+        if let Ok(mut statement) = tx.prepare(&join_sql) {
+            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                let logical_id = row.get::<_, Option<String>>(4)?;
+                Ok(SearchHit {
+                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    body,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::Text,
+                    source_id: None,
+                    ce_score: None,
+                })
+            })?;
+            rows.flatten().collect()
+        } else {
+            let plain_sql = format!(
                 "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor LIMIT {k}"
-            ),
-            None => "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
-                 WHERE search_index MATCH ?1 ORDER BY bm25(search_index), write_cursor"
-                .to_string(),
-        };
-        let mut statement = tx.prepare(&sql)?;
-        let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
-            Ok(SearchHit {
-                body: row.get::<_, String>(0)?,
-                kind: row.get::<_, String>(1)?,
-                id: row.get::<_, i64>(2)? as u64,
-                score: row.get::<_, f64>(3)?,
-                branch: SoftFallbackBranch::Text,
-                source_id: None,
-                ce_score: None,
-            })
-        })?;
-        rows.flatten().collect()
+                 WHERE search_index MATCH ?1 \
+                 ORDER BY bm25(search_index), write_cursor{limit_clause}"
+            );
+            let mut statement = tx.prepare(&plain_sql)?;
+            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                Ok(SearchHit {
+                    // No logical_id column on this schema → content-hash stable id.
+                    stable_id: Some(derive_stable_id(None, &body)),
+                    body,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::Text,
+                    source_id: None,
+                    ce_score: None,
+                })
+            })?;
+            rows.flatten().collect()
+        }
     };
     let mut text_results: Vec<SearchHit> = Vec::with_capacity(text_candidates.len());
     for hit in text_candidates {
@@ -6093,7 +6182,11 @@ fn read_search_in_tx(
     // candidates into a Vec first (drops stmt borrow on tx) so we can pass
     // &tx to edge_fts_hit_passes_filter without a borrow conflict.
     let edge_candidates: Vec<SearchHit> = {
-        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges) \
+        // Cause-A: the JOIN to canonical_edges already exists; additively select
+        // `ce.logical_id` (edges always carry one) for the stable hit-id. No
+        // ordering/row-set change.
+        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
+             ce.logical_id \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
@@ -6103,8 +6196,11 @@ fn read_search_in_tx(
         // ignore the error gracefully (returns empty slice).
         if let Ok(mut stmt) = tx.prepare(edge_sql) {
             if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                let logical_id = row.get::<_, Option<String>>(4)?;
                 Ok(SearchHit {
-                    body: row.get::<_, String>(0)?,
+                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    body,
                     kind: row.get::<_, String>(1)?,
                     id: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
@@ -6409,6 +6505,9 @@ fn bfs_graph_arm_candidates(
             if let Some((kind, body, write_cursor)) = row {
                 stats.seeds_resolved += 1;
                 if visited.insert(lid.clone()) {
+                    // Cause-A: the seed's `logical_id` is in hand (`lid`) — derive the
+                    // stable id before `lid` is moved onto the frontier (zero extra query).
+                    let stable_id = Some(derive_stable_id(Some(&lid), &body));
                     frontier.push_back((lid, 0));
                     if !seed_bodies.contains(body.as_str()) && candidates.len() < cap {
                         // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
@@ -6422,6 +6521,7 @@ fn bfs_graph_arm_candidates(
                             branch: SoftFallbackBranch::GraphArm,
                             source_id,
                             ce_score: None,
+                            stable_id,
                         });
                     }
                 }
@@ -6505,6 +6605,10 @@ fn bfs_graph_arm_candidates(
                     let hop_score = 1.0 / (1.0 + (depth + 1) as f64);
                     let score =
                         if kind == "unknown" { hop_score * SYNTHESIZED_PENALTY } else { hop_score };
+                    // Cause-A: the neighbor's `logical_id` is `neighbor` (still in
+                    // scope here; only moved onto the frontier below) — derive the
+                    // stable id with no extra query.
+                    let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
                     candidates.push(SearchHit {
                         id: write_cursor as u64,
                         kind,
@@ -6514,6 +6618,7 @@ fn bfs_graph_arm_candidates(
                         // BLOCK-2: the session this fact-edge was extracted from.
                         source_id: edge_source_id.clone(),
                         ce_score: None,
+                        stable_id,
                     });
                     if candidates.len() >= cap {
                         break;
@@ -8902,6 +9007,38 @@ fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Cause-A (0.8.11.2) — derive the additive **stable hit-id** carried on
+/// [`SearchHit::stable_id`] for cross-session real-gold keying.
+///
+/// The stable id is the active canonical node's `logical_id` — the post-G0
+/// supersession-stable identity, preserved across re-projection/re-ingest by
+/// the tombstone-then-insert contract (whereas `SearchHit.id` ==
+/// `write_cursor` is reassigned on every re-ingest). When `logical_id` is NULL
+/// — the doc-seeded node case, the *dominant* corpus hit type today — we fall
+/// back to a content hash of the body so doc hits still carry a
+/// re-ingest-survivable key (a `None` here would leave the doc-seeded real-gold
+/// arms session-scoped; the Steward DECIDED to adopt this fallback).
+///
+/// The result is **prefix-tagged by id-space** so the two provenances are
+/// distinguishable by inspection (honest `id_space`):
+/// - `"l:<logical_id>"` — logical-id space (entities + edges; graph-arm,
+///   vector-node, and edge hits when `logical_id` is present);
+/// - `"h:<sha256(body)>"` — content-hash space (doc nodes with NULL
+///   `logical_id`, and any branch that cannot cheaply resolve a `logical_id`).
+///
+/// Behaviour-neutral: the value never participates in ranking/scoring (same
+/// additive posture as `source_id` / `ce_score`).
+fn derive_stable_id(logical_id: Option<&str>, body: &str) -> String {
+    match logical_id {
+        Some(lid) if !lid.is_empty() => format!("l:{lid}"),
+        _ => {
+            let mut hasher = Sha256::new();
+            hasher.update(body.as_bytes());
+            format!("h:{:x}", hasher.finalize())
+        }
+    }
+}
+
 /// fix-34 [P2]: dedup a batch of [`PreparedWrite`]s by `logical_id`, keeping the
 /// first occurrence. Shared by the entity and edge arms of the BYO-LLM ingest
 /// path so a harness that returns the same node/edge twice in one response does
@@ -10176,9 +10313,37 @@ unsafe extern "C" fn profile_callback_trampoline(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_source_type, Engine, PreparedWrite, KIND_TO_SOURCE_TYPE_CASE_SQL};
+    use super::{
+        derive_stable_id, resolve_source_type, Engine, PreparedWrite, KIND_TO_SOURCE_TYPE_CASE_SQL,
+    };
     use rusqlite::Connection;
     use tempfile::TempDir;
+
+    /// Cause-A (0.8.11.2) — `derive_stable_id` id-space contract: a present
+    /// `logical_id` yields an `"l:"`-tagged key; a NULL or empty `logical_id`
+    /// falls back to a deterministic `"h:"`-tagged sha256 content-hash of the
+    /// body. The two id-spaces are prefix-distinguishable and the value is
+    /// behaviour-neutral (never used in ranking).
+    #[test]
+    fn derive_stable_id_id_space_contract() {
+        // logical_id present → l:-tagged, body-independent.
+        assert_eq!(derive_stable_id(Some("alice-1"), "any body"), "l:alice-1");
+        assert_eq!(derive_stable_id(Some("alice-1"), "a different body"), "l:alice-1");
+
+        // NULL logical_id → h:-tagged content-hash, deterministic on body.
+        let h1 = derive_stable_id(None, "stable body text");
+        let h2 = derive_stable_id(None, "stable body text");
+        assert_eq!(h1, h2, "content-hash is deterministic");
+        assert!(h1.starts_with("h:"));
+        assert_eq!(h1.len(), 2 + 64, "h: + sha256 hex");
+        assert!(h1["h:".len()..].chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Empty logical_id is treated as absent (falls back to content-hash).
+        assert_eq!(derive_stable_id(Some(""), "stable body text"), h1);
+
+        // Distinct bodies → distinct content-hashes (no collision).
+        assert_ne!(derive_stable_id(None, "body A"), derive_stable_id(None, "body B"));
+    }
 
     // Pack 1 drift-detection: the Rust helper used by the two writer
     // sites must agree with the CASE WHEN used by the Pack 1 reshape

@@ -104,6 +104,14 @@ export interface SearchHit {
    * path, or no CE model loaded).
    */
   ceScore: number | null;
+  /**
+   * Cause-A (0.8.11.2) — additive cross-session-stable hit id for real-gold
+   * keying. The active node's `logical_id` (`"l:"`-tagged) when present, else an
+   * `"h:"` content-hash of the body (doc nodes). `null` only for synthetic
+   * passages. Unlike `id` (the interim `write_cursor`), it survives re-ingest;
+   * it never participates in ranking.
+   */
+  stableId: string | null;
 }
 
 /**
@@ -635,6 +643,7 @@ export class Engine {
           : "text",
         sourceId: h.sourceId ?? null,
         ceScore: h.ceScore ?? null,
+        stableId: h.stableId ?? null,
       })),
       explanation,
     };
@@ -881,6 +890,7 @@ export const graph = {
         sourceId: h.sourceId ?? null,
         // 0.8.5 — searchExpand never reranks (depth=0) → ceScore is always null.
         ceScore: h.ceScore ?? null,
+        stableId: h.stableId ?? null,
       })),
       expanded: r.expanded.map((e) => ({
         node: e.node,

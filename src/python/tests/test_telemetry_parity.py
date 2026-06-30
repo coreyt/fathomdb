@@ -101,6 +101,11 @@ def test_telemetry_captures_event_and_feedback(db_path: str, tmp_path: Path) -> 
     assert ev0["query_chars"] == len("hybrid")
     assert isinstance(ev0["result_ids"], list) and ev0["result_ids"]
     assert isinstance(ev0["arm_of"], dict)
+    # Cause-A (0.8.11.2): NEW PARALLEL `result_stable_ids`, RETAINED `result_ids`.
+    # Same length/order; doc-corpus hits carry the `"h:"` content-hash stable id.
+    assert isinstance(ev0["result_stable_ids"], list)
+    assert len(ev0["result_stable_ids"]) == len(ev0["result_ids"])
+    assert all(isinstance(s, str) and s.startswith("h:") for s in ev0["result_stable_ids"])
 
     fb = json.loads(lines[2])
     assert fb["type"] == "feedback"

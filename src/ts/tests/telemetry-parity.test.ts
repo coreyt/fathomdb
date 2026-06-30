@@ -106,6 +106,13 @@ test("telemetry: captures event + correlated feedback deterministically", async 
   assert.equal(ev0.query_chars, "hybrid".length);
   assert.ok(Array.isArray(ev0.result_ids) && ev0.result_ids.length > 0);
   assert.equal(typeof ev0.arm_of, "object");
+  // Cause-A (0.8.11.2): NEW PARALLEL `result_stable_ids`, RETAINED `result_ids`.
+  // Same length/order; doc-corpus hits carry the `"h:"` content-hash stable id.
+  assert.ok(Array.isArray(ev0.result_stable_ids));
+  assert.equal(ev0.result_stable_ids.length, ev0.result_ids.length);
+  assert.ok(
+    ev0.result_stable_ids.every((s: unknown) => typeof s === "string" && s.startsWith("h:")),
+  );
 
   const fb = JSON.parse(lines[2]);
   assert.equal(fb.type, "feedback");

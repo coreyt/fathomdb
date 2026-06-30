@@ -79,6 +79,11 @@ test("functional search: structured hit shape across the FFI", async () => {
       assert.ok(hit.body.length > 0);
       assert.equal(typeof hit.score, "number");
       assert.ok(hit.branch === "vector" || hit.branch === "text");
+      // Cause-A (0.8.11.2) — `stableId` crosses the FFI. Doc-seeded corpus nodes
+      // carry NULL logical_id, so the stable id is the `"h:"` content-hash of the
+      // body (never null for a real node hit). Py↔TS parity with `stable_id`.
+      assert.equal(typeof hit.stableId, "string");
+      assert.ok(hit.stableId !== null && hit.stableId.startsWith("h:"));
     }
   } finally {
     await engine.close();

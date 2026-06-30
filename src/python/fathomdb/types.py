@@ -61,6 +61,12 @@ class SearchHit:
     `ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
     (`ce_norm = sigmoid(ce_logit)`), set only for hits inside the reranked pool;
     `None` otherwise (out-of-pool, the identity path, or no CE model loaded).
+
+    `stable_id` (Cause-A / 0.8.11.2) is the additive cross-session-stable hit id
+    for real-gold keying: the active node's `logical_id` (`"l:"`-tagged) when
+    present, else an `"h:"` content-hash of the body (doc nodes). `None` only
+    for synthetic passages. Unlike `id` (the interim `write_cursor`), it survives
+    re-ingest; it never participates in ranking.
     """
 
     id: int
@@ -70,6 +76,7 @@ class SearchHit:
     branch: SoftFallbackBranch
     source_id: str | None = None
     ce_score: float | None = None
+    stable_id: str | None = None
 
 
 @dataclass(frozen=True)

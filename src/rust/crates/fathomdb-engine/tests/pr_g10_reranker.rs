@@ -19,6 +19,7 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         branch: SoftFallbackBranch::Vector,
         source_id: None,
         ce_score: None,
+        stable_id: None,
     }
 }
 
@@ -85,6 +86,7 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
             branch: SoftFallbackBranch::Vector,
             source_id: None,
             ce_score: None,
+            stable_id: None,
         },
         SearchHit {
             id: 2,
@@ -94,6 +96,7 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
             branch: SoftFallbackBranch::Text,
             source_id: None,
             ce_score: None,
+            stable_id: None,
         },
     ];
     let out = rerank_fused("", hits.clone(), 0, 0.3, 0);
