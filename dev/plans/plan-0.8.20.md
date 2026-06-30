@@ -56,6 +56,14 @@ In scope — two **migration/wide** upgrades, each its own LBO, each its own wor
   `fathomdb-schema`, `bundled`) and **un-pin/raise** `sqlite-vec` (`=0.1.7` → 0.1.9) **together** —
   they are coupled through the bundled SQLite version. Resolve the API jump (9 minors); confirm the
   bundled-SQLite change does not regress FTS5/vector behavior. Blast: **wide**.
+- **`action-gh-release` 2 → 3 (#98) — escalated here from the 0.8.11.1 sweep (2026-06-30).** Bump
+  `softprops/action-gh-release` in `release.yml` to
+  `718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1`. It could not be validated in the label-only sweep:
+  the consuming `github-release` job is gated `if: ${{ inputs.dry_run != true }}`, so a `workflow_dispatch`
+  dry-run **skips it entirely** (vacuous proof) and the only real validation is a tagged publish (forbidden
+  in a pico). 0.8.20 is a real cut that naturally exercises the publish path under HITL supervision — bump
+  it here and verify on the actual release run. v3.0.0 breaking change = runner Node 20→24 (GitHub-hosted
+  runners support it); no input renames. Blast: **contained** (but release-path → HITL-gated on the cut).
 
 **Out of scope (deferred):** anything the 0.8.11.1 sweep already handles (sha2 unless it escalated here;
 ts-tooling; CI actions). Any further library that is still `contained` belongs in the next Library
