@@ -18,7 +18,7 @@ sha2 = { version = "0.11", optional = true }
 dirs = { version = "5", optional = true }
 fs2 = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
-thiserror = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
 
 # Candle stack + tokenizer for the default `CandleBgeEmbedder` (EU-4).
 # Pinned to candle 0.10 (current stable line) and tokenizers 0.20. Gated
