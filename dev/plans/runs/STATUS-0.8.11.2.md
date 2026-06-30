@@ -108,3 +108,14 @@ memex-steward orchestrator**, which the fathomdb-steward SPAWNS to drive `plan-0
   **latency** (workaround re-reads the growing log per call), mitigable consumer-side, not a FathomDB ask.
   **Memex 0.5.1 ships on the log-collapse workaround** as a known/accepted scale-limited gap. Recorded in
   `plan-0.8.15.md` §11 + a forward-note on `ADR-0.6.0-op-store-same-file.md`.
+- 2026-06-30 — **6-repo Phase-2 checkpoint PASSED + WorldModel greenlit.** The Memex 0.5.1 refit (Phase-2
+  swap) surfaced **3 governed-API gaps, all with shipped workarounds, none blocking.** HITL dispositions:
+  **gap #2 (no governed touch / last-accessed surface — `NodeRecord` is `logical_id/kind/body/write_cursor`
+  only; workaround = `last_accessed_at` in `body`)** and **gap #3 (`graph.neighbors` not edge-label scoped +
+  50-neighbor cap; workaround = consumer-side read-parity filter)** → filed as **~0.8.15 roadmap candidates**
+  (`plan-0.8.15.md` §12 + §13; off-default-until-scoped, paired with Memex 0.5.3, same posture as §10/§11).
+  **Gap #1 (no governed physical-purge verb — flat `admin.purge_logical_id` has no analog; `delete`/`purge`/
+  `forget` now tombstone-retire ONLY, data stays on disk)** is **HELD for a post-Phase-2 privacy/product
+  decision** (is tombstone-only acceptable for "purge/forget", or does privacy compliance require a physical-
+  purge verb?) — **NOT scheduled for ~0.8.15**, recorded as held in `plan-0.8.15.md` §14, explicitly distinct
+  from the scheduled #2/#3.

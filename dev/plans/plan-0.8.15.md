@@ -390,3 +390,80 @@ candidate, **paired with Memex 0.5.3**.
 
 **Memex 0.5.1 ships on the log-collapse workaround** as a known, accepted, scale-limited gap (the
 corruption footgun is theoretical at single-user-local scale). HITL 2026-06-30 **DEFER** decision.
+
+---
+
+## 12. Adjacent (candidate, off-default until scoped) — governed touch / last-accessed surface (gap #2), paired with Memex 0.5.3
+
+> **Scope note.** Like §10/§11, this does **not** add to the dispatcher ladder. It is a forward pointer
+> so the last-accessed gap lands in the right place and is not re-discovered cold. **Candidate, not
+> committed** — off-default until scoped at a Slice 0, same posture as §10/§11.
+
+**The gap (surfaced by the Memex 0.5.1 Phase-2 swap).** `NodeRecord` is `logical_id / kind / body /
+write_cursor` only. The flat pre-0.6.0 API had a `LastAccessTouchRequest` verb to record a
+last-accessed timestamp; it was **removed at 0.6.0 and has zero analog on the 0.8.x governed surface** —
+there is no governed touch verb and no last-accessed column or read. A consumer that wants recency-of-
+access (e.g. for LRU-style memory decay or "recently used" surfacing) cannot record or read it through
+the governed API.
+
+**Memex 0.5.1 workaround (shipped, non-blocking).** Memex persists `last_accessed_at` **inside the node
+`body`** and updates it on access. This works at single-user-local scale but couples access-recency into
+content payload and makes it invisible to any server-side recency filter or ordering.
+
+**Roadmap candidate (~0.8.15, paired with Memex 0.5.3).** Either a **governed touch verb** (record
+last-accessed for a `logical_id` without rewriting `body`) or a **last-accessed column + governed read**
+on `NodeRecord`. Off-default until scoped; a new governed verb / column requires a **publishable micro**
+plus the full binding / allowlist / parity-test governance (not a label-only pico), and revives a
+write-side surface — so it also carries a HITL governance sign-off. Gated on a real Memex-data value
+test (does in-`body` recency actually fall short for 0.5.3's needs).
+
+---
+
+## 13. Adjacent (candidate, off-default until scoped) — `graph.neighbors` edge-label scoping + neighbor cap (gap #3), paired with Memex 0.5.3
+
+> **Scope note.** Like §10/§11/§12, this does **not** add to the dispatcher ladder. Forward pointer
+> only. **Candidate, not committed** — off-default until scoped at a Slice 0.
+
+**The gap (surfaced by the Memex 0.5.1 Phase-2 swap).** `graph.neighbors` is **not label / edge-kind
+scoped** and **caps at 50 neighbors**. A consumer cannot ask for "neighbors via edge-kind X" or page
+past the cap, which limits graph-heavy retrieval (gathering a single entity's full relationship set when
+it exceeds 50, or filtering to one relationship type).
+
+**Memex 0.5.1 workaround (shipped, non-blocking).** Memex retrieves via `graph.neighbors` at read-parity
+(takes the unscoped, capped result) and filters/assembles consumer-side. Sufficient for 0.5.1; it does
+not recover edges beyond the 50-cap.
+
+**Roadmap candidate (~0.8.15, paired with Memex 0.5.3).** **Edge-label scoping** on `graph.neighbors`
+(filter by edge-kind) **plus raising / making-configurable the neighbor cap** (with a sane default and a
+bounded max). Off-default until scoped; an additive signature change to a governed read verb still
+requires the full binding / allowlist / parity-test governance. The graph arm is REFUTED for *recall*
+fusion (M1 ΔF1 −0.0405); this candidate is about **explicit known-anchor graph walks**, not reviving the
+fused graph arm — scope it as an entity-relationship-retrieval surface, not a recall lever.
+
+---
+
+## 14. Held (NOT scheduled) — governed physical-purge verb (gap #1), pending a post-Phase-2 privacy/product decision
+
+> **Posture — distinct from §12/§13.** This is **HELD, not a roadmap candidate.** It is **NOT scheduled
+> for ~0.8.15** and is **NOT** off-default-until-scoped like §10–§13. It is parked pending a HITL
+> **product / privacy decision** taken after Phase-2, and is recorded here only so it is not lost. Do not
+> open a Slice 0 for it; do not fold it into the §12/§13 scoping.
+
+**The gap (surfaced by the Memex 0.5.1 Phase-2 swap).** There is **no governed physical-purge verb** on
+the 0.8.x surface. The flat pre-0.6.0 `engine.admin.purge_logical_id` (physical delete) has **no
+analog** — the recovery-tooling purge verbs (`purge_logical_id`, `excise_source`) are
+recovery-tooling-only and unreachable from the runtime SDK by design. On 0.8.x, Memex `delete` / `purge`
+/ `forget` now perform **tombstone-retire ONLY**: the row is marked superseded and reads never resurface
+it, **but the data stays on disk**.
+
+**The open question (privacy-pertinent — for HITL).** Is **tombstone-only acceptable** semantics for a
+user-facing "purge / forget", or does privacy compliance (e.g. a true right-to-erasure / GDPR-style
+delete) **require a FathomDB physical-purge verb** that removes the bytes from disk? This is a
+**product / privacy decision**, not an engineering-scoping decision, which is why it is held rather than
+scheduled.
+
+**Disposition.** **HELD — pending a post-Phase-2 product/privacy decision (HITL 2026-06-30).** Memex
+0.5.1 ships on tombstone-retire as the accepted semantics for now. Revisit after Phase-2; if the product
+decision lands on "physical purge required", *then* scope it as a governed verb (publishable micro +
+governance + a deliberate recovery-tooling-vs-runtime-surface boundary review). Until then it is
+explicitly **not** on the 0.8.15 roadmap.
