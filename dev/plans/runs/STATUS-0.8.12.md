@@ -43,7 +43,7 @@
 | **0** | Setup + ADRs (coverage-probe + value-test pre-reg; consolidation ADR); STATUS + DoD freeze | **CLOSED** | n/a (design) | CONCERN→accepted (1×P2: DOC-INDEX EXP-COV-results ref — resolved by Slice 5 landing the file); `0.8.12-slice0-review-20260701.md` | `9180883e` |
 | **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** | n/a (measurement) | CONCERN→**PASS after fix-1** (1×P1: optional GLiNER broke pyright → typed `Any`+`# type: ignore`, verify green); `0.8.12-slice5-review-20260701.md` | `8a82cb55` + fix-1 |
 | **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated) | **HELD** — priced sweep gates it; EXP-COV-1 sufficiency test prepared but spend held for user confirmation | — | — | — |
-| **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **IN-FLIGHT** (implementer, own worktree) | X1 live-run → Slice 40 | — | — |
+| **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **fix-1 in progress** | X1 live-run → Slice 40 | CONCERN (1×P1 retrieval-exclusion + 3×P2: py wrapper, vector/projection prune, verdict-completeness) → fix-1 dispatched; `0.8.12-slice15-review-20260701.md` | engine `a7a1069a` + bindings `bd51901f` (pre-fix) |
 | **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | not started | — | — | — |
 | **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | not started | — | — | — |
 
