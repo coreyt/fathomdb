@@ -1656,6 +1656,83 @@ fn rerank(
         .collect()
 }
 
+// ===== CLS batch embedder (V-3 dense-encoder GPU path) ================
+//
+// Exposes candle `embed_batch` with `Pooling::Cls` to Python. The stock
+// `PyEngine::embed()` uses the engine's default `Pooling::Mean`; the V-3
+// A0/A3 dense stack (m1_baseline.BGEEncoder) is CLS-pooled + L2-normalized, so
+// routing that harness through `embed()` would silently switch Mean↔CLS and
+// break comparability to V-1. This binding loads the SAME pinned bge-small
+// weights the numpy path loads, pins `Pooling::Cls`, and honors
+// `FATHOMDB_EMBED_DEVICE` (CPU default; `cuda:N` under the `embed-cuda`
+// feature). One padded `(B, L)` forward → the same per-row vectors as B single
+// `embed()` calls (parity-locked in the embedder crate's tests). Additive: it
+// does NOT change `embed()`'s default pooling. This also closes the standing
+// "Python embed cannot select CLS pooling" exposure gap.
+
+/// Process-wide, lazily-initialized CLS-pooled default embedder. `None` once a
+/// load has been attempted and failed (no cached weights + no network) —
+/// memoized so a failed load is not retried on every call. Mirrors
+/// `reranker_singleton` in the engine.
+#[cfg(feature = "default-embedder")]
+fn cls_embedder_singleton() -> Option<&'static fathomdb_embedder::CandleBgeEmbedder> {
+    static CELL: std::sync::OnceLock<Option<fathomdb_embedder::CandleBgeEmbedder>> =
+        std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        fathomdb_embedder::CandleBgeEmbedder::new()
+            .map(|e| e.with_pooling(fathomdb_embedder::Pooling::Cls))
+            .ok()
+    })
+    .as_ref()
+}
+
+/// Embed many texts with the pinned default bge-small weights using **CLS
+/// pooling** + L2-normalization, honoring `FATHOMDB_EMBED_DEVICE`. Returns one
+/// `list[float]` per input, in the same order. Distinct from `Engine.embed()`,
+/// which uses the engine's default Mean pooling. Requires a wheel built with
+/// `default-embedder` (or `embed-cuda`); otherwise raises
+/// `EmbedderNotConfiguredError`.
+#[pyfunction]
+fn embed_batch_cls(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    for t in &texts {
+        validate_ffi_string_py(t)?;
+    }
+    embed_batch_cls_impl(py, texts)
+}
+
+#[cfg(feature = "default-embedder")]
+fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    use fathomdb_embedder_api::Embedder;
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let embedder = cls_embedder_singleton().ok_or_else(|| {
+        EmbedderNotConfiguredError::new_err(
+            "default embedder weights unavailable (cache miss + no network)",
+        )
+    })?;
+    // Release the GIL for the (pure CPU/GPU compute) forward pass, and wrap in
+    // `catch_unwind` so the never-panic FFI contract holds even though the
+    // embedder returns a Result channel (mirrors `rerank`).
+    let result = py
+        .detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+                embedder.embed_batch(&refs)
+            }))
+        })
+        .map_err(|_| PanicException::new_err("embed_batch_cls panic (see logs)"))?;
+    result.map_err(|e| EmbedderError::new_err(format!("embed_batch_cls: {e:?}")))
+}
+
+#[cfg(not(feature = "default-embedder"))]
+fn embed_batch_cls_impl(_py: Python<'_>, _texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    Err(EmbedderNotConfiguredError::new_err(
+        "embed_batch_cls requires a wheel built with the `default-embedder` \
+         (or `embed-cuda`) feature",
+    ))
+}
+
 // ===== Test hooks =====================================================
 
 /// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
@@ -1712,6 +1789,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
     // 0.8.2 Slice E2 — standalone rerank over an arbitrary passage list.
     m.add_function(wrap_pyfunction!(rerank, &m)?)?;
+    m.add_function(wrap_pyfunction!(embed_batch_cls, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;

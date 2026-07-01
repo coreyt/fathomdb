@@ -12,6 +12,7 @@ from fathomdb import _fathomdb as _native  # noqa: F401 — load native extensio
 from fathomdb import admin, errors, graph, read
 from fathomdb._fathomdb import ConsolidateReceipt
 from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import embed_batch_cls
 from fathomdb._fathomdb import rerank
 from fathomdb.config import EngineConfig
 from fathomdb.engine import Engine
@@ -55,6 +56,7 @@ __all__ = [
     "WriteReceipt",
     "__version__",
     "admin",
+    "embed_batch_cls",
     "errors",
     "graph",
     "read",
