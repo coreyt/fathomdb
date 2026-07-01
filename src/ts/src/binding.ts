@@ -235,6 +235,21 @@ export interface NativeExtractDocument {
   body: string;
 }
 
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation receipt.
+export interface NativeConsolidateReceipt {
+  clustersProcessed: number;
+  edgesExamined: number;
+  edgesKept: number;
+  edgesInvalidated: number;
+  edgesSuperseded: number;
+}
+
+// 0.8.12 Slice 15 (OPP-2) — one (subject, relation) axis to consolidate.
+export interface NativeConsolidateAxis {
+  subjectLogicalId: string;
+  relation: string;
+}
+
 interface NativeEngineOpenOptions {
   engineConfig?: NativeEngineConfig;
   useDefaultEmbedder?: boolean;
@@ -268,6 +283,11 @@ export interface NativeEngine {
     cmd: string[],
     documents: NativeExtractDocument[],
   ): Promise<NativeIngestWithExtractorReceipt>;
+  // 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation over the same transport.
+  consolidateWithProvider(
+    cmd: string[],
+    axes: NativeConsolidateAxis[],
+  ): Promise<NativeConsolidateReceipt>;
   // 0.8.6 Slice 10 — read-path embed primitive (Py↔TS parity for Engine.embed).
   embed(text: string): Promise<number[]>;
   // 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture. enable/record are

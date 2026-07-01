@@ -31,7 +31,8 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    ComparisonOp as RustComparisonOp, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
+    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
     Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
     FilterTerm as RustFilterTerm, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
@@ -75,6 +76,8 @@ const CODE_MIGRATION: &str = "FDB_MIGRATION";
 const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
 // G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
 // Slice 20 — depth > 3 or invalid argument (G5/G6).
@@ -192,6 +195,9 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
         RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
         RustEngineError::Extractor => {
             typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::Consolidator => {
+            typed_error(CODE_CONSOLIDATOR, "consolidator error", JsonValue::Null)
         }
         RustEngineError::InvalidFilter { reason } => {
             typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
@@ -384,6 +390,28 @@ impl IngestWithExtractorReceipt {
             nodes_written: r.nodes_written as i64,
             edges_written: r.edges_written as i64,
             docs_processed: r.docs_processed as i64,
+        }
+    }
+}
+
+/// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation receipt.
+#[napi(object)]
+pub struct ConsolidateReceipt {
+    pub clusters_processed: i64,
+    pub edges_examined: i64,
+    pub edges_kept: i64,
+    pub edges_invalidated: i64,
+    pub edges_superseded: i64,
+}
+
+impl ConsolidateReceipt {
+    fn from_rust(r: RustConsolidateReceipt) -> Self {
+        Self {
+            clusters_processed: r.clusters_processed as i64,
+            edges_examined: r.edges_examined as i64,
+            edges_kept: r.edges_kept as i64,
+            edges_invalidated: r.edges_invalidated as i64,
+            edges_superseded: r.edges_superseded as i64,
         }
     }
 }
@@ -1066,6 +1094,57 @@ impl Engine {
         })
         .await?;
         Ok(IngestWithExtractorReceipt::from_rust(receipt))
+    }
+
+    /// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation. `cmd` is the argv to
+    /// spawn a caller-supplied harness speaking `fathomdb.consolidate.v1` (the
+    /// SAME transport as extraction). `axes` is an array of objects with
+    /// `subjectLogicalId` and `relation` string properties. FathomDB assembles
+    /// each competing fact-edge cluster deterministically and applies the harness
+    /// verdicts as supersession/recency metadata (bodies never rewritten).
+    #[napi]
+    pub async fn consolidate_with_provider(
+        &self,
+        cmd: Vec<String>,
+        axes: Vec<JsonValue>,
+    ) -> Result<ConsolidateReceipt> {
+        let rust_axes: Vec<RustConsolidateAxis> = axes
+            .iter()
+            .map(|item| {
+                let subject_logical_id = item
+                    .get("subjectLogicalId")
+                    .or_else(|| item.get("subject_logical_id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "axis must have subjectLogicalId",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                let relation = item
+                    .get("relation")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        typed_error(
+                            CODE_WRITE_VALIDATION,
+                            "axis must have relation",
+                            JsonValue::Null,
+                        )
+                    })?
+                    .to_string();
+                Ok(RustConsolidateAxis { subject_logical_id, relation })
+            })
+            .collect::<Result<_>>()?;
+
+        let engine = Arc::clone(&self.inner);
+        let receipt = call_engine(move || {
+            let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+            engine.consolidate_with_provider(&cmd_refs, &rust_axes)
+        })
+        .await?;
+        Ok(ConsolidateReceipt::from_rust(receipt))
     }
 
     /// Embed `text` with the engine's pinned default embedder

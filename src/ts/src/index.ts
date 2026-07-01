@@ -75,6 +75,28 @@ export interface ExtractDocument {
   body: string;
 }
 
+/** 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation receipt. */
+export interface ConsolidateReceipt {
+  /** Number of (subject, relation) axes with a non-empty cluster dispatched. */
+  clustersProcessed: number;
+  /** Number of candidate edges presented across all clusters. */
+  edgesExamined: number;
+  /** Number of edges the harness ruled `keep`. */
+  edgesKept: number;
+  /** Number of edges the harness ruled `invalidate` (t_invalid set). */
+  edgesInvalidated: number;
+  /** Number of edges the harness ruled `supersede`/`merge` (marked superseded). */
+  edgesSuperseded: number;
+}
+
+/** 0.8.12 Slice 15 (OPP-2) — one (subject, relation) axis to consolidate. */
+export interface ConsolidateAxis {
+  /** Stable `logicalId` of the subject entity (edge `fromId`). */
+  subjectLogicalId: string;
+  /** The relation/edge kind whose competing fact-edges form the cluster. */
+  relation: string;
+}
+
 export type SoftFallbackBranch = "vector" | "text" | "text_edge" | "graph_arm";
 
 export interface SoftFallback {
@@ -681,6 +703,42 @@ export class Engine {
       nodesWritten: r.nodesWritten,
       edgesWritten: r.edgesWritten,
       docsProcessed: r.docsProcessed,
+    };
+  }
+
+  /**
+   * 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation / recency. Spawns a
+   * caller-supplied harness speaking the `fathomdb.consolidate.v1`
+   * NDJSON-over-stdio protocol (the SAME transport as `ingestWithExtractor`).
+   * For each `{ subjectLogicalId, relation }` axis FathomDB assembles the
+   * competing fact-edge cluster deterministically and applies the harness
+   * verdicts as supersession/recency METADATA — edge bodies are never rewritten
+   * and no row is ever deleted (ADR-0.8.12 §2.1).
+   *
+   * @param cmd - argv to spawn (first element = program, rest = args).
+   * @param axes - array of `{ subjectLogicalId, relation }` axes to consolidate.
+   */
+  async consolidateWithProvider(
+    cmd: string[],
+    axes: ConsolidateAxis[],
+  ): Promise<ConsolidateReceipt> {
+    // Validate all user-controlled strings at the FFI boundary.
+    for (const arg of cmd) validateFfiString(arg);
+    for (const axis of axes) {
+      validateFfiString(axis.subjectLogicalId);
+      validateFfiString(axis.relation);
+    }
+    const nativeAxes = axes.map((a) => ({
+      subjectLogicalId: a.subjectLogicalId,
+      relation: a.relation,
+    }));
+    const r = await intercept(() => this.#native.consolidateWithProvider(cmd, nativeAxes));
+    return {
+      clustersProcessed: r.clustersProcessed,
+      edgesExamined: r.edgesExamined,
+      edgesKept: r.edgesKept,
+      edgesInvalidated: r.edgesInvalidated,
+      edgesSuperseded: r.edgesSuperseded,
     };
   }
 

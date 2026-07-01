@@ -35,10 +35,11 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp, CorruptionDetail,
-    CorruptionKind, EmbedderChoice, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, Explanation as RustExplanation, ExtractDocument as RustExtractDocument,
-    Filter as RustFilter, FilterTerm as RustFilterTerm,
+    rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp,
+    ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
+    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
+    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
@@ -82,6 +83,8 @@ create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
 create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 create_exception!(_fathomdb, ExtractorError, EngineError);
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+create_exception!(_fathomdb, ConsolidatorError, EngineError);
 // G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 create_exception!(_fathomdb, InvalidFilterError, EngineError);
 // Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
@@ -178,6 +181,7 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
         RustEngineError::Closing => ClosingError::new_err("engine is closing"),
         RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
         RustEngineError::InvalidFilter { reason } => {
             InvalidFilterError::new_err(format!("invalid filter: {reason}"))
         }
@@ -348,6 +352,35 @@ impl PyIngestWithExtractorReceipt {
             nodes_written: r.nodes_written,
             edges_written: r.edges_written,
             docs_processed: r.docs_processed,
+        }
+    }
+}
+
+/// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation receipt.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ConsolidateReceipt",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyConsolidateReceipt {
+    clusters_processed: u64,
+    edges_examined: u64,
+    edges_kept: u64,
+    edges_invalidated: u64,
+    edges_superseded: u64,
+}
+
+impl PyConsolidateReceipt {
+    fn from_rust(r: RustConsolidateReceipt) -> Self {
+        Self {
+            clusters_processed: r.clusters_processed,
+            edges_examined: r.edges_examined,
+            edges_kept: r.edges_kept,
+            edges_invalidated: r.edges_invalidated,
+            edges_superseded: r.edges_superseded,
         }
     }
 }
@@ -959,6 +992,45 @@ impl PyEngine {
         let engine = Arc::clone(&self.inner);
         let receipt = call_engine(py, move || engine.ingest_with_extractor(&cmd_refs, &docs))?;
         Ok(PyIngestWithExtractorReceipt::from_rust(receipt))
+    }
+
+    /// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation. `cmd` is the argv to
+    /// spawn a caller-supplied harness speaking `fathomdb.consolidate.v1` (the
+    /// SAME transport as extraction). `axes` is a list of dicts with
+    /// `subject_logical_id` and `relation` keys. FathomDB assembles the competing
+    /// fact-edge cluster for each axis deterministically and applies the harness
+    /// verdicts as supersession/recency metadata (bodies never rewritten).
+    fn consolidate_with_provider(
+        &self,
+        py: Python<'_>,
+        cmd: Bound<'_, PyList>,
+        axes: Bound<'_, PyList>,
+    ) -> PyResult<PyConsolidateReceipt> {
+        let cmd_strings: Vec<String> = cmd
+            .iter()
+            .map(|item| {
+                item.extract::<String>()
+                    .map_err(|_| WriteValidationError::new_err("cmd elements must be strings"))
+            })
+            .collect::<PyResult<_>>()?;
+
+        let rust_axes: Vec<RustConsolidateAxis> = axes
+            .iter()
+            .map(|item| {
+                let dict = item
+                    .cast::<PyDict>()
+                    .map_err(|_| WriteValidationError::new_err("axis must be a dict"))?;
+                let subject_logical_id = dict_str_required(dict, "subject_logical_id")?;
+                let relation = dict_str_required(dict, "relation")?;
+                Ok(RustConsolidateAxis { subject_logical_id, relation })
+            })
+            .collect::<PyResult<_>>()?;
+
+        let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+        let engine = Arc::clone(&self.inner);
+        let receipt =
+            call_engine(py, move || engine.consolidate_with_provider(&cmd_refs, &rust_axes))?;
+        Ok(PyConsolidateReceipt::from_rust(receipt))
     }
 
     fn counters(&self) -> PyCounterSnapshot {
@@ -1607,6 +1679,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
     m.add_class::<PyIngestWithExtractorReceipt>()?;
+    // 0.8.12 Slice 15 (OPP-2) — consolidation receipt.
+    m.add_class::<PyConsolidateReceipt>()?;
     m.add_class::<PySoftFallback>()?;
     m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
@@ -1662,6 +1736,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
     m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
     m.add("ExtractorError", py.get_type::<ExtractorError>())?;
+    m.add("ConsolidatorError", py.get_type::<ConsolidatorError>())?;
     m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
     m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
     Ok(())
