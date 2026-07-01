@@ -26,7 +26,7 @@
 > **Changelog:** v1 (348dd44e, 2026-06-30) initial design-on-spec → **v2 (this commit, 2026-06-30)**
 > HITL decisions incorporated + #0 vendor abstraction + two-tier scope + research for #0/#3/#4. **v2
 > residual-resolution (same commit, 2026-06-30):** HITL confirmed (1) per-engine strict (#3) stays a
-> *proposed-not-locked* default; (2) **Tier 2 → the 0.8.14 slot** (no standalone 0.8.16); (3) the
+> *proposed-not-locked* default; (2) **Tier 2 → the 0.8.16 slot** (no standalone 0.8.18); (3) the
 > `doctor` system-review may be a `doctor`/admin surface and **may be housed in the 0.8.8 EXP-OBS
 > telemetry/explain sidecar** rather than a new CLI subcommand. Folded into §0.5/§4.1/§5/§7.
 
@@ -66,7 +66,7 @@ experiment campaign** ship immediately, decoupled from the larger vendor-neutral
 ### TIER 1 — MVP now (this machine + the V-3/V-7 experiment work)
 
 The **minimal safe basics** to run GPU CE-rerank on this box (2×3090 + display Quadro) for the
-0.8.12 GPU-rerank work / V-3/V-7 campaign. The experiments are *already* safe because they pin
+0.8.14 GPU-rerank work / V-3/V-7 campaign. The experiments are *already* safe because they pin
 `cuda:0`/`cuda:1` explicitly; Tier 1 adds the two things that make **casual use on this machine**
 safe too — a display-GPU exclude and an observable fallback. **Exactly three behaviors land:**
 
@@ -80,7 +80,7 @@ safe too — a display-GPU exclude and an observable fallback. **Exactly three b
 abstraction trait, no memory budget/fraction, no UUID pin, no startup re-check, no `doctor`. The
 exclude-list in Tier 1 is *user-declared indices only* — FathomDB does **not** detect which device
 drives the display (that needs NVML and is Tier 2). Tier 1 is pure, unit-testable with no GPU and no
-feature build, and **folds into the 0.8.12 GPU-rerank slice**. Default fallback mode is `notify`
+feature build, and **folds into the 0.8.14 GPU-rerank slice**. Default fallback mode is `notify`
 (the `strict`/`silent` mode selector is Tier 2).
 
 > Why this is enough for now: the campaign already pins `cuda:0`/`cuda:1` (the two 3090s) explicitly,
@@ -96,19 +96,19 @@ The complete #0–#4 surface, for the released package that ships GPU functional
 
 | Item | What | Roadmap slot |
 | --- | --- | --- |
-| **#0/#1 vendor-neutral probe trait** | `DeviceProbe`/`GpuBackend` trait (§3.5); NVML/`nvidia-smi` = the NVIDIA impl; planned AMD (ROCm-SMI) / Intel (Level-Zero) impls. | with 0.8.14 ONNX |
-| **#1 NVML dynamic probing** | optional feature-gated `nvml-wrapper` dep + `nvidia-smi` shell-out fallback, behind the #0 trait. | with 0.8.14 ONNX |
-| **#2 startup re-check + `doctor`** | startup device-eligibility re-validation (never trust cached/configured device identity) + a `doctor`/admin system-review that enumerates GPU availability + eligibility (HITL: may be housed in the 0.8.8 EXP-OBS sidecar). | with 0.8.14 ONNX |
+| **#0/#1 vendor-neutral probe trait** | `DeviceProbe`/`GpuBackend` trait (§3.5); NVML/`nvidia-smi` = the NVIDIA impl; planned AMD (ROCm-SMI) / Intel (Level-Zero) impls. | with 0.8.16 ONNX |
+| **#1 NVML dynamic probing** | optional feature-gated `nvml-wrapper` dep + `nvidia-smi` shell-out fallback, behind the #0 trait. | with 0.8.16 ONNX |
+| **#2 startup re-check + `doctor`** | startup device-eligibility re-validation (never trust cached/configured device identity) + a `doctor`/admin system-review that enumerates GPU availability + eligibility (HITL: may be housed in the 0.8.8 EXP-OBS sidecar). | with 0.8.16 ONNX |
 | **#3 strict-scope** (researched) | `require_gpu`/`strict` as a **per-engine** setting (per-call rejected on overhead grounds — §3.5/§2.8). | with NVML layer |
-| **#4 memory budget** (researched) | **advisory** free-VRAM eligibility gate on candle (cudarc `mem_get_info`); **hard** `gpu_mem_limit` cap on the ONNX path. | advisory: with NVML layer · hard: 0.8.14 ONNX |
+| **#4 memory budget** (researched) | **advisory** free-VRAM eligibility gate on candle (cudarc `mem_get_info`); **hard** `gpu_mem_limit` cap on the ONNX path. | advisory: with NVML layer · hard: 0.8.16 ONNX |
 | **UUID pin + `auto` select** | stable `cuda:uuid:<UUID>` pin + probe-and-pick `auto`. | with NVML layer |
-| **Vendor breadth (AMD/Intel/DirectML)** | reachable only via the ONNX Runtime EP path, not candle. | ONNX path (0.8.14+) |
+| **Vendor breadth (AMD/Intel/DirectML)** | reachable only via the ONNX Runtime EP path, not candle. | ONNX path (0.8.16+) |
 
 ---
 
 ## 1. Current-state survey — what FathomDB does today
 
-Source: `0.8.12-gpu-rerank` branch, shared crate
+Source: `0.8.14-gpu-rerank` branch, shared crate
 `src/rust/crates/fathomdb-embedder/src/{device.rs,candle_bge.rs,candle_reranker.rs}`.
 
 ### 1.1 The shared parser (`device.rs`)
@@ -157,7 +157,7 @@ The **default build stays CPU**; GPU is opt-in via feature + env. The fallback i
   cudarc with no pool/arena ceiling. It also exposes **no VRAM-query API of its own**; free/total VRAM
   is reachable only by dropping to the underlying `cudarc` context (`mem_get_info`). This is why the
   memory budget is **advisory on candle, hard only on ONNX** (§4.3, #4).
-- The 0.8.14 ONNX path will **extend `resolve_device()`** (ONNX Runtime CUDA EP carries its own
+- The 0.8.16 ONNX path will **extend `resolve_device()`** (ONNX Runtime CUDA EP carries its own
   device-id + `gpu_mem_limit` hard cap — see §2.4), which is the natural insertion point for a real
   allocation budget.
 
@@ -250,7 +250,7 @@ called out in §2.7; **v2 research** (candle memory cap, per-call overhead, vend
   [Ollama multi-GPU notes](https://knightli.com/en/2026/04/19/ollama-multiple-gpu-notes/),
   [llama.cpp multi-gpu.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/multi-gpu.md).
 
-### 2.4 ONNX Runtime (CUDA EP) — directly relevant to the 0.8.14 path
+### 2.4 ONNX Runtime (CUDA EP) — directly relevant to the 0.8.16 path
 
 The CUDA execution provider takes a provider-options struct:
 
@@ -505,7 +505,7 @@ HITL #0: **target NVIDIA now, but never NVIDIA-only.** Research (§2.8c) shows t
 ## 4. Recommendation
 
 **A two-tier, layered policy: Tier-1 static declaration + typed-notification fallback is the MVP that
-folds into 0.8.12; Tier-2 dynamic probing (behind the #0 vendor-neutral trait), budget cap, and
+folds into 0.8.14; Tier-2 dynamic probing (behind the #0 vendor-neutral trait), budget cap, and
 strict-mode are the full-release surface.** Concretely:
 
 ### 4.1 Default policy (unchanged spirit, safer floor)
@@ -552,7 +552,7 @@ when:
 
 These map 1:1 to a `GpuPolicy` config struct (so non-env callers — the `EmbedderChoice::Caller` path —
 set the same fields programmatically). The struct is the source of truth; env is one populator. Define
-it so the 0.8.14 ONNX `resolve_device` extension **inherits the same struct** rather than forking one.
+it so the 0.8.16 ONNX `resolve_device` extension **inherits the same struct** rather than forking one.
 
 ### 4.3 Probing / eligibility algorithm (Tier 2 — `auto` and refusing a bad pin)
 
@@ -594,7 +594,7 @@ the authoritative guard remains the allocation attempt itself, handled at the ca
 the **only validation per call is none** — eligibility is resolved once at open + the #2(a) startup
 re-check; nothing re-probes per `embed()`.
 
-### 4.4 Tier-1 MVP — exact scope (folds into 0.8.12)
+### 4.4 Tier-1 MVP — exact scope (folds into 0.8.14)
 
 Restating §0.5 Tier 1 as the build order for the GPU-rerank slice — **pure, NVML-free,
 unit-testable**:
@@ -626,10 +626,10 @@ This is **device-seam family** work and rides the existing seam without re-openi
 - **#3 GPU-seam** — owns `resolve_device`; the eligibility/probe layer slots *between*
   `parse_device_request` and `Device::new_cuda`, leaving the pure parser and the `Embedder` trait
   untouched.
-- **#4 ONNX (0.8.14)** — the ONNX backend is where a **real (hard) memory budget** (`gpu_mem_limit`)
+- **#4 ONNX (0.8.16)** — the ONNX backend is where a **real (hard) memory budget** (`gpu_mem_limit`)
   and the **cross-vendor device-id** surface naturally live; the `GpuPolicy` struct should be defined
   so the ONNX `resolve_device` extension consumes the same fields. **Sequence the policy struct so
-  0.8.14 inherits it** rather than inventing a parallel one. ONNX is also where the #0 **vendor
+  0.8.16 inherits it** rather than inventing a parallel one. ONNX is also where the #0 **vendor
   breadth** (AMD/Intel/DirectML) actually arrives (§2.8c).
 - **#5 vector-equivalence** — orthogonal but adjacent: an `auto`-selected or budget-capped backend can
   change numerics (CPU↔CUDA↔ONNX), which is exactly what the probe-set equivalence guard
@@ -641,10 +641,10 @@ This is **device-seam family** work and rides the existing seam without re-openi
 
 | Work | Slot | Rationale |
 | --- | --- | --- |
-| **Tier 1 MVP** (exclude-list + typed-notify fallback) | **0.8.12** (GPU-rerank fold-in) | small, NVML-free, safety-critical; the natural companion to the GPU-rerank work / V-3/V-7 campaign. Do **not** bundle NVML here. |
-| **Tier 2 dynamic** — `DeviceProbe` trait (#0) + NVML probing (#1) + `auto`/UUID + startup re-check + `doctor`/EXP-OBS (#2) + advisory budget (#4) + per-engine strict (#3) | **with 0.8.14 ONNX** *(HITL-confirmed; no standalone 0.8.16)* — shares the ONNX memory-budget + cross-vendor plumbing | NVML dep + probe trait land alongside the cross-vendor seam |
-| **Hard memory budget** (`gpu_mem_limit`) | **0.8.14 ONNX path** | candle cannot hard-cap (§2.8a); the real cap is an ONNX-EP option |
-| **Vendor breadth** (AMD ROCm/MIGraphX, Intel OpenVINO, DirectML) + their `DeviceProbe` impls (ROCm-SMI, Level-Zero) | **ONNX path (0.8.14+)** | unreachable at the candle layer; an ONNX-EP + per-vendor-probe concern |
+| **Tier 1 MVP** (exclude-list + typed-notify fallback) | **0.8.14** (GPU-rerank fold-in) | small, NVML-free, safety-critical; the natural companion to the GPU-rerank work / V-3/V-7 campaign. Do **not** bundle NVML here. |
+| **Tier 2 dynamic** — `DeviceProbe` trait (#0) + NVML probing (#1) + `auto`/UUID + startup re-check + `doctor`/EXP-OBS (#2) + advisory budget (#4) + per-engine strict (#3) | **with 0.8.16 ONNX** *(HITL-confirmed; no standalone 0.8.18)* — shares the ONNX memory-budget + cross-vendor plumbing | NVML dep + probe trait land alongside the cross-vendor seam |
+| **Hard memory budget** (`gpu_mem_limit`) | **0.8.16 ONNX path** | candle cannot hard-cap (§2.8a); the real cap is an ONNX-EP option |
+| **Vendor breadth** (AMD ROCm/MIGraphX, Intel OpenVINO, DirectML) + their `DeviceProbe` impls (ROCm-SMI, Level-Zero) | **ONNX path (0.8.16+)** | unreachable at the candle layer; an ONNX-EP + per-vendor-probe concern |
 
 ---
 
@@ -701,8 +701,8 @@ This is **device-seam family** work and rides the existing seam without re-openi
    recommendation*, not yet a contract. Still open within that: whether the **batch re-embed** path
    should default to `strict` while interactive rerank stays `notify` (revisit when the Tier-2 layer
    is built).
-2. **Tier-2 slot = 0.8.14** *(HITL OK)*. The dynamic/NVML layer rides **0.8.14 (with ONNX)**; the
-   standalone-0.8.16 alternative is dropped.
+2. **Tier-2 slot = 0.8.16** *(HITL OK)*. The dynamic/NVML layer rides **0.8.16 (with ONNX)**; the
+   standalone-0.8.18 alternative is dropped.
 3. **`doctor` surface** *(HITL OK)*. Treat as a **`doctor`/admin surface**; **may be housed in the
    existing 0.8.8 EXP-OBS telemetry/explain sidecar** rather than a new CLI subcommand. Final
    placement decided when #2 is built.

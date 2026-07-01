@@ -43,7 +43,7 @@ defaults (`initial-arch-planner-router-0.8.x.md` §5; `planner-router-psd-0.8.x.
 - **F2 (multi_session):** wider candidate-gen; α/pool_n per EXP-B'; D2-as-router hint possible;
   MMR on.
 - **F3 (temporal / knowledge-update):** F1-base + valid-time filter post-expansion (OD-4 order —
-  expand → filter → rerank, not pre-filter); recency-judgment provider hook (OPP-2/0.8.10) if
+  expand → filter → rerank, not pre-filter); recency-judgment provider hook (OPP-2/0.8.12) if
   landed, else absent (safe fallback).
 - **F4 (global sensemaking):** C (map-reduce QFS), LLM spend tier; CE-rerank **FORBIDDEN** on this
   path (F4-isolation constraint); cost tier surfaced per query.
@@ -96,7 +96,7 @@ DoD closes on Workstreams A+B; the fork slices are **reserved-gap / conditional*
   HITL must approve. At 0.8.17 this is a **decision gate only**; no implementation.
 
 **Out of scope (explicitly):** EXP-FT free-threaded-Python ladder (→ 0.8.19); #13 benchmark-
-harness (→ 0.8.19); even-line items #5/#11-full (→ 0.8.16); #15 F9 ranking (→ 0.8.14); any
+harness (→ 0.8.19); even-line items #5/#11-full (→ 0.8.18); #15 F9 ranking (→ 0.8.16); any
 engine schema migration.
 
 ---
@@ -143,7 +143,7 @@ Slice 40.
 | **[25]** | **EXP-C productization (Track C, reserved-gap — PROCEED on current corpus)** — `query --global` mode on existing AP-News; C router-isolated via the Slice 10 validator; per-query cost surfaced; registered as CALLER-SIDE-BYO-LLM mode (not an engine change) | C | reserved-gap | 0; AP-News on disk (confirmed) |
 | **[30]** | **EXP-D corpus acquisition + decide_084 re-run (Track C, corpus-gated HITL)** — acquire ~269 entity-rich Q set (AutoQ-style, the only new F4 acquisition item); HITL spend decision required before execution; resilient harness required for the priced judge run | C | reserved-gap / corpus-gated | [25]; HITL spend approval at slice start |
 | **[35]** | **EXP-E Fork-E decision gate (Track C, HITL-only)** — assess whether EXP-D corpus reveals a relationship gap C/D2 cannot close; HITL decision recorded; **no engine build at this slice** (D1/RAPTOR is a prerequisite that is not scoped in any current release) | C | reserved-gap / HITL gate | [30]; HITL required; D1 unbuilt = EXP-E cannot build |
-| **40** | **Verification + Release Readiness (0.8.17)** — X1/X2/X3; R-CFG-1–4, R-AF-1/2, R-FORK-C gates green; R-FORK-D/E documented; master sequencing doc §4+§6 reconciled; dry-run publish via 0.8.16 release machinery | A+B+C | verification | 5,10,15,20 (backbone); [25] if complete |
+| **40** | **Verification + Release Readiness (0.8.17)** — X1/X2/X3; R-CFG-1–4, R-AF-1/2, R-FORK-C gates green; R-FORK-D/E documented; master sequencing doc §4+§6 reconciled; dry-run publish via 0.8.18 release machinery | A+B+C | verification | 5,10,15,20 (backbone); [25] if complete |
 
 ### Keystones / hard gates
 
@@ -218,7 +218,7 @@ decides. Specifically:
 ## 7. Prerequisites
 
 1. **0.8.15 dispatcher closed (hard gate)** — the in-library EXP-Fr dispatcher exists over the
-   EXP-S kind-tagged substrate (0.8.12), and the router locus decision is resolved. 0.8.17 hardens
+   EXP-S kind-tagged substrate (0.8.14), and the router locus decision is resolved. 0.8.17 hardens
    what 0.8.15 built; it cannot precede it. Verify via `dev/plans/runs/STATUS-0.8.15.md`.
 
 2. **0.8.11 EXP-AF prototype and readout available (hard gate for Track B)** — the EXP-AF value
@@ -240,9 +240,9 @@ decides. Specifically:
    `dev/plans/runs/NOTE-0.8.8-to-orchestrator-record-feedback-reclassify.md` and the 0.8.11
    status doc. If unresolved, escalate at Slice 0.
 
-6. **OPP-2 consolidation/recency provider (0.8.10)** — if landed, the F3 config tuple wires its
+6. **OPP-2 consolidation/recency provider (0.8.12)** — if landed, the F3 config tuple wires its
    recency-judgment hook. If not landed, F3 ships without it (the tuple is partial, not wrong —
-   valid-time filtering still applies). Verify via `dev/plans/runs/STATUS-0.8.10.md`.
+   valid-time filtering still applies). Verify via `dev/plans/runs/STATUS-0.8.12.md`.
 
 7. **AP-News BenchmarkQED on disk** — confirmed by corpus-survey Cycle 1 (2026-06-28) at
    `data/corpus-data/raw/apnews_benchmarkqed/`. EXP-C productization ([Slice 25]) PROCEEDS on
@@ -270,7 +270,7 @@ decides. Specifically:
 
 | Edge | From | To | Class |
 | --- | --- | --- | --- |
-| 0.8.15 dispatcher | 0.8.15 (EXP-Fr; EXP-S substrate @0.8.12) | All tracks | **Physically hard** — no dispatcher to harden |
+| 0.8.15 dispatcher | 0.8.15 (EXP-Fr; EXP-S substrate @0.8.14) | All tracks | **Physically hard** — no dispatcher to harden |
 | EXP-B' joint-tuning values | 0.8.9–0.8.11 | Track A, Slice 5 | Physically hard — Slice 5 bakes the tuned values |
 | EXP-AF 0.8.11 readout | 0.8.11 | Track B, Slice 20 | Physically hard — Slice 20 executes a known verdict |
 | AP-News BenchmarkQED | On disk (confirmed) | Track C, Slice 25 | Satisfied |
@@ -303,11 +303,11 @@ home for any fork overflow, since it is the end-of-0.8.x slot. Record the carry-
 
 ### Position in the overall sequence
 
-- **After 0.8.16** — the #5 vector-equivalence + #11-full publish capstone must close first; the
+- **After 0.8.18** — the #5 vector-equivalence + #11-full publish capstone must close first; the
   full publish pipeline then exists for 0.8.17's Slice 40 dry-run verify.
 - **Before 0.8.19** — EXP-FT free-threaded-Python ladder (FT-1…5) and #13 benchmark harness are
   held for 0.8.19; 0.8.17 does not touch them. The EXP-S-KILL contingency (agent-side router as
-  fallback) was resolved at 0.8.12/0.8.15; 0.8.17 does not re-litigate locus.
+  fallback) was resolved at 0.8.14/0.8.15; 0.8.17 does not re-litigate locus.
 - **Odd line owns OOB / eval.** 0.8.17 is the correct slot for EXP-AF productization and the fork
   experiments; no even-release engine work belongs here (don't import even-line schema migrations
   into an OOB odd release).

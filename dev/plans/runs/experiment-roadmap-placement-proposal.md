@@ -17,10 +17,10 @@ The experiments map onto **existing roadmap anchors — no new releases are requ
 exception (the **Cause-A standalone OOB pico**). They split into **two efforts, not one monolith**, because of
 one hard HITL-imposed ordering: **recall-first → V-1 (live-CE re-validation) → V-3 (iteration)**.
 
-- **Effort A — recall/headroom evals, runnable NOW:** OPP-6 (coverage) + OPP-3 (cascade). Feed the 0.8.10
+- **Effort A — recall/headroom evals, runnable NOW:** OPP-6 (coverage) + OPP-3 (cascade). Feed the 0.8.12
   coverage decision and the improved-recall substrate.
 - **Effort B — the Pre-0.8.15 Validation Gate (already one sequential campaign):** OPP-1 = **V-3**, run in
-  strict **V-1→V-7** order, after 0.8.12 (EXP-S), before 0.8.15 (dispatcher).
+  strict **V-1→V-7** order, after 0.8.14 (EXP-S), before 0.8.15 (dispatcher).
 - **Parallel:** the **Cause-A OOB pico** (size-it-first) — gates only the real-gold *adoption* arms (+OPP-9/
   graph), **not** the academic experiments.
 
@@ -68,13 +68,13 @@ Soft/parallel: OPP-3, Cause-A pico. Vehicle dependency: the Memex 0.5.2 harness 
 ### Phase A — recall/headroom evals (runnable now; parallel)
 6. **OPP-6 EXP-COV-0..3** (coverage→outcome sweep, Memex-driven, Fathom-supplies the held-fixed stack +
    extract seam + index rebuild + `decide_08x`). **EXP-COV-0 also re-measures the per-corpus relevance
-   ceiling.** Output gates **0.8.10 #6 ELPS-coverage** (eval-gated: flat curve ⇒ de-prioritize; real
+   ceiling.** Output gates **0.8.12 #6 ELPS-coverage** (eval-gated: flat curve ⇒ de-prioritize; real
    multi_session/temporal lift ⇒ invest).
 7. **OPP-3 cascade evals** (Memex-driven on `eval/routing/` + held-out judge; FathomDB supplies `margin`
    measurement + knobs + per-corpus `decide_08x`). **Native-gap characterization first**, then the
    marginal-band treatment; **per-corpus, never pooled.** Final cascade/CE-default-on bearing recorded at V-7.
 
-### Phase B — Pre-0.8.15 Validation Gate (strict V-1→V-7; after 0.8.12 EXP-S, before 0.8.15)
+### Phase B — Pre-0.8.15 Validation Gate (strict V-1→V-7; after 0.8.14 EXP-S, before 0.8.15)
 8. **V-1 (keystone):** re-run EXP-B′ on the **live CE engine** (default-reranker ON); fill global + multi_hop;
    add MMR + recency. *Everything downstream re-validates against this.*
 9. **V-3 = OPP-1 EXP-ITER-D/-P/-POLICY** on the **improved-recall substrate** (Phase A + EXP-A), at-power on
@@ -96,7 +96,7 @@ Soft/parallel: OPP-3, Cause-A pico. Vehicle dependency: the Memex 0.5.2 harness 
 ## 4. Roadmap deltas to apply (Steward / HITL)
 
 **FathomDB master (`0.8.6-0.8.16-PROGRAM-SEQUENCING.md`):**
-- **0.8.10 row:** mark **#6 ELPS coverage as eval-gated by OPP-6 EXP-COV-0..3** (build≠adopt; may
+- **0.8.12 row:** mark **#6 ELPS coverage as eval-gated by OPP-6 EXP-COV-0..3** (build≠adopt; may
   de-prioritize).
 - **Add the Cause-A OOB pico** to §4 (size-it-first → cut); note scope vs F-8a.
 - **Cross-ref** the V-3 / V-7 concrete designs (Memex `OPP-1-experiments.md` / `OPP-3-experiments.md`) and

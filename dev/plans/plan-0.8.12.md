@@ -1,39 +1,34 @@
-# FathomDB 0.8.12 — Plan (state-machine ladder) · **Substrate & recall features**
+# FathomDB 0.8.12 — Plan (state-machine ladder) · **Memory-quality plumbing**
 
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `0.8.12-implementation.md`; live state → `runs/STATUS-0.8.12.md`; deps/decision record →
 > `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.12` as an **orchestrator** session.
 >
-> **Theme.** The schema-migration release. Land the **kind-tagged coexisting-index substrate** (#2,
-> EXP-S) and the **fielded FTS / BM25F recall lever** (#16, F5) **in one release so the engine pays one
-> coordinated migration cost**, plus the **filter-grammar G4↔G10 unification** (#17, the typed-constraint
-> surface the router will lean on). All IN-LIBRARY; CPU-only/deterministic query path preserved.
+> **Theme.** Build the two memory-quality capabilities that sit at the head of the retrieval virtuous
+> loop, now that the provider protocol (#8) and governed-verb boundary (#9) from 0.8.6 exist: lift ELPS
+> extraction coverage (#6) and add the consolidation/recency provider (#7, the Mem0-parity update/
+> temporal axis). Both are **CALLER-SIDE BYO-LLM** seams — no LLM enters the library query path.
 >
-> **Footprint.** All three IN-LIBRARY. Re-embeds/index rebuilds are far cheaper on GPU (0.8.7) but the
-> shipped query path stays CPU-only/1-bit/deterministic.
+> **Footprint.** The provider callbacks are caller-side BYO-LLM (OFFLINE-BUILD / caller's own model);
+> the in-library write/index path stays CPU-only, deterministic. Tag every technique.
 
 ---
 
 ## 1. Goal & scope
 
-- **#2 — Kind-tagged coexisting-index substrate (EXP-S).** Today `kind` is doc-type-only and the
-  portfolio's "one store, many indexes" is *asserted, not built*. Add row-kinds (leaf / coverage /
-  graph), plural indexes coexisting in one store, incremental multi-index write, and a **determinism
-  check**. This is the physical foundation the (out-of-scope) router needs; its **KILL path** = router
-  stays agent-side, indexes stay eval-side.
-- **#16 — Fielded FTS / BM25F (F5).** A genuine recall lever (field-weighted lexical scoring,
-  tunable `b`) — already ADR-ratified (`ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md`), conditional on the
-  0.8.3 15b-proxy passing + a Slice-20 Mem0 gap. It is a **schema migration**, which is exactly why it
-  is coordinated with EXP-S in one release rather than paid for twice.
-- **#17 — Filter-grammar G4↔G10 unification (gap-37).** Unify the G4 filter grammar with the shipped G10
-  `SearchFilter` (reserved-gap 37, NEEDED per Slice-35). Yields the typed-constraint surface the router's
-  `constraints` block (PSD §I.B) and intelligent filtering both depend on.
+- **#6 — ELPS extraction coverage (OPP-6).** Extraction coverage is ~1% on the consumer corpus, which
+  starves every graph- and coverage-dependent measure and the D2 path. Lift coverage via the **one**
+  generalized provider (0.8.6 #8), and verify the lift with a $0 LLM-free coverage probe before any
+  priced extraction run. This enriches the inputs OPP-1/OPP-4/D2 consume "for free" and is the head of
+  the real-gold partnership (OPP-9, 0.8.8 #10).
+- **#7 — Consolidation/recency provider (OPP-2, AGREED).** An ELPS-shaped, prompt-and-regenerate
+  consolidation/recency callback that merges/supersedes facts on the update axis (Mem0 parity), built
+  **as one generalized provider per OPP-8** (not a new sibling contract). Gated on a **lossiness-vs-
+  latency value test** — measure that consolidation buys accuracy worth its cost before shipping it on.
 
-*Why this release / why coordinated:* #2 and #16 are both engine/schema migrations on the index write
-path — doing them in one release lets EXP-S land the kind-tag/field columns that F5 then rides, paying
-one `SCHEMA_VERSION` bump and one re-index rather than two. #17 touches the shipped G10 surface and is
-sequenced here (not as a blind OOB drop-in) because the typed-constraint surface composes with the new
-substrate.
+*Why this order in the line:* both hard-depend on 0.8.6 — #7 must ride the OPP-8 protocol (else a
+throwaway contract), and HITL ruled the consumer migrates onto governed verbs (#9) **before** OPP-2/4
+layer on. Coverage (#6) feeds the M5/M6 experiments, so coordinate with the M-work owner.
 
 ---
 
@@ -41,16 +36,15 @@ substrate.
 
 | ID | Requirement | Acceptance signal |
 |----|-------------|-------------------|
-| R-SUB-1 | Row-kinds (leaf/coverage/graph) coexist in one store | Schema migration lands; a fixture writes ≥2 kinds; queries select by kind |
-| R-SUB-2 | Incremental multi-index write is deterministic | Determinism test: same input → byte-identical index state across runs/backends-on-same-CPU |
-| R-SUB-3 | Migration is forward-only + guarded | `SCHEMA_VERSION` bump; migration test (old DB → new) green; eu7 re-clear if vectors are touched |
-| R-F5-1 | Fielded BM25F with tunable `b`/field weights | RED→GREEN: a field-weighted query outranks an unweighted baseline on a known fixture |
-| R-F5-2 | F5 ADR pre-conditions are met | The 0.8.3 15b-proxy pass + Mem0-gap condition is confirmed before F5 ships (else record + defer) |
-| R-FIL-1 | G4 grammar unified with G10 `SearchFilter` | One filter contract; the shipped G10 paths re-expressed on it without behavior change (parity test) |
-| R-X-1 | Py + TS SDK parity for all three | X1 cross-binding harness green |
-| R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) holds after any re-embed | `recall_gate.rs`: ci_hi ≥ 0.90 PASS; a breach BLOCKS→HITL |
+| R-COV-1 | $0 LLM-free coverage probe gates any priced extraction run | Probe reports per-class coverage on a fixed corpus; a failing probe blocks the priced run (records the negative) |
+| R-COV-2 | Coverage lift is measured, pre-registered | Δcoverage vs the ~1% baseline on the frozen corpus, power-sized; reported with CI; no claim on an under-powered class |
+| R-COV-3 | Extraction runs on the OPP-8 provider protocol | Re-expressed extractor uses the one protocol; no second transport (codex §9) |
+| R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds |
+| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded |
+| R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present |
+| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green |
 
-New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gates.
+New ACs: candidates at Slice 0 (provider conformance) and the consolidation value-gate.
 
 ---
 
@@ -62,27 +56,25 @@ New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gate
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | Setup + ADR — EXP-S substrate migration ADR (row-kinds, determinism check, KILL path); confirm the F5 ADR pre-conditions; G4↔G10 unification design | design-adr | — |
-| **5** | **EXP-S substrate KEYSTONE** — row-kinds + plural coexisting indexes + incremental multi-index write + determinism check; `SCHEMA_VERSION` bump | implementation (schema) | 0 |
-| **10** | **F5 fielded BM25F** — field-weighted FTS + tunable `b`, riding the EXP-S field columns | implementation (schema) | 5 |
-| **15** | **G4↔G10 filter unification** — one typed filter contract; re-express shipped G10 paths (parity) | implementation | 0 |
-| **20** | **eu7 re-clear + migration verify** — if Slices 5/10 touched vectors, re-clear the one-sided fidelity gate; old→new migration test | verification | 5,10 |
-| **40** | **Verification + Release Readiness (0.8.12)** — X1/X2/X3 + R-SUB/R-F5/R-FIL AC gate + eu7 gate | verification | 5,10,15,20 |
+| **0** | Setup + ADR — coverage-probe design + pre-registration; consolidation-provider ADR (OPP-2 on the OPP-8 protocol); the lossiness-vs-latency value-test design | design-adr | — |
+| **5** | **Coverage probe (\$0)** — LLM-free per-class coverage measurement on the frozen corpus; the gate that precedes any priced extraction | implementation (measurement) | 0 |
+| **10** | **ELPS coverage lift** — extractor on the OPP-8 protocol; priced run gated by Slice 5; measured Δcoverage | implementation (+priced, HITL-gated) | 5 |
+| **15** | **Consolidation/recency provider** — BYO-LLM merge/supersede callback on the OPP-8 protocol | implementation | 0 |
+| **20** | **Consolidation value-test** — lossiness-vs-latency pre-registered gate; ship-on only if it clears | implementation (eval) | 15 |
+| **40** | **Verification + Release Readiness (0.8.12)** — X1/X2/X3 + R-COV/R-CON AC gate | verification | 5,10,15,20 |
 
-**Keystones / hard gates.** **Slice 5 (EXP-S) is the keystone** — F5 (10) rides its field columns, so
-5 → 10 is a hard sequence (do EXP-S first within the release). **eu7 ≥ 0.90 (one-sided CI) is a hard
-BLOCK→HITL gate** at Slice 20 if any re-embed occurs (`fathomdb-recall-fidelity-vs-relevance`). **F5
-ships only if its ADR pre-conditions hold**, else record + defer.
+**Keystones / hard gates.** **Slice 5 coverage-probe gates Slice 10's priced extraction** (cheap-
+validate-before-spend). **Slice 20 value-test gates shipping consolidation on by default.** Any priced
+run uses the **resilient harness** (auto-resume, atomic checkpoint, 429/5xx backoff, failure≠abstention,
+completeness guard) and a $ ledger — `priced-runs-need-resilience-before-spend`.
 
-**Tracks (parallelizable).** Substrate→F5 track **5 → 10 → 20** ∥ filter track **15** (off Slice 0).
+**Tracks (parallelizable).** Coverage track **5 → 10** ∥ consolidation track **15 → 20**, off Slice 0.
 
 ---
 
 ## 4. Reserved-gap policy
 
-Carried unchanged (`0.8.1-plan.md` §Numbering). Schema-migration follow-on (e.g. a backfill the
-migration reveals) is a fully-orchestrated reserved-gap slice off a fresh `main` baseline, never an
-ad-hoc patch.
+Carried unchanged (`0.8.1-plan.md` §Numbering).
 
 ## 5. Cross-cutting DoD (X1/X2/X3 — bind EVERY slice)
 
@@ -91,27 +83,26 @@ carries the per-slice X column.
 
 ## 6. Acceptance-criteria policy
 
-`dev/acceptance.md` locked; track by G-gap/F-id + TDD names; new ACs only at gated slices, HITL-decided.
+`dev/acceptance.md` locked; track by OPP-id + TDD names; new ACs only at gated slices, HITL-decided.
 
 ## 7. Prerequisites
 
-1. **0.8.6 closed** (release machinery / DoD-shippable) and **0.8.7 OOB GPU recommended-landed** (the
-   re-index here is re-embed-heavy; GPU makes it minutes not hours).
-2. **F5 ADR pre-conditions** (0.8.3 15b-proxy + Mem0-gap) confirmed at Slice 0 — else F5 records-and-
-   defers and the release ships EXP-S + #17 only.
-3. **Frozen corpus + eu7 harness** reproduced locally for the fidelity re-clear.
-4. Worktrees off `$(git rev-parse main)`; maturin/GPU build on the MAIN tree only.
+1. **0.8.6 closed** — the generalized provider protocol (#8) and governed-verb boundary (#9) exist
+   (hard deps for #7 and the #6 refactor).
+2. **0.8.7 (OOB GPU) recommended-landed** — coverage/extraction re-embeds are far cheaper on GPU
+   (soft, not blocking).
+3. **Frozen corpus + gold** for the coverage probe and value-test (reproduced locally per slice;
+   coordinate the gold with 0.8.8 #10 real-gold if available).
+4. Worktrees off `$(git rev-parse main)`; priced runs HITL-gated with a resilient harness.
 
 ## 8. Out-of-band / parallel notes
 
-- **Coordinate with the M-work + router-design owners:** EXP-S is the router's physical substrate and
-  F5 is an M2/M5 recall lever — align the row-kind taxonomy and field weights with what the experiments
-  and the router design expect, so the schema is migrated once for both.
-- This is the **heaviest engine release** in the line; sequence it when the experiment program can
-  tolerate a coordinated schema migration (it bumps `SCHEMA_VERSION` and may trigger a re-index).
+- **Coordinate with the M-work owner:** ELPS coverage directly feeds the M5/M6 measures — align the
+  coverage probe and frozen corpus with the active experiment so the lift is measured on the same basis.
+- Priced extraction (Slice 10) is the only spend in this release and is HITL-gated; everything else is $0.
 
 ## 9. Immediate next slice
 
-**Slice 0 — EXP-S + F5 + filter ADRs.** Ratify the row-kind taxonomy + determinism contract, confirm
-F5's ADR pre-conditions, and design the G4↔G10 unification; stand up `runs/STATUS-0.8.12.md`. Then run
-Slice 5 (EXP-S) before 10 (F5); 15 (filter) in parallel.
+**Slice 0 — coverage-probe + consolidation-provider ADRs.** Pre-register the coverage probe and the
+lossiness-vs-latency value test; confirm both seams ride the OPP-8 protocol; stand up
+`runs/STATUS-0.8.12.md`. Then fan out Slices 5 ∥ 15.

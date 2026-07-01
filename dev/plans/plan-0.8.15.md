@@ -7,15 +7,15 @@
 > **orchestrator** session.
 >
 > **Theme.** Build the **in-library query-router / dispatcher (EXP-Fr)** over the kind-tagged
-> coexisting-index substrate shipped by EXP-S (0.8.12). This is the keystone of the planner-router track:
+> coexisting-index substrate shipped by EXP-S (0.8.14). This is the keystone of the planner-router track:
 > a `RouteDecision`-carrying dispatcher (`route_recommend` + `search_routed`) that classifies query
 > intent to one of five feature classes, selects the `(index_kind, retrieval, alpha, pool_n, recency)`
 > config tuple from the EXP-B′ joint-tuning results, and returns both the search result _and_ what it
 > decided and why. The **locus decision** (in-library vs agent-side vs both-layered) is the release's
-> first and most critical HITL call; it is answered at Slice 0 from the 0.8.12 EXP-S and EXP-Fr-acc
+> first and most critical HITL call; it is answered at Slice 0 from the 0.8.14 EXP-S and EXP-Fr-acc
 > readouts.
 >
-> **This release is NOT OOB** — it is a real engine build, hard-gated by I-2 (EXP-S @ 0.8.12).
+> **This release is NOT OOB** — it is a real engine build, hard-gated by I-2 (EXP-S @ 0.8.14).
 > The "odd-line" label means it is sequenced outside the even-backbone, _not_ that it is a $0 drop-in.
 >
 > **Footprint.** Dispatcher logic is IN-LIBRARY. The query path stays CPU-only, 1-bit, deterministic.
@@ -128,7 +128,7 @@ EXP-Fr-acc results and written into `0.8.15-implementation.md` at Slice 0. No in
 
 | Slice | Title | Work-type | Depends-on |
 | ---: | --- | --- | --- |
-| **0** | **ADR + locus ratification** — read EXP-S (0.8.12) + EXP-Fr-acc readouts; read EXP-B′ config tuples; write dispatcher ADR (`0.8.15-implementation.md`): locus, `RouteDecision` shape, 5-class route table schema, forbidden-composition list, route-accuracy threshold; HITL locus call; if KILL, declare agent-side track and note ladder adaptations; stand up `STATUS-0.8.15.md` | design-adr | EXP-S @0.8.12 closed; EXP-Fr-acc results; EXP-B′ results |
+| **0** | **ADR + locus ratification** — read EXP-S (0.8.14) + EXP-Fr-acc readouts; read EXP-B′ config tuples; write dispatcher ADR (`0.8.15-implementation.md`): locus, `RouteDecision` shape, 5-class route table schema, forbidden-composition list, route-accuracy threshold; HITL locus call; if KILL, declare agent-side track and note ladder adaptations; stand up `STATUS-0.8.15.md` | design-adr | EXP-S @0.8.14 closed; EXP-Fr-acc results; EXP-B′ results |
 | **5** | **Dispatcher core** — `src/rust/crates/fathomdb-engine/src/dispatch.rs` (new): `IntentClass` enum (Needle / MultiSession / Temporal / Global / MultiHop), `CostTier` enum (Cpu / Gpu / LocalLlm / NetLlm), `RouteDecision` struct, 5-class route table populated with EXP-B′ config tuples, forbidden-composition guard; `Engine::route_recommend()` method (no retrieval, returns `RouteDecision`); re-export on `fathomdb` facade; TDD: `dispatch_route_table.rs` (5 intent classes → expected route; forbidden-composition rejection; override accepted/rejected) | implementation (engine) | Slice 0 ADR ratified |
 | **10** | **Routing execution + typed-constraint integration** — `Engine::search_routed()`: calls `route_recommend()` then dispatches to the L1 arm (`search_reranked` for CPU-tier; gated path for NetLlm); OD-4 enforcement in dispatch path (expand → valid-time filter → rerank, never filter before pool expansion); wire `SearchFilter` typed-constraint from #17 (0.8.11) into dispatcher `constraints` field; `RouteDecision` sidecar attached to `SearchResult` on the routed path (as `route_decision: Option<RouteDecision>` field, parallel to `explanation`); `route_hint` override path validated against forbidden-composition guard; integration TDD: `dispatch_routing_execution.rs` against kind-tagged fixtures | implementation (engine) | Slice 5; EXP-S kind-tagged fixture DBs available |
 | **15** | **Py + TS SDK parity + governed surface** — Python binding (`fathomdb-py/src/lib.rs`): expose `route_recommend`, `search_routed`, `RouteDecision`, `IntentClass`, `CostTier` via PyO3; update `_fathomdb.pyi` stubs; TS binding (`fathomdb-napi/src/lib.rs`): same surface via napi-rs; `src/ts/src/index.ts` type exports; update `governed-surface-allowlist.json` with new verb names (frozen at Slice 0 ADR); X1 cross-binding harness green; check F-8b `record_feedback` governance reclassification — if graduated to governed command, include in allowlist update | implementation (bindings) | Slices 5, 10 |
@@ -192,8 +192,8 @@ fill `{{AC_IDS}}` template slots with fabricated identifiers.
 All must be verified at Slice 0 before any implementation begins. Slice 0 _must fail loudly and halt to
 HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
 
-1. **EXP-S @ 0.8.12 CLOSED with GO verdict.** Kind-tagged coexisting indexes landed; determinism check
-   passed; `runs/STATUS-0.8.12.md` shows CLOSED. This is I-2 — the hard physical gate. No in-library
+1. **EXP-S @ 0.8.14 CLOSED with GO verdict.** Kind-tagged coexisting indexes landed; determinism check
+   passed; `runs/STATUS-0.8.14.md` shows CLOSED. This is I-2 — the hard physical gate. No in-library
    dispatcher is possible without the kind-tagged substrate. If the EXP-S verdict is KILL (determinism/perf
    failure), declare DP-A and invoke the agent-side track immediately; do not attempt to build over a
    broken substrate.
@@ -228,7 +228,7 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
    parity tests (Slice 15) and the Slice 40 full suite require the MAIN tree's `maturin develop` build.
    Only one `maturin develop` at a time on the MAIN tree (`0.8.6-0.8.7-parallel-build-venv-mutex`).
 
-> **Net (per master F-11): the only remaining upstream *experiment* gate for 0.8.15 is EXP-S (0.8.12), the
+> **Net (per master F-11): the only remaining upstream *experiment* gate for 0.8.15 is EXP-S (0.8.14), the
 > long pole.** EXP-OBS is already satisfied on `origin/main` (F-6), and the EXP-B′ + EXP-Fr-acc experiment
 > base is **de-risked / produced by 0.8.11's folded-in ladder** rather than by the never-run 0.8.7/0.8.9
 > float. The prereq verifications above for items 2/3 therefore check **0.8.11 deliverables**, not stale
@@ -242,7 +242,7 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
 
 | Upstream | Lands | What it gates at 0.8.15 | Class |
 | --- | --- | --- | --- |
-| **EXP-S** (0.8.12) | even @0.8.12 | In-library dispatcher code over kind-tagged indexes | **HARD (I-2); long pole** |
+| **EXP-S** (0.8.14) | even @0.8.14 | In-library dispatcher code over kind-tagged indexes | **HARD (I-2); long pole** |
 | **EXP-OBS** (0.8.8) | even @0.8.8 | Routed path must carry full EXP-OBS provenance; transparent router requires the EXPLAIN surface | **HARD (I-1 consumer)** |
 | **EXP-Fr-acc** | **produced by 0.8.11 (F-11)** — never ran as float | Locus decision + mis-route matrix + route-accuracy threshold → Slice 0 ADR | feeds Slice 0 |
 | **EXP-B′** | **produced by 0.8.11 (F-11)** — never ran as float | Per-intent `(alpha, pool_n, k, recency)` config tuples → Slice 5 route table | feeds Slice 5 |
@@ -258,7 +258,7 @@ HITL_ if any item is absent or its gate is not in a verified-CLOSED state.
 
 ### One-for-one EXP-S slip coupling
 
-If EXP-S slips (0.8.12 delayed), 0.8.15 slips exactly one-for-one. The dispatcher cannot precede the
+If EXP-S slips (0.8.14 delayed), 0.8.15 slips exactly one-for-one. The dispatcher cannot precede the
 kind-tagged substrate. **Protect EXP-S's schedule above all other items in the program** (finding F-1,
 master sequencing doc §6). The 0.8.11 agent-side prototype is the only hedge: a router ships either way
 (agent-side via the prototype, or in-library via 0.8.15); EXP-S only decides the in-library locus
@@ -266,12 +266,12 @@ availability.
 
 ### Decision points consumed by this release
 
-**DP-A — EXP-S KILL path (Slice 0 gate).** If the 0.8.12 EXP-S determinism/perf check returned KILL
+**DP-A — EXP-S KILL path (Slice 0 gate).** If the 0.8.14 EXP-S determinism/perf check returned KILL
 (coexisting indexes not fast or deterministic enough in-product), the in-library dispatcher is off the
 table. Slice 5 shifts to hardening the 0.8.11 agent-side L2 prototype into a documented, tested L1
 config-carrying surface rather than building a new `dispatch.rs` module. Slices 10 (execution) and 15
 (bindings) adapt accordingly. Slice 40's verification and route-accuracy gate still apply. Decision owner:
-steward, at Slice 0 with the 0.8.12 EXP-S verdict in hand.
+steward, at Slice 0 with the 0.8.14 EXP-S verdict in hand.
 
 **DP-B — EXP-B′ stacks-diverge verdict (Slice 5).** If EXP-B′ showed per-intent stacks cannot unify
 under one config, the Slice 5 route table carries separate hardcoded tuples per intent class. If stacks
@@ -300,7 +300,7 @@ in-library L2 as the default, L1 as the explicit override path already available
 
 **Slice 0 — ADR + locus ratification.** Three reads before writing anything:
 
-1. Read `dev/plans/runs/STATUS-0.8.12.md` — confirm EXP-S is CLOSED and the determinism check verdict
+1. Read `dev/plans/runs/STATUS-0.8.14.md` — confirm EXP-S is CLOSED and the determinism check verdict
    is GO or KILL. If KILL, stop here and surface to HITL before proceeding; the rest of the ladder adapts
    at that point.
 2. Read the EXP-Fr-acc results document — extract the locus recommendation and the per-class mis-route

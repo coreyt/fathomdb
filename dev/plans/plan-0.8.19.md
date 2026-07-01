@@ -85,7 +85,7 @@ The five experiments (run in order; each informs the next):
   `cp313t` (and optionally `cp314t`) targets beside the existing `abi3-py310` wheel. Build locally;
   measure added CI wall-time and artifact count; confirm the abi3 wheel cannot serve FT interpreters
   (expected: no — FT ABI is version-specific). Eval criterion: packaging lift is **acceptable** if it
-  fits the existing release CI budget (informed by #11-full publish matrix at 0.8.16) without a
+  fits the existing release CI budget (informed by #11-full publish matrix at 0.8.18) without a
   structural overhaul; otherwise FT productization is packaging-gated to a later slot.
 
 **Scope boundary.** EXP-FT _decides_ the productization path; it does **not** implement it. Flipping
@@ -135,7 +135,7 @@ Adapted workflow shape (from ci-deferred.md § adaptations):
 - TS observability harness: **logged as dropped** (workspace-topology prerequisite unmet).
 - Weekly cron (`0 7 * * 1`).
 
-**HITL decision on #13 scope (F-10, already resolved).** The 0.8.16 plan flagged that #13 might be
+**HITL decision on #13 scope (F-10, already resolved).** The 0.8.18 plan flagged that #13 might be
 roadmap-pushed past 0.8.x if its ROI is low at Slice 0. SEQUENCING §6 F-10 records the HITL resolution
 (2026-06-28): **#13 is KEPT in 0.8.x at 0.8.19.** This plan implements that decision. No re-decision
 needed; the Slice 0 scope-call is on _which_ jobs to build (the TS harness question), not whether
@@ -270,8 +270,8 @@ All prerequisites are **already satisfied** on `origin/main` at plan date (2026-
    infrastructure (#10, 0.8.8 Slices 15/20) aids EXP-FT-1/2/3 timing instrumentation but is not a
    hard gate. EXP-FT runs correctly without it; real-gold telemetry is a convenience, not a blocker.
 
-4. **#11-full publish matrix — DONE @0.8.16.** EXP-FT-5 (wheel feasibility) extends the matrix that
-   0.8.16 established. The `cp313t` prototype builds on the 0.8.16 cibuildwheel configuration; it does
+4. **#11-full publish matrix — DONE @0.8.18.** EXP-FT-5 (wheel feasibility) extends the matrix that
+   0.8.18 established. The `cp313t` prototype builds on the 0.8.18 cibuildwheel configuration; it does
    not need to pre-empt it.
 
 5. **CI-integrity foundation — DONE @0.8.9.** Honest gate map, bootstrap un-mask, and
@@ -294,7 +294,7 @@ All prerequisites are **already satisfied** on `origin/main` at plan date (2026-
 | --- | --- | --- | --- |
 | pyo3 0.29 + `gil_used` seam | 0.8.8 → 0.8.19 | physically hard (to start) | Cannot instrument or test FT behavior against an older pyo3 API. **Already satisfied.** |
 | FT-4 zero-races gate | FT-4 → `gil_used = false` | physically hard (to flip) | The no-GIL module declaration cannot ship without this gate. FT-4 is the only thing blocking productization code-safety. |
-| #11-full publish matrix | 0.8.16 → post-0.8.19 wheel lane | rework-forcing (packaging) | FT wheels extend the 0.8.16 matrix; building them before 0.8.16 means building the matrix twice. **Already satisfied.** |
+| #11-full publish matrix | 0.8.18 → post-0.8.19 wheel lane | rework-forcing (packaging) | FT wheels extend the 0.8.18 matrix; building them before 0.8.18 means building the matrix twice. **Already satisfied.** |
 | EXP-FT telemetry substrate | 0.8.8 #10 → FT-1/2 timing | soft (eval convenience) | Aids instrumentation precision; EXP-FT runs without it. |
 
 **EXP-FT does NOT depend on 0.8.17, 0.8.18, or any dispatcher/router work.** The ladder is purely a
@@ -337,7 +337,7 @@ Per SEQUENCING §6 F-5 (2026-06-28 HITL record): this is the binding resolution.
 This release is the **end of the 0.8.x odd line**. After 0.8.19 closes:
 
 - The 17 non-measure items from SEQUENCING §1a are fully placed (all 17 have landed or are in their
-  respective releases through 0.8.16).
+  respective releases through 0.8.18).
 - The planner-router track is at its 0.8.17 hardening + EXP-C/D/E fork phase.
 - EXP-FT data is available for the HITL productization decision.
 - #13 benchmark harness is live on a weekly cron.

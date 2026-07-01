@@ -6,7 +6,7 @@
 >
 > **Scheduling (master §6 F-5):** the EXP-FT ladder (FT-1…5) is folded into **0.8.15** (the forks/overflow
 > odd slot — `$0` eval, gated only on the 0.8.8 pyo3 0.29 landing), kept **inside 0.8.x**. Productization
-> (`gil_used = false` + the non-abi3 `*t` wheels) is a **0.8.15-readout contingency** → 0.8.16 #11-full or
+> (`gil_used = false` + the non-abi3 `*t` wheels) is a **0.8.15-readout contingency** → 0.8.18 #11-full or
 > a net-new 0.8.17. "Pre-decision" here is about the *outcome* (V1/V2, the GIL flip), not the slot.
 >
 > **Scope.** Should FathomDB's `fathomdb-py` binding *support* free-threaded CPython (declare
