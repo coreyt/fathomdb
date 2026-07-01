@@ -139,9 +139,17 @@ its own (build ≠ adopt); the priced arm needs the explicit go + the resilience
 
 ```bash
 # $0, deterministic; reads gitignored EVAL-ONLY inputs by path (env-overridable)
-cd src/python && python -m eval.exp_cov_census            # C0-floor + ELPS-baseline
+cd src/python && python -m eval.exp_cov_census            # C0-floor + ELPS-baseline (no extra deps)
+pip install gliner                                        # C1 arm only (pulls torch+transformers)
 cd src/python && python -m eval.exp_cov_census --gliner   # + C1-gliner (downloads the NER model once)
 ```
+
+The C1-gliner path is OPTIONAL: `gliner` (and its `torch`/`transformers` deps) are **not** in the repo's
+`dev` extras, and the `gliner` import is lazy + shielded from pyright, so the base `$0` census and the
+verify/typecheck gates stay green without them. `gliner` was installed only to produce the C1 numbers
+above and then **uninstalled to keep the shared `.venv` clean** (installing torch surfaces a latent,
+unrelated pyright finding in the M-work file `eval/s15a_embedder_probe.py`; reinstall gliner locally to
+re-run the C1 arm).
 
 Inputs (gitignored, on-machine): `data/corpus-data/external/memex-elps/personal.gold.jsonl`,
 `personal.baseline_outputs.jsonl`. Override the dir with `EXP_COV_CORPUS_DIR`.

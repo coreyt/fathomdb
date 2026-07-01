@@ -29,18 +29,18 @@ Determinism: pure-Python, no RNG, no network, no ``fathomdb`` import.
 from __future__ import annotations
 
 import json
+import os
 import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 # --------------------------------------------------------------------------- #
 # Input locations (gitignored EVAL-ONLY; overridable for a copied worktree input)
 # --------------------------------------------------------------------------- #
-import os
-
 _DEFAULT_CORPUS_DIR = os.environ.get(
     "EXP_COV_CORPUS_DIR",
     "/home/coreyt/projects/fathomdb/data/corpus-data/external/memex-elps",
@@ -199,13 +199,16 @@ def c0_floor_extraction(body: str, gold_amap: dict[str, str]) -> Extraction:
 # dependency-light + $0/deterministic). GLiNER is a local CPU/GPU model; entity
 # coverage only (no relations), so it feeds the entity axis of the census only.
 # --------------------------------------------------------------------------- #
-_GLINER_SINGLETON: object | None = None
+# GLiNER is an OPTIONAL local dep (not in the dev/typecheck extras). Type the whole
+# path as ``Any`` and shield the lazy import from static analysis so pyright stays
+# green whether or not gliner is installed (the base `$0` census never imports it).
+_GLINER_SINGLETON: Any = None
 
 
-def _gliner_model(model_name: str = "urchade/gliner_small-v2.1") -> object:
+def _gliner_model(model_name: str = "urchade/gliner_small-v2.1") -> Any:
     global _GLINER_SINGLETON
     if _GLINER_SINGLETON is None:
-        from gliner import GLiNER  # lazy; only when the C1 arm is requested
+        from gliner import GLiNER  # type: ignore  # lazy; only for the C1 arm
 
         _GLINER_SINGLETON = GLiNER.from_pretrained(model_name)
     return _GLINER_SINGLETON
@@ -218,7 +221,7 @@ def c1_gliner_extraction(
     Entity-only (no edges). Deterministic given the pinned model + threshold."""
     ex = Extraction()
     labels = entity_types or ["Person", "Organization", "Location"]
-    model = _gliner_model()
+    model: Any = _gliner_model()
     seen: set[str] = set()
     for e in model.predict_entities(body or "", labels, threshold=0.5):
         ck = canon(str(e.get("text", "")))

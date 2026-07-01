@@ -39,8 +39,8 @@
 
 | Slice | Title | State | X (X1/X2/X3) | codex §9 | Cherry-pick SHA |
 |------:|-------|-------|--------------|----------|-----------------|
-| **0** | Setup + ADRs (coverage-probe + value-test pre-reg; consolidation ADR); STATUS + DoD freeze | **CLOSED** | n/a (design) | PASS (1×P2: DOC-INDEX EXP-COV-results ref — resolved by Slice 5 landing the file) | `9180883e` (worktree branch) |
-| **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** (pending §9) | n/a (measurement) | pending | (worktree branch) |
+| **0** | Setup + ADRs (coverage-probe + value-test pre-reg; consolidation ADR); STATUS + DoD freeze | **CLOSED** | n/a (design) | CONCERN→accepted (1×P2: DOC-INDEX EXP-COV-results ref — resolved by Slice 5 landing the file); `0.8.12-slice0-review-20260701.md` | `9180883e` |
+| **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** | n/a (measurement) | CONCERN→**PASS after fix-1** (1×P1: optional GLiNER broke pyright → typed `Any`+`# type: ignore`, verify green); `0.8.12-slice5-review-20260701.md` | `8a82cb55` + fix-1 |
 | **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated) | not started | — | — | — |
 | **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | not started | — | — | — |
 | **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | not started | — | — | — |
