@@ -1,17 +1,13 @@
-# FathomDB 0.8.12 — Plan (GPU-rerank micro) · **opt-in GPU cross-encoder, default CPU unchanged**
+# FathomDB 0.8.14 — Plan (GPU-rerank sub-part of EXP-S) · **opt-in GPU cross-encoder, default CPU unchanged**
 
-> ⚠️ **NUMBERING CONFLICT — UNRESOLVED, NEEDS HITL/Steward.** The label "0.8.12" is
-> **already assigned** to the *substrate & recall* release (EXP-S kind-tag substrate #2 + fielded-FTS/BM25F
-> #16) in `dev/plans/plan-0.8.12.md` and in `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (rows I-2 / I-6 / the
-> 0.8.12 program row — it is the *long pole*). This GPU-rerank micro was branched as `0.8.12-gpu-rerank`
-> but it is **a different, much smaller piece of work** and **cannot share the 0.8.12 slot** with the
-> substrate release. This plan is filed under `plan-0.8.12-gpu-rerank.md` (NOT over the existing
-> `plan-0.8.12.md`) precisely so nothing is clobbered. **Resolve the real label before any publish:**
-> candidate resolutions include shipping this as a later even micro (e.g. **0.8.14** GPU-perf, which is
-> currently the GPU-perf-themed slot), folding it into the substrate release, or assigning a fresh even
-> number — but **`0.8.13` is HITL-forbidden** (odd line skips 13) and an **odd** number is not publishable
-> under the two-tier policy. **Do not publish this under "0.8.12" while the substrate release also claims
-> it.** The engine change below stands on its own regardless of which number it eventually carries.
+> ✅ **NUMBERING CONFLICT RESOLVED (2026-07-01 renumber).** Under the 0.8.x forward renumber
+> (`dev/plans/runs/0.8.x-renumber-reconciliation.md`), EXP-S (substrate & recall) moved `0.8.12 → 0.8.14`.
+> This opt-in GPU-rerank work **folds into the 0.8.14 EXP-S build** as its GPU sub-part (todos #20): the
+> branch was renamed `0.8.12-gpu-rerank → 0.8.14-gpu-rerank`, rebased onto `main` (`41b56a9d`), and the Rust
+> workspace verify is green. It is **not** a standalone release — it merges *with* 0.8.14. The old
+> "0.8.12-owns-two-things" collision is gone (memory-quality now holds `0.8.12`; `plan-0.8.12.md` is the
+> memory-quality plan, `plan-0.8.14.md` is EXP-S). Publish remains HITL-gated with the 0.8.14 cut; `0.8.13`
+> stays HITL-forbidden. The engine change below stands on its own.
 >
 > **Theme.** Make the cross-encoder (CE) reranker able to run on **GPU as an opt-in**, mirroring the
 > existing GPU *embedder* path (0.8.7). **Default is unchanged (CPU).** This is a self-contained engine
@@ -163,8 +159,6 @@ reviewed on its own merits.
 
 - This is a **publishable micro** in principle (even-number, real engine change), **HITL-gated publish**
   like every `x.y.z` (two-tier policy: even + HITL approval = publishable; odd = not).
-- **Merges AFTER 0.8.11.2** to preserve numbering order.
-- **BLOCKED on the §0 numbering conflict:** it must **not** be published as "0.8.12" while the substrate
-  release also owns that label. Resolve the number first (HITL/Steward), then publish via the normal
-  `v*`-tag path. No `v*` tag, no manifest bump, and no publish were done in this micro — branch
-  `0.8.12-gpu-rerank`, source + tests + this plan only.
+- **Merges AS PART OF the 0.8.14 EXP-S build** (not standalone; numbering resolved per §0).
+- Publish is HITL-gated with the 0.8.14 cut via the normal `v*`-tag path. No `v*` tag, no manifest bump,
+  and no publish were done here — branch `0.8.14-gpu-rerank`, source + tests + this plan only.
