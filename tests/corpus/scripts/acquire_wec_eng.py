@@ -33,16 +33,19 @@ Canonical output per mention (CorpusDoc shape, see corpus-card.md):
                   for each resolved event page (empty when a title has no QID)
 
 Config-driven / deterministic:
-  --split (train|dev|test), --sample-size (bounded; default 3000), --seed.
-  Sampling is a seeded draw over mention_id-sorted records; output order is
-  mention_id-sorted -> byte-stable for a fixed (split, sample-size, seed).
-  No wall-clock is read into any document.
+  A typed WecEngConfig(split, sample_size, seed) resolved through the shared
+  _config helper (--config file.yaml + dotted --override key=val); the baked
+  default lives in configs/acquire-wec-eng.yaml. Sampling is a seeded draw over
+  mention_id-sorted records; output order is mention_id-sorted -> byte-stable for
+  a fixed (split, sample_size, seed). No wall-clock is read into any document.
 
 Output: data/corpus-data/raw/wec_eng.jsonl  (gitignored).
 Also updates: tests/corpus/scripts/manifest.json — adds/refreshes 'wec_eng'.
 
 Usage:
-    uv run tests/corpus/scripts/acquire_wec_eng.py --split train --sample-size 3000
+    uv run tests/corpus/scripts/acquire_wec_eng.py
+    uv run tests/corpus/scripts/acquire_wec_eng.py --override split=dev
+    uv run tests/corpus/scripts/acquire_wec_eng.py --config my-wec-eng.yaml
 """
 
 from __future__ import annotations
@@ -56,9 +59,11 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _config import add_config_cli, resolve_config  # noqa: E402
 from _corpus_lib import (  # noqa: E402
     CorpusDoc,
     EntityRef,
@@ -87,6 +92,36 @@ CREATED_AT = "2021-10-04T11:21:48+00:00"
 
 DEFAULT_SAMPLE_SIZE = 3000
 DEFAULT_SEED = 20260702
+
+
+@dataclass
+class WecEngConfig:
+    """Typed acquire config (the conforming exemplar; see scripts/README.md).
+
+    Behaviour-identical to the former ``--split/--sample-size/--seed`` argparse
+    flags. Resolved via ``--config``/``--override`` through the shared
+    ``_config`` helper; every field is consumed-or-loudly-rejected.
+    """
+
+    split: str = "train"
+    sample_size: int = DEFAULT_SAMPLE_SIZE
+    seed: int = DEFAULT_SEED
+
+    def validate(self) -> None:
+        if self.split not in SPLIT_FILES:
+            raise ValueError(
+                f"split must be one of {sorted(SPLIT_FILES)}, got {self.split!r}"
+            )
+        if (
+            not isinstance(self.sample_size, int)
+            or isinstance(self.sample_size, bool)
+            or self.sample_size <= 0
+        ):
+            raise ValueError(
+                f"sample_size must be a positive int, got {self.sample_size!r}"
+            )
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError(f"seed must be an int, got {self.seed!r}")
 
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 WIKIPEDIA_BATCH = 50
@@ -223,15 +258,14 @@ def main() -> int:
     from huggingface_hub import hf_hub_download  # type: ignore[import-not-found]
 
     parser = argparse.ArgumentParser(description="Acquire WEC-Eng as an event corpus.")
-    parser.add_argument("--split", choices=sorted(SPLIT_FILES), default="train")
-    parser.add_argument("--sample-size", type=int, default=DEFAULT_SAMPLE_SIZE)
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    add_config_cli(parser)
     args = parser.parse_args()
+    cfg = resolve_config(WecEngConfig, args, WecEngConfig())
 
-    split_file = SPLIT_FILES[args.split]
+    split_file = SPLIT_FILES[cfg.split]
     print(f"[wec_eng] dataset:  {DATASET_ID}@{DATASET_REVISION[:8]}")
-    print(f"[wec_eng] split:    {args.split} ({split_file})")
-    print(f"[wec_eng] sample:   size={args.sample_size} seed={args.seed}")
+    print(f"[wec_eng] split:    {cfg.split} ({split_file})")
+    print(f"[wec_eng] sample:   size={cfg.sample_size} seed={cfg.seed}")
     print(f"[wec_eng] output:   {OUT_PATH}")
 
     local = hf_hub_download(
@@ -243,7 +277,7 @@ def main() -> int:
     records = json.loads(Path(local).read_text(encoding="utf-8"))
     print(f"[wec_eng] loaded {len(records)} gold mentions from {split_file}")
 
-    sampled = sample_records(records, args.sample_size, args.seed)
+    sampled = sample_records(records, cfg.sample_size, cfg.seed)
     print(f"[wec_eng] sampled {len(sampled)} mentions")
 
     titles = [r.get("coref_link") for r in sampled]
@@ -272,7 +306,7 @@ def main() -> int:
         "upstream": {
             "kind": "huggingface_dataset_json_files",
             "id": DATASET_ID,
-            "split": args.split,
+            "split": cfg.split,
             "file": split_file,
             "revision": DATASET_REVISION,
             "last_modified": DATASET_LAST_MODIFIED,
@@ -288,8 +322,8 @@ def main() -> int:
         ),
         "distribution": "cache",
         "output": "data/corpus-data/raw/wec_eng.jsonl",
-        "sample_size": args.sample_size,
-        "seed": args.seed,
+        "sample_size": cfg.sample_size,
+        "seed": cfg.seed,
         "doc_count": count,
         "qid_coverage": round(coverage, 4),
         "docs_with_qid": with_qid,
