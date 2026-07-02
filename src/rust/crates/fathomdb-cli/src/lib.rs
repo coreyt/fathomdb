@@ -720,6 +720,7 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         EngineError::Overloaded => "OverloadedError",
         EngineError::Closing => "ClosingError",
         EngineError::Extractor => "ExtractorError",
+        EngineError::Consolidator => "ConsolidatorError",
         // G4 (Slice 35) — filter predicate construction error.
         EngineError::InvalidFilter { .. } => "InvalidFilterError",
         EngineError::InvalidArgument { .. } => "InvalidArgumentError",
