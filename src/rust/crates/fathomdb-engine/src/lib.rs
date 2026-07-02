@@ -3531,11 +3531,16 @@ impl Engine {
     /// projection scheduler still treats the cursor as done (fix-2 [P2]); clear it
     /// when the row is superseded (excluded from the pending-work scan anyway).
     ///
-    /// KNOWN LIMITATION: a full `rebuild_projections` re-projects every
-    /// non-superseded edge with a body, which would re-materialise an invalidated
-    /// edge's FTS/vec shadows (graph traversal still excludes it via the
-    /// `t_invalid > now` filter). The durable fix is to teach the FTS/vec projection
-    /// SQL the same temporal filter; tracked as a follow-up, out of Slice-15 scope.
+    /// FIXED (0.8.12 Slice A, R-CON-2 named default-ON blocker; Slice-20 codex
+    /// §9 [P2]): a full `rebuild_projections` re-projects every non-superseded
+    /// edge with a body from `canonical_edges` — this used to re-materialise an
+    /// invalidated edge's FTS/vec shadows even though graph traversal excludes
+    /// it via the `t_invalid > now` filter. The FTS rebuild SELECT
+    /// (`rebuild_shadow_state`), the vec projection queue
+    /// (`next_pending_projection_jobs`), and the pending-work probe
+    /// (`database_has_pending_projection_work`) now all carry the same
+    /// `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` filter as
+    /// graph traversal, so a rebuild is durable across the recency exclusion.
     fn prune_edge_projection_shadows(
         tx: &rusqlite::Transaction<'_>,
         cursor: i64,
@@ -5420,10 +5425,16 @@ impl Engine {
             }
             // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
             // with non-null bodies (G11 search_index_edges).
+            // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
+            // §9 [P2]): mirror the graph-traversal recency filter
+            // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
+            // here too, so a full rebuild does not re-surface an edge that
+            // recency consolidation already invalidated.
             let mut edge_stmt = tx
                 .prepare(
                     "SELECT write_cursor, kind, body FROM canonical_edges \
-                     WHERE superseded_at IS NULL AND body IS NOT NULL",
+                     WHERE superseded_at IS NULL AND body IS NOT NULL \
+                       AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
                 )
                 .map_err(|_| EngineError::Storage)?;
             let edge_rows: Vec<(i64, String, String)> = edge_stmt
@@ -8085,6 +8096,8 @@ fn next_pending_projection_jobs(
              WHERE canonical_edges.write_cursor > ?1
                AND canonical_edges.body IS NOT NULL
                AND canonical_edges.superseded_at IS NULL
+               AND (canonical_edges.t_invalid IS NULL
+                    OR datetime(canonical_edges.t_invalid) > datetime('now'))
                AND _fathomdb_projection_terminal.write_cursor IS NULL
          ) ORDER BY write_cursor
          LIMIT {sql_limit}"
@@ -8136,6 +8149,13 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
     // drain() returns idle while edge vectors remain unembedded on reopen.
     // fix-31 [P2]: exclude superseded edges from the pending check so the
     // scheduler does not pick up stale tombstoned rows as projection work.
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+    // this mirror, a rebuild-truncated t_invalid edge that
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
     connection
         .query_row(
             "SELECT 1
@@ -8144,6 +8164,7 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
                ON pt.write_cursor = ce.write_cursor
              WHERE ce.body IS NOT NULL
                AND ce.superseded_at IS NULL
+               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now'))
                AND pt.write_cursor IS NULL
              LIMIT 1",
             [],
