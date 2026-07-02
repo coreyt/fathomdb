@@ -2,7 +2,10 @@
 
 > Live verdict board + running `$` ledger + per-slice X column for the `/goal complete 0.8.12`
 > orchestrator run. Plan: `dev/plans/plan-0.8.12.md`. Branch: `0.8.12-memory-quality`
-> (worktree `/home/coreyt/projects/fathomdb-worktrees/0.8.12`, base main `20f53ffb`).
+> (worktree `/home/coreyt/projects/fathomdb-worktrees/0.8.12`, **tip `63d19c2d`** as of 2026-07-02 Phase-3/4
+> completion). Base-main pointer refreshed: the branch diverged from `main` at merge-base `20f53ffb`;
+> **`main` is now `fe103a81`** (16 main-only docs/tooling commits the branch legitimately lacks — none
+> touch `fathomdb-engine`/`src/ts`/`fathomdb-napi`; reconciled at the Phase-5 label-only merge, NOT rebased).
 > **Label-only release** — manifests stay `0.8.9`, NO `v*` tag, NO publish (separate later HITL call).
 
 ## Envelopes (from the orchestrator commission, HITL 2026-07-01)
@@ -33,11 +36,11 @@
 |----|-------------|-------------------|-------|
 | R-COV-1 | `$0` LLM-free coverage probe gates any priced extraction run | Probe reports per-class coverage on a fixed corpus; a failing probe blocks the priced run (records the negative) | ✅ Slice 5 — `exp_cov_census.py` + `EXP-COV-results.md`; gate recommendation = OPEN-BUT-NARROWED feeds HARD-STOP #1 |
 | R-COV-2 | Coverage lift is measured, pre-registered | Δcoverage vs the ~1% baseline on the frozen corpus, power-sized; reported with CI; no claim on an under-powered class | ✅ (census) — pre-registered §A; per-class + bootstrap CIs; all 6 classes powered. Priced coverage→outcome LIFT (EXP-COV-1) is HELD |
-| R-COV-3 | Extraction runs on the OPP-8 provider protocol | Re-expressed extractor uses the one protocol; no second transport (codex §9) | ⏳ Slice 10 |
+| R-COV-3 | Downstream sufficiency verdict for coverage-lift (Phase 1-2) | Pre-registered decision rule applied on the full held-fixed GPU stack; verdict recorded | ✅ **RESOLVED-NEGATIVE** — EXP-COV-1 GPU verdict = **`CEILING-ABSORBED`** (`813d9a22`); every powered Δ vs same-stack C-none negative ⇒ OPP-6 #6 de-prioritized (HITL 2026-07-02). Slice 10 CLOSED. Cross-ref master **F-15** (`dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md`) + `EXP-COV-1-results.md` (on `0.8.12-expcov1-sweep`) |
 | R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds | ✅ Slice 15 — `consolidate_provider.rs` 12/12 (recency invalidate w/ temporal bound + supersede + retrieval-exclusion) |
-| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ✅ Slice 20 (value-test ran; outcome = **STAY-OFF**) — `$0` mechanism: precision 0.50→1.00, lossiness 0, query-latency ≈0. Default-ON NOT cleared for TWO named reasons: (1) no real-corpus at-power evidence (deferred); (2) exclusion not rebuild-durable → **blocker-before-default-ON** = add `t_invalid` filter to FTS/vec projection SQL (codex §9). Provider ships default-OFF/opt-in. `consolidation-value-test-results.md` |
+| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ✅ Slice 20 (value-test ran; outcome = **STAY-OFF**) — `$0` mechanism: precision 0.50→1.00, lossiness 0, query-latency ≈0. Default-ON NOT cleared for TWO named reasons: (1) no real-corpus at-power evidence (deferred); (2) exclusion not rebuild-durable → **blocker-before-default-ON** = add `t_invalid` filter to FTS/vec projection SQL (codex §9) — **CLEARED by Slice A** (`0c26703d`, codex §9 PASS): FTS/vec edge projection now rebuild-durable. Provider still ships default-OFF/opt-in (reason (1) real-corpus at-power evidence remains out of `$0` scope). `consolidation-value-test-results.md` |
 | R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present | ✅ Slice 15 — no-egress guard for consolidate; CPU-only deterministic cluster assembly; tagged |
-| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ✅ Py-live / ⏳ TS-build — Slice 40: Py public API live-verified (isolated-venv build, surface test 3/3 + live consolidate call); TS surface present + napi compiles, live TS run build-gated (no `node_modules`). |
+| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ✅ **Py-live + TS-live** — Slice 40 Py live-verified (isolated venv, surface 3/3 + live consolidate); **Slice B** (`a1f6f5a3`+`79fbad6c`, codex §9 PASS) adds the live TS X1 (`functional-consolidate.test.ts`: real napi build + `fathomdb.consolidate.v1` subprocess + verdict applied end-to-end; `npm test` 131/131 exit 0). Also closed a masked governed-surface gap: `consolidate_with_provider`/`consolidateWithProvider` added to the shared allowlist → `test_surface.py` 15/15 + `surface.test.ts` green on BOTH bindings. |
 
 ## Per-slice board
 
@@ -45,10 +48,12 @@
 |------:|-------|-------|--------------|----------|-----------------|
 | **0** | Setup + ADRs (coverage-probe + value-test pre-reg; consolidation ADR); STATUS + DoD freeze | **CLOSED** | n/a (design) | CONCERN→accepted (1×P2: DOC-INDEX EXP-COV-results ref — resolved by Slice 5 landing the file); `0.8.12-slice0-review-20260701.md` | `9180883e` |
 | **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** | n/a (measurement) | CONCERN→**PASS after fix-1** (1×P1: optional GLiNER broke pyright → typed `Any`+`# type: ignore`, verify green); `0.8.12-slice5-review-20260701.md` | `8a82cb55` + fix-1 |
-| **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated). **Holds the EXP-COV-1 sufficiency experiment** (gates the productized coverage-lift). | **PAUSED @ HITL hold** — EXP-COV-1 C-relation extraction DONE ($4.79/$20, resilience proven, asset uncommitted in wt `0.8.12-expcov1`); downstream verdict env-BLOCKED (CPU-embedder defect → degraded FTS+graph stack); C-relation-vs-C-none verdict ~10min from a screening number. Productized Slice-10 coverage-lift NOT run (separate fresh-HITL hard-stop). | — | — | — |
+| **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated). **Held the EXP-COV-1 sufficiency experiment.** | **CLOSED (2026-07-02) — verdict `CEILING-ABSORBED`.** EXP-COV-1 GPU downstream sweep (`813d9a22` on `0.8.12-expcov1-sweep`): every powered Δ vs same-stack C-none negative (multi_session Δgip@10 −0.123 [−0.167,−0.078]/ΔMRR −0.227; temporal −0.069/−0.244) ⇒ coverage is not the retrieval lever; the embedder/retrieval ceiling binds. **R-COV-3 = resolved-negative; OPP-6 #6 de-prioritized** (HITL 2026-07-02; do NOT fund the ~$340 full relation pass). Master reconciled: **F-15**. Productization OUT of 0.8.12 (separate later HITL). `$0` (cache reused). | n/a (eval verdict) | n/a (verdict; not a code slice) | — (no code landed; recorded only) |
 | **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **CLOSED** | X1 surface both bindings; live-run → Slice 40 | CONCERN(4)→fix-1(resolved 4, +1 new P2)→fix-2→**PASS**; `0.8.12-slice15-review-20260701.md` | `a7a1069a`,`bd51901f`,`065ffcc2`,`90261612`,`ffdda578` |
 | **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | **CLOSED** | n/a (eval) | CONCERN(1×P2 rebuild-durability)→fix-1 (reframe scope + named default-ON blocker; gate kept negative)→resolved; `0.8.12-slice20-review-20260702.md` | `bd9164f3` + fix-1 |
-| **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | **PARTIAL (as-far-as-it-can-go)** — X1 Py-live/TS-build-gated, X2 mkdocs --strict GREEN, X3 DOC-INDEX ok; AC gate all ✅ except R-COV-3 (gated on Slice 10). `0.8.12-slice40-verification.md` | X1 Py✅/TS⏳ · X2✅ · X3✅ | n/a (verification) | — |
+| **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | **COMPLETE (2026-07-02)** — X1 Py-live + TS-live (Slice B), X2 `mkdocs build --strict` exit 0, X3 DOC-INDEX ok; **full R-COV/R-CON AC gate GREEN** with R-COV-3 resolved-negative. `0.8.12-slice40-verification.md` | X1 Py✅/TS✅ · X2✅ · X3✅ | n/a (verification) | — |
+| **A** | `t_invalid` FTS/vec projection durability (R-CON-2 named default-ON blocker; Slice-20 codex §9 P2) | **CLOSED (2026-07-02)** — FTS/vec edge projection SQL now applies the `t_invalid > now` recency filter graph traversal already uses (3 sites: rebuild SELECT, vec queue arm, pending-work probe); RED→GREEN via the real `consolidate_with_provider` path asserting exclusion from both `search_index_edges` + `_fathomdb_vector_rows`. | n/a (code) | **PASS** (no findings); `0.8.12-sliceA-review-20260702T204034Z.md` | `2022c9f9` (RED test), `0c26703d` (fix) |
+| **B** | Live TS X1 for `consolidate_with_provider` (R-X-1 TS-live) + governed-surface parity | **CLOSED (2026-07-02)** — committed `functional-consolidate.test.ts` builds the real napi binding, spawns a live `fathomdb.consolidate.v1` provider subprocess, asserts a verdict applied end-to-end; `npm test` 131/131 exit 0. fix-1 governed `consolidate_with_provider`/`consolidateWithProvider` in the shared allowlist → `surface.test.ts` + Python `test_surface.py` 15/15 green (isolated venv; shared `.venv` untouched). | X1 TS✅ | **PASS** (no findings); `0.8.12-sliceB-review-20260702T210411Z.md` | `a1f6f5a3` (test), `79fbad6c` (allowlist), `63d19c2d` (closure) |
 
 ## OPP-6 EXP-COV discharge (folded into Slice 5, HITL 2026-07-01)
 
@@ -67,18 +72,32 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Open HITL questions
 
-1. **[SPEND AUTHORITY — needs the user's own confirmation]** The coordinator relayed a HITL decision
-   authorizing a **$20** priced EXP-COV-1 sufficiency sweep (cheap-validate ladder inside the cap) and
-   directed proceeding. Per the system reminder + `push-scope-fathomdb-only`, a coordinator RELAY carries
-   no user authority for real money, so **no priced call has been executed** (not even the ~$0.05 pilot).
-   The sweep is prepared to a `$0` ready-state (`dev/plans/runs/EXP-COV-1-sweep-plan.md`); it will run
-   only on the user's own confirmation. Needs: user go on the $20 spend.
-2. **[HARD-STOP after the sweep]** Once EXP-COV-1 returns: report the sufficiency verdict + a cost
-   estimate for the full relation-targeted Slice-10 extraction; do NOT run the full Slice-10 extraction
-   without a fresh explicit HITL go (if the lift is ceiling-absorbed, recommend redirect → resolve #6).
+1. **[SPEND AUTHORITY]** — **RESOLVED.** The user's own message (2026-07-02) approved the $20 EXP-COV-1
+   sweep; it ran at **$4.79/$20**, 272/272, 0 failures. No further priced call pending in 0.8.12.
+2. **[HARD-STOP after the sweep]** — **RESOLVED.** EXP-COV-1 GPU downstream verdict = **`CEILING-ABSORBED`**;
+   HITL de-prioritized OPP-6 #6 (do NOT fund the ~$340 full relation-targeted extraction). R-COV-3
+   resolved-negative; Slice 10 CLOSED (F-15).
+3. **[Phase 5 — label-only merge]** — **OPEN, Steward/HITL-gated.** Phases 3-4 are complete on
+   `0.8.12-memory-quality` (tip `63d19c2d`). The label-only merge to `main` (manifests stay `0.8.9`, no
+   `v*` tag, no publish) is the Steward's Phase-5 step; this orchestration does NOT merge to `main`.
 
 ## Recent decisions (newest on top)
 
+- 2026-07-02 — **Phases 3-4 COMPLETE (orchestrator, `$0`/local).** Two code slices landed on
+  `0.8.12-memory-quality` via TDD + codex §9 PASS each, plus the release DoD: **Slice A** (`0c26703d`) made
+  the consolidation `t_invalid` recency-exclusion rebuild-durable (FTS/vec edge projection SQL now mirrors
+  graph traversal's `t_invalid > now` filter; RED→GREEN through the real consolidate path; R-CON-2 named
+  default-ON blocker CLEARED). **Slice B** (`a1f6f5a3`+`79fbad6c`) added the live TS X1
+  (`functional-consolidate.test.ts`, real napi + `fathomdb.consolidate.v1` subprocess + verdict applied;
+  `npm test` 131/131) and closed a previously-masked governed-surface gap by governing the consolidate seam
+  (both name forms) in the shared allowlist → `surface.test.ts` + Python `test_surface.py` 15/15 green.
+  **Slice 10 CLOSED / R-COV-3 resolved-negative** (verdict `CEILING-ABSORBED`, F-15). Slice-40 DoD: X1
+  Py-live+TS-live, X2 `mkdocs build --strict` exit 0, X3 DOC-INDEX ok, full R-COV/R-CON AC gate GREEN.
+  Both slice worktrees cleaned (§11). Branch tip `63d19c2d`. **Phase 5 (label-only merge) is the
+  Steward/HITL step — NOT done here.** All slice worktrees cut off the branch tip (the branch legitimately
+  diverged from `main` at `20f53ffb` and must not be rebased; preflight's stale-base line vs `main` is a
+  known false positive — the real base-contained invariant was verified per handoff §0, and the 16 main-only
+  commits touch none of the changed code paths).
 - 2026-07-02 — **ORCHESTRATION WIND-DOWN (HITL Option A: preserve + defer verdict to GPU re-run).**
   EXP-COV-1 priced extraction COMPLETE at **$4.79/$20** (0 failures, resilience proven). Downstream
   sufficiency read **environment-BLOCKED** (CPU-embedder defect → CE/dense unrunnable;
@@ -116,15 +135,18 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 - 2026-07-01 — Orchestrator run launched. STEP-0 preflight GREEN (`cargo check --workspace` exit 0;
   `.venv` `import fathomdb` OK, bound to shared main-tree build).
 
-## Next action — a FRESH HITL-initiated session (this orchestration has STOOD DOWN)
+## Next action — Phase 5 (Steward/HITL): label-only merge
 
-Full hand-off: **`dev/plans/runs/0.8.12-handoff.md`**. DEFERRED items:
+Phases 0-4 are COMPLETE on `0.8.12-memory-quality` (tip `63d19c2d`). All code slices landed with codex §9
+PASS; the release DoD is GREEN (verified from git with real exit codes). Remaining:
 
-1. **EXP-COV-1 verdict → GPU-embedder re-run** ($0 downstream pass; reuses the preserved $4.79 extraction
-   on branch `0.8.12-expcov1-sweep` via its manifest+sha256; pairs with 0.8.14 GPU work). Plan authored by
-   implementer `a8f76783` (user-directed).
-2. **Slice 10 productization / R-COV-3** — gated on the verdict + a fresh explicit HITL go for any priced/
-   productized extraction.
-3. **Label-only merge** `0.8.12-memory-quality` → `main` (HITL decision; manifests stay 0.8.9).
-4. **Consolidation default-ON blocker** — FTS/vec `t_invalid` projection filter (Slice-20 codex §9).
-5. **Live TS X1** harness at the merge/build step.
+1. **Phase 5 — label-only merge** `0.8.12-memory-quality` → `main` (**Steward/HITL-gated**; manifests stay
+   `0.8.9`, NO `v*` tag, NO publish). Fold in the preserved sweep artifacts as appropriate; retire the
+   `plan-0.8.12-finish.md` redirect stub. **This orchestration does NOT merge to `main`.**
+
+DEFERRED / out-of-scope (carried forward, not 0.8.12 blockers):
+
+- **Real-corpus at-power consolidation value test** (LOCOMO multi_session/temporal, priced) → the eventual
+  consolidation default-ON decision (reason (1) of the STAY-OFF verdict; pairs with a future priced budget).
+- **Productization of relation-focused extraction** — explicitly OUT of 0.8.12 (a separate later HITL call;
+  the coverage-lift premise is de-prioritized per F-15).
