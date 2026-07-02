@@ -31,9 +31,9 @@
 | R-COV-1 | `$0` LLM-free coverage probe gates any priced extraction run | Probe reports per-class coverage on a fixed corpus; a failing probe blocks the priced run (records the negative) | ✅ Slice 5 — `exp_cov_census.py` + `EXP-COV-results.md`; gate recommendation = OPEN-BUT-NARROWED feeds HARD-STOP #1 |
 | R-COV-2 | Coverage lift is measured, pre-registered | Δcoverage vs the ~1% baseline on the frozen corpus, power-sized; reported with CI; no claim on an under-powered class | ✅ (census) — pre-registered §A; per-class + bootstrap CIs; all 6 classes powered. Priced coverage→outcome LIFT (EXP-COV-1) is HELD |
 | R-COV-3 | Extraction runs on the OPP-8 provider protocol | Re-expressed extractor uses the one protocol; no second transport (codex §9) | ⏳ Slice 10 |
-| R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds | ⏳ |
-| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ⏳ |
-| R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present | ⏳ |
+| R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds | ✅ Slice 15 — `consolidate_provider.rs` 12/12 (recency invalidate w/ temporal bound + supersede + retrieval-exclusion) |
+| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ⏳ Slice 20 |
+| R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present | ✅ Slice 15 — no-egress guard for consolidate; CPU-only deterministic cluster assembly; tagged |
 | R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ⏳ |
 
 ## Per-slice board
@@ -43,8 +43,8 @@
 | **0** | Setup + ADRs (coverage-probe + value-test pre-reg; consolidation ADR); STATUS + DoD freeze | **CLOSED** | n/a (design) | CONCERN→accepted (1×P2: DOC-INDEX EXP-COV-results ref — resolved by Slice 5 landing the file); `0.8.12-slice0-review-20260701.md` | `9180883e` |
 | **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** | n/a (measurement) | CONCERN→**PASS after fix-1** (1×P1: optional GLiNER broke pyright → typed `Any`+`# type: ignore`, verify green); `0.8.12-slice5-review-20260701.md` | `8a82cb55` + fix-1 |
 | **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated) | **HELD** — priced sweep gates it; EXP-COV-1 sufficiency test prepared but spend held for user confirmation | — | — | — |
-| **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **fix-1 in progress** | X1 live-run → Slice 40 | CONCERN (1×P1 retrieval-exclusion + 3×P2: py wrapper, vector/projection prune, verdict-completeness) → fix-1 dispatched; `0.8.12-slice15-review-20260701.md` | engine `a7a1069a` + bindings `bd51901f` (pre-fix) |
-| **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | not started | — | — | — |
+| **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **CLOSED** | X1 surface both bindings; live-run → Slice 40 | CONCERN(4)→fix-1(resolved 4, +1 new P2)→fix-2→**PASS**; `0.8.12-slice15-review-20260701.md` | `a7a1069a`,`bd51901f`,`065ffcc2`,`90261612`,`ffdda578` |
+| **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | **IN-FLIGHT** (orchestrator, `$0`) | — | — | — |
 | **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | not started | — | — | — |
 
 ## OPP-6 EXP-COV discharge (folded into Slice 5, HITL 2026-07-01)
@@ -76,6 +76,10 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Recent decisions (newest on top)
 
+- 2026-07-01 — **Slice 15 CLOSED.** Consolidation/recency provider on the one OPP-8 transport (no second
+  transport). codex §9 arc: CONCERN(4) → fix-1 (resolved 4, +1 new P2: phantom pending work) → fix-2
+  (retain terminal on invalidate) → **PASS**. consolidate_provider 12/12; back-compat intact; bindings
+  (Py public wrapper + TS/napi) wired. R-CON-1 + R-CON-3 met. X1 live-run deferred to Slice 40.
 - 2026-07-01 — **HITL decision relayed (coordinator): SWEEP-FIRST + start consolidation track.** Actioned:
   (a) consolidation track Slice 15 spawned (own worktree `0.8.12-s15`, off origin/main; no spend — already
   commissioned); (b) the priced EXP-COV-1 sweep is **HELD for the user's own spend confirmation** (relay ≠
@@ -91,7 +95,9 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Next action
 
-- Slice 15 implementer running (worktree `0.8.12-s15`); on return → cherry-pick + codex §9 + close, then
-  Slice 20 (consolidation value-test).
+- Slice 20 (consolidation value-test, `$0` pre-registered gate) in flight → then report at the Slice-20
+  verdict (coordinator's requested report point).
+- Slice 40 verification (X1 live Py↔TS harness for consolidate + extract; `mkdocs build`; AC gate) after 20.
 - EXP-COV-1 priced sweep: plan ready (`EXP-COV-1-sweep-plan.md`); execute ONLY on the user's own spend
   confirmation. Do NOT run the full Slice-10 extraction without a fresh explicit HITL go.
+- Label-only merge of `0.8.12-memory-quality` → `main` is a HITL decision point (report before merging).
