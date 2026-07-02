@@ -6,8 +6,12 @@
 >
 > **Theme.** The schema-migration release. Land the **kind-tagged coexisting-index substrate** (#2,
 > EXP-S) and the **fielded FTS / BM25F recall lever** (#16, F5) **in one release so the engine pays one
-> coordinated migration cost**, plus the **filter-grammar G4↔G10 unification** (#17, the typed-constraint
-> surface the router will lean on). All IN-LIBRARY; CPU-only/deterministic query path preserved.
+> coordinated migration cost**. All IN-LIBRARY; CPU-only/deterministic query path preserved.
+>
+> **Reconciled 2026-07-02 (Steward):** #17 filter-grammar G4↔G10 unification, originally co-scoped here,
+> **already SHIPPED in 0.8.11** (F-10 re-sequencing; PR #122, commit `ab3b4466`) — struck from this plan.
+> The typed-constraint surface (`Filter`/`SearchFilter`) the 0.8.15 router leans on is on `main`. This
+> plan's spine = EXP-S + F5.
 >
 > **Footprint.** All three IN-LIBRARY. Re-embeds/index rebuilds are far cheaper on GPU (0.8.7) but the
 > shipped query path stays CPU-only/1-bit/deterministic.
@@ -25,15 +29,15 @@
   tunable `b`) — already ADR-ratified (`ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md`), conditional on the
   0.8.3 15b-proxy passing + a Slice-20 Mem0 gap. It is a **schema migration**, which is exactly why it
   is coordinated with EXP-S in one release rather than paid for twice.
-- **#17 — Filter-grammar G4↔G10 unification (gap-37).** Unify the G4 filter grammar with the shipped G10
-  `SearchFilter` (reserved-gap 37, NEEDED per Slice-35). Yields the typed-constraint surface the router's
-  `constraints` block (PSD §I.B) and intelligent filtering both depend on.
+- **#17 — Filter-grammar G4↔G10 unification — DONE in 0.8.11 (struck from 0.8.14).** Shipped as 0.8.11
+  Slice 40 (`ab3b4466`, PR #122): one unified `Filter` contract over the G10 `SearchFilter`. The
+  typed-constraint surface the 0.8.15 router's `constraints` block leans on is already on `main` — it is
+  no longer 0.8.14 scope.
 
 *Why this release / why coordinated:* #2 and #16 are both engine/schema migrations on the index write
 path — doing them in one release lets EXP-S land the kind-tag/field columns that F5 then rides, paying
-one `SCHEMA_VERSION` bump and one re-index rather than two. #17 touches the shipped G10 surface and is
-sequenced here (not as a blind OOB drop-in) because the typed-constraint surface composes with the new
-substrate.
+one `SCHEMA_VERSION` bump and one re-index rather than two. (#17, which would have composed the
+typed-constraint surface with the new substrate, already shipped in 0.8.11 — see above.)
 
 ---
 
@@ -46,8 +50,8 @@ substrate.
 | R-SUB-3 | Migration is forward-only + guarded | `SCHEMA_VERSION` bump; migration test (old DB → new) green; eu7 re-clear if vectors are touched |
 | R-F5-1 | Fielded BM25F with tunable `b`/field weights | RED→GREEN: a field-weighted query outranks an unweighted baseline on a known fixture |
 | R-F5-2 | F5 ADR pre-conditions are met | The 0.8.3 15b-proxy pass + Mem0-gap condition is confirmed before F5 ships (else record + defer) |
-| R-FIL-1 | G4 grammar unified with G10 `SearchFilter` | One filter contract; the shipped G10 paths re-expressed on it without behavior change (parity test) |
-| R-X-1 | Py + TS SDK parity for all three | X1 cross-binding harness green |
+| ~~R-FIL-1~~ | ~~G4 grammar unified with G10 `SearchFilter`~~ — **SHIPPED in 0.8.11 (struck)** | Satisfied by 0.8.11 Slice 40 (`ab3b4466`); not a 0.8.14 gate |
+| R-X-1 | Py + TS SDK parity for EXP-S + F5 | X1 cross-binding harness green |
 | R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) holds after any re-embed | `recall_gate.rs`: ci_hi ≥ 0.90 PASS; a breach BLOCKS→HITL |
 
 New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gates.
@@ -57,24 +61,24 @@ New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gate
 ## 3. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 15 → 20 → 40
+0 → 5 → 10 → 20 → 40      (15 = void reserved gap — #17 shipped in 0.8.11)
 ```
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | Setup + ADR — EXP-S substrate migration ADR (row-kinds, determinism check, KILL path); confirm the F5 ADR pre-conditions; G4↔G10 unification design | design-adr | — |
+| **0** | Setup + ADR — EXP-S substrate migration ADR (row-kinds, determinism check, KILL path); confirm the F5 ADR pre-conditions | design-adr | — |
 | **5** | **EXP-S substrate KEYSTONE** — row-kinds + plural coexisting indexes + incremental multi-index write + determinism check; `SCHEMA_VERSION` bump | implementation (schema) | 0 |
 | **10** | **F5 fielded BM25F** — field-weighted FTS + tunable `b`, riding the EXP-S field columns | implementation (schema) | 5 |
-| **15** | **G4↔G10 filter unification** — one typed filter contract; re-express shipped G10 paths (parity) | implementation | 0 |
+| **15** | *(void reserved gap)* — #17 filter-grammar **SHIPPED in 0.8.11** (F-10; PR #122, `ab3b4466`) | — | — |
 | **20** | **eu7 re-clear + migration verify** — if Slices 5/10 touched vectors, re-clear the one-sided fidelity gate; old→new migration test | verification | 5,10 |
-| **40** | **Verification + Release Readiness (0.8.14)** — X1/X2/X3 + R-SUB/R-F5/R-FIL AC gate + eu7 gate | verification | 5,10,15,20 |
+| **40** | **Verification + Release Readiness (0.8.14)** — X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate | verification | 5,10,20 |
 
 **Keystones / hard gates.** **Slice 5 (EXP-S) is the keystone** — F5 (10) rides its field columns, so
 5 → 10 is a hard sequence (do EXP-S first within the release). **eu7 ≥ 0.90 (one-sided CI) is a hard
 BLOCK→HITL gate** at Slice 20 if any re-embed occurs (`fathomdb-recall-fidelity-vs-relevance`). **F5
 ships only if its ADR pre-conditions hold**, else record + defer.
 
-**Tracks (parallelizable).** Substrate→F5 track **5 → 10 → 20** ∥ filter track **15** (off Slice 0).
+**Tracks.** Substrate→F5 track **5 → 10 → 20** (single spine; the former parallel filter track is void — #17 shipped in 0.8.11).
 
 ---
 
@@ -98,7 +102,7 @@ carries the per-slice X column.
 1. **0.8.6 closed** (release machinery / DoD-shippable) and **0.8.7 OOB GPU recommended-landed** (the
    re-index here is re-embed-heavy; GPU makes it minutes not hours).
 2. **F5 ADR pre-conditions** (0.8.3 15b-proxy + Mem0-gap) confirmed at Slice 0 — else F5 records-and-
-   defers and the release ships EXP-S + #17 only.
+   defers and the release ships EXP-S only.
 3. **Frozen corpus + eu7 harness** reproduced locally for the fidelity re-clear.
 4. Worktrees off `$(git rev-parse main)`; maturin/GPU build on the MAIN tree only.
 
@@ -112,6 +116,6 @@ carries the per-slice X column.
 
 ## 9. Immediate next slice
 
-**Slice 0 — EXP-S + F5 + filter ADRs.** Ratify the row-kind taxonomy + determinism contract, confirm
-F5's ADR pre-conditions, and design the G4↔G10 unification; stand up `runs/STATUS-0.8.14.md`. Then run
-Slice 5 (EXP-S) before 10 (F5); 15 (filter) in parallel.
+**Slice 0 — EXP-S + F5 ADRs.** Ratify the row-kind taxonomy + determinism contract and confirm F5's
+ADR pre-conditions; stand up `runs/STATUS-0.8.14.md`. Then run Slice 5 (EXP-S) before 10 (F5).
+(#17 filter-grammar already shipped in 0.8.11 — no filter slice in this release.)
