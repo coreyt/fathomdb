@@ -13,6 +13,8 @@
     "read.list",
     "ingest_with_extractor",
     "ingestWithExtractor",
+    "consolidate_with_provider",
+    "consolidateWithProvider",
     "graph.neighbors",
     "graph.search_expand",
     "graph.searchExpand",
