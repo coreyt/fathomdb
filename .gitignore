@@ -9,7 +9,14 @@
 /data/corpus-data/
 
 .codex
-.claude/
+# .claude/ holds SHARED harness tooling (tracked) alongside per-user/local files
+# (ignored). Ignore the dir's contents by default, then un-ignore the shared
+# agent defs + slash commands. settings.json / settings.local.json and any other
+# local files stay ignored.
+.claude/*
+!.claude/agents/
+!.claude/commands/
+.claude/settings.local.json
 .local/
 target/
 go/fathom-integrity/fathom-integrity
@@ -112,3 +119,8 @@ dev/plans/runs/*.ce-pass.json
 
 # Agent/tool scratch cache (regenerable)
 .cache/
+
+# ledgerwatch cursor/shadow state (runtime read-cursors; the steward ledger
+# .jsonl + its monotonic .seq sidecar ARE tracked, the cursor state is not).
+.ledgerwatch/
+dev/steward/.ledgerwatch*
