@@ -1,108 +1,133 @@
-# FathomDB 0.8.12 — Plan (state-machine ladder) · **Memory-quality plumbing**
+# FathomDB 0.8.12 — Plan of Record (Memory-quality) · Steward-owned
 
-> **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
-> contracts → `0.8.12-implementation.md`; live state → `runs/STATUS-0.8.12.md`; deps/decision record →
-> `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.12` as an **orchestrator** session.
+> **This is the single source of truth for 0.8.12.** Owner: **Program Steward (PDS)**.
+> Canonical location: **`main:dev/plans/plan-0.8.12.md`** (here). It **supersedes** the
+> prior branch-local completion plan `plan-0.8.12-finish.md` (now a redirect stub on
+> `0.8.12-memory-quality`) and the original build-ladder framing of this same file.
+> Authoritative contracts remain in `0.8.12-implementation.md`; live slice state in
+> `runs/STATUS-0.8.12.md` (on `0.8.12-memory-quality`).
 >
-> **Theme.** Build the two memory-quality capabilities that sit at the head of the retrieval virtuous
-> loop, now that the provider protocol (#8) and governed-verb boundary (#9) from 0.8.6 exist: lift ELPS
-> extraction coverage (#6) and add the consolidation/recency provider (#7, the Mem0-parity update/
-> temporal axis). Both are **CALLER-SIDE BYO-LLM** seams — no LLM enters the library query path.
->
-> **Footprint.** The provider callbacks are caller-side BYO-LLM (OFFLINE-BUILD / caller's own model);
-> the in-library write/index path stays CPU-only, deterministic. Tag every technique.
+> **Scope:** 0.8.12 only (not the wider 0.8.x line). **Label-only** — manifests stay
+> `0.8.9`, no `v*` tag, no publish. Executed by orchestrator/implementer sessions in
+> worktrees off `origin/main`; merged to `main` only at Phase 5 (HITL-gated).
 
----
+## Theme
 
-## 1. Goal & scope
+The two memory-quality capabilities at the head of the retrieval virtuous loop, riding the
+0.8.6 provider protocol (#8) and governed-verb boundary (#9): lift ELPS extraction coverage
+(#6) and add the consolidation/recency provider (#7, the Mem0-parity update/temporal axis).
+Both are **caller-side BYO-LLM** seams — no LLM enters the in-library query path; the
+write/index path stays CPU-only and deterministic.
 
-- **#6 — ELPS extraction coverage (OPP-6).** Extraction coverage is ~1% on the consumer corpus, which
-  starves every graph- and coverage-dependent measure and the D2 path. Lift coverage via the **one**
-  generalized provider (0.8.6 #8), and verify the lift with a $0 LLM-free coverage probe before any
-  priced extraction run. This enriches the inputs OPP-1/OPP-4/D2 consume "for free" and is the head of
-  the real-gold partnership (OPP-9, 0.8.8 #10).
-- **#7 — Consolidation/recency provider (OPP-2, AGREED).** An ELPS-shaped, prompt-and-regenerate
-  consolidation/recency callback that merges/supersedes facts on the update axis (Mem0 parity), built
-  **as one generalized provider per OPP-8** (not a new sibling contract). Gated on a **lossiness-vs-
-  latency value test** — measure that consolidation buys accuracy worth its cost before shipping it on.
+## Current state (verified from git 2026-07-02)
 
-*Why this order in the line:* both hard-depend on 0.8.6 — #7 must ride the OPP-8 protocol (else a
-throwaway contract), and HITL ruled the consumer migrates onto governed verbs (#9) **before** OPP-2/4
-layer on. Coverage (#6) feeds the M5/M6 experiments, so coordinate with the M-work owner.
+- Slices **0 / 5 / 15 / 20 CLOSED** (codex §9 each). **Slice 40 PARTIAL** — X1 Py-live ✓,
+  X2 `mkdocs --strict` ✓, X3 ✓; **R-COV-3 gated** on the Phase 1 verdict.
+- **OPP-6 census discharged:** entity coverage **solved** (local GLiNER matches the frontier);
+  the residual gap is **edges/relations** — strict recall **0.227**, CI95 `[0.157, 0.306]`.
+- **Consolidation provider (#7) built;** value-test verdict = **STAY-OFF / opt-in**. Named
+  default-ON blocker = the **`t_invalid` FTS/vec projection filter** (recency-exclusion is not
+  rebuild-durable).
+- **EXP-COV-1 priced extraction DONE** (`$4.79` of a `$20` cap, 272/272 docs, 0 failures,
+  resilience proven) and **preserved**: manifest + checksums committed on
+  `0.8.12-expcov1-sweep` (`6daf2d94`); the extraction cache is gitignored in the main tree
+  (`data/corpus-data/eval-cache/exp-cov1/…`), sha256-verified against the manifest.
+- **Downstream sufficiency verdict = ENVIRONMENT-BLOCKED** on the CPU-only embedder `.so`
+  (dense embed ~13 s/body, CE ~8 s/query → intractable). A **GPU build is the unblock**
+  (`notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md`).
+- Branches (nothing merged; manifests `0.8.9`): dev **`0.8.12-memory-quality`** (`8a2a1006`),
+  sweep **`0.8.12-expcov1-sweep`** (`6daf2d94`), GPU features on **`0.8.14-gpu-rerank`**
+  (`d9e61c66`, folds into 0.8.14).
 
----
+## Completion path
 
-## 2. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+### Phase 1 — Resolve the EXP-COV-1 sufficiency verdict (the Slice-10 gate) — `$0`
 
-| ID | Requirement | Acceptance signal |
-|----|-------------|-------------------|
-| R-COV-1 | $0 LLM-free coverage probe gates any priced extraction run | Probe reports per-class coverage on a fixed corpus; a failing probe blocks the priced run (records the negative) |
-| R-COV-2 | Coverage lift is measured, pre-registered | Δcoverage vs the ~1% baseline on the frozen corpus, power-sized; reported with CI; no claim on an under-powered class |
-| R-COV-3 | Extraction runs on the OPP-8 provider protocol | Re-expressed extractor uses the one protocol; no second transport (codex §9) |
-| R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds |
-| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded |
-| R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present |
-| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green |
+**Status: IN FLIGHT** — commissioned by the Steward 2026-07-02 as a background orchestrator.
 
-New ACs: candidates at Slice 0 (provider conformance) and the consolidation value-gate.
+Re-run the downstream sufficiency sweep on a **GPU embedder** reusing the preserved cache at
+**`$0`** (completeness guard; NO re-extraction). Composition (each verified from git — they
+live in three places): CUDA engine wheel built from **`0.8.14-gpu-rerank`**, the `exp_cov1`
+harness from **`0.8.12-expcov1-sweep`**, and the preserved 272/272 cache in the main tree.
+Hold the embedder **FIXED** (CLS-corrected bge-small, GPU-accelerated) with a **CPU↔CUDA
+~1-bit parity check + STOP-and-escalate** if it diverges. Three PDS-required additions:
 
----
+1. **GPU allocation hygiene** — pin a 3090 (index 0/1), exclude the K620 (index 2), honor the
+   vLLM/GPU mutex.
+2. **Build FROM `0.8.14-gpu-rerank`** (the `embed-cuda` + rerank-CUDA path already exists there,
+   rebased + green) — not a fresh build off main.
+3. **Same-stack `C-none`** — the verdict compares against a full-GPU-stack `C-none` re-run in
+   this sweep; the degraded FTS-only `C-none` (multi_session gold-in-pool@10 `0.468`) is a
+   prior data point only.
 
-## 3. Slice ladder (mod-5)
+→ **HARD-STOP: report the verdict (SUFFICIENT / CEILING-ABSORBED) to the Steward/HITL.**
 
-```text
-0 → 5 → 10 → 15 → 20 → 40
-```
+### Phase 2 — Slice-10 disposition (record only)
 
-| Slice | Title | Work-type | Depends-on |
-|------:|-------|-----------|-----------|
-| **0** | Setup + ADR — coverage-probe design + pre-registration; consolidation-provider ADR (OPP-2 on the OPP-8 protocol); the lossiness-vs-latency value-test design | design-adr | — |
-| **5** | **Coverage probe (\$0)** — LLM-free per-class coverage measurement on the frozen corpus; the gate that precedes any priced extraction | implementation (measurement) | 0 |
-| **10** | **ELPS coverage lift** — extractor on the OPP-8 protocol; priced run gated by Slice 5; measured Δcoverage | implementation (+priced, HITL-gated) | 5 |
-| **15** | **Consolidation/recency provider** — BYO-LLM merge/supersede callback on the OPP-8 protocol | implementation | 0 |
-| **20** | **Consolidation value-test** — lossiness-vs-latency pre-registered gate; ship-on only if it clears | implementation (eval) | 15 |
-| **40** | **Verification + Release Readiness (0.8.12)** — X1/X2/X3 + R-COV/R-CON AC gate | verification | 5,10,15,20 |
+Record the verdict on `STATUS-0.8.12.md` + `EXP-COV-1-results.md` (§4/§5, §0/§2).
 
-**Keystones / hard gates.** **Slice 5 coverage-probe gates Slice 10's priced extraction** (cheap-
-validate-before-spend). **Slice 20 value-test gates shipping consolidation on by default.** Any priced
-run uses the **resilient harness** (auto-resume, atomic checkpoint, 429/5xx backoff, failure≠abstention,
-completeness guard) and a $ ledger — `priced-runs-need-resilience-before-spend`.
+- **CEILING-ABSORBED** → resolve OPP-6 #6 (coverage is not the lever; entity solved, edge lift
+  ceiling-absorbed); **R-COV-3 = resolved-negative**; Slice 10 CLOSED.
+- **SUFFICIENT** → record the finding; **R-COV-3 = verdict-computed**; Slice 10 CLOSED-as-recorded.
 
-**Tracks (parallelizable).** Coverage track **5 → 10** ∥ consolidation track **15 → 20**, off Slice 0.
+**Productization is OUT of 0.8.12 either way** — the productize/defer decision happens only
+after Phase 5 (a separate HITL call).
 
----
+### Phase 3 — Consolidation loose ends (parallel to Phases 1–2)
 
-## 4. Reserved-gap policy
+- **`t_invalid` FTS/vec projection filter fix** — make the recency-exclusion rebuild-durable
+  (the named Slice-20 default-ON blocker). A small codex-§9-reviewed slice.
+- **Live TS X1** — complete the TS binding functional harness for `consolidate_with_provider`
+  (was build-gated in Slice 40; needs `node_modules`/build).
 
-Carried unchanged (`0.8.1-plan.md` §Numbering).
+### Phase 4 — Complete Slice 40 + release DoD
 
-## 5. Cross-cutting DoD (X1/X2/X3 — bind EVERY slice)
+Finish verification with R-COV-3 resolved: **X1** (Py-live ✓ + TS-live), **X2**
+(`mkdocs build --strict`), **X3** (docs + DOC-INDEX), full **R-COV / R-CON AC gate**. Confirm
+release DoD.
 
-X1 SDK parity + harnesses · X2 `mkdocs build` green · X3 docs + DOC-INDEX per slice. `runs/STATUS-0.8.12.md`
-carries the per-slice X column.
+### Phase 5 — Label-only merge to `main`
 
-## 6. Acceptance-criteria policy
+Merge `0.8.12-memory-quality` → `main` — **label-only** (manifests stay `0.8.9`; no `v*` tag;
+no publish). Fold in the preserved sweep artifacts (manifest/harness) as appropriate; reconcile
+`STATUS`; record the EXP-COV-1 verdict + Slice-10 disposition. Retire the branch-local
+`plan-0.8.12-finish.md` redirect stub as part of the merge.
 
-`dev/acceptance.md` locked; track by OPP-id + TDD names; new ACs only at gated slices, HITL-decided.
+## Decision rule (Phase 1) — FIXED, no goalpost movement
 
-## 7. Prerequisites
+**SUFFICIENT** iff the paired-bootstrap CI lower bound of Δ(gold-in-pool@10) **or** Δ(MRR) vs
+the **same-stack `C-none`** is **> +0.04** on **≥1 powered class** (multi_session, temporal);
+**else CEILING-ABSORBED**. LOCOMO is CC-BY-NC — persist only derived metrics; never commit
+corpus payloads or fact spans.
 
-1. **0.8.6 closed** — the generalized provider protocol (#8) and governed-verb boundary (#9) exist
-   (hard deps for #7 and the #6 refactor).
-2. **0.8.7 (OOB GPU) recommended-landed** — coverage/extraction re-embeds are far cheaper on GPU
-   (soft, not blocking).
-3. **Frozen corpus + gold** for the coverage probe and value-test (reproduced locally per slice;
-   coordinate the gold with 0.8.8 #10 real-gold if available).
-4. Worktrees off `$(git rev-parse main)`; priced runs HITL-gated with a resilient harness.
+## Requirements / DoD (frozen at Slice 0)
 
-## 8. Out-of-band / parallel notes
+Full contracts in `0.8.12-implementation.md`. Headline signals: **R-COV-1** ($0 LLM-free
+coverage probe gates any priced run), **R-COV-2** (coverage lift measured + pre-registered, CI,
+no under-powered claims), **R-COV-3** (downstream sufficiency verdict — resolved in Phases 1–2),
+**R-CON** (consolidation provider value-test + `t_invalid` durability). Track by G-gap + TDD
+test names, not invented AC ids.
 
-- **Coordinate with the M-work owner:** ELPS coverage directly feeds the M5/M6 measures — align the
-  coverage probe and frozen corpus with the active experiment so the lift is measured on the same basis.
-- Priced extraction (Slice 10) is the only spend in this release and is HITL-gated; everything else is $0.
+## Constraints
 
-## 9. Immediate next slice
+Label-only (manifests `0.8.9`, no tag/publish) · **fathomdb-only push, never memex** ·
+`13` forbidden as minor+micro · two-tier numbering (`x.y.z` real / `x.y.z.p` pico) ·
+**V-7 held** · don't rewrite history · **verify from git before narrating** · codex §9 on every
+code slice · **one writer per worktree** · shared `.venv`/`maturin` build mutex ·
+**background-agent spend needs the user's own direct authorization** (pre-authorize the envelope
+in the spawn prompt; Phase 1 is `$0`).
 
-**Slice 0 — coverage-probe + consolidation-provider ADRs.** Pre-register the coverage probe and the
-lossiness-vs-latency value test; confirm both seams ride the OPP-8 protocol; stand up
-`runs/STATUS-0.8.12.md`. Then fan out Slices 5 ∥ 15.
+## Execution artifacts (branch map)
+
+- **`0.8.12-memory-quality`** (`8a2a1006`): `runs/STATUS-0.8.12.md` (live state), slice reviews
+  (`runs/0.8.12-slice{0,5,15,20,40}-*.md`), `notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md`.
+- **`0.8.12-expcov1-sweep`** (`6daf2d94`): `runs/EXP-COV-1-downstream-GPU-replan.md` (the Phase 1
+  spawn mandate), `runs/EXP-COV-1-results.md` (filled in Phase 1–2), `runs/EXP-COV-1-extraction-manifest.json`,
+  and the `exp_cov1_*` harness under `src/python/eval/`.
+- Preserved cache (gitignored, EVAL-ONLY, main tree):
+  `data/corpus-data/eval-cache/exp-cov1/relation.claude-haiku.cov1-relation-1.ndjson` (+ ledger).
+
+## After 0.8.12 (out of scope here)
+
+Productization of relation-focused extraction — a separate HITL call, only if the Phase 1
+verdict was SUFFICIENT.
