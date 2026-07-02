@@ -199,6 +199,89 @@ fn recency_consolidation_invalidates_older_edge() {
 }
 
 // ---------------------------------------------------------------------------
+// fix-2 [P2] — invalidate must not leave phantom pending projection work
+// ---------------------------------------------------------------------------
+
+/// fix-2 [P2]: an `invalidate` verdict prunes the edge's FTS/vec shadows (hiding
+/// it from active retrieval) but the canonical row stays NON-superseded, so its
+/// `_fathomdb_projection_terminal` marker MUST be retained — otherwise
+/// `database_has_pending_projection_work` reports permanent pending work (the
+/// cursor is below the projection head, so it is never requeued) and
+/// `drain()`/`wait_for_idle` time out forever.
+///
+/// White-box: the no-embedder test harness does not run the projection scheduler
+/// (no `drain()`), so we INSERT the projection terminal marker directly to simulate
+/// an already-projected edge, then assert `invalidate` retains it (fix-2) while its
+/// FTS shadow is pruned. Contrast: `supersede` (a tombstoned row is excluded from
+/// the pending-work scan) DOES drop the terminal.
+#[test]
+fn invalidate_retains_projection_terminal_while_pruning_fts() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "phantom");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    seed_competing_edges(&opened.engine);
+
+    // Simulate that the older edge was projected: it has an FTS shadow (written
+    // synchronously at ingest) and a projection terminal marker (inserted here).
+    let acme_cursor: i64 = {
+        let conn = Connection::open(&path).unwrap();
+        let cursor: i64 = conn
+            .query_row(
+                "SELECT write_cursor FROM canonical_edges WHERE logical_id = 'edge-acme'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO _fathomdb_projection_terminal(write_cursor, state) \
+             VALUES(?1, 'up_to_date')",
+            [cursor],
+        )
+        .unwrap();
+        // Sanity: the FTS shadow for the older edge exists pre-consolidation.
+        assert!(edge_fts_count(&conn, "Acme") >= 1, "setup: older edge FTS shadow present");
+        cursor
+    };
+
+    // Consolidate → the recency stub rules `invalidate` on the older edge.
+    let cmd_strings = consolidate_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    let axes = vec![ConsolidateAxis {
+        subject_logical_id: "bob".to_string(),
+        relation: "works_for".to_string(),
+    }];
+    let receipt = opened.engine.consolidate_with_provider(&cmd_refs, &axes).expect("consolidate");
+    assert_eq!(receipt.edges_invalidated, 1);
+
+    let conn = Connection::open(&path).unwrap();
+    // fix-2 [P2]: the terminal marker is RETAINED (row stays non-superseded, so
+    // deleting it would make the scheduler report permanent phantom pending work).
+    let terminal_after: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+            [acme_cursor],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        terminal_after, 1,
+        "invalidate must RETAIN the projection terminal (non-superseded)"
+    );
+    // ... but the FTS shadow is pruned (hidden from active retrieval).
+    let fts_after: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM search_index_edges WHERE write_cursor = ?1",
+            [acme_cursor],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        fts_after, 0,
+        "invalidated edge's FTS shadow must be pruned (hidden from retrieval)"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // supersede verdict path (marks-superseded via the G0 tombstone; row survives)
 // ---------------------------------------------------------------------------
 
