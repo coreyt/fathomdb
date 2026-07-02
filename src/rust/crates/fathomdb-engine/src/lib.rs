@@ -3392,6 +3392,9 @@ impl Engine {
     ) -> Result<(), EngineError> {
         let known: std::collections::HashSet<&str> =
             cluster.iter().map(|e| e.edge_ref.as_str()).collect();
+        // fix-1 [P2] bijection: the verdict set must cover the presented cluster
+        // EXACTLY — every presented edge ruled on, none ruled on twice.
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
@@ -3404,8 +3407,15 @@ impl Engine {
             if !known.contains(edge_ref) {
                 return Err(EngineError::Consolidator);
             }
+            // fix-1 [P2]: a repeated edge_ref is a protocol fault (not a bijection).
+            if !seen.insert(edge_ref) {
+                return Err(EngineError::Consolidator);
+            }
             let verdict =
                 v.get("verdict").and_then(|x| x.as_str()).ok_or(EngineError::Consolidator)?;
+            // Look up the active edge's projection cursor BEFORE any UPDATE so a
+            // supersede (which clears `superseded_at IS NULL`) can still find it.
+            let active_cursor = Self::active_edge_write_cursor(&tx, edge_ref)?;
             match verdict {
                 "keep" => {
                     receipt.edges_kept = receipt.edges_kept.saturating_add(1);
@@ -3423,6 +3433,24 @@ impl Engine {
                         params![ts, edge_ref],
                     )
                     .map_err(|_| EngineError::Storage)?;
+                    // fix-1 [P1]: prune the STATIC projection shadow rows so the
+                    // consolidated-away edge stops surfacing in FTS/vector — but
+                    // ONLY when the edge is ended as of the engine's "now",
+                    // mirroring the graph-traversal filter
+                    // `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+                    // A future-dated t_invalid keeps the edge valid ⇒ keep the
+                    // projection. NON-DESTRUCTIVE: the canonical_edges row + body
+                    // survive (ADR-0.8.12 §2.1).
+                    if let Some(cursor) = active_cursor {
+                        let ended: bool = tx
+                            .query_row("SELECT datetime(?1) <= datetime('now')", params![ts], |r| {
+                                r.get(0)
+                            })
+                            .map_err(|_| EngineError::Storage)?;
+                        if ended {
+                            Self::prune_edge_projection_shadows(&tx, cursor)?;
+                        }
+                    }
                     receipt.edges_invalidated = receipt.edges_invalidated.saturating_add(1);
                 }
                 // `merge` maps cleanly to supersede + metadata (ADR-0.8.12 §3):
@@ -3438,13 +3466,65 @@ impl Engine {
                         params![cursor, edge_ref],
                     )
                     .map_err(|_| EngineError::Storage)?;
+                    // fix-1 [P1]: a superseded edge is unconditionally out of the
+                    // active set (graph traversal filters `superseded_at IS NULL`),
+                    // so prune its FTS/vector projection shadow rows to match.
+                    if let Some(active_cursor) = active_cursor {
+                        Self::prune_edge_projection_shadows(&tx, active_cursor)?;
+                    }
                     receipt.edges_superseded = receipt.edges_superseded.saturating_add(1);
                 }
                 _ => return Err(EngineError::Consolidator),
             }
         }
 
+        // fix-1 [P2]: bijection completeness — every presented cluster edge must
+        // have received exactly one verdict.
+        if seen.len() != known.len() {
+            return Err(EngineError::Consolidator);
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
+        Ok(())
+    }
+
+    /// fix-1 [P1] — the active (non-superseded) row's projection `write_cursor`
+    /// for a fact-edge `logical_id`, or `None` if there is no active row. The
+    /// cursor keys the STATIC projection shadow rows (FTS `search_index_edges`,
+    /// vec0 `vector_default` by rowid, `_fathomdb_vector_rows`,
+    /// `_fathomdb_projection_terminal`).
+    fn active_edge_write_cursor(
+        tx: &rusqlite::Transaction<'_>,
+        edge_ref: &str,
+    ) -> Result<Option<i64>, EngineError> {
+        tx.query_row(
+            "SELECT write_cursor FROM canonical_edges \
+             WHERE logical_id = ?1 AND superseded_at IS NULL",
+            params![edge_ref],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|_| EngineError::Storage)
+    }
+
+    /// fix-1 [P1] — prune the STATIC projection shadow rows for a canonical
+    /// row's `write_cursor` so a consolidated-away edge stops surfacing in
+    /// FTS/vector retrieval. Mirrors the excision pattern at
+    /// `excise_source_inner` (invalidate-not-delete: the canonical row + body
+    /// are NEVER touched here).
+    fn prune_edge_projection_shadows(
+        tx: &rusqlite::Transaction<'_>,
+        cursor: i64,
+    ) -> Result<(), EngineError> {
+        tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
+            .map_err(|_| EngineError::Storage)?;
+        // vec0 rowid is the canonical row's write_cursor.
+        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
+            .map_err(|_| EngineError::Storage)?;
+        tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
+            .map_err(|_| EngineError::Storage)?;
+        tx.execute("DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1", [cursor])
+            .map_err(|_| EngineError::Storage)?;
         Ok(())
     }
 

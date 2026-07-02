@@ -99,6 +99,17 @@ fn seed_competing_edges(engine: &Engine) {
     engine.write(&[older, newer]).expect("seed two competing edges");
 }
 
+/// fix-1 [P1]: count edge-FTS shadow rows matching `term` in `search_index_edges`
+/// (the same query pattern used by `slice15_byo_llm_ingest::edge_fts_searchable`).
+fn edge_fts_count(conn: &Connection, term: &str) -> u64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM search_index_edges WHERE search_index_edges MATCH ?1",
+        [term],
+        |r| r.get(0),
+    )
+    .expect("search_index_edges must exist and be queryable")
+}
+
 fn edge_row(conn: &Connection, logical_id: &str) -> (Option<String>, Option<String>, Option<i64>) {
     // (body, t_invalid, superseded_at) for the row with this logical_id.
     conn.query_row(
@@ -436,4 +447,215 @@ fn empty_cluster_is_skipped() {
         .expect("consolidate must succeed");
     assert_eq!(receipt.clusters_processed, 0, "empty cluster is skipped");
     assert_eq!(receipt.edges_examined, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fix-1 [P1] — a consolidated-away edge is hidden from active FTS retrieval
+// ---------------------------------------------------------------------------
+
+/// After `invalidate` (ended as of now), the stale edge's FTS shadow row is
+/// pruned so `search_index_edges` no longer surfaces it — while the winning
+/// edge stays searchable. The canonical row + body survive (§2.1).
+#[test]
+fn invalidate_hides_stale_edge_from_edge_fts() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "invalidate_fts");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    seed_competing_edges(&opened.engine);
+
+    // Before: both edge bodies are indexed in search_index_edges.
+    {
+        let conn = Connection::open(&path).unwrap();
+        assert!(edge_fts_count(&conn, "acme") > 0, "acme edge must be FTS-indexed pre-consolidate");
+        assert!(edge_fts_count(&conn, "globex") > 0, "globex edge must be FTS-indexed pre");
+    }
+
+    let cmd_strings = consolidate_harness_cmd();
+    let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
+    let axes = vec![ConsolidateAxis {
+        subject_logical_id: "bob".to_string(),
+        relation: "works_for".to_string(),
+    }];
+    let receipt = opened
+        .engine
+        .consolidate_with_provider(&cmd_refs, &axes)
+        .expect("consolidate must succeed");
+    assert_eq!(receipt.edges_invalidated, 1, "older edge invalidated");
+
+    let conn = Connection::open(&path).unwrap();
+    // The invalidated (older) edge is gone from edge FTS; the winner remains.
+    assert_eq!(
+        edge_fts_count(&conn, "acme"),
+        0,
+        "invalidated edge must NO LONGER appear in edge FTS (shadow pruned)"
+    );
+    assert!(edge_fts_count(&conn, "globex") > 0, "winning edge must still be FTS-searchable");
+
+    // NON-DESTRUCTIVE: the canonical_edges row + body survive.
+    let (acme_body, acme_ti, acme_sup) = edge_row(&conn, "edge-acme");
+    assert_eq!(acme_body.as_deref(), Some("Bob works for Acme"), "body preserved (no rewrite)");
+    assert!(acme_ti.is_some(), "t_invalid recorded");
+    assert!(acme_sup.is_none(), "invalidate is not a tombstone");
+}
+
+/// A `supersede` verdict unconditionally prunes the loser's FTS shadow (it is
+/// out of the active set); the winner remains searchable, and the loser row +
+/// body survive.
+#[test]
+fn supersede_hides_loser_from_edge_fts() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "supersede_fts");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    seed_competing_edges(&opened.engine);
+
+    // Inline harness: supersede acme (by globex), keep globex.
+    let harness = r#"
+import json, sys
+P = "fathomdb.consolidate.v1"
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": P, "type": "ready", "schema_version": 1,
+                          "model": "stub-consolidate-v1", "supported_tasks": ["consolidate"],
+                          "max_docs_per_request": 8}), flush=True)
+    elif msg.get("type") == "consolidate":
+        edges = msg.get("cluster", {}).get("edges", [])
+        verdicts = []
+        for e in edges:
+            ref = e.get("edge_ref")
+            if ref == "edge-acme":
+                verdicts.append({"edge_ref": ref, "verdict": "supersede", "by": "edge-globex"})
+            else:
+                verdicts.append({"edge_ref": ref, "verdict": "keep"})
+        print(json.dumps({"protocol": P, "type": "result",
+                          "request_id": msg.get("request_id"), "verdicts": verdicts}), flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let axes = vec![ConsolidateAxis {
+        subject_logical_id: "bob".to_string(),
+        relation: "works_for".to_string(),
+    }];
+    let receipt = opened
+        .engine
+        .consolidate_with_provider(&cmd_refs, &axes)
+        .expect("consolidate must succeed");
+    assert_eq!(receipt.edges_superseded, 1, "one supersede verdict applied");
+
+    let conn = Connection::open(&path).unwrap();
+    assert_eq!(
+        edge_fts_count(&conn, "acme"),
+        0,
+        "superseded edge must NO LONGER appear in edge FTS (shadow pruned)"
+    );
+    assert!(edge_fts_count(&conn, "globex") > 0, "kept edge must still be FTS-searchable");
+
+    // Loser row + body survive (invalidate-not-delete).
+    let (acme_body, _ti, acme_sup) = edge_row(&conn, "edge-acme");
+    assert_eq!(acme_body.as_deref(), Some("Bob works for Acme"), "loser body preserved");
+    assert!(acme_sup.is_some(), "loser is superseded");
+}
+
+// ---------------------------------------------------------------------------
+// fix-1 [P2] — the verdict set must be a bijection with the presented cluster
+// ---------------------------------------------------------------------------
+
+/// A cluster edge left WITHOUT a verdict is a protocol fault (incomplete
+/// coverage) → `Err(EngineError::Consolidator)`, with no metadata written.
+#[test]
+fn consolidate_rejects_missing_verdict() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "missing_verdict");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    seed_competing_edges(&opened.engine);
+
+    // Harness rules only on edge-acme, omitting edge-globex.
+    let harness = r#"
+import json, sys
+P = "fathomdb.consolidate.v1"
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": P, "type": "ready", "schema_version": 1,
+                          "model": "stub", "supported_tasks": ["consolidate"],
+                          "max_docs_per_request": 8}), flush=True)
+    elif msg.get("type") == "consolidate":
+        print(json.dumps({"protocol": P, "type": "result",
+                          "request_id": msg.get("request_id"),
+                          "verdicts": [{"edge_ref": "edge-acme", "verdict": "keep"}]}),
+              flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let axes = vec![ConsolidateAxis {
+        subject_logical_id: "bob".to_string(),
+        relation: "works_for".to_string(),
+    }];
+
+    let result = opened.engine.consolidate_with_provider(&cmd_refs, &axes);
+    assert!(
+        matches!(result, Err(EngineError::Consolidator)),
+        "an incomplete verdict set must return Err(Consolidator), got {result:?}"
+    );
+
+    // Fault caught before commit: both edges stay live.
+    let conn = Connection::open(&path).unwrap();
+    let (_b, acme_ti, acme_sup) = edge_row(&conn, "edge-acme");
+    assert!(acme_ti.is_none() && acme_sup.is_none(), "no metadata change on a rejected batch");
+    let (_b2, gx_ti, gx_sup) = edge_row(&conn, "edge-globex");
+    assert!(gx_ti.is_none() && gx_sup.is_none(), "no metadata change on a rejected batch");
+}
+
+/// A REPEATED `edge_ref` is a protocol fault (not a bijection) →
+/// `Err(EngineError::Consolidator)`, with no metadata written.
+#[test]
+fn consolidate_rejects_duplicate_verdict() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "duplicate_verdict");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    seed_competing_edges(&opened.engine);
+
+    // Harness rules on edge-acme TWICE (and never on edge-globex).
+    let harness = r#"
+import json, sys
+P = "fathomdb.consolidate.v1"
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("type") == "hello":
+        print(json.dumps({"protocol": P, "type": "ready", "schema_version": 1,
+                          "model": "stub", "supported_tasks": ["consolidate"],
+                          "max_docs_per_request": 8}), flush=True)
+    elif msg.get("type") == "consolidate":
+        print(json.dumps({"protocol": P, "type": "result",
+                          "request_id": msg.get("request_id"),
+                          "verdicts": [{"edge_ref": "edge-acme", "verdict": "keep"},
+                                       {"edge_ref": "edge-acme", "verdict": "keep"}]}),
+              flush=True)
+"#;
+    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+    let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+    let axes = vec![ConsolidateAxis {
+        subject_logical_id: "bob".to_string(),
+        relation: "works_for".to_string(),
+    }];
+
+    let result = opened.engine.consolidate_with_provider(&cmd_refs, &axes);
+    assert!(
+        matches!(result, Err(EngineError::Consolidator)),
+        "a duplicate edge_ref must return Err(Consolidator), got {result:?}"
+    );
+
+    // Fault caught before commit: both edges stay live.
+    let conn = Connection::open(&path).unwrap();
+    let (_b, acme_ti, acme_sup) = edge_row(&conn, "edge-acme");
+    assert!(acme_ti.is_none() && acme_sup.is_none(), "no metadata change on a rejected batch");
 }
