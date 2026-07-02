@@ -105,6 +105,13 @@ fn consolidation_removes_stale_contradictions_without_lossiness() {
 
     let conn = Connection::open(&path).unwrap();
 
+    // SCOPE (honest): this measures ACTIVE edge-FTS retrieval IMMEDIATELY after consolidation. It does
+    // NOT claim durability across an operator `rebuild_projections()` — the Slice-15 fix-2 KNOWN
+    // LIMITATION means a rebuild re-materialises an invalidated (non-superseded) edge's FTS/vec shadows.
+    // That fragility is a NAMED blocker-before-default-ON in `consolidation-value-test-results.md` and is
+    // one reason the value verdict is STAY-OFF. (rebuild_projections is operator-feature-gated and not
+    // reachable from this default-feature test, so the rebuild path is asserted by code-path analysis +
+    // the elevated blocker, not exercised here.)
     // --- Consolidation OFF (baseline): both stale and updated facts are retrievable. ---
     let (off_updated, off_stale) = fts_hits(&conn, "works");
     let n = SUBJECTS.len() as u64;

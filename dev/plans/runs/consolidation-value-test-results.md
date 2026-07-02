@@ -48,18 +48,31 @@ temporal/update class of a REAL corpus (LOCOMO multi_session/temporal), net of l
   real-corpus at-power confirmation (LOCOMO, with a real/priced consolidation harness) is **out of the
   `$0` scope** of this slice (same discipline as the Slice-10 priced hold).
 
-### Verdict: **STAY-OFF by default (opt-in) — default-ON gate NOT cleared at `$0`; mechanism validated.**
+### Verdict: **STAY-OFF by default (opt-in) — default-ON gate NOT cleared; mechanism validated but not rebuild-durable.**
 
-Per R-CON-2 and ADR-0.8.12 §2.2, the provider **ships built but default-OFF**: the capability is correct
-and available to callers who opt in, and the **default-ON** decision is deferred to the real-corpus
-at-power value test (LOCOMO), which is a heavier/priced eval not run here. This is a legitimate
-pre-registered outcome (build ≠ adopt), not a failure of the provider — the negative recorded is
-specifically "default-ON gate not cleared at `$0`," with the mechanism shown positive and lossless.
+Per R-CON-2 and ADR-0.8.12 §2.2, the provider **ships built but default-OFF**. Two independent reasons the
+default-ON gate is NOT cleared:
 
-## 4. Follow-ups (not this slice)
+1. **No real-corpus at-power evidence.** The `$0` result is a synthetic mechanism corpus, not the real
+   temporal-QA gold (LOCOMO) with the paired-bootstrap CI the pre-registered §B.3 rule requires for
+   default-ON. That confirmation is a heavier/priced eval, out of `$0` scope (same discipline as the
+   Slice-10 hold).
+2. **The exclusion is not durable across a projection rebuild (named blocker).** The measured value is
+   ACTIVE-retrieval-immediately-after-consolidation. Per the Slice-15 fix-2 KNOWN LIMITATION, an operator
+   `rebuild_projections()` re-materialises an invalidated (non-superseded) edge's FTS/vec shadows —
+   re-surfacing the stale contradiction (graph traversal still excludes it via `t_invalid > now`; FTS/vec
+   do not). **DEFAULT-ON IS BLOCKED until the FTS/vec projection SQL applies the same `t_invalid` filter as
+   graph traversal.** Until then even the opt-in capability carries this caveat. (`rebuild_projections` is
+   operator-feature-gated and not reachable from the default-feature value-test, so this is established by
+   code-path analysis + this blocker, not exercised in the test — raised by codex §9 on this slice.)
 
+This is a legitimate pre-registered outcome (build ≠ adopt): the mechanism is positive and lossless for
+active retrieval, and default-ON is correctly withheld. The negative recorded names BOTH reasons.
+
+## 4. Follow-ups
+
+- **[blocker-before-default-ON]** Teach the FTS/vec edge projection SQL (incl. the `rebuild_projections`
+  path) the `t_invalid > now` temporal filter graph traversal already applies, so consolidation's exclusion
+  is rebuild-durable. (Elevated from a soft follow-up to a named default-ON blocker by codex §9 on Slice 20.)
 - Real-corpus at-power value test (LOCOMO multi_session/temporal) with a real/priced consolidation
   harness → the default-ON decision. Pairs naturally with the held EXP-COV-1 priced sweep budget.
-- Known limitation (from Slice-15 fix-2): a full `rebuild_projections` re-materialises an invalidated
-  edge's FTS/vec shadows (graph traversal still excludes via `t_invalid > now`). Durable fix = teach the
-  FTS/vec projection SQL the temporal filter. Tracked as a scoped follow-up.
