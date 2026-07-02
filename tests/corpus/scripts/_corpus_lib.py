@@ -12,15 +12,52 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+import re
+import warnings
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
-SourceType = Literal["email", "meeting", "paper", "article", "note", "todo"]
+SourceType = Literal[
+    "email", "meeting", "paper", "article", "note", "todo", "event", "kb",
+]
 
 SOURCE_TYPES: tuple[SourceType, ...] = (
-    "email", "meeting", "paper", "article", "note", "todo",
+    "email", "meeting", "paper", "article", "note", "todo", "event", "kb",
 )
+
+ENTITY_KINDS: tuple[str, ...] = ("qid", "doi")
+
+_QID_RE = re.compile(r"Q\d+")
+
+
+@dataclass
+class EntityRef:
+    """A resolved cross-corpus join key (Wikidata QID or DOI).
+
+    `kind` is one of {"qid","doi"}; `id` is the canonical identifier
+    (e.g. "Q42", "10.1000/xyz"); `surface` is the optional mention text
+    the id was resolved from. A `qid` whose id does not match `Q\\d+`
+    constructs but emits a warning (upstream QIDs are trusted, not
+    rewritten). See corpus-card.md §"Document schema".
+    """
+
+    id: str
+    kind: str
+    surface: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in ENTITY_KINDS:
+            raise ValueError(
+                f"EntityRef.kind must be one of {ENTITY_KINDS}, got {self.kind!r}"
+            )
+        if not self.id:
+            raise ValueError("EntityRef.id must be non-empty")
+        if self.kind == "qid" and not _QID_RE.fullmatch(self.id):
+            warnings.warn(
+                f"EntityRef qid {self.id!r} does not match Q\\d+",
+                stacklevel=2,
+            )
 
 RELATION_TYPES: tuple[str, ...] = (
     "replies_to", "follows_up_on", "summarizes", "action_from",
@@ -48,6 +85,7 @@ class CorpusDoc:
     parent_doc_id: str | None
     license: str              # SPDX identifier
     provenance: str           # short upstream tag
+    entity_ids: list[EntityRef] = field(default_factory=list)  # cross-corpus join keys
 
     def to_jsonl(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)

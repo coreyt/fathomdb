@@ -34,9 +34,12 @@ The corpus has three jobs:
   **+ QAConv + QASPER ≈ 10.1K**; PMC OA · S2ORC · ELITR stay deferred. See
   `dev/plans/runs/STATUS-0.8.0.md` §7 (2026-06-09) + the COR-2 runbook.
 - **Recall floor: 0.90 @ k=10** (initial; tighten later).
-- **Partition key: `source_type`** (cardinality ~6:
-  `email`, `article`, `paper`, `meeting`, `note`, `todo`).
-  Supersedes the earlier `kind` default in Pack 1's draft.
+- **Partition key: `source_type`** (cardinality ~8:
+  `email`, `article`, `paper`, `meeting`, `note`, `todo`,
+  `event`, `kb`). Supersedes the earlier `kind` default in
+  Pack 1's draft. **Amended 2026-07-02 (HITL coreyt):**
+  cardinality raised 6 → 8 with `event` + `kb` for cross-source
+  QID-native corpora — see §"Source vocabulary" below.
 - **Enron OK to commit** with the CMU April-2026 impersonation
   note recorded here (see §"Provenance notes" below).
 - **Cross-doc chain generator is in 0.7.0 scope** (Corpus-Pack 2).
@@ -56,8 +59,12 @@ The corpus has three jobs:
 
 ## Source vocabulary (`source_type`)
 
-Locked to exactly 6 values. New sources must map onto one of
+Locked to exactly 8 values. New sources must map onto one of
 these — do not extend without a HITL pass.
+
+**Amended 2026-07-02 (HITL coreyt):** extended 6 → 8 with
+`event` + `kb` to admit cross-source QID-native corpora into
+the shared key space (Slice B1). The original 6 are unchanged.
 
 | `source_type` | Examples |
 |---|---|
@@ -67,6 +74,8 @@ these — do not extend without a HITL pass.
 | `article` | CNN/DailyMail news articles |
 | `note`    | bahmutov daily-logs, synthetic notes |
 | `todo`    | Landes/Di Eugenio to-do corpus + synthetic |
+| `event`   | event-centric passages (e.g. WEC-Eng) |
+| `kb`      | knowledge / infobox-table facts (e.g. CompMix, Wikidata) |
 
 ## Document schema (canonical JSONL)
 
@@ -76,7 +85,7 @@ Every per-source JSONL in `raw/` and every synthetic doc in
 ```jsonc
 {
   "doc_id":           "stable hash of provenance + source-native ID",
-  "source_type":      "one of {email,meeting,paper,article,note,todo}",
+  "source_type":      "one of {email,meeting,paper,article,note,todo,event,kb}",
   "title":            "string or null",
   "body":             "string (the text we will chunk + embed)",
   "created_at":       "ISO-8601 UTC",
@@ -90,13 +99,32 @@ Every per-source JSONL in `raw/` and every synthetic doc in
   "thread_id":        "string or null",
   "parent_doc_id":    "string or null",
   "license":          "SPDX identifier",
-  "provenance":       "short upstream tag (e.g. cmu-enron-2015-05-08)"
+  "provenance":       "short upstream tag (e.g. cmu-enron-2015-05-08)",
+  "entity_ids":       [{"id": "Q42", "kind": "qid", "surface": "Douglas Adams"}]
 }
 ```
 
 `thread_id` / `parent_doc_id` are populated for email threads,
 meeting → minutes pairs, and synthetic-chain connective docs.
 Null elsewhere.
+
+`entity_ids` (**additive; HITL-approved amendment 2026-07-02,
+coreyt** — Slice B1) is the cross-corpus join key: a list of
+resolved entity references that let heterogeneous QID-native
+corpora be joined on a shared key space. Each element is an
+`EntityRef` with:
+
+- `id` — canonical identifier, non-empty (e.g. `"Q42"`, `"10.1000/xyz"`);
+- `kind` — one of `{"qid","doi"}` (validated; other kinds raise);
+- `surface` — optional mention text the id was resolved from, or null.
+
+A `qid` whose `id` does not match `Q\d+` still constructs but
+emits a warning (upstream QIDs are trusted, not rewritten).
+The field is **additive and backward-compatible**: it defaults
+to `[]`, so every existing per-source corpus serializes
+`"entity_ids": []` with no acquisition-script change. License
+and provenance carry through unchanged — an `entity_ids` entry
+adds a join key, it does not relicense the doc.
 
 ## Source catalogue + license posture
 
