@@ -299,7 +299,7 @@ fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
             "consolidate stub harness fixture must exist at {}",
             script.display()
         );
-        let cmd = vec!["python3".to_string(), script.to_string_lossy().to_string()];
+        let cmd = ["python3".to_string(), script.to_string_lossy().to_string()];
         let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
         let axes = vec![ConsolidateAxis {
             subject_logical_id: "bob".to_string(),
