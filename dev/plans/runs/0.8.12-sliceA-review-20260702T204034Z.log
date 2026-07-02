@@ -1,0 +1,3397 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f248c-0653-79c2-bed5-729530496156
+--------
+user
+Review the diff introduced by commits bec69825..83e0d686 (equivalently: git diff 0.8.12-memory-quality...HEAD) in this worktree. Read the changed files in full: src/rust/crates/fathomdb-engine/src/lib.rs and src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs. Also read the canonical graph-traversal predicate around src/rust/crates/fathomdb-engine/src/lib.rs:6949-6956 for comparison.
+
+You are the §9 code reviewer for FathomDB 0.8.12 Slice A (label-only release; $0/local).
+
+Slice A makes the consolidation `t_invalid` recency-exclusion durable across `rebuild_projections()`. Today graph traversal excludes invalidated edges via `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` (lib.rs ~6949-6956), but the FTS/vec projection rebuild path filtered only `superseded_at`, so a rebuild re-surfaced an invalidated (non-superseded) edge. The fix adds that same predicate to three edge-projection SQL sites and adds a RED-then-GREEN operator test.
+
+Diff under review: branch `slice-Atinvalid-20260702T202125Z` vs base `0.8.12-memory-quality` — two commits (RED test `a3cf873d`, GREEN fix `83e0d686`), confined to src/rust/crates/fathomdb-engine/{src/lib.rs, tests/rebuild_projections.rs}.
+
+Focus the review on:
+1. Correctness + form parity: are the three added predicates (edge FTS rebuild SELECT in rebuild_shadow_state; the canonical_edges/'edge_fact' vec queue arm in next_pending_projection_jobs; the edge probe in database_has_pending_projection_work) semantically identical to the canonical graph-traversal predicate at lib.rs ~6949-6956? Any alias/qualification bug, NULL-handling gap, or timestamp-format mismatch (datetime() usage)?
+2. Is fix site 3 (database_has_pending_projection_work) genuinely load-bearing, or scope creep? The implementer claims that without it an invalidated-only edge never gains a projection-terminal row and registers as phantom-pending forever, hanging drain()/wait_for_idle.
+3. Test quality: does the new test drive the REAL consolidate_with_provider recency path (not a direct t_invalid poke)? Does it assert exclusion from BOTH search_index_edges (FTS) and _fathomdb_vector_rows (vec) while proving a valid edge survives (non-vacuous)? Would it actually fail without the fix (was RED demonstrated)?
+4. Any regression risk to still-valid edges, superseded-vs-invalidated distinction, or node projection (nodes have no t_invalid — should be untouched).
+
+Verdict format: a `## Verdict: PASS|CONCERN|BLOCK` header, then findings as `### N. [high|medium|low] title` with file:line Refs and 2-4 line explanations, then "What passed on inspection". Sandbox is read-only; do not write files — the orchestrator promotes your verdict.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+I’ll review this as a local diff audit, staying read-only. First I’m loading the repo memory and the changed files, then I’ll compare the three SQL predicates against the canonical traversal predicate and the new test’s actual coverage.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ exited 1 in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+
+codex
+The first shell probe could read the current path, but the sandbox wrapper rejected the git probes with a loopback setup error. I’m going to keep the review read-only and use narrower file reads/searches where the sandbox permits them.
+exec
+/bin/bash -c 'ls -la' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+total 316
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  2 15:27 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul  2 15:21 ..
+-rw-rw-r--  1 coreyt coreyt     68 Jul  2 15:21 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  2 15:21 .github
+-rw-rw-r--  1 coreyt coreyt   3474 Jul  2 15:21 .gitignore
+-rw-rw-r--  1 coreyt coreyt   1181 Jul  2 15:21 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul  2 15:21 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul  2 15:21 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul  2 15:21 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul  2 15:21 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  2 15:21 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111562 Jul  2 15:21 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul  2 15:21 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul  2 15:21 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul  2 15:21 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul  2 15:21 deny.toml
+drwxrwxr-x 26 coreyt coreyt   4096 Jul  2 15:21 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  2 15:21 docs
+-rw-rw-r--  1 coreyt coreyt   1783 Jul  2 15:21 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jul  2 15:21 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  2 15:21 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  2 15:21 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul  2 15:21 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul  2 15:21 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  2 15:21 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  2 15:21 src
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 15:27 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  2 15:21 test
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  2 15:21 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  2 15:21 tools
+
+exec
+/bin/bash -c "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+codex
+There is no `MEMORY.md` at the repo root in this checkout. I’m checking the documented memory locations and then I’ll read the two target files directly.
+exec
+/bin/bash -c "sed -n '6925,6975p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+                    frontier.push_back((lid, 0));
+                    if !seed_bodies.contains(body.as_str()) && candidates.len() < cap {
+                        // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
+                        // 'unknown' kind (mirrors the Phase-2 neighbor scoring).
+                        let score = if kind == "unknown" { SYNTHESIZED_PENALTY } else { 1.0 };
+                        candidates.push(SearchHit {
+                            id: write_cursor as u64,
+                            kind,
+                            body,
+                            score,
+                            branch: SoftFallbackBranch::GraphArm,
+                            source_id,
+                            ce_score: None,
+                            stable_id,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    stats.frontier_nonempty = !frontier.is_empty();
+
+    // Phase 2: BFS over canonical_edges (temporal filter). `candidates` already
+    // holds the depth-0 emitted seeds; BFS appends the reachable neighbors.
+    // Both statements are prepared ONCE outside the loops — re-preparing inside
+    // would issue O(frontier_size × neighbors) sqlite3_prepare_v2 calls.
+    let mut edge_stmt = tx.prepare(
+        // G0 Phase-2 (BLOCK-2): carry the traversed edge's `source_id` so a
+        // graph-reached neighbor can resolve back to the session it was extracted
+        // from. `ORDER BY e.write_cursor` makes the traversal deterministic: when
+        // several active edges connect this node to the SAME neighbor with
+        // different `source_id`s, the earliest-written edge wins the `visited`
+        // dedup, so the carried provenance is stable (not SQLite-order-dependent).
+        // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
+        // `LIMIT 1` lookup for the same reason.)
+        "SELECT e.from_id, e.to_id, e.source_id \
+         FROM canonical_edges e \
+         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+           AND e.superseded_at IS NULL \
+           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
+           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+         ORDER BY e.write_cursor \
+         LIMIT 64",
+    )?;
+    // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
+    // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
+    let mut body_stmt = tx.prepare(
+        "SELECT kind, body, write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL \
+         LIMIT 1",
+    )?;
+
+codex
+The canonical predicate is present as `e.superseded_at IS NULL` plus `(e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))`. I’m now reading the changed file content in chunks and locating the three rebuild/projection sites without relying on git commands.
+exec
+/bin/bash -c "sed -n '1,240p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::lifecycle::ProjectionStatus;
+use fathomdb_engine::{ConsolidateAxis, Engine, PreparedWrite};
+use fathomdb_schema::SQLITE_SUFFIX;
+use rusqlite::Connection;
+use tempfile::TempDir;
+
+const SENTINEL: &[u8; 16] = b"FATHOMDB_SENT_42";
+
+#[derive(Clone, Debug)]
+struct DeterministicEmbedder {
+    identity: EmbedderIdentity,
+    vector: Vector,
+}
+
+impl DeterministicEmbedder {
+    fn new(dim: u32) -> Self {
+        let mut vector = vec![0.0_f32; dim as usize];
+        vector[0] = 1.0;
+        Self { identity: EmbedderIdentity::new("rebuild", "rev-a", dim), vector }
+    }
+}
+
+impl Embedder for DeterministicEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        Ok(self.vector.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FailingEmbedder {
+    identity: EmbedderIdentity,
+    fails: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl FailingEmbedder {
+    fn new(dim: u32) -> Self {
+        Self {
+            identity: EmbedderIdentity::new("rebuild", "rev-a", dim),
+            fails: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl Embedder for FailingEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        self.fails.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Err(EmbedderError::Failed { message: "deterministic failure".to_string() })
+    }
+}
+
+fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
+}
+
+fn wait_until<F: FnMut() -> bool>(mut predicate: F, timeout: Duration) -> bool {
+    let started = std::time::Instant::now();
+    while started.elapsed() < timeout {
+        if predicate() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    predicate()
+}
+
+/// 0.8.12 Slice A: count edge-FTS shadow rows matching `term` in
+/// `search_index_edges` (mirrors `edge_fts_count` in `consolidate_provider.rs`).
+fn edge_fts_count(conn: &Connection, term: &str) -> u64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM search_index_edges WHERE search_index_edges MATCH ?1",
+        [term],
+        |r| r.get(0),
+    )
+    .expect("search_index_edges must exist and be queryable")
+}
+
+/// 0.8.12 Slice A: count `_fathomdb_vector_rows` rows for a given `write_cursor`.
+fn vector_row_count(conn: &Connection, cursor: u64) -> u64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+        [cursor],
+        |r| r.get(0),
+    )
+    .expect("_fathomdb_vector_rows must exist and be queryable")
+}
+
+#[test]
+fn ac_044_rebuild_projections_purges_sentinel_bytes() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "rebuild_sentinel");
+
+    let embedder = Arc::new(DeterministicEmbedder::new(8));
+    {
+        let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+        opened
+            .engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "canonical body alpha".to_string(),
+                source_id: None,
+                logical_id: None,
+            }])
+            .expect("write");
+        opened.engine.drain(10_000).expect("drain");
+    }
+
+    {
+        let connection = Connection::open(&path).expect("open sqlite");
+        connection
+            .execute(
+                "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, 'doc', 9999)",
+                rusqlite::params![std::str::from_utf8(SENTINEL).unwrap()],
+            )
+            .expect("inject sentinel");
+        connection
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_row| Ok(()))
+            .expect("checkpoint");
+    }
+
+    let raw_before = std::fs::read(&path).expect("read db");
+    assert!(
+        raw_before.windows(SENTINEL.len()).any(|window| window == SENTINEL),
+        "sentinel was not actually written into the file"
+    );
+
+    {
+        let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("reopen");
+        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+        opened.engine.rebuild_projections().expect("rebuild_projections");
+        assert!(wait_until(
+            || opened
+                .engine
+                .projection_status_for_test("doc")
+                .map(|s| s == ProjectionStatus::UpToDate)
+                .unwrap_or(false),
+            Duration::from_secs(10),
+        ));
+        opened.engine.drain(10_000).expect("post-rebuild drain");
+    }
+
+    {
+        let connection = Connection::open(&path).expect("open sqlite");
+        connection
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_row| Ok(()))
+            .expect("checkpoint");
+        connection.execute("VACUUM", []).expect("vacuum");
+    }
+
+    let raw_after = std::fs::read(&path).expect("read db");
+    assert!(
+        !raw_after.windows(SENTINEL.len()).any(|window| window == SENTINEL),
+        "sentinel still present in shadow-table pages after rebuild"
+    );
+}
+
+#[test]
+fn ac_063c_rebuild_projections_materializes_failed_terminal_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "rebuild_failed");
+
+    let failing = Arc::new(FailingEmbedder::new(8));
+    let cursor = {
+        let opened = Engine::open_with_embedder_for_test(&path, failing.clone()).expect("open");
+        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+        opened.engine.set_projection_retry_delays_for_test(&[0, 0, 0]);
+        let receipt = opened
+            .engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "failure body".to_string(),
+                source_id: None,
+                logical_id: None,
+            }])
+            .expect("write");
+        assert!(wait_until(
+            || opened
+                .engine
+                .projection_status_for_test("doc")
+                .map(|s| s == ProjectionStatus::Failed)
+                .unwrap_or(false),
+            Duration::from_secs(10),
+        ));
+        assert_eq!(
+            opened.engine.projection_failure_count_for_test(receipt.cursor).expect("failure count"),
+            1
+        );
+        receipt.cursor
+    };
+
+    let healthy = Arc::new(DeterministicEmbedder::new(8));
+    let opened = Engine::open_with_embedder_for_test(&path, healthy.clone()).expect("reopen");
+    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    opened.engine.rebuild_projections().expect("rebuild_projections");
+    assert!(wait_until(
+        || opened
+            .engine
+            .projection_status_for_test("doc")
+            .map(|s| s == ProjectionStatus::UpToDate)
+            .unwrap_or(false),
+        Duration::from_secs(10),
+    ));
+    assert!(opened.engine.has_vector_for_cursor_for_test(cursor).expect("has_vector"));
+}
+
+/// 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9 [P2]).
+///
+/// Graph traversal excludes an invalidated edge via a
+/// `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` filter, but
+/// (before this fix) the FTS/vec PROJECTION rebuild SQL does not — so a full
+/// `rebuild_projections()` re-materializes an invalidated (non-superseded)
+/// edge's FTS/vec shadows, re-surfacing a stale contradiction that
+/// consolidation had already hidden. This test drives the REAL
+/// `consolidate_with_provider` recency path (deterministic stub harness) to
+/// invalidate the older of two competing fact-edges, rebuilds, and asserts
+/// the invalidated edge stays absent from both `search_index_edges` and
+/// `_fathomdb_vector_rows` while the still-valid edge survives the rebuild
+/// (guard against a vacuous test that hides everything).
+#[test]
+fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "rebuild_tinvalid");
+
+    let embedder = Arc::new(DeterministicEmbedder::new(8));
+    let (acme_cursor, globex_cursor) = {
+        let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+
+exec
+/bin/bash -c "sed -n '240,520p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+
+        let older = PreparedWrite::Edge {
+            kind: "works_for".to_string(),
+            from: "bob".to_string(),
+            to: "acme".to_string(),
+            source_id: Some("doc-acme".to_string()),
+            logical_id: Some("edge-acme".to_string()),
+            body: Some("Bob works for Acme".to_string()),
+            t_valid: Some("2019-01-01T00:00:00Z".to_string()),
+            t_invalid: None,
+            confidence: Some(0.9),
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+            temporal_fallback: None,
+        };
+        let newer = PreparedWrite::Edge {
+            kind: "works_for".to_string(),
+            from: "bob".to_string(),
+            to: "globex".to_string(),
+            source_id: Some("doc-globex".to_string()),
+            logical_id: Some("edge-globex".to_string()),
+            body: Some("Bob works for Globex".to_string()),
+            t_valid: Some("2022-01-01T00:00:00Z".to_string()),
+            t_invalid: None,
+            confidence: Some(0.8),
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+            temporal_fallback: None,
+        };
+        let receipt = opened.engine.write(&[older, newer]).expect("seed two competing edges");
+        assert_eq!(receipt.row_cursors.len(), 2, "batch of two edges");
+        let acme_cursor = receipt.row_cursors[0];
+        let globex_cursor = receipt.row_cursors[1];
+
+        opened.engine.drain(10_000).expect("drain seed writes");
+
+        // Guard: both edges are materialized (FTS + vec) before consolidation.
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert_eq!(edge_fts_count(&conn, "acme"), 1, "seed: acme edge must be FTS-indexed");
+            assert_eq!(edge_fts_count(&conn, "globex"), 1, "seed: globex edge must be FTS-indexed");
+        }
+        assert!(
+            opened.engine.has_vector_for_cursor_for_test(acme_cursor).expect("has_vector acme"),
+            "seed: acme edge must be vector-projected"
+        );
+        assert!(
+            opened.engine.has_vector_for_cursor_for_test(globex_cursor).expect("has_vector globex"),
+            "seed: globex edge must be vector-projected"
+        );
+
+        // Consolidate via the REAL provider path: the deterministic stub
+        // harness keeps the latest `t_valid` (globex) and invalidates the
+        // older competing edge (acme) at the winner's `t_valid` — a PAST
+        // timestamp, so acme is immediately "ended" per the recency filter
+        // (mirrors `apply_consolidate_verdicts`'s `ended` check).
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/slice15_consolidate/stub_consolidate_harness.py");
+        assert!(
+            script.exists(),
+            "consolidate stub harness fixture must exist at {}",
+            script.display()
+        );
+        let cmd = vec!["python3".to_string(), script.to_string_lossy().to_string()];
+        let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+        let axes = vec![ConsolidateAxis {
+            subject_logical_id: "bob".to_string(),
+            relation: "works_for".to_string(),
+        }];
+        let consolidate_receipt = opened
+            .engine
+            .consolidate_with_provider(&cmd_refs, &axes)
+            .expect("consolidate_with_provider must succeed with stub harness");
+        assert_eq!(consolidate_receipt.edges_invalidated, 1, "acme must be invalidated");
+        assert_eq!(consolidate_receipt.edges_kept, 1, "globex must be kept");
+
+        // The bug under test: a full rebuild truncates + re-materializes every
+        // FTS/vec shadow from `canonical_edges` — this MUST NOT re-surface the
+        // now-`t_invalid`-excluded acme edge. If the projection scheduler's
+        // pending-work probe does not mirror the same filter, this `drain()`
+        // would hang forever on a phantom-pending invalidated edge.
+        opened.engine.rebuild_projections().expect("rebuild_projections");
+        opened
+            .engine
+            .drain(10_000)
+            .expect("post-rebuild drain must not hang on a phantom-pending invalidated edge");
+
+        (acme_cursor, globex_cursor)
+    };
+
+    let conn = Connection::open(&path).unwrap();
+
+    assert_eq!(
+        edge_fts_count(&conn, "acme"),
+        0,
+        "rebuild must NOT re-surface the t_invalid-excluded edge in search_index_edges"
+    );
+    assert_eq!(
+        edge_fts_count(&conn, "globex"),
+        1,
+        "rebuild must keep the still-valid edge in search_index_edges (guard against a vacuous test)"
+    );
+
+    assert_eq!(
+        vector_row_count(&conn, acme_cursor),
+        0,
+        "rebuild must NOT re-materialize the invalidated edge's vector row"
+    );
+    assert_eq!(
+        vector_row_count(&conn, globex_cursor),
+        1,
+        "rebuild must keep the still-valid edge's vector row (guard against a vacuous test)"
+    );
+}
+
+exec
+/bin/bash -c "sed -n '520,900p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+codex
+The test covers the provider path rather than a direct SQL poke: it seeds two competing `works_for` edges, runs `consolidate_with_provider` through the fixture, rebuilds, and checks both FTS and vector rows with a surviving valid edge as a control. I’m locating the exact library call sites now.
+codex
+Several search commands are being rejected by the execution sandbox before they run, including `git`, `grep`, `rg`, and `wc`. Plain file reads are working, so I’m switching to line-numbered `sed`/`awk` reads around the known function names and SQL blocks.
+codex
+`awk` is also blocked by the wrapper, but `sed` pattern addressing is available. I’m using `sed`’s own search/line-printing to get line numbers and contexts for the three SQL sites.
+exec
+/bin/bash -c "sed -n '/search_index_edges/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+exec
+/bin/bash -c "sed -n '/fn rebuild_shadow_state/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/fn next_pending_projection_jobs/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/fn database_has_pending_projection_work/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+1065
+1075
+1811
+3506
+3549
+5302
+5304
+5399
+5401
+5427
+5449
+6500
+6583
+6602
+6604
+6606
+6608
+6609
+6785
+6843
+6847
+6849
+6853
+10138
+10142
+
+ succeeded in 0ms:
+5387
+8060
+8123
+
+exec
+/bin/bash -c "sed -n '/database_has_pending_projection_work/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+913
+2619
+2670
+3453
+3541
+8123
+
+codex
+The library sites are at `rebuild_shadow_state` around line 5387, the queue builder around 8060, and the pending-work probe around 8123. I’m reading those blocks with line numbers and enough surrounding code to catch aliasing and scheduler behavior.
+exec
+/bin/bash -c "sed -n '5360,5475{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+5360
+            source_ref: source_id.to_string(),
+5361
+            nodes_excised,
+5362
+            edges_excised,
+5363
+            projections_invalidated: shadow_invalidated,
+5364
+        })
+5365
+    }
+5366
+
+5367
+    #[cfg(feature = "operator")]
+5368
+    fn run_rebuild(
+5369
+        &self,
+5370
+        include_fts: bool,
+5371
+        kind: RebuildKind,
+5372
+    ) -> Result<RebuildReport, EngineError> {
+5373
+        self.projection_runtime.set_frozen(true);
+5374
+        // Drain MUST succeed: rebuild_shadow_state truncates shadow rows,
+5375
+        // and SQLite-WAL allows a worker that already dequeued a job to
+5376
+        // commit its `INSERT OR IGNORE INTO _fathomdb_vector_rows / vec0`
+5377
+        // after our truncate releases the writer lock, leaving stale
+5378
+        // rows. Surfacing the timeout (instead of swallowing it) lets the
+5379
+        // operator retry rather than silently corrupt the rebuild.
+5380
+        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+5381
+        let result = drain_result.and_then(|()| self.rebuild_shadow_state(include_fts, kind));
+5382
+        self.projection_runtime.set_frozen(false);
+5383
+        result
+5384
+    }
+5385
+
+5386
+    #[cfg(feature = "operator")]
+5387
+    fn rebuild_shadow_state(
+5388
+        &self,
+5389
+        include_fts: bool,
+5390
+        kind: RebuildKind,
+5391
+    ) -> Result<RebuildReport, EngineError> {
+5392
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+5393
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+5394
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+5395
+        let mut rows_invalidated: u64 = 0;
+5396
+        if include_fts {
+5397
+            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+5398
+            rows_invalidated = rows_invalidated.saturating_add(n as u64);
+5399
+            // fix-26 [P2]: also truncate edge FTS shadow (G11 search_index_edges).
+5400
+            let n = tx
+5401
+                .execute("DELETE FROM search_index_edges", [])
+5402
+                .map_err(|_| EngineError::Storage)?;
+5403
+            rows_invalidated = rows_invalidated.saturating_add(n as u64);
+5404
+        }
+5405
+        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
+5406
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+5407
+        let n = tx
+5408
+            .execute("DELETE FROM _fathomdb_vector_rows", [])
+5409
+            .map_err(|_| EngineError::Storage)?;
+5410
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+5411
+        let n = tx
+5412
+            .execute("DELETE FROM _fathomdb_projection_terminal", [])
+5413
+            .map_err(|_| EngineError::Storage)?;
+5414
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+5415
+        store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+5416
+        let mut rows_rebuilt: u64 = 0;
+5417
+        if include_fts {
+5418
+            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+5419
+                tx.execute(
+5420
+                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+5421
+                    params![row.body, row.kind, row.cursor],
+5422
+                )
+5423
+                .map_err(|_| EngineError::Storage)?;
+5424
+                rows_rebuilt = rows_rebuilt.saturating_add(1);
+5425
+            }
+5426
+            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
+5427
+            // with non-null bodies (G11 search_index_edges).
+5428
+            // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
+5429
+            // §9 [P2]): mirror the graph-traversal recency filter
+5430
+            // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
+5431
+            // here too, so a full rebuild does not re-surface an edge that
+5432
+            // recency consolidation already invalidated.
+5433
+            let mut edge_stmt = tx
+5434
+                .prepare(
+5435
+                    "SELECT write_cursor, kind, body FROM canonical_edges \
+5436
+                     WHERE superseded_at IS NULL AND body IS NOT NULL \
+5437
+                       AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
+5438
+                )
+5439
+                .map_err(|_| EngineError::Storage)?;
+5440
+            let edge_rows: Vec<(i64, String, String)> = edge_stmt
+5441
+                .query_map([], |row| {
+5442
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+5443
+                })
+5444
+                .map_err(|_| EngineError::Storage)?
+5445
+                .collect::<rusqlite::Result<_>>()
+5446
+                .map_err(|_| EngineError::Storage)?;
+5447
+            for (cursor, kind, body) in edge_rows {
+5448
+                tx.execute(
+5449
+                    "INSERT INTO search_index_edges(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+5450
+                    params![body, kind, cursor],
+5451
+                )
+5452
+                .map_err(|_| EngineError::Storage)?;
+5453
+                rows_rebuilt = rows_rebuilt.saturating_add(1);
+5454
+            }
+5455
+        }
+5456
+        let projection_cursor_after =
+5457
+            load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+5458
+        tx.commit().map_err(|_| EngineError::Storage)?;
+5459
+        Ok(RebuildReport { kind, rows_invalidated, rows_rebuilt, projection_cursor_after })
+5460
+    }
+5461
+
+5462
+    fn ensure_open(&self) -> Result<(), EngineError> {
+5463
+        if self.closed.load(Ordering::SeqCst) {
+5464
+            return Err(EngineError::Closing);
+5465
+        }
+5466
+
+5467
+        Ok(())
+5468
+    }
+5469
+}
+5470
+
+5471
+fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
+5472
+    !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
+5473
+}
+5474
+
+5475
+// 0.7.0 Pack 2 (ADR-0.7.0-vector-binary-quant § 2; handoff § 2.2):
+
+exec
+/bin/bash -c "sed -n '8020,8175{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+8020
+                        continue;
+8021
+                    }
+8022
+                    Err(RuntimeEmbedderError::Failed { .. }) => {
+8023
+                        last_code = "EmbedderError";
+8024
+                        continue;
+8025
+                    }
+8026
+                }
+8027
+            }
+8028
+            None => {
+8029
+                last_code = "EmbedderNotConfiguredError";
+8030
+                continue;
+8031
+            }
+8032
+        };
+8033
+
+8034
+        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+8035
+            last_code = "EmbedderDimensionMismatchError";
+8036
+            continue;
+8037
+        }
+8038
+
+8039
+        let blob = encode_vector_blob(&vector);
+8040
+        // EU-5a2 mean-centering apply path (projection write side). The
+8041
+        // f32 BLOB persisted is ALWAYS un-centered; `bin_blob` carries
+8042
+        // the (possibly centered) f32 fed to `vec_quantize_binary`. The
+8043
+        // centering decision is finalized in `commit_projection_outcomes`
+8044
+        // where the writer connection is in-hand and the read of
+8045
+        // `_fathomdb_embedder_profiles.mean_vec` is in the same tx as
+8046
+        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+8047
+        // MC-required, so `bin_blob == blob` throughout EU-5a2.
+8048
+        let bin_blob = blob.clone();
+8049
+        return ProjectionOutcome::Success {
+8050
+            cursor: job.cursor,
+8051
+            kind: job.kind.clone(),
+8052
+            blob,
+8053
+            bin_blob,
+8054
+        };
+8055
+    }
+8056
+
+8057
+    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+8058
+}
+8059
+
+8060
+fn next_pending_projection_jobs(
+8061
+    connection: &Connection,
+8062
+    in_flight: &BTreeSet<u64>,
+8063
+    max_jobs: usize,
+8064
+) -> rusqlite::Result<Vec<ProjectionJob>> {
+8065
+    if max_jobs == 0 {
+8066
+        return Ok(Vec::new());
+8067
+    }
+8068
+    let cursor = load_projection_cursor(connection)?;
+8069
+    // Over-fetch by `in_flight.len()` so the post-filter still returns
+8070
+    // up to `max_jobs` after skipping cursors already in-flight.
+8071
+    let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+8072
+    // G11 (Slice 15) — UNION extends the projection queue to include edge bodies.
+8073
+    // Edge bodies use kind `'edge_fact'` so `resolve_source_type` maps them to
+8074
+    // `source_type = 'edge_fact'` in `vector_default` (partition correctness).
+8075
+    // The UNION is ordered by write_cursor so projection proceeds in
+8076
+    // insertion order across nodes and edges.
+8077
+    let sql = format!(
+8078
+        "SELECT write_cursor, kind, body FROM (
+8079
+             SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+8080
+             FROM canonical_nodes
+8081
+             JOIN _fathomdb_vector_kinds
+8082
+               ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+8083
+             LEFT JOIN _fathomdb_projection_terminal
+8084
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+8085
+             WHERE canonical_nodes.write_cursor > ?1
+8086
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+8087
+
+8088
+             UNION ALL
+8089
+
+8090
+             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+8091
+             FROM canonical_edges
+8092
+             JOIN _fathomdb_vector_kinds
+8093
+               ON _fathomdb_vector_kinds.kind = 'edge_fact'
+8094
+             LEFT JOIN _fathomdb_projection_terminal
+8095
+               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+8096
+             WHERE canonical_edges.write_cursor > ?1
+8097
+               AND canonical_edges.body IS NOT NULL
+8098
+               AND canonical_edges.superseded_at IS NULL
+8099
+               AND (canonical_edges.t_invalid IS NULL
+8100
+                    OR datetime(canonical_edges.t_invalid) > datetime('now'))
+8101
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+8102
+         ) ORDER BY write_cursor
+8103
+         LIMIT {sql_limit}"
+8104
+    );
+8105
+    let mut statement = connection.prepare_cached(&sql)?;
+8106
+    let rows = statement.query_map([cursor], |row| {
+8107
+        Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
+8108
+    })?;
+8109
+    let mut jobs = Vec::with_capacity(max_jobs);
+8110
+    for row in rows {
+8111
+        let job = row?;
+8112
+        if in_flight.contains(&job.cursor) {
+8113
+            continue;
+8114
+        }
+8115
+        jobs.push(job);
+8116
+        if jobs.len() >= max_jobs {
+8117
+            break;
+8118
+        }
+8119
+    }
+8120
+    Ok(jobs)
+8121
+}
+8122
+
+8123
+fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+8124
+    let connection = open_runtime_connection(path)?;
+8125
+    let cursor = load_projection_cursor(&connection)?;
+8126
+    // Check canonical_nodes for un-projected work.
+8127
+    let has_node_work: bool = connection
+8128
+        .query_row(
+8129
+            "SELECT 1
+8130
+             FROM canonical_nodes
+8131
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+8132
+             LEFT JOIN _fathomdb_projection_terminal
+8133
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+8134
+             WHERE canonical_nodes.write_cursor > ?1
+8135
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+8136
+             LIMIT 1",
+8137
+            [cursor],
+8138
+            |_row| Ok(true),
+8139
+        )
+8140
+        .or_else(|err| match err {
+8141
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+8142
+            _ => Err(err),
+8143
+        })?;
+8144
+    if has_node_work {
+8145
+        return Ok(true);
+8146
+    }
+8147
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+8148
+    // that were not projected before the engine closed. Without this check,
+8149
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+8150
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+8151
+    // scheduler does not pick up stale tombstoned rows as projection work.
+8152
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+8153
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+8154
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+8155
+    // this mirror, a rebuild-truncated t_invalid edge that
+8156
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+8157
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+8158
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+8159
+    connection
+8160
+        .query_row(
+8161
+            "SELECT 1
+8162
+             FROM canonical_edges ce
+8163
+             LEFT JOIN _fathomdb_projection_terminal pt
+8164
+               ON pt.write_cursor = ce.write_cursor
+8165
+             WHERE ce.body IS NOT NULL
+8166
+               AND ce.superseded_at IS NULL
+8167
+               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now'))
+8168
+               AND pt.write_cursor IS NULL
+8169
+             LIMIT 1",
+8170
+            [],
+8171
+            |_row| Ok(true),
+8172
+        )
+8173
+        .or_else(|err| match err {
+8174
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+8175
+            _ => Err(err),
+
+exec
+/bin/bash -c "sed -n '6900,6970{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+6900
+        }
+6901
+
+6902
+        // Resolve + emit: a seed is `resolved` only if an ACTIVE canonical_node carries
+6903
+        // that logical_id (dangling edge endpoints count considered-not-resolved). A
+6904
+        // resolved seed is BOTH a BFS root AND emitted as a graph-arm candidate (depth
+6905
+        // 0, hop_score 1.0) — so an edge-only query match surfaces the connected ENTITY
+6906
+        // nodes, not just the fact body (codex §9 [P2]). Seeds whose body is already in
+6907
+        // the two-arm result are skipped; the cap is respected.
+6908
+        let mut active_stmt = tx.prepare(
+6909
+            "SELECT kind, body, write_cursor FROM canonical_nodes \
+6910
+             WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+6911
+        )?;
+6912
+        for (lid, source_id) in candidate_seeds {
+6913
+            stats.seeds_considered += 1;
+6914
+            let row: Option<(String, String, i64)> = active_stmt
+6915
+                .query_row(rusqlite::params![&lid], |r| {
+6916
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+6917
+                })
+6918
+                .optional()?;
+6919
+            if let Some((kind, body, write_cursor)) = row {
+6920
+                stats.seeds_resolved += 1;
+6921
+                if visited.insert(lid.clone()) {
+6922
+                    // Cause-A: the seed's `logical_id` is in hand (`lid`) — derive the
+6923
+                    // stable id before `lid` is moved onto the frontier (zero extra query).
+6924
+                    let stable_id = Some(derive_stable_id(Some(&lid), &body));
+6925
+                    frontier.push_back((lid, 0));
+6926
+                    if !seed_bodies.contains(body.as_str()) && candidates.len() < cap {
+6927
+                        // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
+6928
+                        // 'unknown' kind (mirrors the Phase-2 neighbor scoring).
+6929
+                        let score = if kind == "unknown" { SYNTHESIZED_PENALTY } else { 1.0 };
+6930
+                        candidates.push(SearchHit {
+6931
+                            id: write_cursor as u64,
+6932
+                            kind,
+6933
+                            body,
+6934
+                            score,
+6935
+                            branch: SoftFallbackBranch::GraphArm,
+6936
+                            source_id,
+6937
+                            ce_score: None,
+6938
+                            stable_id,
+6939
+                        });
+6940
+                    }
+6941
+                }
+6942
+            }
+6943
+        }
+6944
+    }
+6945
+    stats.frontier_nonempty = !frontier.is_empty();
+6946
+
+6947
+    // Phase 2: BFS over canonical_edges (temporal filter). `candidates` already
+6948
+    // holds the depth-0 emitted seeds; BFS appends the reachable neighbors.
+6949
+    // Both statements are prepared ONCE outside the loops — re-preparing inside
+6950
+    // would issue O(frontier_size × neighbors) sqlite3_prepare_v2 calls.
+6951
+    let mut edge_stmt = tx.prepare(
+6952
+        // G0 Phase-2 (BLOCK-2): carry the traversed edge's `source_id` so a
+6953
+        // graph-reached neighbor can resolve back to the session it was extracted
+6954
+        // from. `ORDER BY e.write_cursor` makes the traversal deterministic: when
+6955
+        // several active edges connect this node to the SAME neighbor with
+6956
+        // different `source_id`s, the earliest-written edge wins the `visited`
+6957
+        // dedup, so the carried provenance is stable (not SQLite-order-dependent).
+6958
+        // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
+6959
+        // `LIMIT 1` lookup for the same reason.)
+6960
+        "SELECT e.from_id, e.to_id, e.source_id \
+6961
+         FROM canonical_edges e \
+6962
+         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+6963
+           AND e.superseded_at IS NULL \
+6964
+           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
+6965
+           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+6966
+         ORDER BY e.write_cursor \
+6967
+         LIMIT 64",
+6968
+    )?;
+6969
+    // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
+6970
+    // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
+
+exec
+/bin/bash -c "sed -n '8175,8205{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+8175
+            _ => Err(err),
+8176
+        })
+8177
+}
+8178
+
+8179
+struct CanonicalNodeRow {
+8180
+    cursor: u64,
+8181
+    kind: String,
+8182
+    body: String,
+8183
+}
+8184
+
+8185
+/// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
+8186
+/// rows after the step-11 tokenizer-default upgrade drops + recreates the FTS5
+8187
+/// virtual table. Projection-only: it reads `canonical_nodes` (the source of
+8188
+/// truth, untouched) and rewrites the FTS shadow; it performs **no**
+8189
+/// source-record migration. Every canonical node already carries an FTS row at
+8190
+/// write time (the projection-time INSERT is unconditional), so reinserting
+8191
+/// every node exactly reproduces the prior index content under the new
+8192
+/// tokenizer. Runs in a single transaction on the writer connection before
+8193
+/// readers spawn.
+8194
+///
+8195
+/// Crash-retryable (fix-1): the reindex and its durable completion marker
+8196
+/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+8197
+/// commit together in ONE `BEGIN IMMEDIATE…COMMIT`. A crash before the commit
+8198
+/// rolls both back, leaving no marker; the next open re-runs. A crash after
+8199
+/// the commit finds the marker present and skips. Idempotent.
+8200
+fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> rusqlite::Result<()> {
+8201
+    let rows = canonical_node_rows(connection)?;
+8202
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+8203
+    let result = (|| {
+8204
+        connection.execute("DELETE FROM search_index", [])?;
+8205
+        {
+
+codex
+At the three edited sites, the added recency predicate matches the canonical `datetime(...) > datetime('now')` shape and uses the right table/alias in each context. I’m checking the projection cursor/drain logic next, because that determines whether the pending-work probe change is necessary rather than just cosmetic.
+exec
+/bin/bash -c "sed -n '/commit_projection_outcomes/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/ProjectionOutcome/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+316
+7736
+7821
+7849
+8043
+8480
+7712
+7765
+7824
+7842
+7844
+7945
+7953
+7960
+7970
+8003
+8049
+8057
+8482
+8508
+8606
+
+exec
+/bin/bash -c "sed -n '/fn drain/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/wait_for_idle/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/load_projection_cursor/=' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '/store_projection_cursor/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+4360
+4835
+4854
+904
+3458
+4362
+7687
+8158
+5457
+6356
+8068
+8125
+8414
+8467
+5415
+8428
+8476
+
+exec
+/bin/bash -c "sed -n '/_fathomdb_projection_terminal/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+2671
+3508
+3529
+3558
+5319
+5412
+6459
+6460
+6462
+8083
+8084
+8086
+8094
+8095
+8101
+8132
+8133
+8135
+8157
+8163
+8443
+8455
+8792
+8793
+8795
+
+codex
+The pending-work probe is not tied to the projection cursor threshold for edges, while the queue builder is. After rebuild truncates terminal rows and resets the cursor, skipped invalidated edges would remain terminal-less; I’m reading the commit path to confirm terminal rows are only created for queued jobs.
+exec
+/bin/bash -c "sed -n '4325,4385{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+4325
+            Some(preds) => self.read_list(kind, &preds, limit),
+4326
+        }
+4327
+    }
+4328
+
+4329
+    pub fn close(&self) -> Result<(), EngineError> {
+4330
+        self.closed.store(true, Ordering::SeqCst);
+4331
+        self.projection_runtime.stop();
+4332
+        // Uninstall profile callbacks before dropping the connections so
+4333
+        // SQLite cannot fire one last callback against a profile context
+4334
+        // whose Box is about to free. Per `dev/design/engine.md` § Close
+4335
+        // path step 6, readers drain before the writer connection so
+4336
+        // SQLite's last-handle checkpointer runs on the writer. Each
+4337
+        // reader worker uninstalls its own callback inside
+4338
+        // `reader_worker_loop` before dropping its connection, then
+4339
+        // exits — `shutdown` joins those threads here.
+4340
+        self.reader_pool.shutdown();
+4341
+        if let Ok(mut connection) = self.connection.lock() {
+4342
+            if let Some(conn) = connection.as_ref() {
+4343
+                uninstall_profile_callback(conn);
+4344
+            }
+4345
+            connection.take();
+4346
+        }
+4347
+        if let Ok(mut contexts) = self.profile_contexts.lock() {
+4348
+            contexts.clear();
+4349
+        }
+4350
+        if let Ok(mut lock) = self.lock.lock() {
+4351
+            lock.take();
+4352
+        }
+4353
+        Ok(())
+4354
+    }
+4355
+
+4356
+    /// Block until in-flight writes drain or `timeout_ms` elapses.
+4357
+    ///
+4358
+    /// Surface owned by `dev/interfaces/rust.md` § Engine-attached
+4359
+    /// instrumentation; semantics are owned by `dev/design/lifecycle.md`.
+4360
+    pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+4361
+        self.ensure_open()?;
+4362
+        if self.projection_runtime.wait_for_idle(timeout_ms) {
+4363
+            Ok(())
+4364
+        } else {
+4365
+            Err(EngineError::Scheduler)
+4366
+        }
+4367
+    }
+4368
+
+4369
+    /// Snapshot of engine-internal counters.
+4370
+    ///
+4371
+    /// Field set owned by `dev/design/lifecycle.md`.
+4372
+    #[must_use]
+4373
+    pub fn counters(&self) -> CounterSnapshot {
+4374
+        self.counters.snapshot()
+4375
+    }
+4376
+
+4377
+    /// Toggle response-cycle profiling.
+4378
+    ///
+4379
+    /// Per `dev/design/lifecycle.md` § Per-statement profiling, profiling
+4380
+    /// is an opt-in surface that is independently toggleable on a running
+4381
+    /// engine without restart. AC-005a locks runtime toggleability.
+4382
+    pub fn set_profiling(&self, enabled: bool) -> Result<(), EngineError> {
+4383
+        self.profiling_enabled.store(enabled, Ordering::Relaxed);
+4384
+        Ok(())
+4385
+    }
+
+exec
+/bin/bash -c "sed -n '7680,7760{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+7680
+                    Err(_) => return,
+7681
+                };
+7682
+            }
+7683
+        };
+7684
+
+7685
+        // EU-5f — isolate worker faults. A panic inside `embed()` (or the
+7686
+        // commit) must not skip the state cleanup below, or `active_jobs`
+7687
+        // would stay elevated forever and `wait_for_idle` / `drain` would
+7688
+        // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
+7689
+        // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
+7690
+        // back on unwind, leaving the connection clean for reuse.
+7691
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+7692
+            run_projection_jobs(&shared, &mut connection, &jobs);
+7693
+        }))
+7694
+        .is_err();
+7695
+        if panicked {
+7696
+            commit_projection_panic_failures(&shared, &mut connection, &jobs);
+7697
+        }
+7698
+
+7699
+        if let Ok(mut state) = shared.state.lock() {
+7700
+            state.active_jobs = state.active_jobs.saturating_sub(jobs.len());
+7701
+            for job in &jobs {
+7702
+                state.in_flight.remove(&job.cursor);
+7703
+            }
+7704
+            if !state.stopping {
+7705
+                state.pending_scan = true;
+7706
+            }
+7707
+            shared.state_cvar.notify_all();
+7708
+        }
+7709
+    }
+7710
+}
+7711
+
+7712
+enum ProjectionOutcome {
+7713
+    /// `blob` is the un-centered f32 BLOB persisted to
+7714
+    /// `vector_default.embedding`. `bin_blob` is the (possibly centered)
+7715
+    /// f32 BLOB fed to `vec_quantize_binary` for the sign-bit column.
+7716
+    /// EU-5a2: `bin_blob == blob` unless the identity is MC-required
+7717
+    /// AND a mean_vec is pinned.
+7718
+    Success {
+7719
+        cursor: u64,
+7720
+        kind: String,
+7721
+        blob: Vec<u8>,
+7722
+        bin_blob: Vec<u8>,
+7723
+    },
+7724
+    Failure {
+7725
+        cursor: u64,
+7726
+        failure_code: &'static str,
+7727
+    },
+7728
+}
+7729
+
+7730
+fn run_projection_jobs(
+7731
+    shared: &ProjectionRuntimeShared,
+7732
+    connection: &mut Connection,
+7733
+    jobs: &[ProjectionJob],
+7734
+) {
+7735
+    let outcomes = embed_projection_batch(shared, jobs);
+7736
+    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+7737
+}
+7738
+
+7739
+/// Embed a whole commit-batch in ONE `embed_batch` call (amortizes per-call
+7740
+/// overhead; saturates the GPU — minutes -> seconds on a full-corpus embed). The
+7741
+/// batched path is the fast HAPPY path only; on ANY anomaly — no embedder, breaker
+7742
+/// open, single job, batch timeout/failure, row-count or per-row dimension mismatch
+7743
+/// — it falls back to the proven per-job [`run_projection_job`], which carries the
+7744
+/// full retry + circuit-breaker + failure-isolation semantics. So batching can only
+7745
+/// make the common case faster, never change correctness. A panic inside the batch
+7746
+/// embed resume-unwinds exactly like the per-embed watchdog, so the worker's
+7747
+/// batch-level `catch_unwind` records `ProjectionPanic` as before.
+7748
+///
+7749
+/// Batching is **opt-in** via `FATHOMDB_PROJECTION_BATCH=1` (`true`/`on` accepted).
+7750
+/// It reshapes the PR-9 per-embed watchdog/breaker accounting into per-batch, so the
+7751
+/// conservative DEFAULT keeps the proven per-job path — leaving every PR-9 safety
+7752
+/// test (watchdog, serialization, circuit breaker) behaving exactly as before. The
+7753
+/// eval GPU-embed run sets the env to get the batched-forward speedup (minutes ->
+7754
+/// seconds), where the per-job fallback below still backs every error case.
+7755
+fn projection_batch_enabled() -> bool {
+7756
+    matches!(
+7757
+        std::env::var("FATHOMDB_PROJECTION_BATCH").ok().as_deref(),
+7758
+        Some("1") | Some("true") | Some("on")
+7759
+    )
+7760
+}
+
+exec
+/bin/bash -c "sed -n '8400,8495{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+8400
+}
+8401
+
+8402
+#[cfg(feature = "operator")]
+8403
+fn locator_from_rusqlite_error(err: &rusqlite::Error) -> CorruptionLocator {
+8404
+    let extended = err.sqlite_error().map(|inner| inner.extended_code).unwrap_or(0);
+8405
+    CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: extended }
+8406
+}
+8407
+
+8408
+fn open_runtime_connection(path: &Path) -> rusqlite::Result<Connection> {
+8409
+    let connection = Connection::open(path)?;
+8410
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+8411
+    Ok(connection)
+8412
+}
+8413
+
+8414
+fn load_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+8415
+    connection
+8416
+        .query_row(
+8417
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+8418
+            [PROJECTION_CURSOR_KEY],
+8419
+            |row| row.get::<_, String>(0),
+8420
+        )
+8421
+        .map(|value| value.parse::<u64>().unwrap_or(0))
+8422
+        .or_else(|err| match err {
+8423
+            rusqlite::Error::QueryReturnedNoRows => Ok(0),
+8424
+            _ => Err(err),
+8425
+        })
+8426
+}
+8427
+
+8428
+fn store_projection_cursor(connection: &Connection, cursor: u64) -> rusqlite::Result<()> {
+8429
+    connection.execute(
+8430
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+8431
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+8432
+        params![PROJECTION_CURSOR_KEY, cursor.to_string()],
+8433
+    )?;
+8434
+    Ok(())
+8435
+}
+8436
+
+8437
+fn record_projection_terminal(
+8438
+    connection: &Connection,
+8439
+    cursor: u64,
+8440
+    state: &str,
+8441
+) -> rusqlite::Result<()> {
+8442
+    connection.execute(
+8443
+        "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) VALUES(?1, ?2)",
+8444
+        params![cursor, state],
+8445
+    )?;
+8446
+    Ok(())
+8447
+}
+8448
+
+8449
+fn terminal_state_for_cursor(
+8450
+    connection: &Connection,
+8451
+    cursor: u64,
+8452
+) -> rusqlite::Result<Option<String>> {
+8453
+    connection
+8454
+        .query_row(
+8455
+            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+8456
+            [cursor],
+8457
+            |row| row.get::<_, String>(0),
+8458
+        )
+8459
+        .map(Some)
+8460
+        .or_else(|err| match err {
+8461
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+8462
+            _ => Err(err),
+8463
+        })
+8464
+}
+8465
+
+8466
+fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+8467
+    let mut cursor = load_projection_cursor(connection)?;
+8468
+    loop {
+8469
+        let next = cursor.saturating_add(1);
+8470
+        if terminal_state_for_cursor(connection, next)?.is_some() {
+8471
+            cursor = next;
+8472
+        } else {
+8473
+            break;
+8474
+        }
+8475
+    }
+8476
+    store_projection_cursor(connection, cursor)?;
+8477
+    Ok(cursor)
+8478
+}
+8479
+
+8480
+fn commit_projection_outcomes(
+8481
+    connection: &mut Connection,
+8482
+    outcomes: &[ProjectionOutcome],
+8483
+    shared: &ProjectionRuntimeShared,
+8484
+) -> rusqlite::Result<()> {
+8485
+    let embedder_identity = &shared.embedder_identity;
+8486
+    let mc = identity_requires_mean_centering(embedder_identity);
+8487
+    // EU-5f — serialize the whole commit across workers so the at-pin
+8488
+    // re-quantize sees a totally-ordered history (see `commit_gate`).
+8489
+    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+8490
+    let tx = connection.transaction()?;
+8491
+    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+8492
+    // mid-batch (set to `Some` after a threshold-crossing row below).
+8493
+    let mut current_mean: Option<Vec<f32>> = if mc {
+8494
+        tx.query_row(
+8495
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+
+codex
+Terminal rows are written only from projection outcomes, and cursor advancement walks contiguous terminal rows. That supports the implementer’s claim: after rebuild, an excluded edge that is still visible to the pending probe would make idle detection observe permanent work even though the scheduler intentionally never queues it.
+exec
+/bin/bash -c "sed -n '8480,8585{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+8480
+fn commit_projection_outcomes(
+8481
+    connection: &mut Connection,
+8482
+    outcomes: &[ProjectionOutcome],
+8483
+    shared: &ProjectionRuntimeShared,
+8484
+) -> rusqlite::Result<()> {
+8485
+    let embedder_identity = &shared.embedder_identity;
+8486
+    let mc = identity_requires_mean_centering(embedder_identity);
+8487
+    // EU-5f — serialize the whole commit across workers so the at-pin
+8488
+    // re-quantize sees a totally-ordered history (see `commit_gate`).
+8489
+    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+8490
+    let tx = connection.transaction()?;
+8491
+    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+8492
+    // mid-batch (set to `Some` after a threshold-crossing row below).
+8493
+    let mut current_mean: Option<Vec<f32>> = if mc {
+8494
+        tx.query_row(
+8495
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+8496
+            [],
+8497
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+8498
+        )
+8499
+        .ok()
+8500
+        .flatten()
+8501
+        .map(|bytes| decode_vector_blob(&bytes))
+8502
+    } else {
+8503
+        None
+8504
+    };
+8505
+    let mut staged_events: Vec<EmbedderEvent> = Vec::new();
+8506
+    for outcome in outcomes {
+8507
+        match outcome {
+8508
+            ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
+8509
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+8510
+                    continue;
+8511
+                }
+8512
+                // EU-5f — feed the streaming accumulator and decide the pin
+8513
+                // atomically under the accumulator lock (add -> count ->
+8514
+                // take), so exactly one row/worker can cross the threshold.
+8515
+                // Only while MC-required and not yet pinned.
+8516
+                let pin_mean: Option<Vec<f32>> = if mc && current_mean.is_none() {
+8517
+                    let mut acc = shared.mean_accumulator.lock().unwrap_or_else(|p| p.into_inner());
+8518
+                    match acc.as_mut() {
+8519
+                        Some(a) => {
+8520
+                            a.add(&decode_vector_blob(bin_blob));
+8521
+                            if a.count() >= MEAN_VEC_PIN_THRESHOLD {
+8522
+                                let mean = a.materialize();
+8523
+                                *acc = None;
+8524
+                                Some(mean)
+8525
+                            } else {
+8526
+                                None
+8527
+                            }
+8528
+                        }
+8529
+                        None => None,
+8530
+                    }
+8531
+                } else {
+8532
+                    None
+8533
+                };
+8534
+
+8535
+                let source_type = resolve_source_type(kind).map_err(|_| {
+8536
+                    rusqlite::Error::SqliteFailure(
+8537
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+8538
+                        Some(format!("unknown kind for source_type mapping: {kind}")),
+8539
+                    )
+8540
+                })?;
+8541
+                let now_unix =
+8542
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+8543
+                        as i64;
+8544
+                tx.execute(
+8545
+                    "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+8546
+                    params![cursor, kind, cursor],
+8547
+                )?;
+8548
+                // EU-5a2/EU-5f — sign-quant input is the mean-subtracted
+8549
+                // vector iff a mean is live (`current_mean`); otherwise the
+8550
+                // un-centered `bin_blob`. A row inserted just before the
+8551
+                // crossing is centered retroactively by the re-quantize
+8552
+                // pass below.
+8553
+                let centered_blob: Vec<u8> = match &current_mean {
+8554
+                    Some(mean) if mean.len() * 4 == bin_blob.len() => {
+8555
+                        encode_vector_blob(&subtract_mean(&decode_vector_blob(bin_blob), mean))
+8556
+                    }
+8557
+                    _ => bin_blob.clone(),
+8558
+                };
+8559
+                tx.execute(
+8560
+                    // Slice 10 / G10 — `status` ships the empty-string sentinel
+8561
+                    // (vec0 TEXT metadata is NOT NULL-able); no real population
+8562
+                    // source yet (reserved-gap candidate 13).
+8563
+                    "INSERT OR IGNORE INTO vector_default(
+8564
+                        rowid, embedding, embedding_bin, source_type, kind, created_at, status
+8565
+                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+8566
+                    params![cursor, blob, centered_blob, source_type, kind, now_unix],
+8567
+                )?;
+8568
+                record_projection_terminal(&tx, *cursor, "up_to_date")?;
+8569
+
+8570
+                // EU-5f — this row crossed the threshold: pin the mean and
+8571
+                // re-quantize every row written so far (incl. earlier rows
+8572
+                // in this same tx, which are visible to the SELECT) within
+8573
+                // the same transaction so the pin is atomic.
+8574
+                if let Some(mean) = pin_mean {
+8575
+                    tx.execute(
+8576
+                        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+8577
+                        params![encode_vector_blob(&mean)],
+8578
+                    )?;
+8579
+                    let rows: Vec<(i64, Vec<u8>)> = {
+8580
+                        let mut statement = tx.prepare(
+8581
+                            "SELECT rowid, embedding FROM vector_default ORDER BY rowid",
+8582
+                        )?;
+8583
+                        let mapped = statement.query_map([], |row| {
+8584
+                            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+8585
+                        })?;
+
+exec
+/bin/bash -c "sed -n '7580,7680{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+7580
+    loop {
+7581
+        let in_flight = {
+7582
+            let mut state = match shared.state.lock() {
+7583
+                Ok(state) => state,
+7584
+                Err(_) => return,
+7585
+            };
+7586
+            while !state.stopping
+7587
+                && (!state.pending_scan
+7588
+                    || state.frozen
+7589
+                    || state.active_jobs + state.queued_jobs >= PROJECTION_INFLIGHT_LIMIT)
+7590
+            {
+7591
+                state = match shared.state_cvar.wait(state) {
+7592
+                    Ok(state) => state,
+7593
+                    Err(_) => return,
+7594
+                };
+7595
+            }
+7596
+            if state.stopping {
+7597
+                return;
+7598
+            }
+7599
+            state.pending_scan = false;
+7600
+            state.in_flight.clone()
+7601
+        };
+7602
+
+7603
+        // Fetch up to the in-flight budget in one SQL roundtrip and
+7604
+        // enqueue them as a batch — previously this loop fetched ONE job
+7605
+        // per cycle, which capped projection throughput at one row per
+7606
+        // scanner/worker handshake regardless of how much work was queued
+7607
+        // in canonical_nodes.
+7608
+        let budget = {
+7609
+            let state = match shared.state.lock() {
+7610
+                Ok(state) => state,
+7611
+                Err(_) => return,
+7612
+            };
+7613
+            PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
+7614
+        };
+7615
+        let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
+7616
+        match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
+7617
+            Ok(jobs) if !jobs.is_empty() => {
+7618
+                if let Ok(mut state) = shared.state.lock() {
+7619
+                    state.queued_jobs = state.queued_jobs.saturating_add(jobs.len());
+7620
+                    for job in &jobs {
+7621
+                        state.in_flight.insert(job.cursor);
+7622
+                    }
+7623
+                    state.pending_scan = true;
+7624
+                    shared.state_cvar.notify_all();
+7625
+                }
+7626
+                if let Ok(mut queue) = shared.queue.lock() {
+7627
+                    for job in jobs {
+7628
+                        queue.push_back(job);
+7629
+                    }
+7630
+                    shared.queue_cvar.notify_all();
+7631
+                }
+7632
+            }
+7633
+            Ok(_) => {}
+7634
+            Err(_) => {
+7635
+                if let Ok(mut state) = shared.state.lock() {
+7636
+                    state.pending_scan = false;
+7637
+                    shared.state_cvar.notify_all();
+7638
+                }
+7639
+            }
+7640
+        }
+7641
+    }
+7642
+}
+7643
+
+7644
+fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
+7645
+    let mut connection = match open_runtime_connection(&shared.path) {
+7646
+        Ok(connection) => connection,
+7647
+        Err(_) => return,
+7648
+    };
+7649
+    if ensure_vector_partition(&mut connection, shared.embedder_identity.dimension).is_err() {
+7650
+        return;
+7651
+    }
+7652
+    loop {
+7653
+        let jobs = {
+7654
+            let mut queue = match shared.queue.lock() {
+7655
+                Ok(queue) => queue,
+7656
+                Err(_) => return,
+7657
+            };
+7658
+            loop {
+7659
+                let stopping = shared.state.lock().map(|state| state.stopping).unwrap_or(true);
+7660
+                if stopping && queue.is_empty() {
+7661
+                    return;
+7662
+                }
+7663
+                if let Some(job) = queue.pop_front() {
+7664
+                    let mut jobs = vec![job];
+7665
+                    while jobs.len() < PROJECTION_COMMIT_BATCH {
+7666
+                        let Some(job) = queue.pop_front() else {
+7667
+                            break;
+7668
+                        };
+7669
+                        jobs.push(job);
+7670
+                    }
+7671
+                    if let Ok(mut state) = shared.state.lock() {
+7672
+                        state.queued_jobs = state.queued_jobs.saturating_sub(jobs.len());
+7673
+                        state.active_jobs = state.active_jobs.saturating_add(jobs.len());
+7674
+                        shared.state_cvar.notify_all();
+7675
+                    }
+7676
+                    break jobs;
+7677
+                }
+7678
+                queue = match shared.queue_cvar.wait(queue) {
+7679
+                    Ok(queue) => queue,
+7680
+                    Err(_) => return,
+
+exec
+/bin/bash -c "sed -n '4830,4875{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+4830
+    /// EU-5b test seam — drain MeanVecPinned events queued by the
+4831
+    /// projection-commit pin transaction since the last drain. Production
+4832
+    /// callers consume these via `OpenReport.embedder_events`; this seam
+4833
+    /// exists so the EU-5b RED test can observe the live emission.
+4834
+    #[doc(hidden)]
+4835
+    pub fn drain_mean_centering_events_for_test(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+4836
+        self.ensure_open()?;
+4837
+        let mut events = self
+4838
+            .projection_runtime
+4839
+            .shared
+4840
+            .pending_events
+4841
+            .lock()
+4842
+            .map_err(|_| EngineError::Storage)?;
+4843
+        let out = std::mem::take(&mut *events);
+4844
+        Ok(out)
+4845
+    }
+4846
+
+4847
+    /// 0.7.2 PR-2b — NON-test observation seam. Drains and returns every
+4848
+    /// `EmbedderEvent` queued since the last drain (mean pin, manual mean
+4849
+    /// recompute). Production callers use
+4850
+    /// this to observe the synchronous recompute work; events are queued
+4851
+    /// only AFTER the recompute transaction is durable, so a rolled-back
+4852
+    /// recompute never surfaces. Mirrors the at-open
+4853
+    /// `OpenReport.embedder_events` channel for the steady-state path.
+4854
+    pub fn drain_embedder_events(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+4855
+        self.ensure_open()?;
+4856
+        let mut events = self
+4857
+            .projection_runtime
+4858
+            .shared
+4859
+            .pending_events
+4860
+            .lock()
+4861
+            .map_err(|_| EngineError::Storage)?;
+4862
+        Ok(std::mem::take(&mut *events))
+4863
+    }
+4864
+
+4865
+    /// 0.7.2 PR-2b — explicit `doctor recompute-mean` path. Re-derives the
+4866
+    /// pinned corpus mean from the current `vector_default` rows and
+4867
+    /// re-quantizes every row, SYNCHRONOUSLY in one transaction. ALWAYS
+4868
+    /// allowed at any corpus size — this is the ONLY mean-refresh path as of
+4869
+    /// 0.7.2 (the automatic in-ingest drift detector was carved out / deferred
+4870
+    /// to 0.8.x; see `dev/design/embedder.md` §0.3).
+4871
+    ///
+4872
+    /// Serializes against the projection workers via `commit_gate` so the
+4873
+    /// re-quantize sees a totally-ordered history, exactly like the at-pin
+4874
+    /// commit. Publishes a `MeanVecRecomputed { trigger: Manual }` event
+4875
+    /// only after the transaction is durable. No-op-safe on a non-MC
+
+codex
+I’ve confirmed `drain()` delegates to `wait_for_idle`, and projection workers do not synthesize terminal rows for skipped rows. I’m checking the idle predicate itself for the exact dependency on `database_has_pending_projection_work`.
+exec
+/bin/bash -c "sed -n '880,930{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+880
+            let worker_shared = Arc::clone(&shared);
+881
+            workers.push(thread::spawn(move || projection_worker_loop(worker_shared)));
+882
+        }
+883
+
+884
+        Self { shared, dispatcher: Mutex::new(Some(dispatcher)), workers: Mutex::new(workers) }
+885
+    }
+886
+
+887
+    fn notify_new_work(&self) {
+888
+        if let Ok(mut state) = self.shared.state.lock() {
+889
+            state.pending_scan = true;
+890
+            self.shared.state_cvar.notify_all();
+891
+        }
+892
+    }
+893
+
+894
+    fn set_frozen(&self, frozen: bool) {
+895
+        if let Ok(mut state) = self.shared.state.lock() {
+896
+            state.frozen = frozen;
+897
+            if !frozen {
+898
+                state.pending_scan = true;
+899
+            }
+900
+            self.shared.state_cvar.notify_all();
+901
+        }
+902
+    }
+903
+
+904
+    fn wait_for_idle(&self, timeout_ms: u64) -> bool {
+905
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+906
+        let mut state = match self.shared.state.lock() {
+907
+            Ok(state) => state,
+908
+            Err(_) => return false,
+909
+        };
+910
+        loop {
+911
+            if state.active_jobs == 0 && state.queued_jobs == 0 {
+912
+                drop(state);
+913
+                if !database_has_pending_projection_work(&self.shared.path).unwrap_or(true) {
+914
+                    return true;
+915
+                }
+916
+                state = match self.shared.state.lock() {
+917
+                    Ok(state) => state,
+918
+                    Err(_) => return false,
+919
+                };
+920
+            }
+921
+            let now = Instant::now();
+922
+            if now >= deadline {
+923
+                return false;
+924
+            }
+925
+            let wait = deadline.saturating_duration_since(now);
+926
+            let Ok((next_state, _)) = self.shared.state_cvar.wait_timeout(state, wait) else {
+927
+                return false;
+928
+            };
+929
+            state = next_state;
+930
+        }
+
+exec
+/bin/bash -c "sed -n '3425,3475{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+3425
+                    // left intact (this is NOT a destructive content rewrite).
+3426
+                    let ts = v
+3427
+                        .get("t_invalid")
+3428
+                        .and_then(|x| x.as_str())
+3429
+                        .ok_or(EngineError::Consolidator)?;
+3430
+                    tx.execute(
+3431
+                        "UPDATE canonical_edges SET t_invalid = ?1 \
+3432
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+3433
+                        params![ts, edge_ref],
+3434
+                    )
+3435
+                    .map_err(|_| EngineError::Storage)?;
+3436
+                    // fix-1 [P1]: prune the STATIC projection shadow rows so the
+3437
+                    // consolidated-away edge stops surfacing in FTS/vector — but
+3438
+                    // ONLY when the edge is ended as of the engine's "now",
+3439
+                    // mirroring the graph-traversal filter
+3440
+                    // `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+3441
+                    // A future-dated t_invalid keeps the edge valid ⇒ keep the
+3442
+                    // projection. NON-DESTRUCTIVE: the canonical_edges row + body
+3443
+                    // survive (ADR-0.8.12 §2.1).
+3444
+                    if let Some(cursor) = active_cursor {
+3445
+                        let ended: bool = tx
+3446
+                            .query_row("SELECT datetime(?1) <= datetime('now')", params![ts], |r| {
+3447
+                                r.get(0)
+3448
+                            })
+3449
+                            .map_err(|_| EngineError::Storage)?;
+3450
+                        if ended {
+3451
+                            // fix-2 [P2]: KEEP the projection terminal row. The
+3452
+                            // canonical_edges row stays NON-superseded (invalidate
+3453
+                            // is metadata-only), and `database_has_pending_projection_work`
+3454
+                            // flags any non-superseded edge that has a body but no
+3455
+                            // terminal as pending; since `next_pending_projection_jobs`
+3456
+                            // only scans cursors ABOVE the stored projection cursor, an
+3457
+                            // already-projected invalidated edge would never be requeued
+3458
+                            // and `drain()`/`wait_for_idle` would hang forever. Dropping
+3459
+                            // the FTS/vec shadows (below) hides it from active retrieval;
+3460
+                            // retaining the terminal keeps the scheduler idle.
+3461
+                            Self::prune_edge_projection_shadows(&tx, cursor, true)?;
+3462
+                        }
+3463
+                    }
+3464
+                    receipt.edges_invalidated = receipt.edges_invalidated.saturating_add(1);
+3465
+                }
+3466
+                // `merge` maps cleanly to supersede + metadata (ADR-0.8.12 §3):
+3467
+                // the loser is marked superseded; the winner ("by"/"into") is the
+3468
+                // surviving active row. No body is merged.
+3469
+                "supersede" | "merge" => {
+3470
+                    // Mark superseded via the existing G0 tombstone column; the row
+3471
+                    // survives (invalidate-not-delete). Use a fresh monotonic cursor.
+3472
+                    let cursor = self.next_cursor.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+3473
+                    tx.execute(
+3474
+                        "UPDATE canonical_edges SET superseded_at = ?1 \
+3475
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+
+exec
+/bin/bash -c "sed -n '8585,8635{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+8585
+                        })?;
+8586
+                        let mut out = Vec::new();
+8587
+                        for r in mapped {
+8588
+                            out.push(r?);
+8589
+                        }
+8590
+                        out
+8591
+                    };
+8592
+                    let (doc_count, _) =
+8593
+                        run_pin_and_requantize_pass(&tx, &rows, &mean).map_err(|_| {
+8594
+                            rusqlite::Error::SqliteFailure(
+8595
+                                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+8596
+                                Some("mean-centering re-quantize pass failed".to_string()),
+8597
+                            )
+8598
+                        })?;
+8599
+                    staged_events.push(EmbedderEvent::MeanVecPinned {
+8600
+                        dim: u32::try_from(mean.len()).unwrap_or(u32::MAX),
+8601
+                        doc_count,
+8602
+                    });
+8603
+                    current_mean = Some(mean);
+8604
+                }
+8605
+            }
+8606
+            ProjectionOutcome::Failure { cursor, failure_code } => {
+8607
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+8608
+                    continue;
+8609
+                }
+8610
+                let existing: u64 = tx.query_row(
+8611
+                    "SELECT COUNT(*) FROM operational_mutations
+8612
+                     WHERE collection_name = 'projection_failures'
+8613
+                       AND json_extract(payload_json, '$.write_cursor') = ?1",
+8614
+                    [cursor],
+8615
+                    |row| row.get(0),
+8616
+                )?;
+8617
+                if existing == 0 {
+8618
+                    let payload = format!(
+8619
+                        r#"{{"write_cursor":{cursor},"failure_code":"{failure_code}","recorded_at":0}}"#
+8620
+                    );
+8621
+                    tx.execute(
+8622
+                        "INSERT INTO operational_mutations(
+8623
+                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+8624
+                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+8625
+                        params![cursor.to_string(), payload, cursor],
+8626
+                    )?;
+8627
+                }
+8628
+                record_projection_terminal(&tx, *cursor, "failed")?;
+8629
+            }
+8630
+        }
+8631
+    }
+8632
+    // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
+8633
+    // mean + cos-threshold + debounce + 200k cap + `MeanRecomputeDeferred`)
+8634
+    // was CARVED OUT and DEFERRED to 0.8.x; its recall premise was refuted
+8635
+    // (the mean is a non-lever) and the benefit is unmeasured. The mean is
+
+codex
+The idle path confirms fix site 3 is load-bearing: `wait_for_idle` directly calls `database_has_pending_projection_work`, and that probe would otherwise see terminal-less invalidated edges after rebuild even though `next_pending_projection_jobs` skips them. I’m doing one more pass over the test with line numbers for the final references.
+exec
+/bin/bash -c "sed -n '160,330{=;p}' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+160
+        connection.execute("VACUUM", []).expect("vacuum");
+161
+    }
+162
+
+163
+    let raw_after = std::fs::read(&path).expect("read db");
+164
+    assert!(
+165
+        !raw_after.windows(SENTINEL.len()).any(|window| window == SENTINEL),
+166
+        "sentinel still present in shadow-table pages after rebuild"
+167
+    );
+168
+}
+169
+
+170
+#[test]
+171
+fn ac_063c_rebuild_projections_materializes_failed_terminal_rows() {
+172
+    let dir = TempDir::new().unwrap();
+173
+    let path = db_path(&dir, "rebuild_failed");
+174
+
+175
+    let failing = Arc::new(FailingEmbedder::new(8));
+176
+    let cursor = {
+177
+        let opened = Engine::open_with_embedder_for_test(&path, failing.clone()).expect("open");
+178
+        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+179
+        opened.engine.set_projection_retry_delays_for_test(&[0, 0, 0]);
+180
+        let receipt = opened
+181
+            .engine
+182
+            .write(&[PreparedWrite::Node {
+183
+                kind: "doc".to_string(),
+184
+                body: "failure body".to_string(),
+185
+                source_id: None,
+186
+                logical_id: None,
+187
+            }])
+188
+            .expect("write");
+189
+        assert!(wait_until(
+190
+            || opened
+191
+                .engine
+192
+                .projection_status_for_test("doc")
+193
+                .map(|s| s == ProjectionStatus::Failed)
+194
+                .unwrap_or(false),
+195
+            Duration::from_secs(10),
+196
+        ));
+197
+        assert_eq!(
+198
+            opened.engine.projection_failure_count_for_test(receipt.cursor).expect("failure count"),
+199
+            1
+200
+        );
+201
+        receipt.cursor
+202
+    };
+203
+
+204
+    let healthy = Arc::new(DeterministicEmbedder::new(8));
+205
+    let opened = Engine::open_with_embedder_for_test(&path, healthy.clone()).expect("reopen");
+206
+    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+207
+    opened.engine.rebuild_projections().expect("rebuild_projections");
+208
+    assert!(wait_until(
+209
+        || opened
+210
+            .engine
+211
+            .projection_status_for_test("doc")
+212
+            .map(|s| s == ProjectionStatus::UpToDate)
+213
+            .unwrap_or(false),
+214
+        Duration::from_secs(10),
+215
+    ));
+216
+    assert!(opened.engine.has_vector_for_cursor_for_test(cursor).expect("has_vector"));
+217
+}
+218
+
+219
+/// 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9 [P2]).
+220
+///
+221
+/// Graph traversal excludes an invalidated edge via a
+222
+/// `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')` filter, but
+223
+/// (before this fix) the FTS/vec PROJECTION rebuild SQL does not — so a full
+224
+/// `rebuild_projections()` re-materializes an invalidated (non-superseded)
+225
+/// edge's FTS/vec shadows, re-surfacing a stale contradiction that
+226
+/// consolidation had already hidden. This test drives the REAL
+227
+/// `consolidate_with_provider` recency path (deterministic stub harness) to
+228
+/// invalidate the older of two competing fact-edges, rebuilds, and asserts
+229
+/// the invalidated edge stays absent from both `search_index_edges` and
+230
+/// `_fathomdb_vector_rows` while the still-valid edge survives the rebuild
+231
+/// (guard against a vacuous test that hides everything).
+232
+#[test]
+233
+fn slice_a_rebuild_projections_excludes_recency_invalidated_edge() {
+234
+    let dir = TempDir::new().unwrap();
+235
+    let path = db_path(&dir, "rebuild_tinvalid");
+236
+
+237
+    let embedder = Arc::new(DeterministicEmbedder::new(8));
+238
+    let (acme_cursor, globex_cursor) = {
+239
+        let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+240
+        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+241
+
+242
+        let older = PreparedWrite::Edge {
+243
+            kind: "works_for".to_string(),
+244
+            from: "bob".to_string(),
+245
+            to: "acme".to_string(),
+246
+            source_id: Some("doc-acme".to_string()),
+247
+            logical_id: Some("edge-acme".to_string()),
+248
+            body: Some("Bob works for Acme".to_string()),
+249
+            t_valid: Some("2019-01-01T00:00:00Z".to_string()),
+250
+            t_invalid: None,
+251
+            confidence: Some(0.9),
+252
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+253
+            temporal_fallback: None,
+254
+        };
+255
+        let newer = PreparedWrite::Edge {
+256
+            kind: "works_for".to_string(),
+257
+            from: "bob".to_string(),
+258
+            to: "globex".to_string(),
+259
+            source_id: Some("doc-globex".to_string()),
+260
+            logical_id: Some("edge-globex".to_string()),
+261
+            body: Some("Bob works for Globex".to_string()),
+262
+            t_valid: Some("2022-01-01T00:00:00Z".to_string()),
+263
+            t_invalid: None,
+264
+            confidence: Some(0.8),
+265
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+266
+            temporal_fallback: None,
+267
+        };
+268
+        let receipt = opened.engine.write(&[older, newer]).expect("seed two competing edges");
+269
+        assert_eq!(receipt.row_cursors.len(), 2, "batch of two edges");
+270
+        let acme_cursor = receipt.row_cursors[0];
+271
+        let globex_cursor = receipt.row_cursors[1];
+272
+
+273
+        opened.engine.drain(10_000).expect("drain seed writes");
+274
+
+275
+        // Guard: both edges are materialized (FTS + vec) before consolidation.
+276
+        {
+277
+            let conn = Connection::open(&path).unwrap();
+278
+            assert_eq!(edge_fts_count(&conn, "acme"), 1, "seed: acme edge must be FTS-indexed");
+279
+            assert_eq!(edge_fts_count(&conn, "globex"), 1, "seed: globex edge must be FTS-indexed");
+280
+        }
+281
+        assert!(
+282
+            opened.engine.has_vector_for_cursor_for_test(acme_cursor).expect("has_vector acme"),
+283
+            "seed: acme edge must be vector-projected"
+284
+        );
+285
+        assert!(
+286
+            opened.engine.has_vector_for_cursor_for_test(globex_cursor).expect("has_vector globex"),
+287
+            "seed: globex edge must be vector-projected"
+288
+        );
+289
+
+290
+        // Consolidate via the REAL provider path: the deterministic stub
+291
+        // harness keeps the latest `t_valid` (globex) and invalidates the
+292
+        // older competing edge (acme) at the winner's `t_valid` — a PAST
+293
+        // timestamp, so acme is immediately "ended" per the recency filter
+294
+        // (mirrors `apply_consolidate_verdicts`'s `ended` check).
+295
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+296
+            .join("tests/fixtures/slice15_consolidate/stub_consolidate_harness.py");
+297
+        assert!(
+298
+            script.exists(),
+299
+            "consolidate stub harness fixture must exist at {}",
+300
+            script.display()
+301
+        );
+302
+        let cmd = vec!["python3".to_string(), script.to_string_lossy().to_string()];
+303
+        let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+304
+        let axes = vec![ConsolidateAxis {
+305
+            subject_logical_id: "bob".to_string(),
+306
+            relation: "works_for".to_string(),
+307
+        }];
+308
+        let consolidate_receipt = opened
+309
+            .engine
+310
+            .consolidate_with_provider(&cmd_refs, &axes)
+311
+            .expect("consolidate_with_provider must succeed with stub harness");
+312
+        assert_eq!(consolidate_receipt.edges_invalidated, 1, "acme must be invalidated");
+313
+        assert_eq!(consolidate_receipt.edges_kept, 1, "globex must be kept");
+314
+
+315
+        // The bug under test: a full rebuild truncates + re-materializes every
+316
+        // FTS/vec shadow from `canonical_edges` — this MUST NOT re-surface the
+317
+        // now-`t_invalid`-excluded acme edge. If the projection scheduler's
+318
+        // pending-work probe does not mirror the same filter, this `drain()`
+319
+        // would hang forever on a phantom-pending invalidated edge.
+320
+        opened.engine.rebuild_projections().expect("rebuild_projections");
+321
+        opened
+322
+            .engine
+323
+            .drain(10_000)
+324
+            .expect("post-rebuild drain must not hang on a phantom-pending invalidated edge");
+325
+
+326
+        (acme_cursor, globex_cursor)
+327
+    };
+328
+
+329
+    let conn = Connection::open(&path).unwrap();
+330
+
+
+exec
+/bin/bash -c "sed -n '330,380{=;p}' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+330
+
+331
+    assert_eq!(
+332
+        edge_fts_count(&conn, "acme"),
+333
+        0,
+334
+        "rebuild must NOT re-surface the t_invalid-excluded edge in search_index_edges"
+335
+    );
+336
+    assert_eq!(
+337
+        edge_fts_count(&conn, "globex"),
+338
+        1,
+339
+        "rebuild must keep the still-valid edge in search_index_edges (guard against a vacuous test)"
+340
+    );
+341
+
+342
+    assert_eq!(
+343
+        vector_row_count(&conn, acme_cursor),
+344
+        0,
+345
+        "rebuild must NOT re-materialize the invalidated edge's vector row"
+346
+    );
+347
+    assert_eq!(
+348
+        vector_row_count(&conn, globex_cursor),
+349
+        1,
+350
+        "rebuild must keep the still-valid edge's vector row (guard against a vacuous test)"
+351
+    );
+352
+}
+
+exec
+/bin/bash -c "sed -n '1,120{=;p}' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA
+ succeeded in 0ms:
+1
+use std::sync::Arc;
+2
+use std::thread;
+3
+use std::time::Duration;
+4
+
+5
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+6
+use fathomdb_engine::lifecycle::ProjectionStatus;
+7
+use fathomdb_engine::{ConsolidateAxis, Engine, PreparedWrite};
+8
+use fathomdb_schema::SQLITE_SUFFIX;
+9
+use rusqlite::Connection;
+10
+use tempfile::TempDir;
+11
+
+12
+const SENTINEL: &[u8; 16] = b"FATHOMDB_SENT_42";
+13
+
+14
+#[derive(Clone, Debug)]
+15
+struct DeterministicEmbedder {
+16
+    identity: EmbedderIdentity,
+17
+    vector: Vector,
+18
+}
+19
+
+20
+impl DeterministicEmbedder {
+21
+    fn new(dim: u32) -> Self {
+22
+        let mut vector = vec![0.0_f32; dim as usize];
+23
+        vector[0] = 1.0;
+24
+        Self { identity: EmbedderIdentity::new("rebuild", "rev-a", dim), vector }
+25
+    }
+26
+}
+27
+
+28
+impl Embedder for DeterministicEmbedder {
+29
+    fn identity(&self) -> EmbedderIdentity {
+30
+        self.identity.clone()
+31
+    }
+32
+
+33
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+34
+        Ok(self.vector.clone())
+35
+    }
+36
+}
+37
+
+38
+#[derive(Clone, Debug)]
+39
+struct FailingEmbedder {
+40
+    identity: EmbedderIdentity,
+41
+    fails: Arc<std::sync::atomic::AtomicUsize>,
+42
+}
+43
+
+44
+impl FailingEmbedder {
+45
+    fn new(dim: u32) -> Self {
+46
+        Self {
+47
+            identity: EmbedderIdentity::new("rebuild", "rev-a", dim),
+48
+            fails: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+49
+        }
+50
+    }
+51
+}
+52
+
+53
+impl Embedder for FailingEmbedder {
+54
+    fn identity(&self) -> EmbedderIdentity {
+55
+        self.identity.clone()
+56
+    }
+57
+
+58
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+59
+        self.fails.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+60
+        Err(EmbedderError::Failed { message: "deterministic failure".to_string() })
+61
+    }
+62
+}
+63
+
+64
+fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+65
+    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
+66
+}
+67
+
+68
+fn wait_until<F: FnMut() -> bool>(mut predicate: F, timeout: Duration) -> bool {
+69
+    let started = std::time::Instant::now();
+70
+    while started.elapsed() < timeout {
+71
+        if predicate() {
+72
+            return true;
+73
+        }
+74
+        thread::sleep(Duration::from_millis(20));
+75
+    }
+76
+    predicate()
+77
+}
+78
+
+79
+/// 0.8.12 Slice A: count edge-FTS shadow rows matching `term` in
+80
+/// `search_index_edges` (mirrors `edge_fts_count` in `consolidate_provider.rs`).
+81
+fn edge_fts_count(conn: &Connection, term: &str) -> u64 {
+82
+    conn.query_row(
+83
+        "SELECT COUNT(*) FROM search_index_edges WHERE search_index_edges MATCH ?1",
+84
+        [term],
+85
+        |r| r.get(0),
+86
+    )
+87
+    .expect("search_index_edges must exist and be queryable")
+88
+}
+89
+
+90
+/// 0.8.12 Slice A: count `_fathomdb_vector_rows` rows for a given `write_cursor`.
+91
+fn vector_row_count(conn: &Connection, cursor: u64) -> u64 {
+92
+    conn.query_row(
+93
+        "SELECT COUNT(*) FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+94
+        [cursor],
+95
+        |r| r.get(0),
+96
+    )
+97
+    .expect("_fathomdb_vector_rows must exist and be queryable")
+98
+}
+99
+
+100
+#[test]
+101
+fn ac_044_rebuild_projections_purges_sentinel_bytes() {
+102
+    let dir = TempDir::new().unwrap();
+103
+    let path = db_path(&dir, "rebuild_sentinel");
+104
+
+105
+    let embedder = Arc::new(DeterministicEmbedder::new(8));
+106
+    {
+107
+        let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+108
+        opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+109
+        opened
+110
+            .engine
+111
+            .write(&[PreparedWrite::Node {
+112
+                kind: "doc".to_string(),
+113
+                body: "canonical body alpha".to_string(),
+114
+                source_id: None,
+115
+                logical_id: None,
+116
+            }])
+117
+            .expect("write");
+118
+        opened.engine.drain(10_000).expect("drain");
+119
+    }
+120
+
+
+codex
+## Verdict: PASS
+
+No actionable findings.
+
+What passed on inspection:
+
+- The three added predicates match the canonical graph traversal recency filter: `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+  Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:5435), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:8099), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:8167), canonical [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:6964).
+- Fix site 3 is load-bearing. `wait_for_idle()` calls `database_has_pending_projection_work()` directly, while terminal rows are only created for queued projection outcomes; after rebuild deletes terminals, the pending probe must also skip invalidated edges or `drain()` can see phantom pending work.
+- The test drives the real `consolidate_with_provider` path, not a direct `t_invalid` update, and checks both FTS and vec exclusion while proving the valid edge survives. Refs: [rebuild_projections.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:308), [rebuild_projections.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:331).
+- Nodes are untouched, and the existing `superseded_at IS NULL` distinction remains intact.
+
+I did not run tests because this session is read-only; from inspection, the new test would fail without the FTS/vec rebuild predicates, and would hang/fail at `drain()` without the pending-work probe predicate.
+tokens used
+77,673
+## Verdict: PASS
+
+No actionable findings.
+
+What passed on inspection:
+
+- The three added predicates match the canonical graph traversal recency filter: `t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`.
+  Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:5435), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:8099), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:8167), canonical [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/src/lib.rs:6964).
+- Fix site 3 is load-bearing. `wait_for_idle()` calls `database_has_pending_projection_work()` directly, while terminal rows are only created for queued projection outcomes; after rebuild deletes terminals, the pending probe must also skip invalidated edges or `drain()` can see phantom pending work.
+- The test drives the real `consolidate_with_provider` path, not a direct `t_invalid` update, and checks both FTS and vec exclusion while proving the valid edge survives. Refs: [rebuild_projections.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:308), [rebuild_projections.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.12-sliceA/src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:331).
+- Nodes are untouched, and the existing `superseded_at IS NULL` distinction remains intact.
+
+I did not run tests because this session is read-only; from inspection, the new test would fail without the FTS/vec rebuild predicates, and would hang/fail at `drain()` without the pending-work probe predicate.
