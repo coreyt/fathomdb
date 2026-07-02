@@ -111,6 +111,9 @@ export class EmbedderDimensionMismatchError extends FathomDbError {
 // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 export class ExtractorError extends FathomDbError {}
 
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+export class ConsolidatorError extends FathomDbError {}
+
 // G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 export class InvalidFilterError extends FathomDbError {}
 
@@ -150,6 +153,8 @@ type ErrorCode =
   | "FDB_EMBEDDER_IDENTITY_MISMATCH"
   // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
   | "FDB_EXTRACTOR"
+  // 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+  | "FDB_CONSOLIDATOR"
   // G4 (Slice 35) — filter predicate construction error.
   | "FDB_INVALID_FILTER"
   // Slice 20 — depth > 3 or invalid argument (G5/G6).
@@ -242,6 +247,8 @@ function build(envelope: Envelope): Error {
       });
     case "FDB_EXTRACTOR":
       return new ExtractorError(envelope.message);
+    case "FDB_CONSOLIDATOR":
+      return new ConsolidatorError(envelope.message);
     case "FDB_INVALID_FILTER":
       return new InvalidFilterError(envelope.message);
     case "FDB_INVALID_ARGUMENT":

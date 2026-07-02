@@ -98,6 +98,14 @@ class IngestWithExtractorReceipt:
     edges_written: int
     docs_processed: int
 
+class ConsolidateReceipt:
+    """0.8.12 Slice 15 (OPP-2) — consolidation / recency provider receipt."""
+    clusters_processed: int
+    edges_examined: int
+    edges_kept: int
+    edges_invalidated: int
+    edges_superseded: int
+
 class MigrationStepReport:
     step_id: int
     duration_ms: int | None
@@ -172,6 +180,20 @@ class Engine:
 
         ``cmd`` is argv (first element = program, rest = args).
         ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+        ...
+    def consolidate_with_provider(
+        self,
+        cmd: list[str],
+        axes: list[dict[str, str]],
+    ) -> ConsolidateReceipt:
+        """0.8.12 Slice 15 (OPP-2) — consolidation / recency via a BYO-LLM
+        harness speaking the fathomdb.consolidate.v1 protocol.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``axes`` is a list of dicts with ``subject_logical_id`` and ``relation``
+        keys (a `ConsolidateAxis`); each names one (subject, relation) cluster to
+        consolidate.
         """
         ...
     def counters(self) -> CounterSnapshot: ...
@@ -346,6 +368,9 @@ class EmbedderDimensionMismatchError(EngineError):
 
 # G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 class ExtractorError(EngineError): ...
+
+# 0.8.12 Slice 15 (OPP-2) — consolidation harness protocol error.
+class ConsolidatorError(EngineError): ...
 
 # G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 class InvalidFilterError(EngineError): ...

@@ -1,0 +1,63 @@
+{
+  "phase": "0.8.12-sliceB",
+  "baseline_sha": "d66f20fbff110b592839a4422464559e2bb28738",
+  "branch": "slice-Btslive-20260702T204143Z",
+  "head_sha": "df17506dfe8da21d5c99d256c1462c81508577ac",
+  "commits": [
+    "e8a333d9: test(0.8.12 Slice B): live TS X1 — consolidate_with_provider end-to-end (napi) [pre-existing HEAD at task start]",
+    "df17506d: fix(0.8.12 Slice B): govern consolidate_with_provider in the shared SDK surface allowlist (R-X-1/AC-074) [this fix pass]"
+  ],
+  "fix_pass": {
+    "title": "Slice B fix-1: governed-surface parity for the consolidate seam (R-X-1 / AC-074)",
+    "root_cause": "Slice 15 added the consolidate_with_provider / consolidateWithProvider public Engine method (the BYO-LLM consolidation seam) but never added it to the governed SDK surface allowlist (src/conformance/governed-surface-allowlist.json). This is a masked gate (not in per-push CI, only exercised by the TS/Python surface test suites), so the gap was latent until Slice B built the TS suite for the first time and ran surface.test.ts.",
+    "locus_confirmation": "Read src/ts/tests/surface.test.ts (INSTRUMENTATION + ENGINE_NON_COMMAND exclusion sets, liveTsCommandSurface()) and src/python/tests/test_surface.py (_INSTRUMENTATION + _ENGINE_NON_COMMAND, _live_python_command_surface()) BEFORE editing. Confirmed consolidate_with_provider/consolidateWithProvider is NOT listed in either exclusion set in either file (it is a real state-mutating application command, not observability, so it correctly does NOT belong there) — both suites' introspection will surface it into `live` and fail the P1 subset check against the shared allowlist. This is the correct, sole locus: both test files read the single shared JSON contract via loadGovernedSurfaceContract()/_load_governed_surface_contract(), so a one-file fix satisfies P2 cross-binding parity by construction. No exclusion-set edits or per-binding literal additions were made in either test file, per the mandate.",
+    "fix_applied": "Added \"consolidate_with_provider\" and \"consolidateWithProvider\" to the `allowlist` array in src/conformance/governed-surface-allowlist.json, placed immediately after the sibling extract-provider seam entries (\"ingest_with_extractor\", \"ingestWithExtractor\") to mirror that precedent. `core` and `recovery_denylist` untouched. This is the only functional file changed."
+  },
+  "red_demonstration": {
+    "command": "cd src/ts && node --test dist/tests/surface.test.js",
+    "preconditions": "Native .node artifact (fathomdb.linux-x64-gnu.node, built by the prior Slice B commit e8a333d9) and compiled dist/ already present in the worktree; ran `npx tsc -p tsconfig.build.json` to confirm the compile was current, then ran the test directly against the (still unmodified) allowlist JSON.",
+    "result": "11 tests, 9 pass, 2 fail (exit summary from node:test) — confirmed BEFORE the allowlist edit:",
+    "failure_1": "test \"public surface is the governed allowlist (membership, not a count)\" — AssertionError: live command consolidateWithProvider is outside the governed allowlist",
+    "failure_2": "test \"surface parity: TS and Python read one shared allowlist\" — AssertionError: live command consolidateWithProvider is outside the shared governed allowlist",
+    "matches_mandate": "Exact match to the RED specified in the mandate."
+  },
+  "green_verification": [
+    {
+      "cmd": "npx tsc -p tsconfig.build.json",
+      "cwd": "src/ts",
+      "exit_code": 0,
+      "note": "Recompile before the RED run (dist/ was already current from the prior functional-consolidate slice); no changes needed for this fix pass since only a JSON data file changed."
+    },
+    {
+      "cmd": "npm test",
+      "cwd": "src/ts",
+      "exit_code": 0,
+      "note": "FULL suite green after the allowlist edit: 131 tests, 131 pass, 0 fail, 0 cancelled, 0 skipped-unexpected (2 RELEASE_SURFACE_TESTS-gated tests intentionally [skip] as designed, unrelated to this fix). Includes both previously-failing surface.test.ts tests (now pass) and the Slice B functional-consolidate.test.ts live end-to-end test (still passes). duration_ms 36309.5."
+    },
+    {
+      "cmd": "npm run typecheck",
+      "cwd": "src/ts",
+      "exit_code": 0,
+      "note": "tsc --noEmit -p tsconfig.json; clean, no errors. No .ts source changed in this fix pass (only the shared JSON contract), so this is a no-regression confirmation."
+    },
+    {
+      "cmd": "node --test dist/tests/surface.test.js (isolated re-run)",
+      "cwd": "src/ts",
+      "exit_code": 0,
+      "note": "Confirmed both target tests individually GREEN post-fix, isolated from the rest of the suite: 'public surface is the governed allowlist' and 'surface parity: TS and Python read one shared allowlist' both pass (subsumed in the npm test run above; captured explicitly for the record)."
+    }
+  ],
+  "python_parity_disposition": {
+    "status": "VERIFIED_IN_ISOLATED_VENV",
+    "method": "Built THIS branch (head df17506d, with the allowlist fix already committed) into a throwaway venv at /tmp/claude-*/scratchpad/sliceB-py-venv (python3 -m venv; pip install maturin/pytest/hypothesis/pyyaml/numpy into that venv only), then ran `maturin develop --release` from src/python with VIRTUAL_ENV pointed at the throwaway venv (manifest-path ../rust/crates/fathomdb-py/Cargo.toml, features pyo3/extension-module + default-embedder + default-reranker). Build compiled cleanly (~worktree target/ dir, gitignored, self-contained) and installed fathomdb-0.8.9 editable into the throwaway venv. Ran `<throwaway-venv>/bin/python -m pytest tests/test_surface.py -q` from src/python.",
+    "result": "15 passed in 0.72s, exit code 0. All test_surface.py tests genuinely green on this branch, including test_public_surface_is_allowlist and test_surface_parity_py_matches_ts (the two P1/P2 tests that mirror the TS failures) — confirmed consolidate_with_provider is now correctly excluded-from-the-gap on the Python binding too.",
+    "shared_state_respected": "Confirmed via `git status --short` in the worktree (only the pre-existing untracked output.json shown; target/ is gitignored) and by inspecting the MAIN tree's shared .venv (/home/coreyt/projects/fathomdb/.venv/.../fathomdb-0.8.0.dist-info, timestamp unchanged since Jun 28) that the shared .venv / main tree were NOT touched by this build. All Python build/install artifacts are confined to the throwaway /tmp venv and this worktree's own (gitignored) target/ directory."
+  },
+  "files_changed": [
+    "src/conformance/governed-surface-allowlist.json (+2 lines: consolidate_with_provider, consolidateWithProvider)"
+  ],
+  "blockers_encountered": [],
+  "fallback_taken": false,
+  "fallback_reason": null,
+  "next_step_for_orchestrator": "Cherry-pick df17506d (single-file src/conformance/governed-surface-allowlist.json change) alongside e8a333d9 onto the mainline 0.8.12 release branch. Both bindings' surface suites (TS live-verified via full npm test; Python live-verified via an isolated throwaway venv build on this exact branch head) are now green, closing the previously-flagged out-of-scope gap from the prior Slice B output (see that record's 'next_step_for_orchestrator' note about the 2 pre-existing surface-test failures — now resolved). R-X-1/AC-074 governed-surface parity is intact for the consolidate seam on both bindings."
+}

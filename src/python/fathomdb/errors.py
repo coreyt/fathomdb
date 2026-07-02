@@ -78,6 +78,9 @@ from fathomdb._fathomdb import (
     ExtractorError as _ExtractorError,
 )
 from fathomdb._fathomdb import (
+    ConsolidatorError as _ConsolidatorError,
+)
+from fathomdb._fathomdb import (
     InvalidFilterError as _InvalidFilterError,
 )
 from fathomdb._fathomdb import (
@@ -105,6 +108,8 @@ EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
 EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
 # G11 (Slice 15) — BYO-LLM extraction harness protocol error.
 ExtractorError = _ExtractorError
+# 0.8.12 Slice 15 (OPP-2) — consolidation harness protocol error.
+ConsolidatorError = _ConsolidatorError
 # G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 InvalidFilterError = _InvalidFilterError
 InvalidArgumentError = _InvalidArgumentError
@@ -143,6 +148,7 @@ __all__ = [
     "EmbedderError",
     "EmbedderIdentityMismatchError",
     "EmbedderNotConfiguredError",
+    "ConsolidatorError",
     "EngineError",
     "ExtractorError",
     "IncompatibleSchemaVersionError",
