@@ -32,8 +32,13 @@ write/index path stays CPU-only and deterministic.
   resilience proven) and **preserved**: manifest + checksums committed on
   `0.8.12-expcov1-sweep` (`6daf2d94`); the extraction cache is gitignored in the main tree
   (`data/corpus-data/eval-cache/exp-cov1/…`), sha256-verified against the manifest.
-- **Downstream sufficiency verdict = ENVIRONMENT-BLOCKED** on the CPU-only embedder `.so`
-  (dense embed ~13 s/body, CE ~8 s/query → intractable). A **GPU build is the unblock**
+- **Downstream sufficiency verdict = `CEILING-ABSORBED`** (Phase 1 GPU re-run, 2026-07-02,
+  `813d9a22` on `0.8.12-expcov1-sweep`): on the full held-fixed GPU stack, every powered Δ vs
+  the same-stack C-none is negative (multi_session Δgip@10 **−0.123** [−0.167,−0.078], ΔMRR
+  −0.227; temporal −0.069 / −0.244) — added coverage **degrades** retrieval; the
+  embedder/retrieval ceiling binds, not coverage. 1-bit CPU↔CUDA parity held; `$0`.
+  ⇒ **OPP-6 #6 de-prioritized** (HITL-accepted 2026-07-02). The earlier ENVIRONMENT-BLOCKED
+  read (CPU-only `.so`) is resolved by the GPU build
   (`notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md`).
 - Branches (nothing merged; manifests `0.8.9`): dev **`0.8.12-memory-quality`** (`8a2a1006`),
   sweep **`0.8.12-expcov1-sweep`** (`6daf2d94`), GPU features on **`0.8.14-gpu-rerank`**
@@ -49,15 +54,18 @@ write/index path stays CPU-only and deterministic.
 
 | Phase | Deliverable | Status | Gate / next |
 |-------|-------------|--------|-------------|
-| **P1** | EXP-COV-1 GPU verdict re-run (`$0`) | **IN FLIGHT** — background orchestrator commissioned 2026-07-02 | HARD-STOP → report verdict to HITL |
-| **P2** | Slice-10 disposition (record verdict only) | **BLOCKED** on P1 | verdict → STATUS + EXP-COV-1-results §0/§2 |
-| **P3** | `t_invalid` durability fix + live TS X1 | **NOT STARTED** (may run parallel to P1–P2) | code slices → codex §9 each |
+| **P1** | EXP-COV-1 GPU verdict re-run (`$0`) | **DONE** — verdict **`CEILING-ABSORBED`** (`813d9a22`, 2026-07-02) | verified from git; parity held; `$0` |
+| **P2** | Slice-10 disposition (record verdict) | **DONE** — OPP-6 #6 de-prioritized (HITL 2026-07-02); master reconciled (F-15) | R-COV-3 = resolved-negative; Slice 10 CLOSED |
+| **P3** | `t_invalid` durability fix + live TS X1 | **IN FLIGHT** — orchestrator commissioned 2026-07-02 | code slices → codex §9 each |
 | **P4** | Slice 40 + release DoD (R-COV-3 resolved) | **BLOCKED** on P1–P3 | X1/X2/X3 + R-COV/R-CON AC gate |
 | **P5** | Label-only merge → `main` | **BLOCKED** on P4 | **HITL-gated**; retire the `-finish` stub |
 
 ### Phase 1 — Resolve the EXP-COV-1 sufficiency verdict (the Slice-10 gate) — `$0`
 
-**Status: IN FLIGHT** — commissioned by the Steward 2026-07-02 as a background orchestrator.
+**Status: DONE (2026-07-02)** — verdict **`CEILING-ABSORBED`**, verified from git (`813d9a22`).
+All powered Δ vs same-stack C-none negative; 1-bit CPU↔CUDA parity held; `$0` (cache reused,
+272/272). Two GPU-eval build traps were worked around (bundled `libcuda.so.1` → silent CPU
+fallback; stale CPU `.so` shadowing the CUDA wheel) — captured to steward memory.
 
 Re-run the downstream sufficiency sweep on a **GPU embedder** reusing the preserved cache at
 **`$0`** (completeness guard; NO re-extraction). Composition (each verified from git — they
@@ -77,6 +85,11 @@ Hold the embedder **FIXED** (CLS-corrected bge-small, GPU-accelerated) with a **
 → **HARD-STOP: report the verdict (SUFFICIENT / CEILING-ABSORBED) to the Steward/HITL.**
 
 ### Phase 2 — Slice-10 disposition (record only)
+
+**Taken (2026-07-02): the `CEILING-ABSORBED` branch.** OPP-6 #6 de-prioritized (HITL-accepted);
+**R-COV-3 = resolved-negative**; **Slice 10 CLOSED**; master reconciled (§4 0.8.12 row + finding
+**F-15**). Do **not** fund the ~$340 full-corpus relation-extraction pass on a coverage-lift
+premise.
 
 Record the verdict on `STATUS-0.8.12.md` + `EXP-COV-1-results.md` (§4/§5, §0/§2).
 
