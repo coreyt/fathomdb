@@ -1,0 +1,4447 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f24c9-ea3e-7442-8b32-4b5306eda324
+--------
+user
+Review the two-file change on this branch (vs baseline commit ef6abf6d). Changed files: src/rust/crates/fathomdb-cli/src/lib.rs (added one match arm 'EngineError::Consolidator => "ConsolidatorError",' in fn engine_error_code, ~line 723) and src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:302 (a vec! became an array literal). Context: engine EngineError enum + Self::Consolidator => "ConsolidatorError" at src/rust/crates/fathomdb-engine/src/lib.rs:2116; py mapper fathomdb-py/src/lib.rs:184; napi mapper fathomdb-napi/src/lib.rs:199. Questions: (1) is the CLI arm string exactly consistent with the engine + py/napi 'ConsolidatorError' name; (2) purely additive, no behavior change; (3) the vec!->array is behavior-preserving and still satisfies consolidate_with_provider(&cmd_refs, &axes); (4) any remaining non-exhaustive EngineError match or cross-binding name divergence. Output EXACTLY a '## Verdict: PASS|CONCERN|BLOCK' line, then findings (### N. [sev] title + file:line Refs), then 'What passed on inspection'. Read-only.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+I’ll keep this read-only and verify the branch diff against `ef6abf6d`, then check the Rust/Python/Node mappings and any remaining `EngineError` matches.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'src/rust/crates/fathomdb-cli/src/lib.rs' -g 'src/rust/crates/fathomdb-engine/src/lib.rs' -g 'src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs' -g '*py*/src/lib.rs' -g '*napi*/src/lib.rs'" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+src/rust/crates/fathomdb-cli/src/lib.rs
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs
+
+codex
+The first read confirmed the key Rust paths, but the initial `git diff` hit the sandbox wrapper before producing output. I’m switching to direct file and search reads so the review can still be grounded in the checkout.
+exec
+/bin/bash -lc 'ls -la' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+total 324
+drwxrwxr-x 13 coreyt coreyt   4096 Jul  2 16:36 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul  2 16:35 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 16:35 .claude
+-rw-rw-r--  1 coreyt coreyt     72 Jul  2 16:35 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  2 16:35 .github
+-rw-rw-r--  1 coreyt coreyt   4000 Jul  2 16:35 .gitignore
+-rw-rw-r--  1 coreyt coreyt   1181 Jul  2 16:35 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul  2 16:35 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul  2 16:35 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul  2 16:35 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul  2 16:35 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  2 16:35 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111562 Jul  2 16:35 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul  2 16:35 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul  2 16:35 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul  2 16:35 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul  2 16:35 deny.toml
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  2 16:35 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  2 16:35 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  2 16:35 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul  2 16:35 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jul  2 16:35 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  2 16:35 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  2 16:35 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul  2 16:35 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul  2 16:35 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  2 16:35 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  2 16:35 src
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 16:36 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  2 16:35 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 16:35 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  2 16:35 tools
+
+codex
+Some broader searches are tripping the local sandbox wrapper, so I’m narrowing the commands and disabling login-shell startup for those reads.
+exec
+/bin/bash -lc "sed -n '1,120p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+codex
+There is no root `MEMORY.md` in this worktree. I’m checking the relevant source slices directly now, then I’ll do a constrained text search for mapper consistency.
+exec
+/bin/bash -lc "sed -n '700,740p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        "code": engine_open_error_code(err),
+        "detail": err.to_string(),
+    });
+    println!("{payload}");
+    outcome_to_exit_code(outcome)
+}
+
+fn engine_error_code(err: &EngineError) -> &'static str {
+    match err {
+        EngineError::Storage => "StorageError",
+        EngineError::Projection => "ProjectionError",
+        EngineError::Vector => "VectorError",
+        EngineError::Embedder => "EmbedderError",
+        EngineError::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+        EngineError::KindNotVectorIndexed => "KindNotVectorIndexedError",
+        EngineError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineError::Scheduler => "SchedulerError",
+        EngineError::OpStore => "OpStoreError",
+        EngineError::WriteValidation => "WriteValidationError",
+        EngineError::SchemaValidation => "SchemaValidationError",
+        EngineError::Overloaded => "OverloadedError",
+        EngineError::Closing => "ClosingError",
+        EngineError::Extractor => "ExtractorError",
+        EngineError::Consolidator => "ConsolidatorError",
+        // G4 (Slice 35) — filter predicate construction error.
+        EngineError::InvalidFilter { .. } => "InvalidFilterError",
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
+    }
+}
+
+fn engine_open_error_code(err: &EngineOpenError) -> &'static str {
+    match err {
+        EngineOpenError::DatabaseLocked { .. } => "DatabaseLockedError",
+        EngineOpenError::Corruption(_) => "CorruptionError",
+        EngineOpenError::IncompatibleSchemaVersion { .. } => "IncompatibleSchemaVersionError",
+        EngineOpenError::MigrationError { .. } => "MigrationError",
+        EngineOpenError::EmbedderIdentityMismatch { .. } => "EmbedderIdentityMismatchError",
+        EngineOpenError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineOpenError::Embedder(_) => "EmbedderError",
+        EngineOpenError::Io { .. } => "IoError",
+    }
+
+exec
+/bin/bash -lc "sed -n '2090,2130p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+            Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
+        }
+    }
+}
+
+impl EngineError {
+    /// Stable machine-readable code for `errors_by_code` keys.
+    ///
+    /// Names match the binding-facing class stems in
+    /// `dev/design/errors.md` § Binding-facing class matrix.
+    fn stable_code(&self) -> &'static str {
+        match self {
+            Self::Storage => "StorageError",
+            Self::Projection => "ProjectionError",
+            Self::Vector => "VectorError",
+            Self::Embedder => "EmbedderError",
+            Self::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+            Self::KindNotVectorIndexed => "KindNotVectorIndexedError",
+            Self::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+            Self::Scheduler => "SchedulerError",
+            Self::OpStore => "OpStoreError",
+            Self::WriteValidation => "WriteValidationError",
+            Self::SchemaValidation => "SchemaValidationError",
+            Self::Overloaded => "OverloadedError",
+            Self::Closing => "ClosingError",
+            Self::Extractor => "ExtractorError",
+            Self::Consolidator => "ConsolidatorError",
+            Self::InvalidFilter { .. } => "InvalidFilterError",
+            Self::InvalidArgument { .. } => "InvalidArgumentError",
+        }
+    }
+}
+
+impl Error for EngineError {}
+
+/// Doctor `check-integrity` invocation flags. `quick` and `round_trip`
+/// are accepted in 0.6.0 but treated as default; only `full` activates
+/// `PRAGMA integrity_check`. Per `dev/design/recovery.md` § Doctor-only
+/// flags.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CheckIntegrityOpts {
+
+exec
+/bin/bash -lc "sed -n '270,320p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        let acme_cursor = receipt.row_cursors[0];
+        let globex_cursor = receipt.row_cursors[1];
+
+        opened.engine.drain(10_000).expect("drain seed writes");
+
+        // Guard: both edges are materialized (FTS + vec) before consolidation.
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert_eq!(edge_fts_count(&conn, "acme"), 1, "seed: acme edge must be FTS-indexed");
+            assert_eq!(edge_fts_count(&conn, "globex"), 1, "seed: globex edge must be FTS-indexed");
+        }
+        assert!(
+            opened.engine.has_vector_for_cursor_for_test(acme_cursor).expect("has_vector acme"),
+            "seed: acme edge must be vector-projected"
+        );
+        assert!(
+            opened.engine.has_vector_for_cursor_for_test(globex_cursor).expect("has_vector globex"),
+            "seed: globex edge must be vector-projected"
+        );
+
+        // Consolidate via the REAL provider path: the deterministic stub
+        // harness keeps the latest `t_valid` (globex) and invalidates the
+        // older competing edge (acme) at the winner's `t_valid` — a PAST
+        // timestamp, so acme is immediately "ended" per the recency filter
+        // (mirrors `apply_consolidate_verdicts`'s `ended` check).
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/slice15_consolidate/stub_consolidate_harness.py");
+        assert!(
+            script.exists(),
+            "consolidate stub harness fixture must exist at {}",
+            script.display()
+        );
+        let cmd = ["python3".to_string(), script.to_string_lossy().to_string()];
+        let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+        let axes = vec![ConsolidateAxis {
+            subject_logical_id: "bob".to_string(),
+            relation: "works_for".to_string(),
+        }];
+        let consolidate_receipt = opened
+            .engine
+            .consolidate_with_provider(&cmd_refs, &axes)
+            .expect("consolidate_with_provider must succeed with stub harness");
+        assert_eq!(consolidate_receipt.edges_invalidated, 1, "acme must be invalidated");
+        assert_eq!(consolidate_receipt.edges_kept, 1, "globex must be kept");
+
+        // The bug under test: a full rebuild truncates + re-materializes every
+        // FTS/vec shadow from `canonical_edges` — this MUST NOT re-surface the
+        // now-`t_invalid`-excluded acme edge. If the projection scheduler's
+        // pending-work probe does not mirror the same filter, this `drain()`
+        // would hang forever on a phantom-pending invalidated edge.
+        opened.engine.rebuild_projections().expect("rebuild_projections");
+
+exec
+/bin/bash -lc 'ls src' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+conformance
+python
+rust
+ts
+
+exec
+/bin/bash -lc 'ls src/rust/crates' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+fathomdb
+fathomdb-cli
+fathomdb-embedder
+fathomdb-embedder-api
+fathomdb-engine
+fathomdb-napi
+fathomdb-py
+fathomdb-query
+fathomdb-schema
+
+exec
+/bin/bash -lc 'ls src/python' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+README.md
+_typecheck_fixtures
+eval
+fathomdb
+pyproject.toml
+tests
+uv.lock
+
+exec
+/bin/bash -lc 'ls src/ts' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+package-lock.json
+package.json
+src
+tests
+tsconfig.build.json
+tsconfig.json
+
+codex
+The local source confirms the CLI arm and engine stable code both use `ConsolidatorError`, and the test now builds `cmd_refs` from a fixed array of `String`. I’m checking the native binding mappers and any other match sites before giving the verdict.
+exec
+/bin/bash -lc "sed -n '160,210p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        }
+        RustEngineError::KindNotVectorIndexed => {
+            KindNotVectorIndexedError::new_err("kind is not configured for vector indexing")
+        }
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => {
+            let exc = EmbedderDimensionMismatchError::new_err(format!(
+                "embedder vector dimension mismatch: stored {expected}, supplied {actual}",
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stored", expected);
+                let _ = v.setattr("supplied", actual);
+            });
+            exc
+        }
+        RustEngineError::Scheduler => SchedulerError::new_err("scheduler error"),
+        RustEngineError::OpStore => OpStoreError::new_err("op-store error"),
+        RustEngineError::WriteValidation => WriteValidationError::new_err("write validation error"),
+        RustEngineError::SchemaValidation => {
+            SchemaValidationError::new_err("schema validation error")
+        }
+        RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
+        RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+        RustEngineError::InvalidFilter { reason } => {
+            InvalidFilterError::new_err(format!("invalid filter: {reason}"))
+        }
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+    }
+}
+
+fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+    match kind {
+        CorruptionKind::WalReplayFailure => "WalReplayFailure",
+        CorruptionKind::HeaderMalformed => "HeaderMalformed",
+        CorruptionKind::SchemaInconsistent => "SchemaInconsistent",
+        CorruptionKind::EmbedderIdentityDrift => "EmbedderIdentityDrift",
+    }
+}
+
+fn open_stage_str(stage: OpenStage) -> &'static str {
+    match stage {
+        OpenStage::HeaderProbe => "HeaderProbe",
+        OpenStage::WalReplay => "WalReplay",
+        OpenStage::SchemaProbe => "SchemaProbe",
+        OpenStage::EmbedderIdentity => "EmbedderIdentity",
+    }
+}
+
+fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
+
+exec
+/bin/bash -lc "sed -n '175,220p' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+            JsonValue::Null,
+        ),
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => typed_error(
+            CODE_EMBEDDER_DIMENSION_MISMATCH,
+            format!("embedder vector dimension mismatch: stored {expected}, supplied {actual}"),
+            json!({ "stored": expected, "supplied": actual }),
+        ),
+        RustEngineError::Scheduler => {
+            typed_error(CODE_SCHEDULER, "scheduler error", JsonValue::Null)
+        }
+        RustEngineError::OpStore => typed_error(CODE_OP_STORE, "op-store error", JsonValue::Null),
+        RustEngineError::WriteValidation => {
+            typed_error(CODE_WRITE_VALIDATION, "write validation error", JsonValue::Null)
+        }
+        RustEngineError::SchemaValidation => {
+            typed_error(CODE_SCHEMA_VALIDATION, "schema validation error", JsonValue::Null)
+        }
+        RustEngineError::Overloaded => {
+            typed_error(CODE_OVERLOADED, "engine overloaded", JsonValue::Null)
+        }
+        RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+            typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::Consolidator => {
+            typed_error(CODE_CONSOLIDATOR, "consolidator error", JsonValue::Null)
+        }
+        RustEngineError::InvalidFilter { reason } => {
+            typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
+        }
+        RustEngineError::InvalidArgument { msg } => {
+            typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
+        }
+    }
+}
+
+fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+    match kind {
+        CorruptionKind::WalReplayFailure => "WalReplayFailure",
+        CorruptionKind::HeaderMalformed => "HeaderMalformed",
+        CorruptionKind::SchemaInconsistent => "SchemaInconsistent",
+        CorruptionKind::EmbedderIdentityDrift => "EmbedderIdentityDrift",
+    }
+}
+
+fn open_stage_str(stage: OpenStage) -> &'static str {
+
+exec
+/bin/bash -lc "sed -n '2040,2095p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    Scheduler,
+    OpStore,
+    WriteValidation,
+    SchemaValidation,
+    Overloaded,
+    Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
+    /// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — BYO-LLM consolidation provider
+    /// error (protocol mismatch, spawn/handshake failure, task not advertised in
+    /// `supported_tasks`, or a malformed/out-of-cluster verdict). Rides the SAME
+    /// `provider_session` transport as `Extractor`; this is the task-specific leaf.
+    Consolidator,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+    InvalidArgument {
+        msg: String,
+    },
+}
+
+impl Display for EngineError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Storage => write!(f, "storage error"),
+            Self::Projection => write!(f, "projection error"),
+            Self::Vector => write!(f, "vector error"),
+            Self::Embedder => write!(f, "embedder error"),
+            Self::EmbedderNotConfigured => write!(f, "embedder is not configured"),
+            Self::KindNotVectorIndexed => write!(f, "kind is not configured for vector indexing"),
+            Self::EmbedderDimensionMismatch { expected, actual } => {
+                write!(f, "embedder dimension mismatch: expected {expected}, actual {actual}")
+            }
+            Self::Scheduler => write!(f, "scheduler error"),
+            Self::OpStore => write!(f, "op-store error"),
+            Self::WriteValidation => write!(f, "write validation error"),
+            Self::SchemaValidation => write!(f, "schema validation error"),
+            Self::Overloaded => write!(f, "engine overloaded"),
+            Self::Closing => write!(f, "engine is closing"),
+            Self::Extractor => write!(f, "extractor error"),
+            Self::Consolidator => write!(f, "consolidator error"),
+            Self::InvalidFilter { reason } => write!(f, "invalid filter: {reason}"),
+            Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
+        }
+    }
+}
+
+impl EngineError {
+
+exec
+/bin/bash -lc 'git status --short' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+?? dev/plans/runs/0.8.12-fixcompile-output.json
+
+codex
+`git status` shows one untracked plan output file unrelated to the requested two-file review. Recursive search is also hitting the wrapper, so I’m checking known Rust binding files plus the Git diff/status paths directly.
+exec
+/bin/bash -lc 'git status --short' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+?? dev/plans/runs/0.8.12-fixcompile-output.json
+
+codex
+The sandbox allows `git status` but rejects `git diff`/recursive search in this environment, so I can’t independently print the diff. The source reads still cover the requested changed lines and named mapper sites.
+exec
+/bin/bash -lc "sed -n '1,260p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+// pyo3 0.22's `create_exception!` and `#[pymodule]` macros emit
+// `#[cfg(feature = "gil-refs")]` arms that reference an upstream
+// feature this crate does not export; the resulting `unexpected_cfgs`
+// warnings are noise on a clippy `-D warnings` gate. The
+// `useless_conversion` allow covers `#[pymethods]`-generated PyResult
+// wrappers that clippy flags as redundant `Into<PyErr>` calls.
+#![allow(unexpected_cfgs)]
+#![allow(clippy::useless_conversion)]
+
+//! PyO3 binding from the Python SDK to `fathomdb-engine`.
+//!
+//! FFI safety contract (mirrored by Phase 11b napi-rs):
+//!
+//! 1. Every method that may block inside the engine wraps the call in
+//!    `py.detach(...)` so the GIL is released for the duration.
+//! 2. Engine entry points return typed errors via [`engine_error_to_py`] /
+//!    [`engine_open_error_to_py`] — single-switch mapping with no
+//!    catch-all arm; the binding fails to compile when the Rust variant
+//!    set drifts from the Python class set (AC-060a).
+//! 3. Every string crossing the FFI is checked by [`validate_ffi_string`]
+//!    for embedded NUL or unpaired UTF-16 surrogates BEFORE the writer
+//!    transaction opens (AC-068a / AC-068b).
+//! 4. Panics inside engine code surface as Python `PanicException`
+//!    instances (PyO3 `pyo3::panic::PanicException`); the host process
+//!    is not aborted (AC-067). Engine calls are wrapped in
+//!    `catch_unwind` so the panic is translated on the Rust side rather
+//!    than relying on PyO3's implicit conversion at the FFI boundary.
+//!    PanicException is intentionally NOT an `EngineError` subclass:
+//!    panic is a contract bug, not a typed engine outcome, and callers
+//!    that catch `EngineError` must not silently swallow it.
+
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::Arc;
+
+use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
+use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
+use fathomdb_engine::{
+    rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp,
+    ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
+    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
+    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
+    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    WriteReceipt as RustWriteReceipt,
+};
+use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyTypeError, PyValueError};
+use pyo3::panic::PanicException;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
+
+// ===== Exceptions =====================================================
+//
+// Root + concrete leaves per dev/design/errors.md § Binding-facing class
+// matrix. All concrete leaves inherit from `EngineError`; `EngineError`
+// inherits from Python `Exception` via `create_exception!`.
+
+create_exception!(_fathomdb, EngineError, PyException);
+create_exception!(_fathomdb, StorageError, EngineError);
+create_exception!(_fathomdb, ProjectionError, EngineError);
+create_exception!(_fathomdb, VectorError, EngineError);
+create_exception!(_fathomdb, KindNotVectorIndexedError, VectorError);
+create_exception!(_fathomdb, EmbedderError, EngineError);
+create_exception!(_fathomdb, EmbedderNotConfiguredError, EmbedderError);
+create_exception!(_fathomdb, SchedulerError, EngineError);
+create_exception!(_fathomdb, OpStoreError, EngineError);
+create_exception!(_fathomdb, WriteValidationError, EngineError);
+create_exception!(_fathomdb, SchemaValidationError, EngineError);
+create_exception!(_fathomdb, OverloadedError, EngineError);
+create_exception!(_fathomdb, ClosingError, EngineError);
+create_exception!(_fathomdb, DatabaseLockedError, EngineError);
+create_exception!(_fathomdb, CorruptionError, EngineError);
+create_exception!(_fathomdb, IncompatibleSchemaVersionError, EngineError);
+create_exception!(_fathomdb, MigrationError, EngineError);
+create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
+create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+create_exception!(_fathomdb, ExtractorError, EngineError);
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+create_exception!(_fathomdb, ConsolidatorError, EngineError);
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+create_exception!(_fathomdb, InvalidFilterError, EngineError);
+// Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
+create_exception!(_fathomdb, InvalidArgumentError, EngineError);
+
+// ===== String validation (AC-068a / AC-068b) =========================
+
+/// Reject strings carrying an embedded NUL or an unpaired UTF-16
+/// surrogate codepoint (`U+D800..=U+DFFF`).
+///
+/// Both are valid Python `str` values but invalid for SQLite text
+/// columns; AC-068a/b requires the binding to reject them BEFORE the
+/// writer transaction opens (no-row-written invariant).
+pub fn validate_ffi_string(value: &str) -> Result<(), String> {
+    if value.as_bytes().contains(&0) {
+        return Err("embedded NUL byte in FFI string".to_string());
+    }
+    for ch in value.chars() {
+        let cp = ch as u32;
+        if (0xD800..=0xDFFF).contains(&cp) {
+            return Err(format!("unpaired UTF-16 surrogate U+{cp:04X} in FFI string"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_ffi_string_py(value: &str) -> PyResult<()> {
+    validate_ffi_string(value).map_err(WriteValidationError::new_err)
+}
+
+/// Extract a Python string into a Rust `String` and run
+/// [`validate_ffi_string_py`]. PyO3's built-in `str` extraction already
+/// fails on lone surrogates (the underlying `PyUnicode_AsUTF8AndSize`
+/// raises `UnicodeEncodeError`); we re-raise those as the typed
+/// `WriteValidationError` so callers can dispatch on a single class.
+fn extract_validated_str(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    match value.extract::<String>() {
+        Ok(s) => {
+            validate_ffi_string_py(&s)?;
+            Ok(s)
+        }
+        Err(_) => Err(WriteValidationError::new_err(
+            "string contains characters not representable as UTF-8 (lone surrogate)",
+        )),
+    }
+}
+
+/// `Option` lift of [`extract_validated_str`]: `None`/`None`-valued stays
+/// `None` (preserving the all-`None` byte-identical unfiltered path); a
+/// present value is extracted and validated through the same FFI gate as the
+/// write path. Used by `search` for the G10 `SearchFilter` string fields.
+fn extract_opt_validated_str(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<String>> {
+    match value {
+        Some(v) if !v.is_none() => Ok(Some(extract_validated_str(v)?)),
+        _ => Ok(None),
+    }
+}
+
+// ===== Error mapping ==================================================
+
+/// Translate every `EngineError` variant to its Python counterpart.
+///
+/// No catch-all arm: drift between the Rust enum and the Python class
+/// set is a compile error.
+fn engine_error_to_py(err: RustEngineError) -> PyErr {
+    match err {
+        RustEngineError::Storage => StorageError::new_err("storage error"),
+        RustEngineError::Projection => ProjectionError::new_err("projection error"),
+        RustEngineError::Vector => VectorError::new_err("vector error"),
+        RustEngineError::Embedder => EmbedderError::new_err("embedder error"),
+        RustEngineError::EmbedderNotConfigured => {
+            EmbedderNotConfiguredError::new_err("embedder is not configured")
+        }
+        RustEngineError::KindNotVectorIndexed => {
+            KindNotVectorIndexedError::new_err("kind is not configured for vector indexing")
+        }
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => {
+            let exc = EmbedderDimensionMismatchError::new_err(format!(
+                "embedder vector dimension mismatch: stored {expected}, supplied {actual}",
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stored", expected);
+                let _ = v.setattr("supplied", actual);
+            });
+            exc
+        }
+        RustEngineError::Scheduler => SchedulerError::new_err("scheduler error"),
+        RustEngineError::OpStore => OpStoreError::new_err("op-store error"),
+        RustEngineError::WriteValidation => WriteValidationError::new_err("write validation error"),
+        RustEngineError::SchemaValidation => {
+            SchemaValidationError::new_err("schema validation error")
+        }
+        RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
+        RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+        RustEngineError::InvalidFilter { reason } => {
+            InvalidFilterError::new_err(format!("invalid filter: {reason}"))
+        }
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+    }
+}
+
+fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+    match kind {
+        CorruptionKind::WalReplayFailure => "WalReplayFailure",
+        CorruptionKind::HeaderMalformed => "HeaderMalformed",
+        CorruptionKind::SchemaInconsistent => "SchemaInconsistent",
+        CorruptionKind::EmbedderIdentityDrift => "EmbedderIdentityDrift",
+    }
+}
+
+fn open_stage_str(stage: OpenStage) -> &'static str {
+    match stage {
+        OpenStage::HeaderProbe => "HeaderProbe",
+        OpenStage::WalReplay => "WalReplay",
+        OpenStage::SchemaProbe => "SchemaProbe",
+        OpenStage::EmbedderIdentity => "EmbedderIdentity",
+    }
+}
+
+fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
+    match err {
+        EngineOpenError::DatabaseLocked { holder_pid } => {
+            let exc = DatabaseLockedError::new_err(match holder_pid {
+                Some(pid) => format!("database is locked by process {pid}"),
+                None => "database is locked by another engine instance".to_string(),
+            });
+            Python::attach(|py| {
+                let _ = exc.value(py).setattr("holder_pid", holder_pid);
+            });
+            exc
+        }
+        EngineOpenError::Corruption(detail) => corruption_to_py(detail),
+        EngineOpenError::IncompatibleSchemaVersion { seen, supported } => {
+            IncompatibleSchemaVersionError::new_err(format!(
+                "database schema version {seen} is incompatible with supported version {supported}"
+            ))
+        }
+        EngineOpenError::MigrationError {
+            schema_version_before,
+            schema_version_current,
+            step_id,
+        } => MigrationError::new_err(format!(
+            "schema migration failed at step {step_id}; schema version remained between {schema_version_before} and {schema_version_current}"
+        )),
+        EngineOpenError::EmbedderIdentityMismatch { stored, supplied } => {
+            let exc = EmbedderIdentityMismatchError::new_err(format!(
+                "embedder identity mismatch: stored {}@{}, supplied {}@{}",
+                stored.name, stored.revision, supplied.name, supplied.revision,
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stored_name", stored.name);
+                let _ = v.setattr("stored_revision", stored.revision);
+                let _ = v.setattr("supplied_name", supplied.name);
+                let _ = v.setattr("supplied_revision", supplied.revision);
+            });
+            exc
+        }
+        EngineOpenError::EmbedderDimensionMismatch { stored, supplied } => {
+            let exc = EmbedderDimensionMismatchError::new_err(format!(
+                "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stored", stored);
+                let _ = v.setattr("supplied", supplied);
+            });
+            exc
+        }
+        EngineOpenError::Embedder(err) => EmbedderError::new_err(format!("{err:?}")),
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+//! napi-rs binding from the TypeScript SDK to `fathomdb-engine`.
+//!
+//! FFI safety contract (mirrors the PyO3 binding in `fathomdb-py`):
+//!
+//! 1. Every method that may block inside the engine runs its blocking
+//!    body inside `tokio::task::spawn_blocking`, so the libuv main
+//!    thread is never tied up. napi-rs's `#[napi] async fn` wraps
+//!    return values as JS `Promise<T>`.
+//! 2. Engine entry points return typed errors via [`engine_error_to_napi`] /
+//!    [`engine_open_error_to_napi`] — single-switch mapping with no
+//!    catch-all arm; the binding fails to compile when the Rust variant
+//!    set drifts from the TS leaf-class set (AC-060a).
+//! 3. Every string crossing the FFI is checked by [`validate_ffi_string`]
+//!    for embedded NUL or unpaired UTF-16 surrogates BEFORE the writer
+//!    transaction opens (AC-068a / AC-068b).
+//! 4. Engine panics are caught via `catch_unwind` inside the spawn-blocking
+//!    body and rethrown as a distinct `FathomDbPanicError` (code
+//!    `FDB_PANIC`); the host process is not aborted (AC-067).
+//
+// why: napi-rs catches panics by default but throws a generic JS
+// `Error` with `Status::GenericFailure` and a Rust-formatted message,
+// which is hard to assert on. Explicit `catch_unwind` + a stable
+// `FDB_PANIC` code lets the TS-side `rethrowTyped` map panics to a
+// distinct `FathomDbPanicError` class that is intentionally NOT a
+// `FathomDbError` subclass: panic is a contract bug, not a typed
+// engine outcome.
+
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::Arc;
+
+use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
+use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
+use fathomdb_engine::{
+    ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
+    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
+    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
+    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
+};
+use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
+use napi::{Error, JsUnknown, Result, Status};
+use napi_derive::napi;
+use serde::Serialize;
+use serde_json::{json, Value as JsonValue};
+
+// ===== Error-code constants ===========================================
+//
+// One per typed leaf class on the TS side. The single-switch translator
+// below maps every engine variant to exactly one of these codes; the TS
+// `rethrowTyped` table maps each code to exactly one leaf class. Drift
+// fails to compile (Rust side) or fails an exhaustiveness check (TS).
+
+const CODE_STORAGE: &str = "FDB_STORAGE";
+const CODE_PROJECTION: &str = "FDB_PROJECTION";
+const CODE_VECTOR: &str = "FDB_VECTOR";
+const CODE_EMBEDDER: &str = "FDB_EMBEDDER";
+const CODE_EMBEDDER_NOT_CONFIGURED: &str = "FDB_EMBEDDER_NOT_CONFIGURED";
+const CODE_KIND_NOT_VECTOR_INDEXED: &str = "FDB_KIND_NOT_VECTOR_INDEXED";
+const CODE_EMBEDDER_DIMENSION_MISMATCH: &str = "FDB_EMBEDDER_DIMENSION_MISMATCH";
+const CODE_SCHEDULER: &str = "FDB_SCHEDULER";
+const CODE_OP_STORE: &str = "FDB_OP_STORE";
+const CODE_WRITE_VALIDATION: &str = "FDB_WRITE_VALIDATION";
+const CODE_SCHEMA_VALIDATION: &str = "FDB_SCHEMA_VALIDATION";
+const CODE_OVERLOADED: &str = "FDB_OVERLOADED";
+const CODE_CLOSING: &str = "FDB_CLOSING";
+const CODE_DATABASE_LOCKED: &str = "FDB_DATABASE_LOCKED";
+const CODE_CORRUPTION: &str = "FDB_CORRUPTION";
+const CODE_INCOMPATIBLE_SCHEMA_VERSION: &str = "FDB_INCOMPATIBLE_SCHEMA_VERSION";
+const CODE_MIGRATION: &str = "FDB_MIGRATION";
+const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
+// Slice 20 — depth > 3 or invalid argument (G5/G6).
+const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
+const CODE_PANIC: &str = "FDB_PANIC";
+
+// ===== Typed-error encoder ============================================
+
+/// Encode a typed-error envelope as JSON in `err.message` so the
+/// TS-side `rethrowTyped` can reconstitute the right leaf class with
+/// the right payload. napi-rs 2.x has no public API for throwing a
+/// Rust-defined JS class directly; the envelope-in-message pattern is
+/// the canonical workaround.
+#[derive(Serialize)]
+struct TypedEnvelope<'a> {
+    code: &'a str,
+    message: String,
+    payload: JsonValue,
+}
+
+fn typed_error(code: &'static str, message: impl Into<String>, payload: JsonValue) -> Error {
+    let envelope = TypedEnvelope { code, message: message.into(), payload };
+    // serde_json serialization is infallible for our envelope shape;
+    // unwrap is safe.
+    let reason = serde_json::to_string(&envelope).unwrap();
+    Error::new(Status::GenericFailure, reason)
+}
+
+// ===== String validation (AC-068a / AC-068b) =========================
+
+/// Reject strings carrying an embedded NUL or an unpaired UTF-16
+/// surrogate codepoint (`U+D800..=U+DFFF`).
+///
+/// JavaScript strings are UTF-16 by spec, so lone surrogates are
+/// representable on the JS side (`String.fromCharCode(0xD800)`). The
+/// napi-rs string conversion translates UTF-16 → UTF-8 and accepts
+/// some malformed inputs; this helper rejects them BEFORE the writer
+/// transaction opens (no-row-written invariant).
+pub fn validate_ffi_string(value: &str) -> std::result::Result<(), String> {
+    if value.as_bytes().contains(&0) {
+        return Err("embedded NUL byte in FFI string".to_string());
+    }
+    for ch in value.chars() {
+        let cp = ch as u32;
+        if (0xD800..=0xDFFF).contains(&cp) {
+            return Err(format!("unpaired UTF-16 surrogate U+{cp:04X} in FFI string"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_ffi_string_napi(value: &str) -> Result<()> {
+    validate_ffi_string(value)
+        .map_err(|msg| typed_error(CODE_WRITE_VALIDATION, msg, JsonValue::Null))
+}
+
+/// codex §9 [P2] — convert a napi `i64` id list to the engine's `u64`, rejecting
+/// any negative id (which `as u64` would silently wrap). Mirrors the TS/Python
+/// wrapper `validateIdArray`/`_validate_id_list` guards so a raw-napi caller
+/// cannot smuggle a wrapped id past the boundary.
+fn checked_ids_napi(name: &str, ids: &[i64]) -> Result<Vec<u64>> {
+    ids.iter()
+        .map(|&x| {
+            u64::try_from(x).map_err(|_| {
+                typed_error(
+                    CODE_WRITE_VALIDATION,
+                    format!("{name} must contain only non-negative integers, got {x}"),
+                    JsonValue::Null,
+                )
+            })
+        })
+        .collect()
+}
+
+// ===== Error mapping ==================================================
+
+/// Translate every `EngineError` variant to its typed JS counterpart.
+///
+/// No catch-all arm: drift between the Rust enum and the TS class set
+/// is a compile error.
+fn engine_error_to_napi(err: RustEngineError) -> Error {
+    match err {
+        RustEngineError::Storage => typed_error(CODE_STORAGE, "storage error", JsonValue::Null),
+        RustEngineError::Projection => {
+            typed_error(CODE_PROJECTION, "projection error", JsonValue::Null)
+        }
+        RustEngineError::Vector => typed_error(CODE_VECTOR, "vector error", JsonValue::Null),
+        RustEngineError::Embedder => typed_error(CODE_EMBEDDER, "embedder error", JsonValue::Null),
+        RustEngineError::EmbedderNotConfigured => {
+            typed_error(CODE_EMBEDDER_NOT_CONFIGURED, "embedder is not configured", JsonValue::Null)
+        }
+        RustEngineError::KindNotVectorIndexed => typed_error(
+            CODE_KIND_NOT_VECTOR_INDEXED,
+            "kind is not configured for vector indexing",
+            JsonValue::Null,
+        ),
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => typed_error(
+            CODE_EMBEDDER_DIMENSION_MISMATCH,
+            format!("embedder vector dimension mismatch: stored {expected}, supplied {actual}"),
+            json!({ "stored": expected, "supplied": actual }),
+        ),
+        RustEngineError::Scheduler => {
+            typed_error(CODE_SCHEDULER, "scheduler error", JsonValue::Null)
+        }
+        RustEngineError::OpStore => typed_error(CODE_OP_STORE, "op-store error", JsonValue::Null),
+        RustEngineError::WriteValidation => {
+            typed_error(CODE_WRITE_VALIDATION, "write validation error", JsonValue::Null)
+        }
+        RustEngineError::SchemaValidation => {
+            typed_error(CODE_SCHEMA_VALIDATION, "schema validation error", JsonValue::Null)
+        }
+        RustEngineError::Overloaded => {
+            typed_error(CODE_OVERLOADED, "engine overloaded", JsonValue::Null)
+        }
+        RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+            typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+        }
+        RustEngineError::Consolidator => {
+            typed_error(CODE_CONSOLIDATOR, "consolidator error", JsonValue::Null)
+        }
+        RustEngineError::InvalidFilter { reason } => {
+            typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
+        }
+        RustEngineError::InvalidArgument { msg } => {
+            typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
+        }
+    }
+}
+
+fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+    match kind {
+        CorruptionKind::WalReplayFailure => "WalReplayFailure",
+        CorruptionKind::HeaderMalformed => "HeaderMalformed",
+        CorruptionKind::SchemaInconsistent => "SchemaInconsistent",
+        CorruptionKind::EmbedderIdentityDrift => "EmbedderIdentityDrift",
+    }
+}
+
+fn open_stage_str(stage: OpenStage) -> &'static str {
+    match stage {
+        OpenStage::HeaderProbe => "HeaderProbe",
+        OpenStage::WalReplay => "WalReplay",
+        OpenStage::SchemaProbe => "SchemaProbe",
+        OpenStage::EmbedderIdentity => "EmbedderIdentity",
+    }
+}
+
+fn corruption_to_napi(detail: CorruptionDetail) -> Error {
+    let kind = corruption_kind_str(detail.kind);
+    let stage = open_stage_str(detail.stage);
+    let recovery_hint_code = detail.recovery_hint.code;
+    let doc_anchor = detail.recovery_hint.doc_anchor;
+    typed_error(
+        CODE_CORRUPTION,
+        format!("corruption {kind} at stage {stage} ({recovery_hint_code})"),
+        json!({
+            "kind": kind,
+            "stage": stage,
+            "recoveryHintCode": recovery_hint_code,
+            "docAnchor": doc_anchor,
+        }),
+    )
+}
+
+fn engine_open_error_to_napi(err: EngineOpenError) -> Error {
+    match err {
+        EngineOpenError::DatabaseLocked { holder_pid } => typed_error(
+            CODE_DATABASE_LOCKED,
+            match holder_pid {
+                Some(pid) => format!("database is locked by process {pid}"),
+                None => "database is locked by another engine instance".to_string(),
+            },
+            json!({ "holderPid": holder_pid }),
+        ),
+        EngineOpenError::Corruption(detail) => corruption_to_napi(detail),
+        EngineOpenError::IncompatibleSchemaVersion { seen, supported } => typed_error(
+            CODE_INCOMPATIBLE_SCHEMA_VERSION,
+            format!(
+                "database schema version {seen} is incompatible with supported version {supported}"
+
+exec
+/bin/bash -lc "sed -n '650,750p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        Ok((value, outcome)) => {
+            println!("{value}");
+            outcome_to_exit_code(outcome)
+        }
+        Err(err) => match error_outcome {
+            Some(outcome) => emit_engine_error_with_outcome(verb, &err, outcome),
+            None => emit_engine_error(verb, &err),
+        },
+    }
+}
+
+/// Open the engine for `recover`, invoke `f`, print the JSON, and map the
+/// outcome to `RECOVERY_ACCEPTED_LOSS` (64) on success.
+fn wire_recover<F>(db_path: &std::path::Path, sub_verb: &str, f: F) -> i32
+where
+    F: FnOnce(&Engine) -> Result<Value, EngineError>,
+{
+    let opened = match Engine::open(db_path.to_path_buf()) {
+        Ok(o) => o,
+        Err(err) => return emit_engine_open_error(sub_verb, &err),
+    };
+    match f(&opened.engine) {
+        Ok(value) => {
+            println!("{value}");
+            outcome_to_exit_code(CliOutcome::RecoveryAcceptedLoss)
+        }
+        Err(err) => emit_engine_error(sub_verb, &err),
+    }
+}
+
+fn emit_engine_error(verb: &str, err: &EngineError) -> i32 {
+    emit_engine_error_with_outcome(verb, err, engine_error_to_outcome(err))
+}
+
+fn emit_engine_error_with_outcome(verb: &str, err: &EngineError, outcome: CliOutcome) -> i32 {
+    let payload = json!({
+        "status": "error",
+        "verb": verb,
+        "code": engine_error_code(err),
+        "detail": err.to_string(),
+    });
+    println!("{payload}");
+    outcome_to_exit_code(outcome)
+}
+
+fn emit_engine_open_error(verb: &str, err: &EngineOpenError) -> i32 {
+    let outcome = engine_open_error_to_outcome(err);
+    let payload = json!({
+        "status": "error",
+        "verb": verb,
+        "code": engine_open_error_code(err),
+        "detail": err.to_string(),
+    });
+    println!("{payload}");
+    outcome_to_exit_code(outcome)
+}
+
+fn engine_error_code(err: &EngineError) -> &'static str {
+    match err {
+        EngineError::Storage => "StorageError",
+        EngineError::Projection => "ProjectionError",
+        EngineError::Vector => "VectorError",
+        EngineError::Embedder => "EmbedderError",
+        EngineError::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+        EngineError::KindNotVectorIndexed => "KindNotVectorIndexedError",
+        EngineError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineError::Scheduler => "SchedulerError",
+        EngineError::OpStore => "OpStoreError",
+        EngineError::WriteValidation => "WriteValidationError",
+        EngineError::SchemaValidation => "SchemaValidationError",
+        EngineError::Overloaded => "OverloadedError",
+        EngineError::Closing => "ClosingError",
+        EngineError::Extractor => "ExtractorError",
+        EngineError::Consolidator => "ConsolidatorError",
+        // G4 (Slice 35) — filter predicate construction error.
+        EngineError::InvalidFilter { .. } => "InvalidFilterError",
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
+    }
+}
+
+fn engine_open_error_code(err: &EngineOpenError) -> &'static str {
+    match err {
+        EngineOpenError::DatabaseLocked { .. } => "DatabaseLockedError",
+        EngineOpenError::Corruption(_) => "CorruptionError",
+        EngineOpenError::IncompatibleSchemaVersion { .. } => "IncompatibleSchemaVersionError",
+        EngineOpenError::MigrationError { .. } => "MigrationError",
+        EngineOpenError::EmbedderIdentityMismatch { .. } => "EmbedderIdentityMismatchError",
+        EngineOpenError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineOpenError::Embedder(_) => "EmbedderError",
+        EngineOpenError::Io { .. } => "IoError",
+    }
+}
+
+// ---- JSON serializers for engine report types ----
+
+fn integrity_report_outcome(report: &IntegrityReport) -> (Value, CliOutcome) {
+    let any_findings = matches!(report.physical, Section::Findings(_))
+        || matches!(report.logical, Section::Findings(_))
+        || matches!(report.semantic, Section::Findings(_));
+    let body = json!({
+        "verb": "check-integrity",
+
+exec
+/bin/bash -lc "sed -n '2000,2130p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+                schema_version_current,
+                step_id,
+            } => write!(
+                f,
+                "schema migration failed at step {step_id}; schema version remained between {schema_version_before} and {schema_version_current}"
+            ),
+            Self::EmbedderIdentityMismatch { stored, supplied } => write!(
+                f,
+                "embedder identity mismatch: stored {}@{}, supplied {}@{}",
+                stored.name, stored.revision, supplied.name, supplied.revision,
+            ),
+            Self::EmbedderDimensionMismatch { stored, supplied } => write!(
+                f,
+                "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
+            ),
+            Self::Embedder(err) => match err {
+                RuntimeEmbedderError::Timeout => write!(f, "embedder timeout during open"),
+                RuntimeEmbedderError::Failed { message } => {
+                    write!(f, "embedder failure during open: {message}")
+                }
+            },
+            Self::Io { message } => write!(f, "database I/O error: {message}"),
+        }
+    }
+}
+
+impl Error for EngineOpenError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EngineError {
+    Storage,
+    Projection,
+    Vector,
+    Embedder,
+    EmbedderNotConfigured,
+    KindNotVectorIndexed,
+    EmbedderDimensionMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    Scheduler,
+    OpStore,
+    WriteValidation,
+    SchemaValidation,
+    Overloaded,
+    Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
+    /// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — BYO-LLM consolidation provider
+    /// error (protocol mismatch, spawn/handshake failure, task not advertised in
+    /// `supported_tasks`, or a malformed/out-of-cluster verdict). Rides the SAME
+    /// `provider_session` transport as `Extractor`; this is the task-specific leaf.
+    Consolidator,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+    InvalidArgument {
+        msg: String,
+    },
+}
+
+impl Display for EngineError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Storage => write!(f, "storage error"),
+            Self::Projection => write!(f, "projection error"),
+            Self::Vector => write!(f, "vector error"),
+            Self::Embedder => write!(f, "embedder error"),
+            Self::EmbedderNotConfigured => write!(f, "embedder is not configured"),
+            Self::KindNotVectorIndexed => write!(f, "kind is not configured for vector indexing"),
+            Self::EmbedderDimensionMismatch { expected, actual } => {
+                write!(f, "embedder dimension mismatch: expected {expected}, actual {actual}")
+            }
+            Self::Scheduler => write!(f, "scheduler error"),
+            Self::OpStore => write!(f, "op-store error"),
+            Self::WriteValidation => write!(f, "write validation error"),
+            Self::SchemaValidation => write!(f, "schema validation error"),
+            Self::Overloaded => write!(f, "engine overloaded"),
+            Self::Closing => write!(f, "engine is closing"),
+            Self::Extractor => write!(f, "extractor error"),
+            Self::Consolidator => write!(f, "consolidator error"),
+            Self::InvalidFilter { reason } => write!(f, "invalid filter: {reason}"),
+            Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
+        }
+    }
+}
+
+impl EngineError {
+    /// Stable machine-readable code for `errors_by_code` keys.
+    ///
+    /// Names match the binding-facing class stems in
+    /// `dev/design/errors.md` § Binding-facing class matrix.
+    fn stable_code(&self) -> &'static str {
+        match self {
+            Self::Storage => "StorageError",
+            Self::Projection => "ProjectionError",
+            Self::Vector => "VectorError",
+            Self::Embedder => "EmbedderError",
+            Self::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+            Self::KindNotVectorIndexed => "KindNotVectorIndexedError",
+            Self::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+            Self::Scheduler => "SchedulerError",
+            Self::OpStore => "OpStoreError",
+            Self::WriteValidation => "WriteValidationError",
+            Self::SchemaValidation => "SchemaValidationError",
+            Self::Overloaded => "OverloadedError",
+            Self::Closing => "ClosingError",
+            Self::Extractor => "ExtractorError",
+            Self::Consolidator => "ConsolidatorError",
+            Self::InvalidFilter { .. } => "InvalidFilterError",
+            Self::InvalidArgument { .. } => "InvalidArgumentError",
+        }
+    }
+}
+
+impl Error for EngineError {}
+
+/// Doctor `check-integrity` invocation flags. `quick` and `round_trip`
+/// are accepted in 0.6.0 but treated as default; only `full` activates
+/// `PRAGMA integrity_check`. Per `dev/design/recovery.md` § Doctor-only
+/// flags.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CheckIntegrityOpts {
+
+codex
+The binding mappers are single-switch and already include `RustEngineError::Consolidator`; the JS side uses `FDB_CONSOLIDATOR`, while the Python leaf class is `ConsolidatorError`. One more pass over CLI outcome mapping will catch whether a separate match site still lacks the variant.
+exec
+/bin/bash -lc "sed -n '560,650p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+                "code": "DefaultEmbedderFeatureDisabled",
+                "detail": detail,
+            });
+            println!("{payload}");
+        } else {
+            eprintln!("warm-cache: error: {detail}");
+        }
+        exit_code::UNRECOVERABLE
+    }
+}
+
+#[cfg(feature = "default-embedder")]
+fn warm_cache_event_json(ev: &fathomdb_embedder::EmbedderEvent) -> Value {
+    use fathomdb_embedder::EmbedderEvent;
+    match ev {
+        EmbedderEvent::DefaultEmbedderDownload {
+            file,
+            url,
+            bytes,
+            sha256,
+            cache_path,
+            duration_ms,
+        } => json!({
+            "kind": "download",
+            "file": file,
+            "url": url,
+            "bytes": bytes,
+            "sha256": sha256,
+            "cache_path": cache_path.to_string_lossy(),
+            "duration_ms": duration_ms,
+        }),
+        EmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => json!({
+            "kind": "cache_hit",
+            "file": file,
+            "sha256": sha256,
+            "cache_path": cache_path.to_string_lossy(),
+        }),
+        EmbedderEvent::MeanVecPinned { dim, doc_count } => json!({
+            "kind": "mean_vec_pinned",
+            "dim": dim,
+            "doc_count": doc_count,
+        }),
+        EmbedderEvent::MeanVecRecomputed { dim, doc_count, trigger } => json!({
+            "kind": "mean_vec_recomputed",
+            "dim": dim,
+            "doc_count": doc_count,
+            "trigger": trigger.as_str(),
+        }),
+    }
+}
+
+/// Open the engine, invoke `f`, print the resulting JSON value, and map
+/// the outcome to an exit code. The closure returns `(json, outcome)`.
+fn run_doctor_verb<F>(db_path: &std::path::Path, verb: &str, f: F) -> i32
+where
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+{
+    run_doctor_verb_inner(db_path, verb, None, f)
+}
+
+/// Variant that overrides the `EngineError` → outcome mapping for verbs
+/// with a dedicated failure class (per `cli.md § Error → exit-code
+/// mapping`). Example: `doctor safe-export` maps engine errors to
+/// `ExportFailure` (66), not the default `Unrecoverable` (70).
+fn run_doctor_verb_with_error_outcome<F>(
+    db_path: &std::path::Path,
+    verb: &str,
+    error_outcome: CliOutcome,
+    f: F,
+) -> i32
+where
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+{
+    run_doctor_verb_inner(db_path, verb, Some(error_outcome), f)
+}
+
+fn run_doctor_verb_inner<F>(
+    db_path: &std::path::Path,
+    verb: &str,
+    error_outcome: Option<CliOutcome>,
+    f: F,
+) -> i32
+where
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+{
+    let opened = match Engine::open(db_path.to_path_buf()) {
+        Ok(o) => o,
+        Err(err) => return emit_engine_open_error(verb, &err),
+    };
+    match f(&opened.engine) {
+        Ok((value, outcome)) => {
+
+exec
+/bin/bash -lc "sed -n '320,460p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        opened.engine.rebuild_projections().expect("rebuild_projections");
+        opened
+            .engine
+            .drain(10_000)
+            .expect("post-rebuild drain must not hang on a phantom-pending invalidated edge");
+
+        (acme_cursor, globex_cursor)
+    };
+
+    let conn = Connection::open(&path).unwrap();
+
+    assert_eq!(
+        edge_fts_count(&conn, "acme"),
+        0,
+        "rebuild must NOT re-surface the t_invalid-excluded edge in search_index_edges"
+    );
+    assert_eq!(
+        edge_fts_count(&conn, "globex"),
+        1,
+        "rebuild must keep the still-valid edge in search_index_edges (guard against a vacuous test)"
+    );
+
+    assert_eq!(
+        vector_row_count(&conn, acme_cursor),
+        0,
+        "rebuild must NOT re-materialize the invalidated edge's vector row"
+    );
+    assert_eq!(
+        vector_row_count(&conn, globex_cursor),
+        1,
+        "rebuild must keep the still-valid edge's vector row (guard against a vacuous test)"
+    );
+}
+
+exec
+/bin/bash -lc "sed -n '740,830p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    }
+}
+
+// ---- JSON serializers for engine report types ----
+
+fn integrity_report_outcome(report: &IntegrityReport) -> (Value, CliOutcome) {
+    let any_findings = matches!(report.physical, Section::Findings(_))
+        || matches!(report.logical, Section::Findings(_))
+        || matches!(report.semantic, Section::Findings(_));
+    let body = json!({
+        "verb": "check-integrity",
+        "physical": section_json(&report.physical),
+        "logical": section_json(&report.logical),
+        "semantic": section_json(&report.semantic),
+    });
+    let outcome = if any_findings { CliOutcome::Findings } else { CliOutcome::Clean };
+    (body, outcome)
+}
+
+fn section_json(section: &Section) -> Value {
+    match section {
+        Section::Clean => json!({ "status": "clean", "findings": [] }),
+        Section::Findings(findings) => json!({
+            "status": "findings",
+            "findings": findings.iter().map(finding_json).collect::<Vec<_>>(),
+        }),
+    }
+}
+
+fn finding_json(f: &Finding) -> Value {
+    json!({
+        "code": f.code,
+        "stage": f.stage,
+        "locator": locator_json(&f.locator),
+        "doc_anchor": f.doc_anchor,
+        "detail": f.detail,
+    })
+}
+
+fn locator_json(loc: &CorruptionLocator) -> Value {
+    match loc {
+        CorruptionLocator::FileOffset { offset } => {
+            json!({ "kind": "file_offset", "offset": offset })
+        }
+        CorruptionLocator::PageId { page } => json!({ "kind": "page_id", "page": page }),
+        CorruptionLocator::TableRow { table, rowid } => {
+            json!({ "kind": "table_row", "table": table, "rowid": rowid })
+        }
+        CorruptionLocator::Vec0ShadowRow { partition, rowid } => {
+            json!({ "kind": "vec0_shadow_row", "partition": partition, "rowid": rowid })
+        }
+        CorruptionLocator::MigrationStep { from, to } => {
+            json!({ "kind": "migration_step", "from": from, "to": to })
+        }
+        CorruptionLocator::OpaqueSqliteError { sqlite_extended_code } => {
+            json!({
+                "kind": "opaque_sqlite_error",
+                "sqlite_extended_code": sqlite_extended_code,
+            })
+        }
+    }
+}
+
+fn safe_export_json(a: &SafeExportArtifact) -> Value {
+    json!({
+        "verb": "safe-export",
+        "export_path": a.export_path.to_string_lossy(),
+        "manifest_path": a.manifest_path.to_string_lossy(),
+        "manifest_sha256": a.manifest_sha256,
+    })
+}
+
+fn trace_report_json(t: &TraceReport) -> Value {
+    json!({
+        "verb": "trace",
+        "source_ref": t.source_ref,
+        "events": t.events.iter().map(|e| json!({
+            "write_cursor": e.write_cursor,
+            "kind": e.kind,
+            "table": e.table,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn rebuild_report_json(verb: &'static str, r: &RebuildReport) -> Value {
+    let kind = match r.kind {
+        RebuildKind::Projections => "projections",
+        RebuildKind::Vec0 => "vec0",
+    };
+    json!({
+        "verb": verb,
+
+exec
+/bin/bash -lc "sed -n '240,270p' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        opened.engine.configure_vector_kind_for_test("edge_fact").expect("vector kind");
+
+        let older = PreparedWrite::Edge {
+            kind: "works_for".to_string(),
+            from: "bob".to_string(),
+            to: "acme".to_string(),
+            source_id: Some("doc-acme".to_string()),
+            logical_id: Some("edge-acme".to_string()),
+            body: Some("Bob works for Acme".to_string()),
+            t_valid: Some("2019-01-01T00:00:00Z".to_string()),
+            t_invalid: None,
+            confidence: Some(0.9),
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+            temporal_fallback: None,
+        };
+        let newer = PreparedWrite::Edge {
+            kind: "works_for".to_string(),
+            from: "bob".to_string(),
+            to: "globex".to_string(),
+            source_id: Some("doc-globex".to_string()),
+            logical_id: Some("edge-globex".to_string()),
+            body: Some("Bob works for Globex".to_string()),
+            t_valid: Some("2022-01-01T00:00:00Z".to_string()),
+            t_invalid: None,
+            confidence: Some(0.8),
+            extractor_model_id: Some("stub-extractor-v1".to_string()),
+            temporal_fallback: None,
+        };
+        let receipt = opened.engine.write(&[older, newer]).expect("seed two competing edges");
+        assert_eq!(receipt.row_cursors.len(), 2, "batch of two edges");
+        let acme_cursor = receipt.row_cursors[0];
+
+exec
+/bin/bash -lc "sed -n '500,560p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    }
+}
+
+/// EU-5b — invoke the default-embedder loader directly (no engine open)
+/// so users + CI can warm the on-disk cache before the first
+/// `Engine::open` triggers a download.
+fn run_doctor_warm_cache(args: WarmCacheArgs) -> i32 {
+    #[cfg(feature = "default-embedder")]
+    {
+        match fathomdb_embedder::loader::load_pinned_default_embedder() {
+            Ok(weights) => {
+                if args.json {
+                    let payload = json!({
+                        "verb": "warm-cache",
+                        "status": "ok",
+                        "config_json": weights.config_json_path.to_string_lossy(),
+                        "tokenizer_json": weights.tokenizer_json_path.to_string_lossy(),
+                        "model_safetensors": weights.model_safetensors_path.to_string_lossy(),
+                        "bytes_downloaded": weights.bytes_downloaded,
+                        "events": weights
+                            .events
+                            .iter()
+                            .map(warm_cache_event_json)
+                            .collect::<Vec<_>>(),
+                    });
+                    println!("{payload}");
+                } else {
+                    let kind = if weights.bytes_downloaded > 0 { "cold" } else { "warm" };
+                    println!("warm-cache: ok ({kind})");
+                    println!("  config.json:       {}", weights.config_json_path.display());
+                    println!("  tokenizer.json:    {}", weights.tokenizer_json_path.display());
+                    println!("  model.safetensors: {}", weights.model_safetensors_path.display());
+                    println!("  bytes downloaded:  {}", weights.bytes_downloaded);
+                    println!("  events:            {}", weights.events.len());
+                }
+                exit_code::OK
+            }
+            Err(err) => {
+                if args.json {
+                    let payload = json!({
+                        "verb": "warm-cache",
+                        "status": "error",
+                        "code": "EmbedderLoadError",
+                        "detail": err.to_string(),
+                    });
+                    println!("{payload}");
+                } else {
+                    eprintln!("warm-cache: error: {err}");
+                }
+                exit_code::UNRECOVERABLE
+            }
+        }
+    }
+    #[cfg(not(feature = "default-embedder"))]
+    {
+        let detail = "fathomdb CLI was built without the `default-embedder` feature; rebuild with --features default-embedder";
+        if args.json {
+            let payload = json!({
+                "verb": "warm-cache",
+                "status": "error",
+                "code": "DefaultEmbedderFeatureDisabled",
+
+codex
+The visible CLI serializer/outcome path uses `engine_error_code(err)` only for JSON code generation; the added arm is not changing the outcome or detail text. I’m checking the surrounding CLI helpers by line range since broad search is unavailable.
+exec
+/bin/bash -lc "sed -n '1,180p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+//! Operator CLI parser + verb runtime for `fathomdb`.
+//!
+//! Surface owned by `dev/interfaces/cli.md`. Phase 10a wires the parser
+//! scaffold to real engine seam calls: `doctor check-integrity`,
+//! `doctor safe-export`, `doctor trace`, `recover --rebuild-projections`,
+//! `recover --rebuild-vec0`, and `recover --excise-source` invoke the
+//! corresponding [`fathomdb::Engine`] methods and serialize the typed
+//! report under the per-verb JSON discriminator.
+
+use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
+use fathomdb::{
+    CheckIntegrityOpts, CorruptionLocator, DumpProfileReport, DumpRowCountsReport,
+    DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport,
+    MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section,
+    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+};
+use serde_json::{json, Value};
+
+/// Stable exit-code classes for the operator CLI.
+///
+/// Sourced from `dev/interfaces/cli.md` § Exit-code classes; meanings remain
+/// load-bearing across `recover` + `doctor` outcomes.
+pub mod exit_code {
+    /// Successful completion with no findings that require a non-zero exit.
+    pub const OK: i32 = 0;
+
+    /// `recover` completed only because lossy action was explicitly accepted.
+    pub const RECOVERY_ACCEPTED_LOSS: i32 = 64;
+
+    /// Doctor / verification surface found actionable non-clean state.
+    pub const DOCTOR_FOUND_ISSUES: i32 = 65;
+
+    /// Export / materialization failure on an artifact-producing doctor verb.
+    pub const EXPORT_FAILURE: i32 = 66;
+
+    /// Unrecoverable command failure.
+    pub const UNRECOVERABLE: i32 = 70;
+
+    /// Lock-held or equivalent precondition-blocked outcome.
+    pub const LOCK_HELD: i32 = 71;
+}
+
+/// Top-level CLI invocation.
+#[derive(Debug, Parser)]
+#[command(name = "fathomdb", version, about = "FathomDB operator CLI", long_about = None)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+/// Root command verbs.
+///
+/// 0.6.0 ships exactly two roots per `dev/interfaces/cli.md` § Roots:
+/// `recover` for lossy operator workflows and `doctor` for diagnostics.
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Run a lossy / non-bit-preserving recovery workflow.
+    Recover(RecoverArgs),
+    /// Run an operator diagnostic verb.
+    Doctor(DoctorArgs),
+}
+
+/// Wrapper carrying the doctor verb table beneath the `doctor` root.
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    #[command(subcommand)]
+    pub command: DoctorCommand,
+}
+
+/// Argument set for the `recover` root command.
+///
+/// `--accept-data-loss` is declared on this parser only; doctor verbs reject
+/// it as unknown.
+#[derive(Debug, Args)]
+pub struct RecoverArgs {
+    /// Required acknowledgement that the workflow may discard data.
+    #[arg(long)]
+    pub accept_data_loss: bool,
+
+    /// Truncate the SQLite WAL after replay.
+    #[arg(long)]
+    pub truncate_wal: bool,
+
+    /// Rebuild the `vec0` shadow tables from canonical state.
+    #[arg(long)]
+    pub rebuild_vec0: bool,
+
+    /// Rebuild projection materializations.
+    #[arg(long)]
+    pub rebuild_projections: bool,
+
+    /// Excise the named source row from the canonical store.
+    #[arg(long)]
+    pub excise_source: Option<String>,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to recover.
+    pub db_path: PathBuf,
+}
+
+/// Doctor verb table per `dev/interfaces/cli.md` § Doctor verbs.
+#[derive(Debug, Subcommand)]
+pub enum DoctorCommand {
+    /// Run a structural integrity check against the database.
+    CheckIntegrity(CheckIntegrityArgs),
+    /// Materialize a safe export of the database.
+    SafeExport(SafeExportArgs),
+    /// Verify the embedder identity recorded in the database.
+    VerifyEmbedder(VerifyEmbedderArgs),
+    /// Trace the resolution chain for a given source reference.
+    Trace(TraceArgs),
+    /// Dump the canonical schema definition.
+    DumpSchema(SimpleDoctorArgs),
+    /// Dump per-table row counts.
+    DumpRowCounts(SimpleDoctorArgs),
+    /// Dump the response-cycle profile recorded by the engine.
+    DumpProfile(SimpleDoctorArgs),
+    /// EU-5b — fetch and verify the pinned default embedder weights so the
+    /// next `Engine::open` with `EmbedderChoice::Default` runs against a
+    /// warm cache without touching the network.
+    WarmCache(WarmCacheArgs),
+    /// 0.7.2 PR-2b — re-derive and re-pin the corpus mean from the current
+    /// vectors, re-quantizing every row in one transaction. Always allowed
+    /// (exempt from the automatic-path 200k cap).
+    RecomputeMean(SimpleDoctorArgs),
+    /// Slice 34 (F4-READ / reserved-gap-34) — read back op-store
+    /// (`operational_mutations`) rows for one `append_only_log` collection
+    /// over the existing `Engine::read_mutations` seam. A read-only operator
+    /// diagnostic over the mutation log (the `dump-*` family, per
+    /// `ADR-0.6.0-cli-scope`), NOT the rejected `search`/`get`/`list`
+    /// application query surface. CLI-only; no SDK parity.
+    DumpMutations(DumpMutationsArgs),
+}
+
+/// EU-5b — `fathomdb doctor warm-cache` argument set.
+#[derive(Debug, Args)]
+pub struct WarmCacheArgs {
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// Shared args for doctor verbs whose only options are `--json` and a
+/// required `<db_path>` positional. `cli.md` § Output posture: `--json` is
+/// the normative machine-readable contract on every verb.
+#[derive(Debug, Args)]
+pub struct SimpleDoctorArgs {
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Default `--limit` page size for `doctor dump-mutations` when the operator
+/// omits it. A sane page that bounds output; the engine still clamps the
+/// effective SQL `LIMIT` to `READ_COLLECTION_MAX_LIMIT` (~1M), so no read is
+/// ever unbounded. See `dev/design/slice-34-cli-op-store-readback-design.md`.
+const DUMP_MUTATIONS_DEFAULT_LIMIT: usize = 1000;
+
+/// CLI-side mirror of the engine's `read_collection`/`read_mutations` page cap
+/// (`READ_COLLECTION_MAX_LIMIT`, ~1M — private to `fathomdb-engine`). The CLI
+/// clamps `--limit` to the SAME value via [`effective_dump_limit`] so the
+/// `next_after_id` "full page ⇒ maybe more" decision compares `rows.len()`
+/// against the EFFECTIVE limit the engine actually honors. Without this mirror,
+/// a `--limit` above the engine cap would make a full capped page
+/// (`rows.len() == cap < requested`) look exhausted → `next_after_id: null` →
+/// pagination would silently stop while rows remain. Keep in lockstep with
+/// `fathomdb-engine`'s `READ_COLLECTION_MAX_LIMIT`.
+const DUMP_MUTATIONS_MAX_LIMIT: usize = 1_000_000;
+
+/// Resolve the effective `doctor dump-mutations` page limit: the operator's
+/// `--limit` (or the default when omitted), clamped to the engine page cap
+/// [`DUMP_MUTATIONS_MAX_LIMIT`]. Pure + total so the clamp is unit-pinned
+
+exec
+/bin/bash -lc "sed -n '180,360p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+/// [`DUMP_MUTATIONS_MAX_LIMIT`]. Pure + total so the clamp is unit-pinned
+/// without seeding a >1M-row log (`tests/parser.rs`).
+#[must_use]
+pub fn effective_dump_limit(requested: Option<usize>) -> usize {
+    requested.unwrap_or(DUMP_MUTATIONS_DEFAULT_LIMIT).min(DUMP_MUTATIONS_MAX_LIMIT)
+}
+
+/// Slice 34 — argument set for `doctor dump-mutations <collection>
+/// [--after-id <n>] [--limit <n>] [--json] <db_path>`. A read-only operator
+/// diagnostic that pages the op-store mutation log over the existing
+/// `Engine::read_mutations` seam.
+#[derive(Debug, Args)]
+pub struct DumpMutationsArgs {
+    /// The `append_only_log` collection whose appended rows to read back.
+    pub collection: String,
+
+    /// Exclusive cursor: return only rows with `id` strictly greater than this
+    /// value. A negative value is normalized to the start of the log; a value
+    /// past the last id yields an empty page.
+    #[arg(long = "after-id")]
+    pub after_id: Option<i64>,
+
+    /// Maximum rows in this page (default 1000). The engine clamps the
+    /// effective SQL `LIMIT` to the ~1M cap, so the read is never unbounded.
+    #[arg(long)]
+    pub limit: Option<usize>,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Per-verb argument set for `doctor check-integrity`.
+#[derive(Debug, Args)]
+pub struct CheckIntegrityArgs {
+    /// Run only the fast integrity probes.
+    #[arg(long)]
+    pub quick: bool,
+
+    /// Run the full per-page integrity sweep.
+    #[arg(long)]
+    pub full: bool,
+
+    /// Confirm round-trip equivalence between canonical + projection state.
+    #[arg(long = "round-trip")]
+    pub round_trip: bool,
+
+    /// Format human output.
+    #[arg(long)]
+    pub pretty: bool,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Per-verb argument set for `doctor safe-export`.
+#[derive(Debug, Args)]
+pub struct SafeExportArgs {
+    /// Destination path for the exported artifact.
+    pub out: PathBuf,
+
+    /// Optional manifest sidecar describing the exported artifact.
+    #[arg(long)]
+    pub manifest: Option<PathBuf>,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to export.
+    pub db_path: PathBuf,
+}
+
+/// Per-verb argument set for `doctor verify-embedder`. `cli.md`
+/// (amended 2026-05-15) locks the invocation as
+/// `verify-embedder --identity <s> --dimension <n> <db_path>`.
+#[derive(Debug, Args)]
+pub struct VerifyEmbedderArgs {
+    /// Stored-embedder identity string the operator expects (typically
+    /// `<name>:<revision>`).
+    #[arg(long)]
+    pub identity: String,
+
+    /// Stored-embedder dimension the operator expects.
+    #[arg(long)]
+    pub dimension: u32,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Per-verb argument set for `doctor trace`.
+#[derive(Debug, Args)]
+pub struct TraceArgs {
+    /// Source reference to trace.
+    #[arg(long = "source-ref")]
+    pub source_ref: String,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
+    pub db_path: PathBuf,
+}
+
+/// Outcome classes that map to the stable exit-code matrix in
+/// `dev/interfaces/cli.md` § Exit-code classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CliOutcome {
+    /// Verb completed successfully with no findings.
+    Clean,
+    /// Doctor / verification surface found actionable non-clean state.
+    Findings,
+    /// Export / materialization failure on an artifact-producing doctor verb.
+    ExportFailure,
+    /// `recover` completed only because lossy action was explicitly accepted.
+    RecoveryAcceptedLoss,
+    /// Lock-held or equivalent precondition-blocked outcome.
+    LockHeld,
+    /// Unrecoverable command failure.
+    Unrecoverable,
+}
+
+/// Map an outcome to the stable exit code defined in `cli.md`.
+#[must_use]
+pub fn outcome_to_exit_code(outcome: CliOutcome) -> i32 {
+    match outcome {
+        CliOutcome::Clean => exit_code::OK,
+        CliOutcome::Findings => exit_code::DOCTOR_FOUND_ISSUES,
+        CliOutcome::ExportFailure => exit_code::EXPORT_FAILURE,
+        CliOutcome::RecoveryAcceptedLoss => exit_code::RECOVERY_ACCEPTED_LOSS,
+        CliOutcome::LockHeld => exit_code::LOCK_HELD,
+        CliOutcome::Unrecoverable => exit_code::UNRECOVERABLE,
+    }
+}
+
+/// Map an [`EngineError`] to the [`CliOutcome`] class per
+/// `dev/interfaces/cli.md` § Error to exit-code mapping.
+#[must_use]
+pub fn engine_error_to_outcome(err: &EngineError) -> CliOutcome {
+    match err {
+        EngineError::Closing => CliOutcome::LockHeld,
+        _ => CliOutcome::Unrecoverable,
+    }
+}
+
+/// Map an [`EngineOpenError`] to the [`CliOutcome`] class per
+/// `dev/interfaces/cli.md` § Error to exit-code mapping.
+#[must_use]
+pub fn engine_open_error_to_outcome(err: &EngineOpenError) -> CliOutcome {
+    match err {
+        EngineOpenError::DatabaseLocked { .. } => CliOutcome::LockHeld,
+        _ => CliOutcome::Unrecoverable,
+    }
+}
+
+/// Run a parsed CLI command.
+///
+/// Phase 10a wires the six landed engine seams. The CLI opens the engine
+/// at the verb's `<db_path>`, calls the seam, serializes the typed report
+/// under a `verb`-discriminated JSON envelope, and maps `EngineError` to
+/// the stable exit-code matrix.
+///
+/// `recover` invoked without `--accept-data-loss` is refused at the CLI
+/// layer (no engine call) per `dev/design/recovery.md`: recovery is the
+/// only lossy root and must not proceed without explicit acknowledgement.
+#[must_use]
+pub fn run(cli: Cli) -> i32 {
+    match cli.command {
+
+exec
+/bin/bash -lc "sed -n '360,500p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    match cli.command {
+        Command::Recover(args) => run_recover(args),
+        Command::Doctor(d) => run_doctor(d.command),
+    }
+}
+
+fn run_recover(args: RecoverArgs) -> i32 {
+    if !args.accept_data_loss {
+        println!(
+            r#"{{"status":"refused","verb":"recover","code":"E_RECOVER_REQUIRES_ACCEPT_DATA_LOSS"}}"#
+        );
+        return exit_code::UNRECOVERABLE;
+    }
+
+    if args.rebuild_projections {
+        return wire_recover(&args.db_path, "rebuild-projections", |e| {
+            e.rebuild_projections().map(|r| rebuild_report_json("rebuild-projections", &r))
+        });
+    }
+    if args.rebuild_vec0 {
+        return wire_recover(&args.db_path, "rebuild-vec0", |e| {
+            e.rebuild_vec0().map(|r| rebuild_report_json("rebuild-vec0", &r))
+        });
+    }
+    if let Some(source_id) = args.excise_source.as_deref() {
+        return wire_recover(&args.db_path, "excise-source", |e| {
+            e.excise_source(source_id).map(|r| excise_report_json(&r))
+        });
+    }
+    if args.truncate_wal {
+        return wire_recover(&args.db_path, "truncate-wal", |e| {
+            e.truncate_wal().map(|r| truncate_wal_report_json(&r))
+        });
+    }
+
+    // No bound sub-action selected → stub.
+    println!(r#"{{"status":"not_implemented","verb":"recover"}}"#);
+    exit_code::UNRECOVERABLE
+}
+
+fn run_doctor(cmd: DoctorCommand) -> i32 {
+    match cmd {
+        DoctorCommand::CheckIntegrity(args) => {
+            let opts = CheckIntegrityOpts {
+                quick: args.quick,
+                full: args.full,
+                round_trip: args.round_trip,
+            };
+            run_doctor_verb(&args.db_path, "check-integrity", |e| {
+                e.check_integrity(opts).map(|r| integrity_report_outcome(&r))
+            })
+        }
+        DoctorCommand::SafeExport(args) => {
+            let manifest = args.manifest.clone().unwrap_or_else(|| {
+                let mut p = args.out.clone();
+                let name = p
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "export".to_string());
+                p.set_file_name(format!("{name}.manifest.json"));
+                p
+            });
+            run_doctor_verb_with_error_outcome(
+                &args.db_path,
+                "safe-export",
+                CliOutcome::ExportFailure,
+                |e| {
+                    e.safe_export(&args.out, &manifest)
+                        .map(|r| (safe_export_json(&r), CliOutcome::Clean))
+                },
+            )
+        }
+        DoctorCommand::Trace(args) => run_doctor_verb(&args.db_path, "trace", |e| {
+            e.trace_source_ref(&args.source_ref).map(|r| (trace_report_json(&r), CliOutcome::Clean))
+        }),
+        DoctorCommand::VerifyEmbedder(args) => {
+            let identity = args.identity.clone();
+            let dimension = args.dimension;
+            run_doctor_verb(&args.db_path, "verify-embedder", |e| {
+                e.verify_embedder(&identity, dimension)
+                    .map(|r| (verify_embedder_report_json(&r), CliOutcome::Clean))
+            })
+        }
+        DoctorCommand::DumpSchema(args) => run_doctor_verb(&args.db_path, "dump-schema", |e| {
+            e.dump_schema().map(|r| (dump_schema_report_json(&r), CliOutcome::Clean))
+        }),
+        DoctorCommand::DumpRowCounts(args) => {
+            run_doctor_verb(&args.db_path, "dump-row-counts", |e| {
+                e.dump_row_counts().map(|r| (dump_row_counts_report_json(&r), CliOutcome::Clean))
+            })
+        }
+        DoctorCommand::DumpProfile(args) => run_doctor_verb(&args.db_path, "dump-profile", |e| {
+            e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
+        }),
+        DoctorCommand::WarmCache(args) => run_doctor_warm_cache(args),
+        DoctorCommand::RecomputeMean(args) => {
+            run_doctor_verb(&args.db_path, "recompute-mean", |e| {
+                e.recompute_mean().map(|r| (recompute_mean_report_json(&r), CliOutcome::Clean))
+            })
+        }
+        DoctorCommand::DumpMutations(args) => {
+            let limit = effective_dump_limit(args.limit);
+            run_doctor_verb(&args.db_path, "dump-mutations", |e| {
+                // Read over the EXISTING Slice-30 seam (Slice-33 index-driven).
+                // The rows are serialized INLINE below so `OpStoreRow` is never
+                // named / re-exported — the facade public-type set is untouched.
+                e.read_mutations(&args.collection, args.after_id, limit).map(|rows| {
+                    let row_values = rows
+                        .iter()
+                        .map(|r| {
+                            json!({
+                                "id": r.id,
+                                "collection": r.collection,
+                                "record_key": r.record_key,
+                                "op_kind": r.op_kind,
+                                "payload": r.payload,
+                                "schema_id": r.schema_id,
+                                "write_cursor": r.write_cursor,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    // `next_after_id` = the last row's id iff a full page was
+                    // returned (more rows may follow); else null (the log is
+                    // exhausted at this cursor). The engine cursor is exclusive,
+                    // so resuming with `--after-id <next_after_id>` never overlaps.
+                    let next_after_id =
+                        if rows.len() == limit { rows.last().map(|r| r.id) } else { None };
+                    let body = json!({
+                        "verb": "dump-mutations",
+                        "collection": args.collection,
+                        "after_id": args.after_id,
+                        "limit": limit,
+                        "count": row_values.len(),
+                        "rows": row_values,
+                        "next_after_id": next_after_id,
+                    });
+                    (body, CliOutcome::Clean)
+                })
+            })
+        }
+    }
+
+exec
+/bin/bash -lc "sed -n '710,730{=;p}' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+710
+        EngineError::Projection => "ProjectionError",
+711
+        EngineError::Vector => "VectorError",
+712
+        EngineError::Embedder => "EmbedderError",
+713
+        EngineError::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+714
+        EngineError::KindNotVectorIndexed => "KindNotVectorIndexedError",
+715
+        EngineError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+716
+        EngineError::Scheduler => "SchedulerError",
+717
+        EngineError::OpStore => "OpStoreError",
+718
+        EngineError::WriteValidation => "WriteValidationError",
+719
+        EngineError::SchemaValidation => "SchemaValidationError",
+720
+        EngineError::Overloaded => "OverloadedError",
+721
+        EngineError::Closing => "ClosingError",
+722
+        EngineError::Extractor => "ExtractorError",
+723
+        EngineError::Consolidator => "ConsolidatorError",
+724
+        // G4 (Slice 35) — filter predicate construction error.
+725
+        EngineError::InvalidFilter { .. } => "InvalidFilterError",
+726
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
+727
+    }
+728
+}
+729
+
+730
+fn engine_open_error_code(err: &EngineOpenError) -> &'static str {
+
+exec
+/bin/bash -lc "sed -n '175,190{=;p}' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+175
+        RustEngineError::Scheduler => SchedulerError::new_err("scheduler error"),
+176
+        RustEngineError::OpStore => OpStoreError::new_err("op-store error"),
+177
+        RustEngineError::WriteValidation => WriteValidationError::new_err("write validation error"),
+178
+        RustEngineError::SchemaValidation => {
+179
+            SchemaValidationError::new_err("schema validation error")
+180
+        }
+181
+        RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
+182
+        RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+183
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+184
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+185
+        RustEngineError::InvalidFilter { reason } => {
+186
+            InvalidFilterError::new_err(format!("invalid filter: {reason}"))
+187
+        }
+188
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+189
+    }
+190
+}
+
+exec
+/bin/bash -lc "sed -n '2110,2122{=;p}' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+2110
+            Self::OpStore => "OpStoreError",
+2111
+            Self::WriteValidation => "WriteValidationError",
+2112
+            Self::SchemaValidation => "SchemaValidationError",
+2113
+            Self::Overloaded => "OverloadedError",
+2114
+            Self::Closing => "ClosingError",
+2115
+            Self::Extractor => "ExtractorError",
+2116
+            Self::Consolidator => "ConsolidatorError",
+2117
+            Self::InvalidFilter { .. } => "InvalidFilterError",
+2118
+            Self::InvalidArgument { .. } => "InvalidArgumentError",
+2119
+        }
+2120
+    }
+2121
+}
+2122
+
+
+exec
+/bin/bash -lc "sed -n '190,205{=;p}' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+190
+            typed_error(CODE_SCHEMA_VALIDATION, "schema validation error", JsonValue::Null)
+191
+        }
+192
+        RustEngineError::Overloaded => {
+193
+            typed_error(CODE_OVERLOADED, "engine overloaded", JsonValue::Null)
+194
+        }
+195
+        RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+196
+        RustEngineError::Extractor => {
+197
+            typed_error(CODE_EXTRACTOR, "extractor error", JsonValue::Null)
+198
+        }
+199
+        RustEngineError::Consolidator => {
+200
+            typed_error(CODE_CONSOLIDATOR, "consolidator error", JsonValue::Null)
+201
+        }
+202
+        RustEngineError::InvalidFilter { reason } => {
+203
+            typed_error(CODE_INVALID_FILTER, format!("invalid filter: {reason}"), JsonValue::Null)
+204
+        }
+205
+        RustEngineError::InvalidArgument { msg } => {
+
+exec
+/bin/bash -lc "sed -n '298,306{=;p}' src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+298
+            script.exists(),
+299
+            "consolidate stub harness fixture must exist at {}",
+300
+            script.display()
+301
+        );
+302
+        let cmd = ["python3".to_string(), script.to_string_lossy().to_string()];
+303
+        let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+304
+        let axes = vec![ConsolidateAxis {
+305
+            subject_logical_id: "bob".to_string(),
+306
+            relation: "works_for".to_string(),
+
+codex
+I have exact line references for the changed CLI arm and the array conversion. I’m also checking the public TS/Python class surfaces, because the Rust napi mapper’s `FDB_CONSOLIDATOR` should resolve to the same typed leaf name externally.
+exec
+/bin/bash -lc 'ls src/ts/src' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+binding.ts
+errors.ts
+index.ts
+read.ts
+validation.ts
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/ts/src/index.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+// FathomDB TypeScript SDK public surface.
+//
+// Five-verb top-level surface (Engine.open, engine.write, engine.search,
+// engine.close, admin.configure), engine-attached instrumentation, and
+// the FathomDbError leaf-class hierarchy per
+// `dev/interfaces/typescript.md` and `dev/design/bindings.md` § 3. The
+// runtime is the napi-rs binding in `fathomdb-napi`; this file is a
+// thin TS wrapper that funnels every native error through
+// `rethrowTyped`.
+
+import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
+import { InvalidArgumentError, InvalidFilterError, rethrowTyped } from "./errors.js";
+import type { NodeRecord, Predicate } from "./read.js";
+import { validateFfiString, validateFfiTree } from "./validation.js";
+
+export * from "./errors.js";
+export { read } from "./read.js";
+export type { NodeRecord, OpStoreRow, Predicate, ReadCollectionOptions } from "./read.js";
+
+export interface EngineConfig {
+  embedderPoolSize?: number;
+  schedulerRuntimeThreads?: number;
+  provenanceRowCap?: number;
+  embedderCallTimeoutMs?: number;
+  slowThresholdMs?: number;
+}
+
+export interface EngineOpenOptions {
+  engineConfig?: EngineConfig;
+  /**
+   * EU-6: opt-in to the engine's pinned default embedder
+   * (`fathomdb-bge-small-en-v1.5`). On first use, weights are downloaded
+   * from HuggingFace and cached under `~/.cache/fathomdb/embedders/`.
+   * `false` (the default) opens without an embedder; vector writes
+   * then fail with `EmbedderNotConfiguredError`. Caller-supplied
+   * custom embedders are deferred to a future release per
+   * ADR-0.6.0-embedder-protocol Invariant 3.
+   */
+  useDefaultEmbedder?: boolean;
+}
+
+export interface WriteReceipt {
+  cursor: number;
+  /**
+   * G0 (Slice 15) — per-row `write_cursor`s, 1:1 with the input batch order.
+   * The `write_cursor`-as-row-id identity carrier; for an N-row batch this is
+   * `[cursor-N+1, …, cursor]`.
+   */
+  rowCursors: number[];
+  /**
+   * G8 (Slice 20 / F10) — count of edge endpoints in this batch that point at a
+   * non-existent or superseded canonical node (an active node carrying that
+   * `logical_id`). `from_id`/`to_id` are probed independently, so one edge
+   * contributes 0, 1, or 2. Informational only: the batch commits regardless
+   * (flag-and-count). `0` when the batch committed no active edges.
+   */
+  danglingEdgeEndpoints: number;
+}
+
+/** G11 (Slice 15) — BYO-LLM ingest receipt. */
+export interface IngestWithExtractorReceipt {
+  /** Number of `canonical_nodes` rows written (new insertions only). */
+  nodesWritten: number;
+  /** Number of `canonical_edges` rows written (new fact-edge insertions). */
+  edgesWritten: number;
+  /** Number of documents processed (including no-facts documents). */
+  docsProcessed: number;
+}
+
+/** G11 (Slice 15) — a document sent to a BYO-LLM extraction harness. */
+export interface ExtractDocument {
+  /** Stable opaque identifier for this document. */
+  sourceDocId: string;
+  /** Full text body to extract entities and relationships from. */
+  body: string;
+}
+
+/** 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation receipt. */
+export interface ConsolidateReceipt {
+  /** Number of (subject, relation) axes with a non-empty cluster dispatched. */
+  clustersProcessed: number;
+  /** Number of candidate edges presented across all clusters. */
+  edgesExamined: number;
+  /** Number of edges the harness ruled `keep`. */
+  edgesKept: number;
+  /** Number of edges the harness ruled `invalidate` (t_invalid set). */
+  edgesInvalidated: number;
+  /** Number of edges the harness ruled `supersede`/`merge` (marked superseded). */
+  edgesSuperseded: number;
+}
+
+/** 0.8.12 Slice 15 (OPP-2) — one (subject, relation) axis to consolidate. */
+export interface ConsolidateAxis {
+  /** Stable `logicalId` of the subject entity (edge `fromId`). */
+  subjectLogicalId: string;
+  /** The relation/edge kind whose competing fact-edges form the cluster. */
+  relation: string;
+}
+
+export type SoftFallbackBranch = "vector" | "text" | "text_edge" | "graph_arm";
+
+export interface SoftFallback {
+  branch: SoftFallbackBranch;
+}
+
+export interface SearchHit {
+  /** Canonical row `write_cursor` (interim identity carrier). */
+  id: number;
+  kind: string;
+  body: string;
+  /**
+   * G9 RRF-fused relevance (`Σ 1/(RRF_K + rank)`; higher = more relevant),
+   * optionally recency-reweighted. Raw `vec_distance_l2`/`bm25()` are fused on
+   * rank, never compared raw.
+   */
+  score: number;
+  branch: SoftFallbackBranch;
+  /**
+   * G0 Phase-2 — source-document provenance. The traversed edge's `source_id`
+   * for a graph-arm hit; `null` for every two-arm hit.
+   */
+  sourceId: string | null;
+  /**
+   * 0.8.5 (EXP-0) — per-candidate CE score (`ce_norm = sigmoid(ce_logit)`) for
+   * hits inside the reranked pool; `null` otherwise (out-of-pool, the identity
+   * path, or no CE model loaded).
+   */
+  ceScore: number | null;
+  /**
+   * Cause-A (0.8.11.2) — additive cross-session-stable hit id for real-gold
+   * keying. The active node's `logical_id` (`"l:"`-tagged) when present, else an
+   * `"h:"` content-hash of the body (doc nodes). `null` only for synthetic
+   * passages. Unlike `id` (the interim `write_cursor`), it survives re-ingest;
+   * it never participates in ranking.
+   */
+  stableId: string | null;
+}
+
+/**
+ * G10 — closed metadata filter for `engine.search(query, filter?)`. All fields
+ * optional; an all-`undefined` filter (or omitted) is the unfiltered path. A
+ * closed shape, not an open DSL. `createdAfter` is a `created_at >= bound` lower
+ * bound in unix seconds. `status` filters the vec0 `status` metadata column,
+ * which ships an empty-string sentinel only (no real population source yet), so
+ * a `status: "open"`-style filter prunes every row until a population slice
+ * lands. Mirrors the Python `SearchFilter` (cross-binding parity).
+ */
+export interface SearchFilter {
+  sourceType?: string;
+  kind?: string;
+  createdAfter?: number;
+  status?: string;
+}
+
+/**
+ * 0.8.11 Slice 40 (#17) — one term of the unified `Filter` grammar (G4 + G10),
+ * a discriminated union mirroring `fathomdb_engine::FilterTerm`
+ * (ADR-0.8.11, Option A). Exactly five variants: the four G10 shorthand metadata
+ * fields plus the general G4 json-path `Predicate` (`json`). The `json` term is
+ * accepted on `read.listFilter` but **typed-rejected** on `search` (D3: an
+ * arbitrary json-path predicate is never demoted to a post-KNN `json_extract`).
+ */
+export type FilterTerm =
+  | { term: "source_type"; value: string }
+  | { term: "kind"; value: string }
+  | { term: "created_after"; value: number }
+  | { term: "status"; value: string }
+  | { term: "json"; predicate: Predicate };
+
+/**
+ * 0.8.11 Slice 40 (#17) — the unified, closed `Filter` contract. ONE typed
+ * surface (implicit-AND `terms`) dispatched to two backends: the vec0-metadata
+ * indexed pre-KNN `WHERE` for `search`, and `json_extract` over
+ * `canonical_nodes.body` for `read.listFilter`. The shipped `SearchFilter` (G10)
+ * and `Predicate` lists (G4) re-express as sugar that lowers into this type (D4).
+ * Mirrors the Python `fathomdb.filter.Filter` (cross-binding parity, X1).
+ */
+export interface Filter {
+  terms: FilterTerm[];
+}
+
+const VEC0_JSON_REJECT =
+  "arbitrary json-path predicate not supported on search_filtered; it would " +
+  "require a post-KNN json_extract that defeats the indexed pre-KNN filter " +
+  "(ADR-0.8.11 D3 no-demotion guarantee)";
+
+function isUnifiedFilter(f: SearchFilter | Filter | undefined): f is Filter {
+  return f !== undefined && Array.isArray((f as Filter).terms);
+}
+
+/**
+ * vec0 (`search`) backend lowering of the unified `Filter` to the shipped
+ * `SearchFilter` sugar. Typed-rejects a `json` term with `InvalidFilterError`
+ * (D3 no-demotion guarantee); the lowering is canonical-order-independent.
+ */
+export function filterToSearchFilter(filter: Filter): SearchFilter {
+  const sf: SearchFilter = {};
+  for (const t of filter.terms) {
+    switch (t.term) {
+      case "source_type":
+        sf.sourceType = t.value;
+        break;
+      case "kind":
+        sf.kind = t.value;
+        break;
+      case "created_after":
+        sf.createdAfter = t.value;
+        break;
+      case "status":
+        sf.status = t.value;
+        break;
+      case "json":
+        throw new InvalidFilterError(VEC0_JSON_REJECT);
+    }
+  }
+  return sf;
+}
+
+/** D4 sugar: re-express a shipped `SearchFilter` as the unified `Filter`. */
+export function searchFilterToFilter(sf: SearchFilter): Filter {
+
+exec
+/bin/bash -lc 'ls src/python/fathomdb' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+__init__.py
+_fathomdb.pyi
+admin.py
+config.py
+engine.py
+errors.py
+filter.py
+graph.py
+read.py
+types.py
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/fathomdb/__init__.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+"""FathomDB Python SDK public surface.
+
+Top-level five-verb surface and exception hierarchy owned by
+`dev/interfaces/python.md` + `dev/design/errors.md`. The package delegates
+to the native PyO3 extension `fathomdb._fathomdb` which binds to
+`fathomdb-engine`.
+"""
+
+from __future__ import annotations
+
+from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
+from fathomdb import admin, errors, graph, read
+from fathomdb._fathomdb import ConsolidateReceipt
+from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import rerank
+from fathomdb.config import EngineConfig
+from fathomdb.engine import Engine
+from fathomdb.filter import Filter
+from fathomdb.types import (
+    CounterSnapshot,
+    ExpandedNode,
+    Explanation,
+    NodeRecord,
+    OpStoreRow,
+    PerHitExplain,
+    QueryTrace,
+    SearchExpandResult,
+    SearchFilter,
+    SearchHit,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
+
+__all__ = [
+    "ConsolidateReceipt",
+    "CounterSnapshot",
+    "Engine",
+    "EngineConfig",
+    "Filter",
+    "IngestWithExtractorReceipt",
+    "ExpandedNode",
+    "Explanation",
+    "NodeRecord",
+    "OpStoreRow",
+    "PerHitExplain",
+    "QueryTrace",
+    "SearchExpandResult",
+    "SearchFilter",
+    "SearchHit",
+    "SearchResult",
+    "SoftFallback",
+    "SoftFallbackBranch",
+    "WriteReceipt",
+    "__version__",
+    "admin",
+    "errors",
+    "graph",
+    "read",
+    "rerank",
+]
+__version__ = "0.6.0"
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+// Single-rooted FathomDbError hierarchy for the TypeScript SDK.
+//
+// Layout owned by `dev/design/errors.md` § Binding-facing class matrix
+// and `dev/design/bindings.md` § 3. Per-leaf payloads are typed object
+// arguments; callers narrow with `instanceof`.
+//
+// The napi-rs binding cannot throw a Rust-defined JS class with a TS
+// `instanceof` chain. Instead, it throws `Error` whose `message` is a
+// JSON envelope `{ code, message, payload }`. `rethrowTyped` parses
+// that envelope and constructs the matching leaf class so `instanceof
+// FathomDbError` narrowing works on the TS side.
+
+export class FathomDbError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = new.target.name;
+  }
+}
+
+export class StorageError extends FathomDbError {}
+export class ProjectionError extends FathomDbError {}
+export class VectorError extends FathomDbError {}
+export class EmbedderError extends FathomDbError {}
+export class SchedulerError extends FathomDbError {}
+export class OpStoreError extends FathomDbError {}
+export class WriteValidationError extends FathomDbError {}
+export class SchemaValidationError extends FathomDbError {}
+export class OverloadedError extends FathomDbError {}
+export class ClosingError extends FathomDbError {}
+
+export class EmbedderNotConfiguredError extends EmbedderError {}
+export class KindNotVectorIndexedError extends VectorError {}
+
+export interface DatabaseLockedErrorPayload {
+  holderPid?: number;
+}
+
+export class DatabaseLockedError extends FathomDbError {
+  readonly holderPid?: number;
+  constructor(payload: DatabaseLockedErrorPayload = {}) {
+    super(`database locked (holderPid=${payload.holderPid ?? "unknown"})`);
+    this.holderPid = payload.holderPid;
+  }
+}
+
+export interface CorruptionErrorPayload {
+  kind: string;
+  stage: string;
+  recoveryHintCode: string;
+  docAnchor: string;
+}
+
+export class CorruptionError extends FathomDbError {
+  readonly kind: string;
+  readonly stage: string;
+  readonly recoveryHintCode: string;
+  readonly docAnchor: string;
+  constructor(payload: CorruptionErrorPayload) {
+    super(`corruption ${payload.kind} at stage ${payload.stage} (${payload.recoveryHintCode})`);
+    this.kind = payload.kind;
+    this.stage = payload.stage;
+    this.recoveryHintCode = payload.recoveryHintCode;
+    this.docAnchor = payload.docAnchor;
+  }
+}
+
+export class IncompatibleSchemaVersionError extends FathomDbError {}
+export class MigrationError extends FathomDbError {}
+
+export interface EmbedderIdentityMismatchPayload {
+  storedName: string;
+  storedRevision: string;
+  suppliedName: string;
+  suppliedRevision: string;
+}
+
+export class EmbedderIdentityMismatchError extends FathomDbError {
+  readonly storedName: string;
+  readonly storedRevision: string;
+  readonly suppliedName: string;
+  readonly suppliedRevision: string;
+  constructor(payload: EmbedderIdentityMismatchPayload) {
+    super(
+      `embedder identity mismatch: stored ${payload.storedName}@${payload.storedRevision}, ` +
+        `supplied ${payload.suppliedName}@${payload.suppliedRevision}`,
+    );
+    this.storedName = payload.storedName;
+    this.storedRevision = payload.storedRevision;
+    this.suppliedName = payload.suppliedName;
+    this.suppliedRevision = payload.suppliedRevision;
+  }
+}
+
+export interface EmbedderDimensionMismatchPayload {
+  stored: number;
+  supplied: number;
+}
+
+export class EmbedderDimensionMismatchError extends FathomDbError {
+  readonly stored: number;
+  readonly supplied: number;
+  constructor(payload: EmbedderDimensionMismatchPayload) {
+    super(
+      `embedder vector dimension mismatch: stored ${payload.stored}, supplied ${payload.supplied}`,
+    );
+    this.stored = payload.stored;
+    this.supplied = payload.supplied;
+  }
+}
+
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+export class ExtractorError extends FathomDbError {}
+
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+export class ConsolidatorError extends FathomDbError {}
+
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+export class InvalidFilterError extends FathomDbError {}
+
+// Slice 20 — depth > 3 or other invalid argument (G5/G6).
+export class InvalidArgumentError extends FathomDbError {}
+
+// Panic is a contract bug, not a typed engine outcome — intentionally
+// NOT a FathomDbError subclass so callers that catch FathomDbError do
+// not silently swallow it. Mirrors PyO3 PanicException in 11a.
+export class FathomDbPanicError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FathomDbPanicError";
+  }
+}
+
+// ===== Typed-error rethrow ============================================
+
+type ErrorCode =
+  | "FDB_STORAGE"
+  | "FDB_PROJECTION"
+  | "FDB_VECTOR"
+  | "FDB_EMBEDDER"
+  | "FDB_EMBEDDER_NOT_CONFIGURED"
+  | "FDB_KIND_NOT_VECTOR_INDEXED"
+  | "FDB_EMBEDDER_DIMENSION_MISMATCH"
+  | "FDB_SCHEDULER"
+  | "FDB_OP_STORE"
+  | "FDB_WRITE_VALIDATION"
+  | "FDB_SCHEMA_VALIDATION"
+  | "FDB_OVERLOADED"
+  | "FDB_CLOSING"
+  | "FDB_DATABASE_LOCKED"
+  | "FDB_CORRUPTION"
+  | "FDB_INCOMPATIBLE_SCHEMA_VERSION"
+  | "FDB_MIGRATION"
+  | "FDB_EMBEDDER_IDENTITY_MISMATCH"
+  // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+  | "FDB_EXTRACTOR"
+  // 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+  | "FDB_CONSOLIDATOR"
+  // G4 (Slice 35) — filter predicate construction error.
+  | "FDB_INVALID_FILTER"
+  // Slice 20 — depth > 3 or invalid argument (G5/G6).
+  | "FDB_INVALID_ARGUMENT"
+  | "FDB_PANIC";
+
+interface Envelope {
+  code: ErrorCode;
+  message: string;
+  payload: Record<string, unknown> | null;
+}
+
+function parseEnvelope(raw: unknown): Envelope | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw[0] !== "{") {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.code !== "string" || typeof obj.message !== "string") {
+    return null;
+  }
+  return {
+    code: obj.code as ErrorCode,
+    message: obj.message,
+    payload: (obj.payload as Record<string, unknown> | null) ?? null,
+  };
+}
+
+function build(envelope: Envelope): Error {
+  const p = envelope.payload ?? {};
+  switch (envelope.code) {
+    case "FDB_STORAGE":
+      return new StorageError(envelope.message);
+    case "FDB_PROJECTION":
+      return new ProjectionError(envelope.message);
+    case "FDB_VECTOR":
+      return new VectorError(envelope.message);
+    case "FDB_EMBEDDER":
+      return new EmbedderError(envelope.message);
+    case "FDB_EMBEDDER_NOT_CONFIGURED":
+      return new EmbedderNotConfiguredError(envelope.message);
+    case "FDB_KIND_NOT_VECTOR_INDEXED":
+      return new KindNotVectorIndexedError(envelope.message);
+    case "FDB_EMBEDDER_DIMENSION_MISMATCH":
+      return new EmbedderDimensionMismatchError({
+        stored: Number(p.stored),
+        supplied: Number(p.supplied),
+      });
+    case "FDB_SCHEDULER":
+      return new SchedulerError(envelope.message);
+    case "FDB_OP_STORE":
+      return new OpStoreError(envelope.message);
+    case "FDB_WRITE_VALIDATION":
+      return new WriteValidationError(envelope.message);
+    case "FDB_SCHEMA_VALIDATION":
+      return new SchemaValidationError(envelope.message);
+    case "FDB_OVERLOADED":
+      return new OverloadedError(envelope.message);
+    case "FDB_CLOSING":
+      return new ClosingError(envelope.message);
+    case "FDB_DATABASE_LOCKED":
+      return new DatabaseLockedError({
+        holderPid: typeof p.holderPid === "number" ? p.holderPid : undefined,
+      });
+    case "FDB_CORRUPTION":
+      return new CorruptionError({
+        kind: String(p.kind ?? ""),
+        stage: String(p.stage ?? ""),
+        recoveryHintCode: String(p.recoveryHintCode ?? ""),
+        docAnchor: String(p.docAnchor ?? ""),
+      });
+    case "FDB_INCOMPATIBLE_SCHEMA_VERSION":
+      return new IncompatibleSchemaVersionError(envelope.message);
+    case "FDB_MIGRATION":
+      return new MigrationError(envelope.message);
+    case "FDB_EMBEDDER_IDENTITY_MISMATCH":
+      return new EmbedderIdentityMismatchError({
+        storedName: String(p.storedName ?? ""),
+        storedRevision: String(p.storedRevision ?? ""),
+        suppliedName: String(p.suppliedName ?? ""),
+        suppliedRevision: String(p.suppliedRevision ?? ""),
+      });
+    case "FDB_EXTRACTOR":
+      return new ExtractorError(envelope.message);
+    case "FDB_CONSOLIDATOR":
+      return new ConsolidatorError(envelope.message);
+    case "FDB_INVALID_FILTER":
+      return new InvalidFilterError(envelope.message);
+    case "FDB_INVALID_ARGUMENT":
+      return new InvalidArgumentError(envelope.message);
+    case "FDB_PANIC":
+      return new FathomDbPanicError(envelope.message);
+    default: {
+      // Exhaustiveness — if ErrorCode union grows and switch arms
+      // don't cover it, this branch becomes reachable and TS narrows
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/fathomdb/errors.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+"""Single-rooted exception hierarchy for the FathomDB Python SDK.
+
+Layout owned by `dev/design/errors.md` § Binding-facing class matrix and
+`dev/design/bindings.md` § 3. Concrete leaf classes are created by the
+PyO3 binding (`fathomdb._fathomdb`); they inherit from `EngineError`
+which inherits from Python `Exception`. Typed payload attributes
+(`holder_pid`, `kind`, `stage`, `recovery_hint_code`, `doc_anchor`,
+`stored`, `supplied`, `stored_name`, `stored_revision`, `supplied_name`,
+`supplied_revision`) are set by the binding's
+`engine_error_to_py` / `engine_open_error_to_py` translators on raise.
+
+For Python-only construction with typed kwargs (used by binding tests),
+`_install_typed_init` layers a keyword-only `__init__` onto each
+PyO3-created class that stores the documented payload fields as
+instance attributes.
+"""
+
+from __future__ import annotations
+
+from fathomdb._fathomdb import (
+    ClosingError as _ClosingError,
+)
+from fathomdb._fathomdb import (
+    CorruptionError as _CorruptionError,
+)
+from fathomdb._fathomdb import (
+    DatabaseLockedError as _DatabaseLockedError,
+)
+from fathomdb._fathomdb import (
+    EmbedderDimensionMismatchError as _EmbedderDimensionMismatchError,
+)
+from fathomdb._fathomdb import (
+    EmbedderError as _EmbedderError,
+)
+from fathomdb._fathomdb import (
+    EmbedderNotConfiguredError as _EmbedderNotConfiguredError,
+)
+from fathomdb._fathomdb import (
+    EmbedderIdentityMismatchError as _EmbedderIdentityMismatchError,
+)
+from fathomdb._fathomdb import (
+    EngineError as _EngineError,
+)
+from fathomdb._fathomdb import (
+    IncompatibleSchemaVersionError as _IncompatibleSchemaVersionError,
+)
+from fathomdb._fathomdb import (
+    MigrationError as _MigrationError,
+)
+from fathomdb._fathomdb import (
+    OpStoreError as _OpStoreError,
+)
+from fathomdb._fathomdb import (
+    OverloadedError as _OverloadedError,
+)
+from fathomdb._fathomdb import (
+    ProjectionError as _ProjectionError,
+)
+from fathomdb._fathomdb import (
+    SchedulerError as _SchedulerError,
+)
+from fathomdb._fathomdb import (
+    SchemaValidationError as _SchemaValidationError,
+)
+from fathomdb._fathomdb import (
+    StorageError as _StorageError,
+)
+from fathomdb._fathomdb import (
+    KindNotVectorIndexedError as _KindNotVectorIndexedError,
+)
+from fathomdb._fathomdb import (
+    VectorError as _VectorError,
+)
+from fathomdb._fathomdb import (
+    WriteValidationError as _WriteValidationError,
+)
+from fathomdb._fathomdb import (
+    ExtractorError as _ExtractorError,
+)
+from fathomdb._fathomdb import (
+    ConsolidatorError as _ConsolidatorError,
+)
+from fathomdb._fathomdb import (
+    InvalidFilterError as _InvalidFilterError,
+)
+from fathomdb._fathomdb import (
+    InvalidArgumentError as _InvalidArgumentError,
+)
+
+EngineError = _EngineError
+StorageError = _StorageError
+ProjectionError = _ProjectionError
+VectorError = _VectorError
+EmbedderError = _EmbedderError
+EmbedderNotConfiguredError = _EmbedderNotConfiguredError
+KindNotVectorIndexedError = _KindNotVectorIndexedError
+SchedulerError = _SchedulerError
+OpStoreError = _OpStoreError
+WriteValidationError = _WriteValidationError
+SchemaValidationError = _SchemaValidationError
+OverloadedError = _OverloadedError
+ClosingError = _ClosingError
+DatabaseLockedError = _DatabaseLockedError
+CorruptionError = _CorruptionError
+IncompatibleSchemaVersionError = _IncompatibleSchemaVersionError
+MigrationError = _MigrationError
+EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
+EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+ExtractorError = _ExtractorError
+# 0.8.12 Slice 15 (OPP-2) — consolidation harness protocol error.
+ConsolidatorError = _ConsolidatorError
+# G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+InvalidFilterError = _InvalidFilterError
+InvalidArgumentError = _InvalidArgumentError
+
+
+def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
+    def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        payload = {name: kwargs.pop(name, None) for name in fields}
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"unexpected keyword arguments: {unexpected}")
+        Exception.__init__(self, *args)
+        for name, value in payload.items():
+            object.__setattr__(self, name, value)
+
+    cls.__init__ = __init__  # type: ignore[method-assign]
+
+
+_install_typed_init(DatabaseLockedError, ("holder_pid",))
+_install_typed_init(
+    CorruptionError,
+    ("kind", "stage", "recovery_hint_code", "doc_anchor"),
+)
+_install_typed_init(
+    EmbedderIdentityMismatchError,
+    ("stored_name", "stored_revision", "supplied_name", "supplied_revision"),
+)
+_install_typed_init(EmbedderDimensionMismatchError, ("stored", "supplied"))
+
+
+__all__ = [
+    "ClosingError",
+    "CorruptionError",
+    "DatabaseLockedError",
+    "EmbedderDimensionMismatchError",
+    "EmbedderError",
+    "EmbedderIdentityMismatchError",
+    "EmbedderNotConfiguredError",
+    "ConsolidatorError",
+    "EngineError",
+    "ExtractorError",
+    "IncompatibleSchemaVersionError",
+    "InvalidArgumentError",
+    "InvalidFilterError",
+    "KindNotVectorIndexedError",
+    "MigrationError",
+    "OpStoreError",
+    "OverloadedError",
+    "ProjectionError",
+    "SchedulerError",
+    "SchemaValidationError",
+    "StorageError",
+    "VectorError",
+    "WriteValidationError",
+]
+
+exec
+/bin/bash -lc "sed -n '1,140p' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+"""Type stubs for the PyO3 extension `fathomdb._fathomdb`.
+
+Mirrors the surface emitted by `src/rust/crates/fathomdb-py/src/lib.rs`.
+Hand-maintained — keep in sync with the binding's `#[pyclass]` /
+`create_exception!` / `#[pyfunction]` exports.
+"""
+
+from typing import Any, Iterable
+
+from fathomdb.types import EmbedderEvent
+
+class WriteReceipt:
+    cursor: int
+    row_cursors: list[int]
+    dangling_edge_endpoints: int
+
+class SoftFallback:
+    branch: str
+
+class SearchHit:
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: str
+    source_id: str | None
+    # 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
+    # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
+    ce_score: float | None
+    # Cause-A (0.8.11.2) — additive cross-session-stable hit id; None for
+    # synthetic passages. Never participates in ranking.
+    stable_id: str | None
+
+class QueryTrace:
+    # 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace.
+    query_chars: int
+    k: int
+    rerank_depth: int
+    pool_n: int
+    alpha: float
+    use_graph_arm: bool
+    recency: bool
+    embedder_id: str
+    ce_active: bool
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+class PerHitExplain:
+    # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.
+    id: int
+    arm: str
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+class Explanation:
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar.
+    trace: QueryTrace
+    per_hit: list[PerHitExplain]
+
+class SearchResult:
+    projection_cursor: int
+    soft_fallback: SoftFallback | None
+    results: list[SearchHit]
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in; None unless search(..., explain=True).
+    explanation: Explanation | None
+
+class CounterSnapshot:
+    queries: int
+    writes: int
+    write_rows: int
+    admin_ops: int
+    cache_hit: int
+    cache_miss: int
+
+class NodeRecord:
+    logical_id: str
+    kind: str
+    body: str
+    write_cursor: int
+
+class OpStoreRow:
+    id: int
+    collection: str
+    record_key: str
+    op_kind: str
+    payload: str
+    schema_id: str | None
+    write_cursor: int
+
+class IngestWithExtractorReceipt:
+    """G11 (Slice 15) — BYO-LLM ingest receipt."""
+    nodes_written: int
+    edges_written: int
+    docs_processed: int
+
+class ConsolidateReceipt:
+    """0.8.12 Slice 15 (OPP-2) — consolidation / recency provider receipt."""
+    clusters_processed: int
+    edges_examined: int
+    edges_kept: int
+    edges_invalidated: int
+    edges_superseded: int
+
+class MigrationStepReport:
+    step_id: int
+    duration_ms: int | None
+    failed: bool
+
+class EmbedderIdentity:
+    name: str
+    revision: str
+    dimension: int
+
+class OpenReport:
+    schema_version_before: int
+    schema_version_after: int
+    migration_steps: list[MigrationStepReport]
+    embedder_warmup_ms: int
+    query_backend: str
+    default_embedder: EmbedderIdentity
+    # EU-5a1/5a2/5b — surfaced by EU-6.
+    embedder_download_ms: int | None
+    embedder_events: list[EmbedderEvent]
+    embedder_mean_centering_required: bool
+    embedder_mean_vec_pinned: bool
+
+class Engine:
+    @staticmethod
+    def open(path: str, use_default_embedder: bool = ...) -> "Engine": ...
+    # NOTE: `_configure_vector_kind_for_test` and `_write_vector_for_test`
+    # are intentionally NOT declared here. They only exist on the binary
+    # when the `test-hooks` Cargo feature is enabled (see
+    # `src/rust/crates/fathomdb-py/src/lib.rs::#[cfg(any(test, feature =
+    # "test-hooks"))]`), and that feature is dev-only — it is not part of
+    # the shipped wheel's feature axis (`pyproject.toml [tool.maturin]
+
+exec
+/bin/bash -lc "sed -n '140,260p' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    # the shipped wheel's feature axis (`pyproject.toml [tool.maturin]
+    # features` and `release.yml` build-python's `args:`). Advertising
+    # them on the public stub would imply they are callable by end users,
+    # which is false.
+    def open_report(self) -> OpenReport: ...
+    def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
+    def embed(self, text: str) -> list[float]: ...
+    def search(
+        self,
+        query: str,
+        source_type: str | None = ...,
+        kind: str | None = ...,
+        created_after: int | None = ...,
+        status: str | None = ...,
+        rerank_depth: int = ...,
+        use_graph_arm: bool = ...,
+        alpha: float | None = ...,
+        pool_n: int | None = ...,
+        explain: bool = ...,
+    ) -> SearchResult: ...
+    # 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture.
+    def enable_telemetry(self, sink_path: str) -> None: ...
+    def last_telemetry_query_id(self) -> str | None: ...
+    def record_feedback(
+        self,
+        query_id: str,
+        relevant_ids: list[int],
+        irrelevant_ids: list[int],
+        label_source: str,
+    ) -> None: ...
+    def close(self) -> None: ...
+    def drain(self, timeout_s: float = ...) -> None: ...
+    def ingest_with_extractor(
+        self,
+        cmd: list[str],
+        documents: list[dict[str, str]],
+    ) -> IngestWithExtractorReceipt:
+        """G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+        speaking the fathomdb.extract.v1 protocol, extract entities + edges from
+        documents, and write them to the store.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+        ...
+    def consolidate_with_provider(
+        self,
+        cmd: list[str],
+        axes: list[dict[str, str]],
+    ) -> ConsolidateReceipt:
+        """0.8.12 Slice 15 (OPP-2) — consolidation / recency via a BYO-LLM
+        harness speaking the fathomdb.consolidate.v1 protocol.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``axes`` is a list of dicts with ``subject_logical_id`` and ``relation``
+        keys (a `ConsolidateAxis`); each names one (subject, relation) cluster to
+        consolidate.
+        """
+        ...
+    def counters(self) -> CounterSnapshot: ...
+    def set_profiling(self, enabled: bool) -> None: ...
+    def set_slow_threshold_ms(self, value: int) -> None: ...
+    def attach_logging_subscriber(
+        self,
+        logger: Any,
+        heartbeat_interval_ms: int | None = ...,
+    ) -> None: ...
+
+# Slice 20 (G5/G6) — graph traversal result types.
+
+class ExpandedNode:
+    """One node reached by BFS traversal that is NOT in the search hit set."""
+
+    node: NodeRecord
+    hop_count: int
+
+class SearchExpandResult:
+    """G6 result: original search hits + graph-expanded neighbors.
+
+    Deduplication rule: a node in ``search_hits`` will NOT appear in
+    ``expanded`` (search score takes priority).
+    """
+
+    search_hits: list[SearchHit]
+    expanded: list[ExpandedNode]
+    all_logical_ids: list[str]
+
+def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
+def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
+def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
+def read_collection(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
+def read_mutations(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
+def read_list(
+    engine: Engine,
+    kind: str,
+    predicates: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
+def read_list_filter(
+    engine: Engine,
+    kind: str,
+    terms: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
+def graph_neighbors(
+    engine: Engine,
+    logical_id: str,
+    depth: int,
+    direction: str,
+) -> list[NodeRecord]:
+    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+
+exec
+/bin/bash -lc 'rg --files src/rust/crates' in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+src/rust/crates/fathomdb-query/Cargo.toml
+src/rust/crates/fathomdb-query/src/lib.rs
+src/rust/crates/fathomdb-query/tests/property_template.rs
+src/rust/crates/fathomdb-embedder/Cargo.toml
+src/rust/crates/fathomdb-embedder/src/nomic.rs
+src/rust/crates/fathomdb-embedder/src/loader.rs
+src/rust/crates/fathomdb-embedder/src/lib.rs
+src/rust/crates/fathomdb-embedder/src/candle_bge.rs
+src/rust/crates/fathomdb-embedder/src/candle_reranker.rs
+src/rust/crates/fathomdb-embedder/examples/gpu_speedup.rs
+src/rust/crates/fathomdb-embedder/tests/no_engine_dep.rs
+src/rust/crates/fathomdb-embedder/tests/loader.rs
+src/rust/crates/fathomdb-embedder/tests/candle_bge.rs
+src/rust/crates/fathomdb-embedder/tests/candle_dump.rs
+src/rust/crates/fathomdb-py/Cargo.toml
+src/rust/crates/fathomdb/Cargo.toml
+src/rust/crates/fathomdb-embedder-api/Cargo.toml
+src/rust/crates/fathomdb-py/src/lib.rs
+src/rust/crates/fathomdb/src/lib.rs
+src/rust/crates/fathomdb-embedder-api/src/lib.rs
+src/rust/crates/fathomdb-schema/Cargo.toml
+src/rust/crates/fathomdb-cli/Cargo.toml
+src/rust/crates/fathomdb/tests/no_recovery_surface.rs
+src/rust/crates/fathomdb/tests/governed_surface.rs
+src/rust/crates/fathomdb/tests/reexports.rs
+src/rust/crates/fathomdb-cli/src/lib.rs
+src/rust/crates/fathomdb-schema/migrations/002_canonical.sql
+src/rust/crates/fathomdb-schema/migrations/006_vector_runtime.sql
+src/rust/crates/fathomdb-schema/migrations/005_search_index.sql
+src/rust/crates/fathomdb-schema/migrations/013_op_store_collection_index.sql
+src/rust/crates/fathomdb-schema/migrations/004_op_store.sql
+src/rust/crates/fathomdb-napi/Cargo.toml
+src/rust/crates/fathomdb-schema/migrations/011_search_index_tokenizer.sql
+src/rust/crates/fathomdb-napi/build.rs
+src/rust/crates/fathomdb-schema/migrations/001_bootstrap.sql
+src/rust/crates/fathomdb-schema/migrations/003_embedder_profiles.sql
+src/rust/crates/fathomdb-schema/migrations/009_vector_binary_quant.sql
+src/rust/crates/fathomdb-schema/migrations/007_projection_terminal.sql
+src/rust/crates/fathomdb-schema/migrations/008_source_id.sql
+src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs
+src/rust/crates/fathomdb-cli/src/main.rs
+src/rust/crates/fathomdb-engine/Cargo.toml
+src/rust/crates/fathomdb-napi/src/lib.rs
+src/rust/crates/fathomdb-schema/src/lib.rs
+src/rust/crates/fathomdb-engine/src/pcache2.rs
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/src/lifecycle.rs
+src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs
+src/rust/crates/fathomdb-cli/tests/operator_cli.rs
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs
+src/rust/crates/fathomdb-cli/tests/cli_warm_cache.rs
+src/rust/crates/fathomdb-cli/tests/parser.rs
+src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs
+src/rust/crates/fathomdb-engine/examples/security_cycle.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json
+src/rust/crates/fathomdb-schema/tests/fixtures/migrations/accretion_violator.sql
+src/rust/crates/fathomdb-schema/tests/wire_constants.rs
+src/rust/crates/fathomdb-schema/tests/property_template.rs
+src/rust/crates/fathomdb-schema/tests/migrations.rs
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+src/rust/crates/fathomdb-engine/tests/pr_g12_recency.rs
+src/rust/crates/fathomdb-engine/tests/elps_conformance_golden.rs
+src/rust/crates/fathomdb-engine/tests/eu5a2_machinery.rs
+src/rust/crates/fathomdb-engine/tests/compatibility.rs
+src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json
+src/rust/crates/fathomdb-engine/tests/property_template.rs
+src/rust/crates/fathomdb-engine/tests/safe_export.rs
+src/rust/crates/fathomdb-engine/tests/truncate_wal.rs
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+src/rust/crates/fathomdb-engine/tests/op_store.rs
+src/rust/crates/fathomdb-engine/tests/pr_g3_read_collection.rs
+src/rust/crates/fathomdb-engine/tests/excise_source.rs
+src/rust/crates/fathomdb-engine/tests/pr_g1_tokenizer_recall.rs
+src/rust/crates/fathomdb-engine/tests/search_result_shape.rs
+src/rust/crates/fathomdb-engine/tests/telemetry_capture.rs
+src/rust/crates/fathomdb-engine/tests/ir_gold_resolved.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json
+src/rust/crates/fathomdb-engine/tests/pr_g10_filtered_knn.rs
+src/rust/crates/fathomdb-engine/tests/pr_g1_search_hits.rs
+src/rust/crates/fathomdb-engine/tests/slice6_tokenizer_experiment.rs
+src/rust/crates/fathomdb-engine/tests/ir_c_recall_run.rs
+src/rust/crates/fathomdb-engine/tests/pr_g0_phase2_frontier.rs
+src/rust/crates/fathomdb-engine/tests/reader_pool.rs
+src/rust/crates/fathomdb-engine/tests/ir_c_fusion_experiment.rs
+src/rust/crates/fathomdb-engine/tests/pr9_embed_microbench.rs
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+src/rust/crates/fathomdb-engine/tests/verify_embedder.rs
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs
+src/rust/crates/fathomdb-engine/tests/vector_contracts.rs
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs
+src/rust/crates/fathomdb-engine/tests/recall_gate_predicate.rs
+src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs
+src/rust/crates/fathomdb-engine/tests/eu5a1_plumbing.rs
+src/rust/crates/fathomdb-engine/tests/consolidation_value_test.rs
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs
+src/rust/crates/fathomdb-engine/tests/trace_source_ref.rs
+src/rust/crates/fathomdb-engine/tests/slice5_provider_seam.rs
+src/rust/crates/fathomdb-engine/tests/source_id_writes.rs
+src/rust/crates/fathomdb-engine/tests/cursor_read_after_write.rs
+src/rust/crates/fathomdb-engine/tests/check_integrity.rs
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs
+src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_passages.rs
+src/rust/crates/fathomdb-engine/tests/ir_recall_eval.rs
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs
+src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs
+src/rust/crates/fathomdb-engine/tests/durability_open_path.rs
+src/rust/crates/fathomdb-engine/tests/perf_gates_devloop.rs
+src/rust/crates/fathomdb-engine/tests/pr_g1_tokenizer_crash_recovery.rs
+src/rust/crates/fathomdb-engine/tests/lifecycle_reliability.rs
+src/rust/crates/fathomdb-engine/tests/exp_obs_explain.rs
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs
+src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs
+src/rust/crates/fathomdb-engine/tests/instrumentation_methods.rs
+src/rust/crates/fathomdb-engine/tests/ir_c_cdf_run.rs
+src/rust/crates/fathomdb-engine/tests/dump_profile.rs
+src/rust/crates/fathomdb-engine/tests/dump_row_counts.rs
+src/rust/crates/fathomdb-engine/tests/ir_c_gold_diagnostics.rs
+src/rust/crates/fathomdb-engine/tests/corpus_vector.rs
+src/rust/crates/fathomdb-engine/tests/dump_schema.rs
+src/rust/crates/fathomdb-engine/tests/error_taxonomy.rs
+src/rust/crates/fathomdb-engine/tests/pr_c1_graph_seeding.rs
+src/rust/crates/fathomdb-engine/tests/pr_g0_identity.rs
+src/rust/crates/fathomdb-engine/tests/slice40_filter_unification.rs
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs
+src/rust/crates/fathomdb-engine/tests/fts5_injection_safety.rs
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs
+src/rust/crates/fathomdb-engine/tests/durability_soak.rs
+src/rust/crates/fathomdb-engine/tests/slice35_filter_grammar.rs
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs
+src/rust/crates/fathomdb-engine/tests/pr_g2_get_by_id.rs
+src/rust/crates/fathomdb-engine/tests/ir_c_pooling_floor_gate.rs
+src/rust/crates/fathomdb-engine/tests/pr_g8_dangling_edges.rs
+src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs
+src/rust/crates/fathomdb-engine/tests/pr_e2_rerank_nonfinite.rs
+src/rust/crates/fathomdb-engine/tests/cursors.rs
+src/rust/crates/fathomdb-engine/tests/qd_envelope_deserialize.rs
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs
+src/rust/crates/fathomdb-engine/tests/pr_g10_reranker_ce.rs
+src/rust/crates/fathomdb-engine/tests/corpus_fts.rs
+src/rust/crates/fathomdb-engine/tests/ga2_vector_stage_seam.rs
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs
+src/rust/crates/fathomdb-engine/tests/nomic_smoke.rs
+src/rust/crates/fathomdb-engine/tests/eu5b_lockflip.rs
+src/rust/crates/fathomdb-engine/tests/corpus_harness.rs
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/fixture_result.json
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/stub_harness.py
+src/rust/crates/fathomdb-engine/tests/fixtures/v05_shape.sql
+src/rust/crates/fathomdb-engine/tests/support/ir_retrieval.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json
+src/rust/crates/fathomdb-engine/tests/support/corruption.rs
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json
+src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json
+src/rust/crates/fathomdb-engine/tests/support/recall_gate.rs
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json
+src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/golden.jsonl
+src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/golden_inputs.jsonl
+src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/stub_harness.py
+src/rust/crates/fathomdb-engine/tests/fixtures/ir_gold/synthetic_gold.json
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_consolidate/stub_consolidate_harness.py
+
+exec
+/bin/bash -lc "sed -n '/EngineError/p' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+    DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport,
+/// Map an [`EngineError`] to the [`CliOutcome`] class per
+pub fn engine_error_to_outcome(err: &EngineError) -> CliOutcome {
+        EngineError::Closing => CliOutcome::LockHeld,
+/// under a `verb`-discriminated JSON envelope, and maps `EngineError` to
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+/// Variant that overrides the `EngineError` → outcome mapping for verbs
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+    F: FnOnce(&Engine) -> Result<Value, EngineError>,
+fn emit_engine_error(verb: &str, err: &EngineError) -> i32 {
+fn emit_engine_error_with_outcome(verb: &str, err: &EngineError, outcome: CliOutcome) -> i32 {
+fn engine_error_code(err: &EngineError) -> &'static str {
+        EngineError::Storage => "StorageError",
+        EngineError::Projection => "ProjectionError",
+        EngineError::Vector => "VectorError",
+        EngineError::Embedder => "EmbedderError",
+        EngineError::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+        EngineError::KindNotVectorIndexed => "KindNotVectorIndexedError",
+        EngineError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineError::Scheduler => "SchedulerError",
+        EngineError::OpStore => "OpStoreError",
+        EngineError::WriteValidation => "WriteValidationError",
+        EngineError::SchemaValidation => "SchemaValidationError",
+        EngineError::Overloaded => "OverloadedError",
+        EngineError::Closing => "ClosingError",
+        EngineError::Extractor => "ExtractorError",
+        EngineError::Consolidator => "ConsolidatorError",
+        EngineError::InvalidFilter { .. } => "InvalidFilterError",
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
+        assert_eq!(engine_error_to_outcome(&EngineError::Storage), CliOutcome::Unrecoverable);
+        assert_eq!(engine_error_to_outcome(&EngineError::Closing), CliOutcome::LockHeld);
+
+codex
+A direct search inside `fathomdb-cli/src/lib.rs` shows only two `EngineError` match sites: the outcome mapper with `_ => Unrecoverable`, and the code mapper with the new explicit `Consolidator` arm. That avoids a hidden CLI exhaustiveness miss.
+exec
+/bin/bash -lc "sed -n '/EngineError::/p' src/rust/crates/*/src/*.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        EngineError::Closing => CliOutcome::LockHeld,
+        EngineError::Storage => "StorageError",
+        EngineError::Projection => "ProjectionError",
+        EngineError::Vector => "VectorError",
+        EngineError::Embedder => "EmbedderError",
+        EngineError::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+        EngineError::KindNotVectorIndexed => "KindNotVectorIndexedError",
+        EngineError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineError::Scheduler => "SchedulerError",
+        EngineError::OpStore => "OpStoreError",
+        EngineError::WriteValidation => "WriteValidationError",
+        EngineError::SchemaValidation => "SchemaValidationError",
+        EngineError::Overloaded => "OverloadedError",
+        EngineError::Closing => "ClosingError",
+        EngineError::Extractor => "ExtractorError",
+        EngineError::Consolidator => "ConsolidatorError",
+        EngineError::InvalidFilter { .. } => "InvalidFilterError",
+        EngineError::InvalidArgument { .. } => "InvalidArgumentError",
+        assert_eq!(engine_error_to_outcome(&EngineError::Storage), CliOutcome::Unrecoverable);
+        assert_eq!(engine_error_to_outcome(&EngineError::Closing), CliOutcome::LockHeld);
+/// `json_extract`. Callers receive [`EngineError::InvalidFilter`] for any
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+            return Err(EngineError::InvalidFilter {
+    /// Returns [`EngineError::InvalidFilter`] if `path` is not in
+            return Err(EngineError::InvalidFilter {
+    /// [`EngineError::InvalidFilter`] — the explicit no-demotion guarantee (D3).
+                    return Err(EngineError::InvalidFilter {
+    /// fail with `EngineError::EmbedderNotConfigured`. Useful for
+            return Err(EngineError::WriteValidation);
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            return Err(EngineError::Storage);
+                return Err(EngineError::Storage);
+    /// Returns [`EngineError::Extractor`] on protocol errors (bad handshake,
+    /// catch-all `EngineError::Extractor` mapping) is identical across tasks;
+        let (program, args) = cmd.split_first().ok_or(EngineError::Extractor)?;
+            .map_err(|_| EngineError::Extractor)?;
+                return Err(EngineError::Extractor);
+                return Err(EngineError::Extractor);
+                                return Err(EngineError::Extractor);
+    /// Returns [`EngineError::Consolidator`] on any transport/handshake/protocol
+            .map_err(|_| EngineError::Consolidator)?;
+                .map_err(|_| EngineError::Consolidator)?;
+                .ok_or(EngineError::Consolidator)?
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?
+    /// kind, is a protocol fault → [`EngineError::Consolidator`].
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+                v.get("edge_ref").and_then(|x| x.as_str()).ok_or(EngineError::Consolidator)?;
+                return Err(EngineError::Consolidator);
+                return Err(EngineError::Consolidator);
+                v.get("verdict").and_then(|x| x.as_str()).ok_or(EngineError::Consolidator)?;
+                        .ok_or(EngineError::Consolidator)?;
+                    .map_err(|_| EngineError::Storage)?;
+                            .map_err(|_| EngineError::Storage)?;
+                    .map_err(|_| EngineError::Storage)?;
+                _ => return Err(EngineError::Consolidator),
+            return Err(EngineError::Consolidator);
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+    /// [`EngineError::InvalidFilter`] (D3 no-demotion guarantee). This is the
+            .map_err(|_| EngineError::Storage)?;
+        let mut guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+        let guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+            .ok_or(EngineError::InvalidArgument { msg: "telemetry is not enabled".to_string() })?;
+            return Err(EngineError::InvalidArgument { msg: "unknown query_id".to_string() });
+        append_jsonl(&sink.path, &record).map_err(|_| EngineError::Storage)
+            return Err(EngineError::WriteValidation);
+                    let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                    let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            return Err(EngineError::Closing);
+        let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
+                return Err(EngineError::Storage);
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+            return Err(EngineError::InvalidArgument {
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+    /// Returns `Err(EngineError::InvalidArgument)` for `depth > 3`.
+            return Err(EngineError::InvalidArgument {
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+                return Err(EngineError::InvalidFilter {
+            return Err(EngineError::Closing);
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+                Err(EngineError::Storage)
+            Err(EngineError::Scheduler)
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            connection.execute_batch(sql).map_err(|_| EngineError::Storage)?;
+    /// — a deterministic `EngineError::WriteValidation`. The captured
+    /// `last_error_chain` is `[EngineError::stable_code(),
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                _ => Err(EngineError::Storage),
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)?;
+    /// Returns [`EngineError::EmbedderNotConfigured`] if the engine was opened
+            self.runtime_embedder.as_ref().cloned().ok_or(EngineError::EmbedderNotConfigured)?;
+            self.runtime_embedder.as_ref().cloned().ok_or(EngineError::EmbedderNotConfigured)?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            return Err(EngineError::KindNotVectorIndexed);
+        ensure_vector_partition(connection, expected).map_err(|_| EngineError::Storage)?;
+            return Err(EngineError::EmbedderDimensionMismatch { expected, actual });
+                runtime.mean_accumulator.lock().map_err(|_| EngineError::Storage)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+                    .map_err(|_| EngineError::Storage)?;
+                    .map_err(|_| EngineError::Storage)?;
+                    out.push(r.map_err(|_| EngineError::Storage)?);
+        tx.commit().map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            return Err(EngineError::EmbedderNotConfigured);
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        load_default_profile(connection).map_err(|_| EngineError::Storage)
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                .map_err(|_| EngineError::Storage)?;
+        let bytes = std::fs::read(out).map_err(|_| EngineError::Storage)?;
+            serde_json::to_vec_pretty(&manifest_json).map_err(|_| EngineError::Storage)?;
+        std::fs::write(manifest, &manifest_bytes).map_err(|_| EngineError::Storage)?;
+            return Err(EngineError::WriteValidation);
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            events.push(row.map_err(|_| EngineError::Storage)?);
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            events.push(row.map_err(|_| EngineError::Storage)?);
+            return Err(EngineError::WriteValidation);
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                .map_err(|_| EngineError::Storage)?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+            vectorized_kinds.push(row.map_err(|_| EngineError::Storage)?);
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            .map_err(|_| EngineError::Storage)?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+                .map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+                    .map_err(|_| EngineError::Storage)? as u64,
+                    .map_err(|_| EngineError::Storage)? as u64,
+                    .map_err(|_| EngineError::Storage)? as u64,
+                    .map_err(|_| EngineError::Storage)? as u64,
+                .map_err(|_| EngineError::Storage)? as u64,
+            .map_err(|_| EngineError::Storage)? as u64;
+            .map_err(|_| EngineError::Storage)? as u64;
+        .map_err(|_| EngineError::Storage)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+        store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+                .map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?
+                .map_err(|_| EngineError::Storage)?;
+                .map_err(|_| EngineError::Storage)?;
+            load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+            return Err(EngineError::Closing);
+            return Err(EngineError::Storage);
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)?;
+        // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
+    let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+    tx.commit().map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            .map_err(|_| EngineError::Storage)?;
+            out.push(r.map_err(|_| EngineError::Storage)?);
+            return Err(EngineError::Storage);
+    .map_err(|_| EngineError::Storage)?;
+        return Err(EngineError::Storage);
+        .map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)?;
+    match terminal_state_for_cursor(connection, latest).map_err(|_| EngineError::Storage)? {
+        .map_err(|_| EngineError::Storage)?;
+        .map_err(|_| EngineError::Storage)?;
+        out.push(row.map_err(|_| EngineError::Storage)?);
+        .map_err(|_| EngineError::Storage)
+            _ => Err(EngineError::Storage),
+/// returns `Err(EngineError::Storage)` on dimension drift (the open-time
+        .map_err(|_| EngineError::Storage)?;
+        return Err(EngineError::Storage);
+        _ => return Err(EngineError::Storage),
+        return Err(EngineError::Extractor);
+        let hello_line = serde_json::to_string(&hello).map_err(|_| EngineError::Extractor)?;
+        writeln!(self.writer, "{hello_line}").map_err(|_| EngineError::Extractor)?;
+        self.writer.flush().map_err(|_| EngineError::Extractor)?;
+        let ready: Value = serde_json::from_str(line.trim()).map_err(|_| EngineError::Extractor)?;
+            return Err(EngineError::Extractor);
+                return Err(EngineError::Extractor);
+            return Err(EngineError::Extractor);
+            serde_json::to_string(&Value::Object(req)).map_err(|_| EngineError::Extractor)?;
+        writeln!(self.writer, "{req_line}").map_err(|_| EngineError::Extractor)?;
+        self.writer.flush().map_err(|_| EngineError::Extractor)?;
+            serde_json::from_str(result_line.trim()).map_err(|_| EngineError::Extractor)?;
+            return Err(EngineError::Extractor);
+/// an underlying io error all map to [`EngineError::Extractor`].
+        _ => Err(EngineError::Extractor),
+            EngineError::Embedder
+                return Err(EngineError::WriteValidation);
+                    return Err(EngineError::WriteValidation);
+                    return Err(EngineError::WriteValidation);
+                return Err(EngineError::WriteValidation);
+                return Err(EngineError::WriteValidation);
+                    return Err(EngineError::WriteValidation);
+                    return Err(EngineError::WriteValidation);
+                return Err(EngineError::SchemaValidation);
+                return Err(EngineError::WriteValidation);
+                    return Err(EngineError::SchemaValidation);
+                return Err(EngineError::SchemaValidation);
+                _ => Err(EngineError::OpStore),
+        .map_err(|_| EngineError::OpStore)
+        serde_json::from_str::<Value>(schema_json).map_err(|_| EngineError::SchemaValidation)?;
+    let payload = serde_json::from_str::<Value>(body).map_err(|_| EngineError::SchemaValidation)?;
+    let compiled = JSONSchema::compile(&schema).map_err(|_| EngineError::SchemaValidation)?;
+    compiled.validate(&payload).map_err(|_| EngineError::SchemaValidation)?;
+/// errors use the stable `EngineError::stable_code` value (e.g.
+        RustEngineError::Storage => typed_error(CODE_STORAGE, "storage error", JsonValue::Null),
+        RustEngineError::Projection => {
+        RustEngineError::Vector => typed_error(CODE_VECTOR, "vector error", JsonValue::Null),
+        RustEngineError::Embedder => typed_error(CODE_EMBEDDER, "embedder error", JsonValue::Null),
+        RustEngineError::EmbedderNotConfigured => {
+        RustEngineError::KindNotVectorIndexed => typed_error(
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => typed_error(
+        RustEngineError::Scheduler => {
+        RustEngineError::OpStore => typed_error(CODE_OP_STORE, "op-store error", JsonValue::Null),
+        RustEngineError::WriteValidation => {
+        RustEngineError::SchemaValidation => {
+        RustEngineError::Overloaded => {
+        RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+        RustEngineError::Consolidator => {
+        RustEngineError::InvalidFilter { reason } => {
+        RustEngineError::InvalidArgument { msg } => {
+        RustEngineError::Storage => StorageError::new_err("storage error"),
+        RustEngineError::Projection => ProjectionError::new_err("projection error"),
+        RustEngineError::Vector => VectorError::new_err("vector error"),
+        RustEngineError::Embedder => EmbedderError::new_err("embedder error"),
+        RustEngineError::EmbedderNotConfigured => {
+        RustEngineError::KindNotVectorIndexed => {
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => {
+        RustEngineError::Scheduler => SchedulerError::new_err("scheduler error"),
+        RustEngineError::OpStore => OpStoreError::new_err("op-store error"),
+        RustEngineError::WriteValidation => WriteValidationError::new_err("write validation error"),
+        RustEngineError::SchemaValidation => {
+        RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
+        RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+        RustEngineError::InvalidFilter { reason } => {
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+
+exec
+/bin/bash -lc "sed -n '/RustEngineError::/p' src/rust/crates/*/src/*.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+        RustEngineError::Storage => typed_error(CODE_STORAGE, "storage error", JsonValue::Null),
+        RustEngineError::Projection => {
+        RustEngineError::Vector => typed_error(CODE_VECTOR, "vector error", JsonValue::Null),
+        RustEngineError::Embedder => typed_error(CODE_EMBEDDER, "embedder error", JsonValue::Null),
+        RustEngineError::EmbedderNotConfigured => {
+        RustEngineError::KindNotVectorIndexed => typed_error(
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => typed_error(
+        RustEngineError::Scheduler => {
+        RustEngineError::OpStore => typed_error(CODE_OP_STORE, "op-store error", JsonValue::Null),
+        RustEngineError::WriteValidation => {
+        RustEngineError::SchemaValidation => {
+        RustEngineError::Overloaded => {
+        RustEngineError::Closing => typed_error(CODE_CLOSING, "engine is closing", JsonValue::Null),
+        RustEngineError::Extractor => {
+        RustEngineError::Consolidator => {
+        RustEngineError::InvalidFilter { reason } => {
+        RustEngineError::InvalidArgument { msg } => {
+        RustEngineError::Storage => StorageError::new_err("storage error"),
+        RustEngineError::Projection => ProjectionError::new_err("projection error"),
+        RustEngineError::Vector => VectorError::new_err("vector error"),
+        RustEngineError::Embedder => EmbedderError::new_err("embedder error"),
+        RustEngineError::EmbedderNotConfigured => {
+        RustEngineError::KindNotVectorIndexed => {
+        RustEngineError::EmbedderDimensionMismatch { expected, actual } => {
+        RustEngineError::Scheduler => SchedulerError::new_err("scheduler error"),
+        RustEngineError::OpStore => OpStoreError::new_err("op-store error"),
+        RustEngineError::WriteValidation => WriteValidationError::new_err("write validation error"),
+        RustEngineError::SchemaValidation => {
+        RustEngineError::Overloaded => OverloadedError::new_err("engine overloaded"),
+        RustEngineError::Closing => ClosingError::new_err("engine is closing"),
+        RustEngineError::Extractor => ExtractorError::new_err("extractor error"),
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+        RustEngineError::InvalidFilter { reason } => {
+        RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+
+exec
+/bin/bash -lc "sed -n '/ConsolidatorError/p;/FDB_CONSOLIDATOR/p;/CODE_CONSOLIDATOR/p' src/ts/src/errors.ts src/rust/crates/fathomdb-napi/src/lib.rs src/python/fathomdb/errors.py src/rust/crates/fathomdb-py/src/lib.rs src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+export class ConsolidatorError extends FathomDbError {}
+  | "FDB_CONSOLIDATOR"
+    case "FDB_CONSOLIDATOR":
+      return new ConsolidatorError(envelope.message);
+const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
+const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
+            typed_error(CODE_CONSOLIDATOR, "consolidator error", JsonValue::Null)
+    ConsolidatorError as _ConsolidatorError,
+ConsolidatorError = _ConsolidatorError
+    "ConsolidatorError",
+create_exception!(_fathomdb, ConsolidatorError, EngineError);
+        RustEngineError::Consolidator => ConsolidatorError::new_err("consolidator error"),
+    m.add("ConsolidatorError", py.get_type::<ConsolidatorError>())?;
+            Self::Consolidator => "ConsolidatorError",
+        EngineError::Consolidator => "ConsolidatorError",
+
+codex
+The broader Rust source scan found no other explicit `EngineError::Consolidator` mapper missing the variant. The TS/Python public error surfaces also expose `ConsolidatorError`, with napi’s internal `FDB_CONSOLIDATOR` bridge mapping back to that class.
+exec
+/bin/bash -lc "sed -n '100,125{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+100
+  readonly stored: number;
+101
+  readonly supplied: number;
+102
+  constructor(payload: EmbedderDimensionMismatchPayload) {
+103
+    super(
+104
+      `embedder vector dimension mismatch: stored ${payload.stored}, supplied ${payload.supplied}`,
+105
+    );
+106
+    this.stored = payload.stored;
+107
+    this.supplied = payload.supplied;
+108
+  }
+109
+}
+110
+
+111
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+112
+export class ExtractorError extends FathomDbError {}
+113
+
+114
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+115
+export class ConsolidatorError extends FathomDbError {}
+116
+
+117
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+118
+export class InvalidFilterError extends FathomDbError {}
+119
+
+120
+// Slice 20 — depth > 3 or other invalid argument (G5/G6).
+121
+export class InvalidArgumentError extends FathomDbError {}
+122
+
+123
+// Panic is a contract bug, not a typed engine outcome — intentionally
+124
+// NOT a FathomDbError subclass so callers that catch FathomDbError do
+125
+// not silently swallow it. Mirrors PyO3 PanicException in 11a.
+
+exec
+/bin/bash -lc "sed -n '130,150{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+130
+  }
+131
+}
+132
+
+133
+// ===== Typed-error rethrow ============================================
+134
+
+135
+type ErrorCode =
+136
+  | "FDB_STORAGE"
+137
+  | "FDB_PROJECTION"
+138
+  | "FDB_VECTOR"
+139
+  | "FDB_EMBEDDER"
+140
+  | "FDB_EMBEDDER_NOT_CONFIGURED"
+141
+  | "FDB_KIND_NOT_VECTOR_INDEXED"
+142
+  | "FDB_EMBEDDER_DIMENSION_MISMATCH"
+143
+  | "FDB_SCHEDULER"
+144
+  | "FDB_OP_STORE"
+145
+  | "FDB_WRITE_VALIDATION"
+146
+  | "FDB_SCHEMA_VALIDATION"
+147
+  | "FDB_OVERLOADED"
+148
+  | "FDB_CLOSING"
+149
+  | "FDB_DATABASE_LOCKED"
+150
+  | "FDB_CORRUPTION"
+
+exec
+/bin/bash -lc "sed -n '220,235{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+220
+    case "FDB_SCHEMA_VALIDATION":
+221
+      return new SchemaValidationError(envelope.message);
+222
+    case "FDB_OVERLOADED":
+223
+      return new OverloadedError(envelope.message);
+224
+    case "FDB_CLOSING":
+225
+      return new ClosingError(envelope.message);
+226
+    case "FDB_DATABASE_LOCKED":
+227
+      return new DatabaseLockedError({
+228
+        holderPid: typeof p.holderPid === "number" ? p.holderPid : undefined,
+229
+      });
+230
+    case "FDB_CORRUPTION":
+231
+      return new CorruptionError({
+232
+        kind: String(p.kind ?? ""),
+233
+        stage: String(p.stage ?? ""),
+234
+        recoveryHintCode: String(p.recoveryHintCode ?? ""),
+235
+        docAnchor: String(p.docAnchor ?? ""),
+
+exec
+/bin/bash -lc "sed -n '80,110{=;p}' src/python/fathomdb/errors.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+80
+from fathomdb._fathomdb import (
+81
+    ConsolidatorError as _ConsolidatorError,
+82
+)
+83
+from fathomdb._fathomdb import (
+84
+    InvalidFilterError as _InvalidFilterError,
+85
+)
+86
+from fathomdb._fathomdb import (
+87
+    InvalidArgumentError as _InvalidArgumentError,
+88
+)
+89
+
+90
+EngineError = _EngineError
+91
+StorageError = _StorageError
+92
+ProjectionError = _ProjectionError
+93
+VectorError = _VectorError
+94
+EmbedderError = _EmbedderError
+95
+EmbedderNotConfiguredError = _EmbedderNotConfiguredError
+96
+KindNotVectorIndexedError = _KindNotVectorIndexedError
+97
+SchedulerError = _SchedulerError
+98
+OpStoreError = _OpStoreError
+99
+WriteValidationError = _WriteValidationError
+100
+SchemaValidationError = _SchemaValidationError
+101
+OverloadedError = _OverloadedError
+102
+ClosingError = _ClosingError
+103
+DatabaseLockedError = _DatabaseLockedError
+104
+CorruptionError = _CorruptionError
+105
+IncompatibleSchemaVersionError = _IncompatibleSchemaVersionError
+106
+MigrationError = _MigrationError
+107
+EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
+108
+EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
+109
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+110
+ExtractorError = _ExtractorError
+
+exec
+/bin/bash -lc "sed -n '65,90{=;p}' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+65
+create_exception!(_fathomdb, EngineError, PyException);
+66
+create_exception!(_fathomdb, StorageError, EngineError);
+67
+create_exception!(_fathomdb, ProjectionError, EngineError);
+68
+create_exception!(_fathomdb, VectorError, EngineError);
+69
+create_exception!(_fathomdb, KindNotVectorIndexedError, VectorError);
+70
+create_exception!(_fathomdb, EmbedderError, EngineError);
+71
+create_exception!(_fathomdb, EmbedderNotConfiguredError, EmbedderError);
+72
+create_exception!(_fathomdb, SchedulerError, EngineError);
+73
+create_exception!(_fathomdb, OpStoreError, EngineError);
+74
+create_exception!(_fathomdb, WriteValidationError, EngineError);
+75
+create_exception!(_fathomdb, SchemaValidationError, EngineError);
+76
+create_exception!(_fathomdb, OverloadedError, EngineError);
+77
+create_exception!(_fathomdb, ClosingError, EngineError);
+78
+create_exception!(_fathomdb, DatabaseLockedError, EngineError);
+79
+create_exception!(_fathomdb, CorruptionError, EngineError);
+80
+create_exception!(_fathomdb, IncompatibleSchemaVersionError, EngineError);
+81
+create_exception!(_fathomdb, MigrationError, EngineError);
+82
+create_exception!(_fathomdb, EmbedderIdentityMismatchError, EngineError);
+83
+create_exception!(_fathomdb, EmbedderDimensionMismatchError, EngineError);
+84
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+85
+create_exception!(_fathomdb, ExtractorError, EngineError);
+86
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+87
+create_exception!(_fathomdb, ConsolidatorError, EngineError);
+88
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+89
+create_exception!(_fathomdb, InvalidFilterError, EngineError);
+90
+// Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
+
+exec
+/bin/bash -lc "sed -n '150,165{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+150
+  | "FDB_CORRUPTION"
+151
+  | "FDB_INCOMPATIBLE_SCHEMA_VERSION"
+152
+  | "FDB_MIGRATION"
+153
+  | "FDB_EMBEDDER_IDENTITY_MISMATCH"
+154
+  // G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+155
+  | "FDB_EXTRACTOR"
+156
+  // 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+157
+  | "FDB_CONSOLIDATOR"
+158
+  // G4 (Slice 35) — filter predicate construction error.
+159
+  | "FDB_INVALID_FILTER"
+160
+  // Slice 20 — depth > 3 or invalid argument (G5/G6).
+161
+  | "FDB_INVALID_ARGUMENT"
+162
+  | "FDB_PANIC";
+163
+
+164
+interface Envelope {
+165
+  code: ErrorCode;
+
+exec
+/bin/bash -lc "sed -n '235,250{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+235
+        docAnchor: String(p.docAnchor ?? ""),
+236
+      });
+237
+    case "FDB_INCOMPATIBLE_SCHEMA_VERSION":
+238
+      return new IncompatibleSchemaVersionError(envelope.message);
+239
+    case "FDB_MIGRATION":
+240
+      return new MigrationError(envelope.message);
+241
+    case "FDB_EMBEDDER_IDENTITY_MISMATCH":
+242
+      return new EmbedderIdentityMismatchError({
+243
+        storedName: String(p.storedName ?? ""),
+244
+        storedRevision: String(p.storedRevision ?? ""),
+245
+        suppliedName: String(p.suppliedName ?? ""),
+246
+        suppliedRevision: String(p.suppliedRevision ?? ""),
+247
+      });
+248
+    case "FDB_EXTRACTOR":
+249
+      return new ExtractorError(envelope.message);
+250
+    case "FDB_CONSOLIDATOR":
+
+exec
+/bin/bash -lc "sed -n '108,125{=;p}' src/python/fathomdb/errors.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+108
+EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
+109
+# G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+110
+ExtractorError = _ExtractorError
+111
+# 0.8.12 Slice 15 (OPP-2) — consolidation harness protocol error.
+112
+ConsolidatorError = _ConsolidatorError
+113
+# G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+114
+InvalidFilterError = _InvalidFilterError
+115
+InvalidArgumentError = _InvalidArgumentError
+116
+
+117
+
+118
+def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
+119
+    def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+120
+        payload = {name: kwargs.pop(name, None) for name in fields}
+121
+        if kwargs:
+122
+            unexpected = ", ".join(sorted(kwargs))
+123
+            raise TypeError(f"unexpected keyword arguments: {unexpected}")
+124
+        Exception.__init__(self, *args)
+125
+        for name, value in payload.items():
+
+exec
+/bin/bash -lc "sed -n '59,70{=;p}' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+59
+const CODE_STORAGE: &str = "FDB_STORAGE";
+60
+const CODE_PROJECTION: &str = "FDB_PROJECTION";
+61
+const CODE_VECTOR: &str = "FDB_VECTOR";
+62
+const CODE_EMBEDDER: &str = "FDB_EMBEDDER";
+63
+const CODE_EMBEDDER_NOT_CONFIGURED: &str = "FDB_EMBEDDER_NOT_CONFIGURED";
+64
+const CODE_KIND_NOT_VECTOR_INDEXED: &str = "FDB_KIND_NOT_VECTOR_INDEXED";
+65
+const CODE_EMBEDDER_DIMENSION_MISMATCH: &str = "FDB_EMBEDDER_DIMENSION_MISMATCH";
+66
+const CODE_SCHEDULER: &str = "FDB_SCHEDULER";
+67
+const CODE_OP_STORE: &str = "FDB_OP_STORE";
+68
+const CODE_WRITE_VALIDATION: &str = "FDB_WRITE_VALIDATION";
+69
+const CODE_SCHEMA_VALIDATION: &str = "FDB_SCHEMA_VALIDATION";
+70
+const CODE_OVERLOADED: &str = "FDB_OVERLOADED";
+
+exec
+/bin/bash -lc "sed -n '250,255{=;p}' src/ts/src/errors.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+250
+    case "FDB_CONSOLIDATOR":
+251
+      return new ConsolidatorError(envelope.message);
+252
+    case "FDB_INVALID_FILTER":
+253
+      return new InvalidFilterError(envelope.message);
+254
+    case "FDB_INVALID_ARGUMENT":
+255
+      return new InvalidArgumentError(envelope.message);
+
+exec
+/bin/bash -lc "sed -n '70,85{=;p}' src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+70
+const CODE_OVERLOADED: &str = "FDB_OVERLOADED";
+71
+const CODE_CLOSING: &str = "FDB_CLOSING";
+72
+const CODE_DATABASE_LOCKED: &str = "FDB_DATABASE_LOCKED";
+73
+const CODE_CORRUPTION: &str = "FDB_CORRUPTION";
+74
+const CODE_INCOMPATIBLE_SCHEMA_VERSION: &str = "FDB_INCOMPATIBLE_SCHEMA_VERSION";
+75
+const CODE_MIGRATION: &str = "FDB_MIGRATION";
+76
+const CODE_EMBEDDER_IDENTITY_MISMATCH: &str = "FDB_EMBEDDER_IDENTITY_MISMATCH";
+77
+// G11 (Slice 15) — BYO-LLM extraction harness protocol error.
+78
+const CODE_EXTRACTOR: &str = "FDB_EXTRACTOR";
+79
+// 0.8.12 Slice 15 (OPP-2) — BYO-LLM consolidation harness protocol error.
+80
+const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
+81
+// G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
+82
+const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
+83
+// Slice 20 — depth > 3 or invalid argument (G5/G6).
+84
+const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
+85
+const CODE_PANIC: &str = "FDB_PANIC";
+
+exec
+/bin/bash -lc "sed -n '286,292{=;p}' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+286
+    #[arg(long = "source-ref")]
+287
+    pub source_ref: String,
+288
+
+289
+    /// Emit machine-readable JSON output.
+290
+    #[arg(long)]
+291
+    pub json: bool,
+292
+
+
+exec
+/bin/bash -lc "sed -n '300,325{=;p}' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+300
+pub enum CliOutcome {
+301
+    /// Verb completed successfully with no findings.
+302
+    Clean,
+303
+    /// Doctor / verification surface found actionable non-clean state.
+304
+    Findings,
+305
+    /// Export / materialization failure on an artifact-producing doctor verb.
+306
+    ExportFailure,
+307
+    /// `recover` completed only because lossy action was explicitly accepted.
+308
+    RecoveryAcceptedLoss,
+309
+    /// Lock-held or equivalent precondition-blocked outcome.
+310
+    LockHeld,
+311
+    /// Unrecoverable command failure.
+312
+    Unrecoverable,
+313
+}
+314
+
+315
+/// Map an outcome to the stable exit code defined in `cli.md`.
+316
+#[must_use]
+317
+pub fn outcome_to_exit_code(outcome: CliOutcome) -> i32 {
+318
+    match outcome {
+319
+        CliOutcome::Clean => exit_code::OK,
+320
+        CliOutcome::Findings => exit_code::DOCTOR_FOUND_ISSUES,
+321
+        CliOutcome::ExportFailure => exit_code::EXPORT_FAILURE,
+322
+        CliOutcome::RecoveryAcceptedLoss => exit_code::RECOVERY_ACCEPTED_LOSS,
+323
+        CliOutcome::LockHeld => exit_code::LOCK_HELD,
+324
+        CliOutcome::Unrecoverable => exit_code::UNRECOVERABLE,
+325
+    }
+
+exec
+/bin/bash -lc "sed -n '326,342{=;p}' src/rust/crates/fathomdb-cli/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.12-fixcompile
+ succeeded in 0ms:
+326
+}
+327
+
+328
+/// Map an [`EngineError`] to the [`CliOutcome`] class per
+329
+/// `dev/interfaces/cli.md` § Error to exit-code mapping.
+330
+#[must_use]
+331
+pub fn engine_error_to_outcome(err: &EngineError) -> CliOutcome {
+332
+    match err {
+333
+        EngineError::Closing => CliOutcome::LockHeld,
+334
+        _ => CliOutcome::Unrecoverable,
+335
+    }
+336
+}
+337
+
+338
+/// Map an [`EngineOpenError`] to the [`CliOutcome`] class per
+339
+/// `dev/interfaces/cli.md` § Error to exit-code mapping.
+340
+#[must_use]
+341
+pub fn engine_open_error_to_outcome(err: &EngineOpenError) -> CliOutcome {
+342
+    match err {
+
+codex
+## Verdict: PASS
+
+### 1. [info] No findings
+Refs: src/rust/crates/fathomdb-cli/src/lib.rs:723, src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:302
+
+What passed on inspection
+
+- CLI code string is exactly `ConsolidatorError`, matching engine stable code at src/rust/crates/fathomdb-engine/src/lib.rs:2116 and Python mapper/class at src/rust/crates/fathomdb-py/src/lib.rs:87 and src/rust/crates/fathomdb-py/src/lib.rs:184.
+- napi uses internal code `FDB_CONSOLIDATOR`, but TS maps it back to public `ConsolidatorError`: src/rust/crates/fathomdb-napi/src/lib.rs:80, src/rust/crates/fathomdb-napi/src/lib.rs:199, src/ts/src/errors.ts:115, src/ts/src/errors.ts:250.
+- CLI change is additive to `engine_error_code`; exit/outcome behavior remains unchanged via `_ => CliOutcome::Unrecoverable` at src/rust/crates/fathomdb-cli/src/lib.rs:331.
+- `vec!` to array is behavior-preserving: `cmd.iter().map(|s| s.as_str()).collect()` still produces `Vec<&str>`, and `cmd` lives through `consolidate_with_provider(&cmd_refs, &axes)`.
+- Direct Rust source scan found no remaining explicit `EngineError` mapper missing `Consolidator`; binding match arms are exhaustive and include it. No tests run; read-only inspection only.
+tokens used
+89,867
+## Verdict: PASS
+
+### 1. [info] No findings
+Refs: src/rust/crates/fathomdb-cli/src/lib.rs:723, src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:302
+
+What passed on inspection
+
+- CLI code string is exactly `ConsolidatorError`, matching engine stable code at src/rust/crates/fathomdb-engine/src/lib.rs:2116 and Python mapper/class at src/rust/crates/fathomdb-py/src/lib.rs:87 and src/rust/crates/fathomdb-py/src/lib.rs:184.
+- napi uses internal code `FDB_CONSOLIDATOR`, but TS maps it back to public `ConsolidatorError`: src/rust/crates/fathomdb-napi/src/lib.rs:80, src/rust/crates/fathomdb-napi/src/lib.rs:199, src/ts/src/errors.ts:115, src/ts/src/errors.ts:250.
+- CLI change is additive to `engine_error_code`; exit/outcome behavior remains unchanged via `_ => CliOutcome::Unrecoverable` at src/rust/crates/fathomdb-cli/src/lib.rs:331.
+- `vec!` to array is behavior-preserving: `cmd.iter().map(|s| s.as_str()).collect()` still produces `Vec<&str>`, and `cmd` lives through `consolidate_with_provider(&cmd_refs, &axes)`.
+- Direct Rust source scan found no remaining explicit `EngineError` mapper missing `Consolidator`; binding match arms are exhaustive and include it. No tests run; read-only inspection only.

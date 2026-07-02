@@ -1,0 +1,22 @@
+{
+  "phase": "0.8.12-fixcompile",
+  "baseline_sha": "ef6abf6d7dfbc54f2fb855545271f1d6fc7d0d24",
+  "branch": "fix/0.8.12-workspace-compile",
+  "head_sha": "8f451540f1f5d1489bca776906de7752bf5efe3e",
+  "commits": [
+    "167e704f: fix(cli): map EngineError::Consolidator in engine_error_code (workspace compile)",
+    "8f451540: style(engine): array over useless vec! in rebuild_projections test (clippy -D warnings)"
+  ],
+  "findings_addressed": [
+    "Fix 1 — E0004 non-exhaustive match: fathomdb-cli/src/lib.rs engine_error_code() was missing an arm for the new EngineError::Consolidator variant (added during 0.8.12 consolidation). Added `EngineError::Consolidator => \"ConsolidatorError\",` adjacent to the sibling `EngineError::Extractor` arm, mirroring the engine's own mapping at fathomdb-engine/src/lib.rs:2116.",
+    "Fix 2 — clippy::useless_vec (denied by -D warnings): fathomdb-engine/tests/rebuild_projections.rs:302 `let cmd = vec![\"python3\".to_string(), script.to_string_lossy().to_string()];` was immediately borrowed as a slice via `cmd.iter()` and never mutated/grown, so clippy flagged the vec! as useless. Replaced with an array literal `let cmd = [\"python3\".to_string(), script.to_string_lossy().to_string()];` — no other vec! in the file was flagged (clippy stops at first hard error; re-run after the fix showed 0 remaining useless_vec hits in this file or elsewhere in the workspace)."
+  ],
+  "blockers_encountered": [],
+  "additional_changes_made_in_scope": [
+    "None. Verified per the prompt's VERIFY-BEFORE-EDIT note that engine_error_to_outcome (line 331-336) and engine_open_error_to_outcome (line 341-346) in fathomdb-cli/src/lib.rs use `_ => CliOutcome::Unrecoverable` wildcards — no arm needed/added there.",
+    "Verified fathomdb-py/src/lib.rs:184 (`RustEngineError::Consolidator => ConsolidatorError::new_err(...)`) and fathomdb-napi/src/lib.rs:199 (`RustEngineError::Consolidator => { ... }`) already handle the Consolidator variant — no arms added, files untouched.",
+    "No other non-exhaustive EngineError match surfaced when running the gate; only the single expected CLI arm was needed."
+  ],
+  "agent_verify_result": "pass — cargo clippy --workspace --all-targets -- -D warnings -A missing-docs: exit 0 (final confirmation run); cargo check --workspace --all-targets: exit 0 (final confirmation run). Both re-verified a second time after commit with a clean working tree (git status --short empty).",
+  "next_step_for_orchestrator": "Cherry-pick commits 167e704f and 8f451540 from fix/0.8.12-workspace-compile onto the mainline release branch; only src/rust/crates/fathomdb-cli/src/lib.rs and src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs changed (plus this output.json, untracked). Ready for codex §9 review."
+}
