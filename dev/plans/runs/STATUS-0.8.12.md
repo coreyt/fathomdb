@@ -79,6 +79,15 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Recent decisions (newest on top)
 
+- 2026-07-02 — **ORCHESTRATION WIND-DOWN (HITL Option A: preserve + defer verdict to GPU re-run).**
+  EXP-COV-1 priced extraction COMPLETE at **$4.79/$20** (0 failures, resilience proven). Downstream
+  sufficiency read **environment-BLOCKED** (CPU-embedder defect → CE/dense unrunnable;
+  `dev/notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md`) → verdict **DEFERRED to a GPU-embedder
+  re-run** (reuses the preserved extraction; no re-anchoring on a degraded FTS+graph screening number).
+  Division of labor: sweep implementer `a8f76783` (sole writer of `0.8.12-expcov1`, now under the user's
+  direct direction) preserves the $4.79 asset + authors the GPU re-run plan; THIS session (sole writer of
+  `0.8.12`) wrote the finding + `0.8.12-handoff.md` + this update, and **stands down**. Fresh HITL session
+  picks up the GPU re-run + Slice-10 decision + label-only merge.
 - 2026-07-02 — **Slice 40 driven as-far-as-it-can-go.** X2 mkdocs --strict GREEN; X3 DOC-INDEX resolves;
   X1 Python public API **live-verified** in an isolated venv (shared `.venv` untouched — mutex respected),
   TS surface present + napi compiles (live TS deferred, no `node_modules`). AC gate all ✅ except **R-COV-3
@@ -107,11 +116,15 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 - 2026-07-01 — Orchestrator run launched. STEP-0 preflight GREEN (`cargo check --workspace` exit 0;
   `.venv` `import fathomdb` OK, bound to shared main-tree build).
 
-## Next action
+## Next action — a FRESH HITL-initiated session (this orchestration has STOOD DOWN)
 
-- **EXP-COV-1 priced sweep ($20):** plan ready (`EXP-COV-1-sweep-plan.md`); executes ONLY on the user's
-  OWN direct confirmation → then the post-sweep hard-stop (sufficiency verdict + full-Slice-10 cost est).
-- **Slice 10 / R-COV-3** resolves only after the sweep decision (extraction go, or redirect → resolve OPP-6 #6).
-- **Live TS X1** + the **FTS/vec `t_invalid`-filter** (consolidation default-ON blocker) at the merge/build step.
-- **Label-only merge** of `0.8.12-memory-quality` → `main` is a HITL decision point (Slices 0/5/15/20 CLOSED,
-  40 partial; label-only, manifests stay 0.8.9). Report before merging.
+Full hand-off: **`dev/plans/runs/0.8.12-handoff.md`**. DEFERRED items:
+
+1. **EXP-COV-1 verdict → GPU-embedder re-run** ($0 downstream pass; reuses the preserved $4.79 extraction
+   on branch `0.8.12-expcov1-sweep` via its manifest+sha256; pairs with 0.8.14 GPU work). Plan authored by
+   implementer `a8f76783` (user-directed).
+2. **Slice 10 productization / R-COV-3** — gated on the verdict + a fresh explicit HITL go for any priced/
+   productized extraction.
+3. **Label-only merge** `0.8.12-memory-quality` → `main` (HITL decision; manifests stay 0.8.9).
+4. **Consolidation default-ON blocker** — FTS/vec `t_invalid` projection filter (Slice-20 codex §9).
+5. **Live TS X1** harness at the merge/build step.
