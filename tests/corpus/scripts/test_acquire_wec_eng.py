@@ -20,19 +20,29 @@ Run: FATHOMDB_TESTS_NO_REBUILD=1 python -m pytest \
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import warnings
+from dataclasses import asdict
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _config import add_config_cli, config_from_dict, resolve_config  # noqa: E402
 from _corpus_lib import _QID_RE, write_jsonl  # noqa: E402
 from acquire_wec_eng import (  # noqa: E402
     CREATED_AT,
+    DEFAULT_SAMPLE_SIZE,
+    DEFAULT_SEED,
+    WecEngConfig,
     build_doc,
     mention_body,
     sample_records,
 )
+
+CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
 
 # ── inline fixture: one WEC-Eng gold mention (fields per the HF data card) ─────
 FIXTURE_MENTION = {
@@ -120,3 +130,52 @@ def test_writer_round_trips_entity_ids(tmp_path):
         {"id": "Q152075", "kind": "qid", "surface": "summit"}
     ]
     assert rows[1]["entity_ids"] == []
+
+
+# ── typed-config conversion (behavior-identical to the former argparse) ────────
+
+
+def test_config_defaults_match_legacy_argparse_defaults():
+    cfg = WecEngConfig()
+    assert cfg.split == "train"
+    assert cfg.sample_size == DEFAULT_SAMPLE_SIZE == 3000
+    assert cfg.seed == DEFAULT_SEED == 20260702
+
+
+def test_config_round_trips_through_dict():
+    cfg = WecEngConfig(split="dev", sample_size=50, seed=7)
+    assert config_from_dict(WecEngConfig, asdict(cfg)) == cfg
+
+
+def test_config_rejects_unknown_key():
+    with pytest.raises(ValueError, match="unknown config keys"):
+        config_from_dict(WecEngConfig, {"splitt": "train"})
+
+
+def test_config_validate_rejects_bad_split():
+    with pytest.raises(ValueError, match="split"):
+        WecEngConfig(split="nonsense").validate()
+
+
+def test_config_validate_rejects_nonpositive_sample_size():
+    with pytest.raises(ValueError, match="sample_size"):
+        WecEngConfig(sample_size=0).validate()
+
+
+def test_resolve_config_override_matches_argparse_semantics():
+    parser = argparse.ArgumentParser()
+    add_config_cli(parser)
+    args = parser.parse_args(
+        ["--override", "split=dev", "--override", "sample_size=100"]
+    )
+    cfg = resolve_config(WecEngConfig, args, WecEngConfig())
+    assert cfg.split == "dev"
+    assert cfg.sample_size == 100
+    assert cfg.seed == DEFAULT_SEED  # untouched fields keep defaults
+
+
+def test_baked_yaml_config_matches_defaults():
+    from _config import load_config
+
+    cfg = load_config(WecEngConfig, CONFIGS_DIR / "acquire-wec-eng.yaml")
+    assert cfg == WecEngConfig()
