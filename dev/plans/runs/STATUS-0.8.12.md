@@ -34,7 +34,7 @@
 | R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds | ✅ Slice 15 — `consolidate_provider.rs` 12/12 (recency invalidate w/ temporal bound + supersede + retrieval-exclusion) |
 | R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ✅ Slice 20 (value-test ran; outcome = **STAY-OFF**) — `$0` mechanism: precision 0.50→1.00, lossiness 0, query-latency ≈0. Default-ON NOT cleared for TWO named reasons: (1) no real-corpus at-power evidence (deferred); (2) exclusion not rebuild-durable → **blocker-before-default-ON** = add `t_invalid` filter to FTS/vec projection SQL (codex §9). Provider ships default-OFF/opt-in. `consolidation-value-test-results.md` |
 | R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present | ✅ Slice 15 — no-egress guard for consolidate; CPU-only deterministic cluster assembly; tagged |
-| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ⏳ |
+| R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ✅ Py-live / ⏳ TS-build — Slice 40: Py public API live-verified (isolated-venv build, surface test 3/3 + live consolidate call); TS surface present + napi compiles, live TS run build-gated (no `node_modules`). |
 
 ## Per-slice board
 
@@ -45,7 +45,7 @@
 | **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated) | **HELD** — priced sweep gates it; EXP-COV-1 sufficiency test prepared but spend held for user confirmation | — | — | — |
 | **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **CLOSED** | X1 surface both bindings; live-run → Slice 40 | CONCERN(4)→fix-1(resolved 4, +1 new P2)→fix-2→**PASS**; `0.8.12-slice15-review-20260701.md` | `a7a1069a`,`bd51901f`,`065ffcc2`,`90261612`,`ffdda578` |
 | **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | **CLOSED** | n/a (eval) | CONCERN(1×P2 rebuild-durability)→fix-1 (reframe scope + named default-ON blocker; gate kept negative)→resolved; `0.8.12-slice20-review-20260702.md` | `bd9164f3` + fix-1 |
-| **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | not started | — | — | — |
+| **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | **PARTIAL (as-far-as-it-can-go)** — X1 Py-live/TS-build-gated, X2 mkdocs --strict GREEN, X3 DOC-INDEX ok; AC gate all ✅ except R-COV-3 (gated on Slice 10). `0.8.12-slice40-verification.md` | X1 Py✅/TS⏳ · X2✅ · X3✅ | n/a (verification) | — |
 
 ## OPP-6 EXP-COV discharge (folded into Slice 5, HITL 2026-07-01)
 
@@ -76,6 +76,17 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Recent decisions (newest on top)
 
+- 2026-07-02 — **Slice 40 driven as-far-as-it-can-go.** X2 mkdocs --strict GREEN; X3 DOC-INDEX resolves;
+  X1 Python public API **live-verified** in an isolated venv (shared `.venv` untouched — mutex respected),
+  TS surface present + napi compiles (live TS deferred, no `node_modules`). AC gate all ✅ except **R-COV-3
+  GATED ON SLICE 10**. `0.8.12-slice40-verification.md`.
+- 2026-07-02 — **Slice 20 CLOSED.** Value-test STAY-OFF (default-OFF). codex §9 CONCERN (rebuild-durability
+  P2) → fix-1: reframed test scope + elevated the FTS/vec `t_invalid`-filter fix to a named
+  blocker-before-default-ON; gate kept negative. Also corrected the `$` ledger note (spend-hold basis =
+  the system-reminder relayed-consent guard, not the memex-push memory).
+- 2026-07-02 — **Spend HOLD reaffirmed.** Coordinator re-asserted a user-approved $20 EXP-COV-1 sweep;
+  per the standing system reminder a coordinator relay is not the user's own confirmation for irreversible
+  spend → NOT executed. Non-spend work (Slice 20, Slice 40) proceeded. Awaiting the user's OWN message.
 - 2026-07-01 — **Slice 15 CLOSED.** Consolidation/recency provider on the one OPP-8 transport (no second
   transport). codex §9 arc: CONCERN(4) → fix-1 (resolved 4, +1 new P2: phantom pending work) → fix-2
   (retain terminal on invalidate) → **PASS**. consolidate_provider 12/12; back-compat intact; bindings
@@ -95,9 +106,9 @@ priced EXP-COV-1 sweep. See `EXP-COV-results.md` §6.
 
 ## Next action
 
-- Slice 20 (consolidation value-test, `$0` pre-registered gate) in flight → then report at the Slice-20
-  verdict (coordinator's requested report point).
-- Slice 40 verification (X1 live Py↔TS harness for consolidate + extract; `mkdocs build`; AC gate) after 20.
-- EXP-COV-1 priced sweep: plan ready (`EXP-COV-1-sweep-plan.md`); execute ONLY on the user's own spend
-  confirmation. Do NOT run the full Slice-10 extraction without a fresh explicit HITL go.
-- Label-only merge of `0.8.12-memory-quality` → `main` is a HITL decision point (report before merging).
+- **EXP-COV-1 priced sweep ($20):** plan ready (`EXP-COV-1-sweep-plan.md`); executes ONLY on the user's
+  OWN direct confirmation → then the post-sweep hard-stop (sufficiency verdict + full-Slice-10 cost est).
+- **Slice 10 / R-COV-3** resolves only after the sweep decision (extraction go, or redirect → resolve OPP-6 #6).
+- **Live TS X1** + the **FTS/vec `t_invalid`-filter** (consolidation default-ON blocker) at the merge/build step.
+- **Label-only merge** of `0.8.12-memory-quality` → `main` is a HITL decision point (Slices 0/5/15/20 CLOSED,
+  40 partial; label-only, manifests stay 0.8.9). Report before merging.
