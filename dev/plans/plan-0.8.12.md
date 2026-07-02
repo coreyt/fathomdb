@@ -56,9 +56,16 @@ write/index path stays CPU-only and deterministic.
 |-------|-------------|--------|-------------|
 | **P1** | EXP-COV-1 GPU verdict re-run (`$0`) | **DONE** — verdict **`CEILING-ABSORBED`** (`813d9a22`, 2026-07-02) | verified from git; parity held; `$0` |
 | **P2** | Slice-10 disposition (record verdict) | **DONE** — OPP-6 #6 de-prioritized (HITL 2026-07-02); master reconciled (F-15) | R-COV-3 = resolved-negative; Slice 10 CLOSED |
-| **P3** | `t_invalid` durability fix + live TS X1 | **IN FLIGHT** — orchestrator commissioned 2026-07-02 | code slices → codex §9 each |
-| **P4** | Slice 40 + release DoD (R-COV-3 resolved) | **BLOCKED** on P1–P3 | X1/X2/X3 + R-COV/R-CON AC gate |
-| **P5** | Label-only merge → `main` | **BLOCKED** on P4 | **HITL-gated**; retire the `-finish` stub |
+| **P3** | `t_invalid` durability fix + live TS X1 | **DONE** — Slice A (`2022c9f9`/`0c26703d`) + Slice B (`a1f6f5a3`/`79fbad6c`/`63d19c2d`), codex §9 PASS each | R-CON-2 blocker cleared; R-X-1 TS-live ✓ |
+| **P4** | Slice 40 + release DoD (R-COV-3 resolved) | **DONE** — X1 Py+TS, X2 mkdocs --strict, X3 docs; full R-COV/R-CON AC gate green | R-COV-3 resolved-negative |
+| **P5** | Label-only merge → `main` | **DONE (2026-07-02)** — merged label-only (manifests stay `0.8.9`, no tag/publish); EXP-COV-1 artifacts folded in; `-finish` stub retired; post-merge workspace-compile fix `3817997f` | 0.8.12 CLOSED; `main` green + pushed |
+
+> **Masked-gate note (2026-07-02):** the merge first failed the pre-push gate — a non-exhaustive
+> `EngineError::Consolidator` match in `fathomdb-cli` + a `vec!` clippy denial — because the slice DoD
+> verified per-crate (`cargo test -p fathomdb-engine --features operator`) instead of the full workspace
+> gate. Fixed on `main` (`3817997f`); Steward re-ran `cargo clippy --workspace --all-targets` + `cargo check
+> --workspace --all-targets` (both exit 0) before pushing. **DoD amended:** every release must run the full
+> pre-push/CI workspace gate before any "green" claim.
 
 ### Phase 1 — Resolve the EXP-COV-1 sufficiency verdict (the Slice-10 gate) — `$0`
 
