@@ -476,6 +476,31 @@
       },
       "sha256": "b98e5af356e886eb72015cedb42fc3c41d64714e061e3485d435666e2a0a8680",
       "acquired_at": "2026-06-30"
+    },
+    "wec_eng": {
+      "script": "acquire_wec_eng.py",
+      "upstream": {
+        "kind": "huggingface_dataset_json_files",
+        "id": "Intel/WEC-Eng",
+        "split": "train",
+        "file": "Train_Event_gold_mentions.json",
+        "revision": "e9a0f74a6fc2ec7a12ce66299dcffc693d2bf0d9",
+        "last_modified": "2021-10-04T11:21:48Z",
+        "qid_resolution": "en.wikipedia.org MediaWiki API pageprops.wikibase_item"
+      },
+      "license": "LicenseRef-WEC-Eng-Undeclared",
+      "license_notes": "Undeclared on the Intel/WEC-Eng HF card. Content derives from English Wikipedia text (CC-BY-SA-4.0); the extract-wec generator (Intel) is Apache-2.0 (Eirew et al. 2021, NAACL, https://aclanthology.org/2021.naacl-main.198/). Cache-only until the posture is clarified.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/wec_eng.jsonl",
+      "sample_size": 3000,
+      "seed": 20260702,
+      "doc_count": 3000,
+      "qid_coverage": 0.9993,
+      "docs_with_qid": 2998,
+      "distinct_qids": 2056,
+      "sha256": "d10a2c9f0af0c7c414bc043aa8bc0140c6fe04a1036018675b10a867cfad0d6d",
+      "acquired_at": "2026-07-02",
+      "role_note": "Cross-source pattern-setter: event-centric passages carrying native Wikidata QIDs in entity_ids, the shared join spine for CompMix / MultiHop-RAG / S2ORC cross-source interconnection."
     }
   }
 }

@@ -150,7 +150,27 @@ soft minimums. All output paths are
 | bahmutov daily-logs | `note` (style seed) | 300 | MIT | commit-eligible |
 | Synthetic notes (this project) | `note` | 1,200 | project license | commit-eligible |
 | Synthetic chain connectives (Corpus-Pack 2) | mixed (`note`/`email`/`todo`) | ~200 chains, ~600 docs | project license | commit-eligible; provenance=`synthetic-chain` |
+| WEC-Eng (HF `Intel/WEC-Eng`) | `event` | 3,000 (sampled; QID-carrying) | undeclared on HF card; Wikipedia-derived (CC-BY-SA-4.0) + extract-wec Apache-2.0 | cache-only until posture clarified |
 | **Total target** | | **~10,000** | | |
+
+### Cross-source QID spine (2026-07-02 — HITL coreyt, Slice B1)
+
+**HITL-approved cross-source expansion (2026-07-02).** The `event` + `kb`
+`source_type` values and the additive `entity_ids` join key (see §"Source
+vocabulary" and §"Document schema") admit QID-native corpora into a shared key
+space so heterogeneous corpora can interconnect — the existing corpus had zero
+cross-source joins.
+
+**WEC-Eng** (Intel/WEC-Eng, Wikipedia Event Coreference; Eirew et al. 2021,
+NAACL) is the pattern-setter: each gold event mention is anchored to a Wikipedia
+event page (`coref_link`), whose title is resolved to a Wikidata **QID** via the
+MediaWiki `pageprops.wikibase_item` API and carried as
+`entity_ids=[EntityRef(id=<QID>, kind="qid", surface=<mention>)]`. The
+acquisition (`acquire_wec_eng.py`) is config-driven (`--split`, `--sample-size`,
+`--seed`) and deterministic (fixed provenance `created_at`; seeded,
+mention_id-sorted sampling). A 3,000-mention train sample resolved at **~99.9 %
+QID coverage** (2,998/3,000 docs, ~2,056 distinct QIDs). This is the template to
+be copied for CompMix / MultiHop-RAG / S2ORC cross-source acquisitions.
 
 PMC OA remains **deferred** after the 2026-06-02 reconsideration.
 QASPER now fills `paper` for 0.8.x, and PMC OA still needs
