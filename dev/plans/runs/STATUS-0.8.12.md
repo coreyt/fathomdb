@@ -32,7 +32,7 @@
 | R-COV-2 | Coverage lift is measured, pre-registered | Δcoverage vs the ~1% baseline on the frozen corpus, power-sized; reported with CI; no claim on an under-powered class | ✅ (census) — pre-registered §A; per-class + bootstrap CIs; all 6 classes powered. Priced coverage→outcome LIFT (EXP-COV-1) is HELD |
 | R-COV-3 | Extraction runs on the OPP-8 provider protocol | Re-expressed extractor uses the one protocol; no second transport (codex §9) | ⏳ Slice 10 |
 | R-CON-1 | Consolidation/recency provider merges/supersedes facts via BYO-LLM callback | Functional harness: ingest conflicting/updated facts → consolidated result with correct supersession + temporal bounds | ✅ Slice 15 — `consolidate_provider.rs` 12/12 (recency invalidate w/ temporal bound + supersede + retrieval-exclusion) |
-| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ⏳ Slice 20 |
+| R-CON-2 | Lossiness-vs-latency value test passes before shipping-on | Pre-registered: accuracy gain ≥ tolerance at an acceptable latency/lossiness; a failing test ⇒ provider stays opt-off, negative recorded | ✅ Slice 20 — `$0` mechanism value-test: precision 0.50→1.00, lossiness 0, query-latency ≈0. **Verdict = STAY-OFF by default (opt-in)**: default-ON gate needs real-corpus at-power (deferred); negative recorded. `consolidation-value-test-results.md` |
 | R-CON-3 | Footprint honesty | Provider is caller-side BYO-LLM; library query path unchanged/CPU-only; tags present | ✅ Slice 15 — no-egress guard for consolidate; CPU-only deterministic cluster assembly; tagged |
 | R-X-1 | Py + TS SDK parity for both seams | X1 cross-binding harness green | ⏳ |
 
@@ -44,7 +44,7 @@
 | **5** | Coverage probe (`$0`) + **OPP-6 EXP-COV academic/`$0` arms** — persist results | **CLOSED** | n/a (measurement) | CONCERN→**PASS after fix-1** (1×P1: optional GLiNER broke pyright → typed `Any`+`# type: ignore`, verify green); `0.8.12-slice5-review-20260701.md` | `8a82cb55` + fix-1 |
 | **10** | ELPS coverage lift (extractor on OPP-8; priced run HITL-gated) | **HELD** — priced sweep gates it; EXP-COV-1 sufficiency test prepared but spend held for user confirmation | — | — | — |
 | **15** | Consolidation/recency provider (BYO-LLM merge/supersede on OPP-8) | **CLOSED** | X1 surface both bindings; live-run → Slice 40 | CONCERN(4)→fix-1(resolved 4, +1 new P2)→fix-2→**PASS**; `0.8.12-slice15-review-20260701.md` | `a7a1069a`,`bd51901f`,`065ffcc2`,`90261612`,`ffdda578` |
-| **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | **IN-FLIGHT** (orchestrator, `$0`) | — | — | — |
+| **20** | Consolidation value-test (lossiness-vs-latency pre-registered gate) | **CLOSED** (pending §9) | n/a (eval) | pending | (on-branch) |
 | **40** | Verification + release readiness (X1/X2/X3 + R-COV/R-CON AC gate) | not started | — | — | — |
 
 ## OPP-6 EXP-COV discharge (folded into Slice 5, HITL 2026-07-01)
