@@ -1,0 +1,165 @@
+{
+  "experiment": "EXP-COV-1",
+  "corpus": "LOCOMO (CC-BY-NC, EVAL-ONLY)",
+  "n_docs": 272,
+  "n_gold_queries": 590,
+  "class_counts": {
+    "multi_session": 269,
+    "temporal": 321
+  },
+  "held_fixed": {
+    "embedder": "CLS-corrected bge-small dense (edge_facts) + FTS(docs)",
+    "rerank_depth": 50,
+    "alpha": 1.0,
+    "pool_n": 50,
+    "k_grid": [
+      5,
+      10,
+      20
+    ],
+    "ce_note": "CE on"
+  },
+  "conditions_run": [
+    "C-none",
+    "C0-floor",
+    "C-relation"
+  ],
+  "ingest_info": {
+    "C-none": {
+      "n_docs": 272,
+      "n_edges_reported": 0,
+      "drain": "n/a",
+      "elapsed_s": 37.2
+    },
+    "C0-floor": {
+      "n_docs": 272,
+      "n_edges_reported": 2468,
+      "drain": "idle",
+      "elapsed_s": 197.7
+    },
+    "C-relation": {
+      "n_docs": 272,
+      "n_edges_reported": 5036,
+      "drain": "idle",
+      "elapsed_s": 377.9
+    }
+  },
+  "relation_model": "claude-haiku",
+  "prompt_version": "cov1-relation-1",
+  "C0-floor_vs_C-none": {
+    "treatment": "C0-floor",
+    "baseline": "C-none",
+    "focus_k": 10,
+    "per_class": {
+      "multi_session": {
+        "n_scored": 269,
+        "powered": true,
+        "gold_in_pool_at_10": {
+          "treatment": 0.3346,
+          "baseline": 0.3978,
+          "paired_delta_ci": {
+            "point": -0.0632,
+            "lo": -0.0967,
+            "hi": -0.0297,
+            "n": 269
+          }
+        },
+        "mrr": {
+          "treatment": 0.4912,
+          "baseline": 0.6131,
+          "paired_delta_ci": {
+            "point": -0.1219,
+            "lo": -0.1493,
+            "hi": -0.0951,
+            "n": 269
+          }
+        },
+        "verdict": "CEILING_ABSORBED"
+      },
+      "temporal": {
+        "n_scored": 321,
+        "powered": true,
+        "gold_in_pool_at_10": {
+          "treatment": 0.8349,
+          "baseline": 0.8723,
+          "paired_delta_ci": {
+            "point": -0.0374,
+            "lo": -0.0592,
+            "hi": -0.0187,
+            "n": 321
+          }
+        },
+        "mrr": {
+          "treatment": 0.5581,
+          "baseline": 0.6705,
+          "paired_delta_ci": {
+            "point": -0.1124,
+            "lo": -0.1379,
+            "hi": -0.089,
+            "n": 321
+          }
+        },
+        "verdict": "CEILING_ABSORBED"
+      }
+    },
+    "overall_verdict": "CEILING_ABSORBED"
+  },
+  "C-relation_vs_C-none": {
+    "treatment": "C-relation",
+    "baseline": "C-none",
+    "focus_k": 10,
+    "per_class": {
+      "multi_session": {
+        "n_scored": 269,
+        "powered": true,
+        "gold_in_pool_at_10": {
+          "treatment": 0.2751,
+          "baseline": 0.3978,
+          "paired_delta_ci": {
+            "point": -0.1227,
+            "lo": -0.1673,
+            "hi": -0.0781,
+            "n": 269
+          }
+        },
+        "mrr": {
+          "treatment": 0.3857,
+          "baseline": 0.6131,
+          "paired_delta_ci": {
+            "point": -0.2274,
+            "lo": -0.2629,
+            "hi": -0.1908,
+            "n": 269
+          }
+        },
+        "verdict": "CEILING_ABSORBED"
+      },
+      "temporal": {
+        "n_scored": 321,
+        "powered": true,
+        "gold_in_pool_at_10": {
+          "treatment": 0.8037,
+          "baseline": 0.8723,
+          "paired_delta_ci": {
+            "point": -0.0685,
+            "lo": -0.0967,
+            "hi": -0.0436,
+            "n": 321
+          }
+        },
+        "mrr": {
+          "treatment": 0.4265,
+          "baseline": 0.6705,
+          "paired_delta_ci": {
+            "point": -0.2439,
+            "lo": -0.278,
+            "hi": -0.2138,
+            "n": 321
+          }
+        },
+        "verdict": "CEILING_ABSORBED"
+      }
+    },
+    "overall_verdict": "CEILING_ABSORBED"
+  }
+}

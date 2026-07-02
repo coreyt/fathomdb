@@ -1,0 +1,59 @@
+{
+  "schema": "exp-cov1-extraction-manifest-v1",
+  "note": "Provenance-only manifest for the EXP-COV-1 priced relation-extraction asset. Contains NO licensed payload text (no LOCOMO session text, no extracted fact bodies). The cache itself is gitignored EVAL-ONLY on-machine; this manifest lets a GPU downstream re-run verify + reuse it (--resume) at $0 additional spend.",
+  "experiment": "OPP-6 EXP-COV-1 (coverage->outcome sufficiency sweep)",
+  "date": "2026-07-02",
+  "corpus": {
+    "name": "LOCOMO",
+    "license": "CC-BY-NC-4.0 (Maharana et al. 2024)",
+    "handling": "gitignored EVAL-ONLY, on-machine, never committed/pushed",
+    "source_path": "data/corpus-data/raw/locomo10.json",
+    "n_sessions": 272,
+    "n_conversations": 10
+  },
+  "extraction": {
+    "lever": "relation-maximizing prompt (the priced coverage lever)",
+    "model": "claude-haiku",
+    "prompt_version": "cov1-relation-1",
+    "protocol": "fathomdb.extract.v1",
+    "n_docs": 272,
+    "status_ok": 272,
+    "status_failed": 0,
+    "completeness_guard": "SATISFIED (272/272 present, 0 missing)",
+    "coverage_derived_metrics": {
+      "total_entities": 2966,
+      "total_edges": 5756,
+      "mean_entities_per_doc": 10.9,
+      "mean_edges_per_doc": 21.2
+    }
+  },
+  "cost": {
+    "total_usd": 4.788365,
+    "ceiling_usd": 20.0,
+    "cost_per_doc_usd": 0.0179,
+    "mean_prompt_tokens_per_doc": 1406,
+    "mean_completion_tokens_per_doc": 3299,
+    "auto_stop_triggered": false,
+    "pricing_basis": "actual response-usage tokens x a pinned price map (see eval.exp_cov1_common.PRICE_PER_MTOK)"
+  },
+  "resume_provenance": {
+    "resilience": "atomic checkpoint (temp-file+rename); --resume by key doc_id+model+prompt_version; 429/5xx backoff; window-fit; completeness guard; running $-ledger with hard $20 auto-stop",
+    "real_crash_recovery": "extraction was killed mid-run at 229/272 and resumed cleanly to 272 with the ledger continuing from $4.09 (0 re-extraction, 0 double-charge)"
+  },
+  "preserved_cache_files": [
+    {
+      "role": "extraction_cache (fathomdb.extract.v1 records, LLM-extracted facts)",
+      "path": "data/corpus-data/eval-cache/exp-cov1/relation.claude-haiku.cov1-relation-1.ndjson",
+      "gitignored": true,
+      "sha256": "af2553ad67f627c922aeb5e8685e64f107e8f241678ecad6f405b2bcfacdb088"
+    },
+    {
+      "role": "dollar_ledger (per-doc token+cost, no payload)",
+      "path": "data/corpus-data/eval-cache/exp-cov1/ledger.ndjson",
+      "gitignored": true,
+      "sha256": "9f5f9559eb18a88f3ee2cab5db7d9f0980cc5128137a0973c137d648c8f818f7"
+    }
+  ],
+  "reuse_instructions": "A GPU downstream re-run reuses this at $0: point exp_cov1_sweep --relation-cache at the extraction_cache path; the sweep's completeness guard confirms 272/272 and NO re-extraction occurs. See EXP-COV-1-downstream-GPU-replan.md.",
+  "downstream_status": "DEFERRED-to-GPU (CPU embedder .so lacks embed-cuda and stalls; see EXP-COV-1-results.md sec 6). NO coverage->outcome verdict computed (HITL: do not anchor a degraded-stack screening verdict)."
+}

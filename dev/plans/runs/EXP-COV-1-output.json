@@ -1,0 +1,37 @@
+{
+  "experiment": "EXP-COV-1 downstream GPU re-run (Phase 1 of plan-0.8.12-finish)",
+  "date": "2026-07-02",
+  "phase": "Phase 1 ONLY (experiment run, $0); HARD-STOP at verdict — no merge/tag/publish",
+  "verdict": "CEILING-ABSORBED",
+  "decision_rule": "SUFFICIENT iff paired-bootstrap CI-lo of Δ(gold-in-pool@10) OR Δ(MRR) vs same-stack C-none > +0.04 on >=1 powered class (power floor 30); else CEILING-ABSORBED. FIXED, pre-registered, not moved.",
+  "spend_usd_additional": 0.0,
+  "cache_reuse": {"completeness": "272/272", "re_extraction": false,
+    "extraction_cache_sha256": "af2553ad67f627c922aeb5e8685e64f107e8f241678ecad6f405b2bcfacdb088"},
+  "held_fixed_stack": {"embedder": "CLS-corrected bge-small dense (edge_facts) + FTS(docs), GPU (embed-cuda)",
+    "graph_arm": "ON for all conditions", "rerank_depth": 50, "alpha": 1.0, "pool_n": 50,
+    "paired_bootstrap": {"B": 2000, "seed": "0xC0F1"}, "focus_k": 10, "k_grid": [5, 10, 20]},
+  "gpu": {"device": "RTX 3090 idx 0 (CUDA_VISIBLE_DEVICES=0; Quadro K620 idx 2 excluded)",
+    "wheel_features": "pyo3/extension-module,embed-cuda,rerank-cuda", "cuda": "12.6 runtime / driver 580.159.03",
+    "embed_700tok_ms": 13.9, "cpu_embed_700tok_ms": 954.75,
+    "cpu_cuda_parity": {"held": true, "max_abs_diff": 1.08e-07, "mean_abs_diff": 2.45e-08, "cosine": 1.0}},
+  "same_stack_c_none_baseline": {
+    "multi_session": {"n": 269, "gold_in_pool_at_10": 0.3978, "mrr": 0.6131},
+    "temporal": {"n": 321, "gold_in_pool_at_10": 0.8723, "mrr": 0.6705}},
+  "C-relation_vs_same_stack_C-none": {
+    "multi_session": {"n": 269, "delta_gip10": -0.1227, "delta_gip10_ci": [-0.1673, -0.0781],
+      "delta_mrr": -0.2274, "delta_mrr_ci": [-0.2629, -0.1908], "verdict": "CEILING-ABSORBED"},
+    "temporal": {"n": 321, "delta_gip10": -0.0685, "delta_gip10_ci": [-0.0967, -0.0436],
+      "delta_mrr": -0.2439, "delta_mrr_ci": [-0.2780, -0.2138], "verdict": "CEILING-ABSORBED"}},
+  "C0-floor_anchor_vs_same_stack_C-none": {
+    "multi_session": {"delta_gip10": -0.0632, "delta_gip10_ci": [-0.0967, -0.0297],
+      "delta_mrr": -0.1219, "delta_mrr_ci": [-0.1493, -0.0951]},
+    "temporal": {"delta_gip10": -0.0374, "delta_gip10_ci": [-0.0592, -0.0187],
+      "delta_mrr": -0.1124, "delta_mrr_ci": [-0.1379, -0.0890]}},
+  "graph_arm_latency_gpu_590q": {"C-none": {"edges": 0, "s": 37.2, "per_query_ms": 63},
+    "C0-floor": {"edges": 2468, "s": 197.7, "per_query_ms": 335},
+    "C-relation": {"edges": 5036, "s": 377.9, "per_query_ms": 640}},
+  "precision_guard": "intact — no recall/precision masking; MRR degrades monotonically with coverage density (coverage lowers both pool membership and rank precision together)",
+  "interpretation": "Coverage is not the lever at this operating point; the graph-arm coverage-consumer degrades precision below the embedder-only baseline. Redirect to OPP-6 #6 (resolve the embedder/retrieval ceiling); do NOT fund a full-corpus (~$340+) relation-extraction pass on a coverage-lift premise.",
+  "corpus_license": "LOCOMO CC-BY-NC — only derived metrics persisted; no payloads/fact-spans committed; cache gitignored on-machine",
+  "next": "HARD-STOP. Report to Program Steward. Phases 2-5 NOT started."
+}
