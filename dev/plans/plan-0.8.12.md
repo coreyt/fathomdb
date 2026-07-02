@@ -41,6 +41,20 @@ write/index path stays CPU-only and deterministic.
 
 ## Completion path
 
+### Phase status (canonical progress tracker — update as phases close)
+
+> A completion run records P1→P5 progress here (mirror to `runs/STATUS-0.8.12.md`).
+> Legend: `NOT STARTED` · `IN FLIGHT` · `BLOCKED` (on a predecessor) · `DONE`.
+> Last updated: **2026-07-02**.
+
+| Phase | Deliverable | Status | Gate / next |
+|-------|-------------|--------|-------------|
+| **P1** | EXP-COV-1 GPU verdict re-run (`$0`) | **IN FLIGHT** — background orchestrator commissioned 2026-07-02 | HARD-STOP → report verdict to HITL |
+| **P2** | Slice-10 disposition (record verdict only) | **BLOCKED** on P1 | verdict → STATUS + EXP-COV-1-results §0/§2 |
+| **P3** | `t_invalid` durability fix + live TS X1 | **NOT STARTED** (may run parallel to P1–P2) | code slices → codex §9 each |
+| **P4** | Slice 40 + release DoD (R-COV-3 resolved) | **BLOCKED** on P1–P3 | X1/X2/X3 + R-COV/R-CON AC gate |
+| **P5** | Label-only merge → `main` | **BLOCKED** on P4 | **HITL-gated**; retire the `-finish` stub |
+
 ### Phase 1 — Resolve the EXP-COV-1 sufficiency verdict (the Slice-10 gate) — `$0`
 
 **Status: IN FLIGHT** — commissioned by the Steward 2026-07-02 as a background orchestrator.
