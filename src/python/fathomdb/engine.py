@@ -14,6 +14,7 @@ import logging
 import math
 from typing import Any, cast
 
+from fathomdb._fathomdb import ConsolidateReceipt
 from fathomdb._fathomdb import Engine as _NativeEngine
 from fathomdb._fathomdb import IngestWithExtractorReceipt
 from fathomdb.config import EngineConfig
@@ -368,6 +369,21 @@ class Engine:
         """
 
         return self._native.ingest_with_extractor(cmd, documents)
+
+    def consolidate_with_provider(
+        self,
+        cmd: list[str],
+        axes: list[dict[str, str]],
+    ) -> ConsolidateReceipt:
+        """0.8.12 Slice 15 (OPP-2) — consolidation / recency via a BYO-LLM
+        harness speaking the ``fathomdb.consolidate.v1`` protocol.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``axes`` is a list of dicts with ``subject_logical_id`` and ``relation``
+        keys; each names one (subject, relation) cluster to consolidate.
+        """
+
+        return self._native.consolidate_with_provider(cmd, axes)
 
     def open_report(self) -> OpenReport:
         """Return the structured open-time report captured at `Engine.open`.
