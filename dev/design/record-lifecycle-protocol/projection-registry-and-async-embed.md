@@ -15,8 +15,11 @@ and it rotted. Banning denormalization removes the *legitimate* channel and guar
 one returns.
 
 **The fix — a third pillar:** the engine owns **state + the projection contract**; the app owns **meaning +
-projection declarations.** The engine already stores everything (EAV attributes, typed edges live in
-FathomDB's substrate); ownership is over **schemas and semantics**, not bytes.
+projection declarations.** Typed **edges** already live in FathomDB's substrate (`canonical_edges`), but
+there is **no EAV/attribute store and no property-FTS today** — only `body`-FTS (`search_index`) + vector.
+So the canonical **attribute store + property-FTS the registry projects *from* are net-new** (they converge
+with Memex's entity-schema-registry EAV, which is likewise being built). Ownership is over **schemas and
+semantics**, not bytes.
 
 ## 2. The projection registry
 
@@ -63,13 +66,17 @@ every writer behind embed latency and couples the write path to GPU availability
   but absent from the vector arm enters fusion with one arm missing, so its fused rank is systematically
   depressed vs fully-indexed peers. Recent memories are **under-ranked until embedded**, not invisible.
 
-## 4. Async-embed execution model — host-driven, no daemon
+## 4. Async-embed execution model
 
-An embedded, single-writer library has no ambient execution context and its `mode=ro` readers cannot write.
-So the engine **does not own a background worker**; the **host owns embed cadence** (the same principle as
-disowning the validity clock on the read side — §3 of the structural contract).
+> **Reconciled to shipped code.** FathomDB **already owns an in-process async projection worker** — a
+> dispatcher + worker-thread pool (`projection_dispatcher_loop` / `projection_worker_loop`, `lib.rs:876-887`)
+> that embeds **off the write path**, cursor-scheduled via `_fathomdb_projection_state.last_enqueued_cursor`
+> (`schema:166`). The earlier "no daemon; host owns cadence; sync-inline default" framing was **wrong about
+> today** — the engine's default IS an async worker. The reconciled model **keeps that worker** and adds the
+> missing controls on top of it (all **net-new**): a `dense_readiness` flag, a `flush_embeddings()` drain, and
+> an optional sync-inline mode.
 
-Two **host-chosen** modes:
+Two **host-selectable** modes over the existing worker:
 
 - **sync-inline (default, interactive single writes):** embed in/adjacent to the write ⇒ `commit ⇒ fully
   retrievable`. Fast on GPU (single-digit-to-tens of ms, illustrative — not a promised figure); the

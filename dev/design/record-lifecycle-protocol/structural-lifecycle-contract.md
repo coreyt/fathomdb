@@ -55,14 +55,49 @@ Illegal transitions (e.g. `purged → *`, `active → purged` skipping `deleted`
 
 ## 2. Axis: version-currency
 
-`is_latest` (bool) / `superseded` (= `¬is_latest`), one indexed column, enforced by:
+> **Reconciled to shipped code.** The single is-latest authority this axis needs **already exists** — the
+> HITL-signed **G0 `superseded_at`** substrate, not a new `is_latest` column.
+
+Currency is the shipped `superseded_at` (a nullable transaction-time tombstone on `canonical_nodes`): a row
+is **current** iff `superseded_at IS NULL`, else **superseded**. Enforced by the shipped partial-unique index
+(`fathomdb-schema/src/lib.rs:300`, ADR-0.8.0, HITL-signed, *logical_id-alone* — the G0 keystone):
 
 ```sql
-UNIQUE(logical_id) WHERE is_latest = 1
+CREATE UNIQUE INDEX canonical_nodes_logical_active_idx
+  ON canonical_nodes(logical_id) WHERE superseded_at IS NULL
 ```
 
-**This partial unique index is the single "is-latest determination" Q2 asks for** — one authoritative
-answer every search path uses, so no caller re-derives (closes the CR-060 divergence).
+**This shipped index is the single "is-latest determination" Q2 asks for** — one authoritative answer every
+search path uses; exclusion is a query-time `WHERE superseded_at IS NULL` over the indexed column (**not** a
+materialized `is_latest` bit — see §4). `is_latest`/`superseded` are *derived predicates* of `superseded_at`,
+not a stored column; keeping the name `is_latest` would be a **rename of a shipped mechanism, not a new one**.
+No caller re-derives (closes the CR-060 divergence).
+
+**Prerequisite — records must carry a `logical_id`, and search must return it (co-requisite, GATING).**
+Verified from code: FathomDB has **two** identity carriers (`ADR-0.8.0-canonical-identity-substrate`,
+`lib.rs:198`) — the stable `logical_id`, and the **interim `write_cursor`** (a positional `u64` reassigned
+on every re-projection). Today **`SearchHit` returns the `write_cursor` as its primary id** (`SearchHit.id`,
+`lib.rs:1109`); Cause-A (0.8.11.2) added an *additive* `SearchHit.stable_id` (`lib.rs:1132`, `derive_stable_id`
+`:9455`) = `l:<logical_id>` when the active canonical node has one, else `h:<sha256(body)>` for
+**doc-seeded/anonymous nodes** (which have **no `logical_id`** — the dominant corpus hit type today), else
+`None`. Two consequences the contract must carry:
+
+1. **Co-requisite (GATING): complete the F-8a / ADR-0.8.0 swap** — `SearchHit.id` must become the
+   first-class `logical_id` (building on the existing `stable_id`), so a hit carries the identity used to
+   dedupe-to-current / check is-latest / delete. Callers must **not** key on the interim `write_cursor`.
+   **Lands-together** with the Cause-A id-contract pico. (This is why Memex's per-path reconciliation hacks
+   exist — CR-060 closes at the engine, but the *cleanup* Memex promised needs the hit to carry `logical_id`.)
+2. **The object-id question (doc-seeded gap) — RESOLUTION.** FathomDB *does* provide a stable object id:
+   `logical_id` is present for every **governed** write — caller-supplied, or engine-**derived** from
+   `kind`+`name` (`derive_logical_id`, `lib.rs:3069`). It is **absent only for anonymous / doc-seeded**
+   bulk-ingest nodes (`PreparedWrite::Node { logical_id: None }`, `lib.rs:7188`), which are content-addressed
+   and deliberately never versioned ("anonymous nodes are never superseded-in-batch", `lib.rs:10263`). So the
+   engine is **not** missing an object id — governed objects have one; bulk doc-chunks opt out. **Resolution:**
+   (i) complete the F-8a swap (above) so `SearchHit` returns the `logical_id`; (ii) to satisfy the expectation
+   that *every* object is addressable, the engine **mints an opaque surrogate `logical_id` for anonymous
+   nodes** (an auto-assigned primary key), so every canonical node is addressable + version-eligible. Memex's
+   world-model records already carry `logical_id`s, so its lifecycle problem is closed by (i) alone; (ii) is
+   the general "a database provides an object id" fix (**net-new**).
 
 - **Head-deletion invariant:** currency is **positional** — the latest insert is the head, deleted or not.
   A `logical_id` is *live* iff its **head is admissible**. Deleting the head does **not** resurrect the
@@ -70,22 +105,31 @@ answer every search path uses, so no caller re-derives (closes the CR-060 diverg
 - **`superseded` is not "not-live."** An old version is often **historical-but-valid** ("what was true
   then"). It is excluded only by **view-policy** (the default dedup-to-current mode), never treated as a
   deletion. `include_superseded` returns history.
-- The write mechanism is **"supersede-insert" / "head-advance"** — **never** called a "tombstone" (see §5).
+- The write mechanism is the shipped **tombstone-then-insert** (`superseded_at` is a transaction-time
+  *tombstone*; the term is load-bearing in schema + engine). It is a *different* tombstone from the
+  *deletion* tombstone (existence axis) — same word, two axes; disambiguate by axis, don't ban the word (§5).
 
 ## 3. Axis: temporal validity
 
-`valid_from` / `valid_until`, one **half-open** interval `[valid_from, valid_until)`, `NULL` = unbounded on
-that side, **single window** (not recurrence — "weekdays 9–5" is not expressible; a re-entrant window is
-one future window, not a schedule).
+> **Reconciled to shipped code (mostly NET-NEW).** Today validity exists **only on edges** — `canonical_edges`
+> `t_valid`/`t_invalid` as **ISO-8601 text** (`fathomdb-schema/src/lib.rs:351`), evaluated by **inline**
+> `datetime(t_invalid) > datetime('now')` (`lib.rs:5430, 6690`), **not** via `SearchFilter` (fields:
+> `source_type/kind/created_after/status`, `lib.rs:1499`). **Nodes have NO validity columns.** So record-level
+> validity, integer windows, the bound-`:now`/`SearchFilter` seam, and `valid_as_of` below are **net-new**. The
+> ELPS wire keeps the frozen `t_valid`/`t_invalid` (`fathomdb.extract.v1`); the seam maps wire ↔ storage.
+
+`valid_from` / `valid_until` (**net-new**, record-level), one **half-open** interval `[valid_from, valid_until)`,
+`NULL` = unbounded on that side, **single window** (not recurrence — "weekdays 9–5" is not expressible; a
+re-entrant window is one future window, not a schedule).
 
 - This is **valid time** (world time / "what is in force"), named **distinctly** from **transaction time**
   (write time / version-currency). Full bitemporal query is out of scope, but the schema uses the standard
   names so it is not precluded.
 - **"expired" is a predicate, never a stored label:** `¬(valid_from ≤ :now < valid_until)`.
-- **Evaluated at query time** via the typed `SearchFilter` seam with a **bound `:now` parameter** (never
-  `unixepoch()` inline) — buys testability, replay, and `valid_as_of(t)` for free. At target scale (<~50k
-  rows, exact/brute-force vector) a two-column range compare over candidates is microseconds and costs
-  **zero recall**; materializing the passage of time into a static index is incoherent and rejected.
+- **Evaluated at query time.** *Today (edges):* inline `datetime(t_invalid) > datetime('now')`. *Proposed
+  (net-new):* replace the inline clock with a **bound `:now` parameter** (buys testability, replay,
+  `valid_as_of(t)`). Either way, a range compare over candidates is microseconds and costs **zero recall** at
+  target scale; materializing the passage of time into a static index is rejected.
 - **Boundary crossings are lazy, on next touch** (an embedded library has no daemon). The engine offers a
   **caller-invoked** `crossed_boundary_since(t)` detection hook the host runs opportunistically — a
   detection hook, **not** eager prevention. A never-queried future-window row does silently re-activate
@@ -93,8 +137,11 @@ one future window, not a schedule).
 
 ## 4. Retrieval contract & read modes
 
-- **Materialize only** `admissible = active ∧ is_latest` (write-stable, flipped **transactionally** — both
-  conjuncts change only on writes). This is the single cheap bit the hot path filters on.
+- **Exclusion is a query-time predicate over the shipped index — not a materialized bit (today).** The hot
+  path filters `WHERE superseded_at IS NULL` (indexed, cheap) + the inline edge-validity check. A materialized
+  `admissible` column — and the `active` existence-state it references — is **net-new**; since the shipped
+  predicate already rides a partial index, materialization is an optional optimization, **not** a requirement,
+  and the earlier "must never be per-query" framing is dropped.
 - **Validity** is the query-time range check (§3).
 - **View membership** (archived/unpublished) is separate flag column(s) with a defined recompute protocol
   when policy changes.
@@ -115,11 +162,15 @@ Two different things wear the word "superseded":
 - **meaning-supersession** — interpretive: record A `obsoleted-by` / `corrected-by` record B — **different**
   records/`logical_id`s. An **edge**, in Memex's vocabulary (§B of the A/B/C map). **Never** an enum value.
 
-They must **never share the name**. Additional banned overloads:
+They must **never share the name**. On the other overloads — reconciled to shipped vocabulary:
 
-- **"tombstone"** off the currency axis — the head-advance mechanism is not a tombstone (existence ⟂ currency).
-- **"current"** near the temporal axis — use **`is_latest`** for currency, **in-force** for validity.
-- **`t_invalid`** — collides with Memex's **schema-invalid** quarantine concept; use `valid_from`/`valid_until`.
+- **"tombstone" is NOT banned** (the earlier ban was wrong): `superseded_at` is a shipped "transaction-time
+  tombstone" and "tombstone-then-insert" is pervasive engine/schema vocab. Disambiguate by **axis** instead —
+  a *currency* tombstone (`superseded_at`) vs a *deletion* tombstone (the net-new existence axis).
+- **"current"** near the temporal axis — do use `superseded_at IS NULL` / "is-latest" for currency and
+  "in-force" for validity, but this is a doc-writing caution, not a code rename.
+- **`t_invalid` stays** — it is a frozen, load-bearing `canonical_edges` column and the ELPS wire name; the
+  net-new **node**-validity columns may be `valid_from`/`valid_until`, with a seam mapping to the edge wire.
 
 ## 6. Exclusion vs ranking — different machinery, kept apart
 
