@@ -1,14 +1,13 @@
 # Record lifecycle & projection protocol — FathomDB ⇄ Memex
 
-> **Status: CONVERGED — ratification pending MEMEX agreement (2026-07-03).** The record-liveness/lifecycle
-> contract (leverage-ledger **OPP-12**) has converged over the enum-discussion-ledger (`seq 1→10`): the shape,
-> all 10 seq-8 conditions, and the seq-9 residuals (C-1..C-5) are resolved, and the **FathomDB HITL has approved
-> ratification**. It is **NOT yet contracted** — final ratification requires **MEMEX's agreement** in the ledger.
-> The OPP-12 mirror is prepared as a proposed leverage-ledger update (`OPP-12-leverage-ledger-update.md`) for
-> Memex to apply + confirm (FathomDB does not edit the memex repo directly). **C-1** (projection ↔
+> **Status: RATIFIED (both sides, 2026-07-03).** The record-liveness/lifecycle contract (leverage-ledger
+> **OPP-12**) is ratified: converged over the enum-discussion-ledger (`seq 1→12`) — shape + all 10 seq-8
+> conditions + seq-9 residuals (C-1..C-5) resolved; **FathomDB HITL approved (seq-11)** and **MEMEX agreed
+> (seq-12, "OPP-12 RATIFIED"),** having applied the OPP-12 mirror to its leverage ledger. **Ratification
+> schedules nothing / authorizes no build (build ≠ adopt).** **C-1** (projection ↔
 > `EntityTypeSpec` unification — *hard*) and **C-2** (`SearchHit.id` typed `IdSpace` newtype — *binding*) are
 > folded into the surface below. Live thread: `memex/dev/fathomdb/enum-discussion-ledger.jsonl` (FATHOM option
-> at `seq 6`; latest `seq 10`). Refined over **four adversarial review rounds** + a code-grounded audit + two
+> at `seq 6` → RATIFIED at `seq 12`). Refined over **four adversarial review rounds** + a code-grounded audit + two
 > consolidation rounds (see [Provenance](#provenance)). Roadmap placement is **TBD** (breaking ⇒ likely ≥0.9.x;
 > a later steward/HITL scheduling call) — this is design, not a scheduled release.
 

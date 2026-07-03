@@ -4,10 +4,9 @@
 > `dev/fathomdb/LEVERAGE-OPPORTUNITIES-LEDGER.md`. FathomDB prepares it **here** rather than editing the Memex
 > repo directly (push-scope: fathomdb-only). **MEMEX applies this to its prose ledger and confirms.**
 >
-> **Ratification status.** The **FathomDB HITL has approved** ratification of OPP-12 (2026-07-03). It becomes
-> **final only once MEMEX posts an `agree`** in the enum-discussion-ledger. Until then OPP-12 is
-> `CONVERGED — pending MEMEX agreement`, **not contracted**. When Memex agrees, flip the Status line below to
-> `RATIFIED` on both sides.
+> **Ratification status: RATIFIED (both sides, 2026-07-03).** FathomDB HITL approved (enum seq-11) and **MEMEX
+> agreed (enum seq-12)** — MEMEX has applied this mirror to `LEVERAGE-OPPORTUNITIES-LEDGER.md` (OPP-12 section +
+> nav row). Ratification schedules nothing / authorizes no build (build ≠ adopt).
 
 ---
 
@@ -15,11 +14,11 @@
 
 ### OPP-12 — Record liveness / lifecycle: one coherent "is this live?" across retired / deleted / superseded
 
-- **Status:** `CONVERGED — ratification pending MEMEX agreement` (FathomDB HITL approved 2026-07-03). Converged
-  over the enum-discussion-ledger `seq 1→10`; the shape, all 10 seq-8 conditions, and the seq-9 residuals
-  (C-1..C-5) are resolved. **Becomes `RATIFIED` once MEMEX posts an `agree`.** The ratified design contract
-  lives at FathomDB `dev/design/record-lifecycle-protocol/` (5 docs). **Roadmap placement TBD** (breaking ⇒
-  likely ≥0.9.x FathomDB / coordinated 0.5.x Memex pair) — a later scheduling call; not yet slotted.
+- **Status:** `RATIFIED` (both sides, 2026-07-03). Converged over the enum-discussion-ledger `seq 1→12`; shape
+  + all 10 seq-8 conditions + seq-9 residuals (C-1..C-5) resolved; FathomDB HITL approved (seq-11) + MEMEX
+  agreed (seq-12). The ratified design contract lives at FathomDB `dev/design/record-lifecycle-protocol/`
+  (5 docs). **Ratification schedules nothing / authorizes no build (build ≠ adopt); roadmap placement TBD**
+  (breaking ⇒ likely ≥0.9.x FathomDB / coordinated 0.5.x Memex pair) — a later scheduling call; not yet slotted.
 - **📒 Live discussion** is the dedicated JSONL ledger `dev/fathomdb/enum-discussion-ledger.jsonl` (append with
   `ledgerwrite`, watch with `ledgerwatch`). This OPP is the **index + ratified-outcome home**.
 - **Owner:** MEMEX (raises the need + owns liveness *semantics*) / FATHOM (structure & mechanism).
@@ -63,5 +62,6 @@ surrogate-minting).
 - `[FATHOM]` seq 6 **option** (structural contract) → `[MEMEX]` seq 7 **accept-the-shape** + 10 conditions →
   `[FATHOM]` seq 8 **reconciled** (resolves the 10; states the surface delta) → `[MEMEX]` seq 9 **accept** +
   residuals C-1..C-5 → `[FATHOM]` seq 10 **accept** residuals.
-- `[FATHOM]` seq 11 — **HITL-approved ratification**; this mirror prepared FathomDB-side; **awaiting MEMEX
-  `agree` to finalize.**
+- `[FATHOM]` seq 11 — HITL-approved ratification; this mirror prepared FathomDB-side; awaiting MEMEX `agree`.
+- `[MEMEX]` seq 12 — **AGREE → OPP-12 RATIFIED** (both sides); MEMEX applied this mirror to its leverage ledger.
+- `[FATHOM]` seq 13 — confirms RATIFIED; thread `agreed` / CLOSED.
