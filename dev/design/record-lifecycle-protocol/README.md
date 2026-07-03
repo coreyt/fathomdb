@@ -120,6 +120,8 @@ up. Lifecycle is **engine mechanism, exposed 1:1 by the SDKs, with policy in the
    naming, exclusion-vs-ranking, and how Memex composes its labels.
 2. **`projection-registry-and-async-embed.md`** — the projection registry, staleness split by projection
    type, the async-embed execution model + the atomic-flip invariant, GDPR erasure, and the open items.
+3. **`api-surface.md`** — the consolidated verb + signature delta (net +3 verbs; `ReadView`, `PreparedWrite`,
+   `SearchHit`-shrink, `LifecycleState`), with the four consolidation-review fixes folded in.
 
 ## Co-requisites & open items (honestly named, not closed)
 

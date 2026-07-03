@@ -42,6 +42,10 @@ pending  →  active  →  deleted  →  purged
 
 Illegal transitions (e.g. `purged → *`, `active → purged` skipping `deleted`) are refused by the engine.
 
+These reversible moves are exposed as **one verb** — `transition(logical_id, to_state, reason?)` with a typed
+`LifecycleState` enum and an `IllegalTransition { from, to, legal: [...] }` error — **except `purge`**, which is
+a **separate** `purge(logical_id)` verb (destructive/irreversible). See [`api-surface.md`](api-surface.md).
+
 ### 1.2 `purged` = hard, GDPR-grade erasure
 
 - Row content, FTS entries, vector entries, and EAV attributes are **physically removed**.
@@ -82,11 +86,14 @@ on every re-projection). Today **`SearchHit` returns the `write_cursor` as its p
 **doc-seeded/anonymous nodes** (which have **no `logical_id`** — the dominant corpus hit type today), else
 `None`. Two consequences the contract must carry:
 
-1. **Co-requisite (GATING): complete the F-8a / ADR-0.8.0 swap** — `SearchHit.id` must become the
-   first-class `logical_id` (building on the existing `stable_id`), so a hit carries the identity used to
-   dedupe-to-current / check is-latest / delete. Callers must **not** key on the interim `write_cursor`.
-   **Lands-together** with the Cause-A id-contract pico. (This is why Memex's per-path reconciliation hacks
-   exist — CR-060 closes at the engine, but the *cleanup* Memex promised needs the hit to carry `logical_id`.)
+1. **Co-requisite (GATING): complete the F-8a / ADR-0.8.0 swap** — `SearchHit.id` **subsumes** the
+   prefix-tagged stable identity (`l:<logical_id>` for canonical nodes · `h:<content-hash>` for doc-seeded ·
+   `p:<passage>` for synthetic rerank hits), typed and **nullable**; the interim `write_cursor` **and** the
+   separate `stable_id` field are retired *into* `id` — **subsumed, not dropped** (real-gold keying and the
+   dominant doc-seeded/synthetic hits keep an identity). Callers key on `id`, never on the `write_cursor`.
+   **Lands-together** with the Cause-A id-contract pico **and** the anonymous-node surrogate minting (below).
+   See [`api-surface.md`](api-surface.md) §SearchHit. (CR-060 closes at the engine; the *cleanup* Memex
+   promised needs the hit to carry a stable identity.)
 2. **The object-id question (doc-seeded gap) — RESOLUTION.** FathomDB *does* provide a stable object id:
    `logical_id` is present for every **governed** write — caller-supplied, or engine-**derived** from
    `kind`+`name` (`derive_logical_id`, `lib.rs:3069`). It is **absent only for anonymous / doc-seeded**

@@ -74,7 +74,9 @@ every writer behind embed latency and couples the write path to GPU availability
 > (`schema:166`). The earlier "no daemon; host owns cadence; sync-inline default" framing was **wrong about
 > today** — the engine's default IS an async worker. The reconciled model **keeps that worker** and adds the
 > missing controls on top of it (all **net-new**): a `dense_readiness` flag, a `flush_embeddings()` drain, and
-> an optional sync-inline mode.
+> an optional sync-inline mode. **Flush reuses the shipped `drain(timeout_ms)` barrier** (`lib.rs:4360`) — not
+> a new `flush_embeddings()`; deferred/backfill rows enqueue on the same projection runtime `drain` waits on.
+> See [`api-surface.md`](api-surface.md).
 
 Two **host-selectable** modes over the existing worker:
 
