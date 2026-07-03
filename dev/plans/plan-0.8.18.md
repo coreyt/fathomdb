@@ -7,7 +7,9 @@
 > **Theme.** The GA-hardening capstone of the non-measure line. Make portable DBs / runtime
 > backend-swap *safe* with the **vector-equivalence self-check** (#5, now meaningful because 0.8.7 CUDA
 > and 0.8.16 ONNX backends exist) and complete the **full publish pipeline** (#11-full) on top of
-> 0.8.6's minimal path. After this release the whole 0.8.x line is GA-grade shippable.
+> 0.8.6's minimal path. After this release the whole 0.8.x line is **beta-grade shippable** (release-engineering
+> GA — publish machinery + frozen safety gates; **pre-1.0.0 is beta**, so this is not a stability/scale
+> guarantee — those are staged 0.9.x → 1.1.0, F-17).
 >
 > **Reconciled 2026-07-02 (Steward):** #13 benchmark-and-robustness harness, originally co-scoped here,
 > belongs at **0.8.19** per master §4 + F-10 ("#13 kept in 0.8.x → 0.8.19"); `plan-0.8.19.md` §1.2 owns
@@ -110,6 +112,11 @@ Slice 40 GA), HITL-decided.
 
 - **#13 benchmark harness is at 0.8.19, not here** (master §4 / F-10; `plan-0.8.19.md` §1.2). The
   vector-equivalence (#5) and full-publish (#11) work is the non-negotiable GA-safety core of 0.8.18.
+- **GA makes NO scale claim; pre-1.0.0 is beta.** The supported-scale envelope is a staged ladder —
+  **0.9.0 soft · 0.9.3 stated · 1.0.0 exit-beta · 1.1.0 hard** (a supportable promise, with 1.0.0→1.1.0
+  break/fix room) (HITL 2026-07-02, **F-17**); the 2.x HNSW/ANN work (F-16) later raises the bound.
+  0.8.18's "GA" is **release-engineering GA** (publish machinery + frozen eu7/latency gates), NOT a
+  maturity/stability/scale guarantee — **do not add a scale-envelope label here.**
 - Coordinate the GA tag with the experiment program — this release tags the **whole 0.8.x line**, so
   the M-work and router-design states should be at a coherent stopping point.
 
