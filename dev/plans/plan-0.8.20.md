@@ -41,6 +41,11 @@ The **first LBS action is a timing-correctness review**, per F-12. Do this and P
    = `"2"`, `napi-derive` = `"2"`, `@napi-rs/cli` = `^2.18.4`; `rusqlite` = `"0.31"`,
    `sqlite-vec` = `"=0.1.7"`).
 4. **Surface the §11 HITL questions and PAUSE** (publish/label decision; per-migration go/defer).
+5. **(Added 2026-07-03, M11 — cross-product roadmap pass.)** **sqlite-vec migration as a predecessor.**
+   *If* the 1–2M-chunk premise (G-1 in `dev/design/fathomdb-memex-overall-roadmap/`) resolves **YES**, the
+   `sqlite-vec 0.1.7 → later` migration in this sweep is a **predecessor of any future vec0-internal latency
+   kernel work** (2MM Path A) — sequence it accordingly and note the dependency for the kernel slice. If G-1 =
+   NO (default), this is informational only. This does **not** pull ANN forward: HNSW/ANN stays 2.x (F-16).
 
 ---
 
