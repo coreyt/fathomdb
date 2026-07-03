@@ -101,6 +101,20 @@ chat).
 
 - Read the ledger via `ledgerwatch` deltas, not whole-file re-reads. Never open
   the steward ledger directly.
+- **Todos & considerations ledger** (`dev/todos-and-considerations-ledger.jsonl`;
+  protocol `dev/todos-and-considerations-ledger-readme.md`; id prefix `TC`). The
+  durable home for **cross-cutting items that otherwise die in chat** — a caveat a
+  future change must respect, a consideration to weigh at a later decision point, a
+  durable observation (measurement / root cause), a todo with no owning plan yet, an
+  open question that will steer later work. Append with `ledgerwrite`, read with
+  `ledgerwatch`; **never hand-edit** (event-sourced — append a new entry per `id`,
+  state is the fold-to-latest). **Use judgement — not every observation earns an
+  entry.** Something you will remedy in-session does NOT belong here; the best
+  candidates are items **another agent or session** (other work, a different release,
+  a cross-repo coordination) must be aware of and would otherwise lose. Distinct from
+  the steward ledger (your own decision/drift/reconcile trail) and from a plan's slice
+  ladder. When you spot such an item, either write it yourself or surface it to the
+  HITL to write.
 - Delegate bulky/mechanical reads to a resident subagent (steward hand-off §7 has
   the measured cost model — warmth → overlap → size); keep only distilled results.
   Spend your context on judgment.

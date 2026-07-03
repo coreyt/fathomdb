@@ -92,6 +92,19 @@ re-run preflight → report.
 - Never run the full test suite in the foreground. Background or `| tail -5` only.
 - After extracting findings from a subagent's report, drop the raw output from
   working memory. Spend your context on judgment, not bulk text.
+- **Todos & considerations ledger** (`dev/todos-and-considerations-ledger.jsonl`;
+  protocol `dev/todos-and-considerations-ledger-readme.md`; id prefix `TC`). The
+  durable home for **cross-cutting items that otherwise die in chat** — a caveat a
+  later slice or release must respect, a consideration to weigh at a future decision
+  point, a durable observation (a measured gotcha, a root cause), a todo with no
+  owning plan yet, an open question. Append with `ledgerwrite`, read with
+  `ledgerwatch`; **never hand-edit** (event-sourced; state is the fold-to-latest per
+  `id`). **Use judgement — not every observation earns an entry.** Something you will
+  fix within the current slice does NOT belong here; the best candidates are items a
+  **different agent, slice, or release** must know about and would otherwise lose (a
+  cross-slice coupling, a caveat for a future release, a deferred cleanup). Distinct
+  from the plan/board (this release's ladder) and the steward ledger. When you spot
+  one, write it or flag it to the HITL.
 
 ## When to stop and ask coreyt
 

@@ -124,3 +124,4 @@ dev/plans/runs/*.ce-pass.json
 # .jsonl + its monotonic .seq sidecar ARE tracked, the cursor state is not).
 .ledgerwatch/
 dev/steward/.ledgerwatch*
+dev/.ledgerwatch-todos*
