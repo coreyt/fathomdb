@@ -14,9 +14,9 @@
 
 ### OPP-12 — Record liveness / lifecycle: one coherent "is this live?" across retired / deleted / superseded
 
-- **Status:** `RATIFIED` (both sides, 2026-07-03). Converged over the enum-discussion-ledger `seq 1→12`; shape
-  + all 10 seq-8 conditions + seq-9 residuals (C-1..C-5) resolved; FathomDB HITL approved (seq-11) + MEMEX
-  agreed (seq-12). The ratified design contract lives at FathomDB `dev/design/record-lifecycle-protocol/`
+- **Status:** `RATIFIED` (both sides, 2026-07-03). Converged over the enum-discussion-ledger `seq 1→12`; the
+  shape, all 10 seq-8 conditions, and the seq-9 residuals (C-1..C-5) are resolved; FathomDB HITL approved
+  (seq-11) and MEMEX agreed (seq-12). The ratified design contract lives at FathomDB `dev/design/record-lifecycle-protocol/`
   (5 docs). **Ratification schedules nothing / authorizes no build (build ≠ adopt); roadmap placement TBD**
   (breaking ⇒ likely ≥0.9.x FathomDB / coordinated 0.5.x Memex pair) — a later scheduling call; not yet slotted.
 - **📒 Live discussion** is the dedicated JSONL ledger `dev/fathomdb/enum-discussion-ledger.jsonl` (append with
