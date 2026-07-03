@@ -6,11 +6,14 @@
 >
 > **Theme.** The GA-hardening capstone of the non-measure line. Make portable DBs / runtime
 > backend-swap *safe* with the **vector-equivalence self-check** (#5, now meaningful because 0.8.7 CUDA
-> and 0.8.16 ONNX backends exist), restore the heavy **benchmark-and-robustness regression harness**
-> (#13), and complete the **full publish pipeline** (#11-full) on top of 0.8.6's minimal path. After
-> this release the whole 0.8.x line is GA-grade shippable.
+> and 0.8.16 ONNX backends exist) and complete the **full publish pipeline** (#11-full) on top of
+> 0.8.6's minimal path. After this release the whole 0.8.x line is GA-grade shippable.
 >
-> **Footprint.** #5 = IN-LIBRARY (open-time check, opt-in/enforced; CPU-only). #13/#11 = CI/CD. Library
+> **Reconciled 2026-07-02 (Steward):** #13 benchmark-and-robustness harness, originally co-scoped here,
+> belongs at **0.8.19** per master §4 + F-10 ("#13 kept in 0.8.x → 0.8.19"); `plan-0.8.19.md` §1.2 owns
+> it. Struck from this plan — **0.8.18 = #5 vector-equivalence + #11-full publish + the GA tag.**
+>
+> **Footprint.** #5 = IN-LIBRARY (open-time check, opt-in/enforced; CPU-only). #11 = CI/CD. Library
 > query path stays CPU-only/1-bit/deterministic.
 
 ---
@@ -24,17 +27,17 @@
   (Hamming, calibrated against the binary-quant floor + the candle↔ONNX Δ measured in 0.8.16 Slice 15).
   Divergence ⇒ refuse to serve the dense/fused arm (loud typed error, never silent). Subsumes the
   `EmbedderIdentity` pre-filter (identity = *claims* same embedder; probe = *proves* equivalent vectors).
-- **#13 — `benchmark-and-robustness.yml` restoration.** Net-new authorship of the substrate the weekly
-  workflow needs (criterion `benches/`, `scale.rs`, a `tracing` cargo feature, stress suites), then the
-  workflow on a weekly cron. Build only the jobs whose substrate is justified; `log()` what is dropped.
+- **#13 — benchmark-and-robustness harness — moved to 0.8.19 (struck from 0.8.18).** Per master §4 +
+  F-10, the net-new benchmark substrate (`benches/`, `scale.rs`, `tracing` feature) + weekly workflow are
+  owned by **0.8.19** (`plan-0.8.19.md` §1.2), not the GA capstone. Not 0.8.18 scope.
 - **#11-full — Full publish pipeline.** On top of 0.8.6's minimal path: multi-OS napi prebuild matrix,
   the cross-ecosystem `all-builds-passed` gate, tiered `publish-rust`/`publish-pypi`/`publish-npm` with
   index-propagation, and a real (HITL-gated) tagged release of the 0.8.x line.
 
 *Why last:* #5 is only meaningful once ≥2 backends can read each other's index (0.8.7 + 0.8.16), and is
-deliberately deferred out of the high-re-embed experimentation phase (PROGRAM-SEQUENCING §5 Q2). #13 is
-heavy net-new authorship with low near-term ROI whose substrate partly accretes from earlier perf work.
-\#11-full is the GA publish that the whole line builds toward.
+deliberately deferred out of the high-re-embed experimentation phase (PROGRAM-SEQUENCING §5 Q2).
+\#11-full is the GA publish that the whole line builds toward. (#13, heavy net-new authorship, is at
+0.8.19 — see above.)
 
 ---
 
@@ -46,8 +49,7 @@ heavy net-new authorship with low near-term ROI whose substrate partly accretes 
 | R-VEQ-2 | Open-time re-embed + tolerance assert at the retrieval representation | RED: a deliberately-divergent backend trips the check and refuses the dense arm; GREEN: same-backend float-noise does **not** trip it |
 | R-VEQ-3 | Tolerance calibrated against the quant floor + the 0.8.16 candle↔ONNX Δ | Documented calibration; a true backend change (CUDA→CPU, candle→ONNX) trips, identical-backend does not |
 | R-VEQ-4 | Loud typed error, never silent degradation | Error path is a typed `Engine::open`/serve error; no silent fallback |
-| R-BR-1 | Benchmark/robustness substrate authored | `benches/` + `scale.rs` + `tracing` feature exist; jobs run green locally |
-| R-BR-2 | Weekly workflow restored, dropped jobs logged | `benchmark-and-robustness.yml` runs on cron; any omitted pre-0.6.0 job is documented, not silently dropped |
+| ~~R-BR-1 / R-BR-2~~ | ~~benchmark/robustness substrate + weekly workflow~~ — **MOVED to 0.8.19** (master §4 / F-10) | Owned by `plan-0.8.19.md` §1.2; not a 0.8.18 gate |
 | R-REL-4 | Full publish pipeline + a real tagged release | Tiered publish dry-run green; HITL-gated tag fires the real 8-tier publish; versions consistent on both axes |
 | R-GATE | eu7 ≥ 0.90 + AC-012/013/020 latency hold at GA | All frozen gates PASS on the release candidate |
 
@@ -58,25 +60,25 @@ New ACs: candidates at Slice 0 (vector-equivalence contract) and Slice 40 (GA re
 ## 3. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 15 → 20 → 40
+0 → 5 → 20 → 40      (10, 15 = void reserved gaps — #13 moved to 0.8.19)
 ```
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | Setup + ADR — vector-equivalence design (probe set, tolerance calibration vs quant floor + 0.8.16 Δ, refuse-to-serve semantics); benchmark-substrate scope; full-publish design | design-adr | — |
+| **0** | Setup + ADR — vector-equivalence design (probe set, tolerance calibration vs quant floor + 0.8.16 Δ, refuse-to-serve semantics); full-publish design | design-adr | — |
 | **5** | **Vector-equivalence KEYSTONE** — probe-set store + open-time re-embed + post-quant tolerance check + typed refuse-to-serve | implementation (schema + open-path) | 0 |
-| **10** | **Benchmark/robustness substrate** — author `benches/` (criterion) + `scale.rs` + `tracing` feature + stress suites | implementation | 0 |
-| **15** | **Restore `benchmark-and-robustness.yml`** — weekly cron over the Slice-10 substrate; document dropped jobs | implementation (CI) | 10 |
+| **10** | *(void reserved gap)* — #13 benchmark substrate **MOVED to 0.8.19** (master §4 / F-10) | — | — |
+| **15** | *(void reserved gap)* — #13 `benchmark-and-robustness.yml` **MOVED to 0.8.19** | — | — |
 | **20** | **Full publish pipeline** — napi prebuild matrix + cross-ecosystem gate + tiered publish; dry-run | implementation (CI) | 0 |
-| **40** | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-BR/R-REL AC gate + all frozen gates (eu7/latency); HITL-gated real tagged release | verification + release | 5,10,15,20 |
+| **40** | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-REL AC gate + all frozen gates (eu7/latency); HITL-gated real tagged release | verification + release | 5,20 |
 
 **Keystones / hard gates.** **Slice 5 (vector-equivalence) is the keystone** — it is the prerequisite
 to advertising portable DBs / runtime backend-swap (gate the claim on it). **R-VEQ-2 two-sided test is
 hard:** must trip on a true backend change *and* not trip on same-backend float-noise. **Slice 40 real
 tag is HITL-gated** (`release-publish-gotchas`: a `v*` tag fires the real publish).
 
-**Tracks (parallelizable).** Equivalence track **5** ∥ benchmark track **10 → 15** ∥ publish track
-**20**, off Slice 0; all converge at Slice 40.
+**Tracks (parallelizable).** Equivalence track **5** ∥ publish track **20**, off Slice 0; both converge
+at Slice 40. (The former benchmark track 10 → 15 is void — #13 moved to 0.8.19.)
 
 ---
 
@@ -106,14 +108,13 @@ Slice 40 GA), HITL-decided.
 
 ## 8. Out-of-band / parallel notes
 
-- **#13 benchmark harness** is the one heavy net-new CI item; if its ROI is still low at this point it
-  may be roadmap-pushed past 0.8.x rather than built — decide at Slice 0 with the HITL. The
-  vector-equivalence (#5) and full-publish (#11) work is the non-negotiable GA-safety core.
+- **#13 benchmark harness is at 0.8.19, not here** (master §4 / F-10; `plan-0.8.19.md` §1.2). The
+  vector-equivalence (#5) and full-publish (#11) work is the non-negotiable GA-safety core of 0.8.18.
 - Coordinate the GA tag with the experiment program — this release tags the **whole 0.8.x line**, so
   the M-work and router-design states should be at a coherent stopping point.
 
 ## 9. Immediate next slice
 
-**Slice 0 — vector-equivalence + benchmark + publish ADRs.** Calibrate the equivalence tolerance against
-the quant floor and the 0.8.16 candle↔ONNX Δ; scope the benchmark substrate (build vs roadmap-push);
-design the full publish pipeline; stand up `runs/STATUS-0.8.18.md`. Then fan out Slices 5 ∥ 10 ∥ 20.
+**Slice 0 — vector-equivalence + publish ADRs.** Calibrate the equivalence tolerance against the quant
+floor and the 0.8.16 candle↔ONNX Δ; design the full publish pipeline; stand up `runs/STATUS-0.8.18.md`.
+Then fan out Slices 5 ∥ 20. (#13 benchmark harness is at 0.8.19 — no benchmark slice here.)
