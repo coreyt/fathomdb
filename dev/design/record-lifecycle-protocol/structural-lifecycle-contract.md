@@ -88,7 +88,7 @@ on every re-projection). Today **`SearchHit` returns the `write_cursor` as its p
 
 1. **Co-requisite (GATING): complete the F-8a / ADR-0.8.0 swap** — `SearchHit.id` **subsumes** the
    prefix-tagged stable identity (`l:<logical_id>` for canonical nodes · `h:<content-hash>` for doc-seeded ·
-   `p:<passage>` for synthetic rerank hits), typed and **nullable**; the interim `write_cursor` **and** the
+   `p:<passage>` for synthetic rerank hits), typed and **non-null** (id-space-tagged); the interim `write_cursor` **and** the
    separate `stable_id` field are retired *into* `id` — **subsumed, not dropped** (real-gold keying and the
    dominant doc-seeded/synthetic hits keep an identity). Callers key on `id`, never on the `write_cursor`.
    **Lands-together** with the Cause-A id-contract pico **and** the anonymous-node surrogate minting (below).
