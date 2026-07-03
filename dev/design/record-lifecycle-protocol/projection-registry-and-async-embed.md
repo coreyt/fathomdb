@@ -34,7 +34,11 @@ Per interpretive **attribute** or **edge-type**, Memex **declares** its index vi
 Tokenizer / embedder choices are part of the declaration where relevant. Projections are **rebuild-durable**
 (re-derivable from the canonical graph — the CQRS answer to drift), which works precisely because the
 canonical interpretive values live in engine storage. This **converges with Memex's entity-schema-registry**
-(hot kinds → Fathom property-FTS): Memex is already building the app-side of exactly this registry.
+(hot kinds → Fathom property-FTS): Memex is already building the app-side of exactly this registry. **C-1
+RATIFIED as a hard requirement:** one declarative registration flow where a Memex `EntityTypeSpec` drives the
+engine `ProjectionSpec`, so the app never maintains two registries in sync (ordering / atomicity / idempotent
+re-registration / drift-detection live in one place). Seam unchanged: Memex owns the type + semantics +
+declarations; Fathom owns the projection mechanism.
 
 **"Never denormalize" is softened** to its true intent: never *hand*-denormalize into ad-hoc structural
 fields — flow through the registry, or resolve at read.

@@ -55,7 +55,8 @@
 - **`SearchHit` — net *smaller* (C11 fix).** `id` **subsumes** the prefix-tagged stable identity
   (`l:<logical_id>` for canonical nodes · `h:<content-hash>` for doc-seeded/anonymous nodes · `p:<passage>`
   for synthetic rerank hits) — **non-null and id-space-tagged (S2 fix)** (all three hit classes carry an
-  id-space, so `id` is total; prefer a typed `{ space: IdSpace, value }` newtype over a magic-prefixed string).
+  id-space, so `id` is total; **a typed `{ space: IdSpace, value }` newtype — C-2 RATIFIED as binding** (not a
+  magic-prefixed string): `l:`/`h:`/`p:` are `IdSpace` variants and lifecycle-addressability is a type check).
   The interim `write_cursor` id **and** the `stable_id` field are **retired — subsumed into `id`, not dropped**
   (real-gold keying continues on the `id` value; `h:`/`p:` hits keep an identity). **Lifecycle verbs
   (`transition`/`purge`/`read.get`) key on the bare `logical_id` — the `l:` space only; `h:`/`p:` hits are not
