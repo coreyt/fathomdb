@@ -27,7 +27,7 @@ pending  →  active  →  deleted  →  purged
   validation/consolidation). Serves Memex's quarantine/promotion gate for untrusted ELPS/LLM extraction.
 - **`active`** — present and admitted.
 - **`deleted`** — soft-deleted, **retained + recoverable**; excluded from default reads. **Stays indexed
-  behind a flag** so restore/audit search works.
+  behind a flag** so undelete/audit search works.
 - **`purged`** — terminal, physically erased (see §1.2).
 
 ### 1.1 Transition table (engine-enforced; app decides *when*, engine enforces *which are legal*)
@@ -37,7 +37,7 @@ pending  →  active  →  deleted  →  purged
 | pending → active | **promote** | quarantine/consolidation admits the record |
 | pending → deleted | **reject** | quarantine rejection |
 | active → deleted | **soft-delete** | recoverable |
-| deleted → active | **restore** | |
+| deleted → active | **undelete** | named `undelete`, **not** `restore` — `restore` is on the `recovery_denylist` (SDK-absent) |
 | deleted → purged | **purge** | terminal, irreversible |
 
 Illegal transitions (e.g. `purged → *`, `active → purged` skipping `deleted`) are refused by the engine.
@@ -149,7 +149,7 @@ re-entrant window is one future window, not a schedule).
   `include_deleted`, `include_superseded`, and `valid_as_of(t)` / `ignore_validity`.
   - **Default** (no flags) = `admissible ∧ in-force-now`, **deduped to current-per-`logical_id`** → this is
     the mode all search paths use, closing CR-060 by construction.
-  - `include_deleted ∧ include_superseded` = restore/audit over history.
+  - `include_deleted ∧ include_superseded` = undelete/audit over history.
   - No mode returns **purged** content (physically gone). A distinct `include_existence_stubs` may surface
     the content-free referential stubs if ever needed.
 
