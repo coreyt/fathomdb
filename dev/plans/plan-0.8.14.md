@@ -49,7 +49,7 @@ typed-constraint surface with the new substrate, already shipped in 0.8.11 — s
 | R-SUB-2 | Incremental multi-index write is deterministic | Determinism test: same input → byte-identical index state across runs/backends-on-same-CPU |
 | R-SUB-3 | Migration is forward-only + guarded | `SCHEMA_VERSION` bump; migration test (old DB → new) green; eu7 re-clear if vectors are touched |
 | R-F5-1 | Fielded BM25F with tunable `b`/field weights | RED→GREEN: a field-weighted query outranks an unweighted baseline on a known fixture |
-| R-F5-2 | F5 ADR pre-conditions are met | The 0.8.3 15b-proxy pass + Mem0-gap condition is confirmed before F5 ships (else record + defer) |
+| R-F5-2 | F5 ships per **HITL Option-C override** (NOT gate-clearance) | **The R-F5-2 pre-registered gate did NOT clear** (only a synthetic n=16 15b smoke passed; full at-power run deferred; 0.8.3 shipped at marginal parity, no measured Mem0 gap). F5 ships this release by **conscious HITL override** (decider: coreyt, 2026-07-03) on intrinsic recall-lever merit + one-`SCHEMA_VERSION`-bump economics. KILL path retained. See ADR-0.8.14 §D8. |
 | ~~R-FIL-1~~ | ~~G4 grammar unified with G10 `SearchFilter`~~ — **SHIPPED in 0.8.11 (struck)** | Satisfied by 0.8.11 Slice 40 (`ab3b4466`); not a 0.8.14 gate |
 | R-X-1 | Py + TS SDK parity for EXP-S + F5 | X1 cross-binding harness green |
 | R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) holds after any re-embed | `recall_gate.rs`: ci_hi ≥ 0.90 PASS; a breach BLOCKS→HITL |
@@ -61,7 +61,7 @@ New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gate
 ## 3. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 20 → 40      (15 = void reserved gap — #17 shipped in 0.8.11)
+0 → 5 → 10 → 20 → 25 → 40      (15 = void reserved gap — #17 shipped in 0.8.11)
 ```
 
 | Slice | Title | Work-type | Depends-on |
@@ -71,14 +71,16 @@ New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gate
 | **10** | **F5 fielded BM25F** — field-weighted FTS + tunable `b`, riding the EXP-S field columns | implementation (schema) | 5 |
 | **15** | *(void reserved gap)* — #17 filter-grammar **SHIPPED in 0.8.11** (F-10; PR #122, `ab3b4466`) | — | — |
 | **20** | **eu7 re-clear + migration verify** — if Slices 5/10 touched vectors, re-clear the one-sided fidelity gate; old→new migration test | verification | 5,10 |
-| **40** | **Verification + Release Readiness (0.8.14)** — X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate | verification | 5,10,20 |
+| **25** | *(reserved gap)* **Merge `0.8.14-gpu-rerank`** — rebase branch `d9e61c66` onto then-current base, full `agent-verify.sh` (py/ts/security); opt-in `rerank-cuda` GPU CE + `embed_batch_cls`, default-CPU-unchanged (EXP-S GPU sub-part; `0.8.x-remaining-todos §1`) | integration | 5 |
+| **40** | **Verification + Release Readiness (0.8.14)** — X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate | verification | 5,10,20,25 |
 
 **Keystones / hard gates.** **Slice 5 (EXP-S) is the keystone** — F5 (10) rides its field columns, so
 5 → 10 is a hard sequence (do EXP-S first within the release). **eu7 ≥ 0.90 (one-sided CI) is a hard
-BLOCK→HITL gate** at Slice 20 if any re-embed occurs (`fathomdb-recall-fidelity-vs-relevance`). **F5
-ships only if its ADR pre-conditions hold**, else record + defer.
+BLOCK→HITL gate** at Slice 20 if any re-embed occurs (`fathomdb-recall-fidelity-vs-relevance`). **F5 ships in 0.8.14 by conscious HITL
+override** (decider: coreyt, 2026-07-03) — the R-F5-2 pre-registered gate did NOT clear; it ships on
+intrinsic recall-lever merit + one-`SCHEMA_VERSION`-bump economics, KILL path retained (ADR-0.8.14 §D8).
 
-**Tracks.** Substrate→F5 track **5 → 10 → 20** (single spine; the former parallel filter track is void — #17 shipped in 0.8.11).
+**Tracks.** Substrate→F5 track **5 → 10 → 20 → 25** (single spine; the former parallel filter track is void — #17 shipped in 0.8.11).
 
 ---
 
@@ -116,6 +118,13 @@ carries the per-slice X column.
 
 ## 9. Immediate next slice
 
-**Slice 0 — EXP-S + F5 ADRs.** Ratify the row-kind taxonomy + determinism contract and confirm F5's
-ADR pre-conditions; stand up `runs/STATUS-0.8.14.md`. Then run Slice 5 (EXP-S) before 10 (F5).
-(#17 filter-grammar already shipped in 0.8.11 — no filter slice in this release.)
+**Slice 0 — CLOSED (2026-07-03).** ADR `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`
+ratified by HITL (checkpoint approved): D1 separate `row_kind` column; D2 per-kind index-target dispatch;
+D3 flush-then-byte-compare determinism check; D4 one coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S,
+16→17 F5); D5 discharges **TC-1** (OPP-12 projection-registry forward-compat seam); D6 eu7 no-op unless
+vec0 rewritten; D7 KILL paths. **D8 = Option C:** F5 ships by conscious HITL override, NOT gate-clearance
+(see R-F5-2). Board stood up at `runs/STATUS-0.8.14.md`.
+
+**Next — Slice 5 (EXP-S KEYSTONE).** Row-kinds + per-kind coexisting-index write + determinism check +
+`SCHEMA_VERSION` 15→16, off a fresh `origin/main` baseline. Then 10 (F5) → 20 (eu7/migration verify) →
+25 (gpu-rerank merge) → 40 (release readiness). (#17 filter-grammar already shipped in 0.8.11.)

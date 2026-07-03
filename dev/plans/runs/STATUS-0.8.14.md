@@ -1,0 +1,55 @@
+# STATUS — 0.8.14 (Substrate & recall: EXP-S + F5) · the schema-migration release
+
+> Live state board (source of truth = git witnesses per orchestration.md §1.5; this is a cache).
+> Plan: `dev/plans/plan-0.8.14.md` · ADR: `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`.
+> Build: **label-only** (manifests stay `0.8.9`; NO `v*` tag, NO publish). Push scope: fathomdb-only.
+
+## Current state
+- **Slice 0 (ADR) — CLOSED** (2026-07-03). HITL checkpoint approved D1–D8. F5 ships per **Option C**
+  (conscious HITL override, NOT gate-clearance). TC-1 discharged via D5.
+- **Next:** Slice 5 (EXP-S keystone) — CANARY, off a fresh `origin/main` baseline.
+
+## Slice scoreboard
+| Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
+|------:|-------|-------|----------|--------|-------------|-------|-------------------|
+| 0 | Setup + ADR (row-kinds, determinism, KILL, SCHEMA_VERSION, TC-1, F5 ruling) | **CLOSED** | 0344a343 (ADR authored on main d7cad699) | (docs on main) | n/a (design slice) | n/a | docs commit on main |
+| 5 | **EXP-S KEYSTONE** — row_kind + per-kind coexisting-index write + determinism check + `SCHEMA_VERSION` 15→16 | not-started | — | — | — | — | — |
+| 10 | **F5 fielded BM25F** — `search_index_v2` multi-column FTS + tunable `b`, `SCHEMA_VERSION` 16→17 | not-started | — | — | — | — | — |
+| 15 | *(void reserved gap — #17 shipped 0.8.11)* | VOID | — | — | — | — | — |
+| 20 | eu7 re-clear + migration verify (D6) | not-started | — | — | — | — | — |
+| 25 | *(reserved gap)* Merge `0.8.14-gpu-rerank` (`d9e61c66`, rebase + full agent-verify.sh) | not-started | — | — | — | — | — |
+| 40 | Verification + Release Readiness (X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate) | not-started | — | — | — | — | — |
+
+## Requirements / AC status (DoD frozen at Slice 0)
+| ID | Requirement | State |
+|----|-------------|-------|
+| R-SUB-1 | Row-kinds coexist in one store | ⏳ Slice 5 |
+| R-SUB-2 | Incremental multi-index write deterministic | ⏳ Slice 5 |
+| R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ⏳ Slice 5/10/20 |
+| R-F5-1 | Fielded BM25F, tunable `b`/field weights | ⏳ Slice 10 |
+| R-F5-2 | F5 ships per HITL Option-C override (gate did NOT clear) | ✅ ruled (ADR §D8) — ships as override |
+| R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ⏳ per slice |
+| R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) after any re-embed | ⏳ Slice 20 (no-op unless vec0 rewritten, D6) |
+
+## Hard gates
+- **eu7 ≥ 0.90 one-sided CI** — BLOCK→HITL at Slice 20 if any re-embed/vec0 rewrite occurs (D6).
+- **Full-workspace clippy+check** — `cargo clippy --workspace --all-targets` AND
+  `cargo check --workspace --all-targets`, both exit 0, before ANY green claim.
+- **codex §9** review gate on every slice's output.json.
+- **SCHEMA_VERSION migration** = engine/schema migration → HITL-gated; ADR ratifies the plan.
+
+## Outstanding worktrees
+- Slice-0 worktree `/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-0-20260703T205511Z`
+  (base 0344a343) — preflight-only; to be removed at Slice-0 close (no slice commits on it).
+
+## Concurrency
+- **Library Sweep #2** runs on its own branch (only `.github/workflows/*` + JS/TS lockfiles) —
+  disjoint from engine `src/`/`Cargo.lock`. Expect `main` to advance; rebase is trivial.
+
+## Recent decisions (newest first)
+- 2026-07-03 — Slice-0 ADR ratified; D8=Option C (F5 override); Slice 25 (gpu-rerank merge) added;
+  TC-1 discharged. Base advanced 0344a343 → d7cad699 (disjoint from engine src).
+
+## Next action
+Close Slice 0 (this docs commit) → cut Slice-5 keystone worktree off fresh `origin/main` →
+preflight → canary the EXP-S implementer → codex §9 gate → report.
