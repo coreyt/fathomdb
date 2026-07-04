@@ -8,14 +8,17 @@
 - **Slice 0 (ADR) — CLOSED** (2026-07-03). HITL approved D1–D8; F5 per Option C; TC-1 discharged.
 - **Slice 5 (EXP-S keystone) — CLOSED** (2026-07-04). Cherry-picked `ba15e176`+`718cfe94` to `main`;
   codex §9 **PASS** (no findings); full-workspace gate both exit 0; SCHEMA_VERSION 15→16; D6 no vec0 rewrite.
-- **Next:** Slice 10 (F5 BM25F, step-17) — off a fresh `origin/main` baseline.
+- **Slice 10 (F5 BM25F) — CLOSED** (2026-07-04). Cherry-picked `b145754f`+`c57e4e99`+`9d8e368b`+`a7c3c145`;
+  codex §9 CONCERN→fix-1→CONCERN→fix-2→land; substantive tokenization finding resolved; gate both exit 0;
+  SCHEMA_VERSION 16→17; ships per D8 Option-C override; in-engine BM25F (justified ADR-0.8.1 deviation for tunable b).
+- **Next:** Slice 20 (eu7 no-op regression per D6 + v15→v17 migration verify) — off a fresh `origin/main` baseline.
 
 ## Slice scoreboard
 | Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
 |------:|-------|-------|----------|--------|-------------|-------|-------------------|
 | 0 | Setup + ADR (row-kinds, determinism, KILL, SCHEMA_VERSION, TC-1, F5 ruling) | **CLOSED** | 0344a343 (ADR authored on main d7cad699) | (docs on main) | n/a (design slice) | n/a | docs commit on main |
 | 5 | **EXP-S KEYSTONE** — row_kind + per-kind coexisting-index write + determinism check + `SCHEMA_VERSION` 15→16 | **CLOSED** | dff4830c | slice-5-…235950Z | ✅ | **PASS** (no findings) | `ba15e176`+`718cfe94` on main |
-| 10 | **F5 fielded BM25F** — `search_index_v2` multi-column FTS + tunable `b`, `SCHEMA_VERSION` 16→17 | not-started | — | — | — | — | — |
+| 10 | **F5 fielded BM25F** — `search_index_v2` + in-engine BM25F (tunable weights/`b`), `SCHEMA_VERSION` 16→17 | **CLOSED** | be37dffd | slice-10-…002826Z | ✅ | CONCERN→fix1→CONCERN→fix2→**resolved** | `b145754f`+`c57e4e99`+`9d8e368b`+`a7c3c145` |
 | 15 | *(void reserved gap — #17 shipped 0.8.11)* | VOID | — | — | — | — | — |
 | 20 | eu7 re-clear + migration verify (D6) | not-started | — | — | — | — | — |
 | 25 | *(reserved gap)* Merge `0.8.14-gpu-rerank` (`d9e61c66`, rebase + full agent-verify.sh) | not-started | — | — | — | — | — |
@@ -26,8 +29,8 @@
 |----|-------------|-------|
 | R-SUB-1 | Row-kinds coexist in one store | ✅ Slice 5 (GREEN) |
 | R-SUB-2 | Incremental multi-index write deterministic | ✅ Slice 5 (GREEN, non-vacuous) |
-| R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ✅ step-16 (Slice 5); step-17 @ Slice 10 |
-| R-F5-1 | Fielded BM25F, tunable `b`/field weights | ⏳ Slice 10 |
+| R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ✅ step-16 (Slice 5) + step-17 (Slice 10); v15→v17 verify @ Slice 20 |
+| R-F5-1 | Fielded BM25F, tunable `b`/field weights | ✅ Slice 10 (GREEN; tokenization-faithful) |
 | R-F5-2 | F5 ships per HITL Option-C override (gate did NOT clear) | ✅ ruled (ADR §D8) — ships as override |
 | R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ⏳ per slice |
 | R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) after any re-embed | ⏳ Slice 20 (no-op unless vec0 rewritten, D6) |
@@ -47,10 +50,12 @@
   disjoint from engine `src/`/`Cargo.lock`. Expect `main` to advance; rebase is trivial.
 
 ## Recent decisions (newest first)
+- 2026-07-04 — Slice 10 (F5) CLOSED: 4 commits on main, codex CONCERN→fix1→CONCERN→fix2→resolved, gate green,
+  SCHEMA_VERSION 16→17; in-engine BM25F (justified ADR-0.8.1 deviation for tunable b); D6 no vector touch.
 - 2026-07-04 — Slice 5 (EXP-S keystone) CLOSED: `ba15e176`+`718cfe94` on main, codex §9 PASS, gate green,
   SCHEMA_VERSION 15→16, D6 no vec0 rewrite (eu7@20 = no-op).
 - 2026-07-03 — Slice-0 ADR ratified; D8=Option C (F5 override); Slice 25 added; TC-1 discharged.
 
 ## Next action
-Cut Slice-10 (F5) worktree off fresh `origin/main` → preflight `--expect-closed 5` → spawn F5 implementer
-(step-17 migration, ships per D8 Option-C override) → codex §9 gate → land → advance to 20/25/40.
+Cut Slice-20 (eu7/migration verify) worktree off fresh `origin/main` → preflight `--expect-closed 10` →
+run eu7 as a documented no-op regression (D6) + v15→v17 migration test → codex §9 → land → 25 (gpu-rerank) → 40.

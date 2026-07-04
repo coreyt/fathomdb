@@ -1,0 +1,90 @@
+{
+  "slice": "0.8.14-slice-10",
+  "title": "F5 fielded FTS / BM25F — search_index_v2 (step 17) + tunable field weights/b",
+  "status": "COMPLETE",
+  "pass": "fix-2 (codex §9 LOW remediation, comment-only)",
+  "baseline_sha": "be37dffd116cc2d0337a381d299009433835ccc1",
+  "branch": "slice-10-20260704T002826Z",
+  "head_sha": "afe91ad3d44f36f3cbe615b40dfa806b28412c69",
+  "fix1_addresses": "dev/plans/runs/0.8.14-slice-10-review-20260704T005156Z.md",
+  "commits": [
+    {
+      "sha": "3e9ee55f",
+      "subject": "feat(0.8.14): search_index_v2 + step-17 migration (F5 R-SUB-3)"
+    },
+    {
+      "sha": "f58d3d81",
+      "subject": "feat(0.8.14): BM25F field weights + tunable b (F5 R-F5-1)"
+    },
+    {
+      "sha": "eb3c206e",
+      "subject": "fix(0.8.14): BM25F scorer tokenization-faithful to FTS5 (Slice 10 fix-1)"
+    },
+    {
+      "sha": "afe91ad3",
+      "subject": "fix(0.8.14): correct step-17 migration comment re: search_index_v2.status (Slice 10 fix-2)",
+      "note": "comment-only correction — the step-17 migration comment in fathomdb-schema/src/lib.rs still said 'the same status the G10 SearchFilter reads' (false, and inconsistent with the fix-1-corrected engine comment). Corrected to state search_index_v2.status is F5's own $.status-derived field (json_valid-guarded), NOT the value the shipped G10 SearchFilter reads (G10 reads vec0 status, still the empty sentinel). No SQL/code/behavior change; diff is comment-lines-only in a single file."
+    }
+  ],
+  "fix1": {
+    "finding_1": {
+      "severity": "medium",
+      "title": "BM25F scorer was not tokenization-faithful to the FTS5 index it ranks",
+      "root_cause": "search_index_v2 recalls candidates via 'porter unicode61 remove_diacritics 2', but the in-engine scorer recomputed tf/df/field-lengths with a hand-rolled lowercase-alnum splitter (bm25f_tokenize). A stemmed or diacritic variant recalled by MATCH (query 'run' vs indexed 'running'; 'cafe' vs 'café') was scored as if the term were absent -> tf==0 and df==0 -> the recalled doc scored exactly 0.0 -> wrong ranking for those variants (recall itself was intact; the BM25F math and live weights/b/k1 were sound).",
+      "fix": "Deleted bm25f_tokenize; added fts5_tokenize(connection, text) which round-trips the text through a temp single-column FTS5 table using the IDENTICAL tokenizer ('porter unicode61 remove_diacritics 2') and reads the emitted token instances back via fts5vocab(...,'instance') (SELECT term ... ORDER BY offset). The token multiset (duplicates kept) is returned so callers count tf and field length directly. All five call sites in bm25f_search_inner (query terms, corpus-pass field lengths + df, and per-candidate tf/lengths for kind/body/status) now measure under the SAME FTS5 tokenization the index uses. No porter/unicode61 re-implementation in Rust — FTS5 itself is reused, which is the smallest tokenization-faithful change.",
+      "why_fts5vocab_instance": "rusqlite 0.31 bundles SQLite 3.45 (fts5vocab 'instance' available since 3.44). Empirically probed before the fix: input 'Running cafés RUNNER' -> tokens ['run','cafe','runner'], confirming porter stemming + diacritic folding + case-fold and offset ordering on a temp FTS5 table."
+    },
+    "finding_2": {
+      "severity": "low",
+      "title": "inaccurate search_index_v2.status comment vs shipped G10 semantics",
+      "fix": "Corrected the code comment in project_canonical_node_row: search_index_v2.status is F5's OWN $.status-derived field for the BM25F 'status' column; it is NOT (yet) the value the shipped G10 SearchFilter reads (G10 reads the vec0 'status' column, still hardwired to the empty-string sentinel). No G10 re-wiring — annotation only, per fix-1 scope. Also tightened the bm25f_match_expression doc comment (tokens are FTS5-emitted stems)."
+    }
+  },
+  "fix2": {
+    "finding": {
+      "severity": "low",
+      "title": "step-17 migration comment (schema crate) still asserted the false 'same status the G10 SearchFilter reads' claim",
+      "root_cause": "fix-1 corrected the analogous comment at fathomdb-engine/src/lib.rs (project_canonical_node_row) but missed the sibling comment on the step-17 Migration entry in fathomdb-schema/src/lib.rs, which retained the original (false) phrasing.",
+      "fix": "Corrected the step-17 migration comment (fathomdb-schema/src/lib.rs, around line 413) to match the fix-1-corrected engine comment: search_index_v2.status is F5's own $.status-derived field (json_valid-guarded), NOT the value the shipped G10 SearchFilter reads (G10 reads vec0 status, still the empty sentinel). Comment-only; no SQL/DDL/behavior change."
+    },
+    "diff_scope": "git diff eb3c206e..afe91ad3 --stat shows ONLY src/rust/crates/fathomdb-schema/src/lib.rs changed (4 insertions, 2 deletions), comment lines only."
+  },
+  "new_test": {
+    "name": "fathomdb-engine/tests/f5_bm25f.rs::r_f5_1_fix1_scorer_is_tokenization_faithful_to_fts5",
+    "status": "GREEN (after fix); RED before fix",
+    "falsifiable": "Two gold docs match their query ONLY under FTS5 tokenization: cursor 1 body 'running late again' (porter-stem of query 'run'); cursor 2 body 'meet at the café tonight' (diacritic fold of query 'cafe'). Both are recalled by MATCH in BOTH the old and new code. Under the old lowercase-alnum splitter tf/df for the query term were 0, so the scorer returned the recalled doc with score EXACTLY 0.0. The test asserts each gold doc's score > 0. Observed RED (old scorer, verified via `git stash` of lib.rs): panicked 'query run must score the porter-stemmed running doc > 0 ... got 0 in [(1, 0.0)]'. GREEN after fix: both stem and diacritic docs score > 0.",
+    "red_evidence": "got 0 in [(1, 0.0)]"
+  },
+  "acceptance_regression": {
+    "R-F5-1": "GREEN — r_f5_1_field_weight_flips_ranking_vs_body_only_baseline still passes (field-weight flip intact under FTS5 tokenization).",
+    "R-SUB-2": "GREEN — exp_s_substrate::r_sub_2_incremental_multi_index_write_is_deterministic (determinism) unchanged.",
+    "R-SUB-1_D2_D5": "GREEN — exp_s_substrate {d2_index_targets_differ_by_row_kind, r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind}.",
+    "R-SUB-3_step17": "GREEN — fathomdb-schema/tests/step17_migration.rs {s17_search_index_v2_present_and_schema_version_is_17, s17_forward_only_from_v16_reindexes_existing_rows, s17_passes_accretion_guard_with_marker}; migrations.rs (12) green.",
+    "write_path_sync": "GREEN — write_path_populates_search_index_v2_synchronously unchanged."
+  },
+  "search_index_v1_retained": "RETAINED, byte-unchanged. Only the in-engine BM25F scorer's tokenization changed; the v1 search_index and its query paths are untouched.",
+  "write_synchronous_and_deterministic": "CONFIRMED. search_index_v2 is still written SYNCHRONOUSLY in the same write transaction via the Slice-5 D2 seam; the write path was NOT touched by fix-1 (only the read-time scorer). R-SUB-2 determinism test still GREEN.",
+  "d6_vectors_untouched": "CONFIRMED. fix-1 touches only the read-time BM25F scorer (engine src/lib.rs) and its test; no embedder/pooling/quant/vec0/partition change. Step 17 and search_index_v2 population unchanged. eu7 stays a documented Slice-20 no-op.",
+  "scope_boundaries_respected": {
+    "engine_and_schema_crates_only": true,
+    "engine_only_this_fix": "fix-1 changes are engine-only (src/rust/crates/fathomdb-engine/src/lib.rs + tests/f5_bm25f.rs); schema DDL unchanged.",
+    "no_public_py_ts_sdk_surface": true,
+    "no_maturin_or_pip_e_from_worktree": true,
+    "no_manifest_bump": "manifests stay 0.8.9 (label-only)",
+    "hard_locked_kind_vocab_untouched": true,
+    "no_vector_path_change": true
+  },
+  "verification": {
+    "clippy_workspace_all_targets_exit": 0,
+    "check_workspace_all_targets_exit": 0,
+    "clippy_warning_count": 0,
+    "new_test_red_then_green": true,
+    "tests_rerun": "PASS — fathomdb-engine {f5_bm25f (3, incl. new test), exp_s_substrate (3)}; fathomdb-schema {step17_migration (3), migrations (12)}.",
+    "fmt": "cargo fmt applied (pre-commit fmt --check passed).",
+    "agent_long_eu7_suite": "NOT run (Slice 20 scope, per instructions).",
+    "fix2_check_workspace_all_targets_exit": 0,
+    "fix2_diff_is_comment_only": "CONFIRMED via git diff eb3c206e..HEAD --stat (single file, fathomdb-schema/src/lib.rs, 4 insertions/2 deletions, all in comment block)."
+  },
+  "blockers": [],
+  "next_step_for_orchestrator": "Re-run codex (§9) review on branch slice-10-20260704T002826Z at HEAD afe91ad3 (or accept as a trivial comment-only follow-up to the already-reviewed eb3c206e). Then cherry-pick 3e9ee55f + f58d3d81 + eb3c206e + afe91ad3 onto main. fix-1's two findings and fix-2's LOW comment-consistency finding are all addressed: (1) fts5_tokenize makes the scorer measure tf/df/lengths under the index's own porter/diacritic tokenization, RED->GREEN test added; (2) engine comment corrected in fix-1, no G10 re-wire; (3, fix-2) the sibling step-17 migration comment in the schema crate — missed by fix-1 — now matches. Full-workspace clippy+check both exit 0 at eb3c206e; check re-verified exit 0 at afe91ad3 (comment-only change, no clippy re-run needed but expected unaffected). Note for reviewer: fts5_tokenize relies on fts5vocab 'instance' mode (SQLite >=3.44; rusqlite 0.31 bundles 3.45) — a temp FTS5 round-trip per field, correctness-first for this experimental EXP-S lever; no perf gate covers bm25f_search."
+}

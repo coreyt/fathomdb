@@ -133,7 +133,19 @@ determinism check) onto `main`. codex §9 **PASS** (no findings; determinism tes
 Full-workspace clippy+check both exit 0. R-SUB-1/R-SUB-2/R-SUB-3 GREEN; D5/TC-1 discharged. D6:
 vec0 NOT rewritten → eu7 at Slice 20 is a documented no-op.
 
-**Next — Slice 10 (F5 fielded BM25F).** `search_index_v2` multi-column FTS + tunable `b`/field weights,
-riding the EXP-S columns; migration step **17** (`SCHEMA_VERSION` 16→17). Ships per the **D8 Option-C HITL
-override** (recorded as override, NOT gate-clearance). Off a fresh `origin/main` baseline. Then 20
-(eu7/migration verify) → 25 (gpu-rerank merge) → 40 (release readiness).
+**Slice 10 (F5 fielded BM25F) — CLOSED (2026-07-04).** Cherry-picked `b145754f` (step-17 migration:
+`SCHEMA_VERSION` 16→17, `search_index_v2` multi-column FTS5 over kind/body/status, O(N) rebuild) +
+`c57e4e99` (in-engine BM25F scorer, tunable field weights + `b`/`k1`) + `9d8e368b` (fix-1: scorer
+tokenization-faithful via `fts5_tokenize`) + `a7c3c145` (fix-2: comment correction). codex §9: CONCERN →
+fix-1 (resolved the substantive tokenization finding) → CONCERN → fix-2 (comment-only) → landed;
+re-review confirmed the medium finding resolved, sole residual a LOW comment now fixed. Full-workspace
+clippy+check both exit 0 on the landing head. R-F5-1 GREEN (falsifiable ranking-flip + tokenization-faithful
+tests). **Ships per the D8 Option-C HITL override** (recorded as override, NOT gate-clearance).
+**Justified deviation from ADR-0.8.1:** FTS5's `bm25()` pins `k1`/`b`, so scoring is in-engine (BM25F over
+`search_index_v2 MATCH`-recalled candidates) to honor the ADR's tunable-`b` requirement; field set +
+weighting per ADR. D6: no vector touch → eu7 at Slice 20 is a no-op.
+
+**Next — Slice 20 (eu7 re-clear + migration verify).** Per D6, Slices 5/10 touched NO vectors (pure
+additive schema + FTS), so the eu7 gate is a **documented no-op regression check**; also verify old→new
+(v15→v17) migration. Any eu7 breach = BLOCK→HITL. Then 25 (gpu-rerank merge) → 40 (release readiness).
+Off a fresh `origin/main` baseline.
