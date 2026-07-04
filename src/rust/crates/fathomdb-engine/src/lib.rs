@@ -1843,6 +1843,39 @@ pub enum PreparedWrite {
     },
 }
 
+/// EXP-S (0.8.14 Slice 5, D1) — structural-role tag for a canonical row.
+///
+/// A SEPARATE axis from the doc-type `kind` (email/article/paper/meeting/
+/// note/todo/doc/edge_fact): `row_kind` describes *what structural role* a row
+/// plays in the "one store, many indexes" substrate, not what document type it
+/// carries. Stored in `canonical_nodes.row_kind` (schema migration step 16).
+///
+/// `Leaf` is the default (a normal record; every existing/normal write is a
+/// leaf — back-compat preserving). `Coverage` = coverage/summary rows;
+/// `Graph` = graph structural rows. Engine-internal in 0.8.14 — there is NO
+/// public Py/TS SDK surface for `row_kind` this release (`Leaf` for all normal
+/// writes; `Coverage`/`Graph` are set only by internal paths). Cross-binding
+/// parity (X1) is a Slice-40 concern.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RowKind {
+    Leaf,
+    Coverage,
+    Graph,
+}
+
+impl RowKind {
+    /// On-disk `canonical_nodes.row_kind` spelling. Must match the migration
+    /// step-16 `DEFAULT 'leaf'` and the schema vocabulary (D1).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowKind::Leaf => "leaf",
+            RowKind::Coverage => "coverage",
+            RowKind::Graph => "graph",
+        }
+    }
+}
+
 /// Snapshot of engine-internal counters returned by [`Engine::counters`].
 ///
 /// Public key set is owned by `dev/design/lifecycle.md` § Public key set
@@ -4676,6 +4709,75 @@ impl Engine {
             )
             .map_err(|_| EngineError::Storage)?;
         Ok(())
+    }
+
+    /// EXP-S (0.8.14 Slice 5, D1) — write one canonical node row carrying an
+    /// explicit structural `row_kind` (leaf/coverage/graph), routing the index
+    /// projection through the SAME `row_kind -> index-target` dispatch seam
+    /// (`project_canonical_node_row`) as the production `leaf` write path.
+    ///
+    /// This is the internal-only writer for `coverage`/`graph` rows (there is no
+    /// public SDK surface for `row_kind` in 0.8.14). Cursor assignment preserves
+    /// the `rowid == write_cursor == cursor` determinism identity. When the row
+    /// projects into an async vector index, the worker pool is notified so the
+    /// embed is scheduled exactly as for a normal write.
+    #[doc(hidden)]
+    pub fn write_canonical_row_with_kind_for_test(
+        &self,
+        kind: &str,
+        body: &str,
+        row_kind: RowKind,
+    ) -> Result<WriteReceipt, EngineError> {
+        self.ensure_open()?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+
+        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        let enqueued = {
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            tx.execute(
+                "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
+                 VALUES(?1, ?2, ?3, NULL, NULL, ?4)",
+                params![cursor, kind, body, row_kind.as_str()],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            let enqueued = project_canonical_node_row(&tx, cursor, kind, body, row_kind)
+                .map_err(|_| EngineError::Storage)?;
+            advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            enqueued
+        };
+        self.next_cursor.store(cursor, Ordering::SeqCst);
+        if enqueued {
+            self.projection_runtime.notify_new_work();
+        }
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
+    }
+
+    /// EXP-S (0.8.14 Slice 5, D1) — select the active canonical rows carrying a
+    /// given `row_kind`, returning their `write_cursor`s in cursor order. Proves
+    /// the engine can query/select rows by the structural `row_kind` axis.
+    #[doc(hidden)]
+    pub fn canonical_rows_with_row_kind_for_test(
+        &self,
+        row_kind: RowKind,
+    ) -> Result<Vec<u64>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare(
+                "SELECT write_cursor FROM canonical_nodes
+                 WHERE row_kind = ?1 AND superseded_at IS NULL
+                 ORDER BY write_cursor",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let cursors = stmt
+            .query_map(params![row_kind.as_str()], |row| row.get::<_, u64>(0))
+            .map_err(|_| EngineError::Storage)?
+            .collect::<rusqlite::Result<Vec<u64>>>()
+            .map_err(|_| EngineError::Storage)?;
+        Ok(cursors)
     }
 
     /// Embed arbitrary text with the engine's configured runtime embedder,
@@ -9996,6 +10098,87 @@ fn prior_edge_cursors_by_triple(
     rows.collect()
 }
 
+/// EXP-S (0.8.14 Slice 5, D2) — the set of coexisting indexes a `row_kind`
+/// projects into. `fts` = the FTS index (`search_index`), written SYNCHRONOUSLY
+/// in the write transaction; `vector` = the vec0 vector index, written
+/// ASYNCHRONOUSLY by the projection worker pool (and additionally gated per
+/// doc-type `kind` by [`kind_is_vector_indexed`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct IndexTargetSet {
+    fts: bool,
+    vector: bool,
+}
+
+/// EXP-S (0.8.14 Slice 5) — the `row_kind -> index-target set` dispatch
+/// (ADR-0.8.14 §D2), and the OPP-12 forward-compat seam (ADR-0.8.14 §D5(a) /
+/// ledger `TC-1`).
+///
+/// This is deliberately a per-kind LOOKUP rather than branching inlined at each
+/// write call-site: it is the single seam a later declarative OPP-12 projection
+/// registry (`dev/design/projection-registry-and-async-embed.md`) would wrap to
+/// populate `row_kind -> {filterable, searchable->FTS (same-txn), searchable->
+/// vector (async)}` without reshaping the substrate. Per D5, EXP-S implements
+/// NO OPP-12 surface here (OPP-12 lands >=0.9.x; re-check at its scheduling) —
+/// this function only records the index-target intent so the async-vs-sync split
+/// (D5(b)) and the per-kind-extensible terminal-cursor readiness (D5(c)) stay
+/// wrappable.
+///
+/// `Leaf` MUST preserve today's behavior exactly: FTS (sync) + vector (async,
+/// gated by `kind_is_vector_indexed`).
+fn index_targets_for_row_kind(row_kind: RowKind) -> IndexTargetSet {
+    match row_kind {
+        // Normal record — identical to pre-EXP-S behavior.
+        RowKind::Leaf => IndexTargetSet { fts: true, vector: true },
+        // Coverage/summary rows — searchable and embeddable.
+        RowKind::Coverage => IndexTargetSet { fts: true, vector: true },
+        // Graph structural rows — lexically searchable, not embedded.
+        RowKind::Graph => IndexTargetSet { fts: true, vector: false },
+    }
+}
+
+/// EXP-S (0.8.14 Slice 5, D2/D5) — apply the per-`row_kind` index-target
+/// dispatch for one just-inserted canonical node row (write_cursor `cursor`).
+///
+/// Preserves the OPP-12-shaped split (D5(b)): FTS is written in THIS
+/// transaction (same-txn `searchable->FTS`); vector work is only *enqueued*
+/// here into `_fathomdb_projection_state` and embedded later, asynchronously,
+/// by the projection worker pool (`searchable->vector`). When the row projects
+/// into no async vector index, its readiness is terminated up-front (D5(c),
+/// per-kind-extensible) so `advance_projection_cursor` can walk past it.
+///
+/// Returns `true` iff async vector work was enqueued (the caller must then
+/// `notify_new_work`). For `RowKind::Leaf` this is behavior-identical to the
+/// pre-EXP-S inline node path.
+fn project_canonical_node_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: &str,
+    row_kind: RowKind,
+) -> rusqlite::Result<bool> {
+    let targets = index_targets_for_row_kind(row_kind);
+    if targets.fts {
+        tx.execute(
+            "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+            params![body, kind, cursor],
+        )?;
+    }
+    let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
+    if enqueue_vector {
+        tx.execute(
+            "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+             VALUES(?1, ?2, 0)
+             ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+            params![kind, cursor],
+        )?;
+    } else {
+        // Never-vector-projected rows terminate the cursor up-front so
+        // `advance_projection_cursor` can advance the readiness watermark.
+        record_projection_terminal(tx, cursor, "up_to_date")?;
+    }
+    Ok(enqueue_vector)
+}
+
 fn commit_batch(
     connection: &mut Connection,
     batch: &[PreparedWrite],
@@ -10025,28 +10208,22 @@ fn commit_batch(
                         params![cursor, logical_id],
                     )?;
                 }
+                // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
+                // `leaf` structural row_kind (a normal record). coverage/graph
+                // rows are written via internal paths (row_kind is a SEPARATE
+                // axis from the doc-type `kind`, and there is no public SDK
+                // surface for it this release). Writing `leaf` explicitly is
+                // value-identical to the column DEFAULT.
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id)
-                     VALUES(?1, ?2, ?3, ?4, ?5)",
-                    params![cursor, kind, body, source_id, logical_id],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str()],
                 )?;
-                tx.execute(
-                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
-                    params![body, kind, cursor],
-                )?;
-                if kind_is_vector_indexed(&tx, kind).unwrap_or(false) {
-                    tx.execute(
-                        "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
-                         VALUES(?1, ?2, 0)
-                         ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
-                        params![kind, cursor],
-                    )?;
-                } else {
-                    // Non-vector-indexed nodes will never be projected,
-                    // so terminate the cursor up-front to let
-                    // `advance_projection_cursor` walk past it.
-                    record_projection_terminal(&tx, cursor, "up_to_date")?;
-                }
+                // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
+                // this is behavior-identical to the pre-EXP-S inline path: FTS
+                // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
+                // else the cursor is terminated up-front.
+                project_canonical_node_row(&tx, cursor, kind, body, RowKind::Leaf)?;
             }
             (
                 PreparedWrite::Edge {
