@@ -1670,20 +1670,46 @@ fn rerank(
 // does NOT change `embed()`'s default pooling. This also closes the standing
 // "Python embed cannot select CLS pooling" exposure gap.
 
-/// Process-wide, lazily-initialized CLS-pooled default embedder. `None` once a
-/// load has been attempted and failed (no cached weights + no network) —
-/// memoized so a failed load is not retried on every call. Mirrors
-/// `reranker_singleton` in the engine.
+/// Memoize the result of `init` in `cell`, caching **only on success**.
+///
+/// fix-1 finding 2: the previous CLS-embedder singleton stored
+/// `Option<CandleBgeEmbedder>` and initialized it with `init().ok()`, so a
+/// *transient* load failure (cache miss + no network) was cached as `None`
+/// forever and every later call — even after connectivity returned — reported
+/// the same "unavailable" error and never retried. This helper instead returns
+/// the real error on failure and leaves `cell` empty, so the next call retries;
+/// a value is stored only when init succeeds. On a lost init race the loser's
+/// value is dropped and the winner's `'static` ref is returned.
+#[allow(dead_code)] // used under `default-embedder`; exercised directly by unit tests
+fn get_or_try_init<T, E>(
+    cell: &'static std::sync::OnceLock<T>,
+    init: impl FnOnce() -> Result<T, E>,
+) -> Result<&'static T, E> {
+    if let Some(v) = cell.get() {
+        return Ok(v);
+    }
+    let v = init()?;
+    Ok(cell.get_or_init(|| v))
+}
+
+/// Process-wide, lazily-initialized CLS-pooled default embedder. Loaded on
+/// first use and memoized **on success only** (via [`get_or_try_init`]): a
+/// failed load surfaces the real [`EmbedderLoadError`] and is NOT cached, so a
+/// later call retries. Unlike the engine's `reranker_singleton` (which caches a
+/// `None`), this preserves the ability to recover once weights become reachable.
+///
+/// [`EmbedderLoadError`]: fathomdb_embedder::loader::EmbedderLoadError
 #[cfg(feature = "default-embedder")]
-fn cls_embedder_singleton() -> Option<&'static fathomdb_embedder::CandleBgeEmbedder> {
-    static CELL: std::sync::OnceLock<Option<fathomdb_embedder::CandleBgeEmbedder>> =
+fn cls_embedder_singleton() -> Result<
+    &'static fathomdb_embedder::CandleBgeEmbedder,
+    fathomdb_embedder::loader::EmbedderLoadError,
+> {
+    static CELL: std::sync::OnceLock<fathomdb_embedder::CandleBgeEmbedder> =
         std::sync::OnceLock::new();
-    CELL.get_or_init(|| {
-        fathomdb_embedder::CandleBgeEmbedder::new()
-            .map(|e| e.with_pooling(fathomdb_embedder::Pooling::Cls))
-            .ok()
+    get_or_try_init(&CELL, || {
+        Ok(fathomdb_embedder::CandleBgeEmbedder::new()?
+            .with_pooling(fathomdb_embedder::Pooling::Cls))
     })
-    .as_ref()
 }
 
 /// Embed many texts with the pinned default bge-small weights using **CLS
@@ -1706,10 +1732,11 @@ fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<
     if texts.is_empty() {
         return Ok(Vec::new());
     }
-    let embedder = cls_embedder_singleton().ok_or_else(|| {
-        EmbedderNotConfiguredError::new_err(
-            "default embedder weights unavailable (cache miss + no network)",
-        )
+    let embedder = cls_embedder_singleton().map_err(|e| {
+        // fix-1 finding 2: surface the REAL loader error (e.g. checksum
+        // mismatch, cache I/O, dimension drift) instead of flattening every
+        // failure to a generic "cache miss + no network" string.
+        EmbedderNotConfiguredError::new_err(format!("default embedder weights unavailable: {e}"))
     })?;
     // Release the GIL for the (pure CPU/GPU compute) forward pass, and wrap in
     // `catch_unwind` so the never-panic FFI contract holds even though the
@@ -1852,5 +1879,28 @@ mod tests {
         // bytes-derived input.
         let valid_high_unicode = "\u{FFFD}";
         assert!(validate_ffi_string(valid_high_unicode).is_ok());
+    }
+
+    // fix-1 finding 2: the CLS-embedder singleton must NOT cache a failed load.
+    // `cls_embedder_singleton` itself is `#[cfg(feature = "default-embedder")]`
+    // and drives a real model load, so we test the caching contract through the
+    // feature-agnostic helper it is built on.
+    #[test]
+    fn get_or_try_init_caches_only_on_success() {
+        static CELL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+        // A failed init returns the real error and leaves the cell empty so the
+        // next call retries (the exact regression finding 2 flags).
+        let err = get_or_try_init::<u32, &str>(&CELL, || Err("transient")).unwrap_err();
+        assert_eq!(err, "transient");
+        assert!(CELL.get().is_none(), "a failed init must not be cached");
+
+        // A subsequent success is stored and returned.
+        let v = get_or_try_init::<u32, &str>(&CELL, || Ok(7)).unwrap();
+        assert_eq!(*v, 7);
+
+        // Once cached, the init closure is never run again.
+        let v2 = get_or_try_init::<u32, &str>(&CELL, || panic!("must not re-init")).unwrap();
+        assert_eq!(*v2, 7);
     }
 }

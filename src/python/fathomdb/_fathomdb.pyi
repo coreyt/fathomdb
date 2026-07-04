@@ -310,6 +310,19 @@ def rerank(
     ...
 
 
+def embed_batch_cls(texts: list[str]) -> list[list[float]]:
+    """V-3 dense-encoder path — CLS-pooled batch embed of ``texts``.
+
+    Embeds each string with the pinned default bge-small weights using **CLS
+    pooling** + L2-normalization (distinct from ``Engine.embed()``, which uses
+    the engine's default Mean pooling), honoring ``FATHOMDB_EMBED_DEVICE``.
+    Returns one ``list[float]`` per input, in input order; an empty input list
+    returns ``[]``. Requires a wheel built with the ``default-embedder`` (or
+    ``embed-cuda``) feature; otherwise raises ``EmbedderNotConfiguredError``.
+    """
+    ...
+
+
 def force_panic_for_test() -> None: ...
 
 class EngineError(Exception): ...
