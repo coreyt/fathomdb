@@ -1,0 +1,56 @@
+{
+  "slice": "0.8.14-slice-25-fix-1",
+  "task": "codex §9 BLOCK fix-1 on the gpu-rerank merge (embed_batch_cls singleton + .pyi stub)",
+  "branch": "slice-25-20260704T033943Z",
+  "baseline_sha": "48517073",
+  "head_sha": "ce01f885bc96aecb3dccd8a1f0f84d595047350d",
+  "status": "COMPLETE",
+  "manifest_bump": false,
+  "commits": [
+    {
+      "sha": "ce01f885bc96aecb3dccd8a1f0f84d595047350d",
+      "summary": "fix(fathomdb-py): CLS embedder singleton retries + surfaces real load error; add embed_batch_cls .pyi stub",
+      "files": [
+        "src/rust/crates/fathomdb-py/src/lib.rs",
+        "src/python/fathomdb/_fathomdb.pyi"
+      ]
+    }
+  ],
+  "findings": {
+    "finding_1": {
+      "severity": "medium",
+      "verdict": "REFUTED — no change",
+      "detail": "CLS helpers (cls_embedder_singleton, embed_batch_cls_impl) ARE already #[cfg(feature=\"default-embedder\")]-gated; the no-default-features path uses the separate #[cfg(not(feature=\"default-embedder\"))] stub. `cargo check -p fathomdb-py --no-default-features` exits 0, confirming the opt-in path builds without the CLS/embedder code."
+    },
+    "finding_2": {
+      "severity": "medium",
+      "verdict": "FIXED",
+      "detail": "cls_embedder_singleton cached Option<CandleBgeEmbedder> in a OnceLock via .ok(), so a transient load failure was memoized as None forever and embed_batch_cls_impl flattened every failure to 'cache miss + no network'. Extracted a feature-agnostic get_or_try_init<T,E>(cell, init) helper that memoizes ONLY on success: a failed init returns the real EmbedderLoadError and leaves the OnceLock empty so the next call retries. cls_embedder_singleton now returns Result<&'static CandleBgeEmbedder, EmbedderLoadError>; embed_batch_cls_impl surfaces that real error via format!(\"default embedder weights unavailable: {e}\"). Panic boundary (catch_unwind) and the successful CLS path are byte-identical.",
+      "test": "get_or_try_init_caches_only_on_success (unit test, runs under default `cargo test -p fathomdb-py --lib`) proves a failed init is not cached, a subsequent success is memoized, and the init closure is not re-run after caching."
+    },
+    "finding_3": {
+      "severity": "medium",
+      "verdict": "FIXED",
+      "detail": "Added the missing embed_batch_cls declaration to src/python/fathomdb/_fathomdb.pyi (placed between rerank(...) and force_panic_for_test()): `def embed_batch_cls(texts: list[str]) -> list[list[float]]` with a docstring noting the CLS-pooled batch-embed path, empty-list -> [] behavior, FATHOMDB_EMBED_DEVICE honoring, and the default-embedder/embed-cuda feature requirement (raises EmbedderNotConfiguredError otherwise). Signature verified against fathomdb-py/src/lib.rs #[pyfunction] fn embed_batch_cls(py, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>>."
+    }
+  },
+  "gates": {
+    "cargo clippy --workspace --all-targets": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo check -p fathomdb-py --no-default-features": 0
+  },
+  "supplemental_verification": {
+    "note": "fathomdb-py `default` features are empty, so the workspace gates do NOT compile the default-embedder-gated CLS code. Ran extra feature-on checks to confirm the fix path compiles cleanly and the test passes.",
+    "cargo check -p fathomdb-py --features default-embedder": 0,
+    "cargo clippy -p fathomdb-py --features default-embedder --all-targets": 0,
+    "cargo test -p fathomdb-py --lib get_or_try_init": 0
+  },
+  "constraints_honored": {
+    "additive_commits_only": true,
+    "no_manifest_bump": true,
+    "no_maturin_or_pip_from_worktree": true,
+    "scope_limited_to_singleton_error_handling_and_pyi_stub": true,
+    "reranker_engine_schema_feature_wiring_untouched": true
+  },
+  "notes": "The prompt file dev/plans/prompts/0.8.14-slice-25-fix-1.md was NOT present in the worktree; proceeded from the mandate text, which contained the full spec. cargo fmt pre-commit hook reformatted the cls_embedder_singleton return-type signature on first commit attempt; re-committed after `cargo fmt -p fathomdb-py`. Ready for codex re-review + cherry-pick by the orchestrator."
+}

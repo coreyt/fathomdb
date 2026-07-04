@@ -1,0 +1,2076 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f2b49-64f5-74e3-9803-93e2595db1e4
+--------
+user
+You are re-reviewing FathomDB 0.8.14 Slice 25 (gpu-rerank merge) after a fix-1 pass. codex §9 re-verdict per orchestration.md §3/§6.
+
+Branch: slice-25-20260704T033943Z, HEAD ce01f885bc96aecb3dccd8a1f0f84d595047350d.
+Fix-1 baseline (prior head): 48517073.
+
+IMPORTANT sandbox tip: earlier your sandbox blocked `git` and you diffed against stale GitHub snapshots, which caused a MISREAD (you claimed cls_embedder_singleton was compiled unconditionally; it is actually `#[cfg(feature="default-embedder")]`-gated at fathomdb-py/src/lib.rs:1677, and `cargo check -p fathomdb-py --no-default-features` exits 0). Read the CURRENT LOCAL tree directly (the files at HEAD in this worktree), not GitHub. Verify cfg attributes on the LINE ABOVE each function.
+
+Your prior verdict was BLOCK with 3 findings:
+1. [high] no-feature py build broken by unguarded CLS helper — this was REFUTED (the helper IS cfg-gated; no-default-features builds). Confirm from the current tree that `cls_embedder_singleton` and `embed_batch_cls_impl` carry `#[cfg(feature="default-embedder")]` (with a `#[cfg(not(...))]` fallback). This should be a non-finding now.
+2. [medium] the singleton cached `Option` via `.ok()`, permanently poisoning on transient failure + misreporting the cause.
+3. [medium] `embed_batch_cls` exported from `__init__.py` but missing from `_fathomdb.pyi`.
+
+The fix-1 commit is ce01f885. Re-review focus (confirm 2 & 3 are ACTUALLY resolved; no regression):
+- **Finding 2:** the fix replaced `OnceLock<Option<..>>`+`.ok()` with a `get_or_try_init<T,E>(cell, init)` helper that memoizes ONLY on success; `cls_embedder_singleton` now returns `Result<&'static CandleBgeEmbedder, EmbedderLoadError>` and a failed load returns the REAL error + leaves the cell empty to retry; `embed_batch_cls_impl` surfaces that error. Verify: (a) failures are no longer permanently cached (retry works); (b) the real loader error is surfaced (not flattened to "cache miss + no network"); (c) the success path + CLS pooling + the catch_unwind panic boundary are unchanged; (d) the new unit test `get_or_try_init_caches_only_on_success` genuinely proves success-only memoization.
+- **Finding 3:** confirm `_fathomdb.pyi` now declares `embed_batch_cls` with a signature matching the `#[pyfunction]` in lib.rs.
+- **Regression:** opt-in feature wiring, reranker, engine/schema all untouched by fix-1 (fix-1 should touch only fathomdb-py/src/lib.rs + _fathomdb.pyi).
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK` header; `## Addressed` section; findings (if any) as `### N. [sev] title` + Refs + explanation; then "What passed on inspection" + "Reviewer process notes". Sandbox is read-only; do NOT write the verdict file.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+Reviewing the current local worktree at `ce01f885` and checking the specific fix-1 claims against the files on disk. I’m starting with the repo memory/invariants, then I’ll inspect `fathomdb-py/src/lib.rs` and `_fathomdb.pyi` directly and verify whether anything outside those files changed.
+exec
+/bin/bash -lc "pwd && ls -1 && sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ exited 2 in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+sed: can't read MEMORY.md: No such file or directory
+
+codex
+`MEMORY.md` is not at the worktree root, so I’m locating it explicitly before continuing. After that I’ll inspect the current Python binding implementation and type stub line-by-line rather than relying on any GitHub snapshot.
+exec
+/bin/bash -c 'ls -la /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 44
+drwxrwxr-x 11 coreyt coreyt 4096 Jul  3 22:39 .
+drwxrwxr-x  3 coreyt coreyt 4096 Jul  3 22:39 ..
+drwxrwxr-x  4 coreyt coreyt 4096 Jul  3 22:39 fathomdb
+drwxrwxr-x  4 coreyt coreyt 4096 Jul  3 22:39 fathomdb-cli
+drwxrwxr-x  5 coreyt coreyt 4096 Jul  3 22:39 fathomdb-embedder
+drwxrwxr-x  3 coreyt coreyt 4096 Jul  3 22:39 fathomdb-embedder-api
+drwxrwxr-x  5 coreyt coreyt 4096 Jul  3 22:39 fathomdb-engine
+drwxrwxr-x  3 coreyt coreyt 4096 Jul  3 22:39 fathomdb-napi
+drwxrwxr-x  3 coreyt coreyt 4096 Jul  3 22:39 fathomdb-py
+drwxrwxr-x  4 coreyt coreyt 4096 Jul  3 22:39 fathomdb-query
+drwxrwxr-x  5 coreyt coreyt 4096 Jul  3 22:39 fathomdb-schema
+
+exec
+/bin/bash -c 'ls -la ..' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 28
+drwxrwxr-x  7 coreyt coreyt 4096 Jul  3 22:39 .
+drwxrwxr-x 33 coreyt coreyt 4096 Jun 29 21:49 ..
+drwxrwxr-x 11 coreyt coreyt 4096 Jun 29 22:23 0.5.1-memex-build
+drwxrwxr-x 17 coreyt coreyt 4096 Jun 30 18:12 0.8.11.2
+drwxrwxr-x 12 coreyt coreyt 4096 Jun 30 20:23 0.8.12-gpu-rerank
+drwxrwxr-x 13 coreyt coreyt 4096 Jul  3 22:40 0.8.14-slice-25-20260704T033943Z
+drwxrwxr-x 12 coreyt coreyt 4096 Jul  3 15:47 tooling-mermaid-renderer
+
+exec
+/bin/bash -c 'ls -la ../..' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 132
+drwxrwxr-x 33 coreyt coreyt 4096 Jun 29 21:49 .
+drwxr-x--- 42 coreyt coreyt 4096 Jul  3 22:36 ..
+drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 7thplacenw-client
+drwxrwxr-x 17 coreyt coreyt 4096 Jun 26 14:37 ado-mcp
+drwxrwxr-x 24 coreyt coreyt 4096 Jun 28 21:23 airlock
+drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 armada
+drwxrwxr-x 15 coreyt coreyt 4096 Mar 30 19:14 bosun
+drwxrwxr-x 10 coreyt coreyt 4096 Mar 30 19:14 coral
+drwxrwxr-x  9 coreyt coreyt 4096 Mar 30 19:14 cotudes
+drwxrwxr-x  7 coreyt coreyt 4096 Mar 30 19:14 cpptudes
+drwxrwxr-x  3 coreyt coreyt 4096 Mar 30 19:14 dependency-scout
+drwxrwxr-x 20 coreyt coreyt 4096 Jun 12 11:43 dicom-de-id
+drwxrwxr-x  2 coreyt coreyt 4096 Jun  8 15:13 dicom-de-id-worktrees
+drwxrwxr-x 28 coreyt coreyt 4096 Jul  3 15:55 fathomdb
+drwxrwxr-x  7 coreyt coreyt 4096 Jul  3 22:39 fathomdb-worktrees
+drwxrwxr-x  8 coreyt coreyt 4096 Mar 30 19:14 graph-ir
+drwxrwxr-x 12 coreyt coreyt 4096 Mar 30 19:14 graph-ir-tools
+drwxrwxr-x  9 coreyt coreyt 4096 Jun 26 14:37 libavoided-js
+drwxrwxr-x  9 coreyt coreyt 4096 Jun 27 18:02 local
+drwxrwxr-x 12 coreyt coreyt 4096 Mar 30 19:14 lookout
+drwxrwxr-x 11 coreyt coreyt 4096 Mar 30 19:14 margie
+drwxrwxr-x  5 coreyt coreyt 4096 Jun  2 05:51 md-render
+drwxrwxr-x 25 coreyt coreyt 4096 Jul  3 12:13 memex
+drwxrwxr-x  4 coreyt coreyt 4096 Jul  3 19:07 memex-worktrees
+drwxrwxr-x 18 coreyt coreyt 4096 Jun  6 17:00 mesh-seam-ripper
+drwxrwxr-x  8 coreyt coreyt 4096 Jun 28 19:28 monospace-design-tui
+drwxrwxr-x 16 coreyt coreyt 4096 Mar 30 19:14 one-0-one
+drwxrwxr-x 10 coreyt coreyt 4096 Mar 30 19:14 ros2-igus-rebel
+drwxrwxr-x  7 coreyt coreyt 4096 Mar 30 19:14 schooner
+drwxrwxr-x  2 coreyt coreyt 4096 Jun  2 09:53 temp
+drwxrwxr-x 19 coreyt coreyt 4096 Apr 15 22:35 wake
+drwxrwxr-x  3 coreyt coreyt 4096 Apr  6 23:40 windchill-llm
+drwxrwxr-x  8 coreyt coreyt 4096 Mar 30 19:14 wopr-markii
+
+exec
+/bin/bash -c "sed -n '1,220p' /home/coreyt/projects/fathomdb/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ exited 2 in 0ms:
+sed: can't read /home/coreyt/projects/fathomdb/MEMORY.md: No such file or directory
+
+exec
+/bin/bash -c "sed -n '1,260p' /home/coreyt/projects/fathomdb/AGENTS.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+# AGENTS.md — FathomDB
+
+Operating manual for AI coding agents (Claude Code, Codex, Cursor, Aider, Copilot) working in this repo. Cross-vendor convention. This is the canonical agent-instruction file; **no `CLAUDE.md` is maintained** — Claude Code reads `AGENTS.md` natively.
+
+Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
+
+## 0. System layers — where each rule fits
+
+- **Invariants layer** — this file (front-loaded, cached, ≤300, bullets).
+- **Index layer** — `dev/adr/ADR-0.6.0-decision-index.md`, `dev/interfaces/*.md`. Linked, never inlined.
+- **Retrieval layer** — grep / glob / read / LSP / tree-sitter map on demand. No local vector index.
+- **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
+- **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
+- **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits; **one writer per checkout** — concurrent file-mutating sessions/agents each get their own worktree, or are serialized.
+
+---
+
+## 1. Invariants — read these first
+
+- **Memory first.** Read `MEMORY.md` and the `feedback_*.md` files it points to before planning any change. They encode prior corrections that override default behavior.
+- **ADRs are authoritative.** Decisions live in `dev/adr/`. Index: `dev/adr/ADR-0.6.0-decision-index.md`. Do not contradict an accepted ADR; propose a successor instead.
+- **TDD is mandatory.** Failing test first; red → green → refactor. Mechanical version bumps and renames are the only exception. (`feedback_tdd.md`)
+- **Stale > missing.** A wrong comment, doc, or ADR is more harmful than its absence. If you cannot maintain something, delete it.
+- **Public surface is contract.** Anything in `dev/interfaces/` or `pub` Rust APIs is a contract; changes need an ADR or interface-doc update in the same PR.
+
+## 2. Repo shape
+
+- **Rust workspace** under `src/rust/crates/` — 7 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`.
+- **Python bindings** under `src/python/` (package: `fathomdb`).
+- **TypeScript bindings** under `src/ts/`.
+- **Public docs** under `docs/` (MkDocs-built).
+- **Internal engineering docs** under `dev/`: `adr/`, `interfaces/`, `progress/`, `plans/`, `tmp/`.
+
+## 3. Build / test / lint commands
+
+Use the typed dev-loop verbs (Phase 2). Each emits **concise output on pass, structured diagnostic on fail**, with full output spilled to `/tmp/fathomdb-agent-<verb>-<pid>.log` when capped.
+
+| Verb      | Script                         | Purpose                                                           |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| build     | `./scripts/agent-build.sh`     | Compile workspace (Rust + Python install + TS build if installed) |
+| lint      | `./scripts/agent-lint.sh`      | clippy + ruff + markdownlint + prettier --check + lychee          |
+| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit                              |
+| test      | `./scripts/agent-test.sh`      | cargo test + pytest                                               |
+| verify    | `./scripts/agent-verify.sh`    | lint → typecheck → test (short-circuits on first fail)            |
+
+Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, and root metadata. Pre-existing legacy under `dev/adr/`, `dev/design/`, `dev/agents/`, `dev/deps/`, etc. is excluded — clean up incrementally when touching those files. Auto-fix: `npm run format:md` (prettier --write) + `./node_modules/.bin/markdownlint-cli2 --fix`.
+
+Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
+
+The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`. Long-run test variants (e.g. AC-021 60 s window, AC-059b ~1000-iteration cursor-race fixture) are exercised only via `scripts/check.sh` with `AGENT_LONG=1`; `agent-verify.sh` skips them for runtime budget.
+
+### One-time setup
+
+- Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
+- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without this, the Python lint/typecheck/test steps emit a skip notice and pass without exercising.
+- TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
+- Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2` + `prettier`. `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
+
+## 4. Verification ordering
+
+Run in latency order; short-circuit on first failure:
+
+1. **lint** (clippy / ruff) — fastest signal, catches most style + correctness issues
+2. **typecheck** (cargo check / pyright / tsc) — catches type errors before tests run them
+3. **unit tests** (`agent-test.sh`)
+4. **integration tests** — opt-in, gated by feature/env flag; not part of `agent-verify`
+
+Do not paraphrase, summarize, or shorten compiler diagnostics — pass them through unaltered. Rust diagnostics in particular are best-in-class; Anthropic's RustAssistant numbers depend on them being unaltered.
+
+## 5. Test discipline
+
+- **Failing test first.** Write the failing test, commit it (or stage it visible to the reviewer), then implement.
+- **Test files are read-only during fix-to-spec.** Do not edit a test to make a failing build pass; fix the code.
+- **Property-based tests required** for codec / projection / recovery / round-trip layers. Rust: `proptest` (dev-dep on `fathomdb-schema`, `fathomdb-engine`, `fathomdb-query`). Python: `hypothesis` (in `[dev]` and `[test]` optional deps; install via `pip install -e 'src/python[dev]'`). Scaffolds: `src/rust/crates/<crate>/tests/property_template.rs` and `src/python/tests/test_property_template.py` — replace the trivial property with real round-trip / invariant assertions when domain types land.
+- **No agent-generated oracles.** Tests must encode human intent; do not regenerate snapshot or golden tests autonomously.
+- **Retry budget.** If you hit the same failure mode twice, stop. Re-read the failing test, the relevant ADR, and the relevant `feedback_*.md`. Do not loop a third time without re-thinking; if necessary, `/clear` and reset.
+
+## 6. Comment policy
+
+- **Public-API docstrings:** required for `pub` Rust items, top-level Python functions/classes, exported TS symbols. Document contract: inputs, outputs, errors, panics, invariants.
+- **Internal helpers:** no docstrings unless behavior is non-obvious. Names should carry the meaning.
+- **Inline comments:** why / invariants / hazards only. Never restate what code does. Never reference the current task or PR. (Per CLAUDE-default rules and `feedback_reliability_principles.md`.)
+- **Stale comment > delete.** If a comment no longer matches the code, delete it; do not "update later."
+
+## 7. Subagent rules
+
+- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread _is_ the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Releases:** main thread plans; delegate coding to `implementer` (in worktree); request diff review from `code-reviewer`. (`feedback_orchestrate_releases.md`)
+- **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
+- **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
+- **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **One writer per checkout — NEVER share a checkout across concurrent file-mutating sessions or subagents.** Two writers in one working tree race on `HEAD`/branch-switch/uncommitted edits — commits land on the wrong branch and one writer's edits surface on another's. Each concurrent writer MUST have its own git worktree (cut off `origin/main`); if you can't isolate, **serialize** (run one, let it finish + verify, then the next). Read-only subagents (audit, search, review) MAY share a checkout and run concurrently. After any concurrent run, verify-from-git and push **explicit branch refs** (HEAD-independent), never relying on current HEAD. (incident 2026-06-29)
+- **Valid agent types (Claude Code `subagent_type`):** `claude`, `claude-code-guide`, `Explore`, `general-purpose`, `implementer`, `Plan`, `statusline-setup`. Never guess or invent a type — if none fits, omit `subagent_type` (defaults to `claude`). A wrong type is a hard error that cascades to every child.
+- **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (agent-def anti-chaining, main-thread-owned worktrees, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the spawn discipline.
+
+## 8. Iteration discipline
+
+- **Cap retry-budget at ~2 same-issue corrections.** Beyond that, stop, externalize plan to `dev/progress/0.6.0.md`, `/clear`, restart with the plan in front of you.
+- **Compact-aware.** Anything that must survive compaction goes on disk: ADRs, progress logs, plan files, MEMORY entries. Do not rely on chat to remember.
+- **Front-load invariants, end-load tasks.** When prompting yourself or constructing context, put rules near the top, the immediate task near the bottom (lost-in-the-middle).
+
+## 9. Pointers
+
+- **Decisions:** `dev/adr/ADR-0.6.0-decision-index.md`
+- **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
+- **Method on-ramp:** `dev/agent-harness-bootstrap-prompt.md` (portable distillation — the plan-vs-runbook split, 7 principles, the operating loop)
+- **Orchestration mechanics:** `dev/design/orchestration.md` (cross-release runbook: Claude+Codex spawn discipline, § 1.6 preflight gate, § 13 failure catalog)
+- **Preflight gate:** `scripts/preflight.sh` (run before every worktree spawn — stale-base + dep-CLOSED + disk)
+- **Plan / slice templates:** `dev/plans/prompts/PLAN-TEMPLATE.md` (per-release plan + authoring checklist) · `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` (per-slice prompt)
+- **Progress log:** `dev/progress/0.6.0.md`
+- **Plans:** `dev/plans/`
+- **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
+- **Memory:** `MEMORY.md` (auto-loaded into Claude Code session start)
+
+## 10. Forbidden patterns
+
+Pulled from MEMORY `feedback_*.md`. Violations are correctness bugs, not style preferences.
+
+- **No mocking the database.** Integration tests hit a real database. (`feedback_tdd.md`-adjacent; prior incident.)
+- **No skipping hooks.** Never `--no-verify`, never `--no-gpg-sign` unless explicitly approved.
+- **No backwards-compatibility shims** in pre-1.0 rewrites.
+- **No data migrations** in managed-vec projection releases. (`feedback_no_data_migration.md`)
+- **No `c_char` hardcoded as `i8` or `u8`** at C interop boundaries. (`feedback_cross_platform_rust.md`)
+- **No `pip install` + manual `cargo build` + `cp`** for Python native modules — use `pip install -e python/`. (`feedback_python_native_build.md`)
+- **No `yaml.safe_load` as workflow validator** — use `actionlint`. (`feedback_workflow_validation.md`)
+- **No "fix in 0.7"** for reliability bugs. Net-negative LoC on reliability releases. (`feedback_reliability_principles.md`)
+- **No "green CI = done"** for releases — install the published wheel and run end-to-end open/close/exit before declaring done. (`feedback_release_verification.md`)
+- **No shared checkout across concurrent writers.** Never run more than one file-mutating session/subagent in the same working tree at once — worktree-isolate each writer (off `origin/main`) or serialize them (§7). (incident 2026-06-29)
+- **Vector identity belongs to the embedder.** (`project_vector_identity_invariant.md`)
+
+## 11. Permission model (for the Claude Code harness)
+
+`.claude/settings.json` enforces a 3-tier model:
+
+- **read-only** (auto-allowed): `Read`, `Grep`, `Glob`, plus `Bash` for the agent-loop verbs and read-only git/cargo/uv operations.
+- **workspace-write** (auto-allowed): `Edit`, `Write` within the repo; `git add`, `git commit`, `git restore`.
+- **escalated** (denied or asked): destructive ops (`rm`, `mv`, `git reset --hard`, `git clean`); network beyond the package registries (`curl`, `wget`); `git push` requires confirmation.
+
+If the agent needs an op outside this model, surface it to the user; do not look for workarounds.
+
+## 12. Working with this file
+
+- This file should stay ≤300 lines. If it grows, link out to a scoped doc and reference it.
+- Per-crate `AGENTS.md` files are **not maintained** until each crate has non-scaffold content. Stale > missing.
+- Update this file in the same PR as any change that invalidates one of its rules.
+
+codex
+I’ve got the current repo instructions from the sibling checkout, but `MEMORY.md` is not in the expected root path. I’m locating it explicitly now, then I’ll move to the exact lines around the cfg gates, singleton init helper, panic boundary, and the stub export.
+exec
+/bin/bash -c 'ls -la /home/coreyt/projects/fathomdb' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 380
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  3 15:55 .
+drwxrwxr-x 33 coreyt coreyt   4096 Jun 29 21:49 ..
+drwxrwxr-x  3 coreyt coreyt   4096 Jun 28 19:16 .cache
+drwxrwxr-x  7 coreyt coreyt   4096 Jul  2 14:17 .claude
+-r--r--r--  1 coreyt coreyt      0 May 29 16:05 .codex
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  3 22:39 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  1 07:35 .github
+-rw-rw-r--  1 coreyt coreyt   4024 Jul  3 12:23 .gitignore
+drwxrwxr-x  3 coreyt coreyt   4096 Jun  5 21:41 .hypothesis
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  3 12:18 .ledgerwatch
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 .local
+-rw-rw-r--  1 coreyt coreyt   1181 May 21 17:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jun 29 10:33 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 May 21 17:13 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 May 21 17:13 .prettierrc.json
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:14 .pytest_cache
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 13 22:02 .ruff_cache
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  1 16:05 .venv
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  3 23:01 .wake
+-rw-rw-r--  1 coreyt coreyt  13373 Jun 29 21:11 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  1 07:35 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111562 Jul  1 07:35 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jun 29 10:33 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Apr 10 07:33 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jun 26 14:32 README.md
+drwxrwxr-x  3 coreyt coreyt   4096 May 27 15:49 data
+-rw-rw-r--  1 coreyt coreyt    120 May 21 17:13 deny.toml
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  3 20:29 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jun 27 08:19 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  2 14:14 experiments
+drwxrwxr-x  3 coreyt coreyt   4096 Mar 30 19:15 go
+-rw-rw-r--  1 coreyt coreyt   1783 Jun 29 10:33 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jun  4 18:14 mkdocs.yml
+drwxrwxr-x 85 coreyt coreyt   4096 Jul  3 15:56 node_modules
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  3 15:56 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  3 15:55 package.json
+drwxrwxr-x  9 coreyt coreyt   4096 Jun 13 10:42 python
+-rw-rw-r--  1 coreyt coreyt     66 May 21 17:13 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 May 21 17:13 rustfmt.toml
+drwxrwxr-x 10 coreyt coreyt   4096 Jun 29 21:11 scripts
+drwxrwxr-x 17 coreyt coreyt   4096 Jun 28 22:25 site
+drwxrwxr-x  6 coreyt coreyt   4096 Jun  4 14:57 src
+drwxrwxr-x  8 coreyt coreyt   4096 May 25 10:48 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 26 14:32 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 14:14 tests
+drwxrwxr-x  3 coreyt coreyt   4096 May 21 17:13 tools
+drwxrwxr-x  5 coreyt coreyt   4096 May 21 17:13 typescript
+
+exec
+/bin/bash -c "ls -la /home/coreyt/projects/fathomdb/dev | sed -n '1,220p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 736
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  3 20:29 .
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  3 15:55 ..
+-rw-rw-r--  1 coreyt coreyt    467 Jun 28 19:52 .env.eval
+-rw-rw-r--  1 coreyt coreyt  73313 Jul  2 16:29 DOC-INDEX.md
+-rw-rw-r--  1 coreyt coreyt   1082 Jun 26 14:32 README.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 acceptance-rowsets
+-rw-rw-r--  1 coreyt coreyt 104171 Jun 29 10:33 acceptance.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  3 18:55 adr
+-rw-rw-r--  1 coreyt coreyt  10576 Jun 29 10:33 agent-harness-bootstrap-prompt.md
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  2 14:17 agent-tools
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 agents
+-rw-rw-r--  1 coreyt coreyt  51431 Jun 26 14:32 architecture.md
+drwxrwxr-x  6 coreyt coreyt   4096 Jun 26 22:35 archive
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 corpus-creation
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 corpus-survey
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 deps
+drwxrwxr-x  5 coreyt coreyt   4096 Jul  3 15:45 design
+-rw-rw-r--  1 coreyt coreyt  67896 Jun 29 10:33 experiments-ledger.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 interface-inventory
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 interfaces
+-rw-rw-r--  1 coreyt coreyt 142279 Jun 26 14:32 learnings.md
+-rw-rw-r--  1 coreyt coreyt  12825 Jun 26 14:32 memex-note-on-0.6.0.md
+-rw-rw-r--  1 coreyt coreyt  10260 Jun 26 14:32 needs.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  2 16:29 notes
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 perf-history
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  3 15:45 plans
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 profiling
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 progress
+drwxrwxr-x  3 coreyt coreyt   4096 Jun 28 21:34 prototypes
+drwxrwxr-x  4 coreyt coreyt   4096 Jun 26 14:32 release
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 releases
+-rw-rw-r--  1 coreyt coreyt  30522 Jun 29 10:33 requirements.md
+drwxrwxr-x  5 coreyt coreyt   4096 Jul  2 16:39 research
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 roadmap
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:31 scripts
+-rw-rw-r--  1 coreyt coreyt  20902 Jun 26 14:32 security-review.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  3 20:29 steward
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 26 14:32 templates
+-rw-rw-r--  1 coreyt coreyt  21047 Jun 26 14:32 test-plan.md
+-rw-rw-r--  1 coreyt coreyt  13861 Jul  3 12:24 todos-and-considerations-ledger-readme.md
+-rw-rw-r--  1 coreyt coreyt   5387 Jul  3 20:29 todos-and-considerations-ledger.jsonl
+-rw-rw-r--  1 coreyt coreyt      1 Jul  3 20:29 todos-and-considerations-ledger.jsonl.seq
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 tools
+-rw-rw-r--  1 coreyt coreyt  11843 Jun 26 14:32 traceability.md
+drwxrwxr-x  2 coreyt coreyt   4096 Jun 29 10:33 turso-watch
+-rw-rw-r--  1 coreyt coreyt  16528 Jun 29 10:33 update-docs.md
+
+exec
+/bin/bash -c 'ls -la /home/coreyt/projects/fathomdb/dev/agents' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 28
+drwxrwxr-x  2 coreyt coreyt 4096 Jun 26 14:32 .
+drwxrwxr-x 28 coreyt coreyt 4096 Jul  3 20:29 ..
+-rw-rw-r--  1 coreyt coreyt  552 Jun 26 14:32 README.md
+-rw-rw-r--  1 coreyt coreyt 4634 Jun 26 14:32 dep-auditor.md
+-rw-rw-r--  1 coreyt coreyt 3873 Jun 26 14:32 learnings-harvester.md
+-rw-rw-r--  1 coreyt coreyt 3907 Jun 26 14:32 prose-harvester.md
+
+codex
+The sandbox is intermittently rejecting some directory scans, so I’m sticking to simple local reads. I have the repo’s agent rules loaded; next I’m reading the Python binding files and the nearby unit test directly from this worktree to verify the fix behavior and exact exported surface.
+exec
+/bin/bash -c "sed -n '1765,1925p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+/// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
+/// "test-hooks"))` so release wheels built with `--no-default-features`
+/// do not expose it.
+#[cfg(any(test, feature = "test-hooks"))]
+#[pyfunction]
+fn force_panic_for_test() -> PyResult<()> {
+    panic!("force_panic_for_test: AC-067 probe");
+}
+
+// ===== Module =========================================================
+
+// `gil_used = true` preserves current GIL semantics: pyo3 0.28 makes
+// `#[pymodule]` free-threaded by default, but this binding is `abi3-py310`
+// and the whole FFI contract assumes the GIL is held. Opting into
+// free-threading (`gil_used = false`) is a separate, larger correctness
+// campaign — see dev/design/free-threaded-python-value-lift-and-experiments.md.
+#[pymodule(gil_used = true)]
+fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyEngine>()?;
+    m.add_class::<PyWriteReceipt>()?;
+    m.add_class::<PyIngestWithExtractorReceipt>()?;
+    // 0.8.12 Slice 15 (OPP-2) — consolidation receipt.
+    m.add_class::<PyConsolidateReceipt>()?;
+    m.add_class::<PySoftFallback>()?;
+    m.add_class::<PySearchHit>()?;
+    m.add_class::<PySearchResult>()?;
+    // 0.8.8 EXP-OBS (Slice 10) — explanation sidecar types.
+    m.add_class::<PyQueryTrace>()?;
+    m.add_class::<PyPerHitExplain>()?;
+    m.add_class::<PyExplanation>()?;
+    m.add_class::<PyCounterSnapshot>()?;
+    m.add_class::<PyMigrationStepReport>()?;
+    m.add_class::<PyEmbedderIdentity>()?;
+    m.add_class::<PyOpenReport>()?;
+    m.add_class::<PyNodeRecord>()?;
+    m.add_class::<PyOpStoreRow>()?;
+    // Slice 20 — graph traversal result types.
+    m.add_class::<PyExpandedNode>()?;
+    m.add_class::<PySearchExpandResult>()?;
+    m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
+    // Slice 30 — governed read.* native fns (G2/G3).
+    m.add_function(wrap_pyfunction!(read_get, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_collection, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
+    // Slice 35 — G4 read.list with Predicate filter.
+    m.add_function(wrap_pyfunction!(read_list, &m)?)?;
+    // 0.8.11 Slice 40 — unified Filter → read.list backend (#17).
+    m.add_function(wrap_pyfunction!(read_list_filter, &m)?)?;
+    // Slice 20 — G5/G6 graph traversal fns.
+    m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
+    m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
+    // 0.8.2 Slice E2 — standalone rerank over an arbitrary passage list.
+    m.add_function(wrap_pyfunction!(rerank, &m)?)?;
+    m.add_function(wrap_pyfunction!(embed_batch_cls, &m)?)?;
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
+
+    m.add("EngineError", py.get_type::<EngineError>())?;
+    m.add("StorageError", py.get_type::<StorageError>())?;
+    m.add("ProjectionError", py.get_type::<ProjectionError>())?;
+    m.add("VectorError", py.get_type::<VectorError>())?;
+    m.add("KindNotVectorIndexedError", py.get_type::<KindNotVectorIndexedError>())?;
+    m.add("EmbedderError", py.get_type::<EmbedderError>())?;
+    m.add("EmbedderNotConfiguredError", py.get_type::<EmbedderNotConfiguredError>())?;
+    m.add("SchedulerError", py.get_type::<SchedulerError>())?;
+    m.add("OpStoreError", py.get_type::<OpStoreError>())?;
+    m.add("WriteValidationError", py.get_type::<WriteValidationError>())?;
+    m.add("SchemaValidationError", py.get_type::<SchemaValidationError>())?;
+    m.add("OverloadedError", py.get_type::<OverloadedError>())?;
+    m.add("ClosingError", py.get_type::<ClosingError>())?;
+    m.add("DatabaseLockedError", py.get_type::<DatabaseLockedError>())?;
+    m.add("CorruptionError", py.get_type::<CorruptionError>())?;
+    m.add("IncompatibleSchemaVersionError", py.get_type::<IncompatibleSchemaVersionError>())?;
+    m.add("MigrationError", py.get_type::<MigrationError>())?;
+    m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
+    m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
+    m.add("ExtractorError", py.get_type::<ExtractorError>())?;
+    m.add("ConsolidatorError", py.get_type::<ConsolidatorError>())?;
+    m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
+    m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_ffi_string_accepts_plain_ascii() {
+        assert!(validate_ffi_string("hello").is_ok());
+    }
+
+    #[test]
+    fn validate_ffi_string_accepts_non_ascii_utf8() {
+        assert!(validate_ffi_string("héllo 🦀 文字").is_ok());
+    }
+
+    #[test]
+    fn validate_ffi_string_rejects_embedded_nul() {
+        let err = validate_ffi_string("a\0b").unwrap_err();
+        assert!(err.contains("NUL"), "expected NUL diagnostic, got {err:?}");
+    }
+
+    #[test]
+    fn validate_ffi_string_rejects_lone_surrogate() {
+        // The surrogate codepoint U+D800 cannot appear in a Rust &str
+        // (it is not valid UTF-8). The Rust-side helper exists for the
+        // case where the Python layer feeds us the codepoint via an
+        // alternate path; construct it through `char::from_u32`
+        // unchecked... actually `char::from_u32` returns None for
+        // surrogates. The exhaustive guard sits in Python; the Rust
+        // helper documents the rule and remains a runtime check for
+        // bytes-derived input.
+        let valid_high_unicode = "\u{FFFD}";
+        assert!(validate_ffi_string(valid_high_unicode).is_ok());
+    }
+
+    // fix-1 finding 2: the CLS-embedder singleton must NOT cache a failed load.
+    // `cls_embedder_singleton` itself is `#[cfg(feature = "default-embedder")]`
+    // and drives a real model load, so we test the caching contract through the
+    // feature-agnostic helper it is built on.
+    #[test]
+    fn get_or_try_init_caches_only_on_success() {
+        static CELL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+        // A failed init returns the real error and leaves the cell empty so the
+        // next call retries (the exact regression finding 2 flags).
+        let err = get_or_try_init::<u32, &str>(&CELL, || Err("transient")).unwrap_err();
+        assert_eq!(err, "transient");
+        assert!(CELL.get().is_none(), "a failed init must not be cached");
+
+        // A subsequent success is stored and returned.
+        let v = get_or_try_init::<u32, &str>(&CELL, || Ok(7)).unwrap();
+        assert_eq!(*v, 7);
+
+        // Once cached, the init closure is never run again.
+        let v2 = get_or_try_init::<u32, &str>(&CELL, || panic!("must not re-init")).unwrap();
+        assert_eq!(*v2, 7);
+    }
+}
+
+exec
+/bin/bash -c "sed -n '1580,1765p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+        ))
+    })
+}
+
+/// Extract a required finite float `score` from a passage dict.
+fn dict_f64_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<f64> {
+    let v = dict_get(d, key)?.filter(|v| !v.is_none()).ok_or_else(|| {
+        WriteValidationError::new_err(format!("passage missing required field {key:?}"))
+    })?;
+    v.extract::<f64>().map_err(|_| {
+        WriteValidationError::new_err(format!("passage field {key:?} must be a number"))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (query, passages, rerank_depth, alpha=None, pool_n=None))]
+fn rerank(
+    py: Python<'_>,
+    query: &str,
+    passages: &Bound<'_, PyList>,
+    rerank_depth: usize,
+    // 0.8.5 (EXP-0) — CE-blend weight (default 0.3, clamped to [0,1] in the engine)
+    // and reranked-pool size (default = rerank_depth). Omitting both reproduces the
+    // pre-slice α=0.3 blend; `alpha=1.0, pool_n=10` is the measured-parity config.
+    alpha: Option<f64>,
+    pool_n: Option<usize>,
+) -> PyResult<Vec<Py<PyDict>>> {
+    validate_ffi_string_py(query)?;
+
+    // Marshal the passage dicts into `(id, body, score)` tuples. `body` rides the
+    // same FFI string gate as the write path (rejects embedded NUL / lone
+    // surrogate as the typed WriteValidationError).
+    let tuples: Vec<(u64, String, f64)> = passages
+        .iter()
+        .map(|item| {
+            let dict = item
+                .cast::<PyDict>()
+                .map_err(|_| WriteValidationError::new_err("passage must be a dict"))?;
+            let id = dict_u64_required(dict, "id")?;
+            let body = dict_str_required(dict, "body")?;
+            let score = dict_f64_required(dict, "score")?;
+            Ok((id, body, score))
+        })
+        .collect::<PyResult<_>>()?;
+
+    let query = query.to_string();
+    // 0.8.5 (D4): resolve the binding-side defaults — α=0.3, pool_n=rerank_depth.
+    let alpha = alpha.unwrap_or(0.3);
+    let pool_n = pool_n.unwrap_or(rerank_depth);
+    // The helper is pure CPU (no engine handle); it may perform a one-time gated
+    // model load on a cold cache, so release the GIL for the duration.
+    // `catch_unwind` + `AssertUnwindSafe` mirror `call_engine` so the never-panic
+    // contract holds even though the helper returns a Result channel.
+    // E2 fix-1 [P2]: `rust_rerank_passages` now returns `Result<Vec<…>, String>`;
+    // the inner `Err` (non-finite score) surfaces as `WriteValidationError`.
+    let reranked = py
+        .detach(|| {
+            catch_unwind(AssertUnwindSafe(move || {
+                rust_rerank_passages(&query, tuples, rerank_depth, alpha, pool_n)
+            }))
+        })
+        // outer Result: catch_unwind — any panic → PanicException (hard invariant).
+        .map_err(|_| PanicException::new_err("rerank panic (see logs)"))?
+        // inner Result: validation error (non-finite score) → WriteValidationError.
+        .map_err(WriteValidationError::new_err)?;
+
+    reranked
+        .into_iter()
+        .map(|(id, score, ce_score)| {
+            let d = PyDict::new(py);
+            d.set_item("id", id)?;
+            d.set_item("score", score)?;
+            // 0.8.5 — additive CE score; None (Python `None`) outside the reranked pool.
+            d.set_item("ce_score", ce_score)?;
+            Ok(d.unbind())
+        })
+        .collect()
+}
+
+// ===== CLS batch embedder (V-3 dense-encoder GPU path) ================
+//
+// Exposes candle `embed_batch` with `Pooling::Cls` to Python. The stock
+// `PyEngine::embed()` uses the engine's default `Pooling::Mean`; the V-3
+// A0/A3 dense stack (m1_baseline.BGEEncoder) is CLS-pooled + L2-normalized, so
+// routing that harness through `embed()` would silently switch Mean↔CLS and
+// break comparability to V-1. This binding loads the SAME pinned bge-small
+// weights the numpy path loads, pins `Pooling::Cls`, and honors
+// `FATHOMDB_EMBED_DEVICE` (CPU default; `cuda:N` under the `embed-cuda`
+// feature). One padded `(B, L)` forward → the same per-row vectors as B single
+// `embed()` calls (parity-locked in the embedder crate's tests). Additive: it
+// does NOT change `embed()`'s default pooling. This also closes the standing
+// "Python embed cannot select CLS pooling" exposure gap.
+
+/// Memoize the result of `init` in `cell`, caching **only on success**.
+///
+/// fix-1 finding 2: the previous CLS-embedder singleton stored
+/// `Option<CandleBgeEmbedder>` and initialized it with `init().ok()`, so a
+/// *transient* load failure (cache miss + no network) was cached as `None`
+/// forever and every later call — even after connectivity returned — reported
+/// the same "unavailable" error and never retried. This helper instead returns
+/// the real error on failure and leaves `cell` empty, so the next call retries;
+/// a value is stored only when init succeeds. On a lost init race the loser's
+/// value is dropped and the winner's `'static` ref is returned.
+#[allow(dead_code)] // used under `default-embedder`; exercised directly by unit tests
+fn get_or_try_init<T, E>(
+    cell: &'static std::sync::OnceLock<T>,
+    init: impl FnOnce() -> Result<T, E>,
+) -> Result<&'static T, E> {
+    if let Some(v) = cell.get() {
+        return Ok(v);
+    }
+    let v = init()?;
+    Ok(cell.get_or_init(|| v))
+}
+
+/// Process-wide, lazily-initialized CLS-pooled default embedder. Loaded on
+/// first use and memoized **on success only** (via [`get_or_try_init`]): a
+/// failed load surfaces the real [`EmbedderLoadError`] and is NOT cached, so a
+/// later call retries. Unlike the engine's `reranker_singleton` (which caches a
+/// `None`), this preserves the ability to recover once weights become reachable.
+///
+/// [`EmbedderLoadError`]: fathomdb_embedder::loader::EmbedderLoadError
+#[cfg(feature = "default-embedder")]
+fn cls_embedder_singleton() -> Result<
+    &'static fathomdb_embedder::CandleBgeEmbedder,
+    fathomdb_embedder::loader::EmbedderLoadError,
+> {
+    static CELL: std::sync::OnceLock<fathomdb_embedder::CandleBgeEmbedder> =
+        std::sync::OnceLock::new();
+    get_or_try_init(&CELL, || {
+        Ok(fathomdb_embedder::CandleBgeEmbedder::new()?
+            .with_pooling(fathomdb_embedder::Pooling::Cls))
+    })
+}
+
+/// Embed many texts with the pinned default bge-small weights using **CLS
+/// pooling** + L2-normalization, honoring `FATHOMDB_EMBED_DEVICE`. Returns one
+/// `list[float]` per input, in the same order. Distinct from `Engine.embed()`,
+/// which uses the engine's default Mean pooling. Requires a wheel built with
+/// `default-embedder` (or `embed-cuda`); otherwise raises
+/// `EmbedderNotConfiguredError`.
+#[pyfunction]
+fn embed_batch_cls(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    for t in &texts {
+        validate_ffi_string_py(t)?;
+    }
+    embed_batch_cls_impl(py, texts)
+}
+
+#[cfg(feature = "default-embedder")]
+fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    use fathomdb_embedder_api::Embedder;
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let embedder = cls_embedder_singleton().map_err(|e| {
+        // fix-1 finding 2: surface the REAL loader error (e.g. checksum
+        // mismatch, cache I/O, dimension drift) instead of flattening every
+        // failure to a generic "cache miss + no network" string.
+        EmbedderNotConfiguredError::new_err(format!("default embedder weights unavailable: {e}"))
+    })?;
+    // Release the GIL for the (pure CPU/GPU compute) forward pass, and wrap in
+    // `catch_unwind` so the never-panic FFI contract holds even though the
+    // embedder returns a Result channel (mirrors `rerank`).
+    let result = py
+        .detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+                embedder.embed_batch(&refs)
+            }))
+        })
+        .map_err(|_| PanicException::new_err("embed_batch_cls panic (see logs)"))?;
+    result.map_err(|e| EmbedderError::new_err(format!("embed_batch_cls: {e:?}")))
+}
+
+#[cfg(not(feature = "default-embedder"))]
+fn embed_batch_cls_impl(_py: Python<'_>, _texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    Err(EmbedderNotConfiguredError::new_err(
+        "embed_batch_cls requires a wheel built with the `default-embedder` \
+         (or `embed-cuda`) feature",
+    ))
+}
+
+// ===== Test hooks =====================================================
+
+/// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
+
+exec
+/bin/bash -c "sed -n '1,240p' src/rust/crates/fathomdb-py/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ exited 2 in 0ms:
+sed: can't read src/rust/crates/fathomdb-py/python/fathomdb/_fathomdb.pyi: No such file or directory
+
+codex
+I’ve confirmed the current `lib.rs` implementation directly, including the `#[cfg]` placement above the CLS helper and the new success-only init helper. I’m locating the actual stub path in this tree now so I can compare the exported `embed_batch_cls` signature against the `#[pyfunction]` definition, then I’ll do a narrow file-scope regression check.
+exec
+/bin/bash -c 'ls -la src/python/fathomdb' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 104
+drwxrwxr-x 2 coreyt coreyt  4096 Jul  3 22:57 .
+drwxrwxr-x 6 coreyt coreyt  4096 Jul  3 22:39 ..
+-rw-rw-r-- 1 coreyt coreyt  1563 Jul  3 22:39 __init__.py
+-rw-rw-r-- 1 coreyt coreyt 12626 Jul  3 22:57 _fathomdb.pyi
+-rw-rw-r-- 1 coreyt coreyt  1160 Jul  3 22:39 admin.py
+-rw-rw-r-- 1 coreyt coreyt   767 Jul  3 22:39 config.py
+-rw-rw-r-- 1 coreyt coreyt 18189 Jul  3 22:39 engine.py
+-rw-rw-r-- 1 coreyt coreyt  5446 Jul  3 22:39 errors.py
+-rw-rw-r-- 1 coreyt coreyt  6287 Jul  3 22:39 filter.py
+-rw-rw-r-- 1 coreyt coreyt  6079 Jul  3 22:39 graph.py
+-rw-rw-r-- 1 coreyt coreyt  6853 Jul  3 22:39 read.py
+-rw-rw-r-- 1 coreyt coreyt 14746 Jul  3 22:39 types.py
+
+exec
+/bin/bash -c 'ls -la src/python' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 64
+drwxrwxr-x 6 coreyt coreyt  4096 Jul  3 22:39 .
+drwxrwxr-x 6 coreyt coreyt  4096 Jul  3 22:39 ..
+-rw-rw-r-- 1 coreyt coreyt   252 Jul  3 22:39 README.md
+drwxrwxr-x 2 coreyt coreyt  4096 Jul  3 22:39 _typecheck_fixtures
+drwxrwxr-x 2 coreyt coreyt  4096 Jul  3 22:39 eval
+drwxrwxr-x 2 coreyt coreyt  4096 Jul  3 22:57 fathomdb
+-rw-rw-r-- 1 coreyt coreyt  3742 Jul  3 22:39 pyproject.toml
+drwxrwxr-x 2 coreyt coreyt  4096 Jul  3 22:39 tests
+-rw-rw-r-- 1 coreyt coreyt 30922 Jul  3 22:39 uv.lock
+
+exec
+/bin/bash -c 'ls -la src/rust/crates/fathomdb-py' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+total 16
+drwxrwxr-x  3 coreyt coreyt 4096 Jul  3 22:39 .
+drwxrwxr-x 11 coreyt coreyt 4096 Jul  3 22:39 ..
+-rw-rw-r--  1 coreyt coreyt 2651 Jul  3 22:39 Cargo.toml
+drwxrwxr-x  2 coreyt coreyt 4096 Jul  3 22:57 src
+
+exec
+/bin/bash -c "sed -n '1,220p' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+"""Type stubs for the PyO3 extension `fathomdb._fathomdb`.
+
+Mirrors the surface emitted by `src/rust/crates/fathomdb-py/src/lib.rs`.
+Hand-maintained — keep in sync with the binding's `#[pyclass]` /
+`create_exception!` / `#[pyfunction]` exports.
+"""
+
+from typing import Any, Iterable
+
+from fathomdb.types import EmbedderEvent
+
+class WriteReceipt:
+    cursor: int
+    row_cursors: list[int]
+    dangling_edge_endpoints: int
+
+class SoftFallback:
+    branch: str
+
+class SearchHit:
+    id: int
+    kind: str
+    body: str
+    score: float
+    branch: str
+    source_id: str | None
+    # 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
+    # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
+    ce_score: float | None
+    # Cause-A (0.8.11.2) — additive cross-session-stable hit id; None for
+    # synthetic passages. Never participates in ranking.
+    stable_id: str | None
+
+class QueryTrace:
+    # 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace.
+    query_chars: int
+    k: int
+    rerank_depth: int
+    pool_n: int
+    alpha: float
+    use_graph_arm: bool
+    recency: bool
+    embedder_id: str
+    ce_active: bool
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+class PerHitExplain:
+    # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.
+    id: int
+    arm: str
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+class Explanation:
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar.
+    trace: QueryTrace
+    per_hit: list[PerHitExplain]
+
+class SearchResult:
+    projection_cursor: int
+    soft_fallback: SoftFallback | None
+    results: list[SearchHit]
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in; None unless search(..., explain=True).
+    explanation: Explanation | None
+
+class CounterSnapshot:
+    queries: int
+    writes: int
+    write_rows: int
+    admin_ops: int
+    cache_hit: int
+    cache_miss: int
+
+class NodeRecord:
+    logical_id: str
+    kind: str
+    body: str
+    write_cursor: int
+
+class OpStoreRow:
+    id: int
+    collection: str
+    record_key: str
+    op_kind: str
+    payload: str
+    schema_id: str | None
+    write_cursor: int
+
+class IngestWithExtractorReceipt:
+    """G11 (Slice 15) — BYO-LLM ingest receipt."""
+    nodes_written: int
+    edges_written: int
+    docs_processed: int
+
+class ConsolidateReceipt:
+    """0.8.12 Slice 15 (OPP-2) — consolidation / recency provider receipt."""
+    clusters_processed: int
+    edges_examined: int
+    edges_kept: int
+    edges_invalidated: int
+    edges_superseded: int
+
+class MigrationStepReport:
+    step_id: int
+    duration_ms: int | None
+    failed: bool
+
+class EmbedderIdentity:
+    name: str
+    revision: str
+    dimension: int
+
+class OpenReport:
+    schema_version_before: int
+    schema_version_after: int
+    migration_steps: list[MigrationStepReport]
+    embedder_warmup_ms: int
+    query_backend: str
+    default_embedder: EmbedderIdentity
+    # EU-5a1/5a2/5b — surfaced by EU-6.
+    embedder_download_ms: int | None
+    embedder_events: list[EmbedderEvent]
+    embedder_mean_centering_required: bool
+    embedder_mean_vec_pinned: bool
+
+class Engine:
+    @staticmethod
+    def open(path: str, use_default_embedder: bool = ...) -> "Engine": ...
+    # NOTE: `_configure_vector_kind_for_test` and `_write_vector_for_test`
+    # are intentionally NOT declared here. They only exist on the binary
+    # when the `test-hooks` Cargo feature is enabled (see
+    # `src/rust/crates/fathomdb-py/src/lib.rs::#[cfg(any(test, feature =
+    # "test-hooks"))]`), and that feature is dev-only — it is not part of
+    # the shipped wheel's feature axis (`pyproject.toml [tool.maturin]
+    # features` and `release.yml` build-python's `args:`). Advertising
+    # them on the public stub would imply they are callable by end users,
+    # which is false.
+    def open_report(self) -> OpenReport: ...
+    def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
+    def embed(self, text: str) -> list[float]: ...
+    def search(
+        self,
+        query: str,
+        source_type: str | None = ...,
+        kind: str | None = ...,
+        created_after: int | None = ...,
+        status: str | None = ...,
+        rerank_depth: int = ...,
+        use_graph_arm: bool = ...,
+        alpha: float | None = ...,
+        pool_n: int | None = ...,
+        explain: bool = ...,
+    ) -> SearchResult: ...
+    # 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture.
+    def enable_telemetry(self, sink_path: str) -> None: ...
+    def last_telemetry_query_id(self) -> str | None: ...
+    def record_feedback(
+        self,
+        query_id: str,
+        relevant_ids: list[int],
+        irrelevant_ids: list[int],
+        label_source: str,
+    ) -> None: ...
+    def close(self) -> None: ...
+    def drain(self, timeout_s: float = ...) -> None: ...
+    def ingest_with_extractor(
+        self,
+        cmd: list[str],
+        documents: list[dict[str, str]],
+    ) -> IngestWithExtractorReceipt:
+        """G11 (Slice 15) — BYO-LLM ingest: spawn an external extraction harness
+        speaking the fathomdb.extract.v1 protocol, extract entities + edges from
+        documents, and write them to the store.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``documents`` is a list of dicts with ``source_doc_id`` and ``body`` keys.
+        """
+        ...
+    def consolidate_with_provider(
+        self,
+        cmd: list[str],
+        axes: list[dict[str, str]],
+    ) -> ConsolidateReceipt:
+        """0.8.12 Slice 15 (OPP-2) — consolidation / recency via a BYO-LLM
+        harness speaking the fathomdb.consolidate.v1 protocol.
+
+        ``cmd`` is argv (first element = program, rest = args).
+        ``axes`` is a list of dicts with ``subject_logical_id`` and ``relation``
+        keys (a `ConsolidateAxis`); each names one (subject, relation) cluster to
+        consolidate.
+        """
+        ...
+    def counters(self) -> CounterSnapshot: ...
+    def set_profiling(self, enabled: bool) -> None: ...
+    def set_slow_threshold_ms(self, value: int) -> None: ...
+    def attach_logging_subscriber(
+        self,
+        logger: Any,
+        heartbeat_interval_ms: int | None = ...,
+    ) -> None: ...
+
+# Slice 20 (G5/G6) — graph traversal result types.
+
+class ExpandedNode:
+    """One node reached by BFS traversal that is NOT in the search hit set."""
+
+    node: NodeRecord
+    hop_count: int
+
+class SearchExpandResult:
+    """G6 result: original search hits + graph-expanded neighbors.
+
+    Deduplication rule: a node in ``search_hits`` will NOT appear in
+    ``expanded`` (search score takes priority).
+
+exec
+/bin/bash -c "sed -n '1,220p' src/python/fathomdb/__init__.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+"""FathomDB Python SDK public surface.
+
+Top-level five-verb surface and exception hierarchy owned by
+`dev/interfaces/python.md` + `dev/design/errors.md`. The package delegates
+to the native PyO3 extension `fathomdb._fathomdb` which binds to
+`fathomdb-engine`.
+"""
+
+from __future__ import annotations
+
+from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
+from fathomdb import admin, errors, graph, read
+from fathomdb._fathomdb import ConsolidateReceipt
+from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import embed_batch_cls
+from fathomdb._fathomdb import rerank
+from fathomdb.config import EngineConfig
+from fathomdb.engine import Engine
+from fathomdb.filter import Filter
+from fathomdb.types import (
+    CounterSnapshot,
+    ExpandedNode,
+    Explanation,
+    NodeRecord,
+    OpStoreRow,
+    PerHitExplain,
+    QueryTrace,
+    SearchExpandResult,
+    SearchFilter,
+    SearchHit,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
+
+__all__ = [
+    "ConsolidateReceipt",
+    "CounterSnapshot",
+    "Engine",
+    "EngineConfig",
+    "Filter",
+    "IngestWithExtractorReceipt",
+    "ExpandedNode",
+    "Explanation",
+    "NodeRecord",
+    "OpStoreRow",
+    "PerHitExplain",
+    "QueryTrace",
+    "SearchExpandResult",
+    "SearchFilter",
+    "SearchHit",
+    "SearchResult",
+    "SoftFallback",
+    "SoftFallbackBranch",
+    "WriteReceipt",
+    "__version__",
+    "admin",
+    "embed_batch_cls",
+    "errors",
+    "graph",
+    "read",
+    "rerank",
+]
+__version__ = "0.6.0"
+
+exec
+/bin/bash -c "sed -n '1,220p' src/rust/crates/fathomdb-py/Cargo.toml" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+[package]
+name = "fathomdb-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "fathomdb_py"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+test-hooks = []
+# EU-6: forward the engine's default-embedder feature so the
+# `use_default_embedder=True` kwarg actually materializes a real
+# `CandleBgeEmbedder` rather than failing with a typed Embedder error.
+# Wheels built without this feature still expose the kwarg but reject
+# `True` at open time per ADR-0.7.1-default-embedder-weight-fetch (no
+# silent network in a no-feature wheel).
+default-embedder = ["fathomdb-engine/default-embedder"]
+# 0.8.2 Slice E2 fix-1 [P1]: forward the engine's default-reranker feature so
+# a plain `maturin develop` / `pytest` activates the real CE reranker in
+# dev/test builds. The shipped wheel keeps `default-reranker` OFF (release.yml
+# and ci.yml pin their own explicit `--features` lists that omit it).
+default-reranker = ["fathomdb-engine/default-reranker"]
+# GPU acceleration (opt-in; forwards to the engine; default wheel stays CPU).
+# Build: `maturin develop --features pyo3/extension-module,embed-cuda`; activate via
+# FATHOMDB_EMBED_DEVICE=cuda. See dev/design/0.8.1-embedder-gpu-and-portability.md.
+embed-cuda = ["default-embedder", "fathomdb-engine/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-engine/embed-metal"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; forwards to the engine;
+# default wheel stays CPU). Build: `maturin develop --features
+# pyo3/extension-module,rerank-cuda`; activate via FATHOMDB_RERANK_DEVICE=cuda.
+# The shipped wheel keeps this OFF (release.yml/ci.yml pin explicit feature lists).
+rerank-cuda = ["default-reranker", "fathomdb-engine/rerank-cuda"]
+rerank-metal = ["default-reranker", "fathomdb-engine/rerank-metal"]
+
+[dependencies]
+fathomdb-embedder.workspace = true
+fathomdb-embedder-api.workspace = true
+fathomdb-engine.workspace = true
+fathomdb-schema.workspace = true
+# 0.8.9 Slice 20 (F-9): `extension-module` is NOT always-on. It tells pyo3 to link
+# libpython-less (symbols resolved by the host interpreter at import), which makes the
+# standalone `cargo test --workspace` test binary fail to link under strict macOS/Windows
+# linkers (Linux tolerates it). Wheels + `maturin develop` pass it back explicitly via
+# `--features pyo3/extension-module` (release.yml, ci.yml, the Cargo.toml:30 dev command),
+# so the shipped artifact and dev flow are unchanged; only the workspace test link is fixed.
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+serde_json = "1"
+
+exec
+/bin/bash -c "sed -n '220,320p' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+    ``expanded`` (search score takes priority).
+    """
+
+    search_hits: list[SearchHit]
+    expanded: list[ExpandedNode]
+    all_logical_ids: list[str]
+
+def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
+def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
+def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
+def read_collection(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
+def read_mutations(
+    engine: Engine,
+    collection: str,
+    after_id: int | None = ...,
+    limit: int = ...,
+) -> list[OpStoreRow]: ...
+def read_list(
+    engine: Engine,
+    kind: str,
+    predicates: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
+def read_list_filter(
+    engine: Engine,
+    kind: str,
+    terms: list[dict[str, Any]] | None = ...,
+    limit: int = ...,
+) -> list[NodeRecord]: ...
+def graph_neighbors(
+    engine: Engine,
+    logical_id: str,
+    depth: int,
+    direction: str,
+) -> list[NodeRecord]:
+    """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
+
+    ``depth`` must be 1–3; raises ``InvalidArgumentError`` for depth > 3.
+    ``direction`` is one of ``"outgoing"``, ``"incoming"``, or ``"both"``.
+    Returns nodes reachable within ``depth`` hops, hard-capped at 50.
+    Valid-time filter: edges with ``t_invalid`` in the past are not traversed.
+    """
+    ...
+
+def search_expand(
+    engine: Engine,
+    query: str,
+    depth: int,
+    source_type: str | None = ...,
+    kind: str | None = ...,
+    created_after: int | None = ...,
+    status: str | None = ...,
+) -> SearchExpandResult:
+    """G6 — FTS/vector search followed by bounded BFS expansion.
+
+    Runs ``search(query, ...)`` (G1), then expands each hit node via
+    ``graph_neighbors(depth, both)``. Nodes that are both search hits
+    and traversal neighbors appear only in ``search_hits`` (deduplicated).
+    """
+    ...
+
+
+def rerank(
+    query: str,
+    passages: list[dict[str, Any]],
+    rerank_depth: int,
+    alpha: float | None = ...,
+    pool_n: int | None = ...,
+) -> list[dict[str, Any]]:
+    """0.8.2 Slice E2 — standalone CE rerank over an arbitrary passage list.
+
+    Each ``passages`` entry is ``{"id": int, "body": str, "score": float}``
+    (``score`` = the caller's fused/RRF score). Returns the reranked order as
+    ``[{"id": int, "score": float, "ce_score": float | None}]`` where ``score`` is
+    the CE-blended score and ``ce_score`` is the per-candidate ``sigmoid(ce_logit)``
+    (None outside the reranked pool). ``rerank_depth == 0`` OR an empty list returns
+    the input order with input scores, byte-identical (no model load, no network).
+
+    0.8.5 (EXP-0): ``alpha`` (default 0.3, clamped to [0,1]) is the CE-blend weight
+    and ``pool_n`` (default = ``rerank_depth``) is the reranked-pool size. Omitting
+    both reproduces the pre-slice α=0.3 blend; ``alpha=1.0, pool_n=10`` is the
+    measured-parity config. Unlike ``Engine.search(rerank_depth=...)`` — which
+    reranks the engine's own capped text pool — this reranks the caller-supplied
+    pool with the identical cross-encoder.
+    """
+    ...
+
+
+def embed_batch_cls(texts: list[str]) -> list[list[float]]:
+    """V-3 dense-encoder path — CLS-pooled batch embed of ``texts``.
+
+    Embeds each string with the pinned default bge-small weights using **CLS
+    pooling** + L2-normalization (distinct from ``Engine.embed()``, which uses
+    the engine's default Mean pooling), honoring ``FATHOMDB_EMBED_DEVICE``.
+    Returns one ``list[float]`` per input, in input order; an empty input list
+    returns ``[]``. Requires a wheel built with the ``default-embedder`` (or
+
+exec
+/bin/bash -c "sed -n '320,360p' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+    returns ``[]``. Requires a wheel built with the ``default-embedder`` (or
+    ``embed-cuda``) feature; otherwise raises ``EmbedderNotConfiguredError``.
+    """
+    ...
+
+
+def force_panic_for_test() -> None: ...
+
+class EngineError(Exception): ...
+class StorageError(EngineError): ...
+class ProjectionError(EngineError): ...
+class VectorError(EngineError): ...
+class KindNotVectorIndexedError(VectorError): ...
+class EmbedderError(EngineError): ...
+class EmbedderNotConfiguredError(EmbedderError): ...
+class SchedulerError(EngineError): ...
+class OpStoreError(EngineError): ...
+class WriteValidationError(EngineError): ...
+class SchemaValidationError(EngineError): ...
+class OverloadedError(EngineError): ...
+class ClosingError(EngineError): ...
+
+class DatabaseLockedError(EngineError):
+    holder_pid: int | None
+    def __init__(self, *args: Any, holder_pid: int | None = ...) -> None: ...
+
+class CorruptionError(EngineError):
+    kind: str
+    stage: str
+    recovery_hint_code: str
+    doc_anchor: str
+    def __init__(
+        self,
+        *args: Any,
+        kind: str = ...,
+        stage: str = ...,
+        recovery_hint_code: str = ...,
+        doc_anchor: str = ...,
+    ) -> None: ...
+
+class IncompatibleSchemaVersionError(EngineError): ...
+
+codex
+The binding stub now clearly contains `embed_batch_cls`; I’m pulling exact line references for the Rust symbols and checking whether the fix-1 delta was isolated to the two expected files. If local `git` stays blocked, I’ll fall back to direct local metadata plus file content inspection and call out that limitation.
+exec
+/bin/bash -lc "sed -n '1660,1760p' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+//
+// Exposes candle `embed_batch` with `Pooling::Cls` to Python. The stock
+// `PyEngine::embed()` uses the engine's default `Pooling::Mean`; the V-3
+// A0/A3 dense stack (m1_baseline.BGEEncoder) is CLS-pooled + L2-normalized, so
+// routing that harness through `embed()` would silently switch Mean↔CLS and
+// break comparability to V-1. This binding loads the SAME pinned bge-small
+// weights the numpy path loads, pins `Pooling::Cls`, and honors
+// `FATHOMDB_EMBED_DEVICE` (CPU default; `cuda:N` under the `embed-cuda`
+// feature). One padded `(B, L)` forward → the same per-row vectors as B single
+// `embed()` calls (parity-locked in the embedder crate's tests). Additive: it
+// does NOT change `embed()`'s default pooling. This also closes the standing
+// "Python embed cannot select CLS pooling" exposure gap.
+
+/// Memoize the result of `init` in `cell`, caching **only on success**.
+///
+/// fix-1 finding 2: the previous CLS-embedder singleton stored
+/// `Option<CandleBgeEmbedder>` and initialized it with `init().ok()`, so a
+/// *transient* load failure (cache miss + no network) was cached as `None`
+/// forever and every later call — even after connectivity returned — reported
+/// the same "unavailable" error and never retried. This helper instead returns
+/// the real error on failure and leaves `cell` empty, so the next call retries;
+/// a value is stored only when init succeeds. On a lost init race the loser's
+/// value is dropped and the winner's `'static` ref is returned.
+#[allow(dead_code)] // used under `default-embedder`; exercised directly by unit tests
+fn get_or_try_init<T, E>(
+    cell: &'static std::sync::OnceLock<T>,
+    init: impl FnOnce() -> Result<T, E>,
+) -> Result<&'static T, E> {
+    if let Some(v) = cell.get() {
+        return Ok(v);
+    }
+    let v = init()?;
+    Ok(cell.get_or_init(|| v))
+}
+
+/// Process-wide, lazily-initialized CLS-pooled default embedder. Loaded on
+/// first use and memoized **on success only** (via [`get_or_try_init`]): a
+/// failed load surfaces the real [`EmbedderLoadError`] and is NOT cached, so a
+/// later call retries. Unlike the engine's `reranker_singleton` (which caches a
+/// `None`), this preserves the ability to recover once weights become reachable.
+///
+/// [`EmbedderLoadError`]: fathomdb_embedder::loader::EmbedderLoadError
+#[cfg(feature = "default-embedder")]
+fn cls_embedder_singleton() -> Result<
+    &'static fathomdb_embedder::CandleBgeEmbedder,
+    fathomdb_embedder::loader::EmbedderLoadError,
+> {
+    static CELL: std::sync::OnceLock<fathomdb_embedder::CandleBgeEmbedder> =
+        std::sync::OnceLock::new();
+    get_or_try_init(&CELL, || {
+        Ok(fathomdb_embedder::CandleBgeEmbedder::new()?
+            .with_pooling(fathomdb_embedder::Pooling::Cls))
+    })
+}
+
+/// Embed many texts with the pinned default bge-small weights using **CLS
+/// pooling** + L2-normalization, honoring `FATHOMDB_EMBED_DEVICE`. Returns one
+/// `list[float]` per input, in the same order. Distinct from `Engine.embed()`,
+/// which uses the engine's default Mean pooling. Requires a wheel built with
+/// `default-embedder` (or `embed-cuda`); otherwise raises
+/// `EmbedderNotConfiguredError`.
+#[pyfunction]
+fn embed_batch_cls(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    for t in &texts {
+        validate_ffi_string_py(t)?;
+    }
+    embed_batch_cls_impl(py, texts)
+}
+
+#[cfg(feature = "default-embedder")]
+fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    use fathomdb_embedder_api::Embedder;
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let embedder = cls_embedder_singleton().map_err(|e| {
+        // fix-1 finding 2: surface the REAL loader error (e.g. checksum
+        // mismatch, cache I/O, dimension drift) instead of flattening every
+        // failure to a generic "cache miss + no network" string.
+        EmbedderNotConfiguredError::new_err(format!("default embedder weights unavailable: {e}"))
+    })?;
+    // Release the GIL for the (pure CPU/GPU compute) forward pass, and wrap in
+    // `catch_unwind` so the never-panic FFI contract holds even though the
+    // embedder returns a Result channel (mirrors `rerank`).
+    let result = py
+        .detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+                embedder.embed_batch(&refs)
+            }))
+        })
+        .map_err(|_| PanicException::new_err("embed_batch_cls panic (see logs)"))?;
+    result.map_err(|e| EmbedderError::new_err(format!("embed_batch_cls: {e:?}")))
+}
+
+#[cfg(not(feature = "default-embedder"))]
+fn embed_batch_cls_impl(_py: Python<'_>, _texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    Err(EmbedderNotConfiguredError::new_err(
+        "embed_batch_cls requires a wheel built with the `default-embedder` \
+         (or `embed-cuda`) feature",
+    ))
+
+exec
+/bin/bash -lc "sed -n '1670,1765{=;p;}' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+1670
+// does NOT change `embed()`'s default pooling. This also closes the standing
+1671
+// "Python embed cannot select CLS pooling" exposure gap.
+1672
+
+1673
+/// Memoize the result of `init` in `cell`, caching **only on success**.
+1674
+///
+1675
+/// fix-1 finding 2: the previous CLS-embedder singleton stored
+1676
+/// `Option<CandleBgeEmbedder>` and initialized it with `init().ok()`, so a
+1677
+/// *transient* load failure (cache miss + no network) was cached as `None`
+1678
+/// forever and every later call — even after connectivity returned — reported
+1679
+/// the same "unavailable" error and never retried. This helper instead returns
+1680
+/// the real error on failure and leaves `cell` empty, so the next call retries;
+1681
+/// a value is stored only when init succeeds. On a lost init race the loser's
+1682
+/// value is dropped and the winner's `'static` ref is returned.
+1683
+#[allow(dead_code)] // used under `default-embedder`; exercised directly by unit tests
+1684
+fn get_or_try_init<T, E>(
+1685
+    cell: &'static std::sync::OnceLock<T>,
+1686
+    init: impl FnOnce() -> Result<T, E>,
+1687
+) -> Result<&'static T, E> {
+1688
+    if let Some(v) = cell.get() {
+1689
+        return Ok(v);
+1690
+    }
+1691
+    let v = init()?;
+1692
+    Ok(cell.get_or_init(|| v))
+1693
+}
+1694
+
+1695
+/// Process-wide, lazily-initialized CLS-pooled default embedder. Loaded on
+1696
+/// first use and memoized **on success only** (via [`get_or_try_init`]): a
+1697
+/// failed load surfaces the real [`EmbedderLoadError`] and is NOT cached, so a
+1698
+/// later call retries. Unlike the engine's `reranker_singleton` (which caches a
+1699
+/// `None`), this preserves the ability to recover once weights become reachable.
+1700
+///
+1701
+/// [`EmbedderLoadError`]: fathomdb_embedder::loader::EmbedderLoadError
+1702
+#[cfg(feature = "default-embedder")]
+1703
+fn cls_embedder_singleton() -> Result<
+1704
+    &'static fathomdb_embedder::CandleBgeEmbedder,
+1705
+    fathomdb_embedder::loader::EmbedderLoadError,
+1706
+> {
+1707
+    static CELL: std::sync::OnceLock<fathomdb_embedder::CandleBgeEmbedder> =
+1708
+        std::sync::OnceLock::new();
+1709
+    get_or_try_init(&CELL, || {
+1710
+        Ok(fathomdb_embedder::CandleBgeEmbedder::new()?
+1711
+            .with_pooling(fathomdb_embedder::Pooling::Cls))
+1712
+    })
+1713
+}
+1714
+
+1715
+/// Embed many texts with the pinned default bge-small weights using **CLS
+1716
+/// pooling** + L2-normalization, honoring `FATHOMDB_EMBED_DEVICE`. Returns one
+1717
+/// `list[float]` per input, in the same order. Distinct from `Engine.embed()`,
+1718
+/// which uses the engine's default Mean pooling. Requires a wheel built with
+1719
+/// `default-embedder` (or `embed-cuda`); otherwise raises
+1720
+/// `EmbedderNotConfiguredError`.
+1721
+#[pyfunction]
+1722
+fn embed_batch_cls(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+1723
+    for t in &texts {
+1724
+        validate_ffi_string_py(t)?;
+1725
+    }
+1726
+    embed_batch_cls_impl(py, texts)
+1727
+}
+1728
+
+1729
+#[cfg(feature = "default-embedder")]
+1730
+fn embed_batch_cls_impl(py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+1731
+    use fathomdb_embedder_api::Embedder;
+1732
+    if texts.is_empty() {
+1733
+        return Ok(Vec::new());
+1734
+    }
+1735
+    let embedder = cls_embedder_singleton().map_err(|e| {
+1736
+        // fix-1 finding 2: surface the REAL loader error (e.g. checksum
+1737
+        // mismatch, cache I/O, dimension drift) instead of flattening every
+1738
+        // failure to a generic "cache miss + no network" string.
+1739
+        EmbedderNotConfiguredError::new_err(format!("default embedder weights unavailable: {e}"))
+1740
+    })?;
+1741
+    // Release the GIL for the (pure CPU/GPU compute) forward pass, and wrap in
+1742
+    // `catch_unwind` so the never-panic FFI contract holds even though the
+1743
+    // embedder returns a Result channel (mirrors `rerank`).
+1744
+    let result = py
+1745
+        .detach(|| {
+1746
+            catch_unwind(AssertUnwindSafe(|| {
+1747
+                let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+1748
+                embedder.embed_batch(&refs)
+1749
+            }))
+1750
+        })
+1751
+        .map_err(|_| PanicException::new_err("embed_batch_cls panic (see logs)"))?;
+1752
+    result.map_err(|e| EmbedderError::new_err(format!("embed_batch_cls: {e:?}")))
+1753
+}
+1754
+
+1755
+#[cfg(not(feature = "default-embedder"))]
+1756
+fn embed_batch_cls_impl(_py: Python<'_>, _texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+1757
+    Err(EmbedderNotConfiguredError::new_err(
+1758
+        "embed_batch_cls requires a wheel built with the `default-embedder` \
+1759
+         (or `embed-cuda`) feature",
+1760
+    ))
+1761
+}
+1762
+
+1763
+// ===== Test hooks =====================================================
+1764
+
+1765
+/// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
+
+exec
+/bin/bash -lc "sed -n '1845,1905{=;p;}' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+1845
+    m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
+1846
+    m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
+1847
+    Ok(())
+1848
+}
+1849
+
+1850
+#[cfg(test)]
+1851
+mod tests {
+1852
+    use super::*;
+1853
+
+1854
+    #[test]
+1855
+    fn validate_ffi_string_accepts_plain_ascii() {
+1856
+        assert!(validate_ffi_string("hello").is_ok());
+1857
+    }
+1858
+
+1859
+    #[test]
+1860
+    fn validate_ffi_string_accepts_non_ascii_utf8() {
+1861
+        assert!(validate_ffi_string("héllo 🦀 文字").is_ok());
+1862
+    }
+1863
+
+1864
+    #[test]
+1865
+    fn validate_ffi_string_rejects_embedded_nul() {
+1866
+        let err = validate_ffi_string("a\0b").unwrap_err();
+1867
+        assert!(err.contains("NUL"), "expected NUL diagnostic, got {err:?}");
+1868
+    }
+1869
+
+1870
+    #[test]
+1871
+    fn validate_ffi_string_rejects_lone_surrogate() {
+1872
+        // The surrogate codepoint U+D800 cannot appear in a Rust &str
+1873
+        // (it is not valid UTF-8). The Rust-side helper exists for the
+1874
+        // case where the Python layer feeds us the codepoint via an
+1875
+        // alternate path; construct it through `char::from_u32`
+1876
+        // unchecked... actually `char::from_u32` returns None for
+1877
+        // surrogates. The exhaustive guard sits in Python; the Rust
+1878
+        // helper documents the rule and remains a runtime check for
+1879
+        // bytes-derived input.
+1880
+        let valid_high_unicode = "\u{FFFD}";
+1881
+        assert!(validate_ffi_string(valid_high_unicode).is_ok());
+1882
+    }
+1883
+
+1884
+    // fix-1 finding 2: the CLS-embedder singleton must NOT cache a failed load.
+1885
+    // `cls_embedder_singleton` itself is `#[cfg(feature = "default-embedder")]`
+1886
+    // and drives a real model load, so we test the caching contract through the
+1887
+    // feature-agnostic helper it is built on.
+1888
+    #[test]
+1889
+    fn get_or_try_init_caches_only_on_success() {
+1890
+        static CELL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+1891
+
+1892
+        // A failed init returns the real error and leaves the cell empty so the
+1893
+        // next call retries (the exact regression finding 2 flags).
+1894
+        let err = get_or_try_init::<u32, &str>(&CELL, || Err("transient")).unwrap_err();
+1895
+        assert_eq!(err, "transient");
+1896
+        assert!(CELL.get().is_none(), "a failed init must not be cached");
+1897
+
+1898
+        // A subsequent success is stored and returned.
+1899
+        let v = get_or_try_init::<u32, &str>(&CELL, || Ok(7)).unwrap();
+1900
+        assert_eq!(*v, 7);
+1901
+
+1902
+        // Once cached, the init closure is never run again.
+1903
+        let v2 = get_or_try_init::<u32, &str>(&CELL, || panic!("must not re-init")).unwrap();
+1904
+        assert_eq!(*v2, 7);
+1905
+    }
+
+exec
+/bin/bash -lc "sed -n '1800,1835{=;p;}' src/rust/crates/fathomdb-py/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+1800
+    m.add_class::<PyOpStoreRow>()?;
+1801
+    // Slice 20 — graph traversal result types.
+1802
+    m.add_class::<PyExpandedNode>()?;
+1803
+    m.add_class::<PySearchExpandResult>()?;
+1804
+    m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
+1805
+    // Slice 30 — governed read.* native fns (G2/G3).
+1806
+    m.add_function(wrap_pyfunction!(read_get, &m)?)?;
+1807
+    m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
+1808
+    m.add_function(wrap_pyfunction!(read_collection, &m)?)?;
+1809
+    m.add_function(wrap_pyfunction!(read_mutations, &m)?)?;
+1810
+    // Slice 35 — G4 read.list with Predicate filter.
+1811
+    m.add_function(wrap_pyfunction!(read_list, &m)?)?;
+1812
+    // 0.8.11 Slice 40 — unified Filter → read.list backend (#17).
+1813
+    m.add_function(wrap_pyfunction!(read_list_filter, &m)?)?;
+1814
+    // Slice 20 — G5/G6 graph traversal fns.
+1815
+    m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
+1816
+    m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
+1817
+    // 0.8.2 Slice E2 — standalone rerank over an arbitrary passage list.
+1818
+    m.add_function(wrap_pyfunction!(rerank, &m)?)?;
+1819
+    m.add_function(wrap_pyfunction!(embed_batch_cls, &m)?)?;
+1820
+
+1821
+    #[cfg(any(test, feature = "test-hooks"))]
+1822
+    m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
+1823
+
+1824
+    m.add("EngineError", py.get_type::<EngineError>())?;
+1825
+    m.add("StorageError", py.get_type::<StorageError>())?;
+1826
+    m.add("ProjectionError", py.get_type::<ProjectionError>())?;
+1827
+    m.add("VectorError", py.get_type::<VectorError>())?;
+1828
+    m.add("KindNotVectorIndexedError", py.get_type::<KindNotVectorIndexedError>())?;
+1829
+    m.add("EmbedderError", py.get_type::<EmbedderError>())?;
+1830
+    m.add("EmbedderNotConfiguredError", py.get_type::<EmbedderNotConfiguredError>())?;
+1831
+    m.add("SchedulerError", py.get_type::<SchedulerError>())?;
+1832
+    m.add("OpStoreError", py.get_type::<OpStoreError>())?;
+1833
+    m.add("WriteValidationError", py.get_type::<WriteValidationError>())?;
+1834
+    m.add("SchemaValidationError", py.get_type::<SchemaValidationError>())?;
+1835
+    m.add("OverloadedError", py.get_type::<OverloadedError>())?;
+
+exec
+/bin/bash -lc "sed -n '286,330{=;p;}' src/python/fathomdb/_fathomdb.pyi" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+286
+
+287
+def rerank(
+288
+    query: str,
+289
+    passages: list[dict[str, Any]],
+290
+    rerank_depth: int,
+291
+    alpha: float | None = ...,
+292
+    pool_n: int | None = ...,
+293
+) -> list[dict[str, Any]]:
+294
+    """0.8.2 Slice E2 — standalone CE rerank over an arbitrary passage list.
+295
+
+296
+    Each ``passages`` entry is ``{"id": int, "body": str, "score": float}``
+297
+    (``score`` = the caller's fused/RRF score). Returns the reranked order as
+298
+    ``[{"id": int, "score": float, "ce_score": float | None}]`` where ``score`` is
+299
+    the CE-blended score and ``ce_score`` is the per-candidate ``sigmoid(ce_logit)``
+300
+    (None outside the reranked pool). ``rerank_depth == 0`` OR an empty list returns
+301
+    the input order with input scores, byte-identical (no model load, no network).
+302
+
+303
+    0.8.5 (EXP-0): ``alpha`` (default 0.3, clamped to [0,1]) is the CE-blend weight
+304
+    and ``pool_n`` (default = ``rerank_depth``) is the reranked-pool size. Omitting
+305
+    both reproduces the pre-slice α=0.3 blend; ``alpha=1.0, pool_n=10`` is the
+306
+    measured-parity config. Unlike ``Engine.search(rerank_depth=...)`` — which
+307
+    reranks the engine's own capped text pool — this reranks the caller-supplied
+308
+    pool with the identical cross-encoder.
+309
+    """
+310
+    ...
+311
+
+312
+
+313
+def embed_batch_cls(texts: list[str]) -> list[list[float]]:
+314
+    """V-3 dense-encoder path — CLS-pooled batch embed of ``texts``.
+315
+
+316
+    Embeds each string with the pinned default bge-small weights using **CLS
+317
+    pooling** + L2-normalization (distinct from ``Engine.embed()``, which uses
+318
+    the engine's default Mean pooling), honoring ``FATHOMDB_EMBED_DEVICE``.
+319
+    Returns one ``list[float]`` per input, in input order; an empty input list
+320
+    returns ``[]``. Requires a wheel built with the ``default-embedder`` (or
+321
+    ``embed-cuda``) feature; otherwise raises ``EmbedderNotConfiguredError``.
+322
+    """
+323
+    ...
+324
+
+325
+
+326
+def force_panic_for_test() -> None: ...
+327
+
+328
+class EngineError(Exception): ...
+329
+class StorageError(EngineError): ...
+330
+class ProjectionError(EngineError): ...
+
+exec
+/bin/bash -lc "sed -n '1,70{=;p;}' src/python/fathomdb/__init__.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+1
+"""FathomDB Python SDK public surface.
+2
+
+3
+Top-level five-verb surface and exception hierarchy owned by
+4
+`dev/interfaces/python.md` + `dev/design/errors.md`. The package delegates
+5
+to the native PyO3 extension `fathomdb._fathomdb` which binds to
+6
+`fathomdb-engine`.
+7
+"""
+8
+
+9
+from __future__ import annotations
+10
+
+11
+from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
+12
+from fathomdb import admin, errors, graph, read
+13
+from fathomdb._fathomdb import ConsolidateReceipt
+14
+from fathomdb._fathomdb import IngestWithExtractorReceipt
+15
+from fathomdb._fathomdb import embed_batch_cls
+16
+from fathomdb._fathomdb import rerank
+17
+from fathomdb.config import EngineConfig
+18
+from fathomdb.engine import Engine
+19
+from fathomdb.filter import Filter
+20
+from fathomdb.types import (
+21
+    CounterSnapshot,
+22
+    ExpandedNode,
+23
+    Explanation,
+24
+    NodeRecord,
+25
+    OpStoreRow,
+26
+    PerHitExplain,
+27
+    QueryTrace,
+28
+    SearchExpandResult,
+29
+    SearchFilter,
+30
+    SearchHit,
+31
+    SearchResult,
+32
+    SoftFallback,
+33
+    SoftFallbackBranch,
+34
+    WriteReceipt,
+35
+)
+36
+
+37
+__all__ = [
+38
+    "ConsolidateReceipt",
+39
+    "CounterSnapshot",
+40
+    "Engine",
+41
+    "EngineConfig",
+42
+    "Filter",
+43
+    "IngestWithExtractorReceipt",
+44
+    "ExpandedNode",
+45
+    "Explanation",
+46
+    "NodeRecord",
+47
+    "OpStoreRow",
+48
+    "PerHitExplain",
+49
+    "QueryTrace",
+50
+    "SearchExpandResult",
+51
+    "SearchFilter",
+52
+    "SearchHit",
+53
+    "SearchResult",
+54
+    "SoftFallback",
+55
+    "SoftFallbackBranch",
+56
+    "WriteReceipt",
+57
+    "__version__",
+58
+    "admin",
+59
+    "embed_batch_cls",
+60
+    "errors",
+61
+    "graph",
+62
+    "read",
+63
+    "rerank",
+64
+]
+65
+__version__ = "0.6.0"
+
+codex
+I’ve finished the substantive code inspection. One last pass is checking file-level scope from the local checkout as far as the read-only sandbox allows; if `git diff` remains unavailable, I’ll mark that exact limitation in the process notes instead of pretending I verified it.
+exec
+/bin/bash -lc 'ls -l --full-time src/rust/crates/fathomdb-py/src/lib.rs src/python/fathomdb/_fathomdb.pyi src/python/fathomdb/__init__.py src/rust/crates/fathomdb-py/Cargo.toml src/rust/crates/fathomdb-engine/Cargo.toml src/rust/crates/fathomdb-schema/Cargo.toml' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z
+ succeeded in 0ms:
+-rw-rw-r-- 1 coreyt coreyt  1563 2026-07-03 22:39:43.352207133 -0500 src/python/fathomdb/__init__.py
+-rw-rw-r-- 1 coreyt coreyt 12626 2026-07-03 22:57:24.169407160 -0500 src/python/fathomdb/_fathomdb.pyi
+-rw-rw-r-- 1 coreyt coreyt  5465 2026-07-03 22:39:43.302206433 -0500 src/rust/crates/fathomdb-engine/Cargo.toml
+-rw-rw-r-- 1 coreyt coreyt  2651 2026-07-03 22:39:43.302206433 -0500 src/rust/crates/fathomdb-py/Cargo.toml
+-rw-rw-r-- 1 coreyt coreyt 77951 2026-07-03 22:58:37.546471222 -0500 src/rust/crates/fathomdb-py/src/lib.rs
+-rw-rw-r-- 1 coreyt coreyt   583 2026-07-03 22:39:43.208391405 -0500 src/rust/crates/fathomdb-schema/Cargo.toml
+
+codex
+## Verdict: PASS
+
+## Addressed
+
+Finding 1 is closed. The current local tree shows `cls_embedder_singleton` is gated with `#[cfg(feature = "default-embedder")]` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1702), and `embed_batch_cls_impl` has both the feature-enabled definition at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1729) and the explicit no-feature fallback at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1755). I did not find the previously reported unconditional-build defect in the current worktree.
+
+Finding 2 is resolved. The singleton path now goes through `get_or_try_init` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1684), which only stores after `init()?` succeeds, so failed loads are not cached and later calls retry. `cls_embedder_singleton` now returns `Result<&'static CandleBgeEmbedder, EmbedderLoadError>` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1703), and `embed_batch_cls_impl` preserves the real loader error text in the surfaced Python exception instead of flattening it to the old generic cache-miss message at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1735). The success path is still CLS pooling via `.with_pooling(Pooling::Cls)` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1710), and the `detach` + `catch_unwind` panic boundary remains in place at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1744). The new unit test at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1889) genuinely checks the intended contract: failed init returns the real error and leaves the `OnceLock` empty, a later success is cached, and later calls do not rerun init.
+
+Finding 3 is resolved. `_fathomdb.pyi` now declares `embed_batch_cls(texts: list[str]) -> list[list[float]]` at [_fathomdb.pyi](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/_fathomdb.pyi:313), which matches the Python-visible `#[pyfunction] fn embed_batch_cls(py, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>>` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1722). The package export remains present in [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:15) and [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:59).
+
+## What passed on inspection
+
+- `embed_batch_cls` is still registered in the module at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1819).
+- The no-feature fallback still raises `EmbedderNotConfiguredError` rather than failing to compile at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1756).
+- In the inspected local files, I saw no evidence of reranker or engine/schema wiring changes tied to fix-1.
+
+## Reviewer process notes
+
+- This review used the current local worktree files directly, not GitHub snapshots.
+- I did not rerun builds/tests in this read-only sandbox.
+- `git diff` was blocked in this sandbox (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`), so I could not independently re-derive the exact cross-commit touched-file list. Within inspected scope, `src/rust/crates/fathomdb-py/src/lib.rs` and `src/python/fathomdb/_fathomdb.pyi` carry the fix-1 updates, while inspected neighboring files such as [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:1) and [fathomdb-py/Cargo.toml](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/Cargo.toml:1) were unchanged by content in this review.
+tokens used
+117,086
+## Verdict: PASS
+
+## Addressed
+
+Finding 1 is closed. The current local tree shows `cls_embedder_singleton` is gated with `#[cfg(feature = "default-embedder")]` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1702), and `embed_batch_cls_impl` has both the feature-enabled definition at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1729) and the explicit no-feature fallback at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1755). I did not find the previously reported unconditional-build defect in the current worktree.
+
+Finding 2 is resolved. The singleton path now goes through `get_or_try_init` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1684), which only stores after `init()?` succeeds, so failed loads are not cached and later calls retry. `cls_embedder_singleton` now returns `Result<&'static CandleBgeEmbedder, EmbedderLoadError>` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1703), and `embed_batch_cls_impl` preserves the real loader error text in the surfaced Python exception instead of flattening it to the old generic cache-miss message at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1735). The success path is still CLS pooling via `.with_pooling(Pooling::Cls)` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1710), and the `detach` + `catch_unwind` panic boundary remains in place at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1744). The new unit test at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1889) genuinely checks the intended contract: failed init returns the real error and leaves the `OnceLock` empty, a later success is cached, and later calls do not rerun init.
+
+Finding 3 is resolved. `_fathomdb.pyi` now declares `embed_batch_cls(texts: list[str]) -> list[list[float]]` at [_fathomdb.pyi](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/_fathomdb.pyi:313), which matches the Python-visible `#[pyfunction] fn embed_batch_cls(py, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>>` at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1722). The package export remains present in [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:15) and [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:59).
+
+## What passed on inspection
+
+- `embed_batch_cls` is still registered in the module at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1819).
+- The no-feature fallback still raises `EmbedderNotConfiguredError` rather than failing to compile at [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/src/lib.rs:1756).
+- In the inspected local files, I saw no evidence of reranker or engine/schema wiring changes tied to fix-1.
+
+## Reviewer process notes
+
+- This review used the current local worktree files directly, not GitHub snapshots.
+- I did not rerun builds/tests in this read-only sandbox.
+- `git diff` was blocked in this sandbox (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`), so I could not independently re-derive the exact cross-commit touched-file list. Within inspected scope, `src/rust/crates/fathomdb-py/src/lib.rs` and `src/python/fathomdb/_fathomdb.pyi` carry the fix-1 updates, while inspected neighboring files such as [__init__.py](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/python/fathomdb/__init__.py:1) and [fathomdb-py/Cargo.toml](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-25-20260704T033943Z/src/rust/crates/fathomdb-py/Cargo.toml:1) were unchanged by content in this review.
