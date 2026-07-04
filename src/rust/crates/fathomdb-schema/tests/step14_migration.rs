@@ -113,10 +113,7 @@ fn s14_schema_version_is_14() {
     let conn = Connection::open_in_memory().unwrap();
     migrate_fresh(&conn);
     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
-    assert_eq!(
-        SCHEMA_VERSION, 15,
-        "SCHEMA_VERSION constant must be 15 (step-15 temporal_fallback)"
-    );
+    assert_eq!(SCHEMA_VERSION, 16, "SCHEMA_VERSION constant must be 16 (step-16 EXP-S row_kind)");
 }
 
 /// Step-14 SQL contains the MIGRATION-ACCRETION-EXEMPTION marker (ADD COLUMN requires it).

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -372,6 +372,27 @@ pub const MIGRATIONS: &[Migration] = &[
         step_id: 15,
         sql: "-- MIGRATION-ACCRETION-EXEMPTION: R3 temporal_fallback provenance flag (additive nullable BOOLEAN column)
               ALTER TABLE canonical_edges ADD COLUMN temporal_fallback INTEGER;",
+    },
+    // 0.8.14 Slice 5 (EXP-S KEYSTONE) — kind-tagged coexisting-index substrate.
+    // Per `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` D1
+    // (RATIFIED 2026-07-03) and `dev/plans/plan-0.8.14.md` §2 (R-SUB-1/R-SUB-3).
+    // Adds `row_kind` — a SEPARATE structural-role axis on `canonical_nodes`,
+    // orthogonal to the doc-type `kind` (email/article/paper/meeting/note/todo/
+    // doc/edge_fact). Vocabulary: `leaf` (normal record — the DEFAULT, which
+    // preserves current behavior for every existing/normal row), `coverage`
+    // (coverage/summary rows), `graph` (graph structural rows). D1 is explicit:
+    // this must NOT overload the doc-type `kind` vocabulary or touch its three
+    // hard-locked sites (engine `resolve_source_type` / `KIND_TO_SOURCE_TYPE_CASE_SQL`
+    // / this crate's migration-9 preflight CHECK). NOT NULL DEFAULT 'leaf' is a
+    // constant default, so pre-existing rows back-fill to `leaf` in-place (no data
+    // migration / re-open) and the migration is forward-only. Additive ADD COLUMN
+    // (no DROP) → the accretion guard REQUIRES the exemption marker. No vec0
+    // embedding/quant/pooling change (ADR §D6): this step does NOT rewrite vec0
+    // rows, so the eu7 fidelity gate stays a documented no-op at Slice 20.
+    Migration {
+        step_id: 16,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: EXP-S row_kind structural-role tag (additive NOT NULL DEFAULT 'leaf' column; separate axis from doc-type kind)
+              ALTER TABLE canonical_nodes ADD COLUMN row_kind TEXT NOT NULL DEFAULT 'leaf';",
     },
 ];
 
