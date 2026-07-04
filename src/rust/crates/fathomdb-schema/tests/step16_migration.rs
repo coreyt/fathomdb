@@ -48,10 +48,11 @@ fn column_names(conn: &Connection, table: &str) -> Vec<String> {
 }
 
 /// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
-/// R-SUB-3 — the migration reaches head `SCHEMA_VERSION` (== 16), and step-16
-/// is the last step.
+/// R-SUB-3 — the migration reaches head `SCHEMA_VERSION`. `row_kind` lands at
+/// step 16; the head pin below tracks the current head (bumped to 17 when F5's
+/// step-17 `search_index_v2` co-landed in the same release).
 #[test]
-fn s16_row_kind_column_present_and_schema_version_is_16() {
+fn s16_row_kind_column_present_and_schema_version_is_head() {
     register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
@@ -64,11 +65,11 @@ fn s16_row_kind_column_present_and_schema_version_is_16() {
     );
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 16, "SCHEMA_VERSION must be 16 (step-16 EXP-S row_kind)");
+    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        16,
-        "step-16 must be the last (head) migration"
+        17,
+        "step-17 (F5 search_index_v2) must be the last (head) migration"
     );
 }
 
@@ -95,7 +96,7 @@ fn s16_forward_only_from_v15_defaults_existing_rows_to_leaf() {
     .expect("legacy node insert");
 
     // Apply ONLY the forward step-16 migration.
-    let step16_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id >= 16).cloned().collect();
+    let step16_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 16).cloned().collect();
     let report = migrate_with_steps(&conn, &step16_only).expect("forward migrate to v16");
 
     // Forward-only: exactly the single new step ran; nothing before it re-ran.

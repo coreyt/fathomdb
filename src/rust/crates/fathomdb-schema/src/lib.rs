@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -393,6 +393,51 @@ pub const MIGRATIONS: &[Migration] = &[
         step_id: 16,
         sql: "-- MIGRATION-ACCRETION-EXEMPTION: EXP-S row_kind structural-role tag (additive NOT NULL DEFAULT 'leaf' column; separate axis from doc-type kind)
               ALTER TABLE canonical_nodes ADD COLUMN row_kind TEXT NOT NULL DEFAULT 'leaf';",
+    },
+    // 0.8.14 Slice 10 (F5 — fielded FTS / BM25F) — multi-column FTS5 index.
+    // Per `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` §3.1 and
+    // `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` §D4
+    // (RATIFIED 2026-07-03; F5 co-lands by the §D8 HITL override) and
+    // `dev/plans/plan-0.8.14.md` §2 (R-F5-1 / R-SUB-3). Creates a NEW FTS5 virtual
+    // table `search_index_v2` over the doc-type node fields `kind` / `body` /
+    // `status`, so a BM25F query can weight each field independently
+    // (`bm25(search_index_v2, W_kind, W_body, W_status)`), riding the EXP-S
+    // substrate. This is ADDITIVE and coexists with the single-column body-only
+    // `search_index` (which is RETAINED, byte-unchanged — the existing RRF/lexical
+    // query path keeps using it, so its determinism pins are untouched): the new
+    // table is a second coexisting index in the "one store, many indexes"
+    // substrate, exactly like `search_index_edges` (step 14, Option B). FTS5 has
+    // no in-place column-add, so BM25F requires a new virtual table + an O(N)
+    // re-index; the co-land with step 16 means an old DB pays ONE re-index window
+    // (`SCHEMA_VERSION` 15 -> 17 in one open). The `status` field is derived from
+    // the JSON body's `$.status` (the same status the G10 SearchFilter reads),
+    // guarded by `json_valid` so non-JSON bodies index an empty status. The
+    // `write_cursor` UNINDEXED column mirrors `search_index` for the
+    // canonical-row join (rowid==write_cursor identity is preserved by the
+    // engine write path; the vec0 corpus is NOT touched, so the eu7 fidelity gate
+    // stays a documented no-op at Slice 20 — ADR-0.8.14 §D6). `CREATE VIRTUAL
+    // TABLE` does not trip the accretion guard (it fires only on `CREATE TABLE` /
+    // `ADD COLUMN`), but the exemption marker is carried to document the additive
+    // re-index intent and match the step-11/step-14 virtual-table precedent.
+    Migration {
+        step_id: 17,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: F5 fielded FTS (new multi-column search_index_v2 FTS5 table + O(N) re-index; search_index retained)
+              CREATE VIRTUAL TABLE IF NOT EXISTS search_index_v2 USING fts5(
+                  kind,
+                  body,
+                  status,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );
+              INSERT INTO search_index_v2(kind, body, status, write_cursor)
+                  SELECT
+                      kind,
+                      body,
+                      CASE WHEN json_valid(body)
+                           THEN COALESCE(json_extract(body, '$.status'), '')
+                           ELSE '' END,
+                      write_cursor
+                  FROM canonical_nodes;",
     },
 ];
 
