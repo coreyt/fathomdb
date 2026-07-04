@@ -501,6 +501,31 @@
       "sha256": "d10a2c9f0af0c7c414bc043aa8bc0140c6fe04a1036018675b10a867cfad0d6d",
       "acquired_at": "2026-07-02",
       "role_note": "Cross-source pattern-setter: event-centric passages carrying native Wikidata QIDs in entity_ids, the shared join spine for CompMix / MultiHop-RAG / S2ORC cross-source interconnection."
+    },
+    "compmix": {
+      "script": "acquire_compmix.py",
+      "upstream": {
+        "kind": "huggingface_dataset_zip",
+        "id": "pchristm/CompMix",
+        "split": "train",
+        "file": "train_set.zip",
+        "revision": "398eb2b9dec2b14fba6f86789da63414b3eecd89",
+        "last_modified": "2023-06-19T03:20:00Z",
+        "note": "native Wikidata QIDs from CompMix entities+answers"
+      },
+      "license": "CC-BY-4.0",
+      "license_notes": "CC-BY-4.0 (Christmann et al., CompMix, WWW-2024 \u2014 heterogeneous question answering over Wikidata). Redistribution permitted with attribution; produced JSONL is cache-only / no-leak (gitignored).",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/compmix.jsonl",
+      "sample_size": 5000,
+      "seed": 20260702,
+      "doc_count": 4966,
+      "qid_coverage": 0.9992,
+      "docs_with_qid": 4962,
+      "distinct_qids": 3211,
+      "sha256": "7a3fa1f014182c2f155df244881ec91ca49dafa7ed8ba12842447a76262da5ef",
+      "acquired_at": "2026-07-03",
+      "role_note": "2nd native-QID corpus: heterogeneous Wikidata-QA docs (source_type=kb) carrying native QIDs in entity_ids \u2014 the kb axis for cross-source interconnection with wec_eng/news."
     }
   }
 }
