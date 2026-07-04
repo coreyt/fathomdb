@@ -197,6 +197,30 @@ fn serialize_index_state(path: &Path) -> Vec<u8> {
         out.extend_from_slice(format!("{wc}|{kind}|{body}\n").as_bytes());
     }
 
+    // 1b. F5 (Slice 10) — search_index_v2 content rows (kind/body/status) ordered
+    // by write_cursor. Added to the write path in the same D2 dispatch seam, so
+    // the R-SUB-2 determinism guarantee must extend to it.
+    out.extend_from_slice(b"# search_index_v2\n");
+    let mut stmt = conn
+        .prepare(
+            "SELECT write_cursor, kind, body, status FROM search_index_v2 ORDER BY write_cursor",
+        )
+        .expect("prep fts v2");
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })
+        .expect("fts v2 rows");
+    for row in rows {
+        let (wc, kind, body, status) = row.expect("fts v2 row");
+        out.extend_from_slice(format!("{wc}|{kind}|{body}|{status}\n").as_bytes());
+    }
+
     // 2. vec0 rows: rowid, source_type, kind, and the quantized embedding BLOB.
     out.extend_from_slice(b"# vector_default\n");
     let mut stmt = conn

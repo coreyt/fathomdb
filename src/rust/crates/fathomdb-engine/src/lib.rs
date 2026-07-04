@@ -1876,6 +1876,57 @@ impl RowKind {
     }
 }
 
+/// F5 (0.8.14 Slice 10) — per-field BM25F weights for the `search_index_v2`
+/// multi-column FTS index. One weight per indexed field
+/// (`kind`/`body`/`status`), applied as the field's contribution multiplier in
+/// the BM25F weighted-term-frequency accumulation.
+///
+/// The default is uniform (`1.0` each) — the "unweighted" baseline the R-F5-1
+/// acceptance test contrasts against. Boosting a field (e.g. `kind`) makes a
+/// match in that field outrank a same-strength match in a lower-weighted field.
+/// Engine-internal for 0.8.14: there is NO public Py/TS SDK surface for these
+/// tunables this release (cross-binding parity is a Slice-40/X1 concern).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bm25fFieldWeights {
+    pub kind: f64,
+    pub body: f64,
+    pub status: f64,
+}
+
+impl Default for Bm25fFieldWeights {
+    fn default() -> Self {
+        Self { kind: 1.0, body: 1.0, status: 1.0 }
+    }
+}
+
+/// F5 (0.8.14 Slice 10) — the compiled BM25F query plan for the fielded lexical
+/// arm (`ADR-0.8.1` §3.2 `BM25fQueryPlan`). Carries the tunable per-field
+/// `weights` and the tunable length-normalization `b` (and the term-saturation
+/// `k1`).
+///
+/// NOTE on `b`: SQLite FTS5's built-in `bm25()` auxiliary function pins its
+/// internal `k1`/`b` and exposes ONLY per-column weights — it cannot express a
+/// tunable `b`. So the score is computed in-engine (a textbook BM25F over the
+/// FTS5-recalled candidates) rather than delegated to the built-in `bm25()`:
+/// that is what makes `b` (and `k1`) genuinely tunable here, not a dead
+/// parameter. The `search_index_v2` FTS5 index is still load-bearing — it does
+/// the candidate recall (`MATCH`) that the scorer then ranks.
+///
+/// Defaults match Robertson/SQLite BM25 (`b = 0.75`, `k1 = 1.2`) with uniform
+/// field weights. Engine-internal for 0.8.14 (no SDK surface).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bm25fQueryPlan {
+    pub weights: Bm25fFieldWeights,
+    pub b: f64,
+    pub k1: f64,
+}
+
+impl Default for Bm25fQueryPlan {
+    fn default() -> Self {
+        Self { weights: Bm25fFieldWeights::default(), b: 0.75, k1: 1.2 }
+    }
+}
+
 /// Snapshot of engine-internal counters returned by [`Engine::counters`].
 ///
 /// Public key set is owned by `dev/design/lifecycle.md` § Public key set
@@ -4778,6 +4829,30 @@ impl Engine {
             .collect::<rusqlite::Result<Vec<u64>>>()
             .map_err(|_| EngineError::Storage)?;
         Ok(cursors)
+    }
+
+    /// F5 (0.8.14 Slice 10) — the fielded BM25F lexical arm over
+    /// `search_index_v2`. Recalls candidate rows through the FTS5 index
+    /// (`search_index_v2 MATCH`) and scores them with a textbook BM25F using the
+    /// plan's tunable per-field `weights` and tunable `b`/`k1`, returning
+    /// `(write_cursor, score)` in descending score order (write_cursor asc as the
+    /// deterministic tiebreak). Superseded node versions are excluded (join to
+    /// `canonical_nodes WHERE superseded_at IS NULL`).
+    ///
+    /// This is the engine-internal `BM25fQueryPlan` compiler path (`ADR-0.8.1`
+    /// §3.2); there is no public Py/TS SDK surface this release. The score is
+    /// computed in-engine (not via SQLite's `bm25()`, which cannot express a
+    /// tunable `b`); the FTS5 index remains load-bearing for candidate recall.
+    #[doc(hidden)]
+    pub fn bm25f_search(
+        &self,
+        query: &str,
+        plan: &Bm25fQueryPlan,
+    ) -> Result<Vec<(u64, f64)>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        bm25f_search_inner(connection, query, plan).map_err(|_| EngineError::Storage)
     }
 
     /// Embed arbitrary text with the engine's configured runtime embedder,
@@ -10162,6 +10237,27 @@ fn project_canonical_node_row(
             "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
             params![body, kind, cursor],
         )?;
+        // F5 (0.8.14 Slice 10) — same coexisting `searchable->FTS` target also
+        // populates the multi-column `search_index_v2` (kind/body/status) so a
+        // BM25F query can field-weight the lexical arm. Written SYNCHRONOUSLY in
+        // THIS transaction, exactly like `search_index` (rowid==write_cursor
+        // identity preserved). The `status` field mirrors the migration-17
+        // O(N) re-index: `$.status` from a JSON body (the same status the G10
+        // SearchFilter reads), guarded by `json_valid` so non-JSON bodies index
+        // an empty status. Determinism (R-SUB-2) is preserved: the derivation is
+        // a pure function of `body`, evaluated in-SQL identically on every run.
+        tx.execute(
+            "INSERT INTO search_index_v2(kind, body, status, write_cursor)
+             VALUES(
+                 ?1,
+                 ?2,
+                 CASE WHEN json_valid(?2)
+                      THEN COALESCE(json_extract(?2, '$.status'), '')
+                      ELSE '' END,
+                 ?3
+             )",
+            params![kind, body, cursor],
+        )?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if enqueue_vector {
@@ -10177,6 +10273,203 @@ fn project_canonical_node_row(
         record_projection_terminal(tx, cursor, "up_to_date")?;
     }
     Ok(enqueue_vector)
+}
+
+/// F5 (0.8.14 Slice 10) — tokenizer for the in-engine BM25F scorer. Lowercases
+/// and splits on non-alphanumeric boundaries (Unicode-aware). Used identically
+/// for the query and for every candidate field, so term-frequency, field
+/// length, document frequency, and average field length are all computed under
+/// one consistent tokenization (the FTS5 `porter` tokenizer is used only for
+/// candidate recall, a superset for the simple terms this lever targets).
+fn bm25f_tokenize(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            current.extend(ch.to_lowercase());
+        } else if !current.is_empty() {
+            out.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+/// F5 (0.8.14 Slice 10) — build the FTS5 `MATCH` expression for candidate
+/// recall from the query's tokens: each token is a double-quoted FTS5 string
+/// (tokens are alphanumeric-only, so no embedded quotes), OR-joined.
+fn bm25f_match_expression(terms: &[String]) -> String {
+    terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
+}
+
+/// F5 (0.8.14 Slice 10) — the BM25F score for one candidate document.
+///
+/// Standard BM25F: per query term, accumulate a length-normalized,
+/// field-weighted pseudo term-frequency across the fields, then apply the BM25
+/// saturation once. `norm_f = 1 - b + b*(len_f/avglen_f)` is the per-field
+/// length normalization (this is where tunable `b` bites); `weight_f` is the
+/// field boost (this is where the R-F5-1 field weighting bites).
+fn bm25f_score_doc(
+    plan: &Bm25fQueryPlan,
+    query_terms: &[String],
+    // (weight, doc field length, corpus avg field length, per-term tf in field)
+    fields: &[(f64, f64, f64, &HashMap<String, u32>)],
+    doc_count: usize,
+    df: &HashMap<String, usize>,
+) -> f64 {
+    let mut score = 0.0_f64;
+    for term in query_terms {
+        let mut weighted_tf = 0.0_f64;
+        for (weight, len_f, avglen_f, tf_map) in fields {
+            if *weight == 0.0 || *avglen_f <= 0.0 {
+                continue;
+            }
+            let tf = *tf_map.get(term).unwrap_or(&0) as f64;
+            if tf == 0.0 {
+                continue;
+            }
+            let norm = 1.0 - plan.b + plan.b * (len_f / avglen_f);
+            if norm <= 0.0 {
+                continue;
+            }
+            weighted_tf += weight * tf / norm;
+        }
+        if weighted_tf <= 0.0 {
+            continue;
+        }
+        let dfq = *df.get(term).unwrap_or(&0);
+        if dfq == 0 {
+            continue;
+        }
+        let n = doc_count as f64;
+        let idf = ((n - dfq as f64 + 0.5) / (dfq as f64 + 0.5) + 1.0).ln();
+        score += idf * (weighted_tf * (plan.k1 + 1.0)) / (plan.k1 + weighted_tf);
+    }
+    score
+}
+
+/// F5 (0.8.14 Slice 10) — connection-level implementation of the BM25F lexical
+/// arm. See [`Engine::bm25f_search`].
+fn bm25f_search_inner(
+    connection: &Connection,
+    query: &str,
+    plan: &Bm25fQueryPlan,
+) -> rusqlite::Result<Vec<(u64, f64)>> {
+    let query_terms: Vec<String> = {
+        let mut seen = BTreeSet::new();
+        bm25f_tokenize(query).into_iter().filter(|t| seen.insert(t.clone())).collect()
+    };
+    if query_terms.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Corpus pass over ACTIVE rows (superseded versions excluded): accumulate
+    // N, total field length per field (for avg field length), and per-term
+    // document frequency — all under the same Rust tokenization.
+    let mut doc_count: usize = 0;
+    let mut total_len = [0.0_f64; 3]; // kind, body, status
+    let mut df: HashMap<String, usize> = HashMap::new();
+    {
+        let mut stmt = connection.prepare(
+            "SELECT v.kind, v.body, v.status
+             FROM search_index_v2 v
+             JOIN canonical_nodes cn ON cn.write_cursor = v.write_cursor
+             WHERE cn.superseded_at IS NULL",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let fields =
+                [row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?];
+            doc_count += 1;
+            let mut present: BTreeSet<String> = BTreeSet::new();
+            for (i, field) in fields.iter().enumerate() {
+                let toks = bm25f_tokenize(field);
+                total_len[i] += toks.len() as f64;
+                for tok in toks {
+                    if query_terms.contains(&tok) {
+                        present.insert(tok);
+                    }
+                }
+            }
+            for term in present {
+                *df.entry(term).or_insert(0) += 1;
+            }
+        }
+    }
+    if doc_count == 0 {
+        return Ok(Vec::new());
+    }
+    let avglen = [
+        total_len[0] / doc_count as f64,
+        total_len[1] / doc_count as f64,
+        total_len[2] / doc_count as f64,
+    ];
+
+    // Active write_cursor set, to filter FTS5 MATCH candidates (search_index_v2
+    // retains superseded versions, exactly like search_index).
+    let active: BTreeSet<i64> = {
+        let mut stmt = connection
+            .prepare("SELECT write_cursor FROM canonical_nodes WHERE superseded_at IS NULL")?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<BTreeSet<i64>>>()?
+    };
+
+    // Candidate recall through the FTS5 index (this is what makes the v2 index
+    // load-bearing), then score each candidate with the in-engine BM25F.
+    let match_expr = bm25f_match_expression(&query_terms);
+    let mut scored: Vec<(u64, f64)> = Vec::new();
+    {
+        let mut stmt = connection.prepare(
+            "SELECT write_cursor, kind, body, status
+             FROM search_index_v2
+             WHERE search_index_v2 MATCH ?1",
+        )?;
+        let mut rows = stmt.query([match_expr.as_str()])?;
+        while let Some(row) = rows.next()? {
+            let wc = row.get::<_, i64>(0)?;
+            if !active.contains(&wc) {
+                continue;
+            }
+            let kind = row.get::<_, String>(1)?;
+            let body = row.get::<_, String>(2)?;
+            let status = row.get::<_, String>(3)?;
+
+            let mut tf_kind: HashMap<String, u32> = HashMap::new();
+            let mut len_kind = 0.0_f64;
+            for tok in bm25f_tokenize(&kind) {
+                len_kind += 1.0;
+                *tf_kind.entry(tok).or_insert(0) += 1;
+            }
+            let mut tf_body: HashMap<String, u32> = HashMap::new();
+            let mut len_body = 0.0_f64;
+            for tok in bm25f_tokenize(&body) {
+                len_body += 1.0;
+                *tf_body.entry(tok).or_insert(0) += 1;
+            }
+            let mut tf_status: HashMap<String, u32> = HashMap::new();
+            let mut len_status = 0.0_f64;
+            for tok in bm25f_tokenize(&status) {
+                len_status += 1.0;
+                *tf_status.entry(tok).or_insert(0) += 1;
+            }
+
+            let fields = [
+                (plan.weights.kind, len_kind, avglen[0], &tf_kind),
+                (plan.weights.body, len_body, avglen[1], &tf_body),
+                (plan.weights.status, len_status, avglen[2], &tf_status),
+            ];
+            let score = bm25f_score_doc(plan, &query_terms, &fields, doc_count, &df);
+            scored.push((wc as u64, score));
+        }
+    }
+
+    // Descending score; write_cursor ascending as the deterministic tiebreak.
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
+    });
+    Ok(scored)
 }
 
 fn commit_batch(
