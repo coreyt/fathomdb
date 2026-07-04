@@ -10242,9 +10242,13 @@ fn project_canonical_node_row(
         // BM25F query can field-weight the lexical arm. Written SYNCHRONOUSLY in
         // THIS transaction, exactly like `search_index` (rowid==write_cursor
         // identity preserved). The `status` field mirrors the migration-17
-        // O(N) re-index: `$.status` from a JSON body (the same status the G10
-        // SearchFilter reads), guarded by `json_valid` so non-JSON bodies index
-        // an empty status. Determinism (R-SUB-2) is preserved: the derivation is
+        // O(N) re-index: `$.status` from a JSON body, guarded by `json_valid` so
+        // non-JSON bodies index an empty status. NOTE (codex fix-1 finding 2):
+        // this is F5's OWN `$.status`-derived field for the BM25F `status`
+        // column — it is NOT (yet) the value the shipped G10 SearchFilter reads.
+        // G10 filtering reads the vec0 `status` column, which is still hardwired
+        // to the empty-string sentinel; wiring G10 onto this field is out of
+        // scope for F5. Determinism (R-SUB-2) is preserved: the derivation is
         // a pure function of `body`, evaluated in-SQL identically on every run.
         tx.execute(
             "INSERT INTO search_index_v2(kind, body, status, write_cursor)
@@ -10275,31 +10279,45 @@ fn project_canonical_node_row(
     Ok(enqueue_vector)
 }
 
-/// F5 (0.8.14 Slice 10) — tokenizer for the in-engine BM25F scorer. Lowercases
-/// and splits on non-alphanumeric boundaries (Unicode-aware). Used identically
-/// for the query and for every candidate field, so term-frequency, field
-/// length, document frequency, and average field length are all computed under
-/// one consistent tokenization (the FTS5 `porter` tokenizer is used only for
-/// candidate recall, a superset for the simple terms this lever targets).
-fn bm25f_tokenize(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            current.extend(ch.to_lowercase());
-        } else if !current.is_empty() {
-            out.push(std::mem::take(&mut current));
-        }
-    }
-    if !current.is_empty() {
-        out.push(current);
-    }
-    out
+/// F5 (0.8.14 Slice 10, fix-1) — tokenizer for the in-engine BM25F scorer.
+///
+/// Tokenizes `text` through the SAME FTS5 tokenizer that `search_index_v2` uses
+/// for candidate recall (`porter unicode61 remove_diacritics 2`), so the scorer
+/// measures term-frequency, document-frequency, field length, and average field
+/// length under the index's own tokenization — porter stemming + unicode61
+/// case-fold + diacritic folding. The previous implementation hand-rolled a
+/// second lowercase-alnum splitter; a stemmed/diacritic variant recalled by
+/// `MATCH` (e.g. query `run` vs indexed `running`, or `cafe` vs `café`) was then
+/// scored as if the term were absent, so ranking was wrong for exactly those
+/// variants (codex §9 fix-1 finding 1). Reusing FTS5 itself makes scoring
+/// tokenization-faithful without re-implementing porter/unicode61 in Rust.
+///
+/// Mechanism: round-trip `text` through a temp single-column FTS5 table with the
+/// identical tokenizer, then read the emitted token instances back via the
+/// `fts5vocab(..., 'instance')` companion. The token multiset is returned in
+/// index order (duplicates kept) so callers count tf and field length directly.
+/// Query terms and every candidate field go through this one path, so all four
+/// statistics are consistent with each other and with the FTS5 index the scorer
+/// ranks.
+fn fts5_tokenize(connection: &Connection, text: &str) -> rusqlite::Result<Vec<String>> {
+    connection.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS temp.bm25f_tok
+             USING fts5(t, tokenize = 'porter unicode61 remove_diacritics 2');
+         CREATE VIRTUAL TABLE IF NOT EXISTS temp.bm25f_tok_vocab
+             USING fts5vocab('bm25f_tok', 'instance');
+         DELETE FROM temp.bm25f_tok;",
+    )?;
+    connection.execute("INSERT INTO temp.bm25f_tok(t) VALUES(?1)", params![text])?;
+    let mut stmt =
+        connection.prepare("SELECT term FROM temp.bm25f_tok_vocab ORDER BY \"offset\"")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    rows.collect()
 }
 
 /// F5 (0.8.14 Slice 10) — build the FTS5 `MATCH` expression for candidate
 /// recall from the query's tokens: each token is a double-quoted FTS5 string
-/// (tokens are alphanumeric-only, so no embedded quotes), OR-joined.
+/// (tokens are FTS5-emitted stems — unicode61 alnum, no embedded quotes),
+/// OR-joined.
 fn bm25f_match_expression(terms: &[String]) -> String {
     terms.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
 }
@@ -10359,7 +10377,7 @@ fn bm25f_search_inner(
 ) -> rusqlite::Result<Vec<(u64, f64)>> {
     let query_terms: Vec<String> = {
         let mut seen = BTreeSet::new();
-        bm25f_tokenize(query).into_iter().filter(|t| seen.insert(t.clone())).collect()
+        fts5_tokenize(connection, query)?.into_iter().filter(|t| seen.insert(t.clone())).collect()
     };
     if query_terms.is_empty() {
         return Ok(Vec::new());
@@ -10367,7 +10385,7 @@ fn bm25f_search_inner(
 
     // Corpus pass over ACTIVE rows (superseded versions excluded): accumulate
     // N, total field length per field (for avg field length), and per-term
-    // document frequency — all under the same Rust tokenization.
+    // document frequency — all under the SAME FTS5 tokenization the index uses.
     let mut doc_count: usize = 0;
     let mut total_len = [0.0_f64; 3]; // kind, body, status
     let mut df: HashMap<String, usize> = HashMap::new();
@@ -10385,7 +10403,7 @@ fn bm25f_search_inner(
             doc_count += 1;
             let mut present: BTreeSet<String> = BTreeSet::new();
             for (i, field) in fields.iter().enumerate() {
-                let toks = bm25f_tokenize(field);
+                let toks = fts5_tokenize(connection, field)?;
                 total_len[i] += toks.len() as f64;
                 for tok in toks {
                     if query_terms.contains(&tok) {
@@ -10438,19 +10456,19 @@ fn bm25f_search_inner(
 
             let mut tf_kind: HashMap<String, u32> = HashMap::new();
             let mut len_kind = 0.0_f64;
-            for tok in bm25f_tokenize(&kind) {
+            for tok in fts5_tokenize(connection, &kind)? {
                 len_kind += 1.0;
                 *tf_kind.entry(tok).or_insert(0) += 1;
             }
             let mut tf_body: HashMap<String, u32> = HashMap::new();
             let mut len_body = 0.0_f64;
-            for tok in bm25f_tokenize(&body) {
+            for tok in fts5_tokenize(connection, &body)? {
                 len_body += 1.0;
                 *tf_body.entry(tok).or_insert(0) += 1;
             }
             let mut tf_status: HashMap<String, u32> = HashMap::new();
             let mut len_status = 0.0_f64;
-            for tok in bm25f_tokenize(&status) {
+            for tok in fts5_tokenize(connection, &status)? {
                 len_status += 1.0;
                 *tf_status.entry(tok).or_insert(0) += 1;
             }

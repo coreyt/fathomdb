@@ -124,6 +124,66 @@ fn r_f5_1_field_weight_flips_ranking_vs_body_only_baseline() {
     );
 }
 
+/// fix-1 (codex §9 finding 1) — the in-engine scorer must measure tf / df /
+/// field-lengths under the SAME tokenization the `search_index_v2` FTS5 index
+/// uses for recall (`porter unicode61 remove_diacritics 2`). A query term that
+/// matches a document ONLY via porter stemming (`run` vs indexed `running`) or
+/// diacritic folding (`cafe` vs indexed `café`) is recalled by `MATCH`; it must
+/// therefore also be COUNTED by the scorer, not treated as absent.
+///
+/// Falsifiable RED under the previous lowercase-alnum splitter: it tokenized
+/// `running` as `["running"]` (never `run`) and `café` as `["café"]` (never
+/// `cafe`), so tf and df for the query term were both 0 and the recalled doc
+/// scored exactly 0.0 — present in the result set but effectively unranked.
+/// GREEN after fix-1: both the field text and the query go through FTS5, both
+/// sides fold to the same stem, tf/df are positive, and the score is > 0.
+#[test]
+fn r_f5_1_fix1_scorer_is_tokenization_faithful_to_fts5() {
+    let (_dir, engine) = fresh_engine("bm25f_tokfaithful");
+
+    // Each gold row matches its query ONLY under FTS5 tokenization:
+    //   * cursor 1 — body "running" stems to "run"  (query "run").
+    //   * cursor 2 — body "café"    folds  to "cafe" (query "cafe").
+    // Filler rows keep IDF / average field length non-degenerate.
+    let batch = vec![
+        node("note", "running late again"), // cursor 1 = porter-stem gold
+        node("note", "meet at the café tonight"), // cursor 2 = diacritic gold
+        node("note", "foxtrot golf hotel india"), // cursor 3 = filler
+        node("doc", "juliet kilo lima mike"), // cursor 4 = filler
+    ];
+    let receipt = engine.write(&batch).expect("write fixture");
+    assert_eq!(receipt.row_cursors, vec![1, 2, 3, 4], "deterministic per-row cursors");
+
+    let plan = Bm25fQueryPlan::default();
+
+    // Porter-stem case: "run" must score the "running" doc as PRESENT (> 0).
+    let stem = engine.bm25f_search("run", &plan).expect("stem search");
+    let stem_score = stem
+        .iter()
+        .find(|(id, _)| *id == 1)
+        .map(|(_, s)| *s)
+        .unwrap_or_else(|| panic!("porter-stem doc must be recalled by MATCH, got {stem:?}"));
+    assert!(
+        stem_score > 0.0,
+        "query 'run' must score the porter-stemmed 'running' doc > 0 (RED under the \
+         lowercase-alnum splitter, which counted the term as absent → 0.0), got {stem_score} \
+         in {stem:?}"
+    );
+
+    // Diacritic case: "cafe" must score the "café" doc as PRESENT (> 0).
+    let dia = engine.bm25f_search("cafe", &plan).expect("diacritic search");
+    let dia_score = dia
+        .iter()
+        .find(|(id, _)| *id == 2)
+        .map(|(_, s)| *s)
+        .unwrap_or_else(|| panic!("diacritic doc must be recalled by MATCH, got {dia:?}"));
+    assert!(
+        dia_score > 0.0,
+        "query 'cafe' must score the diacritic-folded 'café' doc > 0 (RED under the \
+         lowercase-alnum splitter), got {dia_score} in {dia:?}"
+    );
+}
+
 /// Write-path integration — the multi-index write populates `search_index_v2`
 /// synchronously (same transaction) for every FTS-searchable row, so the BM25F
 /// arm sees rows immediately after `write` (no drain needed for the sync FTS).
