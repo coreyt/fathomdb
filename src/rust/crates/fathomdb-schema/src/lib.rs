@@ -410,8 +410,10 @@ pub const MIGRATIONS: &[Migration] = &[
     // no in-place column-add, so BM25F requires a new virtual table + an O(N)
     // re-index; the co-land with step 16 means an old DB pays ONE re-index window
     // (`SCHEMA_VERSION` 15 -> 17 in one open). The `status` field is derived from
-    // the JSON body's `$.status` (the same status the G10 SearchFilter reads),
-    // guarded by `json_valid` so non-JSON bodies index an empty status. The
+    // the JSON body's `$.status`, guarded by `json_valid` so non-JSON bodies
+    // index an empty status; this is F5's own `$.status`-derived field, NOT
+    // the value the shipped G10 SearchFilter reads (G10 reads vec0 `status`,
+    // still the empty sentinel). The
     // `write_cursor` UNINDEXED column mirrors `search_index` for the
     // canonical-row join (rowid==write_cursor identity is preserved by the
     // engine write path; the vec0 corpus is NOT touched, so the eu7 fidelity gate
