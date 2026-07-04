@@ -1,0 +1,61 @@
+{
+  "slice": "0.8.14-slice-5",
+  "title": "EXP-S substrate KEYSTONE — kind-tagged coexisting-index substrate (row_kind + step-16 migration + per-kind index dispatch + determinism check)",
+  "status": "COMPLETE",
+  "baseline_sha": "dff4830c8853219c9cfafac3bf6356b962b16894",
+  "branch": "slice-5-20260703T235950Z",
+  "head_sha": "400369e44a85313595bd04aeb8174b679c09a60c",
+  "commits": [
+    {
+      "sha": "559a55fbc20c65872fdf4e31d8b5cf84b4b5a290",
+      "subject": "feat(0.8.14): row_kind column + step-16 migration (EXP-S R-SUB-1/R-SUB-3)",
+      "summary": "Schema crate: forward-only migration step 16 (SCHEMA_VERSION 15->16) adds canonical_nodes.row_kind TEXT NOT NULL DEFAULT 'leaf' with the MIGRATION-ACCRETION-EXEMPTION marker. New tests/step16_migration.rs; bumped step-count/SCHEMA_VERSION tripwires in migrations.rs, step14_migration.rs, engine compatibility.rs."
+    },
+    {
+      "sha": "400369e44a85313595bd04aeb8174b679c09a60c",
+      "subject": "feat(0.8.14): row_kind index-target dispatch + determinism check (EXP-S R-SUB-1/R-SUB-2/D2/D5)",
+      "summary": "Engine crate: pub RowKind {Leaf,Coverage,Graph}; row_kind->index-target LOOKUP seam (index_targets_for_row_kind + project_canonical_node_row); commit_batch Node arm refactored to write row_kind='leaf' via the seam (behavior-identical for leaf); internal write/query seams (write_canonical_row_with_kind_for_test, canonical_rows_with_row_kind_for_test); tests/exp_s_substrate.rs (R-SUB-1, D2 index-target divergence, R-SUB-2 determinism)."
+    }
+  ],
+  "acceptance": {
+    "R-SUB-1": "GREEN — row_kinds (leaf/coverage/graph) coexist; migration lands the column; fixture writes 3 distinct row_kinds and the engine selects by row_kind (schema s16_row_kind_column_present..., engine r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind).",
+    "R-SUB-2": "GREEN — incremental multi-index write is deterministic; two fresh DBs, drained to quiescence, produce byte-identical serialized index state (FTS content rows, vec0 rows incl. quantized embedding BLOB, _fathomdb_vector_rows, row_kind tags, projection-terminal cursors) via engine r_sub_2_incremental_multi_index_write_is_deterministic.",
+    "R-SUB-3": "GREEN — migration is forward-only + guarded: schema s16_forward_only_from_v15_defaults_existing_rows_to_leaf (open at v15 with a pre-existing row, apply ONLY step 16, reach v16, legacy row defaults to 'leaf', exactly [16] ran) and s16_passes_accretion_guard_only_with_marker.",
+    "D5-TC-1": "DISCHARGED (hygiene) — the per-row_kind index-target set is a wrappable LOOKUP seam (index_targets_for_row_kind) with an ADR-0.8.14 §D5 / ledger TC-1 code comment; FTS/filter writes stay same-transaction and vector writes stay async-via-worker; terminal-cursor readiness stays per-kind-extensible. NO OPP-12 surface implemented."
+  },
+  "tdd": {
+    "note": "Schema tests authored against a not-yet-migrated schema (SCHEMA_VERSION=15) would RED on the s16_* / bumped-count assertions before step 16 existed; committed as an atomic migration+tests change. Engine tests reference RowKind + the internal seams so they are committed test+impl together (memory: 'clear test+impl commit' acceptable). All new tests verified GREEN post-impl.",
+    "new_tests": [
+      "fathomdb-schema tests/step16_migration.rs: s16_row_kind_column_present_and_schema_version_is_16, s16_forward_only_from_v15_defaults_existing_rows_to_leaf, s16_passes_accretion_guard_only_with_marker",
+      "fathomdb-engine tests/exp_s_substrate.rs: r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind, d2_index_targets_differ_by_row_kind, r_sub_2_incremental_multi_index_write_is_deterministic"
+    ]
+  },
+  "verification": {
+    "cargo_clippy_workspace_all_targets_exit": 0,
+    "cargo_check_workspace_all_targets_exit": 0,
+    "gate_commands": [
+      "cargo clippy --workspace --all-targets  => exit 0",
+      "cargo check --workspace --all-targets   => exit 0"
+    ],
+    "targeted_tests": [
+      "cargo test -p fathomdb-schema => ok (all migration + step16 tests pass)",
+      "cargo test -p fathomdb-engine --test exp_s_substrate => 3 passed",
+      "cargo test -p fathomdb-engine --test compatibility --test batch_write_per_row_cursor --test projection_runtime --test cursor_read_after_write --test pr_g0_identity => all ok (regression, node write path)",
+      "cargo test -p fathomdb-engine --features operator --test dump_schema --test rebuild_projections --test rebuild_vec0 --test excise_source --test source_id_writes => all ok"
+    ],
+    "agent_long_not_run": "eu7 recall gate NOT run (Slice 20 concern per D6; correct scope for this slice)."
+  },
+  "d6_vec0_rewrite": {
+    "vec0_rows_rewritten": false,
+    "detail": "Migration step 16 is a pure additive ALTER TABLE ... ADD COLUMN on canonical_nodes; it does NOT touch vector_default / vec0 rows and does NOT reshape ensure_vector_partition. No embedder, pooling, or sign-bit quant change. Per ADR-0.8.14 §D6 the eu7 fidelity gate at Slice 20 is therefore a DOCUMENTED NO-OP (no re-embed, no re-quantize). ANN fidelity is mathematically invariant.",
+    "eu7_action_for_slice_20": "Run recall_gate::recall_ci_clears_floor(ci_hi, 0.90) as a documented no-op regression check only; no breach expected."
+  },
+  "scope_boundaries_respected": {
+    "engine_and_schema_only": true,
+    "no_public_sdk_surface_added": "true — row_kind is engine-internal: PreparedWrite::Node unchanged (132 construction sites + Py/TS bindings untouched); Leaf via column default for all normal writes; coverage/graph via internal for_test seams. No Python/TS binding changed.",
+    "no_maturin_or_pip_in_worktree": true,
+    "doc_type_kind_vocabulary_untouched": "true — resolve_source_type, KIND_TO_SOURCE_TYPE_CASE_SQL, migration-9 preflight CHECK all unchanged; row_kind is a SEPARATE column/axis (D1)."
+  },
+  "blockers": [],
+  "next_step_for_orchestrator": "Slice 5 COMPLETE at head 400369e44a85313595bd04aeb8174b679c09a60c. Ready for codex review (schema migration + engine seam) then cherry-pick onto the integration branch. Downstream: Slice 10 (F5 fielded BM25F, step-17 migration) rides these row_kind/field columns; Slice 20 runs the eu7 no-op per D6 (record vec0_rows_rewritten=false above). NOTE for Slice 40 / X1: RowKind + row_kind currently have NO Py/TS binding — cross-binding parity is deferred to Slice 40 (MAIN-tree build) as the ADR §Consequences states."
+}

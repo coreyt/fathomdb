@@ -1,0 +1,3224 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f2a7c-8328-7841-857a-dbc16b45f65c
+--------
+user
+You are the code reviewer for FathomDB 0.8.14 Slice 5 (EXP-S substrate KEYSTONE), a SCHEMA MIGRATION. This is codex §9 review per dev/design/orchestration.md §3.
+
+Branch: slice-5-20260703T235950Z, HEAD 400369e44a85313595bd04aeb8174b679c09a60c.
+Baseline: dff4830c8853219c9cfafac3bf6356b962b16894.
+
+Required reading (in this worktree):
+- dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md — the ratified design (Decisions D1-D7 are binding).
+- dev/plans/plan-0.8.14.md §2 (R-SUB-1, R-SUB-2, R-SUB-3, R-X-1).
+- dev/plans/runs/0.8.14-slice-5-output.json — the implementer's closure claims.
+- The two commits 559a55fb (schema step-16 migration) and 400369e4 (engine row_kind dispatch + tests) in chronological order.
+
+Focus your review on these load-bearing assertions (be adversarial — a schema migration on main is high-stakes):
+
+1. **R-SUB-2 determinism test is NOT vacuously green.** The engine tests were committed test+impl together (no RED-first). Read tests/exp_s_substrate.rs::r_sub_2_incremental_multi_index_write_is_deterministic IN FULL. Does it actually (a) run TWO independent fresh DBs, (b) DRAIN/flush the async projection worker to quiescence before comparing (the FTS-sync/vector-async split races otherwise), and (c) byte-compare a serialization that would genuinely CATCH a non-determinism (FTS rows, vec0 rows incl. the quantized embedding BLOB, _fathomdb_vector_rows, row_kind, projection-terminal cursors)? Would this test FAIL if the write path were non-deterministic, or is it a tautology?
+
+2. **D1/D2 substrate is real, not a stub.** Is row_kind a genuine SEPARATE column from the hard-locked doc-type `kind` (D1)? Are the three hard-locked doc-type sites (resolve_source_type, KIND_TO_SOURCE_TYPE_CASE_SQL, migration-9 CHECK) genuinely untouched? Is index_targets_for_row_kind a REAL per-kind lookup seam that different row_kinds actually route through differently (D2 index-target divergence), or does leaf/coverage/graph collapse to identical behavior? Does the D5/TC-1 seam comment correspond to a real wrappable seam (FTS same-txn, vector async-via-worker preserved)?
+
+3. **Migration correctness (R-SUB-3).** Step 16 forward-only, contiguous (step_id==16), SCHEMA_VERSION bumped 15->16, MIGRATION-ACCRETION-EXEMPTION marker present and required (the accretion guard would reject without it)? Existing v15 rows default row_kind='leaf'? Any way an old DB fails to migrate? Is `ADD COLUMN ... NOT NULL DEFAULT 'leaf'` safe on a populated table?
+
+4. **D6 no vector rewrite.** Confirm step 16 does NOT reshape vec0 / re-embed / re-quantize (so eu7 at Slice 20 is a true no-op). Flag if anything touches vector_default or ensure_vector_partition.
+
+5. **Any correctness/regression risk** in the commit_batch Node-arm refactor (behavior must be byte-identical for leaf writes — the existing production path).
+
+Verdict format:
+- `## Verdict: PASS|CONCERN|BLOCK` markdown header.
+- Findings as `### N. [high|medium|low] short title` then `Refs:` (file:line) then 2-4 line explanation.
+- "What passed on inspection" section.
+- "Reviewer process notes" section.
+Sandbox is read-only; do NOT write the verdict file — the main thread promotes it.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+Reviewing the slice against the ADR, plan requirements, closure claims, and the two target commits first. Then I’ll inspect the determinism test and migration path in detail before issuing a verdict.
+codex
+The shell wrapper is failing at sandbox startup, so I’m retrying with a minimal non-login invocation to get the local files and git diff context. After that I’ll inspect the specific test and migration code paths.
+exec
+/bin/bash -c "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -c pwd in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+
+exec
+/bin/bash -c "ls -la /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z | sed -n '1,120p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+total 324
+drwxrwxr-x 13 coreyt coreyt   4096 Jul  3 19:09 .
+drwxrwxr-x  7 coreyt coreyt   4096 Jul  3 18:59 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  3 18:59 .claude
+-rw-rw-r--  1 coreyt coreyt     86 Jul  3 18:59 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  3 18:59 .github
+-rw-rw-r--  1 coreyt coreyt   4024 Jul  3 18:59 .gitignore
+-rw-rw-r--  1 coreyt coreyt   1181 Jul  3 18:59 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul  3 18:59 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul  3 18:59 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul  3 18:59 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul  3 18:59 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  3 18:59 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111562 Jul  3 18:59 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul  3 18:59 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul  3 18:59 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul  3 18:59 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul  3 18:59 deny.toml
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  3 18:59 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  3 18:59 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  3 18:59 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul  3 18:59 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jul  3 18:59 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  3 18:59 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  3 18:59 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul  3 18:59 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul  3 18:59 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  3 18:59 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  3 18:59 src
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  3 19:09 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  3 18:59 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  3 18:59 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  3 18:59 tools
+
+exec
+/bin/bash -c "rg --files -g 'MEMORY.md' -g 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ exited 1 in 0ms:
+exec
+/bin/bash -c "sed -n '1,220p' AGENTS.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+# AGENTS.md — FathomDB
+
+Operating manual for AI coding agents (Claude Code, Codex, Cursor, Aider, Copilot) working in this repo. Cross-vendor convention. This is the canonical agent-instruction file; **no `CLAUDE.md` is maintained** — Claude Code reads `AGENTS.md` natively.
+
+Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
+
+## 0. System layers — where each rule fits
+
+- **Invariants layer** — this file (front-loaded, cached, ≤300, bullets).
+- **Index layer** — `dev/adr/ADR-0.6.0-decision-index.md`, `dev/interfaces/*.md`. Linked, never inlined.
+- **Retrieval layer** — grep / glob / read / LSP / tree-sitter map on demand. No local vector index.
+- **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
+- **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
+- **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits; **one writer per checkout** — concurrent file-mutating sessions/agents each get their own worktree, or are serialized.
+
+---
+
+## 1. Invariants — read these first
+
+- **Memory first.** Read `MEMORY.md` and the `feedback_*.md` files it points to before planning any change. They encode prior corrections that override default behavior.
+- **ADRs are authoritative.** Decisions live in `dev/adr/`. Index: `dev/adr/ADR-0.6.0-decision-index.md`. Do not contradict an accepted ADR; propose a successor instead.
+- **TDD is mandatory.** Failing test first; red → green → refactor. Mechanical version bumps and renames are the only exception. (`feedback_tdd.md`)
+- **Stale > missing.** A wrong comment, doc, or ADR is more harmful than its absence. If you cannot maintain something, delete it.
+- **Public surface is contract.** Anything in `dev/interfaces/` or `pub` Rust APIs is a contract; changes need an ADR or interface-doc update in the same PR.
+
+## 2. Repo shape
+
+- **Rust workspace** under `src/rust/crates/` — 7 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`.
+- **Python bindings** under `src/python/` (package: `fathomdb`).
+- **TypeScript bindings** under `src/ts/`.
+- **Public docs** under `docs/` (MkDocs-built).
+- **Internal engineering docs** under `dev/`: `adr/`, `interfaces/`, `progress/`, `plans/`, `tmp/`.
+
+## 3. Build / test / lint commands
+
+Use the typed dev-loop verbs (Phase 2). Each emits **concise output on pass, structured diagnostic on fail**, with full output spilled to `/tmp/fathomdb-agent-<verb>-<pid>.log` when capped.
+
+| Verb      | Script                         | Purpose                                                           |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| build     | `./scripts/agent-build.sh`     | Compile workspace (Rust + Python install + TS build if installed) |
+| lint      | `./scripts/agent-lint.sh`      | clippy + ruff + markdownlint + prettier --check + lychee          |
+| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit                              |
+| test      | `./scripts/agent-test.sh`      | cargo test + pytest                                               |
+| verify    | `./scripts/agent-verify.sh`    | lint → typecheck → test (short-circuits on first fail)            |
+
+Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, and root metadata. Pre-existing legacy under `dev/adr/`, `dev/design/`, `dev/agents/`, `dev/deps/`, etc. is excluded — clean up incrementally when touching those files. Auto-fix: `npm run format:md` (prettier --write) + `./node_modules/.bin/markdownlint-cli2 --fix`.
+
+Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
+
+The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`. Long-run test variants (e.g. AC-021 60 s window, AC-059b ~1000-iteration cursor-race fixture) are exercised only via `scripts/check.sh` with `AGENT_LONG=1`; `agent-verify.sh` skips them for runtime budget.
+
+### One-time setup
+
+- Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
+- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without this, the Python lint/typecheck/test steps emit a skip notice and pass without exercising.
+- TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
+- Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2` + `prettier`. `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
+
+## 4. Verification ordering
+
+Run in latency order; short-circuit on first failure:
+
+1. **lint** (clippy / ruff) — fastest signal, catches most style + correctness issues
+2. **typecheck** (cargo check / pyright / tsc) — catches type errors before tests run them
+3. **unit tests** (`agent-test.sh`)
+4. **integration tests** — opt-in, gated by feature/env flag; not part of `agent-verify`
+
+Do not paraphrase, summarize, or shorten compiler diagnostics — pass them through unaltered. Rust diagnostics in particular are best-in-class; Anthropic's RustAssistant numbers depend on them being unaltered.
+
+## 5. Test discipline
+
+- **Failing test first.** Write the failing test, commit it (or stage it visible to the reviewer), then implement.
+- **Test files are read-only during fix-to-spec.** Do not edit a test to make a failing build pass; fix the code.
+- **Property-based tests required** for codec / projection / recovery / round-trip layers. Rust: `proptest` (dev-dep on `fathomdb-schema`, `fathomdb-engine`, `fathomdb-query`). Python: `hypothesis` (in `[dev]` and `[test]` optional deps; install via `pip install -e 'src/python[dev]'`). Scaffolds: `src/rust/crates/<crate>/tests/property_template.rs` and `src/python/tests/test_property_template.py` — replace the trivial property with real round-trip / invariant assertions when domain types land.
+- **No agent-generated oracles.** Tests must encode human intent; do not regenerate snapshot or golden tests autonomously.
+- **Retry budget.** If you hit the same failure mode twice, stop. Re-read the failing test, the relevant ADR, and the relevant `feedback_*.md`. Do not loop a third time without re-thinking; if necessary, `/clear` and reset.
+
+## 6. Comment policy
+
+- **Public-API docstrings:** required for `pub` Rust items, top-level Python functions/classes, exported TS symbols. Document contract: inputs, outputs, errors, panics, invariants.
+- **Internal helpers:** no docstrings unless behavior is non-obvious. Names should carry the meaning.
+- **Inline comments:** why / invariants / hazards only. Never restate what code does. Never reference the current task or PR. (Per CLAUDE-default rules and `feedback_reliability_principles.md`.)
+- **Stale comment > delete.** If a comment no longer matches the code, delete it; do not "update later."
+
+## 7. Subagent rules
+
+- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread _is_ the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Releases:** main thread plans; delegate coding to `implementer` (in worktree); request diff review from `code-reviewer`. (`feedback_orchestrate_releases.md`)
+- **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
+- **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
+- **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **One writer per checkout — NEVER share a checkout across concurrent file-mutating sessions or subagents.** Two writers in one working tree race on `HEAD`/branch-switch/uncommitted edits — commits land on the wrong branch and one writer's edits surface on another's. Each concurrent writer MUST have its own git worktree (cut off `origin/main`); if you can't isolate, **serialize** (run one, let it finish + verify, then the next). Read-only subagents (audit, search, review) MAY share a checkout and run concurrently. After any concurrent run, verify-from-git and push **explicit branch refs** (HEAD-independent), never relying on current HEAD. (incident 2026-06-29)
+- **Valid agent types (Claude Code `subagent_type`):** `claude`, `claude-code-guide`, `Explore`, `general-purpose`, `implementer`, `Plan`, `statusline-setup`. Never guess or invent a type — if none fits, omit `subagent_type` (defaults to `claude`). A wrong type is a hard error that cascades to every child.
+- **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (agent-def anti-chaining, main-thread-owned worktrees, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the spawn discipline.
+
+## 8. Iteration discipline
+
+- **Cap retry-budget at ~2 same-issue corrections.** Beyond that, stop, externalize plan to `dev/progress/0.6.0.md`, `/clear`, restart with the plan in front of you.
+- **Compact-aware.** Anything that must survive compaction goes on disk: ADRs, progress logs, plan files, MEMORY entries. Do not rely on chat to remember.
+- **Front-load invariants, end-load tasks.** When prompting yourself or constructing context, put rules near the top, the immediate task near the bottom (lost-in-the-middle).
+
+## 9. Pointers
+
+- **Decisions:** `dev/adr/ADR-0.6.0-decision-index.md`
+- **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
+- **Method on-ramp:** `dev/agent-harness-bootstrap-prompt.md` (portable distillation — the plan-vs-runbook split, 7 principles, the operating loop)
+- **Orchestration mechanics:** `dev/design/orchestration.md` (cross-release runbook: Claude+Codex spawn discipline, § 1.6 preflight gate, § 13 failure catalog)
+- **Preflight gate:** `scripts/preflight.sh` (run before every worktree spawn — stale-base + dep-CLOSED + disk)
+- **Plan / slice templates:** `dev/plans/prompts/PLAN-TEMPLATE.md` (per-release plan + authoring checklist) · `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` (per-slice prompt)
+- **Progress log:** `dev/progress/0.6.0.md`
+- **Plans:** `dev/plans/`
+- **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
+- **Memory:** `MEMORY.md` (auto-loaded into Claude Code session start)
+
+## 10. Forbidden patterns
+
+Pulled from MEMORY `feedback_*.md`. Violations are correctness bugs, not style preferences.
+
+- **No mocking the database.** Integration tests hit a real database. (`feedback_tdd.md`-adjacent; prior incident.)
+- **No skipping hooks.** Never `--no-verify`, never `--no-gpg-sign` unless explicitly approved.
+- **No backwards-compatibility shims** in pre-1.0 rewrites.
+- **No data migrations** in managed-vec projection releases. (`feedback_no_data_migration.md`)
+- **No `c_char` hardcoded as `i8` or `u8`** at C interop boundaries. (`feedback_cross_platform_rust.md`)
+- **No `pip install` + manual `cargo build` + `cp`** for Python native modules — use `pip install -e python/`. (`feedback_python_native_build.md`)
+- **No `yaml.safe_load` as workflow validator** — use `actionlint`. (`feedback_workflow_validation.md`)
+- **No "fix in 0.7"** for reliability bugs. Net-negative LoC on reliability releases. (`feedback_reliability_principles.md`)
+- **No "green CI = done"** for releases — install the published wheel and run end-to-end open/close/exit before declaring done. (`feedback_release_verification.md`)
+- **No shared checkout across concurrent writers.** Never run more than one file-mutating session/subagent in the same working tree at once — worktree-isolate each writer (off `origin/main`) or serialize them (§7). (incident 2026-06-29)
+- **Vector identity belongs to the embedder.** (`project_vector_identity_invariant.md`)
+
+## 11. Permission model (for the Claude Code harness)
+
+`.claude/settings.json` enforces a 3-tier model:
+
+- **read-only** (auto-allowed): `Read`, `Grep`, `Glob`, plus `Bash` for the agent-loop verbs and read-only git/cargo/uv operations.
+- **workspace-write** (auto-allowed): `Edit`, `Write` within the repo; `git add`, `git commit`, `git restore`.
+- **escalated** (denied or asked): destructive ops (`rm`, `mv`, `git reset --hard`, `git clean`); network beyond the package registries (`curl`, `wget`); `git push` requires confirmation.
+
+If the agent needs an op outside this model, surface it to the user; do not look for workarounds.
+
+## 12. Working with this file
+
+- This file should stay ≤300 lines. If it grows, link out to a scoped doc and reference it.
+- Per-crate `AGENTS.md` files are **not maintained** until each crate has non-scaffold content. Stale > missing.
+- Update this file in the same PR as any change that invalidates one of its rules.
+
+codex
+`MEMORY.md` is not present in this checkout, so I’m proceeding with the repo-local instructions plus the referenced ADR/plan materials. Next I’m pulling the ratified design, closure claims, and the exact commit diffs around the migration and dispatch changes.
+exec
+/bin/bash -c "sed -n '1,260p' dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+# ADR-0.8.14 — EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)
+
+- **Status:** RATIFIED (HITL checkpoint approved, decider: coreyt, 2026-07-03).
+- **Release:** 0.8.14 — "the schema-migration release" (Substrate & recall: EXP-S #2 + F5 #16).
+- **Supersedes/relates:** builds on `ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` (F5 deferral);
+  discharges ledger `TC-1` (OPP-12 projection-registry forward-compat).
+- **Plan:** `dev/plans/plan-0.8.14.md`; board `dev/plans/runs/STATUS-0.8.14.md`.
+
+## Context (grounded in code, not architecture)
+
+The portfolio's "one store, many indexes" is **already partly real** — EXP-S is a *delta +
+generalization*, not net-new architecture. Verified at baseline (`fathomdb-schema`,
+`fathomdb-engine`):
+
+- `SCHEMA_VERSION = 15` (`fathomdb-schema/src/lib.rs:6`); forward-only contiguous `MIGRATIONS`
+  applied by `migrate_with_event_sink`; per-step atomic `PRAGMA user_version` bump; new
+  tables/columns require a `-- MIGRATION-ACCRETION-EXEMPTION:` marker. Next step = **16**.
+- Doc-type `kind` vocabulary is **hard-locked in three sites** — `resolve_source_type`
+  (engine:9389), `KIND_TO_SOURCE_TYPE_CASE_SQL` (engine:9257), migration-9 preflight CHECK
+  (schema:240) — to `email/article/paper/meeting/note/todo` (+`doc`,`edge_fact`).
+- Two-path multi-index write already exists: FTS written **synchronously** in `commit_batch`
+  (engine:9999); vector written **asynchronously** by a projection worker pool
+  (`PROJECTION_WORKERS=2`) → `commit_projection_outcomes` (engine:8480), serialized by a
+  `commit_gate` total order. Durable readiness = `_fathomdb_projection_terminal` +
+  `ProjectionStatus{Pending,UpToDate,Failed}`.
+- Determinism substrate: `rowid == write_cursor == cursor` identity throughout; `commit_gate`
+  total order; mean-pin re-quantize uses DELETE+INSERT to preserve the vec0 BIT subtype.
+- eu7 gate: `recall_gate::recall_ci_clears_floor(ci_hi, 0.90)`
+  (`fathomdb-engine/tests/support/recall_gate.rs`), AGENT_LONG-gated, re-embeds the corpus.
+
+## Decisions
+
+### D1 — Row-kinds via a SEPARATE structural tag, not the doc-type `kind`
+
+The plan's row-kinds (`leaf`/`coverage`/`graph`) are a **structural-role** axis, orthogonal to
+the doc-type `kind` (email/article/…). Add a new `row_kind TEXT NOT NULL DEFAULT 'leaf'` column
+(accretion-exempt) rather than overload the hard-locked doc-type vocabulary. `leaf` = normal
+record (default preserves back-compat), `coverage` = coverage/summary rows, `graph` = graph
+structural rows. Rationale: avoids colliding with the three hard-locked doc-type sites + the
+migration-9 CHECK, and keeps doc-type semantics stable for the (out-of-scope) router/eval.
+**Taxonomy coordination:** the exact `leaf/coverage/graph` names should be aligned with the
+router/M-work design owners before Slice 5 locks them (plan §8); the separate-column decision is
+robust to whatever the final names are.
+
+### D2 — Multi-index write = per-kind index-target dispatch
+
+Generalize the write path so each `row_kind` declares **which** indexes it projects into (a
+`kind → index-target set` lookup), preserving the existing sync-FTS / async-vector split. Current
+behavior becomes the `leaf` default (FTS + optional vector). This is the extensibility that makes
+"one store, many indexes" genuine — a new kind slots in by declaring its targets, no bespoke write
+code.
+
+### D3 — Determinism check (R-SUB-2)
+
+Write a fixed fixture into two fresh DBs, **flush projections to quiescence**, then serialize each
+index (FTS content-rows, vec0 rows, `_fathomdb_vector_rows`, `row_kind` tags, projection-terminal
+cursors) and assert **byte-identical**. Leans on the existing `commit_gate` total order +
+rowid==cursor identity. The flush is mandatory: the FTS-sync/vector-async split otherwise races the
+compare.
+
+### D4 — SCHEMA_VERSION plan (one coordinated migration event)
+
+- **EXP-S** = migration step **16** (`SCHEMA_VERSION` 15→16): adds `row_kind`; old rows default to
+  `leaf` (== current behavior). Forward-only.
+- **F5** = migration step **17** (16→17): `search_index_v2` multi-column FTS
+  (`kind`/`body`/`status`) + per-column BM25F weights, in the **same release**. An old DB migrates
+  15→17 in one open — satisfying "pay once" (one release, one re-index window).
+- Two clean, independently-revertable steps. If F5 were pulled, only step 16 lands
+  (`SCHEMA_VERSION=16`). No vec0 embedding/quant/pooling change (see D6).
+
+### D5 — TC-1 forward-compat (OPP-12 projection registry) — DISCHARGES TC-1
+
+The engine **already owns** the async substrate a future OPP-12 projection registry needs
+(projection workers + `_fathomdb_projection_terminal` readiness = the durable equivalent of
+`dense_readiness`; per-kind `kind_is_vector_indexed` decision). EXP-S forward-compat obligations:
+
+- (a) Make the D2 per-kind index-target set the **seam** a later declarative projection spec wraps
+  — keep it a per-kind lookup, not inline hard-coding.
+- (b) Keep FTS/filter writes **same-transaction** and vector writes **async-via-worker** (do NOT
+  collapse to sync) — that IS OPP-12's `filterable`/`searchable→FTS` same-txn vs `searchable→vector`
+  async split.
+- (c) Keep the terminal-cursor readiness **per-kind-extensible** so a later
+  `dense_readiness ∈ {ready, embedding}` maps on without a substrate reshape.
+Hygiene only — implement **no** OPP-12 surface here. OPP-12 lands ≥0.9.x; re-check at its scheduling.
+(Ledger `TC-1`, refs OPP-12 / `projection-registry-and-async-embed.md`.)
+
+### D6 — eu7 gate scoping
+
+EXP-S (`row_kind` + multi-index dispatch) and F5 (multi-column FTS) change **no** embedder, pooling,
+or quant → ANN fidelity is mathematically invariant. Slice 20 runs
+`recall_gate::recall_ci_clears_floor(ci_hi, 0.90)` as a **regression check only if** a migration step
+rewrites vec0 rows (e.g. a vec0 metadata reshape via `ensure_vector_partition`, which DELETE+INSERTs
+the *same* embeddings). If no vec0 rewrite occurs, the re-clear is a **documented no-op**. Any breach
+(which would indicate an unintended embedding change) is **BLOCK→HITL**.
+
+### D7 — KILL paths
+
+- **EXP-S KILL** (determinism unworkable / substrate collision): revert `row_kind` + multi-index
+  dispatch; the engine keeps its current fixed FTS-sync/vector-async paths; router stays agent-side,
+  indexes stay eval-side (plan §1).
+- **F5 KILL** (retained even though F5 ships per D8): record-and-defer to 0.8.5+ per ADR-0.8.1.
+
+### D8 — F5 ships by conscious HITL override (NOT gate-clearance)
+
+`ADR-0.8.1` gates F5 (`R-F5-2`) on **(a)** the 15b at-power proxy passing **and** **(b)** Slice-20
+leaving a measured Mem0 gap. **The pre-registered gate did NOT clear** (verified from the 0.8.3
+record): only a **synthetic n=16 smoke** passed (`probe_15b_pass: true`,
+`dev/plans/runs/0.8.3-s15b-smoke.json`); the full at-power 15b eligibility run was
+**deferred/never ran** (`plan-0.8.3.md:253`, `STATUS-0.8.3.md:156`); 0.8.3 shipped at **marginal
+parity via CE-rerank** (`STATUS-0.8.3.md:143-151`), not an F5-closeable gap; Slice 25 (D2/F5 build)
+was **NOT RUN** (`STATUS-0.8.3.md:159`).
+
+**Ruling (decider: coreyt, 2026-07-03):** F5 **ships in 0.8.14 by conscious HITL override**,
+**decoupled from the R-F5-2 parity gate**, justified by (i) F5's intrinsic recall-lever merit and
+(ii) the release's own "pay once" economics — the multi-column FTS schema co-lands while
+`SCHEMA_VERSION` is already bumping (16→17). This is **an override, not a gate-pass**: the
+pre-registered condition is recorded as NOT met, and the F5 KILL path (D7) is retained. This ADR and
+`plan-0.8.14.md` (R-F5-2) both record it as an override so the honesty prior is preserved (no
+goalpost moved).
+
+## Consequences
+
+- Slice 5 (keystone) implements D1–D3 + the step-16 migration; Slice 10 implements F5 (step 17);
+  Slice 20 runs D6; Slice 25 merges the parked `0.8.14-gpu-rerank`; Slice 40 gates release readiness.
+- Cross-binding (Py/TS) parity (X1) must cover `row_kind` + BM25F surfaces.
+- Label-only build (manifests stay `0.8.9`; no tag/publish).
+
+exec
+/bin/bash -c "sed -n '1,260p' dev/plans/plan-0.8.14.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+# FathomDB 0.8.14 — Plan (state-machine ladder) · **Substrate & recall features**
+
+> **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
+> contracts → `0.8.14-implementation.md`; live state → `runs/STATUS-0.8.14.md`; deps/decision record →
+> `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.14` as an **orchestrator** session.
+>
+> **Theme.** The schema-migration release. Land the **kind-tagged coexisting-index substrate** (#2,
+> EXP-S) and the **fielded FTS / BM25F recall lever** (#16, F5) **in one release so the engine pays one
+> coordinated migration cost**. All IN-LIBRARY; CPU-only/deterministic query path preserved.
+>
+> **Reconciled 2026-07-02 (Steward):** #17 filter-grammar G4↔G10 unification, originally co-scoped here,
+> **already SHIPPED in 0.8.11** (F-10 re-sequencing; PR #122, commit `ab3b4466`) — struck from this plan.
+> The typed-constraint surface (`Filter`/`SearchFilter`) the 0.8.15 router leans on is on `main`. This
+> plan's spine = EXP-S + F5.
+>
+> **Footprint.** All three IN-LIBRARY. Re-embeds/index rebuilds are far cheaper on GPU (0.8.7) but the
+> shipped query path stays CPU-only/1-bit/deterministic.
+
+---
+
+## 1. Goal & scope
+
+- **#2 — Kind-tagged coexisting-index substrate (EXP-S).** Today `kind` is doc-type-only and the
+  portfolio's "one store, many indexes" is *asserted, not built*. Add row-kinds (leaf / coverage /
+  graph), plural indexes coexisting in one store, incremental multi-index write, and a **determinism
+  check**. This is the physical foundation the (out-of-scope) router needs; its **KILL path** = router
+  stays agent-side, indexes stay eval-side.
+- **#16 — Fielded FTS / BM25F (F5).** A genuine recall lever (field-weighted lexical scoring,
+  tunable `b`) — already ADR-ratified (`ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md`), conditional on the
+  0.8.3 15b-proxy passing + a Slice-20 Mem0 gap. It is a **schema migration**, which is exactly why it
+  is coordinated with EXP-S in one release rather than paid for twice.
+- **#17 — Filter-grammar G4↔G10 unification — DONE in 0.8.11 (struck from 0.8.14).** Shipped as 0.8.11
+  Slice 40 (`ab3b4466`, PR #122): one unified `Filter` contract over the G10 `SearchFilter`. The
+  typed-constraint surface the 0.8.15 router's `constraints` block leans on is already on `main` — it is
+  no longer 0.8.14 scope.
+
+*Why this release / why coordinated:* #2 and #16 are both engine/schema migrations on the index write
+path — doing them in one release lets EXP-S land the kind-tag/field columns that F5 then rides, paying
+one `SCHEMA_VERSION` bump and one re-index rather than two. (#17, which would have composed the
+typed-constraint surface with the new substrate, already shipped in 0.8.11 — see above.)
+
+---
+
+## 2. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+
+| ID | Requirement | Acceptance signal |
+|----|-------------|-------------------|
+| R-SUB-1 | Row-kinds (leaf/coverage/graph) coexist in one store | Schema migration lands; a fixture writes ≥2 kinds; queries select by kind |
+| R-SUB-2 | Incremental multi-index write is deterministic | Determinism test: same input → byte-identical index state across runs/backends-on-same-CPU |
+| R-SUB-3 | Migration is forward-only + guarded | `SCHEMA_VERSION` bump; migration test (old DB → new) green; eu7 re-clear if vectors are touched |
+| R-F5-1 | Fielded BM25F with tunable `b`/field weights | RED→GREEN: a field-weighted query outranks an unweighted baseline on a known fixture |
+| R-F5-2 | F5 ships per **HITL Option-C override** (NOT gate-clearance) | **The R-F5-2 pre-registered gate did NOT clear** (only a synthetic n=16 15b smoke passed; full at-power run deferred; 0.8.3 shipped at marginal parity, no measured Mem0 gap). F5 ships this release by **conscious HITL override** (decider: coreyt, 2026-07-03) on intrinsic recall-lever merit + one-`SCHEMA_VERSION`-bump economics. KILL path retained. See ADR-0.8.14 §D8. |
+| ~~R-FIL-1~~ | ~~G4 grammar unified with G10 `SearchFilter`~~ — **SHIPPED in 0.8.11 (struck)** | Satisfied by 0.8.11 Slice 40 (`ab3b4466`); not a 0.8.14 gate |
+| R-X-1 | Py + TS SDK parity for EXP-S + F5 | X1 cross-binding harness green |
+| R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) holds after any re-embed | `recall_gate.rs`: ci_hi ≥ 0.90 PASS; a breach BLOCKS→HITL |
+
+New ACs: candidates at Slice 0 (substrate determinism) and at the F5/filter gates.
+
+---
+
+## 3. Slice ladder (mod-5)
+
+```text
+0 → 5 → 10 → 20 → 25 → 40      (15 = void reserved gap — #17 shipped in 0.8.11)
+```
+
+| Slice | Title | Work-type | Depends-on |
+|------:|-------|-----------|-----------|
+| **0** | Setup + ADR — EXP-S substrate migration ADR (row-kinds, determinism check, KILL path); confirm the F5 ADR pre-conditions | design-adr | — |
+| **5** | **EXP-S substrate KEYSTONE** — row-kinds + plural coexisting indexes + incremental multi-index write + determinism check; `SCHEMA_VERSION` bump | implementation (schema) | 0 |
+| **10** | **F5 fielded BM25F** — field-weighted FTS + tunable `b`, riding the EXP-S field columns | implementation (schema) | 5 |
+| **15** | *(void reserved gap)* — #17 filter-grammar **SHIPPED in 0.8.11** (F-10; PR #122, `ab3b4466`) | — | — |
+| **20** | **eu7 re-clear + migration verify** — if Slices 5/10 touched vectors, re-clear the one-sided fidelity gate; old→new migration test | verification | 5,10 |
+| **25** | *(reserved gap)* **Merge `0.8.14-gpu-rerank`** — rebase branch `d9e61c66` onto then-current base, full `agent-verify.sh` (py/ts/security); opt-in `rerank-cuda` GPU CE + `embed_batch_cls`, default-CPU-unchanged (EXP-S GPU sub-part; `0.8.x-remaining-todos §1`) | integration | 5 |
+| **40** | **Verification + Release Readiness (0.8.14)** — X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate | verification | 5,10,20,25 |
+
+**Keystones / hard gates.** **Slice 5 (EXP-S) is the keystone** — F5 (10) rides its field columns, so
+5 → 10 is a hard sequence (do EXP-S first within the release). **eu7 ≥ 0.90 (one-sided CI) is a hard
+BLOCK→HITL gate** at Slice 20 if any re-embed occurs (`fathomdb-recall-fidelity-vs-relevance`). **F5 ships in 0.8.14 by conscious HITL
+override** (decider: coreyt, 2026-07-03) — the R-F5-2 pre-registered gate did NOT clear; it ships on
+intrinsic recall-lever merit + one-`SCHEMA_VERSION`-bump economics, KILL path retained (ADR-0.8.14 §D8).
+
+**Tracks.** Substrate→F5 track **5 → 10 → 20 → 25** (single spine; the former parallel filter track is void — #17 shipped in 0.8.11).
+
+---
+
+## 4. Reserved-gap policy
+
+Carried unchanged (`0.8.1-plan.md` §Numbering). Schema-migration follow-on (e.g. a backfill the
+migration reveals) is a fully-orchestrated reserved-gap slice off a fresh `main` baseline, never an
+ad-hoc patch.
+
+## 5. Cross-cutting DoD (X1/X2/X3 — bind EVERY slice)
+
+X1 SDK parity + harnesses · X2 `mkdocs build` green · X3 docs + DOC-INDEX per slice. `runs/STATUS-0.8.14.md`
+carries the per-slice X column.
+
+## 6. Acceptance-criteria policy
+
+`dev/acceptance.md` locked; track by G-gap/F-id + TDD names; new ACs only at gated slices, HITL-decided.
+
+## 7. Prerequisites
+
+1. **0.8.6 closed** (release machinery / DoD-shippable) and **0.8.7 OOB GPU recommended-landed** (the
+   re-index here is re-embed-heavy; GPU makes it minutes not hours).
+2. **F5 ADR pre-conditions** (0.8.3 15b-proxy + Mem0-gap) confirmed at Slice 0 — else F5 records-and-
+   defers and the release ships EXP-S only.
+3. **Frozen corpus + eu7 harness** reproduced locally for the fidelity re-clear.
+4. Worktrees off `$(git rev-parse main)`; maturin/GPU build on the MAIN tree only.
+
+## 8. Out-of-band / parallel notes
+
+- **Coordinate with the M-work + router-design owners:** EXP-S is the router's physical substrate and
+  F5 is an M2/M5 recall lever — align the row-kind taxonomy and field weights with what the experiments
+  and the router design expect, so the schema is migrated once for both.
+- This is the **heaviest engine release** in the line; sequence it when the experiment program can
+  tolerate a coordinated schema migration (it bumps `SCHEMA_VERSION` and may trigger a re-index).
+
+## 9. Immediate next slice
+
+**Slice 0 — CLOSED (2026-07-03).** ADR `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`
+ratified by HITL (checkpoint approved): D1 separate `row_kind` column; D2 per-kind index-target dispatch;
+D3 flush-then-byte-compare determinism check; D4 one coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S,
+16→17 F5); D5 discharges **TC-1** (OPP-12 projection-registry forward-compat seam); D6 eu7 no-op unless
+vec0 rewritten; D7 KILL paths. **D8 = Option C:** F5 ships by conscious HITL override, NOT gate-clearance
+(see R-F5-2). Board stood up at `runs/STATUS-0.8.14.md`.
+
+**Next — Slice 5 (EXP-S KEYSTONE).** Row-kinds + per-kind coexisting-index write + determinism check +
+`SCHEMA_VERSION` 15→16, off a fresh `origin/main` baseline. Then 10 (F5) → 20 (eu7/migration verify) →
+25 (gpu-rerank merge) → 40 (release readiness). (#17 filter-grammar already shipped in 0.8.11.)
+
+exec
+/bin/bash -c "sed -n '1,260p' dev/plans/runs/0.8.14-slice-5-output.json" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+{
+  "slice": "0.8.14-slice-5",
+  "title": "EXP-S substrate KEYSTONE — kind-tagged coexisting-index substrate (row_kind + step-16 migration + per-kind index dispatch + determinism check)",
+  "status": "COMPLETE",
+  "baseline_sha": "dff4830c8853219c9cfafac3bf6356b962b16894",
+  "branch": "slice-5-20260703T235950Z",
+  "head_sha": "400369e44a85313595bd04aeb8174b679c09a60c",
+  "commits": [
+    {
+      "sha": "559a55fbc20c65872fdf4e31d8b5cf84b4b5a290",
+      "subject": "feat(0.8.14): row_kind column + step-16 migration (EXP-S R-SUB-1/R-SUB-3)",
+      "summary": "Schema crate: forward-only migration step 16 (SCHEMA_VERSION 15->16) adds canonical_nodes.row_kind TEXT NOT NULL DEFAULT 'leaf' with the MIGRATION-ACCRETION-EXEMPTION marker. New tests/step16_migration.rs; bumped step-count/SCHEMA_VERSION tripwires in migrations.rs, step14_migration.rs, engine compatibility.rs."
+    },
+    {
+      "sha": "400369e44a85313595bd04aeb8174b679c09a60c",
+      "subject": "feat(0.8.14): row_kind index-target dispatch + determinism check (EXP-S R-SUB-1/R-SUB-2/D2/D5)",
+      "summary": "Engine crate: pub RowKind {Leaf,Coverage,Graph}; row_kind->index-target LOOKUP seam (index_targets_for_row_kind + project_canonical_node_row); commit_batch Node arm refactored to write row_kind='leaf' via the seam (behavior-identical for leaf); internal write/query seams (write_canonical_row_with_kind_for_test, canonical_rows_with_row_kind_for_test); tests/exp_s_substrate.rs (R-SUB-1, D2 index-target divergence, R-SUB-2 determinism)."
+    }
+  ],
+  "acceptance": {
+    "R-SUB-1": "GREEN — row_kinds (leaf/coverage/graph) coexist; migration lands the column; fixture writes 3 distinct row_kinds and the engine selects by row_kind (schema s16_row_kind_column_present..., engine r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind).",
+    "R-SUB-2": "GREEN — incremental multi-index write is deterministic; two fresh DBs, drained to quiescence, produce byte-identical serialized index state (FTS content rows, vec0 rows incl. quantized embedding BLOB, _fathomdb_vector_rows, row_kind tags, projection-terminal cursors) via engine r_sub_2_incremental_multi_index_write_is_deterministic.",
+    "R-SUB-3": "GREEN — migration is forward-only + guarded: schema s16_forward_only_from_v15_defaults_existing_rows_to_leaf (open at v15 with a pre-existing row, apply ONLY step 16, reach v16, legacy row defaults to 'leaf', exactly [16] ran) and s16_passes_accretion_guard_only_with_marker.",
+    "D5-TC-1": "DISCHARGED (hygiene) — the per-row_kind index-target set is a wrappable LOOKUP seam (index_targets_for_row_kind) with an ADR-0.8.14 §D5 / ledger TC-1 code comment; FTS/filter writes stay same-transaction and vector writes stay async-via-worker; terminal-cursor readiness stays per-kind-extensible. NO OPP-12 surface implemented."
+  },
+  "tdd": {
+    "note": "Schema tests authored against a not-yet-migrated schema (SCHEMA_VERSION=15) would RED on the s16_* / bumped-count assertions before step 16 existed; committed as an atomic migration+tests change. Engine tests reference RowKind + the internal seams so they are committed test+impl together (memory: 'clear test+impl commit' acceptable). All new tests verified GREEN post-impl.",
+    "new_tests": [
+      "fathomdb-schema tests/step16_migration.rs: s16_row_kind_column_present_and_schema_version_is_16, s16_forward_only_from_v15_defaults_existing_rows_to_leaf, s16_passes_accretion_guard_only_with_marker",
+      "fathomdb-engine tests/exp_s_substrate.rs: r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind, d2_index_targets_differ_by_row_kind, r_sub_2_incremental_multi_index_write_is_deterministic"
+    ]
+  },
+  "verification": {
+    "cargo_clippy_workspace_all_targets_exit": 0,
+    "cargo_check_workspace_all_targets_exit": 0,
+    "gate_commands": [
+      "cargo clippy --workspace --all-targets  => exit 0",
+      "cargo check --workspace --all-targets   => exit 0"
+    ],
+    "targeted_tests": [
+      "cargo test -p fathomdb-schema => ok (all migration + step16 tests pass)",
+      "cargo test -p fathomdb-engine --test exp_s_substrate => 3 passed",
+      "cargo test -p fathomdb-engine --test compatibility --test batch_write_per_row_cursor --test projection_runtime --test cursor_read_after_write --test pr_g0_identity => all ok (regression, node write path)",
+      "cargo test -p fathomdb-engine --features operator --test dump_schema --test rebuild_projections --test rebuild_vec0 --test excise_source --test source_id_writes => all ok"
+    ],
+    "agent_long_not_run": "eu7 recall gate NOT run (Slice 20 concern per D6; correct scope for this slice)."
+  },
+  "d6_vec0_rewrite": {
+    "vec0_rows_rewritten": false,
+    "detail": "Migration step 16 is a pure additive ALTER TABLE ... ADD COLUMN on canonical_nodes; it does NOT touch vector_default / vec0 rows and does NOT reshape ensure_vector_partition. No embedder, pooling, or sign-bit quant change. Per ADR-0.8.14 §D6 the eu7 fidelity gate at Slice 20 is therefore a DOCUMENTED NO-OP (no re-embed, no re-quantize). ANN fidelity is mathematically invariant.",
+    "eu7_action_for_slice_20": "Run recall_gate::recall_ci_clears_floor(ci_hi, 0.90) as a documented no-op regression check only; no breach expected."
+  },
+  "scope_boundaries_respected": {
+    "engine_and_schema_only": true,
+    "no_public_sdk_surface_added": "true — row_kind is engine-internal: PreparedWrite::Node unchanged (132 construction sites + Py/TS bindings untouched); Leaf via column default for all normal writes; coverage/graph via internal for_test seams. No Python/TS binding changed.",
+    "no_maturin_or_pip_in_worktree": true,
+    "doc_type_kind_vocabulary_untouched": "true — resolve_source_type, KIND_TO_SOURCE_TYPE_CASE_SQL, migration-9 preflight CHECK all unchanged; row_kind is a SEPARATE column/axis (D1)."
+  },
+  "blockers": [],
+  "next_step_for_orchestrator": "Slice 5 COMPLETE at head 400369e44a85313595bd04aeb8174b679c09a60c. Ready for codex review (schema migration + engine seam) then cherry-pick onto the integration branch. Downstream: Slice 10 (F5 fielded BM25F, step-17 migration) rides these row_kind/field columns; Slice 20 runs the eu7 no-op per D6 (record vec0_rows_rewritten=false above). NOTE for Slice 40 / X1: RowKind + row_kind currently have NO Py/TS binding — cross-binding parity is deferred to Slice 40 (MAIN-tree build) as the ADR §Consequences states."
+}
+
+codex
+I have the ADR, frozen ACs, and the implementer’s claims. Now I’m drilling into the actual code and test bodies to see whether the determinism check and migration semantics really prove what the closure says.
+exec
+/bin/bash -c 'ls src/rust/crates' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+fathomdb
+fathomdb-cli
+fathomdb-embedder
+fathomdb-embedder-api
+fathomdb-engine
+fathomdb-napi
+fathomdb-py
+fathomdb-query
+fathomdb-schema
+
+exec
+/bin/bash -c "sed -n '1,260p' src/rust/crates/fathomdb-schema/tests/step16_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+//! Slice 5 (EXP-S KEYSTONE) — step-16 `row_kind` migration tests.
+//!
+//! Covers plan-0.8.14 §2 R-SUB-1 (row_kind column lands) and R-SUB-3
+//! (migration is forward-only + guarded). ADR authority:
+//! `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` D1/D3/D4.
+//!
+//! `row_kind` is a SEPARATE structural-role axis on `canonical_nodes`
+//! (leaf/coverage/graph), orthogonal to the hard-locked doc-type `kind`
+//! vocabulary. `NOT NULL DEFAULT 'leaf'` means every pre-existing row
+//! back-fills to `leaf` in-place (== current behavior) — the migration is
+//! forward-only and touches no vec0 rows (ADR §D6).
+
+use fathomdb_schema::{
+    check_migration_accretion, migrate_with_steps, MigrationAccretionError, MIGRATIONS,
+    SCHEMA_VERSION,
+};
+use rusqlite::Connection;
+use std::sync::Once;
+
+// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
+}
+
+fn set_user_version(conn: &Connection, version: u32) {
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+    conn.prepare(&format!("PRAGMA table_info({table})"))
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect()
+}
+
+/// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
+/// R-SUB-3 — the migration reaches head `SCHEMA_VERSION` (== 16), and step-16
+/// is the last step.
+#[test]
+fn s16_row_kind_column_present_and_schema_version_is_16() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
+
+    let cols = column_names(&conn, "canonical_nodes");
+    assert!(
+        cols.contains(&"row_kind".to_string()),
+        "canonical_nodes must have row_kind after step-16, got: {cols:?}"
+    );
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 16, "SCHEMA_VERSION must be 16 (step-16 EXP-S row_kind)");
+    assert_eq!(
+        MIGRATIONS.last().expect("at least one migration").step_id,
+        16,
+        "step-16 must be the last (head) migration"
+    );
+}
+
+/// R-SUB-3 (forward-only) — open a DB at the OLD schema (version 15) with a
+/// pre-existing row, run ONLY the step-16 migration, and assert: it reaches 16,
+/// the legacy row defaults to `row_kind='leaf'`, and only the single forward
+/// step was applied (no re-run of 2..15).
+#[test]
+fn s16_forward_only_from_v15_defaults_existing_rows_to_leaf() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    // Bring the DB up to the OLD head (version 15) — everything before step-16.
+    let steps_to_15: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 15).cloned().collect();
+    migrate_with_steps(&conn, &steps_to_15).expect("migrate to v15");
+    assert_eq!(user_version(&conn), 15, "precondition: DB is at the old schema version 15");
+
+    // A pre-existing (pre-row_kind) canonical node.
+    conn.execute(
+        "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(1, 'doc', 'legacy-body')",
+        [],
+    )
+    .expect("legacy node insert");
+
+    // Apply ONLY the forward step-16 migration.
+    let step16_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id >= 16).cloned().collect();
+    let report = migrate_with_steps(&conn, &step16_only).expect("forward migrate to v16");
+
+    // Forward-only: exactly the single new step ran; nothing before it re-ran.
+    assert_eq!(report.schema_version_before, 15);
+    assert_eq!(report.schema_version_after, 16);
+    let ran: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+    assert_eq!(ran, vec![16], "only step-16 must run when starting from v15");
+    assert_eq!(user_version(&conn), 16);
+
+    // The legacy row back-fills to the 'leaf' default (== current behavior).
+    let row_kind: String = conn
+        .query_row("SELECT row_kind FROM canonical_nodes WHERE write_cursor = 1", [], |row| {
+            row.get(0)
+        })
+        .expect("legacy row must be readable after step-16");
+    assert_eq!(row_kind, "leaf", "existing rows must default to row_kind='leaf'");
+}
+
+/// R-SUB-3 (guarded) — step-16 is a pure additive `ADD COLUMN` (no DROP), so the
+/// accretion guard REJECTS it unless the exemption marker is present. This pins
+/// that the marker is the only thing letting it pass (mirrors `ac_049` / `s12`).
+#[test]
+fn s16_passes_accretion_guard_only_with_marker() {
+    let step16 =
+        MIGRATIONS.iter().find(|m| m.step_id == 16).expect("step 16 (EXP-S row_kind) must exist");
+
+    check_migration_accretion("016_exp_s_row_kind.sql", step16.sql)
+        .expect("step 16 must pass the accretion guard with its exemption marker");
+
+    let without_marker: String = step16
+        .sql
+        .lines()
+        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let err = check_migration_accretion("016_exp_s_row_kind.sql", &without_marker)
+        .expect_err("step 16 without the exemption marker must be rejected");
+    assert_eq!(err, MigrationAccretionError { offender: "016_exp_s_row_kind.sql".to_string() });
+}
+
+exec
+/bin/bash -c "sed -n '1,260p' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+//! Slice 5 (EXP-S KEYSTONE) — kind-tagged coexisting-index substrate.
+//!
+//! Covers plan-0.8.14 §2:
+//!   * R-SUB-1 — row-kinds (leaf/coverage/graph) coexist in one store; a
+//!     fixture writes >=2 distinct row_kinds and a query selects by row_kind.
+//!   * R-SUB-2 — incremental multi-index write is deterministic: the same
+//!     input produces byte-identical index state across two fresh DBs on the
+//!     same CPU, after flushing the async projection to quiescence.
+//!
+//! ADR authority: `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`
+//! D1 (separate row_kind axis), D2 (per-kind index-target dispatch), D3
+//! (flush-then-byte-compare determinism check).
+
+use std::path::Path;
+use std::sync::Arc;
+
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::{Engine, PreparedWrite, RowKind};
+use rusqlite::Connection;
+use tempfile::TempDir;
+
+/// Deterministic hash-placement embedder (mirrors the one in
+/// `batch_write_per_row_cursor.rs`). Fully deterministic: the same text always
+/// yields the same vector, so two runs are byte-comparable.
+#[derive(Debug)]
+struct DeterministicEmbedder {
+    identity: EmbedderIdentity,
+    dim: u32,
+}
+
+impl DeterministicEmbedder {
+    fn new(dim: u32) -> Self {
+        Self { identity: EmbedderIdentity::new("deterministic", "exp-s-substrate", dim), dim }
+    }
+}
+
+impl Embedder for DeterministicEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        let dim = self.dim as usize;
+        let mut v = vec![0.0_f32; dim];
+        let mut h: u64 = 0xcbf29ce4_84222325;
+        for &b in text.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        for k in 0..6 {
+            let coord = ((h >> (k * 8)) as usize) % dim;
+            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
+            v[coord] += sign * 0.5_f32;
+        }
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+        for x in &mut v {
+            *x /= norm;
+        }
+        Ok(v)
+    }
+}
+
+fn fresh_engine(name: &str) -> (TempDir, Engine) {
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join(format!("{name}.sqlite"));
+    let opened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(DeterministicEmbedder::new(768)))
+            .expect("open");
+    opened.engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+    (dir, opened.engine)
+}
+
+/// The fixed fixture written into every run: a mix of the three structural
+/// row_kinds over a vector-indexed doc-type `kind`. Leaf rows go through the
+/// normal `engine.write` path; coverage/graph rows go through the internal
+/// row_kind writer.
+fn write_fixture(engine: &Engine) {
+    // Leaf rows (normal records) — batched normal write path.
+    let leaves: Vec<PreparedWrite> = (0..6)
+        .map(|i| PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: format!("leaf body {i} alpha bravo charlie token-{i}"),
+            source_id: Some(format!("leaf-{i}")),
+            logical_id: None,
+        })
+        .collect();
+    engine.write(&leaves).expect("write leaf batch");
+
+    // Coverage rows (searchable + embeddable per D2).
+    for i in 0..3 {
+        engine
+            .write_canonical_row_with_kind_for_test(
+                "doc",
+                &format!("coverage summary {i} delta echo"),
+                RowKind::Coverage,
+            )
+            .expect("write coverage row");
+    }
+
+    // Graph rows (FTS-only per D2 — not embedded).
+    for i in 0..2 {
+        engine
+            .write_canonical_row_with_kind_for_test(
+                "doc",
+                &format!("graph structural {i} foxtrot golf"),
+                RowKind::Graph,
+            )
+            .expect("write graph row");
+    }
+}
+
+/// R-SUB-1 — the three row_kinds coexist in one store and the engine can
+/// select rows by row_kind.
+#[test]
+fn r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind() {
+    let (_dir, engine) = fresh_engine("row_kinds");
+    write_fixture(&engine);
+    engine.drain(15_000).expect("drain");
+
+    let leaf = engine.canonical_rows_with_row_kind_for_test(RowKind::Leaf).expect("leaf rows");
+    let coverage =
+        engine.canonical_rows_with_row_kind_for_test(RowKind::Coverage).expect("coverage rows");
+    let graph = engine.canonical_rows_with_row_kind_for_test(RowKind::Graph).expect("graph rows");
+
+    assert_eq!(leaf.len(), 6, "expected 6 leaf rows, got {leaf:?}");
+    assert_eq!(coverage.len(), 3, "expected 3 coverage rows, got {coverage:?}");
+    assert_eq!(graph.len(), 2, "expected 2 graph rows, got {graph:?}");
+
+    // The three sets are disjoint (a row has exactly one structural row_kind).
+    for c in &coverage {
+        assert!(!leaf.contains(c), "coverage cursor {c} leaked into leaf set");
+        assert!(!graph.contains(c), "coverage cursor {c} leaked into graph set");
+    }
+
+    // >= 2 distinct row_kinds are present (the R-SUB-1 acceptance signal).
+    let present = [leaf.is_empty(), coverage.is_empty(), graph.is_empty()]
+        .iter()
+        .filter(|empty| !**empty)
+        .count();
+    assert!(present >= 2, "expected >=2 distinct row_kinds populated, got {present}");
+}
+
+/// D2 — graph rows are FTS-projected but NOT vector-projected; leaf and
+/// coverage rows over a vector-indexed kind ARE vector-projected. Verifies the
+/// per-row_kind index-target dispatch actually routes writes to different
+/// coexisting indexes.
+#[test]
+fn d2_index_targets_differ_by_row_kind() {
+    let (_dir, engine) = fresh_engine("index_targets");
+    write_fixture(&engine);
+    engine.drain(15_000).expect("drain");
+
+    let db_path = engine.path().to_path_buf();
+    engine.close().expect("close");
+    let conn = open_readonly(&db_path);
+
+    // FTS: every row_kind is searchable -> 11 content rows (6 + 3 + 2).
+    let fts_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM search_index", [], |r| r.get(0)).expect("fts count");
+    assert_eq!(fts_count, 11, "all 11 rows (leaf+coverage+graph) must be FTS-indexed");
+
+    // Vector: leaf(6) + coverage(3) are embedded; graph(2) is not -> 9 vec0 rows.
+    let vec_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM vector_default", [], |r| r.get(0)).expect("vec count");
+    assert_eq!(vec_count, 9, "only leaf+coverage rows (9) must be vector-indexed, not graph");
+}
+
+fn open_readonly(path: &Path) -> Connection {
+    Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .expect("open read-only sqlite")
+}
+
+/// Serialize every coexisting index into a single byte string, in a fully
+/// deterministic order. This is the D3 comparison surface: FTS content rows,
+/// vec0 rows (incl. the sign-quantized embedding BLOB), the vector-rows
+/// bookkeeping, the row_kind tags, and the projection-terminal readiness
+/// cursors.
+fn serialize_index_state(path: &Path) -> Vec<u8> {
+    let conn = open_readonly(path);
+    let mut out: Vec<u8> = Vec::new();
+
+    // 1. FTS content rows (search_index) ordered by write_cursor.
+    out.extend_from_slice(b"# search_index\n");
+    let mut stmt = conn
+        .prepare("SELECT write_cursor, kind, body FROM search_index ORDER BY write_cursor")
+        .expect("prep fts");
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })
+        .expect("fts rows");
+    for row in rows {
+        let (wc, kind, body) = row.expect("fts row");
+        out.extend_from_slice(format!("{wc}|{kind}|{body}\n").as_bytes());
+    }
+
+    // 2. vec0 rows: rowid, source_type, kind, and the quantized embedding BLOB.
+    out.extend_from_slice(b"# vector_default\n");
+    let mut stmt = conn
+        .prepare(
+            "SELECT rowid, source_type, kind, embedding_bin FROM vector_default ORDER BY rowid",
+        )
+        .expect("prep vec");
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Vec<u8>>(3)?,
+            ))
+        })
+        .expect("vec rows");
+    for row in rows {
+        let (rowid, st, kind, blob) = row.expect("vec row");
+        out.extend_from_slice(format!("{rowid}|{st}|{kind}|").as_bytes());
+        out.extend_from_slice(&blob);
+        out.push(b'\n');
+    }
+
+    // 3. _fathomdb_vector_rows bookkeeping ordered by rowid.
+    out.extend_from_slice(b"# _fathomdb_vector_rows\n");
+    let mut stmt = conn
+        .prepare("SELECT rowid, kind, write_cursor FROM _fathomdb_vector_rows ORDER BY rowid")
+        .expect("prep vecrows");
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))
+        .expect("vecrows rows");
+    for row in rows {
+        let (rowid, kind, wc) = row.expect("vecrows row");
+        out.extend_from_slice(format!("{rowid}|{kind}|{wc}\n").as_bytes());
+    }
+
+    // 4. row_kind tags on canonical_nodes ordered by write_cursor.
+    out.extend_from_slice(b"# canonical_nodes.row_kind\n");
+    let mut stmt = conn
+        .prepare("SELECT write_cursor, kind, row_kind FROM canonical_nodes ORDER BY write_cursor")
+        .expect("prep rowkind");
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })
+        .expect("rowkind rows");
+    for row in rows {
+        let (wc, kind, rk) = row.expect("rowkind row");
+        out.extend_from_slice(format!("{wc}|{kind}|{rk}\n").as_bytes());
+    }
+
+    // 5. projection-terminal readiness cursors ordered by write_cursor.
+    out.extend_from_slice(b"# _fathomdb_projection_terminal\n");
+    let mut stmt = conn
+        .prepare(
+            "SELECT write_cursor, state FROM _fathomdb_projection_terminal ORDER BY write_cursor",
+        )
+        .expect("prep terminal");
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+
+exec
+/bin/bash -c "sed -n '1,220p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+use std::fmt::{Display, Formatter};
+use std::time::Instant;
+
+use rusqlite::Connection;
+
+pub const SCHEMA_VERSION: u32 = 16;
+
+/// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
+///
+/// Public on-disk surface per `dev/interfaces/wire.md` § Schema-version
+/// sentinel; advanced by successful migrations per `dev/design/migrations.md`.
+pub const PRAGMA_USER_VERSION: &str = "user_version";
+
+/// Suffix of the canonical SQLite database file (`<db-name>.sqlite`).
+pub const SQLITE_SUFFIX: &str = ".sqlite";
+
+/// Suffix of the SQLite write-ahead log file (`<db-name>.sqlite-wal`).
+pub const WAL_SUFFIX: &str = "-wal";
+
+/// Suffix of the sidecar lock file (`<db-name>.sqlite.lock`).
+///
+/// Per `dev/design/bindings.md` § 7, this sidecar flock is the load-bearing
+/// cross-process exclusion layer; it surfaces lock contention before SQLite
+/// I/O begins.
+pub const LOCK_SUFFIX: &str = ".lock";
+
+/// Suffix of the optional SQLite rollback journal file
+/// (`<db-name>.sqlite-journal`).
+pub const JOURNAL_SUFFIX: &str = "-journal";
+
+#[must_use]
+pub fn bootstrap_steps() -> &'static [&'static str] {
+    &["create canonical tables", "register projection metadata", "seed rewrite-era configuration"]
+}
+
+/// Canonical tables owned by the rewrite-era schema, in stable display
+/// order. Excludes FTS, vec0, and projection shadow tables (re-derivable
+/// from canonical state) and internal `_fathomdb_*` metadata.
+///
+/// `doctor dump-row-counts` enumerates this set; `doctor dump-schema`
+/// uses it to order canonical tables ahead of derived/internal ones.
+pub const CANONICAL_TABLES: &[&str] = &[
+    "canonical_nodes",
+    "canonical_edges",
+    "operational_collections",
+    "operational_mutations",
+    "operational_state",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Migration {
+    pub step_id: u32,
+    pub sql: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationStepReport {
+    pub step_id: u32,
+    pub duration_ms: Option<u64>,
+    pub failed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationReport {
+    pub schema_version_before: u32,
+    pub schema_version_after: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationFailureReport {
+    pub schema_version_before: u32,
+    pub schema_version_current: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MigrationError {
+    IncompatibleSchemaVersion { seen: u32, supported: u32 },
+    MigrationError(MigrationFailureReport),
+    Storage { message: &'static str },
+}
+
+impl Display for MigrationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IncompatibleSchemaVersion { seen, supported } => {
+                write!(f, "database schema version {seen} is incompatible with supported version {supported}")
+            }
+            Self::MigrationError(report) => write!(
+                f,
+                "schema migration failed at step {}",
+                report.migration_steps.last().map_or(0, |step| step.step_id)
+            ),
+            Self::Storage { message } => write!(f, "schema storage error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for MigrationError {}
+
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        step_id: 1,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    },
+    Migration {
+        step_id: 2,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_migrations(step_id INTEGER PRIMARY KEY, applied_at_ms INTEGER NOT NULL);
+              CREATE TABLE IF NOT EXISTS canonical_nodes(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS canonical_edges(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL);",
+    },
+    Migration {
+        step_id: 3,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_embedder_profiles(profile TEXT PRIMARY KEY, name TEXT NOT NULL, revision TEXT NOT NULL, dimension INTEGER NOT NULL)",
+    },
+    Migration {
+        step_id: 4,
+        sql: "CREATE TABLE IF NOT EXISTS operational_collections(
+                  name TEXT PRIMARY KEY,
+                  kind TEXT NOT NULL CHECK(kind IN ('append_only_log', 'latest_state')),
+                  schema_json TEXT NOT NULL,
+                  retention_json TEXT NOT NULL,
+                  format_version INTEGER NOT NULL,
+                  created_at INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS operational_mutations(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  collection_name TEXT NOT NULL,
+                  record_key TEXT NOT NULL,
+                  op_kind TEXT NOT NULL CHECK(op_kind = 'append'),
+                  payload_json TEXT NOT NULL,
+                  schema_id TEXT,
+                  write_cursor INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS operational_state(
+                  collection_name TEXT NOT NULL,
+                  record_key TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  schema_id TEXT,
+                  write_cursor INTEGER NOT NULL,
+                  PRIMARY KEY(collection_name, record_key)
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_open_state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+              INSERT OR IGNORE INTO operational_collections(
+                  name, kind, schema_json, retention_json, format_version, created_at
+              ) VALUES (
+                  'projection_failures',
+                  'append_only_log',
+                  '{\"type\":\"object\"}',
+                  '{}',
+                  1,
+                  0
+              );",
+    },
+    Migration {
+        step_id: 5,
+        sql: "CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED
+              );",
+    },
+    Migration {
+        step_id: 6,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_state(
+                  kind TEXT PRIMARY KEY,
+                  last_enqueued_cursor INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_kinds(
+                  kind TEXT PRIMARY KEY,
+                  profile TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_rows(
+                  rowid INTEGER PRIMARY KEY,
+                  kind TEXT NOT NULL,
+                  write_cursor INTEGER NOT NULL UNIQUE
+              );",
+    },
+    Migration {
+        step_id: 7,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_terminal(
+                  write_cursor INTEGER PRIMARY KEY,
+                  state TEXT NOT NULL CHECK(state IN ('failed', 'up_to_date'))
+              );",
+    },
+    // Phase 9 Pack B — REQ-026 / AC-028a/b/c / AC-042 recovery seam.
+    // `source_id` is nullable; existing canonical rows back-fill to NULL,
+    // so reads from older callers stay schema-stable. REQ-045 accretion
+    // offset is documented in `migrations/008_source_id.sql` as inherently
+    // impossible for this slice (every existing canonical column is
+    // load-bearing for replay / projections / recovery locators); the
+    // next schema-touching pack carries the offset budget for two adds.
+    Migration {
+        step_id: 8,
+        sql: "ALTER TABLE canonical_nodes ADD COLUMN source_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_source_id_idx
+                  ON canonical_nodes(source_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+                  ON canonical_edges(source_id);",
+    },
+    // 0.7.0 Pack 1 — Vector binary-quantization data encoding.
+    // Per `dev/design/0.7.0-vector-quant-pack1.md` D4 (fix-3). Stages
+    // the existing f32 corpus + kind mapping into a regular SQL table,
+    // drops + recreates `vector_default` with the new schema (sibling
+    // `embedding_bin bit[768]`, `source_type TEXT partition key`,
+    // `kind TEXT`, `created_at INTEGER`), then repopulates with
+    // SQL-side `vec_quantize_binary` and the D3 CASE mapping. A
+    // prefix CHECK-constraint preflight aborts the migration if any
+    // `_fathomdb_vector_rows.kind` is outside the locked vocabulary.
+    //
+    // `<dim>=768` is hardcoded against the default profile
+    // (`load_default_profile` -> `DEFAULT_EMBEDDER_DIMENSION` in
+    // fathomdb-engine). The design notes this constraint and defers
+    // a runtime-dim migration to 0.7.1.
+    Migration {
+        step_id: 9,
+
+exec
+/bin/bash -c "sed -n '261,520p' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+        .expect("terminal rows");
+    for row in rows {
+        let (wc, state) = row.expect("terminal row");
+        out.extend_from_slice(format!("{wc}|{state}\n").as_bytes());
+    }
+
+    out
+}
+
+/// R-SUB-2 (D3) — write the SAME fixed fixture into two fresh DBs, flush the
+/// async projection to quiescence in BOTH, then assert the serialized index
+/// state is BYTE-IDENTICAL. The flush (`drain`) is mandatory: the FTS-sync /
+/// vector-async split would otherwise race the compare.
+#[test]
+fn r_sub_2_incremental_multi_index_write_is_deterministic() {
+    let (dir_a, engine_a) = fresh_engine("determinism_a");
+    write_fixture(&engine_a);
+    engine_a.drain(30_000).expect("drain A to quiescence");
+    let path_a = engine_a.path().to_path_buf();
+    engine_a.close().expect("close A");
+    let state_a = serialize_index_state(&path_a);
+
+    let (dir_b, engine_b) = fresh_engine("determinism_b");
+    write_fixture(&engine_b);
+    engine_b.drain(30_000).expect("drain B to quiescence");
+    let path_b = engine_b.path().to_path_buf();
+    engine_b.close().expect("close B");
+    let state_b = serialize_index_state(&path_b);
+
+    assert!(!state_a.is_empty(), "serialized index state must be non-empty");
+    assert_eq!(
+        state_a.len(),
+        state_b.len(),
+        "index-state byte length differs across runs ({} vs {})",
+        state_a.len(),
+        state_b.len()
+    );
+    assert!(
+        state_a == state_b,
+        "incremental multi-index write is NOT deterministic: index state differs byte-for-byte \
+         across two fresh DBs on the same CPU"
+    );
+
+    drop(dir_a);
+    drop(dir_b);
+}
+
+exec
+/bin/bash -c "sed -n '220,420p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+        step_id: 9,
+        // SQL-side: D4 fix-3.1 preflight only. The vec0 reshape itself is
+        // dim-aware and lives in the engine crate's
+        // `ensure_vector_partition_pack1` (called by `ensure_vector_partition`
+        // immediately after `migrate_with_event_sink` returns). Splitting the
+        // preflight (SQL, in-tx with `apply_one`) from the reshape (Rust,
+        // dim-driven by `_fathomdb_embedder_profiles.dimension`) is required
+        // because `fathomdb-schema::Migration` is a `&'static str` with no
+        // runtime parameterization, and the existing dim=8 / dim=384 test
+        // suite must stay GREEN. The reshape is idempotent across crashes:
+        // if open fails between this step's commit (user_version=9) and the
+        // Rust reshape, the next open re-detects the old shape and replays
+        // the reshape. See dev/plans/runs/0.7.0-PVQ-P1-IMPL-output.json
+        // for the design-memo deviation note.
+        sql: "CREATE TEMP TABLE _vec0_migration_assertion(
+                  check_passes INTEGER NOT NULL CHECK(check_passes = 1)
+              );
+              INSERT INTO _vec0_migration_assertion(check_passes)
+                  SELECT CASE WHEN EXISTS (
+                      SELECT 1 FROM _fathomdb_vector_rows
+                      WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')
+                  ) THEN 0 ELSE 1 END;
+              DROP TABLE _vec0_migration_assertion;",
+    },
+    // 0.7.1 EU-5a2 — mean-centering schema column.
+    // Per `dev/design/embedder.md` §0.2: nullable BLOB holding the
+    // pinned per-workspace mean vector for the default profile. Byte
+    // length, when non-NULL, MUST equal `4 * dimension` (f32 little-endian).
+    // Pure additive ALTER; SQLite stores NULL for the pre-existing row.
+    // Lifecycle (compute-once-on-first-ingest threshold-pin) is in the
+    // engine crate, not the schema layer.
+    Migration {
+        step_id: 10,
+        sql: "ALTER TABLE _fathomdb_embedder_profiles ADD COLUMN mean_vec BLOB",
+    },
+    // 0.8.0 Slice 5 (G1) — global FTS5 tokenizer-default upgrade.
+    // Per `dev/plans/0.8.0-implementation.md` § "Slice 5" and the design
+    // memo `dev/design/0.8.0-slice-5-G1-design.md`. Migrations are
+    // forward-only and immutable, and FTS5 has no `ALTER … tokenize`, so the
+    // tokenizer default is upgraded by dropping and recreating the
+    // `search_index` virtual table rather than editing the step-5 DDL (which
+    // would change the tokenizer for new DBs only). The drop+recreate leaves
+    // the FTS index empty on a migrated DB; the engine re-tokenizes from the
+    // canonical source rows immediately after this step lands (open path,
+    // `reproject_search_index_after_tokenizer_upgrade`) — projection-only, no
+    // source-record migration. `DROP TABLE` already satisfies the accretion
+    // guard's `names_removal` branch; the exemption marker is carried to
+    // document intent and match the established pattern.
+    Migration {
+        step_id: 11,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: tokenizer-default upgrade (drop+recreate FTS5 projection; no source-record migration)
+              DROP TABLE IF EXISTS search_index;
+              CREATE VIRTUAL TABLE search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+    // 0.8.0 Slice 15 (G0 KEYSTONE) — transaction-time canonical-identity
+    // substrate. Per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`
+    // (SIGNED 2026-06-03) and `dev/design/slice-15-g0-design.md`. Two additive
+    // nullable columns on BOTH canonical tables: `logical_id TEXT` (stable
+    // cross-re-ingestion identity; NULL = legacy/own-identity row) and
+    // `superseded_at INTEGER` (transaction-time tombstone; NULL = active row).
+    // A partial UNIQUE INDEX `(logical_id) WHERE superseded_at IS NULL` per table
+    // enforces one active version per logical id — scoped to `logical_id` ALONE
+    // (Decision 5, HITL-SIGNED 2026-06-05; `kind` is payload/classification on
+    // nodes and relationship-type on edges, NEVER an identity-scope component).
+    // NULL-safe, so the many legacy NULL-logical_id rows never collide (SQLite
+    // treats each NULL as distinct; load-bearing). The folded G4/G5 read indexes
+    // (`canonical_nodes(kind)`, `canonical_edges(from_id)/(to_id)`) ride this one
+    // accretion offset budget. Pure additive ALTER (no DROP) → the exemption
+    // marker is REQUIRED (the accretion guard rejects ADD COLUMN without it);
+    // legacy rows read NULL with no data migration / re-open (in-place ALTER).
+    // Step-12 amended IN PLACE (Slice 31, no SCHEMA_VERSION bump): already-migrated
+    // local v12 DBs keep the old compound index until rebuilt (HITL: disposable).
+    Migration {
+        step_id: 12,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G0 transaction-time identity substrate
+              ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_nodes ADD COLUMN superseded_at INTEGER;
+              ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_nodes_logical_active_idx
+                  ON canonical_nodes(logical_id) WHERE superseded_at IS NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
+                  ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_kind_idx
+                  ON canonical_nodes(kind);
+              CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
+                  ON canonical_edges(from_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
+                  ON canonical_edges(to_id);",
+    },
+    // 0.8.0 Slice 33 (G3 / F4-READ) — op-store paginated read-back hardening.
+    // Per `dev/design/slice-33-cursor-hardening-design.md`. The governed
+    // `read.collection` / `read.mutations` SELECT is
+    // `WHERE collection_name = ?1 AND id > ?2 ORDER BY id LIMIT ?3`. Without an
+    // index on `collection_name`, SQLite rides the `id` PRIMARY KEY (EXPLAIN:
+    // `SEARCH … USING INTEGER PRIMARY KEY (rowid>?)`), scanning the id-ordered
+    // log and filtering `collection_name` row-by-row — O(rows-scanned) for a
+    // small collection inside a large multi-collection log. The composite
+    // `(collection_name, id)` index makes the plan index-driven (EXPLAIN:
+    // `SEARCH … USING INDEX operational_mutations_collection_id_idx
+    // (collection_name=? AND id>?)`): the leading equality on `collection_name`
+    // fixes the prefix, the trailing `id` serves BOTH the after-id cursor range
+    // and `ORDER BY id` with no temp B-tree — O(page). Pure additive
+    // `CREATE INDEX` (no table/column add, no DROP, no table reshape), so the
+    // accretion guard does not flag it and no exemption marker is required.
+    Migration {
+        step_id: 13,
+        sql: "CREATE INDEX IF NOT EXISTS operational_mutations_collection_id_idx
+                  ON operational_mutations(collection_name, id);",
+    },
+    // 0.8.1 Slice 15 (G11) — fact-on-edge enrichment + edge projectability.
+    // Per `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` (HITL-SIGNED
+    // 2026-06-13). Five additive nullable columns on `canonical_edges`:
+    //   `body`              — the fact/relationship text for FTS + vector projection
+    //   `t_valid`           — event valid-time (ISO-8601); NULL = "still valid"
+    //   `t_invalid`         — event invalid-time (ISO-8601); NULL = "still valid"
+    //   `confidence`        — extraction confidence ∈ [0.0, 1.0] from the harness
+    //   `extractor_model_id`— opaque model id from BYO-LLM harness `ready.model`
+    // All five are nullable; pre-G11 rows read NULL (no data migration required).
+    // Also creates `search_index_edges` FTS5 virtual table for edge-body FTS
+    // projection (Option B: separate table, no modification to the existing
+    // `search_index` path). MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 14,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G11 edge enrichment (5 additive nullable columns + edge FTS table)
+              ALTER TABLE canonical_edges ADD COLUMN body TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_valid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_invalid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+              ALTER TABLE canonical_edges ADD COLUMN extractor_model_id TEXT;
+              CREATE VIRTUAL TABLE IF NOT EXISTS search_index_edges USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+    // 0.8.1 Slice 30 (R3) SCHEMA-GATE-1 — temporal_fallback provenance flag.
+    // HITL-SIGNED 2026-06-13: approved additive schema bump.
+    // Edges whose `t_valid` was defaulted to `created_at` by the ELPS extractor
+    // (not text-grounded) carry this flag so the graph-arm BFS can exclude them
+    // from temporal queries. NULL = not a fallback (pre-column rows and edges
+    // written without the flag are treated as NOT temporal_fallback — safe default
+    // since they were written before provenance tracking existed or via a direct
+    // write where the caller owns the t_valid).
+    // MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 15,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R3 temporal_fallback provenance flag (additive nullable BOOLEAN column)
+              ALTER TABLE canonical_edges ADD COLUMN temporal_fallback INTEGER;",
+    },
+    // 0.8.14 Slice 5 (EXP-S KEYSTONE) — kind-tagged coexisting-index substrate.
+    // Per `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` D1
+    // (RATIFIED 2026-07-03) and `dev/plans/plan-0.8.14.md` §2 (R-SUB-1/R-SUB-3).
+    // Adds `row_kind` — a SEPARATE structural-role axis on `canonical_nodes`,
+    // orthogonal to the doc-type `kind` (email/article/paper/meeting/note/todo/
+    // doc/edge_fact). Vocabulary: `leaf` (normal record — the DEFAULT, which
+    // preserves current behavior for every existing/normal row), `coverage`
+    // (coverage/summary rows), `graph` (graph structural rows). D1 is explicit:
+    // this must NOT overload the doc-type `kind` vocabulary or touch its three
+    // hard-locked sites (engine `resolve_source_type` / `KIND_TO_SOURCE_TYPE_CASE_SQL`
+    // / this crate's migration-9 preflight CHECK). NOT NULL DEFAULT 'leaf' is a
+    // constant default, so pre-existing rows back-fill to `leaf` in-place (no data
+    // migration / re-open) and the migration is forward-only. Additive ADD COLUMN
+    // (no DROP) → the accretion guard REQUIRES the exemption marker. No vec0
+    // embedding/quant/pooling change (ADR §D6): this step does NOT rewrite vec0
+    // rows, so the eu7 fidelity gate stays a documented no-op at Slice 20.
+    Migration {
+        step_id: 16,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: EXP-S row_kind structural-role tag (additive NOT NULL DEFAULT 'leaf' column; separate axis from doc-type kind)
+              ALTER TABLE canonical_nodes ADD COLUMN row_kind TEXT NOT NULL DEFAULT 'leaf';",
+    },
+];
+
+pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+    migrate_with_steps(conn, MIGRATIONS)
+}
+
+pub fn migrate_with_steps(
+    conn: &Connection,
+    migrations: &[Migration],
+) -> Result<MigrationReport, MigrationError> {
+    migrate_with_event_sink(conn, migrations, |_| {})
+}
+
+pub fn migrate_with_event_sink(
+    conn: &Connection,
+    migrations: &[Migration],
+    mut emit: impl FnMut(&MigrationStepReport),
+) -> Result<MigrationReport, MigrationError> {
+    let before = user_version(conn)?;
+    if before > SCHEMA_VERSION {
+        return Err(MigrationError::IncompatibleSchemaVersion {
+            seen: before,
+            supported: SCHEMA_VERSION,
+        });
+
+exec
+/bin/bash -c "sed -n '/enum RowKind/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+1860
+
+codex
+I’ve reached the actual test bodies. Next I’m checking whether the engine seam is genuinely per-kind and whether the migration leaves the doc-type `kind` path untouched, including the hard-locked sites called out in the ADR.
+exec
+/bin/bash -c "sed -n '1840,1935p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+        kind: String,
+        schema_json: String,
+        retention_json: String,
+    },
+}
+
+/// EXP-S (0.8.14 Slice 5, D1) — structural-role tag for a canonical row.
+///
+/// A SEPARATE axis from the doc-type `kind` (email/article/paper/meeting/
+/// note/todo/doc/edge_fact): `row_kind` describes *what structural role* a row
+/// plays in the "one store, many indexes" substrate, not what document type it
+/// carries. Stored in `canonical_nodes.row_kind` (schema migration step 16).
+///
+/// `Leaf` is the default (a normal record; every existing/normal write is a
+/// leaf — back-compat preserving). `Coverage` = coverage/summary rows;
+/// `Graph` = graph structural rows. Engine-internal in 0.8.14 — there is NO
+/// public Py/TS SDK surface for `row_kind` this release (`Leaf` for all normal
+/// writes; `Coverage`/`Graph` are set only by internal paths). Cross-binding
+/// parity (X1) is a Slice-40 concern.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RowKind {
+    Leaf,
+    Coverage,
+    Graph,
+}
+
+impl RowKind {
+    /// On-disk `canonical_nodes.row_kind` spelling. Must match the migration
+    /// step-16 `DEFAULT 'leaf'` and the schema vocabulary (D1).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowKind::Leaf => "leaf",
+            RowKind::Coverage => "coverage",
+            RowKind::Graph => "graph",
+        }
+    }
+}
+
+/// Snapshot of engine-internal counters returned by [`Engine::counters`].
+///
+/// Public key set is owned by `dev/design/lifecycle.md` § Public key set
+/// and locked by AC-004a. Reading a snapshot is non-perturbing per
+/// AC-004c. The 0.6.0 surface exposes exactly these seven fields.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CounterSnapshot {
+    pub queries: u64,
+    pub writes: u64,
+    pub write_rows: u64,
+    pub errors_by_code: BTreeMap<String, u64>,
+    pub admin_ops: u64,
+    pub cache_hit: u64,
+    pub cache_miss: u64,
+}
+
+pub use lifecycle::Subscription;
+
+/// Stable corruption-on-open detail carried by
+/// [`EngineOpenError::Corruption`].
+///
+/// Layout owned by `dev/design/errors.md` § Corruption detail owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CorruptionDetail {
+    pub kind: CorruptionKind,
+    pub stage: OpenStage,
+    pub locator: CorruptionLocator,
+    pub recovery_hint: RecoveryHint,
+}
+
+/// Open-path corruption category.
+///
+/// 0.6.0 emits exactly the four members below; per
+/// `dev/design/errors.md` § Engine.open corruption table, doctor-only
+/// finding codes are not represented here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CorruptionKind {
+    WalReplayFailure,
+    HeaderMalformed,
+    SchemaInconsistent,
+    EmbedderIdentityDrift,
+}
+
+/// `Engine.open` stage at which corruption was detected.
+///
+/// Per ADR-0.6.0-corruption-open-behavior, `LockAcquisition` is intentionally
+/// not a member here; lock contention is surfaced via
+/// [`EngineOpenError::DatabaseLocked`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenStage {
+    WalReplay,
+    HeaderProbe,
+    SchemaProbe,
+    EmbedderIdentity,
+}
+
+/// Locator pointing at the corrupted region of the database file.
+
+exec
+/bin/bash -c "sed -n '9420,9565p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+             ''
+         FROM _fathomdb_vector_migration_v0_7_0 s;
+         DROP TABLE _fathomdb_vector_migration_v0_7_0;"
+    );
+    tx.execute_batch(&repopulate_sql)?;
+    tx.commit()
+}
+
+fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector.iter().flat_map(|value| value.to_le_bytes()).collect()
+}
+
+fn decode_vector_blob(bytes: &[u8]) -> Vec<f32> {
+    debug_assert_eq!(bytes.len() % 4, 0, "f32 BLOB length must be multiple of 4");
+    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+}
+
+/// EU-5a2 — does the live embedder identity request mean-centering?
+/// Identity-name compare per EU-5a1's BGE_SMALL_EMBEDDER_NAME constant
+/// (`dev/design/embedder.md` §0.6). NoopEmbedder returns `false`.
+fn identity_requires_mean_centering(identity: &EmbedderIdentity) -> bool {
+    identity.name == BGE_SMALL_EMBEDDER_NAME
+}
+
+/// EU-5a2 — read the pinned mean vector from
+/// `_fathomdb_embedder_profiles.mean_vec` for the default profile.
+/// Returns `Ok(None)` when the column is NULL or the row is missing;
+/// returns `Err(EngineError::Storage)` on dimension drift (the open-time
+/// `check_embedder_profile` already fails closed for this, so a runtime
+/// drift here would be an internal-inconsistency signal).
+fn read_pinned_mean_vec(
+    connection: &Connection,
+    dimension: u32,
+) -> Result<Option<Vec<f32>>, EngineError> {
+    let bytes: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(|_| EngineError::Storage)?;
+    let Some(bytes) = bytes else { return Ok(None) };
+    let expected_len = (dimension as usize).saturating_mul(4);
+    if bytes.len() != expected_len {
+        return Err(EngineError::Storage);
+    }
+    let mut out = Vec::with_capacity(dimension as usize);
+    for chunk in bytes.chunks_exact(4) {
+        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+        out.push(f32::from_le_bytes(arr));
+    }
+    Ok(Some(out))
+}
+
+/// EU-5a2 — pointwise `v - mean`. Length-checked debug-assert; caller
+/// guarantees equal length via `read_pinned_mean_vec` + dimension check.
+fn subtract_mean(v: &[f32], mean: &[f32]) -> Vec<f32> {
+    debug_assert_eq!(v.len(), mean.len(), "subtract_mean dim mismatch");
+    v.iter().zip(mean.iter()).map(|(a, b)| *a - *b).collect()
+}
+
+/// Maps the writer-facing `kind` value to the locked Pack 1
+/// `source_type` partition-key vocabulary. Must stay in lockstep with
+/// the CASE WHEN inlined in migration step 9
+/// (`fathomdb-schema/src/lib.rs`); the drift-detection unit test in
+/// this module's `tests` mod enforces that. Per
+/// `dev/design/0.7.0-vector-quant-pack1.md` D3.
+fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+    Ok(match kind {
+        "email" => "email",
+        "article" => "article",
+        "paper" => "paper",
+        "meeting" => "meeting",
+        "note" => "note",
+        "todo" => "todo",
+        // Synthetic AC-013 test fixture; coerced so the 6-value HITL lock holds.
+        "doc" => "article",
+        // G11 (Slice 15) — edge-body projection; separate `source_type` partition
+        // key distinguishes edge vectors from node vectors in `vector_default`.
+        "edge_fact" => "edge_fact",
+        _ => return Err(EngineError::Storage),
+    })
+}
+
+/// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
+/// `(kind, name)` pair. Both inputs are lowercased before hashing so that
+/// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
+/// canonical form is `sha256("<kind>:<name>")` — identical to the
+/// ADR-0.8.1-byo-llm derivation rule.
+///
+/// fix-34 [P1]: because `:` is the delimiter, a `:` in `kind` would let the
+/// split point move and collide two distinct `(kind, name)` pairs onto one
+/// identity (e.g. `("a:b","c")` and `("a","b:c")` both hash `"a:b:c"`),
+/// silently dropping one entity via batch dedup / G0 supersession. An empty
+/// `name` collapses every name-less entity of a kind onto `sha256("<kind>:")`.
+/// We reject both at the boundary; this preserves the ADR derivation rule
+/// (a colon-free `kind` makes the first `:` an unambiguous delimiter, so a `:`
+/// in `name` stays safe — edge keys deliberately rely on that).
+fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
+    if kind.contains(':') || name.is_empty() {
+        return Err(EngineError::Extractor);
+    }
+    let input = format!("{}:{}", kind.to_lowercase(), name.to_lowercase());
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    // digest 0.11 returns `hybrid_array::Array`, which (unlike the old
+    // `GenericArray`) does not implement `LowerHex`. Format the bytes
+    // explicitly — byte-identical lowercase, zero-padded hex to the prior
+    // `{:x}` rendering, preserving the load-bearing logical-id derivation.
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Cause-A (0.8.11.2) — derive the additive **stable hit-id** carried on
+/// [`SearchHit::stable_id`] for cross-session real-gold keying.
+///
+/// The stable id is the active canonical node's `logical_id` — the post-G0
+/// supersession-stable identity, preserved across re-projection/re-ingest by
+/// the tombstone-then-insert contract (whereas `SearchHit.id` ==
+/// `write_cursor` is reassigned on every re-ingest). When `logical_id` is NULL
+/// — the doc-seeded node case, the *dominant* corpus hit type today — we fall
+/// back to a content hash of the body so doc hits still carry a
+/// re-ingest-survivable key (a `None` here would leave the doc-seeded real-gold
+/// arms session-scoped; the Steward DECIDED to adopt this fallback).
+///
+/// The result is **prefix-tagged by id-space** so the two provenances are
+/// distinguishable by inspection (honest `id_space`):
+/// - `"l:<logical_id>"` — logical-id space (entities + edges; graph-arm,
+///   vector-node, and edge hits when `logical_id` is present);
+/// - `"h:<sha256(body)>"` — content-hash space (doc nodes with NULL
+///   `logical_id`, and any branch that cannot cheaply resolve a `logical_id`).
+///
+/// Behaviour-neutral: the value never participates in ranking/scoring (same
+/// additive posture as `source_id` / `ce_score`).
+fn derive_stable_id(logical_id: Option<&str>, body: &str) -> String {
+    match logical_id {
+        Some(lid) if !lid.is_empty() => format!("l:{lid}"),
+        _ => {
+            let mut hasher = Sha256::new();
+            hasher.update(body.as_bytes());
+            format!(
+                "h:{}",
+                hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
+
+exec
+/bin/bash -c "sed -n '10120,10320p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+/// vector (async)}` without reshaping the substrate. Per D5, EXP-S implements
+/// NO OPP-12 surface here (OPP-12 lands >=0.9.x; re-check at its scheduling) —
+/// this function only records the index-target intent so the async-vs-sync split
+/// (D5(b)) and the per-kind-extensible terminal-cursor readiness (D5(c)) stay
+/// wrappable.
+///
+/// `Leaf` MUST preserve today's behavior exactly: FTS (sync) + vector (async,
+/// gated by `kind_is_vector_indexed`).
+fn index_targets_for_row_kind(row_kind: RowKind) -> IndexTargetSet {
+    match row_kind {
+        // Normal record — identical to pre-EXP-S behavior.
+        RowKind::Leaf => IndexTargetSet { fts: true, vector: true },
+        // Coverage/summary rows — searchable and embeddable.
+        RowKind::Coverage => IndexTargetSet { fts: true, vector: true },
+        // Graph structural rows — lexically searchable, not embedded.
+        RowKind::Graph => IndexTargetSet { fts: true, vector: false },
+    }
+}
+
+/// EXP-S (0.8.14 Slice 5, D2/D5) — apply the per-`row_kind` index-target
+/// dispatch for one just-inserted canonical node row (write_cursor `cursor`).
+///
+/// Preserves the OPP-12-shaped split (D5(b)): FTS is written in THIS
+/// transaction (same-txn `searchable->FTS`); vector work is only *enqueued*
+/// here into `_fathomdb_projection_state` and embedded later, asynchronously,
+/// by the projection worker pool (`searchable->vector`). When the row projects
+/// into no async vector index, its readiness is terminated up-front (D5(c),
+/// per-kind-extensible) so `advance_projection_cursor` can walk past it.
+///
+/// Returns `true` iff async vector work was enqueued (the caller must then
+/// `notify_new_work`). For `RowKind::Leaf` this is behavior-identical to the
+/// pre-EXP-S inline node path.
+fn project_canonical_node_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: &str,
+    row_kind: RowKind,
+) -> rusqlite::Result<bool> {
+    let targets = index_targets_for_row_kind(row_kind);
+    if targets.fts {
+        tx.execute(
+            "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+            params![body, kind, cursor],
+        )?;
+    }
+    let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
+    if enqueue_vector {
+        tx.execute(
+            "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+             VALUES(?1, ?2, 0)
+             ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+            params![kind, cursor],
+        )?;
+    } else {
+        // Never-vector-projected rows terminate the cursor up-front so
+        // `advance_projection_cursor` can advance the readiness watermark.
+        record_projection_terminal(tx, cursor, "up_to_date")?;
+    }
+    Ok(enqueue_vector)
+}
+
+fn commit_batch(
+    connection: &mut Connection,
+    batch: &[PreparedWrite],
+    plans: &[WritePlan],
+    base_cursor: u64,
+    provenance_row_cap: u64,
+) -> rusqlite::Result<u64> {
+    let tx = connection.transaction()?;
+
+    for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
+        // Per-row cursor: row i gets `base_cursor + i + 1`. See the
+        // comment in `Engine::write_inner`.
+        let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
+        match (write, plan) {
+            (PreparedWrite::Node { kind, body, source_id, logical_id }, WritePlan::Node) => {
+                // G0 — supersession is tombstone-then-insert in this same txn:
+                // mark the prior active version superseded BEFORE inserting the
+                // new active row, so the partial-unique-active index never sees
+                // two active rows for one logical_id. Scoped to logical_id ALONE
+                // (Decision 5, HITL-SIGNED 2026-06-05): a kind-change re-ingest of
+                // the same logical_id SUPERSEDES, never forks. No-op when logical_id
+                // is None (legacy/own-identity insert, behavior-identical to 0.7.x).
+                if let Some(logical_id) = logical_id {
+                    tx.execute(
+                        "UPDATE canonical_nodes SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
+                    )?;
+                }
+                // EXP-S (0.8.14 Slice 5, D1) — a `PreparedWrite::Node` is the
+                // `leaf` structural row_kind (a normal record). coverage/graph
+                // rows are written via internal paths (row_kind is a SEPARATE
+                // axis from the doc-type `kind`, and there is no public SDK
+                // surface for it this release). Writing `leaf` explicitly is
+                // value-identical to the column DEFAULT.
+                tx.execute(
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str()],
+                )?;
+                // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
+                // this is behavior-identical to the pre-EXP-S inline path: FTS
+                // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
+                // else the cursor is terminated up-front.
+                project_canonical_node_row(&tx, cursor, kind, body, RowKind::Leaf)?;
+            }
+            (
+                PreparedWrite::Edge {
+                    kind,
+                    from,
+                    to,
+                    source_id,
+                    logical_id,
+                    body,
+                    t_valid,
+                    t_invalid,
+                    confidence,
+                    extractor_model_id,
+                    temporal_fallback,
+                },
+                WritePlan::Edge,
+            ) => {
+                // G0 — identical tombstone-then-insert supersession on edges,
+                // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
+                // edge `kind` is relationship-type, not identity — a kind-change
+                // re-ingest of the same edge logical_id SUPERSEDES, never forks).
+                // No-op when logical_id is None.
+                if let Some(logical_id) = logical_id {
+                    // fix-30 [P2]: collect prior active cursors BEFORE tombstoning
+                    // so stale vector_default rows can be pruned.
+                    let prior_g0 = prior_edge_cursors_by_logical_id(&tx, logical_id)?;
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
+                    )?;
+                    for sc in &prior_g0 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: record terminal so advance_projection_cursor
+                        // can walk past this now-superseded cursor.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
+                }
+                // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
+                // tombstone any prior active edge on the same (from_id, to_id, kind)
+                // BEFORE inserting the new row. This is DIFFERENT from the G0
+                // logical_id tombstone: it is keyed on the triple, not the identity.
+                // Regular edges (body=None) skip this path — they retain G0 semantics.
+                if body.is_some() {
+                    // fix-30 [P2]: collect and prune vector shadow for the superseded edge.
+                    let prior_g11 = prior_edge_cursors_by_triple(&tx, from, to, kind)?;
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
+                        params![cursor, from, to, kind],
+                    )?;
+                    for sc in &prior_g11 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: mark terminal so projection cursor can advance.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
+                }
+                let temporal_fallback_i: Option<i64> =
+                    temporal_fallback.and_then(|f| if f { Some(1) } else { None });
+                tx.execute(
+                    "INSERT INTO canonical_edges(
+                         write_cursor, kind, from_id, to_id, source_id, logical_id,
+                         body, t_valid, t_invalid, confidence, extractor_model_id,
+                         temporal_fallback
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    params![
+                        cursor,
+                        kind,
+                        from,
+                        to,
+                        source_id,
+                        logical_id,
+                        body,
+                        t_valid,
+                        t_invalid,
+                        confidence,
+                        extractor_model_id,
+                        temporal_fallback_i
+                    ],
+                )?;
+                // G11 — edge FTS projection into `search_index_edges` (separate
+                // table from node-body `search_index` — Option B partition).
+                if let Some(edge_body) = body.as_ref() {
+                    tx.execute(
+                        "INSERT INTO search_index_edges(body, kind, write_cursor)
+                         VALUES(?1, ?2, ?3)",
+
+exec
+/bin/bash -c "sed -n '/fn index_targets_for_row_kind/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+10128
+
+exec
+/bin/bash -c "sed -n '/fn project_canonical_node_row/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+10152
+
+exec
+/bin/bash -c "sed -n '/fn commit_batch/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+10182
+
+exec
+/bin/bash -c "sed -n '/fn resolve_source_type/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+9491
+10968
+
+exec
+/bin/bash -c "sed -n '/KIND_TO_SOURCE_TYPE_CASE_SQL/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+9359
+9417
+10927
+10961
+10995
+11002
+
+exec
+/bin/bash -c "sed -n '/write_canonical_row_with_kind_for_test/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+4725
+
+exec
+/bin/bash -c "sed -n '/canonical_rows_with_row_kind_for_test/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+4761
+
+exec
+/bin/bash -c "sed -n '/fn ensure_vector_partition/=' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+9247
+
+exec
+/bin/bash -c "sed -n '9348,9515p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+         )
+             SELECT rowid, embedding, vec_bit(embedding_bin), source_type, kind, created_at, ''
+             FROM _fathomdb_vector_pack2_stage;
+         DROP TABLE _fathomdb_vector_pack2_stage;",
+    )?;
+    tx.commit()
+}
+
+/// SQL fragment implementing the D3 `kind -> source_type` map.
+/// Used both by the Pack 1 reshape migration and by the drift-detection
+/// unit test that pins it to [`resolve_source_type`].
+const KIND_TO_SOURCE_TYPE_CASE_SQL: &str = "CASE s.kind
+    WHEN 'email'   THEN 'email'
+    WHEN 'article' THEN 'article'
+    WHEN 'paper'   THEN 'paper'
+    WHEN 'meeting' THEN 'meeting'
+    WHEN 'note'    THEN 'note'
+    WHEN 'todo'    THEN 'todo'
+    WHEN 'doc'     THEN 'article'
+    ELSE 'article'
+END";
+
+/// Pack 1 in-place reshape of `vector_default`. Stages the existing
+/// f32 corpus + each row's `kind`, drops the old single-column vec0
+/// table, recreates at the runtime `dimension` with the Pack 1
+/// columns, then repopulates with SQL-side `vec_quantize_binary` +
+/// the D3 `kind -> source_type` mapping. The preflight CHECK on
+/// unknown kinds has already run as migration step 9 by the time we
+/// get here.
+///
+/// Atomicity: the DROP+CREATE+repopulate sequence runs inside a
+/// rusqlite `Connection::transaction()` (DEFERRED begin per rusqlite
+/// `transaction.rs:417`). Cross-process serialization is provided by
+/// the engine's sidecar `acquire_lock` at `open_with_migrations`
+/// (`lib.rs:1127` area); reader handles are not opened until
+/// `ensure_vector_partition` returns (`lib.rs:1241` area), so readers
+/// never observe a partial reshape.
+fn migrate_vector_partition_to_pack1(
+    connection: &mut Connection,
+    dimension: u32,
+) -> rusqlite::Result<()> {
+    let tx = connection.transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
+             rowid     INTEGER PRIMARY KEY,
+             embedding BLOB NOT NULL,
+             kind      TEXT NOT NULL
+         );
+         INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
+             SELECT v.rowid, v.embedding, r.kind
+             FROM vector_default v
+             JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
+         DROP TABLE vector_default;",
+    )?;
+    // Slice 10 / G10 — recreate directly at the Pack-2 shape (adds `status`), so
+    // a legacy single-column DB lands the current shape in one reshape.
+    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    // `status` back-fills the empty-string sentinel (vec0 TEXT metadata is NOT
+    // NULL-able; reserved-gap candidate 13). Legacy single-column DBs predate
+    // mean-centering, so re-quantizing from the un-centered `embedding` is
+    // correct here.
+    let repopulate_sql = format!(
+        "INSERT INTO vector_default(
+             rowid, embedding, embedding_bin, source_type, kind, created_at, status
+         )
+         SELECT
+             s.rowid,
+             s.embedding,
+             vec_quantize_binary(s.embedding),
+             {KIND_TO_SOURCE_TYPE_CASE_SQL},
+             s.kind,
+             strftime('%s', 'now'),
+             ''
+         FROM _fathomdb_vector_migration_v0_7_0 s;
+         DROP TABLE _fathomdb_vector_migration_v0_7_0;"
+    );
+    tx.execute_batch(&repopulate_sql)?;
+    tx.commit()
+}
+
+fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector.iter().flat_map(|value| value.to_le_bytes()).collect()
+}
+
+fn decode_vector_blob(bytes: &[u8]) -> Vec<f32> {
+    debug_assert_eq!(bytes.len() % 4, 0, "f32 BLOB length must be multiple of 4");
+    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+}
+
+/// EU-5a2 — does the live embedder identity request mean-centering?
+/// Identity-name compare per EU-5a1's BGE_SMALL_EMBEDDER_NAME constant
+/// (`dev/design/embedder.md` §0.6). NoopEmbedder returns `false`.
+fn identity_requires_mean_centering(identity: &EmbedderIdentity) -> bool {
+    identity.name == BGE_SMALL_EMBEDDER_NAME
+}
+
+/// EU-5a2 — read the pinned mean vector from
+/// `_fathomdb_embedder_profiles.mean_vec` for the default profile.
+/// Returns `Ok(None)` when the column is NULL or the row is missing;
+/// returns `Err(EngineError::Storage)` on dimension drift (the open-time
+/// `check_embedder_profile` already fails closed for this, so a runtime
+/// drift here would be an internal-inconsistency signal).
+fn read_pinned_mean_vec(
+    connection: &Connection,
+    dimension: u32,
+) -> Result<Option<Vec<f32>>, EngineError> {
+    let bytes: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(|_| EngineError::Storage)?;
+    let Some(bytes) = bytes else { return Ok(None) };
+    let expected_len = (dimension as usize).saturating_mul(4);
+    if bytes.len() != expected_len {
+        return Err(EngineError::Storage);
+    }
+    let mut out = Vec::with_capacity(dimension as usize);
+    for chunk in bytes.chunks_exact(4) {
+        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+        out.push(f32::from_le_bytes(arr));
+    }
+    Ok(Some(out))
+}
+
+/// EU-5a2 — pointwise `v - mean`. Length-checked debug-assert; caller
+/// guarantees equal length via `read_pinned_mean_vec` + dimension check.
+fn subtract_mean(v: &[f32], mean: &[f32]) -> Vec<f32> {
+    debug_assert_eq!(v.len(), mean.len(), "subtract_mean dim mismatch");
+    v.iter().zip(mean.iter()).map(|(a, b)| *a - *b).collect()
+}
+
+/// Maps the writer-facing `kind` value to the locked Pack 1
+/// `source_type` partition-key vocabulary. Must stay in lockstep with
+/// the CASE WHEN inlined in migration step 9
+/// (`fathomdb-schema/src/lib.rs`); the drift-detection unit test in
+/// this module's `tests` mod enforces that. Per
+/// `dev/design/0.7.0-vector-quant-pack1.md` D3.
+fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+    Ok(match kind {
+        "email" => "email",
+        "article" => "article",
+        "paper" => "paper",
+        "meeting" => "meeting",
+        "note" => "note",
+        "todo" => "todo",
+        // Synthetic AC-013 test fixture; coerced so the 6-value HITL lock holds.
+        "doc" => "article",
+        // G11 (Slice 15) — edge-body projection; separate `source_type` partition
+        // key distinguishes edge vectors from node vectors in `vector_default`.
+        "edge_fact" => "edge_fact",
+        _ => return Err(EngineError::Storage),
+    })
+}
+
+/// G11 (Slice 15) — derive a stable hex-encoded sha256 logical_id from a
+/// `(kind, name)` pair. Both inputs are lowercased before hashing so that
+/// entity identity is case-insensitive (`"Alice"` == `"alice"`). The
+/// canonical form is `sha256("<kind>:<name>")` — identical to the
+/// ADR-0.8.1-byo-llm derivation rule.
+///
+/// fix-34 [P1]: because `:` is the delimiter, a `:` in `kind` would let the
+/// split point move and collide two distinct `(kind, name)` pairs onto one
+
+exec
+/bin/bash -c "sed -n '4705,4788p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+            .execute(
+                "INSERT OR REPLACE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES(?1, ?2, 0)",
+                params![kind, DEFAULT_VECTOR_PROFILE],
+            )
+            .map_err(|_| EngineError::Storage)?;
+        Ok(())
+    }
+
+    /// EXP-S (0.8.14 Slice 5, D1) — write one canonical node row carrying an
+    /// explicit structural `row_kind` (leaf/coverage/graph), routing the index
+    /// projection through the SAME `row_kind -> index-target` dispatch seam
+    /// (`project_canonical_node_row`) as the production `leaf` write path.
+    ///
+    /// This is the internal-only writer for `coverage`/`graph` rows (there is no
+    /// public SDK surface for `row_kind` in 0.8.14). Cursor assignment preserves
+    /// the `rowid == write_cursor == cursor` determinism identity. When the row
+    /// projects into an async vector index, the worker pool is notified so the
+    /// embed is scheduled exactly as for a normal write.
+    #[doc(hidden)]
+    pub fn write_canonical_row_with_kind_for_test(
+        &self,
+        kind: &str,
+        body: &str,
+        row_kind: RowKind,
+    ) -> Result<WriteReceipt, EngineError> {
+        self.ensure_open()?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+
+        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        let enqueued = {
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            tx.execute(
+                "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
+                 VALUES(?1, ?2, ?3, NULL, NULL, ?4)",
+                params![cursor, kind, body, row_kind.as_str()],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            let enqueued = project_canonical_node_row(&tx, cursor, kind, body, row_kind)
+                .map_err(|_| EngineError::Storage)?;
+            advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            enqueued
+        };
+        self.next_cursor.store(cursor, Ordering::SeqCst);
+        if enqueued {
+            self.projection_runtime.notify_new_work();
+        }
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
+    }
+
+    /// EXP-S (0.8.14 Slice 5, D1) — select the active canonical rows carrying a
+    /// given `row_kind`, returning their `write_cursor`s in cursor order. Proves
+    /// the engine can query/select rows by the structural `row_kind` axis.
+    #[doc(hidden)]
+    pub fn canonical_rows_with_row_kind_for_test(
+        &self,
+        row_kind: RowKind,
+    ) -> Result<Vec<u64>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare(
+                "SELECT write_cursor FROM canonical_nodes
+                 WHERE row_kind = ?1 AND superseded_at IS NULL
+                 ORDER BY write_cursor",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let cursors = stmt
+            .query_map(params![row_kind.as_str()], |row| row.get::<_, u64>(0))
+            .map_err(|_| EngineError::Storage)?
+            .collect::<rusqlite::Result<Vec<u64>>>()
+            .map_err(|_| EngineError::Storage)?;
+        Ok(cursors)
+    }
+
+    /// Embed arbitrary text with the engine's configured runtime embedder,
+    /// returning the raw (un-centered) vector.
+    ///
+    /// This is the read-path embed primitive: it mirrors the search
+    /// query-embedding path — a single, direct [`Embedder::embed`] call. The
+    /// per-`embed()` watchdog/circuit-breaker guards only the bulk
+
+exec
+/bin/bash -c "sed -n '9228,9268p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+    )
+}
+
+fn default_profile_dimension(connection: &Connection) -> Result<u32, EngineError> {
+    load_default_profile(connection)
+        .map(|identity| identity.dimension)
+        .map_err(|_| EngineError::Storage)
+}
+
+fn kind_is_vector_indexed(connection: &Connection, kind: &str) -> Result<bool, EngineError> {
+    connection
+        .query_row("SELECT 1 FROM _fathomdb_vector_kinds WHERE kind = ?1", [kind], |_row| Ok(()))
+        .map(|_| true)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(EngineError::Storage),
+        })
+}
+
+fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusqlite::Result<()> {
+    // 0.7.0 Pack 1 schema per dev/design/0.7.0-vector-quant-pack1.md D1/D2:
+    // f32 `embedding` + binary-quant sibling `embedding_bin` + `source_type`
+    // partition key + `kind` + `created_at`. The vec0 column type is
+    // dim-parameterized, so the reshape lives here rather than in the
+    // SQL-only migration framework — see fathomdb-schema migration step 9
+    // and dev/plans/runs/0.7.0-PVQ-P1-IMPL-output.json for the deviation
+    // from the design memo's "Choose (a)" guidance.
+    //
+    // Three paths:
+    //   (1) no vector_default       -> CREATE at new shape.
+    //   (2) old single-column shape -> stage + drop + recreate at new shape
+    //                                  + repopulate with vec_quantize_binary.
+    //   (3) already new shape       -> no-op.
+    let existing_sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+
+exec
+/bin/bash -c "sed -n '/fn r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+115
+
+exec
+/bin/bash -c "sed -n '/fn d2_index_targets_differ_by_row_kind/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+148
+
+exec
+/bin/bash -c "sed -n '/fn serialize_index_state/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+181
+
+exec
+/bin/bash -c "sed -n '/fn r_sub_2_incremental_multi_index_write_is_deterministic/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+275
+
+exec
+/bin/bash -c "sed -n '/fn write_fixture/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+77
+
+exec
+/bin/bash -c "sed -n '/fn fresh_engine/=' src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+63
+
+exec
+/bin/bash -c "sed -n '/fn s16_row_kind_column_present_and_schema_version_is_16/=' src/rust/crates/fathomdb-schema/tests/step16_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+54
+
+exec
+/bin/bash -c "sed -n '/fn s16_forward_only_from_v15_defaults_existing_rows_to_leaf/=' src/rust/crates/fathomdb-schema/tests/step16_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+80
+
+exec
+/bin/bash -c "sed -n '/fn s16_passes_accretion_guard_only_with_marker/=' src/rust/crates/fathomdb-schema/tests/step16_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+121
+
+exec
+/bin/bash -c "sed -n '/pub const SCHEMA_VERSION/=' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+6
+
+exec
+/bin/bash -c "sed -n '/step_id: 16/=' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+393
+
+exec
+/bin/bash -c "sed -n '/MIGRATION-ACCRETION-EXEMPTION: EXP-S row_kind structural-role tag/=' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+394
+
+exec
+/bin/bash -c "sed -n \"/WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')/=\" src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+240
+
+exec
+/bin/bash -c "sed -n '10245,10360p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+                // keyed by logical_id ALONE (Decision 5, HITL-SIGNED 2026-06-05;
+                // edge `kind` is relationship-type, not identity — a kind-change
+                // re-ingest of the same edge logical_id SUPERSEDES, never forks).
+                // No-op when logical_id is None.
+                if let Some(logical_id) = logical_id {
+                    // fix-30 [P2]: collect prior active cursors BEFORE tombstoning
+                    // so stale vector_default rows can be pruned.
+                    let prior_g0 = prior_edge_cursors_by_logical_id(&tx, logical_id)?;
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE logical_id = ?2 AND superseded_at IS NULL",
+                        params![cursor, logical_id],
+                    )?;
+                    for sc in &prior_g0 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: record terminal so advance_projection_cursor
+                        // can walk past this now-superseded cursor.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
+                }
+                // G11 — invalidate-not-accumulate: for fact-edges (body IS NOT NULL),
+                // tombstone any prior active edge on the same (from_id, to_id, kind)
+                // BEFORE inserting the new row. This is DIFFERENT from the G0
+                // logical_id tombstone: it is keyed on the triple, not the identity.
+                // Regular edges (body=None) skip this path — they retain G0 semantics.
+                if body.is_some() {
+                    // fix-30 [P2]: collect and prune vector shadow for the superseded edge.
+                    let prior_g11 = prior_edge_cursors_by_triple(&tx, from, to, kind)?;
+                    tx.execute(
+                        "UPDATE canonical_edges SET superseded_at = ?1
+                         WHERE from_id = ?2 AND to_id = ?3 AND kind = ?4 AND superseded_at IS NULL",
+                        params![cursor, from, to, kind],
+                    )?;
+                    for sc in &prior_g11 {
+                        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [sc])?;
+                        tx.execute(
+                            "DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1",
+                            [sc],
+                        )?;
+                        // fix-32 [P2]: mark terminal so projection cursor can advance.
+                        record_projection_terminal(&tx, *sc as u64, "superseded")?;
+                    }
+                }
+                let temporal_fallback_i: Option<i64> =
+                    temporal_fallback.and_then(|f| if f { Some(1) } else { None });
+                tx.execute(
+                    "INSERT INTO canonical_edges(
+                         write_cursor, kind, from_id, to_id, source_id, logical_id,
+                         body, t_valid, t_invalid, confidence, extractor_model_id,
+                         temporal_fallback
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    params![
+                        cursor,
+                        kind,
+                        from,
+                        to,
+                        source_id,
+                        logical_id,
+                        body,
+                        t_valid,
+                        t_invalid,
+                        confidence,
+                        extractor_model_id,
+                        temporal_fallback_i
+                    ],
+                )?;
+                // G11 — edge FTS projection into `search_index_edges` (separate
+                // table from node-body `search_index` — Option B partition).
+                if let Some(edge_body) = body.as_ref() {
+                    tx.execute(
+                        "INSERT INTO search_index_edges(body, kind, write_cursor)
+                         VALUES(?1, ?2, ?3)",
+                        params![edge_body, kind, cursor],
+                    )?;
+                }
+                // G11 — edge vector projection: enqueue for projection scheduler
+                // under a fixed kind `"edge_fact"` (so resolve_source_type maps it
+                // to `source_type = "edge_fact"` in vector_default). Auto-register
+                // "edge_fact" in _fathomdb_vector_kinds (idempotent).
+                if body.is_some() {
+                    let now_unix =
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                            as i64;
+                    tx.execute(
+                        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                         VALUES('edge_fact', 'default', ?1)",
+                        params![now_unix],
+                    )?;
+                    tx.execute(
+                        "INSERT INTO _fathomdb_projection_state(
+                             kind, last_enqueued_cursor, updated_at
+                         ) VALUES('edge_fact', ?1, 0)
+                         ON CONFLICT(kind) DO UPDATE
+                             SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                        params![cursor],
+                    )?;
+                    // Do NOT call record_projection_terminal — let the scheduler
+                    // embed the body and mark it terminal after projection.
+                } else {
+                    record_projection_terminal(&tx, cursor, "up_to_date")?;
+                }
+            }
+            (
+                PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },
+                WritePlan::AdminSchema,
+            ) => {
+                tx.execute(
+                    "INSERT INTO operational_collections(
+                        name, kind, schema_json, retention_json, format_version, created_at
+                     ) VALUES(?1, ?2, ?3, ?4, 1, 0)
+                     ON CONFLICT(name) DO UPDATE SET
+                        schema_json = excluded.schema_json,
+
+exec
+/bin/bash -c "sed -n '10360,10440p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+                        schema_json = excluded.schema_json,
+                        retention_json = excluded.retention_json",
+                    params![name, kind, schema_json, retention_json],
+                )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
+            }
+            (
+                PreparedWrite::OpStore { collection, record_key, schema_id, body },
+                WritePlan::AppendOnlyLog,
+            ) => {
+                tx.execute(
+                    "INSERT INTO operational_mutations(
+                        collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                     ) VALUES(?1, ?2, 'append', ?3, ?4, ?5)",
+                    params![collection, record_key, body, schema_id, cursor],
+                )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
+            }
+            (
+                PreparedWrite::OpStore { collection, record_key, schema_id, body },
+                WritePlan::LatestState,
+            ) => {
+                tx.execute(
+                    "INSERT INTO operational_state(
+                        collection_name, record_key, payload_json, schema_id, write_cursor
+                     ) VALUES(?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(collection_name, record_key) DO UPDATE SET
+                        payload_json = excluded.payload_json,
+                        schema_id = excluded.schema_id,
+                        write_cursor = excluded.write_cursor",
+                    params![collection, record_key, body, schema_id, cursor],
+                )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
+            }
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        }
+    }
+
+    // G8 (Slice 20 / F10) — cross-row dangling-edge flag-and-count. This runs
+    // AFTER the batch loop (so every same-batch node is already on disk in `tx`
+    // and a same-batch later-inserted endpoint is visible) and BEFORE retention /
+    // projection-cursor / commit. It is the cross-row reason this lives here and
+    // not in single-row pre-insert `validate_write`. Default is FLAG-AND-COUNT:
+    // we only COUNT, never roll back (strict-mode rollback is deferred to
+    // reserved-gap band 22 — adding a write-options surface is out of scope).
+    //
+    // Probe is `logical_id`-alone against the step-12 partial index
+    // `canonical_nodes_logical_active_idx ON canonical_nodes(logical_id)
+    // WHERE superseded_at IS NULL` (its leading column + partial predicate), so
+    // it SEARCHes the index with no SCAN (see `tests/pr_g8_dangling_edges.rs`
+    // case (f)). There is no node-kind to match: `canonical_edges` stores only
+    // the edge's own kind, not the endpoint node's kind.
+    let dangling_edge_endpoints = {
+        // O(N) pre-pass: record, per `logical_id`, the LAST (highest) index at
+        // which an `Edge { logical_id: Some(_), .. }` with that id appears. Keyed
+        // by `logical_id` ALONE (Decision 5, HITL-SIGNED 2026-06-05) to match the
+        // supersession UPDATE, which keys by logical_id alone: a kind-change
+        // re-ingest of the same edge logical_id SUPERSEDES the earlier one.
+        // Iterating front-to-back and overwriting means the stored value ends up
+        // as the final index for each id. An edge at index `i` with that id is
+        // then in-batch-superseded iff `last_index[lid] > i`. This is
+        // behavior-identical to the prior per-edge `batch[i+1..]` `.any(..)` scan
+        // (which was O(N²) under the single-writer txn) — same skip-set, same count.
+        let mut last_index: HashMap<&str, usize> = HashMap::new();
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { logical_id: Some(lid), .. } = write {
+                last_index.insert(lid.as_str(), i);
+            }
+        }
+
+        let mut probe = tx.prepare(
+            "SELECT 1 FROM canonical_nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+        )?;
+        let mut count: u64 = 0;
+        for (i, write) in batch.iter().enumerate() {
+            if let PreparedWrite::Edge { from, to, logical_id, .. } = write {
+                // Honor `edge.superseded_at IS NULL`: an edge inserted in this
+                // batch is active unless a LATER same-batch edge with the same
+                // `Some(logical_id)` tombstoned it (the loop's supersession
+                // UPDATE). Skip such an in-batch-superseded edge. Edges with
+                // `logical_id: None` are never superseded-in-batch.
+
+exec
+/bin/bash -c "sed -n '/pub fn drain/,+80p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+    pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        if self.projection_runtime.wait_for_idle(timeout_ms) {
+            Ok(())
+        } else {
+            Err(EngineError::Scheduler)
+        }
+    }
+
+    /// Snapshot of engine-internal counters.
+    ///
+    /// Field set owned by `dev/design/lifecycle.md`.
+    #[must_use]
+    pub fn counters(&self) -> CounterSnapshot {
+        self.counters.snapshot()
+    }
+
+    /// Toggle response-cycle profiling.
+    ///
+    /// Per `dev/design/lifecycle.md` § Per-statement profiling, profiling
+    /// is an opt-in surface that is independently toggleable on a running
+    /// engine without restart. AC-005a locks runtime toggleability.
+    pub fn set_profiling(&self, enabled: bool) -> Result<(), EngineError> {
+        self.profiling_enabled.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Set the threshold above which an operation is reported as slow.
+    ///
+    /// Per `dev/design/lifecycle.md` § Slow and heartbeat policy, the
+    /// threshold is runtime-configurable; mutating it changes detection
+    /// behavior on subsequent statements without restart (AC-007b).
+    pub fn set_slow_threshold_ms(&self, value: u64) -> Result<(), EngineError> {
+        self.slow_threshold_ms.store(value, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Attach a host subscriber to engine events.
+    ///
+    /// Dropping the returned [`Subscription`] detaches the subscriber.
+    /// Payload shape owned by `dev/design/lifecycle.md` and
+    /// `dev/design/migrations.md`.
+    #[must_use]
+    pub fn subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription {
+        self.subscribers.attach(subscriber)
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_worker_count_for_test(&self) -> usize {
+        self.reader_pool.worker_count()
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn live_reader_worker_count_for_test(&self) -> usize {
+        self.reader_pool.live_count()
+    }
+
+    /// Pack 6.G G.1 — return the `sqlite3_db_config(LOOKASIDE)` rc
+    /// captured for each reader worker at open time, in worker index
+    /// order. SQLITE_OK (= 0) means the lookaside was configured
+    /// before any allocation happened on the connection.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_lookaside_config_rcs_for_test(&self) -> Vec<i32> {
+        self.reader_lookaside_rcs.clone()
+    }
+
+    /// Pack 6.G G.1 — query each reader worker's
+    /// `SQLITE_DBSTATUS_LOOKASIDE_USED` counter. A value > 0 means at
+    /// least one allocation was satisfied from the per-connection
+    /// lookaside arena (proof the configuration was honored before the
+    /// first prepare).
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_lookaside_used_per_worker_for_test(&self) -> Vec<i32> {
+        self.reader_pool.lookaside_used_per_worker()
+    }
+
+    /// Pack 6.G G.3.5 — broadcast a debug-only `CacheStatus` request to
+    pub fn drain_mean_centering_events_for_test(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+        self.ensure_open()?;
+        let mut events = self
+            .projection_runtime
+            .shared
+            .pending_events
+            .lock()
+            .map_err(|_| EngineError::Storage)?;
+        let out = std::mem::take(&mut *events);
+        Ok(out)
+    }
+
+    /// 0.7.2 PR-2b — NON-test observation seam. Drains and returns every
+    /// `EmbedderEvent` queued since the last drain (mean pin, manual mean
+    /// recompute). Production callers use
+    /// this to observe the synchronous recompute work; events are queued
+    /// only AFTER the recompute transaction is durable, so a rolled-back
+    /// recompute never surfaces. Mirrors the at-open
+    /// `OpenReport.embedder_events` channel for the steady-state path.
+    pub fn drain_embedder_events(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+        self.ensure_open()?;
+        let mut events = self
+            .projection_runtime
+            .shared
+            .pending_events
+            .lock()
+            .map_err(|_| EngineError::Storage)?;
+        Ok(std::mem::take(&mut *events))
+    }
+
+    /// 0.7.2 PR-2b — explicit `doctor recompute-mean` path. Re-derives the
+    /// pinned corpus mean from the current `vector_default` rows and
+    /// re-quantizes every row, SYNCHRONOUSLY in one transaction. ALWAYS
+    /// allowed at any corpus size — this is the ONLY mean-refresh path as of
+    /// 0.7.2 (the automatic in-ingest drift detector was carved out / deferred
+    /// to 0.8.x; see `dev/design/embedder.md` §0.3).
+    ///
+    /// Serializes against the projection workers via `commit_gate` so the
+    /// re-quantize sees a totally-ordered history, exactly like the at-pin
+    /// commit. Publishes a `MeanVecRecomputed { trigger: Manual }` event
+    /// only after the transaction is durable. No-op-safe on a non-MC
+    /// identity (returns `EmbedderNotConfigured` rather than corrupting an
+    /// un-centered workspace).
+    #[cfg(feature = "operator")]
+    pub fn recompute_mean(&self) -> Result<MeanRecomputeReport, EngineError> {
+        self.ensure_open()?;
+        let identity = self.runtime_embedder_identity.clone();
+        if !identity_requires_mean_centering(&identity) {
+            return Err(EngineError::EmbedderNotConfigured);
+        }
+        let report = {
+            // Hold the commit gate for the whole recompute so no projection
+            // worker commit interleaves with the re-quantize.
+            let _gate = self
+                .projection_runtime
+                .shared
+                .commit_gate
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            #[cfg(debug_assertions)]
+            let fail = self
+                .projection_runtime
+                .shared
+                .force_recompute_failure
+                .swap(false, Ordering::SeqCst);
+            #[cfg(not(debug_assertions))]
+            let fail = false;
+            let report = recompute_mean_in_tx_inner(&tx, &identity, fail)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            report
+        };
+        // Post-durable-commit publish.
+        if let Ok(mut events) = self.projection_runtime.shared.pending_events.lock() {
+            events.push(EmbedderEvent::MeanVecRecomputed {
+                dim: report.dim,
+                doc_count: report.doc_count_requantized,
+                trigger: MeanRecomputeTrigger::Manual,
+            });
+
+exec
+/bin/bash -c "sed -n '/fn wait_for_idle/,+80p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+    fn wait_for_idle(&self, timeout_ms: u64) -> bool {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut state = match self.shared.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        loop {
+            if state.active_jobs == 0 && state.queued_jobs == 0 {
+                drop(state);
+                if !database_has_pending_projection_work(&self.shared.path).unwrap_or(true) {
+                    return true;
+                }
+                state = match self.shared.state.lock() {
+                    Ok(state) => state,
+                    Err(_) => return false,
+                };
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let wait = deadline.saturating_duration_since(now);
+            let Ok((next_state, _)) = self.shared.state_cvar.wait_timeout(state, wait) else {
+                return false;
+            };
+            state = next_state;
+        }
+    }
+
+    fn set_retry_delays_for_test(&self, delays_ms: &[u64]) {
+        if let Ok(mut delays) = self.shared.retry_delays_ms.lock() {
+            *delays = delays_ms.to_vec();
+        }
+    }
+
+    fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
+        self.shared.embed_timeout_ms.store(timeout_ms, Ordering::Relaxed);
+    }
+
+    fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
+        self.shared.embed_circuit_threshold.store(threshold, Ordering::Relaxed);
+    }
+
+    fn embed_circuit_open_for_test(&self) -> bool {
+        self.shared.embed_circuit_open.load(Ordering::Relaxed)
+    }
+
+    fn stop(&self) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            if state.stopping {
+                return;
+            }
+            state.stopping = true;
+            state.pending_scan = false;
+            self.shared.state_cvar.notify_all();
+        }
+        if let Ok(mut queue) = self.shared.queue.lock() {
+            queue.clear();
+            self.shared.queue_cvar.notify_all();
+        }
+
+        if let Ok(mut dispatcher) = self.dispatcher.lock() {
+            if let Some(handle) = dispatcher.take() {
+                let _ = handle.join();
+            }
+        }
+        if let Ok(mut workers) = self.workers.lock() {
+            for handle in workers.drain(..) {
+                let _ = handle.join();
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenReport {
+    pub schema_version_before: u32,
+    pub schema_version_after: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+    pub embedder_warmup_ms: u64,
+    pub query_backend: &'static str,
+
+exec
+/bin/bash -c "sed -n '/fn database_has_pending_projection_work/,+80p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+    let connection = open_runtime_connection(path)?;
+    let cursor = load_projection_cursor(&connection)?;
+    // Check canonical_nodes for un-projected work.
+    let has_node_work: bool = connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })?;
+    if has_node_work {
+        return Ok(true);
+    }
+    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+    // that were not projected before the engine closed. Without this check,
+    // drain() returns idle while edge vectors remain unembedded on reopen.
+    // fix-31 [P2]: exclude superseded edges from the pending check so the
+    // scheduler does not pick up stale tombstoned rows as projection work.
+    // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex §9
+    // [P2]) — also exclude t_invalid-excluded (recency-consolidated) edges,
+    // mirroring `next_pending_projection_jobs`'s edge arm. Required: without
+    // this mirror, a rebuild-truncated t_invalid edge that
+    // `next_pending_projection_jobs` now correctly skips would never gain a
+    // `_fathomdb_projection_terminal` row, so this probe would flag it as
+    // phantom-pending forever and `drain()`/`wait_for_idle` would hang.
+    connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_edges ce
+             LEFT JOIN _fathomdb_projection_terminal pt
+               ON pt.write_cursor = ce.write_cursor
+             WHERE ce.body IS NOT NULL
+               AND ce.superseded_at IS NULL
+               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now'))
+               AND pt.write_cursor IS NULL
+             LIMIT 1",
+            [],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })
+}
+
+struct CanonicalNodeRow {
+    cursor: u64,
+    kind: String,
+    body: String,
+}
+
+/// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
+/// rows after the step-11 tokenizer-default upgrade drops + recreates the FTS5
+/// virtual table. Projection-only: it reads `canonical_nodes` (the source of
+/// truth, untouched) and rewrites the FTS shadow; it performs **no**
+/// source-record migration. Every canonical node already carries an FTS row at
+/// write time (the projection-time INSERT is unconditional), so reinserting
+/// every node exactly reproduces the prior index content under the new
+/// tokenizer. Runs in a single transaction on the writer connection before
+/// readers spawn.
+///
+/// Crash-retryable (fix-1): the reindex and its durable completion marker
+/// (`SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY` in `_fathomdb_open_state`)
+/// commit together in ONE `BEGIN IMMEDIATE…COMMIT`. A crash before the commit
+/// rolls both back, leaving no marker; the next open re-runs. A crash after
+/// the commit finds the marker present and skips. Idempotent.
+fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> rusqlite::Result<()> {
+    let rows = canonical_node_rows(connection)?;
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+
+exec
+/bin/bash -c "sed -n '1,120p' src/rust/crates/fathomdb-schema/migrations/016_exp_s_row_kind.sql" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ exited 2 in 0ms:
+sed: can't read src/rust/crates/fathomdb-schema/migrations/016_exp_s_row_kind.sql: No such file or directory
+
+codex
+The remaining question is whether the serialization surface is broad enough to catch a real divergence, especially around async vector projection. I’m checking the projection commit path and the exact fields that become durable in `vector_default` and terminal metadata.
+exec
+/bin/bash -c "sed -n '/INSERT INTO vector_default/,+80p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+            "INSERT INTO vector_default(
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+            params![cursor, blob, bin_blob, source_type, kind, now_unix],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        let mut emitted_event: Option<EmbedderEvent> = None;
+        if let Some(mean_vec) = pin_event {
+            let mean_bytes = encode_vector_blob(&mean_vec);
+            tx.execute(
+                "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+                params![mean_bytes],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            // Read all pre-pin (rowid, embedding) and re-quantize within
+            // the same tx. The just-inserted row above is also covered.
+            let rows: Vec<(i64, Vec<u8>)> = {
+                let mut statement = tx
+                    .prepare("SELECT rowid, embedding FROM vector_default ORDER BY rowid")
+                    .map_err(|_| EngineError::Storage)?;
+                let mapped = statement
+                    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)))
+                    .map_err(|_| EngineError::Storage)?;
+                let mut out = Vec::new();
+                for r in mapped {
+                    out.push(r.map_err(|_| EngineError::Storage)?);
+                }
+                out
+            };
+            let (doc_count, _) = run_pin_and_requantize_pass(&tx, &rows, &mean_vec)?;
+            emitted_event = Some(EmbedderEvent::MeanVecPinned {
+                dim: u32::try_from(mean_vec.len()).unwrap_or(u32::MAX),
+                doc_count,
+            });
+        }
+
+        tx.commit().map_err(|_| EngineError::Storage)?;
+
+        if let Some(ev) = emitted_event {
+            if let Ok(mut events) = self.projection_runtime.shared.pending_events.lock() {
+                events.push(ev);
+            }
+        }
+
+        self.next_cursor.store(cursor, Ordering::SeqCst);
+        // G8 — this path (embedder-profile pin) commits no canonical edges, so
+        // no endpoint can dangle.
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
+    }
+
+    /// EU-5b test seam — drain MeanVecPinned events queued by the
+    /// projection-commit pin transaction since the last drain. Production
+    /// callers consume these via `OpenReport.embedder_events`; this seam
+    /// exists so the EU-5b RED test can observe the live emission.
+    #[doc(hidden)]
+    pub fn drain_mean_centering_events_for_test(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+        self.ensure_open()?;
+        let mut events = self
+            .projection_runtime
+            .shared
+            .pending_events
+            .lock()
+            .map_err(|_| EngineError::Storage)?;
+        let out = std::mem::take(&mut *events);
+        Ok(out)
+    }
+
+    /// 0.7.2 PR-2b — NON-test observation seam. Drains and returns every
+    /// `EmbedderEvent` queued since the last drain (mean pin, manual mean
+    /// recompute). Production callers use
+    /// this to observe the synchronous recompute work; events are queued
+    /// only AFTER the recompute transaction is durable, so a rolled-back
+    /// recompute never surfaces. Mirrors the at-open
+    /// `OpenReport.embedder_events` channel for the steady-state path.
+    pub fn drain_embedder_events(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+        self.ensure_open()?;
+        let mut events = self
+            .projection_runtime
+            .shared
+            .pending_events
+            "INSERT INTO vector_default(
+                rowid, embedding, embedding_bin, source_type, kind, created_at, status
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6, '')",
+            params![rowid, blob, centered_blob, source_type, kind, created_at],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        updated = updated.saturating_add(1);
+    }
+    let events = vec![EmbedderEvent::MeanVecPinned {
+        dim: u32::try_from(dim).unwrap_or(u32::MAX),
+        doc_count: updated,
+    }];
+    Ok((updated, events))
+}
+
+/// EU-5a2 — back-compat test-only count+emit helper. Preserved so the
+/// EU-5a2 machinery test stays green; the EU-5b production path uses
+/// `run_pin_and_requantize_pass`.
+fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
+    let mut updated: u64 = 0;
+    let dim = mean.len();
+    for (_rowid, blob) in rows {
+        if blob.len() != dim * 4 {
+            continue;
+        }
+        updated = updated.saturating_add(1);
+    }
+    let events = vec![EmbedderEvent::MeanVecPinned {
+        dim: u32::try_from(dim).unwrap_or(u32::MAX),
+        doc_count: updated,
+    }];
+    (updated, events)
+}
+
+/// EU-5a2 — test-visible re-exports of the mean-centering internals.
+/// Per the handoff RED tests; the production accumulator and re-quantize
+/// pass are otherwise crate-private.
+#[doc(hidden)]
+pub mod mean_centering_internals_for_test {
+    use super::{EmbedderEvent, MeanAccumulator};
+
+    pub struct AccumulatorHandle(MeanAccumulator);
+
+    #[must_use]
+    pub fn new_mean_accumulator(dim: usize) -> AccumulatorHandle {
+        AccumulatorHandle(MeanAccumulator::new(dim))
+    }
+
+    pub fn accumulator_add(handle: &mut AccumulatorHandle, v: &[f32]) {
+        handle.0.add(v);
+    }
+
+    #[must_use]
+    pub fn accumulator_materialize(handle: &AccumulatorHandle) -> Vec<f32> {
+        handle.0.materialize()
+    }
+
+    #[must_use]
+    pub fn accumulator_count(handle: &AccumulatorHandle) -> u64 {
+        handle.0.count()
+    }
+
+    #[must_use]
+    pub fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
+        super::run_requantize_pass(rows, mean)
+    }
+}
+
+/// G9 — Reciprocal Rank Fusion constant. IR-C (2026-06-10b,
+/// `performance-output-and-compare.md`) found the standard `k≈60` slightly too
+/// high: the recall gain is concentrated at the top of the list, where a lower
+/// `k` sharpens rank-1/2 contributions. `k=30` is the validated operating point
+/// (`k10 > k30 > k60 > k100` on the sweep, `30` the conservative middle).
+/// Fusion is on **rank**, never raw score.
+pub const RRF_K: f64 = 30.0;
+
+/// G9 / IR-C — per-branch RRF weights. The sweep's optimum is strongly
+/// **text-dominant** (`text:vector ≈ 3:1`): the lexical (BM25) arm carries
+/// exact-fact recall and the dense arm, over-weighted, is a net drag on
+/// exploratory recall (`performance-output-and-compare.md`, 2026-06-10b/e). A
+        "INSERT INTO vector_default(
+             rowid, embedding, embedding_bin, source_type, kind, created_at, status
+         )
+             SELECT rowid, embedding, vec_bit(embedding_bin), source_type, kind, created_at, ''
+             FROM _fathomdb_vector_pack2_stage;
+         DROP TABLE _fathomdb_vector_pack2_stage;",
+    )?;
+    tx.commit()
+}
+
+/// SQL fragment implementing the D3 `kind -> source_type` map.
+/// Used both by the Pack 1 reshape migration and by the drift-detection
+/// unit test that pins it to [`resolve_source_type`].
+const KIND_TO_SOURCE_TYPE_CASE_SQL: &str = "CASE s.kind
+    WHEN 'email'   THEN 'email'
+    WHEN 'article' THEN 'article'
+    WHEN 'paper'   THEN 'paper'
+    WHEN 'meeting' THEN 'meeting'
+    WHEN 'note'    THEN 'note'
+    WHEN 'todo'    THEN 'todo'
+    WHEN 'doc'     THEN 'article'
+    ELSE 'article'
+END";
+
+/// Pack 1 in-place reshape of `vector_default`. Stages the existing
+/// f32 corpus + each row's `kind`, drops the old single-column vec0
+/// table, recreates at the runtime `dimension` with the Pack 1
+/// columns, then repopulates with SQL-side `vec_quantize_binary` +
+/// the D3 `kind -> source_type` mapping. The preflight CHECK on
+/// unknown kinds has already run as migration step 9 by the time we
+/// get here.
+///
+/// Atomicity: the DROP+CREATE+repopulate sequence runs inside a
+/// rusqlite `Connection::transaction()` (DEFERRED begin per rusqlite
+/// `transaction.rs:417`). Cross-process serialization is provided by
+/// the engine's sidecar `acquire_lock` at `open_with_migrations`
+/// (`lib.rs:1127` area); reader handles are not opened until
+/// `ensure_vector_partition` returns (`lib.rs:1241` area), so readers
+/// never observe a partial reshape.
+fn migrate_vector_partition_to_pack1(
+    connection: &mut Connection,
+    dimension: u32,
+) -> rusqlite::Result<()> {
+    let tx = connection.transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
+             rowid     INTEGER PRIMARY KEY,
+             embedding BLOB NOT NULL,
+             kind      TEXT NOT NULL
+         );
+         INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
+             SELECT v.rowid, v.embedding, r.kind
+             FROM vector_default v
+             JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
+         DROP TABLE vector_default;",
+    )?;
+    // Slice 10 / G10 — recreate directly at the Pack-2 shape (adds `status`), so
+    // a legacy single-column DB lands the current shape in one reshape.
+    tx.execute_batch(&vector_partition_create_sql(dimension, false))?;
+    // `status` back-fills the empty-string sentinel (vec0 TEXT metadata is NOT
+    // NULL-able; reserved-gap candidate 13). Legacy single-column DBs predate
+    // mean-centering, so re-quantizing from the un-centered `embedding` is
+    // correct here.
+    let repopulate_sql = format!(
+        "INSERT INTO vector_default(
+             rowid, embedding, embedding_bin, source_type, kind, created_at, status
+         )
+         SELECT
+             s.rowid,
+             s.embedding,
+             vec_quantize_binary(s.embedding),
+             {KIND_TO_SOURCE_TYPE_CASE_SQL},
+             s.kind,
+             strftime('%s', 'now'),
+             ''
+         FROM _fathomdb_vector_migration_v0_7_0 s;
+         DROP TABLE _fathomdb_vector_migration_v0_7_0;"
+    );
+    tx.execute_batch(&repopulate_sql)?;
+    tx.commit()
+}
+
+exec
+/bin/bash -c "sed -n '/advance_projection_cursor(&tx)/,+10p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z
+ succeeded in 0ms:
+            advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+            tx.commit().map_err(|_| EngineError::Storage)?;
+            enqueued
+        };
+        self.next_cursor.store(cursor, Ordering::SeqCst);
+        if enqueued {
+            self.projection_runtime.notify_new_work();
+        }
+        Ok(WriteReceipt { cursor, row_cursors: vec![cursor], dangling_edge_endpoints: 0 })
+    }
+
+    advance_projection_cursor(&tx)?;
+    tx.commit()?;
+    // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
+    // rolled-back pin never emits a spurious event.
+    if !staged_events.is_empty() {
+        if let Ok(mut events) = shared.pending_events.lock() {
+            events.extend(staged_events);
+        }
+    }
+    Ok(())
+}
+    advance_projection_cursor(&tx)?;
+
+    tx.commit()?;
+    Ok(dangling_edge_endpoints)
+}
+
+fn load_next_cursor(connection: &Connection) -> u64 {
+    let nodes = max_cursor(connection, "canonical_nodes").unwrap_or(0);
+    let edges = max_cursor(connection, "canonical_edges").unwrap_or(0);
+    let mutations = max_cursor(connection, "operational_mutations").unwrap_or(0);
+    let state = max_cursor(connection, "operational_state").unwrap_or(0);
+
+codex
+## Verdict: PASS
+
+No findings.
+
+**What passed on inspection**
+- The R-SUB-2 test is not vacuous. It creates two independent fresh DBs via `fresh_engine`, writes the same fixture twice, explicitly drains both engines to quiescence before close/compare, and byte-compares a serialized surface that includes `search_index`, `vector_default` (`rowid`, `source_type`, `kind`, `embedding_bin`), `_fathomdb_vector_rows`, `canonical_nodes.row_kind`, and `_fathomdb_projection_terminal`. Refs: [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:63), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:181), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:275)
+- The quiescence barrier is real. `Engine::drain` delegates to `wait_for_idle`, which waits for zero active/queued jobs and then re-checks the durable DB for pending projection work before returning success. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:3302), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:565), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:613)
+- D1/D2 are implemented as a real substrate, not a stub. `RowKind` is a separate axis from doc-type `kind`; node writes persist `row_kind='leaf'`; non-leaf rows go through a dedicated seam; and `index_targets_for_row_kind` genuinely diverges by kind (`Graph` is FTS-only, `Leaf`/`Coverage` are FTS+vector). Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:1860), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:4725), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10128), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10152), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:148)
+- The three hard-locked doc-type sites remain untouched by this slice. The Pack-1 SQL case map, `resolve_source_type`, and the migration-9 CHECK still operate on doc-type `kind`, not `row_kind`. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9359), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9491), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:240)
+- Step 16 is forward-only and contiguous. `SCHEMA_VERSION` is 16, step 16 is the terminal migration, the accretion exemption marker is present, and the migration test exercises a live v15 row through step-16-only upgrade and observes `row_kind='leaf'` afterward. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:6), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:393), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:394), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:54), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:80), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:121)
+- D6 holds. Step 16 is a pure additive `ALTER TABLE canonical_nodes ADD COLUMN`; I found no slice-5 change that reshapes `vector_default`, re-embeds, re-quantizes, or alters `ensure_vector_partition`. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:394), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9247)
+- The `commit_batch` node-arm refactor looks behavior-preserving for leaf writes. It still inserts the canonical row, then performs sync FTS plus async vector enqueue through a helper that preserves the old split; the only new durable field on the normal path is explicit `row_kind='leaf'`, matching the migration default. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10152), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10182)
+
+**Reviewer process notes**
+- Reviewed the required ADR, `plan-0.8.14.md` §2, `0.8.14-slice-5-output.json`, and the HEAD tree corresponding to the two listed slice commits.
+- This was a static code review only. I did not run the test suite in this read-only sandbox.
+- I did not write a verdict file.
+tokens used
+94,591
+## Verdict: PASS
+
+No findings.
+
+**What passed on inspection**
+- The R-SUB-2 test is not vacuous. It creates two independent fresh DBs via `fresh_engine`, writes the same fixture twice, explicitly drains both engines to quiescence before close/compare, and byte-compares a serialized surface that includes `search_index`, `vector_default` (`rowid`, `source_type`, `kind`, `embedding_bin`), `_fathomdb_vector_rows`, `canonical_nodes.row_kind`, and `_fathomdb_projection_terminal`. Refs: [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:63), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:181), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:275)
+- The quiescence barrier is real. `Engine::drain` delegates to `wait_for_idle`, which waits for zero active/queued jobs and then re-checks the durable DB for pending projection work before returning success. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:3302), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:565), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:613)
+- D1/D2 are implemented as a real substrate, not a stub. `RowKind` is a separate axis from doc-type `kind`; node writes persist `row_kind='leaf'`; non-leaf rows go through a dedicated seam; and `index_targets_for_row_kind` genuinely diverges by kind (`Graph` is FTS-only, `Leaf`/`Coverage` are FTS+vector). Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:1860), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:4725), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10128), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10152), [exp_s_substrate.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/tests/exp_s_substrate.rs:148)
+- The three hard-locked doc-type sites remain untouched by this slice. The Pack-1 SQL case map, `resolve_source_type`, and the migration-9 CHECK still operate on doc-type `kind`, not `row_kind`. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9359), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9491), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:240)
+- Step 16 is forward-only and contiguous. `SCHEMA_VERSION` is 16, step 16 is the terminal migration, the accretion exemption marker is present, and the migration test exercises a live v15 row through step-16-only upgrade and observes `row_kind='leaf'` afterward. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:6), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:393), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:394), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:54), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:80), [step16_migration.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/tests/step16_migration.rs:121)
+- D6 holds. Step 16 is a pure additive `ALTER TABLE canonical_nodes ADD COLUMN`; I found no slice-5 change that reshapes `vector_default`, re-embeds, re-quantizes, or alters `ensure_vector_partition`. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-schema/src/lib.rs:394), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:9247)
+- The `commit_batch` node-arm refactor looks behavior-preserving for leaf writes. It still inserts the canonical row, then performs sync FTS plus async vector enqueue through a helper that preserves the old split; the only new durable field on the normal path is explicit `row_kind='leaf'`, matching the migration default. Refs: [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10152), [lib.rs](/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-5-20260703T235950Z/src/rust/crates/fathomdb-engine/src/lib.rs:10182)
+
+**Reviewer process notes**
+- Reviewed the required ADR, `plan-0.8.14.md` §2, `0.8.14-slice-5-output.json`, and the HEAD tree corresponding to the two listed slice commits.
+- This was a static code review only. I did not run the test suite in this read-only sandbox.
+- I did not write a verdict file.

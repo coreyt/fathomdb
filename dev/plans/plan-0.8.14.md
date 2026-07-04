@@ -125,6 +125,15 @@ D3 flush-then-byte-compare determinism check; D4 one coordinated migration (`SCH
 vec0 rewritten; D7 KILL paths. **D8 = Option C:** F5 ships by conscious HITL override, NOT gate-clearance
 (see R-F5-2). Board stood up at `runs/STATUS-0.8.14.md`.
 
-**Next — Slice 5 (EXP-S KEYSTONE).** Row-kinds + per-kind coexisting-index write + determinism check +
-`SCHEMA_VERSION` 15→16, off a fresh `origin/main` baseline. Then 10 (F5) → 20 (eu7/migration verify) →
-25 (gpu-rerank merge) → 40 (release readiness). (#17 filter-grammar already shipped in 0.8.11.)
+**Slice 5 (EXP-S KEYSTONE) — CLOSED (2026-07-04).** Cherry-picked `ba15e176` (step-16 migration:
+`SCHEMA_VERSION` 15→16, `canonical_nodes.row_kind` DEFAULT 'leaf', accretion-exempt) + `718cfe94`
+(engine `RowKind{Leaf,Coverage,Graph}`, `index_targets_for_row_kind` per-kind dispatch seam, R-SUB-2
+determinism check) onto `main`. codex §9 **PASS** (no findings; determinism test non-vacuous, doc-type
+`kind` sites untouched, D6 no vec0 rewrite verified) — `runs/0.8.14-slice-5-review-20260704T001710Z.md`.
+Full-workspace clippy+check both exit 0. R-SUB-1/R-SUB-2/R-SUB-3 GREEN; D5/TC-1 discharged. D6:
+vec0 NOT rewritten → eu7 at Slice 20 is a documented no-op.
+
+**Next — Slice 10 (F5 fielded BM25F).** `search_index_v2` multi-column FTS + tunable `b`/field weights,
+riding the EXP-S columns; migration step **17** (`SCHEMA_VERSION` 16→17). Ships per the **D8 Option-C HITL
+override** (recorded as override, NOT gate-clearance). Off a fresh `origin/main` baseline. Then 20
+(eu7/migration verify) → 25 (gpu-rerank merge) → 40 (release readiness).
