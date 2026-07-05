@@ -6,8 +6,22 @@
 
 Any repo-internal, GPU-acceleratable activity — the **eu7 fidelity harness** (corpus seed / re-embed),
 **corpus re-embeds**, **eval sweeps**, **CE reranking in eval**, and similar embedding/rerank-heavy dev/CI
-work — **MUST run on the 3090s (`cuda:0` / `cuda:1`) whenever they have compute + memory room.** CPU is a
-**fallback only** — for when the 3090s are busy/full, or GPU is genuinely unavailable.
+work — **MUST run on the 3090s (`cuda:0` / `cuda:1`).** Full eval/embed/rerank **workloads and suites always
+run on GPU.** See [CPU is only for compatibility probes](#cpu-is-only-for-compatibility-probes) for the two
+narrow exceptions — CPU is **not** a general fallback for real workloads.
+
+## CPU is only for compatibility probes
+
+CPU is permitted for a GPU-able activity in **exactly two** narrow cases, both **small and targeted**:
+
+1. **Simple CPU-compatibility testing** — a minimal check that the CPU code path still builds and runs (the
+   default-CPU library works).
+2. **CPU-library repeatability / compatibility checks** — a targeted check that the CPU libraries produce
+   repeatable / compatible results.
+
+**"Feature compatibility" means *check compatibility with the CPU libraries* — NOT *run the full suite on both
+CPU and GPU*.** Never mirror a full suite onto CPU; full runs are GPU-only. When the 3090s are momentarily
+busy, **wait for room or use the other 3090** — do not fall back to a full CPU run.
 
 ## Why
 
@@ -24,7 +38,8 @@ work — **MUST run on the 3090s (`cuda:0` / `cuda:1`) whenever they have comput
   **`FATHOMDB_EMBED_DEVICE=cuda:0`** (and `FATHOMDB_RERANK_DEVICE=cuda:0`) — a 3090.
 - **Exclude the K620 display GPU** (`FATHOMDB_GPU_EXCLUDE=<its index>`) — display-only, never allocate.
 - **Check for room first** (`nvidia-smi` utilization + free memory) before dispatching; do not oversubscribe
-  a busy 3090 — that is exactly when CPU fallback is correct.
+  a busy 3090 — when both 3090s are busy, **wait/queue or use the other 3090**. Do NOT fall back to a full
+  CPU run (CPU is reserved for the two compatibility probes above).
 - **Verify the GPU actually engaged** — `nvidia-smi` should show `>0%` util + memory on the chosen device.
   Do not assume the feature/env took.
 
@@ -36,7 +51,7 @@ the shipped GPU device-allocation design (`gpu-device-allocation-policy.md`). Th
 
 ## Enforcement (fix the tooling, not per-run reminders)
 
-The eu7 / eval harness and eval runners **MUST default to GPU-when-room** (with a CPU fallback), so no agent
-has to remember the flags. Tracked as **`TC-4`** in `dev/todos-and-considerations-ledger.jsonl`
+The eu7 / eval harness and eval runners **MUST default to GPU** for full runs (never a CPU full-suite; CPU is
+reserved for the two compatibility probes above), so no agent has to remember the flags. Tracked as **`TC-4`** in `dev/todos-and-considerations-ledger.jsonl`
 (the GPU-default enforcement item). Until that tooling default lands, every eval/eu7 invocation passes the
 `embed-cuda` + `FATHOMDB_EMBED_DEVICE=cuda:0` env/flags explicitly.
