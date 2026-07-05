@@ -1,0 +1,8 @@
+# Baked default config for acquire_compmix.py (the CompMix kb corpus).
+#
+# Behaviour-identical to the WEC-Eng exemplar's config. Override at the CLI with
+# `--override key=val` (repeatable), or point `--config` at a copy of this file.
+# Every field is consumed-or-loudly-rejected: an unknown key fails at load.
+split: train # one of {train, dev, test}
+sample_size: 5000 # bounded, seeded draw over question_id-sorted records
+seed: 20260702 # RNG seed for the deterministic sample
