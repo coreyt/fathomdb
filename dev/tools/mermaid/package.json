@@ -1,0 +1,14 @@
+{
+  "name": "fathomdb-mermaid-renderer",
+  "private": true,
+  "description": "Self-contained Mermaid diagram renderer (mermaid-cli + bundled Chromium). Wraps mmdc with a --no-sandbox Puppeteer config so it works on hosts with unprivileged user namespaces disabled (AppArmor). Not published.",
+  "bin": {
+    "render-mermaid": "./render-mermaid.sh"
+  },
+  "scripts": {
+    "render": "./render-mermaid.sh"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.16.0"
+  }
+}
