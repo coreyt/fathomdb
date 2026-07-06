@@ -1,0 +1,1804 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f2d12-8c52-74c3-9750-936056f72155
+--------
+user
+You are the code reviewer for FathomDB 0.8.14 Slice 20 — a v15→v17 full-path schema-migration VERIFICATION test. codex §9 per orchestration.md §3.
+
+Branch: slice-20-20260704T121320Z, HEAD 33edf5c511e5afac3c0f64199d7a2df3901e861a.
+Baseline: 4ca170a219f812038f39a09e0010789e6a743990.
+
+The slice adds ONE test-only file: src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+(test `s15_to_17_full_path_migrates_legacy_db_without_loss`). No engine/migration-logic/vector change.
+
+Required reading: dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md (D3/D4/R-SUB-3);
+the new test file; and the existing tests/step16_migration.rs + tests/step17_migration.rs for the pattern.
+
+Focus (be adversarial about test VALIDITY — a vacuous migration test is worthless):
+1. **Does it truly exercise v15 → v17?** Confirm the DB is genuinely stood up at `user_version = 15`
+   with v15-era table shapes (NOT already at 16/17), then the FULL migration set runs to 17. If the v15
+   standup is wrong (e.g. it starts at 16), the test is vacuous.
+2. **Non-vacuous assertions.** Would the test FAIL if: row_kind did not default to 'leaf' (step 16), or
+   search_index_v2 were not populated / status not derived from `$.status` (step 17), or the migration
+   skipped/reordered steps? The implementer claims a RED check (mutating the status assertion → failure).
+   Verify the asserted values come from the real migration, not constants.
+3. **Forward-only + contiguity** asserted (steps exactly [16,17], no re-run of ≤15, no skips)?
+4. **No data loss / v1 retained** — legacy row survives with kind intact; search_index (v1) not dropped.
+5. **Scope:** test-only, no engine/migration-logic/vector/embedder/manifest change (D6 intact).
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK` header; findings as `### N. [sev] title` + Refs + 2-4 lines;
+then "What passed on inspection" + "Reviewer process notes". Sandbox read-only; do NOT write the verdict file.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+Reviewing the slice as a read-only code review with focus on whether the new migration test is genuinely exercising `v15 -> v17` and would fail for the claimed failure modes. I’m reading the repo invariants first, then the ADR and the migration test pattern files before checking the diff and assertions.
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'AGENTS.md' -g 'dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md' -g 'src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs' -g 'src/rust/crates/fathomdb-schema/tests/step16_migration.rs' -g 'src/rust/crates/fathomdb-schema/tests/step17_migration.rs'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+AGENTS.md
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md
+
+codex
+The repo scan is clean so far: only the new migration test file appears in scope, but I still need the memory/ADR context and the exact test setup to decide whether the assertions are real or vacuous. Next I’m reading the memory chain and the three migration tests side by side.
+exec
+/bin/bash -c "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -c "sed -n '1,260p' src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+//! Slice 20 (0.8.14 migration verify) — full-path v15 → v17 migration.
+//!
+//! Covers plan-0.8.14 §2 R-SUB-3 (forward-only + contiguous) and R-GATE, for
+//! the WHOLE 0.8.14 schema jump: an OLD database frozen at the pre-0.8.14 head
+//! (schema version 15) must migrate cleanly ALL THE WAY to the current head
+//! (17 = step-16 EXP-S `row_kind` + step-17 F5 `search_index_v2`) in ONE
+//! end-to-end pass, with no data loss and no skipped steps. ADR authority:
+//! `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`
+//! §D3/§D4 + §D6 (no vec0 rows touched).
+//!
+//! The two single-step tests (`step16_migration.rs`, `step17_migration.rs`)
+//! each prove one hop in isolation. This test proves the two hops *compose* off
+//! a real legacy DB: a pre-existing `canonical_nodes` row survives BOTH the
+//! step-16 in-place `row_kind` back-fill AND the step-17 O(N) `search_index_v2`
+//! re-index, and the v1 `search_index` is retained throughout. Non-vacuous: it
+//! fails if `row_kind` defaulting regressed (the legacy row would not read back
+//! `'leaf'`), if the v2 rebuild regressed (the legacy row would be missing from
+//! `search_index_v2` or its `$.status` would not be derived), if a step were
+//! skipped/re-run (the captured step order would not be exactly `[16, 17]`), or
+//! if either step lost its accretion exemption.
+
+use fathomdb_schema::{
+    check_migration_accretion, migrate_with_event_sink, migrate_with_steps, MigrationStepReport,
+    MIGRATIONS, SCHEMA_VERSION,
+};
+use rusqlite::Connection;
+use std::sync::Once;
+
+// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
+}
+
+fn set_user_version(conn: &Connection, version: u32) {
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+fn table_exists(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [name],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap()
+        > 0
+}
+
+/// Stand up a DB at the OLD pre-0.8.14 head (schema version 15) — every step up
+/// to and including 15, nothing from the 0.8.14 jump. Mirrors the v15 fixture
+/// pattern in `step16_migration.rs`.
+fn open_db_at_v15() -> Connection {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    let steps_to_15: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 15).cloned().collect();
+    migrate_with_steps(&conn, &steps_to_15).expect("migrate to old head v15");
+    assert_eq!(user_version(&conn), 15, "precondition: DB is at the old schema version 15");
+    conn
+}
+
+/// R-SUB-3 end-to-end — an OLD v15 DB with a realistic legacy row migrates the
+/// full path to v17 in one pass: forward-only + contiguous (steps 16 then 17,
+/// no skips/re-runs), the legacy row survives both hops (no data loss), and the
+/// coexisting search substrates are correct.
+#[test]
+fn s15_to_17_full_path_migrates_legacy_db_without_loss() {
+    let conn = open_db_at_v15();
+
+    // A realistic legacy (pre-0.8.14) canonical node: JSON body carrying a
+    // `$.status` field, written BEFORE row_kind and search_index_v2 existed.
+    conn.execute(
+        "INSERT INTO canonical_nodes(write_cursor, kind, body)
+         VALUES(1, 'todo', '{\"status\":\"open\",\"text\":\"legacy ticket about widgets\"}')",
+        [],
+    )
+    .expect("legacy node insert at v15");
+
+    // Run the FULL migration set from v15, capturing each applied step via the
+    // event sink (the same driver the engine uses).
+    let mut applied: Vec<u32> = Vec::new();
+    let report = migrate_with_event_sink(&conn, MIGRATIONS, |step: &MigrationStepReport| {
+        assert!(!step.failed, "no step may fail on the v15->v17 path (step {})", step.step_id);
+        applied.push(step.step_id);
+    })
+    .expect("full v15->v17 migration must succeed");
+
+    // Forward-only + contiguous: exactly steps 16 then 17 ran, in order, with no
+    // skips and nothing at/below 15 re-run.
+    assert_eq!(report.schema_version_before, 15);
+    assert_eq!(report.schema_version_after, 17);
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 17, "current head must be 17");
+    assert_eq!(applied, vec![16, 17], "only steps 16 then 17 may run from v15 (forward-only)");
+    let ran_in_report: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+    assert_eq!(ran_in_report, vec![16, 17], "report step order must match the emitted order");
+
+    // No data loss — the legacy row is still there and back-filled to the
+    // step-16 `row_kind='leaf'` default (in-place, == current behavior).
+    let (kind, row_kind): (String, String) = conn
+        .query_row("SELECT kind, row_kind FROM canonical_nodes WHERE write_cursor = 1", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("legacy row must survive the full migration");
+    assert_eq!(kind, "todo", "legacy row's original data must be intact");
+    assert_eq!(row_kind, "leaf", "legacy row must default to row_kind='leaf' after step-16");
+
+    // The step-17 O(N) rebuild indexed the legacy row into search_index_v2,
+    // deriving `status` from its JSON `$.status` (json_valid-guarded).
+    assert!(table_exists(&conn, "search_index_v2"), "search_index_v2 must exist after step-17");
+    let v2_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM search_index_v2", [], |r| r.get(0)).expect("v2 count");
+    assert_eq!(v2_count, 1, "the single legacy row must be re-indexed into search_index_v2");
+    let status_v2: String = conn
+        .query_row("SELECT status FROM search_index_v2 WHERE write_cursor = 1", [], |r| r.get(0))
+        .expect("legacy row must be present in search_index_v2");
+    assert_eq!(status_v2, "open", "legacy JSON body's $.status must be derived by the v2 rebuild");
+
+    // The v1 single-column body-only index is RETAINED (not dropped by the jump).
+    assert!(table_exists(&conn, "search_index"), "single-column search_index must be RETAINED");
+
+    // Accretion-exemption invariants still hold for BOTH steps on this path:
+    // each is additive (ADD COLUMN / CREATE) and carries its exemption marker,
+    // so the full jump does not trip the accretion guard.
+    let step16 = MIGRATIONS.iter().find(|m| m.step_id == 16).expect("step 16 must exist");
+    let step17 = MIGRATIONS.iter().find(|m| m.step_id == 17).expect("step 17 must exist");
+    check_migration_accretion("016_exp_s_row_kind.sql", step16.sql)
+        .expect("step 16 must pass the accretion guard on the full path");
+    check_migration_accretion("017_f5_search_index_v2.sql", step17.sql)
+        .expect("step 17 must pass the accretion guard on the full path");
+}
+
+exec
+/bin/bash -c "sed -n '1,220p' dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+# ADR-0.8.14 — EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)
+
+- **Status:** RATIFIED (HITL checkpoint approved, decider: coreyt, 2026-07-03).
+- **Release:** 0.8.14 — "the schema-migration release" (Substrate & recall: EXP-S #2 + F5 #16).
+- **Supersedes/relates:** builds on `ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` (F5 deferral);
+  discharges ledger `TC-1` (OPP-12 projection-registry forward-compat).
+- **Plan:** `dev/plans/plan-0.8.14.md`; board `dev/plans/runs/STATUS-0.8.14.md`.
+
+## Context (grounded in code, not architecture)
+
+The portfolio's "one store, many indexes" is **already partly real** — EXP-S is a *delta +
+generalization*, not net-new architecture. Verified at baseline (`fathomdb-schema`,
+`fathomdb-engine`):
+
+- `SCHEMA_VERSION = 15` (`fathomdb-schema/src/lib.rs:6`); forward-only contiguous `MIGRATIONS`
+  applied by `migrate_with_event_sink`; per-step atomic `PRAGMA user_version` bump; new
+  tables/columns require a `-- MIGRATION-ACCRETION-EXEMPTION:` marker. Next step = **16**.
+- Doc-type `kind` vocabulary is **hard-locked in three sites** — `resolve_source_type`
+  (engine:9389), `KIND_TO_SOURCE_TYPE_CASE_SQL` (engine:9257), migration-9 preflight CHECK
+  (schema:240) — to `email/article/paper/meeting/note/todo` (+`doc`,`edge_fact`).
+- Two-path multi-index write already exists: FTS written **synchronously** in `commit_batch`
+  (engine:9999); vector written **asynchronously** by a projection worker pool
+  (`PROJECTION_WORKERS=2`) → `commit_projection_outcomes` (engine:8480), serialized by a
+  `commit_gate` total order. Durable readiness = `_fathomdb_projection_terminal` +
+  `ProjectionStatus{Pending,UpToDate,Failed}`.
+- Determinism substrate: `rowid == write_cursor == cursor` identity throughout; `commit_gate`
+  total order; mean-pin re-quantize uses DELETE+INSERT to preserve the vec0 BIT subtype.
+- eu7 gate: `recall_gate::recall_ci_clears_floor(ci_hi, 0.90)`
+  (`fathomdb-engine/tests/support/recall_gate.rs`), AGENT_LONG-gated, re-embeds the corpus.
+
+## Decisions
+
+### D1 — Row-kinds via a SEPARATE structural tag, not the doc-type `kind`
+
+The plan's row-kinds (`leaf`/`coverage`/`graph`) are a **structural-role** axis, orthogonal to
+the doc-type `kind` (email/article/…). Add a new `row_kind TEXT NOT NULL DEFAULT 'leaf'` column
+(accretion-exempt) rather than overload the hard-locked doc-type vocabulary. `leaf` = normal
+record (default preserves back-compat), `coverage` = coverage/summary rows, `graph` = graph
+structural rows. Rationale: avoids colliding with the three hard-locked doc-type sites + the
+migration-9 CHECK, and keeps doc-type semantics stable for the (out-of-scope) router/eval.
+**Taxonomy coordination:** the exact `leaf/coverage/graph` names should be aligned with the
+router/M-work design owners before Slice 5 locks them (plan §8); the separate-column decision is
+robust to whatever the final names are.
+
+### D2 — Multi-index write = per-kind index-target dispatch
+
+Generalize the write path so each `row_kind` declares **which** indexes it projects into (a
+`kind → index-target set` lookup), preserving the existing sync-FTS / async-vector split. Current
+behavior becomes the `leaf` default (FTS + optional vector). This is the extensibility that makes
+"one store, many indexes" genuine — a new kind slots in by declaring its targets, no bespoke write
+code.
+
+### D3 — Determinism check (R-SUB-2)
+
+Write a fixed fixture into two fresh DBs, **flush projections to quiescence**, then serialize each
+index (FTS content-rows, vec0 rows, `_fathomdb_vector_rows`, `row_kind` tags, projection-terminal
+cursors) and assert **byte-identical**. Leans on the existing `commit_gate` total order +
+rowid==cursor identity. The flush is mandatory: the FTS-sync/vector-async split otherwise races the
+compare.
+
+### D4 — SCHEMA_VERSION plan (one coordinated migration event)
+
+- **EXP-S** = migration step **16** (`SCHEMA_VERSION` 15→16): adds `row_kind`; old rows default to
+  `leaf` (== current behavior). Forward-only.
+- **F5** = migration step **17** (16→17): `search_index_v2` multi-column FTS
+  (`kind`/`body`/`status`) + per-column BM25F weights, in the **same release**. An old DB migrates
+  15→17 in one open — satisfying "pay once" (one release, one re-index window).
+- Two clean, independently-revertable steps. If F5 were pulled, only step 16 lands
+  (`SCHEMA_VERSION=16`). No vec0 embedding/quant/pooling change (see D6).
+
+### D5 — TC-1 forward-compat (OPP-12 projection registry) — DISCHARGES TC-1
+
+The engine **already owns** the async substrate a future OPP-12 projection registry needs
+(projection workers + `_fathomdb_projection_terminal` readiness = the durable equivalent of
+`dense_readiness`; per-kind `kind_is_vector_indexed` decision). EXP-S forward-compat obligations:
+
+- (a) Make the D2 per-kind index-target set the **seam** a later declarative projection spec wraps
+  — keep it a per-kind lookup, not inline hard-coding.
+- (b) Keep FTS/filter writes **same-transaction** and vector writes **async-via-worker** (do NOT
+  collapse to sync) — that IS OPP-12's `filterable`/`searchable→FTS` same-txn vs `searchable→vector`
+  async split.
+- (c) Keep the terminal-cursor readiness **per-kind-extensible** so a later
+  `dense_readiness ∈ {ready, embedding}` maps on without a substrate reshape.
+Hygiene only — implement **no** OPP-12 surface here. OPP-12 lands ≥0.9.x; re-check at its scheduling.
+(Ledger `TC-1`, refs OPP-12 / `projection-registry-and-async-embed.md`.)
+
+### D6 — eu7 gate scoping
+
+EXP-S (`row_kind` + multi-index dispatch) and F5 (multi-column FTS) change **no** embedder, pooling,
+or quant → ANN fidelity is mathematically invariant. Slice 20 runs
+`recall_gate::recall_ci_clears_floor(ci_hi, 0.90)` as a **regression check only if** a migration step
+rewrites vec0 rows (e.g. a vec0 metadata reshape via `ensure_vector_partition`, which DELETE+INSERTs
+the *same* embeddings). If no vec0 rewrite occurs, the re-clear is a **documented no-op**. Any breach
+(which would indicate an unintended embedding change) is **BLOCK→HITL**.
+
+### D7 — KILL paths
+
+- **EXP-S KILL** (determinism unworkable / substrate collision): revert `row_kind` + multi-index
+  dispatch; the engine keeps its current fixed FTS-sync/vector-async paths; router stays agent-side,
+  indexes stay eval-side (plan §1).
+- **F5 KILL** (retained even though F5 ships per D8): record-and-defer to 0.8.5+ per ADR-0.8.1.
+
+### D8 — F5 ships by conscious HITL override (NOT gate-clearance)
+
+`ADR-0.8.1` gates F5 (`R-F5-2`) on **(a)** the 15b at-power proxy passing **and** **(b)** Slice-20
+leaving a measured Mem0 gap. **The pre-registered gate did NOT clear** (verified from the 0.8.3
+record): only a **synthetic n=16 smoke** passed (`probe_15b_pass: true`,
+`dev/plans/runs/0.8.3-s15b-smoke.json`); the full at-power 15b eligibility run was
+**deferred/never ran** (`plan-0.8.3.md:253`, `STATUS-0.8.3.md:156`); 0.8.3 shipped at **marginal
+parity via CE-rerank** (`STATUS-0.8.3.md:143-151`), not an F5-closeable gap; Slice 25 (D2/F5 build)
+was **NOT RUN** (`STATUS-0.8.3.md:159`).
+
+**Ruling (decider: coreyt, 2026-07-03):** F5 **ships in 0.8.14 by conscious HITL override**,
+**decoupled from the R-F5-2 parity gate**, justified by (i) F5's intrinsic recall-lever merit and
+(ii) the release's own "pay once" economics — the multi-column FTS schema co-lands while
+`SCHEMA_VERSION` is already bumping (16→17). This is **an override, not a gate-pass**: the
+pre-registered condition is recorded as NOT met, and the F5 KILL path (D7) is retained. This ADR and
+`plan-0.8.14.md` (R-F5-2) both record it as an override so the honesty prior is preserved (no
+goalpost moved).
+
+## Consequences
+
+- Slice 5 (keystone) implements D1–D3 + the step-16 migration; Slice 10 implements F5 (step 17);
+  Slice 20 runs D6; Slice 25 merges the parked `0.8.14-gpu-rerank`; Slice 40 gates release readiness.
+- Cross-binding (Py/TS) parity (X1) must cover `row_kind` + BM25F surfaces.
+- Label-only build (manifests stay `0.8.9`; no tag/publish).
+
+exec
+/bin/bash -c "sed -n '1,260p' src/rust/crates/fathomdb-schema/tests/step16_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+//! Slice 5 (EXP-S KEYSTONE) — step-16 `row_kind` migration tests.
+//!
+//! Covers plan-0.8.14 §2 R-SUB-1 (row_kind column lands) and R-SUB-3
+//! (migration is forward-only + guarded). ADR authority:
+//! `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` D1/D3/D4.
+//!
+//! `row_kind` is a SEPARATE structural-role axis on `canonical_nodes`
+//! (leaf/coverage/graph), orthogonal to the hard-locked doc-type `kind`
+//! vocabulary. `NOT NULL DEFAULT 'leaf'` means every pre-existing row
+//! back-fills to `leaf` in-place (== current behavior) — the migration is
+//! forward-only and touches no vec0 rows (ADR §D6).
+
+use fathomdb_schema::{
+    check_migration_accretion, migrate_with_steps, MigrationAccretionError, MIGRATIONS,
+    SCHEMA_VERSION,
+};
+use rusqlite::Connection;
+use std::sync::Once;
+
+// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
+}
+
+fn set_user_version(conn: &Connection, version: u32) {
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+    conn.prepare(&format!("PRAGMA table_info({table})"))
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect()
+}
+
+/// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
+/// R-SUB-3 — the migration reaches head `SCHEMA_VERSION`. `row_kind` lands at
+/// step 16; the head pin below tracks the current head (bumped to 17 when F5's
+/// step-17 `search_index_v2` co-landed in the same release).
+#[test]
+fn s16_row_kind_column_present_and_schema_version_is_head() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
+
+    let cols = column_names(&conn, "canonical_nodes");
+    assert!(
+        cols.contains(&"row_kind".to_string()),
+        "canonical_nodes must have row_kind after step-16, got: {cols:?}"
+    );
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
+    assert_eq!(
+        MIGRATIONS.last().expect("at least one migration").step_id,
+        17,
+        "step-17 (F5 search_index_v2) must be the last (head) migration"
+    );
+}
+
+/// R-SUB-3 (forward-only) — open a DB at the OLD schema (version 15) with a
+/// pre-existing row, run ONLY the step-16 migration, and assert: it reaches 16,
+/// the legacy row defaults to `row_kind='leaf'`, and only the single forward
+/// step was applied (no re-run of 2..15).
+#[test]
+fn s16_forward_only_from_v15_defaults_existing_rows_to_leaf() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    // Bring the DB up to the OLD head (version 15) — everything before step-16.
+    let steps_to_15: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 15).cloned().collect();
+    migrate_with_steps(&conn, &steps_to_15).expect("migrate to v15");
+    assert_eq!(user_version(&conn), 15, "precondition: DB is at the old schema version 15");
+
+    // A pre-existing (pre-row_kind) canonical node.
+    conn.execute(
+        "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(1, 'doc', 'legacy-body')",
+        [],
+    )
+    .expect("legacy node insert");
+
+    // Apply ONLY the forward step-16 migration.
+    let step16_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 16).cloned().collect();
+    let report = migrate_with_steps(&conn, &step16_only).expect("forward migrate to v16");
+
+    // Forward-only: exactly the single new step ran; nothing before it re-ran.
+    assert_eq!(report.schema_version_before, 15);
+    assert_eq!(report.schema_version_after, 16);
+    let ran: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+    assert_eq!(ran, vec![16], "only step-16 must run when starting from v15");
+    assert_eq!(user_version(&conn), 16);
+
+    // The legacy row back-fills to the 'leaf' default (== current behavior).
+    let row_kind: String = conn
+        .query_row("SELECT row_kind FROM canonical_nodes WHERE write_cursor = 1", [], |row| {
+            row.get(0)
+        })
+        .expect("legacy row must be readable after step-16");
+    assert_eq!(row_kind, "leaf", "existing rows must default to row_kind='leaf'");
+}
+
+/// R-SUB-3 (guarded) — step-16 is a pure additive `ADD COLUMN` (no DROP), so the
+/// accretion guard REJECTS it unless the exemption marker is present. This pins
+/// that the marker is the only thing letting it pass (mirrors `ac_049` / `s12`).
+#[test]
+fn s16_passes_accretion_guard_only_with_marker() {
+    let step16 =
+        MIGRATIONS.iter().find(|m| m.step_id == 16).expect("step 16 (EXP-S row_kind) must exist");
+
+    check_migration_accretion("016_exp_s_row_kind.sql", step16.sql)
+        .expect("step 16 must pass the accretion guard with its exemption marker");
+
+    let without_marker: String = step16
+        .sql
+        .lines()
+        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let err = check_migration_accretion("016_exp_s_row_kind.sql", &without_marker)
+        .expect_err("step 16 without the exemption marker must be rejected");
+    assert_eq!(err, MigrationAccretionError { offender: "016_exp_s_row_kind.sql".to_string() });
+}
+
+exec
+/bin/bash -c "sed -n '1,320p' src/rust/crates/fathomdb-schema/tests/step17_migration.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+//! Slice 10 (F5 — fielded FTS / BM25F) — step-17 `search_index_v2` migration.
+//!
+//! Covers plan-0.8.14 §2 R-SUB-3 (migration is forward-only + guarded) and the
+//! schema half of R-F5-1 (the multi-column BM25F FTS5 table lands + is
+//! O(N)-rebuilt from existing rows). ADR authority:
+//! `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` §3.1 +
+//! `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` §D4/§D6.
+//!
+//! `search_index_v2` is a NEW multi-column FTS5 index (`kind`/`body`/`status`)
+//! that coexists with the RETAINED single-column body-only `search_index`. FTS5
+//! has no in-place column-add, so the step CREATEs the new table and re-indexes
+//! (`INSERT ... SELECT FROM canonical_nodes`) — an O(N) re-index paid once,
+//! co-landed with the step-16 `row_kind` bump. No vec0 rows are touched (ADR
+//! §D6), so the eu7 fidelity gate stays a documented no-op at Slice 20.
+
+use fathomdb_schema::{check_migration_accretion, migrate_with_steps, MIGRATIONS, SCHEMA_VERSION};
+use rusqlite::Connection;
+use std::sync::Once;
+
+// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
+}
+
+fn set_user_version(conn: &Connection, version: u32) {
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+fn table_exists(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [name],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap()
+        > 0
+}
+
+/// R-SUB-3 — after the full migration set the head is 17 and step-17 is last;
+/// the coexisting `search_index_v2` FTS5 table is present alongside the retained
+/// single-column `search_index`.
+#[test]
+fn s17_search_index_v2_present_and_schema_version_is_17() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
+
+    assert!(table_exists(&conn, "search_index_v2"), "search_index_v2 must exist after step-17");
+    assert!(table_exists(&conn, "search_index"), "single-column search_index must be RETAINED");
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
+    assert_eq!(
+        MIGRATIONS.last().expect("at least one migration").step_id,
+        17,
+        "step-17 (F5 search_index_v2) must be the last (head) migration"
+    );
+
+    // The v2 table carries the three BM25F fields kind/body/status (+ the
+    // UNINDEXED write_cursor join column).
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(search_index_v2)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+    for field in ["kind", "body", "status", "write_cursor"] {
+        assert!(
+            cols.contains(&field.to_string()),
+            "search_index_v2 must have {field}, got {cols:?}"
+        );
+    }
+}
+
+/// R-SUB-3 (forward-only) — open a DB at the OLD schema (version 16) with
+/// pre-existing rows, run ONLY step-17, and assert: it reaches 17, ONLY step-17
+/// ran, and `search_index_v2` is O(N)-rebuilt from the existing `canonical_nodes`
+/// rows — including the JSON `$.status` derivation (guarded by `json_valid`).
+#[test]
+fn s17_forward_only_from_v16_reindexes_existing_rows() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    // Bring the DB up to the OLD head (version 16) — everything before step-17.
+    let steps_to_16: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 16).cloned().collect();
+    migrate_with_steps(&conn, &steps_to_16).expect("migrate to v16");
+    assert_eq!(user_version(&conn), 16, "precondition: DB is at the old schema version 16");
+
+    // Two pre-existing (pre-search_index_v2) canonical nodes: one plain body
+    // (non-JSON -> empty status), one JSON body carrying `$.status`.
+    conn.execute(
+        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind)
+         VALUES(1, 'note', 'plain body about widgets', 'leaf')",
+        [],
+    )
+    .expect("plain node insert");
+    conn.execute(
+        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind)
+         VALUES(2, 'todo', '{\"status\":\"open\",\"text\":\"buy milk\"}', 'leaf')",
+        [],
+    )
+    .expect("json node insert");
+
+    // Apply ONLY the forward step-17 migration.
+    let step17_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 17).cloned().collect();
+    let report = migrate_with_steps(&conn, &step17_only).expect("forward migrate to v17");
+
+    // Forward-only: exactly the single new step ran; nothing before it re-ran.
+    assert_eq!(report.schema_version_before, 16);
+    assert_eq!(report.schema_version_after, 17);
+    let ran: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+    assert_eq!(ran, vec![17], "only step-17 must run when starting from v16");
+    assert_eq!(user_version(&conn), 17);
+
+    // The O(N) re-index copied both existing rows in, keyed by write_cursor.
+    let v2_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM search_index_v2", [], |r| r.get(0)).expect("v2 count");
+    assert_eq!(v2_count, 2, "search_index_v2 must be re-indexed from the 2 existing rows");
+
+    // status was derived from `$.status` for the JSON body, and empty for the
+    // non-JSON body (json_valid guard).
+    let status_plain: String = conn
+        .query_row("SELECT status FROM search_index_v2 WHERE write_cursor = 1", [], |r| r.get(0))
+        .expect("plain status");
+    let status_json: String = conn
+        .query_row("SELECT status FROM search_index_v2 WHERE write_cursor = 2", [], |r| r.get(0))
+        .expect("json status");
+    assert_eq!(status_plain, "", "non-JSON body must index an empty status (json_valid guard)");
+    assert_eq!(status_json, "open", "JSON body must index its $.status field");
+
+    // The v2 fields are BM25F-searchable: a `kind`-column match resolves the
+    // right canonical row.
+    let hit_wc: i64 = conn
+        .query_row(
+            "SELECT write_cursor FROM search_index_v2 WHERE search_index_v2 MATCH 'kind:todo'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("kind-column match must resolve");
+    assert_eq!(hit_wc, 2, "kind-column BM25F match must find the 'todo' row");
+}
+
+/// R-SUB-3 (guarded) — step-17 carries the exemption marker and passes the
+/// accretion guard. `CREATE VIRTUAL TABLE` (like step-5) does not itself trip the
+/// guard (it fires on `CREATE TABLE` / `ADD COLUMN`), so the marker is
+/// documentation-of-intent, not a gate — this pins that it is present and valid.
+#[test]
+fn s17_passes_accretion_guard_with_marker() {
+    let step17 = MIGRATIONS
+        .iter()
+        .find(|m| m.step_id == 17)
+        .expect("step 17 (F5 search_index_v2) must exist");
+
+    assert!(
+        step17.sql.contains("-- MIGRATION-ACCRETION-EXEMPTION: "),
+        "step 17 must carry the exemption marker documenting the additive re-index"
+    );
+    check_migration_accretion("017_f5_search_index_v2.sql", step17.sql)
+        .expect("step 17 must pass the accretion guard");
+}
+
+codex
+I have the ADR and all three test files. The remaining context gap is the repo memory chain and a quick diff sanity check against the stated baseline so I can confirm scope and apply the repo’s prior review corrections.
+exec
+/bin/bash -c 'ls -la' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+total 324
+drwxrwxr-x 13 coreyt coreyt   4096 Jul  4 07:16 .
+drwxrwxr-x  8 coreyt coreyt   4096 Jul  4 07:13 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  4 07:13 .claude
+-rw-rw-r--  1 coreyt coreyt     87 Jul  4 07:13 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  4 07:13 .github
+-rw-rw-r--  1 coreyt coreyt   4024 Jul  4 07:13 .gitignore
+-rw-rw-r--  1 coreyt coreyt   1181 Jul  4 07:13 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul  4 07:13 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul  4 07:13 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul  4 07:13 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul  4 07:13 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  4 07:13 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111562 Jul  4 07:13 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul  4 07:13 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul  4 07:13 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul  4 07:13 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul  4 07:13 deny.toml
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  4 07:13 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  4 07:13 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  4 07:13 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul  4 07:13 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jul  4 07:13 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  4 07:13 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  4 07:13 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul  4 07:13 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul  4 07:13 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  4 07:13 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  4 07:13 src
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  4 07:16 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  4 07:13 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  4 07:13 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  4 07:13 tools
+
+codex
+The shell sandbox is intermittently rejecting search-style commands, so I’m switching to direct file reads where possible and using a minimal directory walk only for the memory pointers. That doesn’t affect the review target, but it does mean I’m avoiding broad grep-style sweeps unless needed.
+exec
+/bin/bash -c "sed -n '1,120p' .git" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+gitdir: /home/coreyt/projects/fathomdb/.git/worktrees/0.8.14-slice-20-20260704T121320Z
+
+exec
+/bin/bash -c 'ls dev' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+DOC-INDEX.md
+README.md
+acceptance-rowsets
+acceptance.md
+adr
+agent-harness-bootstrap-prompt.md
+agent-tools
+agents
+architecture.md
+archive
+corpus-creation
+corpus-survey
+deps
+design
+experiments-ledger.md
+interface-inventory
+interfaces
+learnings.md
+memex-note-on-0.6.0.md
+needs.md
+notes
+perf-history
+plans
+profiling
+progress
+prototypes
+release
+releases
+requirements.md
+research
+roadmap
+scripts
+security-review.md
+steward
+templates
+test-plan.md
+todos-and-considerations-ledger-readme.md
+todos-and-considerations-ledger.jsonl
+todos-and-considerations-ledger.jsonl.seq
+tools
+traceability.md
+turso-watch
+update-docs.md
+
+exec
+/bin/bash -c 'ls src/rust/crates/fathomdb-schema/tests' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+fixtures
+migrations.rs
+property_template.rs
+step14_migration.rs
+step15_to_17_migration.rs
+step16_migration.rs
+step17_migration.rs
+wire_constants.rs
+
+exec
+/bin/bash -c "sed -n '1,220p' /home/coreyt/projects/fathomdb/MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ exited 2 in 0ms:
+sed: can't read /home/coreyt/projects/fathomdb/MEMORY.md: No such file or directory
+
+exec
+/bin/bash -c "ls /home/coreyt/projects/fathomdb | sed -n '1,120p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+data
+deny.toml
+dev
+docs
+experiments
+go
+lychee.toml
+mkdocs.yml
+node_modules
+package-lock.json
+package.json
+python
+rust-toolchain.toml
+rustfmt.toml
+scripts
+site
+src
+target
+test
+tests
+tools
+typescript
+
+codex
+I’ve confirmed the review target files and the ADR. To decide whether the assertions are genuinely coupled to the migration machinery, I’m reading the migration driver and the step-16/17 SQL definitions next, not just the tests.
+exec
+/bin/bash -c "sed -n '1,260p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+use std::fmt::{Display, Formatter};
+use std::time::Instant;
+
+use rusqlite::Connection;
+
+pub const SCHEMA_VERSION: u32 = 17;
+
+/// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
+///
+/// Public on-disk surface per `dev/interfaces/wire.md` § Schema-version
+/// sentinel; advanced by successful migrations per `dev/design/migrations.md`.
+pub const PRAGMA_USER_VERSION: &str = "user_version";
+
+/// Suffix of the canonical SQLite database file (`<db-name>.sqlite`).
+pub const SQLITE_SUFFIX: &str = ".sqlite";
+
+/// Suffix of the SQLite write-ahead log file (`<db-name>.sqlite-wal`).
+pub const WAL_SUFFIX: &str = "-wal";
+
+/// Suffix of the sidecar lock file (`<db-name>.sqlite.lock`).
+///
+/// Per `dev/design/bindings.md` § 7, this sidecar flock is the load-bearing
+/// cross-process exclusion layer; it surfaces lock contention before SQLite
+/// I/O begins.
+pub const LOCK_SUFFIX: &str = ".lock";
+
+/// Suffix of the optional SQLite rollback journal file
+/// (`<db-name>.sqlite-journal`).
+pub const JOURNAL_SUFFIX: &str = "-journal";
+
+#[must_use]
+pub fn bootstrap_steps() -> &'static [&'static str] {
+    &["create canonical tables", "register projection metadata", "seed rewrite-era configuration"]
+}
+
+/// Canonical tables owned by the rewrite-era schema, in stable display
+/// order. Excludes FTS, vec0, and projection shadow tables (re-derivable
+/// from canonical state) and internal `_fathomdb_*` metadata.
+///
+/// `doctor dump-row-counts` enumerates this set; `doctor dump-schema`
+/// uses it to order canonical tables ahead of derived/internal ones.
+pub const CANONICAL_TABLES: &[&str] = &[
+    "canonical_nodes",
+    "canonical_edges",
+    "operational_collections",
+    "operational_mutations",
+    "operational_state",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Migration {
+    pub step_id: u32,
+    pub sql: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationStepReport {
+    pub step_id: u32,
+    pub duration_ms: Option<u64>,
+    pub failed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationReport {
+    pub schema_version_before: u32,
+    pub schema_version_after: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationFailureReport {
+    pub schema_version_before: u32,
+    pub schema_version_current: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MigrationError {
+    IncompatibleSchemaVersion { seen: u32, supported: u32 },
+    MigrationError(MigrationFailureReport),
+    Storage { message: &'static str },
+}
+
+impl Display for MigrationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IncompatibleSchemaVersion { seen, supported } => {
+                write!(f, "database schema version {seen} is incompatible with supported version {supported}")
+            }
+            Self::MigrationError(report) => write!(
+                f,
+                "schema migration failed at step {}",
+                report.migration_steps.last().map_or(0, |step| step.step_id)
+            ),
+            Self::Storage { message } => write!(f, "schema storage error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for MigrationError {}
+
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        step_id: 1,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    },
+    Migration {
+        step_id: 2,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_migrations(step_id INTEGER PRIMARY KEY, applied_at_ms INTEGER NOT NULL);
+              CREATE TABLE IF NOT EXISTS canonical_nodes(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS canonical_edges(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL);",
+    },
+    Migration {
+        step_id: 3,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_embedder_profiles(profile TEXT PRIMARY KEY, name TEXT NOT NULL, revision TEXT NOT NULL, dimension INTEGER NOT NULL)",
+    },
+    Migration {
+        step_id: 4,
+        sql: "CREATE TABLE IF NOT EXISTS operational_collections(
+                  name TEXT PRIMARY KEY,
+                  kind TEXT NOT NULL CHECK(kind IN ('append_only_log', 'latest_state')),
+                  schema_json TEXT NOT NULL,
+                  retention_json TEXT NOT NULL,
+                  format_version INTEGER NOT NULL,
+                  created_at INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS operational_mutations(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  collection_name TEXT NOT NULL,
+                  record_key TEXT NOT NULL,
+                  op_kind TEXT NOT NULL CHECK(op_kind = 'append'),
+                  payload_json TEXT NOT NULL,
+                  schema_id TEXT,
+                  write_cursor INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS operational_state(
+                  collection_name TEXT NOT NULL,
+                  record_key TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  schema_id TEXT,
+                  write_cursor INTEGER NOT NULL,
+                  PRIMARY KEY(collection_name, record_key)
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_open_state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+              INSERT OR IGNORE INTO operational_collections(
+                  name, kind, schema_json, retention_json, format_version, created_at
+              ) VALUES (
+                  'projection_failures',
+                  'append_only_log',
+                  '{\"type\":\"object\"}',
+                  '{}',
+                  1,
+                  0
+              );",
+    },
+    Migration {
+        step_id: 5,
+        sql: "CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED
+              );",
+    },
+    Migration {
+        step_id: 6,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_state(
+                  kind TEXT PRIMARY KEY,
+                  last_enqueued_cursor INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_kinds(
+                  kind TEXT PRIMARY KEY,
+                  profile TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_rows(
+                  rowid INTEGER PRIMARY KEY,
+                  kind TEXT NOT NULL,
+                  write_cursor INTEGER NOT NULL UNIQUE
+              );",
+    },
+    Migration {
+        step_id: 7,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_terminal(
+                  write_cursor INTEGER PRIMARY KEY,
+                  state TEXT NOT NULL CHECK(state IN ('failed', 'up_to_date'))
+              );",
+    },
+    // Phase 9 Pack B — REQ-026 / AC-028a/b/c / AC-042 recovery seam.
+    // `source_id` is nullable; existing canonical rows back-fill to NULL,
+    // so reads from older callers stay schema-stable. REQ-045 accretion
+    // offset is documented in `migrations/008_source_id.sql` as inherently
+    // impossible for this slice (every existing canonical column is
+    // load-bearing for replay / projections / recovery locators); the
+    // next schema-touching pack carries the offset budget for two adds.
+    Migration {
+        step_id: 8,
+        sql: "ALTER TABLE canonical_nodes ADD COLUMN source_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_source_id_idx
+                  ON canonical_nodes(source_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+                  ON canonical_edges(source_id);",
+    },
+    // 0.7.0 Pack 1 — Vector binary-quantization data encoding.
+    // Per `dev/design/0.7.0-vector-quant-pack1.md` D4 (fix-3). Stages
+    // the existing f32 corpus + kind mapping into a regular SQL table,
+    // drops + recreates `vector_default` with the new schema (sibling
+    // `embedding_bin bit[768]`, `source_type TEXT partition key`,
+    // `kind TEXT`, `created_at INTEGER`), then repopulates with
+    // SQL-side `vec_quantize_binary` and the D3 CASE mapping. A
+    // prefix CHECK-constraint preflight aborts the migration if any
+    // `_fathomdb_vector_rows.kind` is outside the locked vocabulary.
+    //
+    // `<dim>=768` is hardcoded against the default profile
+    // (`load_default_profile` -> `DEFAULT_EMBEDDER_DIMENSION` in
+    // fathomdb-engine). The design notes this constraint and defers
+    // a runtime-dim migration to 0.7.1.
+    Migration {
+        step_id: 9,
+        // SQL-side: D4 fix-3.1 preflight only. The vec0 reshape itself is
+        // dim-aware and lives in the engine crate's
+        // `ensure_vector_partition_pack1` (called by `ensure_vector_partition`
+        // immediately after `migrate_with_event_sink` returns). Splitting the
+        // preflight (SQL, in-tx with `apply_one`) from the reshape (Rust,
+        // dim-driven by `_fathomdb_embedder_profiles.dimension`) is required
+        // because `fathomdb-schema::Migration` is a `&'static str` with no
+        // runtime parameterization, and the existing dim=8 / dim=384 test
+        // suite must stay GREEN. The reshape is idempotent across crashes:
+        // if open fails between this step's commit (user_version=9) and the
+        // Rust reshape, the next open re-detects the old shape and replays
+        // the reshape. See dev/plans/runs/0.7.0-PVQ-P1-IMPL-output.json
+        // for the design-memo deviation note.
+        sql: "CREATE TEMP TABLE _vec0_migration_assertion(
+                  check_passes INTEGER NOT NULL CHECK(check_passes = 1)
+              );
+              INSERT INTO _vec0_migration_assertion(check_passes)
+                  SELECT CASE WHEN EXISTS (
+                      SELECT 1 FROM _fathomdb_vector_rows
+                      WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')
+                  ) THEN 0 ELSE 1 END;
+              DROP TABLE _vec0_migration_assertion;",
+    },
+    // 0.7.1 EU-5a2 — mean-centering schema column.
+    // Per `dev/design/embedder.md` §0.2: nullable BLOB holding the
+    // pinned per-workspace mean vector for the default profile. Byte
+    // length, when non-NULL, MUST equal `4 * dimension` (f32 little-endian).
+    // Pure additive ALTER; SQLite stores NULL for the pre-existing row.
+    // Lifecycle (compute-once-on-first-ingest threshold-pin) is in the
+    // engine crate, not the schema layer.
+    Migration {
+        step_id: 10,
+        sql: "ALTER TABLE _fathomdb_embedder_profiles ADD COLUMN mean_vec BLOB",
+    },
+    // 0.8.0 Slice 5 (G1) — global FTS5 tokenizer-default upgrade.
+    // Per `dev/plans/0.8.0-implementation.md` § "Slice 5" and the design
+    // memo `dev/design/0.8.0-slice-5-G1-design.md`. Migrations are
+    // forward-only and immutable, and FTS5 has no `ALTER … tokenize`, so the
+    // tokenizer default is upgraded by dropping and recreating the
+    // `search_index` virtual table rather than editing the step-5 DDL (which
+
+exec
+/bin/bash -c "sed -n '1,360p' src/rust/crates/fathomdb-schema/tests/migrations.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+use fathomdb_schema::{
+    check_migration_accretion, migrate, migrate_with_event_sink, migrate_with_steps, Migration,
+    MigrationAccretionError, MigrationError, SCHEMA_VERSION,
+};
+use rusqlite::Connection;
+// Only used by the Unix-gated repo-linter test below.
+#[cfg(unix)]
+use std::process::Command;
+use std::sync::Once;
+
+// Pack 1 (step 9) creates a vec0 virtual table; register sqlite-vec
+// once per test-binary so the migration step can execute.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
+}
+
+fn set_user_version(conn: &Connection, version: u32) {
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+#[test]
+fn ac_046a_applies_ordered_migrations_to_current_version() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    let report = migrate(&conn).unwrap();
+
+    assert_eq!(report.schema_version_before, 1);
+    assert_eq!(report.schema_version_after, SCHEMA_VERSION);
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(report.migration_steps.len(), 16);
+    assert!(report.migration_steps.iter().all(|step| !step.failed));
+}
+
+#[test]
+fn ac_046b_success_report_contains_step_ids_and_durations() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    let report = migrate(&conn).unwrap();
+
+    let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+    assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
+}
+
+#[test]
+fn ac_046b_success_emits_structured_step_events() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    let mut events = Vec::new();
+
+    migrate_with_event_sink(&conn, fathomdb_schema::MIGRATIONS, |event| {
+        events.push(event.clone());
+    })
+    .unwrap();
+
+    let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+    assert!(events.iter().all(|step| step.duration_ms.is_some()));
+    assert!(events.iter().all(|step| !step.failed));
+}
+
+#[test]
+fn ac_046c_and_ac_070_failed_step_reports_failure_and_preserves_user_version() {
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+
+    let migrations = [Migration {
+        step_id: 2,
+        sql: "CREATE TABLE _poison(id INTEGER PRIMARY KEY); SELECT * FROM missing_table",
+    }];
+
+    let err = migrate_with_steps(&conn, &migrations).expect_err("poison migration must fail");
+
+    match err {
+        MigrationError::MigrationError(report) => {
+            assert_eq!(report.schema_version_before, 1);
+            assert_eq!(report.schema_version_current, 1);
+            assert_eq!(report.migration_steps.len(), 1);
+            assert_eq!(report.migration_steps[0].step_id, 2);
+            assert!(report.migration_steps[0].failed);
+            assert!(report.migration_steps[0].duration_ms.is_some());
+        }
+        other => panic!("expected MigrationError, got {other:?}"),
+    }
+    assert_eq!(user_version(&conn), 1);
+}
+
+#[test]
+fn ac_046c_failed_migration_emits_failed_step_event() {
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    let migrations = [Migration {
+        step_id: 2,
+        sql: "CREATE TABLE _poison(id INTEGER PRIMARY KEY); SELECT * FROM missing_table",
+    }];
+    let mut events = Vec::new();
+
+    let err = migrate_with_event_sink(&conn, &migrations, |event| events.push(event.clone()))
+        .expect_err("poison migration must fail");
+
+    assert!(matches!(err, MigrationError::MigrationError(_)));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].step_id, 2);
+    assert!(events[0].failed);
+    assert!(events[0].duration_ms.is_some());
+}
+
+#[test]
+fn ac_049_accretion_guard_accepts_current_migrations_and_rejects_violator() {
+    check_migration_accretion(
+        "003_add_profile.sql",
+        "CREATE TABLE x(id INTEGER); -- MIGRATION-ACCRETION-EXEMPTION: bootstrap profile table",
+    )
+    .unwrap();
+
+    let err = check_migration_accretion("004_bad.sql", "ALTER TABLE x ADD COLUMN y TEXT")
+        .expect_err("adding a column without removal or exemption must fail");
+
+    assert_eq!(err, MigrationAccretionError { offender: "004_bad.sql".to_string() });
+}
+
+#[test]
+fn phase9_pack_b_migration_008_adds_source_id_columns_and_indexes() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let nodes_has_source_id: bool = conn
+        .prepare("PRAGMA table_info(canonical_nodes)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|name| name == "source_id");
+    assert!(nodes_has_source_id, "canonical_nodes.source_id must be present after migration 8");
+
+    let edges_has_source_id: bool = conn
+        .prepare("PRAGMA table_info(canonical_edges)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|name| name == "source_id");
+    assert!(edges_has_source_id, "canonical_edges.source_id must be present after migration 8");
+
+    let nodes_idx: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["canonical_nodes_source_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(nodes_idx, 1);
+
+    let edges_idx: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["canonical_edges_source_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(edges_idx, 1);
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+}
+
+// Slice 15 (G0) — the step-12 substrate migration is pure additive `ALTER …
+// ADD COLUMN` (no DROP), so the accretion guard rejects it UNLESS the exemption
+// marker is present. This pins that the marker is the only thing letting it pass
+// (mirrors `ac_049`).
+#[test]
+fn s12_g0_substrate_passes_accretion_guard_only_with_marker() {
+    let step12 = fathomdb_schema::MIGRATIONS
+        .iter()
+        .find(|m| m.step_id == 12)
+        .expect("step 12 (G0 substrate) must exist");
+
+    // As-authored (with the marker): accepted.
+    check_migration_accretion("012_g0_substrate.sql", step12.sql)
+        .expect("step 12 must pass the accretion guard with its exemption marker");
+
+    // Strip the exemption-marker line: the same additive-ALTER SQL is now rejected.
+    let without_marker: String = step12
+        .sql
+        .lines()
+        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let err = check_migration_accretion("012_g0_substrate.sql", &without_marker)
+        .expect_err("step 12 without the exemption marker must be rejected");
+    assert_eq!(err, MigrationAccretionError { offender: "012_g0_substrate.sql".to_string() });
+}
+
+// Slice 15 (G0) — applying the full migration set lands the transaction-time
+// identity substrate: `logical_id` + `superseded_at` on BOTH canonical tables,
+// the partial-unique-active index per table, the folded G4/G5 read indexes, and
+// `user_version == 12`.
+#[test]
+fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let column_present = |table: &str, column: &str| -> bool {
+        conn.prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|name| name == column)
+    };
+    for table in ["canonical_nodes", "canonical_edges"] {
+        assert!(column_present(table, "logical_id"), "{table}.logical_id must be present");
+        assert!(column_present(table, "superseded_at"), "{table}.superseded_at must be present");
+    }
+
+    let index_present = |name: &str| -> u64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            [name],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    for idx in [
+        "canonical_nodes_logical_active_idx",
+        "canonical_edges_logical_active_idx",
+        "canonical_nodes_kind_idx",
+        "canonical_edges_from_id_idx",
+        "canonical_edges_to_id_idx",
+    ] {
+        assert_eq!(index_present(idx), 1, "index {idx} must exist after step 12");
+    }
+
+    // The active-row uniqueness index must be partial (WHERE superseded_at IS NULL)
+    // and — per Decision 5 (HITL-SIGNED 2026-06-05) — scoped to `logical_id` ALONE
+    // (NOT the pre-Slice-31 compound `(logical_id, kind)`), on BOTH tables.
+    for idx_name in ["canonical_nodes_logical_active_idx", "canonical_edges_logical_active_idx"] {
+        let active_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name=?1",
+                [idx_name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            active_sql.contains("superseded_at IS NULL"),
+            "{idx_name} must be partial on superseded_at IS NULL, got: {active_sql}"
+        );
+        assert!(
+            active_sql.contains("(logical_id)"),
+            "{idx_name} must be scoped to logical_id alone (Decision 5), got: {active_sql}"
+        );
+        assert!(
+            !active_sql.contains("kind"),
+            "{idx_name} must NOT include kind in its active-uniqueness scope, got: {active_sql}"
+        );
+    }
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 17);
+}
+
+// Slice 33 (G3 / F4-READ) — the step-13 additive index makes the op-store
+// paginated read-back (`read.collection` / `read.mutations`) index-driven on a
+// large multi-collection log. Pure `CREATE INDEX` (no table/column add, no DROP),
+// so the accretion guard does not flag it and no exemption marker is required.
+#[test]
+fn s13_op_store_collection_index_present_after_migrate() {
+    register_sqlite_vec_once();
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let idx_count: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["operational_mutations_collection_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(idx_count, 1, "step-13 must create operational_mutations_collection_id_idx");
+
+    // The index is shaped (collection_name, id): leading column collection_name
+    // serves the equality predicate, trailing id serves both the after-id cursor
+    // range and ORDER BY id (no temp B-tree).
+    let idx_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name=?1",
+            ["operational_mutations_collection_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        idx_sql.contains("operational_mutations"),
+        "index must be on operational_mutations, got: {idx_sql}"
+    );
+    assert!(
+        idx_sql.contains("collection_name") && idx_sql.contains("id"),
+        "index must be (collection_name, id), got: {idx_sql}"
+    );
+    let cn = idx_sql.find("collection_name").unwrap();
+    let id_pos = idx_sql.rfind("id").unwrap();
+    assert!(cn < id_pos, "collection_name must lead id in the composite index, got: {idx_sql}");
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 17);
+}
+
+// Slice 33 — the step-13 SQL is a pure `CREATE INDEX` (additive index, no table
+// or column add). The accretion guard fires only on CREATE TABLE / ADD COLUMN,
+// so step-13 passes WITHOUT an exemption marker (contrast step-12's ADD COLUMN,
+// which requires the marker).
+#[test]
+fn s13_op_store_index_passes_accretion_guard_without_marker() {
+    let step13 = fathomdb_schema::MIGRATIONS
+        .iter()
+        .find(|m| m.step_id == 13)
+        .expect("step 13 (op-store collection index) must exist");
+    assert!(
+        !step13.sql.contains("MIGRATION-ACCRETION-EXEMPTION"),
+        "an index-only additive step needs no exemption marker"
+    );
+    check_migration_accretion("013_op_store_collection_index.sql", step13.sql)
+        .expect("step 13 (CREATE INDEX only) must pass the accretion guard with no marker");
+}
+
+// Exercises the repo's `scripts/agent-lint-migrations.sh` bash linter — Unix dev/CI
+// tooling. Windows cannot exec a `.sh` directly (Os 193) and the script is not a Windows
+// artifact, so the test is Unix-only (the accretion-guard logic itself is covered by the
+// platform-independent `ac_049_accretion_guard_*` test above). (0.8.9 Slice 20, F-9.)
+#[cfg(unix)]
+#[test]
+fn ac_049_repo_linter_accepts_actual_migrations_and_names_violator() {
+    let repo =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(4).expect("repo root");
+    let script = repo.join("scripts/agent-lint-migrations.sh");
+
+    let ok = Command::new(&script).current_dir(repo).output().expect("run linter");
+    assert!(
+        ok.status.success(),
+
+exec
+/bin/bash -c 'ls src/rust/crates/fathomdb-schema/migrations' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+001_bootstrap.sql
+002_canonical.sql
+003_embedder_profiles.sql
+004_op_store.sql
+005_search_index.sql
+006_vector_runtime.sql
+007_projection_terminal.sql
+008_source_id.sql
+009_vector_binary_quant.sql
+011_search_index_tokenizer.sql
+013_op_store_collection_index.sql
+
+exec
+/bin/bash -c "sed -n '260,520p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+    // `search_index` virtual table rather than editing the step-5 DDL (which
+    // would change the tokenizer for new DBs only). The drop+recreate leaves
+    // the FTS index empty on a migrated DB; the engine re-tokenizes from the
+    // canonical source rows immediately after this step lands (open path,
+    // `reproject_search_index_after_tokenizer_upgrade`) — projection-only, no
+    // source-record migration. `DROP TABLE` already satisfies the accretion
+    // guard's `names_removal` branch; the exemption marker is carried to
+    // document intent and match the established pattern.
+    Migration {
+        step_id: 11,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: tokenizer-default upgrade (drop+recreate FTS5 projection; no source-record migration)
+              DROP TABLE IF EXISTS search_index;
+              CREATE VIRTUAL TABLE search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+    // 0.8.0 Slice 15 (G0 KEYSTONE) — transaction-time canonical-identity
+    // substrate. Per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`
+    // (SIGNED 2026-06-03) and `dev/design/slice-15-g0-design.md`. Two additive
+    // nullable columns on BOTH canonical tables: `logical_id TEXT` (stable
+    // cross-re-ingestion identity; NULL = legacy/own-identity row) and
+    // `superseded_at INTEGER` (transaction-time tombstone; NULL = active row).
+    // A partial UNIQUE INDEX `(logical_id) WHERE superseded_at IS NULL` per table
+    // enforces one active version per logical id — scoped to `logical_id` ALONE
+    // (Decision 5, HITL-SIGNED 2026-06-05; `kind` is payload/classification on
+    // nodes and relationship-type on edges, NEVER an identity-scope component).
+    // NULL-safe, so the many legacy NULL-logical_id rows never collide (SQLite
+    // treats each NULL as distinct; load-bearing). The folded G4/G5 read indexes
+    // (`canonical_nodes(kind)`, `canonical_edges(from_id)/(to_id)`) ride this one
+    // accretion offset budget. Pure additive ALTER (no DROP) → the exemption
+    // marker is REQUIRED (the accretion guard rejects ADD COLUMN without it);
+    // legacy rows read NULL with no data migration / re-open (in-place ALTER).
+    // Step-12 amended IN PLACE (Slice 31, no SCHEMA_VERSION bump): already-migrated
+    // local v12 DBs keep the old compound index until rebuilt (HITL: disposable).
+    Migration {
+        step_id: 12,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G0 transaction-time identity substrate
+              ALTER TABLE canonical_nodes ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_nodes ADD COLUMN superseded_at INTEGER;
+              ALTER TABLE canonical_edges ADD COLUMN logical_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN superseded_at INTEGER;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_nodes_logical_active_idx
+                  ON canonical_nodes(logical_id) WHERE superseded_at IS NULL;
+              CREATE UNIQUE INDEX IF NOT EXISTS canonical_edges_logical_active_idx
+                  ON canonical_edges(logical_id) WHERE superseded_at IS NULL;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_kind_idx
+                  ON canonical_nodes(kind);
+              CREATE INDEX IF NOT EXISTS canonical_edges_from_id_idx
+                  ON canonical_edges(from_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_to_id_idx
+                  ON canonical_edges(to_id);",
+    },
+    // 0.8.0 Slice 33 (G3 / F4-READ) — op-store paginated read-back hardening.
+    // Per `dev/design/slice-33-cursor-hardening-design.md`. The governed
+    // `read.collection` / `read.mutations` SELECT is
+    // `WHERE collection_name = ?1 AND id > ?2 ORDER BY id LIMIT ?3`. Without an
+    // index on `collection_name`, SQLite rides the `id` PRIMARY KEY (EXPLAIN:
+    // `SEARCH … USING INTEGER PRIMARY KEY (rowid>?)`), scanning the id-ordered
+    // log and filtering `collection_name` row-by-row — O(rows-scanned) for a
+    // small collection inside a large multi-collection log. The composite
+    // `(collection_name, id)` index makes the plan index-driven (EXPLAIN:
+    // `SEARCH … USING INDEX operational_mutations_collection_id_idx
+    // (collection_name=? AND id>?)`): the leading equality on `collection_name`
+    // fixes the prefix, the trailing `id` serves BOTH the after-id cursor range
+    // and `ORDER BY id` with no temp B-tree — O(page). Pure additive
+    // `CREATE INDEX` (no table/column add, no DROP, no table reshape), so the
+    // accretion guard does not flag it and no exemption marker is required.
+    Migration {
+        step_id: 13,
+        sql: "CREATE INDEX IF NOT EXISTS operational_mutations_collection_id_idx
+                  ON operational_mutations(collection_name, id);",
+    },
+    // 0.8.1 Slice 15 (G11) — fact-on-edge enrichment + edge projectability.
+    // Per `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` (HITL-SIGNED
+    // 2026-06-13). Five additive nullable columns on `canonical_edges`:
+    //   `body`              — the fact/relationship text for FTS + vector projection
+    //   `t_valid`           — event valid-time (ISO-8601); NULL = "still valid"
+    //   `t_invalid`         — event invalid-time (ISO-8601); NULL = "still valid"
+    //   `confidence`        — extraction confidence ∈ [0.0, 1.0] from the harness
+    //   `extractor_model_id`— opaque model id from BYO-LLM harness `ready.model`
+    // All five are nullable; pre-G11 rows read NULL (no data migration required).
+    // Also creates `search_index_edges` FTS5 virtual table for edge-body FTS
+    // projection (Option B: separate table, no modification to the existing
+    // `search_index` path). MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 14,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: G11 edge enrichment (5 additive nullable columns + edge FTS table)
+              ALTER TABLE canonical_edges ADD COLUMN body TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_valid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN t_invalid TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+              ALTER TABLE canonical_edges ADD COLUMN extractor_model_id TEXT;
+              CREATE VIRTUAL TABLE IF NOT EXISTS search_index_edges USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );",
+    },
+    // 0.8.1 Slice 30 (R3) SCHEMA-GATE-1 — temporal_fallback provenance flag.
+    // HITL-SIGNED 2026-06-13: approved additive schema bump.
+    // Edges whose `t_valid` was defaulted to `created_at` by the ELPS extractor
+    // (not text-grounded) carry this flag so the graph-arm BFS can exclude them
+    // from temporal queries. NULL = not a fallback (pre-column rows and edges
+    // written without the flag are treated as NOT temporal_fallback — safe default
+    // since they were written before provenance tracking existed or via a direct
+    // write where the caller owns the t_valid).
+    // MIGRATION-ACCRETION-EXEMPTION required for ADD COLUMN.
+    Migration {
+        step_id: 15,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R3 temporal_fallback provenance flag (additive nullable BOOLEAN column)
+              ALTER TABLE canonical_edges ADD COLUMN temporal_fallback INTEGER;",
+    },
+    // 0.8.14 Slice 5 (EXP-S KEYSTONE) — kind-tagged coexisting-index substrate.
+    // Per `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` D1
+    // (RATIFIED 2026-07-03) and `dev/plans/plan-0.8.14.md` §2 (R-SUB-1/R-SUB-3).
+    // Adds `row_kind` — a SEPARATE structural-role axis on `canonical_nodes`,
+    // orthogonal to the doc-type `kind` (email/article/paper/meeting/note/todo/
+    // doc/edge_fact). Vocabulary: `leaf` (normal record — the DEFAULT, which
+    // preserves current behavior for every existing/normal row), `coverage`
+    // (coverage/summary rows), `graph` (graph structural rows). D1 is explicit:
+    // this must NOT overload the doc-type `kind` vocabulary or touch its three
+    // hard-locked sites (engine `resolve_source_type` / `KIND_TO_SOURCE_TYPE_CASE_SQL`
+    // / this crate's migration-9 preflight CHECK). NOT NULL DEFAULT 'leaf' is a
+    // constant default, so pre-existing rows back-fill to `leaf` in-place (no data
+    // migration / re-open) and the migration is forward-only. Additive ADD COLUMN
+    // (no DROP) → the accretion guard REQUIRES the exemption marker. No vec0
+    // embedding/quant/pooling change (ADR §D6): this step does NOT rewrite vec0
+    // rows, so the eu7 fidelity gate stays a documented no-op at Slice 20.
+    Migration {
+        step_id: 16,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: EXP-S row_kind structural-role tag (additive NOT NULL DEFAULT 'leaf' column; separate axis from doc-type kind)
+              ALTER TABLE canonical_nodes ADD COLUMN row_kind TEXT NOT NULL DEFAULT 'leaf';",
+    },
+    // 0.8.14 Slice 10 (F5 — fielded FTS / BM25F) — multi-column FTS5 index.
+    // Per `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` §3.1 and
+    // `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` §D4
+    // (RATIFIED 2026-07-03; F5 co-lands by the §D8 HITL override) and
+    // `dev/plans/plan-0.8.14.md` §2 (R-F5-1 / R-SUB-3). Creates a NEW FTS5 virtual
+    // table `search_index_v2` over the doc-type node fields `kind` / `body` /
+    // `status`, so a BM25F query can weight each field independently
+    // (`bm25(search_index_v2, W_kind, W_body, W_status)`), riding the EXP-S
+    // substrate. This is ADDITIVE and coexists with the single-column body-only
+    // `search_index` (which is RETAINED, byte-unchanged — the existing RRF/lexical
+    // query path keeps using it, so its determinism pins are untouched): the new
+    // table is a second coexisting index in the "one store, many indexes"
+    // substrate, exactly like `search_index_edges` (step 14, Option B). FTS5 has
+    // no in-place column-add, so BM25F requires a new virtual table + an O(N)
+    // re-index; the co-land with step 16 means an old DB pays ONE re-index window
+    // (`SCHEMA_VERSION` 15 -> 17 in one open). The `status` field is derived from
+    // the JSON body's `$.status`, guarded by `json_valid` so non-JSON bodies
+    // index an empty status; this is F5's own `$.status`-derived field, NOT
+    // the value the shipped G10 SearchFilter reads (G10 reads vec0 `status`,
+    // still the empty sentinel). The
+    // `write_cursor` UNINDEXED column mirrors `search_index` for the
+    // canonical-row join (rowid==write_cursor identity is preserved by the
+    // engine write path; the vec0 corpus is NOT touched, so the eu7 fidelity gate
+    // stays a documented no-op at Slice 20 — ADR-0.8.14 §D6). `CREATE VIRTUAL
+    // TABLE` does not trip the accretion guard (it fires only on `CREATE TABLE` /
+    // `ADD COLUMN`), but the exemption marker is carried to document the additive
+    // re-index intent and match the step-11/step-14 virtual-table precedent.
+    Migration {
+        step_id: 17,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: F5 fielded FTS (new multi-column search_index_v2 FTS5 table + O(N) re-index; search_index retained)
+              CREATE VIRTUAL TABLE IF NOT EXISTS search_index_v2 USING fts5(
+                  kind,
+                  body,
+                  status,
+                  write_cursor UNINDEXED,
+                  tokenize = 'porter unicode61 remove_diacritics 2'
+              );
+              INSERT INTO search_index_v2(kind, body, status, write_cursor)
+                  SELECT
+                      kind,
+                      body,
+                      CASE WHEN json_valid(body)
+                           THEN COALESCE(json_extract(body, '$.status'), '')
+                           ELSE '' END,
+                      write_cursor
+                  FROM canonical_nodes;",
+    },
+];
+
+pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+    migrate_with_steps(conn, MIGRATIONS)
+}
+
+pub fn migrate_with_steps(
+    conn: &Connection,
+    migrations: &[Migration],
+) -> Result<MigrationReport, MigrationError> {
+    migrate_with_event_sink(conn, migrations, |_| {})
+}
+
+pub fn migrate_with_event_sink(
+    conn: &Connection,
+    migrations: &[Migration],
+    mut emit: impl FnMut(&MigrationStepReport),
+) -> Result<MigrationReport, MigrationError> {
+    let before = user_version(conn)?;
+    if before > SCHEMA_VERSION {
+        return Err(MigrationError::IncompatibleSchemaVersion {
+            seen: before,
+            supported: SCHEMA_VERSION,
+        });
+    }
+
+    let mut current = before;
+    let mut reports = Vec::new();
+
+    for migration in migrations.iter().filter(|migration| migration.step_id > before) {
+        if migration.step_id != current.saturating_add(1) {
+            return Err(MigrationError::Storage {
+                message: "migration registry is not contiguous",
+            });
+        }
+
+        let started = Instant::now();
+        if let Err(_err) = apply_one(conn, migration) {
+            reports.push(MigrationStepReport {
+                step_id: migration.step_id,
+                duration_ms: Some(duration_ms(started)),
+                failed: true,
+            });
+            emit(reports.last().expect("failed step report was just pushed"));
+            let schema_version_current = user_version(conn).unwrap_or(current);
+            return Err(MigrationError::MigrationError(MigrationFailureReport {
+                schema_version_before: before,
+                schema_version_current,
+                migration_steps: reports,
+            }));
+        }
+
+        current = migration.step_id;
+        reports.push(MigrationStepReport {
+            step_id: migration.step_id,
+            duration_ms: Some(duration_ms(started)),
+            failed: false,
+        });
+        emit(reports.last().expect("successful step report was just pushed"));
+    }
+
+    Ok(MigrationReport {
+        schema_version_before: before,
+        schema_version_after: user_version(conn)?,
+        migration_steps: reports,
+    })
+}
+
+fn apply_one(conn: &Connection, migration: &Migration) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        conn.execute_batch(migration.sql)?;
+        conn.pragma_update(None, PRAGMA_USER_VERSION, migration.step_id)?;
+        Ok(())
+    })();
+
+    match result {
+
+exec
+/bin/bash -c "sed -n '520,860p' src/rust/crates/fathomdb-schema/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
+fn user_version(conn: &Connection) -> Result<u32, MigrationError> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+        .map_err(|_| MigrationError::Storage { message: "could not read schema version" })
+}
+
+fn duration_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationAccretionError {
+    pub offender: String,
+}
+
+impl Display for MigrationAccretionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "migration accretion guard rejected {}", self.offender)
+    }
+}
+
+impl std::error::Error for MigrationAccretionError {}
+
+pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
+    let upper = sql.to_ascii_uppercase();
+    let adds_schema = upper.contains("CREATE TABLE") || upper.contains("ADD COLUMN");
+    let names_removal = upper.contains("DROP TABLE") || upper.contains("DROP COLUMN");
+    let has_exemption = sql.contains("-- MIGRATION-ACCRETION-EXEMPTION: ");
+
+    if adds_schema && !names_removal && !has_exemption {
+        return Err(MigrationAccretionError { offender: name.to_string() });
+    }
+
+    Ok(())
+}
+
+codex
+The key source check is positive so far: the new test is wired to the real `MIGRATIONS` registry and the actual `migrate_with_event_sink` driver, so the remaining question is whether its preconditions and assertions are strong enough to catch a bad `15 -> 17` path. I’m pulling line-numbered views now for precise references.
+exec
+/bin/bash -c 'ls -lt src/rust/crates/fathomdb-schema/tests' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-20260704T121320Z
+ succeeded in 0ms:
+total 60
+-rw-rw-r-- 1 coreyt coreyt  7326 Jul  4 07:18 step15_to_17_migration.rs
+drwxrwxr-x 3 coreyt coreyt  4096 Jul  4 07:13 fixtures
+-rw-rw-r-- 1 coreyt coreyt 14621 Jul  4 07:13 migrations.rs
+-rw-rw-r-- 1 coreyt coreyt   682 Jul  4 07:13 property_template.rs
+-rw-rw-r-- 1 coreyt coreyt  6525 Jul  4 07:13 step14_migration.rs
+-rw-rw-r-- 1 coreyt coreyt  6049 Jul  4 07:13 step16_migration.rs
+-rw-rw-r-- 1 coreyt coreyt  7871 Jul  4 07:13 step17_migration.rs
+-rw-rw-r-- 1 coreyt coreyt   407 Jul  4 07:13 wire_constants.rs
+
+codex
+## Verdict: PASS
+
+No findings.
+
+**What passed on inspection**
+- The test does exercise a real `v15 -> v17` path. `open_db_at_v15()` builds the DB with `MIGRATIONS.iter().filter(|m| m.step_id <= 15)` and asserts `PRAGMA user_version = 15` before the full run, so step 16/17 are not pre-applied by the fixture itself. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`open_db_at_v15`), `src/rust/crates/fathomdb-schema/src/lib.rs` (`MIGRATIONS` step 16/17).
+- The forward-only/contiguous claim is real, not just commentary. The test captures emitted step ids and asserts exact order `[16, 17]`, and the migration driver itself rejects non-contiguous execution with `migration.step_id != current + 1`. That would fail on skips, reordering, or any re-run of `<= 15`. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`applied`, `ran_in_report` assertions), `src/rust/crates/fathomdb-schema/src/lib.rs` (`migrate_with_event_sink`).
+- The non-vacuous data assertions are hooked to migrated DB state. The test inserts a legacy row before step 16/17, then reads back `canonical_nodes.kind`, `canonical_nodes.row_kind`, `search_index_v2` row count, and `search_index_v2.status` after migration. A broken step-16 backfill, missing step-17 rebuild, or wrong step order would fail. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (legacy insert, row_kind assertion, `search_index_v2` assertions).
+- The “no data loss / v1 retained” scope is covered at the right level for this slice: the legacy canonical row survives with `kind = 'todo'`, and `search_index` v1 is still present after the jump. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`kind` readback, `table_exists("search_index")`).
+- The new test matches the existing pattern split correctly: step-16 semantics are already pinned in `step16_migration.rs`, step-17 fielded-FTS semantics are already pinned in `step17_migration.rs`, and this new file adds the missing composition check across the full `15 -> 17` path. Refs: `src/rust/crates/fathomdb-schema/tests/step16_migration.rs`, `src/rust/crates/fathomdb-schema/tests/step17_migration.rs`.
+
+**Reviewer process notes**
+- Read the requested ADR and the three migration-test files, then inspected `fathomdb_schema::MIGRATIONS` and `migrate_with_event_sink` to verify the test is coupled to the real migration registry and execution path.
+- I did not find a repo-local `MEMORY.md` in this checkout.
+- I could not use `git diff` in this sandbox because git/search-style commands were failing with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`, so scope confirmation is from direct file inspection rather than diff output.
+- I did not execute the test binary; this is a static review.
+tokens used
+54,472
+## Verdict: PASS
+
+No findings.
+
+**What passed on inspection**
+- The test does exercise a real `v15 -> v17` path. `open_db_at_v15()` builds the DB with `MIGRATIONS.iter().filter(|m| m.step_id <= 15)` and asserts `PRAGMA user_version = 15` before the full run, so step 16/17 are not pre-applied by the fixture itself. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`open_db_at_v15`), `src/rust/crates/fathomdb-schema/src/lib.rs` (`MIGRATIONS` step 16/17).
+- The forward-only/contiguous claim is real, not just commentary. The test captures emitted step ids and asserts exact order `[16, 17]`, and the migration driver itself rejects non-contiguous execution with `migration.step_id != current + 1`. That would fail on skips, reordering, or any re-run of `<= 15`. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`applied`, `ran_in_report` assertions), `src/rust/crates/fathomdb-schema/src/lib.rs` (`migrate_with_event_sink`).
+- The non-vacuous data assertions are hooked to migrated DB state. The test inserts a legacy row before step 16/17, then reads back `canonical_nodes.kind`, `canonical_nodes.row_kind`, `search_index_v2` row count, and `search_index_v2.status` after migration. A broken step-16 backfill, missing step-17 rebuild, or wrong step order would fail. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (legacy insert, row_kind assertion, `search_index_v2` assertions).
+- The “no data loss / v1 retained” scope is covered at the right level for this slice: the legacy canonical row survives with `kind = 'todo'`, and `search_index` v1 is still present after the jump. Refs: `src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs` (`kind` readback, `table_exists("search_index")`).
+- The new test matches the existing pattern split correctly: step-16 semantics are already pinned in `step16_migration.rs`, step-17 fielded-FTS semantics are already pinned in `step17_migration.rs`, and this new file adds the missing composition check across the full `15 -> 17` path. Refs: `src/rust/crates/fathomdb-schema/tests/step16_migration.rs`, `src/rust/crates/fathomdb-schema/tests/step17_migration.rs`.
+
+**Reviewer process notes**
+- Read the requested ADR and the three migration-test files, then inspected `fathomdb_schema::MIGRATIONS` and `migrate_with_event_sink` to verify the test is coupled to the real migration registry and execution path.
+- I did not find a repo-local `MEMORY.md` in this checkout.
+- I could not use `git diff` in this sandbox because git/search-style commands were failing with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`, so scope confirmation is from direct file inspection rather than diff output.
+- I did not execute the test binary; this is a static review.

@@ -1,0 +1,41 @@
+{
+  "slice": 20,
+  "title": "v15 -> v17 full-path migration verify (R-SUB-3)",
+  "status": "complete",
+  "baseline_sha": "4ca170a219f812038f39a09e0010789e6a743990",
+  "branch": "slice-20-20260704T121320Z",
+  "head_sha": "33edf5c511e5afac3c0f64199d7a2df3901e861a",
+  "commits": [
+    {
+      "sha": "33edf5c511e5afac3c0f64199d7a2df3901e861a",
+      "message": "feat(0.8.14): v15→v17 full-path migration test (Slice 20 R-SUB-3)"
+    }
+  ],
+  "files_changed": [
+    "src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs (new, +142)"
+  ],
+  "new_test": {
+    "file": "src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs",
+    "name": "s15_to_17_full_path_migrates_legacy_db_without_loss",
+    "what_it_proves": "An OLD pre-0.8.14 DB frozen at schema v15, with a realistic legacy canonical_nodes row (JSON body carrying $.status), migrates the FULL path to head v17 in ONE end-to-end pass driven by migrate_with_event_sink. Asserts: schema_version_before==15, after==17, user_version==17==SCHEMA_VERSION; forward-only + contiguous (emitted step order and report step order are BOTH exactly [16,17] — no skips, nothing at/below 15 re-run, no failed steps); legacy row survives with original kind intact and row_kind back-filled to 'leaf' (step-16, no data loss); search_index_v2 exists and was O(N)-rebuilt for the legacy row with status='open' derived from $.status under json_valid (step-17); v1 search_index retained (not dropped); accretion-exemption invariants hold for both step 16 and step 17 sql (check_migration_accretion passes).",
+    "non_vacuous": "RED-verified: temporarily changing the derived-status assertion to a wrong sentinel made the test FAIL with left=\"open\" right=\"CLOSED_SENTINEL\", proving the v2-rebuild status derivation is a live, real value (reverted). The test would also fail if row_kind defaulting regressed (legacy row would not read 'leaf'), if the legacy row were dropped by the migration (count/query would fail), if a step were skipped or re-run (captured order != [16,17]), or if either step lost its accretion exemption. Complements the two isolated single-hop tests (step16_migration.rs v15->v16, step17_migration.rs v16->v17) by proving the two hops COMPOSE off one legacy DB."
+  },
+  "verify": {
+    "new_test_red_green": "RED confirmed by mutating the $.status assertion (FAILED as expected), reverted; GREEN: s15_to_17_full_path_migrates_legacy_db_without_loss passes",
+    "cargo_test_p_fathomdb_schema_exit": 0,
+    "cargo_test_p_fathomdb_schema_summary": "all test binaries green incl. new test (1 passed), step16_migration (3), step17_migration (3), wire_constants (2)",
+    "cargo_clippy_workspace_all_targets_exit": 0,
+    "cargo_check_workspace_all_targets_exit": 0
+  },
+  "scope_confirmation": {
+    "test_code_only": true,
+    "engine_change": false,
+    "migration_logic_change": false,
+    "vector_embedder_change": false,
+    "manifests_bumped": false,
+    "maturin_or_pip_run_from_worktree": false,
+    "eu7_agent_long_run": false
+  },
+  "blockers": [],
+  "notes": "Test-only slice; migrate_with_event_sink driven with the full MIGRATIONS set from a v15 fixture (reusing the step16_migration.rs v15-standup pattern via a local open_db_at_v15 helper). Pre-commit cargo fmt hook reflowed the test on first commit attempt; cargo fmt -p fathomdb-schema applied and re-committed clean. No engine/vector/migration-logic change (D6 vectors untouched)."
+}

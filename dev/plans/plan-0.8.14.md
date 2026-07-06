@@ -145,7 +145,23 @@ tests). **Ships per the D8 Option-C HITL override** (recorded as override, NOT g
 `search_index_v2 MATCH`-recalled candidates) to honor the ADR's tunable-`b` requirement; field set +
 weighting per ADR. D6: no vector touch → eu7 at Slice 20 is a no-op.
 
-**Next — Slice 20 (eu7 re-clear + migration verify).** Per D6, Slices 5/10 touched NO vectors (pure
-additive schema + FTS), so the eu7 gate is a **documented no-op regression check**; also verify old→new
-(v15→v17) migration. Any eu7 breach = BLOCK→HITL. Then 25 (gpu-rerank merge) → 40 (release readiness).
-Off a fresh `origin/main` baseline.
+**Slice 25 (gpu-rerank merge) — CLOSED (2026-07-04).** `3c98b35b`+`813e525a`+`9187de26`+`e311aadf` on
+`origin/main`; codex §9 BLOCK→fix-1→PASS; opt-in `rerank-cuda`/`FATHOMDB_RERANK_DEVICE` (default OFF),
+default-CPU byte-path unchanged; MAIN-tree maturin build OK. See `runs/STATUS-0.8.14.md`.
+
+**Slice 20 (eu7 re-clear + v15→v17 migration verify) — CLOSED (2026-07-05, D6 no-op basis; HITL-ruled (A)).**
+Migration half landed `52f29fb9` (codex §9 **PASS**; v15→v17 full-path test, R-SUB-3). **eu7 half closed on the
+D6 no-op basis:** D6 (codex-verified @ Slice 5 — zero vec0 rewrite) conclusively excludes a 0.8.14 fidelity
+regression, and R-GATE is conditional on a re-embed ("≥ 0.90 *after any re-embed*"), which did not occur. An
+empirical eu7 confirmation run was executed on GPU (cuda:0) — a **mis-directed cross-backend** measurement,
+self-corrected into policy `649a8d45` (the eu7 fidelity gate MUST run **CPU same-backend** vs its 0.896 CPU
+baseline): it seeded healthily (116 docs/s; the prior seed-throughput timeout did not recur) and gave N=1000
+**PASS** (recall 0.950, ci[0.930,0.967]) but N=7667 **sub-floor** (0.833, ci_hi 0.864 < 0.90). Per HITL
+characterization the sub-floor number is a **cross-backend quant-flip + corpus-growth artifact** (the N=7667
+subset is drawn from an 18,472-doc pool now including `compmix`/`musique_dev`, added after the 0.896 baseline),
+**not** a 0.8.14 regression. Floor re-baseline for the grown corpus is tracked as **TC-5**. Evidence:
+`runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log`.
+
+**Next — Slice 40 (Verification + Release Readiness).** X1/X2/X3 cross-binding parity + R-SUB/R-F5 AC gate +
+eu7 gate (satisfied on the D6 no-op basis) + resolve-or-document the pre-existing agent-verify reds flagged at
+the Slice-25 closure. Off `origin/main` (`649a8d45`); codex §9; label-only.

@@ -1,0 +1,76 @@
+EU7_RUN_START 2026-07-05T20:11:07Z profile=release device=cuda:0(3090)
+nvcc: /usr/local/cuda/bin/nvcc
+   Compiling generic-array v0.14.7
+   Compiling crossbeam-epoch v0.9.18
+   Compiling which v7.0.3
+   Compiling serde v1.0.228
+   Compiling num_cpus v1.17.0
+   Compiling fs2 v0.4.3
+   Compiling serde_json v1.0.149
+   Compiling cudarc v0.19.7
+   Compiling crossbeam-deque v0.8.6
+   Compiling rayon-core v1.13.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling rayon v1.12.0
+   Compiling cudaforge v0.1.5
+   Compiling candle-kernels v0.10.2
+   Compiling candle-core v0.10.2
+   Compiling candle-nn v0.10.2
+   Compiling candle-transformers v0.10.2
+   Compiling fathomdb-embedder v0.8.9 (/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-eu7-20260705T195012Z/src/rust/crates/fathomdb-embedder)
+   Compiling fathomdb-engine v0.8.9 (/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-20-eu7-20260705T195012Z/src/rust/crates/fathomdb-engine)
+warning: methods `worker_count` and `live_count` are never used
+   --> src/rust/crates/fathomdb-engine/src/lib.rs:618:8
+    |
+594 | impl ReaderWorkerPool {
+    | --------------------- methods in this implementation
+...
+618 |     fn worker_count(&self) -> usize {
+    |        ^^^^^^^^^^^^
+...
+622 |     fn live_count(&self) -> usize {
+    |        ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `dispatch_stress_failure` is never used
+   --> src/rust/crates/fathomdb-engine/src/lifecycle.rs:173:19
+    |
+129 | impl SubscriberRegistry {
+    | ----------------------- method in this implementation
+...
+173 |     pub(crate) fn dispatch_stress_failure(&self, context: &StressFailureContext) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `fathomdb-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 55.70s
+     Running tests/eu7_real_corpus_ac.rs (target/release/deps/eu7_real_corpus_ac-8b3882b0274119ba)
+
+running 1 test
+EU7_SETUP real_docs=18472 queries=100 n_values=[1000, 7667] bootstrap=1000 latency_samples=1000 stress_per_thread=250
+EU7_PHASE n=1000 seed_start (from 0)
+EU7_PHASE n=1000 GT_EMBED_START n=1000
+EU7_PHASE n=1000 seed_done seed_ms=7350
+test eu7_real_corpus_ac_validation has been running for over 60 seconds
+EU7_PHASE n=1000 latency_done p50_ms=43 p99_ms=260
+EU7_RECALL_OLD exclude-after+setGT(fused) recall@10=0.3100 ci=[0.2580,0.3570] sigma=0.0246 target_in_top10=72/100
+EU7_RECALL_VECTOR exclude-before+dedupGT vector-stage recall@10=0.9500 ci=[0.9300,0.9670] sigma=0.0090 (AC-075 VERDICT SUT)
+EU7_RECALL_FUSED exclude-before+dedupGT fused-search recall@10=0.3400 ci=[0.2820,0.3930] sigma=0.0278 (report-only delta; NOT the floor SUT)
+EU7_RECALL_DELTA vector_stage=0.9500 fused_search=0.3400 delta=0.6100 (correction is load-bearing: the floor gates the vector stage, not the hybrid output)
+EU7_PHASE n=1000 recall_done vector_stage=0.9500 fused_search=0.3400
+EU7_PHASE n=1000 stress_done p99_ms=958
+EU7_NUMBERS n=1000 padded=false seed_ms=7350 p50_ms=43 p99_ms=260 recall_at_10=0.9500 recall_ci_lo=0.9300 recall_ci_hi=0.9670 sigma=0.0090 recall_fused_search=0.3400 recall_fused_delta=0.6100 stress_p99_ms=958 stress_bound_ms=2607 ac013=true ac019=true
+EU7_PHASE n=7667 seed_start (from 1000)
+EU7_SEED_PROGRESS seeded=4584/7667 elapsed_s=30 rate_docs_per_s=116.7
+EU7_PHASE n=7667 GT_EMBED_START n=6667
+EU7_GT_EMBED_PROGRESS embedded=3745/6667 rate_docs_per_s=124.8
+EU7_PHASE n=7667 seed_done seed_ms=42087
+EU7_PHASE n=7667 latency_done p50_ms=497 p99_ms=1370
+EU7_RECALL_OLD exclude-after+setGT(fused) recall@10=0.3030 ci=[0.2540,0.3480] sigma=0.0239 target_in_top10=70/100
+EU7_RECALL_VECTOR exclude-before+dedupGT vector-stage recall@10=0.8330 ci=[0.8010,0.8640] sigma=0.0165 (AC-075 VERDICT SUT)
+EU7_RECALL_FUSED exclude-before+dedupGT fused-search recall@10=0.3360 ci=[0.2790,0.3880] sigma=0.0274 (report-only delta; NOT the floor SUT)
+EU7_RECALL_DELTA vector_stage=0.8330 fused_search=0.3360 delta=0.4970 (correction is load-bearing: the floor gates the vector stage, not the hybrid output)
+EU7_PHASE n=7667 recall_done vector_stage=0.8330 fused_search=0.3360
