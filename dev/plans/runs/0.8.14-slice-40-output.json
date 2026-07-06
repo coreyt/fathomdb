@@ -1,0 +1,72 @@
+{
+  "phase": "0.8.14-slice-40",
+  "task": "Verification + Release Readiness (0.8.14, label-only): R-SUB/R-F5 AC gate, full-workspace gate, X1/X2/X3, agent-verify reds resolve-or-document",
+  "baseline_sha": "91c47ee0436642900f3cf88569047edd5af353d7",
+  "branch": "slice-40-20260706T013816Z",
+  "head_sha": "471418853500c1353292f6f3ab8da3c17ab5fa24",
+  "status": "COMPLETE",
+  "manifest_bump": false,
+  "commits": [
+    "f67ae9fe: fix(md-lint): scope markdownlint to maintained tracked markdown",
+    "55022df8: fix(eval): initialize cache_file so pyright is not possibly-unbound",
+    "a7a382e6: test(x1): assert the py-only module-level embedder-helper asymmetry",
+    "47141885: docs(doc-index): index 0.8.14 substrate/recall docs (X3)"
+  ],
+  "findings_addressed": [
+    "md-lint mis-scope (FIXED): markdownlint-cli2 no longer scans vendored/gitignored/cache trees or agent-emitted prompt files",
+    "pyright cache_file possibly-unbound at exp_cov1_sweep.py:377 (FIXED)",
+    "X1 silent blind spot: embed_batch_cls py-only asymmetry now ASSERTED (was blind — harness only introspects Engine/admin/read)"
+  ],
+  "blockers_encountered": [
+    {
+      "id": "release-yml-actionlint-fixture-red",
+      "description": "scripts/tests/test_actionlint_fixture.sh FAILS: 'publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p'. This is the only remaining agent-verify red (fails at step=test).",
+      "resolution": "DOCUMENTED, not fixed (release.yml is out of scope; task forbids editing workflow files). Provenance git-proven NOT 0.8.14-caused: HEAD==baseline (branch had no commits before Slice 40); `git log d7cad699..HEAD -- .github/workflows scripts/tests/test_actionlint_fixture.sh` is EMPTY; release.yml was last touched by 8bec917e 'Library Sweep #2' (the concurrent track). 0.8.14 is label-only (no publish) so a publish-structure red does not block readiness."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "Added dev/plans/prompts/** to the markdownlint ignore set (same class as the already-ignored dev/plans/runs/**; removed 21 of 30 pre-existing tracked-file lint errors)",
+    "Recorded the R-X-1 py-first embed_batch_cls deferral in the STATUS-0.8.14 board row and the DOC-INDEX plan/STATUS row"
+  ],
+  "agent_verify_result": "fail (step=test; sole failure = test-actionlint-fixture, the pre-existing/concurrent release.yml publish-structure red documented above; lint PASS, typecheck PASS, security PASS [0 violations, 0 blockers, 1 accepted userns env downgrade])",
+  "readiness": {
+    "A_ac_gate": {
+      "exp_s_substrate": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind", "r_sub_2_incremental_multi_index_write_is_deterministic", "d2_index_targets_differ_by_row_kind"]},
+      "step15_to_17_migration": {"result": "pass", "count": "1/1", "exit": 0},
+      "step16_migration": {"result": "pass", "count": "3/3", "exit": 0},
+      "step17_migration": {"result": "pass", "count": "3/3", "exit": 0},
+      "f5_bm25f": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_f5_1_field_weight_flips_ranking_vs_body_only_baseline", "r_f5_1_fix1_scorer_is_tokenization_faithful_to_fts5", "write_path_populates_search_index_v2_synchronously"]},
+      "r_f5_2": "no test gate — ships by HITL Option-C override (ADR-0.8.14 D8), not invented"
+    },
+    "B_full_workspace_gate": {
+      "cargo clippy --workspace --all-targets": 0,
+      "cargo check --workspace --all-targets": 0,
+      "cargo test --workspace": {"exit": 0, "note": "0 failed across all crates; some AGENT_LONG-gated tests ignored (not failures)"}
+    },
+    "C1_surface_parity": {
+      "python": {"result": "pass", "count": "16 passed", "runner": ".venv/bin/python -m pytest src/python/tests/test_surface.py -q"},
+      "typescript": {"result": "pass", "count": "131 pass / 0 fail", "runner": "cd src/ts && npm test (node --test dist/tests/*.test.js)", "note": "node_modules symlinked from the identical-lockfile main tree (no maturin/pip; napi build used the worktree's own target/); symlink + build artifacts removed after"}
+    },
+    "C2_no_new_verb_confirmation": "CONFIRMED non-vacuous: grep for row_kind / search_index_v2 / bm25f|BM25F across src (--include *.rs *.py *.ts *.pyi *.d.ts) hits ONLY fathomdb-engine + fathomdb-schema Rust crates+tests; ZERO hits in Py/TS SDK bindings or src/conformance/governed-surface-allowlist.json. EXP-S + F5 are engine-internal and add no SDK verbs.",
+    "C3_embed_batch_cls_disposition": "FIXED (minimal assertion) + DOCUMENTED. embed_batch_cls is a module-level embedder helper exposed PYTHON-ONLY (fathomdb-py/src/lib.rs, fathomdb.__all__, _fathomdb.pyi; ABSENT from fathomdb-napi/src/lib.rs and all of src/ts — grep rc=1). The parity harness introspects only Engine/admin/read so it was blind to this. Added test_module_level_embedder_helper_asymmetry_is_tracked (asserts the py-only set == {embed_batch_cls}). Engine.embed verb IS at Py<->TS parity (allowlist member 'embed'). TS embedBatchCls binding = tracked py-first deferral (out of scope). Recorded in STATUS-0.8.14 R-X-1 row + DOC-INDEX.",
+    "D_mkdocs": {"result": "pass", "exit": 0, "command": ".venv/bin/mkdocs build --strict", "note": "mkdocs 1.6.1 present on PATH; built in 0.18s; site/ artifact removed"},
+    "E_doc_index": "UPDATED: added rows for ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md, plan-0.8.14.md + STATUS-0.8.14.md (combined, carries R-X-1 deferral note), and dev/design/gpu-eval-activities-policy.md. Slice prompt/output NOT indexed (DOC-INDEX convention indexes design/plan/adr/status docs + selective handoffs, not per-slice output.json).",
+    "F_agent_verify_reds": {
+      "md_lint_misscope": "FIXED (commit f67ae9fe). Added ignores: **/node_modules/** , data/corpus-data/** , scripts/repo-prune/backups/** , dev/plans/prompts/**. Verified with main-tree markdownlint-cli2: planted offenders in all three dirs ignored; residual = 9 pre-existing MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (authored snapshot untouched by any 0.8.14 commit) — flagged as a separate Steward content decision, NOT a scope mis-config.",
+      "pyright_exp_cov1_sweep_377": "FIXED (commit 55022df8). cache_file initialized to None; agent-typecheck exits 0.",
+      "release_yml_actionlint_fixture": "DOCUMENTED (not fixed; workflow files out of scope). Pre-existing/concurrent Library Sweep #2 track; git-proven NOT 0.8.14-caused (d7cad699..HEAD touches no .github/workflows or actionlint fixtures/tests; release.yml last touched by 8bec917e). Label-only release => publish-structure red does not block readiness."
+    }
+  },
+  "fixed_vs_documented": {
+    "FIXED": ["md-lint scope (config)", "pyright cache_file guard", "X1 embed_batch_cls asymmetry assertion + board/DOC-INDEX docs", "DOC-INDEX 0.8.14 rows"],
+    "DOCUMENTED": ["release.yml publish-rust-t1-embedder-api actionlint-fixture red (pre-existing/concurrent Library Sweep #2, not 0.8.14-caused, non-blocking for label-only)", "residual 9 MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (Steward content decision)"]
+  },
+  "constraints_honored": {
+    "no_eu7_run": true,
+    "no_maturin_or_pip_from_worktree": true,
+    "no_workflow_file_edits": true,
+    "no_manifest_bump_tag_or_publish": true,
+    "used_existing_shared_venv": true
+  },
+  "next_step_for_orchestrator": "codex §9 review of these 4 commits, then cherry-pick f67ae9fe+55022df8+a7a382e6+47141885 onto main. 0.8.14 release readiness: all AC gates GREEN (R-SUB-1/2/3, R-F5-1), full-workspace clippy+check+test all exit 0, X1 py16/ts131 GREEN + no-new-verb confirmed + embed_batch_cls asymmetry now asserted, X2 mkdocs strict GREEN, X3 DOC-INDEX updated; eu7/R-GATE satisfied on the D6 no-op basis (Slice 20). ONE non-blocking red remains: the release.yml/actionlint-fixture publish-structure test (Library Sweep #2 track, not 0.8.14-caused, label-only => no publish). Steward follow-ups: (1) route the release.yml publish-structure red to the Library Sweep #2 track; (2) decide dev/research/personal-agent-database-market-2026-07-02.md — fix the 9 MD025/MD001 findings or reclassify (e.g. move under dev/archive or add to md-lint ignores as research substrate)."
+}

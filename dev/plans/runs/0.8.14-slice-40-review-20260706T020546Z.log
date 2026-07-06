@@ -1,0 +1,2306 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019f352c-a854-70d1-80f2-428e7fc68014
+--------
+user
+You are the §9 reviewer for FathomDB 0.8.14 Slice 40 (Verification + Release Readiness, label-only).
+
+Branch: slice-40-20260706T013816Z, HEAD 47141885. Baseline 91c47ee0.
+Review commits 91c47ee0..HEAD (4 commits): f67ae9fe (md-lint scope), 55022df8 (pyright cache_file),
+a7a382e6 (X1 asymmetry test), 47141885 (DOC-INDEX + STATUS R-X-1).
+
+Required reading:
+- dev/plans/runs/0.8.14-slice-40-output.json (the readiness claims)
+- The 4 commits' diffs
+- .markdownlint-cli2.jsonc, src/python/eval/exp_cov1_sweep.py, src/python/tests/test_surface.py,
+  dev/DOC-INDEX.md, dev/plans/runs/STATUS-0.8.14.md
+
+Focus (be adversarial on these):
+1. **X1 test non-vacuousness (LOAD-BEARING).** In src/python/tests/test_surface.py, the new
+   test_module_level_embedder_helper_asymmetry_is_tracked: does it ACTUALLY assert the py-only asymmetry
+   in a way that would CATCH drift (e.g. if embed_batch_cls were later added to TS, or a new py-only helper
+   appeared)? Or is it a hard-coded tautology that passes vacuously? Would it fail RED if the asserted set
+   were wrong? (memory: conformance-rewrite-vacuous-green-trap.)
+2. **md-lint scope change.** Does .markdownlint-cli2.jsonc now exclude ONLY vendored/gitignored/generated
+   trees (node_modules, data/corpus-data, repo-prune/backups, dev/plans/prompts), WITHOUT hiding maintained
+   repo markdown? Is adding dev/plans/prompts/** to ignores defensible (agent-emitted), or does it hide real
+   docs? Confirm it doesn't silence genuine lint debt beyond the stated intent.
+3. **pyright fix.** Is `cache_file` initialization at exp_cov1_sweep.py:377 a correct guard, or does it mask
+   a real unbound-use bug (i.e. could cache_file be USED as None downstream and break at runtime)?
+4. **Scope discipline.** Confirm NO Rust/Cargo/workflow/release.yml edits; no manifest bump. Confirm the
+   documented (not fixed) release.yml/actionlint red is legitimately out of scope + not 0.8.14-caused.
+5. **DOC-INDEX + STATUS R-X-1 edits accurate.**
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK` header; findings as `### N. [severity] title` + Refs
+(file:line) + 2-4 lines. Then "What passed on inspection" and "Reviewer process notes". Sandbox is
+read-only; do not write the verdict file — the main thread promotes it.
+
+warning: Codex's Linux sandbox uses bubblewrap and needs access to create user namespaces.
+codex
+Reviewing the slice as a code review task. I’m starting with `MEMORY.md` and the referenced feedback files, then I’ll inspect the required files and commit diffs against `91c47ee0..47141885`.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+codex
+I hit an environment quirk on the first shell call and `MEMORY.md` was not at repo root. I’m locating the repo-level memory and then I’ll read the exact review targets plus the four commit diffs.
+exec
+/bin/bash -c "rg --files -g 'MEMORY.md' -g 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 1 in 0ms:
+mcp: codex/list_mcp_resources started
+mcp: codex/list_mcp_resources (completed)
+mcp: codex_apps/github_search_installed_repositories_v2 started
+mcp: codex_apps/github_get_user_login started
+mcp: codex_apps/github_search_installed_repositories_v2 (completed)
+mcp: codex_apps/github_get_user_login (completed)
+codex
+I can inspect the branch through the GitHub app even though local shell access is blocked here. Next I’m pulling `MEMORY.md`, the specific feedback notes it references, and the four commit diffs from `coreyt/fathomdb`.
+mcp: codex_apps/github_fetch_file started
+mcp: codex_apps/github_compare_commits started
+mcp: codex_apps/github_fetch_commit started
+mcp: codex_apps/github_fetch_commit started
+mcp: codex_apps/github_fetch_commit started
+mcp: codex_apps/github_fetch_commit started
+mcp: codex_apps/github_fetch_file (failed)
+mcp: codex_apps/github_compare_commits (failed)
+mcp: codex_apps/github_fetch_commit (failed)
+mcp: codex_apps/github_fetch_commit (failed)
+mcp: codex_apps/github_fetch_commit (failed)
+mcp: codex_apps/github_fetch_commit (failed)
+codex
+The review branch isn’t on the remote, so the GitHub path won’t help for the exact diffs. I’m probing the local command runner with a few minimal variants to find one that can read the worktree without tripping the sandbox wrapper.
+exec
+/bin/sh -c /bin/pwd in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+/home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+
+exec
+/bin/sh -c ls in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+AGENTS.md     LICENSE	 dev	      mkdocs.yml	   rustfmt.toml  test
+CHANGELOG.md  README.md  docs	      package-lock.json    scripts	 tests
+Cargo.lock    data	 experiments  package.json	   src		 tools
+Cargo.toml    deny.toml  lychee.toml  rust-toolchain.toml  target
+
+exec
+/bin/sh -c "sed -n '1,240p' MEMORY.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+codex
+I found a working shell mode, but it’s brittle with some command forms. I’m switching to simpler one-shot reads so I can finish the required inspection reliably.
+exec
+/bin/sh -c 'ls MEMORY.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access 'MEMORY.md': No such file or directory
+
+exec
+/bin/sh -c 'ls ..' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+0.5.1-memex-build  0.8.14-slice-40-20260706T013816Z
+0.8.11.2	   tooling-mermaid-renderer
+
+exec
+/bin/sh -c 'ls -a' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+.			  .prettierrc.json  deny.toml		 rustfmt.toml
+..			  .ruff_cache	    dev			 scripts
+.claude			  AGENTS.md	    docs		 src
+.git			  CHANGELOG.md	    experiments		 target
+.github			  Cargo.lock	    lychee.toml		 test
+.gitignore		  Cargo.toml	    mkdocs.yml		 tests
+.markdownlint-cli2.jsonc  LICENSE	    package-lock.json	 tools
+.markdownlint.jsonc	  README.md	    package.json
+.prettierignore		  data		    rust-toolchain.toml
+
+exec
+/bin/sh -c 'ls .claude' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+agents	commands
+
+exec
+/bin/sh -c 'ls dev' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+DOC-INDEX.md			   plans
+README.md			   profiling
+acceptance-rowsets		   progress
+acceptance.md			   prototypes
+adr				   release
+agent-harness-bootstrap-prompt.md  releases
+agent-tools			   requirements.md
+agents				   research
+architecture.md			   roadmap
+archive				   scripts
+corpus-creation			   security-review.md
+corpus-survey			   steward
+deps				   templates
+design				   test-plan.md
+experiments-ledger.md		   todos-and-considerations-ledger-readme.md
+interface-inventory		   todos-and-considerations-ledger.jsonl
+interfaces			   todos-and-considerations-ledger.jsonl.seq
+learnings.md			   tools
+memex-note-on-0.6.0.md		   traceability.md
+needs.md			   turso-watch
+notes				   update-docs.md
+perf-history
+
+exec
+/bin/sh -c 'ls dev/feedback_*.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access 'dev/feedback_*.md': No such file or directory
+
+exec
+/bin/sh -c 'ls dev/design' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+0.5.1x0.8.11.2
+0.7.0-vector-quant-pack1.md
+0.7.1-EU-6-FIX-1-design.md
+0.7.1-EU-6-FIX-2-design.md
+0.8.0-agent-memory-fit.md
+0.8.0-slice-5-G1-design.md
+0.8.0-v05-feature-triage.md
+0.8.1-embedder-gpu-and-portability.md
+0.8.1-graph-experiment-plan.md
+0.8.1-slice-10-reranker-design.md
+0.8.11-analysis-G10-G4-searchfilt.md
+0.8.11-slice40-f8b-record-feedback-execution-note.md
+0.8.12-coverage-probe-and-value-test.md
+0.8.2-m1-multihop-harness.md
+0.8.3-ce-rerank-batch-release.md
+0.8.3-ce-rerank-precision-probe.md
+0.8.3-gap-decomposition-probe.md
+0.8.3-mem0-parity.md
+0.8.3-openai-batch-completion-howto.md
+0.8.3-rerank-accuracy-arm.md
+0.8.3-slice-10-design.md
+0.8.3-slice-15a-embedder-probe.md
+0.8.3-slice-15b-d2-proxy.md
+0.8.3-slice-5-design.md
+0.8.4-closing-graphrag-gap.md
+0.8.4-graphrag-sensemaking.md
+0.8.5-ce-rerank-slice-design.md
+0.8.8-explain-and-telemetry-adr.md
+0.8.8-telemetry-design.md
+0.8.x-parity-portfolio-strategy.md
+1-2M-chunk-scaling-DECISION-BRIEF.md
+1-2M-chunk-scaling-roadmap-divergence.md
+1-2M-chunk-scaling-vector-latency-roadmap.md
+README.md
+agent-memory-impl-strategy.md
+ann-index-vec0.md
+bindings.md
+embedder-decision.md
+embedder.md
+engine.md
+errors.md
+fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md
+fathomdb-memex-overall-roadmap
+free-threaded-python-value-lift-and-experiments.md
+gpu-device-allocation-policy.md
+gpu-eval-activities-policy.md
+initial-arch-planner-router-0.8.x.md
+ir-recall-measure.md
+lifecycle.md
+migrations.md
+op-store.md
+orchestration.md
+perf-gates.md
+perf-regression-detection.md
+planner-router-psd-0.8.x.md
+planner-router-psd-audit-notes.md
+planner-router-sequencing-0.8.x.md
+projections.md
+record-lifecycle-protocol
+recovery.md
+release.md
+retrieval.md
+scheduler.md
+slice-0-adr-plan.md
+slice-10-design.md
+slice-15-design.md
+slice-15-g0-design.md
+slice-20-design.md
+slice-20-g8-design.md
+slice-25-conformance-design.md
+slice-25-r2-design.md
+slice-27-fix1-operator-gate-design.md
+slice-27-fix2-engine-test-gate-design.md
+slice-27-rust-allowlist-design.md
+slice-30-design.md
+slice-31-identity-rescope-design.md
+slice-33-cursor-hardening-design.md
+slice-34-cli-op-store-readback-design.md
+slice-35-design.md
+slice-40-gate-restructure-and-ga.md
+slice-5-design.md
+slice-G0-design.md
+vector.md
+
+exec
+/bin/sh -c 'ls dev/agents' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+README.md  dep-auditor.md  learnings-harvester.md  prose-harvester.md
+
+exec
+/bin/sh -c 'ls dev/notes' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+0.6.0-design-docs-index.md
+0.7.0-engine-batch-vec0-collapse.md
+0.7.0-test-corpus-research.md
+0.7.0-vector-cost-research.md
+0.7.1-default-embedder-research.md
+0.7.2-EU-8-ir-recall-design.md
+0.8.0-fts5-tokenizer-latency-experiment.md
+0.8.12-cpu-embedder-defect-blocks-dense-eval.md
+0.8.2-bge-cls-mean-engine-bug.md
+0.8.x-corpus-source-expansion-research.md
+0.8.x-pmc-oa-reconsideration.md
+12-TX-parity-matrix.md
+IR-C-bge-small-literature-benchmark.md
+IR-C-embedder-options-research.md
+IR-C-fact-level-gold-labels-research.md
+README.md
+ac013-ac019-canonical-scale-policy.md
+context-research-agentic-best-practices.md
+elps-consult-3-provenance.md
+fathomdb-performance-critique-0.6.0-rewrite-WIP.md
+longmemeval-leaderboard-reference.md
+pcache2-followups.md
+perf-canonical-runner-2026-MM.md
+performance-whitepaper-notes.md
+phase9-handoff.md
+recall-eval-framework-assessment-20260607T174821Z.md
+
+exec
+/bin/sh -c 'ls .claude/commands' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+orch.md  orchestrate.md  steward.md
+
+exec
+/bin/sh -c 'ls .claude/agents' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+implementer.md	orchestrator.md  steward.md
+
+exec
+/bin/sh -c 'ls /home/coreyt' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+Desktop    Videos	       ngccli_arm64.zip  rtw89-restore.sh
+Documents  agent-smt.md        nltk_data	 script-tools
+Downloads  fathomdb-worktrees  nvidia		 snap
+Music	   go		       orin-recover	 vllm-env
+Pictures   memex	       projects		 wifi-signal.sh
+Public	   ngc-cli	       projects2
+Templates  ngc-cli.md5	       projects3
+
+exec
+/bin/sh -c 'ls /home/coreyt/.codex' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+auth.json	    logs_2.sqlite	   rules
+cache		    logs_2.sqlite-shm	   sessions
+config.toml	    logs_2.sqlite-wal	   shell_snapshots
+goals_1.sqlite	    memories		   skills
+goals_1.sqlite-shm  memories_1.sqlite	   state_5.sqlite
+goals_1.sqlite-wal  memories_1.sqlite-shm  state_5.sqlite-shm
+history.jsonl	    memories_1.sqlite-wal  state_5.sqlite-wal
+installation_id     models_cache.json	   tmp
+log		    plugins		   version.json
+
+exec
+/bin/sh -c 'ls /home/coreyt/projects' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+7thplacenw-client  dependency-scout	  local			one-0-one
+ado-mcp		   dicom-de-id		  lookout		ros2-igus-rebel
+airlock		   dicom-de-id-worktrees  margie		schooner
+armada		   fathomdb		  md-render		temp
+bosun		   fathomdb-worktrees	  memex			wake
+coral		   graph-ir		  memex-worktrees	windchill-llm
+cotudes		   graph-ir-tools	  mesh-seam-ripper	wopr-markii
+cpptudes	   libavoided-js	  monospace-design-tui
+
+exec
+/bin/sh -c 'git status --short' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+?? dev/plans/runs/0.8.14-slice-40-output.json
+
+exec
+/bin/sh -c 'ls dev/MEMORY.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access 'dev/MEMORY.md': No such file or directory
+
+exec
+/bin/sh -c 'ls .claude/MEMORY.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access '.claude/MEMORY.md': No such file or directory
+
+exec
+/bin/sh -c 'ls ../MEMORY.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access '../MEMORY.md': No such file or directory
+
+exec
+/bin/sh -c 'ls /home/coreyt/projects/fathomdb/MEMORY.md' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+ls: cannot access '/home/coreyt/projects/fathomdb/MEMORY.md': No such file or directory
+
+exec
+/bin/sh -c "sed -n '1,220p' .markdownlint-cli2.jsonc" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+// markdownlint-cli2 globs and ignore patterns.
+//
+// Scope: all actively-maintained markdown. Only build outputs, vendored
+// deps, tool caches, and the dev/archive historical record are excluded.
+{
+  "config": {
+    "extends": ".markdownlint.jsonc"
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    // Vendored / build outputs. `**/node_modules/**` catches node_modules at
+    // ANY depth (root, src/ts/, typescript/, …) so a stray vendored tree can
+    // never re-enter the lint scope.
+    "**/node_modules/**",
+    "node_modules/**",
+    "src/ts/node_modules/**",
+    "target/**",
+    "site/**",
+    "dist/**",
+    "**/dist/**",
+    ".venv/**",
+    "**/.venv/**",
+    ".cache/**",
+    ".wake/**",
+
+    // Gitignored eval corpus payloads (never committed; seeded locally for runs).
+    "data/corpus-data/**",
+
+    // repo-prune tool backups (staging dir for pruned files; not maintained prose).
+    "scripts/repo-prune/backups/**",
+
+    // Research substrate — bare URLs are intentional citations.
+    "dev/tmp/**",
+    "dev/tmp2/**",
+    "dev/tmp3/**",
+
+    // Memex-related scratch notes (gitignored, mirrors .gitignore dev/memex/).
+    "dev/memex/**",
+
+    // Archived / resolved artifacts — historical record, not actively maintained.
+    "dev/archive/**",
+
+    // Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
+    // not actively maintained, formatting drifts per agent.
+    "dev/plans/runs/**",
+
+    // Orchestrator/agent-emitted slice PROMPTS — same class as runs/** above
+    // (verbatim emitted, formatting drifts per agent), not maintained prose.
+    "dev/plans/prompts/**",
+
+    // Local-only agent config (gitignored, not part of repo).
+    ".claude/**",
+
+    // Public docs are gated by `mkdocs build --strict` already.
+    "docs/**"
+  ]
+}
+
+exec
+/bin/sh -c "sed -n '1,120p' .git/HEAD" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ exited 2 in 0ms:
+sed: can't read .git/HEAD: Not a directory
+
+exec
+/bin/sh -c "sed -n '1,40p' .git" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+gitdir: /home/coreyt/projects/fathomdb/.git/worktrees/0.8.14-slice-40-20260706T013816Z
+
+exec
+/bin/sh -c "sed -n '1,80p' /home/coreyt/projects/fathomdb/.git/worktrees/0.8.14-slice-40-20260706T013816Z/logs/HEAD" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+0000000000000000000000000000000000000000 91c47ee0436642900f3cf88569047edd5af353d7 Corey Thompson <coreyt@gmail.com> 1783301896 -0500
+91c47ee0436642900f3cf88569047edd5af353d7 91c47ee0436642900f3cf88569047edd5af353d7 Corey Thompson <coreyt@gmail.com> 1783301896 -0500	reset: moving to HEAD
+91c47ee0436642900f3cf88569047edd5af353d7 f67ae9fe33de836e96edb10b606ef9e42eb645e1 Corey Thompson <coreyt@gmail.com> 1783303274 -0500	commit: fix(md-lint): scope markdownlint to maintained tracked markdown
+f67ae9fe33de836e96edb10b606ef9e42eb645e1 55022df8cd6da01276cb2ad4c96fd1f0f9102960 Corey Thompson <coreyt@gmail.com> 1783303284 -0500	commit: fix(eval): initialize cache_file so pyright is not possibly-unbound
+55022df8cd6da01276cb2ad4c96fd1f0f9102960 a7a382e61f7db10db19e63c2b8360d5b2c981cd3 Corey Thompson <coreyt@gmail.com> 1783303300 -0500	commit: test(x1): assert the py-only module-level embedder-helper asymmetry
+a7a382e61f7db10db19e63c2b8360d5b2c981cd3 471418853500c1353292f6f3ab8da3c17ab5fa24 Corey Thompson <coreyt@gmail.com> 1783303326 -0500	commit: docs(doc-index): index 0.8.14 substrate/recall docs (X3)
+
+codex
+I have the exact four commit SHAs from the worktree’s reflog now. I’m reading the current target files and, where needed, I’ll fall back to the raw git object store to reconstruct the baseline versions since normal `git diff/show` is blocked in this sandbox.
+exec
+/bin/sh -c "sed -n '1,220p' src/python/tests/test_surface.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+"""Public surface assertions for the Python SDK.
+
+Binds AC-074 (REQ-053): governed SDK surface — a curated allowlist with
+cross-binding parity, a permanent recovery-name denylist, and the typed /
+no-raw-SQL boundary. (AC-057a's verb-count scope cap is superseded by AC-074;
+the surface is now governed-but-open, not capped.)
+
+Pins the governed-surface allowlist (membership, not a count), the
+engine-attached instrumentation methods, the keyword vs EngineConfig forms of
+`Engine.open`, and the soft-fallback record shape per `dev/interfaces/python.md`
+and `dev/design/bindings.md` § 1 / § 3.
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+from pathlib import Path
+
+from fathomdb import (
+    CounterSnapshot,
+    Engine,
+    EngineConfig,
+    SearchResult,
+    SoftFallback,
+    WriteReceipt,
+    admin,
+    read,
+)
+
+
+def _load_governed_surface_contract() -> dict[str, list[str]]:
+    """Load the *single shared* governed-surface contract (AC-074 / REQ-053).
+
+    The allowlist is declared exactly once, in
+    `src/conformance/governed-surface-allowlist.json`, and read by BOTH the
+    Python suite and the TypeScript suite (`src/ts/tests/surface.test.ts`).
+    There is no per-binding duplicate literal, so Python and TypeScript cannot
+    drift apart (cross-binding parity, P2). As of Slice 30 the four `read.*`
+    members are LIVE: they are introspected from the `read` namespace and enter
+    the live set, so the membership check (P1) is still subset (never equality)
+    but `read.*` is now actually asserted-live, not documented-only.
+    """
+    # tests/ -> python/ -> src/ -> src/conformance/...
+    here = Path(__file__).resolve()
+    contract_path = here.parents[2] / "conformance" / "governed-surface-allowlist.json"
+    with contract_path.open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_CONTRACT = _load_governed_surface_contract()
+GOVERNED_SURFACE_ALLOWLIST = frozenset(_CONTRACT["allowlist"])
+_CORE_LIVE_SURFACE = frozenset(_CONTRACT["core"])
+
+# Engine-attached instrumentation/control methods are observability, NOT
+# application commands — excluded from the allowlist (preserved from AC-057a's
+# measurement boundary).
+_INSTRUMENTATION = frozenset(
+    {
+        "drain",
+        "counters",
+        "set_profiling",
+        "set_slow_threshold_ms",
+        "attach_logging_subscriber",
+        # 0.8.8 Slice 15 (OPP-9) — opt-in telemetry capture is observability,
+        # NOT an application command (mirrors set_profiling/attach_subscriber).
+        "enable_telemetry",
+        "last_telemetry_query_id",
+        "record_feedback",
+    }
+)
+
+# Other public `Engine` members that are NOT application commands: the
+# open-time report accessor (Shape D, an observability accessor) and the
+# `path` / `config` data accessors. Subtracted from the introspected surface
+# alongside `_INSTRUMENTATION` so the live-command set is exactly the command
+# verbs. A NEW public command (e.g. `Engine.delete`) is NOT in this exclusion
+# set, so it would enter `live` and fail the subset check (P1).
+_ENGINE_NON_COMMAND = _INSTRUMENTATION | frozenset({"open_report", "path", "config"})
+
+# The permanent recovery-name denylist (the FIVE names). `doctor` is SDK-absent
+# by non-membership in the allowlist (it is a CLI verb), NOT by this denylist.
+_RECOVERY_DENYLIST = frozenset(_CONTRACT["recovery_denylist"])
+
+# Slice 30 — the four governed read verbs that go LIVE under the `read.*`
+# namespace. Asserted present-in-the-introspected-surface so a future REMOVAL of
+# any `read.*` verb fails this suite (not merely a documented-allowlist member).
+_NOW_LIVE_READ_VERBS = frozenset(
+    {"read.get", "read.get_many", "read.collection", "read.mutations"}
+)
+
+
+def _live_python_command_surface() -> set[str]:
+    """Introspect the *live* public application-command surface.
+
+    Built from the REAL public symbols of `Engine` (`dir(Engine)`, minus
+    dunder/private names), the introspected `admin` namespace, and — as of
+    Slice 30 — the introspected `read` namespace (`read.__all__`, mirroring the
+    `admin.__all__` loop), subtracting the instrumentation/control methods and
+    the other non-command members (`open_report`, `path`, `config`). The result
+    is honest: any public name the live binding actually exposes that is not a
+    known non-command verb enters the live set — so a hypothetical
+    `Engine.delete` or a stray `read.delete` would surface here and fail the
+    subset check (P1), rather than being silently ignored.
+    """
+    live: set[str] = set()
+    for name in dir(Engine):
+        if name.startswith("_"):
+            continue
+        if name in _ENGINE_NON_COMMAND:
+            continue
+        # `open` is the canonical `Engine.open`; the rest are bare verbs.
+        live.add("Engine.open" if name == "open" else name)
+    for verb in getattr(admin, "__all__", ()):
+        if callable(getattr(admin, verb, None)):
+            live.add(f"admin.{verb}")
+    # Slice 30 — the governed `read.*` namespace. `read.__all__` is the snake_case
+    # verb list (`get`, `get_many`, `collection`, `mutations`); each emits the
+    # dotted allowlist name verbatim. A stray non-allowlisted `read` verb (e.g.
+    # `read.delete`) enters `live` and fails the P1 subset check.
+    for verb in getattr(read, "__all__", ()):
+        if callable(getattr(read, verb, None)):
+            live.add(f"read.{verb}")
+    return live
+
+
+def test_public_surface_is_allowlist() -> None:
+    """P1 — every live public application command is a governed-allowlist member.
+
+    Membership (subset), NOT equality: the allowlist is a superset; the live
+    surface as of Slice 30 is the core five PLUS the four `read.*` verbs, all
+    members of the 9-name allowlist.
+    """
+    live = _live_python_command_surface()
+    extra = live - GOVERNED_SURFACE_ALLOWLIST
+    assert not extra, f"live command(s) outside the governed allowlist: {sorted(extra)}"
+    # The core write/lifecycle commands are live today.
+    assert _CORE_LIVE_SURFACE <= live
+
+
+def test_read_namespace_verbs_are_live() -> None:
+    """Slice 30 — the four `read.*` verbs are now LIVE (introspected), not just
+    documented-allowlist members. A future removal of any one fails here."""
+    live = _live_python_command_surface()
+    missing = _NOW_LIVE_READ_VERBS - live
+    assert not missing, f"read.* verbs that must be live are missing: {sorted(missing)}"
+    # And they remain governed-allowlist members.
+    assert _NOW_LIVE_READ_VERBS <= GOVERNED_SURFACE_ALLOWLIST
+
+
+def test_read_is_module_level_namespace() -> None:
+    assert inspect.ismodule(read)
+    for verb in ("get", "get_many", "collection", "mutations"):
+        assert callable(getattr(read, verb, None)), f"read.{verb} must be callable"
+
+
+def test_surface_parity_py_matches_ts() -> None:
+    """P2 — Python and TypeScript read ONE shared governed allowlist.
+
+    The allowlist is declared exactly once, in
+    `src/conformance/governed-surface-allowlist.json`. This suite loads it via
+    `_load_governed_surface_contract()`; `src/ts/tests/surface.test.ts` loads
+    the same file. Because there is a single declaration, Python and TypeScript
+    can no longer carry divergent copies — parity is structural, not a
+    byte-compared duplicate. This test pins that the suite genuinely consumes
+    the shared contract (the introspected live surface is a subset of it).
+    """
+    contract = _load_governed_surface_contract()
+    # The constant the suite enforces against IS the shared contract's allowlist.
+    assert GOVERNED_SURFACE_ALLOWLIST == frozenset(contract["allowlist"])
+    # The TypeScript suite reads this identical file; drift is impossible
+    # because there is no second copy to diverge from.
+    assert _live_python_command_surface() <= GOVERNED_SURFACE_ALLOWLIST
+
+
+def test_allowlist_excludes_recovery_denylist() -> None:
+    """P3 — allowlist ∩ {recover,restore,repair,fix,rebuild} = ∅.
+
+    Allowlist-level assertion only; the byte-frozen `test_no_recovery_surface.py`
+    remains the live enforcement of recovery unreachability.
+    """
+    assert GOVERNED_SURFACE_ALLOWLIST & _RECOVERY_DENYLIST == set()
+
+
+# X1 (0.8.14 Slice 40) — module-level embedder-helper parity ledger.
+#
+# The cross-binding surface harness above (`_live_python_command_surface` /
+# `src/ts/tests/surface.test.ts`) introspects only `Engine` / `admin` / `read`,
+# so it is BLIND to module-level functions. `embed_batch_cls` is a module-level
+# embedder helper exposed PYTHON-ONLY — it lives in `fathomdb-py/src/lib.rs`,
+# `fathomdb.__all__`, and the `_fathomdb.pyi` stub, and is intentionally ABSENT
+# from the TS binding (`fathomdb-napi/src/lib.rs`, `src/ts`). TS parity for it is
+# a TRACKED DEFERRAL (py-first). By contrast the `Engine.embed` *verb* IS at
+# Py↔TS parity (governed-allowlist member `embed`). This ledger makes the
+# asymmetry ASSERTED rather than a silent blind spot: a new/removed Python
+# module-level embedder helper must be reflected here in lockstep with a
+# conscious TS parity decision.
+_PY_ONLY_MODULE_EMBEDDER_HELPERS = frozenset({"embed_batch_cls"})
+
+
+def test_module_level_embedder_helper_asymmetry_is_tracked() -> None:
+    import fathomdb
+
+    # The tracked py-only helpers are present as module-level callables and
+    # exported in `__all__`.
+    for name in _PY_ONLY_MODULE_EMBEDDER_HELPERS:
+        assert callable(getattr(fathomdb, name, None)), (
+            f"expected Python-only module-level embedder helper {name!r}"
+        )
+        assert name in getattr(fathomdb, "__all__", ()), (
+            f"{name!r} must be exported in fathomdb.__all__"
+        )
+
+    # The module-level embedder-helper surface is EXACTLY the tracked py-only set.
+    # A new module-level `embed*` callable (e.g. a future `embed_batch`) would
+    # break this and force a conscious update here + a TS parity decision, rather
+    # than drifting in silently. (`Engine.embed` is a class method, not a module
+    # attribute, so it is correctly out of scope for this module-level check.)
+    live_module_embed_helpers = {
+        n
+
+exec
+/bin/sh -c "sed -n '1,220p' dev/DOC-INDEX.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+# DOC-INDEX — FathomDB documentation map (agentic cold-start)
+
+> **Purpose.** The single cold-start map an agent reads to find the right doc
+> *without scanning the tree*. One row per doc: **path → purpose → owning
+> slice/AC → last-touched**. Created at **Slice 0** of 0.8.0 (X3 cross-cutting
+> requirement).
+>
+> **THE RULE (binds every slice — stated here, on `runs/STATUS-0.8.0.md`, and in
+> `0.8.0-plan.md`):** **every slice updates `dev/DOC-INDEX.md` in its closing docs
+> commit.** When a slice adds, renames, or materially changes a doc, it adds/edits
+> that doc's row here (path · purpose · owning slice/AC · last-touched) in the same
+> commit that closes the slice (mirrors the §12.4 plan-as-state-machine discipline,
+> applied to docs). A stale or missing row is an X3 gap; Slice 40 **gate m** fails
+> the release if `dev/DOC-INDEX.md` is not the accurate map of the shipped surface.
+
+`last-touched` = date of the last git commit that modified the file (best-effort;
+refresh in the closing commit when you touch a doc).
+
+---
+
+## `dev/` — engineering docs (the build-time source of truth)
+
+| Path | Purpose | Owning slice / AC | Last-touched |
+|------|---------|-------------------|--------------|
+| `dev/README.md` | Entry map for the engineering docs tree | — | 2026-05-02 |
+| `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
+| `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
+| `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade measurement filled (Q5=BIND-RUST), tightened to method-level + feature-gated by 27 fix-1; 40/GA-2 mints AC-075 (recall verdict — real-embedder eu7 VECTOR STAGE, ◆ B-1) + AC-076 (ac_012 tier) | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
+| `dev/interfaces/rust.md` | Rust public interface (owner of the Rust-visible symbol spelling + the governed Rust-facade surface contract — AC-074 Q5=BIND-RUST positive-allowlist/parity/denylist-absence; 27 fix-1 adds the default-vs-`operator`-feature method-level boundary) | 27 (governed-surface contract); 27 fix-1 (operator feature gate); ground-truth engine type names | 2026-06-06 |
+| `dev/interfaces/cli.md` | CLI public interface (concrete flag spelling, root paths, exit-code classes, `--json` wrapping for the two-root operator CLI); 34 adds the `doctor dump-mutations` op-store read-back diagnostic ({0,70,71}; empty page = exit 0) + reconciles the operator-only prose | 34 (dump-mutations); owned-by ADR-0.6.0-cli-scope | 2026-06-06 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch); 31 re-scopes G0 active identity to `logical_id` alone | 2026-06-05 |
+| `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
+| `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
+| `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
+| `dev/learnings.md` | Cross-phase engineering learnings | per-slice as discovered | 2026-05-31 |
+| `dev/experiments-ledger.md` | **Distilled results of record for EVERY FathomDB experiment** (0.6.x→0.8.4 + untracked research/) — hypothesis · prereg · N/power · numbers+CI · verdict · $ cost · sources. The durable home so raw `runs/*` artifacts can be pruned; recover raw from git ≤ baseline `25541d88`. Built by the first ledger-prune | ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`) | 2026-06-26 |
+| `scripts/repo-prune/README.md` | **repo-prune mini-project** — doc + memory ledger-prune tooling (prompts, acceptance tests, clarity/verify scripts, measurements, memory snapshot backup). Run to re-prune or measure context clarity | repo-prune (tooling) | 2026-06-26 |
+| `dev/notes/0.8.0-fts5-tokenizer-latency-experiment.md` | **B2 FTS5 tokenizer latency experiment report** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral (the cost is O(N) corpus-scaling); recommends tiering AC-012 per the AC-072/073 precedent. Run artifacts under `dev/plans/runs/0.8.0-slice-6-*` | Slice 6 (B2) | 2026-06-07 |
+| `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md` | **Recall-eval framework assessment** — grounds the fidelity-vs-IR/agentic-relevance axis distinction; FathomDB's GA gate (eu7/AC-075) is fidelity (system health), the product-value gate (evidence/task recall) does not exist yet (eu8 is report-only, ceiling ≈0.571). Reframes the GA recall halt + seeds the IR-eval IR-1/IR-2 initiative | IR-eval (IR-1/IR-2 input) | 2026-06-07 |
+| `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md` | **Sequenced roadmap (+ ASCII visual map)** — lines up every unfinished task to GA + to the IR-eval gate: 3 tracks (GA / Corpus / IR-eval), gates, dependencies, the two critical paths. Answers B-1-vs-consensus, corpus-freeze timing, Slice-40 landing, IR-1 Ph2–4 completion | orchestrator (live) | 2026-06-07 |
+| `dev/plans/prompts/0.8.0-MASTER-ORCHESTRATOR-HANDOFF.md` | **Master orchestrator hand-off** — the whole campaign across 3 tracks: who spawns which session, in what sequence, with which work/gating prompt; roles (HITL spawns+decides, orch gates+reviews, owner runs corpus); per-gate decision packages | orchestrator (entry point) | 2026-06-07 |
+| `dev/plans/prompts/0.8.0-SESSION-SCAFFOLD-GENERATOR.md` · `dev/plans/prompts/scaffolds/` | **Session scaffold generator** — writes a starter (prereqs + output-to-orchestrator contract + work to-do + full-prompt pointer) per session (GA-1, Slice-40, COR-2, IR-A, IR-B/C/D, IR-E + the HITL gates) into `scaffolds/` | orchestrator (bootstrap) | 2026-06-07 |
+| `dev/plans/prompts/scaffolds/README.md` · `scaffolds/<order>-<id>.md` (1–9) | **Session scaffolds (generated)** — one starter per campaign session: prereqs (with verify lines) + output-to-orchestrator contract + work to-do (real checklist for unprompted GA-1/COR-2; launcher for prompted Slice-40/IR-A/IR-B-C-D/IR-E; decision-package stub for ◆ B-1 / GA sign-off / IR-gate). README = the ordered index + how-to-use | orchestrator (bootstrap); generated by `0.8.0-SESSION-SCAFFOLD-GENERATOR.md` | 2026-06-07 |
+| `dev/plans/prompts/0.8.x-IR-1-phase1-measure-consensus.md` | **IR-1 Phase 1 (runnable now)** — define the IR/agentic-relevance measure + Claude↔codex consensus → signed `dev/design/ir-recall-measure.md`. No AC/gold-set/experiments. No prerequisites | IR-eval (now) | 2026-06-07 |
+| `dev/plans/prompts/0.8.x-IR-1-recall-measure.md` · `0.8.x-IR-2-recall-gate.md` | **IR-eval IR-1 Phases 2–4 (DEFERRED) + IR-2** — Ph2–4 mint AC-077 + build eval infra + experiments (gated on: Phase 1 merged · Slice-40 merged · B-1 ruling · corpus frozen); IR-2 analyzes → HITL gate recommendation | IR-eval (post-0.8.0-GA / 0.8.1) | 2026-06-07 |
+| `dev/memex-note-on-0.6.0.md` | Memex consumer note on 0.6.0 | — | 2026-05-21 |
+| `dev/DOC-INDEX.md` | **This file** — agentic doc map | 0 creates; every slice updates | 2026-06-02 |
+
+## `dev/design/` — design notes + ADR-adjacent specs
+
+| Path | Purpose | Owning slice / AC | Last-touched |
+|------|---------|-------------------|--------------|
+| `dev/design/README.md` | Design-notes index | — | (tree) |
+| `dev/design/gpu-eval-activities-policy.md` | **Policy — repo MUST use the 3090s for eval/embed activities when there is room** (standing HITL mandate, 2026-07-05): any GPU-acceleratable repo-internal activity (eu7 fidelity harness seed/re-embed, corpus re-embeds, eval sweeps, CE reranking, embedding/rerank-heavy dev/CI) MUST run on `cuda:0`/`cuda:1`; CPU is permitted ONLY for two narrow compatibility probes, not as a general fallback. Grounds the 0.8.14 Slice-20 eu7 policy correction (the fidelity gate itself must run **CPU same-backend** vs its 0.896 baseline — a GPU eu7 run cross-backends it) | 0.8.14 Slice 20 (eu7 policy) | 2026-07-05 |
+| `dev/design/free-threaded-python-value-lift-and-experiments.md` | **Free-threaded Python (PEP 703) for FathomDB — value, lift, experiment plan** (`status: analysis/pre-decision`): raised out of the 0.8.8 pyo3 `0.24.1→0.29.0` bump (0.28+ defaults `#[pymodule]` to FT, forcing the `gil_used` declaration). 0.8.8 ships **`gil_used = true`** (safe); FT *support* (`gil_used = false`) is a separate later data-gated campaign. Key thesis: engine already runs GIL-free (every call `detach`/`allow_threads`; `ReaderWorkerPool` + real `Mutex`/`OnceLock`, `frozen` pyclasses) → **direct throughput value (V2) likely small; the real value (V1) = ecosystem non-poisoning** (a `gil_used=true` module re-enables the GIL **process-wide** on FT interpreters, killing FT for consumers Memex/Hermes/OpenClaw). Lift = MEDIUM, dominated by an FT CI lane + non-abi3 per-version `*t` wheel matrix, NOT engine code. Five experiments (EXP-FT-1 GIL-held fraction / -2 multi-thread scaling / -3 poisoning-cost / **-4 concurrency-safety HARD GATE** / -5 wheel feasibility) with objective data + eval criteria + a decision rule. **Appendix A — Survey** (web research): FathomDB ≈ HF `tokenizers` (Rust core + `RwLock` + GIL released → shipped FT cleanly), NOT polars (GIL-assumed bindings → crashes/deadlocks); benefits caveat confirmed (already-GIL-free native work gains ~0); pydantic-core's pre-fix segfault = why EXP-FT-4 is a hard gate. Cross-links: `dev/plans/plan-0.8.8.md` §1 (Migration approach) + R-SEC-1; scheduled as the **0.8.15** EXP-FT ladder (master §6 F-5; productization a 0.8.15-readout contingency → 0.8.16/0.8.17) | 0.8.15 ladder (pyo3 dep @ 0.8.8) | 2026-06-27 |
+| `dev/design/0.8.2-m1-multihop-harness.md` | **0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen 0-rev2 2026-06-19)** (`status: decision-ready`): MuSiQue-Ans 2/3/4-hop datasets, the 5 arms (bm25 / passage-dense / fused(RRF k=60) / fused+rerank / ppr-fusion), the **fixed comparator = `fused-RRF`** (re-frozen at 0-rev2 from the earlier `fused+rerank`, data-justified by the $0 bridge-vs-answer diagnostic; never per-hop max), **`MATERIAL_F1_LIFT = 0.04`** (re-frozen from 0.02/0.03), the **same-answerer** protocol, ablations + bias controls, the budget plan (flash-lite cheap-validate gate + answerer-call model), the dated frozen pre-registration block (primary endpoint = **paired pooled ≥3-hop ΔF1 vs fused-RRF** with bootstrap CI; per-hop = secondary feeding a **trend gate** that vetoes only on a significantly negative slope; EM CI-banded; unanswerable-set carries confident-wrong; decision rule frozen as `eval/m1_decision_rule.py::decide(material, em, trend, confident_wrong, power_ok)`; **whole-rule power-sim** plan) + the falsifiable Slice 5/15/20 AC list. **Applied at Slice 20 → verdict NO-GO.** Cross-links: `dev/plans/plan-0.8.2.md` §4, `dev/roadmap/0.8.2.md`, `runs/0.8.2-m1-FINDINGS.md`, `runs/0.8.2-slice-0-prereg-methodology-review.md` | 0.8.2 Slice 0-rev2 | 2026-06-19 |
+| `dev/design/0.8.3-mem0-parity.md` | **0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution)** (`status: decision-ready`): the **two-level measurement** (external `FathomDB − {Mem0, Graphiti/Zep, naive-RAG}` gate decides *done*; internal corrected-fused = attribution only), the **near-parity band ε = 0.05** + power-sized per-class N (paired **MDE ≤ ε**), the **$0-probe pass/fail** criteria (15a embedder-ceiling PRIMARY; 15b D2 content-at-scale proxy), the **eu7-break fork** + **surpass-option protocol**, the **ADJ-2 F5/tunable-`b` scope ruling** (conditional promotion to Slice 25, pending HITL ratification), the aggregate ≤ \$30 three-priced-run budget, and the falsifiable S5/10/15/20/25/30 AC list. Rule frozen as `eval/decision_rule_083.py::decide_083(external_per_class, eu7_recall, latency_ok)`. Cross-links: `dev/plans/plan-0.8.3.md` §4, `dev/roadmap/0.8.3.md` §1c, `runs/0.8.x-capability-status-report.md`, `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` | 0.8.3 Slice 0 | 2026-06-21 |
+| `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | **0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score** (codex-reviewed design memo + slice spec): promote the measured-provisional Mem0-parity config (α≈1.0, narrow pool — previously reachable only via the eval `ReblendRerankAdapter` `score=0` trick) into the native `rerank()` + `Engine.search` surfaces as an **opt-in knob**; default behavior (α=0.3, pool_n=rerank_depth) is **ranking-field byte-identical** (C6 factoid guard preserved). Adds `ce_score = sigmoid(ce_logit)` per candidate (None outside the reranked pool). Locked decisions D1–D6; α=1.0 opt-in for the agentic-answer/memory path. Does NOT change the default or wire any caller to α=1.0. Cross-links: `dev/design/0.8.1-slice-10-reranker-design.md` Decision 5, `runs/0.8.3-rerank-tune-FINDINGS.md` | 0.8.5 (EXP-0) | 2026-06-25 |
+| `dev/design/0.8.12-coverage-probe-and-value-test.md` | **0.8.12 Slice-0 pre-registration** (2026-07-01): §A the `$0` LLM-free coverage probe (Slice 5) that gates the Slice-10 priced extraction + folds in the OPP-6 EXP-COV academic/`$0` arms — frozen `personal.gold` slice (60 docs / 246 ent / 163 edges), arms C0-floor heuristic + current-ELPS-baseline scored `$0` from pre-computed `claude-haiku-4-5` outputs + C1-gliner(if installs) + ceiling re-measure; fact-coverage metric (entity/edge recall + precision guard, per doc-kind class) + GATE-OPEN/CLOSED decision rule; §B the consolidation lossiness-vs-latency value test (Slice 20) pre-registered SHIP-ON/STAY-OFF rule. C2/C3/C4 priced arms HELD (HITL go). Cross-links: Memex `OPP-6-experiments.md`, `ADR-0.8.12-consolidation-recency-provider.md`, `runs/EXP-COV-results.md` | 0.8.12 Slice 0 authors; Slice 5/20 execute | 2026-07-01 |
+| `dev/design/0.8.8-explain-and-telemetry-adr.md` · `dev/plans/runs/0.8.8-explanation-fieldset-ratification.md` | **0.8.8 EXP-OBS — `Explanation` payload + telemetry/gold schema ADR** (`status: RATIFIED 2026-06-27`, 6-owner negotiation): the opt-in `search_explained` → `SearchResult.explanation: Option<Explanation>` **sidecar** carrier (HITL-ratified; `SearchHit` byte-identical, zero-cost when off), the ratified field set (`Explanation`/`QueryTrace`/`PerHitExplain`, all `#[non_exhaustive]`; raw `fused_score` not normalized; `ce_active`/`recency`; 3 arms), §A.4 Q1–Q3 closed, and the Part B telemetry/gold amendments (id-contract = stable `logical_id`; no `source_id`; `+query_id`/`+id_space`; gold-row-shape align) carried into Slice 15/20. Landed: Slice 5 engine keystone + R-OBS-1 golden / R-OBS-2-COV tests. Cross-links: `dev/plans/plan-0.8.8.md`, `runs/STATUS-0.8.8.md`, `runs/0.8.8-carrier-decision-hitl-brief.md` | 0.8.8 Slice 0/5 | 2026-06-27 |
+| `dev/design/0.8.8-telemetry-design.md` | **0.8.8 Slice 15 — telemetry capture mechanism** (`status: PROPOSED`): the mechanism the §B schema didn't pin — opt-in `enable_telemetry` (off-by-default atomic fast-path → zero cost), the gated capture point in the search body, JSONL append-only sink (no egress), `last_telemetry_query_id()` surfacing (D1a), and the `record_feedback` API. Schema/id-contract/no-`source_id`/no-egress gates locked by the ratification artifact §B. Implemented in Slice 15 (engine + pyo3/napi/Py/TS); real-gold consumer = Slice 20 `eval/gold_capture.py` + `eval/frozen_candidate_scorer.py`. | 0.8.8 Slice 15/20 | 2026-06-28 |
+| `dev/design/slice-40-gate-restructure-and-ga.md` | **Slice 40 / GA-2 gate-restructure + GA verification design memo** — the ◆ B-1 correction (eu7 → ANN+ vector-stage fidelity via a test-only engine seam), AC-075/076 designs, CI split, release-doc plan, the falsifiable bar | 40/GA-2 | 2026-06-08 |
+| `dev/design/slice-0-adr-plan.md` | Slice 0 design memo — one-paragraph per ADR: BYO-LLM extraction protocol, IR-measure/eval design (R0+R2), G11 graph substrate migration | Slice 0 | 2026-06-12 |
+| `dev/design/ir-recall-measure.md` | **IR/agentic evidence-recall MEASURE (definition + methodology)** — Phase-1 Claude↔codex consensus-signed: primary measure = Evidence Recall@K (strict all-of + graded), unit = atomic evidence unit (gold-set schema additive over eu8 `ground_truth_queries`), K-ladder @5/@10(headline)/@20/@50, per-class structure, retrieval-mode matrix (4/5 runnable; +reranker stub, +graph 0.8.1), pooled qrels methodology + pinned-versioned-corpus PRINCIPLE. Numbers all TBD; eu7/AC-075 fidelity gate untouched. Input to IR-1 Ph2–4 + IR-2 | IR-eval (IR-1 Phase 1) | 2026-06-08 |
+| `dev/design/orchestration.md` | **Cross-release runbook** (release-independent METHOD) — roles (§1), state spine (§1.5), **preflight gate (§1.6)**, spawn/review/cherry-pick/fix-N (§2–9), worktree cleanup (§11), context discipline (§12), **failure & recovery catalog (§13)**, **reviewer topology & empirical resolution (§14)** | binds every slice | 2026-06-26 |
+| `dev/agent-harness-bootstrap-prompt.md` | **Method on-ramp (portable distillation)** — the plan(to-do)-vs-runbook(method) split, 7 core principles mapped to repo files, artifact set, witness-state + release-DoD skeletons, kickoff-HITL set, the operating loop, bootstrap order, hard-won notes; single-agent degraded mode | method on-ramp (cross-release) | 2026-06-26 |
+| `scripts/preflight.sh` | **Orchestrator preflight gate** — run before every worktree spawn: stale-base guard (HARD), dependency-CLOSED gate, mid-operation/disk checks; emits JSON, exits non-zero on HARD fail (`orchestration.md §1.6`) | binds every spawn | 2026-06-26 |
+| `dev/design/bindings.md` | SDK bindings spec; §1 governed SDK surface invariant (allowlist + parity, AC-074); §10 recovery-unreachability (BYTE-FROZEN) | 25 rewrote §1/§13/§14; §10 preserved | 2026-06-04 |
+| `dev/design/0.8.0-agent-memory-fit.md` | Agent-memory gap ladder (G0–G12) + §7 read-verb HITL questions | scope source for 0.8.0 | 2026-06-02 |
+| `dev/design/0.8.0-v05-feature-triage.md` | v0.5.x feature triage (ship/defer/drop) | scope source of truth | 2026-06-02 |
+| `dev/design/0.8.0-slice-5-G1-design.md` | Slice 5 design memo — structured `SearchHit` shape, per-branch score, dedup/order, step-11 tokenizer migration + re-tokenization, X1/X2/X3 plan | 5 (G1) | 2026-06-02 |
+| `dev/design/slice-10-design.md` | Slice 10 design memo — G9 RRF fusion (formula/tiebreak, dropped-knob note) + rerank seam, G10 `SearchFilter` + 3-way shape-sentinel, G12-recency flag, score-comparability note, test plan | 10 (G9/G10/G12-recency) | 2026-06-03 |
+| `dev/design/slice-15-g0-design.md` | Slice 15 design memo — G0 canonical-identity substrate: step-12 additive `ALTER` (exemption-marker rationale), tombstone-then-insert supersession + same-txn atomicity, NULL-on-legacy-rows rule, `row_cursors` semantics, op-store cascade, reserved Slice-16 shadow reconciliation, test plan (active-identity re-scoped to `logical_id` alone by Slice 31) | 15 (G0 keystone); amended by 31 | 2026-06-05 |
+| `dev/design/slice-15-design.md` | Slice 15 design memo — G11 edge enrichment + BYO-LLM ingest + edge projectability: step-14 exact migration SQL (5 additive nullable cols on `canonical_edges` + `search_index_edges` FTS5), `fathomdb.extract.v1` NDJSON-over-stdio protocol (hello→ready→extract→result/error), invalidate-not-accumulate SQL keyed on `(from_id,to_id,kind)`, `derive_logical_id` sha256 formula, FTS Option B (`search_index_edges`), `SoftFallbackBranch::TextEdge`, Python/TS SDK API shapes, `ExtractorError` hierarchy, fixture harness | 15 (G11 BYO-LLM keystone) | 2026-06-13 |
+| `dev/design/slice-31-identity-rescope-design.md` | Slice 31 design memo — re-scope active-row uniqueness to `logical_id` ALONE on both tables (Decision 5, HITL-SIGNED 2026-06-05): fixes the kind-change identity-fork, resolves Slice 30 read.get [P2], re-keys G8; amend step-12 in place (no SCHEMA_VERSION bump) | 31 (G0 re-scope) | 2026-06-05 |
+| `dev/design/slice-20-g8-design.md` | Slice 20 design memo — G8 dangling-edge flag-and-count: cross-row post-row-insert EXISTS pass inside `commit_batch`'s open tx (why not `validate_write`), logical_id-alone probe + step-12 partial-index hit argument, legacy-NULL endpoint consequence, flag-and-count default (strict-mode deferred to band 22), test plan | 20 (G8/F10) | 2026-06-03 |
+| `dev/design/slice-20-design.md` | Slice 20 design memo — G5/G6 graph traversal: BFS CTE SQL (ADR conflict resolution: t_invalid filter), visited-string cycle guard, direction parameterization (Outgoing/Incoming/Both), G6 compose (G1+G5), dedup strategy (search-score wins), hard cap 50 + depth >3 rejection, Python/TS API shapes, EXPLAIN gate strategy | 20 (0.8.1 G5/G6) | 2026-06-13 |
+| `dev/design/slice-25-conformance-design.md` | Slice 25 design memo — governed-surface conformance rewrite: the allowlist (core 5 + `read.*` 4), the four falsifiable properties (P1 allowlist-membership · P2 cross-binding parity · P3 recovery-denylist empty-intersection · P4 no-raw-SQL), the honest-green plan for not-yet-live `read.*`, touch-points | 25 (AC-057a→AC-074) | 2026-06-04 |
+| `dev/design/slice-27-rust-allowlist-design.md` | Slice 27 design memo — Rust-facade governed-surface allowlist/parity pin (Q5=BIND-RUST): the curated 17-type governed allowlist vs the 20 operator-seam re-exports (CLI-only), the three properties (P1 positive-allowlist · P2 parity-in-intent-not-identity · P3 recovery-denylist-absence exact-match), AC-074 Rust measurement, mirrors the best-effort `no_recovery_surface.rs` style (no Rust runtime introspection) | 27 (AC-074 Rust half) | 2026-06-05 |
+| `dev/design/slice-27-fix1-operator-gate-design.md` | Slice 27 fix-1 design memo — feature-gate the operator/recovery seam off the default Rust facade (HITL Option B, codex [P1]): the `operator` cargo feature, the 12 gated methods + 6 private helpers + 20 re-exports, cfg-gated `compile_fail` method-absence doctests (feature-unification-safe), AC-050c green via scoping `tests/` out of the public-API scanner | 27 fix-1 (AC-074 method-level + AC-050c) | 2026-06-06 |
+| `dev/design/slice-27-fix2-engine-test-gate-design.md` | Slice 27 fix-2 design memo — restore `cargo test -p fathomdb-engine` (default) under the operator gate (codex [P1]): 13 pure-operator engine test targets get `[[test]] required-features=["operator"]`; the mixed `pr2b_mean_recompute.rs` keeps its non-operator carve-out test via per-fn `#[cfg]`; `corpus_graph` is not-operator (doc-mention only); no method un-gated | 27 fix-2 (engine default test build) | 2026-06-06 |
+| `dev/design/slice-30-design.md` | **0.8.1 Slice 30 design memo** — R3 graph-retrieval arm: ELPS conformance gate (8 golden cases, orphaned==0), fuse_three_arms() 3-arm RRF (RRF_WEIGHT_GRAPH=1.0), use_graph_arm bool flag threaded through Engine::search_reranked → search_inner → ReaderRequest::Search → read_search_in_tx, BFS over canonical_edges (depth≤3, cap 50, temporal filter t_invalid IS NULL OR t_invalid > now, synthesized-node penalty kind='unknown'→score*=0.3), SoftFallbackBranch::GraphArm, SDK parity (Python use_graph_arm=False + TypeScript useGraphArm?), t_valid/t_invalid in SDK write path; SCHEMA GATE: temporal_fallback col deferred to SCHEMA_VERSION 15 | 30 (R3) | 2026-06-13 |
+| `dev/design/slice-33-cursor-hardening-design.md` | Slice 33 design memo — op-store `read.collection`/`read.mutations` cursor + limit hardening under a genuine ~1M-row log: EXPLAIN before (id-PK walk) / after (step-13 `(collection_name,id)` index, index-driven, no SCAN / no temp B-tree), clamp/cursor edge cases (`limit==0`, over-MAX clamp, negative/past-end `after_id`, unknown collection), accretion guard (index-only ⇒ no marker), test plan; no SDK signature change | 33 (G3/F4-READ) | 2026-06-05 |
+| `dev/design/slice-34-cli-op-store-readback-design.md` | Slice 34 design memo — CLI-only `doctor dump-mutations` op-store read-back: the scope call (diagnostic dump over the mutation log, NOT the rejected Option-B application query surface; ADR amendment), verb shape + default `--limit` 1000, `--json` envelope (`verb`/`collection`/`after_id`/`limit`/`count`/`rows`/`next_after_id`), exit map {0,70,71} (empty page = 0), inline-serialize rationale (no `OpStoreRow` re-export ⇒ facade type-set unchanged), RED test plan; no engine/schema/SDK change | 34 (F4-READ / reserved-gap-34) | 2026-06-06 |
+| `dev/design/slice-35-design.md` | Slice 35 design memo — G4 filter grammar: `read.list(kind, predicates?, limit)` with closed `Predicate` enum (`JsonPathEq`/`JsonPathCompare{Gt/Gte/Lt/Lte}`) and `ScalarValue{Text/Integer/Bool}`; path allowlist `[$.status, $.priority, $.tags, $.kind, $.created_at]`; injection-safe parameterized `json_extract` SQL; AND-composition; `InvalidFilterError` for non-allowlisted paths; `SearchFilter` unchanged; Python + TypeScript SDK wrappers; deferred F9/F5 ADR framing | 35 (G4 filter grammar) | 2026-06-13 |
+| `dev/design/slice-5-design.md` | **0.8.1 Slice 5 design memo** — R0 CDF runner architecture: 4 arm implementations (bm25_text direct FTS5 / dense vector-stage-only / rrf_fused production RRF / oracle_union), found@K aggregation, K=1000 fanout override rationale, CE latency benchmark approach, ADR §2.3 schema alignment, latency-field list-vs-object discrepancy note | 0.8.1 Slice 5 | 2026-06-13 |
+| `dev/design/slice-25-r2-design.md` | **0.8.1 Slice 25 design memo** — R2 end-to-end parity eval harness: the identical-answerer constraint (adapters expose only `retrieve()`, the harness owns the one `Answerer` + prompt template), query-set decision (frozen FathomDB gold = pinnable default; LongMemEval = source of the 4 memory classes, unavailable here), per-class scoring + abstention, replay-determinism, scoring function, and the environment-constraint findings (no answerer LLM / no local Mem0 backend / no memory-class gold in the frozen corpus → retrieval-only data-limited run) | 0.8.1 Slice 25 (R2) | 2026-06-14 |
+| `dev/plans/prompts/0.8.1-graph-track-HANDOFF-2.md` | **0.8.1 graph-track hand-off #2 (CURRENT entry point)** — continues HANDOFF.md: the phase goal + FathomDB constraints, the tracking-file map, current state (main `0da87ab`: base e2e via airlock Batch API landed + TDD; readers re-anchored to `gemini-flash-lite`/`gemini-3.1-pro`; batch resolved = `gpt-5.4-nano` openai only), and the **outstanding-work backlog #5.1–5.7** (C1 seeding slice = budget-critical, C3 G1 AC, G0 Phase-2 + schema-gate, scale base test + judge, fused, scorer-unification, HITL decisions) + operating rules/traps | 0.8.1 graph track (entry point) | 2026-06-14 |
+| `dev/plans/prompts/0.8.1-graph-track-HANDOFF.md` | **0.8.1 graph-track orchestrator continuation hand-off (#1, deep reference)** — instructs an adversarial review of the plan in FathomDB context, captures current state (G0 Phase 1 done + design-reviewed → seeding is the real blocker), the prior session's planning MISSES (tracer-first, stale-worktree trap, self-waiter death, vacuous-green tests, stats), open HITL decisions, the gated workflow, and references to **all** 0.8.1 graph files | 0.8.1 graph track (deep ref) | 2026-06-14 |
+| `dev/plans/runs/0.8.1-g0-design-review.md` | **G0 Phase-1 adversarial design review** — BLOCK-1 (graph-arm seeding, not `source_id`, is the recall blocker → separate seeding slice), BLOCK-2 (traversed-edge source, not `LIMIT 1`), BLOCK-3 (measurement-accuracy tests), + CONCERNs (TS/conformance, `session_id_of`, PRE-1 product gap, node-stamping). Supersedes the G0 memo's E0a framing | 0.8.1 G0 | 2026-06-14 |
+| `dev/design/slice-G0-design.md` · `dev/plans/runs/0.8.1-g0-capability-map-*.json` | **G0 Phase-1 design memo + capability map** — tracer T1–T4 results (dense via test-hook only; readers usable minus gpt-5/gemini-3-pro; embedding 4.7 sess/min); E0a/E0b/PRE-1/2/3 approach + step-16 SQL (memo partly superseded by the design review above) | 0.8.1 G0 | 2026-06-14 |
+| `dev/design/0.8.1-graph-experiment-plan.md` | **0.8.1 graph/IR experiment plan (LME)** — prioritized, gated program to find the most valuable design choices: two-metrics/two-loops (LLM-free Recall@K iteration vs airlock end-to-end gates), match-mechanism-to-benchmark (community tier parked), fix-only-what-blinds-the-instrument sequencing; the **smallest-but-valid math** (per-question-haystack difficulty knob, paired-McNemar MDE table, KU=78 ceiling, ~11–17 pp per-class noise floor — **adversarially reviewed**); phases P0/P1 with deps/parallelism/gates/ACs; **cost forecast** (extraction $12–146, gate runs $7–16); G2 = HITL graph go/no-go on held-out questions | 0.8.1 graph track | 2026-06-14 |
+| `dev/notes/elps-consult-3-provenance.md` | **ELPS consult #3 — `ready.provenance` (PRE-3) ANSWERED** (2026-06-14) — Memex confirms an additive OPTIONAL `ready.provenance` object is within `fathomdb.extract.v1` at `schema_version 1` (no bump/re-ratify; `ready.model` stays the authoritative cache-key; round-2 additive precedent). Also: **production ELPS does NOT truncate** (E0b is eval-harness-only); **E4 grounding-as-input-field WOULD warrant re-ratify**. Source: memex `dev/elps/FATHOMDB-CONSULT-3.md` | 0.8.1 graph track / G0 PRE-3 | 2026-06-14 |
+| `dev/notes/longmemeval-leaderboard-reference.md` | **LongMemEval external leaderboard + reading notes** (original LME, NOT LME-V2) — reported end-to-end scores (Exabase 96.4, Mastra 94.87, Mem0 94.8, …) with the **reader-LLM-is-a-huge-variable** caveat (Mastra 84→95 by reader swap), the hard classes (temporal/knowledge-update/multi-session), and what the 90% target implies for our gate | 0.8.1 graph track (reference) | 2026-06-14 |
+| `dev/design/fathomdb-graph-vs-mem0-zep-and-longmemeval-diagnosis.md` | **Graph implementation vs Mem0/GraphRAG/Zep + LongMemEval diagnosis** — code-grounded account of FathomDB's graph (SQLite property-graph, fact-on-EDGE, bi-temporal-aware, BYO-LLM); how Mem0 (vector+overwrite, graph removed), Microsoft GraphRAG (corpus sensemaking, Leiden community summaries, no temporal), and Zep/Graphiti (bi-temporal KG, 3 tiers, invalidate-not-delete) differ; the answer to "muddled node/edge?" (No — three separable causes: read-path `SearchHit.id=write_cursor` makes the graph arm invisible to the scorer; ~1% extraction coverage; base dense+FTS trails BM25 on conversational data) + a structural-completeness gap vs Zep; and an ordered experiment program (E0–E5) | 0.8.1 graph track (input to experiments) | 2026-06-14 |
+| `dev/design/0.8.1-slice-10-reranker-design.md` | **0.8.1 Slice 10 design memo — IMPLEMENTED 0.8.2 Slice E1** — R1 CPU cross-encoder reranker: crate structure (no new crate; CE inference type lives in `fathomdb-embedder/candle_reranker.rs`, engine seam forwards the feature), pinned `cross-encoder/ms-marco-TinyBERT-L2-v2` rev `81d1926f` (2-layer BERT, hidden 128, sha256-pinned), Candle BERT+pooler+classifier `score`, lazy `OnceLock` load + ureq/sha256 cache loader, `rerank_fused` 3-arg signature, score-blend (α=0.3 × sigmoid(CE) + 0.7 × RRF-norm), soft-fallback (depth=0 or model absent → identity; feature-off = ML-free + no-network), determinism, `RECENCY_WEIGHT` fix (→0.002), `default-reranker` Cargo feature. **Slice E2** exposes the SAME CE over an ARBITRARY passage list (not engine-bound): engine helper `rerank_passages(query, Vec<(id,body,score)>, depth) -> Vec<(id,score)>` + governed pyo3 SDK fn `fathomdb.rerank(query, passages, rerank_depth)` (input `{"id","body","score"}` → reranked `[{"id","score"}]`; depth0/empty = byte-identical identity; allowlisted `rerank`) — unblocks Slice 5's `fused_rerank` comparator reranking its own fused(bm25+dense) pool | 0.8.1 Slice 10 (R1) → impl 0.8.2 Slice E1; standalone API Slice E2 | 2026-06-18 |
+| `dev/design/agent-memory-impl-strategy.md` | Slice shapes / impl strategy for the gap ladder | 5/10/15/20/30 shapes | 2026-06-02 |
+| `dev/design/retrieval.md` | Retrieval pipeline design (vector + FTS5, fusion) | 5/10 | (tree) |
+| `dev/design/projections.md` | Projection model | 5/15 | (tree) |
+| `dev/design/migrations.md` | Migration model (forward-only, accretion guard; index-only additive steps need no marker) | 5/15/33 (schema 10→11→13) | 2026-06-05 |
+| `dev/design/vector.md`, `ann-index-vec0.md` | Vector store / vec0 ANN index | 10/15 | (tree) |
+| `dev/design/op-store.md` | Operational mutation store (incl. the Slice 30 `read.collection`/`read.mutations` read-back contract: reader-pool DEFERRED-tx, `ORDER BY id`, mandatory limit ≤ ~1M cap, after-id cursor; Slice 33 index-driven pagination via the step-13 `(collection_name,id)` index + clamp/cursor edge contract; Slice 34 notes the CLI `doctor dump-mutations` operator diagnostic over the same seam) | 30/33/34 (`read.collection`/`read.mutations`) | 2026-06-06 |
+| `dev/design/engine.md`, `lifecycle.md`, `scheduler.md`, `recovery.md`, `errors.md`, `embedder.md`, `embedder-decision.md`, `release.md`, `perf-gates.md`, `perf-regression-detection.md`, `0.7.0-vector-quant-pack1.md`, `0.7.1-EU-6-FIX-*.md` | Engine/lifecycle/scheduler/recovery/error/embedder/release/perf design notes | per-slice as touched | (tree) |
+
+## `dev/adr/` — architecture decision records
+
+| Path | Purpose | Owning slice / AC | Last-touched |
+|------|---------|-------------------|--------------|
+| `dev/adr/README.md`, `ADR-0.6.0-decision-index.md` | ADR index | — | (tree) |
+| `dev/adr/ADR-0.8.0-supersede-five-verb-surface-cap.md` | Supersede AC-057a's five-verb cap → governed surface; **status: SIGNED/accepted** (Q1–Q5 = A1/B1/amend/confirm/**BIND-RUST**; Rust pin → Slice 27) | advanced 0.b; signed 2026-06-03; executed at 25; gates 30 | 2026-06-03 |
+| `dev/adr/ADR-0.8.0-canonical-identity-substrate.md` | NEW (0.a) — canonical identity substrate (logical_id+superseded_at, Option 2A); Decision 5 (Slice 31) re-scopes active uniqueness to `logical_id` alone | authored at 0.a; gates 15; amended by 31 | 2026-06-05 |
+| `dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md` | Retrieval+identity ADR (Q1 table-stakes, Q3 RRF compat); gates Slice 10; Q2/Q4 amended by Slice 31 (`logical_id`-alone identity; edges DO supersede) | gates 10; amended by 31 | 2026-06-05 |
+| `dev/adr/ADR-0.8.0-embedder-identity-change-workflow.md` | Embedder-identity change workflow | — | (tree) |
+| `dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md` | NEW (Slice 32) — intended graph model: one **ontology-neutral** binary property-graph substrate first-classing **corpus (GraphRAG)** + **memory (Graphiti fact-on-edge)** ontologies; opaque-id addressing for 0.8.0 (hybrid future ADR); edge-enrichment/projectability/edge-inclusive-G7 **reserved-additive**; fact-on-node escape hatch. **status: ACCEPTED — H1 (neutral-both) + H3 (reserve edge-enrichment additive) HITL-SIGNED 2026-06-05**; H2/H4/H5/H6 deferred 0.8.x; **no 0.8.0 substrate change**. Foundation for the Slice 35 graph ADRs | Slice 32 (signed) | 2026-06-05 |
+| `dev/adr/ADR-0.8.0-graph-traversal-scope.md` | NEW (Slice 35) — F1/G5/G6 graph-traversal SCOPE: SDK depth ceiling ≤3 + engine hard cap 50 (v0.5.6 `MAX_TRAVERSAL_DEPTH` port); 0.8.x walk filters `superseded_at IS NULL` only (edge valid-time G11 deferred); `canonical_edges(from_id)/(to_id)` already folded into G0 → **no new migration** (gap 36 not triggered); `G6 = G1+G4+G5+G9`, build G6 before standalone G5; v0.5.6 `WITH RECURSIVE` BFS re-targeted to `from_id`/`to_id`. **status: ACCEPTED as 0.8.1 roadmap direction** (HITL-signed 2026-06-06; revisable when 0.8.1 graph work opens — recorded in `dev/roadmap/0.8.1.md`; graph work retargeted 0.8.x→0.8.1). No 0.8.0 code/schema change | **35** produces; gates 0.8.1 Slice H (G5/G6) | 2026-06-06 |
+| `dev/adr/ADR-0.8.0-filter-grammar.md` | NEW (Slice 35) — G4/F3 CLOSED typed filter enum `{JsonPathEq, JsonPathCompare{Gt/Gte/Lt/Lte}, ScalarValue{Text/Integer/Bool}}` on `read.list(kind, filter?, limit)`; EXCLUDES the fused predicates + all `*_unchecked` builders; coordinates with G10 `SearchFilter` (shared value vocab; **full unification = NEEDED future work, reserved-gap 37, affects both G4+G10**); compiles to parameterized `json_extract` over allowlisted paths (no DSL/no raw SQL). **status: ACCEPTED** (HITL-signed 2026-06-06). No 0.8.0 code/schema change | **35** produces; gates 0.8.x G4 | 2026-06-06 |
+| `dev/roadmap/0.8.1.md` | NEW (Slice 35 close) — 0.8.1 roadmap direction (REVISABLE): the HITL-signed graph-traversal-scope decisions recorded as roadmap direction not a frozen G-gap contract (graph work retargeted 0.8.x→0.8.1); + the G4↔G10 unification (gap 37, needed) + the parked F9/F5 Slice 46 pointer | **35** close; informs 0.8.1 | 2026-06-06 |
+| `dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md` | F9 confidence vs G12 importance — **DEFERRED 0.8.2+**; prerequisites: R2 eval (Slice 25), ≥100 confidence-bearing edges, HITL sign-off on formula; written as framing ADR by Slice 35 | **35** produces; gates 0.8.2+ | 2026-06-13 |
+| `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` | F5 fielded FTS / BM25F column model — **DEFERRED 0.8.2+**; prerequisites: R0 CDF (Slice 5), R2 eval (Slice 25), HITL sign-off; written as framing ADR by Slice 35 | **35** produces; gates 0.8.2+ | 2026-06-13 |
+| `dev/adr/ADR-0.8.1-byo-llm-extraction-protocol.md` | BYO-LLM Extraction Provider Protocol ADR — `fathomdb.extract.v1` engine-side contract (spawn+handshake+ingest surface+invalidate-not-accumulate; footprint: no FathomDB network call); 5 additive pins from Memex ELPS consult 2026-06-12; pending HITL sign-off (Slice 0 gate) | Slice 0; Slice 15 implements | 2026-06-12 |
+| `dev/adr/ADR-0.8.6-generalized-provider-protocol.md` | **OPP-8 generalized typed-task provider protocol** (ACCEPTED, HITL-signed 2026-06-26): generalizes `fathomdb.extract.v1` → `fathomdb.provider.v1` — same transport/handshake/error model, adds a `task` discriminator (extract-only default, back-compat) + `supported_tasks` negotiation + `provider_session` refactor; **Option A** = land the transport seam now, payloads deferred to 0.8.12; proven by **byte-identical** ELPS golden output; closes the I-5 (#8→#7/#6) rework edge | 0.8.6 Slice 0 gates; **Slice 5 implements** | 2026-06-26 |
+| `dev/adr/ADR-0.8.6-governed-verb-coupling-hygiene.md` | **OPP-5 governed-verb coupling hygiene** (ACCEPTED, HITL-signed 2026-06-26): governed read surface (read.get/get_many/collection/mutations/list, graph.neighbors/search_expand) is already complete+LIVE in Py+TS; Slice 10 = **parity-harden** (cross-binding harness for ALL read verbs, not just `read.list`; consumer-boundary conformance assertion; reconcile interface docs), **not** build a new surface | 0.8.6 Slice 0 gates; **Slice 10 implements** | 2026-06-26 |
+| `dev/adr/ADR-0.8.1-ir-measure-eval-design.md` | IR-measure/Eval Design ADR — R0 CDF spec (found@K for K∈{50..1000}, per-class, all arms; gates Slice 10 rerank depth) + R2 end-to-end parity eval design (identical-answerer, local Mem0-OSS baseline, per-class; Decision ①: AC-077 gate, R2 north-star, C3: gates R3 go/no-go); pending HITL sign-off | Slice 0; Slice 5/25 implements | 2026-06-12 |
+| `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` | G11 edge enrichment ADR — activates H3 reservation; step-14 SCHEMA_VERSION 13→14 (additive body/t_valid/t_invalid/confidence/extractor_model_id columns on canonical_edges); edge projectability capability (FTS+vector; exact mechanism = Slice 15 impl detail); invalidate-not-accumulate contract; pending HITL sign-off | Slice 0; Slice 15 implements | 2026-06-12 |
+| `dev/adr/ADR-0.8.12-consolidation-recency-provider.md` | **OPP-2 consolidation/recency provider** (PROPOSED, 0.8.12 Slice-0): a new typed task `fathomdb.consolidate.v1` on the ONE OPP-8 transport (ADR-0.8.6) — additive `ProviderTask::Consolidate` + payload (candidate fact-cluster → keep/supersede/merge/invalidate verdict) + `EngineError::Consolidator` leaf; **no second transport** (closes I-5); post-retrieval recency/supersession metadata NOT a destructive content-rewrite (0.8.3 blind-merge caution); caller-side BYO-LLM, default-OFF until the Slice-20 value test clears | 0.8.12 Slice 0 gates; **Slice 15 implements**, Slice 20 value-gates | 2026-07-01 |
+| `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` | **EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)** (RATIFIED, HITL-signed 2026-07-03): realizes the `ADR-0.8.1-deferred-f5` deferral + discharges ledger **TC-1** (OPP-12 projection-registry forward-compat). D1 separate `row_kind` column (leaf/coverage/graph); D2 per-kind index-target dispatch; D3 flush-then-byte-compare determinism check; D4 ONE coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S, 16→17 F5); D5 discharges TC-1; **D6 eu7 no-op unless vec0 rewritten**; D7 KILL paths; **D8 = Option C** (F5 ships by conscious HITL override, NOT gate-clearance). Cross-links: `dev/plans/plan-0.8.14.md`, `runs/STATUS-0.8.14.md` | 0.8.14 Slice 0 gates; Slices 5/10 implement | 2026-07-03 |
+| `dev/adr/ADR-0.6.0-cli-scope.md` | CLI scope = two-root operator surface (`recover` lossy / `doctor` bit-preserving); Option B (`search`/`get`/`list` application query) rejected. Amended 2026-06-06 (Slice 34): scopes the 0.8.0 `doctor dump-mutations` op-store read-back IN under `doctor` as a `dump-*` diagnostic (NOT Option B; application query verbs still require a re-open) | 34 (amendment); reference | 2026-06-06 |
+| `dev/adr/ADR-0.7.0-vector-binary-quant.md` | Binary-quant + f32 rerank recall floor (0.90). **40/GA-2 amendment (AC-075, ◆ B-1):** floor now GATED on the real-embedder eu7 measured on the pre-fusion VECTOR STAGE (ANN-quantization fidelity in isolation), NOT the RRF-fused `search()`; synthetic `ac_013b` demoted to report-only; no numeric change; cites GA-1 | 40/GA-2 amends § 2 pt 4 + status | 2026-06-08 |
+| `dev/adr/ADR-0.6.0-*.md`, `ADR-0.7.0-*.md`, `ADR-0.7.1-*.md` | Prior-release ADRs (typed-write boundary, CLI scope, error taxonomy, etc.) | reference (e.g. typed-write boundary preserved by 25) | (tree) |
+
+## `dev/plans/` — plans + live state
+
+| Path | Purpose | Owning slice / AC | Last-touched |
+|------|---------|-------------------|--------------|
+| `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` | **0.8.x program schedule-of-record (THE master).** Single source of truth for the 0.8.6→0.8.18 line: findings F-1…F-11, interlocks, allocation, by-when. The Program Steward keeps it continuously true to the repo. Defines the Steward↔Release-Orchestrator role split (work is orchestrated per-release, commissioned by the Steward). | Program Steward (keeps true) | 2026-06-29 |
+| `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` | **Program Steward hand-off — role/mandate (canonical).** Opening prompt for a program-scope Steward session: keep the master true, reconcile drift, place + sequence cross-cutting work, **commission** execution (do not implement, never hand-drive a release ladder), be the truthful propose-first HITL interface, trust-git-not-narration. | Program Steward (entry point) | 2026-06-27 |
+| `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` | **Release Orchestrator hand-off — sibling role (NOT the Steward).** Per-release entry point (`/goal complete 0.8.z`) that gates one release's slice ladder; commissioned by the Steward. Renamed 2026-06-27 from `0.8.x-PROGRAM-STEWARD-HANDOFF.md`; generic mechanics valid, release-specific body partly 0.8.3/0.8.4-stale (pending a release-agnostic refresh). | Release Orchestrator (per-release) | 2026-06-27 |
+| `dev/plans/0.8.0-implementation.md` | **Authoritative slice contracts** (objective/subagents/lifecycle/success per slice 0–40); Slice 15/20 active-identity language re-scoped to `logical_id` alone by Slice 31 | the plan itself | 2026-06-05 |
+| `dev/plans/0.8.0-plan.md` | **Mod-5 ladder + reserved-gap policy + Immediate-Next-Slice pointer + Slice-0/5/10 CLOSED blocks** | 0 authors; every slice advances the pointer | 2026-06-03 |
+| `dev/plans/runs/STATUS-0.8.0.md` | **Live state board** (nine §12.5 sections + X1/X2/X3 column + witness + harness contract) | 0 authors; every slice updates at close | 2026-06-03 |
+| `dev/plans/prompts/PLAN-TEMPLATE.md` | **Per-release plan authoring template** — fill-in `plan-<release>.md` skeleton (mod-5 ladder, R-* acceptance, X1/X2/X3 DoD, override/duplication register, behavior-change register, decisions/open-Q) + the plan-authoring checklist that defeats plan-level under-spec | authors every plan-<release>.md | 2026-06-26 |
+| `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` | **Per-slice prompt template** — self-contained implementer prompt (worktree/stray-edit discipline, RED→GREEN→X1/X2/X3, closure output.json) + the anti-under-spec authoring checklist | authors every slice prompt | 2026-06-03 |
+| `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
+| `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
+| `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | **Slice 6 (B2) FTS5 tokenizer latency experiment** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral; recommends tiering AC-012 (10k binding) per the AC-072/073 precedent | Slice 6 (B2) | 2026-06-07 |
+| `dev/plans/0.8.1-plan.md` | **0.8.1 mod-5 ladder** + reserved-gap policy + X1/X2/X3 DoD + Immediate-Next-Slice pointer (graph traversal + temporal-edge graph retrieval + reranker + eval + filter; R0–R4) | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
+| `dev/plans/0.8.1-implementation.md` | **0.8.1 authoritative slice contracts** (Slices 0–40; critical path + parallelization; footprint invariant; BYO-LLM ingest) | the plan itself | 2026-06-12 |
+| `dev/plans/runs/STATUS-0.8.1.md` | **0.8.1 live state board** (§12.5 sections + X1/X2/X3 column) | 0.8.1 Slice 0 authors; every slice updates at close | 2026-06-12 |
+| `dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` | **0.8.1 orchestrator hand-off** — roles, ladder spawn order, the per-slice decision loop (TDD + codex §9 + board-in-one-commit), HITL gates, footprint invariant | orchestrator | 2026-06-12 |
+| `dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md` | **BYO-LLM extraction-harness brief** for Memex — the `fathomdb.extract.v1` Extraction Provider Protocol FathomDB proxies graph construction to (0.8.1 Slice 15 implements) | 0.8.1 Slice 15 | 2026-06-12 |
+| `dev/roadmap/0.8.2.md` | **0.8.2 roadmap** — M1 multi-hop answer-accuracy harness; **✅ CLOSED, verdict NO-GO (HITL-signed 2026-06-19):** ppr_fusion ΔF1 −0.0405 vs fused-RRF (n=300), CI upper < +0.04; passage_dense strongest. Redirect 0.8.3 → index-key enrichment | 0.8.2 | 2026-06-19 |
+| `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan (as-built)** — M1 slice contracts (0 design+pre-register → 4 corpus → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict; +E1/E2 reranker engine slices); OUTCOME banner = NO-GO | 0.8.2 | 2026-06-19 |
+| `dev/plans/plan-0.8.7.md` + `dev/plans/runs/STATUS-0.8.7.md` | **0.8.7 GPU embedder (OOB) — plan + live status (COMPLETE).** `FATHOMDB_EMBED_DEVICE` device seam (cpu/cuda/cuda:N/metal) + `embed-cuda`/`embed-metal` feature chain ALREADY LANDED (`02297cb3`, in the 0.8.5 baseline); 0.8.7 added the pure `parse_device_request` + 7 env-grammar unit tests (R-GPU-1), validated `embed-cuda` on an RTX 3090, and recorded the measured speedup (per-doc **15.6×**, batched **93×**, best-path bulk **~46×**; CPU↔CUDA 1-bit codes identical, 0/6144 sign-bit diff). Default CPU build byte-identical (R-GPU-2). Harness = `fathomdb-embedder/examples/gpu_speedup.rs` | 0.8.7 Slices 0/5/10/40 | 2026-06-26 |
+| `dev/plans/plan-0.8.9.md` + `dev/plans/runs/STATUS-0.8.9.md` | **0.8.9 CI-integrity micro (OOB) — plan + live status.** **$0** CI/test-harness work (no library query-path change). Slice 0 audit found most of the plan's premises **already fixed** at 0.8.0 Slice 40+ → the deliverable is an **honest gate map** (`dev/design/perf-gates.md`), not a fabricated pass. Landed: **R-PG** ac_013b off the synthetic floor (report-only `RECALL_FIDELITY_INFO`; asserting verdict lives in `eu7_real_corpus_ac.rs`) + `recall_gate_predicate.rs` RED-confirmed catch; **R-037** AC-037 `netns-deny-egress` durably on the `ubuntu-22.04` `security` job + `check-netns-deny-egress-catch.sh` (offline catch + live-netns demonstrate, proven IN CI); **R-050c** `fetch-depth: 0` so removal-detect resolves `v0.6.1`; **R-DEP** npm overrides (markdown-it 14.2.0 / js-yaml 4.2.0, `npm audit`=0) + dependabot.yml npm `/` coverage; **R-BOOT** bootstrap un-mask (httpx `# type: ignore` + drop `--quiet`/`>/dev/null` masking). Two **external** blockers (NOT 0.8.9 scope): repo-wide markdownlint debt (`verify`/lint) escalated to steward, and the 0.8.8 pyo3 macOS/Windows link error. | 0.8.9 Slices 0/1/5/10/15/40 | 2026-06-28 |
+| `dev/plans/plan-0.8.14.md` + `dev/plans/runs/STATUS-0.8.14.md` | **0.8.14 Substrate & recall (the schema-migration release) — plan + live orchestrator board.** Spine EXP-S (#2 kind-tagged coexisting-index substrate) → F5 (#16 fielded BM25F), one coordinated `SCHEMA_VERSION` 15→17 migration; #17 filter-grammar struck (shipped 0.8.11). **Label-only** (manifests stay 0.8.9). Ladder `0 → 5 → 10 → 20 → 25 → 40` (15 void). Slices 5/10/20/25 CLOSED; Slice 40 = release readiness. **R-X-1 py-first deferral (intentional):** EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are engine-internal → NO new Py/TS SDK verbs (non-vacuously green). The module-level embedder helper `embed_batch_cls` is **Python-only** (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS); TS parity is a tracked deferral (the `Engine.embed` verb IS at Py↔TS parity). eu7 (R-GATE) satisfied on the D6 no-op basis; grown-corpus floor re-baseline → TC-5 | 0.8.14 Slice 0 authors; every slice updates | 2026-07-05 |
+| `dev/plans/plan-0.8.12.md` + `dev/plans/runs/STATUS-0.8.12.md` | **0.8.12 Memory-quality plumbing — plan + live orchestrator board.** Mod-5 ladder `0 → 5 → 10 → 15 → 20 → 40`, tracks coverage (5→10) ∥ consolidation (15→20). #6 ELPS coverage (eval-gated by OPP-6 EXP-COV) + #7 consolidation/recency provider (OPP-2 on the OPP-8 seam). **Label-only** (manifests stay 0.8.9). Slice 5 folds in the OPP-6 EXP-COV academic/`$0` arms (HITL 2026-07-01). STATUS carries the frozen DoD (R-COV-1..3 / R-CON-1..3 / R-X-1), the `$` ledger, per-slice X + codex §9 columns. Renamed from `plan-0.8.10.md` at the 2026-07-01 forward renumber | 0.8.12 Slice 0 authors; every slice updates | 2026-07-01 |
+| `dev/plans/runs/EXP-COV-results.md` | **OPP-6 EXP-COV Phase-A `$0` results (discharges the parked OPP-6 eval).** Per-class fact-coverage table (entity/edge recall + precision guard, per doc-kind) for C0-floor heuristic + current-ELPS-baseline (scored `$0` from pre-computed `claude-haiku-4-5` outputs) [+ C1-gliner if installed] on the frozen `personal.gold` slice; per-corpus relevance-ceiling re-measure; the GATE-OPEN/CLOSED recommendation for the Slice-10 priced run (HARD-STOP #1). No raw licensed payloads. Pre-registration: `dev/design/0.8.12-coverage-probe-and-value-test.md` §A | 0.8.12 Slice 5 | 2026-07-01 |
+| `dev/plans/runs/0.8.2-m1-corpus-manifest.json` | **M1 corpus manifest artifact** — pinned `musique_hash` (sha256), per-hop counts (2/3/4), answerable vs unanswerable counts, materialized-corpus path, acquire command; consumed by Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
+| `src/python/eval/m1_graph_build.py` (+ `tests/test_m1_graph_build.py`) | **M1 per-question graph build** (Slice 10) — reproduces the Slice-4 corpus, reuses `graph_arm_recall.extract_graph` (Qwen3.6-27B Airlock vLLM batch, $0) to extract entities + fact-edges per MuSiQue **paragraph** (incremental cache), loads into a FathomDB engine with **per-question-namespaced** entities + **BODY-LESS** edges (dodges the `edge_fact` vector-projection scale bug), then **coverage-verifies** read-only (`verify_embed_db` pattern — every sampled question ≥1 entity node, tables populated, no edge body). PPR arm (Slice 15) seeds from this graph + the per-paragraph cache | 0.8.2 Slice 10 | 2026-06-17 |
+| `dev/plans/runs/0.8.2-m1-graph-coverage-n300.json` | **M1 graph coverage artifact** (Slice 10) — pinned to `musique_hash 3cff37fd…` + extractor model id; per-question entity/edge counts, coverage = questions-with-non-empty-graph / total, median entities & edges, body-less-edge confirmation, `priced_api_calls=0` over the n=299 (300-requested, hop-stratified) answerable sample | 0.8.2 Slice 10 | 2026-06-17 |
+| `src/python/eval/m1_baseline.py` (+ `tests/test_m1_baseline.py`) | **M1 strong-baseline harness — THE BAR** (Slice 5 + fix-2): `load_musique` (asserts pinned `musique_hash`), the 4 baseline arms (in-harness BM25 + in-harness **bge-small-en-v1.5** passage-dense (pure-numpy forward, **CLS-pooled** — the correct pooling) + RRF **k=60** fused + the **LIVE engine CE** via `fathomdb.rerank` = fixed comparator), SQuAD EM/F1 stratified per-hop(2/3/4) + pooled ≥3-hop + unanswerable confident-answer rate, **identical-answerer** protocol (one answerer, same top-K across arms; optional concurrent answer phase), per-question paired records for the Slice-20 bootstrap; `retrieval_recall()` returns both `recall_at_k` (per-passage) + `all_bridges_present_at_k` (multi-hop-correct binary, added fix-2). Dense/fused arms are in-harness (justified: canonical `.so` has `default-reranker` but not `test-hooks` + no production vector-kind surface). **Slice-15 prerequisite:** PPR arm MUST use the same CLS space | 0.8.2 Slice 5 + fix-2 | 2026-06-18 |
+| `dev/notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md` | **Env finding (0.8.12 EXP-COV-1)** — the installed CPU embedder `.so` is pathologically slow/stalling (~13s/700-tok doc; stalls @1500% CPU) and has no `embed-cuda`/GPU build ⇒ CE-rerank + dense arms UNRUNNABLE ⇒ the coverage→outcome sufficiency read can't test the "above ~0.571 ceiling" question. Blocks ANY dense/CE eval in this env; fix = a GPU (`embed-cuda`) build; pairs with 0.8.14 GPU-rerank. Priced extraction + `$0` gold-scored census were unaffected | 0.8.12 EXP-COV-1; ties to 0.8.14 | 2026-07-02 |
+| `dev/notes/0.8.2-bge-cls-mean-engine-bug.md` | **Engine bug note — CandleBgeEmbedder defaults to Mean pooling for a CLS model** (flagged Slice 5 fix-2, codex §9 [P2]): `CandleBgeEmbedder::new()` sets `pooling: Pooling::Mean`; `bge-small-en-v1.5` is a CLS-pooled model (`1_Pooling/config.json pooling_mode_cls_token:true`); BGE docs warn Mean causes "a significant decrease in performance". Fix NOT done here (changing the default touches stored-vector compat → embedder-identity change workflow → separate slice). The harness **CLS** pooling is CORRECT; stored engine vectors are in the wrong space. Includes Slice-15 prerequisite note | 0.8.2 Slice 5 fix-2 | 2026-06-18 |
+| `src/python/eval/m1_power_sim.py` (+ `tests/test_m1_power_sim.py`) | **M1 whole-`decide()`-rule power simulation** (Slice 5, design §4 amendment 4): maps measured baseline F1/EM variance + effect shape (flat-positive+0.03 / monotonic / inverted-U) → **P(GO)** through the **real frozen `decide()`** (imported, not redefined); `required_n()` sizes the pooled ≥3-hop cell for **P(GO) ≥ 0.8 under flat-positive**. Paired-difference noise modelled from baseline variance via `rho` (logged); deterministic (seeded) | 0.8.2 Slice 5 | 2026-06-18 |
+| `src/python/eval/m1_baseline_run.py` | **M1 baseline runner** (Slice 5) — `cheap`/`pilot` CLI: hop-stratified deterministic sample (pooled ≥3-hop answerable cell = power-sim variance source), `CostTrackingAnswerer` (captures proxy token usage → \$ = tokens × documented price table), runs the power sim from the measured variance, **HARD CAP N≤100** enforced, **never runs the full priced pass** (gated on HITL \$ go-ahead). Concurrent answerer phase (`--workers`) makes a 100-Q reasoning-model pilot tractable | 0.8.2 Slice 5 | 2026-06-18 |
+| `dev/plans/runs/0.8.2-slice-10-graph-build.md` | **Slice 10 note** — what the graph build delivers (per-question, body-less edges), the granularity choice (per-paragraph for HippoRAG passage→entity membership), the sampling rule (hop-stratified, deterministic, `log()`-ed), the asset-divergence finding (asset already body-less at 92ed09e), and the Slice-15 hand-off (engine + cache paths, both gitignored) | 0.8.2 Slice 10 | 2026-06-17 |
+| `src/python/eval/m1_ppr.py` (+ `tests/test_m1_ppr.py`) | **M1 PPR-fusion arm — the graph mechanism KEYSTONE** (Slice 15, $0): HippoRAG-style lexically-seeded Personalized-PageRank over the Slice-10 preserved per-question graph (`build_entity_graph` — nodes = entities ∪ relation endpoints, **body-less** edges, stable sorted order; membership = the `entities` list only so seeds/IDF/df are deterministic), **lexical IDF-weighted seeds** from the BM25 top-`K` (`seed_weights`, `log((N+1)/(df+0.5))` suppresses hub drift — NOT self-seeding), ONE deterministic `networkx.pagerank` pass (`α=0.85`, fixed `max_iter=1000`/`tol=1e-6` sized for near-bipartite oscillation), passages ranked by summed PPR mass then **RRF-fused with BM25 at k=60** (`retrieve_ppr` → `ppr_fusion`). Parallel arm — leaves `m1_baseline.retrieve_arms` byte-identical; `add_ppr_fusion_arm` is the Slice-20 hook. Lexical+graph only → CLS-pooling constraint N/A. Tests pin AC-M1-15a..d (determinism / restart→1.0 collapse / IDF-live / fusion no-regression) on provable constructed fixtures | 0.8.2 Slice 15 | 2026-06-19 |
+| `dev/plans/runs/0.8.2-slice-15-ppr-arm.md` | **Slice 15 note** — what the PPR-fusion arm delivers (the 4 mechanism steps), the membership decision (`entities`-list only; relation-only phrase nodes relay mass but don't score), the convergence sizing (near-bipartite oscillation → `max_iter`/`tol`; the silent-fallback trap caught RED→GREEN), the integration seam (parallel arm; `add_ppr_fusion_arm`), the 4 load-bearing properties, and the Slice-20 hand-off (config: `α=0.85`, k=60, seed_k=10, IDF scheme) | 0.8.2 Slice 15 | 2026-06-19 |
+| `dev/roadmap/0.8.3.md` | **0.8.3 roadmap** — **RE-ANCHORED 2026-06-21 on the Mem0-parity RESOLUTION** (§1c): the gate is `FathomDB − {Mem0, Graphiti/Zep}` near-parity-or-better on agentic memory; D1 dense/embedder + D2 fielded enrichment are *means*. §1a/§1b carry ADJ-1..10; §1c adds two-level measurement, D0-as-spine, embedder-primary, surpass-before-signoff | 0.8.3 | 2026-06-21 |
+| `dev/plans/plan-0.8.3.md` | **0.8.3 slice plan** — resolution-driven ladder `0 → 5 D0a (gold re-pin + Mem0-OSS stand-up) → 10 D0b (measure the Mem0 gap = target) → 15 $0 triage (15a embedder PRIMARY ∥ 15b D2 proxy) → 20 D1 build (CLS + chosen embedder, one re-embed/eu7, PRF if gap) → 25 D2 build (conditional) → 30 verdict + surpass package`. Two-level measurement; stop-at-parity; eu7 ≥0.90 + latency hard gates | 0.8.3 | 2026-06-21 |
+| `dev/roadmap/0.8.4.md` | **0.8.4 roadmap** — **RE-ANCHORED 2026-06-21 on the GraphRAG-parity RESOLUTION**: near-parity-or-better vs GraphRAG via **S1** (FathomDB's own community-summary build) PAIRED with **G-HH-2** (measured S1-vs-running-GraphRAG head-to-head on BenchmarkQED; HippoRAG-2 multi-hop secondary). Graphiti/Zep head-to-head moved to 0.8.3. Surpass-option before the gate | 0.8.4 | 2026-06-21 |
+| `dev/roadmap/0.8.5.md` | **0.8.5 roadmap** — displaced/contingent items: R3b (gate now **S1-alone**; M1 already NO-GO), portable-DB vector guard, R4 whole-doc dense, tunable-b FTS5, EU7 perf | 0.8.5 | 2026-06-19 |
+| `dev/archive/README.md` | **Archive manifest** — table of relocated historical docs (path · original path · release · date · what-it-was); records the ledger-prune relocations (interface-inventory study, context-research sets, psd, reports) | ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`) | 2026-06-26 |
+| `dev/archive/0.8.1-roadmap-direction-20260612.md` | **Archived** 0.8.1 roadmap-direction doc (graph/filter/eu7 + R0–R4 scope) — superseded by the implementation plan triad | reference | 2026-06-12 |
+| `dev/plans/runs/IR-C-roadmap.md` (+ `-analysis-dossier`, `-deep-research`) | **IR-C retrieval roadmap** (Fable-5 review): R0–R4 + per-item P(success) + the C1–C8 ceiling corrections; the decision artifact behind 0.8.1's retrieval-quality track | reference / 0.8.1 source | 2026-06-12 |
+| `dev/plans/runs/IR-C-recall-cdf.json` | **R0 candidate-recall CDF artifact** — found@K for K∈{50,100,200,500,1000} × 4 arms (bm25_text/dense/oracle_union/rrf_fused) × all gold query classes (exact_fact/exploratory/…), corpus_hash-pinned to fe973fcd…; CE latency section (TinyBERT-L-2 p50=1.54ms + MiniLM-L12 p50=16.82ms). Gates Slice 10 rerank depth choice | 0.8.1 Slice 5 produces; gates Slice 10 | 2026-06-13 |
+| `dev/plans/runs/IR-C-r0-findings.md` | **R0 findings** — CDF curve interpretation: arm comparison at each K, C1/C2 corrections (depth-50 rrf_fused: exact_fact=0.950/exploratory=0.510 vs depth-1000), dense plateau at K=200, recommended rerank depth K=200 for Slice 10 (R1), CE latency budget analysis vs AC-013 | 0.8.1 Slice 5 | 2026-06-13 |
+| `src/python/eval/r2_parity_eval.py` (+ `eval/__init__.py`) | **R2 parity eval harness** (test-infra; NOT in the shipped wheel) — identical-answerer protocol over FathomDB / Mem0-OSS / naive-RAG; `BaseAnswerer` (Stub/Recording/LLM/Null), `FathomDBAdapter`/`NaiveRAGAdapter`(pure-Python BM25)/`Mem0OSSAdapter`(lazy, local-only), `PerClassScorer` (5 R2 classes + abstention), `R2Harness` (COR-2 corpus-hash pin asserted before any number), `run_r2_eval()` + `python -m eval.r2_parity_eval` live runner. **0.8.3 Slice 5:** `load_repin_gold` + `R2Harness.from_repin_gold` (consume the LME re-pinned gold, bypassing the COR-2 pin by design); `Mem0OSSAdapter.try_build` now builds the footprint-safe LOCAL config (`eval.mem0_local`); `gold_gen.generate_class_targeted` added (class-targeted re-pin top-up). Unit tests: `src/python/tests/test_r2_harness.py` | 0.8.1 Slice 25 (R2) + 0.8.3 Slice 5 | 2026-06-21 |
+| `src/python/eval/gold_repin.py` | **0.8.3 D0a power-sized gold re-pin builder** (Slice 5) — fixes the Slice-25 **N=0** memory-class defect. Build = **LongMemEval real labelled gold** (authoritative base; `load_lme` maps `question_type`→reporting class) **+** a **local-Qwen `gold_gen` top-up** (`augment_class`, class-targeted over the LME sessions of the deficit class) for any class below `n_min`; every query `_provenance`-tagged (`lme-real`/`qwen-aug:<model>`). Emits `variance_proxy` (per-class naive-RAG recall@k outcome variance + implied N for MDE≤ε — the Slice-10 power signal) + `corpus_hash` (sha256 over the sorted LME corpus). Resilient: per-class checkpoint + LLM backoff. `$0` OFFLINE-BUILD. `python -m eval.gold_repin` | 0.8.3 Slice 5 | 2026-06-21 |
+| `src/python/eval/corpus_validity.py` | **0.8.3 D0a corpus-validity guard** (Slice 5) — `validate_repin(manifest, gold_queries)`: the non-vacuous guard MISSING in Slice 25 — flags any frozen `MEMORY_CLASS` that is absent / **N=0** / below `n_min`, plus manifest↔gold count drift. Pure stdlib. Demonstrated catching N=0/under-N in RED. Unit tests in `tests/test_r2_harness.py` | 0.8.3 Slice 5 | 2026-06-21 |
+| `src/python/eval/mem0_local.py` | **0.8.3 Mem0-OSS footprint-safe LOCAL backend config** (Slice 5 de-risk output) — `build_local_mem0_config(api_key=…)`: airlock-local LLM (`qwen3.6-27b`) + local `bge-small` huggingface embedder + on-disk chroma vector store; **no Mem0 cloud** (ADR §3.6). Pins the D0b stand-up config as reviewable code; no install/network at import; wired into `Mem0OSSAdapter.try_build()` | 0.8.3 Slice 5 | 2026-06-21 |
+| `dev/plans/runs/0.8.3-d0a-corpus-manifest.json` + `0.8.3-d0a-memory-gold.json` | **0.8.3 D0a re-pin artifacts** (Slice 5) — the manifest pins the new LME `corpus_hash`, `per_class_gold_counts` (all four MEMORY_CLASSES ≥ `n_min`=150), `synthetic_fraction`, `per_class_variance` proxy + `power_note` (MDE≤ε needs N≫150 → Slice-10 HITL power-check); the gold file carries the `_provenance`-tagged power-sized memory-class gold consumed by Slice 10 via `R2Harness.from_repin_gold` | 0.8.3 Slice 5 | 2026-06-21 |
+| `dev/plans/runs/0.8.3-eu7-bisect-report.md` (+ `0.8.3-eu7-bisect.json`) | **0.8.3 eu7 0.937→0.896 root-cause / bisect** ($0, no-LLM, no-GPU, no-build offline archaeology) — **verdict: case A (vector-path/SUT), NOT case B (CLS/embedding); corpus ruled out.** Embedder src byte-identical v0.7.2→v0.8.0 (CLS pooling is option-only `c7afbfde`, default Mean, dated AFTER the 0.896 run); vector-stage ranking unchanged (stored bits byte-identical, KNN SQL ranking-invariant per codex §9 P2, f32 rerank unchanged) → no fidelity-loss commit; leading cause = the B-1 `vector_stage_only` SUT change (0.937 = pre-correction `search()` anchor, not comparable; true vector-stage = 0.896). **Slice-20 application:** decouple CLS from eu7 (CLS = eu8/relevance lever), judge eu7 fresh vs 0.90 floor after re-embed, quant-path fork (whitening → K>192 → 2-bit) if breach. Residual (engine A/B) blocked: no pre-embedded eu7 DB. De-risks `plan-0.8.3.md` §4 Slice 20 + `0.8.3-mem0-parity.md` §5 eu7-break fork | 0.8.3 Slice 20 (de-risk) | 2026-06-22 |
+| `dev/plans/runs/0.8.3-resolution-verdict.md` (+ `.json`) | **0.8.3 RESOLUTION VERDICT (Slice 30) — CLOSED AS-IS** (HITL "take results as-is", 2026-06-23): **provisional parity-or-better with Mem0 via a retrieval-PRECISION lever** (in-footprint CE-rerank at tuned blend weight α=1.0). `decide_083` strict REACHED unavailable (eu7-blocked + the α=1.0 arm `ABORTED_INCOMPLETE` n=354/606 + just-underpowered MDE 0.078>ε). On the answered cells: reranked **0.525** vs mem0 **0.323** vs baseline **0.137** = +0.21; pooled margin +0.325 [+0.274,+0.381]; paired α=0.3→1.0 +0.241. **Honest subset-bias caveat:** unanswered 42% skew to retrieval-FAILURE cells where Mem0 wins → full-606 ≈ 0.33–0.35 vs 0.323 = marginal PARITY. Accuracy is **retrieval-gated**; surpass lives in retrieval **recall** (0.8.4). **Steward rec = SHIP-AT-PARITY.** Evidence chain: `…-d0b-parity-n606.json`, `…-gap-decomposition-n606.json`, `…-rerank-accuracy-n606.json`, `…-rerank-accuracy-reblend-a1-n606.json`, `…-rerank-tune-FINDINGS.md`. Final ledger ~$38.16/$50 | 0.8.3 Slice 30 | 2026-06-23 |
+| `dev/plans/runs/0.8.3-parity-forward-plan.md` | **0.8.3→parity forward plan** — the Mem0 ladder (5a CE-rerank → distractor-suppression/MMR → PRF → D2) + the **0.8.4 GraphRAG framing** (§B: S1 community-summaries + G-HH-2 head-to-head; HippoRAG parked) + cross-cutting de-risks. Grounds: gap-decomposition = retrieval PRECISION is the lever | 0.8.3 / 0.8.4 framing | 2026-06-22 |
+| `dev/design/0.8.3-slice-5-design.md` | **0.8.3 Slice 5 (D0a) design + de-risk findings** — Mem0-OSS root-cause (missing install + unconfigured backend) + footprint-safe local config + **GO** for D0b; LME-real-base + Qwen-top-up re-pin plan + n_min/power-rule rationale + HITL under-power escalation; answerer-seam wiring (`load_repin_gold`/`from_repin_gold`). (Namespaced — the generic `slice-5-design.md` is the unrelated 0.8.1 R0 doc) | 0.8.3 Slice 5 | 2026-06-21 |
+| `src/python/eval/decision_rule_083.py` (+ `tests/test_decision_rule_083.py`) | **0.8.3 frozen RESOLUTION decision rule** (Slice 0) — the executable pre-registration extending `m1_decision_rule.py`'s style (pure stdlib, deterministic, consumes already-computed summary stats; **no `fathomdb`/`scipy`/`numpy`/`networkx`/RNG/I-O**): `EPS_NEAR_PARITY = 0.05`, `MEMORY_CLASSES`, `decide_083` (**BLOCK** on eu7 < 0.90 / latency first → per-class power guard `mde > ε` → **REACHED** iff every class `ci_lo ≥ −ε`; `surpass_candidates` = classes `ci_lo > 0`; `below_parity:`/`underpowered:` binding-constraint), `probe_15a_pass`/`probe_15b_pass` (the §5 $0-probe criteria), and `lint_preregistration_083` (asserts the design carries every dated `frozen-field:`). Tests run under plain `pytest` (no extension build; `FATHOMDB_TESTS_NO_REBUILD=1`) | 0.8.3 Slice 0 | 2026-06-21 |
+| `dev/plans/runs/IR-C-r2-eval-results.md` | **R2 eval results doc** — per-class Evidence Recall@K for FathomDB vs naive-RAG on the frozen corpus (`fe973fcd…`), the FathomDB−Mem0 / FathomDB−naive delta table (the Slice 30 go/no-go input), N per class, answerer/version, and the blockers (no answerer LLM, no local Mem0 backend, no temporal/multi_hop/knowledge_update gold in the frozen corpus → data-limited go/no-go) | 0.8.1 Slice 25 (R2) | 2026-06-14 |
+| `dev/plans/0.6.x/0.7.x-*.md`, `ci-deferred.md`, `README.md` | Prior-release plans + CI-deferral ledger | reference | (tree) |
+| `dev/scripts/ir_c_ce_latency.py` | **CE latency benchmark** — CPU cross-encoder latency script for R0; benchmarks TinyBERT-L-2 (~4 MB, p50=1.54ms) and MiniLM-L12 (~22 MB, p50=16.82ms) on ≥1,000 random (query, passage) pairs; patches `latency` list into `IR-C-recall-cdf.json`; requires flashrank (exits 0 with null if unavailable) | 0.8.1 Slice 5 | 2026-06-13 |
+
+---
+
+## `docs/` — user-facing documentation (mkdocs, `nav` in `mkdocs.yml`)
+
+| Path | Purpose | Owning slice / AC | Last-touched |
+|------|---------|-------------------|--------------|
+| `docs/index.md` | Docs home | X2 (nav) | 2026-05-17 |
+| `docs/getting-started/index.md` | Getting-started overview | — | 2026-05-17 |
+| `docs/getting-started/quickstart.md` | Quickstart (five-operation contract) | 5/30 (new surface examples) | 2026-05-17 |
+| `docs/install/python.md` | Python install | — | 2026-05-30 |
+| `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
+| `docs/install/rust.md` | Rust install | — | 2026-05-17 |
+| `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
+| `docs/reference/python-api.md` | Python API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logical_id`-alone supersession), 0.8.1-10 (`rerank_depth` opt-in) | 2026-06-13 |
+| `docs/reference/typescript-api.md` | TypeScript API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes) | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logicalId`-alone supersession), 0.8.1-10 (`rerankDepth` opt-in) | 2026-06-13 |
+| `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only); 34 documents the `doctor dump-mutations` op-store read-back diagnostic + `--json` example | 34 (dump-mutations); preserved | 2026-06-06 |
+| `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
+| `docs/reference/config.md` | Config reference | — | 2026-05-17 |
+| `docs/concepts/index.md` | Concepts overview | — | 2026-05-17 |
+| `docs/embedder.md` | Default embedder | — | 2026-06-01 |
+| `docs/compatibility/index.md` | Compatibility matrix | 40 (compat events) | 2026-05-17 |
+| `docs/operations/index.md` | Operations guide | — | 2026-05-01 |
+| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-06-04 |
+| `docs/guides/structured-search-hits.md` | Structured `SearchHit` usage guide (id/kind/body/score/branch; Py + TS) | 5 (G1); 10 (score → RRF) | 2026-06-03 |
+| `docs/guides/retrieve-by-id.md` | Retrieve-by-id guide — `read.get`/`read.get_many` point lookup by `logical_id` (active-only) + `read.collection`/`read.mutations` paginated op-store read-back (mandatory limit + after-id cursor); Py + TS | 30 (G2/G3) | 2026-06-04 |
+| `docs/guides/hybrid-search-filtering.md` | Hybrid search guide — G9 RRF ranking (documented behavior-compat event) + G10 `SearchFilter` metadata filtering, Py + TS examples | 10 (G9/G10) | 2026-06-03 |
+| `docs/positions/index.md` | Positions hub | — | 2026-05-01 |
+| `docs/positions/sdk-parity.md` | Position: SDK parity (guarantee carried forward by 25) | 25 | 2026-05-01 |
+| `docs/positions/recovery-surface.md` | Position: recovery surface (denylist, CLI-only) | preserved by 25/30 | 2026-05-01 |
+
+exec
+/bin/sh -c "sed -n '340,430p' src/python/eval/exp_cov1_sweep.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+    docs, gold = load_gold(locomo_path, classes=classes)
+    print(f"[cov1-sweep] docs={len(docs)} gold={len(gold)}", flush=True)
+
+    # resumable per-condition ranks checkpoint
+    ranks_by_cond: dict[str, dict[str, list[str]]] = {}
+    rp = Path(ranks_path)
+    if rp.exists():
+        ranks_by_cond = json.loads(rp.read_text(encoding="utf-8"))
+
+    info: dict[str, Any] = {}
+    for cond in conditions:
+        if cond in ranks_by_cond:
+            print(f"[cov1-sweep] {cond}: cached ranks, skip ingest", flush=True)
+            continue
+        mode, graph = CONDITIONS[cond]
+        extractor_cmd = None
+        extractor_env = None
+        model = None
+        cache_file = None
+        if mode == "heuristic":
+            build_c0_cache(docs, c0_cache, model="c0-floor")
+            model = "c0-floor"
+            cache_file = c0_cache
+        elif mode == "replay":
+            model = relation_model
+            cache_file = relation_cache
+            # completeness guard: refuse if the priced cache is incomplete
+            cache = ExtractionCache.load(cache_file)
+            expected = [cache_key(d, model, PROMPT_VERSION) for d in docs]
+            comp = cache.completeness(expected)
+            if not comp["ok"]:
+                raise SystemExit(
+                    f"[cov1-sweep] REFUSING C-relation: extraction cache incomplete "
+                    f"({comp['n_missing']} missing / {comp['n_ok']} ok). Run exp_cov1_extract."
+                )
+        if mode in ("heuristic", "replay"):
+            extractor_cmd = [sys.executable, "-m", "eval.exp_cov1_replay_harness"]
+            extractor_env = {
+                "COV1_CACHE_PATH": cache_file, "COV1_MODEL": model,
+                "COV1_PROMPT_VER": PROMPT_VERSION,
+            }
+        t0 = time.time()
+        engine, doc_id_of, cinfo = build_condition_engine(
+            docs, Path(db_dir) / f"cov1_{cond}.sqlite",
+            extractor_cmd=extractor_cmd, extractor_env=extractor_env,
+            use_embedder=use_embedder,
+        )
+        ranks = retrieve_ranks(
+            engine, doc_id_of, gold, use_graph_arm=graph, rerank_depth=rerank_depth
+        )
+        engine.close()
+        ranks_by_cond[cond] = ranks
+        rp.parent.mkdir(parents=True, exist_ok=True)
+        rp.write_text(json.dumps(ranks_by_cond), encoding="utf-8")
+        info[cond] = {**cinfo, "elapsed_s": round(time.time() - t0, 1)}
+        print(f"[cov1-sweep] {cond} done {info[cond]}", flush=True)
+
+    result: dict[str, Any] = {
+        "experiment": "EXP-COV-1",
+        "corpus": "LOCOMO (CC-BY-NC, EVAL-ONLY)",
+        "n_docs": len(docs),
+        "n_gold_queries": len(gold),
+        "class_counts": {
+            c: sum(1 for q in gold if q["query_class"] == c)
+            for c in sorted({q["query_class"] for q in gold})
+        },
+        "held_fixed": {
+            "embedder": (
+                "CLS-corrected bge-small dense (edge_facts) + FTS(docs)"
+                if use_embedder else
+                "FTS(docs + fact nodes) + STRUCTURAL graph-arm BFS; dense projection "
+                "OFF (CPU-embedder stall defect) — dropped identically across conditions"
+            ),
+            "rerank_depth": rerank_depth,
+            "alpha": ALPHA if rerank_depth > 0 else None,
+            "pool_n": POOL_N if rerank_depth > 0 else None,
+            "k_grid": list(DEFAULT_K_GRID),
+            "ce_note": (
+                "CE rerank held OFF (rerank_depth=0): the installed CPU embedder build "
+                "reranks LOCOMO-sized bodies at ~8s/query -> hours/condition. gold-in-pool "
+                "is a pool-membership metric unaffected in kind by CE reordering."
+            ) if rerank_depth == 0 else "CE on",
+        },
+        "conditions_run": [c for c in conditions if c in ranks_by_cond],
+        "ingest_info": info,
+        "relation_model": relation_model,
+        "prompt_version": PROMPT_VERSION,
+    }
+    if "C-none" in ranks_by_cond and "C0-floor" in ranks_by_cond:
+        result["C0-floor_vs_C-none"] = compute_verdicts(
+            gold, ranks_by_cond, treatment="C0-floor", baseline="C-none"
+
+exec
+/bin/sh -c "sed -n '1,220p' dev/plans/runs/STATUS-0.8.14.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+# STATUS — 0.8.14 (Substrate & recall: EXP-S + F5) · the schema-migration release
+
+> Live state board (source of truth = git witnesses per orchestration.md §1.5; this is a cache).
+> Plan: `dev/plans/plan-0.8.14.md` · ADR: `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md`.
+> Build: **label-only** (manifests stay `0.8.9`; NO `v*` tag, NO publish). Push scope: fathomdb-only.
+
+## Current state
+- **Slice 0 (ADR) — CLOSED** (2026-07-03). HITL approved D1–D8; F5 per Option C; TC-1 discharged.
+- **Slice 5 (EXP-S keystone) — CLOSED** (2026-07-04). Cherry-picked `ba15e176`+`718cfe94` to `main`;
+  codex §9 **PASS** (no findings); full-workspace gate both exit 0; SCHEMA_VERSION 15→16; D6 no vec0 rewrite.
+- **Slice 10 (F5 BM25F) — CLOSED** (2026-07-04). Cherry-picked `b145754f`+`c57e4e99`+`9d8e368b`+`a7c3c145`;
+  codex §9 CONCERN→fix-1→CONCERN→fix-2→land; substantive tokenization finding resolved; gate both exit 0;
+  SCHEMA_VERSION 16→17; ships per D8 Option-C override; in-engine BM25F (justified ADR-0.8.1 deviation for tunable b).
+- **Slice 25 (gpu-rerank merge) — CLOSED** (2026-07-04). `3c98b35b`+`813e525a`+`9187de26`+`e311aadf` on
+  origin/main; codex §9 BLOCK→fix-1→PASS (finding-1 refuted empirically; findings 2+3 fixed). Rebased clean
+  onto `ce8e1eef`; opt-in `rerank-cuda`/`FATHOMDB_RERANK_DEVICE` (default `[]`), default-CPU unchanged.
+  MAIN-tree maturin build OK + `embed_batch_cls` importable; full-workspace gate 0/0; agent-security PASS.
+- **Slice 20 (eu7 re-clear + v15→v17 migration verify) — CLOSED** (2026-07-05, D6 no-op basis; HITL-ruled (A)).
+  Migration half landed `52f29fb9` (codex §9 PASS, R-SUB-3). eu7 half **closed on the D6 no-op basis**: D6
+  (codex-verified @ Slice 5 — zero vec0 rewrite) conclusively excludes a 0.8.14 fidelity regression (R-GATE is
+  conditional on a re-embed; none occurred). Empirical GPU run (mis-directed cross-backend, self-corrected in policy
+  `649a8d45`): N=1000 PASS (0.950, ci[0.930,0.967]); N=7667 sub-floor (0.833, ci_hi 0.864) — a cross-backend
+  quant-flip + corpus-growth artifact, NOT a 0.8.14 regression. Canonical eu7 = CPU same-backend (baseline 0.896);
+  floor re-baseline for the grown 18,472-doc corpus → **TC-5**.
+- **Next:** Slice 40 (release readiness) — off `649a8d45`.
+
+## Slice scoreboard
+| Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
+|------:|-------|-------|----------|--------|-------------|-------|-------------------|
+| 0 | Setup + ADR (row-kinds, determinism, KILL, SCHEMA_VERSION, TC-1, F5 ruling) | **CLOSED** | 0344a343 (ADR authored on main d7cad699) | (docs on main) | n/a (design slice) | n/a | docs commit on main |
+| 5 | **EXP-S KEYSTONE** — row_kind + per-kind coexisting-index write + determinism check + `SCHEMA_VERSION` 15→16 | **CLOSED** | dff4830c | slice-5-…235950Z | ✅ | **PASS** (no findings) | `ba15e176`+`718cfe94` on main |
+| 10 | **F5 fielded BM25F** — `search_index_v2` + in-engine BM25F (tunable weights/`b`), `SCHEMA_VERSION` 16→17 | **CLOSED** | be37dffd | slice-10-…002826Z | ✅ | CONCERN→fix1→CONCERN→fix2→**resolved** | `b145754f`+`c57e4e99`+`9d8e368b`+`a7c3c145` |
+| 15 | *(void reserved gap — #17 shipped 0.8.11)* | VOID | — | — | — | — | — |
+| 20 | eu7 re-clear + v15→v17 migration verify (D6) | **CLOSED** | 4ca170a2 (mig) · 1c5ba1b6 (eu7) | slice-20-…121320Z (mig) | ✅ (mig) | **PASS** (mig §9) | mig `52f29fb9` on main; eu7 half **D6 no-op close** (HITL) |
+| 25 | *(reserved gap)* Merge `0.8.14-gpu-rerank` (opt-in GPU CE + `embed_batch_cls`, default-CPU-unchanged) | **CLOSED** | ce8e1eef | slice-25-…033943Z | ✅ | BLOCK→fix1→**PASS** | `3c98b35b`+`813e525a`+`9187de26`+`e311aadf` on main |
+| 40 | Verification + Release Readiness (X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate) | not-started | — | — | — | — | — |
+
+## Requirements / AC status (DoD frozen at Slice 0)
+| ID | Requirement | State |
+|----|-------------|-------|
+| R-SUB-1 | Row-kinds coexist in one store | ✅ Slice 5 (GREEN) |
+| R-SUB-2 | Incremental multi-index write deterministic | ✅ Slice 5 (GREEN, non-vacuous) |
+| R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ✅ step-16 (Slice 5) + step-17 (Slice 10); v15→v17 full-path verify landed `52f29fb9` (Slice 20, codex PASS) |
+| R-F5-1 | Fielded BM25F, tunable `b`/field weights | ✅ Slice 10 (GREEN; tokenization-faithful) |
+| R-F5-2 | F5 ships per HITL Option-C override (gate did NOT clear) | ✅ ruled (ADR §D8) — ships as override |
+| R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ✅ Slice 40 — EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are **engine-internal**: grep confirms they appear ONLY in `fathomdb-engine`/`fathomdb-schema` (Rust), NEVER in the Py/TS SDK bindings or the governed-surface allowlist → **NO new SDK verbs** (non-vacuously green). Py surface 16✅ / TS surface 131✅ (both read the one shared `governed-surface-allowlist.json`). **KNOWN py-first deferral (intentional, tracked):** the module-level embedder helper `embed_batch_cls` is Python-only (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS) — the parity harness is blind to module-level functions, so Slice 40 added `test_module_level_embedder_helper_asymmetry_is_tracked` to ASSERT the py-only set (was a silent blind spot). `Engine.embed` verb IS at Py↔TS parity. TS `embedBatchCls` binding = out-of-scope deferral |
+| R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) after any re-embed | ✅ Slice 20 — **satisfied on D6 no-op basis** (zero vec0 rewrite ⇒ no re-embed ⇒ gate not triggered; HITL-ruled). GPU run sub-floor @ N=7667 (0.833) = cross-backend+corpus artifact, not a regression; floor re-baseline → TC-5 |
+
+## Hard gates
+- **eu7 ≥ 0.90 one-sided CI** — Slice 20 CLOSED on D6 no-op basis (no re-embed occurred). The eu7 fidelity gate MUST run **CPU same-backend** (policy `649a8d45`); a GPU run cross-backends it. Floor re-baseline for the grown corpus → TC-5.
+- **Full-workspace clippy+check** — `cargo clippy --workspace --all-targets` AND
+  `cargo check --workspace --all-targets`, both exit 0, before ANY green claim.
+- **codex §9** review gate on every slice's output.json.
+- **SCHEMA_VERSION migration** = engine/schema migration → HITL-gated; ADR ratifies the plan.
+
+## Outstanding worktrees
+- None open (dead-run `slice-20-…121320Z` + `0.8.12-gpu-rerank` cleaned; eu7-verify worktree `slice-20-eu7-…195012Z` removed after the D6-no-op close).
+
+## Concurrency
+- **Library Sweep #2** runs on its own branch (only `.github/workflows/*` + JS/TS lockfiles) —
+  disjoint from engine `src/`/`Cargo.lock`. Expect `main` to advance; rebase is trivial.
+
+## Recent decisions (newest first)
+- 2026-07-05 — **Slice 20 CLOSED (D6 no-op basis; HITL-ruled (A)).** Migration half `52f29fb9` (codex PASS, R-SUB-3).
+  eu7 half: D6 (codex-verified zero vec0 rewrite @ Slice 5) excludes any 0.8.14 fidelity regression (R-GATE is
+  conditional on a re-embed; none occurred). Empirical GPU eu7 (mis-directed cross-backend): N=1000 PASS 0.950;
+  N=7667 sub-floor 0.833 (ci_hi 0.864) = cross-backend quant-flip + corpus-growth artifact. eu7 fidelity gate →
+  CPU same-backend policy `649a8d45`; floor re-baseline → TC-5. Evidence:
+  `runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log`.
+- 2026-07-04 — Slice 10 (F5) CLOSED: 4 commits on main, codex CONCERN→fix1→CONCERN→fix2→resolved, gate green,
+  SCHEMA_VERSION 16→17; in-engine BM25F (justified ADR-0.8.1 deviation for tunable b); D6 no vector touch.
+- 2026-07-04 — Slice 5 (EXP-S keystone) CLOSED: `ba15e176`+`718cfe94` on main, codex §9 PASS, gate green,
+  SCHEMA_VERSION 15→16, D6 no vec0 rewrite (eu7@20 = no-op).
+- 2026-07-03 — Slice-0 ADR ratified; D8=Option C (F5 override); Slice 25 added; TC-1 discharged.
+
+## Repo-health flags (pre-existing; NOT Slice-25-caused; surfaced by running agent-verify at merge)
+- **md-lint mis-scoped:** `agent-lint-md` (markdownlint-cli2) scans the whole tree incl. `typescript/node_modules`,
+  gitignored `data/corpus-data/**`, and `scripts/repo-prune/backups/**` → `agent-verify` fails at `lint`. Tooling fix (scope excludes).
+- **pyright:** 1 pre-existing error `src/python/eval/exp_cov1_sweep.py:377` (`cache_file` possibly unbound).
+- **release.yml test:** `publish-rust-t1-embedder-api dry-run` structure + actionlint-fixture fail — from the concurrent
+  Library-Sweep/napi-3 workflow changes (Slice 25 touched no `.github/workflows`). Echoes the 0.8.9 embedder-api publish drift.
+- These are flagged to the Steward as repo-health items (own fix/consideration), not Slice-25 blockers.
+
+## Next action
+Cut Slice-40 (release readiness) worktree off `649a8d45` → preflight `--expect-closed 20` → X1/X2/X3 cross-binding
+parity + R-SUB/R-F5 AC gate + eu7 gate (satisfied D6 no-op) + resolve-or-document the pre-existing agent-verify reds
+→ codex §9 → land → close 0.8.14 (label-only).
+
+exec
+/bin/sh -c "sed -n '1,240p' dev/plans/runs/0.8.14-slice-40-output.json" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+{
+  "phase": "0.8.14-slice-40",
+  "task": "Verification + Release Readiness (0.8.14, label-only): R-SUB/R-F5 AC gate, full-workspace gate, X1/X2/X3, agent-verify reds resolve-or-document",
+  "baseline_sha": "91c47ee0436642900f3cf88569047edd5af353d7",
+  "branch": "slice-40-20260706T013816Z",
+  "head_sha": "471418853500c1353292f6f3ab8da3c17ab5fa24",
+  "status": "COMPLETE",
+  "manifest_bump": false,
+  "commits": [
+    "f67ae9fe: fix(md-lint): scope markdownlint to maintained tracked markdown",
+    "55022df8: fix(eval): initialize cache_file so pyright is not possibly-unbound",
+    "a7a382e6: test(x1): assert the py-only module-level embedder-helper asymmetry",
+    "47141885: docs(doc-index): index 0.8.14 substrate/recall docs (X3)"
+  ],
+  "findings_addressed": [
+    "md-lint mis-scope (FIXED): markdownlint-cli2 no longer scans vendored/gitignored/cache trees or agent-emitted prompt files",
+    "pyright cache_file possibly-unbound at exp_cov1_sweep.py:377 (FIXED)",
+    "X1 silent blind spot: embed_batch_cls py-only asymmetry now ASSERTED (was blind — harness only introspects Engine/admin/read)"
+  ],
+  "blockers_encountered": [
+    {
+      "id": "release-yml-actionlint-fixture-red",
+      "description": "scripts/tests/test_actionlint_fixture.sh FAILS: 'publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p'. This is the only remaining agent-verify red (fails at step=test).",
+      "resolution": "DOCUMENTED, not fixed (release.yml is out of scope; task forbids editing workflow files). Provenance git-proven NOT 0.8.14-caused: HEAD==baseline (branch had no commits before Slice 40); `git log d7cad699..HEAD -- .github/workflows scripts/tests/test_actionlint_fixture.sh` is EMPTY; release.yml was last touched by 8bec917e 'Library Sweep #2' (the concurrent track). 0.8.14 is label-only (no publish) so a publish-structure red does not block readiness."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "Added dev/plans/prompts/** to the markdownlint ignore set (same class as the already-ignored dev/plans/runs/**; removed 21 of 30 pre-existing tracked-file lint errors)",
+    "Recorded the R-X-1 py-first embed_batch_cls deferral in the STATUS-0.8.14 board row and the DOC-INDEX plan/STATUS row"
+  ],
+  "agent_verify_result": "fail (step=test; sole failure = test-actionlint-fixture, the pre-existing/concurrent release.yml publish-structure red documented above; lint PASS, typecheck PASS, security PASS [0 violations, 0 blockers, 1 accepted userns env downgrade])",
+  "readiness": {
+    "A_ac_gate": {
+      "exp_s_substrate": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind", "r_sub_2_incremental_multi_index_write_is_deterministic", "d2_index_targets_differ_by_row_kind"]},
+      "step15_to_17_migration": {"result": "pass", "count": "1/1", "exit": 0},
+      "step16_migration": {"result": "pass", "count": "3/3", "exit": 0},
+      "step17_migration": {"result": "pass", "count": "3/3", "exit": 0},
+      "f5_bm25f": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_f5_1_field_weight_flips_ranking_vs_body_only_baseline", "r_f5_1_fix1_scorer_is_tokenization_faithful_to_fts5", "write_path_populates_search_index_v2_synchronously"]},
+      "r_f5_2": "no test gate — ships by HITL Option-C override (ADR-0.8.14 D8), not invented"
+    },
+    "B_full_workspace_gate": {
+      "cargo clippy --workspace --all-targets": 0,
+      "cargo check --workspace --all-targets": 0,
+      "cargo test --workspace": {"exit": 0, "note": "0 failed across all crates; some AGENT_LONG-gated tests ignored (not failures)"}
+    },
+    "C1_surface_parity": {
+      "python": {"result": "pass", "count": "16 passed", "runner": ".venv/bin/python -m pytest src/python/tests/test_surface.py -q"},
+      "typescript": {"result": "pass", "count": "131 pass / 0 fail", "runner": "cd src/ts && npm test (node --test dist/tests/*.test.js)", "note": "node_modules symlinked from the identical-lockfile main tree (no maturin/pip; napi build used the worktree's own target/); symlink + build artifacts removed after"}
+    },
+    "C2_no_new_verb_confirmation": "CONFIRMED non-vacuous: grep for row_kind / search_index_v2 / bm25f|BM25F across src (--include *.rs *.py *.ts *.pyi *.d.ts) hits ONLY fathomdb-engine + fathomdb-schema Rust crates+tests; ZERO hits in Py/TS SDK bindings or src/conformance/governed-surface-allowlist.json. EXP-S + F5 are engine-internal and add no SDK verbs.",
+    "C3_embed_batch_cls_disposition": "FIXED (minimal assertion) + DOCUMENTED. embed_batch_cls is a module-level embedder helper exposed PYTHON-ONLY (fathomdb-py/src/lib.rs, fathomdb.__all__, _fathomdb.pyi; ABSENT from fathomdb-napi/src/lib.rs and all of src/ts — grep rc=1). The parity harness introspects only Engine/admin/read so it was blind to this. Added test_module_level_embedder_helper_asymmetry_is_tracked (asserts the py-only set == {embed_batch_cls}). Engine.embed verb IS at Py<->TS parity (allowlist member 'embed'). TS embedBatchCls binding = tracked py-first deferral (out of scope). Recorded in STATUS-0.8.14 R-X-1 row + DOC-INDEX.",
+    "D_mkdocs": {"result": "pass", "exit": 0, "command": ".venv/bin/mkdocs build --strict", "note": "mkdocs 1.6.1 present on PATH; built in 0.18s; site/ artifact removed"},
+    "E_doc_index": "UPDATED: added rows for ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md, plan-0.8.14.md + STATUS-0.8.14.md (combined, carries R-X-1 deferral note), and dev/design/gpu-eval-activities-policy.md. Slice prompt/output NOT indexed (DOC-INDEX convention indexes design/plan/adr/status docs + selective handoffs, not per-slice output.json).",
+    "F_agent_verify_reds": {
+      "md_lint_misscope": "FIXED (commit f67ae9fe). Added ignores: **/node_modules/** , data/corpus-data/** , scripts/repo-prune/backups/** , dev/plans/prompts/**. Verified with main-tree markdownlint-cli2: planted offenders in all three dirs ignored; residual = 9 pre-existing MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (authored snapshot untouched by any 0.8.14 commit) — flagged as a separate Steward content decision, NOT a scope mis-config.",
+      "pyright_exp_cov1_sweep_377": "FIXED (commit 55022df8). cache_file initialized to None; agent-typecheck exits 0.",
+      "release_yml_actionlint_fixture": "DOCUMENTED (not fixed; workflow files out of scope). Pre-existing/concurrent Library Sweep #2 track; git-proven NOT 0.8.14-caused (d7cad699..HEAD touches no .github/workflows or actionlint fixtures/tests; release.yml last touched by 8bec917e). Label-only release => publish-structure red does not block readiness."
+    }
+  },
+  "fixed_vs_documented": {
+    "FIXED": ["md-lint scope (config)", "pyright cache_file guard", "X1 embed_batch_cls asymmetry assertion + board/DOC-INDEX docs", "DOC-INDEX 0.8.14 rows"],
+    "DOCUMENTED": ["release.yml publish-rust-t1-embedder-api actionlint-fixture red (pre-existing/concurrent Library Sweep #2, not 0.8.14-caused, non-blocking for label-only)", "residual 9 MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (Steward content decision)"]
+  },
+  "constraints_honored": {
+    "no_eu7_run": true,
+    "no_maturin_or_pip_from_worktree": true,
+    "no_workflow_file_edits": true,
+    "no_manifest_bump_tag_or_publish": true,
+    "used_existing_shared_venv": true
+  },
+  "next_step_for_orchestrator": "codex §9 review of these 4 commits, then cherry-pick f67ae9fe+55022df8+a7a382e6+47141885 onto main. 0.8.14 release readiness: all AC gates GREEN (R-SUB-1/2/3, R-F5-1), full-workspace clippy+check+test all exit 0, X1 py16/ts131 GREEN + no-new-verb confirmed + embed_batch_cls asymmetry now asserted, X2 mkdocs strict GREEN, X3 DOC-INDEX updated; eu7/R-GATE satisfied on the D6 no-op basis (Slice 20). ONE non-blocking red remains: the release.yml/actionlint-fixture publish-structure test (Library Sweep #2 track, not 0.8.14-caused, label-only => no publish). Steward follow-ups: (1) route the release.yml publish-structure red to the Library Sweep #2 track; (2) decide dev/research/personal-agent-database-market-2026-07-02.md — fix the 9 MD025/MD001 findings or reclassify (e.g. move under dev/archive or add to md-lint ignores as research substrate)."
+}
+
+exec
+/bin/sh -c "sed -n '220,320p' src/python/tests/test_surface.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+        n
+        for n in getattr(fathomdb, "__all__", ())
+        if "embed" in n.lower() and callable(getattr(fathomdb, n, None))
+    }
+    assert live_module_embed_helpers == _PY_ONLY_MODULE_EMBEDDER_HELPERS, (
+        "module-level embedder-helper surface drifted from the tracked py-only "
+        "set; update _PY_ONLY_MODULE_EMBEDDER_HELPERS and record the TS parity "
+        f"decision. live={sorted(live_module_embed_helpers)}"
+    )
+
+
+def test_admin_is_module_level_namespace() -> None:
+    assert inspect.ismodule(admin)
+    assert hasattr(admin, "configure")
+
+
+def test_engine_exposes_instrumentation_methods() -> None:
+    for instr in (
+        "drain",
+        "counters",
+        "set_profiling",
+        "set_slow_threshold_ms",
+        "attach_logging_subscriber",
+        "enable_telemetry",
+        "last_telemetry_query_id",
+        "record_feedback",
+    ):
+        assert hasattr(Engine, instr), f"Engine must expose {instr}"
+
+
+def test_engine_open_accepts_kwargs_and_engine_config(tmp_path) -> None:
+    a = Engine.open(
+        str(tmp_path / "a.sqlite"),
+        embedder_pool_size=2,
+        scheduler_runtime_threads=4,
+        provenance_row_cap=1024,
+        embedder_call_timeout_ms=30_000,
+        slow_threshold_ms=250,
+    )
+    cfg = EngineConfig(
+        embedder_pool_size=2,
+        scheduler_runtime_threads=4,
+        provenance_row_cap=1024,
+        embedder_call_timeout_ms=30_000,
+        slow_threshold_ms=250,
+    )
+    b = Engine.open(str(tmp_path / "b.sqlite"), config=cfg)
+
+    assert a.config == b.config
+    a.close()
+    b.close()
+
+
+def test_engine_open_rejects_kwargs_and_config_together(db_path: str) -> None:
+    cfg = EngineConfig()
+    try:
+        Engine.open(db_path, config=cfg, embedder_pool_size=2)
+    except ValueError:
+        return
+    raise AssertionError("Engine.open must reject config + kwargs in the same call")
+
+
+def test_write_receipt_carries_cursor(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        receipt = engine.write([{"kind": "doc", "body": "{}"}])
+        assert isinstance(receipt, WriteReceipt)
+        assert isinstance(receipt.cursor, int)
+    finally:
+        engine.close()
+
+
+def test_search_result_carries_optional_soft_fallback(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        result = engine.search("hello")
+        assert isinstance(result, SearchResult)
+        assert isinstance(result.projection_cursor, int)
+        assert result.soft_fallback is None
+    finally:
+        engine.close()
+
+
+def test_soft_fallback_branch_is_typed() -> None:
+    f = SoftFallback(branch="vector")
+    assert f.branch == "vector"
+    f = SoftFallback(branch="text")
+    assert f.branch == "text"
+
+
+def test_admin_configure_returns_write_receipt_shape(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        receipt = admin.configure(engine, name="default", body="{}")
+        assert isinstance(receipt, WriteReceipt)
+        assert isinstance(receipt.cursor, int)
+    finally:
+        engine.close()
+
+
+def test_engine_attached_stub_methods_return_canonical_types(db_path: str) -> None:
+
+codex
+I’ve got the target file contents. I’m now pinning exact line references and checking the changed scope claims against the live files so the verdict can cite concrete refs.
+exec
+/bin/sh -c "sed -n '175,245{=;p;}' src/python/tests/test_surface.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+175
+
+176
+def test_allowlist_excludes_recovery_denylist() -> None:
+177
+    """P3 — allowlist ∩ {recover,restore,repair,fix,rebuild} = ∅.
+178
+
+179
+    Allowlist-level assertion only; the byte-frozen `test_no_recovery_surface.py`
+180
+    remains the live enforcement of recovery unreachability.
+181
+    """
+182
+    assert GOVERNED_SURFACE_ALLOWLIST & _RECOVERY_DENYLIST == set()
+183
+
+184
+
+185
+# X1 (0.8.14 Slice 40) — module-level embedder-helper parity ledger.
+186
+#
+187
+# The cross-binding surface harness above (`_live_python_command_surface` /
+188
+# `src/ts/tests/surface.test.ts`) introspects only `Engine` / `admin` / `read`,
+189
+# so it is BLIND to module-level functions. `embed_batch_cls` is a module-level
+190
+# embedder helper exposed PYTHON-ONLY — it lives in `fathomdb-py/src/lib.rs`,
+191
+# `fathomdb.__all__`, and the `_fathomdb.pyi` stub, and is intentionally ABSENT
+192
+# from the TS binding (`fathomdb-napi/src/lib.rs`, `src/ts`). TS parity for it is
+193
+# a TRACKED DEFERRAL (py-first). By contrast the `Engine.embed` *verb* IS at
+194
+# Py↔TS parity (governed-allowlist member `embed`). This ledger makes the
+195
+# asymmetry ASSERTED rather than a silent blind spot: a new/removed Python
+196
+# module-level embedder helper must be reflected here in lockstep with a
+197
+# conscious TS parity decision.
+198
+_PY_ONLY_MODULE_EMBEDDER_HELPERS = frozenset({"embed_batch_cls"})
+199
+
+200
+
+201
+def test_module_level_embedder_helper_asymmetry_is_tracked() -> None:
+202
+    import fathomdb
+203
+
+204
+    # The tracked py-only helpers are present as module-level callables and
+205
+    # exported in `__all__`.
+206
+    for name in _PY_ONLY_MODULE_EMBEDDER_HELPERS:
+207
+        assert callable(getattr(fathomdb, name, None)), (
+208
+            f"expected Python-only module-level embedder helper {name!r}"
+209
+        )
+210
+        assert name in getattr(fathomdb, "__all__", ()), (
+211
+            f"{name!r} must be exported in fathomdb.__all__"
+212
+        )
+213
+
+214
+    # The module-level embedder-helper surface is EXACTLY the tracked py-only set.
+215
+    # A new module-level `embed*` callable (e.g. a future `embed_batch`) would
+216
+    # break this and force a conscious update here + a TS parity decision, rather
+217
+    # than drifting in silently. (`Engine.embed` is a class method, not a module
+218
+    # attribute, so it is correctly out of scope for this module-level check.)
+219
+    live_module_embed_helpers = {
+220
+        n
+221
+        for n in getattr(fathomdb, "__all__", ())
+222
+        if "embed" in n.lower() and callable(getattr(fathomdb, n, None))
+223
+    }
+224
+    assert live_module_embed_helpers == _PY_ONLY_MODULE_EMBEDDER_HELPERS, (
+225
+        "module-level embedder-helper surface drifted from the tracked py-only "
+226
+        "set; update _PY_ONLY_MODULE_EMBEDDER_HELPERS and record the TS parity "
+227
+        f"decision. live={sorted(live_module_embed_helpers)}"
+228
+    )
+229
+
+230
+
+231
+def test_admin_is_module_level_namespace() -> None:
+232
+    assert inspect.ismodule(admin)
+233
+    assert hasattr(admin, "configure")
+234
+
+235
+
+236
+def test_engine_exposes_instrumentation_methods() -> None:
+237
+    for instr in (
+238
+        "drain",
+239
+        "counters",
+240
+        "set_profiling",
+241
+        "set_slow_threshold_ms",
+242
+        "attach_logging_subscriber",
+243
+        "enable_telemetry",
+244
+        "last_telemetry_query_id",
+245
+        "record_feedback",
+
+exec
+/bin/sh -c "sed -n '360,405{=;p;}' src/python/eval/exp_cov1_sweep.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+360
+            build_c0_cache(docs, c0_cache, model="c0-floor")
+361
+            model = "c0-floor"
+362
+            cache_file = c0_cache
+363
+        elif mode == "replay":
+364
+            model = relation_model
+365
+            cache_file = relation_cache
+366
+            # completeness guard: refuse if the priced cache is incomplete
+367
+            cache = ExtractionCache.load(cache_file)
+368
+            expected = [cache_key(d, model, PROMPT_VERSION) for d in docs]
+369
+            comp = cache.completeness(expected)
+370
+            if not comp["ok"]:
+371
+                raise SystemExit(
+372
+                    f"[cov1-sweep] REFUSING C-relation: extraction cache incomplete "
+373
+                    f"({comp['n_missing']} missing / {comp['n_ok']} ok). Run exp_cov1_extract."
+374
+                )
+375
+        if mode in ("heuristic", "replay"):
+376
+            extractor_cmd = [sys.executable, "-m", "eval.exp_cov1_replay_harness"]
+377
+            extractor_env = {
+378
+                "COV1_CACHE_PATH": cache_file, "COV1_MODEL": model,
+379
+                "COV1_PROMPT_VER": PROMPT_VERSION,
+380
+            }
+381
+        t0 = time.time()
+382
+        engine, doc_id_of, cinfo = build_condition_engine(
+383
+            docs, Path(db_dir) / f"cov1_{cond}.sqlite",
+384
+            extractor_cmd=extractor_cmd, extractor_env=extractor_env,
+385
+            use_embedder=use_embedder,
+386
+        )
+387
+        ranks = retrieve_ranks(
+388
+            engine, doc_id_of, gold, use_graph_arm=graph, rerank_depth=rerank_depth
+389
+        )
+390
+        engine.close()
+391
+        ranks_by_cond[cond] = ranks
+392
+        rp.parent.mkdir(parents=True, exist_ok=True)
+393
+        rp.write_text(json.dumps(ranks_by_cond), encoding="utf-8")
+394
+        info[cond] = {**cinfo, "elapsed_s": round(time.time() - t0, 1)}
+395
+        print(f"[cov1-sweep] {cond} done {info[cond]}", flush=True)
+396
+
+397
+    result: dict[str, Any] = {
+398
+        "experiment": "EXP-COV-1",
+399
+        "corpus": "LOCOMO (CC-BY-NC, EVAL-ONLY)",
+400
+        "n_docs": len(docs),
+401
+        "n_gold_queries": len(gold),
+402
+        "class_counts": {
+403
+            c: sum(1 for q in gold if q["query_class"] == c)
+404
+            for c in sorted({q["query_class"] for q in gold})
+405
+        },
+
+exec
+/bin/sh -c "sed -n '348,360{=;p;}' src/python/eval/exp_cov1_sweep.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+348
+
+349
+    info: dict[str, Any] = {}
+350
+    for cond in conditions:
+351
+        if cond in ranks_by_cond:
+352
+            print(f"[cov1-sweep] {cond}: cached ranks, skip ingest", flush=True)
+353
+            continue
+354
+        mode, graph = CONDITIONS[cond]
+355
+        extractor_cmd = None
+356
+        extractor_env = None
+357
+        model = None
+358
+        cache_file = None
+359
+        if mode == "heuristic":
+360
+            build_c0_cache(docs, c0_cache, model="c0-floor")
+
+exec
+/bin/sh -c "sed -n '1,120{=;p;}' .markdownlint-cli2.jsonc" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+1
+// markdownlint-cli2 globs and ignore patterns.
+2
+//
+3
+// Scope: all actively-maintained markdown. Only build outputs, vendored
+4
+// deps, tool caches, and the dev/archive historical record are excluded.
+5
+{
+6
+  "config": {
+7
+    "extends": ".markdownlint.jsonc"
+8
+  },
+9
+  "globs": ["**/*.md"],
+10
+  "ignores": [
+11
+    // Vendored / build outputs. `**/node_modules/**` catches node_modules at
+12
+    // ANY depth (root, src/ts/, typescript/, …) so a stray vendored tree can
+13
+    // never re-enter the lint scope.
+14
+    "**/node_modules/**",
+15
+    "node_modules/**",
+16
+    "src/ts/node_modules/**",
+17
+    "target/**",
+18
+    "site/**",
+19
+    "dist/**",
+20
+    "**/dist/**",
+21
+    ".venv/**",
+22
+    "**/.venv/**",
+23
+    ".cache/**",
+24
+    ".wake/**",
+25
+
+26
+    // Gitignored eval corpus payloads (never committed; seeded locally for runs).
+27
+    "data/corpus-data/**",
+28
+
+29
+    // repo-prune tool backups (staging dir for pruned files; not maintained prose).
+30
+    "scripts/repo-prune/backups/**",
+31
+
+32
+    // Research substrate — bare URLs are intentional citations.
+33
+    "dev/tmp/**",
+34
+    "dev/tmp2/**",
+35
+    "dev/tmp3/**",
+36
+
+37
+    // Memex-related scratch notes (gitignored, mirrors .gitignore dev/memex/).
+38
+    "dev/memex/**",
+39
+
+40
+    // Archived / resolved artifacts — historical record, not actively maintained.
+41
+    "dev/archive/**",
+42
+
+43
+    // Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
+44
+    // not actively maintained, formatting drifts per agent.
+45
+    "dev/plans/runs/**",
+46
+
+47
+    // Orchestrator/agent-emitted slice PROMPTS — same class as runs/** above
+48
+    // (verbatim emitted, formatting drifts per agent), not maintained prose.
+49
+    "dev/plans/prompts/**",
+50
+
+51
+    // Local-only agent config (gitignored, not part of repo).
+52
+    ".claude/**",
+53
+
+54
+    // Public docs are gated by `mkdocs build --strict` already.
+55
+    "docs/**"
+56
+  ]
+57
+}
+
+exec
+/bin/sh -c "sed -n '55,115{=;p;}' dev/plans/runs/STATUS-0.8.14.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+55
+
+56
+## Outstanding worktrees
+57
+- None open (dead-run `slice-20-…121320Z` + `0.8.12-gpu-rerank` cleaned; eu7-verify worktree `slice-20-eu7-…195012Z` removed after the D6-no-op close).
+58
+
+59
+## Concurrency
+60
+- **Library Sweep #2** runs on its own branch (only `.github/workflows/*` + JS/TS lockfiles) —
+61
+  disjoint from engine `src/`/`Cargo.lock`. Expect `main` to advance; rebase is trivial.
+62
+
+63
+## Recent decisions (newest first)
+64
+- 2026-07-05 — **Slice 20 CLOSED (D6 no-op basis; HITL-ruled (A)).** Migration half `52f29fb9` (codex PASS, R-SUB-3).
+65
+  eu7 half: D6 (codex-verified zero vec0 rewrite @ Slice 5) excludes any 0.8.14 fidelity regression (R-GATE is
+66
+  conditional on a re-embed; none occurred). Empirical GPU eu7 (mis-directed cross-backend): N=1000 PASS 0.950;
+67
+  N=7667 sub-floor 0.833 (ci_hi 0.864) = cross-backend quant-flip + corpus-growth artifact. eu7 fidelity gate →
+68
+  CPU same-backend policy `649a8d45`; floor re-baseline → TC-5. Evidence:
+69
+  `runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log`.
+70
+- 2026-07-04 — Slice 10 (F5) CLOSED: 4 commits on main, codex CONCERN→fix1→CONCERN→fix2→resolved, gate green,
+71
+  SCHEMA_VERSION 16→17; in-engine BM25F (justified ADR-0.8.1 deviation for tunable b); D6 no vector touch.
+72
+- 2026-07-04 — Slice 5 (EXP-S keystone) CLOSED: `ba15e176`+`718cfe94` on main, codex §9 PASS, gate green,
+73
+  SCHEMA_VERSION 15→16, D6 no vec0 rewrite (eu7@20 = no-op).
+74
+- 2026-07-03 — Slice-0 ADR ratified; D8=Option C (F5 override); Slice 25 added; TC-1 discharged.
+75
+
+76
+## Repo-health flags (pre-existing; NOT Slice-25-caused; surfaced by running agent-verify at merge)
+77
+- **md-lint mis-scoped:** `agent-lint-md` (markdownlint-cli2) scans the whole tree incl. `typescript/node_modules`,
+78
+  gitignored `data/corpus-data/**`, and `scripts/repo-prune/backups/**` → `agent-verify` fails at `lint`. Tooling fix (scope excludes).
+79
+- **pyright:** 1 pre-existing error `src/python/eval/exp_cov1_sweep.py:377` (`cache_file` possibly unbound).
+80
+- **release.yml test:** `publish-rust-t1-embedder-api dry-run` structure + actionlint-fixture fail — from the concurrent
+81
+  Library-Sweep/napi-3 workflow changes (Slice 25 touched no `.github/workflows`). Echoes the 0.8.9 embedder-api publish drift.
+82
+- These are flagged to the Steward as repo-health items (own fix/consideration), not Slice-25 blockers.
+83
+
+84
+## Next action
+85
+Cut Slice-40 (release readiness) worktree off `649a8d45` → preflight `--expect-closed 20` → X1/X2/X3 cross-binding
+86
+parity + R-SUB/R-F5 AC gate + eu7 gate (satisfied D6 no-op) + resolve-or-document the pre-existing agent-verify reds
+87
+→ codex §9 → land → close 0.8.14 (label-only).
+
+exec
+/bin/sh -c "sed -n '20,55{=;p;}' dev/plans/runs/STATUS-0.8.14.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+20
+  (codex-verified @ Slice 5 — zero vec0 rewrite) conclusively excludes a 0.8.14 fidelity regression (R-GATE is
+21
+  conditional on a re-embed; none occurred). Empirical GPU run (mis-directed cross-backend, self-corrected in policy
+22
+  `649a8d45`): N=1000 PASS (0.950, ci[0.930,0.967]); N=7667 sub-floor (0.833, ci_hi 0.864) — a cross-backend
+23
+  quant-flip + corpus-growth artifact, NOT a 0.8.14 regression. Canonical eu7 = CPU same-backend (baseline 0.896);
+24
+  floor re-baseline for the grown 18,472-doc corpus → **TC-5**.
+25
+- **Next:** Slice 40 (release readiness) — off `649a8d45`.
+26
+
+27
+## Slice scoreboard
+28
+| Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
+29
+|------:|-------|-------|----------|--------|-------------|-------|-------------------|
+30
+| 0 | Setup + ADR (row-kinds, determinism, KILL, SCHEMA_VERSION, TC-1, F5 ruling) | **CLOSED** | 0344a343 (ADR authored on main d7cad699) | (docs on main) | n/a (design slice) | n/a | docs commit on main |
+31
+| 5 | **EXP-S KEYSTONE** — row_kind + per-kind coexisting-index write + determinism check + `SCHEMA_VERSION` 15→16 | **CLOSED** | dff4830c | slice-5-…235950Z | ✅ | **PASS** (no findings) | `ba15e176`+`718cfe94` on main |
+32
+| 10 | **F5 fielded BM25F** — `search_index_v2` + in-engine BM25F (tunable weights/`b`), `SCHEMA_VERSION` 16→17 | **CLOSED** | be37dffd | slice-10-…002826Z | ✅ | CONCERN→fix1→CONCERN→fix2→**resolved** | `b145754f`+`c57e4e99`+`9d8e368b`+`a7c3c145` |
+33
+| 15 | *(void reserved gap — #17 shipped 0.8.11)* | VOID | — | — | — | — | — |
+34
+| 20 | eu7 re-clear + v15→v17 migration verify (D6) | **CLOSED** | 4ca170a2 (mig) · 1c5ba1b6 (eu7) | slice-20-…121320Z (mig) | ✅ (mig) | **PASS** (mig §9) | mig `52f29fb9` on main; eu7 half **D6 no-op close** (HITL) |
+35
+| 25 | *(reserved gap)* Merge `0.8.14-gpu-rerank` (opt-in GPU CE + `embed_batch_cls`, default-CPU-unchanged) | **CLOSED** | ce8e1eef | slice-25-…033943Z | ✅ | BLOCK→fix1→**PASS** | `3c98b35b`+`813e525a`+`9187de26`+`e311aadf` on main |
+36
+| 40 | Verification + Release Readiness (X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate) | not-started | — | — | — | — | — |
+37
+
+38
+## Requirements / AC status (DoD frozen at Slice 0)
+39
+| ID | Requirement | State |
+40
+|----|-------------|-------|
+41
+| R-SUB-1 | Row-kinds coexist in one store | ✅ Slice 5 (GREEN) |
+42
+| R-SUB-2 | Incremental multi-index write deterministic | ✅ Slice 5 (GREEN, non-vacuous) |
+43
+| R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ✅ step-16 (Slice 5) + step-17 (Slice 10); v15→v17 full-path verify landed `52f29fb9` (Slice 20, codex PASS) |
+44
+| R-F5-1 | Fielded BM25F, tunable `b`/field weights | ✅ Slice 10 (GREEN; tokenization-faithful) |
+45
+| R-F5-2 | F5 ships per HITL Option-C override (gate did NOT clear) | ✅ ruled (ADR §D8) — ships as override |
+46
+| R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ✅ Slice 40 — EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are **engine-internal**: grep confirms they appear ONLY in `fathomdb-engine`/`fathomdb-schema` (Rust), NEVER in the Py/TS SDK bindings or the governed-surface allowlist → **NO new SDK verbs** (non-vacuously green). Py surface 16✅ / TS surface 131✅ (both read the one shared `governed-surface-allowlist.json`). **KNOWN py-first deferral (intentional, tracked):** the module-level embedder helper `embed_batch_cls` is Python-only (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS) — the parity harness is blind to module-level functions, so Slice 40 added `test_module_level_embedder_helper_asymmetry_is_tracked` to ASSERT the py-only set (was a silent blind spot). `Engine.embed` verb IS at Py↔TS parity. TS `embedBatchCls` binding = out-of-scope deferral |
+47
+| R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) after any re-embed | ✅ Slice 20 — **satisfied on D6 no-op basis** (zero vec0 rewrite ⇒ no re-embed ⇒ gate not triggered; HITL-ruled). GPU run sub-floor @ N=7667 (0.833) = cross-backend+corpus artifact, not a regression; floor re-baseline → TC-5 |
+48
+
+49
+## Hard gates
+50
+- **eu7 ≥ 0.90 one-sided CI** — Slice 20 CLOSED on D6 no-op basis (no re-embed occurred). The eu7 fidelity gate MUST run **CPU same-backend** (policy `649a8d45`); a GPU run cross-backends it. Floor re-baseline for the grown corpus → TC-5.
+51
+- **Full-workspace clippy+check** — `cargo clippy --workspace --all-targets` AND
+52
+  `cargo check --workspace --all-targets`, both exit 0, before ANY green claim.
+53
+- **codex §9** review gate on every slice's output.json.
+54
+- **SCHEMA_VERSION migration** = engine/schema migration → HITL-gated; ADR ratifies the plan.
+55
+
+
+exec
+/bin/sh -c "sed -n '/0.8.14/{=;p;}' dev/DOC-INDEX.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+54
+| `dev/design/gpu-eval-activities-policy.md` | **Policy — repo MUST use the 3090s for eval/embed activities when there is room** (standing HITL mandate, 2026-07-05): any GPU-acceleratable repo-internal activity (eu7 fidelity harness seed/re-embed, corpus re-embeds, eval sweeps, CE reranking, embedding/rerank-heavy dev/CI) MUST run on `cuda:0`/`cuda:1`; CPU is permitted ONLY for two narrow compatibility probes, not as a general fallback. Grounds the 0.8.14 Slice-20 eu7 policy correction (the fidelity gate itself must run **CPU same-backend** vs its 0.896 baseline — a GPU eu7 run cross-backends it) | 0.8.14 Slice 20 (eu7 policy) | 2026-07-05 |
+126
+| `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` | **EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)** (RATIFIED, HITL-signed 2026-07-03): realizes the `ADR-0.8.1-deferred-f5` deferral + discharges ledger **TC-1** (OPP-12 projection-registry forward-compat). D1 separate `row_kind` column (leaf/coverage/graph); D2 per-kind index-target dispatch; D3 flush-then-byte-compare determinism check; D4 ONE coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S, 16→17 F5); D5 discharges TC-1; **D6 eu7 no-op unless vec0 rewritten**; D7 KILL paths; **D8 = Option C** (F5 ships by conscious HITL override, NOT gate-clearance). Cross-links: `dev/plans/plan-0.8.14.md`, `runs/STATUS-0.8.14.md` | 0.8.14 Slice 0 gates; Slices 5/10 implement | 2026-07-03 |
+155
+| `dev/plans/plan-0.8.14.md` + `dev/plans/runs/STATUS-0.8.14.md` | **0.8.14 Substrate & recall (the schema-migration release) — plan + live orchestrator board.** Spine EXP-S (#2 kind-tagged coexisting-index substrate) → F5 (#16 fielded BM25F), one coordinated `SCHEMA_VERSION` 15→17 migration; #17 filter-grammar struck (shipped 0.8.11). **Label-only** (manifests stay 0.8.9). Ladder `0 → 5 → 10 → 20 → 25 → 40` (15 void). Slices 5/10/20/25 CLOSED; Slice 40 = release readiness. **R-X-1 py-first deferral (intentional):** EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are engine-internal → NO new Py/TS SDK verbs (non-vacuously green). The module-level embedder helper `embed_batch_cls` is **Python-only** (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS); TS parity is a tracked deferral (the `Engine.embed` verb IS at Py↔TS parity). eu7 (R-GATE) satisfied on the D6 no-op basis; grown-corpus floor re-baseline → TC-5 | 0.8.14 Slice 0 authors; every slice updates | 2026-07-05 |
+162
+| `dev/notes/0.8.12-cpu-embedder-defect-blocks-dense-eval.md` | **Env finding (0.8.12 EXP-COV-1)** — the installed CPU embedder `.so` is pathologically slow/stalling (~13s/700-tok doc; stalls @1500% CPU) and has no `embed-cuda`/GPU build ⇒ CE-rerank + dense arms UNRUNNABLE ⇒ the coverage→outcome sufficiency read can't test the "above ~0.571 ceiling" question. Blocks ANY dense/CE eval in this env; fix = a GPU (`embed-cuda`) build; pairs with 0.8.14 GPU-rerank. Priced extraction + `$0` gold-scored census were unaffected | 0.8.12 EXP-COV-1; ties to 0.8.14 | 2026-07-02 |
+
+exec
+/bin/sh -c "sed -n '120,158{=;p;}' dev/DOC-INDEX.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+120
+| `dev/adr/ADR-0.8.1-byo-llm-extraction-protocol.md` | BYO-LLM Extraction Provider Protocol ADR — `fathomdb.extract.v1` engine-side contract (spawn+handshake+ingest surface+invalidate-not-accumulate; footprint: no FathomDB network call); 5 additive pins from Memex ELPS consult 2026-06-12; pending HITL sign-off (Slice 0 gate) | Slice 0; Slice 15 implements | 2026-06-12 |
+121
+| `dev/adr/ADR-0.8.6-generalized-provider-protocol.md` | **OPP-8 generalized typed-task provider protocol** (ACCEPTED, HITL-signed 2026-06-26): generalizes `fathomdb.extract.v1` → `fathomdb.provider.v1` — same transport/handshake/error model, adds a `task` discriminator (extract-only default, back-compat) + `supported_tasks` negotiation + `provider_session` refactor; **Option A** = land the transport seam now, payloads deferred to 0.8.12; proven by **byte-identical** ELPS golden output; closes the I-5 (#8→#7/#6) rework edge | 0.8.6 Slice 0 gates; **Slice 5 implements** | 2026-06-26 |
+122
+| `dev/adr/ADR-0.8.6-governed-verb-coupling-hygiene.md` | **OPP-5 governed-verb coupling hygiene** (ACCEPTED, HITL-signed 2026-06-26): governed read surface (read.get/get_many/collection/mutations/list, graph.neighbors/search_expand) is already complete+LIVE in Py+TS; Slice 10 = **parity-harden** (cross-binding harness for ALL read verbs, not just `read.list`; consumer-boundary conformance assertion; reconcile interface docs), **not** build a new surface | 0.8.6 Slice 0 gates; **Slice 10 implements** | 2026-06-26 |
+123
+| `dev/adr/ADR-0.8.1-ir-measure-eval-design.md` | IR-measure/Eval Design ADR — R0 CDF spec (found@K for K∈{50..1000}, per-class, all arms; gates Slice 10 rerank depth) + R2 end-to-end parity eval design (identical-answerer, local Mem0-OSS baseline, per-class; Decision ①: AC-077 gate, R2 north-star, C3: gates R3 go/no-go); pending HITL sign-off | Slice 0; Slice 5/25 implements | 2026-06-12 |
+124
+| `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` | G11 edge enrichment ADR — activates H3 reservation; step-14 SCHEMA_VERSION 13→14 (additive body/t_valid/t_invalid/confidence/extractor_model_id columns on canonical_edges); edge projectability capability (FTS+vector; exact mechanism = Slice 15 impl detail); invalidate-not-accumulate contract; pending HITL sign-off | Slice 0; Slice 15 implements | 2026-06-12 |
+125
+| `dev/adr/ADR-0.8.12-consolidation-recency-provider.md` | **OPP-2 consolidation/recency provider** (PROPOSED, 0.8.12 Slice-0): a new typed task `fathomdb.consolidate.v1` on the ONE OPP-8 transport (ADR-0.8.6) — additive `ProviderTask::Consolidate` + payload (candidate fact-cluster → keep/supersede/merge/invalidate verdict) + `EngineError::Consolidator` leaf; **no second transport** (closes I-5); post-retrieval recency/supersession metadata NOT a destructive content-rewrite (0.8.3 blind-merge caution); caller-side BYO-LLM, default-OFF until the Slice-20 value test clears | 0.8.12 Slice 0 gates; **Slice 15 implements**, Slice 20 value-gates | 2026-07-01 |
+126
+| `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` | **EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)** (RATIFIED, HITL-signed 2026-07-03): realizes the `ADR-0.8.1-deferred-f5` deferral + discharges ledger **TC-1** (OPP-12 projection-registry forward-compat). D1 separate `row_kind` column (leaf/coverage/graph); D2 per-kind index-target dispatch; D3 flush-then-byte-compare determinism check; D4 ONE coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S, 16→17 F5); D5 discharges TC-1; **D6 eu7 no-op unless vec0 rewritten**; D7 KILL paths; **D8 = Option C** (F5 ships by conscious HITL override, NOT gate-clearance). Cross-links: `dev/plans/plan-0.8.14.md`, `runs/STATUS-0.8.14.md` | 0.8.14 Slice 0 gates; Slices 5/10 implement | 2026-07-03 |
+127
+| `dev/adr/ADR-0.6.0-cli-scope.md` | CLI scope = two-root operator surface (`recover` lossy / `doctor` bit-preserving); Option B (`search`/`get`/`list` application query) rejected. Amended 2026-06-06 (Slice 34): scopes the 0.8.0 `doctor dump-mutations` op-store read-back IN under `doctor` as a `dump-*` diagnostic (NOT Option B; application query verbs still require a re-open) | 34 (amendment); reference | 2026-06-06 |
+128
+| `dev/adr/ADR-0.7.0-vector-binary-quant.md` | Binary-quant + f32 rerank recall floor (0.90). **40/GA-2 amendment (AC-075, ◆ B-1):** floor now GATED on the real-embedder eu7 measured on the pre-fusion VECTOR STAGE (ANN-quantization fidelity in isolation), NOT the RRF-fused `search()`; synthetic `ac_013b` demoted to report-only; no numeric change; cites GA-1 | 40/GA-2 amends § 2 pt 4 + status | 2026-06-08 |
+129
+| `dev/adr/ADR-0.6.0-*.md`, `ADR-0.7.0-*.md`, `ADR-0.7.1-*.md` | Prior-release ADRs (typed-write boundary, CLI scope, error taxonomy, etc.) | reference (e.g. typed-write boundary preserved by 25) | (tree) |
+130
+
+131
+## `dev/plans/` — plans + live state
+132
+
+133
+| Path | Purpose | Owning slice / AC | Last-touched |
+134
+|------|---------|-------------------|--------------|
+135
+| `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` | **0.8.x program schedule-of-record (THE master).** Single source of truth for the 0.8.6→0.8.18 line: findings F-1…F-11, interlocks, allocation, by-when. The Program Steward keeps it continuously true to the repo. Defines the Steward↔Release-Orchestrator role split (work is orchestrated per-release, commissioned by the Steward). | Program Steward (keeps true) | 2026-06-29 |
+136
+| `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` | **Program Steward hand-off — role/mandate (canonical).** Opening prompt for a program-scope Steward session: keep the master true, reconcile drift, place + sequence cross-cutting work, **commission** execution (do not implement, never hand-drive a release ladder), be the truthful propose-first HITL interface, trust-git-not-narration. | Program Steward (entry point) | 2026-06-27 |
+137
+| `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md` | **Release Orchestrator hand-off — sibling role (NOT the Steward).** Per-release entry point (`/goal complete 0.8.z`) that gates one release's slice ladder; commissioned by the Steward. Renamed 2026-06-27 from `0.8.x-PROGRAM-STEWARD-HANDOFF.md`; generic mechanics valid, release-specific body partly 0.8.3/0.8.4-stale (pending a release-agnostic refresh). | Release Orchestrator (per-release) | 2026-06-27 |
+138
+| `dev/plans/0.8.0-implementation.md` | **Authoritative slice contracts** (objective/subagents/lifecycle/success per slice 0–40); Slice 15/20 active-identity language re-scoped to `logical_id` alone by Slice 31 | the plan itself | 2026-06-05 |
+139
+| `dev/plans/0.8.0-plan.md` | **Mod-5 ladder + reserved-gap policy + Immediate-Next-Slice pointer + Slice-0/5/10 CLOSED blocks** | 0 authors; every slice advances the pointer | 2026-06-03 |
+140
+| `dev/plans/runs/STATUS-0.8.0.md` | **Live state board** (nine §12.5 sections + X1/X2/X3 column + witness + harness contract) | 0 authors; every slice updates at close | 2026-06-03 |
+141
+| `dev/plans/prompts/PLAN-TEMPLATE.md` | **Per-release plan authoring template** — fill-in `plan-<release>.md` skeleton (mod-5 ladder, R-* acceptance, X1/X2/X3 DoD, override/duplication register, behavior-change register, decisions/open-Q) + the plan-authoring checklist that defeats plan-level under-spec | authors every plan-<release>.md | 2026-06-26 |
+142
+| `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` | **Per-slice prompt template** — self-contained implementer prompt (worktree/stray-edit discipline, RED→GREEN→X1/X2/X3, closure output.json) + the anti-under-spec authoring checklist | authors every slice prompt | 2026-06-03 |
+143
+| `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
+144
+| `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
+145
+| `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | **Slice 6 (B2) FTS5 tokenizer latency experiment** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral; recommends tiering AC-012 (10k binding) per the AC-072/073 precedent | Slice 6 (B2) | 2026-06-07 |
+146
+| `dev/plans/0.8.1-plan.md` | **0.8.1 mod-5 ladder** + reserved-gap policy + X1/X2/X3 DoD + Immediate-Next-Slice pointer (graph traversal + temporal-edge graph retrieval + reranker + eval + filter; R0–R4) | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
+147
+| `dev/plans/0.8.1-implementation.md` | **0.8.1 authoritative slice contracts** (Slices 0–40; critical path + parallelization; footprint invariant; BYO-LLM ingest) | the plan itself | 2026-06-12 |
+148
+| `dev/plans/runs/STATUS-0.8.1.md` | **0.8.1 live state board** (§12.5 sections + X1/X2/X3 column) | 0.8.1 Slice 0 authors; every slice updates at close | 2026-06-12 |
+149
+| `dev/plans/prompts/0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md` | **0.8.1 orchestrator hand-off** — roles, ladder spawn order, the per-slice decision loop (TDD + codex §9 + board-in-one-commit), HITL gates, footprint invariant | orchestrator | 2026-06-12 |
+150
+| `dev/plans/prompts/IR-C-byo-llm-extraction-harness-memex.md` | **BYO-LLM extraction-harness brief** for Memex — the `fathomdb.extract.v1` Extraction Provider Protocol FathomDB proxies graph construction to (0.8.1 Slice 15 implements) | 0.8.1 Slice 15 | 2026-06-12 |
+151
+| `dev/roadmap/0.8.2.md` | **0.8.2 roadmap** — M1 multi-hop answer-accuracy harness; **✅ CLOSED, verdict NO-GO (HITL-signed 2026-06-19):** ppr_fusion ΔF1 −0.0405 vs fused-RRF (n=300), CI upper < +0.04; passage_dense strongest. Redirect 0.8.3 → index-key enrichment | 0.8.2 | 2026-06-19 |
+152
+| `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan (as-built)** — M1 slice contracts (0 design+pre-register → 4 corpus → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict; +E1/E2 reranker engine slices); OUTCOME banner = NO-GO | 0.8.2 | 2026-06-19 |
+153
+| `dev/plans/plan-0.8.7.md` + `dev/plans/runs/STATUS-0.8.7.md` | **0.8.7 GPU embedder (OOB) — plan + live status (COMPLETE).** `FATHOMDB_EMBED_DEVICE` device seam (cpu/cuda/cuda:N/metal) + `embed-cuda`/`embed-metal` feature chain ALREADY LANDED (`02297cb3`, in the 0.8.5 baseline); 0.8.7 added the pure `parse_device_request` + 7 env-grammar unit tests (R-GPU-1), validated `embed-cuda` on an RTX 3090, and recorded the measured speedup (per-doc **15.6×**, batched **93×**, best-path bulk **~46×**; CPU↔CUDA 1-bit codes identical, 0/6144 sign-bit diff). Default CPU build byte-identical (R-GPU-2). Harness = `fathomdb-embedder/examples/gpu_speedup.rs` | 0.8.7 Slices 0/5/10/40 | 2026-06-26 |
+154
+| `dev/plans/plan-0.8.9.md` + `dev/plans/runs/STATUS-0.8.9.md` | **0.8.9 CI-integrity micro (OOB) — plan + live status.** **$0** CI/test-harness work (no library query-path change). Slice 0 audit found most of the plan's premises **already fixed** at 0.8.0 Slice 40+ → the deliverable is an **honest gate map** (`dev/design/perf-gates.md`), not a fabricated pass. Landed: **R-PG** ac_013b off the synthetic floor (report-only `RECALL_FIDELITY_INFO`; asserting verdict lives in `eu7_real_corpus_ac.rs`) + `recall_gate_predicate.rs` RED-confirmed catch; **R-037** AC-037 `netns-deny-egress` durably on the `ubuntu-22.04` `security` job + `check-netns-deny-egress-catch.sh` (offline catch + live-netns demonstrate, proven IN CI); **R-050c** `fetch-depth: 0` so removal-detect resolves `v0.6.1`; **R-DEP** npm overrides (markdown-it 14.2.0 / js-yaml 4.2.0, `npm audit`=0) + dependabot.yml npm `/` coverage; **R-BOOT** bootstrap un-mask (httpx `# type: ignore` + drop `--quiet`/`>/dev/null` masking). Two **external** blockers (NOT 0.8.9 scope): repo-wide markdownlint debt (`verify`/lint) escalated to steward, and the 0.8.8 pyo3 macOS/Windows link error. | 0.8.9 Slices 0/1/5/10/15/40 | 2026-06-28 |
+155
+| `dev/plans/plan-0.8.14.md` + `dev/plans/runs/STATUS-0.8.14.md` | **0.8.14 Substrate & recall (the schema-migration release) — plan + live orchestrator board.** Spine EXP-S (#2 kind-tagged coexisting-index substrate) → F5 (#16 fielded BM25F), one coordinated `SCHEMA_VERSION` 15→17 migration; #17 filter-grammar struck (shipped 0.8.11). **Label-only** (manifests stay 0.8.9). Ladder `0 → 5 → 10 → 20 → 25 → 40` (15 void). Slices 5/10/20/25 CLOSED; Slice 40 = release readiness. **R-X-1 py-first deferral (intentional):** EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are engine-internal → NO new Py/TS SDK verbs (non-vacuously green). The module-level embedder helper `embed_batch_cls` is **Python-only** (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS); TS parity is a tracked deferral (the `Engine.embed` verb IS at Py↔TS parity). eu7 (R-GATE) satisfied on the D6 no-op basis; grown-corpus floor re-baseline → TC-5 | 0.8.14 Slice 0 authors; every slice updates | 2026-07-05 |
+156
+| `dev/plans/plan-0.8.12.md` + `dev/plans/runs/STATUS-0.8.12.md` | **0.8.12 Memory-quality plumbing — plan + live orchestrator board.** Mod-5 ladder `0 → 5 → 10 → 15 → 20 → 40`, tracks coverage (5→10) ∥ consolidation (15→20). #6 ELPS coverage (eval-gated by OPP-6 EXP-COV) + #7 consolidation/recency provider (OPP-2 on the OPP-8 seam). **Label-only** (manifests stay 0.8.9). Slice 5 folds in the OPP-6 EXP-COV academic/`$0` arms (HITL 2026-07-01). STATUS carries the frozen DoD (R-COV-1..3 / R-CON-1..3 / R-X-1), the `$` ledger, per-slice X + codex §9 columns. Renamed from `plan-0.8.10.md` at the 2026-07-01 forward renumber | 0.8.12 Slice 0 authors; every slice updates | 2026-07-01 |
+157
+| `dev/plans/runs/EXP-COV-results.md` | **OPP-6 EXP-COV Phase-A `$0` results (discharges the parked OPP-6 eval).** Per-class fact-coverage table (entity/edge recall + precision guard, per doc-kind) for C0-floor heuristic + current-ELPS-baseline (scored `$0` from pre-computed `claude-haiku-4-5` outputs) [+ C1-gliner if installed] on the frozen `personal.gold` slice; per-corpus relevance-ceiling re-measure; the GATE-OPEN/CLOSED recommendation for the Slice-10 priced run (HARD-STOP #1). No raw licensed payloads. Pre-registration: `dev/design/0.8.12-coverage-probe-and-value-test.md` §A | 0.8.12 Slice 5 | 2026-07-01 |
+158
+| `dev/plans/runs/0.8.2-m1-corpus-manifest.json` | **M1 corpus manifest artifact** — pinned `musique_hash` (sha256), per-hop counts (2/3/4), answerable vs unanswerable counts, materialized-corpus path, acquire command; consumed by Slices 5 ∥ 10 | 0.8.2 Slice 4 | 2026-06-17 |
+
+exec
+/bin/sh -c 'ls dev/plans/prompts' in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+0.6.1-AC012-measure.md
+0.6.1-AXIS-E-PIN.md
+0.6.1-B-001-removal-detect-baseref.md
+0.6.1-BUMP.md
+0.6.1-DEPENDABOT.md
+0.6.1-GA.md
+0.6.1-HANDOFF-V-GA.md
+0.6.1-OPENREPORT-py.md
+0.6.1-OPENREPORT-ts.md
+0.6.1-RC1.md
+0.6.1-V.md
+0.6.1-WF-FIX-1-axis-e-idempotent-publish.md
+0.6.1-planning.md
+0.7.0-BUMP.md
+0.7.0-CORPUS-BUILD-HANDOFF.md
+0.7.0-DOCS.md
+0.7.0-GA.md
+0.7.0-HANDOFF.md
+0.7.0-PERF-AC013-AC019.md
+0.7.0-PERF-AC020.md
+0.7.0-PERF-DIAG.md
+0.7.0-PERF-EXP-HANDOFF.md
+0.7.0-PERF-PRAGMA.md
+0.7.0-PERF-TOPK-LIMIT.md
+0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
+0.7.0-PVQ-P1-DESIGN-fix-1.md
+0.7.0-PVQ-P1-DESIGN-fix-2.md
+0.7.0-PVQ-P1-DESIGN-fix-3.md
+0.7.0-PVQ-P1-DESIGN.md
+0.7.0-PVQ-P1-IMPL.md
+0.7.0-PVQ-P2-IMPL.md
+0.7.0-PVQ-P2-RED.md
+0.7.0-PVQ-S0-adr-draft.md
+0.7.0-RC1.md
+0.7.0-V.md
+0.7.0-VECTOR-COST-RESEARCH.md
+0.7.0-WF-FIX-PYPI-SMOKE.md
+0.7.0-planning.md
+0.7.1-EMBEDDER-UNDEFER-HANDOFF.md
+0.7.1-EU-5f-EU-7-codex-review.md
+0.7.1-EU-6-FIX-plan.md
+0.7.1-EU-6-launch.md
+0.7.1-EU-7-launch.md
+0.7.1-EU-8-launch.md
+0.7.2-PR-1-doc-drift-sweep.md
+0.7.2-PR-2a-recall-investigation.md
+0.7.2-PR-2b-mean-recompute.md
+0.7.2-PR-2bc-S1-land-harness.md
+0.7.2-PR-2bc-S2-carve-auto-drift.md
+0.7.2-PR-2bc-S3-floor-reframe.md
+0.7.2-PR-2bc-reassessment.md
+0.7.2-PR-2c-representative-initial-pin.md
+0.7.2-PR-3-canonical-ci-dispatch.md
+0.7.2-PR-5-corpus-harness.md
+0.7.2-PR-6-devloop-perf-gates.md
+0.7.2-PR-7-perf-regression-detection.md
+0.7.2-PR-9-embedder-robustness.md
+0.7.2-RELEASE-HARDENING-HANDOFF.md
+0.7.2-embedder-recall-HANDOFF.md
+0.8.0-MASTER-ORCHESTRATOR-HANDOFF.md
+0.8.0-ORCHESTRATOR-CONTINUE-GA-RECALL.md
+0.8.0-ORCHESTRATOR-CONTINUE.md
+0.8.0-PROF-ingest-stack-profiling.md
+0.8.0-PROF-retrieval-stack-profiling.md
+0.8.0-SESSION-SCAFFOLD-GENERATOR.md
+0.8.0-SLICE-TEMPLATE.md
+0.8.0-slice-0a.md
+0.8.0-slice-0b.md
+0.8.0-slice-10-fix1.md
+0.8.0-slice-10.md
+0.8.0-slice-15.md
+0.8.0-slice-20.md
+0.8.0-slice-21.md
+0.8.0-slice-25.md
+0.8.0-slice-27-fix-1.md
+0.8.0-slice-27-fix-2.md
+0.8.0-slice-27.md
+0.8.0-slice-30.md
+0.8.0-slice-31.md
+0.8.0-slice-32.md
+0.8.0-slice-33.md
+0.8.0-slice-34.md
+0.8.0-slice-35.md
+0.8.0-slice-40-B1-application.md
+0.8.0-slice-40.md
+0.8.0-slice-46.md
+0.8.0-slice-5.md
+0.8.0-slice-6.md
+0.8.1-CONTINUATION-HANDOFF.md
+0.8.1-G0-instrument-hardening.md
+0.8.1-MASTER-ORCHESTRATOR-HANDOFF.md
+0.8.1-SLICE-30-PREP.md
+0.8.1-graph-track-HANDOFF-2.md
+0.8.1-graph-track-HANDOFF-3.md
+0.8.1-graph-track-HANDOFF.md
+0.8.1-slice-0-adr-kickoff.md
+0.8.1-slice-10-prompt.md
+0.8.1-slice-15-g11-keystone.md
+0.8.1-slice-20-g5g6-traversal.md
+0.8.1-slice-25-r2-parity-eval.md
+0.8.1-slice-30-graph-retrieval-arm.md
+0.8.1-slice-30-option2.md
+0.8.1-slice-30-option3.md
+0.8.1-slice-35-g4-filter-grammar.md
+0.8.1-slice-5-r0-recall-cdf.md
+0.8.12-slice15-fix-1.md
+0.8.14-slice-10-fix-1.md
+0.8.14-slice-10-fix-2.md
+0.8.14-slice-25-fix-1.md
+0.8.2-pwrfix.md
+0.8.2-s20-abstention-fix.md
+0.8.2-slice-0-fix-1.md
+0.8.2-slice-0-rev-fix-1.md
+0.8.2-slice-0-rev.md
+0.8.2-slice-0-rev2.md
+0.8.2-slice-0.md
+0.8.2-slice-10-fix-1.md
+0.8.2-slice-10.md
+0.8.2-slice-15.md
+0.8.2-slice-20-rerun.md
+0.8.2-slice-20-resilience.md
+0.8.2-slice-20.md
+0.8.2-slice-4-fix-1.md
+0.8.2-slice-4.md
+0.8.2-slice-5-fix-1.md
+0.8.2-slice-5-fix-2.md
+0.8.2-slice-5.md
+0.8.2-slice-e1-fix-1.md
+0.8.2-slice-e1.md
+0.8.2-slice-e2-fix-1.md
+0.8.2-slice-e2.md
+0.8.2-slice-h1.md
+0.8.3-ce-rerank-accuracy-HANDOFF.md
+0.8.3-slice-0-prompt.md
+0.8.3-slice-10-prompt.md
+0.8.3-slice-5-prompt.md
+0.8.4-slice-5-prompt.md
+0.8.4-slice-5b-autoe-prompt.md
+0.8.4-slice-5b-pilot-runner-prompt.md
+0.8.9.1-markdownlint-cleanup-HANDOFF.md
+0.8.x-IR-1-phase1-measure-consensus.md
+0.8.x-IR-1-recall-measure.md
+0.8.x-IR-2-recall-gate.md
+0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md
+0.8.x-STEWARD-HANDOFF.md
+0.8.x-auto-mean-drift-DEFERRED.md
+0.8.x-corpus-qa-expansion-handoff.md
+0.8.x-corpus-source-expansion-search.md
+00-handoff-execute.md
+01-orchestrator-resume.md
+02-pack6-handoff-readerpool-refactor.md
+02a-pack6-diagnostics-recapture.md
+03-whitepaper-currency-check.md
+04-pack6G-handoff-canonical-sqlite-tuning.md
+10b-A-fix-1.md
+10b-A-low-risk-seams.md
+10b-B-purge-restore.md
+11a-fix-1.md
+11a-pyo3-binding.md
+11b-fix-1.md
+11b-napi-binding.md
+11c-fix-1.md
+11c-set-version.md
+11d-fix-1.md
+11d-release-workflow.md
+12-B-benchmark-robustness-workflow.md
+12-D-durability-harnesses.md
+12-D-fix-1.md
+12-DX-external-user-docs.md
+12-GA-HANDOFF.md
+12-GA-bump.md
+12-HANDOFF.md
+12-P-decision.md
+12-RC1-WF-FIX-1-resume.md
+12-RC1-WF-FIX-1-resume2.md
+12-RC1-WF-FIX-1-resume3.md
+12-RC1-WF-FIX-1.md
+12-RC1-tag-rc1.md
+12-RC2-bump.md
+12-RC3-bump.md
+12-RC4-bump.md
+12-S-fix-1.md
+12-S-fix-2.md
+12-S-security-fixtures.md
+12-TX-ts-python-parity.md
+12-V-VERBS-decision.md
+12-WF-FIX-3.md
+A0-harness-split.md
+A1-perf-capture.md
+A2-symbol-focus.md
+A3-secondary-diagnostics.md
+A4-decision-record.md
+B1-multithread-wiring.md
+B2-memstatus.md
+B3-lookaside.md
+C1-threadsafe2-rebuild.md
+D1-union-refactor.md
+E1-prepare-cached-readers.md
+F0-thread-affine-readers.md
+FATHOMDB-MEMEX-DIVERGENCE-REVIEW.md
+G0-wal-checkpoint-telemetry.md
+G1-reader-lookaside.md
+G3_5-cache-pressure-telemetry.md
+IR-C-byo-llm-extraction-harness-memex.md
+IR-C-fact-level-gold-label-generation.md
+IR-C-roadmap-A-analysis-dossier.md
+IR-C-roadmap-B-fable5-review.md
+IR-C-roadmap-deep-research-question.md
+LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md
+LIBRARY-BUMP-STEWARD.md
+PLAN-TEMPLATE.md
+final-synthesis.md
+review-experiment.md
+review-phase78-robustness.md
+scaffolds
+
+codex
+The main risk is narrowing. One issue is a real false-green in the markdownlint scope; the X1 test is better than a tautology, but it still only enforces the Python half of the claimed asymmetry. I’m pulling exact refs for those claims now.
+exec
+/bin/sh -c "sed -n '1,220{=;p;}' dev/plans/runs/0.8.14-slice-40-output.json" in /home/coreyt/projects/fathomdb-worktrees/0.8.14-slice-40-20260706T013816Z
+ succeeded in 0ms:
+1
+{
+2
+  "phase": "0.8.14-slice-40",
+3
+  "task": "Verification + Release Readiness (0.8.14, label-only): R-SUB/R-F5 AC gate, full-workspace gate, X1/X2/X3, agent-verify reds resolve-or-document",
+4
+  "baseline_sha": "91c47ee0436642900f3cf88569047edd5af353d7",
+5
+  "branch": "slice-40-20260706T013816Z",
+6
+  "head_sha": "471418853500c1353292f6f3ab8da3c17ab5fa24",
+7
+  "status": "COMPLETE",
+8
+  "manifest_bump": false,
+9
+  "commits": [
+10
+    "f67ae9fe: fix(md-lint): scope markdownlint to maintained tracked markdown",
+11
+    "55022df8: fix(eval): initialize cache_file so pyright is not possibly-unbound",
+12
+    "a7a382e6: test(x1): assert the py-only module-level embedder-helper asymmetry",
+13
+    "47141885: docs(doc-index): index 0.8.14 substrate/recall docs (X3)"
+14
+  ],
+15
+  "findings_addressed": [
+16
+    "md-lint mis-scope (FIXED): markdownlint-cli2 no longer scans vendored/gitignored/cache trees or agent-emitted prompt files",
+17
+    "pyright cache_file possibly-unbound at exp_cov1_sweep.py:377 (FIXED)",
+18
+    "X1 silent blind spot: embed_batch_cls py-only asymmetry now ASSERTED (was blind — harness only introspects Engine/admin/read)"
+19
+  ],
+20
+  "blockers_encountered": [
+21
+    {
+22
+      "id": "release-yml-actionlint-fixture-red",
+23
+      "description": "scripts/tests/test_actionlint_fixture.sh FAILS: 'publish-rust-t1-embedder-api dry-run branch is not cargo publish --dry-run -p'. This is the only remaining agent-verify red (fails at step=test).",
+24
+      "resolution": "DOCUMENTED, not fixed (release.yml is out of scope; task forbids editing workflow files). Provenance git-proven NOT 0.8.14-caused: HEAD==baseline (branch had no commits before Slice 40); `git log d7cad699..HEAD -- .github/workflows scripts/tests/test_actionlint_fixture.sh` is EMPTY; release.yml was last touched by 8bec917e 'Library Sweep #2' (the concurrent track). 0.8.14 is label-only (no publish) so a publish-structure red does not block readiness."
+25
+    }
+26
+  ],
+27
+  "additional_changes_made_in_scope": [
+28
+    "Added dev/plans/prompts/** to the markdownlint ignore set (same class as the already-ignored dev/plans/runs/**; removed 21 of 30 pre-existing tracked-file lint errors)",
+29
+    "Recorded the R-X-1 py-first embed_batch_cls deferral in the STATUS-0.8.14 board row and the DOC-INDEX plan/STATUS row"
+30
+  ],
+31
+  "agent_verify_result": "fail (step=test; sole failure = test-actionlint-fixture, the pre-existing/concurrent release.yml publish-structure red documented above; lint PASS, typecheck PASS, security PASS [0 violations, 0 blockers, 1 accepted userns env downgrade])",
+32
+  "readiness": {
+33
+    "A_ac_gate": {
+34
+      "exp_s_substrate": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_sub_1_row_kinds_coexist_and_are_queryable_by_row_kind", "r_sub_2_incremental_multi_index_write_is_deterministic", "d2_index_targets_differ_by_row_kind"]},
+35
+      "step15_to_17_migration": {"result": "pass", "count": "1/1", "exit": 0},
+36
+      "step16_migration": {"result": "pass", "count": "3/3", "exit": 0},
+37
+      "step17_migration": {"result": "pass", "count": "3/3", "exit": 0},
+38
+      "f5_bm25f": {"result": "pass", "count": "3/3", "exit": 0, "tests": ["r_f5_1_field_weight_flips_ranking_vs_body_only_baseline", "r_f5_1_fix1_scorer_is_tokenization_faithful_to_fts5", "write_path_populates_search_index_v2_synchronously"]},
+39
+      "r_f5_2": "no test gate — ships by HITL Option-C override (ADR-0.8.14 D8), not invented"
+40
+    },
+41
+    "B_full_workspace_gate": {
+42
+      "cargo clippy --workspace --all-targets": 0,
+43
+      "cargo check --workspace --all-targets": 0,
+44
+      "cargo test --workspace": {"exit": 0, "note": "0 failed across all crates; some AGENT_LONG-gated tests ignored (not failures)"}
+45
+    },
+46
+    "C1_surface_parity": {
+47
+      "python": {"result": "pass", "count": "16 passed", "runner": ".venv/bin/python -m pytest src/python/tests/test_surface.py -q"},
+48
+      "typescript": {"result": "pass", "count": "131 pass / 0 fail", "runner": "cd src/ts && npm test (node --test dist/tests/*.test.js)", "note": "node_modules symlinked from the identical-lockfile main tree (no maturin/pip; napi build used the worktree's own target/); symlink + build artifacts removed after"}
+49
+    },
+50
+    "C2_no_new_verb_confirmation": "CONFIRMED non-vacuous: grep for row_kind / search_index_v2 / bm25f|BM25F across src (--include *.rs *.py *.ts *.pyi *.d.ts) hits ONLY fathomdb-engine + fathomdb-schema Rust crates+tests; ZERO hits in Py/TS SDK bindings or src/conformance/governed-surface-allowlist.json. EXP-S + F5 are engine-internal and add no SDK verbs.",
+51
+    "C3_embed_batch_cls_disposition": "FIXED (minimal assertion) + DOCUMENTED. embed_batch_cls is a module-level embedder helper exposed PYTHON-ONLY (fathomdb-py/src/lib.rs, fathomdb.__all__, _fathomdb.pyi; ABSENT from fathomdb-napi/src/lib.rs and all of src/ts — grep rc=1). The parity harness introspects only Engine/admin/read so it was blind to this. Added test_module_level_embedder_helper_asymmetry_is_tracked (asserts the py-only set == {embed_batch_cls}). Engine.embed verb IS at Py<->TS parity (allowlist member 'embed'). TS embedBatchCls binding = tracked py-first deferral (out of scope). Recorded in STATUS-0.8.14 R-X-1 row + DOC-INDEX.",
+52
+    "D_mkdocs": {"result": "pass", "exit": 0, "command": ".venv/bin/mkdocs build --strict", "note": "mkdocs 1.6.1 present on PATH; built in 0.18s; site/ artifact removed"},
+53
+    "E_doc_index": "UPDATED: added rows for ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md, plan-0.8.14.md + STATUS-0.8.14.md (combined, carries R-X-1 deferral note), and dev/design/gpu-eval-activities-policy.md. Slice prompt/output NOT indexed (DOC-INDEX convention indexes design/plan/adr/status docs + selective handoffs, not per-slice output.json).",
+54
+    "F_agent_verify_reds": {
+55
+      "md_lint_misscope": "FIXED (commit f67ae9fe). Added ignores: **/node_modules/** , data/corpus-data/** , scripts/repo-prune/backups/** , dev/plans/prompts/**. Verified with main-tree markdownlint-cli2: planted offenders in all three dirs ignored; residual = 9 pre-existing MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (authored snapshot untouched by any 0.8.14 commit) — flagged as a separate Steward content decision, NOT a scope mis-config.",
+56
+      "pyright_exp_cov1_sweep_377": "FIXED (commit 55022df8). cache_file initialized to None; agent-typecheck exits 0.",
+57
+      "release_yml_actionlint_fixture": "DOCUMENTED (not fixed; workflow files out of scope). Pre-existing/concurrent Library Sweep #2 track; git-proven NOT 0.8.14-caused (d7cad699..HEAD touches no .github/workflows or actionlint fixtures/tests; release.yml last touched by 8bec917e). Label-only release => publish-structure red does not block readiness."
+58
+    }
+59
+  },
+60
+  "fixed_vs_documented": {
+61
+    "FIXED": ["md-lint scope (config)", "pyright cache_file guard", "X1 embed_batch_cls asymmetry assertion + board/DOC-INDEX docs", "DOC-INDEX 0.8.14 rows"],
+62
+    "DOCUMENTED": ["release.yml publish-rust-t1-embedder-api actionlint-fixture red (pre-existing/concurrent Library Sweep #2, not 0.8.14-caused, non-blocking for label-only)", "residual 9 MD025/MD001 content findings in dev/research/personal-agent-database-market-2026-07-02.md (Steward content decision)"]
+63
+  },
+64
+  "constraints_honored": {
+65
+    "no_eu7_run": true,
+66
+    "no_maturin_or_pip_from_worktree": true,
+67
+    "no_workflow_file_edits": true,
+68
+    "no_manifest_bump_tag_or_publish": true,
+69
+    "used_existing_shared_venv": true
+70
+  },
+71
+  "next_step_for_orchestrator": "codex §9 review of these 4 commits, then cherry-pick f67ae9fe+55022df8+a7a382e6+47141885 onto main. 0.8.14 release readiness: all AC gates GREEN (R-SUB-1/2/3, R-F5-1), full-workspace clippy+check+test all exit 0, X1 py16/ts131 GREEN + no-new-verb confirmed + embed_batch_cls asymmetry now asserted, X2 mkdocs strict GREEN, X3 DOC-INDEX updated; eu7/R-GATE satisfied on the D6 no-op basis (Slice 20). ONE non-blocking red remains: the release.yml/actionlint-fixture publish-structure test (Library Sweep #2 track, not 0.8.14-caused, label-only => no publish). Steward follow-ups: (1) route the release.yml publish-structure red to the Library Sweep #2 track; (2) decide dev/research/personal-agent-database-market-2026-07-02.md — fix the 9 MD025/MD001 findings or reclassify (e.g. move under dev/archive or add to md-lint ignores as research substrate)."
+72
+}
+
+codex
+## Verdict: BLOCK
+
+### 1. [high] STATUS board is stale and contradicts the slice-complete claim
+Refs: `dev/plans/runs/STATUS-0.8.14.md:25`, `dev/plans/runs/STATUS-0.8.14.md:36`, `dev/plans/runs/STATUS-0.8.14.md:84`, `dev/plans/runs/0.8.14-slice-40-output.json:7`, `dev/plans/runs/0.8.14-slice-40-output.json:71`
+
+The board still says “Next: Slice 40”, marks Slice 40 `not-started`, and tells the orchestrator to cut the Slice-40 worktree. The output JSON says the slice is `COMPLETE` and ready to cherry-pick. For a release-readiness slice, that stale board is blocking.
+
+### 2. [high] The markdownlint “fix” hides maintained docs under `dev/plans/prompts/**`
+Refs: `.markdownlint-cli2.jsonc:47`, `.markdownlint-cli2.jsonc:49`, `dev/DOC-INDEX.md:136`, `dev/DOC-INDEX.md:141`, `dev/DOC-INDEX.md:142`, `dev/plans/runs/0.8.14-slice-40-output.json:28`, `dev/plans/runs/0.8.14-slice-40-output.json:55`
+
+The new ignore treats all of `dev/plans/prompts/**` as agent-emitted noise, but `DOC-INDEX` explicitly catalogs maintained docs there (`...STEWARD-HANDOFF`, `PLAN-TEMPLATE`, `0.8.0-SLICE-TEMPLATE`). That means the branch clears the lint red by excluding tracked documentation, not by scoping to only vendored/generated trees as claimed.
+
+### 3. [medium] The new X1 test is non-vacuous for Python, but it does not assert the claimed cross-binding asymmetry
+Refs: `src/python/tests/test_surface.py:201`, `src/python/tests/test_surface.py:219`, `dev/plans/runs/0.8.14-slice-40-output.json:18`, `dev/plans/runs/0.8.14-slice-40-output.json:51`, `dev/plans/runs/STATUS-0.8.14.md:46`
+
+This test would go red if the Python module-level `embed*` callable set drifted, so it is not a tautology. But it never inspects TS, so a future TS `embedBatchCls` addition would leave the test green while the “Python-only / tracked deferral” claim became stale. The current prose overstates what is actually enforced.
+
+**What passed on inspection**
+- The `cache_file = None` initialization in `src/python/eval/exp_cov1_sweep.py:358` is a valid pyright guard. `cache_file` is only consumed under `if mode in ("heuristic", "replay")` at `:375-380`, and both of those branches assign it first (`:359-365`), so this does not mask a real `None` flow.
+- The new X1 test would fail if the asserted Python-side set were wrong or if a new Python module-level `embed*` callable appeared in `fathomdb.__all__`; the issue is incomplete scope, not vacuity.
+- The specific new `DOC-INDEX` rows exist and are coherent. The accuracy problem is the stale `STATUS-0.8.14.md` board, not missing row creation.
+- I saw no contrary evidence to the “label-only / no manifest bump / no workflow edits in this slice” claim in the inspected artifacts, and the documented `release.yml` red remains plausibly out of scope for this branch.
+
+**Reviewer process notes**
+- The sandbox blocked normal `git diff/show/log` commands, so I reconstructed the four commit SHAs from the worktree reflog and reviewed the required live files plus `0.8.14-slice-40-output.json` directly.
+- Repo-local `MEMORY.md` was not present in this checkout, so I proceeded from `AGENTS.md` and the requested review targets.
+tokens used
+218,309
+## Verdict: BLOCK
+
+### 1. [high] STATUS board is stale and contradicts the slice-complete claim
+Refs: `dev/plans/runs/STATUS-0.8.14.md:25`, `dev/plans/runs/STATUS-0.8.14.md:36`, `dev/plans/runs/STATUS-0.8.14.md:84`, `dev/plans/runs/0.8.14-slice-40-output.json:7`, `dev/plans/runs/0.8.14-slice-40-output.json:71`
+
+The board still says “Next: Slice 40”, marks Slice 40 `not-started`, and tells the orchestrator to cut the Slice-40 worktree. The output JSON says the slice is `COMPLETE` and ready to cherry-pick. For a release-readiness slice, that stale board is blocking.
+
+### 2. [high] The markdownlint “fix” hides maintained docs under `dev/plans/prompts/**`
+Refs: `.markdownlint-cli2.jsonc:47`, `.markdownlint-cli2.jsonc:49`, `dev/DOC-INDEX.md:136`, `dev/DOC-INDEX.md:141`, `dev/DOC-INDEX.md:142`, `dev/plans/runs/0.8.14-slice-40-output.json:28`, `dev/plans/runs/0.8.14-slice-40-output.json:55`
+
+The new ignore treats all of `dev/plans/prompts/**` as agent-emitted noise, but `DOC-INDEX` explicitly catalogs maintained docs there (`...STEWARD-HANDOFF`, `PLAN-TEMPLATE`, `0.8.0-SLICE-TEMPLATE`). That means the branch clears the lint red by excluding tracked documentation, not by scoping to only vendored/generated trees as claimed.
+
+### 3. [medium] The new X1 test is non-vacuous for Python, but it does not assert the claimed cross-binding asymmetry
+Refs: `src/python/tests/test_surface.py:201`, `src/python/tests/test_surface.py:219`, `dev/plans/runs/0.8.14-slice-40-output.json:18`, `dev/plans/runs/0.8.14-slice-40-output.json:51`, `dev/plans/runs/STATUS-0.8.14.md:46`
+
+This test would go red if the Python module-level `embed*` callable set drifted, so it is not a tautology. But it never inspects TS, so a future TS `embedBatchCls` addition would leave the test green while the “Python-only / tracked deferral” claim became stale. The current prose overstates what is actually enforced.
+
+**What passed on inspection**
+- The `cache_file = None` initialization in `src/python/eval/exp_cov1_sweep.py:358` is a valid pyright guard. `cache_file` is only consumed under `if mode in ("heuristic", "replay")` at `:375-380`, and both of those branches assign it first (`:359-365`), so this does not mask a real `None` flow.
+- The new X1 test would fail if the asserted Python-side set were wrong or if a new Python module-level `embed*` callable appeared in `fathomdb.__all__`; the issue is incomplete scope, not vacuity.
+- The specific new `DOC-INDEX` rows exist and are coherent. The accuracy problem is the stale `STATUS-0.8.14.md` board, not missing row creation.
+- I saw no contrary evidence to the “label-only / no manifest bump / no workflow edits in this slice” claim in the inspected artifacts, and the documented `release.yml` red remains plausibly out of scope for this branch.
+
+**Reviewer process notes**
+- The sandbox blocked normal `git diff/show/log` commands, so I reconstructed the four commit SHAs from the worktree reflog and reviewed the required live files plus `0.8.14-slice-40-output.json` directly.
+- Repo-local `MEMORY.md` was not present in this checkout, so I proceeded from `AGENTS.md` and the requested review targets.

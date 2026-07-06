@@ -162,6 +162,28 @@ subset is drawn from an 18,472-doc pool now including `compmix`/`musique_dev`, a
 **not** a 0.8.14 regression. Floor re-baseline for the grown corpus is tracked as **TC-5**. Evidence:
 `runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log`.
 
-**Next — Slice 40 (Verification + Release Readiness).** X1/X2/X3 cross-binding parity + R-SUB/R-F5 AC gate +
-eu7 gate (satisfied on the D6 no-op basis) + resolve-or-document the pre-existing agent-verify reds flagged at
-the Slice-25 closure. Off `origin/main` (`649a8d45`); codex §9; label-only.
+**Slice 40 (Verification + Release Readiness) — CLOSED (2026-07-05).** Cherry-picked `ccef3c58` (md-lint
+scope fix) + `ebb1e666` (pyright `cache_file` guard) + `a8e28ff2` (X1 module-level embedder-helper asymmetry
+assertion) + `0a39de3a` (DOC-INDEX X3) onto `main`. §9 **PASS** via adversarial-subagent fallback (codex was
+attempted first but derailed on a bubblewrap user-namespace sandbox quirk, exiting without a verdict twice;
+per orchestration.md §3 the subagent is the sanctioned fallback) — 1 LOW/informational finding
+(`dev/plans/prompts/**` md-lint ignore silences ~21 process-scaffold findings; Steward awareness). **All DoD
+gates GREEN:** R-SUB-1/2/3 + R-F5-1 AC targets pass; full-workspace `clippy`+`check`+`test` all exit 0
+(the 4 commits touch NO Rust/Cargo/workflow, so the Rust gate is unchanged from `91c47ee0`); X1 Py surface
+16✅ / TS surface 131✅ reading one shared allowlist, EXP-S+F5 add NO new SDK verbs (non-vacuously confirmed),
+`embed_batch_cls` py-only asymmetry now ASSERTED (was a silent blind spot); X2 `mkdocs build --strict` exit 0;
+X3 DOC-INDEX updated. Pre-existing agent-verify reds dispositioned: md-lint mis-scope + pyright FIXED; the
+release.yml `publish-rust-t1-embedder-api`/actionlint-fixture red DOCUMENTED as pre-existing/concurrent
+(git-proven NOT 0.8.14-caused — nothing in `d7cad699..HEAD` touched `.github/workflows`; Library Sweep #2
+track) and non-blocking (label-only ⇒ no publish).
+
+## 10. Release status
+
+**0.8.14 — RELEASE-READY (label-only); awaiting Steward verification/ratification.** All slices CLOSED
+(0 · 5 · 10 · 20 · 25 · 40). Cross-cutting DoD X1/X2/X3 green; R-SUB (SUB-1/2/3) + R-F5 (F5-1; F5-2 ships by
+D8 Option-C HITL override) AC gate green; eu7/R-GATE satisfied on the **D6 no-op basis** (zero vec0 rewrite ⇒
+no re-embed ⇒ gate not triggered; the GPU eu7 sub-floor at N=7667 is a cross-backend + corpus-growth artifact,
+not a regression — floor re-baseline tracked as TC-5). **Manifests stay `0.8.9`; NO `v*` tag, NO publish.**
+Non-blocking follow-ups for the Steward: (1) route the release.yml publish-structure/actionlint red to the
+Library-Sweep #2 track; (2) decide `dev/research/personal-agent-database-market-2026-07-02.md` (9 MD025/MD001
+content findings); (3) **TC-5** eu7 floor re-baseline for the grown 18,472-doc corpus.

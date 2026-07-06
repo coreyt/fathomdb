@@ -22,7 +22,8 @@
   `649a8d45`): N=1000 PASS (0.950, ci[0.930,0.967]); N=7667 sub-floor (0.833, ci_hi 0.864) — a cross-backend
   quant-flip + corpus-growth artifact, NOT a 0.8.14 regression. Canonical eu7 = CPU same-backend (baseline 0.896);
   floor re-baseline for the grown 18,472-doc corpus → **TC-5**.
-- **Next:** Slice 40 (release readiness) — off `649a8d45`.
+- **Slice 40 (Verification + Release Readiness) — CLOSED** (2026-07-05). Cherry-picked `ccef3c58`+`ebb1e666`+`a8e28ff2`+`0a39de3a` to `main`; §9 **PASS** (adversarial-subagent fallback — codex derailed on a sandbox userns quirk; 1 LOW/informational finding). All gates GREEN: R-SUB-1/2/3 + R-F5-1 AC targets pass; full-workspace clippy+check+test all exit 0; X1 py16✅/ts131✅ + no-new-verb confirmed + `embed_batch_cls` py-only asymmetry now ASSERTED; X2 `mkdocs build --strict` 0; X3 DOC-INDEX updated. md-lint scope + pyright reds FIXED.
+- **0.8.14 — RELEASE-READY (label-only; awaiting Steward verification).** All slices CLOSED (0·5·10·20·25·40); cross-cutting DoD X1/X2/X3 green; R-SUB/R-F5 AC gate green; eu7/R-GATE satisfied on the D6 no-op basis. Manifests stay `0.8.9`; NO tag/publish. Non-blocking follow-ups routed to the Steward (see Repo-health flags).
 
 ## Slice scoreboard
 | Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
@@ -33,7 +34,7 @@
 | 15 | *(void reserved gap — #17 shipped 0.8.11)* | VOID | — | — | — | — | — |
 | 20 | eu7 re-clear + v15→v17 migration verify (D6) | **CLOSED** | 4ca170a2 (mig) · 1c5ba1b6 (eu7) | slice-20-…121320Z (mig) | ✅ (mig) | **PASS** (mig §9) | mig `52f29fb9` on main; eu7 half **D6 no-op close** (HITL) |
 | 25 | *(reserved gap)* Merge `0.8.14-gpu-rerank` (opt-in GPU CE + `embed_batch_cls`, default-CPU-unchanged) | **CLOSED** | ce8e1eef | slice-25-…033943Z | ✅ | BLOCK→fix1→**PASS** | `3c98b35b`+`813e525a`+`9187de26`+`e311aadf` on main |
-| 40 | Verification + Release Readiness (X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate) | not-started | — | — | — | — | — |
+| 40 | Verification + Release Readiness (X1/X2/X3 + R-SUB/R-F5 AC gate + eu7 gate) | **CLOSED** | 91c47ee0 | slice-40-…013816Z | ✅ | **PASS** (§9 fallback; 1 LOW) | `ccef3c58`+`ebb1e666`+`a8e28ff2`+`0a39de3a` on main |
 
 ## Requirements / AC status (DoD frozen at Slice 0)
 | ID | Requirement | State |
@@ -61,6 +62,11 @@
   disjoint from engine `src/`/`Cargo.lock`. Expect `main` to advance; rebase is trivial.
 
 ## Recent decisions (newest first)
+- 2026-07-05 — **Slice 40 CLOSED → 0.8.14 RELEASE-READY (label-only).** Cherry-picked `ccef3c58`+`ebb1e666`+
+  `a8e28ff2`+`0a39de3a`; §9 PASS (adversarial-subagent fallback, codex sandbox-derailed; 1 LOW). Gates: R-SUB/R-F5
+  AC green; full-workspace clippy+check+test 0; X1 py16/ts131 + no-new-verb + `embed_batch_cls` asymmetry asserted;
+  X2 mkdocs-strict 0; X3 DOC-INDEX. md-lint + pyright reds FIXED; release.yml/actionlint red documented (not
+  0.8.14-caused → Library Sweep #2). Awaiting Steward verification.
 - 2026-07-05 — **Slice 20 CLOSED (D6 no-op basis; HITL-ruled (A)).** Migration half `52f29fb9` (codex PASS, R-SUB-3).
   eu7 half: D6 (codex-verified zero vec0 rewrite @ Slice 5) excludes any 0.8.14 fidelity regression (R-GATE is
   conditional on a re-embed; none occurred). Empirical GPU eu7 (mis-directed cross-backend): N=1000 PASS 0.950;
@@ -73,15 +79,21 @@
   SCHEMA_VERSION 15→16, D6 no vec0 rewrite (eu7@20 = no-op).
 - 2026-07-03 — Slice-0 ADR ratified; D8=Option C (F5 override); Slice 25 added; TC-1 discharged.
 
-## Repo-health flags (pre-existing; NOT Slice-25-caused; surfaced by running agent-verify at merge)
-- **md-lint mis-scoped:** `agent-lint-md` (markdownlint-cli2) scans the whole tree incl. `typescript/node_modules`,
-  gitignored `data/corpus-data/**`, and `scripts/repo-prune/backups/**` → `agent-verify` fails at `lint`. Tooling fix (scope excludes).
-- **pyright:** 1 pre-existing error `src/python/eval/exp_cov1_sweep.py:377` (`cache_file` possibly unbound).
-- **release.yml test:** `publish-rust-t1-embedder-api dry-run` structure + actionlint-fixture fail — from the concurrent
-  Library-Sweep/napi-3 workflow changes (Slice 25 touched no `.github/workflows`). Echoes the 0.8.9 embedder-api publish drift.
-- These are flagged to the Steward as repo-health items (own fix/consideration), not Slice-25 blockers.
+## Repo-health flags (dispositioned at Slice 40)
+- **md-lint mis-scoped — FIXED** (Slice 40, `ccef3c58`): `.markdownlint-cli2.jsonc` now ignores `**/node_modules/**`,
+  `data/corpus-data/**`, `scripts/repo-prune/backups/**`, `dev/plans/prompts/**`; `agent-lint` PASS.
+- **pyright `exp_cov1_sweep.py:377` — FIXED** (Slice 40, `ebb1e666`): `cache_file` initialized; `agent-typecheck` PASS.
+- **release.yml `publish-rust-t1-embedder-api` dry-run + actionlint-fixture — DOCUMENTED (NOT 0.8.14-caused).**
+  Git-proven: no commit in `d7cad699..HEAD` (nor any 0.8.14 slice commit) touched `.github/workflows`/actionlint
+  fixtures; release.yml last touched by `8bec917e` (Library Sweep #2). Label-only ⇒ no publish ⇒ non-blocking for
+  0.8.14. **Steward follow-up:** route to the Library-Sweep #2 track.
+- **NEW — `dev/research/personal-agent-database-market-2026-07-02.md`:** 9 residual MD025/MD001 findings in an
+  authored snapshot (untouched by 0.8.14). **Steward content decision** (fix / archive / ignore-list); non-blocking.
+- **NEW (§9 LOW):** the `dev/plans/prompts/**` md-lint ignore silences ~21 lint findings on tracked process
+  scaffolds — defensible (agent-emitted, sibling of `runs/**`); Steward awareness only.
 
 ## Next action
-Cut Slice-40 (release readiness) worktree off `649a8d45` → preflight `--expect-closed 20` → X1/X2/X3 cross-binding
-parity + R-SUB/R-F5 AC gate + eu7 gate (satisfied D6 no-op) + resolve-or-document the pre-existing agent-verify reds
-→ codex §9 → land → close 0.8.14 (label-only).
+**0.8.14 is RELEASE-READY (label-only) — awaiting Steward verification/ratification.** All slices CLOSED; DoD green.
+No tag/publish (manifests stay `0.8.9`). Steward: verify from git (HEAD carries `ccef3c58`..`0a39de3a`); then dispose
+the non-blocking follow-ups (release.yml publish-structure red → Library Sweep #2; the `dev/research` md findings;
+TC-5 eu7 floor re-baseline for the grown corpus).
