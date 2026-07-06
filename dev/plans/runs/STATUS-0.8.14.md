@@ -43,7 +43,7 @@
 | R-SUB-3 | Migration forward-only + guarded (`SCHEMA_VERSION` bump) | ✅ step-16 (Slice 5) + step-17 (Slice 10); v15→v17 full-path verify landed `52f29fb9` (Slice 20, codex PASS) |
 | R-F5-1 | Fielded BM25F, tunable `b`/field weights | ✅ Slice 10 (GREEN; tokenization-faithful) |
 | R-F5-2 | F5 ships per HITL Option-C override (gate did NOT clear) | ✅ ruled (ADR §D8) — ships as override |
-| R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ⏳ per slice (Slice 25 added `embed_batch_cls` py-only + `.pyi` stub) |
+| R-X-1 | Py+TS SDK parity for EXP-S + F5 (X1) | ✅ Slice 40 — EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are **engine-internal**: grep confirms they appear ONLY in `fathomdb-engine`/`fathomdb-schema` (Rust), NEVER in the Py/TS SDK bindings or the governed-surface allowlist → **NO new SDK verbs** (non-vacuously green). Py surface 16✅ / TS surface 131✅ (both read the one shared `governed-surface-allowlist.json`). **KNOWN py-first deferral (intentional, tracked):** the module-level embedder helper `embed_batch_cls` is Python-only (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS) — the parity harness is blind to module-level functions, so Slice 40 added `test_module_level_embedder_helper_asymmetry_is_tracked` to ASSERT the py-only set (was a silent blind spot). `Engine.embed` verb IS at Py↔TS parity. TS `embedBatchCls` binding = out-of-scope deferral |
 | R-GATE | eu7 ANN fidelity ≥ 0.90 (one-sided CI) after any re-embed | ✅ Slice 20 — **satisfied on D6 no-op basis** (zero vec0 rewrite ⇒ no re-embed ⇒ gate not triggered; HITL-ruled). GPU run sub-floor @ N=7667 (0.833) = cross-backend+corpus artifact, not a regression; floor re-baseline → TC-5 |
 
 ## Hard gates

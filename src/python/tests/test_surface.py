@@ -182,6 +182,52 @@ def test_allowlist_excludes_recovery_denylist() -> None:
     assert GOVERNED_SURFACE_ALLOWLIST & _RECOVERY_DENYLIST == set()
 
 
+# X1 (0.8.14 Slice 40) — module-level embedder-helper parity ledger.
+#
+# The cross-binding surface harness above (`_live_python_command_surface` /
+# `src/ts/tests/surface.test.ts`) introspects only `Engine` / `admin` / `read`,
+# so it is BLIND to module-level functions. `embed_batch_cls` is a module-level
+# embedder helper exposed PYTHON-ONLY — it lives in `fathomdb-py/src/lib.rs`,
+# `fathomdb.__all__`, and the `_fathomdb.pyi` stub, and is intentionally ABSENT
+# from the TS binding (`fathomdb-napi/src/lib.rs`, `src/ts`). TS parity for it is
+# a TRACKED DEFERRAL (py-first). By contrast the `Engine.embed` *verb* IS at
+# Py↔TS parity (governed-allowlist member `embed`). This ledger makes the
+# asymmetry ASSERTED rather than a silent blind spot: a new/removed Python
+# module-level embedder helper must be reflected here in lockstep with a
+# conscious TS parity decision.
+_PY_ONLY_MODULE_EMBEDDER_HELPERS = frozenset({"embed_batch_cls"})
+
+
+def test_module_level_embedder_helper_asymmetry_is_tracked() -> None:
+    import fathomdb
+
+    # The tracked py-only helpers are present as module-level callables and
+    # exported in `__all__`.
+    for name in _PY_ONLY_MODULE_EMBEDDER_HELPERS:
+        assert callable(getattr(fathomdb, name, None)), (
+            f"expected Python-only module-level embedder helper {name!r}"
+        )
+        assert name in getattr(fathomdb, "__all__", ()), (
+            f"{name!r} must be exported in fathomdb.__all__"
+        )
+
+    # The module-level embedder-helper surface is EXACTLY the tracked py-only set.
+    # A new module-level `embed*` callable (e.g. a future `embed_batch`) would
+    # break this and force a conscious update here + a TS parity decision, rather
+    # than drifting in silently. (`Engine.embed` is a class method, not a module
+    # attribute, so it is correctly out of scope for this module-level check.)
+    live_module_embed_helpers = {
+        n
+        for n in getattr(fathomdb, "__all__", ())
+        if "embed" in n.lower() and callable(getattr(fathomdb, n, None))
+    }
+    assert live_module_embed_helpers == _PY_ONLY_MODULE_EMBEDDER_HELPERS, (
+        "module-level embedder-helper surface drifted from the tracked py-only "
+        "set; update _PY_ONLY_MODULE_EMBEDDER_HELPERS and record the TS parity "
+        f"decision. live={sorted(live_module_embed_helpers)}"
+    )
+
+
 def test_admin_is_module_level_namespace() -> None:
     assert inspect.ismodule(admin)
     assert hasattr(admin, "configure")
