@@ -8,7 +8,10 @@
   },
   "globs": ["**/*.md"],
   "ignores": [
-    // Vendored / build outputs
+    // Vendored / build outputs. `**/node_modules/**` catches node_modules at
+    // ANY depth (root, src/ts/, typescript/, …) so a stray vendored tree can
+    // never re-enter the lint scope.
+    "**/node_modules/**",
     "node_modules/**",
     "src/ts/node_modules/**",
     "target/**",
@@ -19,6 +22,12 @@
     "**/.venv/**",
     ".cache/**",
     ".wake/**",
+
+    // Gitignored eval corpus payloads (never committed; seeded locally for runs).
+    "data/corpus-data/**",
+
+    // repo-prune tool backups (staging dir for pruned files; not maintained prose).
+    "scripts/repo-prune/backups/**",
 
     // Research substrate — bare URLs are intentional citations.
     "dev/tmp/**",
@@ -34,6 +43,10 @@
     // Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
     // not actively maintained, formatting drifts per agent.
     "dev/plans/runs/**",
+
+    // Orchestrator/agent-emitted slice PROMPTS — same class as runs/** above
+    // (verbatim emitted, formatting drifts per agent), not maintained prose.
+    "dev/plans/prompts/**",
 
     // Local-only agent config (gitignored, not part of repo).
     ".claude/**",
