@@ -355,6 +355,7 @@ def run(
         extractor_cmd = None
         extractor_env = None
         model = None
+        cache_file = None
         if mode == "heuristic":
             build_c0_cache(docs, c0_cache, model="c0-floor")
             model = "c0-floor"
