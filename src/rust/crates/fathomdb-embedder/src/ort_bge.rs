@@ -25,7 +25,7 @@ use std::sync::Mutex;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use ort::execution_providers::{
-    CPUExecutionProvider, CUDAExecutionProvider, DirectMLExecutionProvider,
+    CPUExecutionProvider, CUDAExecutionProvider, DirectMLExecutionProvider, ExecutionProvider,
     ExecutionProviderDispatch, OpenVINOExecutionProvider, ROCmExecutionProvider,
 };
 use ort::session::Session;
@@ -124,17 +124,83 @@ fn map_extended_provider(raw: &str) -> (OrtProvider, Option<String>) {
     }
 }
 
+/// Emit a LOUD construction-time fallback warning to stderr. Centralized so the
+/// `clippy::print_stderr` allow is scoped to construction (never `embed()`), and
+/// so the loud fallback is OUR OWN — `ort` is built `default-features = false`,
+/// which compiles out its warn/error macros, so we cannot rely on it to surface
+/// a silent CPU fallback (R-ONNX-2).
+#[allow(clippy::print_stderr)] // construction-time only (not in `embed()`)
+fn emit_onnx_warning(msg: &str) {
+    eprintln!("fathomdb-embedder(onnx): {msg}");
+}
+
 /// RUNTIME resolution of the ORT provider from `FATHOMDB_EMBED_DEVICE`
 /// (R-ONNX-2 — not a compile-time constant). Emits the LOUD stderr fallback
 /// message at construction time, never inside `embed()`.
-#[allow(clippy::print_stderr)] // construction-time only (not in `embed()`)
 fn resolve_provider_from_env() -> OrtProvider {
     let raw = std::env::var("FATHOMDB_EMBED_DEVICE").unwrap_or_default();
     let (provider, warn) = map_device_request(&parse_device_request(&raw));
     if let Some(msg) = warn {
-        eprintln!("fathomdb-embedder(onnx): {msg}");
+        emit_onnx_warning(&msg);
     }
     provider
+}
+
+/// PURE decision for the SESSION-BUILD stage of the loud fallback (R-ONNX-2):
+/// given a requested [`OrtProvider`] and an availability probe, return the
+/// EFFECTIVE provider plus an optional LOUD warning. A non-CPU provider the
+/// probe reports unavailable is downgraded to CPU and the warning names the
+/// requested provider; the caller emits it. This is distinct from the earlier
+/// grammar-mapping warning ([`map_device_request`]): a request like `rocm` maps
+/// cleanly to `Rocm`, but if this ONNX Runtime build lacks the ROCm EP, `ort`'s
+/// own dispatch would fall back to CPU SILENTLY (its log macros are compiled out
+/// under `default-features = false`), making a cross-vendor run look successful
+/// while secretly on CPU. Kept pure (probe injected) so it is unit-testable
+/// with no model and no ORT native lib.
+fn resolve_effective_provider_with(
+    requested: OrtProvider,
+    is_available: impl Fn(OrtProvider) -> bool,
+) -> (OrtProvider, Option<String>) {
+    if matches!(requested, OrtProvider::Cpu) {
+        return (OrtProvider::Cpu, None);
+    }
+    if is_available(requested) {
+        (requested, None)
+    } else {
+        (
+            OrtProvider::Cpu,
+            Some(format!(
+                "requested ONNX execution provider {requested:?} is unavailable in this ONNX \
+                 Runtime build/runtime (ort is built default-features=false, so its own fallback \
+                 log is compiled out); falling back to CPU"
+            )),
+        )
+    }
+}
+
+/// Thin LIVE wrapper over [`resolve_effective_provider_with`] using `ort`'s real
+/// `ExecutionProvider::is_available()` probe.
+fn resolve_effective_provider(requested: OrtProvider) -> (OrtProvider, Option<String>) {
+    resolve_effective_provider_with(requested, provider_is_available)
+}
+
+/// Probe whether this ONNX Runtime build was compiled with support for the
+/// requested non-CPU provider (`ort`'s `ExecutionProvider::is_available()`).
+/// Returns `false` when the probe errors — e.g. the ORT dylib is absent under
+/// `load-dynamic` — which is precisely an unavailable provider, the silent-CPU
+/// case we must surface.
+fn provider_is_available(provider: OrtProvider) -> bool {
+    match provider {
+        OrtProvider::Cpu => true,
+        OrtProvider::Cuda(_) => CUDAExecutionProvider::default().is_available().unwrap_or(false),
+        OrtProvider::Rocm(_) => ROCmExecutionProvider::default().is_available().unwrap_or(false),
+        OrtProvider::DirectMl(_) => {
+            DirectMLExecutionProvider::default().is_available().unwrap_or(false)
+        }
+        OrtProvider::OpenVino => {
+            OpenVINOExecutionProvider::default().is_available().unwrap_or(false)
+        }
+    }
 }
 
 /// Build the concrete `ort` execution-provider dispatch for a resolved
@@ -204,9 +270,18 @@ impl OrtBgeEmbedder {
             }))
             .map_err(|e| err("tokenizer truncation", e))?;
 
+        // SESSION-BUILD stage of the loud fallback (R-ONNX-2): if the requested
+        // non-CPU provider is unavailable in this ORT build, downgrade to CPU
+        // and warn LOUDLY ourselves rather than letting `ort`'s compiled-out
+        // dispatch fall back silently. CPU functionality is preserved.
+        let (effective, avail_warn) = resolve_effective_provider(provider);
+        if let Some(msg) = avail_warn {
+            emit_onnx_warning(&msg);
+        }
+
         let session = Session::builder()
             .map_err(|e| err("session builder", e))?
-            .with_execution_providers([provider_dispatch(provider)])
+            .with_execution_providers([provider_dispatch(effective)])
             .map_err(|e| err("execution provider", e))?
             .commit_from_file(model_path)
             .map_err(|e| err("model load", e))?;
@@ -366,6 +441,52 @@ mod tests {
             assert_eq!(p, OrtProvider::Cpu, "{raw:?}");
             assert!(warn.is_some(), "{raw:?} must warn on CPU fallback");
         }
+    }
+
+    /// SESSION-BUILD loud fallback (codex §9 fix-1): a requested GPU provider
+    /// that the ORT build does not support must downgrade to CPU with a LOUD
+    /// warning that names the requested provider — never a silent CPU fallback.
+    /// Probe is injected (`|_| false`), so this runs with no ORT lib / no GPU.
+    #[test]
+    fn requested_gpu_unavailable_falls_back_to_cpu_loudly() {
+        for requested in [
+            OrtProvider::Cuda(0),
+            OrtProvider::Rocm(1),
+            OrtProvider::DirectMl(0),
+            OrtProvider::OpenVino,
+        ] {
+            let (eff, warn) = super::resolve_effective_provider_with(requested, |_| false);
+            assert_eq!(eff, OrtProvider::Cpu, "{requested:?} must downgrade to CPU");
+            let msg = warn.expect("unavailable GPU provider must emit a warning");
+            assert!(
+                msg.contains(&format!("{requested:?}")),
+                "warning must name the requested provider {requested:?}, got {msg:?}"
+            );
+            assert!(
+                msg.to_lowercase().contains("cpu"),
+                "warning must state the CPU fallback, got {msg:?}"
+            );
+        }
+    }
+
+    /// When the probe reports the requested provider available, it is honored
+    /// and there is NO warning (no spurious loud fallback).
+    #[test]
+    fn requested_available_provider_is_honored_without_warning() {
+        let (eff, warn) = super::resolve_effective_provider_with(OrtProvider::Cuda(2), |_| true);
+        assert_eq!(eff, OrtProvider::Cuda(2));
+        assert!(warn.is_none(), "an available provider must not warn");
+    }
+
+    /// A CPU request is always honored, never warns, and never probes (CPU is
+    /// unconditionally available) — the probe closure must not run.
+    #[test]
+    fn cpu_request_never_probes_and_never_warns() {
+        let (eff, warn) = super::resolve_effective_provider_with(OrtProvider::Cpu, |_| {
+            panic!("CPU request must not probe provider availability")
+        });
+        assert_eq!(eff, OrtProvider::Cpu);
+        assert!(warn.is_none());
     }
 
     /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
