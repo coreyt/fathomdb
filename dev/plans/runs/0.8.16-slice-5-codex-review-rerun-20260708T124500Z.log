@@ -1,0 +1,3105 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f41c2-9b2d-7b80-a48b-223b714b86a7
+--------
+user
+changes against '61c9e09af69b040e0335fc13e1eab61bab461449'
+exec
+/bin/bash -lc 'cat MEMORY.md && for f in feedback_*.md; do echo ---$f; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "ls -la && find .. -maxdepth 2 -name MEMORY.md -o -name 'feedback_*.md'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+total 336
+drwxrwxr-x 13 coreyt coreyt   4096 Jul  8 07:43 .
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  8 06:49 ..
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  8 06:49 .claude
+-rw-rw-r--  1 coreyt coreyt     86 Jul  8 06:49 .git
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  8 06:49 .github
+-rw-rw-r--  1 coreyt coreyt   4024 Jul  8 06:49 .gitignore
+-rw-rw-r--  1 coreyt coreyt   1792 Jul  8 06:49 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt   2105 Jul  8 06:49 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt    657 Jul  8 06:49 .prettierignore
+-rw-rw-r--  1 coreyt coreyt    296 Jul  8 06:49 .prettierrc.json
+-rw-rw-r--  1 coreyt coreyt  13373 Jul  8 06:49 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt  36808 Jul  8 06:49 CHANGELOG.md
+-rw-rw-r--  1 coreyt coreyt 111588 Jul  8 07:37 Cargo.lock
+-rw-rw-r--  1 coreyt coreyt   2434 Jul  8 06:49 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt   1078 Jul  8 06:49 LICENSE
+-rw-rw-r--  1 coreyt coreyt    939 Jul  8 06:49 README.md
+-rw-rw-r--  1 coreyt coreyt    120 Jul  8 06:49 deny.toml
+drwxrwxr-x 28 coreyt coreyt   4096 Jul  8 06:49 dev
+drwxrwxr-x 11 coreyt coreyt   4096 Jul  8 06:49 docs
+drwxrwxr-x  2 coreyt coreyt   4096 Jul  8 06:49 experiments
+-rw-rw-r--  1 coreyt coreyt   1783 Jul  8 06:49 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   1445 Jul  8 06:49 mkdocs.yml
+-rw-rw-r--  1 coreyt coreyt   9127 Jul  8 07:43 output.json
+-rw-rw-r--  1 coreyt coreyt  48768 Jul  8 06:49 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   1249 Jul  8 06:49 package.json
+-rw-rw-r--  1 coreyt coreyt     66 Jul  8 06:49 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt     45 Jul  8 06:49 rustfmt.toml
+drwxrwxr-x  9 coreyt coreyt   4096 Jul  8 06:49 scripts
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  8 06:49 src
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  8 07:00 target
+drwxrwxr-x  6 coreyt coreyt   4096 Jul  8 06:49 test
+drwxrwxr-x  4 coreyt coreyt   4096 Jul  8 06:49 tests
+drwxrwxr-x  3 coreyt coreyt   4096 Jul  8 06:49 tools
+
+exec
+/bin/bash -lc 'git diff --stat 61c9e09af69b040e0335fc13e1eab61bab461449 && git diff --name-only 61c9e09af69b040e0335fc13e1eab61bab461449' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+ Cargo.lock                                         |   2 +
+ src/rust/crates/fathomdb-engine/src/lib.rs         | 292 ++++++++++++++--
+ .../crates/fathomdb-engine/tests/compatibility.rs  |   2 +-
+ .../fathomdb-engine/tests/f9_importance_ranking.rs | 381 +++++++++++++++++++++
+ src/rust/crates/fathomdb-napi/Cargo.toml           |   3 +
+ src/rust/crates/fathomdb-napi/src/lib.rs           |  79 +++++
+ src/rust/crates/fathomdb-py/Cargo.toml             |   3 +
+ src/rust/crates/fathomdb-py/src/lib.rs             |  74 ++++
+ src/rust/crates/fathomdb-schema/src/lib.rs         |  20 +-
+ .../crates/fathomdb-schema/tests/migrations.rs     |  10 +-
+ .../fathomdb-schema/tests/step14_migration.rs      |   5 +-
+ .../tests/step15_to_17_migration.rs                |  12 +-
+ .../fathomdb-schema/tests/step16_migration.rs      |   9 +-
+ .../fathomdb-schema/tests/step17_migration.rs      |   6 +-
+ .../fathomdb-schema/tests/step18_migration.rs      | 183 ++++++++++
+ 15 files changed, 1039 insertions(+), 42 deletions(-)
+Cargo.lock
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/compatibility.rs
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs
+src/rust/crates/fathomdb-napi/Cargo.toml
+src/rust/crates/fathomdb-napi/src/lib.rs
+src/rust/crates/fathomdb-py/Cargo.toml
+src/rust/crates/fathomdb-py/src/lib.rs
+src/rust/crates/fathomdb-schema/src/lib.rs
+src/rust/crates/fathomdb-schema/tests/migrations.rs
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-schema/src/lib.rs src/rust/crates/fathomdb-py/src/lib.rs src/rust/crates/fathomdb-napi/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 6d3fb76f..ca996690 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -334,6 +334,14 @@ struct ProjectionRuntimeShared {
+     /// the more recent `write_cursor` AFTER bit-KNN. Flipped by the
+     /// `set_recency_reweight_enabled_for_test` seam; no production toggle yet.
+     recency_reweight_enabled: AtomicBool,
++    /// 0.8.16 Slice 5 / F9 — dedicated importance/confidence reweight flag,
++    /// **off by default** (mirrors `recency_reweight_enabled`; NOT `fusion_mode`).
++    /// When set, fused hits are multiplicatively reweighted by node `importance`
++    /// (`canonical_nodes.importance`) and edge `confidence`
++    /// (`canonical_edges.confidence`) AFTER bit-KNN + RRF fusion — `NULL ⇒ neutral
++    /// (1.0)`. Flipped by `set_importance_reweight_enabled_for_test`; no production
++    /// toggle yet (F9 ships OFF-by-default as a MECHANISM, no eval-quality claim).
++    importance_reweight_enabled: AtomicBool,
+     /// GA-2 / Slice-40 (◆ B-1) measurement seam, **off by default**. When set,
+     /// `read_search_in_tx` returns the pre-fusion VECTOR-branch ranking
+     /// (bit-KNN K=192 + f32 rerank) verbatim — the ANN-quantization fidelity
+@@ -448,6 +456,10 @@ enum ReaderRequest {
+         /// G12-recency — whether the dedicated recency reweight is enabled for
+         /// this request (read from `recency_reweight_enabled`, off by default).
+         recency_enabled: bool,
++        /// F9 (0.8.16 Slice 5) — whether the dedicated importance/confidence
++        /// reweight is enabled for this request (read from
++        /// `importance_reweight_enabled`, off by default).
++        importance_enabled: bool,
+         /// GA-2 / Slice-40 (◆ B-1) measurement seam — when true the worker
+         /// returns the pre-fusion vector-branch ranking instead of the fused
+         /// result (read from `vector_stage_only_for_test`, off by default).
+@@ -750,6 +762,7 @@ fn reader_worker_loop(
+                 search_limit,
+                 filter,
+                 recency_enabled,
++                importance_enabled,
+                 vector_stage_only,
+                 raw_query,
+                 rerank_depth,
+@@ -767,6 +780,7 @@ fn reader_worker_loop(
+                     search_limit,
+                     filter.as_deref(),
+                     recency_enabled,
++                    importance_enabled,
+                     vector_stage_only,
+                     &raw_query,
+                     rerank_depth,
+@@ -867,6 +881,7 @@ impl ProjectionRuntime {
+             commit_gate: Mutex::new(()),
+             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
+             recency_reweight_enabled: AtomicBool::new(false),
++            importance_reweight_enabled: AtomicBool::new(false),
+             vector_stage_only_for_test: AtomicBool::new(false),
+             #[cfg(debug_assertions)]
+             force_recompute_failure: AtomicBool::new(false),
+@@ -1281,6 +1296,16 @@ pub struct PerHitExplain {
+     pub ce_score: Option<f64>,
+     /// Final blended score, == the returned `SearchHit.score`.
+     pub blended: f64,
++    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
++    /// fused contribution when the importance reweight is ON, else the raw stored
++    /// value. `None` = never assigned (graceful-absent, ranks NEUTRAL). Additive
++    /// (`#[non_exhaustive]` leaf absorbs the new score component).
++    pub importance: Option<f64>,
++    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
++    /// graph-arm contribution when the importance reweight is ON, else the raw
++    /// stored value. `None` for node hits / edges without a confidence
++    /// (graceful-absent, ranks NEUTRAL).
++    pub confidence: Option<f64>,
+ }
+ 
+ // ===== G4 filter grammar types (Slice 35) ===============================
+@@ -4063,6 +4088,8 @@ impl Engine {
+             .max(SEARCH_RERANK_LIMIT);
+         let recency_enabled =
+             self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
++        let importance_enabled =
++            self.projection_runtime.shared.importance_reweight_enabled.load(Ordering::SeqCst);
+         let vector_stage_only =
+             self.projection_runtime.shared.vector_stage_only_for_test.load(Ordering::SeqCst);
+         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
+@@ -4073,6 +4100,7 @@ impl Engine {
+             search_limit,
+             filter: filter.map(Box::new),
+             recency_enabled,
++            importance_enabled,
+             vector_stage_only,
+             raw_query: Box::from(query), // FIX-4: Box<str> (16B) not String (24B)
+             rerank_depth,
+@@ -5114,6 +5142,65 @@ impl Engine {
+         self.projection_runtime.shared.recency_reweight_enabled.store(enabled, Ordering::SeqCst);
+     }
+ 
++    /// 0.8.16 Slice 5 / F9 test seam — flip the dedicated importance/confidence
++    /// reweight flag (off by default). The reweight runs AFTER bit-KNN + RRF on
++    /// the fused hits (multiplicative-on-fused, `NULL ⇒ neutral`); it is never a
++    /// vec0 predicate and is NOT `fusion_mode`. Mirrors
++    /// `set_recency_reweight_enabled_for_test`.
++    #[doc(hidden)]
++    pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
++        self.projection_runtime.shared.importance_reweight_enabled.store(enabled, Ordering::SeqCst);
++    }
++
++    /// 0.8.16 Slice 5 / F9 (R-F9-1) — set the caller-supplied `importance` ranking
++    /// scalar on the `canonical_nodes` row identified by `write_cursor` (the
++    /// interim id `SearchHit.id` carries). Validates `importance ∈ [0.0, 1.0]`,
++    /// mirroring the existing `canonical_edges.confidence` write-path check —
++    /// an out-of-range value is a deterministic [`EngineError::WriteValidation`].
++    ///
++    /// The 3-way sentinel: NOT calling this leaves the column `NULL` (never
++    /// assigned = graceful-absent, ranks NEUTRAL); `0.0` is the explicit floor;
++    /// `(0.0, 1.0]` is an explicit importance. Importance is a caller-supplied
++    /// scalar — the engine does NOT compute graph-centrality importance (ADR §4
++    /// non-goal). Engine-internal minimal surface for this keystone; SDK (Py/TS)
++    /// exposure is a Slice-40 concern.
++    pub fn write_node_importance(
++        &self,
++        write_cursor: u64,
++        importance: f64,
++    ) -> Result<(), EngineError> {
++        if !importance.is_finite() || !(0.0..=1.0).contains(&importance) {
++            return Err(EngineError::WriteValidation);
++        }
++        self.ensure_open()?;
++        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
++        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
++        connection
++            .execute(
++                "UPDATE canonical_nodes SET importance = ?1 WHERE write_cursor = ?2",
++                params![importance, write_cursor],
++            )
++            .map_err(|_| EngineError::Storage)?;
++        Ok(())
++    }
++
++    /// 0.8.16 Slice 5 / F9 (R-F9-1) — read back the `importance` scalar for the
++    /// `canonical_nodes` row identified by `write_cursor`. `None` = SQL `NULL` =
++    /// never assigned (graceful-absent). The reciprocal read for
++    /// [`Engine::write_node_importance`].
++    pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
++        self.ensure_open()?;
++        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
++        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
++        connection
++            .query_row(
++                "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
++                params![write_cursor],
++                |r| r.get::<_, Option<f64>>(0),
++            )
++            .map_err(|_| EngineError::Storage)
++    }
++
+     /// GA-2 / Slice-40 (◆ B-1) measurement seam — make `search()` return the
+     /// pre-fusion VECTOR-branch ranking (the ANN+ bit-KNN K=192 + f32 rerank
+     /// signal) instead of the unconditional RRF-fused result, so the eu7 recall
+@@ -6017,6 +6104,87 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
+     reweighted
+ }
+ 
++/// 0.8.16 Slice 5 / F9 — OFF-by-default importance/confidence reweight, applied
++/// to the fused hits AFTER bit-KNN + RRF (mirrors [`apply_recency_reweight`]).
++///
++/// Multiplicative-on-fused (ADR-0.8.16 §2.2, HITL-SIGNED 2026-07-08): a hit's
++/// score is scaled by node `importance` (`importance_by_id`) × edge `confidence`
++/// (`confidence_by_id`), each keyed by the hit's interim id (`write_cursor`). A
++/// missing key = `NULL` = never assigned = graceful-absent ⇒ neutral (1.0), the
++/// OPP-12 Q6a graceful-absent state. Node hits carry `importance`; graph/edge hits
++/// carry `confidence`; the two id-spaces never collide (cursors are globally
++/// unique), so each hit gets exactly one non-neutral factor.
++///
++/// **R-F9-4 graceful-neutral identity:** when `enabled` but *no* hit has a
++/// non-neutral factor (every importance/confidence absent), the input is returned
++/// **unchanged** — byte-identical to the `enabled == false` result (no re-sort),
++/// so declaring the mechanism never perturbs an all-absent corpus.
++#[must_use]
++pub fn apply_importance_reweight(
++    hits: Vec<SearchHit>,
++    importance_by_id: &HashMap<u64, f64>,
++    confidence_by_id: &HashMap<u64, f64>,
++    enabled: bool,
++) -> Vec<SearchHit> {
++    if !enabled {
++        return hits;
++    }
++    // Graceful-neutral fast path (R-F9-4): if nothing is weighted, do not touch
++    // order or scores — identical to the reweight-OFF result.
++    let any_weighted = hits
++        .iter()
++        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
++    if !any_weighted {
++        return hits;
++    }
++    let mut reweighted: Vec<SearchHit> = hits
++        .into_iter()
++        .map(|mut h| {
++            let importance = importance_by_id.get(&h.id).copied().unwrap_or(1.0);
++            let confidence = confidence_by_id.get(&h.id).copied().unwrap_or(1.0);
++            h.score *= importance * confidence;
++            h
++        })
++        .collect();
++    // Stable sort preserves the fused order on exact ties.
++    reweighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
++    reweighted
++}
++
++/// 0.8.16 Slice 5 / F9 — build the per-hit importance/confidence weight maps for
++/// the candidate `hits` from the durable columns (`canonical_nodes.importance`,
++/// `canonical_edges.confidence`). Only NON-NULL values are inserted; an absent
++/// value stays out of the map (graceful-absent ⇒ neutral in
++/// [`apply_importance_reweight`]). Prepared statements are guarded so a pre-step-18
++/// / pre-step-14 schema (no column) yields empty maps rather than an error.
++fn build_importance_confidence_maps(
++    tx: &rusqlite::Connection,
++    hits: &[SearchHit],
++) -> rusqlite::Result<(HashMap<u64, f64>, HashMap<u64, f64>)> {
++    let mut importance_by_id: HashMap<u64, f64> = HashMap::new();
++    let mut confidence_by_id: HashMap<u64, f64> = HashMap::new();
++    if let Ok(mut stmt) =
++        tx.prepare("SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
++    {
++        for h in hits {
++            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
++                importance_by_id.insert(h.id, v);
++            }
++        }
++    }
++    if let Ok(mut stmt) = tx.prepare(
++        "SELECT confidence FROM canonical_edges \
++         WHERE write_cursor = ?1 AND superseded_at IS NULL LIMIT 1",
++    ) {
++        for h in hits {
++            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
++                confidence_by_id.insert(h.id, v);
++            }
++        }
++    }
++    Ok((importance_by_id, confidence_by_id))
++}
++
+ /// 0.8.1 Slice 10 (R1) — CE rerank seam.
+ ///
+ /// `rerank_depth = 0` (or model absent / `default-reranker` feature off): returns
+@@ -6521,6 +6689,7 @@ fn read_search_in_tx(
+     final_limit: usize,
+     filter: Option<&SearchFilter>,
+     recency_enabled: bool,
++    importance_enabled: bool,
+     vector_stage_only: bool,
+     raw_query: &str,
+     rerank_depth: usize,
+@@ -6858,6 +7027,10 @@ fn read_search_in_tx(
+     let mut exp_graph_ranks: Option<HashMap<String, u32>> = None;
+     let mut exp_fused_scores: Option<HashMap<String, f64>> = None;
+     let mut exp_graph_n: u32 = 0;
++    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
++    // (keyed by hit id == write_cursor), captured for the explain sidecar.
++    let mut exp_importance: Option<HashMap<u64, f64>> = None;
++    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
+ 
+     let results = if vector_stage_only {
+         vector_results
+@@ -6875,7 +7048,7 @@ fn read_search_in_tx(
+         // C1: seed the graph arm from the query's FTS match expression (entities /
+         // edge-facts), not the doc-node fused hits. `fused_hits` is still passed for
+         // the seed-body exclusion set.
+-        let (graph_candidates, stats) = bfs_graph_arm_candidates(
++        let (graph_candidates, stats, graph_edge_confidence) = bfs_graph_arm_candidates(
+             reader,
+             &two_arm_fused,
+             compiled.match_expression.as_str(),
+@@ -6893,7 +7066,28 @@ fn read_search_in_tx(
+             fuse_three_arms(two_arm_fused, vec![], graph_candidates),
+             recency_enabled,
+         );
++        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
++        // Order: AFTER recency (consistent placement), BEFORE the CE rerank seam.
++        let (imp_map, mut conf_map) = if importance_enabled || explain {
++            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
++        } else {
++            (HashMap::new(), HashMap::new())
++        };
++        // F9 FIX-1: `build_importance_confidence_maps` keys edge confidence on the
++        // EDGE `write_cursor`, which never matches a graph-arm NODE hit's cursor —
++        // so it alone leaves graph-arm hits with no edge confidence. Merge the
++        // BFS-collected per-node traversing-edge confidence (node cursor ⇒ conf).
++        // Node/edge cursors are globally unique, so there is never a key collision
++        // with the edge-fact confidence above; `or_insert` documents that intent.
++        if importance_enabled || explain {
++            for (cursor, conf) in &graph_edge_confidence {
++                conf_map.entry(*cursor).or_insert(*conf);
++            }
++        }
++        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+         if explain {
++            exp_importance = Some(imp_map);
++            exp_confidence = Some(conf_map);
+             exp_fused_scores = Some(body_score_map(&fused));
+         }
+         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+@@ -6904,7 +7098,17 @@ fn read_search_in_tx(
+         // vector-empty `soft_fallback` signal was computed above, BEFORE this
+         // branch-collapse.
+         let fused = apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled);
++        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
++        // Same placement as the graph-arm branch: after recency, before CE rerank.
++        let (imp_map, conf_map) = if importance_enabled || explain {
++            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
++        } else {
++            (HashMap::new(), HashMap::new())
++        };
++        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+         if explain {
++            exp_importance = Some(imp_map);
++            exp_confidence = Some(conf_map);
+             exp_fused_scores = Some(body_score_map(&fused));
+         }
+         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+@@ -6926,6 +7130,8 @@ fn read_search_in_tx(
+                 fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
+                 ce_score: h.ce_score,
+                 blended: h.score,
++                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
++                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+             })
+             .collect();
+         let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());
+@@ -6973,13 +7179,26 @@ fn read_search_in_tx(
+ /// `SoftFallbackBranch::GraphArm`. Score = `1.0 / (1.0 + hop_count)` with a
+ /// synthesized-node penalty (`kind = 'unknown'` → score *= 0.3). Bodies already
+ /// present in `fused_hits` are excluded (already covered by the two-arm result).
++///
++/// **F9 (0.8.16 Slice 5) confidence carry:** the third tuple element maps each
++/// emitted graph-arm hit's `write_cursor` (its `SearchHit.id`, a NODE cursor) to
++/// the `confidence` of the EDGE traversed to reach that node — the input the F9
++/// reweight (`graph_rrf_score(edge) = confidence × 1/(K+bfs_rank)`) consumes.
++/// `build_importance_confidence_maps` keys edge confidence on the EDGE
++/// `write_cursor`, which never equals a reached node's cursor, so without this
++/// carry edge confidence never reaches a graph-arm hit. **Determinism rule (matches
++/// the BLOCK-2 provenance carry):** when several edges reach the same node, the
++/// FIRST edge to claim the node in the `visited` dedup wins — i.e. the edge that
++/// produced the node's winning `bfs_rank` (seeds are considered before Phase-2
++/// neighbors; within a phase, `ORDER BY write_cursor` makes the earliest-written
++/// edge win). A NULL edge confidence is simply not inserted ⇒ neutral (1.0).
+ fn bfs_graph_arm_candidates(
+     reader: &mut Connection,
+     fused_hits: &[SearchHit],
+     match_expression: &str,
+     max_depth: u32,
+     cap: usize,
+-) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats)> {
++) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats, HashMap<u64, f64>)> {
+     // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
+     const SEED_FTS_N: usize = 10;
+     const SYNTHESIZED_PENALTY: f64 = 0.3;
+@@ -6993,6 +7212,10 @@ fn bfs_graph_arm_candidates(
+     let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
+     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+     let mut candidates: Vec<SearchHit> = Vec::new();
++    // F9 (0.8.16 Slice 5) — per-hit traversing-edge confidence, keyed by the
++    // emitted hit's NODE `write_cursor`. First edge to reach a node wins (visited
++    // dedup); NULL confidence is never inserted (⇒ neutral in the reweight).
++    let mut edge_confidence_by_cursor: HashMap<u64, f64> = HashMap::new();
+     // G0 Phase-2 (BLOCK-1) frontier meter — distinct seed candidates considered vs
+     // resolved-active; `resolved_seed_rate` flips 0→>0 once entities/edge-facts seed.
+     let mut stats = GraphFrontierStats::default();
+@@ -7002,25 +7225,29 @@ fn bfs_graph_arm_candidates(
+         // Order-preserving dedup (first provenance wins) so `seeds_considered` counts
+         // each candidate once. `source_id` is the session the seed traces back to: the
+         // matched edge's `source_id` (source A) or the entity node's own (source B).
+-        let mut candidate_seeds: Vec<(String, Option<String>)> = Vec::new();
++        // F9: each seed carries the confidence of the edge that surfaced it
++        // (`None` for entity-FTS seeds, which have no traversing edge).
++        let mut candidate_seeds: Vec<(String, Option<String>, Option<f64>)> = Vec::new();
+         let mut seen_candidates: std::collections::HashSet<String> =
+             std::collections::HashSet::new();
+         let push_candidate =
+             |lid: String,
+              source_id: Option<String>,
++             confidence: Option<f64>,
+              seen: &mut std::collections::HashSet<String>,
+-             out: &mut Vec<(String, Option<String>)>| {
++             out: &mut Vec<(String, Option<String>, Option<f64>)>| {
+                 if seen.insert(lid.clone()) {
+-                    out.push((lid, source_id));
++                    out.push((lid, source_id, confidence));
+                 }
+             };
+ 
+         // Seed source A — edge-fact endpoints (primary). Both endpoints of each
+         // matched, temporally-live, non-fallback edge are candidate seeds, tagged with
+-        // the edge's `source_id` provenance. `search_index_edges` may be absent on very
+-        // old DBs (< step-14) — degrade to no edge seeds rather than error.
++        // the edge's `source_id` provenance and (F9) `confidence`. `search_index_edges`
++        // may be absent on very old DBs (< step-14) — degrade to no edge seeds rather
++        // than error.
+         if let Ok(mut edge_seed_stmt) = tx.prepare(
+-            "SELECT ce.from_id, ce.to_id, ce.source_id \
++            "SELECT ce.from_id, ce.to_id, ce.source_id, ce.confidence \
+              FROM search_index_edges sei \
+              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+              WHERE search_index_edges MATCH ?1 \
+@@ -7037,18 +7264,26 @@ fn bfs_graph_arm_candidates(
+                         row.get::<_, String>(0)?,
+                         row.get::<_, String>(1)?,
+                         row.get::<_, Option<String>>(2)?,
++                        row.get::<_, Option<f64>>(3)?,
+                     ))
+                 },
+             )?;
+-            for triple in rows {
+-                let (from_id, to_id, source_id) = triple?;
++            for quad in rows {
++                let (from_id, to_id, source_id, confidence) = quad?;
+                 push_candidate(
+                     from_id,
+                     source_id.clone(),
++                    confidence,
++                    &mut seen_candidates,
++                    &mut candidate_seeds,
++                );
++                push_candidate(
++                    to_id,
++                    source_id,
++                    confidence,
+                     &mut seen_candidates,
+                     &mut candidate_seeds,
+                 );
+-                push_candidate(to_id, source_id, &mut seen_candidates, &mut candidate_seeds);
+             }
+         }
+ 
+@@ -7072,7 +7307,8 @@ fn bfs_graph_arm_candidates(
+                 })?;
+             for pair in rows {
+                 let (lid, source_id) = pair?;
+-                push_candidate(lid, source_id, &mut seen_candidates, &mut candidate_seeds);
++                // Entity-FTS seed: no traversing edge ⇒ no edge confidence (neutral).
++                push_candidate(lid, source_id, None, &mut seen_candidates, &mut candidate_seeds);
+             }
+         }
+ 
+@@ -7086,7 +7322,7 @@ fn bfs_graph_arm_candidates(
+             "SELECT kind, body, write_cursor FROM canonical_nodes \
+              WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+         )?;
+-        for (lid, source_id) in candidate_seeds {
++        for (lid, source_id, seed_confidence) in candidate_seeds {
+             stats.seeds_considered += 1;
+             let row: Option<(String, String, i64)> = active_stmt
+                 .query_row(rusqlite::params![&lid], |r| {
+@@ -7104,6 +7340,11 @@ fn bfs_graph_arm_candidates(
+                         // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
+                         // 'unknown' kind (mirrors the Phase-2 neighbor scoring).
+                         let score = if kind == "unknown" { SYNTHESIZED_PENALTY } else { 1.0 };
++                        // F9: an edge-seeded endpoint carries its seeding edge's
++                        // confidence (source A); entity-FTS seeds carry None.
++                        if let Some(c) = seed_confidence {
++                            edge_confidence_by_cursor.insert(write_cursor as u64, c);
++                        }
+                         candidates.push(SearchHit {
+                             id: write_cursor as u64,
+                             kind,
+@@ -7134,7 +7375,11 @@ fn bfs_graph_arm_candidates(
+         // dedup, so the carried provenance is stable (not SQLite-order-dependent).
+         // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
+         // `LIMIT 1` lookup for the same reason.)
+-        "SELECT e.from_id, e.to_id, e.source_id \
++        // F9: also carry the traversed edge's `confidence` — the reweight input for
++        // the reached node (keyed downstream by the node's `write_cursor`). Same
++        // determinism as `source_id`: the earliest-written edge wins the `visited`
++        // dedup, so the reached node's confidence is the winning-`bfs_rank` edge's.
++        "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
+          FROM canonical_edges e \
+          WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+            AND e.superseded_at IS NULL \
+@@ -7160,24 +7405,26 @@ fn bfs_graph_arm_candidates(
+         }
+ 
+         // Fetch temporal-live neighbors via edges, each paired with the
+-        // traversing edge's `source_id` (BLOCK-2 provenance carry).
+-        let neighbors: Vec<(String, Option<String>)> = {
++        // traversing edge's `source_id` (BLOCK-2 provenance carry) and (F9)
++        // `confidence` (the reweight input for the reached node).
++        let neighbors: Vec<(String, Option<String>, Option<f64>)> = {
+             let rows = edge_stmt.query_map([&lid], |row| {
+                 Ok((
+                     row.get::<_, String>(0)?,
+                     row.get::<_, String>(1)?,
+                     row.get::<_, Option<String>>(2)?,
++                    row.get::<_, Option<f64>>(3)?,
+                 ))
+             })?;
+             rows.flatten()
+-                .map(|(from_id, to_id, source_id)| {
++                .map(|(from_id, to_id, source_id, confidence)| {
+                     let neighbor = if from_id == lid { to_id } else { from_id };
+-                    (neighbor, source_id)
++                    (neighbor, source_id, confidence)
+                 })
+                 .collect()
+         };
+ 
+-        for (neighbor, edge_source_id) in neighbors {
++        for (neighbor, edge_source_id, edge_confidence) in neighbors {
+             if visited.contains(&neighbor) {
+                 continue;
+             }
+@@ -7200,6 +7447,11 @@ fn bfs_graph_arm_candidates(
+                     // scope here; only moved onto the frontier below) — derive the
+                     // stable id with no extra query.
+                     let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
++                    // F9: record the traversing edge's confidence for this node
++                    // (first edge wins — this is the winning-`bfs_rank` edge).
++                    if let Some(c) = edge_confidence {
++                        edge_confidence_by_cursor.insert(write_cursor as u64, c);
++                    }
+                     candidates.push(SearchHit {
+                         id: write_cursor as u64,
+                         kind,
+@@ -7225,7 +7477,7 @@ fn bfs_graph_arm_candidates(
+     drop(body_stmt);
+     tx.commit()?;
+     stats.graph_candidates_emitted = candidates.len() as u32;
+-    Ok((candidates, stats))
++    Ok((candidates, stats, edge_confidence_by_cursor))
+ }
+ 
+ /// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
+diff --git a/src/rust/crates/fathomdb-napi/src/lib.rs b/src/rust/crates/fathomdb-napi/src/lib.rs
+index 44b5a0a1..4e15d7bc 100644
+--- a/src/rust/crates/fathomdb-napi/src/lib.rs
++++ b/src/rust/crates/fathomdb-napi/src/lib.rs
+@@ -610,6 +610,11 @@ pub struct PerHitExplain {
+     pub fused_score: f64,
+     pub ce_score: Option<f64>,
+     pub blended: f64,
++    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
++    /// hit's contribution (`None` = graceful-absent / neutral). Mirrors the
++    /// engine `PerHitExplain` additive fields (napi → `importance`, `confidence`).
++    pub importance: Option<f64>,
++    pub confidence: Option<f64>,
+ }
+ 
+ impl PerHitExplain {
+@@ -628,10 +633,84 @@ impl PerHitExplain {
+             fused_score: p.fused_score,
+             ce_score: p.ce_score,
+             blended: p.blended,
++            importance: p.importance,
++            confidence: p.confidence,
+         }
+     }
+ }
+ 
++#[cfg(test)]
++mod per_hit_explain_tests {
++    use super::*;
++    use fathomdb_engine::{Engine as EngEngine, PreparedWrite as EngPreparedWrite};
++
++    // 0.8.16 Slice 5 / F9 (codex §9 fix-1, FINDING 2) — the N-API `PerHitExplain`
++    // mirror must copy the new `importance`/`confidence` fields from the engine
++    // type, or Node/TS `searchExplained` callers cannot observe the F9 contribution
++    // (the 0.8.14 `embed_batch_cls` binding blind-spot). The engine `PerHitExplain`
++    // is `#[non_exhaustive]`, so it cannot be built by literal cross-crate — the
++    // source value comes from a REAL `search_explained` run (F9 reweight ON, graph
++    // arm ON). Runs under `cargo test` (no maturin / node needed).
++    #[test]
++    fn from_rust_copies_f9_importance_and_confidence() {
++        let dir = tempfile::TempDir::new().unwrap();
++        let path = dir.path().join(format!("napi_f9_explain{}", fathomdb_schema::SQLITE_SUFFIX));
++        let opened = EngEngine::open(&path).expect("open");
++        let engine = &opened.engine;
++        let receipt = engine
++            .write(&[
++                EngPreparedWrite::Node {
++                    kind: "doc".to_string(),
++                    body: "zephyr anchor entity".to_string(),
++                    source_id: None,
++                    logical_id: Some("zephyr".to_string()),
++                },
++                EngPreparedWrite::Node {
++                    kind: "doc".to_string(),
++                    body: "beta reachable payload node".to_string(),
++                    source_id: None,
++                    logical_id: Some("beta".to_string()),
++                },
++                EngPreparedWrite::Edge {
++                    kind: "link".to_string(),
++                    from: "zephyr".to_string(),
++                    to: "beta".to_string(),
++                    source_id: None,
++                    logical_id: Some("e-zb".to_string()),
++                    body: Some("collaboration record".to_string()),
++                    t_valid: None,
++                    t_invalid: None,
++                    confidence: Some(0.90),
++                    extractor_model_id: None,
++                    temporal_fallback: None,
++                },
++            ])
++            .expect("write");
++        let beta_cursor = receipt.row_cursors[1];
++        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
++        engine.set_importance_reweight_enabled_for_test(true);
++
++        let explained =
++            engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
++        let exp = explained.explanation.expect("explanation sidecar present");
++        let entry = exp
++            .per_hit
++            .iter()
++            .find(|p| p.id == beta_cursor)
++            .expect("per_hit entry for the graph-reached beta node");
++        // The engine populated both fields on the source explain entry.
++        assert_eq!(entry.importance, Some(0.25), "source explain carries node importance");
++        assert_eq!(entry.confidence, Some(0.90), "source explain carries edge confidence");
++
++        // The binding mirror MUST copy them (the fix).
++        let mirror = PerHitExplain::from_rust(entry);
++        assert_eq!(mirror.importance, Some(0.25), "importance must propagate to the N-API mirror");
++        assert_eq!(mirror.confidence, Some(0.90), "confidence must propagate to the N-API mirror");
++
++        opened.engine.close().unwrap();
++    }
++}
++
+ /// 0.8.8 EXP-OBS (Slice 10) — the explanation sidecar (mirror of engine
+ /// `Explanation`): a query-level [`QueryTrace`] + a per-hit breakdown parallel to
+ /// (and in the same order as) `SearchResult.results`.
+diff --git a/src/rust/crates/fathomdb-py/src/lib.rs b/src/rust/crates/fathomdb-py/src/lib.rs
+index 825de6e8..342f917a 100644
+--- a/src/rust/crates/fathomdb-py/src/lib.rs
++++ b/src/rust/crates/fathomdb-py/src/lib.rs
+@@ -538,6 +538,12 @@ struct PyPerHitExplain {
+     fused_score: f64,
+     ce_score: Option<f64>,
+     blended: f64,
++    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
++    /// hit's contribution (`None` = graceful-absent / neutral). Mirrors the engine
++    /// `PerHitExplain` additive fields; `get_all` exposes them as read-only Python
++    /// attributes, symmetric with the N-API mirror.
++    importance: Option<f64>,
++    confidence: Option<f64>,
+ }
+ 
+ impl PyPerHitExplain {
+@@ -556,6 +562,8 @@ impl PyPerHitExplain {
+             fused_score: p.fused_score,
+             ce_score: p.ce_score,
+             blended: p.blended,
++            importance: p.importance,
++            confidence: p.confidence,
+         }
+     }
+ }
+@@ -1903,4 +1911,70 @@ mod tests {
+         let v2 = get_or_try_init::<u32, &str>(&CELL, || panic!("must not re-init")).unwrap();
+         assert_eq!(*v2, 7);
+     }
++
++    // 0.8.16 Slice 5 / F9 (codex §9 fix-1, FINDING 2) — the pyo3 `PerHitExplain`
++    // mirror must copy the new `importance`/`confidence` fields from the engine
++    // type, keeping Py symmetric with the N-API mirror; otherwise Python
++    // `search_explained` callers cannot observe the F9 contribution (the 0.8.14
++    // `embed_batch_cls` binding blind-spot). The engine `PerHitExplain` is
++    // `#[non_exhaustive]` (no cross-crate literal), so the source value comes from
++    // a REAL `search_explained` run (F9 reweight ON, graph arm ON). Runs under
++    // `cargo test` (no maturin needed; `extension-module` is off for the workspace
++    // test build).
++    #[test]
++    fn per_hit_explain_from_rust_copies_f9_importance_and_confidence() {
++        let dir = tempfile::TempDir::new().unwrap();
++        let path = dir.path().join(format!("py_f9_explain{}", fathomdb_schema::SQLITE_SUFFIX));
++        let opened = RustEngine::open(&path).expect("open");
++        let engine = &opened.engine;
++        let receipt = engine
++            .write(&[
++                PreparedWrite::Node {
++                    kind: "doc".to_string(),
++                    body: "zephyr anchor entity".to_string(),
++                    source_id: None,
++                    logical_id: Some("zephyr".to_string()),
++                },
++                PreparedWrite::Node {
++                    kind: "doc".to_string(),
++                    body: "beta reachable payload node".to_string(),
++                    source_id: None,
++                    logical_id: Some("beta".to_string()),
++                },
++                PreparedWrite::Edge {
++                    kind: "link".to_string(),
++                    from: "zephyr".to_string(),
++                    to: "beta".to_string(),
++                    source_id: None,
++                    logical_id: Some("e-zb".to_string()),
++                    body: Some("collaboration record".to_string()),
++                    t_valid: None,
++                    t_invalid: None,
++                    confidence: Some(0.90),
++                    extractor_model_id: None,
++                    temporal_fallback: None,
++                },
++            ])
++            .expect("write");
++        let beta_cursor = receipt.row_cursors[1];
++        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
++        engine.set_importance_reweight_enabled_for_test(true);
++
++        let explained =
++            engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
++        let exp = explained.explanation.expect("explanation sidecar present");
++        let entry = exp
++            .per_hit
++            .iter()
++            .find(|p| p.id == beta_cursor)
++            .expect("per_hit entry for the graph-reached beta node");
++        assert_eq!(entry.importance, Some(0.25), "source explain carries node importance");
++        assert_eq!(entry.confidence, Some(0.90), "source explain carries edge confidence");
++
++        let mirror = PyPerHitExplain::from_rust(entry);
++        assert_eq!(mirror.importance, Some(0.25), "importance must propagate to the pyo3 mirror");
++        assert_eq!(mirror.confidence, Some(0.90), "confidence must propagate to the pyo3 mirror");
++
++        opened.engine.close().unwrap();
++    }
+ }
+diff --git a/src/rust/crates/fathomdb-schema/src/lib.rs b/src/rust/crates/fathomdb-schema/src/lib.rs
+index d1e80415..e9f3948f 100644
+--- a/src/rust/crates/fathomdb-schema/src/lib.rs
++++ b/src/rust/crates/fathomdb-schema/src/lib.rs
+@@ -3,7 +3,7 @@ use std::time::Instant;
+ 
+ use rusqlite::Connection;
+ 
+-pub const SCHEMA_VERSION: u32 = 17;
++pub const SCHEMA_VERSION: u32 = 18;
+ 
+ /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
+ ///
+@@ -441,6 +441,24 @@ pub const MIGRATIONS: &[Migration] = &[
+                       write_cursor
+                   FROM canonical_nodes;",
+     },
++    // 0.8.16 Slice 5 (F9 KEYSTONE) — node-level importance ranking scalar.
++    // Per `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1
++    // (SIGNED 2026-07-08) and `dev/plans/plan-0.8.16.md` §2 (R-F9-1/R-F9-4).
++    // Adds `importance REAL` on `canonical_nodes` — a caller-supplied ranking
++    // scalar, symmetric with the existing genuine-NULL `canonical_edges.confidence`
++    // (step-14). 3-way sentinel (frozen): `NULL` = never assigned (graceful-absent,
++    // ranks NEUTRAL — the OPP-12 Q6a graceful-absent state, load-bearing for
++    // R-F9-4); `0.0` = explicit floor/de-weight; `(0.0, 1.0]` = explicit importance.
++    // Nullable, so pre-existing rows read NULL in-place (no data migration / re-open):
++    // the graceful-absent default preserves current ranking for every existing row.
++    // Additive `ADD COLUMN` (no DROP) → the accretion guard REQUIRES the exemption
++    // marker. This step does NOT rewrite vec0 / vector rows (ADR §4 eu7 no-op basis):
++    // it adds a scalar column only, so the eu7 fidelity gate stays a documented no-op.
++    Migration {
++        step_id: 18,
++        sql: "-- MIGRATION-ACCRETION-EXEMPTION: F9 importance ranking scalar (additive nullable REAL; 3-way sentinel, NULL=graceful-absent)
++              ALTER TABLE canonical_nodes ADD COLUMN importance REAL;",
++    },
+ ];
+ 
+ pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+
+exec
+/bin/bash -lc "grep -R \"confidence\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -80 && grep -R \"write_node_importance\\|node_importance\" -n ." in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+exec
+/bin/bash -lc "sed -n '1740,1870p' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '3260,3345p' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '4040,4090p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+    /// superseded prior edges are ALSO counted as rows written).
+    pub edges_written: u64,
+    /// Number of documents processed (including no-facts documents).
+    pub docs_processed: u64,
+}
+
+/// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — one (subject-entity, relation) axis to
+/// consolidate via [`Engine::consolidate_with_provider`]. FathomDB assembles the
+/// competing fact-edge cluster for this axis DETERMINISTICALLY (CPU-only, no
+/// LLM) by querying active `canonical_edges` where `from_id = subject_logical_id`
+/// AND `kind = relation`.
+#[derive(Clone, Debug)]
+pub struct ConsolidateAxis {
+    /// Stable `logical_id` of the subject entity (edge `from_id`).
+    pub subject_logical_id: String,
+    /// The relation/edge `kind` whose competing fact-edges form the cluster.
+    pub relation: String,
+}
+
+/// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — one competing fact-edge in a candidate
+/// cluster sent to the consolidation harness. Assembled deterministically from
+/// `canonical_edges`; sent to the harness as the request payload; the harness's
+/// verdict references edges back by `edge_ref` (the edge's stable `logical_id`).
+#[derive(Clone, Debug)]
+pub struct ConsolidateCandidateEdge {
+    /// The edge's stable `logical_id` — the ref the harness uses in its verdict.
+    pub edge_ref: String,
+    /// The fact/relationship text (never rewritten by consolidation — §2.1).
+    pub body: Option<String>,
+    /// Event valid-time (ISO-8601), if known.
+    pub t_valid: Option<String>,
+    /// Event invalid-time (ISO-8601), if already invalidated.
+    pub t_invalid: Option<String>,
+    /// Extraction confidence ∈ [0.0, 1.0], if known.
+    pub confidence: Option<f64>,
+    /// Provenance: originating document id.
+    pub source_doc_id: Option<String>,
+    /// Provenance: extractor model id from the original BYO-LLM ingest.
+    pub extractor_model_id: Option<String>,
+}
+
+/// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — receipt returned by
+/// [`Engine::consolidate_with_provider`]. Consolidation records supersession /
+/// recency METADATA only (§2.1): edge bodies are never rewritten and no row is
+/// ever deleted, so these counts describe metadata transitions, not content
+/// changes.
+#[derive(Clone, Debug, Default)]
+pub struct ConsolidateReceipt {
+    /// Number of (subject, relation) axes with a non-empty cluster that were
+    /// dispatched to the harness.
+    pub clusters_processed: u64,
+    /// Number of candidate edges presented across all clusters.
+    pub edges_examined: u64,
+    /// Number of edges the harness ruled `keep` (no metadata change).
+    pub edges_kept: u64,
+    /// Number of edges the harness ruled `invalidate` (t_invalid set; row + body
+    /// preserved).
+    pub edges_invalidated: u64,
+    /// Number of edges the harness ruled `supersede`/`merge` (marked superseded
+    /// via the existing G0 tombstone column; row + body preserved).
+    pub edges_superseded: u64,
+}
+
+/// Batch input shape for [`Engine::write`].
+///
+/// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
+/// entity variants land in 0.6.x without a major bump. Adding fields to
+/// existing variants remains a binding-coordination change.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PreparedWrite {
+    Node {
+        kind: String,
+        body: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam. `None` is the
+        /// back-compat default and lands as NULL on disk; callers that
+        /// participate in `excise_source` / `trace_source_ref` must
+        /// supply a stable identifier.
+        source_id: Option<String>,
+        /// G0 (Slice 15) — stable cross-re-ingestion identity. `Some(id)`
+        /// makes this write a transaction-time supersession of the prior
+        /// active version of `(logical_id, kind)` (tombstone-then-insert).
+        /// `None` is the legacy/own-identity default: a plain insert with a
+        /// NULL `logical_id` (NULL-safe — never collides with other NULLs).
+        logical_id: Option<String>,
+    },
+    Edge {
+        kind: String,
+        from: String,
+        to: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node.
+        source_id: Option<String>,
+        /// G0 (Slice 15) — see Node. Supersession semantics are identical on
+        /// edges (keyed by `(logical_id, kind)`).
+        logical_id: Option<String>,
+        /// G11 (Slice 15) — the fact/relationship text. When `Some`, triggers
+        /// FTS projection into `search_index_edges` and vector projection via
+        /// the projection scheduler (kind `"edge_fact"`). Also triggers
+        /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
+        body: Option<String>,
+        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
+        t_valid: Option<String>,
+        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
+        t_invalid: Option<String>,
+        /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
+        /// non-BYO-LLM-ingested edges.
+        confidence: Option<f64>,
+        /// G11 (Slice 15) — opaque model/provider id from the BYO-LLM harness
+        /// `ready.model` field. NULL for non-BYO-LLM edges.
+        extractor_model_id: Option<String>,
+        /// R3 (Slice 30, SCHEMA-GATE-1, HITL-SIGNED 2026-06-13) — set when the
+        /// ELPS extractor defaulted this edge's `t_valid` to `created_at` rather
+        /// than deriving it from the document text. Such edges have untrustworthy
+        /// event times and are excluded from graph-arm BFS temporal queries.
+        /// `None`/`false` = not a fallback; `Some(true)` = fallback.
+        temporal_fallback: Option<bool>,
+    },
+    OpStore {
+        collection: String,
+        record_key: String,
+        schema_id: Option<String>,
+        body: String,
+    },
+    AdminSchema {
+        name: String,
+        kind: String,
+        schema_json: String,
+        retention_json: String,
+    },
+}
+
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
+                        for alias in aliases.iter().filter_map(|a| a.as_str()) {
+                            if !alias.is_empty() {
+                                entity_index
+                                    .entry(alias.to_lowercase())
+                                    .or_insert_with(|| (name.to_string(), kind.clone()));
+                            }
+                        }
+                    }
+                }
+
+                let edge_batch: Vec<PreparedWrite> = raw_edges
+                    .iter()
+                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                        let from_entity =
+                            edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let to_entity =
+                            edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let relation =
+                            edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
+                        let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_valid =
+                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_invalid =
+                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+                        // protocol boundary; reject out-of-range values.
+                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+                            Some(c) if !(0.0..=1.0).contains(&c) => {
+                                return Err(EngineError::Extractor);
+                            }
+                            c => c,
+                        };
+                        let source_doc_id =
+                            edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
+
+                        // fix-33 [P1]: resolve each endpoint via the entities[]
+                        // index (by name or alias) → the entity's canonical
+                        // (name, type); fall back to kind "entity" only for a truly
+                        // unlisted name (synthesized dangling endpoints ARE listed,
+                        // so this is the defensive path). derive_logical_id (fix-34)
+                        // still rejects an empty name / ':' in kind.
+                        let (from_name, from_kind) = entity_index
+                            .get(&from_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (from_entity.to_string(), "entity".to_string()));
+                        let (to_name, to_kind) = entity_index
+                            .get(&to_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (to_entity.to_string(), "entity".to_string()));
+                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
+                        let edge_key = format!("{from_lid}:{to_lid}:{relation}");
+                        let edge_lid = derive_logical_id("edge", &edge_key)?;
+
+                        let is_temporal_fallback = t_valid
+                            .as_deref()
+                            .map(|tv| fallback_dates.contains(tv))
+                            .unwrap_or(false);
+                        Ok(PreparedWrite::Edge {
+                            kind: relation.to_string(),
+                            from: from_lid,
+                            to: to_lid,
+                            source_id: source_doc_id,
+                            logical_id: Some(edge_lid),
+                            body,
+                            t_valid,
+                            t_invalid,
+                            confidence,
+                            extractor_model_id: extractor_model_id.clone(),
+                            temporal_fallback: if is_temporal_fallback { Some(true) } else { None },
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                // fix-34 [P2]: dedup edges by logical_id, mirroring the node arm
+                // (fix-29) — a duplicate edge in one harness response would
+                // otherwise write a row that immediately supersedes its sibling.
+                let edge_batch = dedup_prepared_by_logical_id(edge_batch);
+                let n = edge_batch.len() as u64;
+                self.write(&edge_batch)?;
+                edges_written = edges_written.saturating_add(n);
+            }
+        }
+    ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
+        self.ensure_open()?;
+        if query.trim().is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        let compiled = compile_text_query(query);
+        // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
+        // MUST be derived from the same WAL snapshot the data was read
+        // from. Loading `next_cursor` from the writer-side atomic before
+        // the reader transaction acquires its snapshot races against
+        // concurrent writers — see `dev/design/engine.md` § Cursor
+        // contract. Run cursor probe + body query inside one read tx
+        // (BEGIN DEFERRED on a `query_only=ON` connection in WAL mode is
+        // a snapshot-stable read).
+        // EU-5a2 mean-centering apply path (query side). `query_vector`
+        // is ALWAYS un-centered (used by the f32 vec_distance_l2 rerank
+        // in phase 2). `query_vector_bin` is the (possibly centered) f32
+        // fed to `vec_quantize_binary` in phase 1. The centering decision
+        // mirrors the write path: identity must be MC-required AND a
+        // mean_vec must be pinned. NoopEmbedder collapses to
+        // `query_vector_bin == query_vector` until EU-5b.
+        let raw_query_vector =
+            self.runtime_embedder.as_ref().and_then(|embedder| embedder.embed(query).ok());
+        let query_vector_bin = match raw_query_vector.as_ref() {
+            Some(vector) if identity_requires_mean_centering(&self.runtime_embedder_identity) => {
+                let pinned = {
+                    let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                    let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                    read_pinned_mean_vec(connection, self.runtime_embedder_identity.dimension)?
+                };
+                match pinned {
+                    Some(mean) => serde_json::to_string(&subtract_mean(vector, &mean)).ok(),
+                    None => serde_json::to_string(vector).ok(),
+                }
+            }
+            Some(vector) => serde_json::to_string(vector).ok(),
+            None => None,
+        };
+        let query_vector = raw_query_vector.and_then(|vector| serde_json::to_string(&vector).ok());
+        // 0.7.2 PR-2bc S1 fix-1 — phase-2 rerank LIMIT. Production default is
+        // `SEARCH_RERANK_LIMIT` (10); the test seam may RAISE it, clamped to
+        // the production floor so a test can never shrink search semantics.
+        let search_limit = self
+            .projection_runtime
+            .shared
+            .search_limit_override
+            .load(Ordering::SeqCst)
+            .max(SEARCH_RERANK_LIMIT);
+        let recency_enabled =
+            self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs && sed -n '260,520p' src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+//! 0.8.16 Slice 5 (F9 KEYSTONE) — importance/confidence ranking mechanism.
+//!
+//! Ships F9 as an OFF-by-default, observable, OPP-12-`rankable`-forward-compatible
+//! MECHANISM (no eval-quality claim). Covers plan-0.8.16 §2:
+//!   - R-F9-1: `canonical_nodes.importance` write/read round-trip + [0,1]
+//!     validation + the 3-way sentinel (`NULL` absent / `0.0` floor / `(0.0,1.0]`).
+//!   - R-F9-2: importance (node) / confidence (edge) reweight reorders vs OFF, and
+//!     the contribution is observable through `PerHitExplain`.
+//!   - R-F9-4: reweight-ON with all-absent (NULL) importance == reweight-OFF
+//!     (graceful-neutral identity — the OPP-12 Q6a graceful-absent state).
+//!
+//! The reweight is multiplicative-on-fused (ADR §2.2, HITL-SIGNED 2026-07-08):
+//! `score *= importance(node) * confidence(edge)`, with `NULL ⇒ neutral (1.0)`.
+//! Mirrors the `apply_recency_reweight` precedent (pure fn + OFF-by-default flag +
+//! `_for_test` seam). No vec0 rewrite (eu7 no-op basis).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::{
+    apply_importance_reweight, Engine, EngineError, PreparedWrite, SearchHit, SoftFallbackBranch,
+};
+use fathomdb_schema::SQLITE_SUFFIX;
+use tempfile::TempDir;
+
+fn hit(id: u64, body: &str, score: f64) -> SearchHit {
+    SearchHit {
+        id,
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        score,
+        branch: SoftFallbackBranch::Vector,
+        source_id: None,
+        ce_score: None,
+        stable_id: None,
+    }
+}
+
+// ---- pure-function unit tests (mirror pr_g12_recency.rs) --------------------
+
+#[test]
+fn importance_disabled_is_a_no_op() {
+    let hits = vec![hit(1, "a", 0.02), hit(2, "b", 0.01)];
+    let mut imp = HashMap::new();
+    imp.insert(1u64, 0.1_f64); // would de-weight if enabled
+    let out = apply_importance_reweight(hits.clone(), &imp, &HashMap::new(), false);
+    assert_eq!(out, hits, "flag off => order + scores unchanged");
+}
+
+#[test]
+fn importance_all_absent_equals_disabled_r_f9_4() {
+    // R-F9-4 graceful-neutral identity: enabled but every hit is NULL/absent
+    // (empty maps) must be byte-identical to the disabled result.
+    let hits = vec![hit(1, "a", 0.02), hit(2, "b", 0.01)];
+    let disabled = apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), false);
+    let enabled_absent =
+        apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), true);
+    assert_eq!(enabled_absent, disabled, "all-absent reweight-ON must equal reweight-OFF");
+    assert_eq!(enabled_absent, hits, "and preserve the input order/scores");
+}
+
+#[test]
+fn importance_enabled_deweights_and_reorders() {
+    // Node 1 outranks node 2 on raw score, but a low importance (0.1) de-weights
+    // it below the neutral (absent => 1.0) node 2 => non-vacuous reorder.
+    let hits = vec![hit(1, "high-raw", 0.02), hit(2, "neutral", 0.015)];
+    let mut imp = HashMap::new();
+    imp.insert(1u64, 0.1_f64);
+    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
+    assert_eq!(out[0].id, 2, "de-weighted node drops below the neutral node");
+    assert_eq!(out[1].id, 1);
+    assert!(out[0].score >= out[1].score, "reweighted list stays sorted by score desc");
+}
+
+#[test]
+fn confidence_scales_contribution_pure_fn() {
+    // Pure-fn coverage retained: a confidence map entry multiplies the hit's
+    // contribution. (The REAL graph-arm path is proven end-to-end by
+    // `confidence_on_graph_arm_reorders_and_surfaces_in_explain` below.)
+    let hits = vec![hit(1, "edge", 0.02)];
+    let mut conf = HashMap::new();
+    conf.insert(1u64, 0.5_f64);
+    let out = apply_importance_reweight(hits, &HashMap::new(), &conf, true);
+    assert!((out[0].score - 0.01).abs() < 1e-9, "confidence 0.5 halves the contribution");
+}
+
+#[test]
+fn importance_floor_zero_zeroes_contribution() {
+    // Sentinel 0.0 = explicit floor => full de-weight (score -> 0.0).
+    let hits = vec![hit(1, "floored", 0.02), hit(2, "kept", 0.015)];
+    let mut imp = HashMap::new();
+    imp.insert(1u64, 0.0_f64);
+    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
+    assert_eq!(out[0].id, 2, "floored node ranks last");
+    assert_eq!(out[1].score, 0.0, "floor 0.0 zeroes the contribution");
+}
+
+// ---- end-to-end engine tests -----------------------------------------------
+
+#[derive(Clone, Debug)]
+struct FixedEmbedder;
+
+impl Embedder for FixedEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new("deterministic", "rev-a", 8)
+    }
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        let mut v = vec![0.0_f32; 8];
+        v[0] = 1.0;
+        Ok(v)
+    }
+}
+
+fn fixture(name: &str) -> (TempDir, std::path::PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join(format!("{name}{SQLITE_SUFFIX}"));
+    (dir, path)
+}
+
+/// R-F9-1 — importance write/read round-trips exact for the 3-way sentinel, and
+/// an out-of-[0,1] value is rejected (mirrors the edge-confidence validation).
+#[test]
+fn importance_write_read_roundtrip_and_range_validation() {
+    let (_dir, path) = fixture("f9_roundtrip");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    let engine = &opened.engine;
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+    let receipt = engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "importance subject".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("write");
+    let cursor = receipt.cursor;
+
+    // Absent by default => NULL => graceful-absent.
+    assert_eq!(engine.node_importance(cursor).expect("read"), None, "absent => NULL");
+
+    for v in [0.0_f64, 0.5, 1.0] {
+        engine.write_node_importance(cursor, v).expect("set importance");
+        assert_eq!(engine.node_importance(cursor).expect("read"), Some(v), "round-trips exact");
+    }
+
+    // Out-of-range rejected on the write path (mirror canonical_edges.confidence).
+    for bad in [-0.1_f64, 1.1] {
+        assert!(
+            matches!(engine.write_node_importance(cursor, bad), Err(EngineError::WriteValidation)),
+            "importance {bad} out of [0,1] must be rejected"
+        );
+    }
+    // The last good value survived the rejected writes.
+    assert_eq!(engine.node_importance(cursor).expect("read"), Some(1.0));
+
+    opened.engine.close().unwrap();
+}
+
+fn seed_two_docs(engine: &Engine) -> (u64, u64) {
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    let a = engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "importance alpha widget".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("write a")
+        .cursor;
+    let b = engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "importance beta widget".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("write b")
+        .cursor;
+    engine.drain(10_000).expect("drain");
+    (a, b)
+}
+
+/// R-F9-2 — an importance reweight (ON) reorders vs the OFF baseline: de-weighting
+/// the baseline top hit drops it below the neutral hit. Non-vacuous.
+#[test]
+fn importance_reweight_reorders_vs_off() {
+    let (_dir, path) = fixture("f9_reorder");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    let engine = &opened.engine;
+    seed_two_docs(engine);
+
+    let baseline = engine.search("importance").expect("search");
+    assert_eq!(baseline.results.len(), 2, "both docs retrieved");
+    let top_id = baseline.results[0].id;
+    let second_id = baseline.results[1].id;
+
+    // De-weight the baseline top hit hard; enable the reweight.
+    engine.write_node_importance(top_id, 0.01).expect("set importance");
+    engine.set_importance_reweight_enabled_for_test(true);
+
+    let reweighted = engine.search("importance").expect("search");
+    let rw_bodies: std::collections::BTreeSet<&str> =
+        reweighted.results.iter().map(|h| h.body.as_str()).collect();
+    let base_bodies: std::collections::BTreeSet<&str> =
+        baseline.results.iter().map(|h| h.body.as_str()).collect();
+    assert_eq!(base_bodies, rw_bodies, "reweight preserves the result SET");
+    assert_eq!(reweighted.results[0].id, second_id, "de-weighted top hit is now second");
+    assert_eq!(reweighted.results[1].id, top_id);
+    for w in reweighted.results.windows(2) {
+        assert!(w[0].score >= w[1].score, "reweighted list stays sorted by score desc");
+    }
+
+    opened.engine.close().unwrap();
+}
+
+/// R-F9-4 (end-to-end) — reweight ON with all-NULL importance yields the exact
+/// same ordering + scores as reweight OFF (graceful-neutral identity).
+#[test]
+fn importance_reweight_on_all_null_equals_off_e2e() {
+    let (_dir, path) = fixture("f9_identity");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    let engine = &opened.engine;
+    seed_two_docs(engine);
+
+    let off = engine.search("importance").expect("search off");
+    engine.set_importance_reweight_enabled_for_test(true);
+    let on_all_null = engine.search("importance").expect("search on");
+
+    assert_eq!(
+        off.results, on_all_null.results,
+        "reweight-ON with all-absent importance must equal reweight-OFF"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+/// R-F9-2 (observability) — `explain=True` surfaces the importance contribution
+/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
+#[test]
+fn explain_surfaces_importance_contribution() {
+    let (_dir, path) = fixture("f9_explain");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
+    let engine = &opened.engine;
+    let (a, _b) = seed_two_docs(engine);
+
+    engine.write_node_importance(a, 0.5).expect("set importance");
+    engine.set_importance_reweight_enabled_for_test(true);
+
+    let explained =
+        engine.search_explained("importance", None, 0, false, 0.3, 0).expect("search_explained");
+    let exp = explained.explanation.expect("explanation sidecar present");
+
+    let entry =
+        exp.per_hit.iter().find(|p| p.id == a).expect("per_hit entry for the weighted node");
+    assert_eq!(entry.importance, Some(0.5), "explain surfaces the node importance");
+    assert_eq!(entry.confidence, None, "a node hit carries no edge confidence");
+
+    opened.engine.close().unwrap();
+    opened.engine.close().unwrap();
+}
+
+// ---- graph-arm edge-confidence e2e (codex §9 fix-1, FINDING 1) --------------
+
+/// Entity node with an explicit `logical_id` (so it can be a graph seed / edge
+/// endpoint — mirrors `pr_c1_graph_seeding::entity_node`).
+fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
+    PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+    }
+}
+
+/// Edge with an explicit `confidence` and a query-NON-matching `body` (so the
+/// endpoints are reached by BFS traversal, not co-seeded by edge-fact FTS).
+fn conf_edge(from: &str, to: &str, logical_id: &str, body: &str, confidence: f64) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+        body: Some(body.to_string()),
+        t_valid: None,
+        t_invalid: None,
+        confidence: Some(confidence),
+        extractor_model_id: None,
+        temporal_fallback: None,
+    }
+}
+
+/// FINDING 1 (codex §9) — edge confidence must actually reach a graph-arm NODE
+/// hit and drive ranking END-TO-END through the real retrieval path (not a
+/// hand-built confidence map). Two entities are reached from the same seed by
+/// BFS-traversed edges of very different confidence; the reweight reorders them
+/// and the confidence surfaces in `PerHitExplain`.
+///
+/// Setup (no vector kind configured ⇒ vector arm empty; only the seed body
+/// matches the FTS query, so `beta`/`gamma` are reached ONLY via graph traversal
+/// and are NOT excluded as two-arm hits):
+///
+/// - seed `zephyr` (matched by the query)
+/// - `zephyr --(conf 0.10)--> gamma`  (edge written FIRST ⇒ lower write_cursor ⇒
+///   traversed first ⇒ better graph `bfs_rank`)
+/// - `zephyr --(conf 0.90)--> beta`   (edge written SECOND)
+///
+/// So with the reweight OFF, `gamma` (better rank) outranks `beta`; with it ON,
+/// `beta` (0.90) leaps above `gamma` (0.10) — a confidence-driven FLIP.
+#[test]
+fn confidence_on_graph_arm_reorders_and_surfaces_in_explain() {
+    let (_dir, path) = fixture("f9_graph_conf");
+    let opened = Engine::open(&path).expect("open");
+    let engine = &opened.engine;
+    engine
+        .write(&[
+            entity_node("zephyr anchor entity", "zephyr"),
+            entity_node("beta reachable payload node", "beta"),
+            entity_node("gamma reachable payload node", "gamma"),
+            // Edge bodies do NOT contain "zephyr" ⇒ endpoints are reached by BFS,
+            // not co-seeded by edge-fact FTS. gamma-edge is written FIRST.
+            conf_edge("zephyr", "gamma", "e-zg", "collaboration record one", 0.10),
+            conf_edge("zephyr", "beta", "e-zb", "collaboration record two", 0.90),
+        ])
+        .expect("write");
+
+    // Helper: 0-based index of a body in the result list.
+    let pos = |results: &[SearchHit], needle: &str| -> usize {
+        results
+            .iter()
+            .position(|h| h.body.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} must be present in results"))
+    };
+
+    // Reweight OFF baseline (graph arm ON): both endpoints are graph-arm hits;
+    // gamma (better bfs_rank) outranks beta.
+    let off = engine.search_reranked("zephyr", None, 0, true, 0.3, 0).expect("search off");
+    for name in ["gamma reachable", "beta reachable"] {
+        let h = off.results.iter().find(|h| h.body.contains(name)).expect("graph hit present");
+        assert_eq!(h.branch, SoftFallbackBranch::GraphArm, "{name} is a graph-arm hit");
+    }
+    assert!(
+        pos(&off.results, "gamma reachable") < pos(&off.results, "beta reachable"),
+        "OFF: gamma (better bfs_rank) outranks beta — {:?}",
+        off.results.iter().map(|h| (h.body.as_str(), h.score)).collect::<Vec<_>>()
+    );
+
+    // Reweight ON: the high-confidence edge (beta, 0.90) must overtake the
+    // low-confidence edge (gamma, 0.10) — a confidence-driven end-to-end FLIP.
+    engine.set_importance_reweight_enabled_for_test(true);
+    let on = engine.search_reranked("zephyr", None, 0, true, 0.3, 0).expect("search on");
+    assert!(
+        pos(&on.results, "beta reachable") < pos(&on.results, "gamma reachable"),
+        "ON: beta (edge conf 0.90) overtakes gamma (edge conf 0.10) — {:?}",
+        on.results.iter().map(|h| (h.body.as_str(), h.score)).collect::<Vec<_>>()
+    );
+
+    // (b) Observability: the traversing edge's confidence shows in PerHitExplain.
+    let explained =
+        engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
+    let exp = explained.explanation.expect("explanation sidecar present");
+    let beta_id = on.results.iter().find(|h| h.body.contains("beta reachable")).unwrap().id;
+    let gamma_id = on.results.iter().find(|h| h.body.contains("gamma reachable")).unwrap().id;
+    let beta_exp =
+        exp.per_hit.iter().find(|p| p.id == beta_id).expect("per_hit entry for beta graph hit");
+    let gamma_exp =
+        exp.per_hit.iter().find(|p| p.id == gamma_id).expect("per_hit entry for gamma graph hit");
+    assert_eq!(
+        beta_exp.confidence,
+        Some(0.90),
+        "explain surfaces the traversing edge confidence for beta"
+    );
+    assert_eq!(
+        gamma_exp.confidence,
+        Some(0.10),
+        "explain surfaces the traversing edge confidence for gamma"
+    );
+
+    opened.engine.close().unwrap();
+}
+
+ succeeded in 33058ms:
+grep: ./target/debug/deps/elps_conformance_golden-f5a66bd0784295a0: binary file matches
+grep: ./target/debug/deps/error_taxonomy-06014e6171460543: binary file matches
+grep: ./target/debug/deps/slice5_provider_seam-6b95ada8f8d1d96e: binary file matches
+grep: ./target/debug/deps/eu5f_production_pin-b3a6d22668a660fc: binary file matches
+grep: ./target/debug/deps/elps_conformance_golden-0c629bfe5d24be7e: binary file matches
+grep: ./target/debug/deps/fathomdb_py-66dfaa704b17e489: binary file matches
+grep: ./target/debug/deps/rebuild_vec0-e3fc84aca731e5e9: binary file matches
+grep: ./target/debug/deps/safe_export-7d37362b043e72f1: binary file matches
+grep: ./target/debug/deps/f9_importance_ranking-ce9f25c28209a2fa: binary file matches
+grep: ./target/debug/deps/slice30_graph_arm-312cb23e691dbeb3: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-6da816dd150bbea8.rmeta: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-a819f5062f6bc063.rmeta: binary file matches
+grep: ./target/debug/deps/durability_open_path-a8576279dfccd454: binary file matches
+grep: ./target/debug/deps/corpus_vector-c994b2798197614e: binary file matches
+grep: ./target/debug/deps/f5_bm25f-0876b51437baf2f0: binary file matches
+grep: ./target/debug/deps/reader_pool-2691e785db4cf30d: binary file matches
+grep: ./target/debug/deps/slice5_provider_seam-acbcda1716bf2ed2: binary file matches
+grep: ./target/debug/deps/operator_cli-06b55f5bbeff89ac: binary file matches
+grep: ./target/debug/deps/f9_importance_ranking-f675993fab62bcaa: binary file matches
+grep: ./target/debug/deps/fathomdb-cfbcdc4d71245a2b: binary file matches
+grep: ./target/debug/deps/pr_g1_search_hits-40396853e442214a: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-6564d99428f111ba.rmeta: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-6564d99428f111ba.rlib: binary file matches
+grep: ./target/debug/deps/search_result_shape-21bc2f5d3e31aabb: binary file matches
+grep: ./target/debug/deps/consolidation_value_test-2b584e2b933c41eb: binary file matches
+grep: ./target/debug/deps/corpus_graph-596afa9113a8f49f: binary file matches
+grep: ./target/debug/deps/source_id_writes-e25e9c7510535d1c: binary file matches
+grep: ./target/debug/deps/ga2_vector_stage_seam-4f495faf9f3bbe7f: binary file matches
+grep: ./target/debug/deps/dump_profile-d0d98a304411e98d: binary file matches
+grep: ./target/debug/deps/pr_g1_tokenizer_crash_recovery-294fef4628cc471f: binary file matches
+grep: ./target/debug/deps/slice20_graph_traversal-46ea73ec6b561173: binary file matches
+grep: ./target/debug/deps/ir_c_cdf_run-2b8d68c344a31c9f: binary file matches
+grep: ./target/debug/deps/pr_g12_recency-f3a85b87c5b29377: binary file matches
+grep: ./target/debug/deps/rebuild_report-12d065e32836de80: binary file matches
+grep: ./target/debug/deps/batch_write_per_row_cursor-c1d23de4c43c9937: binary file matches
+grep: ./target/debug/deps/ir_c_pooling_floor_gate-164997662702601d: binary file matches
+grep: ./target/debug/deps/fathomdb-29cb99ec205aa1b6: binary file matches
+grep: ./target/debug/deps/perf_gates_devloop-6600b484fadbc4f0: binary file matches
+grep: ./target/debug/deps/durability_open_path-3802e344d45d83fa: binary file matches
+grep: ./target/debug/deps/pr_g3_read_collection-679eda2b0db848db: binary file matches
+grep: ./target/debug/deps/trace_source_ref-f214303cae22a770: binary file matches
+grep: ./target/debug/deps/pr_g0_phase2_frontier-a5ef7d0d18e36836: binary file matches
+grep: ./target/debug/deps/pr9_embed_watchdog-8947037fd14a0dfc: binary file matches
+grep: ./target/debug/deps/eu5a2_machinery-6bee901b2eaae9d7: binary file matches
+grep: ./target/debug/deps/ir_gold_resolved-8121d245cfbc9090: binary file matches
+grep: ./target/debug/deps/pr_g10_filtered_knn-b174e8329beca47c: binary file matches
+grep: ./target/debug/deps/perf_gates-76908bafe032699e: binary file matches
+grep: ./target/debug/deps/pr_g1_tokenizer_crash_recovery-dfb8284bfcc9af02: binary file matches
+grep: ./target/debug/deps/corpus_harness-24b5379ee373bb7b: binary file matches
+grep: ./target/debug/deps/ir_c_gold_diagnostics-a25a86e3847bbc6a: binary file matches
+grep: ./target/debug/deps/qd_envelope_deserialize-072892d3d99a1c35: binary file matches
+grep: ./target/debug/deps/corpus_fts-ba4f7bbacc122d61: binary file matches
+grep: ./target/debug/deps/pr_g10_filtered_knn-ee2927fc703d9c01: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-2a4266c41ff626f2.rlib: binary file matches
+grep: ./target/debug/deps/eu5b_lockflip-972d1dbcb0664c10: binary file matches
+grep: ./target/debug/deps/consolidation_value_test-5d0c96e5cbf0db3d: binary file matches
+grep: ./target/debug/deps/fathomdb_py-8c5fc8ae04ad4e34: binary file matches
+grep: ./target/debug/deps/pr_g10_reranker-4009c55b5fa9b24c: binary file matches
+grep: ./target/debug/deps/operator_cli-8805186e01938eae: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-6da816dd150bbea8.rlib: binary file matches
+grep: ./target/debug/deps/perf_gates-f0d5aa8c9cb245e7: binary file matches
+grep: ./target/debug/deps/rebuild_projections-dcc172e9b1f71688: binary file matches
+grep: ./target/debug/deps/check_integrity-11663d3bbab09a6b: binary file matches
+grep: ./target/debug/deps/error_taxonomy-e46be3c050adc0e4: binary file matches
+grep: ./target/debug/deps/eu5a1_plumbing-58b1aef2eb51b326: binary file matches
+grep: ./target/debug/deps/projection_runtime-21d7a7b21cf1216e: binary file matches
+grep: ./target/debug/deps/fts5_injection_safety-d04da5ff9db50340: binary file matches
+grep: ./target/debug/deps/slice20_graph_traversal-2be2a23c02fd07bc: binary file matches
+grep: ./target/debug/deps/telemetry_capture-0bad69091cd95371: binary file matches
+grep: ./target/debug/deps/eu5a1_plumbing-e2451288b6fb0c2f: binary file matches
+grep: ./target/debug/deps/f5_bm25f-35f5ab256ea84dea: binary file matches
+grep: ./target/debug/deps/cursor_read_after_write-6c28b5b24c19cc31: binary file matches
+grep: ./target/debug/deps/lifecycle_observability-8cc11c59b1cda0d8: binary file matches
+grep: ./target/debug/deps/vector_contracts-b41b0d8634025c8d: binary file matches
+grep: ./target/debug/deps/search_result_shape-18b1c6a7ab337db0: binary file matches
+grep: ./target/debug/deps/op_store-c93c3500e317f944: binary file matches
+grep: ./target/debug/deps/slice40_filter_unification-4b70fad98f49cefa: binary file matches
+grep: ./target/debug/deps/pr_e2_rerank_nonfinite-0b82418dfc993b1a: binary file matches
+grep: ./target/debug/deps/lifecycle_reliability-f22eae977badf89a: binary file matches
+grep: ./target/debug/deps/ir_recall_eval-1f07f1683264d7ac: binary file matches
+grep: ./target/debug/deps/lifecycle_reliability-6d8a05ae11d29b5c: binary file matches
+grep: ./target/debug/deps/slice40_filter_unification-d4d6751e176a94a7: binary file matches
+grep: ./target/debug/deps/eu5f_production_pin-c22095aeaef96eda: binary file matches
+grep: ./target/debug/deps/eu5b_lockflip-68d94aa9b59dbda0: binary file matches
+grep: ./target/debug/deps/batch_write_per_row_cursor-c4aa60c2d18b2d36: binary file matches
+grep: ./target/debug/deps/slice15_byo_llm_ingest-2d03e95147d6738a: binary file matches
+grep: ./target/debug/deps/corpus_fts-ed6d67600f5387a8: binary file matches
+grep: ./target/debug/deps/telemetry_capture-e46aac6d90e94202: binary file matches
+grep: ./target/debug/deps/pr_g10_reranker-43e1fae35afb7e80: binary file matches
+grep: ./target/debug/deps/excise_source-45f5b7f7aed7cacf: binary file matches
+grep: ./target/debug/deps/slice30_graph_arm-391409b6060f8113: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-24ec18a5cbc0d459.rmeta: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-0821235f2b7ef881.rmeta: binary file matches
+grep: ./target/debug/deps/parser-66ba1904bc11745a: binary file matches
+grep: ./target/debug/deps/pr9_embed_watchdog-24d9d790ee8832ca: binary file matches
+grep: ./target/debug/deps/pr_g0_identity-906fa5e2cd7b08af: binary file matches
+grep: ./target/debug/deps/durability_soak-b0932fa0a5d75635: binary file matches
+grep: ./target/debug/deps/ga2_vector_stage_seam-e235b2bf0969268b: binary file matches
+grep: ./target/debug/deps/slice35_filter_grammar-8a7425974bf2d8a5: binary file matches
+grep: ./target/debug/deps/op_store-a05716b596b47498: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-24cc6f730e810f35.rlib: binary file matches
+grep: ./target/debug/deps/slice35_filter_grammar-8a56a13fca3b6db8: binary file matches
+grep: ./target/debug/deps/pr_g9_rrf_fusion-0452a08ca82a5b3b: binary file matches
+grep: ./target/debug/deps/dump_row_counts-a435a49c228c1e51: binary file matches
+grep: ./target/debug/deps/pr_g1_tokenizer_recall-16983e3dd78b09d4: binary file matches
+grep: ./target/debug/deps/pr2b_mean_recompute-44aab695e3ae1b94: binary file matches
+grep: ./target/debug/deps/pr_g0_identity-b63eb405cf15675e: binary file matches
+grep: ./target/debug/deps/pr_g2_get_by_id-b0ac9486a41ebe2a: binary file matches
+grep: ./target/debug/deps/pr_g12_recency-96ae88d607048631: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-fcd2bb852dab781d.rlib: binary file matches
+grep: ./target/debug/deps/lifecycle_observability-92472d05c76b06f0: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-0821235f2b7ef881.rlib: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-24ec18a5cbc0d459.rlib: binary file matches
+grep: ./target/debug/deps/projection_runtime-c6c477febfa000e2: binary file matches
+grep: ./target/debug/deps/fathomdb_napi-b922db4fd890a85a: binary file matches
+grep: ./target/debug/deps/corpus_harness-9cf12f00d92937bb: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-90e8d97949562165.rmeta: binary file matches
+grep: ./target/debug/deps/fathomdb_py-9a1bef363fc26cea: binary file matches
+grep: ./target/debug/deps/pr_g8_dangling_edges-6322bd8555b87e33: binary file matches
+grep: ./target/debug/deps/pr_g1_tokenizer_recall-99df323f725ec78d: binary file matches
+grep: ./target/debug/deps/durability_soak-b1ba641645734cce: binary file matches
+grep: ./target/debug/deps/pr_g9_rrf_fusion-5f63bf3eeffc9fbd: binary file matches
+grep: ./target/debug/deps/operator_cli-8eb251fb9823bfbc: binary file matches
+grep: ./target/debug/deps/pr_g2_get_by_id-f1fb7b530c0bf4ad: binary file matches
+grep: ./target/debug/deps/pr_e2_rerank_nonfinite-99944fc7de51ff79: binary file matches
+grep: ./target/debug/deps/exp_obs_explain-9904f262a03fc527: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-b888d6e031ef5faa.rmeta: binary file matches
+grep: ./target/debug/deps/qd_envelope_deserialize-c50b6bf7c73d6b8f: binary file matches
+grep: ./target/debug/deps/vector_quant_pack1-81802bb8f0555e18: binary file matches
+grep: ./target/debug/deps/fts5_injection_safety-7e37b1d00c3bdfaf: binary file matches
+grep: ./target/debug/deps/pr_c1_graph_seeding-c39cd7a015db3e3c: binary file matches
+grep: ./target/debug/deps/ir_c_cdf_run-483823dcf3558d72: binary file matches
+grep: ./target/debug/deps/source_id_writes-b669020266f17189: binary file matches
+grep: ./target/debug/deps/dump_schema-d51c619e70767958: binary file matches
+grep: ./target/debug/deps/exp_s_substrate-7b5ded78041f7f4b: binary file matches
+grep: ./target/debug/deps/libfathomdb_py.so: binary file matches
+grep: ./target/debug/deps/vector_contracts-2f1edf4d09c6c4a5: binary file matches
+grep: ./target/debug/deps/pr_g8_dangling_edges-e40430f62ef274b0: binary file matches
+grep: ./target/debug/deps/exp_s_substrate-710fc1bb0f3e3700: binary file matches
+grep: ./target/debug/deps/cursors-38f613fd3a5cc325: binary file matches
+grep: ./target/debug/deps/slice15_byo_llm_ingest-edb3e244a111db79: binary file matches
+grep: ./target/debug/deps/ir_recall_eval-aa59fd184115c6ad: binary file matches
+grep: ./target/debug/deps/reader_pool-1c16d334f63c0cb0: binary file matches
+grep: ./target/debug/deps/instrumentation_methods-bd4d66fcdf403f8b: binary file matches
+grep: ./target/debug/deps/fathomdb_cli-0949d3c34de153f4: binary file matches
+grep: ./target/debug/deps/ir_c_gold_diagnostics-eb796e62a6bd1185: binary file matches
+grep: ./target/debug/deps/ir_gold_resolved-9b3c1a390210ee3c: binary file matches
+grep: ./target/debug/deps/compatibility-bb7d60d9fca26e23: binary file matches
+grep: ./target/debug/deps/instrumentation_methods-7cb12cc6a47df2dc: binary file matches
+grep: ./target/debug/deps/pr_g3_read_collection-4ee604a77525d36a: binary file matches
+grep: ./target/debug/deps/consolidate_provider-c5bdc397b41dc827: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-49252bedeee2e094.rlib: binary file matches
+grep: ./target/debug/deps/ir_c_pooling_floor_gate-bdbad41463a249e4: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-2a4266c41ff626f2.rmeta: binary file matches
+grep: ./target/debug/deps/corpus_vector-ae736c9a8246ec8e: binary file matches
+grep: ./target/debug/deps/fathomdb-e6a2669b8ee689d1: binary file matches
+grep: ./target/debug/deps/perf_gates_devloop-551d8f67e7aa8b4c: binary file matches
+grep: ./target/debug/deps/vector_quant_pack1-55d4bb450fa21cd5: binary file matches
+grep: ./target/debug/deps/compatibility-c21a9843026b8455: binary file matches
+grep: ./target/debug/deps/fathomdb_cli-6342469b5cdf347b: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-fcd2bb852dab781d.rmeta: binary file matches
+grep: ./target/debug/deps/parser-5f6526a1571e02b5: binary file matches
+grep: ./target/debug/deps/consolidate_provider-7a33e02e5541979f: binary file matches
+grep: ./target/debug/deps/fathomdb_napi-3d56527c41bf17ac: binary file matches
+grep: ./target/debug/deps/pr9_embed_serialization-5df7a155df807c60: binary file matches
+grep: ./target/debug/deps/fathomdb_napi-7823336f1a2e7607: binary file matches
+grep: ./target/debug/deps/pr_c1_graph_seeding-ea1971c18186aaf4: binary file matches
+grep: ./target/debug/deps/truncate_wal-5595246dec8bf599: binary file matches
+grep: ./target/debug/deps/libfathomdb_napi.so: binary file matches
+grep: ./target/debug/deps/corpus_graph-b4ee8e3fbfd2a34f: binary file matches
+grep: ./target/debug/deps/exp_obs_explain-da7bc033a213d324: binary file matches
+grep: ./target/debug/deps/cursor_read_after_write-61305c9c7c2eec0b: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-24cc6f730e810f35.rmeta: binary file matches
+grep: ./target/debug/deps/eu5a2_machinery-11354d9b18d9944a: binary file matches
+grep: ./target/debug/deps/pr_g0_phase2_frontier-dc7ef36948679e7e: binary file matches
+grep: ./target/debug/deps/pr2b_mean_recompute-04e665ac46b98776: binary file matches
+grep: ./target/debug/deps/cursors-004850d958f41d77: binary file matches
+grep: ./target/debug/deps/recovery_cli-f2d357cf55448acb: binary file matches
+grep: ./target/debug/deps/recovery_cli-cf30b40dbaee902e: binary file matches
+grep: ./target/debug/deps/verify_embedder-f024f6ac44228e14: binary file matches
+grep: ./target/debug/deps/pr_g1_search_hits-4ae05d5b05fdc931: binary file matches
+grep: ./target/debug/deps/libfathomdb_engine-49252bedeee2e094.rmeta: binary file matches
+grep: ./target/debug/deps/pr9_embed_serialization-29a29dd9a903729b: binary file matches
+grep: ./target/debug/examples/security_cycle-677c657c12951db4: binary file matches
+grep: ./target/debug/examples/ingest_corpus: binary file matches
+grep: ./target/debug/examples/security_cycle-d397393217caac4c: binary file matches
+grep: ./target/debug/examples/security_cycle: binary file matches
+grep: ./target/debug/examples/ingest_corpus-c6de73b66ae312b1: binary file matches
+grep: ./target/debug/fathomdb: binary file matches
+grep: ./target/debug/libfathomdb_engine.rlib: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/619d7xviii8uxmjj4dhs1r86t.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/0f4yionrikhoy1ctm1mj43qcu.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/1duym16z7kbgdb818rx06a2s9.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/14ghs6kumnq0f9it8b6tfkhqp.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-2q1iir29l91jb/s-hk7b9ntcw1-0tdjf2b-3k9y7tpicwvwlv4sysdfxhw3a/6ac9ox6wdxo9ryyrlbkfkm3lk.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/6fdox3t5uh88vkmkhjmnp3p00.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/96h8r0zr957qkozir3jdu9yij.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/atcx2wzu27qup5metezxwx6dg.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/agdv5gk5q1kwt9arlfsd10sa0.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0zf3zvgwteb8d/s-hk7b6d2qpc-0vt8ygf-7xddyx4wh17oxe1d887gtwlod/15zqfm5bpbtn2cxrm1tqhcspb.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/3sk0wlmqyd98znir42m5vnw8y.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/44sj4b5lsbct465nmpm9ppt6r.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/4yvd38rn7d6wj2wioilesac11.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/730eudwtwnxp8dbwbxkuguzpa.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7b1g8hxo-0d8bbkv-2mlvx1mrinb8kw1pg2h9nkeqz/8u2cwmjligbxe16hfaa88t5db.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/3sk0wlmqyd98znir42m5vnw8y.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/44sj4b5lsbct465nmpm9ppt6r.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/4yvd38rn7d6wj2wioilesac11.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/730eudwtwnxp8dbwbxkuguzpa.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0dhu1bmy9e9lm/s-hk7am48j19-16b700v-7hcy49qj5ndofeszcsn37z45y/8u2cwmjligbxe16hfaa88t5db.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_napi-2u7qkmxmt0dw2/s-hk7b6f76tq-06f52rr-9gws9jjkwn9udlqx2ob5n5h4r/7lvpu8say6bl7ar1b8klhmfft.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_napi-2u7qkmxmt0dw2/s-hk7b6f76tq-06f52rr-9gws9jjkwn9udlqx2ob5n5h4r/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_napi-20igmsqebejj4/s-hk7b58mzhv-1k1cihy-czafykkhuinh3xouua3mxk0pl/cllfl3ngr5bupfczqmcjx79r6.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_napi-20igmsqebejj4/s-hk7b58mzhv-1k1cihy-czafykkhuinh3xouua3mxk0pl/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/8ws4s0prr8sn1bjfsa1jr72a7.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/bar4houzjh8he192vvzf83c8u.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/6rkhcd4vcd8nogag2knvprf2a.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/4z4u7rehk6blrg63nsi3nfm1b.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-25kvk2guesyvj/s-hk7akhd5ku-18a3z9s-bbe8a30p2wt31ojcz7w4nzxfx/0q3n8lo4mvjy5qwkkr9ffqu4e.o: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-2l5srxyooxecl/s-hk7b1gvgc5-199czg8-7c2ar8ecy4b1te44ynl71dgub/2znnmzh921oiz6anc2u2k23d2.o: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-2l5srxyooxecl/s-hk7b1gvgc5-199czg8-7c2ar8ecy4b1te44ynl71dgub/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-2l5srxyooxecl/s-hk7b8kv203-1bhx5hm-0dls1srndo53y0z9kh8eaz2l5/2znnmzh921oiz6anc2u2k23d2.o: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-2l5srxyooxecl/s-hk7b8kv203-1bhx5hm-0dls1srndo53y0z9kh8eaz2l5/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/0z5uxab0boifurc4h9b3ovcfw.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/6y3p9t5p78m8f5t7l82827ary.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/0tmctk2ld9pfhdftzely9u9i2.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/dskak4r22ryynvlcf6dw8m4cb.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3w34emiwjz5xt/s-hk7ak5mk9f-1rz5r62-3cujbbnm9dxnlzzezgalapbvj/eoom1ax9p0bte3l1pf8wuz1q2.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3azlz1sx5zctm/s-hk7b67esko-1p9objz-ehy5pwa2zwh3nlqxo95cmdgs4/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3azlz1sx5zctm/s-hk7am50myn-0dvzuav-etzk4nth2r6dkc9z6rf06kewy/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/ept0wp7qdjqm1og0jhp31f8ry.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/dk1ntunkdq8c2qh2wocw88zyu.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/5k6czof3uh9ktq13u717prbq0.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/5gh5le6oyz7gep2pjpw3eqi68.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0uw79fo0aznp5/s-hk7abtscws-1lk0h6y-7ouq1oja93hcrtwrgsa764ea0/12strsfly7xyvljkshcycesbr.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/ddvbrns0lwg6xa4bvxd8caxfq.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/8s4jh89s6apf3rc7ck9adel0x.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/3ia316kqowaupepo0kgg5aa9s.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/4yw3mza3pewczqnig6lxxm3wv.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-27fvlnuo737d6/s-hk7b57h8k9-0rff285-02mlbdgety4u9dvdrm2gsg3lq/6w4o27a1mprc8qggjccvtzh0i.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1xrgjv6vtq3yp/s-hk7b00nfwn-0mebar4-8e5tbeo3pxijgl3pv7p6ei9xn/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1xrgjv6vtq3yp/s-hk7b00nfwn-0mebar4-8e5tbeo3pxijgl3pv7p6ei9xn/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1d0yjwblknmbq/s-hk7b5ntaj9-0tbf3hl-cv1nux7aqdtw1mau1m54logje/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1d0yjwblknmbq/s-hk7b5ntaj9-0tbf3hl-cv1nux7aqdtw1mau1m54logje/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1d0yjwblknmbq/s-hk7am5p0su-1ykeo5r-a7ugb791f9u5mvsxw0xgr2ifz/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1d0yjwblknmbq/s-hk7am5p0su-1ykeo5r-a7ugb791f9u5mvsxw0xgr2ifz/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_py-3nl75art9rxw3/s-hk7b6ehgrw-1qlet1g-6o531mq5yyb506t1k0x609hq1/ccotta0wdcp0ljnptakas2jfw.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_py-3nl75art9rxw3/s-hk7b6ehgrw-1qlet1g-6o531mq5yyb506t1k0x609hq1/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_py-1pwyt8f2p7je7/s-hk7b5evpjt-1vt1onb-50muh1kyv3mrpptlkvd17x5nf/8s239xr8mqx4l3cj9fm2xk0kn.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_py-1pwyt8f2p7je7/s-hk7b5evpjt-1vt1onb-50muh1kyv3mrpptlkvd17x5nf/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0acyah0evolh6/s-hk7acxzt3z-0pd8r4z-20cjetoo7w0db7f9a1i5k04i0/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-0acyah0evolh6/s-hk7b8kg4rd-0ds5cz8-decu287vfsck7odsevy8rndyn/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1f5efhwlhsmzp/s-hk7b67epdg-068mmu7-2q4o3kgqs1cfbve5dssuhb072/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1f5efhwlhsmzp/s-hk7b67epdg-068mmu7-2q4o3kgqs1cfbve5dssuhb072/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1f5efhwlhsmzp/s-hk7am50ldz-1n5gbg7-cys2o3rzwwm0xzxbh36asrlxn/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1f5efhwlhsmzp/s-hk7am50ldz-1n5gbg7-cys2o3rzwwm0xzxbh36asrlxn/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/2dxz2dzcfsps8uo92hfxob526.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/0gklqpgzopt5izmio9ytwa5ck.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/bxxyqj5kptz4k8hxdwnu2sl51.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/ambidiakeqvddeqw9karhckpn.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/metadata.rmeta: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/a8b87lej7hpkpme1zp7q22l0y.o: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-3q5c1o8mv9drm/s-hk7b5drey2-18cis4t-35p7ru76zdiptlod2c9j0fvh8/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-3icerk8s85icr/s-hk7b6fev7n-1e4abwg-epfcajumh51itihr043w7929p/d1b4b3ejqrdhjp5fwvb0nkppw.o: binary file matches
+grep: ./target/debug/incremental/f9_importance_ranking-3icerk8s85icr/s-hk7b6fev7n-1e4abwg-epfcajumh51itihr043w7929p/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-1pz0mmqtxk2t2/s-hk7b6gbdg2-0exd9ua-148s9aquk74nbtqa2yxfw0m9k/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-34x8uhc08rqg5/s-hk7am5p31n-0vw25l5-45qhgc0a9cjkb5xb447cl2us5/query-cache.bin: binary file matches
+grep: ./target/debug/incremental/fathomdb_engine-34x8uhc08rqg5/s-hk7b5ntcbd-12d3aok-5kses03papls8vyq86x1csd61/query-cache.bin: binary file matches
+./output.json:43:    "R-F9-1": "PASS — importance column lands (step-18, SCHEMA_VERSION 17->18); write/read round-trips {NULL,0.0,0.5,1.0} exact; out-of-[0,1] rejected (EngineError::WriteValidation, mirroring canonical_edges.confidence); 3-way sentinel tested (NULL=absent/0.0=floor/(0.0,1.0]=explicit). Engine-internal surface (write_node_importance/node_importance); PreparedWrite untouched (SDK exposure deferred to Slice-40); absent => SQL NULL.",
+./src/rust/crates/fathomdb-py/src/lib.rs:1960:        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
+./src/rust/crates/fathomdb-napi/src/lib.rs:690:        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:141:    assert_eq!(engine.node_importance(cursor).expect("read"), None, "absent => NULL");
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:144:        engine.write_node_importance(cursor, v).expect("set importance");
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:145:        assert_eq!(engine.node_importance(cursor).expect("read"), Some(v), "round-trips exact");
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:151:            matches!(engine.write_node_importance(cursor, bad), Err(EngineError::WriteValidation)),
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:156:    assert_eq!(engine.node_importance(cursor).expect("read"), Some(1.0));
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:200:    engine.write_node_importance(top_id, 0.01).expect("set importance");
+./src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:248:    engine.write_node_importance(a, 0.5).expect("set importance");
+./src/rust/crates/fathomdb-engine/src/lib.rs:5167:    pub fn write_node_importance(
+./src/rust/crates/fathomdb-engine/src/lib.rs:5190:    /// [`Engine::write_node_importance`].
+./src/rust/crates/fathomdb-engine/src/lib.rs:5191:    pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
+
+exec
+/bin/bash -lc "grep -n \"pub fn close\" -n src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '2120,2185p' src/rust/crates/fathomdb-engine/src/lib.rs && sed -n '520,650p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+4441:    pub fn close(&self) -> Result<(), EngineError> {
+            Self::EmbedderDimensionMismatch { stored, supplied } => write!(
+                f,
+                "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
+            ),
+            Self::Embedder(err) => match err {
+                RuntimeEmbedderError::Timeout => write!(f, "embedder timeout during open"),
+                RuntimeEmbedderError::Failed { message } => {
+                    write!(f, "embedder failure during open: {message}")
+                }
+            },
+            Self::Io { message } => write!(f, "database I/O error: {message}"),
+        }
+    }
+}
+
+impl Error for EngineOpenError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EngineError {
+    Storage,
+    Projection,
+    Vector,
+    Embedder,
+    EmbedderNotConfigured,
+    KindNotVectorIndexed,
+    EmbedderDimensionMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    Scheduler,
+    OpStore,
+    WriteValidation,
+    SchemaValidation,
+    Overloaded,
+    Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
+    /// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — BYO-LLM consolidation provider
+    /// error (protocol mismatch, spawn/handshake failure, task not advertised in
+    /// `supported_tasks`, or a malformed/out-of-cluster verdict). Rides the SAME
+    /// `provider_session` transport as `Extractor`; this is the task-specific leaf.
+    Consolidator,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+    InvalidArgument {
+        msg: String,
+    },
+}
+
+impl Display for EngineError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Storage => write!(f, "storage error"),
+            Self::Projection => write!(f, "projection error"),
+            Self::Vector => write!(f, "vector error"),
+            Self::Embedder => write!(f, "embedder error"),
+            Self::EmbedderNotConfigured => write!(f, "embedder is not configured"),
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// Slice 20 (G5) — bounded BFS from a single root node over
+    /// `canonical_edges`. Returns the set of reachable nodes (excluding the
+    /// root) within `depth` hops, limited to the hard cap 50.
+    GraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// Slice 20 (G6) — compose the previous search result with BFS expansion.
+    /// Resolves search hit `write_cursor`s to `logical_id`s, runs G5 traversal
+    /// for each root, deduplicates, and returns a `SearchExpandResult`.
+    SearchExpand {
+        search_hits: Vec<SearchHit>,
+        depth: u32,
+        respond: SyncSender<rusqlite::Result<SearchExpandResult>>,
+    },
+    /// Slice 20 test seam — run `EXPLAIN QUERY PLAN` on the BFS CTE SQL for
+    /// the given root/depth/direction and return the plan detail lines.
+    #[doc(hidden)]
+    ExplainGraphNeighbors {
+        root_logical_id: String,
+        depth: u32,
+        direction: TraversalDirection,
+        respond: SyncSender<rusqlite::Result<Vec<String>>>,
+    },
+    Shutdown,
+    /// Pack 6.G G.1 — debug-only request that asks a worker to read its
+    /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
+    /// high-water mark (`hiwtr` out-param). Used solely by the integration
+    /// test that asserts post-warmup lookaside slots were consumed; not
+    /// on any production path.
+    #[cfg(debug_assertions)]
+    LookasideStatus {
+        respond: SyncSender<i32>,
+    },
+    /// Pack 6.G G.3.5 — debug-only request that asks a worker to read
+    /// `SQLITE_DBSTATUS_CACHE_HIT`, `_CACHE_MISS`, and `_CACHE_USED`
+    /// off its own connection and return them as `(hit, miss, used_bytes)`.
+    /// `snapshot_label` is opaque to the worker; the caller uses it to
+    /// distinguish pre/post snapshots in its own bookkeeping.
+    #[cfg(debug_assertions)]
+    CacheStatus {
+        snapshot_label: String,
+        respond: SyncSender<(String, i32, i32, i32)>,
+    },
+}
+
+// G0 Phase-2: the Search response carries a 4th element — the graph-arm frontier
+// meter (`GraphFrontierStats`). It rides the internal channel but is dropped before
+// `SearchResult` is built (kept OFF the governed surface); the
+// `_graph_frontier_stats_for_test` seam captures it. Default (all-zero) on non-graph paths.
+// 0.8.8 EXP-OBS (Slice 5): the Search response carries a 5th element — the opt-in
+// retrieval `Explanation` (`None` on every default `explain=false` path; `Some`
+// only on the `search_explained` path). Like the `GraphFrontierStats` 4th element
+// it rides the internal channel as a side-channel; unlike it, the explanation IS
+// surfaced (onto `SearchResult.explanation`) when requested.
+type ReaderResponse = rusqlite::Result<(
+    u64,
+    Option<SoftFallback>,
+    Vec<SearchHit>,
+    GraphFrontierStats,
+    Option<Explanation>,
+)>;
+
+/// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
+/// the debug-only `CacheStatus` broadcast path and the test accessor;
+/// not part of the public 0.6.0 surface.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct CacheStatusReply {
+    pub worker_idx: usize,
+    pub snapshot_label: String,
+    pub cache_hit: i32,
+    pub cache_miss: i32,
+    pub cache_used_bytes: i32,
+}
+
+/// Per-worker outbound channel capacity. Round-robin dispatch keeps
+/// queue depth at ~0 on hot paths; the small slack absorbs jitter
+/// without a runtime mutex.
+const READER_WORKER_CHANNEL_CAPACITY: usize = 4;
+
+impl ReaderWorkerPool {
+    fn new(connections: Vec<Connection>) -> Self {
+        let live_workers = Arc::new(AtomicUsize::new(0));
+        let mut senders = Vec::with_capacity(connections.len());
+        let mut handles = Vec::with_capacity(connections.len());
+        for (idx, connection) in connections.into_iter().enumerate() {
+            let (tx, rx) = mpsc::sync_channel::<ReaderRequest>(READER_WORKER_CHANNEL_CAPACITY);
+            let live = Arc::clone(&live_workers);
+            let handle = thread::Builder::new()
+                .name(format!("fathomdb-reader-{idx}"))
+                .spawn(move || reader_worker_loop(connection, rx, live))
+                .expect("spawn reader worker");
+            senders.push(tx);
+            handles.push(handle);
+        }
+        Self {
+            senders,
+            handles: Mutex::new(Some(handles)),
+            next: AtomicUsize::new(0),
+            shutdown: AtomicBool::new(false),
+            live_workers,
+        }
+    }
+
+    fn worker_count(&self) -> usize {
+        self.senders.len()
+    }
+
+    fn live_count(&self) -> usize {
+        self.live_workers.load(Ordering::SeqCst)
+    }
+
+    /// Pack 6.G G.1 — broadcast a `LookasideStatus` request to every
+    /// worker (not round-robin) and collect each worker's
+    /// `SQLITE_DBSTATUS_LOOKASIDE_USED`. Used only by the debug
+    /// integration test for post-warmup lookaside-slot consumption.
+    #[cfg(debug_assertions)]
+    fn lookaside_used_per_worker(&self) -> Vec<i32> {
+        let mut results = Vec::with_capacity(self.senders.len());
+        for sender in &self.senders {
+            let (tx, rx) = mpsc::sync_channel::<i32>(1);
+            if sender.send(ReaderRequest::LookasideStatus { respond: tx }).is_ok() {
+                results.push(rx.recv().unwrap_or(-1));
+            } else {
+                results.push(-1);
+
+exec
+/bin/bash -lc "sed -n '4430,4475p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+        kind: &str,
+        filter: &Filter,
+        limit: usize,
+    ) -> Result<Vec<NodeRecord>, EngineError> {
+        self.ensure_open()?;
+        match filter.lower_for_read_list(kind)? {
+            None => Ok(Vec::new()),
+            Some(preds) => self.read_list(kind, &preds, limit),
+        }
+    }
+
+    pub fn close(&self) -> Result<(), EngineError> {
+        self.closed.store(true, Ordering::SeqCst);
+        self.projection_runtime.stop();
+        // Uninstall profile callbacks before dropping the connections so
+        // SQLite cannot fire one last callback against a profile context
+        // whose Box is about to free. Per `dev/design/engine.md` § Close
+        // path step 6, readers drain before the writer connection so
+        // SQLite's last-handle checkpointer runs on the writer. Each
+        // reader worker uninstalls its own callback inside
+        // `reader_worker_loop` before dropping its connection, then
+        // exits — `shutdown` joins those threads here.
+        self.reader_pool.shutdown();
+        if let Ok(mut connection) = self.connection.lock() {
+            if let Some(conn) = connection.as_ref() {
+                uninstall_profile_callback(conn);
+            }
+            connection.take();
+        }
+        if let Ok(mut contexts) = self.profile_contexts.lock() {
+            contexts.clear();
+        }
+        if let Ok(mut lock) = self.lock.lock() {
+            lock.take();
+        }
+        Ok(())
+    }
+
+    /// Block until in-flight writes drain or `timeout_ms` elapses.
+    ///
+    /// Surface owned by `dev/interfaces/rust.md` § Engine-attached
+    /// instrumentation; semantics are owned by `dev/design/lifecycle.md`.
+    pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        if self.projection_runtime.wait_for_idle(timeout_ms) {
+            Ok(())
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-py/Cargo.toml src/rust/crates/fathomdb-napi/Cargo.toml Cargo.lock && cargo test -p fathomdb-engine --test f9_importance_ranking -- --nocapture' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 1169ms:
+test importance_write_read_roundtrip_and_range_validation ... ok
+test explain_surfaces_importance_contribution ... ok
+test importance_reweight_reorders_vs_off ... ok
+test importance_reweight_on_all_null_equals_off_e2e ... ok
+test confidence_on_graph_arm_reorders_and_surfaces_in_explain ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-py -p fathomdb-napi --tests' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 5753ms:
+   Compiling pyo3 v0.29.0
+   Compiling napi-derive v2.16.13
+   Compiling fathomdb-py v0.8.9 (/home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-py)
+   Compiling fathomdb-napi v0.8.9 (/home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-napi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.67s
+     Running unittests src/lib.rs (target/debug/deps/fathomdb_napi-7439e70dac3fcb4d)
+
+running 5 tests
+test tests::validate_ffi_string_accepts_non_ascii_utf8 ... ok
+test tests::validate_ffi_string_accepts_plain_ascii ... ok
+test tests::validate_ffi_string_accepts_replacement_codepoint ... ok
+test tests::validate_ffi_string_rejects_embedded_nul ... ok
+test per_hit_explain_tests::from_rust_copies_f9_importance_and_confidence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+     Running unittests src/lib.rs (target/debug/deps/fathomdb_py-8c5fc8ae04ad4e34)
+
+running 6 tests
+test tests::get_or_try_init_caches_only_on_success ... ok
+test tests::validate_ffi_string_accepts_non_ascii_utf8 ... ok
+test tests::validate_ffi_string_accepts_plain_ascii ... ok
+test tests::validate_ffi_string_rejects_lone_surrogate ... ok
+test tests::validate_ffi_string_rejects_embedded_nul ... ok
+test tests::per_hit_explain_from_rust_copies_f9_importance_and_confidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-schema/tests src/rust/crates/fathomdb-engine/tests/compatibility.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/compatibility.rs b/src/rust/crates/fathomdb-engine/tests/compatibility.rs
+index e166ee72..ca9bdd90 100644
+--- a/src/rust/crates/fathomdb-engine/tests/compatibility.rs
++++ b/src/rust/crates/fathomdb-engine/tests/compatibility.rs
+@@ -88,7 +88,7 @@ fn engine_open_emits_migration_step_events() {
+     opened.engine.close().unwrap();
+ 
+     let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(events.iter().all(|event| event.duration_ms.is_some()));
+     assert!(events.iter().all(|event| !event.failed));
+     assert_eq!(opened.report.migration_steps, events);
+diff --git a/src/rust/crates/fathomdb-schema/tests/migrations.rs b/src/rust/crates/fathomdb-schema/tests/migrations.rs
+index bcbdab02..46382ed6 100644
+--- a/src/rust/crates/fathomdb-schema/tests/migrations.rs
++++ b/src/rust/crates/fathomdb-schema/tests/migrations.rs
+@@ -41,7 +41,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
+     assert_eq!(report.schema_version_before, 1);
+     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(report.migration_steps.len(), 16);
++    assert_eq!(report.migration_steps.len(), 17);
+     assert!(report.migration_steps.iter().all(|step| !step.failed));
+ }
+ 
+@@ -54,7 +54,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
+     let report = migrate(&conn).unwrap();
+ 
+     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
+ }
+ 
+@@ -71,7 +71,7 @@ fn ac_046b_success_emits_structured_step_events() {
+     .unwrap();
+ 
+     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(events.iter().all(|step| step.duration_ms.is_some()));
+     assert!(events.iter().all(|step| !step.failed));
+ }
+@@ -277,7 +277,7 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
+     }
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17);
++    assert_eq!(SCHEMA_VERSION, 18);
+ }
+ 
+ // Slice 33 (G3 / F4-READ) — the step-13 additive index makes the op-store
+@@ -323,7 +323,7 @@ fn s13_op_store_collection_index_present_after_migrate() {
+     assert!(cn < id_pos, "collection_name must lead id in the composite index, got: {idx_sql}");
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17);
++    assert_eq!(SCHEMA_VERSION, 18);
+ }
+ 
+ // Slice 33 — the step-13 SQL is a pure `CREATE INDEX` (additive index, no table
+diff --git a/src/rust/crates/fathomdb-schema/tests/step14_migration.rs b/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+index f0f8ea7e..6fc1b9a9 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+@@ -113,10 +113,7 @@ fn s14_schema_version_is_14() {
+     let conn = Connection::open_in_memory().unwrap();
+     migrate_fresh(&conn);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
+-    assert_eq!(
+-        SCHEMA_VERSION, 17,
+-        "SCHEMA_VERSION constant must be 17 (step-17 F5 search_index_v2)"
+-    );
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION constant must be 18 (step-18 F9 importance)");
+ }
+ 
+ /// Step-14 SQL contains the MIGRATION-ACCRETION-EXEMPTION marker (ADD COLUMN requires it).
+diff --git a/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs b/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+index 67786301..0b0221f9 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+@@ -99,12 +99,16 @@ fn s15_to_17_full_path_migrates_legacy_db_without_loss() {
+     // Forward-only + contiguous: exactly steps 16 then 17 ran, in order, with no
+     // skips and nothing at/below 15 re-run.
+     assert_eq!(report.schema_version_before, 15);
+-    assert_eq!(report.schema_version_after, 17);
++    assert_eq!(report.schema_version_after, 18);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "current head must be 17");
+-    assert_eq!(applied, vec![16, 17], "only steps 16 then 17 may run from v15 (forward-only)");
++    assert_eq!(SCHEMA_VERSION, 18, "current head must be 18");
++    assert_eq!(
++        applied,
++        vec![16, 17, 18],
++        "only steps 16, 17 then 18 may run from v15 (forward-only)"
++    );
+     let ran_in_report: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+-    assert_eq!(ran_in_report, vec![16, 17], "report step order must match the emitted order");
++    assert_eq!(ran_in_report, vec![16, 17, 18], "report step order must match the emitted order");
+ 
+     // No data loss — the legacy row is still there and back-filled to the
+     // step-16 `row_kind='leaf'` default (in-place, == current behavior).
+diff --git a/src/rust/crates/fathomdb-schema/tests/step16_migration.rs b/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+index ad072e31..fea4c63e 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+@@ -50,7 +50,8 @@ fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+ /// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
+ /// R-SUB-3 — the migration reaches head `SCHEMA_VERSION`. `row_kind` lands at
+ /// step 16; the head pin below tracks the current head (bumped to 17 when F5's
+-/// step-17 `search_index_v2` co-landed in the same release).
++/// step-17 `search_index_v2` co-landed, then 18 when F9's step-18 `importance`
++/// landed).
+ #[test]
+ fn s16_row_kind_column_present_and_schema_version_is_head() {
+     register_sqlite_vec_once();
+@@ -65,11 +66,11 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
+     );
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+     assert_eq!(
+         MIGRATIONS.last().expect("at least one migration").step_id,
+-        17,
+-        "step-17 (F5 search_index_v2) must be the last (head) migration"
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
+     );
+ }
+ 
+diff --git a/src/rust/crates/fathomdb-schema/tests/step17_migration.rs b/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+index 8b0a7d99..5b4b9fbd 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+@@ -62,11 +62,11 @@ fn s17_search_index_v2_present_and_schema_version_is_17() {
+     assert!(table_exists(&conn, "search_index"), "single-column search_index must be RETAINED");
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+     assert_eq!(
+         MIGRATIONS.last().expect("at least one migration").step_id,
+-        17,
+-        "step-17 (F5 search_index_v2) must be the last (head) migration"
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
+     );
+ 
+     // The v2 table carries the three BM25F fields kind/body/status (+ the
+diff --git a/src/rust/crates/fathomdb-schema/tests/step18_migration.rs b/src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+new file mode 100644
+index 00000000..de14d8f1
+--- /dev/null
++++ b/src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+@@ -0,0 +1,183 @@
++//! 0.8.16 Slice 5 (F9 KEYSTONE) — step-18 `importance` migration tests.
++//!
++//! Covers plan-0.8.16 §2 R-F9-1 (the node-level `importance REAL` column lands,
++//! nullable, with the 3-way sentinel `NULL`=absent) and R-F9-4 (absent-importance
++//! is the graceful-neutral state — a plain additive REAL with no data migration).
++//! ADR authority: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1 +
++//! `dev/design/0.8.16-slice-0-f9-onnx-design.md` §3.
++//!
++//! `importance` is a caller-supplied ranking scalar on `canonical_nodes`,
++//! symmetric with the existing genuine-NULL `canonical_edges.confidence`
++//! (step-14). Additive `ADD COLUMN` with a leading `MIGRATION-ACCRETION-EXEMPTION`
++//! marker; pre-existing rows read `NULL` in-place (no data migration). The step
++//! does NOT rewrite vec0 / vector rows (eu7 no-op basis — ADR §4).
++
++use fathomdb_schema::{check_migration_accretion, migrate_with_steps, MIGRATIONS, SCHEMA_VERSION};
++use rusqlite::Connection;
++use std::sync::Once;
++
++// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
++fn register_sqlite_vec_once() {
++    static REGISTER: Once = Once::new();
++    REGISTER.call_once(|| unsafe {
++        let entrypoint: unsafe extern "C" fn(
++            *mut rusqlite::ffi::sqlite3,
++            *mut *const std::os::raw::c_char,
++            *const rusqlite::ffi::sqlite3_api_routines,
++        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
++        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
++    });
++}
++
++fn user_version(conn: &Connection) -> u32 {
++    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
++}
++
++fn set_user_version(conn: &Connection, version: u32) {
++    conn.pragma_update(None, "user_version", version).unwrap();
++}
++
++fn column_names(conn: &Connection, table: &str) -> Vec<String> {
++    conn.prepare(&format!("PRAGMA table_info({table})"))
++        .unwrap()
++        .query_map([], |row| row.get::<_, String>(1))
++        .unwrap()
++        .filter_map(Result::ok)
++        .collect()
++}
++
++/// R-F9-1 — after the full migration set, `canonical_nodes` has `importance`
++/// and the head is 18 / step-18 is last.
++#[test]
++fn s18_importance_column_present_and_schema_version_is_18() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
++
++    let cols = column_names(&conn, "canonical_nodes");
++    assert!(
++        cols.contains(&"importance".to_string()),
++        "canonical_nodes must have importance after step-18, got: {cols:?}"
++    );
++
++    assert_eq!(user_version(&conn), SCHEMA_VERSION);
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
++    assert_eq!(
++        MIGRATIONS.last().expect("at least one migration").step_id,
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
++    );
++}
++
++/// R-F9-1 (forward-only) + R-F9-4 (graceful-absent) — open a DB at the OLD schema
++/// (version 17) with a pre-existing row, run ONLY step-18, and assert: it reaches
++/// 18, ONLY step-18 ran, the legacy row's `importance` back-fills to `NULL`
++/// (never-assigned = graceful-absent), and NO vec0 / vector rows are touched
++/// (eu7 no-op basis).
++#[test]
++fn s18_forward_only_from_v17_importance_null_and_no_vector_rewrite() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++
++    // Bring the DB up to the OLD head (version 17) — everything before step-18.
++    let steps_to_17: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 17).cloned().collect();
++    migrate_with_steps(&conn, &steps_to_17).expect("migrate to v17");
++    assert_eq!(user_version(&conn), 17, "precondition: DB is at the old schema version 17");
++
++    // A pre-existing (pre-importance) canonical node.
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind)
++         VALUES(1, 'note', 'legacy body about widgets', 'leaf')",
++        [],
++    )
++    .expect("legacy node insert at v17");
++
++    // Seed a vec0/vector-row bookkeeping row so we can prove step-18 does NOT
++    // rewrite the vector corpus (eu7 no-op basis — ADR §4).
++    conn.execute(
++        "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(1, 'note', 1)",
++        [],
++    )
++    .expect("seed vector-row bookkeeping");
++    let vrows_before: i64 =
++        conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_rows", [], |r| r.get(0)).unwrap();
++
++    // Apply ONLY the forward step-18 migration.
++    let step18_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 18).cloned().collect();
++    let report = migrate_with_steps(&conn, &step18_only).expect("forward migrate to v18");
++
++    // Forward-only: exactly the single new step ran; nothing before it re-ran.
++    assert_eq!(report.schema_version_before, 17);
++    assert_eq!(report.schema_version_after, 18);
++    let ran: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
++    assert_eq!(ran, vec![18], "only step-18 must run when starting from v17");
++    assert_eq!(user_version(&conn), 18);
++
++    // R-F9-4 graceful-absent: the legacy row reads NULL importance (never-assigned).
++    let importance: Option<f64> = conn
++        .query_row("SELECT importance FROM canonical_nodes WHERE write_cursor = 1", [], |r| {
++            r.get(0)
++        })
++        .expect("legacy row must be readable after step-18");
++    assert!(importance.is_none(), "legacy importance must back-fill to NULL (graceful-absent)");
++
++    // eu7 no-op basis: the vector-row bookkeeping is byte-untouched (step-18 is a
++    // pure ADD COLUMN — it does not rewrite / re-embed / re-quantize any vec0 row).
++    let vrows_after: i64 =
++        conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_rows", [], |r| r.get(0)).unwrap();
++    assert_eq!(vrows_before, vrows_after, "step-18 must NOT rewrite the vector corpus");
++    assert_eq!(vrows_after, 1, "the seeded vector row must survive step-18 untouched");
++}
++
++/// R-F9-1 (roundtrip at the SQL layer) — the 3-way sentinel is storable and
++/// reads back exact: `NULL` (absent), `0.0` (floor), and an explicit `(0.0,1.0]`.
++#[test]
++fn s18_importance_three_way_sentinel_roundtrips() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, MIGRATIONS).expect("migrate to head");
++
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind, importance)
++         VALUES(1, 'note', 'absent', 'leaf', NULL),
++                (2, 'note', 'floor',  'leaf', 0.0),
++                (3, 'note', 'high',   'leaf', 1.0)",
++        [],
++    )
++    .expect("insert 3-way sentinel rows");
++
++    let read = |wc: i64| -> Option<f64> {
++        conn.query_row(
++            "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1",
++            [wc],
++            |r| r.get(0),
++        )
++        .unwrap()
++    };
++    assert!(read(1).is_none(), "NULL = never assigned (graceful-absent)");
++    assert_eq!(read(2), Some(0.0), "0.0 = explicit floor/de-weight");
++    assert_eq!(read(3), Some(1.0), "1.0 = explicit importance");
++}
++
++/// R-F9-1 (guarded) — step-18 is a pure additive `ADD COLUMN` (no DROP), so the
++/// accretion guard REJECTS it unless the exemption marker is present.
++#[test]
++fn s18_passes_accretion_guard_only_with_marker() {
++    let step18 =
++        MIGRATIONS.iter().find(|m| m.step_id == 18).expect("step 18 (F9 importance) must exist");
++
++    check_migration_accretion("018_f9_importance.sql", step18.sql)
++        .expect("step 18 must pass the accretion guard with its exemption marker");
++
++    let without_marker: String = step18
++        .sql
++        .lines()
++        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
++        .collect::<Vec<_>>()
++        .join("\n");
++    check_migration_accretion("018_f9_importance.sql", &without_marker)
++        .expect_err("step 18 without the exemption marker must be rejected");
++}
+
+exec
+/bin/bash -lc "sed -n '1240,1315p' src/rust/crates/fathomdb-engine/src/lib.rs && grep -R \"PerHitExplain\" -n src/ docs dev/interfaces | head -60" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive] // 0.8.8 field-set ratification — additive-safe sidecar
+pub struct Explanation {
+    pub trace: QueryTrace,
+    pub per_hit: Vec<PerHitExplain>,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — query-level retrieval trace. Reuses the existing
+/// `search_reranked` knobs + the active embedder identity; timings are coarse
+/// per-stage wall-clock (monotonic) captured only on the explain path.
+#[derive(Clone, Debug, PartialEq)]
+// 0.8.8 field-set ratification — HARD: leaf absorbs the deferred `timings_ms` (Q3)
+// and any future trace field without a contract break.
+#[non_exhaustive]
+pub struct QueryTrace {
+    /// Query LENGTH only (chars) — never the query text (privacy; ADR §C).
+    pub query_chars: u32,
+    /// Final result limit (`SEARCH_RERANK_LIMIT`-derived `final_limit`).
+    pub k: u32,
+    pub rerank_depth: u32,
+    pub pool_n: u32,
+    pub alpha: f64,
+    pub use_graph_arm: bool,
+    /// Recency reweight (the dedicated G12 flag) was applied.
+    pub recency: bool,
+    /// Active embedder identity `name@revision` (+ dim), or empty when none.
+    pub embedder_id: String,
+    /// The CE cross-encoder actually reranked the pool (model loaded + depth>0).
+    pub ce_active: bool,
+    /// Per-arm input hit counts (pre-fusion).
+    pub vector_hits: u32,
+    pub text_hits: u32,
+    pub graph_hits: u32,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — per-hit provenance + score breakdown. One entry per
+/// returned `SearchHit`, same order. `*_rank` is the 0-based rank the hit's body
+/// held in that arm's pre-fusion list (`None` = absent from that arm).
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
+#[derive(Clone, Debug, PartialEq)]
+// 0.8.8 field-set ratification — HARD: leaf absorbs future arms / score components.
+#[non_exhaustive]
+pub struct PerHitExplain {
+    pub id: u64,
+    /// Winning arm after RRF dedup (vector-first), == `SearchHit.branch`.
+    pub arm: SoftFallbackBranch,
+    pub vector_rank: Option<u32>,
+    pub text_rank: Option<u32>,
+    pub graph_rank: Option<u32>,
+    /// Raw RRF fused score AFTER recency reweight, BEFORE CE blend (the value
+    /// `ce_rerank` normalizes). Faithful to the engine computation — downstream
+    /// may normalize. (ADR §A.4 Q1: raw exposed; normalization deferred.)
+    pub fused_score: f64,
+    /// In-pool cross-encoder score `sigmoid(ce_logit) ∈ [0,1]`, == the returned
+    /// `SearchHit.ce_score`; `None` outside the reranked pool / no-CE path.
+    pub ce_score: Option<f64>,
+    /// Final blended score, == the returned `SearchHit.score`.
+    pub blended: f64,
+    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
+    /// fused contribution when the importance reweight is ON, else the raw stored
+    /// value. `None` = never assigned (graceful-absent, ranks NEUTRAL). Additive
+    /// (`#[non_exhaustive]` leaf absorbs the new score component).
+    pub importance: Option<f64>,
+    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
+    /// graph-arm contribution when the importance reweight is ON, else the raw
+    /// stored value. `None` for node hits / edges without a confidence
+    /// (graceful-absent, ranks NEUTRAL).
+    pub confidence: Option<f64>,
+}
+
+// ===== G4 filter grammar types (Slice 35) ===============================
+
+/// G4 (Slice 35) — scalar value for [`Predicate`] comparisons.
+///
+/// Shared vocabulary with G10 — defined once at the `fathomdb-engine` crate
+src/ts/src/binding.ts:94:interface NativePerHitExplain {
+src/ts/src/binding.ts:107:  perHit: NativePerHitExplain[];
+src/ts/src/index.ts:253: * Rust `PerHitExplain`); parallel to (and same order as) `SearchResult.results`.
+src/ts/src/index.ts:257:export interface PerHitExplain {
+src/ts/src/index.ts:276:  perHit: PerHitExplain[];
+src/rust/crates/fathomdb-py/src/lib.rs:45:    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+src/rust/crates/fathomdb-py/src/lib.rs:522:/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (no BigInt/string
+src/rust/crates/fathomdb-py/src/lib.rs:526:    name = "PerHitExplain",
+src/rust/crates/fathomdb-py/src/lib.rs:532:struct PyPerHitExplain {
+src/rust/crates/fathomdb-py/src/lib.rs:543:    /// `PerHitExplain` additive fields; `get_all` exposes them as read-only Python
+src/rust/crates/fathomdb-py/src/lib.rs:549:impl PyPerHitExplain {
+src/rust/crates/fathomdb-py/src/lib.rs:550:    fn from_rust(p: &RustPerHitExplain) -> Self {
+src/rust/crates/fathomdb-py/src/lib.rs:584:    per_hit: Vec<PyPerHitExplain>,
+src/rust/crates/fathomdb-py/src/lib.rs:591:            per_hit: e.per_hit.iter().map(PyPerHitExplain::from_rust).collect(),
+src/rust/crates/fathomdb-py/src/lib.rs:1801:    m.add_class::<PyPerHitExplain>()?;
+src/rust/crates/fathomdb-py/src/lib.rs:1915:    // 0.8.16 Slice 5 / F9 (codex §9 fix-1, FINDING 2) — the pyo3 `PerHitExplain`
+src/rust/crates/fathomdb-py/src/lib.rs:1919:    // `embed_batch_cls` binding blind-spot). The engine `PerHitExplain` is
+src/rust/crates/fathomdb-py/src/lib.rs:1974:        let mirror = PyPerHitExplain::from_rust(entry);
+src/rust/crates/fathomdb-napi/src/lib.rs:40:    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+src/rust/crates/fathomdb-napi/src/lib.rs:600:/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (`as i64` → JS
+src/rust/crates/fathomdb-napi/src/lib.rs:604:pub struct PerHitExplain {
+src/rust/crates/fathomdb-napi/src/lib.rs:615:    /// engine `PerHitExplain` additive fields (napi → `importance`, `confidence`).
+src/rust/crates/fathomdb-napi/src/lib.rs:620:impl PerHitExplain {
+src/rust/crates/fathomdb-napi/src/lib.rs:621:    fn from_rust(p: &RustPerHitExplain) -> Self {
+src/rust/crates/fathomdb-napi/src/lib.rs:647:    // 0.8.16 Slice 5 / F9 (codex §9 fix-1, FINDING 2) — the N-API `PerHitExplain`
+src/rust/crates/fathomdb-napi/src/lib.rs:650:    // (the 0.8.14 `embed_batch_cls` binding blind-spot). The engine `PerHitExplain`
+src/rust/crates/fathomdb-napi/src/lib.rs:706:        let mirror = PerHitExplain::from_rust(entry);
+src/rust/crates/fathomdb-napi/src/lib.rs:720:    pub per_hit: Vec<PerHitExplain>,
+src/rust/crates/fathomdb-napi/src/lib.rs:727:            per_hit: e.per_hit.iter().map(PerHitExplain::from_rust).collect(),
+src/rust/crates/fathomdb/tests/governed_surface.rs:95:    "PerHitExplain",
+src/rust/crates/fathomdb/tests/governed_surface.rs:152:    let _ = type_name::<fathomdb::PerHitExplain>();
+src/rust/crates/fathomdb/src/lib.rs:22://   Explanation, QueryTrace, PerHitExplain
+src/rust/crates/fathomdb/src/lib.rs:26:    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
+src/rust/crates/fathomdb-engine/tests/exp_obs_explain.rs:10://!     the same order as) `results`; each `PerHitExplain` mirrors the returned
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:8://!     the contribution is observable through `PerHitExplain`.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:240:/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:298:/// and the confidence surfaces in `PerHitExplain`.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:359:    // (b) Observability: the traversing edge's confidence shows in PerHitExplain.
+src/rust/crates/fathomdb-engine/src/lib.rs:200:/// `PerHitExplain.id`. Query text and `source_id` are NEVER captured (privacy, ADR
+src/rust/crates/fathomdb-engine/src/lib.rs:1244:    pub per_hit: Vec<PerHitExplain>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1283:pub struct PerHitExplain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7122:        let per_hit: Vec<PerHitExplain> = results
+src/rust/crates/fathomdb-engine/src/lib.rs:7124:            .map(|h| PerHitExplain {
+src/python/tests/test_exp_obs_explain_parity.py:27:from fathomdb import Engine, Explanation, PerHitExplain, QueryTrace, SearchResult
+src/python/tests/test_exp_obs_explain_parity.py:94:            assert isinstance(p, PerHitExplain)
+src/python/fathomdb/__init__.py:26:    PerHitExplain,
+src/python/fathomdb/__init__.py:48:    "PerHitExplain",
+src/python/fathomdb/types.py:15:#: ``PerHitExplain.arm`` (and, for graph-arm hits, ``SearchHit.branch``).
+src/python/fathomdb/types.py:162:class PerHitExplain:
+src/python/fathomdb/types.py:164:    `PerHitExplain`); parallel to (and same order as) ``SearchResult.results``.
+src/python/fathomdb/types.py:192:    per_hit: list[PerHitExplain] = field(default_factory=list)
+src/python/fathomdb/types.py:423:    "PerHitExplain",
+src/python/fathomdb/engine.py:27:    PerHitExplain,
+src/python/fathomdb/engine.py:275:                    PerHitExplain(
+src/python/fathomdb/_fathomdb.pyi:49:class PerHitExplain:
+src/python/fathomdb/_fathomdb.pyi:63:    per_hit: list[PerHitExplain]
+dev/interfaces/rust.md:49:  (`Explanation`, `QueryTrace`, `PerHitExplain`). Each resolves through the facade
+
+exec
+/bin/bash -lc "sed -n '150,205p' src/python/fathomdb/types.py && sed -n '250,290p' src/python/fathomdb/engine.py && sed -n '45,70p' src/python/fathomdb/_fathomdb.pyi && sed -n '250,285p' src/ts/src/index.ts && sed -n '90,110p' src/ts/src/binding.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+    pool_n: int
+    alpha: float
+    use_graph_arm: bool
+    recency: bool
+    embedder_id: str
+    ce_active: bool
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+
+@dataclass(frozen=True)
+class PerHitExplain:
+    """0.8.8 EXP-OBS — per-hit provenance + score breakdown (mirror of engine
+    `PerHitExplain`); parallel to (and same order as) ``SearchResult.results``.
+
+    ``id`` mirrors ``SearchHit.id`` exactly. ``arm`` is the winning arm
+    (``== SearchHit.branch``). ``fused_score`` is the RAW post-recency, pre-CE RRF
+    score (not normalized). ``ce_score`` (``== SearchHit.ce_score``) is the in-pool
+    sigmoid ∈ [0,1] or ``None``. ``blended`` ``== SearchHit.score``.
+    """
+
+    id: int
+    arm: SoftFallbackBranch
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """0.8.8 EXP-OBS — opt-in retrieval explanation sidecar (mirror of engine
+    `Explanation`): a query-level ``trace`` + a per-hit breakdown.
+
+    Returned on ``SearchResult.explanation`` only when ``search(..., explain=True)``;
+    ``None`` (default) keeps the result byte-identical to the pre-0.8.8 shape.
+    """
+
+    trace: QueryTrace
+    per_hit: list[PerHitExplain] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Result returned by `engine.search`."""
+
+    projection_cursor: int
+    soft_fallback: SoftFallback | None = None
+    results: list[SearchHit] = field(default_factory=list)
+    #: 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar; ``None`` unless
+    #: ``search(..., explain=True)``. New optional field appended with a default
+    #: (the Python evolution rule), so the non-explain shape is unchanged.
+    explanation: Explanation | None = None
+        soft = (
+            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+            if fallback is not None
+            else None
+        )
+        # 0.8.8 EXP-OBS (Slice 10) — convert the opt-in native explanation sidecar
+        # into dataclasses; `None` (default explain=False) stays `None`.
+        native_exp = result.explanation
+        explanation = (
+            Explanation(
+                trace=QueryTrace(
+                    query_chars=native_exp.trace.query_chars,
+                    k=native_exp.trace.k,
+                    rerank_depth=native_exp.trace.rerank_depth,
+                    pool_n=native_exp.trace.pool_n,
+                    alpha=native_exp.trace.alpha,
+                    use_graph_arm=native_exp.trace.use_graph_arm,
+                    recency=native_exp.trace.recency,
+                    embedder_id=native_exp.trace.embedder_id,
+                    ce_active=native_exp.trace.ce_active,
+                    vector_hits=native_exp.trace.vector_hits,
+                    text_hits=native_exp.trace.text_hits,
+                    graph_hits=native_exp.trace.graph_hits,
+                ),
+                per_hit=[
+                    PerHitExplain(
+                        id=p.id,
+                        arm=cast(SoftFallbackBranch, p.arm),
+                        vector_rank=p.vector_rank,
+                        text_rank=p.text_rank,
+                        graph_rank=p.graph_rank,
+                        fused_score=p.fused_score,
+                        ce_score=p.ce_score,
+                        blended=p.blended,
+                    )
+                    for p in native_exp.per_hit
+                ],
+            )
+            if native_exp is not None
+            else None
+        )
+    vector_hits: int
+    text_hits: int
+    graph_hits: int
+
+class PerHitExplain:
+    # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.
+    id: int
+    arm: str
+    vector_rank: int | None
+    text_rank: int | None
+    graph_rank: int | None
+    fused_score: float
+    ce_score: float | None
+    blended: float
+
+class Explanation:
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar.
+    trace: QueryTrace
+    per_hit: list[PerHitExplain]
+
+class SearchResult:
+    projection_cursor: int
+    soft_fallback: SoftFallback | None
+    results: list[SearchHit]
+    # 0.8.8 EXP-OBS (Slice 10) — opt-in; None unless search(..., explain=True).
+    explanation: Explanation | None
+
+/**
+ * 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of the
+ * Rust `PerHitExplain`); parallel to (and same order as) `SearchResult.results`.
+ * `id` mirrors `SearchHit.id` exactly (`perHit[i].id === results[i].id`).
+ * `fusedScore` is the RAW post-recency, pre-CE RRF score (not normalized).
+ */
+export interface PerHitExplain {
+  id: number;
+  arm: SoftFallbackBranch;
+  vectorRank: number | null;
+  textRank: number | null;
+  graphRank: number | null;
+  fusedScore: number;
+  ceScore: number | null;
+  blended: number;
+}
+
+/**
+ * 0.8.8 EXP-OBS (Slice 10) — opt-in retrieval explanation sidecar (mirror of the
+ * Rust `Explanation`): a query-level `trace` + a per-hit breakdown. Returned on
+ * `SearchResult.explanation` only when `search(..., { explain: true })`; `null`
+ * (default) keeps the result byte-identical to the pre-0.8.8 shape.
+ */
+export interface Explanation {
+  trace: QueryTrace;
+  perHit: PerHitExplain[];
+}
+
+export interface SearchResult {
+  projectionCursor: number;
+  softFallback: SoftFallback | null;
+  results: SearchHit[];
+  /**
+   * 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar; `null` unless
+   * `search(..., { explain: true })`.
+  textHits: number;
+  graphHits: number;
+}
+
+interface NativePerHitExplain {
+  id: number;
+  arm: string;
+  vectorRank?: number | null;
+  textRank?: number | null;
+  graphRank?: number | null;
+  fusedScore: number;
+  ceScore?: number | null;
+  blended: number;
+}
+
+interface NativeExplanation {
+  trace: NativeQueryTrace;
+  perHit: NativePerHitExplain[];
+}
+
+interface NativeSearchResult {
+
+exec
+/bin/bash -lc "grep -R \"perHit\" -n src/ts/src | head -30 && sed -n '140,210p' src/ts/src/binding.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+src/ts/src/binding.ts:107:  perHit: NativePerHitExplain[];
+src/ts/src/index.ts:254: * `id` mirrors `SearchHit.id` exactly (`perHit[i].id === results[i].id`).
+src/ts/src/index.ts:276:  perHit: PerHitExplain[];
+src/ts/src/index.ts:640:          perHit: e.perHit.map((p) => ({
+  kind: string;
+  body: string;
+  writeCursor: number;
+}
+
+export interface NativeOpStoreRow {
+  id: number;
+  collection: string;
+  recordKey: string;
+  opKind: string;
+  payload: string;
+  schemaId: string | null;
+  writeCursor: number;
+}
+
+export interface NativeReadCollectionOptions {
+  afterId?: number;
+  limit: number;
+}
+
+// EU-6 FIX-2: Wide native shape emitted by the napi-rs binding. napi-rs
+// has no first-class tagged-union support, so every variant payload
+// field is modelled here as `Option<T>` (collapsed to `T | null |
+// undefined`). The canonical narrow public surface — the discriminated
+// `EmbedderEvent` union — lives in `index.ts` and is built by
+// `mapEmbedderEvent()` at the napi → SDK seam.
+export interface NativeEmbedderEvent {
+  kind: string;
+  file?: string | null;
+  url?: string | null;
+  bytes?: number | null;
+  sha256?: string | null;
+  cachePath?: string | null;
+  durationMs?: number | null;
+  dim?: number | null;
+  docCount?: number | null;
+}
+
+interface NativeOpenReport {
+  schemaVersionBefore: number;
+  schemaVersionAfter: number;
+  migrationSteps: NativeMigrationStepReport[];
+  embedderWarmupMs: number;
+  queryBackend: string;
+  defaultEmbedder: NativeEmbedderIdentity;
+  embedderDownloadMs: number | null;
+  embedderEvents: NativeEmbedderEvent[];
+  embedderMeanCenteringRequired: boolean;
+  embedderMeanVecPinned: boolean;
+}
+
+interface NativeCounterSnapshot {
+  queries: number;
+  writes: number;
+  writeRows: number;
+  adminOps: number;
+  cacheHit: number;
+  cacheMiss: number;
+}
+
+interface NativeAttachSubscriberOptions {
+  heartbeatIntervalMs?: number;
+}
+
+interface NativeEngineConfig {
+  embedderPoolSize?: number;
+  schedulerRuntimeThreads?: number;
+  provenanceRowCap?: number;
+  embedderCallTimeoutMs?: number;
+  slowThresholdMs?: number;
+}
+
+exec
+/bin/bash -lc "sed -n '620,660p' src/ts/src/index.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+        ? (a as SoftFallbackBranch)
+        : "text";
+    // 0.8.8 EXP-OBS: map the opt-in explanation sidecar; `null` (default) stays null.
+    const e = r.explanation;
+    const explanation: Explanation | null = e
+      ? {
+          trace: {
+            queryChars: e.trace.queryChars,
+            k: e.trace.k,
+            rerankDepth: e.trace.rerankDepth,
+            poolN: e.trace.poolN,
+            alpha: e.trace.alpha,
+            useGraphArm: e.trace.useGraphArm,
+            recency: e.trace.recency,
+            embedderId: e.trace.embedderId,
+            ceActive: e.trace.ceActive,
+            vectorHits: e.trace.vectorHits,
+            textHits: e.trace.textHits,
+            graphHits: e.trace.graphHits,
+          },
+          perHit: e.perHit.map((p) => ({
+            id: p.id,
+            arm: armOf(p.arm),
+            vectorRank: p.vectorRank ?? null,
+            textRank: p.textRank ?? null,
+            graphRank: p.graphRank ?? null,
+            fusedScore: p.fusedScore,
+            ceScore: p.ceScore ?? null,
+            blended: p.blended,
+          })),
+        }
+      : null;
+    return {
+      projectionCursor: r.projectionCursor,
+      softFallback:
+        branch === "vector" || branch === "text" || branch === "text_edge" || branch === "graph_arm"
+          ? { branch: branch as SoftFallbackBranch }
+          : null,
+      results: r.results.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+
+exec
+/bin/bash -lc "sed -n '1,60p' src/python/fathomdb/__init__.py && grep -n \"class Engine\" -n src/python/fathomdb/engine.py && grep -n \"search\" src/python/fathomdb/engine.py | head -20" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+"""FathomDB Python SDK public surface.
+
+Top-level five-verb surface and exception hierarchy owned by
+`dev/interfaces/python.md` + `dev/design/errors.md`. The package delegates
+to the native PyO3 extension `fathomdb._fathomdb` which binds to
+`fathomdb-engine`.
+"""
+
+from __future__ import annotations
+
+from fathomdb import _fathomdb as _native  # noqa: F401 — load native extension
+from fathomdb import admin, errors, graph, read
+from fathomdb._fathomdb import ConsolidateReceipt
+from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import embed_batch_cls
+from fathomdb._fathomdb import rerank
+from fathomdb.config import EngineConfig
+from fathomdb.engine import Engine
+from fathomdb.filter import Filter
+from fathomdb.types import (
+    CounterSnapshot,
+    ExpandedNode,
+    Explanation,
+    NodeRecord,
+    OpStoreRow,
+    PerHitExplain,
+    QueryTrace,
+    SearchExpandResult,
+    SearchFilter,
+    SearchHit,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
+
+__all__ = [
+    "ConsolidateReceipt",
+    "CounterSnapshot",
+    "Engine",
+    "EngineConfig",
+    "Filter",
+    "IngestWithExtractorReceipt",
+    "ExpandedNode",
+    "Explanation",
+    "NodeRecord",
+    "OpStoreRow",
+    "PerHitExplain",
+    "QueryTrace",
+    "SearchExpandResult",
+    "SearchFilter",
+    "SearchHit",
+    "SearchResult",
+    "SoftFallback",
+    "SoftFallbackBranch",
+    "WriteReceipt",
+    "__version__",
+    "admin",
+    "embed_batch_cls",
+    "errors",
+67:class Engine:
+148:    def search(
+159:        """Hybrid search with optional CE reranking and optional graph-BFS arm.
+162:            query: Free-text search query.
+200:        # mirroring use_graph_arm + the TS `search` guard (cross-SDK parity).
+206:        # call, mirroring the rerank_depth guard and the TS `search` validation
+223:        # 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search
+226:            filter = filter.to_search_filter()
+228:            result = self._native.search(
+237:            result = self._native.search(
+313:        enabled, each ``search`` records a query→result event keyed on the
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-py/src/lib.rs | sed -n '536,566p'; nl -ba src/rust/crates/fathomdb-napi/src/lib.rs | sed -n '608,638p'; nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '5148,5188p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+   536	    text_rank: Option<u32>,
+   537	    graph_rank: Option<u32>,
+   538	    fused_score: f64,
+   539	    ce_score: Option<f64>,
+   540	    blended: f64,
+   541	    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+   542	    /// hit's contribution (`None` = graceful-absent / neutral). Mirrors the engine
+   543	    /// `PerHitExplain` additive fields; `get_all` exposes them as read-only Python
+   544	    /// attributes, symmetric with the N-API mirror.
+   545	    importance: Option<f64>,
+   546	    confidence: Option<f64>,
+   547	}
+   548	
+   549	impl PyPerHitExplain {
+   550	    fn from_rust(p: &RustPerHitExplain) -> Self {
+   551	        Self {
+   552	            id: p.id,
+   553	            arm: match p.arm {
+   554	                SoftFallbackBranch::Vector => "vector".to_string(),
+   555	                SoftFallbackBranch::Text => "text".to_string(),
+   556	                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+   557	                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+   558	            },
+   559	            vector_rank: p.vector_rank,
+   560	            text_rank: p.text_rank,
+   561	            graph_rank: p.graph_rank,
+   562	            fused_score: p.fused_score,
+   563	            ce_score: p.ce_score,
+   564	            blended: p.blended,
+   565	            importance: p.importance,
+   566	            confidence: p.confidence,
+   608	    pub text_rank: Option<u32>,
+   609	    pub graph_rank: Option<u32>,
+   610	    pub fused_score: f64,
+   611	    pub ce_score: Option<f64>,
+   612	    pub blended: f64,
+   613	    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+   614	    /// hit's contribution (`None` = graceful-absent / neutral). Mirrors the
+   615	    /// engine `PerHitExplain` additive fields (napi → `importance`, `confidence`).
+   616	    pub importance: Option<f64>,
+   617	    pub confidence: Option<f64>,
+   618	}
+   619	
+   620	impl PerHitExplain {
+   621	    fn from_rust(p: &RustPerHitExplain) -> Self {
+   622	        Self {
+   623	            id: p.id as i64,
+   624	            arm: match p.arm {
+   625	                SoftFallbackBranch::Vector => "vector".to_string(),
+   626	                SoftFallbackBranch::Text => "text".to_string(),
+   627	                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+   628	                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+   629	            },
+   630	            vector_rank: p.vector_rank,
+   631	            text_rank: p.text_rank,
+   632	            graph_rank: p.graph_rank,
+   633	            fused_score: p.fused_score,
+   634	            ce_score: p.ce_score,
+   635	            blended: p.blended,
+   636	            importance: p.importance,
+   637	            confidence: p.confidence,
+   638	        }
+  5148	    /// vec0 predicate and is NOT `fusion_mode`. Mirrors
+  5149	    /// `set_recency_reweight_enabled_for_test`.
+  5150	    #[doc(hidden)]
+  5151	    pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
+  5152	        self.projection_runtime.shared.importance_reweight_enabled.store(enabled, Ordering::SeqCst);
+  5153	    }
+  5154	
+  5155	    /// 0.8.16 Slice 5 / F9 (R-F9-1) — set the caller-supplied `importance` ranking
+  5156	    /// scalar on the `canonical_nodes` row identified by `write_cursor` (the
+  5157	    /// interim id `SearchHit.id` carries). Validates `importance ∈ [0.0, 1.0]`,
+  5158	    /// mirroring the existing `canonical_edges.confidence` write-path check —
+  5159	    /// an out-of-range value is a deterministic [`EngineError::WriteValidation`].
+  5160	    ///
+  5161	    /// The 3-way sentinel: NOT calling this leaves the column `NULL` (never
+  5162	    /// assigned = graceful-absent, ranks NEUTRAL); `0.0` is the explicit floor;
+  5163	    /// `(0.0, 1.0]` is an explicit importance. Importance is a caller-supplied
+  5164	    /// scalar — the engine does NOT compute graph-centrality importance (ADR §4
+  5165	    /// non-goal). Engine-internal minimal surface for this keystone; SDK (Py/TS)
+  5166	    /// exposure is a Slice-40 concern.
+  5167	    pub fn write_node_importance(
+  5168	        &self,
+  5169	        write_cursor: u64,
+  5170	        importance: f64,
+  5171	    ) -> Result<(), EngineError> {
+  5172	        if !importance.is_finite() || !(0.0..=1.0).contains(&importance) {
+  5173	            return Err(EngineError::WriteValidation);
+  5174	        }
+  5175	        self.ensure_open()?;
+  5176	        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  5177	        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+  5178	        connection
+  5179	            .execute(
+  5180	                "UPDATE canonical_nodes SET importance = ?1 WHERE write_cursor = ?2",
+  5181	                params![importance, write_cursor],
+  5182	            )
+  5183	            .map_err(|_| EngineError::Storage)?;
+  5184	        Ok(())
+  5185	    }
+  5186	
+  5187	    /// 0.8.16 Slice 5 / F9 (R-F9-1) — read back the `importance` scalar for the
+  5188	    /// `canonical_nodes` row identified by `write_cursor`. `None` = SQL `NULL` =
+
+codex
+The core engine tests pass, but the new observable F9 explain fields are not propagated through the public Python and TypeScript SDK wrappers. Public SDK callers will not see the contribution this patch intends to expose.
+
+Full review comments:
+
+- [P2] Propagate explain weights through the Python wrapper — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-py/src/lib.rs:545-546
+  Adding `importance`/`confidence` to the native `PyPerHitExplain` object does not make them visible to normal Python SDK callers: `src/python/fathomdb/engine.py` still rebuilds `fathomdb.types.PerHitExplain` without these fields, and `types.py`/`_fathomdb.pyi` do not declare them. In the scenario covered by this change (`Engine.search(..., explain=True)` with F9 enabled), the native values are silently dropped before the public result is returned.
+
+- [P2] Propagate explain weights through the TypeScript wrapper — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-napi/src/lib.rs:616-617
+  The native N-API object now includes `importance` and `confidence`, but the TypeScript SDK still omits them from `NativePerHitExplain`, the public `PerHitExplain` interface, and the `perHit` mapping in `src/ts/src/index.ts`. For `search(..., { explain: true })` callers, the F9 contribution is therefore discarded even though the Rust binding produced it.
+The core engine tests pass, but the new observable F9 explain fields are not propagated through the public Python and TypeScript SDK wrappers. Public SDK callers will not see the contribution this patch intends to expose.
+
+Full review comments:
+
+- [P2] Propagate explain weights through the Python wrapper — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-py/src/lib.rs:545-546
+  Adding `importance`/`confidence` to the native `PyPerHitExplain` object does not make them visible to normal Python SDK callers: `src/python/fathomdb/engine.py` still rebuilds `fathomdb.types.PerHitExplain` without these fields, and `types.py`/`_fathomdb.pyi` do not declare them. In the scenario covered by this change (`Engine.search(..., explain=True)` with F9 enabled), the native values are silently dropped before the public result is returned.
+
+- [P2] Propagate explain weights through the TypeScript wrapper — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-napi/src/lib.rs:616-617
+  The native N-API object now includes `importance` and `confidence`, but the TypeScript SDK still omits them from `NativePerHitExplain`, the public `PerHitExplain` interface, and the `perHit` mapping in `src/ts/src/index.ts`. For `search(..., { explain: true })` callers, the F9 contribution is therefore discarded even though the Rust binding produced it.
+codex_rerun_rc=0

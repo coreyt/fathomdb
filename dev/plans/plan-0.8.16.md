@@ -109,6 +109,8 @@ carries the per-slice X column.
 
 ## 9. Immediate next slice
 
-**Slice 0 — F9 + ONNX ADRs.** Honor the Slice-35 F9 ADR; design the trait-local ONNX backend and the
-candle↔ONNX equivalence-measurement plan that feeds 0.8.18; stand up `runs/STATUS-0.8.16.md`. Then fan
-out Slices 5 ∥ 10.
+**Slice 0 — CLOSED (HITL SIGNED 2026-07-08).** **Slice 5 (F9 KEYSTONE) — CLOSED / LANDED 2026-07-08**
+(canary; `6462b511`+`74987f80`+`3c172131` on `main`; codex §9 PASS after fix-1/fix-2; SCHEMA 17→18;
+F9 OFF-by-default). **Next: Slice 10 — ONNX embedder backend** (`OrtBgeEmbedder` behind the trait via
+`EmbedderChoice::Caller`, `onnx-embedder` feature, config/env device select, zero engine diff), then
+Slice 15 (equivalence). Live state → `runs/STATUS-0.8.16.md`.

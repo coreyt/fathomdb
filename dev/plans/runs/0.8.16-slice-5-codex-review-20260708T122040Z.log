@@ -1,0 +1,2598 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f41ac-57fa-7a10-8fea-aac3f26123a3
+--------
+user
+changes against '61c9e09af69b040e0335fc13e1eab61bab461449'
+exec
+/bin/bash -lc 'ls && cat MEMORY.md 2>/dev/null || true && for f in feedback_*.md; do echo ---$f; cat "$f"; done 2>/dev/null' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+output.json
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+---feedback_*.md
+
+exec
+/bin/bash -lc "find .. -maxdepth 2 -name 'MEMORY.md' -o -name 'feedback_*.md'; git status --short; git diff --stat 61c9e09af69b040e0335fc13e1eab61bab461449" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+?? output.json
+ src/rust/crates/fathomdb-engine/src/lib.rs         | 195 ++++++++++++++++
+ .../crates/fathomdb-engine/tests/compatibility.rs  |   2 +-
+ .../fathomdb-engine/tests/f9_importance_ranking.rs | 259 +++++++++++++++++++++
+ src/rust/crates/fathomdb-schema/src/lib.rs         |  20 +-
+ .../crates/fathomdb-schema/tests/migrations.rs     |  10 +-
+ .../fathomdb-schema/tests/step14_migration.rs      |   5 +-
+ .../tests/step15_to_17_migration.rs                |  12 +-
+ .../fathomdb-schema/tests/step16_migration.rs      |   9 +-
+ .../fathomdb-schema/tests/step17_migration.rs      |   6 +-
+ .../fathomdb-schema/tests/step18_migration.rs      | 183 +++++++++++++++
+ 10 files changed, 679 insertions(+), 22 deletions(-)
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-schema/src/lib.rs src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 6d3fb76f..7248e140 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -334,6 +334,14 @@ struct ProjectionRuntimeShared {
+     /// the more recent `write_cursor` AFTER bit-KNN. Flipped by the
+     /// `set_recency_reweight_enabled_for_test` seam; no production toggle yet.
+     recency_reweight_enabled: AtomicBool,
++    /// 0.8.16 Slice 5 / F9 — dedicated importance/confidence reweight flag,
++    /// **off by default** (mirrors `recency_reweight_enabled`; NOT `fusion_mode`).
++    /// When set, fused hits are multiplicatively reweighted by node `importance`
++    /// (`canonical_nodes.importance`) and edge `confidence`
++    /// (`canonical_edges.confidence`) AFTER bit-KNN + RRF fusion — `NULL ⇒ neutral
++    /// (1.0)`. Flipped by `set_importance_reweight_enabled_for_test`; no production
++    /// toggle yet (F9 ships OFF-by-default as a MECHANISM, no eval-quality claim).
++    importance_reweight_enabled: AtomicBool,
+     /// GA-2 / Slice-40 (◆ B-1) measurement seam, **off by default**. When set,
+     /// `read_search_in_tx` returns the pre-fusion VECTOR-branch ranking
+     /// (bit-KNN K=192 + f32 rerank) verbatim — the ANN-quantization fidelity
+@@ -448,6 +456,10 @@ enum ReaderRequest {
+         /// G12-recency — whether the dedicated recency reweight is enabled for
+         /// this request (read from `recency_reweight_enabled`, off by default).
+         recency_enabled: bool,
++        /// F9 (0.8.16 Slice 5) — whether the dedicated importance/confidence
++        /// reweight is enabled for this request (read from
++        /// `importance_reweight_enabled`, off by default).
++        importance_enabled: bool,
+         /// GA-2 / Slice-40 (◆ B-1) measurement seam — when true the worker
+         /// returns the pre-fusion vector-branch ranking instead of the fused
+         /// result (read from `vector_stage_only_for_test`, off by default).
+@@ -750,6 +762,7 @@ fn reader_worker_loop(
+                 search_limit,
+                 filter,
+                 recency_enabled,
++                importance_enabled,
+                 vector_stage_only,
+                 raw_query,
+                 rerank_depth,
+@@ -767,6 +780,7 @@ fn reader_worker_loop(
+                     search_limit,
+                     filter.as_deref(),
+                     recency_enabled,
++                    importance_enabled,
+                     vector_stage_only,
+                     &raw_query,
+                     rerank_depth,
+@@ -867,6 +881,7 @@ impl ProjectionRuntime {
+             commit_gate: Mutex::new(()),
+             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
+             recency_reweight_enabled: AtomicBool::new(false),
++            importance_reweight_enabled: AtomicBool::new(false),
+             vector_stage_only_for_test: AtomicBool::new(false),
+             #[cfg(debug_assertions)]
+             force_recompute_failure: AtomicBool::new(false),
+@@ -1281,6 +1296,16 @@ pub struct PerHitExplain {
+     pub ce_score: Option<f64>,
+     /// Final blended score, == the returned `SearchHit.score`.
+     pub blended: f64,
++    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
++    /// fused contribution when the importance reweight is ON, else the raw stored
++    /// value. `None` = never assigned (graceful-absent, ranks NEUTRAL). Additive
++    /// (`#[non_exhaustive]` leaf absorbs the new score component).
++    pub importance: Option<f64>,
++    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
++    /// graph-arm contribution when the importance reweight is ON, else the raw
++    /// stored value. `None` for node hits / edges without a confidence
++    /// (graceful-absent, ranks NEUTRAL).
++    pub confidence: Option<f64>,
+ }
+ 
+ // ===== G4 filter grammar types (Slice 35) ===============================
+@@ -4063,6 +4088,8 @@ impl Engine {
+             .max(SEARCH_RERANK_LIMIT);
+         let recency_enabled =
+             self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
++        let importance_enabled =
++            self.projection_runtime.shared.importance_reweight_enabled.load(Ordering::SeqCst);
+         let vector_stage_only =
+             self.projection_runtime.shared.vector_stage_only_for_test.load(Ordering::SeqCst);
+         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
+@@ -4073,6 +4100,7 @@ impl Engine {
+             search_limit,
+             filter: filter.map(Box::new),
+             recency_enabled,
++            importance_enabled,
+             vector_stage_only,
+             raw_query: Box::from(query), // FIX-4: Box<str> (16B) not String (24B)
+             rerank_depth,
+@@ -5114,6 +5142,65 @@ impl Engine {
+         self.projection_runtime.shared.recency_reweight_enabled.store(enabled, Ordering::SeqCst);
+     }
+ 
++    /// 0.8.16 Slice 5 / F9 test seam — flip the dedicated importance/confidence
++    /// reweight flag (off by default). The reweight runs AFTER bit-KNN + RRF on
++    /// the fused hits (multiplicative-on-fused, `NULL ⇒ neutral`); it is never a
++    /// vec0 predicate and is NOT `fusion_mode`. Mirrors
++    /// `set_recency_reweight_enabled_for_test`.
++    #[doc(hidden)]
++    pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
++        self.projection_runtime.shared.importance_reweight_enabled.store(enabled, Ordering::SeqCst);
++    }
++
++    /// 0.8.16 Slice 5 / F9 (R-F9-1) — set the caller-supplied `importance` ranking
++    /// scalar on the `canonical_nodes` row identified by `write_cursor` (the
++    /// interim id `SearchHit.id` carries). Validates `importance ∈ [0.0, 1.0]`,
++    /// mirroring the existing `canonical_edges.confidence` write-path check —
++    /// an out-of-range value is a deterministic [`EngineError::WriteValidation`].
++    ///
++    /// The 3-way sentinel: NOT calling this leaves the column `NULL` (never
++    /// assigned = graceful-absent, ranks NEUTRAL); `0.0` is the explicit floor;
++    /// `(0.0, 1.0]` is an explicit importance. Importance is a caller-supplied
++    /// scalar — the engine does NOT compute graph-centrality importance (ADR §4
++    /// non-goal). Engine-internal minimal surface for this keystone; SDK (Py/TS)
++    /// exposure is a Slice-40 concern.
++    pub fn write_node_importance(
++        &self,
++        write_cursor: u64,
++        importance: f64,
++    ) -> Result<(), EngineError> {
++        if !importance.is_finite() || !(0.0..=1.0).contains(&importance) {
++            return Err(EngineError::WriteValidation);
++        }
++        self.ensure_open()?;
++        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
++        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
++        connection
++            .execute(
++                "UPDATE canonical_nodes SET importance = ?1 WHERE write_cursor = ?2",
++                params![importance, write_cursor],
++            )
++            .map_err(|_| EngineError::Storage)?;
++        Ok(())
++    }
++
++    /// 0.8.16 Slice 5 / F9 (R-F9-1) — read back the `importance` scalar for the
++    /// `canonical_nodes` row identified by `write_cursor`. `None` = SQL `NULL` =
++    /// never assigned (graceful-absent). The reciprocal read for
++    /// [`Engine::write_node_importance`].
++    pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
++        self.ensure_open()?;
++        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
++        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
++        connection
++            .query_row(
++                "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
++                params![write_cursor],
++                |r| r.get::<_, Option<f64>>(0),
++            )
++            .map_err(|_| EngineError::Storage)
++    }
++
+     /// GA-2 / Slice-40 (◆ B-1) measurement seam — make `search()` return the
+     /// pre-fusion VECTOR-branch ranking (the ANN+ bit-KNN K=192 + f32 rerank
+     /// signal) instead of the unconditional RRF-fused result, so the eu7 recall
+@@ -6017,6 +6104,87 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
+     reweighted
+ }
+ 
++/// 0.8.16 Slice 5 / F9 — OFF-by-default importance/confidence reweight, applied
++/// to the fused hits AFTER bit-KNN + RRF (mirrors [`apply_recency_reweight`]).
++///
++/// Multiplicative-on-fused (ADR-0.8.16 §2.2, HITL-SIGNED 2026-07-08): a hit's
++/// score is scaled by node `importance` (`importance_by_id`) × edge `confidence`
++/// (`confidence_by_id`), each keyed by the hit's interim id (`write_cursor`). A
++/// missing key = `NULL` = never assigned = graceful-absent ⇒ neutral (1.0), the
++/// OPP-12 Q6a graceful-absent state. Node hits carry `importance`; graph/edge hits
++/// carry `confidence`; the two id-spaces never collide (cursors are globally
++/// unique), so each hit gets exactly one non-neutral factor.
++///
++/// **R-F9-4 graceful-neutral identity:** when `enabled` but *no* hit has a
++/// non-neutral factor (every importance/confidence absent), the input is returned
++/// **unchanged** — byte-identical to the `enabled == false` result (no re-sort),
++/// so declaring the mechanism never perturbs an all-absent corpus.
++#[must_use]
++pub fn apply_importance_reweight(
++    hits: Vec<SearchHit>,
++    importance_by_id: &HashMap<u64, f64>,
++    confidence_by_id: &HashMap<u64, f64>,
++    enabled: bool,
++) -> Vec<SearchHit> {
++    if !enabled {
++        return hits;
++    }
++    // Graceful-neutral fast path (R-F9-4): if nothing is weighted, do not touch
++    // order or scores — identical to the reweight-OFF result.
++    let any_weighted = hits
++        .iter()
++        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
++    if !any_weighted {
++        return hits;
++    }
++    let mut reweighted: Vec<SearchHit> = hits
++        .into_iter()
++        .map(|mut h| {
++            let importance = importance_by_id.get(&h.id).copied().unwrap_or(1.0);
++            let confidence = confidence_by_id.get(&h.id).copied().unwrap_or(1.0);
++            h.score *= importance * confidence;
++            h
++        })
++        .collect();
++    // Stable sort preserves the fused order on exact ties.
++    reweighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
++    reweighted
++}
++
++/// 0.8.16 Slice 5 / F9 — build the per-hit importance/confidence weight maps for
++/// the candidate `hits` from the durable columns (`canonical_nodes.importance`,
++/// `canonical_edges.confidence`). Only NON-NULL values are inserted; an absent
++/// value stays out of the map (graceful-absent ⇒ neutral in
++/// [`apply_importance_reweight`]). Prepared statements are guarded so a pre-step-18
++/// / pre-step-14 schema (no column) yields empty maps rather than an error.
++fn build_importance_confidence_maps(
++    tx: &rusqlite::Connection,
++    hits: &[SearchHit],
++) -> rusqlite::Result<(HashMap<u64, f64>, HashMap<u64, f64>)> {
++    let mut importance_by_id: HashMap<u64, f64> = HashMap::new();
++    let mut confidence_by_id: HashMap<u64, f64> = HashMap::new();
++    if let Ok(mut stmt) =
++        tx.prepare("SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
++    {
++        for h in hits {
++            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
++                importance_by_id.insert(h.id, v);
++            }
++        }
++    }
++    if let Ok(mut stmt) = tx.prepare(
++        "SELECT confidence FROM canonical_edges \
++         WHERE write_cursor = ?1 AND superseded_at IS NULL LIMIT 1",
++    ) {
++        for h in hits {
++            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
++                confidence_by_id.insert(h.id, v);
++            }
++        }
++    }
++    Ok((importance_by_id, confidence_by_id))
++}
++
+ /// 0.8.1 Slice 10 (R1) — CE rerank seam.
+ ///
+ /// `rerank_depth = 0` (or model absent / `default-reranker` feature off): returns
+@@ -6521,6 +6689,7 @@ fn read_search_in_tx(
+     final_limit: usize,
+     filter: Option<&SearchFilter>,
+     recency_enabled: bool,
++    importance_enabled: bool,
+     vector_stage_only: bool,
+     raw_query: &str,
+     rerank_depth: usize,
+@@ -6858,6 +7027,10 @@ fn read_search_in_tx(
+     let mut exp_graph_ranks: Option<HashMap<String, u32>> = None;
+     let mut exp_fused_scores: Option<HashMap<String, f64>> = None;
+     let mut exp_graph_n: u32 = 0;
++    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
++    // (keyed by hit id == write_cursor), captured for the explain sidecar.
++    let mut exp_importance: Option<HashMap<u64, f64>> = None;
++    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
+ 
+     let results = if vector_stage_only {
+         vector_results
+@@ -6893,7 +7066,17 @@ fn read_search_in_tx(
+             fuse_three_arms(two_arm_fused, vec![], graph_candidates),
+             recency_enabled,
+         );
++        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
++        // Order: AFTER recency (consistent placement), BEFORE the CE rerank seam.
++        let (imp_map, conf_map) = if importance_enabled || explain {
++            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
++        } else {
++            (HashMap::new(), HashMap::new())
++        };
++        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+         if explain {
++            exp_importance = Some(imp_map);
++            exp_confidence = Some(conf_map);
+             exp_fused_scores = Some(body_score_map(&fused));
+         }
+         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+@@ -6904,7 +7087,17 @@ fn read_search_in_tx(
+         // vector-empty `soft_fallback` signal was computed above, BEFORE this
+         // branch-collapse.
+         let fused = apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled);
++        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
++        // Same placement as the graph-arm branch: after recency, before CE rerank.
++        let (imp_map, conf_map) = if importance_enabled || explain {
++            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
++        } else {
++            (HashMap::new(), HashMap::new())
++        };
++        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+         if explain {
++            exp_importance = Some(imp_map);
++            exp_confidence = Some(conf_map);
+             exp_fused_scores = Some(body_score_map(&fused));
+         }
+         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+@@ -6926,6 +7119,8 @@ fn read_search_in_tx(
+                 fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
+                 ce_score: h.ce_score,
+                 blended: h.score,
++                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
++                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+             })
+             .collect();
+         let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());
+diff --git a/src/rust/crates/fathomdb-schema/src/lib.rs b/src/rust/crates/fathomdb-schema/src/lib.rs
+index d1e80415..e9f3948f 100644
+--- a/src/rust/crates/fathomdb-schema/src/lib.rs
++++ b/src/rust/crates/fathomdb-schema/src/lib.rs
+@@ -3,7 +3,7 @@ use std::time::Instant;
+ 
+ use rusqlite::Connection;
+ 
+-pub const SCHEMA_VERSION: u32 = 17;
++pub const SCHEMA_VERSION: u32 = 18;
+ 
+ /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
+ ///
+@@ -441,6 +441,24 @@ pub const MIGRATIONS: &[Migration] = &[
+                       write_cursor
+                   FROM canonical_nodes;",
+     },
++    // 0.8.16 Slice 5 (F9 KEYSTONE) — node-level importance ranking scalar.
++    // Per `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1
++    // (SIGNED 2026-07-08) and `dev/plans/plan-0.8.16.md` §2 (R-F9-1/R-F9-4).
++    // Adds `importance REAL` on `canonical_nodes` — a caller-supplied ranking
++    // scalar, symmetric with the existing genuine-NULL `canonical_edges.confidence`
++    // (step-14). 3-way sentinel (frozen): `NULL` = never assigned (graceful-absent,
++    // ranks NEUTRAL — the OPP-12 Q6a graceful-absent state, load-bearing for
++    // R-F9-4); `0.0` = explicit floor/de-weight; `(0.0, 1.0]` = explicit importance.
++    // Nullable, so pre-existing rows read NULL in-place (no data migration / re-open):
++    // the graceful-absent default preserves current ranking for every existing row.
++    // Additive `ADD COLUMN` (no DROP) → the accretion guard REQUIRES the exemption
++    // marker. This step does NOT rewrite vec0 / vector rows (ADR §4 eu7 no-op basis):
++    // it adds a scalar column only, so the eu7 fidelity gate stays a documented no-op.
++    Migration {
++        step_id: 18,
++        sql: "-- MIGRATION-ACCRETION-EXEMPTION: F9 importance ranking scalar (additive nullable REAL; 3-way sentinel, NULL=graceful-absent)
++              ALTER TABLE canonical_nodes ADD COLUMN importance REAL;",
++    },
+ ];
+ 
+ pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs src/rust/crates/fathomdb-schema/tests/step18_migration.rs src/rust/crates/fathomdb-schema/tests/migrations.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs b/src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs
+new file mode 100644
+index 00000000..b9335d91
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs
+@@ -0,0 +1,259 @@
++//! 0.8.16 Slice 5 (F9 KEYSTONE) — importance/confidence ranking mechanism.
++//!
++//! Ships F9 as an OFF-by-default, observable, OPP-12-`rankable`-forward-compatible
++//! MECHANISM (no eval-quality claim). Covers plan-0.8.16 §2:
++//!   - R-F9-1: `canonical_nodes.importance` write/read round-trip + [0,1]
++//!     validation + the 3-way sentinel (`NULL` absent / `0.0` floor / `(0.0,1.0]`).
++//!   - R-F9-2: importance (node) / confidence (edge) reweight reorders vs OFF, and
++//!     the contribution is observable through `PerHitExplain`.
++//!   - R-F9-4: reweight-ON with all-absent (NULL) importance == reweight-OFF
++//!     (graceful-neutral identity — the OPP-12 Q6a graceful-absent state).
++//!
++//! The reweight is multiplicative-on-fused (ADR §2.2, HITL-SIGNED 2026-07-08):
++//! `score *= importance(node) * confidence(edge)`, with `NULL ⇒ neutral (1.0)`.
++//! Mirrors the `apply_recency_reweight` precedent (pure fn + OFF-by-default flag +
++//! `_for_test` seam). No vec0 rewrite (eu7 no-op basis).
++
++use std::collections::HashMap;
++use std::sync::Arc;
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use fathomdb_engine::{
++    apply_importance_reweight, Engine, EngineError, PreparedWrite, SearchHit, SoftFallbackBranch,
++};
++use fathomdb_schema::SQLITE_SUFFIX;
++use tempfile::TempDir;
++
++fn hit(id: u64, body: &str, score: f64) -> SearchHit {
++    SearchHit {
++        id,
++        kind: "doc".to_string(),
++        body: body.to_string(),
++        score,
++        branch: SoftFallbackBranch::Vector,
++        source_id: None,
++        ce_score: None,
++        stable_id: None,
++    }
++}
++
++// ---- pure-function unit tests (mirror pr_g12_recency.rs) --------------------
++
++#[test]
++fn importance_disabled_is_a_no_op() {
++    let hits = vec![hit(1, "a", 0.02), hit(2, "b", 0.01)];
++    let mut imp = HashMap::new();
++    imp.insert(1u64, 0.1_f64); // would de-weight if enabled
++    let out = apply_importance_reweight(hits.clone(), &imp, &HashMap::new(), false);
++    assert_eq!(out, hits, "flag off => order + scores unchanged");
++}
++
++#[test]
++fn importance_all_absent_equals_disabled_r_f9_4() {
++    // R-F9-4 graceful-neutral identity: enabled but every hit is NULL/absent
++    // (empty maps) must be byte-identical to the disabled result.
++    let hits = vec![hit(1, "a", 0.02), hit(2, "b", 0.01)];
++    let disabled = apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), false);
++    let enabled_absent =
++        apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), true);
++    assert_eq!(enabled_absent, disabled, "all-absent reweight-ON must equal reweight-OFF");
++    assert_eq!(enabled_absent, hits, "and preserve the input order/scores");
++}
++
++#[test]
++fn importance_enabled_deweights_and_reorders() {
++    // Node 1 outranks node 2 on raw score, but a low importance (0.1) de-weights
++    // it below the neutral (absent => 1.0) node 2 => non-vacuous reorder.
++    let hits = vec![hit(1, "high-raw", 0.02), hit(2, "neutral", 0.015)];
++    let mut imp = HashMap::new();
++    imp.insert(1u64, 0.1_f64);
++    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
++    assert_eq!(out[0].id, 2, "de-weighted node drops below the neutral node");
++    assert_eq!(out[1].id, 1);
++    assert!(out[0].score >= out[1].score, "reweighted list stays sorted by score desc");
++}
++
++#[test]
++fn confidence_scales_graph_arm_contribution() {
++    // Edge confidence multiplies the (graph-arm) hit's fused contribution.
++    let hits = vec![hit(1, "edge", 0.02)];
++    let mut conf = HashMap::new();
++    conf.insert(1u64, 0.5_f64);
++    let out = apply_importance_reweight(hits, &HashMap::new(), &conf, true);
++    assert!((out[0].score - 0.01).abs() < 1e-9, "confidence 0.5 halves the contribution");
++}
++
++#[test]
++fn importance_floor_zero_zeroes_contribution() {
++    // Sentinel 0.0 = explicit floor => full de-weight (score -> 0.0).
++    let hits = vec![hit(1, "floored", 0.02), hit(2, "kept", 0.015)];
++    let mut imp = HashMap::new();
++    imp.insert(1u64, 0.0_f64);
++    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
++    assert_eq!(out[0].id, 2, "floored node ranks last");
++    assert_eq!(out[1].score, 0.0, "floor 0.0 zeroes the contribution");
++}
++
++// ---- end-to-end engine tests -----------------------------------------------
++
++#[derive(Clone, Debug)]
++struct FixedEmbedder;
++
++impl Embedder for FixedEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        EmbedderIdentity::new("deterministic", "rev-a", 8)
++    }
++    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
++        let mut v = vec![0.0_f32; 8];
++        v[0] = 1.0;
++        Ok(v)
++    }
++}
++
++fn fixture(name: &str) -> (TempDir, std::path::PathBuf) {
++    let dir = TempDir::new().unwrap();
++    let path = dir.path().join(format!("{name}{SQLITE_SUFFIX}"));
++    (dir, path)
++}
++
++/// R-F9-1 — importance write/read round-trips exact for the 3-way sentinel, and
++/// an out-of-[0,1] value is rejected (mirrors the edge-confidence validation).
++#[test]
++fn importance_write_read_roundtrip_and_range_validation() {
++    let (_dir, path) = fixture("f9_roundtrip");
++    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
++    let engine = &opened.engine;
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++
++    let receipt = engine
++        .write(&[PreparedWrite::Node {
++            kind: "doc".to_string(),
++            body: "importance subject".to_string(),
++            source_id: None,
++            logical_id: None,
++        }])
++        .expect("write");
++    let cursor = receipt.cursor;
++
++    // Absent by default => NULL => graceful-absent.
++    assert_eq!(engine.node_importance(cursor).expect("read"), None, "absent => NULL");
++
++    for v in [0.0_f64, 0.5, 1.0] {
++        engine.write_node_importance(cursor, v).expect("set importance");
++        assert_eq!(engine.node_importance(cursor).expect("read"), Some(v), "round-trips exact");
++    }
++
++    // Out-of-range rejected on the write path (mirror canonical_edges.confidence).
++    for bad in [-0.1_f64, 1.1] {
++        assert!(
++            matches!(engine.write_node_importance(cursor, bad), Err(EngineError::WriteValidation)),
++            "importance {bad} out of [0,1] must be rejected"
++        );
++    }
++    // The last good value survived the rejected writes.
++    assert_eq!(engine.node_importance(cursor).expect("read"), Some(1.0));
++
++    opened.engine.close().unwrap();
++}
++
++fn seed_two_docs(engine: &Engine) -> (u64, u64) {
++    engine.configure_vector_kind_for_test("doc").expect("vector kind");
++    let a = engine
++        .write(&[PreparedWrite::Node {
++            kind: "doc".to_string(),
++            body: "importance alpha widget".to_string(),
++            source_id: None,
++            logical_id: None,
++        }])
++        .expect("write a")
++        .cursor;
++    let b = engine
++        .write(&[PreparedWrite::Node {
++            kind: "doc".to_string(),
++            body: "importance beta widget".to_string(),
++            source_id: None,
++            logical_id: None,
++        }])
++        .expect("write b")
++        .cursor;
++    engine.drain(10_000).expect("drain");
++    (a, b)
++}
++
++/// R-F9-2 — an importance reweight (ON) reorders vs the OFF baseline: de-weighting
++/// the baseline top hit drops it below the neutral hit. Non-vacuous.
++#[test]
++fn importance_reweight_reorders_vs_off() {
++    let (_dir, path) = fixture("f9_reorder");
++    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
++    let engine = &opened.engine;
++    seed_two_docs(engine);
++
++    let baseline = engine.search("importance").expect("search");
++    assert_eq!(baseline.results.len(), 2, "both docs retrieved");
++    let top_id = baseline.results[0].id;
++    let second_id = baseline.results[1].id;
++
++    // De-weight the baseline top hit hard; enable the reweight.
++    engine.write_node_importance(top_id, 0.01).expect("set importance");
++    engine.set_importance_reweight_enabled_for_test(true);
++
++    let reweighted = engine.search("importance").expect("search");
++    let rw_bodies: std::collections::BTreeSet<&str> =
++        reweighted.results.iter().map(|h| h.body.as_str()).collect();
++    let base_bodies: std::collections::BTreeSet<&str> =
++        baseline.results.iter().map(|h| h.body.as_str()).collect();
++    assert_eq!(base_bodies, rw_bodies, "reweight preserves the result SET");
++    assert_eq!(reweighted.results[0].id, second_id, "de-weighted top hit is now second");
++    assert_eq!(reweighted.results[1].id, top_id);
++    for w in reweighted.results.windows(2) {
++        assert!(w[0].score >= w[1].score, "reweighted list stays sorted by score desc");
++    }
++
++    opened.engine.close().unwrap();
++}
++
++/// R-F9-4 (end-to-end) — reweight ON with all-NULL importance yields the exact
++/// same ordering + scores as reweight OFF (graceful-neutral identity).
++#[test]
++fn importance_reweight_on_all_null_equals_off_e2e() {
++    let (_dir, path) = fixture("f9_identity");
++    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
++    let engine = &opened.engine;
++    seed_two_docs(engine);
++
++    let off = engine.search("importance").expect("search off");
++    engine.set_importance_reweight_enabled_for_test(true);
++    let on_all_null = engine.search("importance").expect("search on");
++
++    assert_eq!(
++        off.results, on_all_null.results,
++        "reweight-ON with all-absent importance must equal reweight-OFF"
++    );
++
++    opened.engine.close().unwrap();
++}
++
++/// R-F9-2 (observability) — `explain=True` surfaces the importance contribution
++/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
++#[test]
++fn explain_surfaces_importance_contribution() {
++    let (_dir, path) = fixture("f9_explain");
++    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(FixedEmbedder)).expect("open");
++    let engine = &opened.engine;
++    let (a, _b) = seed_two_docs(engine);
++
++    engine.write_node_importance(a, 0.5).expect("set importance");
++    engine.set_importance_reweight_enabled_for_test(true);
++
++    let explained =
++        engine.search_explained("importance", None, 0, false, 0.3, 0).expect("search_explained");
++    let exp = explained.explanation.expect("explanation sidecar present");
++
++    let entry =
++        exp.per_hit.iter().find(|p| p.id == a).expect("per_hit entry for the weighted node");
++    assert_eq!(entry.importance, Some(0.5), "explain surfaces the node importance");
++    assert_eq!(entry.confidence, None, "a node hit carries no edge confidence");
++
++    opened.engine.close().unwrap();
++}
+diff --git a/src/rust/crates/fathomdb-schema/tests/migrations.rs b/src/rust/crates/fathomdb-schema/tests/migrations.rs
+index bcbdab02..46382ed6 100644
+--- a/src/rust/crates/fathomdb-schema/tests/migrations.rs
++++ b/src/rust/crates/fathomdb-schema/tests/migrations.rs
+@@ -41,7 +41,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
+     assert_eq!(report.schema_version_before, 1);
+     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(report.migration_steps.len(), 16);
++    assert_eq!(report.migration_steps.len(), 17);
+     assert!(report.migration_steps.iter().all(|step| !step.failed));
+ }
+ 
+@@ -54,7 +54,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
+     let report = migrate(&conn).unwrap();
+ 
+     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
+ }
+ 
+@@ -71,7 +71,7 @@ fn ac_046b_success_emits_structured_step_events() {
+     .unwrap();
+ 
+     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(events.iter().all(|step| step.duration_ms.is_some()));
+     assert!(events.iter().all(|step| !step.failed));
+ }
+@@ -277,7 +277,7 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
+     }
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17);
++    assert_eq!(SCHEMA_VERSION, 18);
+ }
+ 
+ // Slice 33 (G3 / F4-READ) — the step-13 additive index makes the op-store
+@@ -323,7 +323,7 @@ fn s13_op_store_collection_index_present_after_migrate() {
+     assert!(cn < id_pos, "collection_name must lead id in the composite index, got: {idx_sql}");
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17);
++    assert_eq!(SCHEMA_VERSION, 18);
+ }
+ 
+ // Slice 33 — the step-13 SQL is a pure `CREATE INDEX` (additive index, no table
+diff --git a/src/rust/crates/fathomdb-schema/tests/step18_migration.rs b/src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+new file mode 100644
+index 00000000..de14d8f1
+--- /dev/null
++++ b/src/rust/crates/fathomdb-schema/tests/step18_migration.rs
+@@ -0,0 +1,183 @@
++//! 0.8.16 Slice 5 (F9 KEYSTONE) — step-18 `importance` migration tests.
++//!
++//! Covers plan-0.8.16 §2 R-F9-1 (the node-level `importance REAL` column lands,
++//! nullable, with the 3-way sentinel `NULL`=absent) and R-F9-4 (absent-importance
++//! is the graceful-neutral state — a plain additive REAL with no data migration).
++//! ADR authority: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1 +
++//! `dev/design/0.8.16-slice-0-f9-onnx-design.md` §3.
++//!
++//! `importance` is a caller-supplied ranking scalar on `canonical_nodes`,
++//! symmetric with the existing genuine-NULL `canonical_edges.confidence`
++//! (step-14). Additive `ADD COLUMN` with a leading `MIGRATION-ACCRETION-EXEMPTION`
++//! marker; pre-existing rows read `NULL` in-place (no data migration). The step
++//! does NOT rewrite vec0 / vector rows (eu7 no-op basis — ADR §4).
++
++use fathomdb_schema::{check_migration_accretion, migrate_with_steps, MIGRATIONS, SCHEMA_VERSION};
++use rusqlite::Connection;
++use std::sync::Once;
++
++// Step 9 creates a vec0 virtual table; register sqlite-vec once per binary.
++fn register_sqlite_vec_once() {
++    static REGISTER: Once = Once::new();
++    REGISTER.call_once(|| unsafe {
++        let entrypoint: unsafe extern "C" fn(
++            *mut rusqlite::ffi::sqlite3,
++            *mut *const std::os::raw::c_char,
++            *const rusqlite::ffi::sqlite3_api_routines,
++        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
++        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
++    });
++}
++
++fn user_version(conn: &Connection) -> u32 {
++    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
++}
++
++fn set_user_version(conn: &Connection, version: u32) {
++    conn.pragma_update(None, "user_version", version).unwrap();
++}
++
++fn column_names(conn: &Connection, table: &str) -> Vec<String> {
++    conn.prepare(&format!("PRAGMA table_info({table})"))
++        .unwrap()
++        .query_map([], |row| row.get::<_, String>(1))
++        .unwrap()
++        .filter_map(Result::ok)
++        .collect()
++}
++
++/// R-F9-1 — after the full migration set, `canonical_nodes` has `importance`
++/// and the head is 18 / step-18 is last.
++#[test]
++fn s18_importance_column_present_and_schema_version_is_18() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
++
++    let cols = column_names(&conn, "canonical_nodes");
++    assert!(
++        cols.contains(&"importance".to_string()),
++        "canonical_nodes must have importance after step-18, got: {cols:?}"
++    );
++
++    assert_eq!(user_version(&conn), SCHEMA_VERSION);
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
++    assert_eq!(
++        MIGRATIONS.last().expect("at least one migration").step_id,
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
++    );
++}
++
++/// R-F9-1 (forward-only) + R-F9-4 (graceful-absent) — open a DB at the OLD schema
++/// (version 17) with a pre-existing row, run ONLY step-18, and assert: it reaches
++/// 18, ONLY step-18 ran, the legacy row's `importance` back-fills to `NULL`
++/// (never-assigned = graceful-absent), and NO vec0 / vector rows are touched
++/// (eu7 no-op basis).
++#[test]
++fn s18_forward_only_from_v17_importance_null_and_no_vector_rewrite() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++
++    // Bring the DB up to the OLD head (version 17) — everything before step-18.
++    let steps_to_17: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 17).cloned().collect();
++    migrate_with_steps(&conn, &steps_to_17).expect("migrate to v17");
++    assert_eq!(user_version(&conn), 17, "precondition: DB is at the old schema version 17");
++
++    // A pre-existing (pre-importance) canonical node.
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind)
++         VALUES(1, 'note', 'legacy body about widgets', 'leaf')",
++        [],
++    )
++    .expect("legacy node insert at v17");
++
++    // Seed a vec0/vector-row bookkeeping row so we can prove step-18 does NOT
++    // rewrite the vector corpus (eu7 no-op basis — ADR §4).
++    conn.execute(
++        "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(1, 'note', 1)",
++        [],
++    )
++    .expect("seed vector-row bookkeeping");
++    let vrows_before: i64 =
++        conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_rows", [], |r| r.get(0)).unwrap();
++
++    // Apply ONLY the forward step-18 migration.
++    let step18_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 18).cloned().collect();
++    let report = migrate_with_steps(&conn, &step18_only).expect("forward migrate to v18");
++
++    // Forward-only: exactly the single new step ran; nothing before it re-ran.
++    assert_eq!(report.schema_version_before, 17);
++    assert_eq!(report.schema_version_after, 18);
++    let ran: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
++    assert_eq!(ran, vec![18], "only step-18 must run when starting from v17");
++    assert_eq!(user_version(&conn), 18);
++
++    // R-F9-4 graceful-absent: the legacy row reads NULL importance (never-assigned).
++    let importance: Option<f64> = conn
++        .query_row("SELECT importance FROM canonical_nodes WHERE write_cursor = 1", [], |r| {
++            r.get(0)
++        })
++        .expect("legacy row must be readable after step-18");
++    assert!(importance.is_none(), "legacy importance must back-fill to NULL (graceful-absent)");
++
++    // eu7 no-op basis: the vector-row bookkeeping is byte-untouched (step-18 is a
++    // pure ADD COLUMN — it does not rewrite / re-embed / re-quantize any vec0 row).
++    let vrows_after: i64 =
++        conn.query_row("SELECT COUNT(*) FROM _fathomdb_vector_rows", [], |r| r.get(0)).unwrap();
++    assert_eq!(vrows_before, vrows_after, "step-18 must NOT rewrite the vector corpus");
++    assert_eq!(vrows_after, 1, "the seeded vector row must survive step-18 untouched");
++}
++
++/// R-F9-1 (roundtrip at the SQL layer) — the 3-way sentinel is storable and
++/// reads back exact: `NULL` (absent), `0.0` (floor), and an explicit `(0.0,1.0]`.
++#[test]
++fn s18_importance_three_way_sentinel_roundtrips() {
++    register_sqlite_vec_once();
++    let conn = Connection::open_in_memory().unwrap();
++    set_user_version(&conn, 1);
++    migrate_with_steps(&conn, MIGRATIONS).expect("migrate to head");
++
++    conn.execute(
++        "INSERT INTO canonical_nodes(write_cursor, kind, body, row_kind, importance)
++         VALUES(1, 'note', 'absent', 'leaf', NULL),
++                (2, 'note', 'floor',  'leaf', 0.0),
++                (3, 'note', 'high',   'leaf', 1.0)",
++        [],
++    )
++    .expect("insert 3-way sentinel rows");
++
++    let read = |wc: i64| -> Option<f64> {
++        conn.query_row(
++            "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1",
++            [wc],
++            |r| r.get(0),
++        )
++        .unwrap()
++    };
++    assert!(read(1).is_none(), "NULL = never assigned (graceful-absent)");
++    assert_eq!(read(2), Some(0.0), "0.0 = explicit floor/de-weight");
++    assert_eq!(read(3), Some(1.0), "1.0 = explicit importance");
++}
++
++/// R-F9-1 (guarded) — step-18 is a pure additive `ADD COLUMN` (no DROP), so the
++/// accretion guard REJECTS it unless the exemption marker is present.
++#[test]
++fn s18_passes_accretion_guard_only_with_marker() {
++    let step18 =
++        MIGRATIONS.iter().find(|m| m.step_id == 18).expect("step 18 (F9 importance) must exist");
++
++    check_migration_accretion("018_f9_importance.sql", step18.sql)
++        .expect("step 18 must pass the accretion guard with its exemption marker");
++
++    let without_marker: String = step18
++        .sql
++        .lines()
++        .filter(|line| !line.contains("MIGRATION-ACCRETION-EXEMPTION"))
++        .collect::<Vec<_>>()
++        .join("\n");
++    check_migration_accretion("018_f9_importance.sql", &without_marker)
++        .expect_err("step 18 without the exemption marker must be rejected");
++}
+
+exec
+/bin/bash -lc "grep -n \"struct SearchHit\\|struct SearchResponse\\|search_explained\\|fn fuse_rrf\\|fn fuse_three_arms\\|fn body_score_map\\|canonical_edges\\|confidence\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -100" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+337:    /// 0.8.16 Slice 5 / F9 — dedicated importance/confidence reweight flag,
+340:    /// (`canonical_nodes.importance`) and edge `confidence`
+341:    /// (`canonical_edges.confidence`) AFTER bit-KNN + RRF fusion — `NULL ⇒ neutral
+459:        /// F9 (0.8.16 Slice 5) — whether the dedicated importance/confidence
+523:    /// `canonical_edges`. Returns the set of reachable nodes (excluding the
+576:// only on the `search_explained` path). Like the `GraphFrontierStats` 4th element
+1123:pub struct SearchHit {
+1222:    /// `Some` ONLY on the `search_explained` path; `None` for every default
+1233:/// behind `search_explained` (the `explain=true` surface). Built from the
+1304:    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
+1306:    /// stored value. `None` for node hits / edges without a confidence
+1308:    pub confidence: Option<f64>,
+1739:    /// Number of `canonical_edges` rows written (new fact-edge insertions;
+1749:/// LLM) by querying active `canonical_edges` where `from_id = subject_logical_id`
+1761:/// `canonical_edges`; sent to the harness as the request payload; the harness's
+1773:    /// Extraction confidence ∈ [0.0, 1.0], if known.
+1774:    pub confidence: Option<f64>,
+1844:        /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
+1846:        confidence: Option<f64>,
+2296:/// `"canonical_nodes"` or `"canonical_edges"`.
+2991:    /// (→ `canonical_nodes`) and fact-edges (→ `canonical_edges` with G11
+3288:                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+3290:                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+3331:                            confidence,
+3423:                        "confidence": e.confidence,
+3451:    /// `(subject, relation)` axis, deterministically, from active `canonical_edges`
+3463:                "SELECT logical_id, body, t_valid, t_invalid, confidence, source_id, \
+3465:                 FROM canonical_edges \
+3477:                    confidence: r.get(4)?,
+3540:                        "UPDATE canonical_edges SET t_invalid = ?1 \
+3551:                    // projection. NON-DESTRUCTIVE: the canonical_edges row + body
+3561:                            // canonical_edges row stays NON-superseded (invalidate
+3583:                        "UPDATE canonical_edges SET superseded_at = ?1 \
+3623:            "SELECT write_cursor FROM canonical_edges \
+3645:    /// edge with a body from `canonical_edges` — this used to re-materialise an
+3749:    /// 0.8.8 EXP-OBS (Slice 5) — `search_explained`: the opt-in `explain=true`
+3758:    pub fn search_explained(
+3779:    /// (`explain=false`) and [`search_explained`][Engine::search_explained]
+4192:    /// over `canonical_edges`. Returns nodes reachable within `depth` hops
+5145:    /// 0.8.16 Slice 5 / F9 test seam — flip the dedicated importance/confidence
+5158:    /// mirroring the existing `canonical_edges.confidence` write-path check —
+5369:                "SELECT write_cursor, kind FROM canonical_edges WHERE source_id = ?1
+5378:                    table: "canonical_edges",
+5552:                .prepare("SELECT write_cursor FROM canonical_edges WHERE source_id = ?1")
+5594:            .execute("DELETE FROM canonical_edges WHERE source_id = ?1", [source_id])
+5690:            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
+5699:                    "SELECT write_cursor, kind, body FROM canonical_edges \
+6004:pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
+6027:pub fn fuse_three_arms(
+6107:/// 0.8.16 Slice 5 / F9 — OFF-by-default importance/confidence reweight, applied
+6111:/// score is scaled by node `importance` (`importance_by_id`) × edge `confidence`
+6112:/// (`confidence_by_id`), each keyed by the hit's interim id (`write_cursor`). A
+6115:/// carry `confidence`; the two id-spaces never collide (cursors are globally
+6119:/// non-neutral factor (every importance/confidence absent), the input is returned
+6126:    confidence_by_id: &HashMap<u64, f64>,
+6136:        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
+6144:            let confidence = confidence_by_id.get(&h.id).copied().unwrap_or(1.0);
+6145:            h.score *= importance * confidence;
+6154:/// 0.8.16 Slice 5 / F9 — build the per-hit importance/confidence weight maps for
+6156:/// `canonical_edges.confidence`). Only NON-NULL values are inserted; an absent
+6160:fn build_importance_confidence_maps(
+6165:    let mut confidence_by_id: HashMap<u64, f64> = HashMap::new();
+6176:        "SELECT confidence FROM canonical_edges \
+6181:                confidence_by_id.insert(h.id, v);
+6185:    Ok((importance_by_id, confidence_by_id))
+6746:        // kind = "edge_fact"; their write_cursor is in canonical_edges, not
+6747:        // canonical_nodes. Try canonical_nodes first; fall back to canonical_edges
+6757:            "SELECT body, logical_id FROM canonical_edges \
+6933:    // fix-1 [P2]: JOIN canonical_edges to exclude superseded edge rows
+6945:        // Cause-A: the JOIN to canonical_edges already exists; additively select
+6951:             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+7030:    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
+7033:    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
+7069:        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+7072:            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+7079:            exp_confidence = Some(conf_map);
+7090:        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+7093:            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+7100:            exp_confidence = Some(conf_map);
+7123:                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+7165:/// Phase 2 is unchanged: BFS over `canonical_edges` with the temporal filter,
+7220:             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+7319:    // Phase 2: BFS over canonical_edges (temporal filter). `candidates` already
+7333:         FROM canonical_edges e \
+7648:    JOIN canonical_edges e ON e.from_id = t.logical_id
+7673:    JOIN canonical_edges e ON e.to_id = t.logical_id
+7701:    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+7742:    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
+7814:            "SELECT 1 FROM canonical_edges
+8462:             SELECT canonical_edges.write_cursor, 'edge_fact', canonical_edges.body
+8463:             FROM canonical_edges
+8467:               ON _fathomdb_projection_terminal.write_cursor = canonical_edges.write_cursor
+8468:             WHERE canonical_edges.write_cursor > ?1
+8469:               AND canonical_edges.body IS NOT NULL
+8470:               AND canonical_edges.superseded_at IS NULL
+8471:               AND (canonical_edges.t_invalid IS NULL
+8472:                    OR datetime(canonical_edges.t_invalid) > datetime('now'))
+8519:    // G11 (Slice 15) fix-1 [P2] — also check canonical_edges for edge bodies
+8534:             FROM canonical_edges ce
+10248:            // Reject char(30) in from/to: these become from_id/to_id in canonical_edges
+
+exec
+/bin/bash -lc "sed -n '1100,1260p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '5960,6065p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '6680,7135p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+///
+/// Both retrieval branches emit this shape. `id` is the canonical row's
+/// `write_cursor` — the **interim** identity carrier per
+/// `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`; it swaps to
+/// `logical_id` at the G0 keystone (Slice 15) with no carrier reshape.
+/// `score` is the **G9 RRF-fused** relevance (`Σ 1/(RRF_K + rank)` over the
+/// branches that surfaced this body; higher = more relevant), optionally
+/// recency-reweighted when the dedicated recency flag is on. Raw `vec_distance_l2`
+/// and `bm25()` are fused on **rank**, never compared raw (they are not
+/// comparable). `branch` tags which retrieval branch produced the representative
+/// hit (vector-first when a body is surfaced by both).
+///
+/// `source_id` (G0 Phase-2 / BLOCK-2) carries the source-document provenance of
+/// a hit. For the GraphArm branch it is the **traversed edge's** `source_id`
+/// (the session the fact-edge was extracted from), enabling `doc_id_of` to
+/// resolve a graph-reached entity back to a gold session id. For every two-arm
+/// (vector/text/edge) hit it is `None` — those resolve via the cursor map. The
+/// field is additive and nullable; `use_graph_arm=false` results are byte-stable
+/// (every hit `source_id == None`).
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — `score: f64` forbids
+/// total equality.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchHit {
+    pub id: u64,
+    pub kind: String,
+    pub body: String,
+    pub score: f64,
+    pub branch: SoftFallbackBranch,
+    pub source_id: Option<String>,
+    /// 0.8.5 (EXP-0) — per-candidate cross-encoder score `ce_norm =
+    /// sigmoid(ce_logit) ∈ [0,1]`. `Some` ONLY for hits inside the reranked pool
+    /// (the top `pool_n` when the CE model is loaded); `None` for the unreranked
+    /// remainder, the `rerank_depth == 0` identity path, an empty list, and the
+    /// no-CE-model soft-fallback. Additive + nullable: it never participates in
+    /// ranking, so default-path ordering/scores stay byte-stable.
+    pub ce_score: Option<f64>,
+    /// Cause-A (0.8.11.2) — additive **stable hit-id** for cross-session
+    /// real-gold keying. Unlike `id` (the interim `write_cursor`, reassigned on
+    /// every re-projection/re-ingest), this carries a re-ingest-survivable key
+    /// derived by [`derive_stable_id`]: the active canonical node's `logical_id`
+    /// (id-space `"l:"`) when present, else an `"h:"` content-hash of the body
+    /// (the doc-seeded node case — the dominant corpus hit type today). `None`
+    /// ONLY for synthetic `rerank_passages` hits, which have no canonical
+    /// identity. Additive + nullable, prefix-tagged by id-space, and it NEVER
+    /// participates in ranking — default-path ordering/scores stay byte-stable
+    /// (same posture as `source_id` / `ce_score`).
+    pub stable_id: Option<String>,
+}
+
+/// G0 Phase-2 (E0a / BLOCK-1) — graph-arm frontier instrumentation. A
+/// **side-channel** meter (deliberately NOT a `SearchResult`/`SearchHit` field —
+/// byte stability) that proves whether the graph arm seeds a non-empty frontier.
+/// Under the current doc-seeded path the frontier is empty (doc nodes carry
+/// `logical_id = NULL`), so `seeds_resolved == 0` and `resolved_seed_rate == 0.0`
+/// — this meter is the measurement that proves it (and, post-C1, the 0→>0 flip).
+///
+/// `resolved_seed_rate = seeds_resolved / seeds_considered`, with `0/0 → 0.0`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GraphFrontierStats {
+    /// Hits inspected as seed candidates (the `take(SEED_N)` window, skipping TextEdge).
+    pub seeds_considered: u32,
+    /// Seed candidates that resolved to an active `logical_id` (pushed onto the frontier).
+    pub seeds_resolved: u32,
+    /// Whether the BFS frontier was non-empty after seeding.
+    pub frontier_nonempty: bool,
+    /// Number of graph-arm `SearchHit`s emitted (reachable, not already in the two-arm result).
+    pub graph_candidates_emitted: u32,
+}
+
+impl GraphFrontierStats {
+    /// `seeds_resolved / seeds_considered`, defined as `0.0` when nothing was considered.
+    pub fn resolved_seed_rate(&self) -> f64 {
+        if self.seeds_considered == 0 {
+            0.0
+        } else {
+            f64::from(self.seeds_resolved) / f64::from(self.seeds_considered)
+        }
+    }
+}
+
+/// Slice 30 (G2) — an active canonical node row returned by `read.get` /
+/// `read.get_many`.
+///
+/// `logical_id` is the queried stable identity (echoed). `write_cursor` is the
+/// interim id carrier (same column `SearchHit.id` carries). Only ACTIVE rows
+/// (`superseded_at IS NULL`) are ever materialised into this shape; a missing or
+/// superseded `logical_id` is a normal absence (`None`), never an error.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeRecord {
+    pub logical_id: String,
+    pub kind: String,
+    pub body: String,
+    pub write_cursor: u64,
+}
+
+/// Slice 30 (G3) — one `operational_mutations` row returned by `read.collection`
+/// / `read.mutations`. `id` is the autoincrement PK (the after-id cursor key).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpStoreRow {
+    pub id: i64,
+    pub collection: String,
+    pub record_key: String,
+    pub op_kind: String,
+    pub payload: String,
+    pub schema_id: Option<String>,
+    pub write_cursor: u64,
+}
+
+/// Hybrid `search` result. `results` carries structured [`SearchHit`]s in
+/// vector-first, dedup-on-body order. Derives `Clone, Debug, PartialEq` but
+/// **not `Eq`** — each hit carries a `score: f64`.
+#[derive(Clone, Debug, PartialEq)]
+// 0.8.8 EXP-OBS (field-set ratification): non_exhaustive so future additive fields
+// (e.g. the deferred QueryTrace.timings_ms, Q3) are non-breaking. All construction
+// is in-crate (engine + tests); external crates read fields only.
+#[non_exhaustive]
+pub struct SearchResult {
+    pub projection_cursor: u64,
+    pub soft_fallback: Option<SoftFallback>,
+    pub results: Vec<SearchHit>,
+    /// 0.8.8 EXP-OBS (Slice 5) — opt-in retrieval explanation **sidecar**.
+    /// `Some` ONLY on the `search_explained` path; `None` for every default
+    /// (`explain=false`) search, so `results` + `projection_cursor` stay
+    /// byte-identical to the pre-0.8.8 shape (R-OBS-2 zero-cost contract,
+    /// HITL-ratified sidecar carrier — see
+    /// `dev/design/0.8.8-explain-and-telemetry-adr.md` §A.2). Field-set is
+    /// PROPOSED/ratification-pending; additive inside `Explanation` so later
+    /// amendments do not reshape `SearchResult`/`SearchHit`.
+    pub explanation: Option<Explanation>,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — the opt-in retrieval explanation payload returned
+/// behind `search_explained` (the `explain=true` surface). Built from the
+/// engine's OWN fusion/rerank machinery (`fuse_three_arms` per-arm ranks,
+/// `ce_rerank` blend components) — no parallel machinery (R-OBS-3). Carries a
+/// query-level [`QueryTrace`] plus a per-hit breakdown parallel to (and in the
+/// same order as) `SearchResult.results`.
+///
+/// Derives `Clone, Debug, PartialEq` but **not `Eq`** — scores are `f64`.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive] // 0.8.8 field-set ratification — additive-safe sidecar
+pub struct Explanation {
+    pub trace: QueryTrace,
+    pub per_hit: Vec<PerHitExplain>,
+}
+
+/// 0.8.8 EXP-OBS (Slice 5) — query-level retrieval trace. Reuses the existing
+/// `search_reranked` knobs + the active embedder identity; timings are coarse
+/// per-stage wall-clock (monotonic) captured only on the explain path.
+#[derive(Clone, Debug, PartialEq)]
+// 0.8.8 field-set ratification — HARD: leaf absorbs the deferred `timings_ms` (Q3)
+// and any future trace field without a contract break.
+#[non_exhaustive]
+pub struct QueryTrace {
+    /// Query LENGTH only (chars) — never the query text (privacy; ADR §C).
+    pub query_chars: u32,
+    /// Final result limit (`SEARCH_RERANK_LIMIT`-derived `final_limit`).
+    pub k: u32,
+    pub rerank_depth: u32,
+    pub pool_n: u32,
+/// 2. Large enough to break exact ties: any hit with a higher `write_cursor` (more
+///    recent) gets RECENCY_WEIGHT × 1.0 > 0 nudge and wins a tied comparison.
+///
+/// Value 0.002 satisfies the near-tie-nudge contract with respect to the
+/// committed test (`recency_does_not_override_a_clear_rrf_signal`):
+/// the test's RRF gap is 0.01, which is larger than 0.002, so recency
+/// never overrides it. Note: this value is larger than the minimum
+/// vector-only rank-step at deep ranks (~0.00101 for adjacent ranks near
+/// the bottom), so recency can flip a single-rank vector difference at
+/// deep ranks — by design, recency is a near-tie nudge, and "near-tie"
+/// is scoped to the test gap (0.01), not to every possible rank step.
+///
+/// 0.8.1 Slice 10 fix: the previous value `0.5/RRF_K ≈ 0.01667` violated
+/// the test gap constraint (it exceeded 0.01). Lowered to 0.002.
+pub const RECENCY_WEIGHT: f64 = 0.002;
+
+/// 0.8.8 Slice 15 — the lowercase wire string for a retrieval arm (telemetry +
+/// the same spelling `SearchHit.branch` crosses every binding).
+fn branch_str(branch: SoftFallbackBranch) -> &'static str {
+    match branch {
+        SoftFallbackBranch::Vector => "vector",
+        SoftFallbackBranch::Text => "text",
+        SoftFallbackBranch::TextEdge => "text_edge",
+        SoftFallbackBranch::GraphArm => "graph_arm",
+    }
+}
+
+/// 0.8.8 Slice 15 — append one JSON value as a line to the telemetry sink
+/// (append-only, local file; no network). Best-effort caller handles the error.
+fn append_jsonl(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{value}")?;
+    Ok(())
+}
+
+/// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
+///
+/// Delegates to [`fuse_three_arms`] with an empty graph arm. The two-arm
+/// contract is preserved: `fuse_rrf(v, t)` == `fuse_three_arms(v, t, vec![])`.
+/// All existing callers are unaffected.
+///
+/// See [`fuse_three_arms`] for the full RRF formula documentation.
+#[doc(hidden)]
+#[must_use]
+pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    fuse_three_arms(vector_hits, text_hits, vec![])
+}
+
+/// R3 (Slice 30) — fuse vector, text, and graph arms with Reciprocal Rank Fusion.
+///
+/// Each branch contributes `weight / (RRF_K + rank)` (1-based rank within that
+/// branch; `weight` = [`RRF_WEIGHT_VECTOR`] / [`RRF_WEIGHT_TEXT`] /
+/// [`RRF_WEIGHT_GRAPH`], text-dominant per IR-C), accumulated **keyed on
+/// `SearchHit.body`**, so a body surfaced by multiple branches accumulates all
+/// terms (agreement boosts it). The fused value is written into `SearchHit.score`.
+/// A body in multiple branches surfaces **once** with the **vector** branch's
+/// identity (vector-first), then graph arm identity for non-vector hits, then
+/// text. Output is sorted by score descending, then vector-first, then insertion
+/// order — a pure, deterministic function of the three input lists.
+///
+/// With an empty `graph_hits` (`vec![]`), the output is byte-identical to the
+/// pre-Slice-30 two-arm `fuse_rrf`. This is the backward-compatibility contract.
+///
+/// This is the **unconditional** new ranking (HITL Q3 — no `fusion_mode` knob,
+/// no legacy path). Graph arm is opt-in via `use_graph_arm=true`.
+#[doc(hidden)]
+#[must_use]
+pub fn fuse_three_arms(
+    vector_hits: Vec<SearchHit>,
+    text_hits: Vec<SearchHit>,
+    graph_hits: Vec<SearchHit>,
+) -> Vec<SearchHit> {
+    struct Entry {
+        hit: SearchHit,
+        score: f64,
+        in_vector: bool,
+        order: usize,
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut accumulate = |hit: SearchHit, rank0: usize, in_vector: bool, weight: f64| {
+        let contrib = weight / (RRF_K + (rank0 as f64 + 1.0));
+        if let Some(existing) = entries.iter_mut().find(|e| e.hit.body == hit.body) {
+            // Dedup on body; the representative hit (vector-first) is retained.
+            existing.score += contrib;
+        } else {
+            let order = entries.len();
+            entries.push(Entry { hit, score: contrib, in_vector, order });
+        }
+    };
+    for (rank0, hit) in vector_hits.into_iter().enumerate() {
+        accumulate(hit, rank0, true, RRF_WEIGHT_VECTOR);
+    }
+    for (rank0, hit) in text_hits.into_iter().enumerate() {
+        accumulate(hit, rank0, false, RRF_WEIGHT_TEXT);
+    }
+    for (rank0, hit) in graph_hits.into_iter().enumerate() {
+        // Graph arm: vector-first=false (never overrides an existing vector hit's
+        // representative identity; only new bodies from the graph arm get GraphArm
+        // as their branch identity). The in_vector=false ensures graph arm hits
+        // never sort ahead of vector hits on exact score ties.
+        accumulate(hit, rank0, false, RRF_WEIGHT_GRAPH);
+    }
+    entries.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+// measurement seam; the reader-worker call site threads each field through
+// explicitly (mirroring the existing `recency_enabled` plumbing), so a wrapper
+// struct would only obscure that 1:1 mapping for a test-only flag.
+#[allow(clippy::too_many_arguments)]
+fn read_search_in_tx(
+    reader: &mut Connection,
+    compiled: &fathomdb_query::CompiledQuery,
+    query_vector: Option<&str>,
+    query_vector_bin: Option<&str>,
+    final_limit: usize,
+    filter: Option<&SearchFilter>,
+    recency_enabled: bool,
+    importance_enabled: bool,
+    vector_stage_only: bool,
+    raw_query: &str,
+    rerank_depth: usize,
+    use_graph_arm: bool,
+    alpha: f64,
+    pool_n: usize,
+    explain: bool,
+) -> ReaderResponse {
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let cursor = load_projection_cursor(&tx)?;
+    let vector_results = if let Some(query_vector) = query_vector {
+        let mut rowids = Vec::new();
+        let bin_vector = query_vector_bin.unwrap_or(query_vector);
+        {
+            // Phase 1: bit-KNN over `embedding_bin` to a top-K candidate
+            // set; Phase 2: f32 rerank on the candidate set via
+            // vec_distance_l2 against the retained `embedding` column.
+            // EU-5a2: ?1 is the (possibly centered) sign-quant input,
+            // ?2 is the un-centered f32 for vec_distance_l2 — both sides
+            // of the f32 cosine use un-centered vectors.
+            // PR-2bc S1 fix-1: the phase-2 rerank LIMIT is `SEARCH_RERANK_LIMIT`
+            // (10) in production. `final_limit` is supplied by the caller from
+            // `ProjectionRuntimeShared::search_limit_override` (default 10,
+            // clamped >=10) — there is NO env-var read on this hot path. A test
+            // seam (`set_search_limit_for_test`) may RAISE it so the recall
+            // harness can pull top-(10+slack) and exclude the self-retrieving
+            // query-source doc BEFORE truncating to 10 (standard ANN-recall
+            // practice); it can never shrink below production semantics.
+            // G10: the metadata filter is appended to this single phase-1
+            // statement (`AND col=?n` from ?3); `filter=None` keeps the SQL
+            // byte-identical to 0.7.2. `?1`/`?2` are the sign-quant + f32 query
+            // vectors; filter values bind at ?3.. in `vector_filter_clause`
+            // order.
+            let sql = build_vector_phase1_sql(filter, final_limit);
+            let mut params: Vec<rusqlite::types::Value> = vec![
+                rusqlite::types::Value::Text(bin_vector.to_string()),
+                rusqlite::types::Value::Text(query_vector.to_string()),
+            ];
+            params.extend(vector_filter_values(filter));
+            let mut statement = tx.prepare(&sql)?;
+            let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
+            })?;
+            for row in rows.flatten() {
+                rowids.push(row);
+            }
+        }
+        // G1: carry the canonical row's `write_cursor` (interim id), `kind`,
+        // `body`, and the `vec_distance_l2` rerank score per hit. The
+        // `_fathomdb_vector_rows.rowid` equals the canonical `write_cursor`,
+        // so the candidate rowid IS the hit id.
+        //
+        // G11 (Slice 15) fix: edge bodies are projected into vector_default under
+        // kind = "edge_fact"; their write_cursor is in canonical_edges, not
+        // canonical_nodes. Try canonical_nodes first; fall back to canonical_edges
+        // for edge-fact hits so they are not silently dropped.
+        let mut results = Vec::new();
+        // Cause-A: the two node/edge SELECTs additively fetch `logical_id` so the
+        // hit can carry a stable cross-session id (derive_stable_id). Read-only
+        // additive column — ordering/scores are untouched.
+        let mut node_stmt = tx.prepare(
+            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+        )?;
+        let mut edge_stmt = tx.prepare(
+            "SELECT body, logical_id FROM canonical_edges \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
+        )?;
+        for (rowid, score) in rowids {
+            if let Ok((kind, body, logical_id)) = node_stmt.query_row([rowid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            }) {
+                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
+                results.push(SearchHit {
+                    id: rowid as u64,
+                    kind,
+                    body,
+                    score,
+                    branch: SoftFallbackBranch::Vector,
+                    source_id: None,
+                    ce_score: None,
+                    stable_id,
+                });
+            } else if let Ok((body, logical_id)) = edge_stmt.query_row([rowid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            }) {
+                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
+                results.push(SearchHit {
+                    id: rowid as u64,
+                    kind: "edge_fact".to_string(),
+                    body,
+                    score,
+                    branch: SoftFallbackBranch::TextEdge,
+                    source_id: None,
+                    ce_score: None,
+                    stable_id,
+                });
+            }
+        }
+        results
+    } else {
+        Vec::new()
+    };
+    let vector_rows_visible = !vector_results.is_empty();
+    let soft_fallback = if query_vector.is_some() && !vector_rows_visible {
+        tx.query_row(
+            "SELECT 1
+             FROM search_index
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+             WHERE search_index MATCH ?1
+              AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [compiled.match_expression.as_str()],
+            |_row| Ok(SoftFallback { branch: SoftFallbackBranch::Vector }),
+        )
+        .ok()
+    } else {
+        None
+    };
+    // Collect the text branch (ranked by `write_cursor`, as 0.7.2), then
+    // post-filter it against the same metadata the vector branch was pruned by
+    // in SQL (the vector branch is filtered in phase 1; the text branch has no
+    // metadata columns of its own).
+    let text_candidates: Vec<SearchHit> = {
+        // 0.7.0 perf-experiments: optional FTS5 LIMIT cap. Gated on
+        // FATHOMDB_PERF_EXPERIMENTS=1; opt-in via
+        // FATHOMDB_PERF_SEARCH_LIMIT=<k>. No-op by default — preserves
+        // 0.6.x unbounded result-set semantics. Removed (or made the
+        // hardcoded default) at Wave 5 landing per
+        // dev/plans/0.7.0-perf-experiments.md.
+        let perf_limit: Option<usize> = if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_some() {
+            std::env::var("FATHOMDB_PERF_SEARCH_LIMIT").ok().and_then(|s| s.parse().ok())
+        } else {
+            None
+        };
+        // G1: SELECT body + kind + write_cursor (interim id) and the
+        // `bm25()` text-relevance score. IR-C (2026-06-10,
+        // `performance-output-and-compare.md`): the per-branch rank RRF fuses on
+        // must be **`bm25()` relevance**, not `write_cursor` (insertion order) —
+        // the prior `ORDER BY write_cursor` meant the lexical arm never ranked by
+        // relevance, the single biggest fusion bug. `bm25()` is more-negative ⇒
+        // better, so ascending puts best matches first; `write_cursor` is the
+        // deterministic tiebreak. The filter is applied as a Rust post-filter so
+        // the unfiltered path is untouched.
+        let limit_clause = perf_limit.map(|k| format!(" LIMIT {k}")).unwrap_or_default();
+        // Cause-A: PREFER a logical_id-bearing query — LEFT JOIN canonical_nodes so
+        // node hits carry the `l:`-tagged stable id. The join is 1:1 on
+        // `write_cursor` (search_index holds node bodies only; edge bodies live in
+        // search_index_edges), so the row-set and the `bm25(search_index),
+        // write_cursor` ordering are byte-unchanged — only `cn.logical_id` is added.
+        // FALL BACK to the original (logical_id-free) query on pre-step-12 schemas
+        // (v10) whose `canonical_nodes` lacks `logical_id`: those hits key by the
+        // `h:` content-hash. This keeps old-schema search byte-identical to the
+        // pre-Cause-A behaviour (the prepare of the plain SQL is the exact prior
+        // statement). Columns are qualified because both tables expose `write_cursor`.
+        // CORRECTNESS (0.8.11.2 pico): `AND cn.superseded_at IS NULL` drops
+        // superseded node versions. Node supersession is tombstone-then-insert
+        // (`commit_batch`): the prior `canonical_nodes` row is UPDATEd to set
+        // `superseded_at` (row kept, same write_cursor) and a NEW `search_index`
+        // row is inserted for the new cursor — the OLD `search_index` row is
+        // never deleted, so without this filter both versions stay live in FTS
+        // and the stale one is returned. The other arms already filter this way
+        // (edge branch, graph-arm node seed, point-recall `read_get_by_id`);
+        // only this default node-text branch was missing it. The `LEFT JOIN` is
+        // KEPT (not switched to inner): an active row joins to its `cn` with
+        // `superseded_at = NULL` (kept); a superseded row joins to its tombstoned
+        // `cn` with `superseded_at` NOT NULL (dropped); a legacy/orphan
+        // `search_index` row with no `cn` gets `superseded_at = NULL` via the
+        // LEFT JOIN (KEPT — preserves prior behaviour for ownerless rows).
+        let join_sql = format!(
+            "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
+             bm25(search_index), cn.logical_id FROM search_index \
+             LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
+             WHERE search_index MATCH ?1 \
+               AND cn.superseded_at IS NULL \
+             ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
+        );
+        if let Ok(mut statement) = tx.prepare(&join_sql) {
+            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                let logical_id = row.get::<_, Option<String>>(4)?;
+                Ok(SearchHit {
+                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    body,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::Text,
+                    source_id: None,
+                    ce_score: None,
+                })
+            })?;
+            rows.flatten().collect()
+        } else {
+            // No `superseded_at IS NULL` filter here (and none is possible): this
+            // fallback fires only on pre-step-12 schemas whose `canonical_nodes`
+            // lacks `logical_id` — and step-12 adds `logical_id` and
+            // `superseded_at` in the SAME migration, so this schema has neither
+            // column. Supersession (`commit_batch`) is a no-op without
+            // `logical_id`, so no superseded node rows can exist on this path.
+            // Left byte-identical to preserve old-schema compatibility.
+            let plain_sql = format!(
+                "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
+                 WHERE search_index MATCH ?1 \
+                 ORDER BY bm25(search_index), write_cursor{limit_clause}"
+            );
+            let mut statement = tx.prepare(&plain_sql)?;
+            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                Ok(SearchHit {
+                    // No logical_id column on this schema → content-hash stable id.
+                    stable_id: Some(derive_stable_id(None, &body)),
+                    body,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::Text,
+                    source_id: None,
+                    ce_score: None,
+                })
+            })?;
+            rows.flatten().collect()
+        }
+    };
+    let mut text_results: Vec<SearchHit> = Vec::with_capacity(text_candidates.len());
+    for hit in text_candidates {
+        if text_hit_passes_filter(&tx, hit.id, &hit.kind, filter)? {
+            text_results.push(hit);
+        }
+    }
+
+    // G11 (Slice 15) — edge-body FTS branch from `search_index_edges`.
+    // Appended to text_results; tagged with SoftFallbackBranch::TextEdge so
+    // callers can distinguish edge hits from node hits.
+    //
+    // fix-1 [P2]: JOIN canonical_edges to exclude superseded edge rows
+    // (invalidate-not-accumulate can leave a superseded body in the FTS index).
+    // fix-2 [P2]: use edge_fts_hit_passes_filter (NOT text_hit_passes_filter).
+    // Edge hits always have source_type="edge_fact"; text_hit_passes_filter
+    // calls resolve_source_type(relation_kind) which returns Err for unknown
+    // relation kinds, silently rejecting every edge hit when a source_type
+    // filter is set — the exact inverse of correct behaviour.
+    // fix-3 [P2]: edge_fts_hit_passes_filter now queries vector_default for
+    // created_after/status (mirroring text_hit_passes_filter). Collect edge
+    // candidates into a Vec first (drops stmt borrow on tx) so we can pass
+    // &tx to edge_fts_hit_passes_filter without a borrow conflict.
+    let edge_candidates: Vec<SearchHit> = {
+        // Cause-A: the JOIN to canonical_edges already exists; additively select
+        // `ce.logical_id` (edges always carry one) for the stable hit-id. No
+        // ordering/row-set change.
+        let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
+             ce.logical_id \
+             FROM search_index_edges sei \
+             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+             WHERE search_index_edges MATCH ?1 \
+               AND ce.superseded_at IS NULL \
+             ORDER BY bm25(search_index_edges), sei.write_cursor";
+        // search_index_edges may not exist on very old DBs not yet at step-14;
+        // ignore the error gracefully (returns empty slice).
+        if let Ok(mut stmt) = tx.prepare(edge_sql) {
+            if let Ok(rows) = stmt.query_map([compiled.match_expression.as_str()], |row| {
+                let body = row.get::<_, String>(0)?;
+                let logical_id = row.get::<_, Option<String>>(4)?;
+                Ok(SearchHit {
+                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    body,
+                    kind: row.get::<_, String>(1)?,
+                    id: row.get::<_, i64>(2)? as u64,
+                    score: row.get::<_, f64>(3)?,
+                    branch: SoftFallbackBranch::TextEdge,
+                    source_id: None,
+                    ce_score: None,
+                })
+            }) {
+                rows.flatten().collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    };
+    for row in edge_candidates {
+        if edge_fts_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+            text_results.push(row);
+        }
+    }
+    tx.commit()?;
+
+    // GA-2 / Slice-40 (◆ B-1) measurement seam: when `vector_stage_only` is set
+    // (only ever by the eu7 recall harness via `set_vector_stage_only_for_test`,
+    // off for every production caller), return the pre-fusion VECTOR-branch
+    // ranking (bit-KNN K=192 + f32 rerank) verbatim, skipping `fuse_rrf` /
+    // recency / `rerank_fused`. This exposes the ANN-quantization FIDELITY
+    // signal — vector top-N vs the exact-f32 VECTOR top-10 ground truth — that
+    // the AC-075 0.90 floor is defined to measure. It is NOT a `fusion_mode`
+    // knob: the production branch below is byte-unchanged and RRF stays
+    // unconditional.
+    // G0 Phase-2 (BLOCK-1) side-channel meter — default (all-zero, rate 0.0) on
+    // the non-graph-arm paths; populated by the BFS seed phase when graph-arm runs.
+    let mut graph_stats = GraphFrontierStats::default();
+
+    // 0.8.8 EXP-OBS (Slice 5) — capture per-arm rank maps + counts BEFORE the arms
+    // are consumed by fusion. All reads; only when `explain` (else zero work).
+    // `body_rank_map` keeps the FIRST occurrence (== the rank `fuse_three_arms`
+    // uses, which dedups keeping the first). `*_fused_scores` is captured from the
+    // post-recency / pre-CE intermediate so `fused_score` is faithful to what
+    // `ce_rerank` normalizes.
+    let body_rank_map = |hits: &[SearchHit]| -> HashMap<String, u32> {
+        let mut m: HashMap<String, u32> = HashMap::new();
+        for (i, h) in hits.iter().enumerate() {
+            m.entry(h.body.clone()).or_insert(i as u32);
+        }
+        m
+    };
+    let body_score_map = |hits: &[SearchHit]| -> HashMap<String, f64> {
+        hits.iter().map(|h| (h.body.clone(), h.score)).collect()
+    };
+
+    let (exp_vector_ranks, exp_text_ranks, exp_vector_n, exp_text_n) = if explain {
+        (
+            Some(body_rank_map(&vector_results)),
+            Some(body_rank_map(&text_results)),
+            vector_results.len() as u32,
+            text_results.len() as u32,
+        )
+    } else {
+        (None, None, 0, 0)
+    };
+    let mut exp_graph_ranks: Option<HashMap<String, u32>> = None;
+    let mut exp_fused_scores: Option<HashMap<String, f64>> = None;
+    let mut exp_graph_n: u32 = 0;
+    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
+    // (keyed by hit id == write_cursor), captured for the explain sidecar.
+    let mut exp_importance: Option<HashMap<u64, f64>> = None;
+    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
+
+    let results = if vector_stage_only {
+        vector_results
+    } else if use_graph_arm {
+        // R3 (Slice 30) — graph arm: BFS over temporal fact-edges seeded from
+        // the top-10 two-arm fused candidates, depth ≤ 3, cap 50.
+        // Temporal filter: superseded_at IS NULL AND (t_invalid IS NULL OR t_invalid > now).
+        // Synthesized-node penalty: kind = 'unknown' → score *= 0.3.
+        //
+        // Approach: compute the two-arm fused result first (for BFS seeding),
+        // then fuse three arms: the two-arm result (as "vector" arm), an empty
+        // text arm, and the graph candidates. The two-arm result preserves all
+        // existing ranking semantics; the graph arm contributes new candidates.
+        let two_arm_fused = fuse_rrf(vector_results, text_results);
+        // C1: seed the graph arm from the query's FTS match expression (entities /
+        // edge-facts), not the doc-node fused hits. `fused_hits` is still passed for
+        // the seed-body exclusion set.
+        let (graph_candidates, stats) = bfs_graph_arm_candidates(
+            reader,
+            &two_arm_fused,
+            compiled.match_expression.as_str(),
+            3,
+            50,
+        )?;
+        graph_stats = stats;
+        if explain {
+            exp_graph_ranks = Some(body_rank_map(&graph_candidates));
+            exp_graph_n = graph_candidates.len() as u32;
+        }
+        // Named intermediate (byte-identical to the prior nested call) so explain
+        // can read the pre-CE fused scores without perturbing the ranking.
+        let fused = apply_recency_reweight(
+            fuse_three_arms(two_arm_fused, vec![], graph_candidates),
+            recency_enabled,
+        );
+        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+        // Order: AFTER recency (consistent placement), BEFORE the CE rerank seam.
+        let (imp_map, conf_map) = if importance_enabled || explain {
+            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
+        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+        if explain {
+            exp_importance = Some(imp_map);
+            exp_confidence = Some(conf_map);
+            exp_fused_scores = Some(body_score_map(&fused));
+        }
+        rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+    } else {
+        // G9 + G12: RRF-fuse the two ranked branches (keyed on body, vector-first
+        // tiebreak) into the unconditional new ranking, recency-reweight (gated,
+        // off by default), then pass through the identity rerank seam. The
+        // vector-empty `soft_fallback` signal was computed above, BEFORE this
+        // branch-collapse.
+        let fused = apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled);
+        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+        // Same placement as the graph-arm branch: after recency, before CE rerank.
+        let (imp_map, conf_map) = if importance_enabled || explain {
+            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
+        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+        if explain {
+            exp_importance = Some(imp_map);
+            exp_confidence = Some(conf_map);
+            exp_fused_scores = Some(body_score_map(&fused));
+        }
+        rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
+    };
+
+    // 0.8.8 EXP-OBS — assemble the sidecar `Explanation` from the captured maps +
+    // the final `results`. `embedder_id` is left empty here (the worker has no
+    // identity) and filled by `search_inner_with_stats`.
+    let explanation = if explain {
+        let fused_scores = exp_fused_scores.unwrap_or_default();
+        let per_hit: Vec<PerHitExplain> = results
+            .iter()
+            .map(|h| PerHitExplain {
+                id: h.id,
+                arm: h.branch,
+                vector_rank: exp_vector_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                text_rank: exp_text_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                graph_rank: exp_graph_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
+                fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
+                ce_score: h.ce_score,
+                blended: h.score,
+                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
+                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+            })
+            .collect();
+        let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());
+        Some(Explanation {
+            trace: QueryTrace {
+                query_chars: raw_query.chars().count() as u32,
+                k: final_limit as u32,
+                rerank_depth: rerank_depth as u32,
+                pool_n: pool_n as u32,
+                alpha,
+                use_graph_arm,
+                recency: recency_enabled,
+
+exec
+/bin/bash -lc "sed -n '6065,6095p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '7135,7165p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+            .unwrap_or(std::cmp::Ordering::Equal)
+            // vector-first on equal score (true sorts before false).
+            .then_with(|| b.in_vector.cmp(&a.in_vector))
+            .then_with(|| a.order.cmp(&b.order))
+    });
+    entries
+        .into_iter()
+        .map(|mut e| {
+            e.hit.score = e.score;
+            e.hit
+        })
+        .collect()
+}
+
+/// G12-recency — reweight fused hits toward the more recent (higher
+/// `write_cursor`/`id`) AFTER bit-KNN (never a vec0 predicate). Gated by the
+/// caller's dedicated recency flag; `enabled=false` is a no-op (pure RRF).
+#[doc(hidden)]
+#[must_use]
+pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<SearchHit> {
+    if !enabled || hits.len() < 2 {
+        return hits;
+    }
+    let min_id = hits.iter().map(|h| h.id).min().unwrap_or(0);
+    let max_id = hits.iter().map(|h| h.id).max().unwrap_or(0);
+    if max_id == min_id {
+        return hits;
+    }
+    let span = (max_id - min_id) as f64;
+    let mut reweighted: Vec<SearchHit> = hits
+        .into_iter()
+                recency: recency_enabled,
+                embedder_id: String::new(),
+                ce_active,
+                vector_hits: exp_vector_n,
+                text_hits: exp_text_n,
+                graph_hits: exp_graph_n,
+            },
+            per_hit,
+        })
+    } else {
+        None
+    };
+
+    Ok((cursor, soft_fallback, results, graph_stats, explanation))
+}
+
+/// R3 (Slice 30) + C1 (0.8.1 graph-arm seeding) — graph-arm BFS candidate generation.
+///
+/// **C1 seeding (the BLOCK-1 fix):** the frontier is seeded from the graph's OWN
+/// query-matched text surfaces — NOT from doc-node hits (doc nodes carry
+/// `logical_id = NULL`, so the old doc-seeding produced an empty frontier). Two
+/// seed sources are unioned on `match_expression` (the compiled FTS query):
+///   A. **edge-fact FTS** (`search_index_edges`) — both endpoints (`from_id`,
+///      `to_id`) of matched, temporally-live, non-fallback edges;
+///   B. **entity-node FTS** (`search_index` ⋈ `canonical_nodes`) — matched nodes
+///      with `logical_id IS NOT NULL` (excludes doc nodes — the bug surface).
+/// Each distinct candidate `logical_id` is counted in `seeds_considered`; those
+/// confirmed active in `canonical_nodes` are `seeds_resolved` and pushed onto the
+/// frontier (dangling edge endpoints count considered-but-unresolved).
+///
+/// Phase 2 is unchanged: BFS over `canonical_edges` with the temporal filter,
+
+exec
+/bin/bash -lc "ls dev/adr | grep 0.8.16 || true; grep -R \"importance\\|confidence\" -n dev/adr dev/plans dev/design | head -80" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+ADR-0.8.16-f9-importance-confidence-ranking.md
+ADR-0.8.16-onnx-embedder-backend.md
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:2:title: ADR-0.8.16-f9-importance-confidence-ranking
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:5:desc: Opens the deferred F9 importance/confidence ranking signal as an OFF-by-default, observable, OPP-12-rankable-forward-compatible MECHANISM. Adds canonical_nodes.importance REAL (step-18, SCHEMA_VERSION 17->18) with a 3-way sentinel, integrates the existing canonical_edges.confidence into ranking, and surfaces both through the 0.8.8 PerHitExplain. Supersedes the open-condition of ADR-0.8.1-deferred-f9-confidence-importance.
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:7:supersedes_open_condition_of: dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:10:# ADR-0.8.16 — F9 importance/confidence ranking (opens the deferred F9 signal)
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:16:implementation slice that `ADR-0.8.1-deferred-f9-confidence-importance.md` framed and deferred. Design
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:21:`ADR-0.8.1-deferred-f9-confidence-importance.md` (status `DEFERRED — 0.8.5+`) set a **3-gate open
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:23:confidence-weighted retrieval; (2) ≥100 confidence-bearing edges in the test corpus; (3) HITL sign-off on
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:29:  An importance/confidence weight is only useful product surface if a caller can *see it act* — that
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:32:  importance/confidence signal algebra IS the `rankable` projection-role ranking mechanism** the 0.8.20
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:40:1. **Schema (step-18, SCHEMA_VERSION 17→18):** add `canonical_nodes.importance REAL`, nullable, with a
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:42:   de-weighted (floor); `(0.0, 1.0]` = explicit importance. Symmetric with the existing genuine-NULL
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:43:   `canonical_edges.confidence` (from step-14). No re-embed, no vector rewrite (eu7 no-op basis).
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:45:   AtomicBool` + `apply_recency_reweight`). When enabled, node importance scales the fused RRF contribution
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:46:   and edge confidence scales the graph-arm contribution (`graph_rrf_score(edge) = confidence × 1/(K +
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:47:   bfs_rank)`, confidence NULL⇒1.0, per the deferred ADR §4.1). **The exact weighting formula is an HITL
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:50:   importance/confidence contribution; `explain=True` surfaces it. A weighted query reorders vs unweighted
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:63:  confidence-weighting improves temporal/KU accuracy. So the original §5 gates 1 (eval-gap) and 2 (≥100
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:64:  confidence edges) — which gate an *enabled, quality-claiming* weighting — are **NOT** pre-conditions for
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:77:- **Non-goal:** graph-centrality importance computation (PageRank/degree) — importance is a caller/writer-
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:78:  supplied scalar at 0.8.16; auto-computed importance stays deferred (deferred-ADR §4.2).
+dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md:80:- **X1 parity:** if F9 adds SDK surface (a write for importance, an explain field), it must reach Py↔TS
+dev/adr/ADR-0.8.0-canonical-identity-substrate.md:245:> enrichment columns on `canonical_edges` — `body`/`confidence` plus the valid-time
+dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md:75:  recency/importance reweight per Generative Agents). FathomDB's union-dedup is
+dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md:122:- **No DSL creep:** rerank signals (recency/importance) require per-record
+dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md:199:> — fact-on-edge enrichment (valid-time/body/confidence on edges), edge
+dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md:223:> **G5 / G6 / G4 / G9-confidence → DEFER-0.8.x**; the v0.5.x "grouped query"
+dev/adr/ADR-0.8.0-agent-memory-retrieval-and-identity.md:226:> implement-0.9.x+. Consumer-importance corrections: **OpenClaw is NICE (not
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:16:> confidence + edge-projectability + edge-inclusive history) is **reserved-additive
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:62:| **(3) Reified fact-NODES** | a **node** carrying text/valid-time/confidence/embedding + **n-ary roles**, with SUBJECT/OBJECT/ROLE edges | **HyperGraphRAG** (arXiv 2503.21322); research-note tradition; GraphRAG *claims/covariates* (optional, off by default) | **yes** | node + provenance edges |
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:172:| Confidence on fact-edge | edge `confidence` | ⚠️ not present (v0.5.6 *had* it) |
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:193:2. **Edges have no valid-time/confidence** → point-in-time and confidence-weighted
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:198:Note v0.5.6 edges already carried `properties BLOB` + `confidence REAL` + dual
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:285:  confidence on the edge, episodes as provenance) — matching the docs' own Option
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:304:   `confidence`) as additive-now in the substrate ADR's data model — a **prose
+dev/adr/ADR-0.8.0-graph-model-and-edge-addressing.md:340:| H3 | Reserve edge-enrichment now? | **prose-reserve** / say nothing | ✅ **SIGNED: reserve now** (`valid_at`/`invalid_at`/`body`/`confidence` on edges are reserved-additive) |
+dev/adr/ADR-0.6.0-decision-index.md:103:| 39  | architecture | Graph substrate G11 migration — activates H3 reservation (HITL-signed 2026-06-05); step-14 SCHEMA_VERSION 13→14; additive `body`/`t_valid`/`t_invalid`/`confidence`/`extractor_model_id` columns on `canonical_edges`; edge projectability capability (FTS+vector; mechanism = Slice 15 impl detail); invalidate-not-accumulate contract | decision-ready, HITL-sign-off-pending | ADR-0.8.1-graph-substrate-g11-migration.md            |
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:5:> **Schema:** SCHEMA_VERSION 13 → 14 (step-14: 5 additive ALTER TABLE canonical_edges columns: body/t_valid/t_invalid/confidence/extractor_model_id).
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:17:> Reserve edge-enrichment columns (`body`/`text`, `valid_at`/`invalid_at`, `confidence`) as
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:43:2. Edges have **no valid-time/confidence** — point-in-time recall and confidence-weighted
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:75:| `confidence` | `REAL` | Calibrated extraction confidence ∈ [0.0, 1.0]. NULL for pre-G11 rows and when the harness does not provide a confidence score | YES |
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:89:ALTER TABLE canonical_edges ADD COLUMN confidence REAL;
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:178:response. The G11 `confidence` column carries the harness's calibrated confidence. Both are
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:210:   `confidence`, `extractor_model_id` after step-14
+dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md:246:- v0.5.6 portability proof: `dev/profiling/v05-lineage.md:14-48` (v0.5.6 carried `confidence REAL`
+dev/adr/ADR-0.8.0-graph-traversal-scope.md:62:  addressing** for 0.8.0; edge-enrichment (`body`/`confidence`, valid-time
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:2:title: ADR-0.8.1-deferred-f9-confidence-importance
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:5:desc: Framing ADR for F9 — confidence-vs-importance weighting on graph-retrieved nodes and edges. Deferred pending consumer signal + eval results from the BYO-LLM ingest track (Slices 0/15) and the R2 parity eval (Slice 25). Captures what Slice 15 now provides, what signal is needed before deciding, and what the implementation would look like. RE-POINTED 2026-06-16 from 0.8.2+ → 0.8.5+ (0.8.2–0.8.4 re-sequenced for the graph-adjudication track); F9 may surface earlier only as an ablation knob inside the 0.8.2 M1 / 0.8.3 M2 PPR arm (confidence-weighted seeds/edges), not as an opened slice.
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:21:F9 is the feature gap covering **confidence-vs-importance weighting** on graph-retrieved
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:24:lexical fusion with RRF) is usable without confidence weighting; F9 adds a *quality
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:25:differentiation* once the underlying confidence signal exists and is validated.
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:27:**Relationship to G12 (importance).** G12 is the existing `recency`-weighted re-ranking
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:28:flag (Slice 10). F9 is a distinct axis: not recency but fact-level **confidence** (how
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:29:strongly does the LLM-extracted fact claim to be true?) vs node/edge-level **importance**
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:38:- `canonical_edges.confidence REAL` — the extractor-supplied confidence score
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:44:What Slice 15 does NOT provide: a `confidence` column on `canonical_nodes` (only on edges),
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:45:and no importance score computation (that would require graph centrality, e.g. PageRank or
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:57:confidence-weighted retrieval improves result quality on the categories where it matters
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:58:(temporal facts, competing-update resolution). The `confidence` column was added in Slice 15,
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:59:but no eval harness yet measures whether high-confidence facts improve downstream task
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:62:**3.2 Consumer-side importance signal**
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:63:The Memex / Hermes / OpenClaw consumer agents currently do not feed back an "importance" or
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:64:"relevance" signal to FathomDB beyond query-time retrieval. A confidence-vs-importance
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:69:**3.3 Volume of `confidence`-bearing edges**
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:70:At the time of Slice 35, the `confidence` column is populated only by BYO-LLM ingest
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:87:graph_rrf_score(edge) = confidence(edge) × 1/(K + bfs_rank(edge))
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:90:where `bfs_rank` is the BFS depth × edge count, and `confidence` defaults to `1.0` for
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:94:Node importance could be approximated as in-degree on `canonical_edges(to_id)` (how many
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:95:edges point to this node). A materialized `importance` score would require a periodic
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:105:    pub confidence_weight: Option<f64>,  // None = equal weight
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:106:    pub importance_weight: Option<f64>,  // None = equal weight
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:110:Or folded into the existing `Predicate` filter (filter by `confidence > 0.8`, for example).
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:119:   show a measurable gap between RRF-fused retrieval and confidence-weighted retrieval.
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:120:2. **≥100 `confidence`-bearing edges** exist in the test corpus (BYO-LLM ingest at scale).
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:121:3. **HITL sign-off** on the chosen weighting formula (additive confidence-weight vs
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:122:   multiplicative vs recency-vs-confidence trade-off axis).
+dev/adr/ADR-0.8.1-deferred-f9-confidence-importance.md:124:**Do NOT open an implementation slice speculatively.** The `confidence REAL` column is
+dev/adr/ADR-0.8.0-supersede-five-verb-surface-cap.md:188:**No new verb:** G1 structured hits (enriches `search()`); confidence (F9) and
+dev/adr/ADR-0.8.0-supersede-five-verb-surface-cap.md:189:recency/importance (G12) are scoring signals, governance-free.
+dev/adr/ADR-0.8.12-consolidation-recency-provider.md:43:     `confidence`, `source_doc_id`, and `extractor_model_id` provenance. FathomDB assembles the cluster
+dev/adr/ADR-0.8.1-byo-llm-extraction-protocol.md:164:| `confidence` | `confidence` (REAL ∈ [0,1]) |
+
+exec
+/bin/bash -lc "sed -n '36,55p' dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md; sed -n '1,130p' dev/plans/plan-0.8.16.md 2>/dev/null | grep -n \"R-F9\\|confidence\\|importance\" -C 2" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+## 2. Decision
+
+Open F9 at 0.8.16 as an **OFF-by-default, observable, OPP-12-`rankable`-forward-compatible MECHANISM**:
+
+1. **Schema (step-18, SCHEMA_VERSION 17→18):** add `canonical_nodes.importance REAL`, nullable, with a
+   **3-way sentinel** — `NULL` = never assigned (graceful-absent, ranks neutral); `0.0` = explicitly
+   de-weighted (floor); `(0.0, 1.0]` = explicit importance. Symmetric with the existing genuine-NULL
+   `canonical_edges.confidence` (from step-14). No re-embed, no vector rewrite (eu7 no-op basis).
+2. **Ranking integration:** a new **opt-in, OFF-by-default** reweight (mirrors `recency_reweight_enabled:
+   AtomicBool` + `apply_recency_reweight`). When enabled, node importance scales the fused RRF contribution
+   and edge confidence scales the graph-arm contribution (`graph_rrf_score(edge) = confidence × 1/(K +
+   bfs_rank)`, confidence NULL⇒1.0, per the deferred ADR §4.1). **The exact weighting formula is an HITL
+   sign-off item** (deferred-ADR §5 gate 3).
+3. **Observability (R-F9-2):** extend `PerHitExplain` (`#[non_exhaustive]`) additively with the
+   importance/confidence contribution; `explain=True` surfaces it. A weighted query reorders vs unweighted
+   on a fixture.
+4. **Forward-compat (R-F9-4):** the design honors OPP-12 Q6a graceful-absent/idempotent-graft (mapping in
+   the design package §4). `NULL`=neutral is the graceful-absent state; the reweight is opt-in and
+   add/drop idempotent; the signal is a projection-addressable per-record scalar; no field on the OPP-12
+   break-if-later list.
+5-> `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.16` as an **orchestrator** session.
+6->
+7:> **Theme.** Land the deferred ranking/lifecycle signal **F9 importance/confidence** (#15) — now
+8-> *observable* through the 0.8.8 retrieval `EXPLAIN` surface — and the **cross-vendor ONNX embedder
+9-> backend** (#4), which reaches AMD/Intel via a new `impl Embedder` behind the existing trait with zero
+--
+18-## 1. Goal & scope
+19-
+20:- **#15 — F9 importance / confidence.** The repeatedly-deferred (G12-importance) ranking/lifecycle
+21:  signal: a REAL importance column + the 3-way sentinel + edge confidence, with its Slice-35 ADR gate.
+22-  Now worth landing because 0.8.8 EXP-OBS can **surface** the signal in the score-breakdown — an
+23:  importance/confidence weight is only useful if a caller can see it acting.
+24-  - **Spec constraint (F-18/F-20, HITL 2026-07-07 — reconciled by the Steward at commission).** F9's
+25:    importance/confidence **signal algebra IS the OPP-12 `rankable` projection-role ranking contract** that
+26-    **0.8.20's projection registry will graft**. So **F9 must be specced with the `rankable` contract in
+27-    mind** — designed so the 0.8.20 projection registry can adopt it **without reshape**. Refs:
+28-    `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md` (Q6 graceful-absent `rankable`);
+29-    master §4 / F-18 / F-20. This is a **Slice-0 ADR design obligation**; the concrete forward-compat check
+30:    is a **candidate AC (R-F9-4)** to be minted at the Slice-0 gate (HITL-decided, per §6 AC policy).
+31-- **#4 — Cross-vendor ONNX embedder (B.2.a).** candle reaches only CPU/CUDA/Metal — no ROCm/Vulkan — so
+32-  AMD/Intel GPUs are unreachable through it. Add an `OrtBgeEmbedder` (`ort` crate: CUDA / ROCm /
+--
+45-| ID | Requirement | Acceptance signal |
+46-|----|-------------|-------------------|
+47:| R-F9-1 | Importance column (REAL) + 3-way sentinel + edge confidence | Schema migration lands; write/read round-trips importance + confidence; sentinel semantics tested |
+48:| R-F9-2 | Importance/confidence influences ranking and is **observable** | A weighted query reorders vs unweighted on a fixture; `explain=True` (0.8.8) shows the importance/confidence contribution |
+49:| R-F9-3 | Slice-35 ADR gate honored | The deferred-F9 ADR decision is satisfied; no scope beyond it |
+50-| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small vectors via the trait | A fixture text → vector within tolerance of the candle CPU reference (documented Δ); plugged via `EmbedderChoice::Caller`, zero engine diff |
+51-| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | `FATHOMDB_EMBED_DEVICE`/config selects ONNX; default build unaffected |
+--
+67-|------:|-------|-----------|-----------|
+68-| **0** | Setup + ADR — F9 ranking/lifecycle design (honor the Slice-35 ADR); ONNX-backend design (trait-local, `resolve_device()` extension, equivalence-measurement plan) | design-adr | — |
+69:| **5** | **F9 importance/confidence KEYSTONE** — schema + ranking integration; surfaced via `explain` | implementation (schema) | 0 |
+70-| **10** | **ONNX embedder backend** — `OrtBgeEmbedder` behind the trait; config/env selection; zero engine diff | implementation | 0 |
+71-| **15** | **ONNX equivalence measurement** — candle↔ONNX numeric Δ on a probe set; document the interim same-backend discipline (feeds 0.8.18 #5 tolerance) | implementation (measurement) | 10 |
+72:| **40** | **Verification + Release Readiness (0.8.16)** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | verification | 5,10,15 |
+73-
+74-**Keystones / hard gates.** Slice 5 (F9) keystone. **eu7 ≥ 0.90 hard gate** on any embedder/index
+--
+95-## 7. Prerequisites
+96-
+97:1. **0.8.8 closed** — EXP-OBS exists so F9's signal is observable (R-F9-2).
+98-2. **0.8.7 OOB GPU landed** — the ONNX `resolve_device()` extension builds on the device seam shipped
+99-   there; GPU also accelerates the equivalence-probe re-embeds.
+--
+106-  PROGRAM-SEQUENCING §5 Q1 rationale. Its equivalence measurement (Slice 15) is the explicit hand-off to
+107-  0.8.18 #5.
+108:- F9 may interact with the M5 ranking work — coordinate the importance weighting with the M-work owner.
+109-
+110-## 9. Immediate next slice
+
+exec
+/bin/bash -lc "sed -n '7165,7385p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+/// Phase 2 is unchanged: BFS over `canonical_edges` with the temporal filter,
+/// carrying each traversed edge's `source_id` (G0 BLOCK-2) onto the emitted hit.
+/// Collects reachable node bodies (up to `cap`) as [`SearchHit`]s tagged
+/// `SoftFallbackBranch::GraphArm`. Score = `1.0 / (1.0 + hop_count)` with a
+/// synthesized-node penalty (`kind = 'unknown'` → score *= 0.3). Bodies already
+/// present in `fused_hits` are excluded (already covered by the two-arm result).
+fn bfs_graph_arm_candidates(
+    reader: &mut Connection,
+    fused_hits: &[SearchHit],
+    match_expression: &str,
+    max_depth: u32,
+    cap: usize,
+) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats)> {
+    // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
+    const SEED_FTS_N: usize = 10;
+    const SYNTHESIZED_PENALTY: f64 = 0.3;
+
+    // Bodies already in the fused result — exclude these from graph arm output.
+    let seed_bodies: std::collections::HashSet<&str> =
+        fused_hits.iter().map(|h| h.body.as_str()).collect();
+
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+
+    let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut candidates: Vec<SearchHit> = Vec::new();
+    // G0 Phase-2 (BLOCK-1) frontier meter — distinct seed candidates considered vs
+    // resolved-active; `resolved_seed_rate` flips 0→>0 once entities/edge-facts seed.
+    let mut stats = GraphFrontierStats::default();
+    {
+        // C1 seeding — gather distinct candidate (logical_id, provenance source_id)
+        // pairs from the graph's OWN query-matched FTS surfaces (NOT doc-node hits).
+        // Order-preserving dedup (first provenance wins) so `seeds_considered` counts
+        // each candidate once. `source_id` is the session the seed traces back to: the
+        // matched edge's `source_id` (source A) or the entity node's own (source B).
+        let mut candidate_seeds: Vec<(String, Option<String>)> = Vec::new();
+        let mut seen_candidates: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let push_candidate =
+            |lid: String,
+             source_id: Option<String>,
+             seen: &mut std::collections::HashSet<String>,
+             out: &mut Vec<(String, Option<String>)>| {
+                if seen.insert(lid.clone()) {
+                    out.push((lid, source_id));
+                }
+            };
+
+        // Seed source A — edge-fact endpoints (primary). Both endpoints of each
+        // matched, temporally-live, non-fallback edge are candidate seeds, tagged with
+        // the edge's `source_id` provenance. `search_index_edges` may be absent on very
+        // old DBs (< step-14) — degrade to no edge seeds rather than error.
+        if let Ok(mut edge_seed_stmt) = tx.prepare(
+            "SELECT ce.from_id, ce.to_id, ce.source_id \
+             FROM search_index_edges sei \
+             JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
+             WHERE search_index_edges MATCH ?1 \
+               AND ce.superseded_at IS NULL \
+               AND (ce.t_invalid IS NULL OR datetime(ce.t_invalid) > datetime('now')) \
+               AND (ce.temporal_fallback IS NULL OR ce.temporal_fallback = 0) \
+             ORDER BY bm25(search_index_edges), sei.write_cursor \
+             LIMIT ?2",
+        ) {
+            let rows = edge_seed_stmt.query_map(
+                rusqlite::params![match_expression, SEED_FTS_N as i64],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )?;
+            for triple in rows {
+                let (from_id, to_id, source_id) = triple?;
+                push_candidate(
+                    from_id,
+                    source_id.clone(),
+                    &mut seen_candidates,
+                    &mut candidate_seeds,
+                );
+                push_candidate(to_id, source_id, &mut seen_candidates, &mut candidate_seeds);
+            }
+        }
+
+        // Seed source B — entity-node FTS (isolated / strongly-named entities).
+        // `logical_id IS NOT NULL` structurally excludes doc nodes (the bug surface).
+        // Provenance = the node's own `source_id` (the session it was extracted from).
+        {
+            let mut node_seed_stmt = tx.prepare(
+                "SELECT cn.logical_id, cn.source_id \
+                 FROM search_index si \
+                 JOIN canonical_nodes cn ON cn.write_cursor = si.write_cursor \
+                 WHERE search_index MATCH ?1 \
+                   AND cn.superseded_at IS NULL \
+                   AND cn.logical_id IS NOT NULL \
+                 ORDER BY bm25(search_index), si.write_cursor \
+                 LIMIT ?2",
+            )?;
+            let rows = node_seed_stmt
+                .query_map(rusqlite::params![match_expression, SEED_FTS_N as i64], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                })?;
+            for pair in rows {
+                let (lid, source_id) = pair?;
+                push_candidate(lid, source_id, &mut seen_candidates, &mut candidate_seeds);
+            }
+        }
+
+        // Resolve + emit: a seed is `resolved` only if an ACTIVE canonical_node carries
+        // that logical_id (dangling edge endpoints count considered-not-resolved). A
+        // resolved seed is BOTH a BFS root AND emitted as a graph-arm candidate (depth
+        // 0, hop_score 1.0) — so an edge-only query match surfaces the connected ENTITY
+        // nodes, not just the fact body (codex §9 [P2]). Seeds whose body is already in
+        // the two-arm result are skipped; the cap is respected.
+        let mut active_stmt = tx.prepare(
+            "SELECT kind, body, write_cursor FROM canonical_nodes \
+             WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+        )?;
+        for (lid, source_id) in candidate_seeds {
+            stats.seeds_considered += 1;
+            let row: Option<(String, String, i64)> = active_stmt
+                .query_row(rusqlite::params![&lid], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+                })
+                .optional()?;
+            if let Some((kind, body, write_cursor)) = row {
+                stats.seeds_resolved += 1;
+                if visited.insert(lid.clone()) {
+                    // Cause-A: the seed's `logical_id` is in hand (`lid`) — derive the
+                    // stable id before `lid` is moved onto the frontier (zero extra query).
+                    let stable_id = Some(derive_stable_id(Some(&lid), &body));
+                    frontier.push_back((lid, 0));
+                    if !seed_bodies.contains(body.as_str()) && candidates.len() < cap {
+                        // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
+                        // 'unknown' kind (mirrors the Phase-2 neighbor scoring).
+                        let score = if kind == "unknown" { SYNTHESIZED_PENALTY } else { 1.0 };
+                        candidates.push(SearchHit {
+                            id: write_cursor as u64,
+                            kind,
+                            body,
+                            score,
+                            branch: SoftFallbackBranch::GraphArm,
+                            source_id,
+                            ce_score: None,
+                            stable_id,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    stats.frontier_nonempty = !frontier.is_empty();
+
+    // Phase 2: BFS over canonical_edges (temporal filter). `candidates` already
+    // holds the depth-0 emitted seeds; BFS appends the reachable neighbors.
+    // Both statements are prepared ONCE outside the loops — re-preparing inside
+    // would issue O(frontier_size × neighbors) sqlite3_prepare_v2 calls.
+    let mut edge_stmt = tx.prepare(
+        // G0 Phase-2 (BLOCK-2): carry the traversed edge's `source_id` so a
+        // graph-reached neighbor can resolve back to the session it was extracted
+        // from. `ORDER BY e.write_cursor` makes the traversal deterministic: when
+        // several active edges connect this node to the SAME neighbor with
+        // different `source_id`s, the earliest-written edge wins the `visited`
+        // dedup, so the carried provenance is stable (not SQLite-order-dependent).
+        // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
+        // `LIMIT 1` lookup for the same reason.)
+        "SELECT e.from_id, e.to_id, e.source_id \
+         FROM canonical_edges e \
+         WHERE (e.from_id = ?1 OR e.to_id = ?1) \
+           AND e.superseded_at IS NULL \
+           AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now')) \
+           AND (e.temporal_fallback IS NULL OR e.temporal_fallback = 0) \
+         ORDER BY e.write_cursor \
+         LIMIT 64",
+    )?;
+    // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
+    // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
+    let mut body_stmt = tx.prepare(
+        "SELECT kind, body, write_cursor FROM canonical_nodes \
+         WHERE logical_id = ?1 AND superseded_at IS NULL \
+         LIMIT 1",
+    )?;
+
+    while let Some((lid, depth)) = frontier.pop_front() {
+        if candidates.len() >= cap {
+            break;
+        }
+        if depth >= max_depth {
+            continue;
+        }
+
+        // Fetch temporal-live neighbors via edges, each paired with the
+        // traversing edge's `source_id` (BLOCK-2 provenance carry).
+        let neighbors: Vec<(String, Option<String>)> = {
+            let rows = edge_stmt.query_map([&lid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?;
+            rows.flatten()
+                .map(|(from_id, to_id, source_id)| {
+                    let neighbor = if from_id == lid { to_id } else { from_id };
+                    (neighbor, source_id)
+                })
+                .collect()
+        };
+
+        for (neighbor, edge_source_id) in neighbors {
+            if visited.contains(&neighbor) {
+                continue;
+            }
+            visited.insert(neighbor.clone());
+
+            // Fetch neighbor body + write_cursor from canonical_nodes.
+            let row: Option<(String, String, i64)> = body_stmt
+                .query_row([&neighbor], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                })
+
+exec
+/bin/bash -lc "sed -n '7385,7465p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+                })
+                .optional()?;
+
+            if let Some((kind, body, write_cursor)) = row {
+                // Skip bodies already covered by the two-arm result.
+                if !seed_bodies.contains(body.as_str()) {
+                    let hop_score = 1.0 / (1.0 + (depth + 1) as f64);
+                    let score =
+                        if kind == "unknown" { hop_score * SYNTHESIZED_PENALTY } else { hop_score };
+                    // Cause-A: the neighbor's `logical_id` is `neighbor` (still in
+                    // scope here; only moved onto the frontier below) — derive the
+                    // stable id with no extra query.
+                    let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
+                    candidates.push(SearchHit {
+                        id: write_cursor as u64,
+                        kind,
+                        body,
+                        score,
+                        branch: SoftFallbackBranch::GraphArm,
+                        // BLOCK-2: the session this fact-edge was extracted from.
+                        source_id: edge_source_id.clone(),
+                        ce_score: None,
+                        stable_id,
+                    });
+                    if candidates.len() >= cap {
+                        break;
+                    }
+                }
+                // Always push neighbor to frontier for further BFS expansion.
+                frontier.push_back((neighbor, depth + 1));
+            }
+        }
+    }
+
+    drop(edge_stmt);
+    drop(body_stmt);
+    tx.commit()?;
+    stats.graph_candidates_emitted = candidates.len() as u32;
+    Ok((candidates, stats))
+}
+
+/// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
+/// `read.collection` / `read.mutations` LIMIT is `min(caller_limit, this)`, so
+/// no API path can issue an unbounded SELECT. Cursor/limit hardening under a
+/// genuine ~1M-row append-only log is reserved-gap Slice 32.
+const READ_COLLECTION_MAX_LIMIT: usize = 1_000_000;
+
+/// Slice 30 (G2) — active-only point lookup by `logical_id` on the DEFERRED
+/// reader tx (mirrors `read_search_in_tx`'s snapshot-stable BEGIN DEFERRED). One
+/// returned slot per requested id, in REQUEST ORDER; `None` where no ACTIVE row
+/// (`superseded_at IS NULL`) carries that id. Mirrors the `:4170` canonical
+/// projection columns + `logical_id`; superseded versions are never returned.
+fn read_get_by_id_in_tx(
+    reader: &mut Connection,
+    logical_ids: &[String],
+) -> rusqlite::Result<Vec<Option<NodeRecord>>> {
+    if logical_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    // De-duplicate the requested ids for the IN(...) probe, then re-expand into
+    // request order (a repeated id echoes the same active row).
+    let mut found: HashMap<String, NodeRecord> = HashMap::new();
+    {
+        let unique: Vec<&String> = {
+            let mut seen = std::collections::HashSet::new();
+            logical_ids.iter().filter(|id| seen.insert((*id).clone())).collect()
+        };
+        let placeholders = std::iter::repeat_n("?", unique.len()).collect::<Vec<_>>().join(", ");
+        let sql = format!(
+            "SELECT logical_id, kind, body, write_cursor
+             FROM canonical_nodes
+             WHERE logical_id IN ({placeholders}) AND superseded_at IS NULL"
+        );
+        let mut statement = tx.prepare(&sql)?;
+        let params = rusqlite::params_from_iter(unique.iter().map(|s| s.as_str()));
+        let rows = statement.query_map(params, |row| {
+            let logical_id: String = row.get(0)?;
+            Ok(NodeRecord {
+                logical_id,
+                kind: row.get(1)?,
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '6168,6184p;7394,7408p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+  6168	    {
+  6169	        for h in hits {
+  6170	            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
+  6171	                importance_by_id.insert(h.id, v);
+  6172	            }
+  6173	        }
+  6174	    }
+  6175	    if let Ok(mut stmt) = tx.prepare(
+  6176	        "SELECT confidence FROM canonical_edges \
+  6177	         WHERE write_cursor = ?1 AND superseded_at IS NULL LIMIT 1",
+  6178	    ) {
+  6179	        for h in hits {
+  6180	            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
+  6181	                confidence_by_id.insert(h.id, v);
+  6182	            }
+  6183	        }
+  6184	    }
+  7394	                    // Cause-A: the neighbor's `logical_id` is `neighbor` (still in
+  7395	                    // scope here; only moved onto the frontier below) — derive the
+  7396	                    // stable id with no extra query.
+  7397	                    let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
+  7398	                    candidates.push(SearchHit {
+  7399	                        id: write_cursor as u64,
+  7400	                        kind,
+  7401	                        body,
+  7402	                        score,
+  7403	                        branch: SoftFallbackBranch::GraphArm,
+  7404	                        // BLOCK-2: the session this fact-edge was extracted from.
+  7405	                        source_id: edge_source_id.clone(),
+  7406	                        ce_score: None,
+  7407	                        stable_id,
+  7408	                    });
+
+exec
+/bin/bash -lc "grep -R \"PerHitExplain\" -n src/rust/crates/fathomdb-engine src/rust/crates | head -50; grep -R \"SearchHit \\{\" -n src/rust/crates/fathomdb-engine/tests src/rust/crates/fathomdb-engine/src/lib.rs | wc -l" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/exp_obs_explain.rs:10://!     the same order as) `results`; each `PerHitExplain` mirrors the returned
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:8://!     the contribution is observable through `PerHitExplain`.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:238:/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
+src/rust/crates/fathomdb-engine/src/lib.rs:200:/// `PerHitExplain.id`. Query text and `source_id` are NEVER captured (privacy, ADR
+src/rust/crates/fathomdb-engine/src/lib.rs:1244:    pub per_hit: Vec<PerHitExplain>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1283:pub struct PerHitExplain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7111:        let per_hit: Vec<PerHitExplain> = results
+src/rust/crates/fathomdb-engine/src/lib.rs:7113:            .map(|h| PerHitExplain {
+src/rust/crates/fathomdb-py/src/lib.rs:45:    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+src/rust/crates/fathomdb-py/src/lib.rs:522:/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (no BigInt/string
+src/rust/crates/fathomdb-py/src/lib.rs:526:    name = "PerHitExplain",
+src/rust/crates/fathomdb-py/src/lib.rs:532:struct PyPerHitExplain {
+src/rust/crates/fathomdb-py/src/lib.rs:543:impl PyPerHitExplain {
+src/rust/crates/fathomdb-py/src/lib.rs:544:    fn from_rust(p: &RustPerHitExplain) -> Self {
+src/rust/crates/fathomdb-py/src/lib.rs:576:    per_hit: Vec<PyPerHitExplain>,
+src/rust/crates/fathomdb-py/src/lib.rs:583:            per_hit: e.per_hit.iter().map(PyPerHitExplain::from_rust).collect(),
+src/rust/crates/fathomdb-py/src/lib.rs:1793:    m.add_class::<PyPerHitExplain>()?;
+src/rust/crates/fathomdb-napi/src/lib.rs:40:    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+src/rust/crates/fathomdb-napi/src/lib.rs:600:/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (`as i64` → JS
+src/rust/crates/fathomdb-napi/src/lib.rs:604:pub struct PerHitExplain {
+src/rust/crates/fathomdb-napi/src/lib.rs:615:impl PerHitExplain {
+src/rust/crates/fathomdb-napi/src/lib.rs:616:    fn from_rust(p: &RustPerHitExplain) -> Self {
+src/rust/crates/fathomdb-napi/src/lib.rs:641:    pub per_hit: Vec<PerHitExplain>,
+src/rust/crates/fathomdb-napi/src/lib.rs:648:            per_hit: e.per_hit.iter().map(PerHitExplain::from_rust).collect(),
+src/rust/crates/fathomdb/tests/governed_surface.rs:95:    "PerHitExplain",
+src/rust/crates/fathomdb/tests/governed_surface.rs:152:    let _ = type_name::<fathomdb::PerHitExplain>();
+src/rust/crates/fathomdb/src/lib.rs:22://   Explanation, QueryTrace, PerHitExplain
+src/rust/crates/fathomdb/src/lib.rs:26:    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
+src/rust/crates/fathomdb-engine/tests/exp_obs_explain.rs:10://!     the same order as) `results`; each `PerHitExplain` mirrors the returned
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:8://!     the contribution is observable through `PerHitExplain`.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:238:/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
+src/rust/crates/fathomdb-engine/src/lib.rs:200:/// `PerHitExplain.id`. Query text and `source_id` are NEVER captured (privacy, ADR
+src/rust/crates/fathomdb-engine/src/lib.rs:1244:    pub per_hit: Vec<PerHitExplain>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1283:pub struct PerHitExplain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7111:        let per_hit: Vec<PerHitExplain> = results
+src/rust/crates/fathomdb-engine/src/lib.rs:7113:            .map(|h| PerHitExplain {
+grep: Unmatched \{
+0
+
+exec
+/bin/bash -lc "sed -n '520,560p' src/rust/crates/fathomdb-py/src/lib.rs; sed -n '604,630p' src/rust/crates/fathomdb-napi/src/lib.rs; git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-py/src/lib.rs src/rust/crates/fathomdb-napi/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+
+/// 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of
+/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (no BigInt/string
+/// promotion); `arm` crosses as the same lowercase string as `SearchHit.branch`.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "PerHitExplain",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyPerHitExplain {
+    id: u64,
+    arm: String,
+    vector_rank: Option<u32>,
+    text_rank: Option<u32>,
+    graph_rank: Option<u32>,
+    fused_score: f64,
+    ce_score: Option<f64>,
+    blended: f64,
+}
+
+impl PyPerHitExplain {
+    fn from_rust(p: &RustPerHitExplain) -> Self {
+        Self {
+            id: p.id,
+            arm: match p.arm {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+            vector_rank: p.vector_rank,
+            text_rank: p.text_rank,
+            graph_rank: p.graph_rank,
+            fused_score: p.fused_score,
+            ce_score: p.ce_score,
+            blended: p.blended,
+        }
+    }
+pub struct PerHitExplain {
+    pub id: i64,
+    pub arm: String,
+    pub vector_rank: Option<u32>,
+    pub text_rank: Option<u32>,
+    pub graph_rank: Option<u32>,
+    pub fused_score: f64,
+    pub ce_score: Option<f64>,
+    pub blended: f64,
+}
+
+impl PerHitExplain {
+    fn from_rust(p: &RustPerHitExplain) -> Self {
+        Self {
+            id: p.id as i64,
+            arm: match p.arm {
+                SoftFallbackBranch::Vector => "vector".to_string(),
+                SoftFallbackBranch::Text => "text".to_string(),
+                SoftFallbackBranch::TextEdge => "text_edge".to_string(),
+                SoftFallbackBranch::GraphArm => "graph_arm".to_string(),
+            },
+            vector_rank: p.vector_rank,
+            text_rank: p.text_rank,
+            graph_rank: p.graph_rank,
+            fused_score: p.fused_score,
+            ce_score: p.ce_score,
+            blended: p.blended,
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1290,1310p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+  1290	    /// Raw RRF fused score AFTER recency reweight, BEFORE CE blend (the value
+  1291	    /// `ce_rerank` normalizes). Faithful to the engine computation — downstream
+  1292	    /// may normalize. (ADR §A.4 Q1: raw exposed; normalization deferred.)
+  1293	    pub fused_score: f64,
+  1294	    /// In-pool cross-encoder score `sigmoid(ce_logit) ∈ [0,1]`, == the returned
+  1295	    /// `SearchHit.ce_score`; `None` outside the reranked pool / no-CE path.
+  1296	    pub ce_score: Option<f64>,
+  1297	    /// Final blended score, == the returned `SearchHit.score`.
+  1298	    pub blended: f64,
+  1299	    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
+  1300	    /// fused contribution when the importance reweight is ON, else the raw stored
+  1301	    /// value. `None` = never assigned (graceful-absent, ranks NEUTRAL). Additive
+  1302	    /// (`#[non_exhaustive]` leaf absorbs the new score component).
+  1303	    pub importance: Option<f64>,
+  1304	    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
+  1305	    /// graph-arm contribution when the importance reweight is ON, else the raw
+  1306	    /// stored value. `None` for node hits / edges without a confidence
+  1307	    /// (graceful-absent, ranks NEUTRAL).
+  1308	    pub confidence: Option<f64>,
+  1309	}
+  1310	
+
+exec
+/bin/bash -lc 'git diff 61c9e09af69b040e0335fc13e1eab61bab461449 -- src/rust/crates/fathomdb-engine/tests/compatibility.rs src/rust/crates/fathomdb-schema/tests/step14_migration.rs src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs src/rust/crates/fathomdb-schema/tests/step16_migration.rs src/rust/crates/fathomdb-schema/tests/step17_migration.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/tests/compatibility.rs b/src/rust/crates/fathomdb-engine/tests/compatibility.rs
+index e166ee72..ca9bdd90 100644
+--- a/src/rust/crates/fathomdb-engine/tests/compatibility.rs
++++ b/src/rust/crates/fathomdb-engine/tests/compatibility.rs
+@@ -88,7 +88,7 @@ fn engine_open_emits_migration_step_events() {
+     opened.engine.close().unwrap();
+ 
+     let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
+-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
++    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+     assert!(events.iter().all(|event| event.duration_ms.is_some()));
+     assert!(events.iter().all(|event| !event.failed));
+     assert_eq!(opened.report.migration_steps, events);
+diff --git a/src/rust/crates/fathomdb-schema/tests/step14_migration.rs b/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+index f0f8ea7e..6fc1b9a9 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step14_migration.rs
+@@ -113,10 +113,7 @@ fn s14_schema_version_is_14() {
+     let conn = Connection::open_in_memory().unwrap();
+     migrate_fresh(&conn);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
+-    assert_eq!(
+-        SCHEMA_VERSION, 17,
+-        "SCHEMA_VERSION constant must be 17 (step-17 F5 search_index_v2)"
+-    );
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION constant must be 18 (step-18 F9 importance)");
+ }
+ 
+ /// Step-14 SQL contains the MIGRATION-ACCRETION-EXEMPTION marker (ADD COLUMN requires it).
+diff --git a/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs b/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+index 67786301..0b0221f9 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step15_to_17_migration.rs
+@@ -99,12 +99,16 @@ fn s15_to_17_full_path_migrates_legacy_db_without_loss() {
+     // Forward-only + contiguous: exactly steps 16 then 17 ran, in order, with no
+     // skips and nothing at/below 15 re-run.
+     assert_eq!(report.schema_version_before, 15);
+-    assert_eq!(report.schema_version_after, 17);
++    assert_eq!(report.schema_version_after, 18);
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "current head must be 17");
+-    assert_eq!(applied, vec![16, 17], "only steps 16 then 17 may run from v15 (forward-only)");
++    assert_eq!(SCHEMA_VERSION, 18, "current head must be 18");
++    assert_eq!(
++        applied,
++        vec![16, 17, 18],
++        "only steps 16, 17 then 18 may run from v15 (forward-only)"
++    );
+     let ran_in_report: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
+-    assert_eq!(ran_in_report, vec![16, 17], "report step order must match the emitted order");
++    assert_eq!(ran_in_report, vec![16, 17, 18], "report step order must match the emitted order");
+ 
+     // No data loss — the legacy row is still there and back-filled to the
+     // step-16 `row_kind='leaf'` default (in-place, == current behavior).
+diff --git a/src/rust/crates/fathomdb-schema/tests/step16_migration.rs b/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+index ad072e31..fea4c63e 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step16_migration.rs
+@@ -50,7 +50,8 @@ fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+ /// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
+ /// R-SUB-3 — the migration reaches head `SCHEMA_VERSION`. `row_kind` lands at
+ /// step 16; the head pin below tracks the current head (bumped to 17 when F5's
+-/// step-17 `search_index_v2` co-landed in the same release).
++/// step-17 `search_index_v2` co-landed, then 18 when F9's step-18 `importance`
++/// landed).
+ #[test]
+ fn s16_row_kind_column_present_and_schema_version_is_head() {
+     register_sqlite_vec_once();
+@@ -65,11 +66,11 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
+     );
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+     assert_eq!(
+         MIGRATIONS.last().expect("at least one migration").step_id,
+-        17,
+-        "step-17 (F5 search_index_v2) must be the last (head) migration"
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
+     );
+ }
+ 
+diff --git a/src/rust/crates/fathomdb-schema/tests/step17_migration.rs b/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+index 8b0a7d99..5b4b9fbd 100644
+--- a/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
++++ b/src/rust/crates/fathomdb-schema/tests/step17_migration.rs
+@@ -62,11 +62,11 @@ fn s17_search_index_v2_present_and_schema_version_is_17() {
+     assert!(table_exists(&conn, "search_index"), "single-column search_index must be RETAINED");
+ 
+     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+-    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
++    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+     assert_eq!(
+         MIGRATIONS.last().expect("at least one migration").step_id,
+-        17,
+-        "step-17 (F5 search_index_v2) must be the last (head) migration"
++        18,
++        "step-18 (F9 importance) must be the last (head) migration"
+     );
+ 
+     // The v2 table carries the three BM25F fields kind/body/status (+ the
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --test f9_importance_ranking -- --nocapture' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z
+ succeeded in 203ms:
+     Running tests/f9_importance_ranking.rs (target/debug/deps/f9_importance_ranking-ce9f25c28209a2fa)
+
+running 9 tests
+test importance_all_absent_equals_disabled_r_f9_4 ... ok
+test confidence_scales_graph_arm_contribution ... ok
+test importance_disabled_is_a_no_op ... ok
+test importance_enabled_deweights_and_reorders ... ok
+test importance_floor_zero_zeroes_contribution ... ok
+test importance_write_read_roundtrip_and_range_validation ... ok
+test importance_reweight_reorders_vs_off ... ok
+test explain_surfaces_importance_contribution ... ok
+test importance_reweight_on_all_null_equals_off_e2e ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+codex
+The patch lands the schema and node-importance path, but edge confidence is not actually applied to graph-arm retrieval and the new explain fields are not surfaced through existing SDK bindings. These are functional gaps in the advertised F9 mechanism.
+
+Full review comments:
+
+- [P2] Apply edge confidence to graph-arm hits — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-engine/src/lib.rs:6179-6181
+  When the weighted search uses `use_graph_arm=true`, graph-arm `SearchHit.id` is the reached node's `canonical_nodes.write_cursor`, while the confidence value lives on the traversed `canonical_edges.write_cursor`. Looking up `canonical_edges` by `h.id` therefore never finds the edge confidence for normal graph-arm node hits, so confidence-bearing edges do not affect ranking or explain output in the scenario this feature is meant to cover.
+
+- [P2] Propagate F9 explain fields to bindings — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-engine/src/lib.rs:1299-1308
+  Adding `importance` and `confidence` here only exposes the new score components through the Rust engine type; the existing Python and N-API `PerHitExplain::from_rust` mirrors still copy only the old fields, so `search_explained` callers in those bindings cannot observe the F9 contribution even when it is present. Since the existing explain surface is already exported through those SDKs, these new fields need to be added to the binding structs/converters as part of the same change.
+The patch lands the schema and node-importance path, but edge confidence is not actually applied to graph-arm retrieval and the new explain fields are not surfaced through existing SDK bindings. These are functional gaps in the advertised F9 mechanism.
+
+Full review comments:
+
+- [P2] Apply edge confidence to graph-arm hits — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-engine/src/lib.rs:6179-6181
+  When the weighted search uses `use_graph_arm=true`, graph-arm `SearchHit.id` is the reached node's `canonical_nodes.write_cursor`, while the confidence value lives on the traversed `canonical_edges.write_cursor`. Looking up `canonical_edges` by `h.id` therefore never finds the edge confidence for normal graph-arm node hits, so confidence-bearing edges do not affect ranking or explain output in the scenario this feature is meant to cover.
+
+- [P2] Propagate F9 explain fields to bindings — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-5-20260708T114929Z/src/rust/crates/fathomdb-engine/src/lib.rs:1299-1308
+  Adding `importance` and `confidence` here only exposes the new score components through the Rust engine type; the existing Python and N-API `PerHitExplain::from_rust` mirrors still copy only the old fields, so `search_explained` callers in those bindings cannot observe the F9 contribution even when it is present. Since the existing explain surface is already exported through those SDKs, these new fields need to be added to the binding structs/converters as part of the same change.
