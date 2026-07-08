@@ -8,7 +8,12 @@
 // thin TS wrapper that funnels every native error through
 // `rethrowTyped`.
 
-import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
+import {
+  native,
+  type NativeEmbedderEvent,
+  type NativeEngine,
+  type NativePerHitExplain,
+} from "./binding.js";
 import { InvalidArgumentError, InvalidFilterError, rethrowTyped } from "./errors.js";
 import type { NodeRecord, Predicate } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
@@ -253,6 +258,9 @@ export interface QueryTrace {
  * Rust `PerHitExplain`); parallel to (and same order as) `SearchResult.results`.
  * `id` mirrors `SearchHit.id` exactly (`perHit[i].id === results[i].id`).
  * `fusedScore` is the RAW post-recency, pre-CE RRF score (not normalized).
+ * `importance`/`confidence` (0.8.16 Slice 5 / F9) are the node importance / edge
+ * confidence applied to this hit's contribution (`null` = graceful-absent /
+ * neutral); they mirror the Python `PerHitExplain` additive fields.
  */
 export interface PerHitExplain {
   id: number;
@@ -263,6 +271,36 @@ export interface PerHitExplain {
   fusedScore: number;
   ceScore: number | null;
   blended: number;
+  importance: number | null;
+  confidence: number | null;
+}
+
+/**
+ * @internal — map one native per-hit explain object into the public
+ * {@link PerHitExplain}. Factored out of `Engine.search` so the mapping is
+ * unit-testable against a fake native object without the compiled `.node`
+ * (0.8.16 Slice 5 / F9, codex §9 fix-2). `importance`/`confidence` are the
+ * additive F9 fields (node importance / edge confidence applied to this hit's
+ * contribution; `null` = graceful-absent / neutral), symmetric with the Python
+ * `_map_per_hit_explain` wrapper.
+ */
+export function mapPerHitExplain(p: NativePerHitExplain): PerHitExplain {
+  const armOf = (a: string): SoftFallbackBranch =>
+    a === "vector" || a === "text" || a === "text_edge" || a === "graph_arm"
+      ? (a as SoftFallbackBranch)
+      : "text";
+  return {
+    id: p.id,
+    arm: armOf(p.arm),
+    vectorRank: p.vectorRank ?? null,
+    textRank: p.textRank ?? null,
+    graphRank: p.graphRank ?? null,
+    fusedScore: p.fusedScore,
+    ceScore: p.ceScore ?? null,
+    blended: p.blended,
+    importance: p.importance ?? null,
+    confidence: p.confidence ?? null,
+  };
 }
 
 /**
@@ -615,10 +653,6 @@ export class Engine {
       this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN, explain),
     );
     const branch = r.softFallback?.branch;
-    const armOf = (a: string): SoftFallbackBranch =>
-      a === "vector" || a === "text" || a === "text_edge" || a === "graph_arm"
-        ? (a as SoftFallbackBranch)
-        : "text";
     // 0.8.8 EXP-OBS: map the opt-in explanation sidecar; `null` (default) stays null.
     const e = r.explanation;
     const explanation: Explanation | null = e
@@ -637,16 +671,7 @@ export class Engine {
             textHits: e.trace.textHits,
             graphHits: e.trace.graphHits,
           },
-          perHit: e.perHit.map((p) => ({
-            id: p.id,
-            arm: armOf(p.arm),
-            vectorRank: p.vectorRank ?? null,
-            textRank: p.textRank ?? null,
-            graphRank: p.graphRank ?? null,
-            fusedScore: p.fusedScore,
-            ceScore: p.ceScore ?? null,
-            blended: p.blended,
-          })),
+          perHit: e.perHit.map(mapPerHitExplain),
         }
       : null;
     return {

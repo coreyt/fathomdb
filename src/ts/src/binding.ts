@@ -91,7 +91,7 @@ interface NativeQueryTrace {
   graphHits: number;
 }
 
-interface NativePerHitExplain {
+export interface NativePerHitExplain {
   id: number;
   arm: string;
   vectorRank?: number | null;
@@ -100,6 +100,11 @@ interface NativePerHitExplain {
   fusedScore: number;
   ceScore?: number | null;
   blended: number;
+  // 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+  // hit's contribution (null = graceful-absent / neutral). Mirrors the N-API
+  // `PerHitExplain` additive fields.
+  importance?: number | null;
+  confidence?: number | null;
 }
 
 interface NativeExplanation {

@@ -64,6 +64,31 @@ def _validate_id_list(name: str, value: object) -> list[int]:
     return value
 
 
+def _map_per_hit_explain(p: Any) -> PerHitExplain:
+    """Map one native per-hit explain object into the public
+    :class:`fathomdb.types.PerHitExplain` dataclass.
+
+    Factored out of :meth:`Engine.search` so the mapping is unit-testable
+    against a fake native per-hit object without the compiled ``_fathomdb``
+    extension (0.8.16 Slice 5 / F9, codex §9 fix-2). ``importance``/``confidence``
+    are the additive F9 fields (node importance / edge confidence applied to this
+    hit's contribution; ``None`` = graceful-absent / neutral), symmetric with the
+    TypeScript ``perHit`` mapping.
+    """
+    return PerHitExplain(
+        id=p.id,
+        arm=cast(SoftFallbackBranch, p.arm),
+        vector_rank=p.vector_rank,
+        text_rank=p.text_rank,
+        graph_rank=p.graph_rank,
+        fused_score=p.fused_score,
+        ce_score=p.ce_score,
+        blended=p.blended,
+        importance=p.importance,
+        confidence=p.confidence,
+    )
+
+
 class Engine:
     """Python handle that wraps the native PyO3 engine."""
 
@@ -271,19 +296,7 @@ class Engine:
                     text_hits=native_exp.trace.text_hits,
                     graph_hits=native_exp.trace.graph_hits,
                 ),
-                per_hit=[
-                    PerHitExplain(
-                        id=p.id,
-                        arm=cast(SoftFallbackBranch, p.arm),
-                        vector_rank=p.vector_rank,
-                        text_rank=p.text_rank,
-                        graph_rank=p.graph_rank,
-                        fused_score=p.fused_score,
-                        ce_score=p.ce_score,
-                        blended=p.blended,
-                    )
-                    for p in native_exp.per_hit
-                ],
+                per_hit=[_map_per_hit_explain(p) for p in native_exp.per_hit],
             )
             if native_exp is not None
             else None

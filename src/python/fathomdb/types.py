@@ -177,6 +177,12 @@ class PerHitExplain:
     fused_score: float
     ce_score: float | None
     blended: float
+    #: 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+    #: hit's contribution (``None`` = graceful-absent / neutral). Mirror the
+    #: native ``PerHitExplain`` additive fields + the TypeScript ``PerHitExplain``
+    #: (cross-binding parity). Appended with defaults (the Python evolution rule).
+    importance: float | None = None
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)

@@ -56,6 +56,10 @@ class PerHitExplain:
     fused_score: float
     ce_score: float | None
     blended: float
+    # 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+    # hit's contribution (None = graceful-absent / neutral).
+    importance: float | None
+    confidence: float | None
 
 class Explanation:
     # 0.8.8 EXP-OBS (Slice 10) — opt-in explanation sidecar.
