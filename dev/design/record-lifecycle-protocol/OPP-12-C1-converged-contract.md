@@ -118,7 +118,12 @@ implementation (transaction boundaries) — which every build slice has, and is 
 
 ## Landing
 
-Co-lands **FathomDB 0.9.1 (P2·S-F)** ↔ a coordinated **Memex 0.5.x-successor**. Build ≠ adopt; publish is a
+> **SLOT UPDATE (master F-19/F-20, 2026-07-07):** OPP-12 was pulled into the **0.8.x line** — **C-1 now co-lands
+> at `0.8.20`** (was `0.9.1 P2·S-F`). Read every `0.9.1` / `P2·S-F` in this contract as the **0.8.20** OPP-12
+> Phase-2 slot; the *design is unchanged*, only the release slot moved (master §4). Odd micros may publish by
+> HITL exception (F-20).
+
+Co-lands **FathomDB 0.8.20 (OPP-12 Phase-2)** ↔ a coordinated **Memex 0.5.x-successor**. Build ≠ adopt; publish is a
 separate HITL gate on an even `x.y.z`. Sequencing unchanged (`0.8.16 F9 → 0.8.18 publish → 0.9.0 → 0.9.1`,
 master F-18). The Commission C `index` carrier is the only piece that had to move now, and it has (memex `95ed450`).
 
