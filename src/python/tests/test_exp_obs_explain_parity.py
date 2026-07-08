@@ -17,6 +17,11 @@ cross-binding contract the TypeScript harness
      an int across the pool (no embedder ⇒ vector_rank None, text_rank set).
   6. `"graph_arm"` is a member of the SoftFallbackBranch Literal (the Slice-10
      prereq that brought Python on-contract with Rust/TS).
+  7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit fields
+     survive the real FFI + wrapper. On the default path (F9 reweight OFF, no
+     public SDK seam to enable it) both are `None`; the assertion proves the
+     field crossed the compiled boundary. Mirrored by the TS harness so the two
+     bindings stay symmetric (R-X-1 for F9).
 """
 
 from __future__ import annotations
@@ -106,6 +111,33 @@ def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
         assert any(
             isinstance(v, int) for r in ranks for v in r if v is not None
         ), "expected at least one int rank"
+    finally:
+        engine.close()
+
+
+def test_f9_importance_confidence_survive_the_ffi(db_path: str) -> None:
+    # (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
+    # the compiled FFI + Python wrapper. This is the R-X-1 gap the 0.8.8 harness
+    # predated. There is no public SDK seam to enable the OFF-by-default reweight
+    # or to write node importance, so the default path is None for both — which
+    # still proves the field crossed the boundary (do NOT invent a seam).
+    engine = Engine.open(db_path)
+    try:
+        _seed(engine)
+        result = _search_after_projection(engine, "hybrid", explain=True)
+        exp = result.explanation
+        assert exp is not None
+        assert exp.per_hit, "expected at least one per-hit explain"
+        for p in exp.per_hit:
+            # Fields EXIST on the object that came back across the FFI.
+            assert hasattr(p, "importance")
+            assert hasattr(p, "confidence")
+            # Default (F9-off) path: graceful-absent / neutral == None.
+            assert p.importance is None
+            assert p.confidence is None
+            # When present they are floats (typed contract, symmetric with TS).
+            assert p.importance is None or isinstance(p.importance, float)
+            assert p.confidence is None or isinstance(p.confidence, float)
     finally:
         engine.close()
 

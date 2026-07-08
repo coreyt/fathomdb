@@ -15,6 +15,11 @@
 //   4. The three self-consistency identities (arm===branch, ceScore, blended).
 //   5. None/Some rank fidelity (a null rank + an int rank across the pool).
 //   6. `"graph_arm"` is assignable to SoftFallbackBranch (the Slice-10 contract).
+//   7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit
+//      fields survive the real FFI + wrapper. On the default path (F9 reweight
+//      OFF, no public SDK seam to enable it) both are `null`; the assertion
+//      proves the field crossed the compiled boundary. Mirrored by the Python
+//      harness so the two bindings stay symmetric (R-X-1 for F9).
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -113,6 +118,35 @@ test("exp-obs trace + per-hit fidelity", async () => {
     const ranks = exp.perHit.flatMap((p) => [p.vectorRank, p.textRank, p.graphRank]);
     assert.ok(ranks.some((r) => r === null), "expected at least one null rank");
     assert.ok(ranks.some((r) => typeof r === "number"), "expected at least one int rank");
+  } finally {
+    await engine.close();
+  }
+});
+
+test("f9 importance/confidence survive the FFI", async () => {
+  // (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
+  // the compiled FFI + TS wrapper. This is the R-X-1 gap the 0.8.8 harness
+  // predated. There is no public SDK seam to enable the OFF-by-default reweight
+  // or to write node importance, so the default path is null for both — which
+  // still proves the field crossed the boundary (do NOT invent a seam).
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await seed(engine);
+    const result = await searchAfterProjection(engine, "hybrid", true);
+    const exp = result.explanation as Explanation;
+    assert.notEqual(exp, null);
+    assert.ok(exp.perHit.length > 0, "expected at least one per-hit explain");
+    for (const p of exp.perHit) {
+      // Fields EXIST on the object that came back across the FFI.
+      assert.ok("importance" in p, "importance present on per-hit explain");
+      assert.ok("confidence" in p, "confidence present on per-hit explain");
+      // Default (F9-off) path: graceful-absent / neutral === null.
+      assert.equal(p.importance, null);
+      assert.equal(p.confidence, null);
+      // When present they are numbers (typed contract, symmetric with Python).
+      assert.ok(p.importance === null || typeof p.importance === "number");
+      assert.ok(p.confidence === null || typeof p.confidence === "number");
+    }
   } finally {
     await engine.close();
   }
