@@ -805,19 +805,62 @@ mod tests {
         }
     }
 
-    /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
-    /// `output.json` BLOCKED_ON): no `bge-small-en-v1.5` `.onnx` model and no
-    /// ONNX Runtime native lib exist in the offline build/eval envelope
-    /// (only candle `safetensors` + Python-wheel `onnxruntime` `.so`s). Provide
-    /// `FATHOMDB_ONNX_MODEL_PATH` + `FATHOMDB_ONNX_TOKENIZER_PATH` and
-    /// `ORT_DYLIB_PATH` (load-dynamic), then run with `--ignored`.
+    /// R-ONNX-1 real-vector test — runs FOR REAL against the offline ONNX asset
+    /// on the ONNX-Runtime CPU EP (the same-backend fidelity baseline per policy
+    /// `649a8d45`; GPU is a Slice-15 re-embed speed concern, not needed here).
+    ///
+    /// ENV-GATED (not `#[ignore]`) so CI without the provisioned asset skips it
+    /// cleanly while a provisioned host runs it: set `ORT_DYLIB_PATH` (the
+    /// on-host `libonnxruntime.so`, load-dynamic), `FATHOMDB_ONNX_MODEL_PATH`
+    /// (the offline export from `dev/tools/onnx/export_bge_small_onnx.py`), and
+    /// `FATHOMDB_ONNX_TOKENIZER_PATH` (the pinned `tokenizer.json`). When those
+    /// are unset the test returns early (recorded skip); when set it asserts a
+    /// fixture text → a 384-dim, finite, L2-normalized, deterministic vector via
+    /// the `Embedder` trait, and that the identity revision self-describes the
+    /// loaded asset digest (fix-5). See `dev/tools/onnx/README.md` for the exact
+    /// invocation and the chosen ORT lib.
     #[test]
-    #[ignore = "needs offline bge-small .onnx model + ONNX Runtime native lib (ORT_DYLIB_PATH); see output.json BLOCKED_ON"]
     fn ort_bge_embeds_384_dim_finite_deterministic_vector() {
+        use std::path::Path;
+
         use fathomdb_embedder_api::Embedder;
 
-        let embedder = super::OrtBgeEmbedder::from_env()
-            .expect("set FATHOMDB_ONNX_MODEL_PATH / FATHOMDB_ONNX_TOKENIZER_PATH / ORT_DYLIB_PATH");
+        use super::{OrtBgeEmbedder, OrtProvider};
+
+        let (Ok(_dylib), Ok(model), Ok(tok)) = (
+            std::env::var("ORT_DYLIB_PATH"),
+            std::env::var("FATHOMDB_ONNX_MODEL_PATH"),
+            std::env::var("FATHOMDB_ONNX_TOKENIZER_PATH"),
+        ) else {
+            eprintln!(
+                "SKIP ort_bge_embeds_384_dim_finite_deterministic_vector: set ORT_DYLIB_PATH + \
+                 FATHOMDB_ONNX_MODEL_PATH + FATHOMDB_ONNX_TOKENIZER_PATH to run the real-vector \
+                 R-ONNX-1 test (see dev/tools/onnx/README.md)"
+            );
+            return;
+        };
+
+        // CPU same-backend baseline (policy 649a8d45): force the ONNX CPU EP
+        // explicitly (not via the ambient FATHOMDB_EMBED_DEVICE) so this
+        // fidelity assertion is deterministic and does not depend on env order.
+        let embedder = OrtBgeEmbedder::from_files_with_provider(
+            Path::new(&model),
+            Path::new(&tok),
+            OrtProvider::Cpu,
+        )
+        .expect("open OrtBgeEmbedder on the CPU EP from the provisioned asset");
+
+        // Identity self-describes the loaded asset (fix-5): distinct ONNX name,
+        // dim 384, revision = pinned base + "+onnx-<12 hex>" asset digest.
+        let id = embedder.identity();
+        assert_eq!(id.name, super::ORT_BGE_EMBEDDER_NAME, "distinct ONNX identity name");
+        assert_eq!(id.dimension, super::ORT_BGE_EMBEDDER_DIM, "384-dim identity");
+        assert!(
+            id.revision.contains("+onnx-"),
+            "revision must carry the asset digest, got {:?}",
+            id.revision
+        );
+
         let v1 = embedder.embed("the quick brown fox").expect("embed");
         let v2 = embedder.embed("the quick brown fox").expect("embed");
         assert_eq!(v1.len(), super::ORT_BGE_EMBEDDER_DIM as usize);

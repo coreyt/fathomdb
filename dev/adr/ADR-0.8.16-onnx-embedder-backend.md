@@ -68,3 +68,23 @@ low-urgency reach-hardware and (b) it manufactures the cross-backend numeric-div
 1. Mint the ONNX-equivalence measurement AC (R-ONNX-1 tolerance + R-ONNX-3 recorded Δ).
 2. Confirm the `ort` crate + version is acceptable for the offline/eval build surface (no default-build
    footprint change).
+
+## 6. HITL rulings (2026-07-08) — items 1 & 2 resolved
+
+- **`ort =2.0.0-rc.10` ACCEPTED** behind the optional, non-default `onnx-embedder` feature (open item #2).
+  It is an eval-only opt-in with zero default-build footprint change. The eventual `ort` 2.0-STABLE bump is
+  tracked as **TC-9** (code comment at the `ort` dep in `fathomdb-embedder/Cargo.toml`).
+- **R-ONNX-1 asset = deterministic OFFLINE export**, NO build-time network egress for the model. The
+  committed tooling `dev/tools/onnx/export_bge_small_onnx.py` (+ README) loads the PINNED bge-small
+  safetensors from the local HF cache (same weights / revision `5c38ec7c…` as the candle reference) and
+  exports a byte-deterministic `last_hidden_state` ONNX graph (Rust applies CLS pooling + L2-norm). The
+  `.onnx` binary (~133 MB) is a generated eval asset written to a gitignored path (default
+  `~/.cache/fathomdb/embedders/onnx/…`) and is NOT committed.
+- **ORT runtime provisioning (Task B): OFFLINE, NO DOWNLOAD.** `load-dynamic` + an explicit `ORT_DYLIB_PATH`
+  pointing at an on-host `libonnxruntime.so.1.26.0` (bundled in the fathomdb `.venv` onnxruntime wheel) is
+  ABI-compatible with `ort =2.0.0-rc.10`; the R-ONNX-1 real-vector test passes on the ONNX CPU EP against it.
+  No build- or eval-time ORT-binary egress was needed.
+- **R-ONNX-1 real-vector test is now RUN (not `#[ignore]`)**: env-gated on
+  `ORT_DYLIB_PATH`/`FATHOMDB_ONNX_MODEL_PATH`/`FATHOMDB_ONNX_TOKENIZER_PATH` (skips cleanly on CI without the
+  asset), and verified passing locally on the CPU EP — 384-dim, finite, L2-normalized, deterministic vector
+  via the `Embedder` trait, identity revision self-describing the asset digest.

@@ -39,8 +39,10 @@ tokenizers          = { version = "0.20", optional = true, default-features = fa
 # wheel-size gate / footprint invariant). Pinned to `=2.0.0-rc.10`: the
 # `ort` 2.0 line is the maintained series (1.x is EOL) but is published
 # only as release candidates; rc.10 is the latest rc that builds cleanly
-# in the offline envelope (rc.12 has an ort/ort-sys VitisAI EP mismatch,
-# ADR §5.2 flags ort-version acceptance as an HITL open item). `load-dynamic`
+# in the offline envelope (rc.12 has an ort/ort-sys VitisAI EP mismatch).
+# RC PIN ACCEPTED BY HITL 2026-07-08 (this is a non-default, opt-in
+# eval-only feature); the eventual 2.0-STABLE bump is tracked as TC-9.
+# `load-dynamic`
 # dlopens the ONNX Runtime native lib at RUNTIME (via ORT_DYLIB_PATH), so
 # `cargo build`/`cargo check` never download or link a native binary at
 # build time (no `download-binaries`); the runtime lib is an offline

@@ -131,3 +131,10 @@ dev/plans/runs/*.ce-pass.json
 .ledgerwatch/
 dev/steward/.ledgerwatch*
 dev/.ledgerwatch-todos*
+
+# 0.8.16 Slice 10 — generated ONNX embedder eval assets (~130 MB). The
+# reproducible export tooling (dev/tools/onnx/) IS tracked; the produced
+# .onnx binary is NOT (default export path is ~/.cache/fathomdb/, outside the
+# repo; this guards any in-repo export target too). See dev/tools/onnx/README.md.
+*.onnx
+
