@@ -109,8 +109,10 @@ carries the per-slice X column.
 
 ## 9. Immediate next slice
 
-**Slice 0 — CLOSED (HITL SIGNED 2026-07-08).** **Slice 5 (F9 KEYSTONE) — CLOSED / LANDED 2026-07-08**
-(canary; `6462b511`+`74987f80`+`3c172131` on `main`; codex §9 PASS after fix-1/fix-2; SCHEMA 17→18;
-F9 OFF-by-default). **Next: Slice 10 — ONNX embedder backend** (`OrtBgeEmbedder` behind the trait via
-`EmbedderChoice::Caller`, `onnx-embedder` feature, config/env device select, zero engine diff), then
-Slice 15 (equivalence). Live state → `runs/STATUS-0.8.16.md`.
+**Slices 0, 5, 10, 15 — CLOSED / LANDED (2026-07-08).** Slice 0 (design, HITL SIGNED); Slice 5 (F9
+KEYSTONE, SCHEMA 17→18, codex §9 PASS); Slices 10+15 (ONNX backend + candle↔ONNX equivalence, landed
+together under the standing mandate, 9-commit chain `ece15629`..`77b35e0b`, codex §9 PASS, zero engine
+diff; R-ONNX-1/2/3 green — equivalence cosine≡1.0 / 1-bit flip-rate 0.0; cross-backend Δ → 0.8.18 #5).
+**Next: Slice 40 — Verification + Release Readiness (the ONLY remaining slice)** — X1 (incl. the deferred
+compiled-module e2e F9-explain SDK parity on the MAIN tree) / X2 `mkdocs --strict` / X3 DOC-INDEX + the
+R-F9/R-ONNX AC gate + the eu7 gate. Live state → `runs/STATUS-0.8.16.md`.

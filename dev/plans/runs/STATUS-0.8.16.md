@@ -8,86 +8,87 @@
 > Commission tip (live `main`) = `36024585`. Cut every worktree from `$(git rev-parse origin/main)`.
 
 ## Current state
-- **Slice 0 (design/ADR) — CLOSED (HITL coreyt SIGNED 2026-07-08 — all 5 gate decisions ratified).** DoD
-  frozen; 3 ACs minted (R-F9-4 + F9 ranking-contract + ONNX-equivalence); §3 supersession confirmed;
-  sentinel `NULL`=absent; OFF-by-default multiplicative-on-fused weighting; step-18 migration (SCHEMA 17→18)
-  authorized. Docs committed on `main`. **Slices 5 ∥ 10 RELEASED** (canary-first; worktrees off live `main`).
-- **Slice 5 (F9 KEYSTONE) — CLOSED (HITL landing SIGNED 2026-07-08).** Canary. Cherry-picked
-  `6462b511`+`74987f80`+`3c172131` onto `main` (base `61c9e09a`, clean; `cargo check --workspace` rc=0 on
-  main). codex §9 **PASS** after CONCERN→fix-1→CONCERN→fix-2 (both real: edge-confidence-on-graph-arm
-  correctness + F9 explain propagation through native bindings AND public Py/TS wrappers). SCHEMA_VERSION
-  17→18 (step-18 `canonical_nodes.importance REAL`); F9 ships OFF-by-default (no eval claim); eu7 no-op
-  basis (pure ADD COLUMN, no vector rewrite). Worktree cleaned; preflight re-run pass.
+- **Slice 0 (design/ADR) — CLOSED (HITL SIGNED 2026-07-08).** DoD frozen; 3 ACs minted; §3 supersession
+  confirmed; `NULL`=absent sentinel; OFF-by-default multiplicative-on-fused; step-18 migration authorized.
+- **Slice 5 (F9 KEYSTONE) — CLOSED / LANDED (HITL landing SIGNED 2026-07-08).** codex §9 PASS after
+  fix-1/fix-2; SCHEMA 17→18 (step-18 `canonical_nodes.importance REAL`); F9 OFF-by-default; eu7 no-op basis.
+- **Slice 10 (ONNX backend) + Slice 15 (equivalence) — CLOSED / LANDED TOGETHER (Steward authority, standing
+  mandate, 2026-07-08).** 9-commit chain `ece15629`..`77b35e0b` cherry-picked onto `main` (base `146eecca`,
+  clean; `.gitignore` 3-way auto-merged keeping both `/output.json` + `*.onnx`; `cargo check --workspace` rc=0;
+  **zero engine diff**). codex §9 **PASS** after 6 fix rounds (5 on Slice 10: loud CPU fallback → CPU retry →
+  `error_on_failure` root → untrack witness → asset-digest identity; 1 combined: export fail-closed on the
+  pinned revision). `OrtBgeEmbedder` behind non-default `onnx-embedder` feature via `EmbedderChoice::Caller`;
+  `ort =2.0.0-rc.10` (HITL-accepted; 2.0-stable = TC-9). Offline `safetensors→ONNX` export tooling committed;
+  `.onnx` gitignored; ORT offline via on-host `libonnxruntime.so.1.26.0`. Footprint invariant intact.
 
 ## Slice scoreboard
 | Slice | Title | State | Base SHA | Branch | output.json | codex | Cherry-pick/merge |
 |------:|-------|-------|----------|--------|-------------|-------|-------------------|
-| 0 | Setup + ADR — F9 ranking/lifecycle (honor Slice-35 ADR) + OPP-12 `rankable` forward-compat; ONNX-backend design + equivalence-measurement plan; stand up this board | **CLOSED (HITL SIGNED 2026-07-08)** | 36024585 | (docs on main) | n/a (design slice) | n/a | docs commit on main |
-| 5 | **F9 importance/confidence KEYSTONE** — `canonical_nodes.importance` step-18 (SCHEMA 17→18) + 3-way sentinel + edge-confidence ranking; surfaced via `PerHitExplain` | **CLOSED** (2026-07-08) | 61c9e09a | slice-5-20260708T114929Z | ✅ | **PASS** (CONCERN→fix1→CONCERN→fix2→PASS) | `6462b511`+`74987f80`+`3c172131` on main |
-| 10 | **ONNX embedder backend** — `OrtBgeEmbedder` behind the trait via `EmbedderChoice::Caller`; `onnx-embedder` feature; config/env device select; zero engine diff | NOT STARTED (dep: 0) — **NEXT** | — | — | — | — | — |
-| 15 | **ONNX equivalence measurement** — candle↔ONNX numeric Δ + 1-bit flip rate on a probe set; document interim same-backend discipline (feeds 0.8.18 #5) | NOT STARTED (dep: 10) | — | — | — | — | — |
-| 40 | **Verification + Release Readiness** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | NOT STARTED (dep: 5,10,15) | — | — | — | — | — |
+| 0 | Setup + ADR — F9 ranking/lifecycle + OPP-12 `rankable` forward-compat; ONNX-backend design + equivalence plan; board | **CLOSED (HITL SIGNED)** | 36024585 | (docs on main) | n/a | n/a | docs commit on main |
+| 5 | **F9 KEYSTONE** — `canonical_nodes.importance` step-18 (SCHEMA 17→18) + 3-way sentinel + edge-confidence ranking; `PerHitExplain` | **CLOSED / LANDED** | 61c9e09a | slice-5-…114929Z | ✅ | **PASS** (fix1→fix2) | `6462b511`+`74987f80`+`3c172131` |
+| 10 | **ONNX embedder backend** — `OrtBgeEmbedder` behind trait via `EmbedderChoice::Caller`; `onnx-embedder` feature; runtime device select; zero engine diff | **CLOSED / LANDED** | 146eecca | slice-10-…192441Z | ✅ | **PASS** (fix1→5) | `ece15629`+`994a8bf3`+`8b4b4622`+`53c7aabf`+`31f8ca06`+`eaa8851a`+`dfc0f6ec`+`77b35e0b` |
+| 15 | **ONNX equivalence measurement** — candle↔ONNX Δ + 1-bit flip rate; same-backend discipline (feeds 0.8.18 #5) | **CLOSED / LANDED** | 146eecca | slice-10-…192441Z | ✅ | **PASS** (combined) | `70c2dad6` (in the 10+15 chain) |
+| 40 | **Verification + Release Readiness** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | NOT STARTED (dep: 5,10,15) — **NEXT / ONLY REMAINING** | — | — | — | — | — |
 
-**Tracks (parallelizable):** F9 track **5** (DONE) ∥ ONNX track **10 → 15**. Canary (Slice 5) proved the
-loop. Max 3 concurrent worktrees; per-worktree distinct `TMPDIR` before any parallelism (ac_002/t_s34 flakes).
+**Tracks:** F9 track **5** (DONE) · ONNX track **10 → 15** (DONE). Only **Slice 40** remains.
 
 ## Requirements / AC status (DoD frozen at Slice 0)
 | ID | Requirement | State |
 |----|-------------|-------|
-| R-F9-1 | Importance column (REAL) + 3-way sentinel + edge confidence | ✅ Slice 5 — step-18 (SCHEMA 17→18); round-trip {NULL,0.0,0.5,1.0}; out-of-[0,1] rejected; 3-way sentinel tested |
-| R-F9-2 | Importance/confidence influences ranking AND is observable (`explain`) | ✅ Slice 5 — OFF-by-default reweight reorders vs OFF; edge confidence applied on graph-arm hits (real-path e2e); `PerHitExplain` importance/confidence surfaced through engine + native bindings + public Py/TS wrappers |
-| R-F9-3 | Slice-35 deferred-F9 ADR gate honored (no scope beyond mechanism) | ✅ §3 supersession CONFIRMED (HITL 2026-07-08); mechanism-only, no eval claim |
-| R-F9-4 (minted) | F9 is OPP-12 `rankable`-forward-compatible (Q6a) | ✅ Slice 5 — graceful-neutral identity (all-NULL reweight-ON == OFF) proven e2e + pure-fn; additive REAL, opt-in add/drop-idempotent, no break-if-later field |
-| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small via the trait, within documented Δ | ⏳ Slice 10 |
-| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | ⏳ Slice 10 |
-| R-ONNX-3 | candle↔ONNX Δ measured + recorded; same-backend discipline documented | ⏳ Slice 15 (feeds 0.8.18 #5) |
-| R-X-1 | Py + TS SDK parity for the F9 surface (X1) | ◑ Slice 5 wired native+public wrappers (Py test 3/3; TS mapping test authored); **compiled-module e2e parity = Slice-40 MAIN-tree gate** |
-| R-GATE | eu7 ≥ 0.90 (one-sided CI) on any embedder/index change | ✅ Slice 5 no-op basis (pure ADD COLUMN, no re-embed); full verify at Slice 40 |
+| R-F9-1 | Importance column (REAL) + 3-way sentinel + edge confidence | ✅ Slice 5 |
+| R-F9-2 | Importance/confidence influences ranking AND is observable (`explain`) | ✅ Slice 5 (edge confidence real-path e2e; surfaced engine + native + public Py/TS) |
+| R-F9-3 | Slice-35 deferred-F9 ADR gate honored (no scope beyond mechanism) | ✅ Slice 5 (§3 supersession; mechanism-only) |
+| R-F9-4 (minted) | F9 is OPP-12 `rankable`-forward-compatible (Q6a) | ✅ Slice 5 (graceful-neutral identity proven) |
+| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small via the trait, within documented Δ | ✅ Slice 10 — real 384-dim finite deterministic L2-normed vector on ONNX CPU EP; asset-digest identity |
+| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | ✅ Slice 10 — runtime `FATHOMDB_EMBED_DEVICE`→ORT provider (CPU/CUDA/ROCm/DirectML/OpenVINO), loud CPU fallback |
+| R-ONNX-3 | candle↔ONNX Δ measured + recorded; same-backend discipline documented | ✅ Slice 15 — **cosine ≡ 1.0, 1-bit sign-flip rate = 0.0 (0/17280), max-abs Δ ≤ 1.86e-7** (45 probes, candle-CPU vs ONNX-CPU). Doc: `dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md`. **NOT enforced** (feeds 0.8.18 #5) |
+| R-X-1 | Py + TS SDK parity for the F9 surface (X1) | ◑ Slice 5 wired native+public wrappers; compiled-module e2e parity = Slice-40 MAIN-tree gate |
+| R-GATE | eu7 ≥ 0.90 (one-sided CI) on any embedder/index change | ✅ no-op basis (F9 no re-embed; ONNX default candle path unchanged); full verify at Slice 40 |
 
 ## Cross-cutting DoD (X1/X2/X3 — bind every slice)
-X1 SDK parity + harnesses · X2 `mkdocs build --strict` green · X3 docs + DOC-INDEX per slice.
 | Slice | X1 (SDK parity) | X2 (mkdocs) | X3 (docs+DOC-INDEX) |
 |------:|-----------------|-------------|---------------------|
-| 0 | n/a (design) | n/a | board + ADRs committed |
-| 5 | ◑ native+public wrappers wired (Py/TS); e2e parity → Slice 40 | ⏳ Slice 40 | closure in this docs commit |
-| 10 | ⏳ | ⏳ | ⏳ |
-| 15 | ⏳ | ⏳ | ⏳ |
+| 0 | n/a | n/a | board + ADRs committed |
+| 5 | ◑ wrappers wired; e2e → Slice 40 | ⏳ Slice 40 | closed |
+| 10 | n/a (embedder crate-internal; no SDK verb) — verify at 40 | ⏳ Slice 40 | ADR §6 + `dev/tools/onnx/README.md` |
+| 15 | n/a | ⏳ Slice 40 | `dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md` |
 | 40 | ⏳ | ⏳ | ⏳ |
 
 ## Hard gates
-- **eu7 ≥ 0.90 one-sided CI** on any embedder/index touch — runs **CPU same-backend** (policy `649a8d45`).
-  Default paths (F9 no re-embed; ONNX behind the trait, default candle CPU unchanged) are **no-op**; breach
-  BLOCKS→HITL.
-- **Full-workspace clippy+check** — `cargo clippy --workspace --all-targets` AND `cargo check --workspace
-  --all-targets`, both exit 0, before ANY green claim.
-- **codex §9** review gate on every slice's output.json (adversarial-subagent fallback only if codex down).
-- **SCHEMA_VERSION migration (step-18)** = engine/schema migration → HITL-gated (LANDED under HITL sign-off
-  2026-07-08). Future 0.8.16 slices (10/15/40) are expected no-migration → land under Steward authority on
-  a clean §9 PASS (standing landing mandate); escalate if any unexpectedly needs a migration/override/BLOCK.
-- **R-ONNX-3 is a feed-forward gate** — the candle↔ONNX Δ measured at Slice 15 calibrates 0.8.18 #5;
-  record it precisely.
+- **eu7 ≥ 0.90 one-sided CI** — CPU same-backend (policy `649a8d45`). Default paths no-op; full verify at 40.
+- **Full-workspace clippy+check** — both exit 0 before any green claim.
+- **codex §9** review gate on every slice (adversarial-subagent fallback only if codex down).
+- **step-18 migration** LANDED under HITL sign-off (Slice 5). Slices 10/15 = no-migration → landed under
+  Steward authority on a clean §9 PASS (standing mandate). Slice 40 (verification) same lane.
+- **R-ONNX-3 feed-forward** — Slice-15 Δ calibrates 0.8.18 #5; recorded (see below).
 
-## ACs minted (Slice-0 gate, HITL 2026-07-08 — `dev/acceptance.md` tracked by F-id/G-gap + TDD names)
-1. **R-F9-4** — F9 is `rankable`-forward-compatible per OPP-12 Q6a (design §4 mapping). ✅ Slice 5.
-2. **F9 ranking-contract** — OFF-by-default multiplicative-on-fused; 3-way sentinel semantics. ✅ Slice 5.
-3. **ONNX-equivalence** — R-ONNX-1 documented Δ tolerance + R-ONNX-3 recorded flip rate. ⏳ Slice 10/15.
+## ACs minted (Slice-0 gate, HITL 2026-07-08)
+1. **R-F9-4** — `rankable`-forward-compatible (Q6a). ✅ Slice 5.
+2. **F9 ranking-contract** — OFF-by-default multiplicative-on-fused; 3-way sentinel. ✅ Slice 5.
+3. **ONNX-equivalence** — R-ONNX-1 documented Δ + R-ONNX-3 recorded flip rate. ✅ Slices 10/15.
+
+## 0.8.18 #5 follow-up (recorded, NOT a 0.8.16 gap)
+R-ONNX-3's measured Δ is **ONNX-CPU vs candle-CPU (same arch)** — numerically identical to 1-bit (0 flips).
+The **cross-backend** divergence (GPU ONNX EP vs CPU) is the real 0.8.18 #5 target and is **not yet
+measured** (no GPU ONNX EP asset provisioned). Explicit 0.8.18 #5 follow-up; treat any non-trivial future
+flip rate as an export/backend regression, not benign.
 
 ## Outstanding worktrees
-- None open (`slice-5-20260708T114929Z` cleaned after landing; preflight re-run pass).
+- None open (`slice-5-…` and `slice-10-…192441Z` cleaned after landing; throwaway `/tmp/onnx-export-venv`
+  removed; preflight re-run pass).
 
 ## Recent decisions (newest first)
-- 2026-07-08 — **Slice 5 (F9 KEYSTONE) CLOSED / LANDED (HITL landing SIGNED).** Cherry-picked
-  `6462b511`+`74987f80`+`3c172131` onto `main` (clean; `cargo check --workspace` rc=0). codex §9
-  CONCERN→fix1→CONCERN→fix2→**PASS**. Two review rounds caught real gaps: (1) edge confidence wasn't
-  applied on graph-arm node hits (+ a vacuously-green test) → fix-1 threads the traversing edge's
-  confidence + de-vacuoused the test to a real-path e2e; (2) F9 explain fields dropped by native bindings
-  then by the public Py/TS wrappers → fix-1 + fix-2 wired both layers. SCHEMA 17→18 (step-18); F9
-  OFF-by-default, no eval claim; eu7 no-op basis. Env flakes (ac_002/t_s34) = concurrent-cargo-test
-  artifacts, non-blocking. Slice-40 follow-up: compiled-module e2e SDK parity on the MAIN tree.
-- 2026-07-08 — **Slice-0 CLOSED (HITL SIGNED).** 5 gate decisions ratified; 3 ACs minted; step-18 authorized.
-- 2026-07-07 — **Slice-0 package DRAFTED** (F9 ADR + ONNX ADR + design doc + this board).
+- 2026-07-08 — **Slices 10 + 15 CLOSED / LANDED TOGETHER (Steward authority, standing mandate).** 9-commit
+  chain `ece15629`..`77b35e0b`; codex §9 PASS after 6 fix rounds; zero engine diff; footprint invariant
+  intact; `ort =2.0.0-rc.10` (TC-9 for the stable bump). R-ONNX-1/2/3 green; equivalence cosine≡1.0 /
+  flip-rate 0.0. Model offline (`local_files_only`, pinned rev, fail-closed); export TOOLCHAIN pip-installed
+  into a throwaway venv (network for the Python toolchain only, NOT the weights). Cross-backend Δ → 0.8.18 #5.
+- 2026-07-08 — **Slice 5 (F9 KEYSTONE) CLOSED / LANDED (HITL landing SIGNED).** codex §9 fix1→fix2→PASS;
+  SCHEMA 17→18; F9 OFF-by-default; eu7 no-op basis.
+- 2026-07-08 — **Slice-0 CLOSED (HITL SIGNED).** 5 gate decisions; 3 ACs minted; step-18 authorized.
+- 2026-07-07 — **Slice-0 package DRAFTED.**
 
 ## Next action
-**Fan out Slice 10 (ONNX embedder backend)** — canary proven. Cut a worktree off live `origin/main` with a
-distinct `TMPDIR`, preflight pass, spawn the implementer, drive the §9 loop to a terminal verdict in-turn.
-Slice 10 is expected no-migration → lands under Steward authority on a clean §9 PASS (standing mandate).
+**Slice 40 — Verification + Release Readiness (the ONLY remaining slice).** X1 (incl. the deferred
+compiled-module e2e SDK parity for F9 explain on the MAIN tree), X2 `mkdocs build --strict`, X3 DOC-INDEX,
+the R-F9 + R-ONNX AC gate, and the eu7 gate. Steward to commission/scope.

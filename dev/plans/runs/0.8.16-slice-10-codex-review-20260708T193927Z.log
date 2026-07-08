@@ -1,0 +1,1908 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f433e-1056-74e1-8da9-387417a5043d
+--------
+user
+changes against '146eecca2c2ba9e89ba5bb0cb667ff826a2affec'
+exec
+/bin/bash -lc "ls && cat MEMORY.md 2>/dev/null || true && for f in feedback_*.md; do echo '---' "'$f; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ exited 1 in 0ms:
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+experiments
+lychee.toml
+mkdocs.yml
+output.json
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+tests
+tools
+--- feedback_*.md
+cat: 'feedback_*.md': No such file or directory
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' | sed 's#"'^#/#'"' | head -50 && git status --short && git diff --stat 146eecca2c2ba9e89ba5bb0cb667ff826a2affec" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 171ms:
+?? output.json
+ Cargo.lock                                       |  79 ++++-
+ src/rust/crates/fathomdb-embedder/Cargo.toml     |  27 ++
+ src/rust/crates/fathomdb-embedder/src/lib.rs     |  12 +-
+ src/rust/crates/fathomdb-embedder/src/ort_bge.rs | 392 +++++++++++++++++++++++
+ 4 files changed, 504 insertions(+), 6 deletions(-)
+
+exec
+/bin/bash -lc 'git diff 146eecca2c2ba9e89ba5bb0cb667ff826a2affec -- src/rust/crates/fathomdb-embedder/Cargo.toml src/rust/crates/fathomdb-embedder/src/lib.rs src/rust/crates/fathomdb-embedder/src/ort_bge.rs' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-embedder/Cargo.toml b/src/rust/crates/fathomdb-embedder/Cargo.toml
+index d057271c..022185c1 100644
+--- a/src/rust/crates/fathomdb-embedder/Cargo.toml
++++ b/src/rust/crates/fathomdb-embedder/Cargo.toml
+@@ -31,6 +31,22 @@ candle-nn           = { version = "0.10", optional = true }
+ candle-transformers = { version = "0.10", optional = true, default-features = false }
+ tokenizers          = { version = "0.20", optional = true, default-features = false, features = ["onig"] }
+ 
++# 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend §2) — cross-vendor ONNX
++# Runtime backend for `OrtBgeEmbedder` (mod ort_bge), a caller-supplied
++# `impl Embedder` injected via `EmbedderChoice::Caller` with ZERO engine
++# change. Optional + feature-gated behind `onnx-embedder` so the thin
++# `default = []` build stays ML-free and gains ZERO new deps (EMB-3
++# wheel-size gate / footprint invariant). Pinned to `=2.0.0-rc.10`: the
++# `ort` 2.0 line is the maintained series (1.x is EOL) but is published
++# only as release candidates; rc.10 is the latest rc that builds cleanly
++# in the offline envelope (rc.12 has an ort/ort-sys VitisAI EP mismatch,
++# ADR §5.2 flags ort-version acceptance as an HITL open item). `load-dynamic`
++# dlopens the ONNX Runtime native lib at RUNTIME (via ORT_DYLIB_PATH), so
++# `cargo build`/`cargo check` never download or link a native binary at
++# build time (no `download-binaries`); the runtime lib is an offline
++# build/eval concern, not a compile dep.
++ort = { version = "=2.0.0-rc.10", optional = true, default-features = false, features = ["load-dynamic"] }
++
+ [features]
+ default = []
+ default-embedder = [
+@@ -77,6 +93,17 @@ embed-metal = ["default-embedder", "candle-core/metal", "candle-nn/metal", "cand
+ # candle backend — out of scope, same as the embedder.
+ rerank-cuda = ["default-reranker", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+ rerank-metal = ["default-reranker", "candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
++# 0.8.16 Slice 10 — cross-vendor ONNX embedder (`OrtBgeEmbedder`). Pulls the
++# `ort` ONNX-Runtime binding + the shared `tokenizers` stack (for BGE-small
++# tokenization parity with the candle reference). NON-default: the thin
++# `default = []` build gains ZERO new deps (footprint invariant / EMB-3).
++# The cross-vendor execution providers (ROCm / DirectML / OpenVINO / CUDA)
++# that candle cannot reach are selected at RUNTIME from `FATHOMDB_EMBED_DEVICE`
++# (R-ONNX-2); the ONNX Runtime native lib is dlopen'd at runtime (load-dynamic).
++onnx-embedder = [
++    "dep:ort",
++    "dep:tokenizers",
++]
+ # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
+ # integration tests (or downstream test harnesses) can substitute base URLs,
+ # cache roots, and pinned shas. Production callers MUST NOT enable this
+diff --git a/src/rust/crates/fathomdb-embedder/src/lib.rs b/src/rust/crates/fathomdb-embedder/src/lib.rs
+index 4640f4a6..87297c17 100644
+--- a/src/rust/crates/fathomdb-embedder/src/lib.rs
++++ b/src/rust/crates/fathomdb-embedder/src/lib.rs
+@@ -78,7 +78,7 @@ impl MeanRecomputeTrigger {
+ // `FATHOMDB_EMBED_DEVICE` and the reranker's `FATHOMDB_RERANK_DEVICE` resolve
+ // through one grammar (no duplicate parse logic) even though they sit behind
+ // independent features.
+-#[cfg(any(feature = "default-embedder", feature = "default-reranker"))]
++#[cfg(any(feature = "default-embedder", feature = "default-reranker", feature = "onnx-embedder"))]
+ mod device;
+ 
+ #[cfg(feature = "default-embedder")]
+@@ -86,6 +86,13 @@ mod candle_bge;
+ #[cfg(feature = "default-embedder")]
+ mod nomic;
+ 
++// 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend) — cross-vendor ONNX
++// Runtime BGE-small embedder. Behind its own NON-default `onnx-embedder`
++// feature so the thin default build pulls in zero ONNX code/deps; injected
++// by the caller via `EmbedderChoice::Caller` (zero engine change).
++#[cfg(feature = "onnx-embedder")]
++mod ort_bge;
++
+ // 0.8.2 Slice E1: the default CPU cross-encoder reranker (TinyBERT-L-2).
+ // Lives behind its own `default-reranker` feature so the default build pulls
+ // in zero ML code. The engine's `default-reranker` feature forwards to this.
+@@ -97,6 +104,9 @@ pub use candle_bge::{CandleBgeEmbedder, Pooling, DEFAULT_EMBEDDER_DIM, DEFAULT_E
+ #[cfg(feature = "default-embedder")]
+ pub use nomic::{NomicEmbedder, NOMIC_DIM};
+ 
++#[cfg(feature = "onnx-embedder")]
++pub use ort_bge::{OrtBgeEmbedder, OrtPooling, ORT_BGE_EMBEDDER_DIM, ORT_BGE_EMBEDDER_NAME};
++
+ #[cfg(all(feature = "default-reranker", any(test, feature = "loader-test-hooks")))]
+ pub use candle_reranker::RERANKER_REVISION;
+ #[cfg(feature = "default-reranker")]
+diff --git a/src/rust/crates/fathomdb-embedder/src/ort_bge.rs b/src/rust/crates/fathomdb-embedder/src/ort_bge.rs
+new file mode 100644
+index 00000000..7a1fff40
+--- /dev/null
++++ b/src/rust/crates/fathomdb-embedder/src/ort_bge.rs
+@@ -0,0 +1,392 @@
++//! `OrtBgeEmbedder` — cross-vendor ONNX-Runtime BGE-small embedder.
++//!
++//! A caller-supplied `impl fathomdb_embedder_api::Embedder`, sibling of
++//! `candle_bge` / `nomic`, that produces `BAAI/bge-small-en-v1.5` vectors
++//! (dim 384) through the `ort` ONNX-Runtime binding. Injected purely via
++//! `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))` — the engine never
++//! names it, so there is ZERO engine change (ADR-0.8.16-onnx-embedder-backend
++//! §2). The `Default` variant stays candle-only, preserving the footprint
++//! invariant.
++//!
++//! Why ONNX at all: candle reaches only CPU / CUDA / Metal — no AMD ROCm,
++//! Intel OpenVINO, or Windows DirectML. ONNX Runtime reaches all of those, so
++//! this backend is the cross-vendor reach-hardware path (ADR §1). It is behind
++//! the NON-default `onnx-embedder` Cargo feature so the thin default build
++//! gains zero deps (EMB-3 wheel-size gate).
++//!
++//! Numeric equivalence to the candle reference is MEASURED (not enforced) at
++//! Slice 15 (ADR §3 / design §5); the interim guard is same-backend
++//! build-and-read, enforced here structurally by giving ONNX a DISTINCT
++//! embedder identity name (`…-onnx`) so the engine's identity check never
++//! silently reads candle-written vectors with the ONNX backend.
++
++use std::path::Path;
++use std::sync::Mutex;
++
++use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
++use ort::execution_providers::{
++    CPUExecutionProvider, CUDAExecutionProvider, DirectMLExecutionProvider,
++    ExecutionProviderDispatch, OpenVINOExecutionProvider, ROCmExecutionProvider,
++};
++use ort::session::Session;
++use ort::value::Tensor;
++use tokenizers::{Tokenizer, TruncationParams};
++
++use crate::device::{parse_device_request, DeviceRequest};
++
++/// Engine-facing identity name. Deliberately DISTINCT from the candle default
++/// (`fathomdb-bge-small-en-v1.5`) so the engine's identity check enforces the
++/// R-ONNX-3 same-backend build-and-read discipline: candle-written vectors and
++/// ONNX-read queries never silently mix until 0.8.18 #5 enforces a candle↔ONNX
++/// tolerance (ADR §3).
++pub const ORT_BGE_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5-onnx";
++
++/// Output dimension for `bge-small-en-v1.5` (matches the candle reference).
++pub const ORT_BGE_EMBEDDER_DIM: u32 = 384;
++
++/// Pinned HF revision of `BAAI/bge-small-en-v1.5` — same commit the candle
++/// loader pins (`loader::HF_REVISION`), recorded so an ONNX build is traceable
++/// to the same upstream weights the equivalence measurement compares against.
++const HF_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
++
++/// Tokenizer truncation ceiling — BGE-small's 512-slot learned position
++/// embeddings, identical to the candle path (`candle_bge::MAX_SEQUENCE_TOKENS`).
++const MAX_SEQUENCE_TOKENS: usize = 512;
++
++/// Sentence-vector pooling. Mirrors `candle_bge::Pooling`. Default is
++/// [`OrtPooling::Cls`] — the model-native, CLS-corrected mode the candle
++/// reference is compared against at Slice 15 (design §5).
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum OrtPooling {
++    /// Mean over the attention mask (candle's historical default).
++    Mean,
++    /// `[CLS]` token (position 0) — the mode BGE-small was trained for.
++    Cls,
++}
++
++/// An ORT execution provider selection, resolved from the `FATHOMDB_EMBED_DEVICE`
++/// grammar. Kept as a plain enum (no `ort` types) so the request→provider
++/// mapping is pure + unit-testable without a model or a native runtime.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum OrtProvider {
++    Cpu,
++    Cuda(i32),
++    Rocm(i32),
++    DirectMl(i32),
++    OpenVino,
++}
++
++/// PURE map from the backend-agnostic [`DeviceRequest`] (parsed by the shared
++/// `parse_device_request`, grammar parity with candle) to an [`OrtProvider`].
++///
++/// Returns the provider plus an optional LOUD-fallback message when the request
++/// could not be honored and CPU was substituted (mirrors candle's loud CPU
++/// fallback). The cross-vendor providers candle cannot reach — ROCm / DirectML
++/// / OpenVINO — are requested through the base grammar's `Unknown` arm
++/// (`FATHOMDB_EMBED_DEVICE=rocm|rocm:N|directml|openvino`), so the shared
++/// parser stays unchanged and ONNX only extends the interpretation.
++pub(crate) fn map_device_request(req: &DeviceRequest) -> (OrtProvider, Option<String>) {
++    match req {
++        DeviceRequest::Cpu => (OrtProvider::Cpu, None),
++        DeviceRequest::Cuda(idx) => (OrtProvider::Cuda(*idx as i32), None),
++        DeviceRequest::Metal => (
++            OrtProvider::Cpu,
++            Some(
++                "FATHOMDB_EMBED_DEVICE=metal is a candle backend; the ONNX path has no Metal \
++                 execution provider (use rocm|directml|openvino for cross-vendor GPUs, or \
++                 candle's embed-metal build); using CPU"
++                    .to_string(),
++            ),
++        ),
++        DeviceRequest::Unknown(name) => map_extended_provider(name),
++    }
++}
++
++/// Interpret an `Unknown` device token as a cross-vendor ORT provider.
++/// Accepts `rocm`|`rocm:N`, `directml`|`dml`|`directml:N`, `openvino`|`ovep`.
++/// Anything else is a LOUD CPU fallback.
++fn map_extended_provider(raw: &str) -> (OrtProvider, Option<String>) {
++    let (head, idx) = match raw.split_once(':') {
++        Some((h, i)) => (h, i.parse::<i32>().unwrap_or(0)),
++        None => (raw, 0),
++    };
++    match head {
++        "rocm" => (OrtProvider::Rocm(idx), None),
++        "directml" | "dml" => (OrtProvider::DirectMl(idx), None),
++        "openvino" | "ovep" => (OrtProvider::OpenVino, None),
++        other => (
++            OrtProvider::Cpu,
++            Some(format!(
++                "FATHOMDB_EMBED_DEVICE={other} is not a recognized ONNX execution provider \
++                 (expected cpu|cuda|cuda:N|rocm|rocm:N|directml|openvino); using CPU"
++            )),
++        ),
++    }
++}
++
++/// RUNTIME resolution of the ORT provider from `FATHOMDB_EMBED_DEVICE`
++/// (R-ONNX-2 — not a compile-time constant). Emits the LOUD stderr fallback
++/// message at construction time, never inside `embed()`.
++#[allow(clippy::print_stderr)] // construction-time only (not in `embed()`)
++fn resolve_provider_from_env() -> OrtProvider {
++    let raw = std::env::var("FATHOMDB_EMBED_DEVICE").unwrap_or_default();
++    let (provider, warn) = map_device_request(&parse_device_request(&raw));
++    if let Some(msg) = warn {
++        eprintln!("fathomdb-embedder(onnx): {msg}");
++    }
++    provider
++}
++
++/// Build the concrete `ort` execution-provider dispatch for a resolved
++/// [`OrtProvider`]. ORT's default dispatch is non-fatal — if the provider's
++/// shared lib is absent at runtime it logs and falls back to CPU rather than
++/// erroring (the loud-but-non-fatal behavior candle also uses).
++fn provider_dispatch(provider: OrtProvider) -> ExecutionProviderDispatch {
++    match provider {
++        OrtProvider::Cpu => CPUExecutionProvider::default().build(),
++        OrtProvider::Cuda(idx) => CUDAExecutionProvider::default().with_device_id(idx).build(),
++        OrtProvider::Rocm(idx) => ROCmExecutionProvider::default().with_device_id(idx).build(),
++        OrtProvider::DirectMl(idx) => {
++            DirectMLExecutionProvider::default().with_device_id(idx).build()
++        }
++        OrtProvider::OpenVino => OpenVINOExecutionProvider::default().build(),
++    }
++}
++
++/// Cross-vendor ONNX-Runtime BGE-small embedder.
++///
++/// `Session::run` needs `&mut self` but the `Embedder` trait is `&self` +
++/// `Send + Sync`, so the session lives behind a `Mutex`. Embedding is a short
++/// forward pass, so lock contention is not a concern for the offline/eval use
++/// this backend targets.
++pub struct OrtBgeEmbedder {
++    identity: EmbedderIdentity,
++    tokenizer: Tokenizer,
++    session: Mutex<Session>,
++    pooling: OrtPooling,
++}
++
++fn err(context: &str, e: impl std::fmt::Display) -> EmbedderError {
++    EmbedderError::Failed { message: format!("ort_bge {context}: {e}") }
++}
++
++impl OrtBgeEmbedder {
++    /// Construct from an on-disk `.onnx` model + `tokenizer.json`, selecting the
++    /// ORT execution provider at RUNTIME from `FATHOMDB_EMBED_DEVICE` (R-ONNX-2).
++    /// Paths are caller-supplied (no hardcoded absolute path) so the model is an
++    /// offline-build/eval asset the caller provisions.
++    pub fn from_files(model_path: &Path, tokenizer_path: &Path) -> Result<Self, EmbedderError> {
++        Self::from_files_with_provider(model_path, tokenizer_path, resolve_provider_from_env())
++    }
++
++    /// Construct from `FATHOMDB_ONNX_MODEL_PATH` + `FATHOMDB_ONNX_TOKENIZER_PATH`
++    /// (device from `FATHOMDB_EMBED_DEVICE`). The env-driven entry point an eval
++    /// harness / caller uses to engage the ONNX backend without recompiling.
++    pub fn from_env() -> Result<Self, EmbedderError> {
++        let model = std::env::var("FATHOMDB_ONNX_MODEL_PATH")
++            .map_err(|_| err("from_env", "FATHOMDB_ONNX_MODEL_PATH is unset"))?;
++        let tok = std::env::var("FATHOMDB_ONNX_TOKENIZER_PATH")
++            .map_err(|_| err("from_env", "FATHOMDB_ONNX_TOKENIZER_PATH is unset"))?;
++        Self::from_files(Path::new(&model), Path::new(&tok))
++    }
++
++    fn from_files_with_provider(
++        model_path: &Path,
++        tokenizer_path: &Path,
++        provider: OrtProvider,
++    ) -> Result<Self, EmbedderError> {
++        let mut tokenizer =
++            Tokenizer::from_file(tokenizer_path).map_err(|e| err("tokenizer load", e))?;
++        tokenizer
++            .with_truncation(Some(TruncationParams {
++                max_length: MAX_SEQUENCE_TOKENS,
++                ..Default::default()
++            }))
++            .map_err(|e| err("tokenizer truncation", e))?;
++
++        let session = Session::builder()
++            .map_err(|e| err("session builder", e))?
++            .with_execution_providers([provider_dispatch(provider)])
++            .map_err(|e| err("execution provider", e))?
++            .commit_from_file(model_path)
++            .map_err(|e| err("model load", e))?;
++
++        let identity =
++            EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, HF_REVISION, ORT_BGE_EMBEDDER_DIM);
++
++        Ok(Self { identity, tokenizer, session: Mutex::new(session), pooling: OrtPooling::Cls })
++    }
++
++    /// Select the pooling strategy (default [`OrtPooling::Cls`]). Does NOT change
++    /// the identity — use only on a fresh workspace / in the equivalence harness.
++    #[must_use]
++    pub fn with_pooling(mut self, pooling: OrtPooling) -> Self {
++        self.pooling = pooling;
++        self
++    }
++}
++
++impl Embedder for OrtBgeEmbedder {
++    fn identity(&self) -> EmbedderIdentity {
++        self.identity.clone()
++    }
++
++    fn embed(&self, input: &str) -> Result<Vector, EmbedderError> {
++        let encoding = self.tokenizer.encode(input, true).map_err(|e| err("tokenize", e))?;
++        let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| i64::from(x)).collect();
++        let mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| i64::from(x)).collect();
++        let len = ids.len();
++        let token_type: Vec<i64> = vec![0; len];
++        let shape = vec![1_i64, len as i64];
++
++        let ids_t = Tensor::from_array((shape.clone(), ids)).map_err(|e| err("input_ids", e))?;
++        let mask_t =
++            Tensor::from_array((shape.clone(), mask)).map_err(|e| err("attention_mask", e))?;
++        let tt_t = Tensor::from_array((shape, token_type)).map_err(|e| err("token_type_ids", e))?;
++
++        let mut session = self.session.lock().map_err(|_| err("session lock", "poisoned"))?;
++        let outputs = session
++            .run(ort::inputs![
++                "input_ids" => ids_t,
++                "attention_mask" => mask_t,
++                "token_type_ids" => tt_t,
++            ])
++            .map_err(|e| err("forward", e))?;
++
++        // last_hidden_state — first output, shape (1, L, H).
++        let (out_shape, data) =
++            outputs[0].try_extract_tensor::<f32>().map_err(|e| err("extract", e))?;
++        let dims: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
++        if dims.len() != 3 {
++            return Err(err("output shape", format!("expected rank-3 (1,L,H), got {dims:?}")));
++        }
++        let (seq_len, hidden) = (dims[1], dims[2]);
++        if hidden != ORT_BGE_EMBEDDER_DIM as usize {
++            return Err(err(
++                "output dim",
++                format!("expected hidden {ORT_BGE_EMBEDDER_DIM}, got {hidden}"),
++            ));
++        }
++
++        // Pool. `embed()` is single-input (no padding), so the attention mask is
++        // all-ones and mean-pool reduces to a plain mean over `seq_len`.
++        let mut pooled = vec![0.0_f32; hidden];
++        match self.pooling {
++            OrtPooling::Cls => {
++                pooled.copy_from_slice(&data[0..hidden]);
++            }
++            OrtPooling::Mean => {
++                for pos in 0..seq_len {
++                    let base = pos * hidden;
++                    for (j, slot) in pooled.iter_mut().enumerate() {
++                        *slot += data[base + j];
++                    }
++                }
++                let denom = seq_len.max(1) as f32;
++                for slot in &mut pooled {
++                    *slot /= denom;
++                }
++            }
++        }
++
++        // L2-normalize (matches candle's `l2_normalize`).
++        let norm = pooled.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-12);
++        for slot in &mut pooled {
++            *slot /= norm;
++        }
++        Ok(pooled)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    //! R-ONNX-2 device-mapping unit tests: the `FATHOMDB_EMBED_DEVICE` grammar
++    //! (parsed by the shared `parse_device_request`) → the correct ORT execution
++    //! provider. Pure — no model, no ONNX Runtime native lib, no GPU required.
++    use super::{map_device_request, OrtProvider};
++    use crate::device::parse_device_request;
++
++    fn resolve(raw: &str) -> (OrtProvider, Option<String>) {
++        map_device_request(&parse_device_request(raw))
++    }
++
++    #[test]
++    fn cpu_and_unset_map_to_cpu_no_warning() {
++        for raw in ["", "cpu", "  CPU  "] {
++            let (p, warn) = resolve(raw);
++            assert_eq!(p, OrtProvider::Cpu, "{raw:?}");
++            assert!(warn.is_none(), "{raw:?} should not warn");
++        }
++    }
++
++    #[test]
++    fn cuda_maps_to_cuda_provider_with_index() {
++        assert_eq!(resolve("cuda").0, OrtProvider::Cuda(0));
++        assert_eq!(resolve("cuda:1").0, OrtProvider::Cuda(1));
++        assert_eq!(resolve("cuda:2").0, OrtProvider::Cuda(2));
++        assert!(resolve("cuda:1").1.is_none());
++    }
++
++    #[test]
++    fn rocm_maps_to_rocm_provider() {
++        // ROCm is unreachable through candle — the cross-vendor payoff.
++        assert_eq!(resolve("rocm").0, OrtProvider::Rocm(0));
++        assert_eq!(resolve("rocm:1").0, OrtProvider::Rocm(1));
++        assert!(resolve("rocm").1.is_none());
++        assert!(resolve("ROCm").1.is_none()); // grammar lower-cases
++    }
++
++    #[test]
++    fn directml_maps_to_directml_provider() {
++        assert_eq!(resolve("directml").0, OrtProvider::DirectMl(0));
++        assert_eq!(resolve("dml").0, OrtProvider::DirectMl(0));
++        assert_eq!(resolve("directml:1").0, OrtProvider::DirectMl(1));
++        assert!(resolve("directml").1.is_none());
++    }
++
++    #[test]
++    fn openvino_maps_to_openvino_provider() {
++        assert_eq!(resolve("openvino").0, OrtProvider::OpenVino);
++        assert_eq!(resolve("ovep").0, OrtProvider::OpenVino);
++        assert!(resolve("openvino").1.is_none());
++    }
++
++    #[test]
++    fn metal_falls_back_to_cpu_loudly() {
++        // ORT has no Metal EP; candle owns that lane. Loud, never silent.
++        let (p, warn) = resolve("metal");
++        assert_eq!(p, OrtProvider::Cpu);
++        assert!(warn.is_some(), "metal must warn on CPU fallback");
++    }
++
++    #[test]
++    fn unrecognized_device_falls_back_to_cpu_loudly() {
++        for raw in ["vulkan", "tpu", "gpu"] {
++            let (p, warn) = resolve(raw);
++            assert_eq!(p, OrtProvider::Cpu, "{raw:?}");
++            assert!(warn.is_some(), "{raw:?} must warn on CPU fallback");
++        }
++    }
++
++    /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
++    /// `output.json` BLOCKED_ON): no `bge-small-en-v1.5` `.onnx` model and no
++    /// ONNX Runtime native lib exist in the offline build/eval envelope
++    /// (only candle `safetensors` + Python-wheel `onnxruntime` `.so`s). Provide
++    /// `FATHOMDB_ONNX_MODEL_PATH` + `FATHOMDB_ONNX_TOKENIZER_PATH` and
++    /// `ORT_DYLIB_PATH` (load-dynamic), then run with `--ignored`.
++    #[test]
++    #[ignore = "needs offline bge-small .onnx model + ONNX Runtime native lib (ORT_DYLIB_PATH); see output.json BLOCKED_ON"]
++    fn ort_bge_embeds_384_dim_finite_deterministic_vector() {
++        use fathomdb_embedder_api::Embedder;
++
++        let embedder = super::OrtBgeEmbedder::from_env()
++            .expect("set FATHOMDB_ONNX_MODEL_PATH / FATHOMDB_ONNX_TOKENIZER_PATH / ORT_DYLIB_PATH");
++        let v1 = embedder.embed("the quick brown fox").expect("embed");
++        let v2 = embedder.embed("the quick brown fox").expect("embed");
++        assert_eq!(v1.len(), super::ORT_BGE_EMBEDDER_DIM as usize);
++        assert!(v1.iter().all(|x| x.is_finite()), "all components finite");
++        assert_eq!(v1, v2, "deterministic for identical input");
++        let norm = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
++        assert!((norm - 1.0).abs() < 1e-3, "L2-normalized (got {norm})");
++    }
++}
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/rust/crates/fathomdb-embedder/src/device.rs && sed -n '1,120p' src/rust/crates/fathomdb-embedder-api/src/lib.rs && grep -R \"pub type Vector\" -n src/rust/crates/fathomdb-embedder-api src/rust/crates/fathomdb-embedder" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+//! Shared device-request parsing for the Candle backends (embedder + reranker).
+//!
+//! Both the default embedder (`candle_bge`, `FATHOMDB_EMBED_DEVICE`) and the
+//! default reranker (`candle_reranker`, `FATHOMDB_RERANK_DEVICE`) accept the
+//! SAME device grammar (`cpu` | `cuda` | `cuda:N` | `metal`). Keeping ONE pure
+//! parser here — independent of which Candle features are compiled in — avoids
+//! the two paths drifting apart and lets the grammar be unit-tested without a
+//! GPU or a feature build. The (feature- and hardware-dependent) mapping from a
+//! request to an actual `candle_core::Device` stays in each backend's own
+//! `resolve_device`, because the embedder and reranker are gated on independent
+//! features (`embed-cuda` vs `rerank-cuda`).
+//!
+//! Compiled whenever EITHER Candle path is on (`default-embedder` or
+//! `default-reranker`); the thin no-feature build pulls in none of this.
+
+/// A parsed device request, independent of which backends are compiled in.
+/// Keeping the env-grammar parse PURE (no `Device` construction, no `#[cfg]`
+/// gating, no I/O) makes it unit-testable without a GPU or a feature build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DeviceRequest {
+    /// Default — explicit `cpu`, empty/unset, or whitespace-only.
+    Cpu,
+    /// `cuda` (index 0) or `cuda:N`. A non-numeric index (`cuda:x`) clamps to 0,
+    /// matching the original `.unwrap_or(0)` behavior.
+    Cuda(usize),
+    /// `metal`.
+    Metal,
+    /// Anything else — honored as a loud CPU fallback, never silently.
+    Unknown(String),
+}
+
+/// Parse a device env var (`FATHOMDB_EMBED_DEVICE` / `FATHOMDB_RERANK_DEVICE`)
+/// into a [`DeviceRequest`]. Pure + total: case-insensitive, trims surrounding
+/// whitespace, and never panics.
+pub(crate) fn parse_device_request(raw: &str) -> DeviceRequest {
+    let requested = raw.trim().to_ascii_lowercase();
+    if requested.is_empty() || requested == "cpu" {
+        return DeviceRequest::Cpu;
+    }
+    if requested == "cuda" {
+        return DeviceRequest::Cuda(0);
+    }
+    if let Some(idx) = requested.strip_prefix("cuda:") {
+        return DeviceRequest::Cuda(idx.parse::<usize>().unwrap_or(0));
+    }
+    if requested == "metal" {
+        return DeviceRequest::Metal;
+    }
+    DeviceRequest::Unknown(requested)
+}
+
+#[cfg(test)]
+mod device_request_tests {
+    //! R-GPU-1 — pin the device grammar shared by `FATHOMDB_EMBED_DEVICE` and
+    //! `FATHOMDB_RERANK_DEVICE`. These exercise the PURE parse
+    //! (`parse_device_request`), not either backend's `resolve_device`, so they
+    //! run on the default (CPU) build with no GPU and no
+    //! `embed-cuda`/`embed-metal`/`rerank-cuda`/`rerank-metal` feature. The
+    //! request→`Device` mapping is feature- and hardware-dependent and is
+    //! covered by the GPU validation harness, not unit tests.
+    use super::{parse_device_request, DeviceRequest};
+
+    #[test]
+    fn unset_or_empty_is_cpu() {
+        // unset env decodes through `unwrap_or_default()` to "" at the call site.
+        assert_eq!(parse_device_request(""), DeviceRequest::Cpu);
+        assert_eq!(parse_device_request("   "), DeviceRequest::Cpu);
+    }
+
+    #[test]
+    fn explicit_cpu_is_cpu_case_and_space_insensitive() {
+        assert_eq!(parse_device_request("cpu"), DeviceRequest::Cpu);
+        assert_eq!(parse_device_request("CPU"), DeviceRequest::Cpu);
+        assert_eq!(parse_device_request("  Cpu  "), DeviceRequest::Cpu);
+    }
+
+    #[test]
+    fn bare_cuda_is_device_zero() {
+        assert_eq!(parse_device_request("cuda"), DeviceRequest::Cuda(0));
+        assert_eq!(parse_device_request("CUDA"), DeviceRequest::Cuda(0));
+    }
+
+    #[test]
+    fn cuda_n_selects_the_index() {
+        assert_eq!(parse_device_request("cuda:0"), DeviceRequest::Cuda(0));
+        assert_eq!(parse_device_request("cuda:1"), DeviceRequest::Cuda(1));
+        assert_eq!(parse_device_request(" cuda:2 "), DeviceRequest::Cuda(2));
+    }
+
+    #[test]
+    fn cuda_with_garbage_index_clamps_to_zero() {
+        // Preserves the original `.unwrap_or(0)` behavior — a malformed index
+        // is a GPU-0 request, never a panic.
+        assert_eq!(parse_device_request("cuda:x"), DeviceRequest::Cuda(0));
+        assert_eq!(parse_device_request("cuda:"), DeviceRequest::Cuda(0));
+    }
+
+    #[test]
+    fn metal_is_metal() {
+        assert_eq!(parse_device_request("metal"), DeviceRequest::Metal);
+        assert_eq!(parse_device_request("Metal"), DeviceRequest::Metal);
+    }
+
+    #[test]
+    fn unrecognized_is_a_named_unknown() {
+        // Honored as a loud CPU fallback in each `resolve_device`, never silent.
+        assert_eq!(parse_device_request("rocm"), DeviceRequest::Unknown("rocm".to_string()));
+        assert_eq!(parse_device_request("gpu"), DeviceRequest::Unknown("gpu".to_string()));
+    }
+}
+pub type Vector = Vec<f32>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmbedderIdentity {
+    pub name: String,
+    pub revision: String,
+    pub dimension: u32,
+}
+
+impl EmbedderIdentity {
+    #[must_use]
+    pub fn new(name: impl Into<String>, revision: impl Into<String>, dimension: u32) -> Self {
+        Self { name: name.into(), revision: revision.into(), dimension }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EmbedderError {
+    Failed { message: String },
+    Timeout,
+}
+
+pub trait Embedder: Send + Sync {
+    fn identity(&self) -> EmbedderIdentity;
+
+    fn embed(&self, input: &str) -> Result<Vector, EmbedderError>;
+
+    /// Embed many inputs in one call. The default implementation loops [`embed`],
+    /// so every backend works unchanged; backends with a true batched forward
+    /// (e.g. the candle GPU path) override this to amortize per-call overhead and
+    /// saturate the device (minutes -> seconds on a full-corpus embed).
+    ///
+    /// Contract: `embed_batch` MUST be numerically equivalent (within float
+    /// tolerance) to calling [`embed`] on each input, so a caller can switch to
+    /// batching WITHOUT changing the vectors written to an index. Locked by a
+    /// parity test in the default-embedder crate.
+    ///
+    /// [`embed`]: Embedder::embed
+    fn embed_batch(&self, inputs: &[&str]) -> Result<Vec<Vector>, EmbedderError> {
+        inputs.iter().map(|input| self.embed(input)).collect()
+    }
+}
+src/rust/crates/fathomdb-embedder-api/src/lib.rs:1:pub type Vector = Vec<f32>;
+
+exec
+/bin/bash -lc 'cargo check -p fathomdb-embedder --features onnx-embedder' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 147ms:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
+
+exec
+/bin/bash -lc 'cargo check -p fathomdb-embedder --all-features' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ exited 101 in 2083ms:
+   Compiling zerocopy v0.8.48
+   Compiling libm v0.2.16
+    Checking stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+   Compiling num-traits v0.2.19
+   Compiling generic-array v0.14.7
+   Compiling pulp v0.22.2
+   Compiling typenum v1.20.0
+   Compiling thiserror v2.0.18
+    Checking raw-cpuid v11.6.0
+    Checking reborrow v0.5.5
+   Compiling objc2 v0.6.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling dyn-stack-macros v0.1.3
+    Checking pulp-wasm-simd-flag v0.1.0
+    Checking objc2-encode v4.1.0
+   Compiling rustix v1.1.4
+   Compiling seq-macro v0.3.6
+   Compiling zerocopy-derive v0.8.48
+   Compiling bytemuck_derive v1.10.2
+    Checking zerofrom v0.1.7
+   Compiling thiserror-impl v2.0.18
+   Compiling either v1.16.0
+   Compiling bitflags v2.11.1
+   Compiling linux-raw-sys v0.12.1
+   Compiling anyhow v1.0.102
+    Checking yoke v0.8.2
+   Compiling serde_json v1.0.149
+   Compiling zmij v1.0.21
+   Compiling rustversion v1.0.22
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.18
+   Compiling env_home v0.1.0
+    Checking regex-automata v0.4.14
+   Compiling fs2 v0.4.3
+   Compiling num_cpus v1.17.0
+    Checking zerovec v0.11.6
+    Checking zerotrie v0.2.4
+    Checking equivalent v1.0.2
+   Compiling glob v0.3.3
+error: `objc2` only works on Apple platforms. Pass `--target aarch64-apple-darwin` or similar to compile for macOS.
+       (If you're absolutely certain that you're using GNUStep, you can specify that with the `gnustep-x-y` Cargo feature instead).
+   --> /home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/src/lib.rs:219:1
+    |
+219 | compile_error!("`objc2` only works on Apple platforms. Pass `--target aarch64-apple-darwin` or similar to compile for macOS.\n(If you're absolutely certain that you're using GNUStep, you can specify that with the `gnustep-x-y` Cargo feature instead).");
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling crossbeam-epoch v0.9.18
+   Compiling ring v0.17.14
+   Compiling crc32fast v1.5.0
+    Checking zeroize v1.8.2
+   Compiling tracing-attributes v0.1.31
+    Checking itertools v0.14.0
+    Checking foldhash v0.2.0
+   Compiling cudarc v0.19.7
+    Checking ryu v1.0.23
+    Checking rustls-pki-types v1.14.1
+    Checking static_assertions v1.1.0
+   Compiling crossbeam-deque v0.8.6
+    Checking hashbrown v0.17.0
+    Checking allocator-api2 v0.2.21
+    Checking libloading v0.9.0
+    Checking untrusted v0.9.0
+    Checking typed-path v0.12.3
+    Checking memmap2 v0.9.10
+   Compiling rayon-core v1.13.0
+    Checking byteorder v1.5.0
+    Checking tinystr v0.8.3
+    Checking potential_utf v0.1.5
+error: failed to run custom build command for `cudarc v0.19.7`
+
+Caused by:
+  process didn't exit successfully: `/home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z/target/debug/build/cudarc-983b9321330079bd/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-changed=build.rs
+  cargo:rerun-if-env-changed=CUDARC_CUDA_VERSION
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:rerun-if-env-changed=CUDA_TOOLKIT_ROOT_DIR
+  cargo:rerun-if-env-changed=CUDNN_LIB
+
+  --- stderr
+
+  thread 'main' (563833) panicked at /home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.19.7/build.rs:167:13:
+  `nvcc --version` failed.
+  Err(Os { code: 2, kind: NotFound, message: "No such file or directory" })
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `objc2` (lib) due to 1 previous error
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-embedder --features onnx-embedder' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 463ms:
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running unittests src/lib.rs (target/debug/deps/fathomdb_embedder-1407f33c7b13d14e)
+
+running 15 tests
+test device::device_request_tests::bare_cuda_is_device_zero ... ok
+test device::device_request_tests::cuda_n_selects_the_index ... ok
+test device::device_request_tests::cuda_with_garbage_index_clamps_to_zero ... ok
+test device::device_request_tests::explicit_cpu_is_cpu_case_and_space_insensitive ... ok
+test device::device_request_tests::metal_is_metal ... ok
+test device::device_request_tests::unset_or_empty_is_cpu ... ok
+test device::device_request_tests::unrecognized_is_a_named_unknown ... ok
+test ort_bge::tests::cpu_and_unset_map_to_cpu_no_warning ... ok
+test ort_bge::tests::cuda_maps_to_cuda_provider_with_index ... ok
+test ort_bge::tests::directml_maps_to_directml_provider ... ok
+test ort_bge::tests::ort_bge_embeds_384_dim_finite_deterministic_vector ... ignored, needs offline bge-small .onnx model + ONNX Runtime native lib (ORT_DYLIB_PATH); see output.json BLOCKED_ON
+test ort_bge::tests::metal_falls_back_to_cpu_loudly ... ok
+test ort_bge::tests::openvino_maps_to_openvino_provider ... ok
+test ort_bge::tests::rocm_maps_to_rocm_provider ... ok
+test ort_bge::tests::unrecognized_device_falls_back_to_cpu_loudly ... ok
+
+test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/candle_bge.rs (target/debug/deps/candle_bge-982c0333428bdf87)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/candle_dump.rs (target/debug/deps/candle_dump-a5a505229197a1b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/loader.rs (target/debug/deps/loader-5c3e08c1176c8269)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/no_engine_dep.rs (target/debug/deps/no_engine_dep-d38e59d8e1c3012e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fathomdb_embedder
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+exec
+/bin/bash -lc "grep -R \"struct CUDAExecutionProvider\\|pub struct CUDAExecutionProvider\\|feature.*cuda\" -n ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src | head -50 && grep -R \"CUDAExecutionProvider\" -n ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/execution_providers | head -80" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:87:pub struct CUDAExecutionProvider {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:371:		#[cfg(any(feature = "load-dynamic", feature = "cuda"))]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_tensor/copy.rs:344:	#[cfg(feature = "cuda")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_tensor/copy.rs:353:	#[cfg(feature = "cuda")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_tensor/copy.rs:373:	#[cfg(feature = "cuda")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_tensor/copy.rs:387:	#[cfg(feature = "cuda")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/value/impl_tensor/copy.rs:411:	#[cfg(feature = "cuda")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:87:pub struct CUDAExecutionProvider {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:91:super::impl_ep!(arbitrary; CUDAExecutionProvider);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:93:impl CUDAExecutionProvider {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:97:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:99:	/// let ep = CUDAExecutionProvider::default().with_device_id(0).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:115:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:117:	/// let ep = CUDAExecutionProvider::default().with_memory_limit(2 * 1024 * 1024 * 1024).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:130:	/// # use ort::{execution_providers::{cuda::CUDAExecutionProvider, ArenaExtendStrategy}, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:132:	/// let ep = CUDAExecutionProvider::default()
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:160:	/// PyTorch. See also [`CUDAExecutionProvider::with_conv_max_workspace`] to configure how much memory the exhaustive
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:172:	/// # use ort::{execution_providers::cuda::{CUDAExecutionProvider, CuDNNConvAlgorithmSearch}, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:174:	/// let ep = CUDAExecutionProvider::default()
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:204:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:206:	/// let ep = CUDAExecutionProvider::default().with_conv_max_workspace(false).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:226:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:228:	/// let ep = CUDAExecutionProvider::default().with_conv1d_pad_to_nc1d(true).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:253:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:255:	/// let ep = CUDAExecutionProvider::default().with_cuda_graph(true).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:270:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:272:	/// let ep = CUDAExecutionProvider::default().with_skip_layer_norm_strict_mode(true).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:293:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:295:	/// let ep = CUDAExecutionProvider::default().with_tf32(true).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:311:	/// # use ort::{execution_providers::cuda::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:313:	/// let ep = CUDAExecutionProvider::default().with_prefer_nhwc(true).build();
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:336:	/// # use ort::{execution_providers::cuda::{CUDAExecutionProvider, CUDAAttentionBackend}, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:338:	/// let ep = CUDAExecutionProvider::default()
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:360:impl ExecutionProvider for CUDAExecutionProvider {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cuda.rs:362:		"CUDAExecutionProvider"
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:6://! use ort::{execution_providers::CUDAExecutionProvider, session::Session};
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:10://! 		.with_execution_providers([CUDAExecutionProvider::default().build()])?
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:29:pub use self::cuda::CUDAExecutionProvider;
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:203:/// This only works for [`CUDAExecutionProvider`] & [`ROCmExecutionProvider`].
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:211:/// This only works for [`CUDAExecutionProvider`] & [`ROCmExecutionProvider`].
+
+exec
+/bin/bash -lc "sed -n '340,420p' ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/execution_providers/cuda.rs && grep -R \"struct DirectML\\|impl ExecutionProvider for Direct\" -n ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/execution_providers/directml.rs && sed -n '1,160p' ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/execution_providers/directml.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+	/// 	.build();
+	/// # Ok(())
+	/// # }
+	/// ```
+	#[must_use]
+	pub fn with_attention_backend(mut self, flags: CUDAAttentionBackend) -> Self {
+		self.options.set("sdpa_kernel", flags.0.to_string());
+		self
+	}
+
+	#[must_use]
+	pub fn with_fuse_conv_bias(mut self, enable: bool) -> Self {
+		self.options.set("fuse_conv_bias", if enable { "1" } else { "0" });
+		self
+	}
+
+	// https://github.com/microsoft/onnxruntime/blob/ffceed9d44f2f3efb9dd69fa75fea51163c91d91/onnxruntime/core/providers/cuda/cuda_execution_provider_info.h#L48
+	// https://github.com/microsoft/onnxruntime/blob/fe8a10caa40f64a8fbd144e7049cf5b14c65542d/onnxruntime/core/providers/cuda/cuda_execution_provider_info.cc#L17
+}
+
+impl ExecutionProvider for CUDAExecutionProvider {
+	fn name(&self) -> &'static str {
+		"CUDAExecutionProvider"
+	}
+
+	fn supported_by_platform(&self) -> bool {
+		cfg!(any(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "x86_64")), all(target_os = "windows", target_arch = "x86_64")))
+	}
+
+	#[allow(unused, unreachable_code)]
+	fn register(&self, session_builder: &mut SessionBuilder) -> Result<(), RegisterError> {
+		#[cfg(any(feature = "load-dynamic", feature = "cuda"))]
+		{
+			use core::ptr;
+
+			use crate::{AsPointer, ortsys, util};
+
+			let mut cuda_options: *mut ort_sys::OrtCUDAProviderOptionsV2 = ptr::null_mut();
+			ortsys![unsafe CreateCUDAProviderOptions(&mut cuda_options)?];
+			let _guard = util::run_on_drop(|| {
+				ortsys![unsafe ReleaseCUDAProviderOptions(cuda_options)];
+			});
+
+			let ffi_options = self.options.to_ffi();
+			ortsys![unsafe UpdateCUDAProviderOptions(
+				cuda_options,
+				ffi_options.key_ptrs(),
+				ffi_options.value_ptrs(),
+				ffi_options.len()
+			)?];
+
+			ortsys![unsafe SessionOptionsAppendExecutionProvider_CUDA_V2(session_builder.ptr_mut(), cuda_options)?];
+			return Ok(());
+		}
+
+		Err(RegisterError::MissingFeature)
+	}
+}
+
+#[cfg(windows)]
+pub const CUDA_DYLIBS: &[&str] = &["cublasLt64_12.dll", "cublas64_12.dll", "cufft64_11.dll", "cudart64_12.dll"];
+#[cfg(not(windows))]
+pub const CUDA_DYLIBS: &[&str] = &["libcublasLt.so.12", "libcublas.so.12", "libnvrtc.so.12", "libcurand.so.10", "libcufft.so.11", "libcudart.so.12"];
+
+#[cfg(windows)]
+pub const CUDNN_DYLIBS: &[&str] = &[
+	"cudnn_engines_runtime_compiled64_9.dll",
+	"cudnn_engines_precompiled64_9.dll",
+	"cudnn_heuristic64_9.dll",
+	"cudnn_ops64_9.dll",
+	"cudnn_adv64_9.dll",
+	"cudnn_graph64_9.dll",
+	"cudnn64_9.dll"
+];
+#[cfg(not(windows))]
+pub const CUDNN_DYLIBS: &[&str] = &[
+	"libcudnn_engines_runtime_compiled.so.9",
+	"libcudnn_engines_precompiled.so.9",
+	"libcudnn_heuristic.so.9",
+	"libcudnn_ops.so.9",
+	"libcudnn_adv.so.9",
+23:pub struct DirectMLExecutionProvider {
+46:impl ExecutionProvider for DirectMLExecutionProvider {
+use super::{ExecutionProvider, RegisterError};
+use crate::{error::Result, session::builder::SessionBuilder};
+
+/// [DirectML execution provider](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html) for
+/// DirectX 12-enabled hardware on Windows.
+///
+/// # Performance considerations
+/// The DirectML EP performs best when the size of inputs & outputs are known when the session is created. For graphs
+/// with dynamically sized inputs, you can override individual dimensions by constructing the session with
+/// [`SessionBuilder::with_dimension_override`]:
+/// ```no_run
+/// # use ort::{execution_providers::directml::DirectMLExecutionProvider, session::Session};
+/// # fn main() -> ort::Result<()> {
+/// let session = Session::builder()?
+/// 	.with_execution_providers([DirectMLExecutionProvider::default().build()])?
+/// 	.with_dimension_override("batch", 1)?
+/// 	.with_dimension_override("seq_len", 512)?
+/// 	.commit_from_file("gpt2.onnx")?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Default, Clone)]
+pub struct DirectMLExecutionProvider {
+	device_id: i32
+}
+
+super::impl_ep!(DirectMLExecutionProvider);
+
+impl DirectMLExecutionProvider {
+	/// Configures which device the EP should use.
+	///
+	/// ```
+	/// # use ort::{execution_providers::directml::DirectMLExecutionProvider, session::Session};
+	/// # fn main() -> ort::Result<()> {
+	/// let ep = DirectMLExecutionProvider::default().with_device_id(1).build();
+	/// # Ok(())
+	/// # }
+	/// ```
+	#[must_use]
+	pub fn with_device_id(mut self, device_id: i32) -> Self {
+		self.device_id = device_id;
+		self
+	}
+}
+
+impl ExecutionProvider for DirectMLExecutionProvider {
+	fn name(&self) -> &'static str {
+		"DmlExecutionProvider"
+	}
+
+	fn supported_by_platform(&self) -> bool {
+		cfg!(target_os = "windows")
+	}
+
+	#[allow(unused, unreachable_code)]
+	fn register(&self, session_builder: &mut SessionBuilder) -> Result<(), RegisterError> {
+		#[cfg(any(feature = "load-dynamic", feature = "directml"))]
+		{
+			use crate::AsPointer;
+
+			super::define_ep_register!(OrtSessionOptionsAppendExecutionProvider_DML(options: *mut ort_sys::OrtSessionOptions, device_id: core::ffi::c_int) -> ort_sys::OrtStatusPtr);
+			return Ok(unsafe {
+				crate::error::status_to_result(OrtSessionOptionsAppendExecutionProvider_DML(session_builder.ptr_mut(), self.device_id as _))
+			}?);
+		}
+
+		Err(RegisterError::MissingFeature)
+	}
+}
+
+exec
+/bin/bash -lc "grep -R \"R-ONNX\\|onnx-embedder\\|OrtBge\" -n dev src tests | head -100" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+dev/design/0.8.16-slice-0-f9-onnx-design.md:7:> `dev/adr/ADR-0.8.16-onnx-embedder-backend.md`. Board: `dev/plans/runs/STATUS-0.8.16.md`.
+dev/design/0.8.16-slice-0-f9-onnx-design.md:55:| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small vectors via the trait | fixture text → vector within documented Δ of candle CPU reference; plugged via `EmbedderChoice::Caller`, zero engine diff |
+dev/design/0.8.16-slice-0-f9-onnx-design.md:56:| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | `FATHOMDB_EMBED_DEVICE`/config selects ONNX; default build unaffected |
+dev/design/0.8.16-slice-0-f9-onnx-design.md:57:| R-ONNX-3 | Numeric-divergence documented, not yet enforced | candle↔ONNX Δ measured + recorded (§5); same-backend build-and-read discipline documented as the interim guard until 0.8.18 #5 |
+dev/design/0.8.16-slice-0-f9-onnx-design.md:100:## 5. candle↔ONNX equivalence-measurement plan (R-ONNX-3 → feeds 0.8.18 #5)
+dev/design/0.8.16-slice-0-f9-onnx-design.md:103:BAAI/bge-small-en-v1.5, dim 384, CLS-corrected pooling) and `OrtBgeEmbedder` (ONNX Runtime), so 0.8.18 #5
+dev/design/0.8.16-slice-0-f9-onnx-design.md:124:- New `OrtBgeEmbedder` in `fathomdb-embedder` (`mod ort_bge`, sibling of `candle_bge`/`nomic`), `impl
+dev/design/0.8.16-slice-0-f9-onnx-design.md:125:  Embedder` from `fathomdb-embedder-api`. Injected via `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))`
+dev/design/0.8.16-slice-0-f9-onnx-design.md:127:- New `onnx-embedder` Cargo feature gating optional `ort` (+ tokenizer/loader deps), mirroring the
+dev/design/0.8.16-slice-0-f9-onnx-design.md:131:  DirectML / OpenVINO / CPU). Config/env selects at `Engine::open` (R-ONNX-2), not compile-only.
+dev/design/0.8.16-slice-0-f9-onnx-design.md:138:(backend, then equivalence measurement). Slice 40 = verification (X1/X2/X3 + R-F9/R-ONNX AC gate + eu7).
+dev/design/0.8.16-slice-0-f9-onnx-design.md:145:   formula), and the ONNX-equivalence measurement gate (R-ONNX-1/3). `dev/acceptance.md` is locked; new ACs
+dev/design/fathomdb-memex-overall-roadmap/02-fathomdb-roadmap-adjustments.md:45:| **CURRENT scope** | #15 F9 importance/confidence (KEYSTONE) + #4 cross-vendor `OrtBgeEmbedder` (ort: CUDA/ROCm/DirectML/OpenVINO/CPU) via `EmbedderChoice::Caller`, zero engine diff. Slice-15 candle↔ONNX Δ measurement feeds 0.8.18 #5 tolerance calibration. |
+dev/design/0.8.1-embedder-gpu-and-portability.md:46:  BGE-small has standard ONNX exports. → `OrtBgeEmbedder`.
+dev/plans/plan-0.8.16.md:32:  AMD/Intel GPUs are unreachable through it. Add an `OrtBgeEmbedder` (`ort` crate: CUDA / ROCm /
+dev/plans/plan-0.8.16.md:50:| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small vectors via the trait | A fixture text → vector within tolerance of the candle CPU reference (documented Δ); plugged via `EmbedderChoice::Caller`, zero engine diff |
+dev/plans/plan-0.8.16.md:51:| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | `FATHOMDB_EMBED_DEVICE`/config selects ONNX; default build unaffected |
+dev/plans/plan-0.8.16.md:52:| R-ONNX-3 | Numeric-divergence is documented, not yet enforced | The candle↔ONNX Δ is measured + recorded; the *same-backend build-and-read* discipline is documented as the interim guard until 0.8.18 #5 |
+dev/plans/plan-0.8.16.md:70:| **10** | **ONNX embedder backend** — `OrtBgeEmbedder` behind the trait; config/env selection; zero engine diff | implementation | 0 |
+dev/plans/plan-0.8.16.md:72:| **40** | **Verification + Release Readiness (0.8.16)** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | verification | 5,10,15 |
+dev/plans/plan-0.8.16.md:75:touch. **R-ONNX-3 is a feed-forward gate:** the candle↔ONNX Δ measured at Slice 15 is the input the
+dev/plans/plan-0.8.16.md:114:F9 OFF-by-default). **Next: Slice 10 — ONNX embedder backend** (`OrtBgeEmbedder` behind the trait via
+dev/plans/plan-0.8.16.md:115:`EmbedderChoice::Caller`, `onnx-embedder` feature, config/env device select, zero engine diff), then
+dev/plans/runs/STATUS-0.8.16.md:6:> `dev/adr/ADR-0.8.16-onnx-embedder-backend.md`.
+dev/plans/runs/STATUS-0.8.16.md:27:| 10 | **ONNX embedder backend** — `OrtBgeEmbedder` behind the trait via `EmbedderChoice::Caller`; `onnx-embedder` feature; config/env device select; zero engine diff | NOT STARTED (dep: 0) — **NEXT** | — | — | — | — | — |
+dev/plans/runs/STATUS-0.8.16.md:29:| 40 | **Verification + Release Readiness** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | NOT STARTED (dep: 5,10,15) | — | — | — | — | — |
+dev/plans/runs/STATUS-0.8.16.md:41:| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small via the trait, within documented Δ | ⏳ Slice 10 |
+dev/plans/runs/STATUS-0.8.16.md:42:| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | ⏳ Slice 10 |
+dev/plans/runs/STATUS-0.8.16.md:43:| R-ONNX-3 | candle↔ONNX Δ measured + recorded; same-backend discipline documented | ⏳ Slice 15 (feeds 0.8.18 #5) |
+dev/plans/runs/STATUS-0.8.16.md:67:- **R-ONNX-3 is a feed-forward gate** — the candle↔ONNX Δ measured at Slice 15 calibrates 0.8.18 #5;
+dev/plans/runs/STATUS-0.8.16.md:73:3. **ONNX-equivalence** — R-ONNX-1 documented Δ tolerance + R-ONNX-3 recorded flip rate. ⏳ Slice 10/15.
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1814:ADR-0.8.16-onnx-embedder-backend.md
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1939:32-  AMD/Intel GPUs are unreachable through it. Add an `OrtBgeEmbedder` (`ort` crate: CUDA / ROCm /
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1946:50-| R-ONNX-1 | `OrtBgeEmbedder` produces BGE-small vectors via the trait | A fixture text → vector within tolerance of the candle CPU reference (documented Δ); plugged via `EmbedderChoice::Caller`, zero engine diff |
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1947:51-| R-ONNX-2 | Backend selected at `Engine::open` via config/env, not compile-only | `FATHOMDB_EMBED_DEVICE`/config selects ONNX; default build unaffected |
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1952:70-| **10** | **ONNX embedder backend** — `OrtBgeEmbedder` behind the trait; config/env selection; zero engine diff | implementation | 0 |
+dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log:1954:72:| **40** | **Verification + Release Readiness (0.8.16)** — X1/X2/X3 + R-F9/R-ONNX AC gate + eu7 gate | verification | 5,10,15 |
+dev/experiments-ledger.md:189:- **Result:** (1) GPU via `resolve_device()` seam (`FATHOMDB_EMBED_DEVICE`), default build stays CPU; est. ~100–300× CPU (not measured). (2) **candle 0.10 supports only CPU/CUDA/Metal — no ROCm/Vulkan**; AMD/Intel reachable only via new `impl Embedder` (ONNX-Runtime `OrtBgeEmbedder` rec.). (3) Vector-equivalence self-check needed before advertising portable DBs (`EmbedderIdentity` catches dim/model, NOT numeric divergence).
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:2:title: ADR-0.8.16-onnx-embedder-backend
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:5:desc: Adds a cross-vendor ONNX-Runtime BGE-small embedder (OrtBgeEmbedder) as a new impl Embedder in fathomdb-embedder, injected via EmbedderChoice::Caller with zero engine changes. Reaches AMD ROCm / Intel OpenVINO / DirectML that candle cannot. Behind a new onnx-embedder feature; the thin default build and the in-library 1-bit query path are unchanged. Includes the candle<->ONNX equivalence-measurement plan that feeds the 0.8.18 #5 vector-equivalence tolerance.
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:9:# ADR-0.8.16 — Cross-vendor ONNX embedder backend (OrtBgeEmbedder)
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:26:- **`OrtBgeEmbedder` in `fathomdb-embedder`** (`mod ort_bge`, sibling of `candle_bge` / `nomic`), `impl
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:29:- **Injection: `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))`** via `Engine::open_with_choice`
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:33:- **Feature gating:** a new `onnx-embedder` Cargo feature pulling optional `ort` (+ tokenizer/loader deps),
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:36:- **Device selection (R-ONNX-2):** reuse the backend-agnostic `parse_device_request`
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:42:## 3. Equivalence measurement & interim guard (R-ONNX-1, R-ONNX-3 → 0.8.18 #5)
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:44:- **Measured (Slice 15):** candle-CPU reference vs `OrtBgeEmbedder` across a fixed deterministic probe set;
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:49:- **R-ONNX-1 acceptance:** a fixture text → vector within a *documented* Δ of the candle CPU reference.
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:50:- **Interim guard (R-ONNX-3, documented not enforced):** **same-backend build-and-read** — vectors written
+dev/adr/ADR-0.8.16-onnx-embedder-backend.md:68:1. Mint the ONNX-equivalence measurement AC (R-ONNX-1 tolerance + R-ONNX-3 recorded Δ).
+src/rust/crates/fathomdb-embedder/src/lib.rs:81:#[cfg(any(feature = "default-embedder", feature = "default-reranker", feature = "onnx-embedder"))]
+src/rust/crates/fathomdb-embedder/src/lib.rs:89:// 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend) — cross-vendor ONNX
+src/rust/crates/fathomdb-embedder/src/lib.rs:90:// Runtime BGE-small embedder. Behind its own NON-default `onnx-embedder`
+src/rust/crates/fathomdb-embedder/src/lib.rs:93:#[cfg(feature = "onnx-embedder")]
+src/rust/crates/fathomdb-embedder/src/lib.rs:107:#[cfg(feature = "onnx-embedder")]
+src/rust/crates/fathomdb-embedder/src/lib.rs:108:pub use ort_bge::{OrtBgeEmbedder, OrtPooling, ORT_BGE_EMBEDDER_DIM, ORT_BGE_EMBEDDER_NAME};
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:1://! `OrtBgeEmbedder` — cross-vendor ONNX-Runtime BGE-small embedder.
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:6://! `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))` — the engine never
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:7://! names it, so there is ZERO engine change (ADR-0.8.16-onnx-embedder-backend
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:14://! the NON-default `onnx-embedder` Cargo feature so the thin default build
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:39:/// R-ONNX-3 same-backend build-and-read discipline: candle-written vectors and
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:128:/// (R-ONNX-2 — not a compile-time constant). Emits the LOUD stderr fallback
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:162:pub struct OrtBgeEmbedder {
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:173:impl OrtBgeEmbedder {
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:175:    /// ORT execution provider at RUNTIME from `FATHOMDB_EMBED_DEVICE` (R-ONNX-2).
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:229:impl Embedder for OrtBgeEmbedder {
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:303:    //! R-ONNX-2 device-mapping unit tests: the `FATHOMDB_EMBED_DEVICE` grammar
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:371:    /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
+src/rust/crates/fathomdb-embedder/src/ort_bge.rs:382:        let embedder = super::OrtBgeEmbedder::from_env()
+src/rust/crates/fathomdb-embedder/Cargo.toml:34:# 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend §2) — cross-vendor ONNX
+src/rust/crates/fathomdb-embedder/Cargo.toml:35:# Runtime backend for `OrtBgeEmbedder` (mod ort_bge), a caller-supplied
+src/rust/crates/fathomdb-embedder/Cargo.toml:37:# change. Optional + feature-gated behind `onnx-embedder` so the thin
+src/rust/crates/fathomdb-embedder/Cargo.toml:96:# 0.8.16 Slice 10 — cross-vendor ONNX embedder (`OrtBgeEmbedder`). Pulls the
+src/rust/crates/fathomdb-embedder/Cargo.toml:102:# (R-ONNX-2); the ONNX Runtime native lib is dlopen'd at runtime (load-dynamic).
+src/rust/crates/fathomdb-embedder/Cargo.toml:103:onnx-embedder = [
+
+exec
+/bin/bash -lc "sed -n '24,60p' dev/adr/ADR-0.8.16-onnx-embedder-backend.md && sed -n '120,135p' dev/design/0.8.16-slice-0-f9-onnx-design.md" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+## 2. Decision
+
+- **`OrtBgeEmbedder` in `fathomdb-embedder`** (`mod ort_bge`, sibling of `candle_bge` / `nomic`), `impl
+  Embedder` from `fathomdb-embedder-api` (`embed`/`embed_batch`/`identity`). Produces BGE-small vectors
+  (BAAI/bge-small-en-v1.5, dim 384, CLS-corrected pooling to match the candle reference).
+- **Injection: `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))`** via `Engine::open_with_choice`
+  (`fathomdb-engine/src/lib.rs:2449`). **Zero engine diff** — the engine never names a concrete embedder on
+  the `Caller` path. The `Default` variant stays candle-only (`open_default_embedder` unchanged), preserving
+  the footprint invariant.
+- **Feature gating:** a new `onnx-embedder` Cargo feature pulling optional `ort` (+ tokenizer/loader deps),
+  mirroring `default-embedder`'s `dep:` gating so the thin `default = []` build stays ML-free (EMB-3
+  wheel-size gate). No new dep in the default build.
+- **Device selection (R-ONNX-2):** reuse the backend-agnostic `parse_device_request`
+  (`fathomdb-embedder/src/device.rs`) for `FATHOMDB_EMBED_DEVICE` grammar parity; add an ONNX-specific
+  `resolve_device()` sibling that maps `DeviceRequest → ORT execution provider` (CUDA / ROCm / DirectML /
+  OpenVINO / CPU), with a LOUD stderr fallback to CPU when a provider is unavailable (as candle's does).
+  Selection happens at `Engine::open` via config/env — not compile-only.
+
+## 3. Equivalence measurement & interim guard (R-ONNX-1, R-ONNX-3 → 0.8.18 #5)
+
+- **Measured (Slice 15):** candle-CPU reference vs `OrtBgeEmbedder` across a fixed deterministic probe set;
+  metrics = cosine / L2 / max-abs element Δ **and the load-bearing 1-bit sign-quantization FLIP RATE**
+  (the in-library query path is 1-bit Hamming, so the sign-flip rate is what actually threatens fidelity).
+  Backend matrix candle-CPU × {ONNX-CPU, ONNX-CUDA, ONNX-ROCm/DirectML/OpenVINO as available}; re-embed on
+  the 3090s (cuda:0/1, exclude K620) when there is GPU room. Full plan: design package §5.
+- **R-ONNX-1 acceptance:** a fixture text → vector within a *documented* Δ of the candle CPU reference.
+- **Interim guard (R-ONNX-3, documented not enforced):** **same-backend build-and-read** — vectors written
+  by one embedder backend are read/queried with the SAME backend until 0.8.18 #5 enforces a tolerance.
+  Mirrors the 0.8.14 eu7 CPU-same-backend policy (`649a8d45`).
+- **Feed-forward:** the recorded Δ (esp. the flip rate) is the input the 0.8.18 #5 vector-equivalence
+  tolerance is calibrated against — record it precisely (plan §3).
+
+## 4. Consequences / non-goals
+
+- **Footprint invariant intact:** ONNX is a caller-supplied OFFLINE-BUILD/EVAL backend behind the trait;
+  the in-library 1-bit CPU query path is unchanged; the thin default build gains no dep.
+- **eu7 / R-GATE:** the shipped default path (candle CPU) is unchanged ⇒ eu7 no-op for the default build.
+- **Output:** a recorded Δ table in the Slice-15 run log + a one-line hand-off to the 0.8.18 #5 tolerance.
+
+## 6. ONNX design decision (detail in ADR-0.8.16-onnx-...)
+
+- New `OrtBgeEmbedder` in `fathomdb-embedder` (`mod ort_bge`, sibling of `candle_bge`/`nomic`), `impl
+  Embedder` from `fathomdb-embedder-api`. Injected via `EmbedderChoice::Caller(Arc::new(OrtBgeEmbedder::…))`
+  → **zero engine diff**.
+- New `onnx-embedder` Cargo feature gating optional `ort` (+ tokenizer/loader deps), mirroring the
+  `default-embedder` gating so the thin `default = []` build stays ML-free (EMB-3 wheel-size gate).
+- Device selection: reuse `parse_device_request` for `FATHOMDB_EMBED_DEVICE` grammar parity; add an
+  ONNX-specific `resolve_device()` sibling mapping `DeviceRequest → ORT execution provider` (CUDA / ROCm /
+  DirectML / OpenVINO / CPU). Config/env selects at `Engine::open` (R-ONNX-2), not compile-only.
+- The `Default` variant stays candle-only (no change to `open_default_embedder`) unless separately wired —
+  ONNX is a caller-supplied backend, keeping the footprint invariant intact.
+
+## 7. Slice fan-out (post-sign-off)
+
+exec
+/bin/bash -lc "grep -R \"with_execution_providers\" -n ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/session | head -20 && sed -n '280,360p' ~/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/session/builder.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ exited 2 in 0ms:
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/builder/impl_options.rs:36:	/// - **Indiscriminate use of [`SessionBuilder::with_execution_providers`] in a library** (e.g. always enabling
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/builder/impl_options.rs:39:	pub fn with_execution_providers(mut self, execution_providers: impl AsRef<[ExecutionProviderDispatch]>) -> Result<Self> {
+sed: can't read /home/coreyt/.cargo/registry/src/index.crates.io-*/ort-2.0.0-rc.10/src/session/builder.rs: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,90p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/builder/impl_options.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+use alloc::sync::Arc;
+use core::{
+	any::Any,
+	ffi::{c_int, c_void},
+	ptr
+};
+#[cfg(feature = "std")]
+use std::{borrow::Cow, path::Path};
+
+use super::SessionBuilder;
+#[cfg(feature = "std")]
+use crate::util::path_to_os_char;
+use crate::{
+	AsPointer,
+	environment::{self, ThreadManager},
+	error::Result,
+	execution_providers::{ExecutionProviderDispatch, apply_execution_providers},
+	logging::{LogLevel, LoggerFunction},
+	memory::MemoryInfo,
+	operator::OperatorDomain,
+	ortsys,
+	util::with_cstr,
+	value::DynValue
+};
+
+impl SessionBuilder {
+	/// Registers a list of execution providers for this session. Execution providers are registered in the order they
+	/// are provided.
+	///
+	/// Execution providers will only work if the corresponding Cargo feature is enabled and ONNX Runtime was built
+	/// with support for the corresponding execution provider. Execution providers that do not have their corresponding
+	/// feature enabled will emit a warning.
+	///
+	/// ## Notes
+	///
+	/// - **Indiscriminate use of [`SessionBuilder::with_execution_providers`] in a library** (e.g. always enabling
+	///   `CUDAExecutionProvider`) **is discouraged** unless you allow the user to configure the execution providers by
+	///   providing a `Vec` of [`ExecutionProviderDispatch`]es.
+	pub fn with_execution_providers(mut self, execution_providers: impl AsRef<[ExecutionProviderDispatch]>) -> Result<Self> {
+		apply_execution_providers(&mut self, execution_providers.as_ref(), "session options")?;
+		Ok(self)
+	}
+
+	/// Configure the session to use a number of threads to parallelize the execution within nodes. If ONNX Runtime was
+	/// built with OpenMP (as is the case with Microsoft's prebuilt binaries), this will have no effect on the number of
+	/// threads used. Instead, you can configure the number of threads OpenMP uses via the `OMP_NUM_THREADS` environment
+	/// variable.
+	///
+	/// For configuring the number of threads used when the session execution mode is set to `Parallel`, see
+	/// [`SessionBuilder::with_inter_threads()`].
+	pub fn with_intra_threads(mut self, num_threads: usize) -> Result<Self> {
+		ortsys![unsafe SetIntraOpNumThreads(self.ptr_mut(), num_threads as _)?];
+		Ok(self)
+	}
+
+	/// Configure the session to use a number of threads to parallelize the execution of the graph. If nodes can be run
+	/// in parallel, this sets the maximum number of threads to use to run them in parallel.
+	///
+	/// This has no effect when the session execution mode is set to `Sequential`.
+	///
+	/// For configuring the number of threads used to parallelize the execution within nodes, see
+	/// [`SessionBuilder::with_intra_threads()`].
+	pub fn with_inter_threads(mut self, num_threads: usize) -> Result<Self> {
+		ortsys![unsafe SetInterOpNumThreads(self.ptr_mut(), num_threads as _)?];
+		Ok(self)
+	}
+
+	/// Enable/disable the parallel execution mode for this session. By default, this is disabled.
+	///
+	/// Parallel execution can improve performance for models with many branches, at the cost of higher memory usage.
+	/// You can configure the amount of threads used to parallelize the execution of the graph via
+	/// [`SessionBuilder::with_inter_threads()`].
+	pub fn with_parallel_execution(mut self, parallel_execution: bool) -> Result<Self> {
+		let execution_mode = if parallel_execution {
+			ort_sys::ExecutionMode::ORT_PARALLEL
+		} else {
+			ort_sys::ExecutionMode::ORT_SEQUENTIAL
+		};
+		ortsys![unsafe SetSessionExecutionMode(self.ptr_mut(), execution_mode)?];
+		Ok(self)
+	}
+
+	/// Set the session's optimization level. See [`GraphOptimizationLevel`] for more information on the different
+	/// optimization levels.
+	pub fn with_optimization_level(mut self, opt_level: GraphOptimizationLevel) -> Result<Self> {
+		ortsys![unsafe SetSessionGraphOptimizationLevel(self.ptr_mut(), opt_level.into())?];
+		Ok(self)
+	}
+
+	/// After performing optimization (configurable with [`SessionBuilder::with_optimization_level`]), serializes the
+
+exec
+/bin/bash -lc "grep -R \"fn apply_execution_providers\" -n ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers && sed -n '1,150p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs:345:pub(crate) fn apply_execution_providers(session_builder: &mut SessionBuilder, eps: &[ExecutionProviderDispatch], source: &'static str) -> Result<()> {
+//! [`ExecutionProvider`]s provide hardware acceleration to [`Session`](crate::session::Session)s.
+//!
+//! Sessions can be configured with execution providers via [`SessionBuilder::with_execution_providers`]:
+//!
+//! ```no_run
+//! use ort::{execution_providers::CUDAExecutionProvider, session::Session};
+//!
+//! fn main() -> ort::Result<()> {
+//! 	let session = Session::builder()?
+//! 		.with_execution_providers([CUDAExecutionProvider::default().build()])?
+//! 		.commit_from_file("model.onnx")?;
+//!
+//! 	Ok(())
+//! }
+//! ```
+
+use alloc::{ffi::CString, string::ToString, sync::Arc, vec::Vec};
+use core::{
+	ffi::c_char,
+	fmt::{self, Debug},
+	ptr
+};
+
+use crate::{char_p_to_string, error::Result, ortsys, session::builder::SessionBuilder, util::MiniMap};
+
+pub mod cpu;
+pub use self::cpu::CPUExecutionProvider;
+pub mod cuda;
+pub use self::cuda::CUDAExecutionProvider;
+pub mod tensorrt;
+pub use self::tensorrt::TensorRTExecutionProvider;
+pub mod onednn;
+pub use self::onednn::OneDNNExecutionProvider;
+pub mod acl;
+pub use self::acl::ACLExecutionProvider;
+pub mod openvino;
+pub use self::openvino::OpenVINOExecutionProvider;
+pub mod coreml;
+pub use self::coreml::CoreMLExecutionProvider;
+pub mod rocm;
+pub use self::rocm::ROCmExecutionProvider;
+pub mod cann;
+pub use self::cann::CANNExecutionProvider;
+pub mod directml;
+pub use self::directml::DirectMLExecutionProvider;
+pub mod tvm;
+pub use self::tvm::TVMExecutionProvider;
+pub mod nnapi;
+pub use self::nnapi::NNAPIExecutionProvider;
+pub mod qnn;
+pub use self::qnn::QNNExecutionProvider;
+pub mod xnnpack;
+pub use self::xnnpack::XNNPACKExecutionProvider;
+pub mod armnn;
+pub use self::armnn::ArmNNExecutionProvider;
+pub mod migraphx;
+pub use self::migraphx::MIGraphXExecutionProvider;
+pub mod vitis;
+pub use self::vitis::VitisAIExecutionProvider;
+pub mod rknpu;
+pub use self::rknpu::RKNPUExecutionProvider;
+pub mod webgpu;
+pub use self::webgpu::WebGPUExecutionProvider;
+pub mod azure;
+pub use self::azure::AzureExecutionProvider;
+pub mod nv;
+pub use self::nv::NVExecutionProvider;
+
+/// ONNX Runtime works with different hardware acceleration libraries through its extensible **Execution Providers**
+/// (EP) framework to optimally execute the ONNX models on the hardware platform. This interface enables flexibility for
+/// the AP application developer to deploy their ONNX models in different environments in the cloud and the edge and
+/// optimize the execution by taking advantage of the compute capabilities of the platform.
+///
+/// ![](https://www.onnxruntime.ai/images/ONNX_Runtime_EP1.png)
+pub trait ExecutionProvider: Send + Sync {
+	/// Returns the identifier of this execution provider used internally by ONNX Runtime.
+	///
+	/// This is the same as what's used in ONNX Runtime's Python API to register this execution provider, i.e.
+	/// [`TVMExecutionProvider`]'s identifier is `TvmExecutionProvider`.
+	fn name(&self) -> &'static str;
+
+	/// Returns whether this execution provider is supported on this platform.
+	///
+	/// For example, the CoreML execution provider implements this as:
+	/// ```ignore
+	/// impl ExecutionProvider for CoreMLExecutionProvider {
+	/// 	fn supported_by_platform() -> bool {
+	/// 		cfg!(target_vendor = "apple")
+	/// 	}
+	/// }
+	/// ```
+	fn supported_by_platform(&self) -> bool {
+		true
+	}
+
+	/// Returns `Ok(true)` if ONNX Runtime was *compiled with support* for this execution provider, and `Ok(false)`
+	/// otherwise.
+	///
+	/// An `Err` may be returned if a serious internal error occurs, in which case your application should probably
+	/// just abort.
+	///
+	/// **Note that this does not always mean the execution provider is *usable* for a specific session.** A model may
+	/// use operators not supported by an execution provider, or the EP may encounter an error while attempting to load
+	/// dependencies during session creation. In most cases (i.e. showing the user an error message if CUDA could not be
+	/// enabled), you'll instead want to manually register this EP via [`ExecutionProvider::register`] and detect
+	/// and handle any errors returned by that function.
+	fn is_available(&self) -> Result<bool> {
+		let mut providers: *mut *mut c_char = ptr::null_mut();
+		let mut num_providers = 0;
+		ortsys![unsafe GetAvailableProviders(&mut providers, &mut num_providers)?];
+		if providers.is_null() {
+			return Ok(false);
+		}
+
+		for i in 0..num_providers {
+			let avail = match char_p_to_string(unsafe { *providers.offset(i as isize) }) {
+				Ok(avail) => avail,
+				Err(e) => {
+					let _ = ortsys![unsafe ReleaseAvailableProviders(providers, num_providers)];
+					return Err(e);
+				}
+			};
+			if self.name() == avail {
+				let _ = ortsys![unsafe ReleaseAvailableProviders(providers, num_providers)];
+				return Ok(true);
+			}
+		}
+
+		let _ = ortsys![unsafe ReleaseAvailableProviders(providers, num_providers)];
+		Ok(false)
+	}
+
+	/// Attempts to register this execution provider on the given session.
+	fn register(&self, session_builder: &mut SessionBuilder) -> Result<(), RegisterError>;
+}
+
+/// Trait used for execution providers that can have arbitrary configuration keys applied.
+///
+/// Most execution providers have a small set of configuration options which don't change between ONNX Runtime releases;
+/// others, like the CUDA execution provider, often have options added that go undocumented and thus unimplemented by
+/// `ort`. This allows you to configure these options regardless.
+pub trait ArbitrarilyConfigurableExecutionProvider {
+	fn with_arbitrary_config(self, key: impl ToString, value: impl ToString) -> Self;
+}
+
+/// The strategy for extending the device memory arena.
+#[derive(Debug, Default, Clone)]
+pub enum ArenaExtendStrategy {
+	/// (Default) Subsequent extensions extend by larger amounts (multiplied by powers of two)
+	#[default]
+
+exec
+/bin/bash -lc "sed -n '330,390p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/mod.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+			#[must_use]
+			pub fn build(self) -> $crate::execution_providers::ExecutionProviderDispatch {
+				self.into()
+			}
+		}
+
+		impl From<$symbol> for $crate::execution_providers::ExecutionProviderDispatch {
+			fn from(value: $symbol) -> Self {
+				$crate::execution_providers::ExecutionProviderDispatch::new(value)
+			}
+		}
+	};
+}
+pub(crate) use impl_ep;
+
+pub(crate) fn apply_execution_providers(session_builder: &mut SessionBuilder, eps: &[ExecutionProviderDispatch], source: &'static str) -> Result<()> {
+	fn register_inner(session_builder: &mut SessionBuilder, ep: &ExecutionProviderDispatch, #[allow(unused)] source: &'static str) -> Result<bool> {
+		if let Err(e) = ep.inner.register(session_builder) {
+			if ep.error_on_failure {
+				return Err(e)?;
+			}
+
+			if matches!(e, RegisterError::MissingFeature) {
+				if ep.inner.supported_by_platform() {
+					crate::warn!(%source, "{e}");
+				} else {
+					crate::debug!(%source, "{e} (note: additionally, `{}` may not be supported on this platform)", ep.inner.name());
+				}
+			} else {
+				crate::error!(%source, "An error occurred when attempting to register `{}`: {e}", ep.inner.name());
+			}
+			Ok(false)
+		} else {
+			crate::info!(%source, "Successfully registered `{}`", ep.inner.name());
+			Ok(true)
+		}
+	}
+
+	let mut fallback_to_cpu = !eps.is_empty();
+	for ep in eps {
+		if register_inner(session_builder, ep, source)? {
+			fallback_to_cpu = false;
+		}
+	}
+	if fallback_to_cpu {
+		crate::warn!("No execution providers from {source} registered successfully; may fall back to CPU.");
+	}
+	Ok(())
+}
+
+exec
+/bin/bash -lc "grep -R \"with_pooling\\|Pooling\" -n src/rust/crates/fathomdb-embedder/src/candle_bge.rs | head -40 && sed -n '1,120p' src/rust/crates/fathomdb-embedder/src/candle_bge.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+60:/// `1_Pooling/config.json` with `pooling_mode_cls_token: true`, i.e. it is a
+67:pub enum Pooling {
+102:    pooling: Pooling,
+243:        Ok(Self { identity, tokenizer, model, device, pooling: Pooling::Mean })
+246:    /// Select the pooling strategy (default [`Pooling::Mean`]). Does NOT change
+251:    pub fn with_pooling(mut self, pooling: Pooling) -> Self {
+288:                Pooling::Mean => mean_pool(&hidden, &attn_mask_u32)?,
+289:                Pooling::Cls => cls_pool(&hidden)?,
+343:                Pooling::Mean => mean_pool(&hidden, &attn_mask_u32)?,
+344:                Pooling::Cls => cls_pool(&hidden)?,
+//! `CandleBgeEmbedder` — the default embedder shipped with fathomdb.
+//!
+//! Wraps `candle_transformers::models::bert::BertModel` loaded with the
+//! pinned `BAAI/bge-small-en-v1.5` weights (revision
+//! `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`, dim 384) and implements
+//! the `fathomdb_embedder_api::Embedder` trait.
+//!
+//! Contract sources:
+//! - `dev/design/embedder.md` §0.4 — mean-pool over attention mask, then
+//!   L2-normalize; store un-centered (centering is the engine's concern).
+//! - `dev/design/embedder.md` §1 — pinned identity.
+//! - `dev/design/embedder.md` §7 — embedder does NOT append to
+//!   `embedder_events`; that is the engine's job.
+//! - `dev/design/embedder.md` §8 — little-endian invariant; enforced as
+//!   a `compile_error!` at the top of this module so BE builds fail at
+//!   `cargo build` rather than at runtime.
+//! - `ADR-0.6.0-embedder-protocol.md` Invariants 1–4 — unit-norm output,
+//!   no re-entrancy into the engine, no log/tracing/println in `embed()`,
+//!   trait method is synchronous.
+
+// Design §8: safetensors weight format is little-endian; pinned
+// workspace targets (x86_64, aarch64) are LE on all supported OSes.
+// BE platforms are explicitly out of scope for 0.7.1 — they would need
+// an additional byte-swap pass during weight load. Enforce at compile
+// time so a BE build fails fast rather than silently producing garbage
+// f32 vectors.
+#[cfg(target_endian = "big")]
+compile_error!("fathomdb-embedder default path requires a little-endian target");
+
+use std::path::Path;
+
+use candle_core::{DType, Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::bert::{BertModel, Config as BertConfig};
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use tokenizers::{Tokenizer, TruncationParams};
+
+use crate::loader::{load_pinned_default_embedder, EmbedderLoadError, LoadedWeights, HF_REVISION};
+
+/// Engine-facing identity name (per
+/// `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` §0.5). EU-5 will
+/// reconcile this with `fathomdb-engine::default_embedder_identity()` so
+/// the engine stops returning the noop name.
+pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";
+
+/// Output dimension for `bge-small-en-v1.5`. Must match the hidden_size
+/// field of the pinned `config.json`; `new()` enforces this at runtime.
+pub const DEFAULT_EMBEDDER_DIM: u32 = 384;
+
+/// Maximum sequence length (in tokens, INCLUDING the `[CLS]`/`[SEP]`
+/// specials) the tokenizer truncates to. BGE-small's learned position
+/// embeddings have exactly 512 slots (`config.json` `max_position_
+/// embeddings`); feeding a longer sequence trips an out-of-bounds
+/// index-select inside `BertModel::forward`. Per
+/// `dev/design/embedder-decision.md` §2.1 the tokenizer runs with
+/// `truncation True` / max 512.
+const MAX_SEQUENCE_TOKENS: usize = 512;
+
+/// Sentence-vector pooling strategy. `bge-small-en-v1.5` ships
+/// `1_Pooling/config.json` with `pooling_mode_cls_token: true`, i.e. it is a
+/// CLS-pooled model; BGE's docs warn that mean-pooling causes "a significant
+/// decrease in performance". `Mean` is the historical default (design §0.4);
+/// `Cls` is the model-correct mode, under evaluation behind the 1-bit binary
+/// recall-floor gate (it changes the embedding-space geometry that sign-bit
+/// quantization is sensitive to). See `dev/notes/IR-C-embedder-options-research.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pooling {
+    /// Mean over the attention mask (historical default; design §0.4).
+    Mean,
+    /// `[CLS]` token (position 0) — the mode bge-small was trained for.
+    Cls,
+}
+
+/// L2-normalize a `(1, D)` pooled tensor.
+fn l2_normalize(pooled: &Tensor) -> candle_core::Result<Tensor> {
+    let norm = pooled.sqr()?.sum_keepdim(1)?.sqrt()?;
+    let norm = norm.clamp(1e-12_f32, f32::INFINITY)?;
+    pooled.broadcast_div(&norm)
+}
+
+/// Mean-pool `(1, L, D)` hidden states over the attention mask → `(1, D)`. Pad
+/// positions contribute zero; divide by the non-pad token count, not by L.
+fn mean_pool(hidden: &Tensor, attn_mask_u32: &Tensor) -> candle_core::Result<Tensor> {
+    let mask_f = attn_mask_u32.to_dtype(DType::F32)?.unsqueeze(2)?; // (1, L, 1)
+    let mask_f = mask_f.broadcast_as(hidden.shape())?; // (1, L, D)
+    let summed = (hidden * &mask_f)?.sum(1)?; // (1, D)
+    let counts = mask_f.sum(1)?.clamp(1e-9_f32, f32::INFINITY)?; // (1, D)
+    summed / counts
+}
+
+/// CLS-pool: take the `[CLS]` token at position 0 of `(1, L, D)` → `(1, D)`.
+fn cls_pool(hidden: &Tensor) -> candle_core::Result<Tensor> {
+    hidden.narrow(1, 0, 1)?.squeeze(1)
+}
+
+/// Default embedder backed by `candle-transformers` BERT.
+pub struct CandleBgeEmbedder {
+    identity: EmbedderIdentity,
+    tokenizer: Tokenizer,
+    model: BertModel,
+    device: Device,
+    pooling: Pooling,
+}
+
+// 0.8.12 — the device-request grammar (`DeviceRequest` + `parse_device_request`)
+// moved to the shared `crate::device` module so the embedder and reranker resolve
+// `cpu`|`cuda`|`cuda:N`|`metal` through ONE pure parser. `resolve_device` below
+// (the feature- and hardware-dependent request→`Device` mapping) stays here.
+use crate::device::{parse_device_request, DeviceRequest};
+
+/// Resolve the candle device from `FATHOMDB_EMBED_DEVICE` (default CPU).
+///
+/// Accepts `cpu` | `cuda` | `cuda:N` | `metal`. GPU variants are only honored when
+/// the corresponding feature (`embed-cuda` / `embed-metal`) is compiled in; otherwise
+/// (or on init failure) it falls back to CPU and emits a LOUD stderr warning rather
+/// than silently running 100x slower on CPU when GPU was requested (the
+/// silent-slow-fallback trap). Device is NOT part of `EmbedderIdentity` — see
+/// `dev/design/0.8.1-embedder-gpu-and-portability.md` §3 on cross-backend vector
+/// equivalence (a 0.8.x guard).
+#[allow(clippy::print_stderr)] // construction-time error path only (not in `embed()`)
+
+exec
+/bin/bash -lc 'grep -R "macro_rules! warn'"\\|macro_rules"'! error'"\\|tracing\" -n ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src | head -80" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/environment.rs:42:/// environments are also used to configure ONNX Runtime to send log messages through the [`tracing`] crate in Rust.
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/environment.rs:320:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/environment.rs:321:		let logger = logger.or(Some((crate::logging::tracing_logger, ptr::null_mut())));
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:2:#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:47:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:48:		tracing::trace!($($arg)+);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:53:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:54:		tracing::debug!($($arg)+);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:59:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:60:		tracing::info!($($arg)+);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:63:macro_rules! warning {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:65:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:66:		tracing::warn!($($arg)+);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:69:macro_rules! error {
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:71:		#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:72:		tracing::error!($($arg)+);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:95:/// Callback from C that will handle ONNX logging, forwarding ONNX's logs to the `tracing` crate.
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:96:#[cfg(feature = "tracing")]
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:97:pub(crate) extern "system" fn tracing_logger(
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:112:	let span = tracing::span!(tracing::Level::TRACE, "ort", id = id, location = code_location);
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:115:		ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_VERBOSE => tracing::event!(parent: &span, tracing::Level::TRACE, "{message}"),
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:116:		ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_INFO => tracing::event!(parent: &span, tracing::Level::INFO, "{message}"),
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:117:		ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING => tracing::event!(parent: &span, tracing::Level::WARN, "{message}"),
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:118:		ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR => tracing::event!(parent: &span, tracing::Level::ERROR, "{message}"),
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs:119:		ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_FATAL => tracing::event!(parent: &span, tracing::Level::ERROR, "(FATAL): {message}")
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/builder/impl_options.rs:251:	/// handler ([`tracing`] if the `tracing` feature is enabled, otherwise ONNX Runtime's stdio logger).
+/home/coreyt/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/session/builder/impl_options.rs:275:	/// Note that when [`tracing`] integration is enabled via the `tracing` feature, the global log level takes
+
+exec
+/bin/bash -lc "sed -n '40,80p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/logging.rs && grep -n \"features\" -A40 ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/Cargo.toml | head -60" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+			ort_sys::OrtLoggingLevel::ORT_LOGGING_LEVEL_FATAL => LogLevel::Fatal
+		}
+	}
+}
+
+macro_rules! trace {
+	($($arg:tt)+) => {{
+		#[cfg(feature = "tracing")]
+		tracing::trace!($($arg)+);
+	}}
+}
+macro_rules! debug {
+	($($arg:tt)+) => {{
+		#[cfg(feature = "tracing")]
+		tracing::debug!($($arg)+);
+	}}
+}
+macro_rules! info {
+	($($arg:tt)+) => {{
+		#[cfg(feature = "tracing")]
+		tracing::info!($($arg)+);
+	}}
+}
+macro_rules! warning {
+	($($arg:tt)+) => {{
+		#[cfg(feature = "tracing")]
+		tracing::warn!($($arg)+);
+	}}
+}
+macro_rules! error {
+	($($arg:tt)+) => {{
+		#[cfg(feature = "tracing")]
+		tracing::error!($($arg)+);
+	}}
+}
+pub(crate) use debug;
+pub(crate) use error;
+pub(crate) use info;
+pub(crate) use trace;
+pub(crate) use warning;
+
+51:features = [
+52-    "std",
+53-    "ndarray",
+54-    "half",
+55-    "num-complex",
+56-    "training",
+57-    "fetch-models",
+58-    "load-dynamic",
+59-    "copy-dylibs",
+60-]
+61-rustdoc-args = [
+62-    "--cfg",
+63-    "docsrs",
+64-]
+65-targets = ["x86_64-unknown-linux-gnu"]
+66-
+67:[features]
+68-acl = ["ort-sys/acl"]
+69-alternative-backend = ["ort-sys/disable-linking"]
+70-armnn = ["ort-sys/armnn"]
+71-azure = ["ort-sys/azure"]
+72-cann = ["ort-sys/cann"]
+73-copy-dylibs = ["ort-sys/copy-dylibs"]
+74-coreml = ["ort-sys/coreml"]
+75-cuda = ["ort-sys/cuda"]
+76-default = [
+77-    "std",
+78-    "ndarray",
+79-    "tracing",
+80-    "download-binaries",
+81-    "copy-dylibs",
+82-]
+83-directml = ["ort-sys/directml"]
+84-download-binaries = ["ort-sys/download-binaries"]
+85-fetch-models = [
+86-    "std",
+87-    "dep:ureq",
+88-    "dep:sha2",
+89-]
+90-half = ["dep:half"]
+91-load-dynamic = [
+92-    "std",
+93-    "libloading",
+94-    "ort-sys/load-dynamic",
+95-]
+96-migraphx = ["ort-sys/migraphx"]
+97-ndarray = ["dep:ndarray"]
+98-nnapi = ["ort-sys/nnapi"]
+99-num-complex = ["dep:num-complex"]
+100-nv = ["ort-sys/nv"]
+101-onednn = ["ort-sys/onednn"]
+102-openvino = ["ort-sys/openvino"]
+103-qnn = ["ort-sys/qnn"]
+104-rknpu = ["ort-sys/rknpu"]
+105-rocm = ["ort-sys/rocm"]
+106-std = [
+107-    "ort-sys/std",
+--
+126:default-features = false
+127-
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-embedder/src/ort_bge.rs | sed -n '185,215p;140,160p;107,125p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+   107	/// Anything else is a LOUD CPU fallback.
+   108	fn map_extended_provider(raw: &str) -> (OrtProvider, Option<String>) {
+   109	    let (head, idx) = match raw.split_once(':') {
+   110	        Some((h, i)) => (h, i.parse::<i32>().unwrap_or(0)),
+   111	        None => (raw, 0),
+   112	    };
+   113	    match head {
+   114	        "rocm" => (OrtProvider::Rocm(idx), None),
+   115	        "directml" | "dml" => (OrtProvider::DirectMl(idx), None),
+   116	        "openvino" | "ovep" => (OrtProvider::OpenVino, None),
+   117	        other => (
+   118	            OrtProvider::Cpu,
+   119	            Some(format!(
+   120	                "FATHOMDB_EMBED_DEVICE={other} is not a recognized ONNX execution provider \
+   121	                 (expected cpu|cuda|cuda:N|rocm|rocm:N|directml|openvino); using CPU"
+   122	            )),
+   123	        ),
+   124	    }
+   125	}
+   140	/// Build the concrete `ort` execution-provider dispatch for a resolved
+   141	/// [`OrtProvider`]. ORT's default dispatch is non-fatal — if the provider's
+   142	/// shared lib is absent at runtime it logs and falls back to CPU rather than
+   143	/// erroring (the loud-but-non-fatal behavior candle also uses).
+   144	fn provider_dispatch(provider: OrtProvider) -> ExecutionProviderDispatch {
+   145	    match provider {
+   146	        OrtProvider::Cpu => CPUExecutionProvider::default().build(),
+   147	        OrtProvider::Cuda(idx) => CUDAExecutionProvider::default().with_device_id(idx).build(),
+   148	        OrtProvider::Rocm(idx) => ROCmExecutionProvider::default().with_device_id(idx).build(),
+   149	        OrtProvider::DirectMl(idx) => {
+   150	            DirectMLExecutionProvider::default().with_device_id(idx).build()
+   151	        }
+   152	        OrtProvider::OpenVino => OpenVINOExecutionProvider::default().build(),
+   153	    }
+   154	}
+   155	
+   156	/// Cross-vendor ONNX-Runtime BGE-small embedder.
+   157	///
+   158	/// `Session::run` needs `&mut self` but the `Embedder` trait is `&self` +
+   159	/// `Send + Sync`, so the session lives behind a `Mutex`. Embedding is a short
+   160	/// forward pass, so lock contention is not a concern for the offline/eval use
+   185	    pub fn from_env() -> Result<Self, EmbedderError> {
+   186	        let model = std::env::var("FATHOMDB_ONNX_MODEL_PATH")
+   187	            .map_err(|_| err("from_env", "FATHOMDB_ONNX_MODEL_PATH is unset"))?;
+   188	        let tok = std::env::var("FATHOMDB_ONNX_TOKENIZER_PATH")
+   189	            .map_err(|_| err("from_env", "FATHOMDB_ONNX_TOKENIZER_PATH is unset"))?;
+   190	        Self::from_files(Path::new(&model), Path::new(&tok))
+   191	    }
+   192	
+   193	    fn from_files_with_provider(
+   194	        model_path: &Path,
+   195	        tokenizer_path: &Path,
+   196	        provider: OrtProvider,
+   197	    ) -> Result<Self, EmbedderError> {
+   198	        let mut tokenizer =
+   199	            Tokenizer::from_file(tokenizer_path).map_err(|e| err("tokenizer load", e))?;
+   200	        tokenizer
+   201	            .with_truncation(Some(TruncationParams {
+   202	                max_length: MAX_SEQUENCE_TOKENS,
+   203	                ..Default::default()
+   204	            }))
+   205	            .map_err(|e| err("tokenizer truncation", e))?;
+   206	
+   207	        let session = Session::builder()
+   208	            .map_err(|e| err("session builder", e))?
+   209	            .with_execution_providers([provider_dispatch(provider)])
+   210	            .map_err(|e| err("execution provider", e))?
+   211	            .commit_from_file(model_path)
+   212	            .map_err(|e| err("model load", e))?;
+   213	
+   214	        let identity =
+   215	            EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, HF_REVISION, ORT_BGE_EMBEDDER_DIM);
+
+exec
+/bin/bash -lc "sed -n '1,80p' ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ort-2.0.0-rc.10/src/execution_providers/cpu.rs" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z
+ succeeded in 0ms:
+use super::{ExecutionProvider, RegisterError};
+use crate::{AsPointer, error::Result, ortsys, session::builder::SessionBuilder};
+
+/// The default CPU execution provider, powered by MLAS.
+#[derive(Debug, Default, Clone)]
+pub struct CPUExecutionProvider {
+	use_arena: bool
+}
+
+super::impl_ep!(CPUExecutionProvider);
+
+impl CPUExecutionProvider {
+	/// Enable/disable the usage of the arena allocator.
+	///
+	/// ```
+	/// # use ort::{execution_providers::cpu::CPUExecutionProvider, session::Session};
+	/// # fn main() -> ort::Result<()> {
+	/// let ep = CPUExecutionProvider::default().with_arena_allocator(true).build();
+	/// # Ok(())
+	/// # }
+	/// ```
+	#[must_use]
+	pub fn with_arena_allocator(mut self, enable: bool) -> Self {
+		self.use_arena = enable;
+		self
+	}
+}
+
+impl ExecutionProvider for CPUExecutionProvider {
+	fn name(&self) -> &'static str {
+		"CPUExecutionProvider"
+	}
+
+	// The CPU execution provider is always available.
+	fn is_available(&self) -> Result<bool> {
+		Ok(true)
+	}
+
+	fn supported_by_platform(&self) -> bool {
+		true
+	}
+
+	fn register(&self, session_builder: &mut SessionBuilder) -> Result<(), RegisterError> {
+		if self.use_arena {
+			ortsys![unsafe EnableCpuMemArena(session_builder.ptr_mut())?];
+		} else {
+			ortsys![unsafe DisableCpuMemArena(session_builder.ptr_mut())?];
+		}
+		Ok(())
+	}
+}
+
+codex
+The ONNX backend compiles, but requested unavailable execution providers can silently fall back to CPU, undermining the feature's device-selection contract and performance expectations.
+
+Review comment:
+
+- [P2] Warn when ORT falls back to CPU — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z/src/rust/crates/fathomdb-embedder/src/ort_bge.rs:209-210
+  When `FATHOMDB_EMBED_DEVICE` requests a provider that cannot be registered at runtime (for example `rocm` with a CPU-only ORT dylib, or `directml` on Linux), this relies on `ort`'s non-fatal `with_execution_providers` fallback. But the dependency is built with `default-features = false` and only `load-dynamic`, so `ort`'s warning/error macros are compiled out unless its `tracing` feature is enabled; the requested GPU provider can therefore silently fall back to CPU. That breaks the intended loud fallback behavior and can make cross-vendor runs appear successful while running much slower on CPU.
+The ONNX backend compiles, but requested unavailable execution providers can silently fall back to CPU, undermining the feature's device-selection contract and performance expectations.
+
+Review comment:
+
+- [P2] Warn when ORT falls back to CPU — /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-10-20260708T192441Z/src/rust/crates/fathomdb-embedder/src/ort_bge.rs:209-210
+  When `FATHOMDB_EMBED_DEVICE` requests a provider that cannot be registered at runtime (for example `rocm` with a CPU-only ORT dylib, or `directml` on Linux), this relies on `ort`'s non-fatal `with_execution_providers` fallback. But the dependency is built with `default-features = false` and only `load-dynamic`, so `ort`'s warning/error macros are compiled out unless its `tracing` feature is enabled; the requested GPU provider can therefore silently fall back to CPU. That breaks the intended loud fallback behavior and can make cross-vendor runs appear successful while running much slower on CPU.
+codex_slice10_rc=0
