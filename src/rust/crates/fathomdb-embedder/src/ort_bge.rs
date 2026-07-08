@@ -219,6 +219,46 @@ fn provider_dispatch(provider: OrtProvider) -> ExecutionProviderDispatch {
     }
 }
 
+/// SECOND, RUNTIME stage of the loud fallback (R-ONNX-2, codex §9 fix-2):
+/// even when the availability probe ([`resolve_effective_provider`]) reports a
+/// non-CPU EP as compiled-in, actually BUILDING/COMMITTING the session with it
+/// can still fail at runtime — missing CUDA/cuDNN/ROCm runtime libs, a bad
+/// device id, an incompatible driver. `ort`'s own dispatch would surface that
+/// as a hard `Err`, so a user with a CUDA-enabled ORT but absent runtime deps
+/// could not open the embedder AT ALL, violating the documented loud CPU
+/// fallback. This helper attempts the build with `effective`; on failure of a
+/// NON-CPU provider it produces a LOUD warning (naming the provider + the
+/// error) and RETRIES with CPU, returning the CPU session. A CPU failure is a
+/// real error (no retry). Generic over the session/error types with the build
+/// step injected as a closure, so the retry control flow is unit-testable with
+/// NO model and NO ORT native lib.
+fn build_session_with_fallback<S, E, F>(
+    effective: OrtProvider,
+    build: F,
+) -> Result<(S, Option<String>), E>
+where
+    F: Fn(OrtProvider) -> Result<S, E>,
+    E: std::fmt::Display,
+{
+    match build(effective) {
+        Ok(session) => Ok((session, None)),
+        // A CPU build failure is a genuine error — there is nothing to fall
+        // back to, so do not retry.
+        Err(e) if matches!(effective, OrtProvider::Cpu) => Err(e),
+        // The requested non-CPU EP was reported available but failed to build
+        // at runtime: warn LOUDLY and retry on CPU. Only a CPU failure here is
+        // fatal.
+        Err(e) => {
+            let warn = format!(
+                "requested ONNX execution provider {effective:?} was reported available but \
+                 FAILED during ONNX Runtime session creation ({e}); falling back to CPU"
+            );
+            let session = build(OrtProvider::Cpu)?;
+            Ok((session, Some(warn)))
+        }
+    }
+}
+
 /// Cross-vendor ONNX-Runtime BGE-small embedder.
 ///
 /// `Session::run` needs `&mut self` but the `Embedder` trait is `&self` +
@@ -279,12 +319,20 @@ impl OrtBgeEmbedder {
             emit_onnx_warning(&msg);
         }
 
-        let session = Session::builder()
-            .map_err(|e| err("session builder", e))?
-            .with_execution_providers([provider_dispatch(effective)])
-            .map_err(|e| err("execution provider", e))?
-            .commit_from_file(model_path)
-            .map_err(|e| err("model load", e))?;
+        // SESSION-BUILD RUNTIME stage (codex §9 fix-2): the availability probe
+        // above can pass yet the concrete build still fail (missing runtime
+        // libs, bad device id). `build_session_with_fallback` warns LOUDLY and
+        // retries on CPU for a non-CPU EP so an unavailable-at-runtime GPU never
+        // blocks opening the embedder; a CPU failure stays a hard error.
+        let (session, build_warn) = build_session_with_fallback(effective, |p| {
+            Session::builder()?
+                .with_execution_providers([provider_dispatch(p)])?
+                .commit_from_file(model_path)
+        })
+        .map_err(|e| err("session build", e))?;
+        if let Some(msg) = build_warn {
+            emit_onnx_warning(&msg);
+        }
 
         let identity =
             EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, HF_REVISION, ORT_BGE_EMBEDDER_DIM);
@@ -487,6 +535,85 @@ mod tests {
         });
         assert_eq!(eff, OrtProvider::Cpu);
         assert!(warn.is_none());
+    }
+
+    /// SESSION-BUILD RUNTIME loud fallback (codex §9 fix-2): a NON-CPU provider
+    /// that the availability probe reports as compiled-in can STILL fail when
+    /// the session is actually built (missing runtime libs / bad device id).
+    /// The helper must warn LOUDLY (naming the provider) and RETRY on CPU,
+    /// returning the CPU session. Build step injected, so no model / ORT lib.
+    #[test]
+    fn session_build_gpu_fails_retries_cpu_with_warning() {
+        use std::cell::RefCell;
+        for requested in [OrtProvider::Cuda(0), OrtProvider::Rocm(1), OrtProvider::OpenVino] {
+            let attempts = RefCell::new(Vec::new());
+            let build = |p: OrtProvider| -> Result<&'static str, String> {
+                attempts.borrow_mut().push(p);
+                match p {
+                    OrtProvider::Cpu => Ok("cpu-session"),
+                    other => Err(format!("no runtime lib for {other:?}")),
+                }
+            };
+            let (session, warn) = super::build_session_with_fallback(requested, build)
+                .expect("must retry CPU and succeed");
+            assert_eq!(session, "cpu-session", "{requested:?} must yield the CPU session");
+            let msg = warn.expect("a runtime GPU-build failure must emit a warning");
+            assert!(
+                msg.contains(&format!("{requested:?}")),
+                "warning must name the requested provider {requested:?}, got {msg:?}"
+            );
+            assert!(
+                msg.to_lowercase().contains("cpu"),
+                "warning must state the CPU fallback, got {msg:?}"
+            );
+            assert_eq!(
+                *attempts.borrow(),
+                vec![requested, OrtProvider::Cpu],
+                "must attempt the GPU provider first, then CPU"
+            );
+        }
+    }
+
+    /// When BOTH the requested non-CPU build and the CPU retry fail, the helper
+    /// must surface an `Err` (no session can be opened).
+    #[test]
+    fn session_build_gpu_and_cpu_both_fail_errors() {
+        let build =
+            |p: OrtProvider| -> Result<&'static str, String> { Err(format!("hard fail {p:?}")) };
+        let res = super::build_session_with_fallback(OrtProvider::Cuda(0), build);
+        assert!(res.is_err(), "both GPU and CPU failing must be an error");
+    }
+
+    /// A CPU-effective build failure is a genuine error — there is nothing to
+    /// fall back to, so the build closure must run EXACTLY once (no retry).
+    #[test]
+    fn session_build_cpu_failure_is_error_without_retry() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let build = |_p: OrtProvider| -> Result<&'static str, String> {
+            calls.set(calls.get() + 1);
+            Err("cpu build failed".to_string())
+        };
+        let res = super::build_session_with_fallback(OrtProvider::Cpu, build);
+        assert!(res.is_err(), "a CPU build failure must be an error");
+        assert_eq!(calls.get(), 1, "a CPU failure must NOT retry");
+    }
+
+    /// The happy path: an effective provider whose build succeeds returns the
+    /// session with NO warning and attempts the build exactly once.
+    #[test]
+    fn session_build_success_no_warning_single_attempt() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let build = |_p: OrtProvider| -> Result<&'static str, String> {
+            calls.set(calls.get() + 1);
+            Ok("session")
+        };
+        let (session, warn) = super::build_session_with_fallback(OrtProvider::Cuda(2), build)
+            .expect("build succeeds");
+        assert_eq!(session, "session");
+        assert!(warn.is_none(), "a successful build must not warn");
+        assert_eq!(calls.get(), 1, "a successful build must attempt exactly once");
     }
 
     /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
