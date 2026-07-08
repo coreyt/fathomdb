@@ -17,8 +17,15 @@
 - **Status:** `RATIFIED` (both sides, 2026-07-03). Converged over the enum-discussion-ledger `seq 1→12`; the
   shape, all 10 seq-8 conditions, and the seq-9 residuals (C-1..C-5) are resolved; FathomDB HITL approved
   (seq-11) and MEMEX agreed (seq-12). The ratified design contract lives at FathomDB `dev/design/record-lifecycle-protocol/`
-  (5 docs). **Ratification schedules nothing / authorizes no build (build ≠ adopt); roadmap placement TBD**
-  (breaking ⇒ likely ≥0.9.x FathomDB / coordinated 0.5.x Memex pair) — a later scheduling call; not yet slotted.
+  (5 docs). **Ratification schedules nothing / authorizes no build (build ≠ adopt).**
+- **UPDATE 2026-07-08 (F-19/F-20 resequence, HITL 2026-07-07):** OPP-12 is now **slotted in the FathomDB
+  0.8.x line** — **Phase-1 @ 0.8.19** (odd, label-only: existence axis · `transition`/`purge` · C-2 typed
+  `SearchHit.id` swap · schema migration · X1) + **Phase-2 @ 0.8.20** (even, publish; breaking-pair with a
+  Memex `0.5.x-successor`; the C-1 projection registry co-lands here). This **supersedes** the earlier
+  "≥0.9.x / not yet slotted" placement. Build ≠ adopt still holds — 0.8.19/0.8.20 build-authorization is a
+  separate pending HITL gate. **NB (cross-repo):** the Memex-side `LEVERAGE-OPPORTUNITIES-LEDGER.md` mirror
+  still carries the old "≥0.9.x / not yet slotted" text and needs a **coordinated Memex-side update** — NOT
+  applied here (push-scope is fathomdb-only).
 - **📒 Live discussion** is the dedicated JSONL ledger `dev/fathomdb/enum-discussion-ledger.jsonl` (append with
   `ledgerwrite`, watch with `ledgerwatch`). This OPP is the **index + ratified-outcome home**.
 - **Owner:** MEMEX (raises the need + owns liveness *semantics*) / FATHOM (structure & mechanism).
