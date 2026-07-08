@@ -22,10 +22,14 @@
   0.8.x line** — **Phase-1 @ 0.8.19** (odd, label-only: existence axis · `transition`/`purge` · C-2 typed
   `SearchHit.id` swap · schema migration · X1) + **Phase-2 @ 0.8.20** (even, publish; breaking-pair with a
   Memex `0.5.x-successor`; the C-1 projection registry co-lands here). This **supersedes** the earlier
-  "≥0.9.x / not yet slotted" placement. Build ≠ adopt still holds — 0.8.19/0.8.20 build-authorization is a
-  separate pending HITL gate. **NB (cross-repo):** the Memex-side `LEVERAGE-OPPORTUNITIES-LEDGER.md` mirror
-  still carries the old "≥0.9.x / not yet slotted" text and needs a **coordinated Memex-side update** — NOT
-  applied here (push-scope is fathomdb-only).
+  "≥0.9.x / not yet slotted" placement.
+- **UPDATE 2026-07-08b (build-authorization, HITL — master F-21):** OPP-12 is now **BUILD-AUTHORIZED** for
+  both slots (0.8.19 Phase-1 + 0.8.20 Phase-2) — this **supersedes** the "authorizes no build" clause above.
+  **Build ≠ adopt** (per-item adoption arms stay separately gated); **publish stays a separate per-`x.y.z`
+  HITL call** (0.8.20). Stays **in-sequence after 0.8.18** (not reordered). **NB (cross-repo):** the Memex-side
+  `LEVERAGE-OPPORTUNITIES-LEDGER.md` mirror still carries the old "≥0.9.x / not slotted / authorizes no build"
+  text and needs a **coordinated Memex-side update** (placement + build-auth) — NOT applied here
+  (push-scope is fathomdb-only; bundled with the pending Memex push directive).
 - **📒 Live discussion** is the dedicated JSONL ledger `dev/fathomdb/enum-discussion-ledger.jsonl` (append with
   `ledgerwrite`, watch with `ledgerwatch`). This OPP is the **index + ratified-outcome home**.
 - **Owner:** MEMEX (raises the need + owns liveness *semantics*) / FATHOM (structure & mechanism).
