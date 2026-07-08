@@ -99,6 +99,29 @@
       "default_tree_no_ort_tokenizers": "confirmed (cargo tree -p fathomdb-embedder default: no ort/tokenizers)"
     }
   },
+  "fix_3": {
+    "cycle": "codex §9 fix-3",
+    "finding": "[P2] ROOT cause that made fix-1/fix-2's loud-fallback machinery never fire at runtime: provider_dispatch(p) returned an ExecutionProviderDispatch that defaults to fail_silently (error_on_failure = false). So .with_execution_providers([...]) returned Ok even when a compiled-in non-CPU provider (CUDA/ROCm/DirectML/OpenVINO) could NOT REGISTER at runtime (host missing CUDA/cuDNN/ROCm libs, bad device id) — ORT logs internally and silently falls back to CPU. build_session_with_fallback therefore never saw an Err, build_warn stayed None, and the run silently used CPU, defeating the entire loud-fallback contract.",
+    "resolved": true,
+    "mechanism": "In provider_dispatch, every NON-CPU provider dispatch is now built with .error_on_failure() (verified present on ExecutionProviderDispatch in the pinned ort =2.0.0-rc.10: src/execution_providers/mod.rs:187 — sets error_on_failure=true so a failed EP registration surfaces as Err from with_execution_providers rather than silently falling back). A non-CPU registration failure now flows into build_session_with_fallback's existing CPU-retry + LOUD warning path. The CPU dispatch KEEPS the default (fail_silently) behavior: CPU is the always-available floor and the retry target, so it must be allowed to succeed. No change to the model/asset path, the ort footprint (default-features=false + load-dynamic), or the default ML-free build.",
+    "ort_api_confirmed": "ExecutionProviderDispatch::error_on_failure(self) -> Self exists in ort =2.0.0-rc.10 (execution_providers/mod.rs:187, doc: 'return an error upon EP registration if registration of this EP fails'; the default new() sets error_on_failure=false). Method name matches the finding; no equivalent substitution needed.",
+    "tests_added": [
+      "ort_bge::tests::non_cpu_dispatch_errors_on_failure_cpu_does_not (asserts provider_dispatch({Cuda,Rocm,DirectMl,OpenVino}) renders 'error_on_failure: true' via the dispatch Debug output and CPU renders 'error_on_failure: false'; .build() only constructs the dispatch config struct, so no ORT native lib is loaded) — PASS"
+    ],
+    "tests_result": "cargo test -p fathomdb-embedder --features onnx-embedder ort_bge: 15 passed, 1 ignored (14 prior + 1 new dispatch-flag test; R-ONNX-1 real-vector test stays #[ignore], asset blocker unchanged).",
+    "live_path_note": "The live end-to-end registration-failure -> Err -> CPU-retry -> loud warning path is exercised only when a real ORT native lib + model are present; that is verified at the Slice-15 / MAIN-tree run with a real ORT, part of the R-ONNX-1 blocked-asset work below. The unit test proves the dispatch is now wired with error_on_failure (the precondition for the live path to fire).",
+    "files_touched": [
+      "src/rust/crates/fathomdb-embedder/src/ort_bge.rs (the code fix; output.json is the closure witness in the same commit)"
+    ],
+    "engine_diff": "STILL NONE — git diff 146eecca -- src/rust/crates/fathomdb-engine is empty.",
+    "gates": {
+      "clippy_workspace_all_targets": "rc=0",
+      "check_workspace_all_targets": "rc=0",
+      "clippy_embedder_onnx_feature_all_targets": "rc=0",
+      "check_embedder_default_features": "rc=0",
+      "default_tree_no_ort_tokenizers": "confirmed (cargo tree -p fathomdb-embedder default: no ort/tokenizers)"
+    }
+  },
   "blocked_on": {
     "item": "R-ONNX-1 real-vector test (the fixture-text -> 384-dim vector assertion) requires a decision the implementer cannot make within scope.",
     "missing_assets": [

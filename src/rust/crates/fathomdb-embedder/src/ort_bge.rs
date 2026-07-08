@@ -204,18 +204,31 @@ fn provider_is_available(provider: OrtProvider) -> bool {
 }
 
 /// Build the concrete `ort` execution-provider dispatch for a resolved
-/// [`OrtProvider`]. ORT's default dispatch is non-fatal — if the provider's
-/// shared lib is absent at runtime it logs and falls back to CPU rather than
-/// erroring (the loud-but-non-fatal behavior candle also uses).
+/// [`OrtProvider`].
+///
+/// ORT's DEFAULT dispatch (`fail_silently`) is non-fatal: if a compiled-in
+/// non-CPU provider cannot REGISTER at runtime (missing CUDA/cuDNN/ROCm libs,
+/// bad device id) ORT logs internally and silently falls back to CPU, so
+/// `with_execution_providers` returns `Ok` and our loud-fallback machinery
+/// never fires (codex §9 fix-3 root cause). To make a non-CPU registration
+/// failure SURFACE as an `Err` — which then flows into
+/// [`build_session_with_fallback`]'s CPU retry + LOUD warning — we mark every
+/// non-CPU dispatch `.error_on_failure()`. The CPU dispatch keeps the default
+/// (silent) behavior: it is the always-available floor and the retry target,
+/// so it must be allowed to succeed rather than error.
 fn provider_dispatch(provider: OrtProvider) -> ExecutionProviderDispatch {
     match provider {
         OrtProvider::Cpu => CPUExecutionProvider::default().build(),
-        OrtProvider::Cuda(idx) => CUDAExecutionProvider::default().with_device_id(idx).build(),
-        OrtProvider::Rocm(idx) => ROCmExecutionProvider::default().with_device_id(idx).build(),
-        OrtProvider::DirectMl(idx) => {
-            DirectMLExecutionProvider::default().with_device_id(idx).build()
+        OrtProvider::Cuda(idx) => {
+            CUDAExecutionProvider::default().with_device_id(idx).build().error_on_failure()
         }
-        OrtProvider::OpenVino => OpenVINOExecutionProvider::default().build(),
+        OrtProvider::Rocm(idx) => {
+            ROCmExecutionProvider::default().with_device_id(idx).build().error_on_failure()
+        }
+        OrtProvider::DirectMl(idx) => {
+            DirectMLExecutionProvider::default().with_device_id(idx).build().error_on_failure()
+        }
+        OrtProvider::OpenVino => OpenVINOExecutionProvider::default().build().error_on_failure(),
     }
 }
 
@@ -614,6 +627,34 @@ mod tests {
         assert_eq!(session, "session");
         assert!(warn.is_none(), "a successful build must not warn");
         assert_eq!(calls.get(), 1, "a successful build must attempt exactly once");
+    }
+
+    /// codex §9 fix-3 ROOT: a non-CPU dispatch must be built with
+    /// `error_on_failure` so a runtime EP-registration failure surfaces as an
+    /// `Err` from `with_execution_providers` (feeding the CPU-retry + loud
+    /// warning). The CPU dispatch keeps the default silent behavior so the
+    /// retry target can succeed. Inspected via the dispatch `Debug` output,
+    /// which renders the private `error_on_failure` flag. No native ORT lib is
+    /// loaded — `.build()` only constructs the dispatch config struct.
+    #[test]
+    fn non_cpu_dispatch_errors_on_failure_cpu_does_not() {
+        for p in [
+            OrtProvider::Cuda(0),
+            OrtProvider::Rocm(1),
+            OrtProvider::DirectMl(0),
+            OrtProvider::OpenVino,
+        ] {
+            let dbg = format!("{:?}", super::provider_dispatch(p));
+            assert!(
+                dbg.contains("error_on_failure: true"),
+                "non-CPU provider {p:?} must set error_on_failure, got {dbg:?}"
+            );
+        }
+        let cpu = format!("{:?}", super::provider_dispatch(OrtProvider::Cpu));
+        assert!(
+            cpu.contains("error_on_failure: false"),
+            "CPU provider must keep the silent (fallback-target) default, got {cpu:?}"
+        );
     }
 
     /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
