@@ -117,6 +117,12 @@ dev/plans/runs/*.checkpoint.json
 dev/plans/runs/*.ckpt.json
 dev/plans/runs/*.ce-pass.json
 
+# Orchestrator slice-closure witness at a worktree ROOT — a transient hand-off
+# artifact, never a main deliverable (a stray commit of it was caught by codex §9
+# at 0.8.16 Slice 10, fix-4). Root-anchored so it does NOT match the tracked eval
+# `dev/plans/runs/*-output.json` summaries above. (guardrail: fix the tooling.)
+/output.json
+
 # Agent/tool scratch cache (regenerable)
 .cache/
 
