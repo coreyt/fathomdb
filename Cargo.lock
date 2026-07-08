@@ -1205,6 +1205,7 @@ dependencies = [
  "napi-derive",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -1218,6 +1219,7 @@ dependencies = [
  "fathomdb-schema",
  "pyo3",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -538,6 +538,12 @@ struct PyPerHitExplain {
     fused_score: f64,
     ce_score: Option<f64>,
     blended: f64,
+    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+    /// hit's contribution (`None` = graceful-absent / neutral). Mirrors the engine
+    /// `PerHitExplain` additive fields; `get_all` exposes them as read-only Python
+    /// attributes, symmetric with the N-API mirror.
+    importance: Option<f64>,
+    confidence: Option<f64>,
 }
 
 impl PyPerHitExplain {
@@ -556,6 +562,8 @@ impl PyPerHitExplain {
             fused_score: p.fused_score,
             ce_score: p.ce_score,
             blended: p.blended,
+            importance: p.importance,
+            confidence: p.confidence,
         }
     }
 }
@@ -1902,5 +1910,71 @@ mod tests {
         // Once cached, the init closure is never run again.
         let v2 = get_or_try_init::<u32, &str>(&CELL, || panic!("must not re-init")).unwrap();
         assert_eq!(*v2, 7);
+    }
+
+    // 0.8.16 Slice 5 / F9 (codex §9 fix-1, FINDING 2) — the pyo3 `PerHitExplain`
+    // mirror must copy the new `importance`/`confidence` fields from the engine
+    // type, keeping Py symmetric with the N-API mirror; otherwise Python
+    // `search_explained` callers cannot observe the F9 contribution (the 0.8.14
+    // `embed_batch_cls` binding blind-spot). The engine `PerHitExplain` is
+    // `#[non_exhaustive]` (no cross-crate literal), so the source value comes from
+    // a REAL `search_explained` run (F9 reweight ON, graph arm ON). Runs under
+    // `cargo test` (no maturin needed; `extension-module` is off for the workspace
+    // test build).
+    #[test]
+    fn per_hit_explain_from_rust_copies_f9_importance_and_confidence() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(format!("py_f9_explain{}", fathomdb_schema::SQLITE_SUFFIX));
+        let opened = RustEngine::open(&path).expect("open");
+        let engine = &opened.engine;
+        let receipt = engine
+            .write(&[
+                PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: "zephyr anchor entity".to_string(),
+                    source_id: None,
+                    logical_id: Some("zephyr".to_string()),
+                },
+                PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: "beta reachable payload node".to_string(),
+                    source_id: None,
+                    logical_id: Some("beta".to_string()),
+                },
+                PreparedWrite::Edge {
+                    kind: "link".to_string(),
+                    from: "zephyr".to_string(),
+                    to: "beta".to_string(),
+                    source_id: None,
+                    logical_id: Some("e-zb".to_string()),
+                    body: Some("collaboration record".to_string()),
+                    t_valid: None,
+                    t_invalid: None,
+                    confidence: Some(0.90),
+                    extractor_model_id: None,
+                    temporal_fallback: None,
+                },
+            ])
+            .expect("write");
+        let beta_cursor = receipt.row_cursors[1];
+        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
+        engine.set_importance_reweight_enabled_for_test(true);
+
+        let explained =
+            engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
+        let exp = explained.explanation.expect("explanation sidecar present");
+        let entry = exp
+            .per_hit
+            .iter()
+            .find(|p| p.id == beta_cursor)
+            .expect("per_hit entry for the graph-reached beta node");
+        assert_eq!(entry.importance, Some(0.25), "source explain carries node importance");
+        assert_eq!(entry.confidence, Some(0.90), "source explain carries edge confidence");
+
+        let mirror = PyPerHitExplain::from_rust(entry);
+        assert_eq!(mirror.importance, Some(0.25), "importance must propagate to the pyo3 mirror");
+        assert_eq!(mirror.confidence, Some(0.90), "confidence must propagate to the pyo3 mirror");
+
+        opened.engine.close().unwrap();
     }
 }

@@ -74,8 +74,10 @@ fn importance_enabled_deweights_and_reorders() {
 }
 
 #[test]
-fn confidence_scales_graph_arm_contribution() {
-    // Edge confidence multiplies the (graph-arm) hit's fused contribution.
+fn confidence_scales_contribution_pure_fn() {
+    // Pure-fn coverage retained: a confidence map entry multiplies the hit's
+    // contribution. (The REAL graph-arm path is proven end-to-end by
+    // `confidence_on_graph_arm_reorders_and_surfaces_in_explain` below.)
     let hits = vec![hit(1, "edge", 0.02)];
     let mut conf = HashMap::new();
     conf.insert(1u64, 0.5_f64);
@@ -254,6 +256,126 @@ fn explain_surfaces_importance_contribution() {
         exp.per_hit.iter().find(|p| p.id == a).expect("per_hit entry for the weighted node");
     assert_eq!(entry.importance, Some(0.5), "explain surfaces the node importance");
     assert_eq!(entry.confidence, None, "a node hit carries no edge confidence");
+
+    opened.engine.close().unwrap();
+}
+
+// ---- graph-arm edge-confidence e2e (codex §9 fix-1, FINDING 1) --------------
+
+/// Entity node with an explicit `logical_id` (so it can be a graph seed / edge
+/// endpoint — mirrors `pr_c1_graph_seeding::entity_node`).
+fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
+    PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+    }
+}
+
+/// Edge with an explicit `confidence` and a query-NON-matching `body` (so the
+/// endpoints are reached by BFS traversal, not co-seeded by edge-fact FTS).
+fn conf_edge(from: &str, to: &str, logical_id: &str, body: &str, confidence: f64) -> PreparedWrite {
+    PreparedWrite::Edge {
+        kind: "link".to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        source_id: None,
+        logical_id: Some(logical_id.to_string()),
+        body: Some(body.to_string()),
+        t_valid: None,
+        t_invalid: None,
+        confidence: Some(confidence),
+        extractor_model_id: None,
+        temporal_fallback: None,
+    }
+}
+
+/// FINDING 1 (codex §9) — edge confidence must actually reach a graph-arm NODE
+/// hit and drive ranking END-TO-END through the real retrieval path (not a
+/// hand-built confidence map). Two entities are reached from the same seed by
+/// BFS-traversed edges of very different confidence; the reweight reorders them
+/// and the confidence surfaces in `PerHitExplain`.
+///
+/// Setup (no vector kind configured ⇒ vector arm empty; only the seed body
+/// matches the FTS query, so `beta`/`gamma` are reached ONLY via graph traversal
+/// and are NOT excluded as two-arm hits):
+///
+/// - seed `zephyr` (matched by the query)
+/// - `zephyr --(conf 0.10)--> gamma`  (edge written FIRST ⇒ lower write_cursor ⇒
+///   traversed first ⇒ better graph `bfs_rank`)
+/// - `zephyr --(conf 0.90)--> beta`   (edge written SECOND)
+///
+/// So with the reweight OFF, `gamma` (better rank) outranks `beta`; with it ON,
+/// `beta` (0.90) leaps above `gamma` (0.10) — a confidence-driven FLIP.
+#[test]
+fn confidence_on_graph_arm_reorders_and_surfaces_in_explain() {
+    let (_dir, path) = fixture("f9_graph_conf");
+    let opened = Engine::open(&path).expect("open");
+    let engine = &opened.engine;
+    engine
+        .write(&[
+            entity_node("zephyr anchor entity", "zephyr"),
+            entity_node("beta reachable payload node", "beta"),
+            entity_node("gamma reachable payload node", "gamma"),
+            // Edge bodies do NOT contain "zephyr" ⇒ endpoints are reached by BFS,
+            // not co-seeded by edge-fact FTS. gamma-edge is written FIRST.
+            conf_edge("zephyr", "gamma", "e-zg", "collaboration record one", 0.10),
+            conf_edge("zephyr", "beta", "e-zb", "collaboration record two", 0.90),
+        ])
+        .expect("write");
+
+    // Helper: 0-based index of a body in the result list.
+    let pos = |results: &[SearchHit], needle: &str| -> usize {
+        results
+            .iter()
+            .position(|h| h.body.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} must be present in results"))
+    };
+
+    // Reweight OFF baseline (graph arm ON): both endpoints are graph-arm hits;
+    // gamma (better bfs_rank) outranks beta.
+    let off = engine.search_reranked("zephyr", None, 0, true, 0.3, 0).expect("search off");
+    for name in ["gamma reachable", "beta reachable"] {
+        let h = off.results.iter().find(|h| h.body.contains(name)).expect("graph hit present");
+        assert_eq!(h.branch, SoftFallbackBranch::GraphArm, "{name} is a graph-arm hit");
+    }
+    assert!(
+        pos(&off.results, "gamma reachable") < pos(&off.results, "beta reachable"),
+        "OFF: gamma (better bfs_rank) outranks beta — {:?}",
+        off.results.iter().map(|h| (h.body.as_str(), h.score)).collect::<Vec<_>>()
+    );
+
+    // Reweight ON: the high-confidence edge (beta, 0.90) must overtake the
+    // low-confidence edge (gamma, 0.10) — a confidence-driven end-to-end FLIP.
+    engine.set_importance_reweight_enabled_for_test(true);
+    let on = engine.search_reranked("zephyr", None, 0, true, 0.3, 0).expect("search on");
+    assert!(
+        pos(&on.results, "beta reachable") < pos(&on.results, "gamma reachable"),
+        "ON: beta (edge conf 0.90) overtakes gamma (edge conf 0.10) — {:?}",
+        on.results.iter().map(|h| (h.body.as_str(), h.score)).collect::<Vec<_>>()
+    );
+
+    // (b) Observability: the traversing edge's confidence shows in PerHitExplain.
+    let explained =
+        engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
+    let exp = explained.explanation.expect("explanation sidecar present");
+    let beta_id = on.results.iter().find(|h| h.body.contains("beta reachable")).unwrap().id;
+    let gamma_id = on.results.iter().find(|h| h.body.contains("gamma reachable")).unwrap().id;
+    let beta_exp =
+        exp.per_hit.iter().find(|p| p.id == beta_id).expect("per_hit entry for beta graph hit");
+    let gamma_exp =
+        exp.per_hit.iter().find(|p| p.id == gamma_id).expect("per_hit entry for gamma graph hit");
+    assert_eq!(
+        beta_exp.confidence,
+        Some(0.90),
+        "explain surfaces the traversing edge confidence for beta"
+    );
+    assert_eq!(
+        gamma_exp.confidence,
+        Some(0.10),
+        "explain surfaces the traversing edge confidence for gamma"
+    );
 
     opened.engine.close().unwrap();
 }

@@ -7048,7 +7048,7 @@ fn read_search_in_tx(
         // C1: seed the graph arm from the query's FTS match expression (entities /
         // edge-facts), not the doc-node fused hits. `fused_hits` is still passed for
         // the seed-body exclusion set.
-        let (graph_candidates, stats) = bfs_graph_arm_candidates(
+        let (graph_candidates, stats, graph_edge_confidence) = bfs_graph_arm_candidates(
             reader,
             &two_arm_fused,
             compiled.match_expression.as_str(),
@@ -7068,11 +7068,22 @@ fn read_search_in_tx(
         );
         // F9 — importance (node) / confidence (edge) reweight, OFF by default.
         // Order: AFTER recency (consistent placement), BEFORE the CE rerank seam.
-        let (imp_map, conf_map) = if importance_enabled || explain {
+        let (imp_map, mut conf_map) = if importance_enabled || explain {
             build_importance_confidence_maps(reader, &fused).unwrap_or_default()
         } else {
             (HashMap::new(), HashMap::new())
         };
+        // F9 FIX-1: `build_importance_confidence_maps` keys edge confidence on the
+        // EDGE `write_cursor`, which never matches a graph-arm NODE hit's cursor —
+        // so it alone leaves graph-arm hits with no edge confidence. Merge the
+        // BFS-collected per-node traversing-edge confidence (node cursor ⇒ conf).
+        // Node/edge cursors are globally unique, so there is never a key collision
+        // with the edge-fact confidence above; `or_insert` documents that intent.
+        if importance_enabled || explain {
+            for (cursor, conf) in &graph_edge_confidence {
+                conf_map.entry(*cursor).or_insert(*conf);
+            }
+        }
         let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
         if explain {
             exp_importance = Some(imp_map);
@@ -7168,13 +7179,26 @@ fn read_search_in_tx(
 /// `SoftFallbackBranch::GraphArm`. Score = `1.0 / (1.0 + hop_count)` with a
 /// synthesized-node penalty (`kind = 'unknown'` → score *= 0.3). Bodies already
 /// present in `fused_hits` are excluded (already covered by the two-arm result).
+///
+/// **F9 (0.8.16 Slice 5) confidence carry:** the third tuple element maps each
+/// emitted graph-arm hit's `write_cursor` (its `SearchHit.id`, a NODE cursor) to
+/// the `confidence` of the EDGE traversed to reach that node — the input the F9
+/// reweight (`graph_rrf_score(edge) = confidence × 1/(K+bfs_rank)`) consumes.
+/// `build_importance_confidence_maps` keys edge confidence on the EDGE
+/// `write_cursor`, which never equals a reached node's cursor, so without this
+/// carry edge confidence never reaches a graph-arm hit. **Determinism rule (matches
+/// the BLOCK-2 provenance carry):** when several edges reach the same node, the
+/// FIRST edge to claim the node in the `visited` dedup wins — i.e. the edge that
+/// produced the node's winning `bfs_rank` (seeds are considered before Phase-2
+/// neighbors; within a phase, `ORDER BY write_cursor` makes the earliest-written
+/// edge win). A NULL edge confidence is simply not inserted ⇒ neutral (1.0).
 fn bfs_graph_arm_candidates(
     reader: &mut Connection,
     fused_hits: &[SearchHit],
     match_expression: &str,
     max_depth: u32,
     cap: usize,
-) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats)> {
+) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats, HashMap<u64, f64>)> {
     // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
     const SEED_FTS_N: usize = 10;
     const SYNTHESIZED_PENALTY: f64 = 0.3;
@@ -7188,6 +7212,10 @@ fn bfs_graph_arm_candidates(
     let mut frontier: VecDeque<(String, u32)> = VecDeque::new(); // (logical_id, depth)
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut candidates: Vec<SearchHit> = Vec::new();
+    // F9 (0.8.16 Slice 5) — per-hit traversing-edge confidence, keyed by the
+    // emitted hit's NODE `write_cursor`. First edge to reach a node wins (visited
+    // dedup); NULL confidence is never inserted (⇒ neutral in the reweight).
+    let mut edge_confidence_by_cursor: HashMap<u64, f64> = HashMap::new();
     // G0 Phase-2 (BLOCK-1) frontier meter — distinct seed candidates considered vs
     // resolved-active; `resolved_seed_rate` flips 0→>0 once entities/edge-facts seed.
     let mut stats = GraphFrontierStats::default();
@@ -7197,25 +7225,29 @@ fn bfs_graph_arm_candidates(
         // Order-preserving dedup (first provenance wins) so `seeds_considered` counts
         // each candidate once. `source_id` is the session the seed traces back to: the
         // matched edge's `source_id` (source A) or the entity node's own (source B).
-        let mut candidate_seeds: Vec<(String, Option<String>)> = Vec::new();
+        // F9: each seed carries the confidence of the edge that surfaced it
+        // (`None` for entity-FTS seeds, which have no traversing edge).
+        let mut candidate_seeds: Vec<(String, Option<String>, Option<f64>)> = Vec::new();
         let mut seen_candidates: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         let push_candidate =
             |lid: String,
              source_id: Option<String>,
+             confidence: Option<f64>,
              seen: &mut std::collections::HashSet<String>,
-             out: &mut Vec<(String, Option<String>)>| {
+             out: &mut Vec<(String, Option<String>, Option<f64>)>| {
                 if seen.insert(lid.clone()) {
-                    out.push((lid, source_id));
+                    out.push((lid, source_id, confidence));
                 }
             };
 
         // Seed source A — edge-fact endpoints (primary). Both endpoints of each
         // matched, temporally-live, non-fallback edge are candidate seeds, tagged with
-        // the edge's `source_id` provenance. `search_index_edges` may be absent on very
-        // old DBs (< step-14) — degrade to no edge seeds rather than error.
+        // the edge's `source_id` provenance and (F9) `confidence`. `search_index_edges`
+        // may be absent on very old DBs (< step-14) — degrade to no edge seeds rather
+        // than error.
         if let Ok(mut edge_seed_stmt) = tx.prepare(
-            "SELECT ce.from_id, ce.to_id, ce.source_id \
+            "SELECT ce.from_id, ce.to_id, ce.source_id, ce.confidence \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
@@ -7232,18 +7264,26 @@ fn bfs_graph_arm_candidates(
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<f64>>(3)?,
                     ))
                 },
             )?;
-            for triple in rows {
-                let (from_id, to_id, source_id) = triple?;
+            for quad in rows {
+                let (from_id, to_id, source_id, confidence) = quad?;
                 push_candidate(
                     from_id,
                     source_id.clone(),
+                    confidence,
                     &mut seen_candidates,
                     &mut candidate_seeds,
                 );
-                push_candidate(to_id, source_id, &mut seen_candidates, &mut candidate_seeds);
+                push_candidate(
+                    to_id,
+                    source_id,
+                    confidence,
+                    &mut seen_candidates,
+                    &mut candidate_seeds,
+                );
             }
         }
 
@@ -7267,7 +7307,8 @@ fn bfs_graph_arm_candidates(
                 })?;
             for pair in rows {
                 let (lid, source_id) = pair?;
-                push_candidate(lid, source_id, &mut seen_candidates, &mut candidate_seeds);
+                // Entity-FTS seed: no traversing edge ⇒ no edge confidence (neutral).
+                push_candidate(lid, source_id, None, &mut seen_candidates, &mut candidate_seeds);
             }
         }
 
@@ -7281,7 +7322,7 @@ fn bfs_graph_arm_candidates(
             "SELECT kind, body, write_cursor FROM canonical_nodes \
              WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
         )?;
-        for (lid, source_id) in candidate_seeds {
+        for (lid, source_id, seed_confidence) in candidate_seeds {
             stats.seeds_considered += 1;
             let row: Option<(String, String, i64)> = active_stmt
                 .query_row(rusqlite::params![&lid], |r| {
@@ -7299,6 +7340,11 @@ fn bfs_graph_arm_candidates(
                         // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
                         // 'unknown' kind (mirrors the Phase-2 neighbor scoring).
                         let score = if kind == "unknown" { SYNTHESIZED_PENALTY } else { 1.0 };
+                        // F9: an edge-seeded endpoint carries its seeding edge's
+                        // confidence (source A); entity-FTS seeds carry None.
+                        if let Some(c) = seed_confidence {
+                            edge_confidence_by_cursor.insert(write_cursor as u64, c);
+                        }
                         candidates.push(SearchHit {
                             id: write_cursor as u64,
                             kind,
@@ -7329,7 +7375,11 @@ fn bfs_graph_arm_candidates(
         // dedup, so the carried provenance is stable (not SQLite-order-dependent).
         // (codex §9 [P2]; the design §B already rejected the memo's arbitrary
         // `LIMIT 1` lookup for the same reason.)
-        "SELECT e.from_id, e.to_id, e.source_id \
+        // F9: also carry the traversed edge's `confidence` — the reweight input for
+        // the reached node (keyed downstream by the node's `write_cursor`). Same
+        // determinism as `source_id`: the earliest-written edge wins the `visited`
+        // dedup, so the reached node's confidence is the winning-`bfs_rank` edge's.
+        "SELECT e.from_id, e.to_id, e.source_id, e.confidence \
          FROM canonical_edges e \
          WHERE (e.from_id = ?1 OR e.to_id = ?1) \
            AND e.superseded_at IS NULL \
@@ -7355,24 +7405,26 @@ fn bfs_graph_arm_candidates(
         }
 
         // Fetch temporal-live neighbors via edges, each paired with the
-        // traversing edge's `source_id` (BLOCK-2 provenance carry).
-        let neighbors: Vec<(String, Option<String>)> = {
+        // traversing edge's `source_id` (BLOCK-2 provenance carry) and (F9)
+        // `confidence` (the reweight input for the reached node).
+        let neighbors: Vec<(String, Option<String>, Option<f64>)> = {
             let rows = edge_stmt.query_map([&lid], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<f64>>(3)?,
                 ))
             })?;
             rows.flatten()
-                .map(|(from_id, to_id, source_id)| {
+                .map(|(from_id, to_id, source_id, confidence)| {
                     let neighbor = if from_id == lid { to_id } else { from_id };
-                    (neighbor, source_id)
+                    (neighbor, source_id, confidence)
                 })
                 .collect()
         };
 
-        for (neighbor, edge_source_id) in neighbors {
+        for (neighbor, edge_source_id, edge_confidence) in neighbors {
             if visited.contains(&neighbor) {
                 continue;
             }
@@ -7395,6 +7447,11 @@ fn bfs_graph_arm_candidates(
                     // scope here; only moved onto the frontier below) — derive the
                     // stable id with no extra query.
                     let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
+                    // F9: record the traversing edge's confidence for this node
+                    // (first edge wins — this is the winning-`bfs_rank` edge).
+                    if let Some(c) = edge_confidence {
+                        edge_confidence_by_cursor.insert(write_cursor as u64, c);
+                    }
                     candidates.push(SearchHit {
                         id: write_cursor as u64,
                         kind,
@@ -7420,7 +7477,7 @@ fn bfs_graph_arm_candidates(
     drop(body_stmt);
     tx.commit()?;
     stats.graph_candidates_emitted = candidates.len() as u32;
-    Ok((candidates, stats))
+    Ok((candidates, stats, edge_confidence_by_cursor))
 }
 
 /// Slice 30 (G3) — the ~1M cap on a single op-store read-back page. The public
