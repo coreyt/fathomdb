@@ -100,9 +100,17 @@ rerank-metal = ["default-reranker", "candle-core/metal", "candle-nn/metal", "can
 # The cross-vendor execution providers (ROCm / DirectML / OpenVINO / CUDA)
 # that candle cannot reach are selected at RUNTIME from `FATHOMDB_EMBED_DEVICE`
 # (R-ONNX-2); the ONNX Runtime native lib is dlopen'd at runtime (load-dynamic).
+# `sha2` derives the self-describing identity revision from a content digest of
+# the ACTUALLY-loaded model + tokenizer assets (codex §9 fix-5): two different
+# assets → two different identities, so the engine rejects cross-asset vector
+# mixing; the same asset → a stable identity. `sha2` is ALREADY in the tree
+# (default-embedder / default-reranker / dev-deps + Cargo.lock) so this reuses
+# an existing dependency and adds ZERO new crates; it stays OPTIONAL + gated so
+# the thin `default = []` build is unchanged (no `sha2` in the default tree).
 onnx-embedder = [
     "dep:ort",
     "dep:tokenizers",
+    "dep:sha2",
 ]
 # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
 # integration tests (or downstream test harnesses) can substitute base URLs,

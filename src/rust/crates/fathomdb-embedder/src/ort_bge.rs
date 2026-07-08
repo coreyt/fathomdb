@@ -47,6 +47,9 @@ pub const ORT_BGE_EMBEDDER_DIM: u32 = 384;
 /// Pinned HF revision of `BAAI/bge-small-en-v1.5` — same commit the candle
 /// loader pins (`loader::HF_REVISION`), recorded so an ONNX build is traceable
 /// to the same upstream weights the equivalence measurement compares against.
+/// This is the BASE of the composed identity revision; the actually-loaded
+/// asset digest is appended (`+onnx-<hex>`) so the identity self-describes the
+/// bytes that were opened (see [`derive_asset_revision`]).
 const HF_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
 
 /// Tokenizer truncation ceiling — BGE-small's 512-slot learned position
@@ -272,6 +275,66 @@ where
     }
 }
 
+/// Stream a file through SHA-256, returning the 32-byte digest. Read in fixed
+/// chunks rather than buffering the whole file so a ~130 MB `.onnx` export is
+/// not held in memory (this runs once, at construction).
+fn sha256_file(path: &Path) -> Result<[u8; 32], EmbedderError> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path).map_err(|e| err("asset digest open", e))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 64 * 1024];
+    loop {
+        let n =
+            std::io::Read::read(&mut file, &mut buf).map_err(|e| err("asset digest read", e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+/// PURE composition of the SELF-DESCRIBING identity revision from the two asset
+/// content digests (codex §9 fix-5, remedy (b)). The revision is the pinned
+/// base [`HF_REVISION`] plus a short hex of `SHA-256(model_digest ||
+/// tokenizer_digest)`:
+///
+/// `"<HF_REVISION>+onnx-<12 hex>"`
+///
+/// Net effect: two different model/tokenizer assets → two DIFFERENT revisions
+/// (hence different [`EmbedderIdentity`], so the engine rejects mixing vectors
+/// written under a different asset), while the SAME asset yields a STABLE
+/// revision across opens. Composing the two per-file digests into one final
+/// hash is deterministic and unambiguous (both inputs are fixed 32-byte
+/// digests, so there is no boundary ambiguity). Digest inputs make this a pure
+/// function — no ORT session, unit-testable with arbitrary bytes.
+fn compose_asset_revision(model_digest: &[u8; 32], tokenizer_digest: &[u8; 32]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(model_digest);
+    hasher.update(tokenizer_digest);
+    let combined = hasher.finalize();
+    let mut hex = String::with_capacity(12);
+    for byte in combined.iter().take(6) {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+    }
+    format!("{HF_REVISION}+onnx-{hex}")
+}
+
+/// Derive the self-describing identity revision from the ACTUALLY-loaded asset
+/// files on disk: hash the model bytes and the tokenizer bytes, then compose
+/// via [`compose_asset_revision`]. Takes paths (not an ORT session) so the
+/// revision derivation is exercisable with arbitrary temp files in tests.
+fn derive_asset_revision(
+    model_path: &Path,
+    tokenizer_path: &Path,
+) -> Result<String, EmbedderError> {
+    let model_digest = sha256_file(model_path)?;
+    let tokenizer_digest = sha256_file(tokenizer_path)?;
+    Ok(compose_asset_revision(&model_digest, &tokenizer_digest))
+}
+
 /// Cross-vendor ONNX-Runtime BGE-small embedder.
 ///
 /// `Session::run` needs `&mut self` but the `Embedder` trait is `&self` +
@@ -347,8 +410,14 @@ impl OrtBgeEmbedder {
             emit_onnx_warning(&msg);
         }
 
-        let identity =
-            EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, HF_REVISION, ORT_BGE_EMBEDDER_DIM);
+        // Self-describing identity (codex §9 fix-5): derive the revision from a
+        // content digest of the ACTUALLY-loaded model + tokenizer assets rather
+        // than advertising the pinned base revision unconditionally. A stale or
+        // alternate FATHOMDB_ONNX_MODEL_PATH now yields a DIFFERENT identity, so
+        // the engine's EmbedderIdentity check rejects reading vectors written
+        // under a different embedding space (R-ONNX-3 same-asset discipline).
+        let revision = derive_asset_revision(model_path, tokenizer_path)?;
+        let identity = EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, revision, ORT_BGE_EMBEDDER_DIM);
 
         Ok(Self { identity, tokenizer, session: Mutex::new(session), pooling: OrtPooling::Cls })
     }
@@ -655,6 +724,85 @@ mod tests {
             cpu.contains("error_on_failure: false"),
             "CPU provider must keep the silent (fallback-target) default, got {cpu:?}"
         );
+    }
+
+    /// codex §9 fix-5 — the identity revision self-describes the loaded assets.
+    /// Written a set of arbitrary temp "model"/"tokenizer" byte contents and
+    /// assert the derived revision distinguishes distinct assets, is stable for
+    /// identical bytes, is sensitive to EITHER file changing, keeps the pinned
+    /// base + `+onnx-<12 hex>` shape, and does not depend on file NAMES (only
+    /// bytes). Pure — arbitrary temp files, no ORT session / native lib.
+    mod asset_revision {
+        use std::io::Write as _;
+        use std::path::Path;
+
+        use super::super::{compose_asset_revision, derive_asset_revision, HF_REVISION};
+
+        fn write_temp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+            // Honors TMPDIR — the sandboxed scratch dir set for this build.
+            let dir = std::env::temp_dir();
+            let path = dir.join(format!("fathomdb-ort-rev-{}-{name}", std::process::id()));
+            let mut f = std::fs::File::create(&path).expect("create temp asset");
+            f.write_all(bytes).expect("write temp asset");
+            f.flush().expect("flush temp asset");
+            path
+        }
+
+        fn revision_of(model_bytes: &[u8], tok_bytes: &[u8], tag: &str) -> String {
+            let m = write_temp(&format!("model-{tag}.onnx"), model_bytes);
+            let t = write_temp(&format!("tok-{tag}.json"), tok_bytes);
+            let rev = derive_asset_revision(Path::new(&m), Path::new(&t)).expect("derive revision");
+            let _ = std::fs::remove_file(&m);
+            let _ = std::fs::remove_file(&t);
+            rev
+        }
+
+        #[test]
+        fn distinct_assets_yield_distinct_revisions() {
+            let a = revision_of(b"model-bytes-AAAA", b"tokenizer-bytes-AAAA", "a");
+            let b = revision_of(b"model-bytes-BBBB", b"tokenizer-bytes-AAAA", "b");
+            assert_ne!(a, b, "a different MODEL must change the identity revision");
+
+            let c = revision_of(b"model-bytes-AAAA", b"tokenizer-bytes-CCCC", "c");
+            assert_ne!(a, c, "a different TOKENIZER must change the identity revision");
+            assert_ne!(b, c, "distinct model+tokenizer pairs must differ");
+        }
+
+        #[test]
+        fn identical_bytes_yield_stable_revision() {
+            // Same bytes, DIFFERENT file names/paths + separate opens → identical
+            // revision (stable/deterministic; depends only on content).
+            let first = revision_of(b"same-model-bytes", b"same-tokenizer-bytes", "stable1");
+            let second = revision_of(b"same-model-bytes", b"same-tokenizer-bytes", "stable2");
+            assert_eq!(first, second, "identical asset bytes must yield a stable revision");
+        }
+
+        #[test]
+        fn revision_has_pinned_base_and_onnx_digest_shape() {
+            let rev = revision_of(b"m", b"t", "shape");
+            let prefix = format!("{HF_REVISION}+onnx-");
+            let hex = rev.strip_prefix(&prefix).expect("revision must start with pinned base");
+            assert_eq!(hex.len(), 12, "digest suffix must be 12 hex chars, got {hex:?}");
+            assert!(
+                hex.chars().all(|c| c.is_ascii_hexdigit()),
+                "digest suffix must be lower-hex, got {hex:?}"
+            );
+        }
+
+        #[test]
+        fn compose_is_pure_and_order_sensitive() {
+            let m = [1_u8; 32];
+            let t = [2_u8; 32];
+            // Pure: same inputs → same output.
+            assert_eq!(compose_asset_revision(&m, &t), compose_asset_revision(&m, &t));
+            // Model/tokenizer roles are distinct positions in the composed hash,
+            // so swapping the two digests generally changes the revision.
+            assert_ne!(
+                compose_asset_revision(&m, &t),
+                compose_asset_revision(&t, &m),
+                "the two asset roles must not be interchangeable"
+            );
+        }
     }
 
     /// R-ONNX-1 real-vector test — BLOCKED on an offline ONNX asset (see
