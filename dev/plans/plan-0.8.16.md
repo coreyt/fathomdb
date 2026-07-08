@@ -21,6 +21,13 @@
   signal: a REAL importance column + the 3-way sentinel + edge confidence, with its Slice-35 ADR gate.
   Now worth landing because 0.8.8 EXP-OBS can **surface** the signal in the score-breakdown — an
   importance/confidence weight is only useful if a caller can see it acting.
+  - **Spec constraint (F-18/F-20, HITL 2026-07-07 — reconciled by the Steward at commission).** F9's
+    importance/confidence **signal algebra IS the OPP-12 `rankable` projection-role ranking contract** that
+    **0.8.20's projection registry will graft**. So **F9 must be specced with the `rankable` contract in
+    mind** — designed so the 0.8.20 projection registry can adopt it **without reshape**. Refs:
+    `dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md` (Q6 graceful-absent `rankable`);
+    master §4 / F-18 / F-20. This is a **Slice-0 ADR design obligation**; the concrete forward-compat check
+    is a **candidate AC (R-F9-4)** to be minted at the Slice-0 gate (HITL-decided, per §6 AC policy).
 - **#4 — Cross-vendor ONNX embedder (B.2.a).** candle reaches only CPU/CUDA/Metal — no ROCm/Vulkan — so
   AMD/Intel GPUs are unreachable through it. Add an `OrtBgeEmbedder` (`ort` crate: CUDA / ROCm /
   DirectML / OpenVINO / CPU) as a new `impl Embedder` plugged via `EmbedderChoice::Caller` — **zero
