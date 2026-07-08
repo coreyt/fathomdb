@@ -73,12 +73,46 @@ nothing more. Policy stays 100% Memex-side; the engine stays mechanical.
   swap, ≥0.9.x; additive `stable_id` base landed, typed swap not started). **C-1 needs only the space/value
   split, not the typed carrier.**
 
-## Deferred to the joint P2·S0 ADR (flagged, not resolved here)
+## Resolved now (contract-level) — previously flagged for P2·S0
 
-- **`register → derive → configure_projections` atomicity.** Memex's sole requirement: **idempotent + crash-safe
-  boot re-derive** — a partial apply (crash mid-configure) heals on the next boot re-derive. Full transactional
-  atomicity of the three-step apply is a P2·S0 mechanism decision.
-- **Concrete tokenizer / embedder defaults** for `searchable` projections.
+Both items Memex flagged for deferral have a contract-level answer that **follows from the agreements above**;
+only FathomDB-internal *implementation* mechanics remain for the 0.9.1 build slice (not a co-design item).
+
+### Apply atomicity — RESOLVED: persist-first, idempotent, boot-heal (no cross-step runtime transaction)
+
+Follows from Q5 (Memex spec = sole durable source; `ProjectionSpec` = derived cache) + the OPP-12 async model:
+
+1. **Persist-first.** `register()` durably writes the Memex spec (`WMEntityTypeSpec`) *before* any projection work.
+2. **Then `derive → configure_projections`**, which is idempotent (Q3 diff/backfill).
+3. **Per-projection atomicity is already specified:** cheap roles (`filterable`, `searchable→FTS`) apply
+   same-transaction; `searchable→vector` is async with the atomic `dense_readiness` flip (torn
+   `ready`-without-vector forbidden).
+4. **`register()` does not block on embedding** — it returns once the spec is persisted, cheap projections
+   applied, and vector projections enqueued (`dense_readiness=embedding`).
+5. **Crash-heal.** Because the spec is durable and `configure_projections` is idempotent, a crash at any point
+   self-heals on the next boot `load_from_store → derive → configure_projections` (diffs actual vs desired,
+   backfills the gap). Worst case is incomplete projections in the crash→restart window — surfaced by the
+   existing partial-dense / `dense_readiness` read signals, acceptable for the local-first single-user envelope.
+   **No cross-step runtime transaction is required** — this fully satisfies Memex's SHOT-2 requirement
+   (idempotent + crash-safe boot re-derive).
+
+*P2·S0 (FathomDB-internal build detail only, not co-design):* the exact SQLite transaction boundary for the
+same-transaction tier and the worker-enqueue ordering.
+
+### Tokenizer / embedder defaults — RESOLVED: engine defaults; custom rides the separate FTS work
+
+- **Default embedder** = the engine's shipped default (CLS-corrected bge-small today); Memex's `vector:{embedder}`
+  is an optional override, absent → engine default. Already how the engine works — no new imposition (Memex uses
+  bge-small today).
+- **Default tokenizer** = the engine's default FTS5 tokenizer (the one `body`-FTS uses); `fts:{tokenizer}` is an
+  optional override, absent → engine default.
+- **Custom / per-kind precision tokenizers** are the separately-tracked **≥0.9.x multi-field / per-kind-tokenizer
+  FTS** work (`multifield-fts-deferred-0.9.x`), **not a C-1 open item** — C-1 co-lands on the default tokenizer,
+  and custom tokenizers graft later via the same idempotent `configure_projections` (same graceful-graft pattern
+  as Q4 / Q6a).
+
+**Net: nothing is genuinely open at the contract level.** The residual P2·S0 work is pure FathomDB-internal 0.9.1
+implementation (transaction boundaries) — which every build slice has, and is not a co-design deferral.
 
 ## Landing
 
