@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -440,6 +440,24 @@ pub const MIGRATIONS: &[Migration] = &[
                            ELSE '' END,
                       write_cursor
                   FROM canonical_nodes;",
+    },
+    // 0.8.16 Slice 5 (F9 KEYSTONE) — node-level importance ranking scalar.
+    // Per `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1
+    // (SIGNED 2026-07-08) and `dev/plans/plan-0.8.16.md` §2 (R-F9-1/R-F9-4).
+    // Adds `importance REAL` on `canonical_nodes` — a caller-supplied ranking
+    // scalar, symmetric with the existing genuine-NULL `canonical_edges.confidence`
+    // (step-14). 3-way sentinel (frozen): `NULL` = never assigned (graceful-absent,
+    // ranks NEUTRAL — the OPP-12 Q6a graceful-absent state, load-bearing for
+    // R-F9-4); `0.0` = explicit floor/de-weight; `(0.0, 1.0]` = explicit importance.
+    // Nullable, so pre-existing rows read NULL in-place (no data migration / re-open):
+    // the graceful-absent default preserves current ranking for every existing row.
+    // Additive `ADD COLUMN` (no DROP) → the accretion guard REQUIRES the exemption
+    // marker. This step does NOT rewrite vec0 / vector rows (ADR §4 eu7 no-op basis):
+    // it adds a scalar column only, so the eu7 fidelity gate stays a documented no-op.
+    Migration {
+        step_id: 18,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: F9 importance ranking scalar (additive nullable REAL; 3-way sentinel, NULL=graceful-absent)
+              ALTER TABLE canonical_nodes ADD COLUMN importance REAL;",
     },
 ];
 

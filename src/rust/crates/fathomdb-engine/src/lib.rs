@@ -334,6 +334,14 @@ struct ProjectionRuntimeShared {
     /// the more recent `write_cursor` AFTER bit-KNN. Flipped by the
     /// `set_recency_reweight_enabled_for_test` seam; no production toggle yet.
     recency_reweight_enabled: AtomicBool,
+    /// 0.8.16 Slice 5 / F9 — dedicated importance/confidence reweight flag,
+    /// **off by default** (mirrors `recency_reweight_enabled`; NOT `fusion_mode`).
+    /// When set, fused hits are multiplicatively reweighted by node `importance`
+    /// (`canonical_nodes.importance`) and edge `confidence`
+    /// (`canonical_edges.confidence`) AFTER bit-KNN + RRF fusion — `NULL ⇒ neutral
+    /// (1.0)`. Flipped by `set_importance_reweight_enabled_for_test`; no production
+    /// toggle yet (F9 ships OFF-by-default as a MECHANISM, no eval-quality claim).
+    importance_reweight_enabled: AtomicBool,
     /// GA-2 / Slice-40 (◆ B-1) measurement seam, **off by default**. When set,
     /// `read_search_in_tx` returns the pre-fusion VECTOR-branch ranking
     /// (bit-KNN K=192 + f32 rerank) verbatim — the ANN-quantization fidelity
@@ -448,6 +456,10 @@ enum ReaderRequest {
         /// G12-recency — whether the dedicated recency reweight is enabled for
         /// this request (read from `recency_reweight_enabled`, off by default).
         recency_enabled: bool,
+        /// F9 (0.8.16 Slice 5) — whether the dedicated importance/confidence
+        /// reweight is enabled for this request (read from
+        /// `importance_reweight_enabled`, off by default).
+        importance_enabled: bool,
         /// GA-2 / Slice-40 (◆ B-1) measurement seam — when true the worker
         /// returns the pre-fusion vector-branch ranking instead of the fused
         /// result (read from `vector_stage_only_for_test`, off by default).
@@ -750,6 +762,7 @@ fn reader_worker_loop(
                 search_limit,
                 filter,
                 recency_enabled,
+                importance_enabled,
                 vector_stage_only,
                 raw_query,
                 rerank_depth,
@@ -767,6 +780,7 @@ fn reader_worker_loop(
                     search_limit,
                     filter.as_deref(),
                     recency_enabled,
+                    importance_enabled,
                     vector_stage_only,
                     &raw_query,
                     rerank_depth,
@@ -867,6 +881,7 @@ impl ProjectionRuntime {
             commit_gate: Mutex::new(()),
             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
             recency_reweight_enabled: AtomicBool::new(false),
+            importance_reweight_enabled: AtomicBool::new(false),
             vector_stage_only_for_test: AtomicBool::new(false),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
@@ -1281,6 +1296,16 @@ pub struct PerHitExplain {
     pub ce_score: Option<f64>,
     /// Final blended score, == the returned `SearchHit.score`.
     pub blended: f64,
+    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
+    /// fused contribution when the importance reweight is ON, else the raw stored
+    /// value. `None` = never assigned (graceful-absent, ranks NEUTRAL). Additive
+    /// (`#[non_exhaustive]` leaf absorbs the new score component).
+    pub importance: Option<f64>,
+    /// 0.8.16 Slice 5 / F9 — the edge `confidence` scalar applied to this hit's
+    /// graph-arm contribution when the importance reweight is ON, else the raw
+    /// stored value. `None` for node hits / edges without a confidence
+    /// (graceful-absent, ranks NEUTRAL).
+    pub confidence: Option<f64>,
 }
 
 // ===== G4 filter grammar types (Slice 35) ===============================
@@ -4063,6 +4088,8 @@ impl Engine {
             .max(SEARCH_RERANK_LIMIT);
         let recency_enabled =
             self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
+        let importance_enabled =
+            self.projection_runtime.shared.importance_reweight_enabled.load(Ordering::SeqCst);
         let vector_stage_only =
             self.projection_runtime.shared.vector_stage_only_for_test.load(Ordering::SeqCst);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
@@ -4073,6 +4100,7 @@ impl Engine {
             search_limit,
             filter: filter.map(Box::new),
             recency_enabled,
+            importance_enabled,
             vector_stage_only,
             raw_query: Box::from(query), // FIX-4: Box<str> (16B) not String (24B)
             rerank_depth,
@@ -5114,6 +5142,65 @@ impl Engine {
         self.projection_runtime.shared.recency_reweight_enabled.store(enabled, Ordering::SeqCst);
     }
 
+    /// 0.8.16 Slice 5 / F9 test seam — flip the dedicated importance/confidence
+    /// reweight flag (off by default). The reweight runs AFTER bit-KNN + RRF on
+    /// the fused hits (multiplicative-on-fused, `NULL ⇒ neutral`); it is never a
+    /// vec0 predicate and is NOT `fusion_mode`. Mirrors
+    /// `set_recency_reweight_enabled_for_test`.
+    #[doc(hidden)]
+    pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
+        self.projection_runtime.shared.importance_reweight_enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    /// 0.8.16 Slice 5 / F9 (R-F9-1) — set the caller-supplied `importance` ranking
+    /// scalar on the `canonical_nodes` row identified by `write_cursor` (the
+    /// interim id `SearchHit.id` carries). Validates `importance ∈ [0.0, 1.0]`,
+    /// mirroring the existing `canonical_edges.confidence` write-path check —
+    /// an out-of-range value is a deterministic [`EngineError::WriteValidation`].
+    ///
+    /// The 3-way sentinel: NOT calling this leaves the column `NULL` (never
+    /// assigned = graceful-absent, ranks NEUTRAL); `0.0` is the explicit floor;
+    /// `(0.0, 1.0]` is an explicit importance. Importance is a caller-supplied
+    /// scalar — the engine does NOT compute graph-centrality importance (ADR §4
+    /// non-goal). Engine-internal minimal surface for this keystone; SDK (Py/TS)
+    /// exposure is a Slice-40 concern.
+    pub fn write_node_importance(
+        &self,
+        write_cursor: u64,
+        importance: f64,
+    ) -> Result<(), EngineError> {
+        if !importance.is_finite() || !(0.0..=1.0).contains(&importance) {
+            return Err(EngineError::WriteValidation);
+        }
+        self.ensure_open()?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        connection
+            .execute(
+                "UPDATE canonical_nodes SET importance = ?1 WHERE write_cursor = ?2",
+                params![importance, write_cursor],
+            )
+            .map_err(|_| EngineError::Storage)?;
+        Ok(())
+    }
+
+    /// 0.8.16 Slice 5 / F9 (R-F9-1) — read back the `importance` scalar for the
+    /// `canonical_nodes` row identified by `write_cursor`. `None` = SQL `NULL` =
+    /// never assigned (graceful-absent). The reciprocal read for
+    /// [`Engine::write_node_importance`].
+    pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row(
+                "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+                params![write_cursor],
+                |r| r.get::<_, Option<f64>>(0),
+            )
+            .map_err(|_| EngineError::Storage)
+    }
+
     /// GA-2 / Slice-40 (◆ B-1) measurement seam — make `search()` return the
     /// pre-fusion VECTOR-branch ranking (the ANN+ bit-KNN K=192 + f32 rerank
     /// signal) instead of the unconditional RRF-fused result, so the eu7 recall
@@ -6017,6 +6104,87 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
     reweighted
 }
 
+/// 0.8.16 Slice 5 / F9 — OFF-by-default importance/confidence reweight, applied
+/// to the fused hits AFTER bit-KNN + RRF (mirrors [`apply_recency_reweight`]).
+///
+/// Multiplicative-on-fused (ADR-0.8.16 §2.2, HITL-SIGNED 2026-07-08): a hit's
+/// score is scaled by node `importance` (`importance_by_id`) × edge `confidence`
+/// (`confidence_by_id`), each keyed by the hit's interim id (`write_cursor`). A
+/// missing key = `NULL` = never assigned = graceful-absent ⇒ neutral (1.0), the
+/// OPP-12 Q6a graceful-absent state. Node hits carry `importance`; graph/edge hits
+/// carry `confidence`; the two id-spaces never collide (cursors are globally
+/// unique), so each hit gets exactly one non-neutral factor.
+///
+/// **R-F9-4 graceful-neutral identity:** when `enabled` but *no* hit has a
+/// non-neutral factor (every importance/confidence absent), the input is returned
+/// **unchanged** — byte-identical to the `enabled == false` result (no re-sort),
+/// so declaring the mechanism never perturbs an all-absent corpus.
+#[must_use]
+pub fn apply_importance_reweight(
+    hits: Vec<SearchHit>,
+    importance_by_id: &HashMap<u64, f64>,
+    confidence_by_id: &HashMap<u64, f64>,
+    enabled: bool,
+) -> Vec<SearchHit> {
+    if !enabled {
+        return hits;
+    }
+    // Graceful-neutral fast path (R-F9-4): if nothing is weighted, do not touch
+    // order or scores — identical to the reweight-OFF result.
+    let any_weighted = hits
+        .iter()
+        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
+    if !any_weighted {
+        return hits;
+    }
+    let mut reweighted: Vec<SearchHit> = hits
+        .into_iter()
+        .map(|mut h| {
+            let importance = importance_by_id.get(&h.id).copied().unwrap_or(1.0);
+            let confidence = confidence_by_id.get(&h.id).copied().unwrap_or(1.0);
+            h.score *= importance * confidence;
+            h
+        })
+        .collect();
+    // Stable sort preserves the fused order on exact ties.
+    reweighted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    reweighted
+}
+
+/// 0.8.16 Slice 5 / F9 — build the per-hit importance/confidence weight maps for
+/// the candidate `hits` from the durable columns (`canonical_nodes.importance`,
+/// `canonical_edges.confidence`). Only NON-NULL values are inserted; an absent
+/// value stays out of the map (graceful-absent ⇒ neutral in
+/// [`apply_importance_reweight`]). Prepared statements are guarded so a pre-step-18
+/// / pre-step-14 schema (no column) yields empty maps rather than an error.
+fn build_importance_confidence_maps(
+    tx: &rusqlite::Connection,
+    hits: &[SearchHit],
+) -> rusqlite::Result<(HashMap<u64, f64>, HashMap<u64, f64>)> {
+    let mut importance_by_id: HashMap<u64, f64> = HashMap::new();
+    let mut confidence_by_id: HashMap<u64, f64> = HashMap::new();
+    if let Ok(mut stmt) =
+        tx.prepare("SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+    {
+        for h in hits {
+            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
+                importance_by_id.insert(h.id, v);
+            }
+        }
+    }
+    if let Ok(mut stmt) = tx.prepare(
+        "SELECT confidence FROM canonical_edges \
+         WHERE write_cursor = ?1 AND superseded_at IS NULL LIMIT 1",
+    ) {
+        for h in hits {
+            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
+                confidence_by_id.insert(h.id, v);
+            }
+        }
+    }
+    Ok((importance_by_id, confidence_by_id))
+}
+
 /// 0.8.1 Slice 10 (R1) — CE rerank seam.
 ///
 /// `rerank_depth = 0` (or model absent / `default-reranker` feature off): returns
@@ -6521,6 +6689,7 @@ fn read_search_in_tx(
     final_limit: usize,
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
+    importance_enabled: bool,
     vector_stage_only: bool,
     raw_query: &str,
     rerank_depth: usize,
@@ -6858,6 +7027,10 @@ fn read_search_in_tx(
     let mut exp_graph_ranks: Option<HashMap<String, u32>> = None;
     let mut exp_fused_scores: Option<HashMap<String, f64>> = None;
     let mut exp_graph_n: u32 = 0;
+    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
+    // (keyed by hit id == write_cursor), captured for the explain sidecar.
+    let mut exp_importance: Option<HashMap<u64, f64>> = None;
+    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
 
     let results = if vector_stage_only {
         vector_results
@@ -6893,7 +7066,17 @@ fn read_search_in_tx(
             fuse_three_arms(two_arm_fused, vec![], graph_candidates),
             recency_enabled,
         );
+        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+        // Order: AFTER recency (consistent placement), BEFORE the CE rerank seam.
+        let (imp_map, conf_map) = if importance_enabled || explain {
+            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
+        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
         if explain {
+            exp_importance = Some(imp_map);
+            exp_confidence = Some(conf_map);
             exp_fused_scores = Some(body_score_map(&fused));
         }
         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
@@ -6904,7 +7087,17 @@ fn read_search_in_tx(
         // vector-empty `soft_fallback` signal was computed above, BEFORE this
         // branch-collapse.
         let fused = apply_recency_reweight(fuse_rrf(vector_results, text_results), recency_enabled);
+        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+        // Same placement as the graph-arm branch: after recency, before CE rerank.
+        let (imp_map, conf_map) = if importance_enabled || explain {
+            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
+        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
         if explain {
+            exp_importance = Some(imp_map);
+            exp_confidence = Some(conf_map);
             exp_fused_scores = Some(body_score_map(&fused));
         }
         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
@@ -6926,6 +7119,8 @@ fn read_search_in_tx(
                 fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
                 ce_score: h.ce_score,
                 blended: h.score,
+                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
+                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
             })
             .collect();
         let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());

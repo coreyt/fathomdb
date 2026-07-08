@@ -99,12 +99,16 @@ fn s15_to_17_full_path_migrates_legacy_db_without_loss() {
     // Forward-only + contiguous: exactly steps 16 then 17 ran, in order, with no
     // skips and nothing at/below 15 re-run.
     assert_eq!(report.schema_version_before, 15);
-    assert_eq!(report.schema_version_after, 17);
+    assert_eq!(report.schema_version_after, 18);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 17, "current head must be 17");
-    assert_eq!(applied, vec![16, 17], "only steps 16 then 17 may run from v15 (forward-only)");
+    assert_eq!(SCHEMA_VERSION, 18, "current head must be 18");
+    assert_eq!(
+        applied,
+        vec![16, 17, 18],
+        "only steps 16, 17 then 18 may run from v15 (forward-only)"
+    );
     let ran_in_report: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
-    assert_eq!(ran_in_report, vec![16, 17], "report step order must match the emitted order");
+    assert_eq!(ran_in_report, vec![16, 17, 18], "report step order must match the emitted order");
 
     // No data loss — the legacy row is still there and back-filled to the
     // step-16 `row_kind='leaf'` default (in-place, == current behavior).

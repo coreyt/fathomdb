@@ -50,7 +50,8 @@ fn column_names(conn: &Connection, table: &str) -> Vec<String> {
 /// R-SUB-1 — after the full migration set, `canonical_nodes` has `row_kind`.
 /// R-SUB-3 — the migration reaches head `SCHEMA_VERSION`. `row_kind` lands at
 /// step 16; the head pin below tracks the current head (bumped to 17 when F5's
-/// step-17 `search_index_v2` co-landed in the same release).
+/// step-17 `search_index_v2` co-landed, then 18 when F9's step-18 `importance`
+/// landed).
 #[test]
 fn s16_row_kind_column_present_and_schema_version_is_head() {
     register_sqlite_vec_once();
@@ -65,11 +66,11 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
     );
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 17, "SCHEMA_VERSION must be 17 (step-17 F5 search_index_v2)");
+    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        17,
-        "step-17 (F5 search_index_v2) must be the last (head) migration"
+        18,
+        "step-18 (F9 importance) must be the last (head) migration"
     );
 }
 
