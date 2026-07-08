@@ -24,6 +24,28 @@ initializer order → byte-deterministic output (`--verify` asserts this).
 the on-host HF cache. R-ONNX-1 is a deterministic offline export per HITL
 2026-07-08.
 
+**Fail-closed on the pinned revision.** The script loads ONLY the snapshot for
+the exact pinned commit
+(`snapshots/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/`) and **refuses to fall
+back** to any other locally-cached BGE snapshot. If the exact revision is
+absent it aborts with a clear error (it does NOT download, and it does NOT
+export arbitrary weights — that would silently produce a non-reference asset
+and break the candle↔ONNX equivalence measurement, Slice 15). It also
+independently resolves the source snapshot's commit hash from Hugging Face's
+own cache index (`scan_cache_dir`) and asserts it equals the pinned revision,
+naming expected-vs-found on mismatch. Both guards run BEFORE the heavy `torch`
+import, so the missing-revision path is cheap and testable without torch.
+
+To obtain the exact pinned revision **offline**, on a networked host run:
+
+```sh
+huggingface-cli download BAAI/bge-small-en-v1.5 \
+    --revision 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+```
+
+then copy `~/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5` onto the
+export host. (Point the script at an alternate cache root with `HF_HUB_CACHE`.)
+
 ## Toolchain
 
 The base `python3` and the fathomdb `.venv` LACK `torch`/`transformers`, so the

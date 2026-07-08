@@ -33,7 +33,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import glob
 import hashlib
 import os
 import sys
@@ -48,30 +47,86 @@ DEFAULT_OUT = "~/.cache/fathomdb/embedders/onnx/bge-small-en-v1.5/model.onnx"
 DEFAULT_OPSET = 14
 
 
-def _snapshot_dir() -> Path:
-    """Locate the PINNED local HF cache snapshot (offline; no network)."""
-    hub = os.environ.get(
+def _hub_cache() -> str:
+    return os.environ.get(
         "HF_HUB_CACHE",
         os.path.expanduser("~/.cache/huggingface/hub"),
     )
-    base = Path(hub) / "models--BAAI--bge-small-en-v1.5" / "snapshots"
+
+
+def _pinned_snapshot_dir() -> Path:
+    """Locate the EXACTLY pinned local HF snapshot; FAIL CLOSED otherwise.
+
+    The export is OFFLINE and **refuses to fall back** to any other local BGE
+    snapshot. A different snapshot would silently export NON-reference weights
+    while the ADR/README + the HF_REVISION-based ONNX identity still claim the
+    candle-pinned weights — invalidating the candle<->ONNX equivalence
+    measurement (Slice 15). The pinned revision must be present, or we abort.
+    """
+    base = Path(_hub_cache()) / "models--BAAI--bge-small-en-v1.5" / "snapshots"
     exact = base / HF_REVISION
-    if exact.is_dir():
-        return exact
-    # Fall back to any snapshot but require the pinned revision to be present.
-    candidates = sorted(glob.glob(str(base / "*")))
-    if not candidates:
+    if not exact.is_dir():
+        present = sorted(p.name for p in base.glob("*")) if base.is_dir() else []
         sys.exit(
-            f"no local bge-small snapshot under {base}; this export is OFFLINE "
-            f"and will not download. Populate the HF cache first."
+            "FAIL-CLOSED: the pinned bge-small revision is NOT in the local HF "
+            "cache.\n"
+            f"  expected snapshot: {exact}\n"
+            f"  snapshots present: {present or '(none)'}\n"
+            "This export is OFFLINE (it will NOT download) and refuses to fall "
+            "back to any other snapshot: a non-pinned snapshot would silently "
+            "produce a non-reference ONNX asset and break the candle<->ONNX "
+            "equivalence measurement.\n"
+            "To obtain the EXACT pinned revision offline, on a networked host "
+            "run:\n"
+            f"  huggingface-cli download {MODEL_ID} --revision {HF_REVISION}\n"
+            "then copy ~/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5 "
+            "onto this host."
         )
-    snap = Path(candidates[0])
-    print(
-        f"WARNING: pinned snapshot {HF_REVISION} not found; using {snap.name}. "
-        f"Verify the weights match the candle reference.",
-        file=sys.stderr,
+    for required in ("config.json", "tokenizer.json"):
+        if not (exact / required).exists():
+            sys.exit(
+                f"FAIL-CLOSED: pinned snapshot {exact} is missing {required!r}; "
+                "refusing to export from an incomplete snapshot."
+            )
+    return exact
+
+
+def _assert_snapshot_revision(snap: Path) -> None:
+    """Independently confirm, via the HF cache metadata, that `snap` is the
+    snapshot for commit HF_REVISION — not merely a directory named like it.
+
+    Resolves the source snapshot's actual commit hash from Hugging Face's own
+    cache index (`scan_cache_dir`) and asserts it equals HF_REVISION, naming the
+    expected-vs-found revision on mismatch. This makes the exported ONNX asset
+    provably from the same weights as the candle reference, or the export
+    refuses to run.
+    """
+    try:
+        from huggingface_hub import scan_cache_dir
+    except Exception as e:  # huggingface_hub ships with transformers
+        sys.exit(f"cannot import huggingface_hub to verify the revision: {e}")
+
+    seen: list[str] = []
+    for repo in scan_cache_dir(_hub_cache()).repos:
+        if repo.repo_id != MODEL_ID:
+            continue
+        for rev in repo.revisions:
+            seen.append(rev.commit_hash)
+            if rev.commit_hash == HF_REVISION:
+                resolved = Path(rev.snapshot_path).resolve()
+                if resolved != snap.resolve():
+                    sys.exit(
+                        "revision/snapshot mismatch: cached commit "
+                        f"{HF_REVISION} resolves to {resolved}, expected "
+                        f"{snap.resolve()}. Refusing to export."
+                    )
+                return
+    sys.exit(
+        "revision-integrity check FAILED: expected pinned commit "
+        f"(expected={HF_REVISION}) is not among the cached {MODEL_ID} "
+        f"revisions (found={sorted(set(seen)) or '(none)'}). Refusing to export "
+        "a non-reference asset."
     )
-    return snap
 
 
 def _sha256(path: Path) -> str:
@@ -82,7 +137,7 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def export(out_path: Path, opset: int) -> Path:
+def export(out_path: Path, opset: int, snap: Path) -> Path:
     import numpy as np
     import torch
     from transformers import AutoModel
@@ -92,9 +147,15 @@ def export(out_path: Path, opset: int) -> Path:
     np.random.seed(0)
     torch.use_deterministic_algorithms(True, warn_only=True)
 
-    snap = _snapshot_dir()
-    print(f"loading pinned weights from {snap}", file=sys.stderr)
+    print(
+        f"loading pinned weights (rev {HF_REVISION}) from {snap}",
+        file=sys.stderr,
+    )
 
+    # `snap` is the EXACT pinned-revision snapshot (fail-closed + revision-
+    # integrity verified by main() before we get here), so loading it directly
+    # with local_files_only provably uses the same weights as the candle
+    # reference — no silent fallback to another snapshot is possible.
     # local_files_only: hard-offline, never touch the network.
     # attn_implementation="eager": the SDPA mask path in transformers >=5
     # indexes tensor shapes in a way TorchScript tracing cannot follow
@@ -173,11 +234,16 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    out = export(Path(args.out), args.opset)
+    # Fail-closed BEFORE the heavy torch import: resolve the exact pinned
+    # snapshot (no fallback) and independently verify its commit == HF_REVISION.
+    snap = _pinned_snapshot_dir()
+    _assert_snapshot_revision(snap)
+
+    out = export(Path(args.out), args.opset, snap)
 
     if args.verify:
         tmp = out.with_suffix(".verify.onnx")
-        export(tmp, args.opset)
+        export(tmp, args.opset, snap)
         a, b = _sha256(out), _sha256(tmp)
         tmp.unlink()
         if a != b:
