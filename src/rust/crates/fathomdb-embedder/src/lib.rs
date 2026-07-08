@@ -78,13 +78,20 @@ impl MeanRecomputeTrigger {
 // `FATHOMDB_EMBED_DEVICE` and the reranker's `FATHOMDB_RERANK_DEVICE` resolve
 // through one grammar (no duplicate parse logic) even though they sit behind
 // independent features.
-#[cfg(any(feature = "default-embedder", feature = "default-reranker"))]
+#[cfg(any(feature = "default-embedder", feature = "default-reranker", feature = "onnx-embedder"))]
 mod device;
 
 #[cfg(feature = "default-embedder")]
 mod candle_bge;
 #[cfg(feature = "default-embedder")]
 mod nomic;
+
+// 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend) — cross-vendor ONNX
+// Runtime BGE-small embedder. Behind its own NON-default `onnx-embedder`
+// feature so the thin default build pulls in zero ONNX code/deps; injected
+// by the caller via `EmbedderChoice::Caller` (zero engine change).
+#[cfg(feature = "onnx-embedder")]
+mod ort_bge;
 
 // 0.8.2 Slice E1: the default CPU cross-encoder reranker (TinyBERT-L-2).
 // Lives behind its own `default-reranker` feature so the default build pulls
@@ -96,6 +103,9 @@ mod candle_reranker;
 pub use candle_bge::{CandleBgeEmbedder, Pooling, DEFAULT_EMBEDDER_DIM, DEFAULT_EMBEDDER_NAME};
 #[cfg(feature = "default-embedder")]
 pub use nomic::{NomicEmbedder, NOMIC_DIM};
+
+#[cfg(feature = "onnx-embedder")]
+pub use ort_bge::{OrtBgeEmbedder, OrtPooling, ORT_BGE_EMBEDDER_DIM, ORT_BGE_EMBEDDER_NAME};
 
 #[cfg(all(feature = "default-reranker", any(test, feature = "loader-test-hooks")))]
 pub use candle_reranker::RERANKER_REVISION;

@@ -31,6 +31,22 @@ candle-nn           = { version = "0.10", optional = true }
 candle-transformers = { version = "0.10", optional = true, default-features = false }
 tokenizers          = { version = "0.20", optional = true, default-features = false, features = ["onig"] }
 
+# 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend §2) — cross-vendor ONNX
+# Runtime backend for `OrtBgeEmbedder` (mod ort_bge), a caller-supplied
+# `impl Embedder` injected via `EmbedderChoice::Caller` with ZERO engine
+# change. Optional + feature-gated behind `onnx-embedder` so the thin
+# `default = []` build stays ML-free and gains ZERO new deps (EMB-3
+# wheel-size gate / footprint invariant). Pinned to `=2.0.0-rc.10`: the
+# `ort` 2.0 line is the maintained series (1.x is EOL) but is published
+# only as release candidates; rc.10 is the latest rc that builds cleanly
+# in the offline envelope (rc.12 has an ort/ort-sys VitisAI EP mismatch,
+# ADR §5.2 flags ort-version acceptance as an HITL open item). `load-dynamic`
+# dlopens the ONNX Runtime native lib at RUNTIME (via ORT_DYLIB_PATH), so
+# `cargo build`/`cargo check` never download or link a native binary at
+# build time (no `download-binaries`); the runtime lib is an offline
+# build/eval concern, not a compile dep.
+ort = { version = "=2.0.0-rc.10", optional = true, default-features = false, features = ["load-dynamic"] }
+
 [features]
 default = []
 default-embedder = [
@@ -77,6 +93,17 @@ embed-metal = ["default-embedder", "candle-core/metal", "candle-nn/metal", "cand
 # candle backend — out of scope, same as the embedder.
 rerank-cuda = ["default-reranker", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 rerank-metal = ["default-reranker", "candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+# 0.8.16 Slice 10 — cross-vendor ONNX embedder (`OrtBgeEmbedder`). Pulls the
+# `ort` ONNX-Runtime binding + the shared `tokenizers` stack (for BGE-small
+# tokenization parity with the candle reference). NON-default: the thin
+# `default = []` build gains ZERO new deps (footprint invariant / EMB-3).
+# The cross-vendor execution providers (ROCm / DirectML / OpenVINO / CUDA)
+# that candle cannot reach are selected at RUNTIME from `FATHOMDB_EMBED_DEVICE`
+# (R-ONNX-2); the ONNX Runtime native lib is dlopen'd at runtime (load-dynamic).
+onnx-embedder = [
+    "dep:ort",
+    "dep:tokenizers",
+]
 # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
 # integration tests (or downstream test harnesses) can substitute base URLs,
 # cache roots, and pinned shas. Production callers MUST NOT enable this
