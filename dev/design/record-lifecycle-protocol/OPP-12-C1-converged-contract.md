@@ -121,3 +121,12 @@ implementation (transaction boundaries) — which every build slice has, and is 
 Co-lands **FathomDB 0.9.1 (P2·S-F)** ↔ a coordinated **Memex 0.5.x-successor**. Build ≠ adopt; publish is a
 separate HITL gate on an even `x.y.z`. Sequencing unchanged (`0.8.16 F9 → 0.8.18 publish → 0.9.0 → 0.9.1`,
 master F-18). The Commission C `index` carrier is the only piece that had to move now, and it has (memex `95ed450`).
+
+**Memex isolation (dependency clarification).** P2·S-F is **isolated from Memex's *current* work** — Memex
+continues Commission C **without** P2·S-F designed or built. The design Memex needed (this ratified C-1 seam
+contract) is complete; P2·S-F's remaining design is **FathomDB-internal** (SQLite txn boundary, engine-EAV
+schema), invisible to Memex. In 0.5.x Memex stays on the nested-dict interim + `body`-FTS / R-B recall; the
+engine-projection wiring is explicitly **≥0.9.x** (Memex `PLAN-C-convergence.md`: C-1 "ratified w/ FathomDB",
+engine wiring deferred to ≥0.9.x). The **only** coupling point is the **0.9.1 co-land**, where Memex repoints
+`set_entity_attribute` onto the engine-EAV verb and retires the interim — a future breaking-pair step, **not a
+blocker now**.
