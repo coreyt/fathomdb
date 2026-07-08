@@ -1,0 +1,1036 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f43cf-dd98-75b0-a8ad-59b3d87413c4
+--------
+user
+changes against '616698ea9227c6d98060c8f3ae34bd9a82101ddb'
+exec
+/bin/bash -lc 'cat MEMORY.md && for f in $(grep -o '"'feedback_["'^ )`]*'"\\.md' MEMORY.md | sort -u); do echo '---' "'$f; cat "$f" 2>/dev/null || true; done
+git diff --stat 616698ea9227c6d98060c8f3ae34bd9a82101ddb
+git diff --name-only 616698ea9227c6d98060c8f3ae34bd9a82101ddb' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+cat: MEMORY.md: No such file or directory
+ dev/DOC-INDEX.md                                |  5 ++++
+ src/python/tests/test_exp_obs_explain_parity.py | 32 +++++++++++++++++++++++
+ src/ts/tests/exp-obs-explain.test.ts            | 34 +++++++++++++++++++++++++
+ 3 files changed, 71 insertions(+)
+dev/DOC-INDEX.md
+src/python/tests/test_exp_obs_explain_parity.py
+src/ts/tests/exp-obs-explain.test.ts
+
+exec
+/bin/bash -lc 'git diff 616698ea9227c6d98060c8f3ae34bd9a82101ddb -- dev/DOC-INDEX.md src/python/tests/test_exp_obs_explain_parity.py src/ts/tests/exp-obs-explain.test.ts' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+diff --git a/dev/DOC-INDEX.md b/dev/DOC-INDEX.md
+index 761d65ca..274397d7 100644
+--- a/dev/DOC-INDEX.md
++++ b/dev/DOC-INDEX.md
+@@ -35,6 +35,7 @@ refresh in the closing commit when you touch a doc).
+ | `dev/learnings.md` | Cross-phase engineering learnings | per-slice as discovered | 2026-05-31 |
+ | `dev/experiments-ledger.md` | **Distilled results of record for EVERY FathomDB experiment** (0.6.x→0.8.4 + untracked research/) — hypothesis · prereg · N/power · numbers+CI · verdict · $ cost · sources. The durable home so raw `runs/*` artifacts can be pruned; recover raw from git ≤ baseline `25541d88`. Built by the first ledger-prune | ledger-prune (`scripts/repo-prune/prompts/prune-docs.md`) | 2026-06-26 |
+ | `scripts/repo-prune/README.md` | **repo-prune mini-project** — doc + memory ledger-prune tooling (prompts, acceptance tests, clarity/verify scripts, measurements, memory snapshot backup). Run to re-prune or measure context clarity | repo-prune (tooling) | 2026-06-26 |
++| `dev/tools/onnx/README.md` · `dev/tools/onnx/export_bge_small_onnx.py` | **ONNX embedder export tooling (0.8.16 Slice 10)** — reproducible, **offline** export of the pinned `BAAI/bge-small-en-v1.5` (HF revision `5c38ec7c…`) to an ONNX graph (opset 14, `last_hidden_state` output; CLS-pool + L2-norm applied downstream in `OrtBgeEmbedder`) for the cross-vendor `onnx-embedder` backend. The `.onnx` asset (~133 MB) is a **generated eval asset, NOT committed** (gitignored); the script + README are the committed tooling. **Fails closed** on the wrong/absent pinned revision (no download, no arbitrary-weight export — protects the Slice-15 candle↔ONNX equivalence measurement). Also documents the `ORT_DYLIB_PATH` runtime dlopen + the env-gated R-ONNX-1 real-vector test. Cross-links: `dev/adr/ADR-0.8.16-onnx-embedder-backend.md`, `dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md` | 0.8.16 Slice 10 (tooling) | 2026-07-08 |
+ | `dev/notes/0.8.0-fts5-tokenizer-latency-experiment.md` | **B2 FTS5 tokenizer latency experiment report** — measured config×tier sweep + engine A/B proving the tokenizer is latency-neutral (the cost is O(N) corpus-scaling); recommends tiering AC-012 per the AC-072/073 precedent. Run artifacts under `dev/plans/runs/0.8.0-slice-6-*` | Slice 6 (B2) | 2026-06-07 |
+ | `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md` | **Recall-eval framework assessment** — grounds the fidelity-vs-IR/agentic-relevance axis distinction; FathomDB's GA gate (eu7/AC-075) is fidelity (system health), the product-value gate (evidence/task recall) does not exist yet (eu8 is report-only, ceiling ≈0.571). Reframes the GA recall halt + seeds the IR-eval IR-1/IR-2 initiative | IR-eval (IR-1/IR-2 input) | 2026-06-07 |
+ | `dev/plans/0.8.0-GA-and-IR-eval-roadmap.md` | **Sequenced roadmap (+ ASCII visual map)** — lines up every unfinished task to GA + to the IR-eval gate: 3 tracks (GA / Corpus / IR-eval), gates, dependencies, the two critical paths. Answers B-1-vs-consensus, corpus-freeze timing, Slice-40 landing, IR-1 Ph2–4 completion | orchestrator (live) | 2026-06-07 |
+@@ -53,6 +54,7 @@ refresh in the closing commit when you touch a doc).
+ | `dev/design/README.md` | Design-notes index | — | (tree) |
+ | `dev/design/gpu-eval-activities-policy.md` | **Policy — repo MUST use the 3090s for eval/embed activities when there is room** (standing HITL mandate, 2026-07-05): any GPU-acceleratable repo-internal activity (eu7 fidelity harness seed/re-embed, corpus re-embeds, eval sweeps, CE reranking, embedding/rerank-heavy dev/CI) MUST run on `cuda:0`/`cuda:1`; CPU is permitted ONLY for two narrow compatibility probes, not as a general fallback. Grounds the 0.8.14 Slice-20 eu7 policy correction (the fidelity gate itself must run **CPU same-backend** vs its 0.896 baseline — a GPU eu7 run cross-backends it) | 0.8.14 Slice 20 (eu7 policy) | 2026-07-05 |
+ | `dev/design/free-threaded-python-value-lift-and-experiments.md` | **Free-threaded Python (PEP 703) for FathomDB — value, lift, experiment plan** (`status: analysis/pre-decision`): raised out of the 0.8.8 pyo3 `0.24.1→0.29.0` bump (0.28+ defaults `#[pymodule]` to FT, forcing the `gil_used` declaration). 0.8.8 ships **`gil_used = true`** (safe); FT *support* (`gil_used = false`) is a separate later data-gated campaign. Key thesis: engine already runs GIL-free (every call `detach`/`allow_threads`; `ReaderWorkerPool` + real `Mutex`/`OnceLock`, `frozen` pyclasses) → **direct throughput value (V2) likely small; the real value (V1) = ecosystem non-poisoning** (a `gil_used=true` module re-enables the GIL **process-wide** on FT interpreters, killing FT for consumers Memex/Hermes/OpenClaw). Lift = MEDIUM, dominated by an FT CI lane + non-abi3 per-version `*t` wheel matrix, NOT engine code. Five experiments (EXP-FT-1 GIL-held fraction / -2 multi-thread scaling / -3 poisoning-cost / **-4 concurrency-safety HARD GATE** / -5 wheel feasibility) with objective data + eval criteria + a decision rule. **Appendix A — Survey** (web research): FathomDB ≈ HF `tokenizers` (Rust core + `RwLock` + GIL released → shipped FT cleanly), NOT polars (GIL-assumed bindings → crashes/deadlocks); benefits caveat confirmed (already-GIL-free native work gains ~0); pydantic-core's pre-fix segfault = why EXP-FT-4 is a hard gate. Cross-links: `dev/plans/plan-0.8.8.md` §1 (Migration approach) + R-SEC-1; scheduled as the **0.8.15** EXP-FT ladder (master §6 F-5; productization a 0.8.15-readout contingency → 0.8.16/0.8.17) | 0.8.15 ladder (pyo3 dep @ 0.8.8) | 2026-06-27 |
++| `dev/design/0.8.16-slice-0-f9-onnx-design.md` | **0.8.16 Slice-0 design package — F9 importance/confidence ranking + cross-vendor ONNX embedder** (`status: SIGNED` — HITL ratified all 5 Slice-0 decisions 2026-07-08). Freezes the release DoD (R-F9-1..4 / R-ONNX-1..3 / R-X-1 / R-GATE), records the two design decisions (F9 ranking/lifecycle honoring the Slice-35 deferred ADR; trait-local ONNX backend via `resolve_device()`/`EmbedderChoice::Caller`), maps F9 onto the OPP-12 `rankable` projection-role contract (the F-18/F-20 forward-compat constraint), and specifies the candle↔ONNX equivalence-measurement plan (§5, feeds 0.8.18 #5 tolerance). Backing ADRs: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md`, `dev/adr/ADR-0.8.16-onnx-embedder-backend.md`. Cross-links: `dev/plans/plan-0.8.16.md`, `dev/plans/runs/STATUS-0.8.16.md` | 0.8.16 Slice 0 | 2026-07-08 |
+ | `dev/design/0.8.2-m1-multihop-harness.md` | **0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen 0-rev2 2026-06-19)** (`status: decision-ready`): MuSiQue-Ans 2/3/4-hop datasets, the 5 arms (bm25 / passage-dense / fused(RRF k=60) / fused+rerank / ppr-fusion), the **fixed comparator = `fused-RRF`** (re-frozen at 0-rev2 from the earlier `fused+rerank`, data-justified by the $0 bridge-vs-answer diagnostic; never per-hop max), **`MATERIAL_F1_LIFT = 0.04`** (re-frozen from 0.02/0.03), the **same-answerer** protocol, ablations + bias controls, the budget plan (flash-lite cheap-validate gate + answerer-call model), the dated frozen pre-registration block (primary endpoint = **paired pooled ≥3-hop ΔF1 vs fused-RRF** with bootstrap CI; per-hop = secondary feeding a **trend gate** that vetoes only on a significantly negative slope; EM CI-banded; unanswerable-set carries confident-wrong; decision rule frozen as `eval/m1_decision_rule.py::decide(material, em, trend, confident_wrong, power_ok)`; **whole-rule power-sim** plan) + the falsifiable Slice 5/15/20 AC list. **Applied at Slice 20 → verdict NO-GO.** Cross-links: `dev/plans/plan-0.8.2.md` §4, `dev/roadmap/0.8.2.md`, `runs/0.8.2-m1-FINDINGS.md`, `runs/0.8.2-slice-0-prereg-methodology-review.md` | 0.8.2 Slice 0-rev2 | 2026-06-19 |
+ | `dev/design/0.8.3-mem0-parity.md` | **0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution)** (`status: decision-ready`): the **two-level measurement** (external `FathomDB − {Mem0, Graphiti/Zep, naive-RAG}` gate decides *done*; internal corrected-fused = attribution only), the **near-parity band ε = 0.05** + power-sized per-class N (paired **MDE ≤ ε**), the **$0-probe pass/fail** criteria (15a embedder-ceiling PRIMARY; 15b D2 content-at-scale proxy), the **eu7-break fork** + **surpass-option protocol**, the **ADJ-2 F5/tunable-`b` scope ruling** (conditional promotion to Slice 25, pending HITL ratification), the aggregate ≤ \$30 three-priced-run budget, and the falsifiable S5/10/15/20/25/30 AC list. Rule frozen as `eval/decision_rule_083.py::decide_083(external_per_class, eu7_recall, latency_ok)`. Cross-links: `dev/plans/plan-0.8.3.md` §4, `dev/roadmap/0.8.3.md` §1c, `runs/0.8.x-capability-status-report.md`, `dev/adr/ADR-0.8.1-deferred-f5-fielded-fts-bm25f.md` | 0.8.3 Slice 0 | 2026-06-21 |
+ | `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | **0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score** (codex-reviewed design memo + slice spec): promote the measured-provisional Mem0-parity config (α≈1.0, narrow pool — previously reachable only via the eval `ReblendRerankAdapter` `score=0` trick) into the native `rerank()` + `Engine.search` surfaces as an **opt-in knob**; default behavior (α=0.3, pool_n=rerank_depth) is **ranking-field byte-identical** (C6 factoid guard preserved). Adds `ce_score = sigmoid(ce_logit)` per candidate (None outside the reranked pool). Locked decisions D1–D6; α=1.0 opt-in for the agentic-answer/memory path. Does NOT change the default or wire any caller to α=1.0. Cross-links: `dev/design/0.8.1-slice-10-reranker-design.md` Decision 5, `runs/0.8.3-rerank-tune-FINDINGS.md` | 0.8.5 (EXP-0) | 2026-06-25 |
+@@ -124,6 +126,8 @@ refresh in the closing commit when you touch a doc).
+ | `dev/adr/ADR-0.8.1-graph-substrate-g11-migration.md` | G11 edge enrichment ADR — activates H3 reservation; step-14 SCHEMA_VERSION 13→14 (additive body/t_valid/t_invalid/confidence/extractor_model_id columns on canonical_edges); edge projectability capability (FTS+vector; exact mechanism = Slice 15 impl detail); invalidate-not-accumulate contract; pending HITL sign-off | Slice 0; Slice 15 implements | 2026-06-12 |
+ | `dev/adr/ADR-0.8.12-consolidation-recency-provider.md` | **OPP-2 consolidation/recency provider** (PROPOSED, 0.8.12 Slice-0): a new typed task `fathomdb.consolidate.v1` on the ONE OPP-8 transport (ADR-0.8.6) — additive `ProviderTask::Consolidate` + payload (candidate fact-cluster → keep/supersede/merge/invalidate verdict) + `EngineError::Consolidator` leaf; **no second transport** (closes I-5); post-retrieval recency/supersession metadata NOT a destructive content-rewrite (0.8.3 blind-merge caution); caller-side BYO-LLM, default-OFF until the Slice-20 value test clears | 0.8.12 Slice 0 gates; **Slice 15 implements**, Slice 20 value-gates | 2026-07-01 |
+ | `dev/adr/ADR-0.8.14-exp-s-kind-tagged-coexisting-index-substrate.md` | **EXP-S kind-tagged coexisting-index substrate migration (+ F5 co-land)** (RATIFIED, HITL-signed 2026-07-03): realizes the `ADR-0.8.1-deferred-f5` deferral + discharges ledger **TC-1** (OPP-12 projection-registry forward-compat). D1 separate `row_kind` column (leaf/coverage/graph); D2 per-kind index-target dispatch; D3 flush-then-byte-compare determinism check; D4 ONE coordinated migration (`SCHEMA_VERSION` 15→16 EXP-S, 16→17 F5); D5 discharges TC-1; **D6 eu7 no-op unless vec0 rewritten**; D7 KILL paths; **D8 = Option C** (F5 ships by conscious HITL override, NOT gate-clearance). Cross-links: `dev/plans/plan-0.8.14.md`, `runs/STATUS-0.8.14.md` | 0.8.14 Slice 0 gates; Slices 5/10 implement | 2026-07-03 |
++| `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` | **F9 importance/confidence ranking — opens the deferred F9 signal** (SIGNED, HITL coreyt 2026-07-08 — Slice-0 gate; all 5 decisions ratified). Opens F9 as an **OFF-by-default, observable, OPP-12-`rankable`-forward-compatible MECHANISM**: `canonical_nodes.importance REAL` (step-18, `SCHEMA_VERSION` 17→18) with a **3-way sentinel** (`NULL`=absent/neutral · `0.0`=explicit floor · `(0,1]`=importance), the existing `canonical_edges.confidence` folded into ranking (multiplicative-on-fused; graph-arm `confidence × 1/(K+bfs_rank)`), surfaced additively through the 0.8.8 `PerHitExplain`. **Supersedes the open-condition** of `ADR-0.8.1-deferred-f9-confidence-importance.md` (mechanism now / eval-tuning later; §5 gates 1+2 deferred, gate 3 satisfied). eu7 no-op basis (no re-embed). Mints R-F9-4 + the F9 ranking-contract AC. Cross-links: `dev/design/0.8.16-slice-0-f9-onnx-design.md`, `dev/plans/plan-0.8.16.md` | 0.8.16 Slice 0 gates; **Slice 5 implements** | 2026-07-08 |
++| `dev/adr/ADR-0.8.16-onnx-embedder-backend.md` | **Cross-vendor ONNX embedder backend (`OrtBgeEmbedder`)** (SIGNED, HITL coreyt 2026-07-08 — Slice-0 gate). A new `impl Embedder` in `fathomdb-embedder` behind the `onnx-embedder` feature, injected via `EmbedderChoice::Caller` with **zero engine changes**, reaching AMD ROCm / Intel OpenVINO / Windows DirectML that candle cannot. `ort` built `load-dynamic` (native lib dlopen'd at runtime via `ORT_DYLIB_PATH`; `cargo build`/`check` never download/link). Device/provider resolved from `FATHOMDB_EMBED_DEVICE` at construction (R-ONNX-2). The thin default build + in-library 1-bit query path are unchanged. Includes the candle↔ONNX equivalence-measurement plan (R-ONNX-3 → feeds 0.8.18 #5 tolerance); ONNX-equivalence measurement AC minted. Cross-links: `dev/design/0.8.16-slice-0-f9-onnx-design.md` §5-6, `dev/tools/onnx/README.md` | 0.8.16 Slice 0 gates; **Slices 10→15 implement** | 2026-07-08 |
+ | `dev/adr/ADR-0.6.0-cli-scope.md` | CLI scope = two-root operator surface (`recover` lossy / `doctor` bit-preserving); Option B (`search`/`get`/`list` application query) rejected. Amended 2026-06-06 (Slice 34): scopes the 0.8.0 `doctor dump-mutations` op-store read-back IN under `doctor` as a `dump-*` diagnostic (NOT Option B; application query verbs still require a re-open) | 34 (amendment); reference | 2026-06-06 |
+ | `dev/adr/ADR-0.7.0-vector-binary-quant.md` | Binary-quant + f32 rerank recall floor (0.90). **40/GA-2 amendment (AC-075, ◆ B-1):** floor now GATED on the real-embedder eu7 measured on the pre-fusion VECTOR STAGE (ANN-quantization fidelity in isolation), NOT the RRF-fused `search()`; synthetic `ac_013b` demoted to report-only; no numeric change; cites GA-1 | 40/GA-2 amends § 2 pt 4 + status | 2026-06-08 |
+ | `dev/adr/ADR-0.6.0-*.md`, `ADR-0.7.0-*.md`, `ADR-0.7.1-*.md` | Prior-release ADRs (typed-write boundary, CLI scope, error taxonomy, etc.) | reference (e.g. typed-write boundary preserved by 25) | (tree) |
+@@ -152,6 +156,7 @@ refresh in the closing commit when you touch a doc).
+ | `dev/plans/plan-0.8.2.md` | **0.8.2 slice plan (as-built)** — M1 slice contracts (0 design+pre-register → 4 corpus → 5 baseline bar → 10 graph build → 15 PPR-fusion KEYSTONE → 20 verdict; +E1/E2 reranker engine slices); OUTCOME banner = NO-GO | 0.8.2 | 2026-06-19 |
+ | `dev/plans/plan-0.8.7.md` + `dev/plans/runs/STATUS-0.8.7.md` | **0.8.7 GPU embedder (OOB) — plan + live status (COMPLETE).** `FATHOMDB_EMBED_DEVICE` device seam (cpu/cuda/cuda:N/metal) + `embed-cuda`/`embed-metal` feature chain ALREADY LANDED (`02297cb3`, in the 0.8.5 baseline); 0.8.7 added the pure `parse_device_request` + 7 env-grammar unit tests (R-GPU-1), validated `embed-cuda` on an RTX 3090, and recorded the measured speedup (per-doc **15.6×**, batched **93×**, best-path bulk **~46×**; CPU↔CUDA 1-bit codes identical, 0/6144 sign-bit diff). Default CPU build byte-identical (R-GPU-2). Harness = `fathomdb-embedder/examples/gpu_speedup.rs` | 0.8.7 Slices 0/5/10/40 | 2026-06-26 |
+ | `dev/plans/plan-0.8.9.md` + `dev/plans/runs/STATUS-0.8.9.md` | **0.8.9 CI-integrity micro (OOB) — plan + live status.** **$0** CI/test-harness work (no library query-path change). Slice 0 audit found most of the plan's premises **already fixed** at 0.8.0 Slice 40+ → the deliverable is an **honest gate map** (`dev/design/perf-gates.md`), not a fabricated pass. Landed: **R-PG** ac_013b off the synthetic floor (report-only `RECALL_FIDELITY_INFO`; asserting verdict lives in `eu7_real_corpus_ac.rs`) + `recall_gate_predicate.rs` RED-confirmed catch; **R-037** AC-037 `netns-deny-egress` durably on the `ubuntu-22.04` `security` job + `check-netns-deny-egress-catch.sh` (offline catch + live-netns demonstrate, proven IN CI); **R-050c** `fetch-depth: 0` so removal-detect resolves `v0.6.1`; **R-DEP** npm overrides (markdown-it 14.2.0 / js-yaml 4.2.0, `npm audit`=0) + dependabot.yml npm `/` coverage; **R-BOOT** bootstrap un-mask (httpx `# type: ignore` + drop `--quiet`/`>/dev/null` masking). Two **external** blockers (NOT 0.8.9 scope): repo-wide markdownlint debt (`verify`/lint) escalated to steward, and the 0.8.8 pyo3 macOS/Windows link error. | 0.8.9 Slices 0/1/5/10/15/40 | 2026-06-28 |
++| `dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md` | **0.8.16 Slice 15 — candle↔ONNX numeric-equivalence measurement (R-ONNX-3)** (`status: MEASURED + RECORDED`, not enforced). The candle↔ONNX Δ on a 45-probe set, CPU-vs-CPU, CLS pooling, both loading the same pinned `bge-small-en-v1.5` weights: **cosine mean/median = 1.000000000**, **sign-flip rate 0.0** (0 of 17280 bits), max-abs-delta ~1.2e-7. This is the input the 0.8.18 #5 vector-equivalence tolerance is calibrated against; documents the interim **same-backend build-and-read** discipline as the guard until then. Cross-links: `dev/adr/ADR-0.8.16-onnx-embedder-backend.md` §3, `dev/design/0.8.16-slice-0-f9-onnx-design.md` §5 | 0.8.16 Slice 15 | 2026-07-08 |
+ | `dev/plans/plan-0.8.14.md` + `dev/plans/runs/STATUS-0.8.14.md` | **0.8.14 Substrate & recall (the schema-migration release) — plan + live orchestrator board.** Spine EXP-S (#2 kind-tagged coexisting-index substrate) → F5 (#16 fielded BM25F), one coordinated `SCHEMA_VERSION` 15→17 migration; #17 filter-grammar struck (shipped 0.8.11). **Label-only** (manifests stay 0.8.9). Ladder `0 → 5 → 10 → 20 → 25 → 40` (15 void). Slices 5/10/20/25 CLOSED; Slice 40 = release readiness. **R-X-1 py-first deferral (intentional):** EXP-S (`row_kind`) + F5 (`search_index_v2`/BM25F) are engine-internal → NO new Py/TS SDK verbs (non-vacuously green). The module-level embedder helper `embed_batch_cls` is **Python-only** (`fathomdb-py` + `__init__.__all__` + `_fathomdb.pyi`; ABSENT from `fathomdb-napi`/TS); TS parity is a tracked deferral (the `Engine.embed` verb IS at Py↔TS parity). eu7 (R-GATE) satisfied on the D6 no-op basis; grown-corpus floor re-baseline → TC-5 | 0.8.14 Slice 0 authors; every slice updates | 2026-07-05 |
+ | `dev/plans/plan-0.8.12.md` + `dev/plans/runs/STATUS-0.8.12.md` | **0.8.12 Memory-quality plumbing — plan + live orchestrator board.** Mod-5 ladder `0 → 5 → 10 → 15 → 20 → 40`, tracks coverage (5→10) ∥ consolidation (15→20). #6 ELPS coverage (eval-gated by OPP-6 EXP-COV) + #7 consolidation/recency provider (OPP-2 on the OPP-8 seam). **Label-only** (manifests stay 0.8.9). Slice 5 folds in the OPP-6 EXP-COV academic/`$0` arms (HITL 2026-07-01). STATUS carries the frozen DoD (R-COV-1..3 / R-CON-1..3 / R-X-1), the `$` ledger, per-slice X + codex §9 columns. Renamed from `plan-0.8.10.md` at the 2026-07-01 forward renumber | 0.8.12 Slice 0 authors; every slice updates | 2026-07-01 |
+ | `dev/plans/runs/EXP-COV-results.md` | **OPP-6 EXP-COV Phase-A `$0` results (discharges the parked OPP-6 eval).** Per-class fact-coverage table (entity/edge recall + precision guard, per doc-kind) for C0-floor heuristic + current-ELPS-baseline (scored `$0` from pre-computed `claude-haiku-4-5` outputs) [+ C1-gliner if installed] on the frozen `personal.gold` slice; per-corpus relevance-ceiling re-measure; the GATE-OPEN/CLOSED recommendation for the Slice-10 priced run (HARD-STOP #1). No raw licensed payloads. Pre-registration: `dev/design/0.8.12-coverage-probe-and-value-test.md` §A | 0.8.12 Slice 5 | 2026-07-01 |
+diff --git a/src/python/tests/test_exp_obs_explain_parity.py b/src/python/tests/test_exp_obs_explain_parity.py
+index 14f3d7bc..e4f6886a 100644
+--- a/src/python/tests/test_exp_obs_explain_parity.py
++++ b/src/python/tests/test_exp_obs_explain_parity.py
+@@ -17,6 +17,11 @@ cross-binding contract the TypeScript harness
+      an int across the pool (no embedder ⇒ vector_rank None, text_rank set).
+   6. `"graph_arm"` is a member of the SoftFallbackBranch Literal (the Slice-10
+      prereq that brought Python on-contract with Rust/TS).
++  7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit fields
++     survive the real FFI + wrapper. On the default path (F9 reweight OFF, no
++     public SDK seam to enable it) both are `None`; the assertion proves the
++     field crossed the compiled boundary. Mirrored by the TS harness so the two
++     bindings stay symmetric (R-X-1 for F9).
+ """
+ 
+ from __future__ import annotations
+@@ -110,6 +115,33 @@ def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
+         engine.close()
+ 
+ 
++def test_f9_importance_confidence_survive_the_ffi(db_path: str) -> None:
++    # (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
++    # the compiled FFI + Python wrapper. This is the R-X-1 gap the 0.8.8 harness
++    # predated. There is no public SDK seam to enable the OFF-by-default reweight
++    # or to write node importance, so the default path is None for both — which
++    # still proves the field crossed the boundary (do NOT invent a seam).
++    engine = Engine.open(db_path)
++    try:
++        _seed(engine)
++        result = _search_after_projection(engine, "hybrid", explain=True)
++        exp = result.explanation
++        assert exp is not None
++        assert exp.per_hit, "expected at least one per-hit explain"
++        for p in exp.per_hit:
++            # Fields EXIST on the object that came back across the FFI.
++            assert hasattr(p, "importance")
++            assert hasattr(p, "confidence")
++            # Default (F9-off) path: graceful-absent / neutral == None.
++            assert p.importance is None
++            assert p.confidence is None
++            # When present they are floats (typed contract, symmetric with TS).
++            assert p.importance is None or isinstance(p.importance, float)
++            assert p.confidence is None or isinstance(p.confidence, float)
++    finally:
++        engine.close()
++
++
+ def test_graph_arm_is_in_softfallbackbranch_literal() -> None:
+     # (6) The Slice-10 prereq: Python's Literal is on-contract with Rust/TS.
+     assert "graph_arm" in typing.get_args(SoftFallbackBranch)
+diff --git a/src/ts/tests/exp-obs-explain.test.ts b/src/ts/tests/exp-obs-explain.test.ts
+index 72f168f3..634a1756 100644
+--- a/src/ts/tests/exp-obs-explain.test.ts
++++ b/src/ts/tests/exp-obs-explain.test.ts
+@@ -15,6 +15,11 @@
+ //   4. The three self-consistency identities (arm===branch, ceScore, blended).
+ //   5. None/Some rank fidelity (a null rank + an int rank across the pool).
+ //   6. `"graph_arm"` is assignable to SoftFallbackBranch (the Slice-10 contract).
++//   7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit
++//      fields survive the real FFI + wrapper. On the default path (F9 reweight
++//      OFF, no public SDK seam to enable it) both are `null`; the assertion
++//      proves the field crossed the compiled boundary. Mirrored by the Python
++//      harness so the two bindings stay symmetric (R-X-1 for F9).
+ 
+ import test from "node:test";
+ import assert from "node:assert/strict";
+@@ -118,6 +123,35 @@ test("exp-obs trace + per-hit fidelity", async () => {
+   }
+ });
+ 
++test("f9 importance/confidence survive the FFI", async () => {
++  // (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
++  // the compiled FFI + TS wrapper. This is the R-X-1 gap the 0.8.8 harness
++  // predated. There is no public SDK seam to enable the OFF-by-default reweight
++  // or to write node importance, so the default path is null for both — which
++  // still proves the field crossed the boundary (do NOT invent a seam).
++  const engine = await Engine.open(freshDbPath());
++  try {
++    await seed(engine);
++    const result = await searchAfterProjection(engine, "hybrid", true);
++    const exp = result.explanation as Explanation;
++    assert.notEqual(exp, null);
++    assert.ok(exp.perHit.length > 0, "expected at least one per-hit explain");
++    for (const p of exp.perHit) {
++      // Fields EXIST on the object that came back across the FFI.
++      assert.ok("importance" in p, "importance present on per-hit explain");
++      assert.ok("confidence" in p, "confidence present on per-hit explain");
++      // Default (F9-off) path: graceful-absent / neutral === null.
++      assert.equal(p.importance, null);
++      assert.equal(p.confidence, null);
++      // When present they are numbers (typed contract, symmetric with Python).
++      assert.ok(p.importance === null || typeof p.importance === "number");
++      assert.ok(p.confidence === null || typeof p.confidence === "number");
++    }
++  } finally {
++    await engine.close();
++  }
++});
++
+ test("graph_arm is assignable to SoftFallbackBranch", () => {
+   // (6) The Slice-10 contract: graph_arm is a valid branch on every binding.
+   const arm: SoftFallbackBranch = "graph_arm";
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/python/tests/test_exp_obs_explain_parity.py && echo '---TS---' && sed -n '1,220p' src/ts/tests/exp-obs-explain.test.ts && git status --short" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+"""X1 EXP-OBS explain parity harness (Python SDK) — 0.8.8 Slice 10.
+
+Opens a REAL engine, writes a small corpus, and exercises
+`search(..., explain=True/False)` end-to-end across the FFI. Asserts the
+cross-binding contract the TypeScript harness
+(`src/ts/tests/exp-obs-explain.test.ts`) mirrors:
+
+  1. Carrier gating — explain=False ⇒ `explanation is None` AND results are
+     byte-identical to the same query without explain; explain=True ⇒ present.
+  2. QueryTrace — all 12 fields present + correctly typed; `alpha` exact (0.3
+     default); `embedder_id` is a str ("" sentinel when no embedder).
+  3. per_hit ↔ results alignment — same length, same order, `per_hit[i].id ==
+     results[i].id`.
+  4. The three self-consistency identities — `arm == branch`, `ce_score ==
+     hit.ce_score`, `blended == hit.score`.
+  5. None/Some rank fidelity — at least one arm rank is None and at least one is
+     an int across the pool (no embedder ⇒ vector_rank None, text_rank set).
+  6. `"graph_arm"` is a member of the SoftFallbackBranch Literal (the Slice-10
+     prereq that brought Python on-contract with Rust/TS).
+  7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit fields
+     survive the real FFI + wrapper. On the default path (F9 reweight OFF, no
+     public SDK seam to enable it) both are `None`; the assertion proves the
+     field crossed the compiled boundary. Mirrored by the TS harness so the two
+     bindings stay symmetric (R-X-1 for F9).
+"""
+
+from __future__ import annotations
+
+import time
+import typing
+
+from fathomdb import Engine, Explanation, PerHitExplain, QueryTrace, SearchResult
+from fathomdb.types import SoftFallbackBranch
+
+
+def _search_after_projection(engine: Engine, query: str, *, explain: bool) -> SearchResult:
+    deadline = time.monotonic() + 10.0
+    last = engine.search(query, explain=explain)
+    while time.monotonic() < deadline:
+        last = engine.search(query, explain=explain)
+        if last.results:
+            return last
+        time.sleep(0.02)
+    return last
+
+
+def _seed(engine: Engine) -> None:
+    for body in ["hybrid retrieval alpha", "hybrid retrieval beta", "hybrid retrieval gamma"]:
+        engine.write([{"kind": "doc", "body": body}])
+    engine.drain(timeout_s=30)
+
+
+def test_exp_obs_carrier_gating_and_byte_stability(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        _seed(engine)
+        plain = _search_after_projection(engine, "hybrid", explain=False)
+        assert plain.results, "expected hits"
+        # (1) default path suppresses the sidecar.
+        assert plain.explanation is None
+
+        explained = engine.search("hybrid", explain=True)
+        # (1) on path populates it; results byte-identical to the plain call.
+        assert explained.explanation is not None
+        assert isinstance(explained.explanation, Explanation)
+        assert [h.id for h in explained.results] == [h.id for h in plain.results]
+        assert [h.score for h in explained.results] == [h.score for h in plain.results]
+        assert explained.projection_cursor == plain.projection_cursor
+    finally:
+        engine.close()
+
+
+def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        _seed(engine)
+        result = _search_after_projection(engine, "hybrid", explain=True)
+        exp = result.explanation
+        assert exp is not None
+
+        # (2) QueryTrace — 12 fields, typed; alpha exact; embedder_id is a str.
+        t: QueryTrace = exp.trace
+        assert isinstance(t.query_chars, int) and t.query_chars == len("hybrid")
+        assert isinstance(t.k, int)
+        assert isinstance(t.rerank_depth, int) and t.rerank_depth == 0
+        assert isinstance(t.pool_n, int)
+        assert t.alpha == 0.3
+        assert isinstance(t.use_graph_arm, bool) and t.use_graph_arm is False
+        assert isinstance(t.recency, bool)
+        assert isinstance(t.embedder_id, str)
+        assert isinstance(t.ce_active, bool) and t.ce_active is False
+        assert isinstance(t.vector_hits, int)
+        assert isinstance(t.text_hits, int)
+        assert isinstance(t.graph_hits, int)
+
+        # (3) per_hit ↔ results alignment + (4) the three identities.
+        assert len(exp.per_hit) == len(result.results)
+        for p, h in zip(exp.per_hit, result.results):
+            assert isinstance(p, PerHitExplain)
+            assert p.id == h.id
+            assert p.arm == h.branch
+            assert p.ce_score == h.ce_score
+            assert p.blended == h.score
+            # fused_score is the RAW RRF value (not normalized to [0,1]).
+            assert 0.0 < p.fused_score < 1.0
+
+        # (5) None/Some rank fidelity across the pool (no embedder ⇒ vector_rank
+        # None, text_rank set on text-arm hits).
+        ranks = [(p.vector_rank, p.text_rank, p.graph_rank) for p in exp.per_hit]
+        assert any(r[0] is None for r in ranks), "expected at least one None rank"
+        assert any(
+            isinstance(v, int) for r in ranks for v in r if v is not None
+        ), "expected at least one int rank"
+    finally:
+        engine.close()
+
+
+def test_f9_importance_confidence_survive_the_ffi(db_path: str) -> None:
+    # (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
+    # the compiled FFI + Python wrapper. This is the R-X-1 gap the 0.8.8 harness
+    # predated. There is no public SDK seam to enable the OFF-by-default reweight
+    # or to write node importance, so the default path is None for both — which
+    # still proves the field crossed the boundary (do NOT invent a seam).
+    engine = Engine.open(db_path)
+    try:
+        _seed(engine)
+        result = _search_after_projection(engine, "hybrid", explain=True)
+        exp = result.explanation
+        assert exp is not None
+        assert exp.per_hit, "expected at least one per-hit explain"
+        for p in exp.per_hit:
+            # Fields EXIST on the object that came back across the FFI.
+            assert hasattr(p, "importance")
+            assert hasattr(p, "confidence")
+            # Default (F9-off) path: graceful-absent / neutral == None.
+            assert p.importance is None
+            assert p.confidence is None
+            # When present they are floats (typed contract, symmetric with TS).
+            assert p.importance is None or isinstance(p.importance, float)
+            assert p.confidence is None or isinstance(p.confidence, float)
+    finally:
+        engine.close()
+
+
+def test_graph_arm_is_in_softfallbackbranch_literal() -> None:
+    # (6) The Slice-10 prereq: Python's Literal is on-contract with Rust/TS.
+    assert "graph_arm" in typing.get_args(SoftFallbackBranch)
+
+
+def test_explain_param_type_validation(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        # Mirrors the TS guard (cross-SDK parity): non-bool explain rejected.
+        import pytest
+
+        with pytest.raises(TypeError):
+            engine.search("hybrid", explain=typing.cast(bool, "yes"))
+    finally:
+        engine.close()
+---TS---
+// X1 EXP-OBS explain parity harness (TypeScript SDK) — 0.8.8 Slice 10.
+//
+// Opens a REAL engine, writes a small corpus, and exercises
+// `search(..., explain)` end-to-end across the FFI. Mirrors the Python harness
+// (`src/python/tests/test_exp_obs_explain_parity.py`) so both bindings are shown
+// to surface the SAME explanation contract (the only permitted cross-binding
+// difference is snake_case Python vs camelCase TS field spelling):
+//
+//   1. Carrier gating — explain off ⇒ `explanation === null` + byte-identical
+//      results; explain on ⇒ present.
+//   2. QueryTrace — all 12 fields present + typed; `alpha` exact; `embedderId`
+//      is a string.
+//   3. per_hit ↔ results alignment (same length/order; `perHit[i].id ===
+//      results[i].id`).
+//   4. The three self-consistency identities (arm===branch, ceScore, blended).
+//   5. None/Some rank fidelity (a null rank + an int rank across the pool).
+//   6. `"graph_arm"` is assignable to SoftFallbackBranch (the Slice-10 contract).
+//   7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit
+//      fields survive the real FFI + wrapper. On the default path (F9 reweight
+//      OFF, no public SDK seam to enable it) both are `null`; the assertion
+//      proves the field crossed the compiled boundary. Mirrored by the Python
+//      harness so the two bindings stay symmetric (R-X-1 for F9).
+
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { Engine } from "../src/index.js";
+import type { Explanation, SearchResult, SoftFallbackBranch } from "../src/index.js";
+import { freshDbPath } from "./helpers.js";
+
+async function searchAfterProjection(
+  engine: Engine,
+  query: string,
+  explain: boolean,
+): Promise<SearchResult> {
+  const deadline = Date.now() + 10_000;
+  let last = await engine.search(query, undefined, undefined, undefined, undefined, undefined, explain);
+  while (Date.now() < deadline) {
+    last = await engine.search(query, undefined, undefined, undefined, undefined, undefined, explain);
+    if (last.results.length > 0) return last;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return last;
+}
+
+async function seed(engine: Engine): Promise<void> {
+  for (const body of ["hybrid retrieval alpha", "hybrid retrieval beta", "hybrid retrieval gamma"]) {
+    await engine.write([{ kind: "doc", body }]);
+  }
+  await engine.drain(30_000);
+}
+
+test("exp-obs carrier gating + byte stability", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await seed(engine);
+    const plain = await searchAfterProjection(engine, "hybrid", false);
+    assert.ok(plain.results.length > 0, "expected hits");
+    // (1) default path suppresses the sidecar.
+    assert.equal(plain.explanation, null);
+
+    const explained = await engine.search(
+      "hybrid", undefined, undefined, undefined, undefined, undefined, true,
+    );
+    assert.notEqual(explained.explanation, null, "explain populates the sidecar");
+    // results byte-identical to the plain call.
+    assert.deepEqual(
+      explained.results.map((h) => h.id),
+      plain.results.map((h) => h.id),
+    );
+    assert.deepEqual(
+      explained.results.map((h) => h.score),
+      plain.results.map((h) => h.score),
+    );
+    assert.equal(explained.projectionCursor, plain.projectionCursor);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("exp-obs trace + per-hit fidelity", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await seed(engine);
+    const result = await searchAfterProjection(engine, "hybrid", true);
+    const exp = result.explanation as Explanation;
+    assert.notEqual(exp, null);
+
+    // (2) QueryTrace — 12 fields, typed; alpha exact; embedderId is a string.
+    const t = exp.trace;
+    assert.equal(t.queryChars, "hybrid".length);
+    assert.equal(typeof t.k, "number");
+    assert.equal(t.rerankDepth, 0);
+    assert.equal(typeof t.poolN, "number");
+    assert.equal(t.alpha, 0.3);
+    assert.equal(t.useGraphArm, false);
+    assert.equal(typeof t.recency, "boolean");
+    assert.equal(typeof t.embedderId, "string");
+    assert.equal(t.ceActive, false);
+    assert.equal(typeof t.vectorHits, "number");
+    assert.equal(typeof t.textHits, "number");
+    assert.equal(typeof t.graphHits, "number");
+
+    // (3) alignment + (4) the three identities.
+    assert.equal(exp.perHit.length, result.results.length);
+    for (let i = 0; i < exp.perHit.length; i++) {
+      const p = exp.perHit[i]!;
+      const h = result.results[i]!;
+      assert.equal(p.id, h.id);
+      assert.equal(p.arm, h.branch);
+      assert.equal(p.ceScore, h.ceScore);
+      assert.equal(p.blended, h.score);
+      // fused_score is the RAW RRF value (not normalized to [0,1]).
+      assert.ok(p.fusedScore > 0.0 && p.fusedScore < 1.0, "fusedScore is raw RRF");
+    }
+
+    // (5) None/Some rank fidelity (no embedder ⇒ vectorRank null, textRank set).
+    const ranks = exp.perHit.flatMap((p) => [p.vectorRank, p.textRank, p.graphRank]);
+    assert.ok(ranks.some((r) => r === null), "expected at least one null rank");
+    assert.ok(ranks.some((r) => typeof r === "number"), "expected at least one int rank");
+  } finally {
+    await engine.close();
+  }
+});
+
+test("f9 importance/confidence survive the FFI", async () => {
+  // (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
+  // the compiled FFI + TS wrapper. This is the R-X-1 gap the 0.8.8 harness
+  // predated. There is no public SDK seam to enable the OFF-by-default reweight
+  // or to write node importance, so the default path is null for both — which
+  // still proves the field crossed the boundary (do NOT invent a seam).
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await seed(engine);
+    const result = await searchAfterProjection(engine, "hybrid", true);
+    const exp = result.explanation as Explanation;
+    assert.notEqual(exp, null);
+    assert.ok(exp.perHit.length > 0, "expected at least one per-hit explain");
+    for (const p of exp.perHit) {
+      // Fields EXIST on the object that came back across the FFI.
+      assert.ok("importance" in p, "importance present on per-hit explain");
+      assert.ok("confidence" in p, "confidence present on per-hit explain");
+      // Default (F9-off) path: graceful-absent / neutral === null.
+      assert.equal(p.importance, null);
+      assert.equal(p.confidence, null);
+      // When present they are numbers (typed contract, symmetric with Python).
+      assert.ok(p.importance === null || typeof p.importance === "number");
+      assert.ok(p.confidence === null || typeof p.confidence === "number");
+    }
+  } finally {
+    await engine.close();
+  }
+});
+
+test("graph_arm is assignable to SoftFallbackBranch", () => {
+  // (6) The Slice-10 contract: graph_arm is a valid branch on every binding.
+  const arm: SoftFallbackBranch = "graph_arm";
+  assert.equal(arm, "graph_arm");
+});
+
+test("explain must be a boolean (cross-SDK parity guard)", async () => {
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await assert.rejects(
+      // @ts-expect-error — exercising the runtime type guard
+      () => engine.search("hybrid", undefined, undefined, undefined, undefined, undefined, "yes"),
+      TypeError,
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
+exec
+/bin/bash -lc "grep -R \"importance\\|confidence\" -n src/python src/ts/src src/rust/crates | head -80" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+grep: src/python/tests/__pycache__/test_exp_obs_explain_parity.cpython-312.pyc: binary file matches
+src/python/eval/exp_cov1_common.py:122:- `confidence` in [0,1]. Emit ALL facts you find — do not self-censor low-confidence \
+src/python/eval/exp_cov1_common.py:123:facts; report low confidence instead. Favor recall.
+src/python/eval/exp_cov1_common.py:130:     "t_valid": str, "t_invalid": str | null, "confidence": float,
+src/python/eval/exp_cov1_common.py:206:                        "confidence": 0.3,
+src/python/eval/elps_live_harness.py:59:- `confidence` in [0,1] is the calibrated probability that the fact is correct AND supported by the cited span. Emit ALL facts you find — do not self-censor low-confidence facts behind a threshold; report the low confidence instead.
+src/python/eval/elps_live_harness.py:75:      "confidence": float,
+src/python/eval/elps_live_harness.py:107:            "confidence": 0.5,
+src/python/eval/elps_live_harness.py:215:            # Rust rejects confidence outside [0.0, 1.0] with EngineError::Extractor.
+src/python/eval/elps_live_harness.py:216:            c = edge.get("confidence")
+src/python/eval/elps_live_harness.py:220:                edge["confidence"] = max(0.0, min(1.0, float(c)))
+src/python/eval/elps_live_harness.py:222:                edge["confidence"] = 0.5
+src/python/eval/fracc_classifier_run.py:275:                "internal classifier is a low-confidence fallback only."
+src/python/eval/exp_cov1_extract.py:152:    confidence clamp) so the replay-ingest never trips EngineError."""
+src/python/eval/exp_cov1_extract.py:167:        c = e.get("confidence")
+src/python/eval/exp_cov1_extract.py:169:            e["confidence"] = max(0.0, min(1.0, float(c)))
+src/python/eval/exp_cov1_extract.py:171:            e["confidence"] = 0.5
+src/python/eval/exp_cov1_extract.py:239:                        "t_invalid": None, "confidence": 0.5,
+src/python/eval/expaf_value_run.py:13:the **break-even cells**: low-``ce_top`` (<0.2) queries where CE confidence is weak.
+src/python/tests/test_option2_elps_pipeline.py:120:        assert "confidence" in edge
+src/python/tests/test_f9_explain_wrapper_propagation.py:2:per-hit explain ``importance``/``confidence`` fields.
+src/python/tests/test_f9_explain_wrapper_propagation.py:5:`PerHitExplain`) already carry `importance`/`confidence` (fix-1). This test
+src/python/tests/test_f9_explain_wrapper_propagation.py:45:def _native_per_hit(*, importance: float | None, confidence: float | None) -> SimpleNamespace:
+src/python/tests/test_f9_explain_wrapper_propagation.py:57:        importance=importance,
+src/python/tests/test_f9_explain_wrapper_propagation.py:58:        confidence=confidence,
+src/python/tests/test_f9_explain_wrapper_propagation.py:62:def test_importance_and_confidence_propagate() -> None:
+src/python/tests/test_f9_explain_wrapper_propagation.py:63:    native = _native_per_hit(importance=0.75, confidence=0.9)
+src/python/tests/test_f9_explain_wrapper_propagation.py:67:    assert mapped.importance == 0.75
+src/python/tests/test_f9_explain_wrapper_propagation.py:68:    assert mapped.confidence == 0.9
+src/python/tests/test_f9_explain_wrapper_propagation.py:80:def test_none_importance_and_confidence_propagate_as_none() -> None:
+src/python/tests/test_f9_explain_wrapper_propagation.py:82:    native = _native_per_hit(importance=None, confidence=None)
+src/python/tests/test_f9_explain_wrapper_propagation.py:84:    assert mapped.importance is None
+src/python/tests/test_f9_explain_wrapper_propagation.py:85:    assert mapped.confidence is None
+src/python/tests/test_f9_explain_wrapper_propagation.py:92:    assert "importance" in fields
+src/python/tests/test_f9_explain_wrapper_propagation.py:93:    assert "confidence" in fields
+src/python/tests/test_f9_explain_wrapper_propagation.py:104:    assert hit.importance is None
+src/python/tests/test_f9_explain_wrapper_propagation.py:105:    assert hit.confidence is None
+src/python/tests/test_exp_obs_explain_parity.py:20:  7. F9 (0.8.16 Slice 5) — the additive `importance`/`confidence` per-hit fields
+src/python/tests/test_exp_obs_explain_parity.py:118:def test_f9_importance_confidence_survive_the_ffi(db_path: str) -> None:
+src/python/tests/test_exp_obs_explain_parity.py:119:    # (7) F9 (0.8.16 Slice 5): the additive importance/confidence fields survive
+src/python/tests/test_exp_obs_explain_parity.py:122:    # or to write node importance, so the default path is None for both — which
+src/python/tests/test_exp_obs_explain_parity.py:133:            assert hasattr(p, "importance")
+src/python/tests/test_exp_obs_explain_parity.py:134:            assert hasattr(p, "confidence")
+src/python/tests/test_exp_obs_explain_parity.py:136:            assert p.importance is None
+src/python/tests/test_exp_obs_explain_parity.py:137:            assert p.confidence is None
+src/python/tests/test_exp_obs_explain_parity.py:139:            assert p.importance is None or isinstance(p.importance, float)
+src/python/tests/test_exp_obs_explain_parity.py:140:            assert p.confidence is None or isinstance(p.confidence, float)
+src/python/fathomdb/types.py:180:    #: 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/python/fathomdb/types.py:184:    importance: float | None = None
+src/python/fathomdb/types.py:185:    confidence: float | None = None
+src/python/fathomdb/engine.py:73:    extension (0.8.16 Slice 5 / F9, codex §9 fix-2). ``importance``/``confidence``
+src/python/fathomdb/engine.py:74:    are the additive F9 fields (node importance / edge confidence applied to this
+src/python/fathomdb/engine.py:87:        importance=p.importance,
+src/python/fathomdb/engine.py:88:        confidence=p.confidence,
+src/python/fathomdb/_fathomdb.pyi:59:    # 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/python/fathomdb/_fathomdb.pyi:61:    importance: float | None
+src/python/fathomdb/_fathomdb.pyi:62:    confidence: float | None
+src/ts/src/binding.ts:103:  // 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/ts/src/binding.ts:106:  importance?: number | null;
+src/ts/src/binding.ts:107:  confidence?: number | null;
+src/ts/src/index.ts:261: * `importance`/`confidence` (0.8.16 Slice 5 / F9) are the node importance / edge
+src/ts/src/index.ts:262: * confidence applied to this hit's contribution (`null` = graceful-absent /
+src/ts/src/index.ts:274:  importance: number | null;
+src/ts/src/index.ts:275:  confidence: number | null;
+src/ts/src/index.ts:282: * (0.8.16 Slice 5 / F9, codex §9 fix-2). `importance`/`confidence` are the
+src/ts/src/index.ts:283: * additive F9 fields (node importance / edge confidence applied to this hit's
+src/ts/src/index.ts:301:    importance: p.importance ?? null,
+src/ts/src/index.ts:302:    confidence: p.confidence ?? null,
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:53:    for expected in &["body", "t_valid", "t_invalid", "confidence", "extractor_model_id"] {
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:93:            "SELECT body, t_valid, t_invalid, confidence, extractor_model_id
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:103:    assert!(row.3.is_none(), "confidence must be NULL for legacy row");
+src/rust/crates/fathomdb-schema/tests/step14_migration.rs:116:    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION constant must be 18 (step-18 F9 importance)");
+src/rust/crates/fathomdb-schema/tests/step17_migration.rs:65:    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+src/rust/crates/fathomdb-schema/tests/step17_migration.rs:69:        "step-18 (F9 importance) must be the last (head) migration"
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs:53:/// step-17 `search_index_v2` co-landed, then 18 when F9's step-18 `importance`
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs:69:    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+src/rust/crates/fathomdb-schema/tests/step16_migration.rs:73:        "step-18 (F9 importance) must be the last (head) migration"
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs:1://! 0.8.16 Slice 5 (F9 KEYSTONE) — step-18 `importance` migration tests.
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs:3://! Covers plan-0.8.16 §2 R-F9-1 (the node-level `importance REAL` column lands,
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs:4://! nullable, with the 3-way sentinel `NULL`=absent) and R-F9-4 (absent-importance
+src/rust/crates/fathomdb-schema/tests/step18_migration.rs:6://! ADR authority: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md` §2.1 +
+
+exec
+/bin/bash -lc "grep -R \"struct PerHitExplain\\|confidence:\" -n src/rust/crates/fathomdb* | head -80 && grep -R \"importance\" -n src/rust/crates/fathomdb* | head -120" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs:47:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs:63:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/slice30_graph_arm.rs:79:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:251:            confidence: Some(0.9),
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:264:            confidence: Some(0.8),
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:49:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:65:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:418:                confidence: None,
+src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs:641:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/source_id_writes.rs:54:                confidence: None,
+src/rust/crates/fathomdb-engine/tests/trace_source_ref.rs:65:            confidence: None,
+src/rust/crates/fathomdb-engine/tests/consolidation_value_test.rs:41:        confidence: Some(0.9),
+src/rust/crates/fathomdb-engine/tests/pr_g0_phase2_frontier.rs:58:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:59:    confidence: f64,
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:70:        confidence: Some(confidence),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:240:/// on `PerHitExplain`; a node hit carries `confidence: None` (edge-only signal).
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:278:fn conf_edge(from: &str, to: &str, logical_id: &str, body: &str, confidence: f64) -> PreparedWrite {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:288:        confidence: Some(confidence),
+src/rust/crates/fathomdb-engine/tests/pr_g8_dangling_edges.rs:48:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:411:            confidence: None,
+src/rust/crates/fathomdb-engine/tests/pr_g0_identity.rs:36:        confidence: None,
+src/rust/crates/fathomdb-engine/tests/pr_c1_graph_seeding.rs:50:        confidence: None,
+src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs:349:            confidence: None,
+src/rust/crates/fathomdb-engine/src/lib.rs:1283:pub struct PerHitExplain {
+src/rust/crates/fathomdb-engine/src/lib.rs:1308:    pub confidence: Option<f64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1774:    pub confidence: Option<f64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1846:        confidence: Option<f64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:3477:                    confidence: r.get(4)?,
+src/rust/crates/fathomdb-engine/src/lib.rs:7033:    let mut exp_confidence: Option<HashMap<u64, f64>> = None;
+src/rust/crates/fathomdb-engine/src/lib.rs:7134:                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+src/rust/crates/fathomdb-engine/src/lib.rs:7236:             confidence: Option<f64>,
+src/rust/crates/fathomdb-napi/src/lib.rs:604:pub struct PerHitExplain {
+src/rust/crates/fathomdb-napi/src/lib.rs:617:    pub confidence: Option<f64>,
+src/rust/crates/fathomdb-napi/src/lib.rs:637:            confidence: p.confidence,
+src/rust/crates/fathomdb-napi/src/lib.rs:683:                    confidence: Some(0.90),
+src/rust/crates/fathomdb-napi/src/lib.rs:1804:        confidence: None,
+src/rust/crates/fathomdb-py/src/lib.rs:546:    confidence: Option<f64>,
+src/rust/crates/fathomdb-py/src/lib.rs:566:            confidence: p.confidence,
+src/rust/crates/fathomdb-py/src/lib.rs:1419:        confidence: None,
+src/rust/crates/fathomdb-py/src/lib.rs:1953:                    confidence: Some(0.90),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:1://! 0.8.16 Slice 5 (F9 KEYSTONE) — importance/confidence ranking mechanism.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:5://!   - R-F9-1: `canonical_nodes.importance` write/read round-trip + [0,1]
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:7://!   - R-F9-2: importance (node) / confidence (edge) reweight reorders vs OFF, and
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:9://!   - R-F9-4: reweight-ON with all-absent (NULL) importance == reweight-OFF
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:13://! `score *= importance(node) * confidence(edge)`, with `NULL ⇒ neutral (1.0)`.
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:22:    apply_importance_reweight, Engine, EngineError, PreparedWrite, SearchHit, SoftFallbackBranch,
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:43:fn importance_disabled_is_a_no_op() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:47:    let out = apply_importance_reweight(hits.clone(), &imp, &HashMap::new(), false);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:52:fn importance_all_absent_equals_disabled_r_f9_4() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:56:    let disabled = apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), false);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:58:        apply_importance_reweight(hits.clone(), &HashMap::new(), &HashMap::new(), true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:64:fn importance_enabled_deweights_and_reorders() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:65:    // Node 1 outranks node 2 on raw score, but a low importance (0.1) de-weights
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:70:    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:84:    let out = apply_importance_reweight(hits, &HashMap::new(), &conf, true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:89:fn importance_floor_zero_zeroes_contribution() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:94:    let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:121:/// R-F9-1 — importance write/read round-trips exact for the 3-way sentinel, and
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:124:fn importance_write_read_roundtrip_and_range_validation() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:133:            body: "importance subject".to_string(),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:141:    assert_eq!(engine.node_importance(cursor).expect("read"), None, "absent => NULL");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:144:        engine.write_node_importance(cursor, v).expect("set importance");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:145:        assert_eq!(engine.node_importance(cursor).expect("read"), Some(v), "round-trips exact");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:151:            matches!(engine.write_node_importance(cursor, bad), Err(EngineError::WriteValidation)),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:152:            "importance {bad} out of [0,1] must be rejected"
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:156:    assert_eq!(engine.node_importance(cursor).expect("read"), Some(1.0));
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:166:            body: "importance alpha widget".to_string(),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:175:            body: "importance beta widget".to_string(),
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:185:/// R-F9-2 — an importance reweight (ON) reorders vs the OFF baseline: de-weighting
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:188:fn importance_reweight_reorders_vs_off() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:194:    let baseline = engine.search("importance").expect("search");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:200:    engine.write_node_importance(top_id, 0.01).expect("set importance");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:201:    engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:203:    let reweighted = engine.search("importance").expect("search");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:218:/// R-F9-4 (end-to-end) — reweight ON with all-NULL importance yields the exact
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:221:fn importance_reweight_on_all_null_equals_off_e2e() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:227:    let off = engine.search("importance").expect("search off");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:228:    engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:229:    let on_all_null = engine.search("importance").expect("search on");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:233:        "reweight-ON with all-absent importance must equal reweight-OFF"
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:239:/// R-F9-2 (observability) — `explain=True` surfaces the importance contribution
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:242:fn explain_surfaces_importance_contribution() {
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:248:    engine.write_node_importance(a, 0.5).expect("set importance");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:249:    engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:252:        engine.search_explained("importance", None, 0, false, 0.3, 0).expect("search_explained");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:257:    assert_eq!(entry.importance, Some(0.5), "explain surfaces the node importance");
+src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs:351:    engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-engine/src/lib.rs:337:    /// 0.8.16 Slice 5 / F9 — dedicated importance/confidence reweight flag,
+src/rust/crates/fathomdb-engine/src/lib.rs:339:    /// When set, fused hits are multiplicatively reweighted by node `importance`
+src/rust/crates/fathomdb-engine/src/lib.rs:340:    /// (`canonical_nodes.importance`) and edge `confidence`
+src/rust/crates/fathomdb-engine/src/lib.rs:342:    /// (1.0)`. Flipped by `set_importance_reweight_enabled_for_test`; no production
+src/rust/crates/fathomdb-engine/src/lib.rs:344:    importance_reweight_enabled: AtomicBool,
+src/rust/crates/fathomdb-engine/src/lib.rs:459:        /// F9 (0.8.16 Slice 5) — whether the dedicated importance/confidence
+src/rust/crates/fathomdb-engine/src/lib.rs:461:        /// `importance_reweight_enabled`, off by default).
+src/rust/crates/fathomdb-engine/src/lib.rs:462:        importance_enabled: bool,
+src/rust/crates/fathomdb-engine/src/lib.rs:765:                importance_enabled,
+src/rust/crates/fathomdb-engine/src/lib.rs:783:                    importance_enabled,
+src/rust/crates/fathomdb-engine/src/lib.rs:884:            importance_reweight_enabled: AtomicBool::new(false),
+src/rust/crates/fathomdb-engine/src/lib.rs:1299:    /// 0.8.16 Slice 5 / F9 — the node `importance` scalar applied to this hit's
+src/rust/crates/fathomdb-engine/src/lib.rs:1300:    /// fused contribution when the importance reweight is ON, else the raw stored
+src/rust/crates/fathomdb-engine/src/lib.rs:1303:    pub importance: Option<f64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:1305:    /// graph-arm contribution when the importance reweight is ON, else the raw
+src/rust/crates/fathomdb-engine/src/lib.rs:4091:        let importance_enabled =
+src/rust/crates/fathomdb-engine/src/lib.rs:4092:            self.projection_runtime.shared.importance_reweight_enabled.load(Ordering::SeqCst);
+src/rust/crates/fathomdb-engine/src/lib.rs:4103:            importance_enabled,
+src/rust/crates/fathomdb-engine/src/lib.rs:5145:    /// 0.8.16 Slice 5 / F9 test seam — flip the dedicated importance/confidence
+src/rust/crates/fathomdb-engine/src/lib.rs:5151:    pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
+src/rust/crates/fathomdb-engine/src/lib.rs:5152:        self.projection_runtime.shared.importance_reweight_enabled.store(enabled, Ordering::SeqCst);
+src/rust/crates/fathomdb-engine/src/lib.rs:5155:    /// 0.8.16 Slice 5 / F9 (R-F9-1) — set the caller-supplied `importance` ranking
+src/rust/crates/fathomdb-engine/src/lib.rs:5157:    /// interim id `SearchHit.id` carries). Validates `importance ∈ [0.0, 1.0]`,
+src/rust/crates/fathomdb-engine/src/lib.rs:5163:    /// `(0.0, 1.0]` is an explicit importance. Importance is a caller-supplied
+src/rust/crates/fathomdb-engine/src/lib.rs:5164:    /// scalar — the engine does NOT compute graph-centrality importance (ADR §4
+src/rust/crates/fathomdb-engine/src/lib.rs:5167:    pub fn write_node_importance(
+src/rust/crates/fathomdb-engine/src/lib.rs:5170:        importance: f64,
+src/rust/crates/fathomdb-engine/src/lib.rs:5172:        if !importance.is_finite() || !(0.0..=1.0).contains(&importance) {
+src/rust/crates/fathomdb-engine/src/lib.rs:5180:                "UPDATE canonical_nodes SET importance = ?1 WHERE write_cursor = ?2",
+src/rust/crates/fathomdb-engine/src/lib.rs:5181:                params![importance, write_cursor],
+src/rust/crates/fathomdb-engine/src/lib.rs:5187:    /// 0.8.16 Slice 5 / F9 (R-F9-1) — read back the `importance` scalar for the
+src/rust/crates/fathomdb-engine/src/lib.rs:5190:    /// [`Engine::write_node_importance`].
+src/rust/crates/fathomdb-engine/src/lib.rs:5191:    pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:5197:                "SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+src/rust/crates/fathomdb-engine/src/lib.rs:6107:/// 0.8.16 Slice 5 / F9 — OFF-by-default importance/confidence reweight, applied
+src/rust/crates/fathomdb-engine/src/lib.rs:6111:/// score is scaled by node `importance` (`importance_by_id`) × edge `confidence`
+src/rust/crates/fathomdb-engine/src/lib.rs:6114:/// OPP-12 Q6a graceful-absent state. Node hits carry `importance`; graph/edge hits
+src/rust/crates/fathomdb-engine/src/lib.rs:6119:/// non-neutral factor (every importance/confidence absent), the input is returned
+src/rust/crates/fathomdb-engine/src/lib.rs:6123:pub fn apply_importance_reweight(
+src/rust/crates/fathomdb-engine/src/lib.rs:6125:    importance_by_id: &HashMap<u64, f64>,
+src/rust/crates/fathomdb-engine/src/lib.rs:6136:        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
+src/rust/crates/fathomdb-engine/src/lib.rs:6143:            let importance = importance_by_id.get(&h.id).copied().unwrap_or(1.0);
+src/rust/crates/fathomdb-engine/src/lib.rs:6145:            h.score *= importance * confidence;
+src/rust/crates/fathomdb-engine/src/lib.rs:6154:/// 0.8.16 Slice 5 / F9 — build the per-hit importance/confidence weight maps for
+src/rust/crates/fathomdb-engine/src/lib.rs:6155:/// the candidate `hits` from the durable columns (`canonical_nodes.importance`,
+src/rust/crates/fathomdb-engine/src/lib.rs:6158:/// [`apply_importance_reweight`]). Prepared statements are guarded so a pre-step-18
+src/rust/crates/fathomdb-engine/src/lib.rs:6160:fn build_importance_confidence_maps(
+src/rust/crates/fathomdb-engine/src/lib.rs:6164:    let mut importance_by_id: HashMap<u64, f64> = HashMap::new();
+src/rust/crates/fathomdb-engine/src/lib.rs:6167:        tx.prepare("SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+src/rust/crates/fathomdb-engine/src/lib.rs:6171:                importance_by_id.insert(h.id, v);
+src/rust/crates/fathomdb-engine/src/lib.rs:6185:    Ok((importance_by_id, confidence_by_id))
+src/rust/crates/fathomdb-engine/src/lib.rs:6692:    importance_enabled: bool,
+src/rust/crates/fathomdb-engine/src/lib.rs:7030:    // F9 (0.8.16 Slice 5) — per-hit importance/confidence contribution maps
+src/rust/crates/fathomdb-engine/src/lib.rs:7032:    let mut exp_importance: Option<HashMap<u64, f64>> = None;
+src/rust/crates/fathomdb-engine/src/lib.rs:7069:        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+src/rust/crates/fathomdb-engine/src/lib.rs:7071:        let (imp_map, mut conf_map) = if importance_enabled || explain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7072:            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+src/rust/crates/fathomdb-engine/src/lib.rs:7076:        // F9 FIX-1: `build_importance_confidence_maps` keys edge confidence on the
+src/rust/crates/fathomdb-engine/src/lib.rs:7082:        if importance_enabled || explain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7087:        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+src/rust/crates/fathomdb-engine/src/lib.rs:7089:            exp_importance = Some(imp_map);
+src/rust/crates/fathomdb-engine/src/lib.rs:7101:        // F9 — importance (node) / confidence (edge) reweight, OFF by default.
+src/rust/crates/fathomdb-engine/src/lib.rs:7103:        let (imp_map, conf_map) = if importance_enabled || explain {
+src/rust/crates/fathomdb-engine/src/lib.rs:7104:            build_importance_confidence_maps(reader, &fused).unwrap_or_default()
+src/rust/crates/fathomdb-engine/src/lib.rs:7108:        let fused = apply_importance_reweight(fused, &imp_map, &conf_map, importance_enabled);
+src/rust/crates/fathomdb-engine/src/lib.rs:7110:            exp_importance = Some(imp_map);
+src/rust/crates/fathomdb-engine/src/lib.rs:7133:                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
+src/rust/crates/fathomdb-engine/src/lib.rs:7187:/// `build_importance_confidence_maps` keys edge confidence on the EDGE
+src/rust/crates/fathomdb-napi/src/lib.rs:613:    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/rust/crates/fathomdb-napi/src/lib.rs:615:    /// engine `PerHitExplain` additive fields (napi → `importance`, `confidence`).
+src/rust/crates/fathomdb-napi/src/lib.rs:616:    pub importance: Option<f64>,
+src/rust/crates/fathomdb-napi/src/lib.rs:636:            importance: p.importance,
+src/rust/crates/fathomdb-napi/src/lib.rs:648:    // mirror must copy the new `importance`/`confidence` fields from the engine
+
+exec
+/bin/bash -lc 'for f in dev/tools/onnx/README.md dev/tools/onnx/export_bge_small_onnx.py dev/design/0.8.16-slice-0-f9-onnx-design.md dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md dev/adr/ADR-0.8.16-onnx-embedder-backend.md dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md; do [ -e "$f" ] && echo OK $f || echo MISSING $f; done
+' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+OK dev/tools/onnx/README.md
+OK dev/tools/onnx/export_bge_small_onnx.py
+OK dev/design/0.8.16-slice-0-f9-onnx-design.md
+OK dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md
+OK dev/adr/ADR-0.8.16-onnx-embedder-backend.md
+OK dev/plans/runs/0.8.16-slice-15-candle-onnx-equivalence.md
+
+exec
+/bin/bash -lc "grep -R \"def db_path\" -n src/python/tests conftest.py src/python/tests/conftest.py 2>/dev/null && sed -n '1,120p' src/python/tests/conftest.py 2>/dev/null" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ exited 2 in 0ms:
+src/python/tests/conftest.py:40:def db_path(tmp_path: Path) -> str:
+src/python/tests/conftest.py:40:def db_path(tmp_path: Path) -> str:
+
+exec
+/bin/bash -lc "sed -n '1,80p' src/python/tests/conftest.py" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+"""Shared pytest fixtures for the FathomDB Python SDK test suite.
+
+Phase 11a wires the PyO3 binding to a real `fathomdb-engine`; each
+test now needs a unique database path (the engine acquires an
+exclusive file lock, so reusing one path across tests in the same
+process would surface as `DatabaseLockedError`). `db_path` yields a
+fresh per-test `Path` under pytest's `tmp_path` fixture.
+
+EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
+`test-hooks` Cargo feature before any test module is imported —
+`pyproject.toml [tool.maturin] features` ships only `default-embedder`
+(parity with the released wheel), so without this `Engine._write_vector_for_test`
+and friends are missing and tests like `test_use_default_embedder.py`,
+`test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
+
+This rebuild runs at conftest IMPORT time (module level below), NOT as a
+session-scoped fixture. A fixture runs during test *setup*, which is too late
+for a test module that imports a test-hooks symbol at MODULE level
+(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
+that import is evaluated during *collection*, before any fixture runs, so the
+binding must already carry the symbol. conftest.py top-level code is the
+earliest hook that still runs before sibling test modules are collected. The
+rebuild short-circuits if the test-hooks symbol is already present (developer
+pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
+session in the same venv built it), so the `maturin develop` cost (~5-60s) is
+paid at most once per venv.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> str:
+    return str(tmp_path / "rewrite.sqlite")
+
+
+_PYTHON_SRC_DIR = Path(__file__).resolve().parent.parent  # src/python
+
+
+_PROBE_SRC = (
+    "import sys\n"
+    "try:\n"
+    "    from fathomdb import _fathomdb\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+    "engine = getattr(_fathomdb, 'Engine', None)\n"
+    "sys.exit(0 if engine is not None and hasattr(engine, '_write_vector_for_test') else 1)\n"
+)
+
+
+def _binding_has_test_hooks() -> bool:
+    """Return True if the installed `Engine` already exposes the test-hooks
+    surface (`_write_vector_for_test`).
+
+    The probe runs in a CHILD process and must NOT import
+    `fathomdb._fathomdb` into this (the pytest) process. Importing the
+    hook-less extension here dlopen()s it; a subsequent `maturin develop`
+    that overwrites the `.so` on disk cannot be re-imported in the same
+    process — the dynamic loader returns the already-mapped library, so the
+    rebuilt symbols never become visible and collection still fails on the
+    missing `force_panic_for_test`. Probing out-of-process keeps this
+    interpreter pristine so pytest's first import sees the FRESH `.so`."""
+
+    return subprocess.run(
+        [sys.executable, "-c", _PROBE_SRC],
+        cwd=str(_PYTHON_SRC_DIR),
+    ).returncode == 0
+
+
+def _ensure_test_hooks_binding() -> None:
+    """Rebuild the editable binding with `test-hooks` enabled before
+    sibling test modules are collected, unless it is already present.
+
+
+exec
+/bin/bash -lc "nl -ba src/python/tests/test_exp_obs_explain_parity.py | sed -n '125,142p'; nl -ba src/ts/tests/exp-obs-explain.test.ts | sed -n '138,154p'" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+   125	    try:
+   126	        _seed(engine)
+   127	        result = _search_after_projection(engine, "hybrid", explain=True)
+   128	        exp = result.explanation
+   129	        assert exp is not None
+   130	        assert exp.per_hit, "expected at least one per-hit explain"
+   131	        for p in exp.per_hit:
+   132	            # Fields EXIST on the object that came back across the FFI.
+   133	            assert hasattr(p, "importance")
+   134	            assert hasattr(p, "confidence")
+   135	            # Default (F9-off) path: graceful-absent / neutral == None.
+   136	            assert p.importance is None
+   137	            assert p.confidence is None
+   138	            # When present they are floats (typed contract, symmetric with TS).
+   139	            assert p.importance is None or isinstance(p.importance, float)
+   140	            assert p.confidence is None or isinstance(p.confidence, float)
+   141	    finally:
+   142	        engine.close()
+   138	    assert.ok(exp.perHit.length > 0, "expected at least one per-hit explain");
+   139	    for (const p of exp.perHit) {
+   140	      // Fields EXIST on the object that came back across the FFI.
+   141	      assert.ok("importance" in p, "importance present on per-hit explain");
+   142	      assert.ok("confidence" in p, "confidence present on per-hit explain");
+   143	      // Default (F9-off) path: graceful-absent / neutral === null.
+   144	      assert.equal(p.importance, null);
+   145	      assert.equal(p.confidence, null);
+   146	      // When present they are numbers (typed contract, symmetric with Python).
+   147	      assert.ok(p.importance === null || typeof p.importance === "number");
+   148	      assert.ok(p.confidence === null || typeof p.confidence === "number");
+   149	    }
+   150	  } finally {
+   151	    await engine.close();
+   152	  }
+   153	});
+   154	
+
+exec
+/bin/bash -lc "grep -R \"write_node_importance\\|set_importance_reweight\\|importance\" -n src/python/fathomdb src/rust/crates/fathomdb-py/src/lib.rs src/ts/src src/rust/crates/fathomdb-napi/src/lib.rs | head -120" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+src/python/fathomdb/types.py:180:    #: 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/python/fathomdb/types.py:184:    importance: float | None = None
+src/python/fathomdb/engine.py:73:    extension (0.8.16 Slice 5 / F9, codex §9 fix-2). ``importance``/``confidence``
+src/python/fathomdb/engine.py:74:    are the additive F9 fields (node importance / edge confidence applied to this
+src/python/fathomdb/engine.py:87:        importance=p.importance,
+src/python/fathomdb/_fathomdb.pyi:59:    # 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/python/fathomdb/_fathomdb.pyi:61:    importance: float | None
+src/rust/crates/fathomdb-py/src/lib.rs:541:    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/rust/crates/fathomdb-py/src/lib.rs:545:    importance: Option<f64>,
+src/rust/crates/fathomdb-py/src/lib.rs:565:            importance: p.importance,
+src/rust/crates/fathomdb-py/src/lib.rs:1916:    // mirror must copy the new `importance`/`confidence` fields from the engine
+src/rust/crates/fathomdb-py/src/lib.rs:1925:    fn per_hit_explain_from_rust_copies_f9_importance_and_confidence() {
+src/rust/crates/fathomdb-py/src/lib.rs:1960:        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
+src/rust/crates/fathomdb-py/src/lib.rs:1961:        engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-py/src/lib.rs:1971:        assert_eq!(entry.importance, Some(0.25), "source explain carries node importance");
+src/rust/crates/fathomdb-py/src/lib.rs:1975:        assert_eq!(mirror.importance, Some(0.25), "importance must propagate to the pyo3 mirror");
+src/ts/src/binding.ts:103:  // 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/ts/src/binding.ts:106:  importance?: number | null;
+src/ts/src/index.ts:261: * `importance`/`confidence` (0.8.16 Slice 5 / F9) are the node importance / edge
+src/ts/src/index.ts:274:  importance: number | null;
+src/ts/src/index.ts:282: * (0.8.16 Slice 5 / F9, codex §9 fix-2). `importance`/`confidence` are the
+src/ts/src/index.ts:283: * additive F9 fields (node importance / edge confidence applied to this hit's
+src/ts/src/index.ts:301:    importance: p.importance ?? null,
+src/rust/crates/fathomdb-napi/src/lib.rs:613:    /// 0.8.16 Slice 5 / F9 — node importance / edge confidence applied to this
+src/rust/crates/fathomdb-napi/src/lib.rs:615:    /// engine `PerHitExplain` additive fields (napi → `importance`, `confidence`).
+src/rust/crates/fathomdb-napi/src/lib.rs:616:    pub importance: Option<f64>,
+src/rust/crates/fathomdb-napi/src/lib.rs:636:            importance: p.importance,
+src/rust/crates/fathomdb-napi/src/lib.rs:648:    // mirror must copy the new `importance`/`confidence` fields from the engine
+src/rust/crates/fathomdb-napi/src/lib.rs:655:    fn from_rust_copies_f9_importance_and_confidence() {
+src/rust/crates/fathomdb-napi/src/lib.rs:690:        engine.write_node_importance(beta_cursor, 0.25).expect("set importance");
+src/rust/crates/fathomdb-napi/src/lib.rs:691:        engine.set_importance_reweight_enabled_for_test(true);
+src/rust/crates/fathomdb-napi/src/lib.rs:702:        assert_eq!(entry.importance, Some(0.25), "source explain carries node importance");
+src/rust/crates/fathomdb-napi/src/lib.rs:707:        assert_eq!(mirror.importance, Some(0.25), "importance must propagate to the N-API mirror");
+
+exec
+/bin/bash -lc "sed -n '55,95p' src/python/fathomdb/engine.py; sed -n '288,306p' src/ts/src/index.ts" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+            f"{name} must be a list of non-negative ints, got {type(value).__name__!r}"
+        )
+    for item in value:
+        if not isinstance(item, int) or isinstance(item, bool):
+            raise TypeError(
+                f"{name} must contain only non-negative ints, got {type(item).__name__!r}"
+            )
+        if item < 0:
+            raise ValueError(f"{name} must contain only non-negative ints, got {item!r}")
+    return value
+
+
+def _map_per_hit_explain(p: Any) -> PerHitExplain:
+    """Map one native per-hit explain object into the public
+    :class:`fathomdb.types.PerHitExplain` dataclass.
+
+    Factored out of :meth:`Engine.search` so the mapping is unit-testable
+    against a fake native per-hit object without the compiled ``_fathomdb``
+    extension (0.8.16 Slice 5 / F9, codex §9 fix-2). ``importance``/``confidence``
+    are the additive F9 fields (node importance / edge confidence applied to this
+    hit's contribution; ``None`` = graceful-absent / neutral), symmetric with the
+    TypeScript ``perHit`` mapping.
+    """
+    return PerHitExplain(
+        id=p.id,
+        arm=cast(SoftFallbackBranch, p.arm),
+        vector_rank=p.vector_rank,
+        text_rank=p.text_rank,
+        graph_rank=p.graph_rank,
+        fused_score=p.fused_score,
+        ce_score=p.ce_score,
+        blended=p.blended,
+        importance=p.importance,
+        confidence=p.confidence,
+    )
+
+
+class Engine:
+    """Python handle that wraps the native PyO3 engine."""
+
+    __slots__ = ("_native", "_path", "_config")
+  const armOf = (a: string): SoftFallbackBranch =>
+    a === "vector" || a === "text" || a === "text_edge" || a === "graph_arm"
+      ? (a as SoftFallbackBranch)
+      : "text";
+  return {
+    id: p.id,
+    arm: armOf(p.arm),
+    vectorRank: p.vectorRank ?? null,
+    textRank: p.textRank ?? null,
+    graphRank: p.graphRank ?? null,
+    fusedScore: p.fusedScore,
+    ceScore: p.ceScore ?? null,
+    blended: p.blended,
+    importance: p.importance ?? null,
+    confidence: p.confidence ?? null,
+  };
+}
+
+/**
+
+exec
+/bin/bash -lc 'git log --oneline --decorate --stat 616698ea9227c6d98060c8f3ae34bd9a82101ddb..HEAD' in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+00bb0014 (HEAD -> slice-40-20260708T215328Z) test+docs(0.8.16-slice-40): extend compiled-module explain parity for F9 + DOC-INDEX + AC-gate mapping
+ dev/DOC-INDEX.md                                |  5 ++++
+ src/python/tests/test_exp_obs_explain_parity.py | 32 +++++++++++++++++++++++
+ src/ts/tests/exp-obs-explain.test.ts            | 34 +++++++++++++++++++++++++
+ 3 files changed, 71 insertions(+)
+
+exec
+/bin/bash -lc "grep -R \"line-length\" -n pyproject.toml src/python/pyproject.toml .ruff.toml 2>/dev/null; awk 'length("'$0)>120 {print FILENAME ":" FNR ":" length($0)}'"' src/python/tests/test_exp_obs_explain_parity.py src/ts/tests/exp-obs-explain.test.ts | head" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+src/python/pyproject.toml:69:line-length = 100
+
+exec
+/bin/bash -lc "sed -n '60,90p' src/python/pyproject.toml; awk 'length("'$0)>100 {print FILENAME ":" FNR ":" length($0) ":" $0}'"' src/python/tests/test_exp_obs_explain_parity.py | head -20" in /home/coreyt/projects/fathomdb-worktrees/0.8.16-slice-40-20260708T215328Z
+ succeeded in 0ms:
+# Slice 15a fix-3 (codex §9 [P2]): register the `integration` marker so it does not
+# emit a PytestUnknownMarkWarning. These are OPT-IN tests (real HuggingFace model
+# loads, possible network); they skip in the default gate and run only with
+# FDB_S15A_INTEGRATION=1 + torch/transformers present (see test_s15a_embedder_probe.py).
+markers = [
+    "integration: opt-in tests that load real models (require FDB_S15A_INTEGRATION=1 + torch/transformers)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pyright]
+include = ["fathomdb", "tests", "eval"]
+typeCheckingMode = "standard"
+pythonVersion = "3.10"
+venvPath = "../.."
+venv = ".venv"
+
+codex
+The changes add documentation index entries and mirrored Python/TypeScript parity tests without introducing evident runtime or test-breaking issues in the modified lines.
+The changes add documentation index entries and mirrored Python/TypeScript parity tests without introducing evident runtime or test-breaking issues in the modified lines.
+codex_s40_rc=0

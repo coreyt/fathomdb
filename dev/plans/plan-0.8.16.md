@@ -109,10 +109,11 @@ carries the per-slice X column.
 
 ## 9. Immediate next slice
 
-**Slices 0, 5, 10, 15 — CLOSED / LANDED (2026-07-08).** Slice 0 (design, HITL SIGNED); Slice 5 (F9
-KEYSTONE, SCHEMA 17→18, codex §9 PASS); Slices 10+15 (ONNX backend + candle↔ONNX equivalence, landed
-together under the standing mandate, 9-commit chain `ece15629`..`77b35e0b`, codex §9 PASS, zero engine
-diff; R-ONNX-1/2/3 green — equivalence cosine≡1.0 / 1-bit flip-rate 0.0; cross-backend Δ → 0.8.18 #5).
-**Next: Slice 40 — Verification + Release Readiness (the ONLY remaining slice)** — X1 (incl. the deferred
-compiled-module e2e F9-explain SDK parity on the MAIN tree) / X2 `mkdocs --strict` / X3 DOC-INDEX + the
-R-F9/R-ONNX AC gate + the eu7 gate. Live state → `runs/STATUS-0.8.16.md`.
+**ALL SLICES CLOSED — 0.8.16 RELEASE-READY (2026-07-08).** Slice 0 (design, HITL SIGNED) · Slice 5 (F9
+KEYSTONE, SCHEMA 17→18, §9 PASS) · Slices 10+15 (ONNX backend + candle↔ONNX equivalence, landed together,
+§9 PASS, zero engine diff; equivalence cosine≡1.0 / 1-bit flip-rate 0.0) · Slice 40 (Verification + Release
+Readiness, §9 PASS): X1 compiled-module F9 explain parity GREEN both bindings + no-new-verb · X2 `mkdocs
+--strict` 0 · X3 DOC-INDEX · full R-F9/R-ONNX AC gate green · eu7 R-GATE satisfied on the grounded no-op
+basis (default vector path byte-unchanged since `05755e10`). **No further slices.** The version-bump / `v*`
+tag / publish is the HITL's SEPARATE call (fed by the release-readiness verdict); manifests remain `0.8.9`
+to date. Cross-backend ONNX Δ → 0.8.18 #5. Live state → `runs/STATUS-0.8.16.md`.
