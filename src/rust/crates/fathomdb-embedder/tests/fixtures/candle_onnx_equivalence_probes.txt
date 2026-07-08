@@ -1,0 +1,71 @@
+# FathomDB 0.8.16 Slice 15 — candle<->ONNX numeric-equivalence probe set (R-ONNX-3).
+#
+# A FIXED, ORDER-STABLE probe set. One probe per non-empty line; lines whose
+# first non-whitespace character is '#' are comments (skipped). The harness
+# (tests/candle_onnx_equivalence.rs) embeds every probe with BOTH the candle
+# reference (CLS pooling, CPU) and the ONNX OrtBgeEmbedder (CLS pooling, CPU EP)
+# and reports cosine / L2 / max-abs delta + the 1-bit sign-quantization flip
+# rate. Re-running yields byte-identical inputs (deterministic).
+#
+# Categories exercised: short single tokens, short phrases, punctuation-heavy,
+# multilingual-ish (accented Latin / Cyrillic / Greek / CJK / emoji / mixed),
+# medium sentences, long paragraphs, and near-max-token (~512 BPE) inputs.
+
+# --- short single words / tokens ---
+memory
+vector
+embedding
+database
+retrieval
+tokenizer
+quantization
+cosine
+FathomDB
+bge-small-en-v1.5
+
+# --- short phrases ---
+the quick brown fox
+open source memory engine
+one bit hamming distance
+cross vendor execution provider
+approximate nearest neighbour
+local first agent memory
+sign bit quantization flip
+candle versus onnx runtime
+
+# --- punctuation-heavy ---
+!!! wow??? really... (yes) [maybe] {no} <sometimes>
+foo, bar; baz: qux -- quux / corge \ grault
+"quoted string" 'single' `backtick` #hashtag @handle
+1 + 2 = 3; 4 * 5 = 20; 6 / 2 = 3.0
+C:\Users\corey\AppData\Local\Programs\FathomDB\model.onnx
+https://example.com/path?a=1&b=2#frag
+
+# --- multilingual-ish ---
+naive cafe resume fiance decor cliche
+Пример векторного поиска на русском языке
+Παράδειγμα αναζήτησης διανυσμάτων στα ελληνικά
+向量数据库的中文示例查询语句
+ベクトル検索の日本語のサンプルクエリ
+retrieval augmented generation with emojis rocket brain sparkles
+Uber uber Muller Straße Grosse Weisheit
+mixed English et un peu de francais avec des accents
+
+# --- medium sentences ---
+FathomDB stores un-centered L2-normalized embeddings and centers them in the engine at query time.
+The ONNX backend reaches AMD ROCm, Intel OpenVINO, and Windows DirectML that the candle default cannot.
+Same-backend build-and-read discipline is the interim guard until the vector-equivalence tolerance is enforced.
+The one-bit sign-quantization flip rate is the number that actually threatens retrieval fidelity in this library.
+A caller supplies an ONNX embedder purely through EmbedderChoice::Caller, so the engine never names it and there is zero engine change.
+Both backends load the same pinned bge-small-en-v1.5 weights, so a gross divergence signals an export or pooling bug rather than benign numeric noise.
+Cross-encoder reranking with pool_n=10 and alpha=1.0 lifted MRR from 0.347 to 0.587 on the memory-parity benchmark.
+
+# --- long paragraphs ---
+FathomDB is a local-first memory engine built on SQLite with the sqlite-vec and FTS5 extensions, exposing a small verb surface over documents, edges, and key-value state; it revives a curated subset of the older graph lineage while keeping the query path deliberately simple so that consumer agents such as Memex, Hermes, and OpenClaw can treat it as a dependable substrate for agent memory rather than a research vehicle, and every retrieval path ultimately reduces to a one-bit Hamming comparison over sign-quantized embedding vectors.
+The equivalence measurement compares the candle reference embedder, which uses CLS-corrected pooling on the CPU, against the ONNX-Runtime OrtBgeEmbedder on the CPU execution provider, computing per-vector cosine similarity, L2 distance, maximum absolute element-wise delta, and most importantly the fraction of the three hundred and eighty-four sign bits that differ between the two vectors, because the in-library query path quantizes each dimension to a single sign bit and compares with Hamming distance, so it is the sign-flip rate, not the raw floating-point delta, that determines whether a vector written by one backend can be read safely by the other.
+Because the two backends share identical pinned weights and identical pooling, we expect very high agreement: a mean cosine similarity extremely close to one and a sign-flip rate near zero; if instead the harness reported a low cosine or a high flip rate, that would indicate an export mismatch such as a wrong opset, a divergent attention-mask construction, a transposed initializer, or an accidental mean-pool versus CLS-pool discrepancy, and the correct response is to surface that number as a finding for the 0.8.18 vector-equivalence work rather than to hide it behind a lenient assertion.
+Numeric equivalence is measured and recorded at this slice but deliberately not enforced as a gate, because the tight tolerance belongs to 0.8.18 item five which will calibrate against exactly the flip rate and delta distribution recorded here; until then the structural guard is the distinct ONNX embedder identity name, which the engine's identity check uses to prevent candle-written vectors from ever being read silently by the ONNX backend and vice versa, preserving fidelity by construction rather than by a floating-point tolerance that has not yet been chosen.
+
+# --- near-max-token (~512 BPE tokens) ---
+FathomDB memory engine retrieval embedding vector quantization sign bit hamming distance cosine similarity L2 normalization candle onnx runtime execution provider cross vendor rocm openvino directml cuda cpu metal tokenizer truncation attention mask cls pooling mean pooling bge small english weights pinned revision safetensors config json hidden size three eighty four dimension identity revision digest sha two fifty six offline export opset fourteen deterministic byte identical reproducible eval asset gitignore footprint invariant default features thin build zero dependency wheel size gate consumer agent memex hermes openclaw sqlite vector fts five bm twenty five field boost recall precision floor ceiling gate adversarial subagent reviewer codex orchestrator steward worktree branch baseline commit closure witness output json probe set aggregate mean median percentile ninety five maximum minimum distribution flip rate tolerance calibration handoff slice ten fifteen eighteen release engineering general availability beta maturity ladder soft stated hard scale bound partition key ivf brute force exact scan kernel latency overhead bound million chunk scaling hnsw graph arm bfs seed lexical top k length norm bias entity co mingling parity reframe competitor mem zero graphrag locomo ap news corpus adequacy multi session temporal knowledge update single hop multi hop open domain question answering feedback reclassify explain sidecar telemetry no egress opt in real gold judge airlock quarantine batch drain backoff checkpoint resume completeness guard resilience budget discipline cheap validate priced run ledger sequence memex enum thread record lifecycle protocol projection registry entity type spec search hit typed id space cause carrier superseded at currency edge only validity mechanism policy seam design contract build not adopt roadmap deferred multi field recursive payload custom tokenizer governed search expand vector dispatcher screening planner router experiment ladder gate zero two float folded closed provisional results config carrying tuning lever filter grammar keystone identity logical id alone canonical nodes edges migration step active uniqueness recovery denylist doctor allowlist conformance vacuous green surface test real directory exclusion allowlist load bearing
+FathomDB stores each document as a row with an un-centered L2-normalized embedding produced by the pinned bge-small-en-v1.5 model, and at query time the engine subtracts the per-workspace mean vector before quantizing every one of the three hundred and eighty-four dimensions down to a single sign bit, so that the entire nearest-neighbour search reduces to counting how many bits differ between the query and each stored vector using an extremely cheap Hamming distance, which is why the candle-to-ONNX comparison in this slice cares far more about the sign-flip rate than about the raw floating-point magnitude of the element-wise differences; a difference of a hundredth in a component whose magnitude is a tenth is numerically negligible and cannot flip a sign, whereas a much smaller difference in a component sitting almost exactly on zero can flip a sign and therefore change one bit of the quantized code, and it is the accumulation of such near-zero crossings across the whole vector that the recorded flip-rate distribution is designed to capture, giving the 0.8.18 vector-equivalence work a concrete empirical basis on which to choose a tolerance rather than guessing, and giving the orchestrator an immediate signal if the two backends have somehow diverged in their pooling, their attention-mask handling, their opset lowering, or their initializer ordering, any of which would show up here as an anomalously large flip rate rather than the near-zero rate expected from two backends running mathematically identical weights over the same tokenizer output on the same CPU.
