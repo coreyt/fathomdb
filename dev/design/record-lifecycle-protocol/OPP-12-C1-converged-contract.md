@@ -1,6 +1,6 @@
 # OPP-12 C-1 — converged co-design contract (EntityTypeSpec → ProjectionSpec)
 
-> **Status: RATIFIED (HITL coreyt, 2026-07-07).** Converged 2-shot loop, HITL-ratified — C-1 is a **closed,
+> **Status: RATIFIED — BOTH SIDES (HITL coreyt + MEMEX, 2026-07-07; sub-ledger seq 6/7/8).** Converged 2-shot loop, HITL- and Memex-ratified — C-1 is a **closed,
 > agreed cross-repo design contract**. **Ratification schedules nothing / authorizes no build (build ≠ adopt);**
 > the 0.9.1 P2·S-F build is separately authorized (0.9.x roadmap §7.8). FathomDB-side design home + seed for the
 > joint **FathomDB 0.9.1 P2·S0 ADR**. Product of the bounded two-shot loop on `OPP-12-sub-ledger.jsonl`
