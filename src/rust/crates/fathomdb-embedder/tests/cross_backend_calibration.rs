@@ -92,7 +92,14 @@ fn onnx_env() -> Option<(String, String)> {
 // ── leg result (produced by a child process, consumed by the orchestrator) ─
 
 struct LegResult {
+    /// True when this leg is NOT a measured run on the requested device: either a
+    /// clean skip (env unset / construction failed) OR a fallback (requested
+    /// backend unavailable ⇒ effective ≠ requested). A fallback is a skip.
     skipped: bool,
+    /// True specifically for the fallback sub-case (requested backend unavailable,
+    /// silently downgraded) — distinct from a clean env-unset/construction skip.
+    /// Vectors + the effective device are retained as DATA in this case.
+    fallback: bool,
     reason: String,
     requested_device: String,
     effective_device: String,
@@ -144,7 +151,8 @@ fn calibration_leg_worker() {
             let effective = emb.device_label();
             let vectors: Vec<Vec<f32>> =
                 set.iter().map(|p| emb.embed(p).expect("candle embed")).collect();
-            write_leg(&out, &LegOut::ran("candle", &requested, &effective, &vectors));
+            let note = fallback_note("candle", &requested, &effective);
+            write_leg(&out, &LegOut::classify("candle", &requested, &effective, &vectors, &note));
         }
         "onnx" => {
             let Some((model, tok)) = onnx_env() else {
@@ -168,7 +176,11 @@ fn calibration_leg_worker() {
                     let effective = emb.effective_provider().to_string();
                     let vectors: Vec<Vec<f32>> =
                         set.iter().map(|p| emb.embed(p).expect("onnx embed")).collect();
-                    write_leg(&out, &LegOut::ran("onnx", &requested, &effective, &vectors));
+                    let note = fallback_note("onnx", &requested, &effective);
+                    write_leg(
+                        &out,
+                        &LegOut::classify("onnx", &requested, &effective, &vectors, &note),
+                    );
                 }
                 Err(e) => {
                     write_leg(
@@ -189,6 +201,7 @@ fn calibration_leg_worker() {
 /// A leg's payload, serialized to JSON by hand (no serde derive needed).
 struct LegOut<'a> {
     skipped: bool,
+    fallback: bool,
     reason: &'a str,
     vendor: &'a str,
     requested: &'a str,
@@ -198,17 +211,64 @@ struct LegOut<'a> {
 
 const NO_VECTORS: &[Vec<f32>] = &[];
 
+/// Human-readable fallback classification note (used only when effective ≠
+/// requested). Names both the requested and the effective backend so the durable
+/// leg payload is self-describing.
+fn fallback_note(vendor: &str, requested: &str, effective: &str) -> String {
+    format!(
+        "{vendor} leg: requested backend `{requested}` unavailable in this build/runtime; \
+         silently downgraded to effective `{effective}` — classified a SKIP/fallback \
+         (silent-GPU guard), NOT a measured run on the requested device"
+    )
+}
+
 impl<'a> LegOut<'a> {
-    fn ran(
+    /// Classify a leg that PRODUCED vectors on `effective`. A genuine measured RUN
+    /// requires the effective backend to match the requested one; otherwise the
+    /// requested backend was unavailable and we fell back — which is a SKIP/fallback
+    /// (`effective ≠ requested`), never a clean `ran` and never mislabeled as the
+    /// requested device, even though the produced vectors are retained as DATA.
+    fn classify(
         vendor: &'a str,
         requested: &'a str,
         effective: &'a str,
         vectors: &'a [Vec<f32>],
+        fallback_reason: &'a str,
     ) -> Self {
-        LegOut { skipped: false, reason: "", vendor, requested, effective, vectors }
+        if ran_on_requested(requested, effective) {
+            LegOut {
+                skipped: false,
+                fallback: false,
+                reason: "",
+                vendor,
+                requested,
+                effective,
+                vectors,
+            }
+        } else {
+            // effective ≠ requested ⇒ fallback: a SKIP that retains the effective
+            // device + vectors as DATA (never a clean `ran`).
+            LegOut {
+                skipped: true,
+                fallback: true,
+                reason: fallback_reason,
+                vendor,
+                requested,
+                effective,
+                vectors,
+            }
+        }
     }
     fn skipped(vendor: &'a str, requested: &'a str, reason: &'a str) -> Self {
-        LegOut { skipped: true, reason, vendor, requested, effective: "n/a", vectors: NO_VECTORS }
+        LegOut {
+            skipped: true,
+            fallback: false,
+            reason,
+            vendor,
+            requested,
+            effective: "n/a",
+            vectors: NO_VECTORS,
+        }
     }
 }
 
@@ -232,9 +292,10 @@ fn write_leg(path: &str, leg: &LegOut<'_>) {
     }
     vecs.push(']');
     let json = format!(
-        "{{\"skipped\":{},\"reason\":{:?},\"vendor\":{:?},\"requested_device\":{:?},\
+        "{{\"skipped\":{},\"fallback\":{},\"reason\":{:?},\"vendor\":{:?},\"requested_device\":{:?},\
          \"effective_device\":{:?},\"dim\":{},\"n\":{},\"vectors\":{}}}",
         leg.skipped,
+        leg.fallback,
         leg.reason,
         leg.vendor,
         leg.requested,
@@ -293,6 +354,7 @@ fn parse_leg(raw: &str) -> LegResult {
         .unwrap_or_default();
     LegResult {
         skipped: v["skipped"].as_bool().unwrap_or(true),
+        fallback: v["fallback"].as_bool().unwrap_or(false),
         reason: v["reason"].as_str().unwrap_or("").to_string(),
         requested_device: v["requested_device"].as_str().unwrap_or("").to_string(),
         effective_device: v["effective_device"].as_str().unwrap_or("").to_string(),
@@ -463,33 +525,71 @@ fn harness_skips_unavailable_backends_cleanly() {
     assert_eq!(cpu.vectors.len(), 45, "CPU leg must produce 45 probe vectors");
     assert!(ran_on_requested("cpu", &cpu.effective_device));
 
-    // candle-CUDA leg in this CPU-only (no embed-cuda) build: the leg process
-    // succeeds (candle falls back to CPU with a LOUD warning), but effective
-    // (cpu) ≠ requested (cuda) ⇒ the harness classifies it as an UNAVAILABLE
-    // SKIP, never a test failure. This is exactly how the orchestrator's
-    // MAIN-tree candle-CUDA leg is selected: same code path, but there the
-    // embed-cuda build makes effective == cuda.
+    // candle-CUDA leg. The harness must pass in BOTH valid outcomes and fail only
+    // on a genuinely broken classification (a leg claiming it ran on the requested
+    // device when effective ≠ requested):
+    //   * effective backend ≠ requested (cuda fell back to cpu — the no-CUDA-runtime
+    //     case, e.g. this CPU-only worktree build) ⇒ the leg MUST be classified a
+    //     clean SKIP/fallback, never a test failure and never mislabeled GPU;
+    //   * a VALID cuda runtime is present and effective == cuda (e.g. the MAIN-tree
+    //     `embed-cuda` leg or a CUDA host) ⇒ that is a VALID RUN, not a failure.
     let gpu = run_leg("candle", "cuda:0");
+    let gpu_backend = backend_of(&gpu.effective_device);
     assert!(
-        !ran_on_requested("cuda:0", &gpu.effective_device),
-        "in a no-embed-cuda build the cuda leg MUST fall back to CPU (skip), effective={}",
+        gpu_backend == "cpu" || gpu_backend == "cuda",
+        "candle cuda leg reported an incoherent effective backend: {}",
         gpu.effective_device
     );
-    assert_eq!(
-        backend_of(&gpu.effective_device),
-        "cpu",
-        "candle cuda leg without embed-cuda must report effective cpu (silent-GPU guard)"
-    );
+    if ran_on_requested("cuda:0", &gpu.effective_device) {
+        // Valid CUDA runtime: a measured RUN — never a failure, never a skip.
+        assert_eq!(gpu_backend, "cuda", "ran_on_requested(cuda) but effective backend != cuda");
+        assert!(
+            !gpu.skipped && !gpu.fallback,
+            "a candle cuda leg that ran on cuda must NOT be classified skip/fallback (effective={})",
+            gpu.effective_device
+        );
+        assert_eq!(gpu.vectors.len(), 45, "a measured candle cuda leg must produce 45 vectors");
+    } else {
+        // No CUDA runtime: candle fell back to CPU ⇒ a clean SKIP/fallback (never a
+        // test failure and never mislabeled GPU — the silent-GPU guard).
+        assert_eq!(
+            gpu_backend, "cpu",
+            "candle cuda leg without a cuda runtime must report effective cpu, got {}",
+            gpu.effective_device
+        );
+        assert!(
+            gpu.skipped && gpu.fallback,
+            "a candle cuda leg that fell back to CPU (effective != requested) must be classified a \
+             SKIP/fallback, not a clean run"
+        );
+    }
 
-    // ONNX-GPU-EP leg: only when the ONNX asset env is present. A CUDA EP
-    // absent from this ONNX Runtime build downgrades to CPU at construction;
-    // effective_provider() reports the truth, so it is a clean skip too.
+    // ONNX-GPU-EP leg: only when the ONNX asset env is present. Same both-cases
+    // rule: a CUDA EP present + engaged ⇒ a VALID RUN; a CUDA EP absent from this
+    // ONNX Runtime build downgrades to CPU at construction ⇒ a clean SKIP/fallback.
+    // `effective_provider()` reports the truth, so we fail only on a broken
+    // classification.
     if onnx_env().is_some() {
         let ogpu = run_leg("onnx", "cuda");
-        if !ogpu.skipped {
+        if ran_on_requested("cuda", &ogpu.effective_device) {
+            // A CUDA EP genuinely engaged: a VALID RUN, not a failure.
+            assert_eq!(
+                backend_of(&ogpu.effective_device),
+                "cuda",
+                "ran_on_requested(cuda) but ONNX effective provider != cuda"
+            );
             assert!(
-                !ran_on_requested("cuda", &ogpu.effective_device),
-                "ONNX cuda leg fell through as GPU but this build has no CUDA EP; effective={}",
+                !ogpu.skipped && !ogpu.fallback,
+                "an ONNX cuda leg whose CUDA EP engaged must NOT be classified skip/fallback \
+                 (effective={})",
+                ogpu.effective_device
+            );
+        } else {
+            // Downgraded to CPU (no CUDA EP) or construction failed ⇒ a clean skip.
+            assert!(
+                ogpu.skipped,
+                "an ONNX cuda leg that downgraded to CPU (or failed to construct) must be \
+                 classified a SKIP/fallback, effective={}",
                 ogpu.effective_device
             );
         }
