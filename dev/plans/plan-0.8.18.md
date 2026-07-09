@@ -7,13 +7,22 @@
 > **Theme.** The GA-hardening capstone of the non-measure line. Make portable DBs / runtime
 > backend-swap *safe* with the **vector-equivalence self-check** (#5, now meaningful because 0.8.7 CUDA
 > and 0.8.16 ONNX backends exist) and complete the **full publish pipeline** (#11-full) on top of
-> 0.8.6's minimal path. After this release the whole 0.8.x line is **beta-grade shippable** (release-engineering
-> GA — publish machinery + frozen safety gates; **pre-1.0.0 is beta**, so this is not a stability/scale
+> 0.8.6's minimal path. This makes the 0.8.x line **beta-grade shippable** (release-engineering GA —
+> publish machinery + frozen safety gates; **pre-1.0.0 is beta**, so this is not a stability/scale
 > guarantee — those are staged 0.9.x → 1.1.0, F-17).
+>
+> **0.8.18 is NOT the end of the 0.8.x line (F-19/F-20).** OPP-12 (0.8.19/0.8.20) and the F-17 scale-bound
+> (0.8.23/0.8.24) follow. Critically, **#11-full is the publish prerequisite for 0.8.20's OPP-12
+> coordinated breaking-pair publish** — the atomic Memex `0.5.x-successor` pairing (F-19/F-21). 0.8.18
+> hardens the publish machinery that 0.8.20 *uses*; it is on the Memex-value critical path, not a
+> standalone GA nicety. (The Slice-40 tag here remains HITL-gated and label-vs-publish is a per-`x.y.z`
+> HITL call.)
 >
 > **Reconciled 2026-07-02 (Steward):** #13 benchmark-and-robustness harness, originally co-scoped here,
 > belongs at **0.8.19** per master §4 + F-10 ("#13 kept in 0.8.x → 0.8.19"); `plan-0.8.19.md` §1.2 owns
 > it. Struck from this plan — **0.8.18 = #5 vector-equivalence + #11-full publish + the GA tag.**
+> *(NB — F-19/F-20 later re-homed #13 to 0.8.21 and dep-migrations to 0.8.22; those ladders are drift-flagged
+> in F-21, to re-home as their slots near. Does not change 0.8.18 scope.)*
 >
 > **Footprint.** #5 = IN-LIBRARY (open-time check, opt-in/enforced; CPU-only). #11 = CI/CD. Library
 > query path stays CPU-only/1-bit/deterministic.
@@ -29,6 +38,12 @@
   (Hamming, calibrated against the binary-quant floor + the candle↔ONNX Δ measured in 0.8.16 Slice 15).
   Divergence ⇒ refuse to serve the dense/fused arm (loud typed error, never silent). Subsumes the
   `EmbedderIdentity` pre-filter (identity = *claims* same embedder; probe = *proves* equivalent vectors).
+  **Calibration input — the 0.8.16 Δ is SAME-ARCH ONLY (unmeasured cross-backend gap, Steward 2026-07-08):**
+  the R-ONNX-3 hand-off measured ONNX-CPU vs candle-CPU (**0 flips, same-arch**). The **cross-backend Δ
+  (GPU-EP vs CPU, and candle-CUDA vs candle-CPU) is UNMEASURED** — and it is exactly the divergence #5's
+  tolerance must bound. Slice 0 must **measure the cross-backend Δ** (GPU-eval mandate: 3090 cuda:0/1) as a
+  real calibration input, not inherit the same-arch 0-flip number as if it covered backend swaps. Related
+  carry-forwards: **TC-5** (eu7 grown-corpus floor re-baseline), **TC-9** (`ort` 2.0-stable bump).
 - **#13 — benchmark-and-robustness harness — moved to 0.8.19 (struck from 0.8.18).** Per master §4 +
   F-10, the net-new benchmark substrate (`benches/`, `scale.rs`, `tracing` feature) + weekly workflow are
   owned by **0.8.19** (`plan-0.8.19.md` §1.2), not the GA capstone. Not 0.8.18 scope.
@@ -49,7 +64,7 @@ deliberately deferred out of the high-re-embed experimentation phase (PROGRAM-SE
 |----|-------------|-------------------|
 | R-VEQ-1 | Probe set stored at first vector-kind registration | `_fathomdb_embed_probe` populated; migration test green |
 | R-VEQ-2 | Open-time re-embed + tolerance assert at the retrieval representation | RED: a deliberately-divergent backend trips the check and refuses the dense arm; GREEN: same-backend float-noise does **not** trip it |
-| R-VEQ-3 | Tolerance calibrated against the quant floor + the 0.8.16 candle↔ONNX Δ | Documented calibration; a true backend change (CUDA→CPU, candle→ONNX) trips, identical-backend does not |
+| R-VEQ-3 | Tolerance calibrated against the quant floor + the 0.8.16 candle↔ONNX Δ **+ a freshly-measured cross-backend Δ (GPU-EP vs CPU / candle-CUDA vs CPU — the 0.8.16 Δ is same-arch only, unmeasured across backends)** | Documented calibration; a true backend change (CUDA→CPU, candle→ONNX) trips, identical-backend does not |
 | R-VEQ-4 | Loud typed error, never silent degradation | Error path is a typed `Engine::open`/serve error; no silent fallback |
 | ~~R-BR-1 / R-BR-2~~ | ~~benchmark/robustness substrate + weekly workflow~~ — **MOVED to 0.8.19** (master §4 / F-10) | Owned by `plan-0.8.19.md` §1.2; not a 0.8.18 gate |
 | R-REL-4 | Full publish pipeline + a real tagged release | Tiered publish dry-run green; HITL-gated tag fires the real 8-tier publish; versions consistent on both axes |
