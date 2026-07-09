@@ -9,17 +9,27 @@
 #   • pypi-publish-if-new.sh invoked `twine upload` with NO --repository-url.
 # Either would ship a test/staging run to the real registry.
 #
-# These are RED-first assertions: they FAIL against the pre-Fix-1 helpers (no
-# routing flags) and PASS only when the publish command targets the SAME host
-# that was queried. Recording shims are used ON PURPOSE here — the property
-# under test is the argv routing of the publish command, not idempotency (the
-# real publish->install round-trip is in test_idempotent_republish.sh).
+# The same split-brain exists for cargo (Fix-2): cargo-publish-if-new.sh queries
+# CARGO_PUBLISH_IF_NEW_REGISTRY, but `cargo publish` has no URL knob and defaults
+# to prod crates.io. The fix mirrors npm/PyPI: when the query is overridden the
+# publish must EITHER route to a mapped alt-registry (--registry <name>) OR fail
+# closed — it may NEVER run a default-crates.io `cargo publish` for a redirected
+# query.
+#
+# These are RED-first assertions: they FAIL against the pre-Fix-1/Fix-2 helpers
+# (no routing flags) and PASS only when the publish command targets the SAME host
+# that was queried (or fails closed). Recording shims are used ON PURPOSE here —
+# the property under test is the argv routing of the publish command, not
+# idempotency (the real publish->install round-trip is in
+# test_idempotent_republish.sh).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 NPM_HELPER="$REPO_ROOT/scripts/release/npm-publish-if-new.sh"
 PYPI_HELPER="$REPO_ROOT/scripts/release/pypi-publish-if-new.sh"
+CARGO_HELPER="$REPO_ROOT/scripts/release/cargo-publish-if-new.sh"
+CARGO_CRATE="fathomdb-safety-crate"
 
 FAILED=0
 SERVE_DIR="$(mktemp -d)"
@@ -39,6 +49,10 @@ fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 # helper's query returns "absent" and proceeds to the publish command.
 printf '{"name":"fathomdb-safety-pkg","versions":{}}' >"$SERVE_DIR/fathomdb-safety-pkg"
 # PyPI JSON API for an absent version is simply a 404 (missing path).
+# crates.io index API for an absent version: valid JSON whose versions[] omits
+# the target, so cargo-publish-if-new's query returns "absent" and proceeds.
+mkdir -p "$SERVE_DIR/api/v1/crates"
+printf '{"versions":[]}' >"$SERVE_DIR/api/v1/crates/$CARGO_CRATE"
 
 ( cd "$SERVE_DIR" && python3 -u -m http.server 0 ) >"$SERVE_DIR/server.log" 2>&1 &
 PID=$!
@@ -52,7 +66,7 @@ done
 STAGING="http://127.0.0.1:${PORT}"
 
 export TOOL_LOG="$SHIM_DIR/tool.log"
-for tool in npm twine; do
+for tool in npm twine cargo; do
   cat >"$SHIM_DIR/$tool" <<SHIM
 #!/usr/bin/env bash
 printf '$tool %s\n' "\$*" >>"\$TOOL_LOG"
@@ -102,6 +116,45 @@ if printf '%s' "$argv" | grep -q -- "--repository-url $STAGING/legacy/"; then
   pass "twine upload honours an explicit PYPI_PUBLISH_IF_NEW_UPLOAD_URL"
 else
   fail "twine upload ignored explicit upload URL; argv='$argv'"
+fi
+
+# --- cargo: overridden query + mapped publish-registry routes via --registry --
+# CARGO_PUBLISH_IF_NEW_LOCAL_VERSION skips the manifest read; the fixture server
+# answers the version query as "absent" so the helper proceeds to publish.
+: >"$TOOL_LOG"
+CARGO_PUBLISH_IF_NEW_REGISTRY="$STAGING" \
+  CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY="staging-alt" \
+  CARGO_PUBLISH_IF_NEW_LOCAL_VERSION="9.9.9" \
+  CARGO_REGISTRY_TOKEN="fake-token" \
+  PATH="$SHIM_DIR:$PATH" "$CARGO_HELPER" "$CARGO_CRATE" >/dev/null 2>&1 || true
+argv="$(cat "$TOOL_LOG")"
+# The publish must carry --registry staging-alt (the mapped alt-registry). A bare
+# `cargo publish` with no --registry (the pre-Fix-2 behaviour) has no such token
+# and fails this assertion — it would default to prod crates.io.
+if printf '%s' "$argv" | grep -q -- 'publish' \
+   && printf '%s' "$argv" | grep -q -- '--registry staging-alt'; then
+  pass "cargo publish routes to mapped alt-registry (staging-alt), not default crates.io"
+else
+  fail "cargo publish did NOT route to mapped alt-registry; argv='$argv'"
+fi
+
+# --- cargo: overridden query + NO publish-registry map → FAIL CLOSED ----------
+# The query is redirected but no safe publish target is provided: the helper must
+# exit non-zero and NEVER invoke `cargo publish` (which would default to prod).
+: >"$TOOL_LOG"
+if CARGO_PUBLISH_IF_NEW_REGISTRY="$STAGING" \
+     CARGO_PUBLISH_IF_NEW_LOCAL_VERSION="9.9.9" \
+     CARGO_REGISTRY_TOKEN="fake-token" \
+     PATH="$SHIM_DIR:$PATH" "$CARGO_HELPER" "$CARGO_CRATE" >/dev/null 2>&1; then
+  helper_rc=0
+else
+  helper_rc=$?
+fi
+argv="$(cat "$TOOL_LOG")"
+if [ "$helper_rc" -ne 0 ] && ! printf '%s' "$argv" | grep -q -- 'publish'; then
+  pass "cargo fails closed (rc=$helper_rc, no cargo publish) when query is redirected without a publish-registry map"
+else
+  fail "cargo did NOT fail closed on redirected query without a map; rc=$helper_rc argv='$argv'"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

@@ -116,8 +116,11 @@ else
 fi
 
 # crates.io positive control: absent version -> publish invoked (not vacuous).
+# CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY maps the redirected query to a publish
+# alt-registry (Fix-2 split-brain guard) so the helper does not fail closed.
 reset_log
 if out="$(CARGO_PUBLISH_IF_NEW_REGISTRY="$REG" CARGO_REGISTRY_TOKEN=t \
+          CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY=staging-alt \
           CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=9.9.9 \
           PATH="$SHIM_DIR:$PATH" "$CARGO_HELPER" fathomdb-query 2>&1)"; then
   grep -q '^cargo .*publish' "$TOOL_LOG" 2>/dev/null \

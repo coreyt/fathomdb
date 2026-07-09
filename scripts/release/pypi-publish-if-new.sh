@@ -55,6 +55,11 @@ TWINE_BIN="${TWINE_BIN:-twine}"
 #   2. else if the query registry was overridden (staging/test), derive the
 #      upload target FROM that same host — a staging run can NEVER reach prod;
 #   3. else (production defaults) use the real PyPI upload endpoint.
+# CAVEAT: rule 2's derivation (${BASE%/}/) assumes a SINGLE-HOST index (the local
+# round-trip fixture). Real PyPI splits the JSON-API host (pypi.org) from the
+# upload endpoint (upload.pypi.org/legacy/); a PyPI-like staging that mirrors
+# that split MUST set PYPI_PUBLISH_IF_NEW_UPLOAD_URL explicitly (rule 1). The
+# derived default is safe (never prod) but is not a general PyPI-topology guess.
 if [ -n "${PYPI_PUBLISH_IF_NEW_UPLOAD_URL:-}" ]; then
   UPLOAD_URL="$PYPI_PUBLISH_IF_NEW_UPLOAD_URL"
 elif [ -n "${PYPI_PUBLISH_IF_NEW_REGISTRY:-}" ]; then

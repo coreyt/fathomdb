@@ -121,8 +121,13 @@ start_server
 
 REG="http://127.0.0.1:${PORT}"
 run_helper() {
+  # CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY maps the redirected query to a publish
+  # alt-registry (Fix-2 split-brain guard): with the query registry overridden,
+  # the helper refuses a default-crates.io `cargo publish` unless a publish
+  # registry is mapped. The cargo shim records the resulting argv.
   PATH="$SHIM_DIR:$PATH" \
   CARGO_PUBLISH_IF_NEW_REGISTRY="$REG" \
+  CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY="staging-alt" \
   CARGO_REGISTRY_TOKEN="test-token" \
   "$HELPER" "$@"
 }

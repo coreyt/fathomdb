@@ -19,9 +19,26 @@
 # with "version already exists". Also covers partial-republish retries
 # where an RC2 follows an RC1 that landed only some tiers.
 #
+# Registry-safety (Fix-2): the version QUERY honours
+# CARGO_PUBLISH_IF_NEW_REGISTRY, but `cargo publish` has no URL knob and always
+# targets prod crates.io from ambient config. So a staging/test run whose query
+# was redirected to a non-prod index could still PUBLISH to the real crates.io —
+# the exact split-brain hole closed for npm (--registry) and PyPI
+# (--repository-url). Rule, mirroring that posture:
+#   • query NOT overridden (real release)         → publish to crates.io (unchanged);
+#   • query overridden + publish-registry mapped   → cargo publish --registry <name>
+#     (a [registries] alt configured to the same staging host);
+#   • query overridden + NO publish-registry map   → FAIL CLOSED (loud, non-zero).
+#     Never silently publish to prod when the query was redirected.
+#
 # Test env overrides (NOT for production CI):
-#   CARGO_PUBLISH_IF_NEW_REGISTRY      — base URL in place of https://crates.io
-#   CARGO_PUBLISH_IF_NEW_LOCAL_VERSION — skip manifest read; use this version
+#   CARGO_PUBLISH_IF_NEW_REGISTRY         — base URL in place of https://crates.io
+#                                           (redirects the version QUERY only)
+#   CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY — cargo alt-registry NAME (a configured
+#                                           [registries] entry / CARGO_REGISTRIES_
+#                                           <NAME>_INDEX) to route the PUBLISH to,
+#                                           so query and publish hit the same host
+#   CARGO_PUBLISH_IF_NEW_LOCAL_VERSION    — skip manifest read; use this version
 set -euo pipefail
 
 usage() {
@@ -197,6 +214,25 @@ case "$rc" in
       printf 'cargo-publish-if-new: CARGO_REGISTRY_TOKEN not set\n' >&2
       exit 1
     fi
+    # SAFETY (Fix-2): registry-routing split-brain guard. The query above may
+    # have been redirected by CARGO_PUBLISH_IF_NEW_REGISTRY; a bare
+    # `cargo publish` would still target prod crates.io. See the header rule.
+    if [ -n "${CARGO_PUBLISH_IF_NEW_REGISTRY:-}" ]; then
+      if [ -n "${CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY:-}" ]; then
+        # Query overridden + publish-registry mapped: route the publish to the
+        # SAME staging host the query hit. A staging/test run is structurally
+        # incapable of touching prod crates.io.
+        exec cargo publish -p "$CRATE" \
+          --registry "$CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY" \
+          --token "$CARGO_REGISTRY_TOKEN"
+      fi
+      # Query overridden but no publish-registry mapping: FAIL CLOSED. Never run
+      # a default-crates.io `cargo publish` when the query was redirected.
+      printf 'cargo-publish-if-new: CARGO_PUBLISH_IF_NEW_REGISTRY is overridden (%s) but CARGO_PUBLISH_IF_NEW_PUBLISH_REGISTRY is unset; refusing to run a default-crates.io `cargo publish` for a redirected query (fail-closed split-brain guard)\n' \
+        "${CARGO_PUBLISH_IF_NEW_REGISTRY}" >&2
+      exit 1
+    fi
+    # Not overridden (real release): publish to crates.io — behaviour unchanged.
     exec cargo publish -p "$CRATE" --token "$CARGO_REGISTRY_TOKEN"
     ;;
   *)
