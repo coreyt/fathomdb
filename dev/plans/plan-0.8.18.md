@@ -1,5 +1,14 @@
 # FathomDB 0.8.18 — Plan (state-machine ladder) · **Production-safety & CI hardening capstone**
 
+> **✅ COMPLETE — RELEASE-READY, label-only close (HITL 2026-07-09, `bce032a0`).** All mod-5 slices CLOSED
+> (0 design-signed · 5 #5 keystone SCHEMA 18→19 · 20 #11-full · 40 GA verification) + U3 calibration + D3 OOB.
+> GA gates GREEN: workspace clippy/check 0, schema 18→19 (fresh+upgrade), X1 parity (py 20/ts 15), X2
+> `mkdocs --strict` 0, X3 DOC-INDEX, R-VEQ/R-REL AC gates, eu7 **no-op basis** (default vector path
+> byte-unchanged), AC-012/013/020 latency unaffected. D4 floor frozen (P1=0, P2 L2 ε=1e-5). **Manifests stay
+> `0.8.9`; NO tag/publish** — publish deferred to 0.8.20's OPP-12 coordinated breaking-pair (#11-full is its
+> proven+exercised prerequisite). Carry-forward: **TC-10** (#5 open-latency → identity-gated probe caching),
+> **TC-9** (`ort::init` GPU-EP), cross-platform matrix → follow-on orchestrator.
+>
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `0.8.18-implementation.md`; live state → `runs/STATUS-0.8.18.md`; deps/decision record →
 > `0.8.6-0.8.16-PROGRAM-SEQUENCING.md`. Run via `/goal complete 0.8.18` as an **orchestrator** session.
