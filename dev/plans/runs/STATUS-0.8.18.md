@@ -12,7 +12,7 @@
 > design/ADR + new ACs + DoD freeze are HITL-gated (contract-setting, not a mechanical PASS). #5 tolerance-floor
 > and #11-full publish-matrix decisions are HITL regardless.
 
-## Current state — **Slice 0 CLOSED (HITL SIGNED `beee25a4`); U3 canary IN FLIGHT → then D4 floor → then fan 5 ∥ 20**
+## Current state — **Slice 0 SIGNED · U3 CLOSED · Slice 20 (#11-full) LANDED · Slice 5 (#5) §9 BLOCK→fix-1 in flight**
 - **Slice 0 — CLOSED / HITL SIGNED (`beee25a4`, 2026-07-09).** Design review CLEAN after 4 codex rounds (BLOCKs resolved, never overridden). Frozen: design approved; **R-VEQ-5 = additive-only**; **D4 floor set after U3**; npm dist-tag deferred to Slice 20/40.
 - **U3 canary — IN FLIGHT (calibration harness).** Implementer spawned on worktree `0.8.18-u3-calibration` (branch same), base `beee25a4`, preflight PASS. Builds the device-parameterized harness (subprocess-per-leg, Cls pinned both backends, hard-assert 0 flips/45 on the CPU baseline, real pinned-mean fixture for P1). **CPU legs validated in the worktree; candle-CUDA leg runs on the MAIN tree (`cuda:0`; D3 OOB agent has `cuda:1`; K620 excluded) by the orchestrator after §9-PASS/land.** ONNX-GPU-EP = D3's OOB track.
 - **Sequencing (Steward-directed):** U3 measures → orchestrator runs candle-CUDA leg on main → **report both D4 components (P1 mean-centered flip count + P2 un-centered L2) to Steward → STOP; Steward sets the D4 floor** (backstopped by HITL-gated Slice-5 landing) → then fan **Slice 20 (#11-full, no floor needed)** and **Slice 5 (#5 probe, waits for D4 floor)** straight to RED/GREEN TDD → codex §9 (no second design review — Slice-0 signed the reqs+ACs+design).
@@ -35,10 +35,10 @@
 | Slice | Title | State | Base SHA | Branch | codex | Cherry-pick/merge |
 |------:|-------|-------|----------|--------|-------|-------------------|
 | 0 | Setup + ADR — vector-equivalence design (probe set, tolerance calibration vs quant floor + 0.8.16 Δ + fresh cross-backend Δ, refuse-to-serve); full-publish design; board | **CLOSED (SIGNED 2026-07-09)** | (closure) | design review CLEAN (4 codex rounds) | n/a | HITL-signed; docs closure on main |
-| 5 | **Vector-equivalence KEYSTONE** — probe-set store + open-time re-embed + post-quant tolerance check + typed refuse-to-serve | PENDING (blocked on 0) | — | — | — | — |
+| 5 | **Vector-equivalence KEYSTONE** — `_fathomdb_embed_probe` (SCHEMA 18→19) + degraded-open + two-stage P1(=0)/P2(L2 ε=1e-5) check + typed refuse-to-serve | **§9 BLOCK → fix-1 IN FLIGHT** | 12f732a5 | 0.8.18-slice-5-veq (30f16706) | **BLOCK** (fail-open silent-degradation; trigger hole; MC-pin untested) | HITL-gated landing (schema) |
 | 10 | *(void reserved gap)* — #13 benchmark substrate MOVED to 0.8.19 | VOID | — | — | — | — |
 | 15 | *(void reserved gap)* — #13 `benchmark-and-robustness.yml` MOVED to 0.8.19 | VOID | — | — | — | — |
-| 20 | **Full publish pipeline** — napi prebuild matrix + cross-ecosystem gate + tiered publish; dry-run | **IMPLEMENTED (awaiting codex §9)** | `12f732a5` | `0.8.18-slice-20-publish` | pending | pending | R-REL-4a..f done; matrix gated to linux-x64-gnu; poll-not-sleep; per-registry idempotency (crates/npm/PyPI); npm platform-split; cross-platform matrix **deferred-to-follow-on** (R-REL-4d). Design: `dev/design/0.8.18-slice-20-publish-pipeline.md` |
+| 20 | **Full publish pipeline** — reconcile + exercised verify (real npm/PyPI round-trips) + OPP-12 resilience (idempotency/poll/rollback-forward) + GA-tag matrix gate (x86_64-linux) + napi split topology | **CLOSED / LANDED** | 12f732a5 | 0.8.18-slice-20-publish (fc8a6016) | **PASS** (fix-1 npm/pypi + fix-2 cargo safety) | cherry-picked → main `3bdfaea8` (mandate) |
 | 40 | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-REL AC gate + all frozen gates (eu7/latency); HITL-gated real tagged release | PENDING (blocked on 5,20) | — | — | — | — |
 
 **Tracks (parallelizable off Slice 0):** equivalence track **5** ∥ publish track **20**; converge at **40**.
