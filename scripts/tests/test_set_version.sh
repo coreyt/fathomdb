@@ -11,6 +11,9 @@ CARGO="$REPO_ROOT/Cargo.toml"
 PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
 NPMPKG="$REPO_ROOT/src/ts/package.json"
 EMBAPI="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api/Cargo.toml"
+# napi per-platform binary packages (R-REL-4f) — set-version.sh keeps their
+# `version` in lockstep with Axis W, so the test must snapshot/restore them too.
+NPM_PLATFORM_DIR="$REPO_ROOT/src/ts/npm"
 
 FAILED=0
 TMPDIR_ROOT="$(mktemp -d)"
@@ -23,12 +26,18 @@ cp "$CARGO" "$SNAP/Cargo.toml"
 cp "$PYPROJ" "$SNAP/pyproject.toml"
 cp "$NPMPKG" "$SNAP/package.json"
 cp "$EMBAPI" "$SNAP/embedder-api.toml"
+if [ -d "$NPM_PLATFORM_DIR" ]; then
+  cp -r "$NPM_PLATFORM_DIR" "$SNAP/npm"
+fi
 
 restore() {
   cp "$SNAP/Cargo.toml" "$CARGO" 2>/dev/null || true
   cp "$SNAP/pyproject.toml" "$PYPROJ" 2>/dev/null || true
   cp "$SNAP/package.json" "$NPMPKG" 2>/dev/null || true
   cp "$SNAP/embedder-api.toml" "$EMBAPI" 2>/dev/null || true
+  if [ -d "$SNAP/npm" ]; then
+    cp -r "$SNAP/npm/." "$NPM_PLATFORM_DIR/" 2>/dev/null || true
+  fi
 }
 
 pass() { printf 'PASS  %s\n' "$1"; }

@@ -80,6 +80,7 @@ cat >"$FIX_DIR/fathomdb-embedder-api.json" <<'JSON'
 {
   "crate": {"name": "fathomdb-embedder-api"},
   "versions": [
+    {"num": "0.6.1", "yanked": false},
     {"num": "0.6.0", "yanked": false},
     {"num": "0.5.1", "yanked": false}
   ]

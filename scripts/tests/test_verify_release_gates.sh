@@ -16,6 +16,11 @@ CARGO="$REPO_ROOT/Cargo.toml"
 EMBAPI="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api/Cargo.toml"
 PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
 NPMPKG="$REPO_ROOT/src/ts/package.json"
+# napi per-platform binary packages (R-REL-4f) — set-version.sh keeps their
+# version in lockstep with Axis W, and some cases here bump via set-version.sh,
+# so they must be snapshotted/restored too or their drift leaks into later
+# clean-state assertions.
+NPM_PLATFORM_DIR="$REPO_ROOT/src/ts/npm"
 
 FAILED=0
 TMPDIR_ROOT="$(mktemp -d)"
@@ -33,6 +38,9 @@ for c in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
   rel="$(basename "$(dirname "$c")")"
   cp "$c" "$SNAP_CRATES/$rel.toml"
 done
+if [ -d "$NPM_PLATFORM_DIR" ]; then
+  cp -r "$NPM_PLATFORM_DIR" "$SNAP/npm"
+fi
 
 restore() {
   cp "$SNAP/Cargo.toml" "$CARGO" 2>/dev/null || true
@@ -43,6 +51,9 @@ restore() {
     base="$(basename "$f" .toml)"
     cp "$f" "$REPO_ROOT/src/rust/crates/$base/Cargo.toml" 2>/dev/null || true
   done
+  if [ -d "$SNAP/npm" ]; then
+    cp -r "$SNAP/npm/." "$NPM_PLATFORM_DIR/" 2>/dev/null || true
+  fi
 }
 
 pass() { printf 'PASS  %s\n' "$1"; }

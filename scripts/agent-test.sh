@@ -27,6 +27,23 @@ run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_ap
 # time by the release workflow, not here.
 run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 
+# Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
+# assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
+# dist-tag). Pure python3+PyYAML parse; never runs the workflow.
+run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+
+# Scripts (bash): coordinated-publish resilience (R-REL-4c) — per-registry
+# idempotent no-op across crates.io + npm + PyPI. Offline fixture http server.
+run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+
+# Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
+# index-propagation sleep (R-REL-4c). Offline fixture http server.
+run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+
+# Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
+# napi per-platform split. Pure filesystem fixture; no registry.
+run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+
 # actionlint binary present + rejects deliberately-broken fixture.
 run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
 

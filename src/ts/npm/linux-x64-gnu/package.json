@@ -1,0 +1,23 @@
+{
+  "name": "@fathomdb/fathomdb-linux-x64-gnu",
+  "version": "0.8.9",
+  "description": "Prebuilt FathomDB native binding for linux-x64-gnu (napi-rs). Installed automatically as an optionalDependency of the `fathomdb` package on matching hosts.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coreyt/fathomdb"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "main": "fathomdb.linux-x64-gnu.node",
+  "files": [
+    "fathomdb.linux-x64-gnu.node"
+  ]
+}

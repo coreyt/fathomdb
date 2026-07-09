@@ -38,7 +38,7 @@
 | 5 | **Vector-equivalence KEYSTONE** — probe-set store + open-time re-embed + post-quant tolerance check + typed refuse-to-serve | PENDING (blocked on 0) | — | — | — | — |
 | 10 | *(void reserved gap)* — #13 benchmark substrate MOVED to 0.8.19 | VOID | — | — | — | — |
 | 15 | *(void reserved gap)* — #13 `benchmark-and-robustness.yml` MOVED to 0.8.19 | VOID | — | — | — | — |
-| 20 | **Full publish pipeline** — napi prebuild matrix + cross-ecosystem gate + tiered publish; dry-run | PENDING (blocked on 0) | — | — | — | — |
+| 20 | **Full publish pipeline** — napi prebuild matrix + cross-ecosystem gate + tiered publish; dry-run | **IMPLEMENTED (awaiting codex §9)** | `12f732a5` | `0.8.18-slice-20-publish` | pending | pending | R-REL-4a..f done; matrix gated to linux-x64-gnu; poll-not-sleep; per-registry idempotency (crates/npm/PyPI); npm platform-split; cross-platform matrix **deferred-to-follow-on** (R-REL-4d). Design: `dev/design/0.8.18-slice-20-publish-pipeline.md` |
 | 40 | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-REL AC gate + all frozen gates (eu7/latency); HITL-gated real tagged release | PENDING (blocked on 5,20) | — | — | — | — |
 
 **Tracks (parallelizable off Slice 0):** equivalence track **5** ∥ publish track **20**; converge at **40**.
@@ -51,7 +51,7 @@
 | R-VEQ-2 | Open-time re-embed + tolerance assert at retrieval representation; two-sided (trips on true backend change, not on same-backend float-noise) | PENDING (Slice 5) |
 | R-VEQ-3 | Tolerance calibrated vs quant floor + 0.8.16 Δ + fresh cross-backend Δ | **FROZEN (Steward, HITL-delegated, from U3): P1 binary-flip floor = 0 (exact); P2 un-centered L2 ε = 1e-5** (final HITL look at Slice-5 landing). U3 legs: candle-CPU↔ONNX-CPU / candle-CPU↔candle-CUDA / candle-CUDA↔ONNX-CPU all **0/17280**, P2 L2 ≤ 1.4e-6; D3 ONNX-GPU-EP = 2/17280 (distinct identity, additive-only ⇒ no floor change) |
 | R-VEQ-4 | Loud typed error, never silent degradation | PENDING (Slice 5) |
-| R-REL-4 | Full publish pipeline + a real tagged release (HITL-gated tag fires the real 8-tier publish) | PENDING (Slice 20 dry-run; Slice 40 tag) |
+| R-REL-4 | Full publish pipeline + a real tagged release (HITL-gated tag fires the real 8-tier publish) | **Slice-20 machinery IMPLEMENTED** (R-REL-4a reconciliation + 4b exercised verification + 4c resilience + 4e matrix-gate + 4f npm split; 4d cross-platform matrix **deferred-to-follow-on**). The real `v*` tag remains Slice 40 (HITL-gated). |
 | R-GATE | eu7 ≥ 0.90 + AC-012/013/020 latency hold at GA | PENDING (Slice 40) |
 
 New ACs: candidates minted at Slice 0 (vector-equivalence contract) and Slice 40 (GA release-readiness) — HITL-decided.

@@ -43,6 +43,7 @@ NPMPKG="$REPO_ROOT/src/ts/package.json"
 EMB_API_DIR="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api"
 EMB_API="$EMB_API_DIR/Cargo.toml"
 CRATES_DIR="$REPO_ROOT/src/rust/crates"
+NPM_PLATFORM_DIR="$REPO_ROOT/src/ts/npm"
 
 # Atomic write: edits "$1" with awk program "$2" via a tmpfile mv.
 awk_inplace() {
@@ -157,6 +158,29 @@ set_npm_version() {
   mv "$tmp" "$NPMPKG"
 }
 
+# Set the top-level "version" in each src/ts/npm/<triple>/package.json (the
+# napi per-platform binary packages). They are versioned in lockstep with
+# Axis W, same as the main package.
+set_npm_platform_pkg_versions() {
+  local new="$1" pkg tmp
+  [ -d "$NPM_PLATFORM_DIR" ] || return 0
+  for pkg in "$NPM_PLATFORM_DIR"/*/package.json; do
+    [ -f "$pkg" ] || continue
+    tmp="$(mktemp "${pkg}.XXXXXX")"
+    awk -v new="$new" '
+      BEGIN { done = 0 }
+      {
+        if (!done && match($0, /"version"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+          sub(/"version"[[:space:]]*:[[:space:]]*"[^"]*"/, "\"version\": \"" new "\"")
+          done = 1
+        }
+        print
+      }
+    ' "$pkg" >"$tmp"
+    mv "$tmp" "$pkg"
+  done
+}
+
 # Set [package].version in fathomdb-embedder-api/Cargo.toml. Preserves any
 # leading comment lines inside the [package] block (so the Axis-E why-comment
 # survives re-runs).
@@ -204,6 +228,11 @@ read_pyproject_version() {
 
 read_npm_version() {
   sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$NPMPKG" | head -1
+}
+
+# Read the first "version" from an arbitrary package.json (platform pkgs).
+read_npm_version_file() {
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
 }
 
 # Returns the literal text of the version line inside [package] of the
@@ -280,6 +309,21 @@ check_files() {
   if [ "$npm" != "$ws" ]; then
     _drift "$NPMPKG" "$(_json_version_line "$NPMPKG")" "$npm" "$ws"
     rc=1
+  fi
+
+  # Each src/ts/npm/<triple>/package.json (platform binary package) must be at
+  # Axis W too — they publish in lockstep with the main package.
+  local plat_pkg plat_pkg_ver plat_pkg_no
+  if [ -d "$NPM_PLATFORM_DIR" ]; then
+    for plat_pkg in "$NPM_PLATFORM_DIR"/*/package.json; do
+      [ -f "$plat_pkg" ] || continue
+      plat_pkg_ver="$(read_npm_version_file "$plat_pkg")"
+      if [ "$plat_pkg_ver" != "$ws" ]; then
+        plat_pkg_no="$(_json_version_line "$plat_pkg")"
+        _drift "$plat_pkg" "${plat_pkg_no:-1}" "$plat_pkg_ver" "$ws"
+        rc=1
+      fi
+    done
   fi
 
   case "$emb" in
@@ -384,6 +428,7 @@ case "$mode" in
     set_workspace_dep_axis_w_versions "$new"
     set_pyproject_version "$new"
     set_npm_version "$new"
+    set_npm_platform_pkg_versions "$new"
     check_files
     ;;
   --embedder-api)

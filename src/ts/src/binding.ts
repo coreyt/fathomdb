@@ -1,52 +1,62 @@
-// Native-binding loader. Locates the platform-tagged `.node` artifact
-// produced by `napi build` and re-exports it as a typed module.
+// Native-binding loader. Resolves the running host to a napi-rs triple, then
+// loads the compiled binding from either a local dev build
+// (`fathomdb.<triple>.node`, produced by `napi build --platform`) or the
+// published `@fathomdb/fathomdb-<triple>` platform package. When neither is
+// present, `loadPlatformBinding` throws a clear "unsupported platform" error
+// (R-REL-4f) — never a silent runtime segfault. The platform-resolution logic
+// lives in `./platform.ts` (side-effect-free, unit-tested independently of a
+// built binding).
 
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPlatformBinding } from "./platform.js";
 
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 
-// `napi build` writes `<name>.<triple>.node` next to the package.json
-// (cwd of the build script). Walk up from this file's compiled location
-// to find candidates.
+// `napi build --platform` writes `<name>.<triple>.node` next to the
+// package.json (cwd of the build script). Walk up from this file's compiled
+// location to find a local dev binary before falling back to the published
+// platform package.
 const SEARCH_ROOTS = [
   join(here, ".."), // dist/src/ -> dist/
   join(here, "..", ".."), // dist/src/ -> dist/.. (pkg root)
   here, // co-located fallback
 ];
 
-const TRIPLES = [
-  "linux-x64-gnu",
-  "linux-x64-musl",
-  "linux-arm64-gnu",
-  "linux-arm64-musl",
-  "linux-arm-gnueabihf",
-  "darwin-x64",
-  "darwin-arm64",
-  "darwin-universal",
-  "win32-x64-msvc",
-  "win32-ia32-msvc",
-  "win32-arm64-msvc",
-  "freebsd-x64",
-  "android-arm64",
-  "android-arm-eabi",
-];
+// glibc vs musl: napi-rs distinguishes these via the runtime report. A missing
+// `glibcVersionRuntime` header means a musl host (Alpine et al.).
+function hostIsMusl(): boolean {
+  try {
+    const report = process.report?.getReport?.() as
+      | { header?: { glibcVersionRuntime?: string } }
+      | undefined;
+    return report?.header?.glibcVersionRuntime == null;
+  } catch {
+    return false;
+  }
+}
 
-function loadNative(): unknown {
+function loadLocal(triple: string): unknown | null {
   for (const root of SEARCH_ROOTS) {
-    for (const triple of TRIPLES) {
-      const candidate = join(root, `fathomdb.${triple}.node`);
-      if (existsSync(candidate)) {
-        return require(candidate);
-      }
+    const candidate = join(root, `fathomdb.${triple}.node`);
+    if (existsSync(candidate)) {
+      return require(candidate);
     }
   }
-  throw new Error(
-    "fathomdb native binding not found. Run `npm run build` to compile it.",
-  );
+  return null;
+}
+
+function loadNative(): unknown {
+  return loadPlatformBinding({
+    platform: process.platform,
+    arch: process.arch,
+    isMusl: hostIsMusl(),
+    loadLocal,
+    requirePackage: (pkg: string) => require(pkg),
+  });
 }
 
 interface NativeWriteReceipt {

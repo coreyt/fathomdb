@@ -11,9 +11,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "fathomdb.*.node"
+    "dist"
   ],
+  "//napi-platform-split": "R-REL-4f. Thin main package: ships NO .node. Each host's binary is a separate @fathomdb/fathomdb-<triple> package (src/ts/npm/<triple>/) carrying os/cpu, resolved by the loader in src/ts/src/platform.ts. optionalDependencies are INJECTED at publish time by scripts/release/npm-inject-optional-deps.sh (one entry per published platform, pinned to this version) so the committed package-lock.json stays in sync with `npm ci`. 0.8.18 publishes ONLY linux-x64-gnu under a non-latest dist-tag (NPM_DIST_TAG); the follow-on orchestrator adds the remaining platforms and promotes latest.",
   "scripts": {
     "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --features default-embedder --js false",
     "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks,default-embedder --js false",
