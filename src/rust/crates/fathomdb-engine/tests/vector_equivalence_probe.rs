@@ -14,15 +14,24 @@
 //! non-bge, so `identity_requires_mean_centering` is false and the probe uses the
 //! un-centered (raw-sign) representation on BOTH sides (R-VEQ-3c non-MC branch).
 
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, EngineError};
+use fathomdb_schema::{migrate_with_steps, MIGRATIONS};
 use tempfile::TempDir;
 
 const DIM: usize = 384;
 const PROBE_IDENTITY_NAME: &str = "fathomdb-probe-test";
 const PROBE_IDENTITY_REV: &str = "veq-slice5";
+
+// ---- fix-1: mean-centering (MC) identity for the production P1 branch --------
+// The default bge identity is the ONLY one for which
+// `identity_requires_mean_centering` is true; these tests exercise the
+// MC-required-WITH-pin P1 branch (DEFECT #5 / CONCERN #9), the real production
+// path, which non-bge identities never reach.
+const BGE_NAME: &str = "fathomdb-bge-small-en-v1.5";
+const BGE_REV: &str = "veq-slice5-mc";
 
 /// Deterministic per-text reference vector, every component in `[0.5, 1.5]` (all
 /// strictly positive, so the 1-bit sign quantization is all-ones and is robustly
@@ -101,8 +110,126 @@ impl Embedder for P2OnlyEmbedder {
     }
 }
 
+/// fix-1 DEFECT #1 — a caller embedder that PANICS in `embed`. SAME identity as
+/// the seeded references, so `check_embedder_profile` passes and the panic is the
+/// ONLY thing that can be caught: the probe must fail-SAFE (refuse dense), never
+/// wedge open and never fail-open (silently serve an un-verifiable arm).
+#[derive(Debug)]
+struct PanicEmbedder;
+impl Embedder for PanicEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(PROBE_IDENTITY_NAME, PROBE_IDENTITY_REV, DIM as u32)
+    }
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        panic!("probe embedder deliberately panics");
+    }
+}
+
+/// fix-1 DEFECT #1 — a caller embedder that ERRORS in `embed`. SAME identity as
+/// the references; the probe must fail-SAFE (refuse dense).
+#[derive(Debug)]
+struct ErrorEmbedder;
+impl Embedder for ErrorEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(PROBE_IDENTITY_NAME, PROBE_IDENTITY_REV, DIM as u32)
+    }
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        Err(EmbedderError::Failed { message: "deterministic probe embed failure".to_string() })
+    }
+}
+
+/// fix-1 (DEFECT #5 / CONCERN #9) — faithful bge-identity backend (the only
+/// identity whose `identity_requires_mean_centering` is true). `embed ==
+/// reference_vector` (all components in `[0.5, 1.5)`, strictly positive).
+#[derive(Debug)]
+struct BgeRefEmbedder;
+impl Embedder for BgeRefEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM as u32)
+    }
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        Ok(reference_vector(text))
+    }
+}
+
+/// fix-1 (DEFECT #5 / CONCERN #9) — bge-identity backend that REFLECTS every
+/// component about the pinned mean `1.0`: `e = 2.0 - r`. Because `r ∈ [0.5, 1.5)`,
+/// `e ∈ (0.5, 1.5]` — so the RAW sign is unchanged (0 un-centered flips), but the
+/// MEAN-CENTERED sign `sign(e − 1) = −sign(r − 1)` flips on every component whose
+/// `r ≠ 1.0`. This isolates the MC-required-with-pin P1 branch: it trips ONLY when
+/// centering is actually applied (with a pin ⇒ flips ≫ 0; without a pin ⇒ flips=0).
+#[derive(Debug)]
+struct BgeMeanReflectEmbedder;
+impl Embedder for BgeMeanReflectEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new(BGE_NAME, BGE_REV, DIM as u32)
+    }
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        Ok(reference_vector(text).into_iter().map(|x| 2.0 - x).collect())
+    }
+}
+
 fn db_path(dir: &TempDir) -> std::path::PathBuf {
     dir.path().join("veq.sqlite")
+}
+
+/// Register sqlite-vec once per test binary (needed to build a raw v18 DB whose
+/// step-9 migration creates a vec0 table).
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+/// The all-`1.0` mean vector, LE-f32 encoded (matches the engine's `mean_vec`
+/// blob shape: `4 * dim` bytes). Chosen so the centered reference `r − 1.0` is a
+/// MIX of positive and negative components (`r ∈ [0.5, 1.5)`), i.e. the centered
+/// P1 bits are genuinely mean-dependent, not trivially all-ones.
+fn all_ones_mean_blob() -> Vec<u8> {
+    let mut blob = Vec::with_capacity(DIM * 4);
+    for _ in 0..DIM {
+        blob.extend_from_slice(&1.0f32.to_le_bytes());
+    }
+    blob
+}
+
+/// Directly pin (or, with `None`, un-pin) `_fathomdb_embedder_profiles.mean_vec`
+/// for the default profile via a raw connection while the engine is closed. There
+/// is no public test seam to pin the mean without writing ≥256 vector rows; a
+/// direct UPDATE reproduces the pinned state deterministically.
+fn set_pinned_mean(path: &std::path::Path, mean: Option<Vec<u8>>) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+        rusqlite::params![mean],
+    )
+    .expect("pin/un-pin mean_vec");
+}
+
+/// Seed a bge-identity workspace (registered vector kind + 45 UN-centered f32
+/// references) with a pinned all-`1.0` mean, leaving the DB ready for an MC-branch
+/// CHECK on the next open. Returns with `dense_disabled == false`.
+fn seed_bge_references_with_pinned_mean(path: &std::path::Path) {
+    // Session 1 — create the profile (bge identity) + register the vector kind.
+    let opened = Engine::open_with_embedder_for_test(path, Arc::new(BgeRefEmbedder))
+        .expect("bge session 1 open");
+    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+    opened.engine.close().expect("close bge session 1");
+
+    // Pin the mean BEFORE the references are captured, so the MC gate engages.
+    set_pinned_mean(path, Some(all_ones_mean_blob()));
+
+    // Session 2 — kind registered + references empty ⇒ persist UN-centered refs.
+    let opened = Engine::open_with_embedder_for_test(path, Arc::new(BgeRefEmbedder))
+        .expect("bge session 2 open persists references");
+    assert!(!opened.report.dense_disabled, "first registration is never degraded");
+    opened.engine.close().expect("close bge session 2");
 }
 
 /// Register a vector kind then persist the 45 UN-centered f32 references with the
@@ -385,4 +512,309 @@ fn open_report_surfaces_dense_disabled_and_counter_and_reopen_stays_degraded() {
     let healthy = Engine::open_with_embedder_for_test(&path, Arc::new(RefEmbedder)).unwrap();
     assert!(!healthy.report.dense_disabled, "reopen with a matching backend clears the degrade");
     healthy.engine.close().unwrap();
+}
+
+// ---- fix-1 DEFECT #1 — fail-SAFE (never fail-open) on an un-verifiable arm ----
+
+/// A probe embedder that PANICS at CHECK time ⇒ open SUCCEEDS (no wedge), but the
+/// dense arm is REFUSED (`dense_disabled=true`), a dense query raises
+/// `VectorEquivalenceMismatch`, and the text-only/FTS path still serves. Before
+/// fix-1 this failed open (dense served on an un-verifiable arm).
+#[test]
+fn panicking_embedder_at_check_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(PanicEmbedder))
+        .expect("a panicking probe embedder must NOT wedge open (open still succeeds)");
+    let engine = opened.engine;
+
+    assert!(
+        opened.report.dense_disabled,
+        "an un-verifiable (panicking) embedder must fail SAFE: dense refused"
+    );
+    assert!(opened.report.dense_disabled_reason.is_some(), "a refusal reason is surfaced");
+    match engine.search("memory") {
+        Err(EngineError::VectorEquivalenceMismatch { .. }) => {}
+        other => panic!("dense query must refuse with VectorEquivalenceMismatch, got {other:?}"),
+    }
+    assert!(engine.search_text_only("memory").is_ok(), "FTS-only path must still serve");
+    engine.close().unwrap();
+}
+
+/// A probe embedder that ERRORS at CHECK time ⇒ same fail-SAFE contract as the
+/// panicking one (open succeeds, dense refused, FTS serves).
+#[test]
+fn erroring_embedder_at_check_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(ErrorEmbedder))
+        .expect("an erroring probe embedder must NOT wedge open");
+    let engine = opened.engine;
+
+    assert!(
+        opened.report.dense_disabled,
+        "an un-verifiable (erroring) embedder must fail SAFE: dense refused"
+    );
+    match engine.search("memory") {
+        Err(EngineError::VectorEquivalenceMismatch { .. }) => {}
+        other => panic!("dense query must refuse with VectorEquivalenceMismatch, got {other:?}"),
+    }
+    assert!(engine.search_text_only("memory").is_ok(), "FTS-only path must still serve");
+    engine.close().unwrap();
+}
+
+/// POPULATION path (first registration): if the embedder cannot produce the
+/// reference vectors, NO baseline can be established ⇒ fail-SAFE (dense refused),
+/// and NO partial references are persisted. Before fix-1 this fail-opened (dense
+/// served with an empty/partial baseline).
+#[test]
+fn population_failure_fails_safe_and_persists_no_partial_baseline() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    // Session 1 — register the vector kind with a faithful backend (probe inert).
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(RefEmbedder)).expect("open");
+    opened.engine.configure_vector_kind_for_test("note").expect("register vector kind");
+    opened.engine.close().unwrap();
+
+    // Session 2 — kind registered + references empty ⇒ POPULATION runs, but the
+    // panicking backend cannot produce any reference ⇒ fail-SAFE.
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(PanicEmbedder))
+        .expect("population failure must NOT wedge open");
+    assert!(
+        opened.report.dense_disabled,
+        "a baseline that cannot be established must fail SAFE: dense refused"
+    );
+    match opened.engine.search("q") {
+        Err(EngineError::VectorEquivalenceMismatch { .. }) => {}
+        other => panic!("dense query must refuse, got {other:?}"),
+    }
+    opened.engine.close().unwrap();
+
+    // No partial baseline was persisted (atomic population; rollback on failure).
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let rows: i64 =
+        conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0, "a failed population must persist NO probe rows (no partial baseline)");
+}
+
+// ---- fix-1 DEFECT #4 hole (a) — post-open registration: safe in-session + ------
+// ---- baseline established at the NEXT open (NOT in the write path) ------------
+
+/// A vector kind registered AFTER open serves SAFELY in the registering session
+/// (the serving backend IS the backend that built the vectors — nothing to
+/// diverge from), and the baseline is established at the NEXT open (identity-gated
+/// population), catching all forward drift. The baseline is deliberately NOT
+/// captured in the write path: a write must never block on the embedder (the
+/// async-projection invariant — `ac_029` + the PR-9 embed watchdog). This closes
+/// hole (a) to the same degree as the accepted v18→v19 upgrade residual.
+#[test]
+fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
+    use fathomdb_engine::PreparedWrite;
+
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    // Session 1 — fresh open with NO vector kind ⇒ the probe is inert. Register a
+    // kind post-open and write under it; the write does NOT block on the embedder
+    // (no probe embeds on the write path) and the dense arm is NOT degraded.
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(RefEmbedder)).expect("open");
+    let engine = opened.engine;
+    assert!(!opened.report.dense_disabled, "a vector-less open is not degraded");
+    engine.configure_vector_kind_for_test("note").expect("register vector kind post-open");
+    engine
+        .write(&[PreparedWrite::Node {
+            kind: "note".to_string(),
+            body: "post-open registration body".to_string(),
+            source_id: None,
+            logical_id: None,
+        }])
+        .expect("write must not block on / be gated by the probe");
+    assert!(!engine.dense_disabled(), "in-session serving is safe (same live backend)");
+    // In-session serving is not refused (the registering backend is serving).
+    assert!(engine.search("post-open").is_ok(), "in-session dense query is served");
+    engine.close().unwrap();
+
+    // No baseline was written in the registering session (write-path is embed-free).
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let pre: i64 =
+        conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+    assert_eq!(pre, 0, "the write path must not embed/establish the baseline");
+    drop(conn);
+
+    // Session 2 (next open) — the kind now exists at open ⇒ population establishes
+    // the 45-probe baseline from the identity-matched embedder (hole (a) closed).
+    let reopened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(RefEmbedder)).expect("reopen");
+    assert!(!reopened.report.dense_disabled, "baseline establishment at reopen is not degraded");
+    reopened.engine.close().unwrap();
+
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let rows: i64 =
+        conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 45, "the next open must establish the 45-probe baseline (identity-gated)");
+    drop(conn);
+
+    // Session 3 — a divergent same-identity backend is now caught against the
+    // baseline (forward drift detection works after the reopen baseline).
+    let divergent = Engine::open_with_embedder_for_test(&path, Arc::new(DivergentEmbedder))
+        .expect("divergent reopen (degraded)");
+    assert!(divergent.report.dense_disabled, "forward drift is caught after the reopen baseline");
+    divergent.engine.close().unwrap();
+}
+
+// ---- fix-1 DEFECT #5 / CONCERN #9 — MC-required-WITH-pin P1 branch ------------
+
+/// The default bge identity WITH a pinned mean is the real production P1 path
+/// (`identity_requires_mean_centering ∧ mean_pinned`). A same-backend reopen must
+/// NOT trip (0 flips through the mean-centered comparison).
+#[test]
+fn mc_required_with_pin_same_backend_does_not_trip() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_bge_references_with_pinned_mean(&path);
+
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(BgeRefEmbedder))
+        .expect("bge same-backend reopen");
+    assert!(
+        !opened.report.dense_disabled,
+        "the MC-with-pin same-backend path must be 0 flips / 0 L2 (dense served)"
+    );
+    match opened.engine.search("q") {
+        Ok(_) | Err(EngineError::EmbedderNotConfigured) => {}
+        Err(EngineError::VectorEquivalenceMismatch { .. }) => {
+            panic!("the same-backend MC path must NOT refuse dense")
+        }
+        Err(other) => panic!("unexpected error: {other:?}"),
+    }
+    opened.engine.close().unwrap();
+}
+
+/// The MC-required-WITH-pin P1 branch DOES trip on a mean-centered sign flip: the
+/// reflect backend (`e = 2 − r`) has ZERO raw-sign flips but FULL mean-centered
+/// flips, so it trips ONLY because centering is applied with the pinned mean. The
+/// no-pin contrast (below) proves the pin is what caught it.
+#[test]
+fn mc_required_with_pin_centered_flip_trips_dense() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_bge_references_with_pinned_mean(&path);
+
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(BgeMeanReflectEmbedder))
+        .expect("bge reflect reopen (degraded)");
+    assert!(
+        opened.report.dense_disabled,
+        "a mean-centered sign flip must degrade the open on the MC-with-pin path"
+    );
+    let reason = opened.report.dense_disabled_reason.clone().expect("reason present");
+    assert!(
+        !reason.contains("flips=0 "),
+        "centering must be applied (flips > 0) with the pinned mean, reason was: {reason}"
+    );
+    opened.engine.close().unwrap();
+}
+
+/// Contrast that PROVES centering is the cause: the SAME reflect backend, with the
+/// mean UN-pinned, takes the un-centered path — 0 raw flips — so P1 does NOT trip
+/// (only P2 does, `flips=0`). With the pin (test above) P1 trips (`flips > 0`).
+/// Same backend, opposite P1 outcome ⇒ the MC-with-pin branch genuinely centers.
+#[test]
+fn mc_reflect_without_pin_takes_uncentered_path_zero_flips() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_bge_references_with_pinned_mean(&path);
+
+    // Un-pin the mean: the bge identity now falls back to the un-centered path.
+    set_pinned_mean(&path, None);
+
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(BgeMeanReflectEmbedder))
+        .expect("bge reflect reopen (un-pinned)");
+    // P2 still trips (L2 large) ⇒ degraded, but P1 sees ZERO raw-sign flips.
+    assert!(opened.report.dense_disabled, "the reflect backend still trips P2 (L2) un-centered");
+    let reason = opened.report.dense_disabled_reason.clone().expect("reason present");
+    assert!(
+        reason.contains("flips=0 "),
+        "un-centered, the reflect backend must show 0 raw-sign flips, reason was: {reason}"
+    );
+    opened.engine.close().unwrap();
+}
+
+// ---- fix-1 CONCERN #6 — v18→v19 upgrade with pre-existing kind + pinned mean --
+
+/// Build a genuine v18 DB with a pre-existing vector kind + a pinned mean, then
+/// open it through the engine (which upgrades 18→19). The baseline must be
+/// established at that first v19 open FROM the identity-matched embedder (gated by
+/// `check_embedder_profile`), and the subsequent check must behave: same backend ⇒
+/// served; divergent backend ⇒ dense refused (fail-SAFE). The residual (a
+/// same-identity backend that diverged BEFORE upgrade is not retroactively caught)
+/// is documented in the design; #5 is additive-only.
+#[test]
+fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() {
+    register_sqlite_vec_once();
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    // --- Build a v18 DB (migrations 1..=18) then seed the pre-existing state ---
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let steps_to_18: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id <= 18).cloned().collect();
+        // Fresh DB (user_version 0) ⇒ steps 1..=18 run contiguously (step 1 creates
+        // `_fathomdb_embedder_profiles`; the mean_vec column + `_fathomdb_vector_kinds`
+        // land at earlier steps). Profile row is inserted AFTER migrating, mirroring
+        // the engine's order (migrate, then check_embedder_profile inserts it).
+        migrate_with_steps(&conn, &steps_to_18).expect("migrate to v18");
+        let ver: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(ver, 18, "precondition: DB is at v18");
+
+        conn.execute(
+            "INSERT INTO _fathomdb_embedder_profiles(profile, name, revision, dimension, mean_vec)
+             VALUES('default', ?1, ?2, ?3, ?4)",
+            rusqlite::params![BGE_NAME, BGE_REV, DIM as u32, all_ones_mean_blob()],
+        )
+        .expect("seed bge profile with a pinned mean");
+        conn.execute(
+            "INSERT INTO _fathomdb_vector_kinds(kind, profile, created_at) VALUES('note','default',0)",
+            [],
+        )
+        .expect("seed pre-existing vector kind");
+
+        // No probe references yet — exactly the post-upgrade state (the migration
+        // creates the empty table at v19; the engine populates it at open).
+        drop(conn);
+    }
+
+    // --- First v19 open: upgrade + establish the baseline (identity-gated) ------
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(BgeRefEmbedder))
+        .expect("open must upgrade v18→v19 and establish the baseline");
+    assert!(
+        !opened.report.dense_disabled,
+        "establishing the baseline at the upgrade open is never degraded"
+    );
+    assert_eq!(opened.report.schema_version_before, 18, "upgrade started at v18");
+    assert_eq!(opened.report.schema_version_after, 19, "upgrade reached v19");
+    opened.engine.close().unwrap();
+
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let rows: i64 =
+        conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 45, "the upgrade open must establish the 45-probe baseline");
+    drop(conn);
+
+    // --- Subsequent checks behave: same backend served, divergent refused -------
+    let same = Engine::open_with_embedder_for_test(&path, Arc::new(BgeRefEmbedder))
+        .expect("same-backend reopen");
+    assert!(!same.report.dense_disabled, "same identity-matched backend ⇒ dense served");
+    same.engine.close().unwrap();
+
+    let divergent = Engine::open_with_embedder_for_test(&path, Arc::new(BgeMeanReflectEmbedder))
+        .expect("divergent reopen (degraded)");
+    assert!(
+        divergent.report.dense_disabled,
+        "a mean-centered divergent backend ⇒ dense refused (fail-SAFE)"
+    );
+    divergent.engine.close().unwrap();
 }

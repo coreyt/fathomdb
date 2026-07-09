@@ -186,6 +186,28 @@ test("read.* namespace verbs are live (Slice 30, introspected not documented-onl
   }
 });
 
+test("searchTextOnly verb is live (0.8.18 Slice 5 #5, CONCERN #7, introspected)", async () => {
+  // The P1 subset check passes even if the verb VANISHES (fewer-live is allowed)
+  // and `searchTextOnly` is not in CORE_LIVE_SURFACE, so guard its PRESENCE +
+  // callability directly — otherwise the FTS-only degraded-mode surface (R-VEQ-4)
+  // could disappear vacuously-green while the allowlist still lists it.
+  assert.ok(GOVERNED_SURFACE_ALLOWLIST.has("searchTextOnly"));
+  const engine = await Engine.open(freshDbPath());
+  try {
+    assert.equal(
+      typeof (engine as unknown as Record<string, unknown>).searchTextOnly,
+      "function",
+      "Engine.searchTextOnly must be a live callable (governed FTS-only path)",
+    );
+    assert.ok(
+      liveTsCommandSurface(engine).has("searchTextOnly"),
+      "searchTextOnly must be introspected-live, not documented-only",
+    );
+  } finally {
+    await engine.close();
+  }
+});
+
 test("surface parity: TS and Python read one shared allowlist", async () => {
   // P2 — the governed allowlist is declared exactly ONCE, in
   // `src/conformance/governed-surface-allowlist.json`. This suite loads it via

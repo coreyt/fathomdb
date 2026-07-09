@@ -10028,8 +10028,10 @@ struct VectorEquivalenceOutcome {
 /// open time on the writer connection BEFORE the projection workers spawn, so a
 /// caller-supplied embedder that PANICS (or returns an error / a wrong-dimension
 /// vector) must never wedge `Engine::open`. A panic/error/shape-mismatch yields
-/// `None` (fail-open: cannot verify ⇒ leave dense enabled, the identity gate
-/// stays primary; ADR-0.6.0 Invariant-5 posture, mirrored open-side).
+/// `None`; the CALLERS then fail-SAFE (fix-1 DEFECT #1) — a `None` at population
+/// or check time means the vector arm cannot be established/verified, so dense is
+/// REFUSED (`dense_disabled=true`), never silently served. `Engine::open` still
+/// succeeds (no wedge; ADR-0.6.0 Invariant-5 posture, mirrored open-side).
 fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<Vec<f32>> {
     let embedded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| embedder.embed(text)));
     match embedded {
@@ -10061,11 +10063,17 @@ fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<
 /// `mean_pinned`, applied symmetrically to reference + reembed (un-centered
 /// fallback otherwise; NoopEmbedder no-op) — R-VEQ-3c.
 ///
-/// Never fails open: a probe-infrastructure error (embed failure, malformed
-/// stored row) leaves dense ENABLED — the distinct-identity cross-vendor refusal
-/// (`check_embedder_profile`) remains the primary gate and this check is
-/// ADDITIVE-ONLY (R-VEQ-5). Divergence is only ever asserted on a successfully
-/// re-embedded + compared probe.
+/// Fail-SAFE, never fail-open (0.8.18 Slice 5 fix-1, DEFECT #1): any inability to
+/// RUN or VERIFY the probe — a probe embed that panics/errors/returns wrong-dim, a
+/// malformed/missing reference row, an unreadable pinned mean, or a
+/// `vec_quantize_binary`/L2 SQL failure — yields `dense_disabled=true` with a clear
+/// reason (refuse the un-verifiable dense/fused arm; the text-only/FTS path still
+/// serves). `Engine::open` still SUCCEEDS (never wedges on a panicking caller
+/// embedder). The distinct-identity cross-vendor refusal (`check_embedder_profile`)
+/// remains the PRIMARY gate; this probe is ADDITIVE-ONLY (R-VEQ-5), but on the
+/// vector arm it fails CLOSED, not open — same-identity backend drift on an
+/// un-verifiable arm is exactly what #5 must catch (R-VEQ-4 "loud typed refuse,
+/// never silent").
 fn run_vector_equivalence_probe(
     connection: &Connection,
     embedder: Option<&dyn Embedder>,
@@ -10082,11 +10090,29 @@ fn run_vector_equivalence_probe(
     // kind (`_fathomdb_vector_kinds` non-empty). A fresh workspace that has never
     // committed to vector indexing has no dense arm to guard yet, so the probe
     // does ZERO embed work at that open — this keeps `Engine::open` free of the
-    // 45-probe re-embed on empty/vector-less workspaces (and makes the check a
-    // no-op for the pathological single-session hang/panic embedder tests, which
-    // register their kind AFTER open and never reopen). References are therefore
-    // persisted at the first open where a vector kind already exists (R-VEQ-1
-    // "first vector-kind registration"); the check runs on subsequent opens.
+    // 45-probe re-embed on empty/vector-less workspaces (and inert for the
+    // pathological single-session hang/panic embedder tests, which register their
+    // kind AFTER open and never reopen).
+    //
+    // fix-1 DEFECT #4 — the baseline is established at OPEN, at the first open
+    // where a vector kind already exists (population path below). This covers BOTH:
+    //   (b) the v18→v19 UPGRADE with pre-existing vector kinds: the baseline is
+    //       captured here, at the first v19 open, from the identity-matched
+    //       embedder (identity is already gated by `check_embedder_profile`, so the
+    //       baseline is the same *claimed* embedder; future backend drift is caught);
+    //   (a) a vector kind registered POST-OPEN in a prior session: the baseline is
+    //       captured at the NEXT open (this gate + population), again identity-gated.
+    // It is deliberately NOT captured in the registering session's write path: a
+    // write must NEVER block on the embedder (the async-projection invariant —
+    // `ac_029_canonical_writes_complete_under_projection_stall` and the PR-9 embed
+    // watchdog/thread-leak bounds), and 45 synchronous probe embeds there would
+    // violate it and hang/degrade under a stalling embedder. Serving vector queries
+    // in the registering session is SAFE regardless: the serving backend IS the
+    // backend that built those vectors, so there is nothing to diverge from. The
+    // residual — a same-*identity* backend that drifted between the registering
+    // session and the next open is not retroactively caught — is IDENTICAL to the
+    // accepted upgrade residual (R-VEQ-5 additive-only; U3 same-identity candle
+    // CPU↔CUDA = 0/17280). See `dev/design/0.8.18-slice-5-vector-equivalence-probe.md`.
     let vector_kind_registered: bool = connection
         .query_row("SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)", [], |r| r.get(0))
         .unwrap_or(false);
@@ -10094,86 +10120,165 @@ fn run_vector_equivalence_probe(
         return not_disabled;
     }
 
+    match probe_populate_or_check(connection, embedder, identity, mean_pinned) {
+        Ok(()) => not_disabled,
+        Err(reason) => VectorEquivalenceOutcome { dense_disabled: true, reason: Some(reason) },
+    }
+}
+
+/// 0.8.18 Slice 5 — either PERSIST the baseline (probe table empty) or CHECK
+/// against it (probe table populated). `Err(reason)` ⇒ refuse the dense arm
+/// (`dense_disabled=true`); `Ok(())` ⇒ dense served. Fail-SAFE throughout.
+fn probe_populate_or_check(
+    connection: &Connection,
+    embedder: &dyn Embedder,
+    identity: &EmbedderIdentity,
+    mean_pinned: bool,
+) -> Result<(), String> {
     let probes = vector_equivalence_probes();
     if probes.is_empty() {
-        return not_disabled;
+        // Fail-SAFE: the compiled-in probe fixture is empty ⇒ nothing to verify
+        // the vector arm against. (Defensive; the fixture is drift-guarded
+        // non-empty at 45 probes.)
+        return Err(
+            "vector-equivalence probe fixture is empty; cannot verify the dense arm".to_string()
+        );
     }
 
-    // Is the probe set already persisted for this workspace?
     let existing: i64 = connection
         .query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0))
-        .unwrap_or(0);
+        .map_err(|e| format!("could not read the probe reference table: {e}; cannot verify"))?;
 
+    if existing == 0 {
+        probe_populate_baseline(connection, embedder, identity, &probes)
+    } else {
+        probe_check_against_baseline(connection, embedder, identity, mean_pinned)
+    }
+}
+
+/// 0.8.18 Slice 5 — FIRST vector-kind registration: persist the 45 UN-centered
+/// f32 reference vectors (R-VEQ-1; store f32 ONLY, never the P1 bits — U1-d).
+/// Fail-SAFE (fix-1 DEFECT #1): if the embedder cannot produce EVERY reference
+/// (panic/error/wrong-dim) no baseline can be established ⇒ `Err` (refuse dense).
+/// The inserts run in a single transaction so a partial/mismatched set is NEVER
+/// persisted (rolled back on any error).
+fn probe_populate_baseline(
+    connection: &Connection,
+    embedder: &dyn Embedder,
+    identity: &EmbedderIdentity,
+    probes: &[&str],
+) -> Result<(), String> {
     let dimension = identity.dimension as usize;
+    // Embed ALL probes first; a single failure aborts population (store nothing).
+    let mut rows: Vec<(i64, &str, Vec<f32>)> = Vec::with_capacity(probes.len());
+    for (ordinal, probe) in probes.iter().enumerate() {
+        match probe_embed(embedder, probe, dimension) {
+            Some(vec) => rows.push((ordinal as i64, probe, vec)),
+            None => {
+                return Err(format!(
+                    "embedder failed to produce a reference vector for probe {ordinal}; \
+                     cannot establish a vector-equivalence baseline (dense arm refused)"
+                ));
+            }
+        }
+    }
+    // Atomic insert — a partial reference set is never persisted (rollback on
+    // any error, so a later open cleanly retries population).
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|e| format!("could not open the probe-baseline transaction: {e}"))?;
+    for (ordinal, probe, vec) in &rows {
+        let blob = encode_vector_blob(vec);
+        tx.execute(
+            "INSERT OR REPLACE INTO _fathomdb_embed_probe(
+                 probe_ordinal, probe_text, reference_vec,
+                 embedder_name, embedder_revision, dim
+             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![ordinal, probe, blob, identity.name, identity.revision, identity.dimension],
+        )
+        .map_err(|e| format!("could not persist the probe baseline: {e}"))?;
+    }
+    tx.commit().map_err(|e| format!("could not commit the probe baseline: {e}"))?;
+    Ok(())
+}
+
+/// 0.8.18 Slice 5 — SUBSEQUENT open: re-embed the 45 probes and assert BOTH
+/// dense-pipeline representations against the stored references — **(P1)** the
+/// mean-centered `embedding_bin` sign-flip count (floor 0, exact) and **(P2)** the
+/// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`). Fail-SAFE
+/// (fix-1 DEFECT #1): a probe embed that panics/errors/returns wrong-dim, a
+/// malformed/missing reference row, an unreadable pinned mean, or a
+/// `vec_quantize_binary`/L2 SQL failure each ⇒ `Err` (cannot verify ⇒ refuse
+/// dense), never a silent skip-and-serve.
+fn probe_check_against_baseline(
+    connection: &Connection,
+    embedder: &dyn Embedder,
+    identity: &EmbedderIdentity,
+    mean_pinned: bool,
+) -> Result<(), String> {
+    let dimension = identity.dimension as usize;
+
+    // Resolve the live mean. Fail-SAFE: if centering is required + pinned but the
+    // mean cannot be read, we cannot reproduce `embedding_bin` ⇒ refuse (P1
+    // un-verifiable). NoopEmbedder / no-pin ⇒ un-centered on BOTH sides (R-VEQ-3c).
     let mean_vec = if identity_requires_mean_centering(identity) && mean_pinned {
-        read_pinned_mean_vec(connection, identity.dimension).ok().flatten()
+        match read_pinned_mean_vec(connection, identity.dimension) {
+            Ok(Some(mean)) => Some(mean),
+            Ok(None) => {
+                return Err("mean-centering is required and pinned but mean_vec is absent; \
+                     cannot verify P1 (dense arm refused)"
+                    .to_string());
+            }
+            Err(_) => {
+                return Err(
+                    "could not read the pinned mean_vec; cannot verify P1 (dense arm refused)"
+                        .to_string(),
+                );
+            }
+        }
     } else {
         None
     };
 
-    if existing == 0 {
-        // FIRST vector-kind registration — persist UN-centered f32 references.
-        // A single embed failure aborts population (leave the table empty so a
-        // later open retries); never persist a partial/mismatched set.
-        let mut rows: Vec<(i64, &str, Vec<f32>)> = Vec::with_capacity(probes.len());
-        for (ordinal, probe) in probes.iter().enumerate() {
-            match probe_embed(embedder, probe, dimension) {
-                Some(vec) => rows.push((ordinal as i64, probe, vec)),
-                None => return not_disabled,
-            }
-        }
-        for (ordinal, probe, vec) in &rows {
-            let blob = encode_vector_blob(vec);
-            if connection
-                .execute(
-                    "INSERT OR REPLACE INTO _fathomdb_embed_probe(
-                         probe_ordinal, probe_text, reference_vec,
-                         embedder_name, embedder_revision, dim
-                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        ordinal,
-                        probe,
-                        blob,
-                        identity.name,
-                        identity.revision,
-                        identity.dimension
-                    ],
-                )
-                .is_err()
-            {
-                return not_disabled;
-            }
-        }
-        return not_disabled;
+    let mut stmt = connection
+        .prepare(
+            "SELECT probe_ordinal, probe_text, reference_vec \
+             FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+        )
+        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
+    let stored: Vec<(i64, String, Vec<u8>)> = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
+
+    if stored.is_empty() {
+        return Err("the probe reference table is unexpectedly empty; cannot verify the dense arm"
+            .to_string());
     }
 
-    // SUBSEQUENT open — re-embed + assert BOTH representations against the refs.
     let mut total_flips: u64 = 0;
     let mut max_l2: f32 = 0.0;
     let mut worst_probe: Option<String> = None;
 
-    let mut stmt = match connection
-        .prepare("SELECT probe_ordinal, probe_text, reference_vec FROM _fathomdb_embed_probe ORDER BY probe_ordinal")
-    {
-        Ok(s) => s,
-        Err(_) => return not_disabled,
-    };
-    let stored: Vec<(i64, String, Vec<u8>)> = match stmt.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
-    }) {
-        Ok(rows) => rows.filter_map(Result::ok).collect(),
-        Err(_) => return not_disabled,
-    };
-
-    for (_ordinal, probe_text, ref_blob) in &stored {
+    for (ordinal, probe_text, ref_blob) in &stored {
         if ref_blob.len() != dimension * 4 {
-            continue; // malformed stored row — cannot compare, fail-open.
+            // Fail-SAFE: a malformed/missing reference cannot be compared.
+            return Err(format!(
+                "probe reference {ordinal} is malformed (len {} != {}); \
+                 cannot verify the dense arm",
+                ref_blob.len(),
+                dimension * 4
+            ));
         }
         let reference = decode_vector_blob(ref_blob);
-        let reembed = match probe_embed(embedder, probe_text, dimension) {
-            Some(v) => v,
-            None => continue, // embed failure/panic — additive check, fail-open per probe.
-        };
+        let reembed = probe_embed(embedder, probe_text, dimension).ok_or_else(|| {
+            format!(
+                "embedder failed/panicked re-embedding probe {ordinal}; \
+                 cannot verify the dense arm (refused)"
+            )
+        })?;
 
         // (P2) un-centered L2 — `vec_distance_l2(embedding, vec_f32(query))`.
         let l2 = l2_distance(&reembed, &reference);
@@ -10185,32 +10290,29 @@ fn run_vector_equivalence_probe(
         // (P1) mean-centered Phase-1 flip count — same
         // `vec_quantize_binary(sign(x − mean_vec))` path as build_vector_phase1_sql.
         let (ref_c, reembed_c) = match &mean_vec {
-            Some(mean) if mean.len() == dimension => {
-                (subtract_mean(&reference, mean), subtract_mean(&reembed, mean))
-            }
-            _ => (reference.clone(), reembed.clone()),
+            Some(mean) => (subtract_mean(&reference, mean), subtract_mean(&reembed, mean)),
+            None => (reference.clone(), reembed.clone()),
         };
-        if let (Some(ref_bits), Some(reembed_bits)) = (
-            quantize_binary_via_sql(connection, &ref_c),
-            quantize_binary_via_sql(connection, &reembed_c),
-        ) {
-            total_flips = total_flips.saturating_add(hamming_bytes(&ref_bits, &reembed_bits));
-        }
+        let ref_bits = quantize_binary_via_sql(connection, &ref_c).ok_or_else(|| {
+            format!("vec_quantize_binary SQL failed for probe {ordinal}; cannot verify P1")
+        })?;
+        let reembed_bits = quantize_binary_via_sql(connection, &reembed_c).ok_or_else(|| {
+            format!("vec_quantize_binary SQL failed for probe {ordinal}; cannot verify P1")
+        })?;
+        total_flips = total_flips.saturating_add(hamming_bytes(&ref_bits, &reembed_bits));
     }
 
     let p1_tripped = total_flips > VECTOR_EQUIVALENCE_P1_FLIP_FLOOR;
     let p2_tripped = max_l2 > VECTOR_EQUIVALENCE_L2_EPSILON;
     if p1_tripped || p2_tripped {
         let probe_hint = worst_probe.as_deref().unwrap_or("<unknown>");
-        let reason = format!(
+        return Err(format!(
             "P1 mean-centered embedding_bin flips={total_flips} (floor={VECTOR_EQUIVALENCE_P1_FLIP_FLOOR}), \
              P2 max un-centered L2={max_l2:.3e} (epsilon={VECTOR_EQUIVALENCE_L2_EPSILON:.3e}); \
              worst probe {probe_hint:?}"
-        );
-        return VectorEquivalenceOutcome { dense_disabled: true, reason: Some(reason) };
+        ));
     }
-
-    not_disabled
+    Ok(())
 }
 
 /// 0.8.18 Slice 5 — un-centered Euclidean (L2) distance, matching the

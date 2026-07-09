@@ -154,6 +154,21 @@ def test_read_namespace_verbs_are_live() -> None:
     assert _NOW_LIVE_READ_VERBS <= GOVERNED_SURFACE_ALLOWLIST
 
 
+def test_search_text_only_verb_is_live() -> None:
+    """0.8.18 Slice 5 (#5, fix-1 CONCERN #7) — `search_text_only` is a LIVE governed
+    verb, not merely an allowlist member. The P1 subset check passes even if the
+    verb VANISHES (fewer-live is allowed) and `search_text_only` is not in
+    `_CORE_LIVE_SURFACE`, so guard its PRESENCE + callability directly — otherwise
+    the FTS-only degraded-mode surface (R-VEQ-4) could disappear vacuously-green."""
+    assert "search_text_only" in GOVERNED_SURFACE_ALLOWLIST
+    assert callable(getattr(Engine, "search_text_only", None)), (
+        "Engine.search_text_only must be a live callable (governed FTS-only path)"
+    )
+    assert "search_text_only" in _live_python_command_surface(), (
+        "search_text_only must be introspected-live, not documented-only"
+    )
+
+
 def test_read_is_module_level_namespace() -> None:
     assert inspect.ismodule(read)
     for verb in ("get", "get_many", "collection", "mutations"):
