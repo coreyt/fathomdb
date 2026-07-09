@@ -26,6 +26,18 @@
 - **SHIPPED finding (→ TC-9, Steward to log):** `OrtBgeEmbedder` under `ort=2.0.0-rc.10` (default-features=false) CANNOT instantiate the CUDA EP as shipped — no `ort::init()` → "DefaultLogger not registered" → loud CPU fallback. ONNX GPU/cross-vendor EPs unreachable as shipped; fix = one-time ORT env init, re-verify at the ort 2.0-stable bump. **The D3 agent drafted a TC-D3 line for the Steward (not written).**
 - **My candle-CUDA 45-probe refresh is now load-bearing:** D3 showed GPU FP divergence flips bits (ONNX-CUDA 2/17280); the SAME-identity candle-CPU↔candle-CUDA leg (0.8.7 said 0/6144 on the old 16-probe set) must be re-measured at 45 probes + real mean before the D4 floor is set.
 
+### Slice 40 — GA VERIFICATION GREEN → 0.8.18 RELEASE-READY (2026-07-09); STOP before the tag
+All on-MAIN gates verified at `121e5baa` (Slices 5 + 20 integrated):
+- **X1 SDK parity:** Slice 5 py **20 passed** + ts **15 passed** (VEQ leaf class + `dense_disabled`/`denseDisabled` + `search_text_only`/`searchTextOnly`); Slice 20 = no SDK surface.
+- **X2:** `mkdocs build --strict` = exit 0. **X3:** DOC-INDEX entries present for Slice 5 + Slice 20.
+- **R-VEQ AC gate (R-VEQ-1..6):** GREEN (Slice 5 — engine probe 23 passed + X1). **R-REL AC gate (R-REL-4a..f):** GREEN (Slice 20 — codex §9 PASS).
+- **eu7 ≥ 0.90 — NO-OP BASIS (grounded from git, not assumed):** the default embedder path (`candle_bge.rs`/`device.rs`) is UNTOUCHED and the production quant/write/retrieval SQL is unchanged outside additive probe code; #5 is an open-time additive check whose `dense_disabled` guard is a no-op when the probe passes → default vector path byte-unchanged → fidelity gate not triggered (same basis as 0.8.16 D6 / policy `649a8d45`).
+- **AC-012/013/020 latency (query/read-path):** UNAFFECTED — `dense_disabled` is an `AtomicBool` set once at open, read-path adds only a flag check; no read-path representation change.
+- **Workspace DoD:** `cargo clippy/check --workspace --all-targets` = 0.
+- **GA CONSIDERATION (flag → Steward/HITL; TC candidate):** #5 re-embeds the 45 probes at **every open** of a vector-kind DB (the cross-open drift check) — a new **open-latency** overhead (not a query-latency / AC-012/013/020 breach). Worth a measured note and/or a GA AC if the HITL wants an open-latency bound.
+- **GA = release-engineering GA** (publish machinery + frozen gates); pre-1.0.0 beta, **no scale-envelope label** (F-17/F-20).
+**STOP before the Slice-40 `v*` tag** — the tag fires the REAL 8-tier publish; label-vs-publish is the HITL's per-`x.y.z` call. Awaiting HITL publish/label decision.
+
 ### Slice 5 keystone — LANDED on MAIN `ce8069a3` (HITL-authorized schema 18→19, 2026-07-09)
 Cherry-picked the full branch (4 commits f2f843ed/5a35442d/1e3652fa/ce8069a3 onto `589a23a5`; clean, binding.ts + DOC-INDEX auto-merged). **On-MAIN DoD verification ALL GREEN:**
 - `cargo clippy --workspace --all-targets` = 0 · `cargo check --workspace --all-targets` = 0
@@ -55,7 +67,7 @@ Shipped: SCHEMA 18→19 `_fathomdb_embed_probe` (UN-centered f32 refs only) + de
 | 10 | *(void reserved gap)* — #13 benchmark substrate MOVED to 0.8.19 | VOID | — | — | — | — |
 | 15 | *(void reserved gap)* — #13 `benchmark-and-robustness.yml` MOVED to 0.8.19 | VOID | — | — | — | — |
 | 20 | **Full publish pipeline** — reconcile + exercised verify (real npm/PyPI round-trips) + OPP-12 resilience (idempotency/poll/rollback-forward) + GA-tag matrix gate (x86_64-linux) + napi split topology | **CLOSED / LANDED** | 12f732a5 | 0.8.18-slice-20-publish (fc8a6016) | **PASS** (fix-1 npm/pypi + fix-2 cargo safety) | cherry-picked → main `3bdfaea8` (mandate) |
-| 40 | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-REL AC gate + all frozen gates (eu7/latency); HITL-gated real tagged release | PENDING (blocked on 5,20) | — | — | — | — |
+| 40 | **GA Verification + Release** — X1/X2/X3 + R-VEQ/R-REL AC gate + frozen gates (eu7/latency) | **VERIFICATION GREEN — RELEASE-READY; STOP before tag (HITL publish gate)** | 121e5baa | (verification on main) | n/a | tag = HITL-gated (NOT cut) |
 
 **Tracks (parallelizable off Slice 0):** equivalence track **5** ∥ publish track **20**; converge at **40**.
 (Benchmark track 10 → 15 is VOID — #13 moved to 0.8.19.)
