@@ -103,10 +103,45 @@ at Slice 40. (The former benchmark track 10 → 15 is void — #13 moved to 0.8.
 
 Carried unchanged (`0.8.1-plan.md` §Numbering).
 
-## 5. Cross-cutting DoD (X1/X2/X3 — bind EVERY slice)
+## 5. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)
+
+**X0 — Elevated process gate (HITL 2026-07-08; binds every unit that ships code).** BEFORE any
+implementation, each unit requires, in order: **(A) written requirements with explicit, RED-testable
+acceptance criteria**, then **(B) an independent design review** (mechanism: **codex**, adversarial-subagent
+fallback) **→ HITL sign-off**. Only then does **RED/GREEN TDD → codex §9 code review** proceed. This is a
+higher bar than 0.8.16 — the *design* is reviewed before code, not just the diff after. Applies to Slice-0
+ADRs, Slice 5 (#5 probe), Slice 20 (#11-full publish), and the calibration harness.
 
 X1 SDK parity + harnesses · X2 `mkdocs build` green (release gate) · X3 docs + DOC-INDEX per slice.
-`runs/STATUS-0.8.18.md` carries the per-slice X column.
+`runs/STATUS-0.8.18.md` carries the per-slice X column (incl. X0 design-review state).
+
+### 5a. Slice-0 rulings (HITL 2026-07-08 — freeze into the Slice-0 DoD)
+
+- **D1 (sharpened by the D4 path trace — the ranking is TWO-STAGE, verified from engine source).** The
+  dense arm ranks on a **composition of two representations**, both load-bearing, so #5's probe must assert
+  **both**: **(1) Phase-1 candidate recall = Hamming over `vec_quantize_binary(sign(x − mean_vec))`** — the
+  mean-centered 1-bit `embedding_bin` codes (`lib.rs` `build_vector_phase1_sql` ~6525-6542; ingest/query
+  centering symmetric, `lib.rs` ~4064 / ~4938); **(2) Phase-2 final ordering = `vec_distance_l2` over the
+  UN-centered float `embedding`** — **L2, not cosine** (earlier "cosine" framing was wrong). A probe that
+  checks only one stage passes while the other silently drifts. **Centering is identity-dependent** (only
+  `fathomdb-bge-small-en-v1.5` = the default embedder; NoopEmbedder is a no-op) AND pin-dependent
+  (`identity_requires_mean_centering` ∧ `mean_vec` pinned), and the gate is identical on ingest and query.
+- **D2** on divergence, **refuse the dense/fused arm, keep FTS**, loud typed `EngineOpenError` (never silent).
+- **D4** tolerance floor is a **design-review/HITL parameter** — NOT frozen yet. It must cover **both** the
+  Phase-1 binary-code flip count AND a Phase-2 float/L2 tolerance (lean: 0 binary flips / 45-probe
+  mean-centered + a calibrated L2 epsilon, not ruled).
+- **D5 — platform scope.** Only **`x86_64-unknown-linux-gnu`** (this host arch) is on the 0.8.18 **critical
+  path**. The repo's other declared support targets (Python `aarch64-linux-gnu` · `x86_64/aarch64-darwin` ·
+  `x86_64-windows-msvc`; napi `darwin-x64/arm64` · win32/musl per `release.yml`) **remain supported but are
+  OFF the critical path** — completed by the **deferred follow-on orchestrator**
+  (`prompts/0.8.18-CROSS-PLATFORM-FOLLOWON-ORCHESTRATOR-PROMPT.md`) that starts AFTER x86_64-linux GA works.
+  Slice 20 scopes publish-hardening + dry-run to x86_64-linux; the matrix rows are **deferred-to-follow-on**
+  on the board (not dropped — a platform that truly can't be supported is a HITL call).
+- **D6** #11-full hardening targets the **0.8.20 OPP-12 breaking-pair-publish contract** (F-19/F-21), not a
+  standalone GA nicety.
+- **D3 — ONNX-GPU-EP (L3) Δ** is measured **OOB by a Steward-commissioned subagent** (procure a CUDA
+  `libonnxruntime.so`, measure, write durable results regardless of outcome → **TC-track**); **non-blocking**
+  for the capstone. The candle-CUDA/CPU calibration harness is on the Slice-0 track (X0-gated).
 
 ## 6. Acceptance-criteria policy
 
