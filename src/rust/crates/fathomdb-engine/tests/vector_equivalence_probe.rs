@@ -947,3 +947,64 @@ fn non_contiguous_ordinals_fail_safe_not_open() {
 
     assert_degraded_but_fts_serves(&path);
 }
+
+/// fix-3 — MANGLED/TRUNCATED reference blob (length != `4 * dim`): TRUNCATE one
+/// committed probe's `reference_vec` by ONE byte so its stored length is
+/// `4*dim - 1` while the row count, ordinals, text, and identity all stay intact.
+/// `probe_check_against_baseline` validates each `reference_vec` is a well-formed
+/// `4 * dim` f32 blob BEFORE it is decoded; a mangled blob must fail SAFE (dense
+/// refused), never reach the decoder with a malformed length. This is the sibling
+/// of the partial-row / substituted-probe / re-attributed-identity / non-contiguous
+/// cases for the blob-length branch, which had no dedicated coverage.
+///
+/// The one-byte (non-multiple-of-4) truncation is deliberate and makes this test
+/// NON-VACUOUS for THIS branch specifically. A whole-f32 (4-byte) truncation stays
+/// a multiple of 4, so `decode_vector_blob` still decodes it and the downstream P1
+/// flip-counter catches the packed-bit length delta anyway — the length branch
+/// would be redundant for that input. A one-byte truncation is NOT a multiple of 4:
+/// with the length branch REMOVED it reaches `decode_vector_blob`, whose
+/// `chunks_exact(4)` would silently drop the trailing bytes (release) and whose
+/// `debug_assert!(len % 4 == 0)` panics (debug/test) — proving the branch is the
+/// load-bearing guard. Verified RED with the branch bypassed, GREEN with it present.
+#[test]
+fn mangled_reference_blob_wrong_length_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    // Corrupt the STORED baseline: truncate ONE reference_vec by a single byte so
+    // its length is 4*dim - 1 (not a multiple of 4). Count/ordinals/text/identity
+    // are untouched, so the ONLY thing under test is the blob well-formedness
+    // (length) validation.
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let full: Vec<u8> = conn
+            .query_row(
+                "SELECT reference_vec FROM _fathomdb_embed_probe WHERE probe_ordinal = 7",
+                [],
+                |r| r.get(0),
+            )
+            .expect("read the reference blob to mangle");
+        assert_eq!(full.len(), DIM * 4, "precondition: the stored blob is a full 4*dim f32 blob");
+        let truncated = full[..full.len() - 1].to_vec(); // drop one byte ⇒ 4*dim - 1 (non-%4)
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET reference_vec = ?1 WHERE probe_ordinal = 7",
+            rusqlite::params![truncated],
+        )
+        .expect("truncate one reference blob");
+        let len: i64 = conn
+            .query_row(
+                "SELECT LENGTH(reference_vec) FROM _fathomdb_embed_probe WHERE probe_ordinal = 7",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            len,
+            (DIM * 4 - 1) as i64,
+            "precondition: the stored blob is now the wrong length (not a multiple of 4)"
+        );
+    }
+
+    assert_degraded_but_fts_serves(&path);
+}
