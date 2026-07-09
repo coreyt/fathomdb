@@ -10150,9 +10150,13 @@ fn probe_populate_or_check(
         .map_err(|e| format!("could not read the probe reference table: {e}; cannot verify"))?;
 
     if existing == 0 {
-        probe_populate_baseline(connection, embedder, identity, &probes)
+        // Populate, then CONFIRM the just-written baseline is complete before
+        // enabling dense (fix-2 DEFECT #1 residual): a population that committed
+        // a short/garbled set must never leave dense enabled on the same open.
+        probe_populate_baseline(connection, embedder, identity, &probes)?;
+        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
     } else {
-        probe_check_against_baseline(connection, embedder, identity, mean_pinned)
+        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
     }
 }
 
@@ -10210,11 +10214,21 @@ fn probe_populate_baseline(
 /// malformed/missing reference row, an unreadable pinned mean, or a
 /// `vec_quantize_binary`/L2 SQL failure each ⇒ `Err` (cannot verify ⇒ refuse
 /// dense), never a silent skip-and-serve.
+///
+/// fix-2 (DEFECT #1 residual): BEFORE the divergence check, the STORED baseline is
+/// validated to be EXACTLY the committed probe set — the expected row count, a
+/// contiguous 0-based `probe_ordinal` per committed probe, each `probe_text` equal
+/// to the committed fixture text at that ordinal, each `reference_vec` a well-formed
+/// `4 * dim` f32 blob, and the stored embedder identity/dim matching the current
+/// one. This closes the partial-baseline / external-tamper fail-open (a 44-of-45
+/// table, or a re-attributed/mangled row, previously verified only the rows present
+/// or re-embedded a tampered `probe_text` against itself). Any mismatch ⇒ `Err`.
 fn probe_check_against_baseline(
     connection: &Connection,
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
     mean_pinned: bool,
+    probes: &[&str],
 ) -> Result<(), String> {
     let dimension = identity.dimension as usize;
 
@@ -10242,36 +10256,91 @@ fn probe_check_against_baseline(
 
     let mut stmt = connection
         .prepare(
-            "SELECT probe_ordinal, probe_text, reference_vec \
+            "SELECT probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim \
              FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
         )
         .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
-    let stored: Vec<(i64, String, Vec<u8>)> = stmt
+    let stored: Vec<(i64, String, Vec<u8>, String, String, i64)> = stmt
         .query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
 
-    if stored.is_empty() {
-        return Err("the probe reference table is unexpectedly empty; cannot verify the dense arm"
-            .to_string());
+    // fix-2 (DEFECT #1 residual) — COMPLETENESS validation of the STORED baseline.
+    // `COUNT(*) > 0` is NOT proof of a complete, trustworthy baseline: a partially
+    // populated or externally-tampered probe table (44 of 45 rows, a gap/dupe in the
+    // ordinals, a mangled reference blob, a mismatched probe_text, or a foreign
+    // embedder identity) is UNVERIFIABLE stored state. The prior code re-embedded
+    // the STORED probe_text and compared it to its OWN reference, so a tampered
+    // probe_text verified against itself and a short table verified only the rows
+    // present — both fail-OPEN. Atomic population stops the ENGINE from writing a
+    // partial set; this closes external corruption, a manual edit, and a future
+    // migration bug the engine did not author. Any mismatch ⇒ fail CLOSED (dense
+    // refused); the text-only/FTS path still serves. The stored baseline must be
+    // EXACTLY the committed probe set, in order, under the current identity.
+    if stored.len() != probes.len() {
+        return Err(format!(
+            "the probe reference table has {} rows but the committed fixture defines {}; \
+             the stored baseline is incomplete or corrupt — cannot verify the dense arm (refused)",
+            stored.len(),
+            probes.len()
+        ));
+    }
+    for (idx, (ordinal, probe_text, ref_blob, name, revision, dim)) in stored.iter().enumerate() {
+        // Contiguous 0-based ordinals, one per committed probe (no gaps/dupes).
+        if *ordinal != idx as i64 {
+            return Err(format!(
+                "probe reference ordinals are non-contiguous (row {idx} carries ordinal {ordinal}); \
+                 the stored baseline is corrupt — cannot verify the dense arm (refused)"
+            ));
+        }
+        // The stored text MUST be the committed fixture text at this ordinal —
+        // otherwise a tampered probe_text re-embeds and verifies against ITSELF,
+        // masking drift (the exact fail-open this fix closes).
+        if probe_text != probes[idx] {
+            return Err(format!(
+                "probe reference {ordinal} text does not match the committed fixture; \
+                 the stored baseline is tampered or corrupt — cannot verify the dense arm (refused)"
+            ));
+        }
+        // Well-formed f32[dim] reference (4*dim little-endian bytes).
+        if ref_blob.len() != dimension * 4 {
+            return Err(format!(
+                "probe reference {ordinal} is malformed (len {} != {}); \
+                 cannot verify the dense arm (refused)",
+                ref_blob.len(),
+                dimension * 4
+            ));
+        }
+        // The stored embedder identity/dim must match the CURRENT expected identity
+        // (defence-in-depth beyond `check_embedder_profile`: catches a baseline row
+        // re-attributed to a foreign embedder by external edit/migration).
+        if *dim != identity.dimension as i64
+            || name != &identity.name
+            || revision != &identity.revision
+        {
+            return Err(format!(
+                "probe reference {ordinal} was captured under embedder {name}/{revision}/dim={dim} \
+                 but the current embedder is {}/{}/dim={}; the stored baseline does not match — \
+                 cannot verify the dense arm (refused)",
+                identity.name, identity.revision, identity.dimension
+            ));
+        }
     }
 
     let mut total_flips: u64 = 0;
     let mut max_l2: f32 = 0.0;
     let mut worst_probe: Option<String> = None;
 
-    for (ordinal, probe_text, ref_blob) in &stored {
-        if ref_blob.len() != dimension * 4 {
-            // Fail-SAFE: a malformed/missing reference cannot be compared.
-            return Err(format!(
-                "probe reference {ordinal} is malformed (len {} != {}); \
-                 cannot verify the dense arm",
-                ref_blob.len(),
-                dimension * 4
-            ));
-        }
+    for (ordinal, probe_text, ref_blob, _, _, _) in &stored {
         let reference = decode_vector_blob(ref_blob);
         let reembed = probe_embed(embedder, probe_text, dimension).ok_or_else(|| {
             format!(

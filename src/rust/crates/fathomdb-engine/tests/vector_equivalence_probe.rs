@@ -818,3 +818,132 @@ fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
     );
     divergent.engine.close().unwrap();
 }
+
+// ---- fix-2 DEFECT #1 residual — the STORED baseline must be COMPLETE -----------
+// `COUNT(*) > 0` is not proof of a trustworthy baseline. A partially populated or
+// externally-tampered `_fathomdb_embed_probe` table (44 of 45 rows, a foreign
+// substituted probe whose text+vector are self-consistent, or a re-attributed
+// embedder identity) previously verified only the rows present / re-embedded a
+// tampered `probe_text` against its OWN reference, and so served dense with
+// `dense_disabled=false` — fail-OPEN. These reopen with the FAITHFUL backend (no
+// embed drift) so the ONLY thing under test is the completeness validation: each
+// must degrade the open, refuse the dense arm with `VectorEquivalenceMismatch`, and
+// keep the text-only/FTS path serviceable.
+
+/// LE-f32 encoding of a vector (matches the engine's `reference_vec` blob shape).
+fn encode_le_f32(v: &[f32]) -> Vec<u8> {
+    let mut b = Vec::with_capacity(v.len() * 4);
+    for x in v {
+        b.extend_from_slice(&x.to_le_bytes());
+    }
+    b
+}
+
+/// Assert the fail-SAFE contract after a baseline corruption: faithful reopen is
+/// DEGRADED (not failed), a dense query refuses with the typed error, and the
+/// text-only path still serves.
+fn assert_degraded_but_fts_serves(path: &std::path::Path) {
+    let opened = Engine::open_with_embedder_for_test(path, Arc::new(RefEmbedder))
+        .expect("a corrupt/partial baseline must NOT wedge open (open still succeeds)");
+    let engine = opened.engine;
+    assert!(
+        opened.report.dense_disabled,
+        "an incomplete/tampered stored baseline must fail SAFE: dense refused"
+    );
+    assert!(opened.report.dense_disabled_reason.is_some(), "a refusal reason is surfaced");
+    match engine.search("memory") {
+        Err(EngineError::VectorEquivalenceMismatch { .. }) => {}
+        other => panic!("dense query must refuse with VectorEquivalenceMismatch, got {other:?}"),
+    }
+    assert!(engine.search_text_only("memory").is_ok(), "FTS-only path must still serve");
+    engine.close().unwrap();
+}
+
+/// Partial baseline (44 of 45 rows): DELETE one committed probe. Faithful reopen
+/// must refuse dense (count mismatch), not verify only the 44 rows present.
+#[test]
+fn partial_baseline_missing_one_row_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    // Corrupt the STORED baseline: drop the last committed probe (44 of 45).
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute("DELETE FROM _fathomdb_embed_probe WHERE probe_ordinal = 44", [])
+            .expect("delete one probe row");
+        let rows: i64 =
+            conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 44, "precondition: the stored baseline is now partial (44 of 45)");
+    }
+
+    assert_degraded_but_fts_serves(&path);
+}
+
+/// Substituted foreign probe (self-consistent text+vector): REPLACE one committed
+/// probe's text with a NON-committed string AND its reference with that string's
+/// faithful embedding. The old code re-embedded the stored text and compared it to
+/// its OWN (matching) reference — so this fail-OPENED (0 flips / 0 L2). The
+/// fixture-text validation now refuses it.
+#[test]
+fn substituted_probe_text_verifying_against_itself_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    {
+        let foreign = "this-is-not-a-committed-probe";
+        let foreign_vec = encode_le_f32(&reference_vector(foreign));
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET probe_text = ?1, reference_vec = ?2 \
+             WHERE probe_ordinal = 5",
+            rusqlite::params![foreign, foreign_vec],
+        )
+        .expect("substitute a self-consistent foreign probe");
+    }
+
+    assert_degraded_but_fts_serves(&path);
+}
+
+/// Re-attributed embedder identity: REWRITE the stored `embedder_name` to a foreign
+/// value on every row. The old code ignored the identity columns at check time, so
+/// this fail-OPENED. The identity validation now refuses it.
+#[test]
+fn re_attributed_embedder_identity_fails_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute("UPDATE _fathomdb_embed_probe SET embedder_name = 'a-different-embedder'", [])
+            .expect("re-attribute the stored embedder identity");
+    }
+
+    assert_degraded_but_fts_serves(&path);
+}
+
+/// Non-contiguous ordinals WITHOUT a row-count change: move `probe_ordinal` 44 to a
+/// gap value (45). Count stays 45 but the ordinals are no longer 0..=44. The old
+/// code re-embedded each stored text and served; the contiguity validation refuses.
+#[test]
+fn non_contiguous_ordinals_fail_safe_not_open() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    seed_references(&path);
+
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE _fathomdb_embed_probe SET probe_ordinal = 45 WHERE probe_ordinal = 44",
+            [],
+        )
+        .expect("introduce an ordinal gap");
+        let rows: i64 =
+            conn.query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 45, "precondition: the row COUNT is still 45 (only the ordinal moved)");
+    }
+
+    assert_degraded_but_fts_serves(&path);
+}
