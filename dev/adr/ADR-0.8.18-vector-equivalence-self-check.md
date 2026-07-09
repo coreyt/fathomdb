@@ -1,16 +1,25 @@
 # ADR-0.8.18 — Vector-equivalence self-check (#5)
 
 - **Status: ACCEPTED (HITL SIGNED 2026-07-09).** Design review CLEAN after 4 codex rounds (BLOCKs resolved +
-  re-confirmed, not overridden); Steward-verified. R-VEQ-5 = additive-only (confirmed); D4 floor set after the
-  U3 measurement. The full requirements + RED-testable ACs + design are in
-  `dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md` §U1.
+  re-confirmed, not overridden); Steward-verified. R-VEQ-5 = additive-only (confirmed). **D4 floor FROZEN from
+  the U3 measurement: P1 binary-flip count = 0 (exact), P2 un-centered L2 ε = 1e-5** (all same-identity legs
+  0/17280; HITL kept 1e-5, 2026-07-09). **DEFECT #4 — open-path baseline APPROVED (HITL 2026-07-09):** the
+  baseline is established at `Engine::open` (identity-gated), not synchronously at write-path registration
+  (the R-VEQ-1 literal wording), because 45 sync probe embeds in the write path violate the "a write never
+  blocks on the embedder" async invariant (hung the watchdog 915s); residual = the already-accepted
+  additive-only upgrade residual; codex-accepted as a design residual. The full requirements + RED-testable
+  ACs + design are in `dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md` §U1.
 - **Supersedes-in-part:** the `EmbedderIdentity` pre-filter (`check_embedder_profile`, engine `lib.rs:2806`) —
   identity proves the backend *claims* the same embedder; the probe *proves equivalent 1-bit codes*.
 
 ## Decision (proposed — rulings applied)
 
-1. **R-VEQ-1** Store the 45 committed probes + f32 references in a new internal `_fathomdb_embed_probe` at first
-   vector-kind registration. **Schema migration SCHEMA_VERSION 18 → 19.** Slice-5 landing is **HITL-gated** (schema bump).
+1. **R-VEQ-1** Store the 45 committed probes + f32 references in a new internal `_fathomdb_embed_probe`.
+   **Schema migration SCHEMA_VERSION 18 → 19.** Slice-5 landing is **HITL-gated** (schema bump). **DEFECT #4
+   deviation (HITL-approved 2026-07-09):** the reference **baseline is established at `Engine::open`
+   (identity-gated), not synchronously at write-path registration** — 45 sync embeds in the write path break
+   the async "write never blocks on embedder" invariant. Functionally equivalent guard (does the live backend
+   reproduce the established baseline?); additive-only residual.
 2. **R-VEQ-2/3 — assert BOTH stages of the dense pipeline** (D4 trace, engine-source-verified). On `Engine::open`
    (after `check_embedder_profile`), re-embed each probe and assert: **(P1)** the **mean-centered** Phase-1
    binary-code flip count over `embedding_bin` = `vec_quantize_binary(sign(x − mean_vec))` (`build_vector_phase1_sql`,

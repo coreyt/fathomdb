@@ -127,9 +127,12 @@ X1 SDK parity + harnesses · X2 `mkdocs build` green (release gate) · X3 docs +
   `fathomdb-bge-small-en-v1.5` = the default embedder; NoopEmbedder is a no-op) AND pin-dependent
   (`identity_requires_mean_centering` ∧ `mean_vec` pinned), and the gate is identical on ingest and query.
 - **D2** on divergence, **refuse the dense/fused arm, keep FTS**, loud typed `EngineOpenError` (never silent).
-- **D4** tolerance floor is a **design-review/HITL parameter** — NOT frozen yet. It must cover **both** the
-  Phase-1 binary-code flip count AND a Phase-2 float/L2 tolerance (lean: 0 binary flips / 45-probe
-  mean-centered + a calibrated L2 epsilon, not ruled).
+- **D4 ✅ FROZEN (from U3, HITL 2026-07-09):** **P1 binary-flip count = 0 (exact)** + **P2 un-centered L2 ε =
+  1e-5**. Basis: U3 canary 45-probe measurement — every same-identity leg (candle-CPU↔ONNX-CPU,
+  candle-CPU↔candle-CUDA, candle-CUDA↔ONNX-CPU) = 0/17280 flips, cosine 1.0, benign P2 L2 ≤ 1.4e-6 (commit
+  `12f732a5`). **DEFECT #4 (HITL-approved):** the #5 baseline is established at `Engine::open` (identity-gated),
+  not synchronously at write-path registration (R-VEQ-1 literal) — 45 sync embeds in the write path break the
+  async write invariant; additive-only residual, codex-accepted.
 - **D5 — platform scope.** Only **`x86_64-unknown-linux-gnu`** (this host arch) is on the 0.8.18 **critical
   path**. The repo's other declared support targets (Python `aarch64-linux-gnu` · `x86_64/aarch64-darwin` ·
   `x86_64-windows-msvc`; napi `darwin-x64/arm64` · win32/musl per `release.yml`) **remain supported but are
