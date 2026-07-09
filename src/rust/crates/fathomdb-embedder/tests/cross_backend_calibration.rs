@@ -376,6 +376,31 @@ fn compare_pair(a: &[Vec<f32>], b: &[Vec<f32>], mean: &[f32]) -> PairMetrics {
     }
 }
 
+/// Measured candle-CUDA leg-pairs (present only when the CUDA leg actually ran
+/// on the GPU — i.e. the MAIN-tree `embed-cuda` build). Absent in the worktree.
+struct GpuPairs {
+    effective: String,
+    cpu_vs_cuda: PairMetrics,
+    cuda_vs_onnx: PairMetrics,
+}
+
+/// One measured leg-pair row for the durable-doc table.
+fn measured_row(label: &str, m: &PairMetrics) -> String {
+    format!(
+        "| {label} | {n} | {cos_mean:.9} | {cos_min:.9} | {l2_mean:.3e} | {l2_max:.3e} | \
+         {maxabs:.3e} | **{raw} / {bits}** | **{mc} / {bits}** |",
+        n = m.n_probes,
+        cos_mean = m.cosine_mean,
+        cos_min = m.cosine_min,
+        l2_mean = m.l2_mean,
+        l2_max = m.l2_max,
+        maxabs = m.max_abs_delta,
+        raw = m.raw_flips_total,
+        mc = m.mean_centered_flips_total,
+        bits = m.n_probes * DIM,
+    )
+}
+
 // ── R-CAL-2: reproduce the 0.8.16 CPU baseline (HARD ASSERT) ───────────────
 
 #[test]
@@ -521,12 +546,71 @@ fn calibration_reports_p1_flips_and_p2_l2() {
     assert_eq!(m.mean_centered_flips_total, 0, "CPU baseline mean-centered flips must be 0");
     assert!(m.p2_l2_max < 1e-4, "CPU baseline P2 L2 max {:.3e} unexpectedly large", m.p2_l2_max);
 
-    write_durable_doc(&candle_cpu, &onnx_cpu, &m, mean_l2);
+    // R-CAL-4 candle-CUDA refresh: attempt the CUDA leg through the SAME harness.
+    // In the worktree (no `embed-cuda`) it falls back to CPU and is recorded as
+    // pending/skip (never a failure); on the MAIN tree (`embed-cuda`) it runs on
+    // the GPU and BOTH candle-CUDA leg-pairs are measured + written into the doc
+    // with NO orchestrator glue — the orchestrator just re-runs this test on MAIN
+    // with the `embed-cuda` feature + `FATHOMDB_EMBED_DEVICE` inherited by the
+    // parent (the leg child re-binds cuda:0). This is a CALIBRATION read, never a
+    // gate: no assertion is placed on the GPU deltas.
+    let candle_cuda = run_leg("candle", "cuda:0");
+    let cuda_ran =
+        !candle_cuda.skipped && ran_on_requested("cuda:0", &candle_cuda.effective_device);
+    let gpu = if cuda_ran {
+        let cpu_vs_cuda = compare_pair(&candle_cpu.vectors, &candle_cuda.vectors, &mean);
+        let cuda_vs_onnx = compare_pair(&candle_cuda.vectors, &onnx_cpu.vectors, &mean);
+        eprintln!(
+            "R-CAL-4 candle-CUDA leg MEASURED on {}: CPU↔CUDA raw_flips={} mc_flips={} p2_l2_max={:.3e}; \
+             CUDA↔ONNX-CPU raw_flips={} mc_flips={} p2_l2_max={:.3e}",
+            candle_cuda.effective_device,
+            cpu_vs_cuda.raw_flips_total,
+            cpu_vs_cuda.mean_centered_flips_total,
+            cpu_vs_cuda.p2_l2_max,
+            cuda_vs_onnx.raw_flips_total,
+            cuda_vs_onnx.mean_centered_flips_total,
+            cuda_vs_onnx.p2_l2_max,
+        );
+        Some(GpuPairs {
+            effective: candle_cuda.effective_device.clone(),
+            cpu_vs_cuda,
+            cuda_vs_onnx,
+        })
+    } else {
+        eprintln!(
+            "R-CAL-4 candle-CUDA leg gated-to-skip (effective={}) — recorded PENDING (run on MAIN)",
+            candle_cuda.effective_device
+        );
+        None
+    };
+
+    write_durable_doc(&candle_cpu, &onnx_cpu, &m, mean_l2, gpu.as_ref());
 }
 
 /// R-CAL-4: write the durable results doc (mirrors the Slice-15 doc's shape).
-fn write_durable_doc(candle: &LegResult, onnx: &LegResult, m: &PairMetrics, mean_l2: f64) {
+fn write_durable_doc(
+    candle: &LegResult,
+    onnx: &LegResult,
+    m: &PairMetrics,
+    mean_l2: f64,
+    gpu: Option<&GpuPairs>,
+) {
     let path = repo_root().join("dev/plans/runs/0.8.18-slice-0-cross-backend-calibration.md");
+    // candle-CUDA rows: measured when the GPU leg ran (MAIN tree), else pending.
+    let (cpu_vs_cuda_row, cuda_vs_onnx_row, gpu_status) = match gpu {
+        Some(g) => (
+            measured_row("candle-CPU ↔ candle-CUDA", &g.cpu_vs_cuda),
+            measured_row("candle-CUDA ↔ ONNX-CPU", &g.cuda_vs_onnx),
+            format!("MEASURED on `{}` (MAIN tree)", g.effective),
+        ),
+        None => (
+            "| candle-CPU ↔ candle-CUDA | — | pending (MAIN tree; `embed-cuda`, \
+             `FATHOMDB_EMBED_DEVICE=cuda:0`) | | | | | | |"
+                .to_string(),
+            "| candle-CUDA ↔ ONNX-CPU | — | pending (MAIN tree) | | | | | | |".to_string(),
+            "PENDING (worktree runs CPU legs only; run on MAIN with `embed-cuda`)".to_string(),
+        ),
+    };
     let doc = format!(
         r#"# 0.8.18 Slice 0 U3 — cross-backend vector-equivalence CALIBRATION (R-CAL-1..R-CAL-4)
 
@@ -583,9 +667,11 @@ un-centered L2 (`vec_distance_l2`).
 | Leg-pair | probes | cosine mean | cosine min | P2 L2 mean | P2 L2 max | max-abs Δ | **P1 raw-sign flips** | **P1 mean-centered flips** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | candle-CPU ↔ ONNX-CPU | {n} | {cos_mean:.9} | {cos_min:.9} | {l2_mean:.3e} | {l2_max:.3e} | {maxabs:.3e} | **{raw} / {bits}** | **{mc} / {bits}** |
-| candle-CPU ↔ candle-CUDA | — | pending (MAIN tree; `embed-cuda`, `FATHOMDB_EMBED_DEVICE=cuda:0`) | | | | | | |
-| candle-CUDA ↔ ONNX-CPU | — | pending (MAIN tree) | | | | | | |
+{cpu_vs_cuda_row}
+{cuda_vs_onnx_row}
 | ONNX-GPU-EP (D3/U4/L3) | — | pending OOB (CUDA `libonnxruntime.so`) | | | | | | |
+
+**candle-CUDA legs: {gpu_status}.**
 
 ## Reading
 
@@ -628,6 +714,9 @@ FATHOMDB_EMBED_DEVICE=cuda:0 cargo test -p fathomdb-embedder \
         mc = m.mean_centered_flips_total,
         bits = m.n_probes * DIM,
         mean_l2 = mean_l2,
+        cpu_vs_cuda_row = cpu_vs_cuda_row,
+        cuda_vs_onnx_row = cuda_vs_onnx_row,
+        gpu_status = gpu_status,
     );
     std::fs::write(&path, doc)
         .unwrap_or_else(|e| panic!("write durable doc {}: {e}", path.display()));
