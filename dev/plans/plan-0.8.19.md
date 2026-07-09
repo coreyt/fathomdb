@@ -8,6 +8,16 @@ target_release: 0.8.19
 
 # FathomDB 0.8.19 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-1 — lifecycle + id**
 
+> **▶ Slice 0 CLOSED — HITL-signed 2026-07-09** (codex design review terminal, no residual BLOCK;
+> independent adversarial audit). **gap-1 ruling 1a + the 5 unbundled gaps APPROVED.** **1a:**
+> anonymous/doc-seeded hits stay `h:`; the anonymous-surrogate `logical_id` mechanism is **deferred to
+> Phase-2 (0.8.20)** — so Phase-1's `SearchHit.id` values stay byte-identical to today (no gold-remap), the
+> 19→20 migration carries **existence columns only**, and **Slice 15 is parallelizable off Slice 0** (no
+> longer gated on Slice-5's surrogate). Reconciled across this plan + master §4 rows + F-23. Gaps:
+> purge=cascade-remove · secure_delete+documented-residual · read-without-`ReadView`=complete ·
+> `PreparedWrite` state/reason. **Next = fan Slice 5 ∥ 10 ∥ 15** (schema/id-swap landings HITL-gated;
+> label-only). See master **F-23**.
+>
 > **Plan-as-state-machine.** Mod-5 ladder + reserved-gap policy + "Immediate Next Slice". Authoritative
 > contracts → `0.8.19-implementation.md`; live state → `runs/STATUS-0.8.19.md`; deps/decision record →
 > `0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (§4 0.8.19 row, F-19/F-20/F-21/F-22). OPP-12 design authority →
@@ -68,16 +78,8 @@ design docs; Slice-0's ADR finalizes the detailed semantics (the docs are **PROP
   **subsumed into `id`, not dropped** (real-gold keying continues on `id`). **Lifecycle verbs
   (`transition`/`purge`) key on the bare `logical_id` — the `l:` space only**; `h:`/`p:` hits are not
   lifecycle-addressable by design.
-- **Surrogate `logical_id`.** The engine **mints an opaque surrogate `logical_id`** for anonymous /
-  doc-seeded nodes (`PreparedWrite::Node { logical_id: None }`, `lib.rs:7188`) so every canonical node is
-  addressable + version-eligible (`structural-lifecycle-contract.md` §2, resolution (ii); the general
-  "a database provides an object id" fix). The surrogate **must be opaque, never content-derived** (a
-  purge precondition — a hashed id leaks erased content). **Co-requisite (GATING): lands-together with the
-  C-2 swap** — governed nodes already carry a `logical_id`, anonymous nodes get one here.
-- **`SCHEMA_VERSION` 19→20 migration.** One coordinated migration carries the net-new existence columns
-  (`state`, `reason`) **and** the surrogate-`logical_id` backfill (one migration per release — the I-6
-  discipline). Fresh-create and upgrade-from-19 must both land the same shape. Verified base:
-  `fathomdb-schema/src/lib.rs:6` `SCHEMA_VERSION = 19` (after 0.8.18 Slice-5 #5).
+- **Anonymous-node surrogate `logical_id` — DEFERRED to Phase-2 (0.8.20), gap-1 ruling 1a (HITL 2026-07-09, master F-23).** Doc-seeded / anonymous nodes (`PreparedWrite::Node { logical_id: None }`, `lib.rs:4805`) **stay `h:<content-hash>`** in Phase-1 — they are **not** minted a surrogate `logical_id` and are **not** lifecycle-addressable. Rationale: Memex's Phase-1 need is closed by the C-2 swap alone (`structural-lifecycle-contract.md §2(ii)` — its records carry `logical_id`s); `h:` is a first-class *terminal* `IdSpace` variant (`api-surface.md §SearchHit`); a surrogate has no stable meaning absent the Phase-2 natural-key/projection registry (C-1 Q6b). **This SPLITS the "lands-together GATING" co-requisite** stated in the OPP-12 authority docs — the C-2 swap is **total via `l:`/`h:`/`p:` without the surrogate**, so it needs no anonymous surrogate to be complete. The anonymous-surrogate minting mechanism + the doc-seeded end-state decision are **0.8.20 (Phase-2)**. Consequence: **`SearchHit.id` values stay byte-identical to today's `stable_id`** → no gold-remap; eu7 keying a true no-op.
+- **`SCHEMA_VERSION` 19→20 migration — EXISTENCE COLUMNS ONLY (R-MIG-1 narrowed, 1a).** One migration carries the net-new existence columns (`state`, `reason`) on `canonical_nodes` — **no surrogate backfill** (deferred to Phase-2). Fresh-create and upgrade-from-19 must both land the same shape (one migration per release — I-6 discipline). Verified base: `fathomdb-schema/src/lib.rs:6` `SCHEMA_VERSION = 19` (after 0.8.18 Slice-5 #5).
 - **X1 SDK parity.** Every new surface — `LifecycleState`, `IllegalTransitionError`, `transition`/`purge`,
   the typed `IdSpace` `SearchHit.id`, `PreparedWrite::Node.state`/`reason` — threads through **both**
   `fathomdb-py` and `fathomdb-napi` with parity; the SDKs stay thin pass-throughs (no client-side logic).
@@ -107,8 +109,8 @@ relax it — surfacing deleted/superseded/as-of rows is Phase-2.
 | R-PG-2 | Purge erasure preconditions honored | `secure_delete=ON` (or post-purge `VACUUM`); surrogate `logical_id` is opaque (never content-hashed) so a retained stub leaks nothing; `purge` requires deleted-first + is idempotent |
 | R-ID-1 | C-2 typed `SearchHit.id` swap (TC-8): `write_cursor → logical_id`, typed `IdSpace {space, value}`, non-null + id-space-total | `id` is a typed `IdSpace` across all 3 hit classes (`l:`/`h:`/`p:`); `write_cursor` **and** `stable_id` retired *into* `id` (subsumed, not dropped); RED test asserts `id` totality + type |
 | R-ID-2 | Typed `IdSpace` round-trips through all 4 SDK bindings | `SearchHit.id` `{space, value}` round-trips in Rust · pyo3 · napi/TS · (X1 cross-binding harness); lifecycle verbs accept the bare `logical_id` (`l:` space only); `h:`/`p:` are not lifecycle-addressable (typed refusal) |
-| R-ID-3 | Surrogate `logical_id` minted for anonymous/doc-seeded nodes (lands-together with R-ID-1) | Every canonical node is addressable + version-eligible; surrogate is opaque; RED: a doc-seeded hit now carries a stable `l:`-space id (or documented `h:` fallback per the Slice-0 ruling — see §9) |
-| R-MIG-1 **(HITL-gated)** | `SCHEMA_VERSION` 19→20 migration carries existence columns + surrogate backfill in **one** migration | Fresh-create at 20 and upgrade-from-19 both land the identical shape; migration test green both paths; **HITL sign-off required before the bump lands** |
+| R-ID-3 **(narrowed by 1a)** | **Governed** nodes are `l:`-addressable (they already carry a `logical_id`); **anonymous/doc-seeded hits stay `h:`** and are NOT lifecycle-addressable in Phase-1. Anonymous-surrogate minting → **Phase-2 (0.8.20)** | RED: a governed-node hit's `id` is `l:<logical_id>` and `transition`/`purge` accept it; RED: a doc-seeded hit's `id` stays `h:<content-hash>`, `transition(h:…)` raises `NotLifecycleAddressableError`; `SearchHit.id` values unchanged vs today's `stable_id` |
+| R-MIG-1 **(HITL-gated; narrowed by 1a)** | `SCHEMA_VERSION` 19→20 migration carries the **existence columns (`state`/`reason`) ONLY** — **no surrogate backfill** (deferred to Phase-2) | Fresh-create at 20 and upgrade-from-19 both land the identical shape; migration test green both paths; **HITL sign-off required before the bump lands** |
 | R-X-1 | Py + TS SDK parity for every new surface | X1 cross-binding harness green (`transition`/`purge`/`IdSpace` id/`LifecycleState`/`IllegalTransitionError`/`PreparedWrite` state) |
 | R-GATE | All frozen gates hold on the label-only candidate | eu7 ≥ 0.90 (one-sided CI) on the **no-op basis** (default ranking/vector path byte-unchanged; the `state=active` filter is a no-op on the shipped corpus — see §9 for the gold-keying caveat) · AC-012/013/020 latency unaffected · AC-074 governed-surface allowlist updated for the net-new verbs/types (HITL-decided at the gated slice) |
 
@@ -133,27 +135,28 @@ policy.
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | **Setup + ADR (X0-gated)** — freeze Phase-1 semantics from the OPP-12 docs: existence-axis state machine + legal-transition table; `LifecycleState`/`IllegalTransitionError`/`InitialState` types; C-2 `IdSpace` newtype design; **the one 19→20 migration plan** (existence columns + surrogate backfill together); surrogate-minting rule (opaque; `h:`→`l:` interaction — §9); purge erasure preconditions (`secure_delete`/`VACUUM`, edge-stub policy); **Phase-1/Phase-2 boundary** (no `ReadView`/validity/projections here); default-read-exclusion semantics + eu7 basis; stand up `runs/STATUS-0.8.19.md` | design-adr | — |
-| **5** | **KEYSTONE — existence axis + surrogate `logical_id` + SCHEMA 19→20 migration** *(HITL-gated bump)*. `state`/`reason` columns; `InitialState` on `PreparedWrite::Node`; opaque surrogate-`logical_id` minting for anonymous nodes; `active`-only default-read exclusion on the hot path; the coordinated 19→20 migration (fresh + upgrade) | implementation (schema + write/read path) | 0 |
-| **10** | **`transition` / `purge` verbs.** `transition(logical_id, to_state, reason?)` + legal-transition enforcement + typed `IllegalTransitionError`; `purge(logical_id)` hard-erase (secure_delete/VACUUM, FTS/vector removal, content-free edge stubs, deleted-first + idempotent) | implementation (engine verbs) | 5 |
-| **15** | **KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8).** `write_cursor → logical_id`; typed `IdSpace {space, value}` newtype (`l:`/`h:`/`p:`), non-null + total; retire `write_cursor` + subsume `stable_id` into `id`; lifecycle verbs key on bare `logical_id` (`l:` only). Breaking surface — **built label-only** (publish = 0.8.20) | implementation (surface/type reshape) | 5 |
+| **0 ✅** | **Setup + ADR (X0-gated) — DESIGN CLOSED, HITL-signed 2026-07-09 (codex review terminal; adversarial audit).** Froze Phase-1 semantics: existence-axis state machine + legal-transition table; `LifecycleState`/`IllegalTransitionError`/`InitialState` types; C-2 `IdSpace` newtype; **19→20 migration = existence columns only** (gap-1 **1a**: anonymous-surrogate minting + `h:` end-state → Phase-2); purge = **cascade-remove** edges (gap-3); `secure_delete` PRAGMA + documented residual (gap-4); `active`-only read complete surface (gap-5); `PreparedWrite::Node` state/reason (gap-6); Phase-1/Phase-2 boundary; eu7 no-op basis. Board `runs/STATUS-0.8.19.md` | design-adr | — |
+| **5** | **KEYSTONE — existence axis + SCHEMA 19→20 migration** *(HITL-gated bump)*. `state`/`reason` columns; `InitialState` on `PreparedWrite::Node`; `active`-only default-read exclusion co-located with the 61 `superseded_at IS NULL` sites; the 19→20 migration (**existence columns only, no surrogate backfill** — 1a; fresh + upgrade). **No surrogate minting** (→ Phase-2, 1a) | implementation (schema + write/read path) | 0 |
+| **10** | **`transition` / `purge` verbs.** `transition(logical_id, to_state, reason?)` + legal-transition enforcement + typed `IllegalTransitionError`; `purge(logical_id)` hard-erase (secure_delete/VACUUM, FTS/vector removal, **edges-to-purged cascade-removed** — gap-3, no stubs in Phase-1, deleted-first + idempotent) | implementation (engine verbs) | 5 |
+| **15** | **KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8).** `write_cursor → logical_id`; typed `IdSpace {space, value}` newtype (`l:`/`h:`/`p:`), non-null + total; retire `write_cursor` + subsume `stable_id` into `id`; lifecycle verbs key on bare `logical_id` (`l:` only); **doc-seeded/anonymous stay `h:`** (1a — no surrogate). Breaking surface — **built label-only** (publish = 0.8.20). **Parallelizable off Slice 0 (1a): no longer needs Slice-5's surrogate** | implementation (surface/type reshape) | 0 |
 | **40** | **Verification + Phase-1 release-readiness (label-only close).** X0/X1/X2/X3; R-EX/R-TR/R-PG/R-ID/R-MIG AC gate; migration fresh+upgrade; `IdSpace` round-trip all 4 bindings; eu7 no-op basis + gold-keying caveat recorded; AC-074 surface delta; codex §9. **No `v*` tag / publish — manifests stay `0.8.9`** | verification | 5,10,15 |
 
 **Keystones / hard gates.**
 
 - **Slice 5 is the schema keystone AND a HITL gate** — the 19→20 migration (R-MIG-1) is a default-behavior
-  change; it does not land until HITL signs off (§2, §5 X0). It coordinates **both** net-new schema
-  changes (existence columns + surrogate backfill) in **one** migration (I-6 discipline; two migrations in
-  one release is forbidden).
+  change; it does not land until HITL signs off (§2, §5 X0). It carries the existence columns
+  (`state`/`reason`) in **one** migration — **existence columns only, no surrogate backfill** (1a; the
+  surrogate is Phase-2). One migration per release (I-6 discipline).
 - **Slice 15 is the id-surface keystone** — the C-2 swap is a **breaking** `SearchHit.id` reshape. It is
   **built label-only**; the coordinated breaking-pair publish is 0.8.20 (F-19/F-21). Its RED test is
-  two-sided: `id` is total + typed across all three hit classes, and `write_cursor`/`stable_id` are
-  retired *into* `id` without losing the real-gold key.
-- **Slice 15 depends on Slice 5, not Slice 10** — the id swap needs the surrogate `logical_id`s minted by
-  the Slice-5 migration (lands-together co-requisite), but is independent of the transition/purge verbs.
-  Slices 10 ∥ 15 can be orchestrated concurrently after Slice 5.
+  two-sided: `id` is total + typed across all three hit classes (`l:` governed · `h:` doc-seeded/anonymous ·
+  `p:` synthetic), and `write_cursor`/`stable_id` are retired *into* `id` without losing the real-gold key.
+- **Slice 15 is PARALLELIZABLE OFF SLICE 0 (re-derived under 1a)** — with the surrogate deferred to Phase-2,
+  the C-2 swap sets `id` = the existing `derive_stable_id` output (`l:`/`h:`/`p:`), which needs **neither**
+  Slice-5's existence columns **nor** the transition/purge verbs. So **Slices 5, 10, 15 can all run
+  concurrently off Slice 0** (previously Slice 15 was gated on Slice 5's surrogate — no longer true).
 
-**Tracks (parallelizable).** Existence/id spine **5 → {10 ∥ 15}**, off Slice 0; converge at Slice 40.
+**Tracks (parallelizable).** After Slice 0: **{5 ∥ 10 ∥ 15}** (10 after 5 for the verbs' state columns; 15 independent) → converge at Slice 40.
 
 ---
 
