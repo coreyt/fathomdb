@@ -320,6 +320,58 @@ class Engine:
             explanation=explanation,
         )
 
+    def search_text_only(self, query: str) -> SearchResult:
+        """0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only / FTS-only search.
+
+        Does NOT embed the query and NEVER raises
+        ``VectorEquivalenceMismatchError``, so it stays serviceable when the engine
+        opened in the degraded ``dense_disabled`` state (the D2 "keep FTS servable"
+        contract). Returns node-body FTS hits only — no vector recall, no CE
+        rerank, no graph arm.
+        """
+        result = self._native.search_text_only(query)
+        fallback = result.soft_fallback
+        soft = (
+            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+            if fallback is not None
+            else None
+        )
+        return SearchResult(
+            projection_cursor=result.projection_cursor,
+            soft_fallback=soft,
+            results=[
+                SearchHit(
+                    id=hit.id,
+                    kind=hit.kind,
+                    body=hit.body,
+                    score=hit.score,
+                    branch=cast(SoftFallbackBranch, hit.branch),
+                    source_id=hit.source_id,
+                    ce_score=hit.ce_score,
+                    stable_id=hit.stable_id,
+                )
+                for hit in result.results
+            ],
+            explanation=None,
+        )
+
+    def dense_disabled(self) -> bool:
+        """0.8.18 Slice 5 (R-VEQ-6) — ``True`` iff the engine opened degraded.
+
+        The open-time #5 self-check found a vector-equivalence divergence and every
+        vector-dependent arm now refuses at query time with
+        ``VectorEquivalenceMismatchError``. Mirrors ``OpenReport.dense_disabled``.
+        """
+        return self._native.dense_disabled()
+
+    def dense_disabled_reason(self) -> str | None:
+        """0.8.18 Slice 5 (R-VEQ-6) — reason for the degraded state, or ``None``."""
+        return self._native.dense_disabled_reason()
+
+    def vector_equivalence_refusal_count(self) -> int:
+        """0.8.18 Slice 5 (R-VEQ-6) — count of query-time dense-arm refusals."""
+        return self._native.vector_equivalence_refusal_count()
+
     def enable_telemetry(self, sink_path: str) -> None:
         """0.8.8 Slice 15 (OPP-9) — enable opt-in local telemetry capture to a
         JSONL ``sink_path``. Off by default; local file only (no egress). Once
@@ -430,6 +482,8 @@ class Engine:
             embedder_events=list(native.embedder_events),
             embedder_mean_centering_required=native.embedder_mean_centering_required,
             embedder_mean_vec_pinned=native.embedder_mean_vec_pinned,
+            dense_disabled=native.dense_disabled,
+            dense_disabled_reason=native.dense_disabled_reason,
         )
 
     def counters(self) -> CounterSnapshot:

@@ -48,6 +48,7 @@ different remediation or cross-doc ownership.
 | `SchemaValidationError`         | JSON Schema rejection for op-store payloads        | `EngineError`     | `design/op-store.md`    | fix payload contents against registered `schema_id`                             |
 | `EmbedderIdentityMismatchError` | open-time stored-vs-supplied identity comparison   | `EngineOpenError` | `design/embedder.md`    | open-time incompatibility, not runtime write/query failure                      |
 | `MigrationError`                | schema migration execution                         | `EngineOpenError` | `design/migrations.md`  | open-time schema transition failure with per-step reporting                     |
+| `VectorEquivalenceMismatchError`| open-time #5 probe divergence → query-time dense refusal | `EngineError` | `design/0.8.18-slice-5-vector-equivalence-probe.md` | dense retrieval refused because the live backend's re-embedded probes diverged; text-only/FTS-only path (`search_text_only`) stays serviceable |
 
 `Overloaded` and `Closing` remain direct `EngineError` variants rather than
 module errors because they are cross-cutting runtime states:
@@ -115,6 +116,7 @@ rename the semantic class stems or collapse distinct rows.
 | `EmbedderDimensionMismatchError`     | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
 | `EngineError::EmbedderNotConfigured` | `EmbedderNotConfiguredError`     | `EmbedderNotConfiguredError`     | runtime failure       |
 | `EngineError::KindNotVectorIndexed`  | `KindNotVectorIndexedError`      | `KindNotVectorIndexedError`      | runtime failure       |
+| `EngineError::VectorEquivalenceMismatch` | `VectorEquivalenceMismatchError` | `VectorEquivalenceMismatchError` | dense refused (query-time) |
 
 2026-05-16 amendment: `EmbedderNotConfigured` and `KindNotVectorIndexed` leaf
 classes added per Phase 11a codex reviewer finding #3. Python and TS bindings

@@ -120,6 +120,18 @@ export class InvalidFilterError extends FathomDbError {}
 // Slice 20 — depth > 3 or other invalid argument (G5/G6).
 export class InvalidArgumentError extends FathomDbError {}
 
+// 0.8.18 Slice 5 (#5 vector-equivalence probe) — the open-time self-check found a
+// vector-equivalence divergence beyond the D4 floor, so every vector-dependent arm
+// refuses at query time. The text-only/FTS-only path (`searchTextOnly`) stays
+// serviceable. Leaf parity with `EmbedderIdentityMismatchError`.
+export class VectorEquivalenceMismatchError extends FathomDbError {
+  readonly reason: string;
+  constructor(message: string, reason: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
 // Panic is a contract bug, not a typed engine outcome — intentionally
 // NOT a FathomDbError subclass so callers that catch FathomDbError do
 // not silently swallow it. Mirrors PyO3 PanicException in 11a.
@@ -159,6 +171,8 @@ type ErrorCode =
   | "FDB_INVALID_FILTER"
   // Slice 20 — depth > 3 or invalid argument (G5/G6).
   | "FDB_INVALID_ARGUMENT"
+  // 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense refusal.
+  | "FDB_VECTOR_EQUIVALENCE_MISMATCH"
   | "FDB_PANIC";
 
 interface Envelope {
@@ -253,6 +267,11 @@ function build(envelope: Envelope): Error {
       return new InvalidFilterError(envelope.message);
     case "FDB_INVALID_ARGUMENT":
       return new InvalidArgumentError(envelope.message);
+    case "FDB_VECTOR_EQUIVALENCE_MISMATCH":
+      return new VectorEquivalenceMismatchError(
+        envelope.message,
+        String(p.reason ?? ""),
+      );
     case "FDB_PANIC":
       return new FathomDbPanicError(envelope.message);
     default: {

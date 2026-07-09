@@ -490,6 +490,14 @@ export interface OpenReport {
   /** EU-5a2 — dynamic workspace state (`mean_vec IS NOT NULL` after the
    *  256-doc threshold crossing). */
   readonly embedderMeanVecPinned: boolean;
+  /** 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — `true` iff the
+   *  open-time self-check found a vector-equivalence divergence and every
+   *  vector-dependent arm now refuses at query time with
+   *  `VectorEquivalenceMismatchError`. The `searchTextOnly` path stays
+   *  serviceable. */
+  readonly denseDisabled: boolean;
+  /** R-VEQ-6 — reason for `denseDisabled`, or `null` when dense is healthy. */
+  readonly denseDisabledReason: string | null;
 }
 
 export interface CounterSnapshot {
@@ -696,6 +704,64 @@ export class Engine {
     };
   }
 
+  /**
+   * 0.8.18 Slice 5 (#5 vector-equivalence probe) — the explicit text-only /
+   * FTS-only search path. It does NOT embed the query and NEVER throws
+   * `VectorEquivalenceMismatchError`, so it stays serviceable when the engine
+   * opened in the degraded `denseDisabled` state. Returns node-body FTS hits
+   * only (no vector recall, no CE rerank, no graph arm).
+   */
+  async searchTextOnly(query: string): Promise<SearchResult> {
+    validateFfiString(query);
+    const r = await intercept(() => this.#native.searchTextOnly(query));
+    const branch = r.softFallback?.branch;
+    return {
+      projectionCursor: r.projectionCursor,
+      softFallback:
+        branch === "vector" || branch === "text" || branch === "text_edge" || branch === "graph_arm"
+          ? { branch: branch as SoftFallbackBranch }
+          : null,
+      results: r.results.map((h) => ({
+        id: h.id,
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: (h.branch === "vector" || h.branch === "text_edge" || h.branch === "graph_arm")
+          ? (h.branch as SoftFallbackBranch)
+          : "text",
+        sourceId: h.sourceId ?? null,
+        ceScore: h.ceScore ?? null,
+        stableId: h.stableId ?? null,
+      })),
+      explanation: null,
+    };
+  }
+
+  /**
+   * 0.8.18 Slice 5 (R-VEQ-6) — `true` iff the engine opened degraded (the #5
+   * self-check found a vector-equivalence divergence and every dense arm is
+   * refusing). Mirrors `OpenReport.denseDisabled`.
+   */
+  denseDisabled(): boolean {
+    return this.#native.denseDisabled();
+  }
+
+  /**
+   * 0.8.18 Slice 5 (R-VEQ-6) — the human-readable reason for the degraded state,
+   * or `null` when dense is healthy.
+   */
+  denseDisabledReason(): string | null {
+    return this.#native.denseDisabledReason() ?? null;
+  }
+
+  /**
+   * 0.8.18 Slice 5 (R-VEQ-6) — telemetry counter: query-time dense-arm refusals
+   * raised because the engine opened degraded.
+   */
+  vectorEquivalenceRefusalCount(): number {
+    return this.#native.vectorEquivalenceRefusalCount();
+  }
+
   async close(): Promise<void> {
     await intercept(() => this.#native.close());
   }
@@ -841,6 +907,8 @@ export class Engine {
         embedderEvents: r.embedderEvents.map(mapEmbedderEvent),
         embedderMeanCenteringRequired: r.embedderMeanCenteringRequired,
         embedderMeanVecPinned: r.embedderMeanVecPinned,
+        denseDisabled: r.denseDisabled,
+        denseDisabledReason: r.denseDisabledReason ?? null,
       };
     });
   }

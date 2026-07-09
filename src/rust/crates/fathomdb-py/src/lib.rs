@@ -87,6 +87,8 @@ create_exception!(_fathomdb, ExtractorError, EngineError);
 create_exception!(_fathomdb, ConsolidatorError, EngineError);
 // G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 create_exception!(_fathomdb, InvalidFilterError, EngineError);
+// 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal leaf.
+create_exception!(_fathomdb, VectorEquivalenceMismatchError, EngineError);
 // Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
 create_exception!(_fathomdb, InvalidArgumentError, EngineError);
 
@@ -186,6 +188,15 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
             InvalidFilterError::new_err(format!("invalid filter: {reason}"))
         }
         RustEngineError::InvalidArgument { msg } => InvalidArgumentError::new_err(msg),
+        RustEngineError::VectorEquivalenceMismatch { reason } => {
+            let exc = VectorEquivalenceMismatchError::new_err(format!(
+                "vector-equivalence self-check failed; dense retrieval refused: {reason}"
+            ));
+            Python::attach(|py| {
+                let _ = exc.value(py).setattr("reason", reason);
+            });
+            exc
+        }
     }
 }
 
@@ -720,6 +731,15 @@ struct PyOpenReport {
     /// Dynamic workspace state — true iff
     /// `_fathomdb_embedder_profiles.mean_vec IS NOT NULL`.
     embedder_mean_vec_pinned: bool,
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — `True` iff the
+    /// open-time #5 self-check found a vector-equivalence divergence beyond the
+    /// D4 floor and every vector-dependent arm now refuses at query time with
+    /// `VectorEquivalenceMismatchError`. The text-only/FTS-only path
+    /// (`search_text_only`) stays serviceable.
+    dense_disabled: bool,
+    /// R-VEQ-6 — human-readable reason for `dense_disabled` (which representation
+    /// tripped), or `None` when dense is healthy.
+    dense_disabled_reason: Option<String>,
 }
 
 impl PyOpenReport {
@@ -741,6 +761,8 @@ impl PyOpenReport {
             embedder_events,
             embedder_mean_centering_required: r.embedder_mean_centering_required,
             embedder_mean_vec_pinned: r.embedder_mean_vec_pinned,
+            dense_disabled: r.dense_disabled,
+            dense_disabled_reason: r.dense_disabled_reason.clone(),
         }
     }
 }
@@ -916,6 +938,38 @@ impl PyEngine {
             }
         })?;
         Ok(PySearchResult::from_rust(result))
+    }
+
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the explicit
+    /// text-only / FTS-only search path. Does NOT embed the query and NEVER raises
+    /// `VectorEquivalenceMismatchError`, so it stays serviceable when the engine
+    /// opened in the degraded `dense_disabled` state. Returns node-body FTS hits
+    /// only (no vector recall, no CE rerank, no graph arm).
+    fn search_text_only(&self, py: Python<'_>, query: &str) -> PyResult<PySearchResult> {
+        validate_ffi_string_py(query)?;
+        let engine = Arc::clone(&self.inner);
+        let query = query.to_string();
+        let result = call_engine(py, move || engine.search_text_only(&query))?;
+        Ok(PySearchResult::from_rust(result))
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — `True` iff the engine opened degraded (the #5
+    /// self-check found a vector-equivalence divergence and every dense arm is
+    /// refusing). Mirrors `OpenReport.dense_disabled`.
+    fn dense_disabled(&self) -> bool {
+        self.inner.dense_disabled()
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — the human-readable reason for the degraded state,
+    /// or `None` when dense is healthy.
+    fn dense_disabled_reason(&self) -> Option<String> {
+        self.inner.dense_disabled_reason()
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — telemetry counter: query-time dense-arm refusals
+    /// raised because the engine opened degraded.
+    fn vector_equivalence_refusal_count(&self) -> u64 {
+        self.inner.vector_equivalence_refusal_count()
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
@@ -1852,6 +1906,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConsolidatorError", py.get_type::<ConsolidatorError>())?;
     m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
     m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
+    m.add("VectorEquivalenceMismatchError", py.get_type::<VectorEquivalenceMismatchError>())?;
     Ok(())
 }
 

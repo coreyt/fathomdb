@@ -67,6 +67,12 @@ _INSTRUMENTATION = frozenset(
         "enable_telemetry",
         "last_telemetry_query_id",
         "record_feedback",
+        # 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — degraded-open
+        # observability accessors, NOT application commands (mirror counters /
+        # open_report / last_telemetry_query_id).
+        "dense_disabled",
+        "dense_disabled_reason",
+        "vector_equivalence_refusal_count",
     }
 )
 

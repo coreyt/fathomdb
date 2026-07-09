@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 18;
+pub const SCHEMA_VERSION: u32 = 19;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -458,6 +458,33 @@ pub const MIGRATIONS: &[Migration] = &[
         step_id: 18,
         sql: "-- MIGRATION-ACCRETION-EXEMPTION: F9 importance ranking scalar (additive nullable REAL; 3-way sentinel, NULL=graceful-absent)
               ALTER TABLE canonical_nodes ADD COLUMN importance REAL;",
+    },
+    // 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — the
+    // `_fathomdb_embed_probe` self-check substrate. Per
+    // `dev/adr/ADR-0.8.18-vector-equivalence-self-check.md` (SIGNED 2026-07-09)
+    // and `dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md` §U1
+    // (R-VEQ-1). Creates a new internal table holding the 45 committed
+    // equivalence probes, each with its **UN-centered f32 reference vector**
+    // (`4 * dim` little-endian bytes) and the embedder identity that produced it.
+    // The engine populates the 45 rows at first vector-kind registration (open
+    // path, adjacent to `ensure_vector_partition`); this migration only creates
+    // the empty table. **Store f32 ONLY — the Phase-1 mean-centered bits are
+    // NEVER persisted** (they are recomputed at check time from the un-centered
+    // reference + the live pinned `mean_vec`, U1-d). This step does NOT rewrite
+    // vec0 / vector rows (eu7 no-op basis): it creates a fresh sidecar table only,
+    // so the eu7 fidelity gate stays a documented no-op. `CREATE TABLE` adds
+    // schema (no DROP) → the accretion guard REQUIRES the exemption marker.
+    Migration {
+        step_id: 19,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: #5 vector-equivalence probe substrate (new internal _fathomdb_embed_probe table; UN-centered f32 references only, NEVER persists P1 bits)
+              CREATE TABLE IF NOT EXISTS _fathomdb_embed_probe(
+                  probe_ordinal INTEGER PRIMARY KEY,
+                  probe_text TEXT NOT NULL,
+                  reference_vec BLOB NOT NULL,
+                  embedder_name TEXT NOT NULL,
+                  embedder_revision TEXT NOT NULL,
+                  dim INTEGER NOT NULL
+              );",
     },
 ];
 

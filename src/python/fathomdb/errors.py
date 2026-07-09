@@ -86,6 +86,9 @@ from fathomdb._fathomdb import (
 from fathomdb._fathomdb import (
     InvalidArgumentError as _InvalidArgumentError,
 )
+from fathomdb._fathomdb import (
+    VectorEquivalenceMismatchError as _VectorEquivalenceMismatchError,
+)
 
 EngineError = _EngineError
 StorageError = _StorageError
@@ -113,6 +116,8 @@ ConsolidatorError = _ConsolidatorError
 # G4 (Slice 35) — filter predicate construction error (non-allowlisted path).
 InvalidFilterError = _InvalidFilterError
 InvalidArgumentError = _InvalidArgumentError
+# 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal leaf.
+VectorEquivalenceMismatchError = _VectorEquivalenceMismatchError
 
 
 def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
@@ -138,6 +143,8 @@ _install_typed_init(
     ("stored_name", "stored_revision", "supplied_name", "supplied_revision"),
 )
 _install_typed_init(EmbedderDimensionMismatchError, ("stored", "supplied"))
+# 0.8.18 Slice 5 — the query-time refusal carries the divergence `reason`.
+_install_typed_init(VectorEquivalenceMismatchError, ("reason",))
 
 
 __all__ = [
@@ -162,6 +169,7 @@ __all__ = [
     "SchedulerError",
     "SchemaValidationError",
     "StorageError",
+    "VectorEquivalenceMismatchError",
     "VectorError",
     "WriteValidationError",
 ]

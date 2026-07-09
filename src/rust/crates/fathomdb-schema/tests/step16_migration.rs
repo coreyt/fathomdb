@@ -66,11 +66,14 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
     );
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 18, "SCHEMA_VERSION must be 18 (step-18 F9 importance)");
+    assert_eq!(
+        SCHEMA_VERSION, 19,
+        "SCHEMA_VERSION must be 19 (step-19 #5 vector-equivalence probe)"
+    );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        18,
-        "step-18 (F9 importance) must be the last (head) migration"
+        19,
+        "step-19 (#5 vector-equivalence probe) must be the last (head) migration"
     );
 }
 

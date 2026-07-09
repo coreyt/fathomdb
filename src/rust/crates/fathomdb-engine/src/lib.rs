@@ -68,6 +68,26 @@ const BGE_SMALL_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";
 const DEFAULT_SLOW_THRESHOLD_MS: u64 = 100;
 const DEFAULT_VECTOR_PROFILE: &str = "default";
 const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
+
+/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — the committed 45-probe fixture
+/// (byte-identical to `fathomdb-embedder/tests/fixtures/candle_onnx_equivalence_probes.txt`;
+/// a drift-guard test pins the two copies equal). One probe per non-empty line;
+/// lines whose first non-whitespace char is `#` are comments.
+const VECTOR_EQUIVALENCE_PROBE_FIXTURE: &str = include_str!("vector_equivalence_probes.txt");
+
+/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — the FROZEN D4 tolerance floor,
+/// **P2 component**: the un-centered Phase-2 L2 epsilon. `‖reembed − reference‖₂`
+/// (un-centered, `vec_distance_l2` semantics) strictly greater than this ⇒
+/// divergence ⇒ dense refused. Named constant so the final ε (HITL look at
+/// landing) is trivially tunable. The **P1 component** (Phase-1 mean-centered
+/// `embedding_bin` sign-flip count) has an *exact-zero* floor: ANY single flip on
+/// the 45 probes ⇒ divergence (see [`VECTOR_EQUIVALENCE_P1_FLIP_FLOOR`]).
+const VECTOR_EQUIVALENCE_L2_EPSILON: f32 = 1e-5;
+
+/// 0.8.18 Slice 5 — the FROZEN D4 tolerance floor, **P1 component**: the maximum
+/// tolerated Phase-1 mean-centered `embedding_bin` sign-flip count across all 45
+/// probes. `0` = exact: any single flip ⇒ divergence ⇒ dense refused.
+const VECTOR_EQUIVALENCE_P1_FLIP_FLOOR: u64 = 0;
 /// Default drain budget for `rebuild_projections` / `rebuild_vec0`. The
 /// rebuild path freezes the scheduler before truncating shadow rows, so
 /// the only outstanding work is whatever workers were mid-flight when
@@ -188,6 +208,21 @@ pub struct Engine {
     /// `enable_telemetry` after the sink is installed; the `telemetry` mutex is only
     /// ever taken when this flag is set.
     telemetry_enabled: AtomicBool,
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4/6) — degraded-open
+    /// latch, re-derived at every open by the #5 self-check. `true` ⇒ every
+    /// vector-dependent arm refuses at the `search_inner_with_stats` choke point
+    /// with `EngineError::VectorEquivalenceMismatch`. Read lock-free on the query
+    /// hot path (a single `Relaxed`/`Acquire` load); the text-only/FTS-only path
+    /// never reads it.
+    dense_disabled: AtomicBool,
+    /// R-VEQ-6 — the human-readable reason attached to the query-time refusal (and
+    /// surfaced on `OpenReport.dense_disabled_reason`). Set once at open; read only
+    /// when `dense_disabled` is `true`.
+    dense_disabled_reason: Mutex<Option<String>>,
+    /// R-VEQ-6 — telemetry counter: number of query-time vector-dependent-arm
+    /// refusals raised because the engine opened in the `dense_disabled` state.
+    /// Observable pre/post-query via `vector_equivalence_refusal_count`.
+    vector_equivalence_refusals: AtomicU64,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
 }
@@ -1029,6 +1064,20 @@ pub struct OpenReport {
     /// step 10; the value is dimension-validated (§0.2) at open time
     /// and fails closed via `EmbedderIdentityMismatch` on drift.
     pub embedder_mean_vec_pinned: bool,
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — degraded-open
+    /// observability. `true` iff the open-time #5 self-check re-embedded the 45
+    /// committed probes and found a divergence beyond the frozen D4 floor (a
+    /// Phase-1 mean-centered `embedding_bin` sign flip OR a Phase-2 un-centered
+    /// L2 over `VECTOR_EQUIVALENCE_L2_EPSILON`). When `true`, `Engine::open`
+    /// SUCCEEDED but every vector-dependent arm refuses at query time with
+    /// `EngineError::VectorEquivalenceMismatch`; the text-only/FTS-only path stays
+    /// serviceable. The state is RE-DERIVED at every open (the probe re-runs), so
+    /// a reopen with a still-divergent backend stays degraded (never silently
+    /// re-enables dense) and a reopen with a matching backend clears it.
+    pub dense_disabled: bool,
+    /// R-VEQ-6 — human-readable reason for `dense_disabled` (which representation
+    /// tripped: P1 flip count or P2 L2). `None` when `dense_disabled == false`.
+    pub dense_disabled_reason: Option<String>,
 }
 
 #[derive(Debug)]
@@ -2173,6 +2222,22 @@ pub enum EngineError {
     InvalidArgument {
         msg: String,
     },
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — the open-time
+    /// self-check re-embedded the 45 committed probes with the live backend and
+    /// found a divergence beyond the frozen D4 floor (a Phase-1 mean-centered
+    /// `embedding_bin` sign flip, OR a Phase-2 un-centered L2 distance over
+    /// `VECTOR_EQUIVALENCE_L2_EPSILON`). `Engine::open` succeeded into a degraded
+    /// state (`dense_disabled = true`); this query-time error is raised at the
+    /// single choke point [`Engine::search_inner_with_stats`] BEFORE any embedding
+    /// / vector SQL / graph seeding / CE rerank, refusing EVERY vector-dependent
+    /// arm (`search`, `search_expand`, explain/rerank, graph-arm). The explicit
+    /// text-only/FTS-only path ([`Engine::search_text_only`]) stays serviceable.
+    /// Sibling of the open-time `EngineOpenError::EmbedderIdentityMismatch`; per
+    /// ADR-0.8.18 codex R2 U1-1 the refusal surfaces as an `EngineError` (queries
+    /// never surface `EngineOpenError`). `reason` carries a human-readable summary.
+    VectorEquivalenceMismatch {
+        reason: String,
+    },
 }
 
 impl Display for EngineError {
@@ -2197,6 +2262,9 @@ impl Display for EngineError {
             Self::Consolidator => write!(f, "consolidator error"),
             Self::InvalidFilter { reason } => write!(f, "invalid filter: {reason}"),
             Self::InvalidArgument { msg } => write!(f, "invalid argument: {msg}"),
+            Self::VectorEquivalenceMismatch { reason } => {
+                write!(f, "vector-equivalence self-check failed; dense retrieval refused: {reason}")
+            }
         }
     }
 }
@@ -2225,6 +2293,7 @@ impl EngineError {
             Self::Consolidator => "ConsolidatorError",
             Self::InvalidFilter { .. } => "InvalidFilterError",
             Self::InvalidArgument { .. } => "InvalidArgumentError",
+            Self::VectorEquivalenceMismatch { .. } => "VectorEquivalenceMismatchError",
         }
     }
 }
@@ -2668,6 +2737,24 @@ impl Engine {
                         report.embedder_events = info.events;
                     }
                 }
+
+                // 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — run the
+                // open-time self-check on the FINAL post-recovery connection (the
+                // mean is already pinned/recovered inside open_locked, U1-b). First
+                // registration persists the 45 UN-centered f32 references; a
+                // subsequent open re-embeds + asserts P1 (mean-centered flip count,
+                // floor 0) and P2 (un-centered L2 ε). Divergence ⇒ degraded-open
+                // (`dense_disabled=true`), surfaced on the OpenReport (R-VEQ-6); the
+                // query-time refusal fires later at `search_inner_with_stats`.
+                let veq = run_vector_equivalence_probe(
+                    &connection,
+                    runtime_embedder.as_deref(),
+                    &embedder_identity,
+                    report.embedder_mean_vec_pinned,
+                );
+                report.dense_disabled = veq.dense_disabled;
+                report.dense_disabled_reason = veq.reason.clone();
+
                 let next_cursor = load_next_cursor(&connection);
                 let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
                 let profiling_enabled = Arc::new(AtomicBool::new(false));
@@ -2717,6 +2804,9 @@ impl Engine {
                         reader_lookaside_rcs,
                         telemetry: Mutex::new(None),
                         telemetry_enabled: AtomicBool::new(false),
+                        dense_disabled: AtomicBool::new(veq.dense_disabled),
+                        dense_disabled_reason: Mutex::new(veq.reason),
+                        vector_equivalence_refusals: AtomicU64::new(0),
                         #[cfg(debug_assertions)]
                         force_next_commit_failure: AtomicBool::new(false),
                     },
@@ -2853,6 +2943,11 @@ impl Engine {
             embedder_events: Vec::new(),
             embedder_mean_centering_required,
             embedder_mean_vec_pinned,
+            // 0.8.18 Slice 5 — set by the #5 self-check in `open_with_migrations`
+            // (which has the runtime embedder in scope). `open_locked` returns the
+            // non-degraded default; the probe runs after this returns.
+            dense_disabled: false,
+            dense_disabled_reason: None,
         };
 
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
@@ -3775,6 +3870,90 @@ impl Engine {
         )
     }
 
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the explicit
+    /// **text-only / FTS-only** search path. It does NOT embed the query and does
+    /// NOT route through the vector-dependent choke point
+    /// [`search_inner_with_stats`][Engine::search_inner_with_stats], so it NEVER
+    /// raises [`EngineError::VectorEquivalenceMismatch`] and stays serviceable when
+    /// the engine opened in the degraded `dense_disabled` state (the D2 "keep FTS
+    /// servable" contract; codex R2 U1-2). Results come from the node-body FTS
+    /// branch only — no vector recall, no CE rerank, no graph arm. Available
+    /// regardless of degraded state; when dense is healthy it is simply a
+    /// text-only view of the same corpus.
+    ///
+    /// Governed surface: re-exported from the `fathomdb` facade + Py/TS bindings.
+    pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
+        self.ensure_open()?;
+        if query.trim().is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+        let compiled = compile_text_query(query);
+        let search_limit = self
+            .projection_runtime
+            .shared
+            .search_limit_override
+            .load(Ordering::SeqCst)
+            .max(SEARCH_RERANK_LIMIT);
+        let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
+        // `query_vector = None` ⇒ `read_search_in_tx` skips the vector branch
+        // entirely (no embed, no phase-1 bit-KNN, no phase-2 L2) and returns the
+        // text/FTS branch — exactly the un-embedded fallback the hybrid path already
+        // takes on an embed miss.
+        let request = ReaderRequest::Search {
+            compiled,
+            query_vector: None,
+            query_vector_bin: None,
+            search_limit,
+            filter: None,
+            recency_enabled: false,
+            importance_enabled: false,
+            vector_stage_only: false,
+            raw_query: Box::from(query),
+            rerank_depth: 0,
+            use_graph_arm: false,
+            alpha: 0.3,
+            pool_n: 0,
+            explain: false,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
+        let (cursor, soft_fallback, results, _graph_stats, explanation) = match search_result {
+            Ok(result) => result,
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                return Err(EngineError::Storage);
+            }
+        };
+        Ok(SearchResult { projection_cursor: cursor, soft_fallback, results, explanation })
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — degraded-open observability accessor. `true` iff
+    /// the open-time #5 self-check found a vector-equivalence divergence and every
+    /// vector-dependent arm is refusing. Mirrors `OpenReport.dense_disabled`; read
+    /// lock-free.
+    #[must_use]
+    pub fn dense_disabled(&self) -> bool {
+        self.dense_disabled.load(Ordering::Acquire)
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — the human-readable reason for the degraded state
+    /// (which representation tripped), or `None` when dense is healthy.
+    #[must_use]
+    pub fn dense_disabled_reason(&self) -> Option<String> {
+        self.dense_disabled_reason.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — telemetry counter: number of query-time
+    /// vector-dependent-arm refusals raised because the engine opened degraded.
+    /// Observable pre/post-query.
+    #[must_use]
+    pub fn vector_equivalence_refusal_count(&self) -> u64 {
+        self.vector_equivalence_refusals.load(Ordering::Relaxed)
+    }
+
     /// Shared event-wrapped body for [`search_reranked`][Engine::search_reranked]
     /// (`explain=false`) and [`search_explained`][Engine::search_explained]
     /// (`explain=true`). Keeps the Started/Finished/Failed lifecycle emissions +
@@ -4039,6 +4218,22 @@ impl Engine {
         explain: bool,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
+        // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the SINGLE
+        // vector-dependent choke point. If the open-time self-check found a
+        // divergence beyond the D4 floor, refuse EVERY vector-dependent arm
+        // (search / search_expand / explain-rerank / graph-arm all funnel here)
+        // BEFORE any embedding / vector SQL / graph seeding / CE rerank — no
+        // silent partial results. The text-only/FTS-only path
+        // (`search_text_only`) does NOT route through here, so FTS stays
+        // serviceable in degraded mode.
+        if self.dense_disabled.load(Ordering::Acquire) {
+            self.vector_equivalence_refusals.fetch_add(1, Ordering::Relaxed);
+            let reason =
+                self.dense_disabled_reason.lock().ok().and_then(|g| g.clone()).unwrap_or_else(
+                    || "open-time #5 vector-equivalence self-check failed".to_string(),
+                );
+            return Err(EngineError::VectorEquivalenceMismatch { reason });
+        }
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
         }
@@ -9807,6 +10002,247 @@ fn read_pinned_mean_vec(
 fn subtract_mean(v: &[f32], mean: &[f32]) -> Vec<f32> {
     debug_assert_eq!(v.len(), mean.len(), "subtract_mean dim mismatch");
     v.iter().zip(mean.iter()).map(|(a, b)| *a - *b).collect()
+}
+
+/// 0.8.18 Slice 5 (#5 vector-equivalence probe) — parse the committed 45-probe
+/// fixture into an ordered `Vec<&str>` (one probe per non-empty, non-`#`-comment
+/// line). Order is stable so `probe_ordinal` is deterministic across opens.
+fn vector_equivalence_probes() -> Vec<&'static str> {
+    VECTOR_EQUIVALENCE_PROBE_FIXTURE
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| {
+            let t = line.trim_start();
+            !t.is_empty() && !t.starts_with('#')
+        })
+        .collect()
+}
+
+/// 0.8.18 Slice 5 — outcome of the open-time #5 self-check.
+struct VectorEquivalenceOutcome {
+    dense_disabled: bool,
+    reason: Option<String>,
+}
+
+/// 0.8.18 Slice 5 — embed one probe under panic isolation. The probe runs at
+/// open time on the writer connection BEFORE the projection workers spawn, so a
+/// caller-supplied embedder that PANICS (or returns an error / a wrong-dimension
+/// vector) must never wedge `Engine::open`. A panic/error/shape-mismatch yields
+/// `None` (fail-open: cannot verify ⇒ leave dense enabled, the identity gate
+/// stays primary; ADR-0.6.0 Invariant-5 posture, mirrored open-side).
+fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<Vec<f32>> {
+    let embedded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| embedder.embed(text)));
+    match embedded {
+        Ok(Ok(vector)) if vector.len() == dimension => Some(vector),
+        _ => None,
+    }
+}
+
+/// 0.8.18 Slice 5 (#5 vector-equivalence probe KEYSTONE) — the open-time
+/// self-check. Per `dev/design/0.8.18-slice-0-vector-equivalence-publish-design.md`
+/// §U1 + `dev/adr/ADR-0.8.18-vector-equivalence-self-check.md`.
+///
+/// Runs AFTER open-time mean-recovery/requantize + `ensure_vector_partition`
+/// (U1-b) so it reads the FINAL live `mean_vec`. Two paths:
+///
+///  - **First vector-kind registration** (probe table empty): re-embed the 45
+///    committed probes with the LIVE embedder and persist their **UN-centered
+///    f32 reference vectors** + embedder identity (R-VEQ-1). Store f32 ONLY —
+///    the P1 bits are NEVER persisted (U1-d). Returns `dense_disabled=false`.
+///  - **Subsequent open** (probe table populated): re-embed the 45 probes and
+///    assert BOTH dense-pipeline representations against the stored references:
+///    **(P1)** the Phase-1 mean-centered `embedding_bin` sign-flip count via the
+///    SAME `vec_quantize_binary(sign(x − mean_vec))` path as
+///    `build_vector_phase1_sql` (floor = 0, exact); **(P2)** the un-centered
+///    Phase-2 L2 (`vec_distance_l2` semantics) within `VECTOR_EQUIVALENCE_L2_EPSILON`.
+///    Divergence beyond EITHER floor ⇒ `dense_disabled=true` (R-VEQ-2/3).
+///
+/// Mean-centering is gated by `identity_requires_mean_centering(identity)` ∧
+/// `mean_pinned`, applied symmetrically to reference + reembed (un-centered
+/// fallback otherwise; NoopEmbedder no-op) — R-VEQ-3c.
+///
+/// Never fails open: a probe-infrastructure error (embed failure, malformed
+/// stored row) leaves dense ENABLED — the distinct-identity cross-vendor refusal
+/// (`check_embedder_profile`) remains the primary gate and this check is
+/// ADDITIVE-ONLY (R-VEQ-5). Divergence is only ever asserted on a successfully
+/// re-embedded + compared probe.
+fn run_vector_equivalence_probe(
+    connection: &Connection,
+    embedder: Option<&dyn Embedder>,
+    identity: &EmbedderIdentity,
+    mean_pinned: bool,
+) -> VectorEquivalenceOutcome {
+    let not_disabled = VectorEquivalenceOutcome { dense_disabled: false, reason: None };
+
+    // No live embedder ⇒ no dense arm to guard (EmbedderChoice::None). The probe
+    // is inert; dense writes/queries already fail with EmbedderNotConfigured.
+    let Some(embedder) = embedder else { return not_disabled };
+
+    // Gate: the probe only engages once the workspace has REGISTERED a vector
+    // kind (`_fathomdb_vector_kinds` non-empty). A fresh workspace that has never
+    // committed to vector indexing has no dense arm to guard yet, so the probe
+    // does ZERO embed work at that open — this keeps `Engine::open` free of the
+    // 45-probe re-embed on empty/vector-less workspaces (and makes the check a
+    // no-op for the pathological single-session hang/panic embedder tests, which
+    // register their kind AFTER open and never reopen). References are therefore
+    // persisted at the first open where a vector kind already exists (R-VEQ-1
+    // "first vector-kind registration"); the check runs on subsequent opens.
+    let vector_kind_registered: bool = connection
+        .query_row("SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)", [], |r| r.get(0))
+        .unwrap_or(false);
+    if !vector_kind_registered {
+        return not_disabled;
+    }
+
+    let probes = vector_equivalence_probes();
+    if probes.is_empty() {
+        return not_disabled;
+    }
+
+    // Is the probe set already persisted for this workspace?
+    let existing: i64 = connection
+        .query_row("SELECT COUNT(*) FROM _fathomdb_embed_probe", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let dimension = identity.dimension as usize;
+    let mean_vec = if identity_requires_mean_centering(identity) && mean_pinned {
+        read_pinned_mean_vec(connection, identity.dimension).ok().flatten()
+    } else {
+        None
+    };
+
+    if existing == 0 {
+        // FIRST vector-kind registration — persist UN-centered f32 references.
+        // A single embed failure aborts population (leave the table empty so a
+        // later open retries); never persist a partial/mismatched set.
+        let mut rows: Vec<(i64, &str, Vec<f32>)> = Vec::with_capacity(probes.len());
+        for (ordinal, probe) in probes.iter().enumerate() {
+            match probe_embed(embedder, probe, dimension) {
+                Some(vec) => rows.push((ordinal as i64, probe, vec)),
+                None => return not_disabled,
+            }
+        }
+        for (ordinal, probe, vec) in &rows {
+            let blob = encode_vector_blob(vec);
+            if connection
+                .execute(
+                    "INSERT OR REPLACE INTO _fathomdb_embed_probe(
+                         probe_ordinal, probe_text, reference_vec,
+                         embedder_name, embedder_revision, dim
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        ordinal,
+                        probe,
+                        blob,
+                        identity.name,
+                        identity.revision,
+                        identity.dimension
+                    ],
+                )
+                .is_err()
+            {
+                return not_disabled;
+            }
+        }
+        return not_disabled;
+    }
+
+    // SUBSEQUENT open — re-embed + assert BOTH representations against the refs.
+    let mut total_flips: u64 = 0;
+    let mut max_l2: f32 = 0.0;
+    let mut worst_probe: Option<String> = None;
+
+    let mut stmt = match connection
+        .prepare("SELECT probe_ordinal, probe_text, reference_vec FROM _fathomdb_embed_probe ORDER BY probe_ordinal")
+    {
+        Ok(s) => s,
+        Err(_) => return not_disabled,
+    };
+    let stored: Vec<(i64, String, Vec<u8>)> = match stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
+    }) {
+        Ok(rows) => rows.filter_map(Result::ok).collect(),
+        Err(_) => return not_disabled,
+    };
+
+    for (_ordinal, probe_text, ref_blob) in &stored {
+        if ref_blob.len() != dimension * 4 {
+            continue; // malformed stored row — cannot compare, fail-open.
+        }
+        let reference = decode_vector_blob(ref_blob);
+        let reembed = match probe_embed(embedder, probe_text, dimension) {
+            Some(v) => v,
+            None => continue, // embed failure/panic — additive check, fail-open per probe.
+        };
+
+        // (P2) un-centered L2 — `vec_distance_l2(embedding, vec_f32(query))`.
+        let l2 = l2_distance(&reembed, &reference);
+        if l2 > max_l2 {
+            max_l2 = l2;
+            worst_probe = Some(probe_text.clone());
+        }
+
+        // (P1) mean-centered Phase-1 flip count — same
+        // `vec_quantize_binary(sign(x − mean_vec))` path as build_vector_phase1_sql.
+        let (ref_c, reembed_c) = match &mean_vec {
+            Some(mean) if mean.len() == dimension => {
+                (subtract_mean(&reference, mean), subtract_mean(&reembed, mean))
+            }
+            _ => (reference.clone(), reembed.clone()),
+        };
+        if let (Some(ref_bits), Some(reembed_bits)) = (
+            quantize_binary_via_sql(connection, &ref_c),
+            quantize_binary_via_sql(connection, &reembed_c),
+        ) {
+            total_flips = total_flips.saturating_add(hamming_bytes(&ref_bits, &reembed_bits));
+        }
+    }
+
+    let p1_tripped = total_flips > VECTOR_EQUIVALENCE_P1_FLIP_FLOOR;
+    let p2_tripped = max_l2 > VECTOR_EQUIVALENCE_L2_EPSILON;
+    if p1_tripped || p2_tripped {
+        let probe_hint = worst_probe.as_deref().unwrap_or("<unknown>");
+        let reason = format!(
+            "P1 mean-centered embedding_bin flips={total_flips} (floor={VECTOR_EQUIVALENCE_P1_FLIP_FLOOR}), \
+             P2 max un-centered L2={max_l2:.3e} (epsilon={VECTOR_EQUIVALENCE_L2_EPSILON:.3e}); \
+             worst probe {probe_hint:?}"
+        );
+        return VectorEquivalenceOutcome { dense_disabled: true, reason: Some(reason) };
+    }
+
+    not_disabled
+}
+
+/// 0.8.18 Slice 5 — un-centered Euclidean (L2) distance, matching the
+/// `vec_distance_l2` semantics used by the Phase-2 rerank.
+fn l2_distance(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum::<f32>().sqrt()
+}
+
+/// 0.8.18 Slice 5 — produce the packed 1-bit `embedding_bin` blob for a (possibly
+/// mean-centered) f32 vector via the SAME SQL `vec_quantize_binary` the production
+/// Phase-1 path uses, so the probe's bits are byte-equal to the engine's
+/// `embedding_bin` production. `None` on any SQL/serialization error.
+fn quantize_binary_via_sql(connection: &Connection, vector: &[f32]) -> Option<Vec<u8>> {
+    let json = serde_json::to_string(vector).ok()?;
+    connection
+        .query_row("SELECT vec_quantize_binary(vec_f32(?1))", [json], |row| {
+            row.get::<_, Vec<u8>>(0)
+        })
+        .ok()
+}
+
+/// 0.8.18 Slice 5 — Hamming distance (differing bit count) between two equal-length
+/// packed bit blobs. Unequal lengths ⇒ count every bit of the length delta as
+/// differing (a shape divergence is a divergence).
+fn hamming_bytes(a: &[u8], b: &[u8]) -> u64 {
+    let common = a.len().min(b.len());
+    let mut flips: u64 = 0;
+    for i in 0..common {
+        flips += u64::from((a[i] ^ b[i]).count_ones());
+    }
+    let extra = a.len().abs_diff(b.len());
+    flips + (extra as u64) * 8
 }
 
 /// Maps the writer-facing `kind` value to the locked Pack 1

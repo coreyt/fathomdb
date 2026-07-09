@@ -82,6 +82,8 @@ const CODE_CONSOLIDATOR: &str = "FDB_CONSOLIDATOR";
 const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
 // Slice 20 — depth > 3 or invalid argument (G5/G6).
 const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
+// 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal code.
+const CODE_VECTOR_EQUIVALENCE_MISMATCH: &str = "FDB_VECTOR_EQUIVALENCE_MISMATCH";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -205,6 +207,11 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
         RustEngineError::InvalidArgument { msg } => {
             typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
         }
+        RustEngineError::VectorEquivalenceMismatch { reason } => typed_error(
+            CODE_VECTOR_EQUIVALENCE_MISMATCH,
+            format!("vector-equivalence self-check failed; dense retrieval refused: {reason}"),
+            json!({ "reason": reason }),
+        ),
     }
 }
 
@@ -860,6 +867,14 @@ pub struct OpenReport {
     pub embedder_events: Vec<EmbedderEvent>,
     pub embedder_mean_centering_required: bool,
     pub embedder_mean_vec_pinned: bool,
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — `true` iff the
+    /// open-time #5 self-check found a vector-equivalence divergence beyond the
+    /// D4 floor and every vector-dependent arm now refuses at query time with a
+    /// `FDB_VECTOR_EQUIVALENCE_MISMATCH` error. The text-only/FTS-only path
+    /// (`searchTextOnly`) stays serviceable.
+    pub dense_disabled: bool,
+    /// R-VEQ-6 — human-readable reason for `denseDisabled`, or `null` when healthy.
+    pub dense_disabled_reason: Option<String>,
 }
 
 impl OpenReport {
@@ -875,6 +890,8 @@ impl OpenReport {
             embedder_events: r.embedder_events.iter().map(EmbedderEvent::from_rust).collect(),
             embedder_mean_centering_required: r.embedder_mean_centering_required,
             embedder_mean_vec_pinned: r.embedder_mean_vec_pinned,
+            dense_disabled: r.dense_disabled,
+            dense_disabled_reason: r.dense_disabled_reason.clone(),
         }
     }
 }
@@ -1073,6 +1090,48 @@ impl Engine {
         })
         .await?;
         Ok(SearchResult::from_rust(result))
+    }
+
+    /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the explicit
+    /// text-only / FTS-only search path. Does NOT embed the query and NEVER raises
+    /// `FDB_VECTOR_EQUIVALENCE_MISMATCH`, so it stays serviceable when the engine
+    /// opened in the degraded `denseDisabled` state. Returns node-body FTS hits
+    /// only (no vector recall, no CE rerank, no graph arm).
+    #[napi]
+    pub async fn search_text_only(&self, query: String) -> Result<SearchResult> {
+        validate_ffi_string_napi(&query)?;
+        if query.trim().is_empty() {
+            return Err(typed_error(
+                CODE_WRITE_VALIDATION,
+                "query must not be empty",
+                JsonValue::Null,
+            ));
+        }
+        let engine = Arc::clone(&self.inner);
+        let result = call_engine(move || engine.search_text_only(&query)).await?;
+        Ok(SearchResult::from_rust(result))
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — `true` iff the engine opened degraded (the #5
+    /// self-check found a vector-equivalence divergence and every dense arm is
+    /// refusing). Mirrors `OpenReport.denseDisabled`.
+    #[napi]
+    pub fn dense_disabled(&self) -> bool {
+        self.inner.dense_disabled()
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — the human-readable reason for the degraded state,
+    /// or `null` when dense is healthy.
+    #[napi]
+    pub fn dense_disabled_reason(&self) -> Option<String> {
+        self.inner.dense_disabled_reason()
+    }
+
+    /// 0.8.18 Slice 5 (R-VEQ-6) — telemetry counter: query-time dense-arm refusals
+    /// raised because the engine opened degraded.
+    #[napi]
+    pub fn vector_equivalence_refusal_count(&self) -> i64 {
+        self.inner.vector_equivalence_refusal_count() as i64
     }
 
     #[napi]

@@ -5,6 +5,8 @@
     "admin.configure",
     "write",
     "search",
+    "search_text_only",
+    "searchTextOnly",
     "close",
     "read.get",
     "read.get_many",

@@ -68,6 +68,12 @@ const INSTRUMENTATION = [
   "enableTelemetry",
   "lastTelemetryQueryId",
   "recordFeedback",
+  // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-6) — degraded-open
+  // observability accessors, NOT application commands (mirror counters /
+  // openReport / lastTelemetryQueryId).
+  "denseDisabled",
+  "denseDisabledReason",
+  "vectorEquivalenceRefusalCount",
 ] as const;
 
 // Other public `Engine` members that are NOT application commands: the
