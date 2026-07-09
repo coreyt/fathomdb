@@ -26,6 +26,14 @@
 - **SHIPPED finding (→ TC-9, Steward to log):** `OrtBgeEmbedder` under `ort=2.0.0-rc.10` (default-features=false) CANNOT instantiate the CUDA EP as shipped — no `ort::init()` → "DefaultLogger not registered" → loud CPU fallback. ONNX GPU/cross-vendor EPs unreachable as shipped; fix = one-time ORT env init, re-verify at the ort 2.0-stable bump. **The D3 agent drafted a TC-D3 line for the Steward (not written).**
 - **My candle-CUDA 45-probe refresh is now load-bearing:** D3 showed GPU FP divergence flips bits (ONNX-CUDA 2/17280); the SAME-identity candle-CPU↔candle-CUDA leg (0.8.7 said 0/6144 on the old 16-probe set) must be re-measured at 45 probes + real mean before the D4 floor is set.
 
+### Slice 5 keystone — LANDED on MAIN `ce8069a3` (HITL-authorized schema 18→19, 2026-07-09)
+Cherry-picked the full branch (4 commits f2f843ed/5a35442d/1e3652fa/ce8069a3 onto `589a23a5`; clean, binding.ts + DOC-INDEX auto-merged). **On-MAIN DoD verification ALL GREEN:**
+- `cargo clippy --workspace --all-targets` = 0 · `cargo check --workspace --all-targets` = 0
+- Schema migration **18→19**: step19 (3 passed, fresh+upgrade) · step18 (4) · migrations (3) — green
+- Engine keystone probe suite: **23 passed**; fixture-drift (8) + compatibility (1) green
+- **X1 compiled-module parity (pyo3 + napi rebuilt on MAIN, sentinel-forced):** Python **20 passed** (`test_vector_equivalence_probe.py` + `test_surface.py`), TS **15 passed** (`vector-equivalence-probe.test.ts` + `surface.test.ts`). Bindings confirmed: `VectorEquivalenceMismatchError` leaf (+reason), `OpenReport.dense_disabled`/`denseDisabled` + accessors, `search_text_only`/`searchTextOnly`.
+HITL landing decisions recorded: DEFECT #4 open-path deviation APPROVED · P2 L2 ε = 1e-5 KEPT · X1 mandatory-DoD satisfied.
+
 ### Slice 5 keystone — §9 PASS, HANDED TO HITL FOR LANDING (2026-07-09)
 Head `600adbf8` on `0.8.18-slice-5-veq` (base `12f732a5`; branch not stale vs main `ff79a8ea` — Slice-20 landing was CI/packaging only, no engine/schema overlap; cherry-picks clean at landing). codex §9 drove to terminal PASS across fix-1/fix-2/fix-3 (BLOCKs never overridden). Transcripts in scratchpad (`codex-s9-slice5-out.txt`, `-fix-out.txt`, `-fix2-out.txt`).
 **HITL decisions at the landing gate — RESOLVED (2026-07-09): (a) APPROVED · (b) KEEP 1e-5 · (c) X1 is mandatory DoD (not an if — runs on MAIN at landing). Landing cleared pending the explicit "go".**
@@ -43,7 +51,7 @@ Shipped: SCHEMA 18→19 `_fathomdb_embed_probe` (UN-centered f32 refs only) + de
 | Slice | Title | State | Base SHA | Branch | codex | Cherry-pick/merge |
 |------:|-------|-------|----------|--------|-------|-------------------|
 | 0 | Setup + ADR — vector-equivalence design (probe set, tolerance calibration vs quant floor + 0.8.16 Δ + fresh cross-backend Δ, refuse-to-serve); full-publish design; board | **CLOSED (SIGNED 2026-07-09)** | (closure) | design review CLEAN (4 codex rounds) | n/a | HITL-signed; docs closure on main |
-| 5 | **Vector-equivalence KEYSTONE** — `_fathomdb_embed_probe` (SCHEMA 18→19) + degraded-open + two-stage P1(=0)/P2(L2 ε=1e-5) check | **§9 PASS — AWAITING HITL LANDING (schema)** | 12f732a5 | 0.8.18-slice-5-veq (600adbf8) | **PASS** (fix-1/2/3; DEFECT#4-deviation ACCEPTED) | HITL-gated: NOT landed |
+| 5 | **Vector-equivalence KEYSTONE** — `_fathomdb_embed_probe` (SCHEMA 18→19) + degraded-open + two-stage P1(=0)/P2(L2 ε=1e-5) check | **CLOSED / LANDED (HITL-authorized schema)** | 12f732a5 | 0.8.18-slice-5-veq (600adbf8) | **PASS** (fix-1/2/3; DEFECT#4 APPROVED; P2 ε=1e-5 KEPT) | cherry-pick → main `ce8069a3` (HITL GO) |
 | 10 | *(void reserved gap)* — #13 benchmark substrate MOVED to 0.8.19 | VOID | — | — | — | — |
 | 15 | *(void reserved gap)* — #13 `benchmark-and-robustness.yml` MOVED to 0.8.19 | VOID | — | — | — | — |
 | 20 | **Full publish pipeline** — reconcile + exercised verify (real npm/PyPI round-trips) + OPP-12 resilience (idempotency/poll/rollback-forward) + GA-tag matrix gate (x86_64-linux) + napi split topology | **CLOSED / LANDED** | 12f732a5 | 0.8.18-slice-20-publish (fc8a6016) | **PASS** (fix-1 npm/pypi + fix-2 cargo safety) | cherry-picked → main `3bdfaea8` (mandate) |
