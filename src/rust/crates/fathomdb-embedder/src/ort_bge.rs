@@ -79,6 +79,21 @@ pub(crate) enum OrtProvider {
     OpenVino,
 }
 
+impl OrtProvider {
+    /// Stable string label for the provider (index dropped — the calibration
+    /// leg records the requested device string separately). Used by the
+    /// additive [`OrtBgeEmbedder::effective_provider`] accessor.
+    fn label(self) -> &'static str {
+        match self {
+            OrtProvider::Cpu => "cpu",
+            OrtProvider::Cuda(_) => "cuda",
+            OrtProvider::Rocm(_) => "rocm",
+            OrtProvider::DirectMl(_) => "directml",
+            OrtProvider::OpenVino => "openvino",
+        }
+    }
+}
+
 /// PURE map from the backend-agnostic [`DeviceRequest`] (parsed by the shared
 /// `parse_device_request`, grammar parity with candle) to an [`OrtProvider`].
 ///
@@ -346,6 +361,12 @@ pub struct OrtBgeEmbedder {
     tokenizer: Tokenizer,
     session: Mutex<Session>,
     pooling: OrtPooling,
+    /// The EFFECTIVE ORT execution provider this session was built with, AFTER
+    /// any availability-probe downgrade and any session-build CPU retry (R-D3-2
+    /// / 0.8.18 U3). Captured at construction so a silent CPU fallback of a
+    /// non-CPU request is recorded as durable calibration DATA, not merely a
+    /// transient stderr warning. Exposed via [`OrtBgeEmbedder::effective_provider`].
+    effective_provider: OrtProvider,
 }
 
 fn err(context: &str, e: impl std::fmt::Display) -> EmbedderError {
@@ -406,6 +427,10 @@ impl OrtBgeEmbedder {
                 .commit_from_file(model_path)
         })
         .map_err(|e| err("session build", e))?;
+        // The session-build retry (`build_session_with_fallback`) downgrades a
+        // non-CPU EP that was reported available but FAILED to build to CPU; a
+        // `Some(build_warn)` therefore means the final session runs on CPU.
+        let effective_provider = if build_warn.is_some() { OrtProvider::Cpu } else { effective };
         if let Some(msg) = build_warn {
             emit_onnx_warning(&msg);
         }
@@ -419,7 +444,13 @@ impl OrtBgeEmbedder {
         let revision = derive_asset_revision(model_path, tokenizer_path)?;
         let identity = EmbedderIdentity::new(ORT_BGE_EMBEDDER_NAME, revision, ORT_BGE_EMBEDDER_DIM);
 
-        Ok(Self { identity, tokenizer, session: Mutex::new(session), pooling: OrtPooling::Cls })
+        Ok(Self {
+            identity,
+            tokenizer,
+            session: Mutex::new(session),
+            pooling: OrtPooling::Cls,
+            effective_provider,
+        })
     }
 
     /// Select the pooling strategy (default [`OrtPooling::Cls`]). Does NOT change
@@ -428,6 +459,20 @@ impl OrtBgeEmbedder {
     pub fn with_pooling(mut self, pooling: OrtPooling) -> Self {
         self.pooling = pooling;
         self
+    }
+
+    /// The EFFECTIVE ORT execution provider label (`"cpu"` / `"cuda"` / `"rocm"`
+    /// / `"directml"` / `"openvino"`) this session was built with, AFTER any
+    /// availability-probe downgrade and session-build CPU retry (R-D3-2).
+    ///
+    /// Additive read-only accessor (0.8.18 U3 calibration). A request for a
+    /// non-CPU EP that is unavailable in this ONNX Runtime build/runtime is
+    /// downgraded to CPU at construction; this returns the provider actually in
+    /// force, so the calibration harness records a silent CPU fallback as DATA
+    /// (never a `cuda`-requested leg mislabeled as GPU). Does not change identity.
+    #[must_use]
+    pub fn effective_provider(&self) -> &'static str {
+        self.effective_provider.label()
     }
 }
 

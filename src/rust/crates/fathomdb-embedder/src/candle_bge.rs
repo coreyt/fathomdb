@@ -252,6 +252,26 @@ impl CandleBgeEmbedder {
         self.pooling = pooling;
         self
     }
+
+    /// The EFFECTIVE candle device this embedder resolved to at construction,
+    /// as a stable label (`"cpu"` / `"cuda:N"` / `"metal:N"`).
+    ///
+    /// Additive read-only accessor (0.8.18 U3 calibration): candle selects its
+    /// device from `FATHOMDB_EMBED_DEVICE` via [`resolve_device`], which falls
+    /// back to CPU (with a LOUD warning) when the requested GPU backend is not
+    /// compiled in (no `embed-cuda`/`embed-metal`) or fails to initialize. The
+    /// cross-backend calibration harness records this so a silent CPU fallback
+    /// of a `cuda:0`-requested leg is captured as DATA (effective ≠ requested ⇒
+    /// the leg is treated as skipped, never mislabeled GPU). Does not change the
+    /// embedder identity (device is not part of `EmbedderIdentity`).
+    #[must_use]
+    pub fn device_label(&self) -> String {
+        match self.device.location() {
+            candle_core::DeviceLocation::Cpu => "cpu".to_string(),
+            candle_core::DeviceLocation::Cuda { gpu_id } => format!("cuda:{gpu_id}"),
+            candle_core::DeviceLocation::Metal { gpu_id } => format!("metal:{gpu_id}"),
+        }
+    }
 }
 
 impl Embedder for CandleBgeEmbedder {
