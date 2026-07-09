@@ -4,8 +4,8 @@
 > Plan: `dev/plans/plan-0.8.16.md` · Slice-0 design: `dev/design/0.8.16-slice-0-f9-onnx-design.md` ·
 > ADRs: `dev/adr/ADR-0.8.16-f9-importance-confidence-ranking.md`,
 > `dev/adr/ADR-0.8.16-onnx-embedder-backend.md`.
-> Build: **label-only to date (manifests `0.8.9`)**; the 0.8.16 version-bump / tag / publish is a
-> SEPARATE HITL call (fed by the release-readiness verdict below). Push scope: fathomdb-only.
+> Build: **LABEL-ONLY CLOSE — HITL ruled 2026-07-08**: manifests stay `0.8.9`, **no `v*` tag / no publish**;
+> publish deferred to a later even micro (0.8.18 #11-full matrix / 0.8.20 OPP-12 breaking-pair). Push scope: fathomdb-only.
 
 ## Current state — **0.8.16 CLOSED / RELEASE-READY (all mod-5 slices closed; 2026-07-08)**
 - **Slice 0 (design/ADR) — CLOSED (HITL SIGNED).** DoD frozen; 3 ACs minted; §3 supersession confirmed;
