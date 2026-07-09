@@ -32,9 +32,19 @@ run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
 run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
 
-# Scripts (bash): coordinated-publish resilience (R-REL-4c) — per-registry
-# idempotent no-op across crates.io + npm + PyPI. Offline fixture http server.
+# Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
+# local-registry round-trip (publish -> query-no-op -> install -> loader) +
+# crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
 run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+
+# Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
+# minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
+# (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
+run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+
+# Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
+# publish to prod (npm publish --registry $BASE; twine upload --repository-url).
+run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
 
 # Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
 # index-propagation sleep (R-REL-4c). Offline fixture http server.

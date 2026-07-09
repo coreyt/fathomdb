@@ -92,10 +92,17 @@ registry_has_version() {
 }
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf 'npm-publish-if-new: %s@%s — dry-run\n' "$NAME" "$VERSION"
+  printf 'npm-publish-if-new: %s@%s — dry-run (registry=%s)\n' "$NAME" "$VERSION" "$BASE"
+  # SAFETY (Fix-1): route the publish to the SAME registry we queried ($BASE).
+  # Without --registry, `npm publish` targets the public registry from ambient
+  # config even when NPM_PUBLISH_IF_NEW_REGISTRY points at a staging/test index,
+  # which would let a staging run publish to PROD. --registry "$BASE" makes a
+  # staging/test run structurally incapable of touching prod. In production
+  # $BASE == https://registry.npmjs.org (the setup-node registry-url), so this
+  # is a no-op there and preserves OIDC trusted publishing.
   # NPM_BIN may be a multi-word command ("npx npm@latest") — intentional split.
   # shellcheck disable=SC2086
-  exec $NPM_BIN publish --dry-run --tag "$DIST_TAG" "${EXTRA[@]}"
+  exec $NPM_BIN publish --registry "$BASE" --dry-run --tag "$DIST_TAG" "${EXTRA[@]}"
 fi
 
 set +e
@@ -108,11 +115,14 @@ case "$rc" in
     exit 0
     ;;
   1)
-    printf 'npm-publish-if-new: %s@%s not on registry; publishing (tag=%s)\n' \
-      "$NAME" "$VERSION" "$DIST_TAG"
+    printf 'npm-publish-if-new: %s@%s not on registry; publishing (tag=%s registry=%s)\n' \
+      "$NAME" "$VERSION" "$DIST_TAG" "$BASE"
+    # SAFETY (Fix-1): publish to the SAME registry we queried ($BASE) — see the
+    # dry-run branch above. A run with NPM_PUBLISH_IF_NEW_REGISTRY set at a
+    # staging/test index can never fall through to a prod-targeted publish.
     # NPM_BIN may be a multi-word command ("npx npm@latest") — intentional split.
     # shellcheck disable=SC2086
-    exec $NPM_BIN publish --tag "$DIST_TAG" "${EXTRA[@]}"
+    exec $NPM_BIN publish --registry "$BASE" --tag "$DIST_TAG" "${EXTRA[@]}"
     ;;
   *)
     printf 'npm-publish-if-new: registry query failed for %s; refusing to blind-publish\n' \
