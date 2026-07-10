@@ -1,0 +1,432 @@
+{
+  "E1_CR047_premise_delete": {
+    "anchors": [
+      [
+        "memex/2fa060bc",
+        1613,
+        40
+      ]
+    ],
+    "localized_catches": [
+      {
+        "source": "A-E",
+        "detector": "B-unwitnessed-premise",
+        "file": "2fa060bc-ca20-40",
+        "line": 1617,
+        "signal": "no_consumers+action",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1578,
+        "signal": "delete",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1588,
+        "signal": "delete",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-SHORTKNOWLEDGE",
+        "file": "2fa060bc-ca20-40",
+        "line": 1603,
+        "signal": "delete",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1617,
+        "signal": "ratified",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-SHORTKNOWLEDGE",
+        "file": "2fa060bc-ca20-40",
+        "line": 1642,
+        "signal": "ratified",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:textual",
+        "detector": "PREMATURE-TERM",
+        "file": "2fa060bc-ca20-40",
+        "line": 1617,
+        "signal": "done+open-work",
+        "gap_hours": null
+      }
+    ],
+    "localized_by_detector": {
+      "B-unwitnessed-premise": 1,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 3,
+      "DQ-SHORTKNOWLEDGE": 2,
+      "PREMATURE-TERM": 1
+    },
+    "group_files": 72,
+    "group_by_detector": {
+      "DQ-DEPBLIND-FORWARD": 13,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 18,
+      "DQ-SHORTKNOWLEDGE": 5,
+      "SILENT-STALL": 4,
+      "BLOCK-OVERRIDE": 6,
+      "PREMATURE-TERM": 28,
+      "DQ-NETNEW-DRIFT": 1,
+      "BRANCH-UNVERIFIED-BEFORE-COMMIT": 1,
+      "DQ-SNAP-DISPOSITION": 2,
+      "DQ-IGNOREDESIGN-TEXTUAL": 1
+    },
+    "ae_group_by_family": {
+      "B-unwitnessed-premise": 3,
+      "C-review-catch": 84,
+      "E-halt-scout-falsify": 1
+    }
+  },
+  "E2_30N_wrong_unit": {
+    "anchors": [
+      [
+        "memex/2fa060bc",
+        1475,
+        40
+      ]
+    ],
+    "localized_catches": [
+      {
+        "source": "A-E",
+        "detector": "B-unwitnessed-premise",
+        "file": "2fa060bc-ca20-40",
+        "line": 1495,
+        "signal": "n_sites",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1501,
+        "signal": "ratified",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1508,
+        "signal": "ratified",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "SILENT-STALL",
+        "file": "2fa060bc-ca20-40",
+        "line": 1496,
+        "signal": "large-gap",
+        "gap_hours": 27.8
+      },
+      {
+        "source": "COV:textual",
+        "detector": "PREMATURE-TERM",
+        "file": "2fa060bc-ca20-40",
+        "line": 1458,
+        "signal": "done+open-work",
+        "gap_hours": null
+      }
+    ],
+    "localized_by_detector": {
+      "B-unwitnessed-premise": 1,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 2,
+      "SILENT-STALL": 1,
+      "PREMATURE-TERM": 1
+    },
+    "group_files": 87,
+    "group_by_detector": {
+      "DQ-DEPBLIND-FORWARD": 19,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 18,
+      "DQ-SHORTKNOWLEDGE": 5,
+      "SILENT-STALL": 4,
+      "BLOCK-OVERRIDE": 6,
+      "PREMATURE-TERM": 28,
+      "DQ-NETNEW-DRIFT": 4,
+      "BRANCH-UNVERIFIED-BEFORE-COMMIT": 1,
+      "DQ-SNAP-DISPOSITION": 2,
+      "DQ-IGNOREDESIGN-TEXTUAL": 2,
+      "DQ-ASSUME-TEXTUAL": 2
+    },
+    "ae_group_by_family": {
+      "B-unwitnessed-premise": 3,
+      "C-review-catch": 91,
+      "E-halt-scout-falsify": 2,
+      "D-self-correction": 2
+    }
+  },
+  "E3_36h_silent_stall": {
+    "anchors": [
+      [
+        "fathomdb/ebec94c7",
+        1226,
+        10
+      ],
+      [
+        "fathomdb/ebec94c7",
+        853,
+        10
+      ]
+    ],
+    "localized_catches": [
+      {
+        "source": "A-E",
+        "detector": "C-review-catch",
+        "file": "ebec94c7-c59d-49",
+        "line": 1222,
+        "signal": "finding_id+anchor",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "ebec94c7-c59d-49",
+        "line": 1222,
+        "signal": "ratify",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "ebec94c7-c59d-49",
+        "line": 1231,
+        "signal": "RATIFIED",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "SILENT-STALL",
+        "file": "ebec94c7-c59d-49",
+        "line": 1226,
+        "signal": "large-gap",
+        "gap_hours": 35.7
+      },
+      {
+        "source": "COV:structural",
+        "detector": "SILENT-STALL",
+        "file": "ebec94c7-c59d-49",
+        "line": 853,
+        "signal": "large-gap",
+        "gap_hours": 23.8
+      },
+      {
+        "source": "COV:textual",
+        "detector": "BLOCK-OVERRIDE",
+        "file": "ebec94c7-c59d-49",
+        "line": 849,
+        "signal": "block->action,no-rereview",
+        "gap_hours": null
+      }
+    ],
+    "localized_by_detector": {
+      "C-review-catch": 1,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 2,
+      "SILENT-STALL": 2,
+      "BLOCK-OVERRIDE": 1
+    },
+    "group_files": 32,
+    "group_by_detector": {
+      "DQ-DEPBLIND-FORWARD": 8,
+      "DQ-NETNEW-DRIFT": 8,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 27,
+      "DQ-SHORTKNOWLEDGE": 2,
+      "DQ-SNAP-DISPOSITION": 1,
+      "SILENT-STALL": 3,
+      "BLOCK-OVERRIDE": 15,
+      "PREMATURE-TERM": 11,
+      "DQ-IGNOREDESIGN-TEXTUAL": 1,
+      "DQ-ASSUME-TEXTUAL": 4,
+      "BRANCH-UNVERIFIED-BEFORE-COMMIT": 1,
+      "DQ-STALE-VERSION": 1,
+      "IRREVERSIBLE-ACTION-UNGATED": 1
+    },
+    "ae_group_by_family": {
+      "C-review-catch": 70,
+      "D-self-correction": 5,
+      "E-halt-scout-falsify": 1
+    }
+  },
+  "E4_OPP12_design_drift": {
+    "anchors": [
+      [
+        "fathomdb/60b48af5",
+        2204,
+        40
+      ],
+      [
+        "fathomdb/60b48af5",
+        1758,
+        40
+      ],
+      [
+        "fathomdb/ebec94c7",
+        83,
+        40
+      ]
+    ],
+    "localized_catches": [
+      {
+        "source": "A-E",
+        "detector": "C-review-catch",
+        "file": "60b48af5-141d-42",
+        "line": 2201,
+        "signal": "finding_id+anchor",
+        "gap_hours": null
+      },
+      {
+        "source": "A-E",
+        "detector": "C-review-catch",
+        "file": "60b48af5-141d-42",
+        "line": 2204,
+        "signal": "finding_id+anchor",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-NETNEW-DRIFT",
+        "file": "60b48af5-141d-42",
+        "line": 2178,
+        "signal": "net_new",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-NETNEW-DRIFT",
+        "file": "60b48af5-141d-42",
+        "line": 2220,
+        "signal": "net_new",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "60b48af5-141d-42",
+        "line": 2187,
+        "signal": "Approve",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "60b48af5-141d-42",
+        "line": 2229,
+        "signal": "delete",
+        "gap_hours": null
+      },
+      {
+        "source": "A-E",
+        "detector": "D-self-correction",
+        "file": "60b48af5-141d-42",
+        "line": 1776,
+        "signal": "i_apologize",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-NETNEW-DRIFT",
+        "file": "60b48af5-141d-42",
+        "line": 1739,
+        "signal": "net_new",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-NETNEW-DRIFT",
+        "file": "60b48af5-141d-42",
+        "line": 1754,
+        "signal": "net_new",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:decision-quality",
+        "detector": "DQ-NETNEW-DRIFT",
+        "file": "60b48af5-141d-42",
+        "line": 1776,
+        "signal": "net_new",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "60b48af5-141d-42",
+        "line": 1776,
+        "signal": "approve",
+        "gap_hours": null
+      },
+      {
+        "source": "A-E",
+        "detector": "D-self-correction",
+        "file": "ebec94c7-c59d-49",
+        "line": 77,
+        "signal": "you_are_right",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "ebec94c7-c59d-49",
+        "line": 68,
+        "signal": "ratify",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "ebec94c7-c59d-49",
+        "line": 99,
+        "signal": "ratify",
+        "gap_hours": null
+      },
+      {
+        "source": "COV:structural",
+        "detector": "DQ-SHORTKNOWLEDGE-TEXTUAL",
+        "file": "ebec94c7-c59d-49",
+        "line": 110,
+        "signal": "ratify",
+        "gap_hours": null
+      }
+    ],
+    "localized_by_detector": {
+      "C-review-catch": 2,
+      "DQ-NETNEW-DRIFT": 5,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 6,
+      "D-self-correction": 2
+    },
+    "group_files": 76,
+    "group_by_detector": {
+      "DQ-NETNEW-DRIFT": 35,
+      "DQ-DEPBLIND-FORWARD": 19,
+      "DQ-ASSUME-TEXTUAL": 14,
+      "DQ-SHORTKNOWLEDGE-TEXTUAL": 50,
+      "BLOCK-OVERRIDE": 18,
+      "PREMATURE-TERM": 20,
+      "DQ-SHORTKNOWLEDGE": 2,
+      "DQ-SNAP-DISPOSITION": 1,
+      "SILENT-STALL": 4,
+      "DQ-ASSUME-STRUCTURAL": 1,
+      "IRREVERSIBLE-ACTION-UNGATED": 2,
+      "DQ-IGNOREDESIGN-TEXTUAL": 1,
+      "BRANCH-UNVERIFIED-BEFORE-COMMIT": 1,
+      "DQ-STALE-VERSION": 1,
+      "DQ-LIMITED-SAMPLE": 1
+    },
+    "ae_group_by_family": {
+      "B-unwitnessed-premise": 2,
+      "C-review-catch": 132,
+      "D-self-correction": 9,
+      "E-halt-scout-falsify": 5
+    }
+  }
+}

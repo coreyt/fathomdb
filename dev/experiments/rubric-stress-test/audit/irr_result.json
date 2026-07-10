@@ -1,0 +1,17 @@
+{
+  "n": 27,
+  "kappa_3way": 1.0,
+  "obs_agreement_3way": 1.0,
+  "kappa_binary": 1.0,
+  "obs_agreement_binary": 1.0,
+  "disagreements": 0,
+  "c6_grounding": {
+    "judgeA": 0,
+    "judgeB": 0,
+    "consensus_tp": 0
+  },
+  "specificity": {
+    "judgeA": "14/14",
+    "judgeB": "14/14"
+  }
+}

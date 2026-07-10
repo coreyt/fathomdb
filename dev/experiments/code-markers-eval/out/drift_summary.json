@@ -1,0 +1,49 @@
+{
+  "drift_rate": 0.1514,
+  "drifted": 111,
+  "marker_age_days_median": 46.1,
+  "marker_age_days_p90": 67.8,
+  "max_drift_days": 55.9,
+  "note": "drift_rate is a LOWER bound: blame attributes a line to its last edit; a format/whitespace sweep touching the marker line resets marker_time and masks drift.",
+  "per_class": {
+    "AC": {
+      "drift_rate": 0.1425,
+      "drifted": 59,
+      "usable": 414
+    },
+    "ADR-ID": {
+      "drift_rate": 0.127,
+      "drifted": 8,
+      "usable": 63
+    },
+    "ADR-PATH": {
+      "drift_rate": 0.0968,
+      "drifted": 3,
+      "usable": 31
+    },
+    "DESIGN-PATH": {
+      "drift_rate": 0.191,
+      "drifted": 38,
+      "usable": 199
+    },
+    "F": {
+      "drift_rate": 0.0,
+      "drifted": 0,
+      "usable": 9
+    },
+    "REQ": {
+      "drift_rate": 0.1875,
+      "drifted": 3,
+      "usable": 16
+    },
+    "TC": {
+      "drift_rate": 0.0,
+      "drifted": 0,
+      "usable": 1
+    }
+  },
+  "total_markers": 736,
+  "unusable": 3,
+  "usable": 733,
+  "window_halfwidth": 3
+}
