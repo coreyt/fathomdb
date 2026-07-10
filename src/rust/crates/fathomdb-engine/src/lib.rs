@@ -3214,8 +3214,12 @@ impl Engine {
         // PRAGMA (not schema DDL), so it belongs here, not in the 19→20 migration.
         // RESIDUAL (documented, not forced): pages freed on a pre-20 DB BEFORE this
         // was enabled are not retroactively scrubbed; there is no migration-time
-        // full `VACUUM` (O(db-size)). Only the writer frees pages (purge/excise
-        // delete here), so setting it on the writer connection is sufficient.
+        // full `VACUUM` (O(db-size)). NOTE: this is a standing pragma set at EVERY
+        // connection open (writer here, plus the reader-pool and
+        // `open_runtime_connection`), NOT the writer alone — non-writer connections
+        // also free pages (projection / vector-rewrite DELETEs), so a writer-only
+        // `secure_delete` would leak freed content on disk. See the matching
+        // reader/runtime open comment (~lines 3335-3336).
         connection
             .pragma_update(None, "secure_delete", "ON")
             .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
