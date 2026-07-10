@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **✅ Slices 5 + 15 + 10 all LANDED to `main`; Slice 40 (verification) next (pre-X1). X1 py/ts execution deferred to a quiesced-main window.**
+## Current state — **✅ Slices 5+10+15 LANDED; Slice 40 verification GREEN except X1 py/ts EXECUTION (pending a quiesced-main single-writer window). Manifests stay `0.8.9`; no publish.**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -29,7 +29,7 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 | **5 ✅** | KEYSTONE — existence axis + **SCHEMA 19→20 (existence columns only)** | **LANDED `36074f91`+`a6970496`** (HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
 | **10 ✅** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **LANDED `65061fb7`+`9cb9274b`+`dd5eaf82`** (Steward-authorized) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
 | **15 ✅** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **LANDED `6616db93`+`a704c317`+`51c2c785`** (+compose `c8e2a5b3`; HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
-| **40** | Verification + Phase-1 release-readiness (label-only close) | BLOCKED (dep: 5,10,15) | discharged | — | — | — | — |
+| **40** | Verification + Phase-1 release-readiness (label-only close) | **VERIFICATION GREEN except X1 exec (pending quiesce window)** | discharged | Rust ✓ / **py+ts exec PENDING** | ✓ | ✓ | n/a |
 
 **Keystones / gates (re-derived per F-23 / 1a):** Slice 5 = schema keystone + HITL landing gate (19→20,
 existence columns only). Slice 15 = id-surface keystone (breaking, built label-only; publish = 0.8.20) — the
@@ -132,3 +132,40 @@ validates the worktree+preflight+implementer+codex machinery.
 - **Next: Slice 40 (Phase-1 verification + label-only close)** — cargo AC gate + X2 mkdocs --strict + X3
   DOC-INDEX + eu7 no-op basis + AC-074 delta draft, **STOP at X1 py/ts execution** (needs a quiesced-main
   single-writer window; eval-env native-import trap). No publish; manifests stay `0.8.9`.
+
+## Slice 40 — Phase-1 verification (pre-X1) — GREEN except X1 execution (2026-07-09)
+
+Run in the isolated `0.8.19-landing` worktree on integrated `main @ a7921202` (Slices 5+10+15):
+
+- **Cargo AC gate — GREEN.** R-EX (existence axis): `opp12_existence_axis` 6/6. R-TR + R-PG (transition/purge
+  + typed errors + erasure + secure_delete): `opp12_lifecycle_verbs` 8/8. R-ID (typed `IdSpace` totality):
+  `tc8_idspace_swap` 4/4. R-MIG (19→20 fresh==upgrade): `step20_migration` 3/3. **Full `fathomdb-engine` suite
+  all-pass (0 failed, 1 known-ignored long-gated); `fathomdb-schema` suite all-pass.** No regression from the
+  three slices.
+- **Workspace DoD:** `cargo check` + `clippy --workspace --all-targets` = 0; `cargo fmt --check` = 0.
+- **X2 — `mkdocs build --strict` = exit 0.** **X3 — DOC-INDEX:** the 0.8.19 ADR
+  (`dev/design/0.8.19-slice-0-opp12-phase1-design.md`) + plan + this board present; docs coherent (strict build
+  clean).
+- **eu7 no-op basis (recorded, code-grounded — same posture as 0.8.16 D6 / 0.8.18):** the default ranking/vector
+  path is byte-unchanged. (a) The C-2 id-swap changes only the `SearchHit.id` *carrier type*; its
+  `to_prefixed()`/telemetry `result_stable_ids` bytes are byte-identical to the prior `stable_id` → real-gold
+  keying is a true no-op (no gold-remap). (b) The `state='active'` existence filter is a no-op on the shipped
+  corpus (no non-active row exists; the migration defaults all rows to `active`). (c) `transition`/`purge` add
+  verbs that do not touch the default query path. (d) The embedder / 1-bit vector path is untouched. → eu7 ≥
+  0.90 (one-sided CI) expected to hold; AC-012/013/020 latency unaffected.
+- **AC-074 governed-surface delta (DRAFT for HITL formal sign-off):** verbs **+`transition`, +`purge`**
+  (already in `src/conformance/governed-surface-allowlist.json` — required to keep the conformance subset green
+  once the live `Engine` methods shipped in Slice 10). Types/fields: **+`LifecycleState`**,
+  **+`IllegalTransitionError`** (`from_state`/`to_state`/`legal`), **+`NotLifecycleAddressableError`**
+  (`id_space`), **+`IdSpace`/`IdSpaceKind`**; **`PreparedWrite::Node` +`state`/+`reason`**; **`SearchHit.id`
+  retyped** `u64 → IdSpace` (`write_cursor` + `stable_id` subsumed into `id`). `recovery_denylist` UNCHANGED
+  (five names; `undelete` used, never `restore`). `ReadView`/`ProjectionSpec`/validity/`dense_readiness` are
+  **Phase-2 (0.8.20)** — NOT in this delta.
+- **X1 py/ts EXECUTION — PENDING a quiesced-main single-writer window.** The Rust binding side is validated
+  (`cargo check --workspace` compiles `fathomdb-py` + `fathomdb-napi`), but the py wheel / napi `.node` test
+  EXECUTION hits the eval-env native-import trap in an isolated build (`PyInit_fathomdb_py` module-name; napi
+  tooling absent). Steward is arranging the window (pause rubric-eval agent, or fresh-clone fallback). The X1
+  parity tests to run: `test_opp12_existence_axis.py` + `opp12-existence-axis.test.ts` (Slice 5),
+  `test_idspace_parity.py` + `idspace-parity.test.ts` (Slice 15), `test_opp12_lifecycle_verbs.py` +
+  `opp12-lifecycle-verbs.test.ts` (Slice 10).
+- **Label-only close pending X1 + AC-074 HITL sign-off. Manifests stay `0.8.9`; no `v*` tag / publish.**
