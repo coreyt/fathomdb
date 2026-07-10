@@ -9,6 +9,8 @@ target_release: 0.8.19
 # FathomDB 0.8.19 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-1 — lifecycle + id**
 
 > **▶ Slices 5 + 15 LANDED to `main` (2026-07-09, HITL-approved both landings; `origin/main` @ `c8e2a5b3`).**
+> **▶ Slice 5 CLOSED — LANDED to main `36074f91`+`a6970496`** (2026-07-09; existence axis + SCHEMA 19→20).
+> **▶ Slice 15 CLOSED — LANDED to main `6616db93`+`a704c317`+`51c2c785`** (2026-07-09; C-2 `IdSpace` swap, label-only).
 > Slice 5 (existence axis + SCHEMA 19→20) `36074f91`+`a6970496`; Slice 15 (C-2 `IdSpace` `SearchHit.id` swap,
 > breaking/label-only) `6616db93`+`a704c317`+`51c2c785`; cross-slice compose-fix `c8e2a5b3`. Combined-DoD green
 > (`cargo check`/`clippy`/`fmt --check` --workspace = 0; 19→20 migration fresh==upgrade 3/3; id-swap + existence
