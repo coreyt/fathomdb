@@ -14,9 +14,20 @@ and no longer surfaced.
 
 from __future__ import annotations
 
+import hashlib
 import time
 
 from fathomdb import Engine, IdSpace, SearchHit
+
+# The id-space prefixes (mirror the engine `IdSpaceKind::prefix`). No SDK helper
+# yields the prefixed form, so a consumer keying real-gold reconstructs it as
+# `{prefix}{value}` — this must be byte-identical to the pre-0.8.19 `stable_id`.
+_PREFIX = {"logical": "l:", "content": "h:", "passage": "p:"}
+
+
+def _prefixed(id: IdSpace) -> str:
+    """Reconstruct the pre-0.8.19 `stable_id` string from the typed id."""
+    return f"{_PREFIX[id.space]}{id.value}"
 
 
 def _search_after_projection(engine: Engine, query: str) -> list[SearchHit]:
@@ -46,8 +57,10 @@ def test_governed_hit_id_is_logical_space(db_path: str) -> None:
         assert isinstance(hit.id, IdSpace)
         assert hit.id.space == "logical"
         assert hit.id.value == "gov-py-1"
-        # Prefixed form is byte-identical to the pre-0.8.19 stable_id.
-        assert f"l:{hit.id.value}" == "l:gov-py-1"
+        # eu7 NO-OP (SDK-visible): the reconstructed prefixed/stable form — the
+        # key a consumer would key real-gold on — is byte-identical to the
+        # pre-0.8.19 stable_id `"l:" + logical_id`.
+        assert _prefixed(hit.id) == "l:gov-py-1"
     finally:
         engine.close()
 
@@ -55,7 +68,8 @@ def test_governed_hit_id_is_logical_space(db_path: str) -> None:
 def test_doc_seeded_hit_id_is_content_space(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
-        engine.write([{"kind": "doc", "body": "idspace anonymous docseeded xyzzy"}])
+        body = "idspace anonymous docseeded xyzzy"
+        engine.write([{"kind": "doc", "body": body}])
         engine.drain(timeout_s=30)
         hits = _search_after_projection(engine, "docseeded")
         assert hits, "expected a doc-seeded hit"
@@ -64,6 +78,10 @@ def test_doc_seeded_hit_id_is_content_space(db_path: str) -> None:
         assert hit.id.space == "content"
         assert len(hit.id.value) == 64
         assert all(c in "0123456789abcdef" for c in hit.id.value)
+        # eu7 NO-OP (SDK-visible): the reconstructed prefixed/stable form is the
+        # EXACT pre-0.8.19 stable_id `"h:" + sha256(body)` byte-for-byte.
+        expected = "h:" + hashlib.sha256(body.encode()).hexdigest()
+        assert _prefixed(hit.id) == expected
     finally:
         engine.close()
 

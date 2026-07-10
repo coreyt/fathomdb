@@ -180,7 +180,10 @@ class PerHitExplain:
     """0.8.8 EXP-OBS — per-hit provenance + score breakdown (mirror of engine
     `PerHitExplain`); parallel to (and same order as) ``SearchResult.results``.
 
-    ``id`` mirrors ``SearchHit.id`` exactly. ``arm`` is the winning arm
+    ``id`` is the engine-internal positional ``write_cursor`` (an ``int``) — NOT
+    the typed ``SearchHit.id`` (``IdSpace``). Correlate an explain entry to its
+    ``SearchHit`` by ARRAY POSITION (``per_hit[i]`` ↔ ``results[i]``), not by id.
+    ``arm`` is the winning arm
     (``== SearchHit.branch``). ``fused_score`` is the RAW post-recency, pre-CE RRF
     score (not normalized). ``ce_score`` (``== SearchHit.ce_score``) is the in-pool
     sigmoid ∈ [0,1] or ``None``. ``blended`` ``== SearchHit.score``.

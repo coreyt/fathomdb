@@ -11,7 +11,15 @@ use std::sync::Arc;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, PreparedWrite};
 use fathomdb_schema::SQLITE_SUFFIX;
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+/// PRE-swap `derive_stable_id` content-hash form byte-for-byte: `"h:" +
+/// lowercase-hex(sha256(body))`. Mirrors the copy in `tc8_idspace_swap.rs`.
+fn prior_stable_id_content(body: &str) -> String {
+    let hex: String = Sha256::digest(body.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    format!("h:{hex}")
+}
 
 #[derive(Clone, Debug)]
 struct FixedEmbedder;
@@ -77,6 +85,12 @@ fn telemetry_captures_event_and_feedback_deterministically() {
     let r0 = opened.engine.search("hybrid").expect("search");
     assert!(!r0.results.is_empty(), "expected hits to capture");
     assert_eq!(opened.engine.last_telemetry_query_id().as_deref(), Some("q0-0"));
+    // eu7 NO-OP PROOF (telemetry/gold bytes): capture the stable-id strings the
+    // sink is expected to emit for this query — the `id.to_prefixed()` of every
+    // hit, in result order. Post-C-2 these ARE the pre-swap `stable_id` bytes, so
+    // pinning them here locks that real-gold keying on `result_stable_ids` is
+    // unchanged.
+    let expected_stable_ids: Vec<String> = r0.results.iter().map(|h| h.id.to_prefixed()).collect();
     // Second query → "q0-1" (deterministic sequential id).
     let _ = opened.engine.search("retrieval").expect("search");
     assert_eq!(opened.engine.last_telemetry_query_id().as_deref(), Some("q0-1"));
@@ -112,6 +126,24 @@ fn telemetry_captures_event_and_feedback_deterministically() {
         stable_ids.iter().all(|v| v.as_str().is_some_and(|s| s.starts_with("h:"))),
         "doc-corpus hits carry content-hash stable ids: {stable_ids:?}"
     );
+    // eu7 NO-OP PROOF: the emitted `result_stable_ids` bytes are IDENTICAL to the
+    // hits' `id.to_prefixed()` (the pre-swap `stable_id` form) — byte-for-byte,
+    // in order. So the C-2 swap did not change the telemetry/gold key bytes.
+    let emitted: Vec<String> = stable_ids.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    assert_eq!(emitted, expected_stable_ids, "telemetry stable-id bytes == id.to_prefixed()");
+    // And those bytes are the EXACT prior `derive_stable_id` content-hash form
+    // `"h:" + sha256(body)` for the two seeded doc bodies (order-independent set).
+    let expected_prior: std::collections::HashSet<String> =
+        ["hybrid retrieval alpha", "hybrid retrieval beta"]
+            .iter()
+            .map(|b| prior_stable_id_content(b))
+            .collect();
+    for s in &emitted {
+        assert!(
+            expected_prior.contains(s),
+            "emitted stable id {s} not a prior derive_stable_id byte-form"
+        );
+    }
 
     let fb: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
     assert_eq!(fb["type"], "feedback");

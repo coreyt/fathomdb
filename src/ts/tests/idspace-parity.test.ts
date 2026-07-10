@@ -13,10 +13,25 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import { Engine } from "../src/index.js";
-import type { SearchHit } from "../src/index.js";
+import type { IdSpace, SearchHit } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
+
+// The id-space prefixes (mirror the engine `IdSpaceKind::prefix`). No SDK helper
+// yields the prefixed form, so a consumer keying real-gold reconstructs it as
+// `${prefix}${value}` — byte-identical to the pre-0.8.19 `stableId`.
+const PREFIX: Record<string, string> = {
+  logical: "l:",
+  content: "h:",
+  passage: "p:",
+};
+
+/** Reconstruct the pre-0.8.19 `stableId` string from the typed id. */
+function prefixed(id: IdSpace): string {
+  return `${PREFIX[id.space]}${id.value}`;
+}
 
 async function searchAfterProjection(
   engine: Engine,
@@ -49,8 +64,10 @@ test("idspace: governed hit id is the logical space", async () => {
     // the lowercase discriminant + bare value.
     assert.equal(hit.id.space, "logical");
     assert.equal(hit.id.value, "gov-ts-1");
-    // Prefixed form is byte-identical to the pre-0.8.19 stableId.
-    assert.equal(`l:${hit.id.value}`, "l:gov-ts-1");
+    // eu7 NO-OP (SDK-visible): the reconstructed prefixed/stable form — the key
+    // a consumer would key real-gold on — is byte-identical to the pre-0.8.19
+    // stableId `"l:" + logicalId`.
+    assert.equal(prefixed(hit.id), "l:gov-ts-1");
   } finally {
     await engine.close();
   }
@@ -59,7 +76,8 @@ test("idspace: governed hit id is the logical space", async () => {
 test("idspace: doc-seeded hit id is the content space", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    await engine.write([{ kind: "doc", body: "idspace anonymous docseeded xyzzy" }]);
+    const body = "idspace anonymous docseeded xyzzy";
+    await engine.write([{ kind: "doc", body }]);
     await engine.drain(30_000);
     const hits = await searchAfterProjection(engine, "docseeded");
     assert.ok(hits.length > 0, "expected a doc-seeded hit");
@@ -67,6 +85,10 @@ test("idspace: doc-seeded hit id is the content space", async () => {
     assert.equal(hit.id.space, "content");
     assert.equal(hit.id.value.length, 64);
     assert.ok(/^[0-9a-f]+$/.test(hit.id.value), "content hash is lowercase hex");
+    // eu7 NO-OP (SDK-visible): the reconstructed prefixed/stable form is the
+    // EXACT pre-0.8.19 stableId `"h:" + sha256(body)` byte-for-byte.
+    const expected = `h:${createHash("sha256").update(body).digest("hex")}`;
+    assert.equal(prefixed(hit.id), expected);
   } finally {
     await engine.close();
   }

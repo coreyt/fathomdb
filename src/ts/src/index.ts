@@ -270,7 +270,9 @@ export interface QueryTrace {
 /**
  * 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of the
  * Rust `PerHitExplain`); parallel to (and same order as) `SearchResult.results`.
- * `id` mirrors `SearchHit.id` exactly (`perHit[i].id === results[i].id`).
+ * `id` is the engine-internal positional `write_cursor` (a `number`) — NOT the
+ * typed `SearchHit.id` (`IdSpace`). Correlate an explain entry to its
+ * `SearchHit` by ARRAY POSITION (`perHit[i]` ↔ `results[i]`), not by id.
  * `fusedScore` is the RAW post-recency, pre-CE RRF score (not normalized).
  * `importance`/`confidence` (0.8.16 Slice 5 / F9) are the node importance / edge
  * confidence applied to this hit's contribution (`null` = graceful-absent /

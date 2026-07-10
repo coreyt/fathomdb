@@ -10,8 +10,9 @@
 //      results; explain on ⇒ present.
 //   2. QueryTrace — all 12 fields present + typed; `alpha` exact; `embedderId`
 //      is a string.
-//   3. per_hit ↔ results alignment (same length/order; `perHit[i].id ===
-//      results[i].id`).
+//   3. per_hit ↔ results alignment (same length/order; correlate by ARRAY
+//      POSITION — post-C-2 `perHit[i].id` is the positional write_cursor int,
+//      while `results[i].id` is the typed IdSpace, so NOT by id equality).
 //   4. The three self-consistency identities (arm===branch, ceScore, blended).
 //   5. None/Some rank fidelity (a null rank + an int rank across the pool).
 //   6. `"graph_arm"` is assignable to SoftFallbackBranch (the Slice-10 contract).

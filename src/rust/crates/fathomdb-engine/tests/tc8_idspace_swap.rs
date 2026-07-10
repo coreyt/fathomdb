@@ -15,7 +15,17 @@ use std::time::{Duration, Instant};
 
 use fathomdb_engine::{rerank_passages, Engine, IdSpace, IdSpaceKind, PreparedWrite, SearchResult};
 use fathomdb_schema::SQLITE_SUFFIX;
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
+
+/// Reproduce the PRE-swap `derive_stable_id` content-hash form byte-for-byte:
+/// `"h:" + lowercase-hex(sha256(body))`. Kept local (the engine fn is private)
+/// so the eu7 no-op proof does not depend on engine internals — if the id ever
+/// diverges from this exact string the assertion fails.
+fn prior_stable_id_content(body: &str) -> String {
+    let hex: String = Sha256::digest(body.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    format!("h:{hex}")
+}
 
 fn fixture(name: &str) -> (TempDir, std::path::PathBuf) {
     let dir = TempDir::new().unwrap();
@@ -80,11 +90,12 @@ fn governed_hit_id_is_logical_space() {
 fn doc_seeded_hit_id_is_content_space() {
     let (_dir, path) = fixture("tc8_content");
     let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let body = "tc8 anonymous docseeded payload xyzzy";
     let receipt = opened
         .engine
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
-            body: "tc8 anonymous docseeded payload xyzzy".to_string(),
+            body: body.to_string(),
             source_id: None,
             logical_id: None,
         }])
@@ -99,6 +110,15 @@ fn doc_seeded_hit_id_is_content_space() {
     assert!(prefixed.starts_with("h:"), "doc-seeded id is content-hash tagged, got {prefixed}");
     assert_eq!(prefixed.len(), 2 + 64, "h: + sha256 hex");
     assert!(hit.id.value.chars().all(|c| c.is_ascii_hexdigit()), "content hash is lowercase hex");
+    // eu7 NO-OP PROOF (byte-for-byte): the prefixed form is the EXACT pre-swap
+    // `derive_stable_id` output `"h:" + sha256(body)` — real-gold keys on this
+    // string, so it must not drift by a single byte from the prior release.
+    assert_eq!(prefixed, prior_stable_id_content(body), "content id == prior stable_id bytes");
+    assert_eq!(
+        hit.id.value,
+        prior_stable_id_content(body)["h:".len()..],
+        "bare value is prefix-stripped"
+    );
     // write_cursor is a separate positional cursor.
     assert_eq!(hit.write_cursor, receipt.cursor);
 
