@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **✅ Slice 0 CLOSED / HITL SIGNED (2026-07-09) — X0 gate DISCHARGED for all Phase-1; fanning Slice 5 (canary) + Slice 15**
+## Current state — **Slice 5 §9 PASS (canary validated, awaiting HITL 19→20 landing) · Slice 15 in flight · Slice 0 CLOSED**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -26,9 +26,9 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 | Slice | Title | State | X0 | X1 | X2 | X3 | §9 |
 |------:|-------|-------|----|----|----|----|----|
 | **0** | Setup + ADR (existence axis · transition/purge · C-2 IdSpace · 19→20 migration · 6 gap rulings · Phase boundary) | **✅ CLOSED / HITL SIGNED (2026-07-09)** | A ✓ / B ✓ codex / HITL ✓ | — | — | ✓ | — |
-| **5** | KEYSTONE — existence axis (`state`/`reason` + `active`-only filter) + **SCHEMA 19→20 = existence columns ONLY (no surrogate)** *(HITL-gated bump)* | READY (dep: 0 ✓) | discharged | pending | pending | pending | pending |
-| **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` | BLOCKED (dep: 5 — needs the `state` column) | discharged | — | — | — | — |
-| **15** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | READY (dep: 0 ✓ — **parallelizable off Slice 0**, F-23) | discharged | pending | pending | pending | pending |
+| **5** | KEYSTONE — existence axis (`state`/`reason` + `active`-only filter) + **SCHEMA 19→20 = existence columns ONLY (no surrogate)** *(HITL-gated bump)* | **§9 PASS (43aa29d6) — AWAITING HITL 19→20 LANDING** | discharged | py/ts written (main-exec pending) | pending | ✓ | **PASS (r2, fix-1)** |
+| **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | BLOCKED (dep: 5 — needs `state` column; waits for Slice-5 landing) | discharged | — | — | — | — |
+| **15** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **IN FLIGHT** (worktree `0.8.19-slice-15` off `9ea3ecc2`, preflight pass) | discharged | pending | pending | pending | pending |
 | **40** | Verification + Phase-1 release-readiness (label-only close) | BLOCKED (dep: 5,10,15) | discharged | — | — | — | — |
 
 **Keystones / gates (re-derived per F-23 / 1a):** Slice 5 = schema keystone + HITL landing gate (19→20,
@@ -69,5 +69,18 @@ validates the worktree+preflight+implementer+codex machinery.
   audit confirmed 1a correct + no 0.8.20 unwind risk, but found the ADR under-scoped the "lands-together
   GATING" co-requisite split.** Steward reconciled master+plan+ledgers (`5190eb08`, F-23, R-ID-3/R-MIG-1
   narrowed, Slice 15 parallelizable off Slice 0, TC-11). ADR widened (co-requisite split explicit + F-23
-  ref) + flipped SIGNED; board reconciled. **X0 gate discharged for all Phase-1.** Next: commit Slice-0
-  closure (ADR+board) on `5190eb08` → fan Slice 5 (canary) ∥ Slice 15.
+  ref) + flipped SIGNED; board reconciled. **X0 gate discharged for all Phase-1.** Slice-0 closure committed
+  `9ea3ecc2` + pushed.
+- **2026-07-09 — Slice 5 (canary) → §9 PASS.** Worktree `0.8.19-slice-5` off `9ea3ecc2`, preflight pass.
+  Implementer impl `79abf1a0` (existence axis + `state`/`reason` + `LifecycleState`/`InitialState` + typed
+  create-rejection of deleted/purged + `active`-only filter co-located at the retrieval sites + one 19→20
+  migration existence-columns-only, fresh==upgrade + X1 pyo3/napi). **codex §9 r1 = BLOCK** (P1: vector node
+  hydration filtered `state='active'` but omitted `superseded_at IS NULL` → superseded-version leak via vector
+  search; a latent pre-slice hole the slice's exclusion mandate must close). Never overridden → **fix-1**
+  (`43aa29d6`, one guard co-located + RED→GREEN vector-supersession regression test; clippy/check 0). **codex §9
+  r2 = PASS** (no findings, scope clean, eu7 no-op preserved). **Canary machinery VALIDATED.** Slice 5 head
+  `43aa29d6` is terminal §9 PASS — **AWAITING HITL sign-off for the SCHEMA 19→20 landing** (R-MIG-1; the
+  wheel-build + py/ts X1 execution runs on the MAIN tree at landing).
+- **2026-07-09 — Slice 15 FANNED** (canary validated). Worktree `0.8.19-slice-15` off `9ea3ecc2`, preflight
+  pass; implementer building the C-2 typed `IdSpace` `SearchHit.id` swap (no surrogate; `SCHEMA_VERSION`
+  unchanged; id VALUES == prior `stable_id` for eu7 no-op). Slice 10 stays blocked on Slice-5 landing.
