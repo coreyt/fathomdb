@@ -17,8 +17,17 @@ class WriteReceipt:
 class SoftFallback:
     branch: str
 
+# C-2 (0.8.19 / TC-8) — typed id-space carrier for SearchHit.id.
+class IdSpace:
+    # "logical" | "content" | "passage"
+    space: str
+    # bare id value (id-space prefix stripped)
+    value: str
+
 class SearchHit:
-    id: int
+    # C-2 (0.8.19 / TC-8) — typed, non-null, id-space-total hit id (subsumes the
+    # pre-0.8.19 int write_cursor id AND the additive stable_id).
+    id: IdSpace
     kind: str
     body: str
     score: float
@@ -27,9 +36,6 @@ class SearchHit:
     # 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
     # reranked hits; None otherwise (out-of-pool, identity path, or no CE model).
     ce_score: float | None
-    # Cause-A (0.8.11.2) — additive cross-session-stable hit id; None for
-    # synthetic passages. Never participates in ranking.
-    stable_id: str | None
 
 class QueryTrace:
     # 0.8.8 EXP-OBS (Slice 10) — query-level retrieval trace.

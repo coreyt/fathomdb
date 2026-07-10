@@ -19,21 +19,23 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    apply_importance_reweight, Engine, EngineError, PreparedWrite, SearchHit, SoftFallbackBranch,
+    apply_importance_reweight, Engine, EngineError, IdSpace, PreparedWrite, SearchHit,
+    SoftFallbackBranch,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
 fn hit(id: u64, body: &str, score: f64) -> SearchHit {
     SearchHit {
-        id,
+        // C-2 (0.8.19): importance reweight keys on `write_cursor`, not `id`.
+        id: IdSpace::content(id.to_string()),
+        write_cursor: id,
         kind: "doc".to_string(),
         body: body.to_string(),
         score,
         branch: SoftFallbackBranch::Vector,
         source_id: None,
         ce_score: None,
-        stable_id: None,
     }
 }
 
@@ -68,8 +70,8 @@ fn importance_enabled_deweights_and_reorders() {
     let mut imp = HashMap::new();
     imp.insert(1u64, 0.1_f64);
     let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
-    assert_eq!(out[0].id, 2, "de-weighted node drops below the neutral node");
-    assert_eq!(out[1].id, 1);
+    assert_eq!(out[0].write_cursor, 2, "de-weighted node drops below the neutral node");
+    assert_eq!(out[1].write_cursor, 1);
     assert!(out[0].score >= out[1].score, "reweighted list stays sorted by score desc");
 }
 
@@ -92,7 +94,7 @@ fn importance_floor_zero_zeroes_contribution() {
     let mut imp = HashMap::new();
     imp.insert(1u64, 0.0_f64);
     let out = apply_importance_reweight(hits, &imp, &HashMap::new(), true);
-    assert_eq!(out[0].id, 2, "floored node ranks last");
+    assert_eq!(out[0].write_cursor, 2, "floored node ranks last");
     assert_eq!(out[1].score, 0.0, "floor 0.0 zeroes the contribution");
 }
 
@@ -199,8 +201,8 @@ fn importance_reweight_reorders_vs_off() {
 
     let baseline = engine.search("importance").expect("search");
     assert_eq!(baseline.results.len(), 2, "both docs retrieved");
-    let top_id = baseline.results[0].id;
-    let second_id = baseline.results[1].id;
+    let top_id = baseline.results[0].write_cursor;
+    let second_id = baseline.results[1].write_cursor;
 
     // De-weight the baseline top hit hard; enable the reweight.
     engine.write_node_importance(top_id, 0.01).expect("set importance");
@@ -212,8 +214,8 @@ fn importance_reweight_reorders_vs_off() {
     let base_bodies: std::collections::BTreeSet<&str> =
         baseline.results.iter().map(|h| h.body.as_str()).collect();
     assert_eq!(base_bodies, rw_bodies, "reweight preserves the result SET");
-    assert_eq!(reweighted.results[0].id, second_id, "de-weighted top hit is now second");
-    assert_eq!(reweighted.results[1].id, top_id);
+    assert_eq!(reweighted.results[0].write_cursor, second_id, "de-weighted top hit is now second");
+    assert_eq!(reweighted.results[1].write_cursor, top_id);
     for w in reweighted.results.windows(2) {
         assert!(w[0].score >= w[1].score, "reweighted list stays sorted by score desc");
     }
@@ -368,8 +370,10 @@ fn confidence_on_graph_arm_reorders_and_surfaces_in_explain() {
     let explained =
         engine.search_explained("zephyr", None, 0, true, 0.3, 0).expect("search_explained");
     let exp = explained.explanation.expect("explanation sidecar present");
-    let beta_id = on.results.iter().find(|h| h.body.contains("beta reachable")).unwrap().id;
-    let gamma_id = on.results.iter().find(|h| h.body.contains("gamma reachable")).unwrap().id;
+    let beta_id =
+        on.results.iter().find(|h| h.body.contains("beta reachable")).unwrap().write_cursor;
+    let gamma_id =
+        on.results.iter().find(|h| h.body.contains("gamma reachable")).unwrap().write_cursor;
     let beta_exp =
         exp.per_hit.iter().find(|p| p.id == beta_id).expect("per_hit entry for beta graph hit");
     let gamma_exp =

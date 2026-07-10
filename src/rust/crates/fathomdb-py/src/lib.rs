@@ -40,7 +40,7 @@ use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
     ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
     NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
     OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
@@ -421,10 +421,35 @@ impl PySoftFallback {
     }
 }
 
+/// C-2 (0.8.19 / OPP-12 Phase-1, TC-8) — the typed id-space carrier for
+/// [`PySearchHit::id`], surfaced to Python as an `IdSpace` with `space` +
+/// `value` attributes. `space` is the lowercase discriminant (`"logical"` |
+/// `"content"` | `"passage"`), mirroring the engine's `IdSpaceKind` enum (the
+/// C-2 binding — a typed carrier, not a magic-prefixed string). `value` is the
+/// bare id (id-space prefix stripped).
+#[pyclass(module = "fathomdb._fathomdb", name = "IdSpace", frozen, get_all, skip_from_py_object)]
+#[derive(Clone)]
+struct PyIdSpace {
+    space: String,
+    value: String,
+}
+
+impl PyIdSpace {
+    fn from_rust(id: &RustIdSpace) -> Self {
+        Self { space: id.space.as_str().to_string(), value: id.value.clone() }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "SearchHit", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PySearchHit {
-    id: u64,
+    /// C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
+    /// (`IdSpace` with `space` + `value`). Governed hits are `logical` (`"l:"`),
+    /// doc-seeded hits `content` (`"h:"`), synthetic passages `passage`
+    /// (`"p:"`). Its `value` equals the pre-0.8.19 `stable_id` (which this
+    /// subsumes) so cross-session real-gold keying continues on `id`. The pre-C-2
+    /// positional `write_cursor` id is engine-internal and no longer surfaced.
+    id: PyIdSpace,
     kind: String,
     body: String,
     score: f64,
@@ -435,16 +460,12 @@ struct PySearchHit {
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`.
     /// `Some` only for hits inside the reranked pool; `None` otherwise.
     ce_score: Option<f64>,
-    /// Cause-A (0.8.11.2) — additive cross-session-stable hit id (`logical_id`
-    /// `"l:"`-tagged, or an `"h:"` content-hash for doc nodes). `None` only for
-    /// synthetic passages. Never participates in ranking.
-    stable_id: Option<String>,
 }
 
 impl PySearchHit {
     fn from_rust(h: &RustSearchHit) -> Self {
         Self {
-            id: h.id,
+            id: PyIdSpace::from_rust(&h.id),
             kind: h.kind.clone(),
             body: h.body.clone(),
             score: h.score,
@@ -456,7 +477,6 @@ impl PySearchHit {
             },
             source_id: h.source_id.clone(),
             ce_score: h.ce_score,
-            stable_id: h.stable_id.clone(),
         }
     }
 }
@@ -530,8 +550,11 @@ impl PyQueryTrace {
 }
 
 /// 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of
-/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (no BigInt/string
-/// promotion); `arm` crosses as the same lowercase string as `SearchHit.branch`.
+/// engine `PerHitExplain`). `id` is the hit's engine-internal positional
+/// `write_cursor` (the pre-0.8.19 `SearchHit.id`); post-C-2 the caller-facing
+/// `SearchHit.id` is the typed `IdSpace`, so correlate a `PerHitExplain` to its
+/// `SearchHit` by position (1:1, same order). `arm` crosses as the same lowercase
+/// string as `SearchHit.branch`.
 #[pyclass(
     module = "fathomdb._fathomdb",
     name = "PerHitExplain",
@@ -1001,8 +1024,9 @@ impl PyEngine {
     }
 
     /// 0.8.8 Slice 15 — attach agent relevance labels for a captured `query_id`.
-    /// Ids are the stable identity carrier (== `SearchHit.id`). Errors if telemetry
-    /// is off.
+    /// Ids are the positional `write_cursor` keys emitted in the telemetry
+    /// `result_ids` array (the pre-0.8.19 `SearchHit.id` space), NOT the post-C-2
+    /// typed `SearchHit.id`. Errors if telemetry is off.
     fn record_feedback(
         &self,
         py: Python<'_>,
@@ -1861,6 +1885,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // 0.8.12 Slice 15 (OPP-2) — consolidation receipt.
     m.add_class::<PyConsolidateReceipt>()?;
     m.add_class::<PySoftFallback>()?;
+    // C-2 (0.8.19 / TC-8) — typed IdSpace id carrier for SearchHit.id.
+    m.add_class::<PyIdSpace>()?;
     m.add_class::<PySearchHit>()?;
     m.add_class::<PySearchResult>()?;
     // 0.8.8 EXP-OBS (Slice 10) — explanation sidecar types.

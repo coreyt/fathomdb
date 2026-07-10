@@ -117,7 +117,7 @@ fn explanation_per_hit_mirrors_results_and_trace_is_populated() {
     // Per-hit breakdown is parallel to results, same order.
     assert_eq!(exp.per_hit.len(), explained.results.len(), "one per_hit entry per returned hit");
     for (p, h) in exp.per_hit.iter().zip(&explained.results) {
-        assert_eq!(p.id, h.id, "per_hit id mirrors the hit");
+        assert_eq!(p.id, h.write_cursor, "per_hit id mirrors the hit's positional write_cursor");
         assert_eq!(p.arm, h.branch, "per_hit arm == hit branch");
         assert_eq!(p.blended, h.score, "per_hit blended == hit score");
         assert_eq!(p.ce_score, h.ce_score, "per_hit ce_score == hit ce_score");
@@ -170,7 +170,7 @@ fn r_obs_1_golden_field_fidelity_at_rerank_depth_gt0() {
     // Order-parallel + the three self-consistency identities.
     assert_eq!(exp.per_hit.len(), explained.results.len());
     for (p, h) in exp.per_hit.iter().zip(&explained.results) {
-        assert_eq!(p.id, h.id, "per_hit[i].id == results[i].id");
+        assert_eq!(p.id, h.write_cursor, "per_hit[i].id == results[i].write_cursor");
         assert_eq!(p.arm, h.branch, "per_hit[i].arm == results[i].branch");
         assert_eq!(p.ce_score, h.ce_score, "per_hit[i].ce_score == results[i].ce_score");
         assert_eq!(p.blended, h.score, "per_hit[i].blended == results[i].score");

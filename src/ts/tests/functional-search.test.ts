@@ -71,19 +71,21 @@ test("functional search: structured hit shape across the FFI", async () => {
     const hits = await searchAfterProjection(engine, "structured");
     assert.ok(hits.length > 0, "expected at least one structured hit");
     for (const hit of hits) {
-      assert.equal(typeof hit.id, "number");
-      assert.ok(hit.id > 0);
+      // C-2 (0.8.19 / TC-8) — `id` is the typed IdSpace {space, value}, non-null
+      // + id-space-total, crossing the FFI. Doc-seeded corpus nodes carry NULL
+      // logical_id, so the id is the `content` (`"h:"`) space with a 64-hex
+      // content-hash value (never null for a real node hit). Py↔TS parity with
+      // the Python `IdSpace`. The pre-0.8.19 int write_cursor id is engine-
+      // internal and no longer surfaced.
+      assert.equal(hit.id.space, "content");
+      assert.equal(typeof hit.id.value, "string");
+      assert.equal(hit.id.value.length, 64);
       assert.equal(typeof hit.kind, "string");
       assert.ok(hit.kind.length > 0);
       assert.equal(typeof hit.body, "string");
       assert.ok(hit.body.length > 0);
       assert.equal(typeof hit.score, "number");
       assert.ok(hit.branch === "vector" || hit.branch === "text");
-      // Cause-A (0.8.11.2) — `stableId` crosses the FFI. Doc-seeded corpus nodes
-      // carry NULL logical_id, so the stable id is the `"h:"` content-hash of the
-      // body (never null for a real node hit). Py↔TS parity with `stable_id`.
-      assert.equal(typeof hit.stableId, "string");
-      assert.ok(hit.stableId !== null && hit.stableId.startsWith("h:"));
     }
   } finally {
     await engine.close();

@@ -22,6 +22,7 @@ from fathomdb.types import (
     CounterSnapshot,
     EmbedderIdentity,
     Explanation,
+    IdSpace,
     MigrationStepReport,
     OpenReport,
     PerHitExplain,
@@ -47,9 +48,10 @@ _KWARG_FIELDS = {
 def _validate_id_list(name: str, value: object) -> list[int]:
     """0.8.8 Slice 15 — validate a relevance-label id list before the native
     call (mirrors the TS ``validateIdArray`` guard for cross-SDK parity). Ids
-    are non-negative ints (the stable ``SearchHit.id`` identity carrier);
-    ``bool`` is rejected explicitly (it is an int subclass that PyO3 would
-    otherwise coerce silently)."""
+    are non-negative ints — the telemetry ``result_ids`` / ``write_cursor`` key
+    space (the pre-0.8.19 ``SearchHit.id``), NOT the post-C-2 typed
+    ``SearchHit.id``. ``bool`` is rejected explicitly (it is an int subclass that
+    PyO3 would otherwise coerce silently)."""
     if not isinstance(value, list):
         raise TypeError(
             f"{name} must be a list of non-negative ints, got {type(value).__name__!r}"
@@ -306,14 +308,13 @@ class Engine:
             soft_fallback=soft,
             results=[
                 SearchHit(
-                    id=hit.id,
+                    id=IdSpace(space=hit.id.space, value=hit.id.value),
                     kind=hit.kind,
                     body=hit.body,
                     score=hit.score,
                     branch=cast(SoftFallbackBranch, hit.branch),
                     source_id=hit.source_id,
                     ce_score=hit.ce_score,
-                    stable_id=hit.stable_id,
                 )
                 for hit in result.results
             ],
@@ -341,14 +342,13 @@ class Engine:
             soft_fallback=soft,
             results=[
                 SearchHit(
-                    id=hit.id,
+                    id=IdSpace(space=hit.id.space, value=hit.id.value),
                     kind=hit.kind,
                     body=hit.body,
                     score=hit.score,
                     branch=cast(SoftFallbackBranch, hit.branch),
                     source_id=hit.source_id,
                     ce_score=hit.ce_score,
-                    stable_id=hit.stable_id,
                 )
                 for hit in result.results
             ],
@@ -399,9 +399,10 @@ class Engine:
     ) -> None:
         """0.8.8 Slice 15 — attach agent relevance labels for a previously
         captured ``query_id``. ``relevant_ids`` / ``irrelevant_ids`` are the
-        stable identity carrier (== ``SearchHit.id``); ``label_source`` is the
-        caller-declared label origin (e.g. ``"agent:hermes"``). Raises when
-        telemetry is off."""
+        telemetry ``result_ids`` / ``write_cursor`` keys (the pre-0.8.19
+        ``SearchHit.id`` space), NOT the post-C-2 typed ``SearchHit.id``;
+        ``label_source`` is the caller-declared label origin (e.g.
+        ``"agent:hermes"``). Raises when telemetry is off."""
         if not isinstance(query_id, str):
             raise TypeError(
                 f"query_id must be a str, got {type(query_id).__name__!r}"

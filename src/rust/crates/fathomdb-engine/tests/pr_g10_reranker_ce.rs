@@ -16,11 +16,13 @@
 //! (not a FathomDB-default network call): the default build and the
 //! `rerank_depth == 0` path never touch it.
 
-use fathomdb_engine::{rerank_fused, SearchHit, SoftFallbackBranch};
+use fathomdb_engine::{rerank_fused, IdSpace, SearchHit, SoftFallbackBranch};
 
 fn hit(id: u64, body: &str, score: f64) -> SearchHit {
     SearchHit {
-        id,
+        // C-2 (0.8.19): typed id-space carrier; positional cursor in `write_cursor`.
+        id: IdSpace::content(id.to_string()),
+        write_cursor: id,
         kind: "doc".to_string(),
         body: body.to_string(),
         score,
@@ -28,8 +30,6 @@ fn hit(id: u64, body: &str, score: f64) -> SearchHit {
         source_id: None,
         // 0.8.5 — additive CE score; None until set inside `ce_rerank` for in-pool hits.
         ce_score: None,
-        // Cause-A — additive stable id; None in this synthetic fixture.
-        stable_id: None,
     }
 }
 

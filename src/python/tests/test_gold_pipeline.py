@@ -16,6 +16,7 @@ EVAL-ONLY surface (``eval/`` modules are test-infra, not shipped in the wheel).
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -73,9 +74,14 @@ def test_gold_pipeline_engine_to_record_and_score(db_path: str, tmp_path: Path) 
         qid = engine.last_telemetry_query_id()
         assert qid == "q0-0"
 
-        returned_ids = [sh.id for sh in result.results]
+        assert result.results  # keep the result binding meaningful
+        # Label the top returned hit relevant; no irrelevant labels. The feedback
+        # id space is the telemetry `result_ids` (write_cursor), which post-C-2 is
+        # engine-internal to SearchHit — read the frozen returned pool back from
+        # the captured event (the same array `build_gold_records` keys on).
+        first_event = json.loads(sink.read_text(encoding="utf-8").splitlines()[0])
+        returned_ids = first_event["result_ids"]
         relevant_id = returned_ids[0]
-        # Label the top returned hit relevant; no irrelevant labels.
         engine.record_feedback(qid, [relevant_id], [], "agent:test")
     finally:
         engine.close()

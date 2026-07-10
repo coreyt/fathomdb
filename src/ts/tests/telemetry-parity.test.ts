@@ -58,9 +58,13 @@ test("telemetry: off by default (no captured id; feedback rejects)", async () =>
     assert.ok(hits.length > 0, "expected hits");
     // Off by default: no captured query id...
     assert.equal(engine.lastTelemetryQueryId(), null);
-    // ...and the feedback API rejects when telemetry is off.
+    // ...and the feedback API rejects when telemetry is off. The feedback id
+    // space is the telemetry `result_ids` (write_cursor), engine-internal to
+    // SearchHit post-C-2; a placeholder int suffices since the call rejects
+    // before the ids are read.
+    assert.ok(hits.length > 0);
     await assert.rejects(() =>
-      engine.recordFeedback("q0-0", [hits[0].id], [], "agent:test"),
+      engine.recordFeedback("q0-0", [0], [], "agent:test"),
     );
   } finally {
     await engine.close();
@@ -87,9 +91,15 @@ test("telemetry: captures event + correlated feedback deterministically", async 
     // Second query → "q0-1" (deterministic sequential id).
     await engine.search("retrieval");
     assert.equal(engine.lastTelemetryQueryId(), "q0-1");
+    assert.ok(r0.results.length > 0);
 
-    // Attach agent feedback correlated to the first query.
-    await engine.recordFeedback("q0-0", [r0.results[0].id], [], "agent:test");
+    // Attach agent feedback correlated to the first query. The feedback id space
+    // is the telemetry `result_ids` (write_cursor), which post-C-2 is engine-
+    // internal to SearchHit — read it back from the captured event.
+    const firstEvent = JSON.parse(
+      readFileSync(sink, "utf-8").split("\n").filter((l) => l.length > 0)[0],
+    );
+    await engine.recordFeedback("q0-0", [firstEvent.result_ids[0]], [], "agent:test");
   } finally {
     await engine.close();
   }

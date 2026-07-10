@@ -56,9 +56,13 @@ def test_telemetry_off_by_default(db_path: str) -> None:
         assert hits, "expected hits"
         # Off by default: no captured query id...
         assert engine.last_telemetry_query_id() is None
-        # ...and the feedback API errors when telemetry is off.
+        assert hits  # keep the hits binding meaningful (referenced below)
+        # ...and the feedback API errors when telemetry is off. The feedback id
+        # space is the telemetry `result_ids` (write_cursor), engine-internal to
+        # SearchHit post-C-2; a placeholder int suffices since the call raises
+        # before the ids are read.
         with pytest.raises(Exception):
-            engine.record_feedback("q0-0", [hits[0].id], [], "agent:test")
+            engine.record_feedback("q0-0", [0], [], "agent:test")
     finally:
         engine.close()
 
@@ -83,9 +87,13 @@ def test_telemetry_captures_event_and_feedback(db_path: str, tmp_path: Path) -> 
         # Second query → "q0-1" (deterministic sequential id).
         engine.search("retrieval")
         assert engine.last_telemetry_query_id() == "q0-1"
+        assert r0.results  # keep the r0 binding meaningful
 
-        # Attach agent feedback correlated to the first query.
-        engine.record_feedback("q0-0", [r0.results[0].id], [], "agent:test")
+        # Attach agent feedback correlated to the first query. The feedback id
+        # space is the telemetry `result_ids` (write_cursor), which post-C-2 is
+        # engine-internal to SearchHit — read it back from the captured event.
+        first_event = json.loads(sink.read_text(encoding="utf-8").splitlines()[0])
+        engine.record_feedback("q0-0", [first_event["result_ids"][0]], [], "agent:test")
     finally:
         engine.close()
 

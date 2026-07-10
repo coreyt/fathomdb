@@ -69,8 +69,15 @@ interface NativeSoftFallback {
   branch: string;
 }
 
+/** C-2 (0.8.19 / TC-8) — native typed id-space carrier (`{ space, value }`). */
+interface NativeIdSpace {
+  space: string;
+  value: string;
+}
+
 interface NativeSearchHit {
-  id: number;
+  /** C-2 (0.8.19 / TC-8) — typed, non-null, id-space-total hit id. */
+  id: NativeIdSpace;
   kind: string;
   body: string;
   score: number;
@@ -80,10 +87,6 @@ interface NativeSearchHit {
   /** 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
    * reranked hits; null otherwise. */
   ceScore?: number | null;
-  /** Cause-A (0.8.11.2) — additive cross-session-stable hit id (`"l:"`-tagged
-   * `logical_id`, or `"h:"` content-hash for doc nodes); null for synthetic
-   * passages. */
-  stableId?: string | null;
 }
 
 interface NativeQueryTrace {

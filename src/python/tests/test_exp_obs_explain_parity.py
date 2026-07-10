@@ -9,8 +9,9 @@ cross-binding contract the TypeScript harness
      byte-identical to the same query without explain; explain=True ⇒ present.
   2. QueryTrace — all 12 fields present + correctly typed; `alpha` exact (0.3
      default); `embedder_id` is a str ("" sentinel when no embedder).
-  3. per_hit ↔ results alignment — same length, same order, `per_hit[i].id ==
-     results[i].id`.
+  3. per_hit ↔ results alignment — same length, same order; correlate by
+     position (post-C-2 `PerHitExplain.id` is the positional write_cursor int,
+     while `SearchHit.id` is the typed IdSpace).
   4. The three self-consistency identities — `arm == branch`, `ce_score ==
      hit.ce_score`, `blended == hit.score`.
   5. None/Some rank fidelity — at least one arm rank is None and at least one is
@@ -97,7 +98,12 @@ def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
         assert len(exp.per_hit) == len(result.results)
         for p, h in zip(exp.per_hit, result.results):
             assert isinstance(p, PerHitExplain)
-            assert p.id == h.id
+            # C-2 (0.8.19): PerHitExplain.id is the hit's engine-internal
+            # positional write_cursor (an int, the pre-0.8.19 SearchHit.id space);
+            # the caller-facing SearchHit.id is the typed IdSpace. per_hit ↔ results
+            # correlate by position (this zip), not by cross-type id equality.
+            assert isinstance(p.id, int) and p.id >= 0
+            assert h.id.space in ("logical", "content", "passage")
             assert p.arm == h.branch
             assert p.ce_score == h.ce_score
             assert p.blended == h.score

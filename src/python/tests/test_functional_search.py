@@ -56,9 +56,14 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
         assert hits, "expected at least one structured hit"
         for hit in hits:
             assert isinstance(hit, SearchHit)
-            # id is the canonical write_cursor (interim identity carrier).
-            assert isinstance(hit.id, int)
-            assert hit.id > 0
+            # C-2 (0.8.19 / TC-8) — `id` is the typed IdSpace {space, value},
+            # non-null + id-space-total, crossing the FFI. Doc-seeded corpus nodes
+            # carry NULL logical_id, so the id is the `content` (`"h:"`) space with
+            # a 64-hex content-hash value (never None for a real node hit). The
+            # pre-0.8.19 int write_cursor id is engine-internal and no longer
+            # surfaced.
+            assert hit.id.space == "content"
+            assert isinstance(hit.id.value, str) and len(hit.id.value) == 64
             assert isinstance(hit.kind, str) and hit.kind
             assert isinstance(hit.body, str) and hit.body
             assert isinstance(hit.score, float)
@@ -67,11 +72,6 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
             # is None for every two-arm hit (only graph-arm hits carry it).
             assert hasattr(hit, "source_id")
             assert hit.source_id is None
-            # Cause-A (0.8.11.2) — `stable_id` crosses the FFI. Doc-seeded corpus
-            # nodes carry NULL logical_id, so the stable id is the `"h:"`
-            # content-hash of the body (never None for a real node hit).
-            assert hasattr(hit, "stable_id")
-            assert isinstance(hit.stable_id, str) and hit.stable_id.startswith("h:")
     finally:
         engine.close()
 

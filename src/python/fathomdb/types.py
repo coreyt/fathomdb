@@ -46,14 +46,38 @@ class SoftFallback:
 
 
 @dataclass(frozen=True)
+class IdSpace:
+    """C-2 (0.8.19 / OPP-12 Phase-1, TC-8) — the typed id-space carrier for
+    `SearchHit.id`.
+
+    `space` is the lowercase discriminant (`"logical"` | `"content"` |
+    `"passage"`), mirroring the engine's `IdSpaceKind` enum (the C-2 binding —
+    a typed carrier, not a magic-prefixed string). `value` is the bare id
+    (id-space prefix stripped). The prefixed form is `f"{prefix}{value}"` where
+    the prefix is `l:`/`h:`/`p:` — byte-identical to the pre-0.8.19 `stable_id`.
+    Only `logical` ids are lifecycle-addressable (the `transition`/`purge`
+    verbs, Phase-2 surface).
+    """
+
+    space: str
+    value: str
+
+
+@dataclass(frozen=True)
 class SearchHit:
     """One structured hit in a `SearchResult` (G1 / AC-057a-clean).
 
-    `id` is the canonical row's `write_cursor` — the interim identity carrier
-    per `dev/adr/ADR-0.8.0-canonical-identity-substrate.md`. `score` is the raw
-    per-branch relevance (`vec_distance_l2` for the vector branch, `bm25()` for
-    the text branch); the two are not comparable raw. `branch` tags which
-    retrieval branch produced the hit.
+    `id` (C-2 / 0.8.19, TC-8) is the typed, non-null, id-space-total hit id
+    (`IdSpace` with `space` + `value`). Governed hits are `logical` (`"l:"`),
+    doc-seeded hits `content` (`"h:"`), synthetic passages `passage` (`"p:"`).
+    Its `value` equals the pre-0.8.19 `stable_id` (which this subsumes) so
+    cross-session real-gold keying continues on `id`; it survives re-ingest and
+    never participates in ranking. The pre-C-2 positional `write_cursor` id is
+    engine-internal and no longer surfaced.
+
+    `score` is the raw per-branch relevance (`vec_distance_l2` for the vector
+    branch, `bm25()` for the text branch); the two are not comparable raw.
+    `branch` tags which retrieval branch produced the hit.
 
     `source_id` (G0 Phase-2) carries source-document provenance: the traversed
     edge's `source_id` for a graph-arm hit, `None` for every two-arm hit.
@@ -61,22 +85,15 @@ class SearchHit:
     `ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
     (`ce_norm = sigmoid(ce_logit)`), set only for hits inside the reranked pool;
     `None` otherwise (out-of-pool, the identity path, or no CE model loaded).
-
-    `stable_id` (Cause-A / 0.8.11.2) is the additive cross-session-stable hit id
-    for real-gold keying: the active node's `logical_id` (`"l:"`-tagged) when
-    present, else an `"h:"` content-hash of the body (doc nodes). `None` only
-    for synthetic passages. Unlike `id` (the interim `write_cursor`), it survives
-    re-ingest; it never participates in ranking.
     """
 
-    id: int
+    id: IdSpace
     kind: str
     body: str
     score: float
     branch: SoftFallbackBranch
     source_id: str | None = None
     ce_score: float | None = None
-    stable_id: str | None = None
 
 
 @dataclass(frozen=True)

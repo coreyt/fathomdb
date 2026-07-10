@@ -108,9 +108,31 @@ export interface SoftFallback {
   branch: SoftFallbackBranch;
 }
 
+/**
+ * C-2 (0.8.19 / OPP-12 Phase-1, TC-8) — the typed id-space carrier for
+ * `SearchHit.id`. `space` is the lowercase discriminant (`"logical"` |
+ * `"content"` | `"passage"`), mirroring the engine's `IdSpaceKind` enum (the
+ * C-2 binding — a typed carrier, not a magic-prefixed string). `value` is the
+ * bare id (id-space prefix stripped). The prefixed form is `${prefix}${value}`
+ * (`l:`/`h:`/`p:`) — byte-identical to the pre-0.8.19 `stableId`. Only `logical`
+ * ids are lifecycle-addressable.
+ */
+export interface IdSpace {
+  space: string;
+  value: string;
+}
+
 export interface SearchHit {
-  /** Canonical row `write_cursor` (interim identity carrier). */
-  id: number;
+  /**
+   * C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
+   * (`{ space, value }`). Governed hits are `logical` (`"l:"`), doc-seeded hits
+   * `content` (`"h:"`), synthetic passages `passage` (`"p:"`). Its `value`
+   * equals the pre-0.8.19 `stableId` (which this subsumes) so cross-session
+   * real-gold keying continues on `id`; it survives re-ingest and never
+   * participates in ranking. The pre-C-2 positional `write_cursor` id is
+   * engine-internal and no longer surfaced.
+   */
+  id: IdSpace;
   kind: string;
   body: string;
   /**
@@ -131,14 +153,6 @@ export interface SearchHit {
    * path, or no CE model loaded).
    */
   ceScore: number | null;
-  /**
-   * Cause-A (0.8.11.2) — additive cross-session-stable hit id for real-gold
-   * keying. The active node's `logical_id` (`"l:"`-tagged) when present, else an
-   * `"h:"` content-hash of the body (doc nodes). `null` only for synthetic
-   * passages. Unlike `id` (the interim `write_cursor`), it survives re-ingest;
-   * it never participates in ranking.
-   */
-  stableId: string | null;
 }
 
 /**
@@ -689,7 +703,7 @@ export class Engine {
           ? { branch: branch as SoftFallbackBranch }
           : null,
       results: r.results.map((h) => ({
-        id: h.id,
+        id: { space: h.id.space, value: h.id.value },
         kind: h.kind,
         body: h.body,
         score: h.score,
@@ -698,7 +712,6 @@ export class Engine {
           : "text",
         sourceId: h.sourceId ?? null,
         ceScore: h.ceScore ?? null,
-        stableId: h.stableId ?? null,
       })),
       explanation,
     };
@@ -722,7 +735,7 @@ export class Engine {
           ? { branch: branch as SoftFallbackBranch }
           : null,
       results: r.results.map((h) => ({
-        id: h.id,
+        id: { space: h.id.space, value: h.id.value },
         kind: h.kind,
         body: h.body,
         score: h.score,
@@ -731,7 +744,6 @@ export class Engine {
           : "text",
         sourceId: h.sourceId ?? null,
         ceScore: h.ceScore ?? null,
-        stableId: h.stableId ?? null,
       })),
       explanation: null,
     };
@@ -1031,7 +1043,7 @@ export const graph = {
     );
     return {
       searchHits: r.searchHits.map((h) => ({
-        id: h.id,
+        id: { space: h.id.space, value: h.id.value },
         kind: h.kind,
         body: h.body,
         score: h.score,
@@ -1041,7 +1053,6 @@ export const graph = {
         sourceId: h.sourceId ?? null,
         // 0.8.5 — searchExpand never reranks (depth=0) → ceScore is always null.
         ceScore: h.ceScore ?? null,
-        stableId: h.stableId ?? null,
       })),
       expanded: r.expanded.map((e) => ({
         node: e.node,

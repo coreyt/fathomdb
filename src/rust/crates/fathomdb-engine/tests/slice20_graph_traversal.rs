@@ -344,7 +344,7 @@ fn search_expand_returns_neighbors() {
     assert!(
         expanded_ids.contains(&"B"),
         "node B must appear in expanded; expanded={expanded_ids:?}\nresult.search_hits={:?}",
-        result.search_hits.iter().map(|h| h.id).collect::<Vec<_>>()
+        result.search_hits.iter().map(|h| h.id.clone()).collect::<Vec<_>>()
     );
 
     opened.engine.close().unwrap();
@@ -373,7 +373,7 @@ fn search_expand_deduplicates() {
         opened.engine.search_expand("dedup shimmer unique", None, 1).expect("search_expand");
 
     // B must be in search_hits.
-    let hit_ids: Vec<_> = result.search_hits.iter().map(|h| h.id).collect();
+    let hit_ids: Vec<_> = result.search_hits.iter().map(|h| h.id.clone()).collect();
     // B must NOT be in expanded (it's deduplicated by being a search hit).
     let expanded_logical_ids: Vec<_> =
         result.expanded.iter().map(|(n, _hop)| n.logical_id.as_str()).collect();

@@ -11,21 +11,22 @@ use std::time::{Duration, Instant};
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    apply_recency_reweight, Engine, PreparedWrite, SearchHit, SoftFallbackBranch,
+    apply_recency_reweight, Engine, IdSpace, PreparedWrite, SearchHit, SoftFallbackBranch,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
 fn hit(id: u64, body: &str, score: f64) -> SearchHit {
     SearchHit {
-        id,
+        // C-2 (0.8.19): recency reweight keys on `write_cursor`, not `id`.
+        id: IdSpace::content(id.to_string()),
+        write_cursor: id,
         kind: "doc".to_string(),
         body: body.to_string(),
         score,
         branch: SoftFallbackBranch::Vector,
         source_id: None,
         ce_score: None,
-        stable_id: None,
     }
 }
 

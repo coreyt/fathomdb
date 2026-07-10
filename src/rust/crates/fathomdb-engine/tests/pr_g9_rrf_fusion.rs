@@ -16,22 +16,25 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    fuse_rrf, fuse_three_arms, rerank_fused, Engine, ExtractDocument, PreparedWrite, SearchHit,
-    SoftFallback, SoftFallbackBranch, RRF_K, RRF_WEIGHT_GRAPH, RRF_WEIGHT_TEXT, RRF_WEIGHT_VECTOR,
+    fuse_rrf, fuse_three_arms, rerank_fused, Engine, ExtractDocument, IdSpace, PreparedWrite,
+    SearchHit, SoftFallback, SoftFallbackBranch, RRF_K, RRF_WEIGHT_GRAPH, RRF_WEIGHT_TEXT,
+    RRF_WEIGHT_VECTOR,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
 fn hit(id: u64, body: &str, branch: SoftFallbackBranch) -> SearchHit {
     SearchHit {
-        id,
+        // C-2 (0.8.19): synthetic test id-space carrier; the reweight/fusion
+        // book-keeping keys on `write_cursor`, not `id`.
+        id: IdSpace::content(id.to_string()),
+        write_cursor: id,
         kind: "doc".to_string(),
         body: body.to_string(),
         score: 0.0,
         branch,
         source_id: None,
         ce_score: None,
-        stable_id: None,
     }
 }
 
@@ -74,7 +77,8 @@ fn rrf_agreement_outranks_single_branch() {
     assert!(fused[0].score > fused[1].score, "agreement strictly outranks single-branch");
     // Representative of a both-branch body is the VECTOR hit (vector-first id).
     assert_eq!(fused[0].branch, SoftFallbackBranch::Vector);
-    assert_eq!(fused[0].id, 1);
+    assert_eq!(fused[0].write_cursor, 1);
+    assert_eq!(fused[0].id, IdSpace::content("1"));
 }
 
 #[test]

@@ -106,7 +106,12 @@ test("exp-obs trace + per-hit fidelity", async () => {
     for (let i = 0; i < exp.perHit.length; i++) {
       const p = exp.perHit[i]!;
       const h = result.results[i]!;
-      assert.equal(p.id, h.id);
+      // C-2 (0.8.19): perHit.id is the hit's engine-internal positional
+      // write_cursor (a number, the pre-0.8.19 SearchHit.id space); the caller-
+      // facing SearchHit.id is the typed IdSpace. Correlate by position (this
+      // loop), not by cross-type id equality.
+      assert.equal(typeof p.id, "number");
+      assert.ok(["logical", "content", "passage"].includes(h.id.space));
       assert.equal(p.arm, h.branch);
       assert.equal(p.ceScore, h.ceScore);
       assert.equal(p.blended, h.score);

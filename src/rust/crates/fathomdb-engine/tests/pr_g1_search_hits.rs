@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
-use fathomdb_engine::{Engine, PreparedWrite, SearchHit, SoftFallbackBranch};
+use fathomdb_engine::{Engine, IdSpace, IdSpaceKind, PreparedWrite, SearchHit, SoftFallbackBranch};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
@@ -82,8 +82,9 @@ fn ac_g1_hit_shape_text_branch() {
     assert_eq!(result.results.len(), 1, "expected exactly one hit");
     let hit: &SearchHit = &result.results[0];
 
-    // id == write_cursor (interim identity carrier).
-    assert_eq!(hit.id, receipt.cursor, "hit id must be the write_cursor");
+    // C-2 (0.8.19): the caller-facing `id` is now the typed IdSpace; the
+    // engine-internal positional cursor lives on `write_cursor`.
+    assert_eq!(hit.write_cursor, receipt.cursor, "hit write_cursor must be the projection cursor");
     // populated kind + body.
     assert_eq!(hit.kind, "note");
     assert_eq!(hit.body, "structured retrieval hit shape document");
@@ -119,7 +120,7 @@ fn ac_g1_hit_shape_vector_branch() {
     let result = search_after_projection(&opened.engine, "vectorize", receipt.cursor);
     assert_eq!(result.results.len(), 1, "expected exactly one vector hit");
     let hit = &result.results[0];
-    assert_eq!(hit.id, receipt.cursor);
+    assert_eq!(hit.write_cursor, receipt.cursor);
     assert_eq!(hit.kind, "doc");
     assert_eq!(hit.body, "semantic only payload");
     assert!(hit.score.is_finite());
@@ -181,7 +182,7 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
 
     // Every hit carries the structured shape.
     for hit in &result.results {
-        assert!(hit.id > 0, "id (write_cursor) must be populated");
+        assert!(hit.write_cursor > 0, "write_cursor must be populated");
         assert_eq!(hit.kind, "doc");
         assert!(!hit.body.is_empty());
         assert!(hit.score.is_finite());
@@ -217,16 +218,18 @@ fn ac_g1_no_eq_but_partial_eq() {
 }
 
 // ---------------------------------------------------------------------------
-// Cause-A (0.8.11.2) — additive stable hit-id for cross-session real-gold
-// keying. The field is `stable_id: Option<String>`: the active node's
-// `logical_id` (`"l:"`-tagged) when present, else an `"h:"` content-hash of the
-// body (doc-seeded nodes carry NULL `logical_id`). It never participates in
-// ranking — proven additive by the unchanged ordering/score assertions above.
+// Cause-A (0.8.11.2) / C-2 (0.8.19, TC-8) — the cross-session-stable hit id is
+// now the typed `SearchHit.id: IdSpace` (the additive `stable_id` field is
+// subsumed INTO `id`). A governed node's `id` is `Logical` (`"l:"` + logical_id);
+// a doc-seeded node's `id` is `Content` (`"h:"` + content hash). The id VALUE is
+// byte-identical to the pre-swap `stable_id` (eu7 no-op basis) and never
+// participates in ranking — proven additive by the unchanged ordering/score
+// assertions above.
 // ---------------------------------------------------------------------------
 
 /// A doc node (NULL `logical_id`, the dominant corpus case) surfaces a
-/// content-hash stable id: `"h:" + 64 hex chars`, deterministic across repeated
-/// searches.
+/// `Content` id whose prefixed form is `"h:" + 64 hex chars`, deterministic
+/// across repeated searches.
 #[test]
 fn cause_a_doc_node_stable_id_is_content_hash() {
     let (_dir, path) = fixture("cause_a_doc_hash");
@@ -246,8 +249,9 @@ fn cause_a_doc_node_stable_id_is_content_hash() {
 
     let result = search_after_projection(&opened.engine, "probe", receipt.cursor);
     let hit = &result.results[0];
-    let sid = hit.stable_id.as_deref().expect("doc node must carry a content-hash stable id");
-    assert!(sid.starts_with("h:"), "doc node stable id must be content-hash tagged, got {sid}");
+    assert_eq!(hit.id.space, IdSpaceKind::Content, "doc node id must be the Content space");
+    let sid = hit.id.to_prefixed();
+    assert!(sid.starts_with("h:"), "doc node id must be content-hash tagged, got {sid}");
     assert_eq!(sid.len(), 2 + 64, "h: + sha256 hex (64 chars)");
     assert!(
         sid["h:".len()..].chars().all(|c| c.is_ascii_hexdigit()),
@@ -256,7 +260,7 @@ fn cause_a_doc_node_stable_id_is_content_hash() {
 
     // Deterministic across a second search (no re-ingest).
     let again = search_after_projection(&opened.engine, "probe", receipt.cursor);
-    assert_eq!(again.results[0].stable_id.as_deref(), Some(sid), "stable id must be deterministic");
+    assert_eq!(again.results[0].id, hit.id.clone(), "id must be deterministic");
     opened.engine.close().unwrap();
 }
 
@@ -298,9 +302,9 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
         opened.engine.drain(10_000).expect("drain");
         let result = search_after_projection(&opened.engine, "survival", receipt.cursor);
         let hit = &result.results[0];
-        let sid = hit.stable_id.clone().expect("stable id");
-        // Record the interim id too, to prove it is NOT what gives stability.
-        let interim = hit.id;
+        let sid = hit.id.to_prefixed();
+        // Record the interim positional cursor too, to prove it is NOT what gives stability.
+        let interim = hit.write_cursor;
         opened.engine.close().unwrap();
         format!("{sid}|{interim}")
     };
@@ -309,10 +313,10 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
     let b = capture("cause_a_reingest_b");
     let (sid_a, id_a) = a.split_once('|').unwrap();
     let (sid_b, id_b) = b.split_once('|').unwrap();
-    assert_eq!(sid_a, sid_b, "content-hash stable id must survive re-ingest");
+    assert_eq!(sid_a, sid_b, "content-hash id must survive re-ingest");
     assert_ne!(
         id_a, id_b,
-        "interim write_cursor diverges across sessions (the reason stable_id exists)"
+        "interim write_cursor diverges across sessions (the reason the stable id exists)"
     );
 }
 
@@ -338,10 +342,11 @@ fn cause_a_logical_id_node_is_l_tagged() {
     let result = search_after_projection(&opened.engine, "entity", receipt.cursor);
     let hit = &result.results[0];
     assert_eq!(
-        hit.stable_id.as_deref(),
-        Some("l:entity-cause-a-42"),
-        "a node with a logical_id must carry the l:-tagged stable id"
+        hit.id,
+        IdSpace::logical("entity-cause-a-42"),
+        "a node with a logical_id must carry the Logical (l:) id"
     );
+    assert_eq!(hit.id.to_prefixed(), "l:entity-cause-a-42", "prefixed form is byte-stable");
     opened.engine.close().unwrap();
 }
 
@@ -399,9 +404,9 @@ fn supersession_search_excludes_superseded_node_version() {
     let active = search_after_projection(&opened.engine, "freshactiveterm", receipt.cursor);
     assert_eq!(active.results.len(), 1, "active version must surface for the new-body term");
     assert_eq!(
-        active.results[0].stable_id.as_deref(),
-        Some("l:entity-supersede-7"),
-        "the surfaced hit must be the active (l:-tagged) version"
+        active.results[0].id,
+        IdSpace::logical("entity-supersede-7"),
+        "the surfaced hit must be the active (Logical / l:) version"
     );
 
     // Regression: the OLD-body term must surface NOTHING — the superseded
@@ -412,7 +417,7 @@ fn supersession_search_excludes_superseded_node_version() {
     assert!(
         stale.results.is_empty(),
         "a term unique to the superseded version must return no hits, got {:?}",
-        stale.results.iter().map(|h| (&h.body, &h.stable_id)).collect::<Vec<_>>()
+        stale.results.iter().map(|h| (&h.body, h.id.to_prefixed())).collect::<Vec<_>>()
     );
     opened.engine.close().unwrap();
 }
@@ -449,8 +454,8 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
 
     let result = search_after_projection(&opened.engine, "unique", r1.cursor.max(r2.cursor));
     let ids: std::collections::HashSet<_> =
-        result.results.iter().filter_map(|h| h.stable_id.clone()).collect();
-    assert!(ids.len() >= 2, "two distinct bodies must yield two distinct stable ids, got {ids:?}");
+        result.results.iter().map(|h| h.id.to_prefixed()).collect();
+    assert!(ids.len() >= 2, "two distinct bodies must yield two distinct ids, got {ids:?}");
     assert!(ids.iter().all(|s| s.starts_with("h:")), "all doc-node ids are content-hash tagged");
     opened.engine.close().unwrap();
 }

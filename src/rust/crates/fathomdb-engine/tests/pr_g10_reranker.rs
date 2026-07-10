@@ -8,18 +8,19 @@
 //! feature). The CE inference path is feature-gated; these tests cover the
 //! soft-fallback path which must work without the model.
 
-use fathomdb_engine::{rerank_fused, SearchHit, SoftFallbackBranch};
+use fathomdb_engine::{rerank_fused, IdSpace, SearchHit, SoftFallbackBranch};
 
 fn hit(id: u64, body: &str, score: f64) -> SearchHit {
     SearchHit {
-        id,
+        // C-2 (0.8.19): typed id-space carrier; positional cursor in `write_cursor`.
+        id: IdSpace::content(id.to_string()),
+        write_cursor: id,
         kind: "doc".to_string(),
         body: body.to_string(),
         score,
         branch: SoftFallbackBranch::Vector,
         source_id: None,
         ce_score: None,
-        stable_id: None,
     }
 }
 
@@ -79,24 +80,24 @@ fn rerank_depth_0_is_byte_identical_to_identity_stub() {
     // Mirror of the old `rerank_fused_is_identity_stub` exact input.
     let hits = vec![
         SearchHit {
-            id: 1,
+            id: IdSpace::content("1"),
+            write_cursor: 1,
             kind: "doc".to_string(),
             body: "a".to_string(),
             score: 0.0,
             branch: SoftFallbackBranch::Vector,
             source_id: None,
             ce_score: None,
-            stable_id: None,
         },
         SearchHit {
-            id: 2,
+            id: IdSpace::content("2"),
+            write_cursor: 2,
             kind: "doc".to_string(),
             body: "b".to_string(),
             score: 0.0,
             branch: SoftFallbackBranch::Text,
             source_id: None,
             ce_score: None,
-            stable_id: None,
         },
     ];
     let out = rerank_fused("", hits.clone(), 0, 0.3, 0);

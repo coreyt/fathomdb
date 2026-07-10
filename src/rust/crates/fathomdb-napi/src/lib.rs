@@ -35,14 +35,14 @@ use fathomdb_engine::{
     ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
     Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
-    FilterTerm as RustFilterTerm, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow,
-    OpenReport as RustOpenReport, OpenStage, PerHitExplain as RustPerHitExplain,
-    Predicate as RustPredicate, PreparedWrite, QueryTrace as RustQueryTrace,
-    ScalarValue as RustScalarValue, SearchExpandResult as RustSearchExpandResult,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
-    WriteReceipt as RustWriteReceipt,
+    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
+    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
+    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -430,11 +430,34 @@ pub struct SoftFallback {
     pub branch: String,
 }
 
+/// C-2 (0.8.19 / OPP-12 Phase-1, TC-8) — the typed id-space carrier for
+/// [`SearchHit::id`], surfaced to JS as `{ space, value }`. `space` is the
+/// lowercase discriminant (`"logical"` | `"content"` | `"passage"`), mirroring
+/// the engine's `IdSpaceKind` enum (the C-2 binding — a typed carrier, not a
+/// magic-prefixed string). `value` is the bare id (id-space prefix stripped).
+#[napi(object)]
+pub struct IdSpace {
+    /// "logical" | "content" | "passage"
+    pub space: String,
+    /// The bare id value (id-space prefix stripped).
+    pub value: String,
+}
+
+impl IdSpace {
+    fn from_rust(id: &RustIdSpace) -> Self {
+        Self { space: id.space.as_str().to_string(), value: id.value.clone() }
+    }
+}
+
 #[napi(object)]
 pub struct SearchHit {
-    /// Canonical row `write_cursor` (interim identity carrier per
-    /// ADR-0.8.0-canonical-identity-substrate).
-    pub id: i64,
+    /// C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
+    /// (`{ space, value }`). Governed hits are `logical` (`"l:"`), doc-seeded hits
+    /// `content` (`"h:"`), synthetic passages `passage` (`"p:"`). Its `value`
+    /// equals the pre-0.8.19 `stableId` (which this subsumes) so cross-session
+    /// real-gold keying continues on `id`. The pre-C-2 positional `write_cursor`
+    /// id is engine-internal and no longer surfaced.
+    pub id: IdSpace,
     pub kind: String,
     pub body: String,
     /// Raw per-branch relevance: `vec_distance_l2` (vector) or `bm25()`
@@ -449,16 +472,12 @@ pub struct SearchHit {
     /// (`ceScore` in JS). Set only for hits inside the reranked pool; `null`
     /// otherwise (out-of-pool, identity path, or no CE model loaded).
     pub ce_score: Option<f64>,
-    /// Cause-A (0.8.11.2) — additive cross-session-stable hit id (`stableId` in
-    /// JS): the `"l:"`-tagged `logical_id`, or an `"h:"` content-hash for doc
-    /// nodes; `null` only for synthetic passages. Never participates in ranking.
-    pub stable_id: Option<String>,
 }
 
 impl SearchHit {
     fn from_rust(h: &RustSearchHit) -> Self {
         Self {
-            id: h.id as i64,
+            id: IdSpace::from_rust(&h.id),
             kind: h.kind.clone(),
             body: h.body.clone(),
             score: h.score,
@@ -470,7 +489,6 @@ impl SearchHit {
             },
             source_id: h.source_id.clone(),
             ce_score: h.ce_score,
-            stable_id: h.stable_id.clone(),
         }
     }
 }
@@ -605,9 +623,12 @@ impl QueryTrace {
 }
 
 /// 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown (mirror of
-/// engine `PerHitExplain`). `id` mirrors `SearchHit.id` exactly (`as i64` → JS
-/// number; NO BigInt/string promotion, so `perHit[i].id === results[i].id`).
-/// napi maps snake_case → camelCase (`vectorRank`, `fusedScore`, `ceScore`).
+/// engine `PerHitExplain`). `id` is the hit's engine-internal positional
+/// `write_cursor` (the pre-0.8.19 `SearchHit.id`), `as i64` → JS number (NO
+/// BigInt/string promotion). Post-C-2 the caller-facing `SearchHit.id` is the
+/// typed `{ space, value }` object; correlate a `PerHitExplain` to its `SearchHit`
+/// by position (both arrays are 1:1, same order). napi maps snake_case →
+/// camelCase (`vectorRank`, `fusedScore`, `ceScore`).
 #[napi(object)]
 pub struct PerHitExplain {
     pub id: i64,
@@ -1169,8 +1190,9 @@ impl Engine {
     }
 
     /// 0.8.8 Slice 15 — attach agent relevance labels for a captured `queryId`.
-    /// Ids are the stable identity carrier (== `SearchHit.id`). Errors if telemetry
-    /// is off.
+    /// Ids are the positional `write_cursor` keys emitted in the telemetry
+    /// `result_ids` array (the pre-0.8.19 `SearchHit.id` space), NOT the post-C-2
+    /// typed `SearchHit.id`. Errors if telemetry is off.
     #[napi]
     pub async fn record_feedback(
         &self,
@@ -1181,10 +1203,10 @@ impl Engine {
     ) -> Result<()> {
         validate_ffi_string_napi(&query_id)?;
         validate_ffi_string_napi(&label_source)?;
-        // codex §9 [P2] (parity): ids are non-negative `u64` (the stable
-        // `SearchHit.id` carrier). A direct napi caller bypassing the TS wrapper
-        // could pass a negative `i64` which `as u64` would wrap to a huge value;
-        // reject it here to match the TS/Python wrapper guards.
+        // codex §9 [P2] (parity): ids are non-negative `u64` (the telemetry
+        // `result_ids` / `write_cursor` key space). A direct napi caller bypassing
+        // the TS wrapper could pass a negative `i64` which `as u64` would wrap to a
+        // huge value; reject it here to match the TS/Python wrapper guards.
         let rel = checked_ids_napi("relevantIds", &relevant_ids)?;
         let irr = checked_ids_napi("irrelevantIds", &irrelevant_ids)?;
         let engine = Arc::clone(&self.inner);

@@ -1166,11 +1166,133 @@ pub enum SoftFallbackBranch {
 /// field is additive and nullable; `use_graph_arm=false` results are byte-stable
 /// (every hit `source_id == None`).
 ///
+/// C-2 (0.8.19 / OPP-12 record-lifecycle Phase-1, TC-8) — the **id-space** of a
+/// [`SearchHit::id`]. A closed, typed enum (NOT a magic-prefixed string) — the
+/// C-2 binding ratified in the OPP-12 protocol:
+/// - [`Logical`](IdSpaceKind::Logical) — `"l:"`, a governed/canonical node keyed
+///   by its `logical_id` (the only lifecycle-addressable space).
+/// - [`Content`](IdSpaceKind::Content) — `"h:"`, a doc-seeded/anonymous node
+///   keyed by a content hash of its body (the dominant corpus hit class).
+/// - [`Passage`](IdSpaceKind::Passage) — `"p:"`, a synthetic `rerank_passages`
+///   hit keyed by the caller-supplied passage ordinal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IdSpaceKind {
+    /// `"l:"` — governed/canonical node (its `logical_id`).
+    Logical,
+    /// `"h:"` — doc-seeded/anonymous node (content hash of the body).
+    Content,
+    /// `"p:"` — synthetic rerank passage (caller-supplied ordinal).
+    Passage,
+}
+
+impl IdSpaceKind {
+    /// The two-char id-space prefix (`"l:"` / `"h:"` / `"p:"`) used in the
+    /// prefixed string form. Byte-identical to the pre-swap `derive_stable_id`
+    /// tags so real-gold keying stays a no-op.
+    #[must_use]
+    pub fn prefix(self) -> &'static str {
+        match self {
+            Self::Logical => "l:",
+            Self::Content => "h:",
+            Self::Passage => "p:",
+        }
+    }
+
+    /// The lowercase discriminant (`"logical"` / `"content"` / `"passage"`)
+    /// surfaced through the SDK bindings as the `IdSpace.space` field (mirrors
+    /// how `SoftFallbackBranch` is surfaced as a `branch` string).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Logical => "logical",
+            Self::Content => "content",
+            Self::Passage => "passage",
+        }
+    }
+}
+
+/// C-2 (0.8.19 / OPP-12 Phase-1, TC-8) — the typed, non-null, id-space-**total**
+/// carrier for [`SearchHit::id`]. Subsumes the interim `write_cursor` id AND the
+/// additive Cause-A `stable_id` field of prior releases: the `value` is the BARE
+/// id (prefix stripped), and [`to_prefixed`](IdSpace::to_prefixed) reproduces the
+/// pre-swap `stable_id` string byte-for-byte (`l:`/`h:` unchanged) so
+/// cross-session real-gold keying continues on `id` as a true no-op.
+///
+/// Lifecycle-addressability is a type check consumed downstream by the
+/// `transition`/`purge` verbs: only [`Logical`](IdSpaceKind::Logical) is
+/// lifecycle-addressable; `Content`/`Passage` are total-but-not-addressable.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct IdSpace {
+    /// The typed id-space (`Logical`/`Content`/`Passage`).
+    pub space: IdSpaceKind,
+    /// The bare id value (id-space prefix stripped).
+    pub value: String,
+}
+
+impl IdSpace {
+    /// A `Logical` (`"l:"`) id carrying `value` (a `logical_id`).
+    pub fn logical(value: impl Into<String>) -> Self {
+        Self { space: IdSpaceKind::Logical, value: value.into() }
+    }
+
+    /// A `Content` (`"h:"`) id carrying `value` (a content hash).
+    pub fn content(value: impl Into<String>) -> Self {
+        Self { space: IdSpaceKind::Content, value: value.into() }
+    }
+
+    /// A `Passage` (`"p:"`) id carrying `value` (a caller-supplied ordinal).
+    pub fn passage(value: impl Into<String>) -> Self {
+        Self { space: IdSpaceKind::Passage, value: value.into() }
+    }
+
+    /// The prefixed string form (`{prefix}{value}`) — byte-identical to the
+    /// pre-swap `derive_stable_id` output for `l:`/`h:`.
+    #[must_use]
+    pub fn to_prefixed(&self) -> String {
+        format!("{}{}", self.space.prefix(), self.value)
+    }
+
+    /// Parse the prefixed string form back into a typed `IdSpace`. Round-trip
+    /// stable: `IdSpace::parse(&x.to_prefixed()) == Some(x)`. Only the FIRST
+    /// two-char id-space prefix is stripped, so a value that itself contains
+    /// `":"` round-trips unchanged. Returns `None` for an untagged string.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        if let Some(v) = s.strip_prefix("l:") {
+            Some(Self::logical(v))
+        } else if let Some(v) = s.strip_prefix("h:") {
+            Some(Self::content(v))
+        } else {
+            s.strip_prefix("p:").map(Self::passage)
+        }
+    }
+}
+
+impl std::fmt::Display for IdSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.space.prefix(), self.value)
+    }
+}
+
 /// Derives `Clone, Debug, PartialEq` but **not `Eq`** — `score: f64` forbids
 /// total equality.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchHit {
-    pub id: u64,
+    /// C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
+    /// ([`IdSpace`]). Was the interim `write_cursor: u64` in prior releases; now
+    /// carries the cross-session-stable key (its `value` == the pre-swap
+    /// `stable_id`). Governed hits are `l:`, doc-seeded hits `h:`, synthetic
+    /// passages `p:`. This is the caller-facing identity; the positional
+    /// `write_cursor` below is engine-internal book-keeping.
+    pub id: IdSpace,
+    /// Engine-internal positional cursor (the value `id` carried before the C-2
+    /// swap). Reassigned on every re-projection/re-ingest — NOT cross-session
+    /// stable, NOT the caller-facing id. Retained because the engine still needs
+    /// a positional cursor for its own book-keeping (vector rowid mapping, the
+    /// `state='active'` filter lookups, RRF recency/importance reweight keys,
+    /// telemetry `result_ids` keying, `search_expand` re-resolution). The SDK
+    /// bindings do NOT surface it.
+    pub write_cursor: u64,
     pub kind: String,
     pub body: String,
     pub score: f64,
@@ -1183,17 +1305,6 @@ pub struct SearchHit {
     /// no-CE-model soft-fallback. Additive + nullable: it never participates in
     /// ranking, so default-path ordering/scores stay byte-stable.
     pub ce_score: Option<f64>,
-    /// Cause-A (0.8.11.2) — additive **stable hit-id** for cross-session
-    /// real-gold keying. Unlike `id` (the interim `write_cursor`, reassigned on
-    /// every re-projection/re-ingest), this carries a re-ingest-survivable key
-    /// derived by [`derive_stable_id`]: the active canonical node's `logical_id`
-    /// (id-space `"l:"`) when present, else an `"h:"` content-hash of the body
-    /// (the doc-seeded node case — the dominant corpus hit type today). `None`
-    /// ONLY for synthetic `rerank_passages` hits, which have no canonical
-    /// identity. Additive + nullable, prefix-tagged by id-space, and it NEVER
-    /// participates in ranking — default-path ordering/scores stay byte-stable
-    /// (same posture as `source_id` / `ce_score`).
-    pub stable_id: Option<String>,
 }
 
 /// G0 Phase-2 (E0a / BLOCK-1) — graph-arm frontier instrumentation. A
@@ -1330,6 +1441,12 @@ pub struct QueryTrace {
 // 0.8.8 field-set ratification — HARD: leaf absorbs future arms / score components.
 #[non_exhaustive]
 pub struct PerHitExplain {
+    /// The hit's engine-internal positional `write_cursor` (the pre-C-2
+    /// `SearchHit.id`). Post-0.8.19 the caller-facing `SearchHit.id` is a typed
+    /// [`IdSpace`]; this field keeps carrying the positional cursor so the explain
+    /// sidecar cross-references the telemetry `result_ids` space. Correlate a
+    /// `PerHitExplain` to its `SearchHit` by position (both lists are 1:1, same
+    /// order).
     pub id: u64,
     /// Winning arm after RRF dedup (vector-first), == `SearchHit.branch`.
     pub arm: SoftFallbackBranch,
@@ -4176,7 +4293,11 @@ impl Engine {
         let ts_monotonic_ms = sink.base.elapsed().as_millis() as u64;
         let mut arm_of = serde_json::Map::new();
         for h in &result.results {
-            arm_of.insert(h.id.to_string(), serde_json::Value::from(branch_str(h.branch)));
+            // Keyed on the engine-internal positional cursor (the pre-C-2
+            // `SearchHit.id` == `write_cursor`), byte-unchanged so `record_feedback`
+            // + the gold pipeline keep keying on the same `result_ids` space.
+            arm_of
+                .insert(h.write_cursor.to_string(), serde_json::Value::from(branch_str(h.branch)));
         }
         let event = serde_json::json!({
             "type": "event",
@@ -4184,15 +4305,17 @@ impl Engine {
             "ts_monotonic_ms": ts_monotonic_ms,
             "query_id": query_id,
             "query_chars": query.chars().count() as u64,
-            "result_ids": result.results.iter().map(|h| h.id).collect::<Vec<u64>>(),
-            // Cause-A: parallel cross-session-stable ids, SAME order as result_ids;
-            // `null` for a hit that has no stable id (synthetic passages). Additive
-            // — result_ids (write_cursor) is retained unchanged.
+            "result_ids": result.results.iter().map(|h| h.write_cursor).collect::<Vec<u64>>(),
+            // Cause-A / C-2: parallel cross-session-stable ids, SAME order as
+            // result_ids. Post-C-2 the stable id lives on `SearchHit.id` (its
+            // prefixed form == the pre-swap `stable_id` value byte-for-byte), so
+            // the emitted bytes are unchanged and the `write_cursor` result_ids
+            // keys are retained unchanged (pre-Cause-A gold stays valid).
             "result_stable_ids": result
                 .results
                 .iter()
-                .map(|h| h.stable_id.clone())
-                .collect::<Vec<Option<String>>>(),
+                .map(|h| h.id.to_prefixed())
+                .collect::<Vec<String>>(),
             "arm_of": arm_of,
         });
         let _ = append_jsonl(&sink.path, &event);
@@ -6398,8 +6521,8 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
     if !enabled || hits.len() < 2 {
         return hits;
     }
-    let min_id = hits.iter().map(|h| h.id).min().unwrap_or(0);
-    let max_id = hits.iter().map(|h| h.id).max().unwrap_or(0);
+    let min_id = hits.iter().map(|h| h.write_cursor).min().unwrap_or(0);
+    let max_id = hits.iter().map(|h| h.write_cursor).max().unwrap_or(0);
     if max_id == min_id {
         return hits;
     }
@@ -6407,7 +6530,7 @@ pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
     let mut reweighted: Vec<SearchHit> = hits
         .into_iter()
         .map(|mut h| {
-            let norm = (h.id - min_id) as f64 / span;
+            let norm = (h.write_cursor - min_id) as f64 / span;
             h.score += RECENCY_WEIGHT * norm;
             h
         })
@@ -6444,17 +6567,18 @@ pub fn apply_importance_reweight(
     }
     // Graceful-neutral fast path (R-F9-4): if nothing is weighted, do not touch
     // order or scores — identical to the reweight-OFF result.
-    let any_weighted = hits
-        .iter()
-        .any(|h| importance_by_id.contains_key(&h.id) || confidence_by_id.contains_key(&h.id));
+    let any_weighted = hits.iter().any(|h| {
+        importance_by_id.contains_key(&h.write_cursor)
+            || confidence_by_id.contains_key(&h.write_cursor)
+    });
     if !any_weighted {
         return hits;
     }
     let mut reweighted: Vec<SearchHit> = hits
         .into_iter()
         .map(|mut h| {
-            let importance = importance_by_id.get(&h.id).copied().unwrap_or(1.0);
-            let confidence = confidence_by_id.get(&h.id).copied().unwrap_or(1.0);
+            let importance = importance_by_id.get(&h.write_cursor).copied().unwrap_or(1.0);
+            let confidence = confidence_by_id.get(&h.write_cursor).copied().unwrap_or(1.0);
             h.score *= importance * confidence;
             h
         })
@@ -6480,8 +6604,8 @@ fn build_importance_confidence_maps(
         tx.prepare("SELECT importance FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
     {
         for h in hits {
-            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
-                importance_by_id.insert(h.id, v);
+            if let Ok(Some(v)) = stmt.query_row([h.write_cursor], |r| r.get::<_, Option<f64>>(0)) {
+                importance_by_id.insert(h.write_cursor, v);
             }
         }
     }
@@ -6490,8 +6614,8 @@ fn build_importance_confidence_maps(
          WHERE write_cursor = ?1 AND superseded_at IS NULL LIMIT 1",
     ) {
         for h in hits {
-            if let Ok(Some(v)) = stmt.query_row([h.id], |r| r.get::<_, Option<f64>>(0)) {
-                confidence_by_id.insert(h.id, v);
+            if let Ok(Some(v)) = stmt.query_row([h.write_cursor], |r| r.get::<_, Option<f64>>(0)) {
+                confidence_by_id.insert(h.write_cursor, v);
             }
         }
     }
@@ -6599,22 +6723,26 @@ pub fn rerank_passages(
     let hits: Vec<SearchHit> = passages
         .into_iter()
         .map(|(id, body, score)| SearchHit {
-            id,
+            // C-2: synthetic passages carry no canonical identity — mint the
+            // `Passage` (`p:`) id from the caller-supplied ordinal. The ordinal
+            // is ALSO kept as the engine-internal positional cursor so the
+            // projection below returns it byte-unchanged.
+            id: IdSpace::passage(id.to_string()),
+            write_cursor: id,
             kind: "passage".to_string(),
             body,
             score,
             branch: SoftFallbackBranch::Vector,
             source_id: None,
             ce_score: None,
-            // Cause-A: synthetic passages have no canonical identity → no stable id.
-            stable_id: None,
         })
         .collect();
     // 0.8.5 — project `(id, score, ce_score)` so the binding can surface the CE
     // score per candidate; `ce_score` is `None` for the identity / out-of-pool path.
+    // The projected id is the caller's ordinal (the engine-internal `write_cursor`).
     Ok(rerank_fused(query, hits, rerank_depth, alpha, pool_n)
         .into_iter()
-        .map(|h| (h.id, h.score, h.ce_score))
+        .map(|h| (h.write_cursor, h.score, h.ce_score))
         .collect())
 }
 
@@ -7088,30 +7216,30 @@ fn read_search_in_tx(
                     row.get::<_, Option<String>>(2)?,
                 ))
             }) {
-                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
+                let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
-                    id: rowid as u64,
+                    id,
+                    write_cursor: rowid as u64,
                     kind,
                     body,
                     score,
                     branch: SoftFallbackBranch::Vector,
                     source_id: None,
                     ce_score: None,
-                    stable_id,
                 });
             } else if let Ok((body, logical_id)) = edge_stmt.query_row([rowid], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             }) {
-                let stable_id = Some(derive_stable_id(logical_id.as_deref(), &body));
+                let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
-                    id: rowid as u64,
+                    id,
+                    write_cursor: rowid as u64,
                     kind: "edge_fact".to_string(),
                     body,
                     score,
                     branch: SoftFallbackBranch::TextEdge,
                     source_id: None,
                     ce_score: None,
-                    stable_id,
                 });
             }
         }
@@ -7201,10 +7329,10 @@ fn read_search_in_tx(
                 let body = row.get::<_, String>(0)?;
                 let logical_id = row.get::<_, Option<String>>(4)?;
                 Ok(SearchHit {
-                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    id: derive_stable_id(logical_id.as_deref(), &body),
                     body,
                     kind: row.get::<_, String>(1)?,
-                    id: row.get::<_, i64>(2)? as u64,
+                    write_cursor: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::Text,
                     source_id: None,
@@ -7229,11 +7357,11 @@ fn read_search_in_tx(
             let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
                 let body = row.get::<_, String>(0)?;
                 Ok(SearchHit {
-                    // No logical_id column on this schema → content-hash stable id.
-                    stable_id: Some(derive_stable_id(None, &body)),
+                    // No logical_id column on this schema → content-hash id.
+                    id: derive_stable_id(None, &body),
                     body,
                     kind: row.get::<_, String>(1)?,
-                    id: row.get::<_, i64>(2)? as u64,
+                    write_cursor: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::Text,
                     source_id: None,
@@ -7245,7 +7373,7 @@ fn read_search_in_tx(
     };
     let mut text_results: Vec<SearchHit> = Vec::with_capacity(text_candidates.len());
     for hit in text_candidates {
-        if text_hit_passes_filter(&tx, hit.id, &hit.kind, filter)? {
+        if text_hit_passes_filter(&tx, hit.write_cursor, &hit.kind, filter)? {
             text_results.push(hit);
         }
     }
@@ -7283,10 +7411,10 @@ fn read_search_in_tx(
                 let body = row.get::<_, String>(0)?;
                 let logical_id = row.get::<_, Option<String>>(4)?;
                 Ok(SearchHit {
-                    stable_id: Some(derive_stable_id(logical_id.as_deref(), &body)),
+                    id: derive_stable_id(logical_id.as_deref(), &body),
                     body,
                     kind: row.get::<_, String>(1)?,
-                    id: row.get::<_, i64>(2)? as u64,
+                    write_cursor: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::TextEdge,
                     source_id: None,
@@ -7302,7 +7430,7 @@ fn read_search_in_tx(
         }
     };
     for row in edge_candidates {
-        if edge_fts_hit_passes_filter(&tx, row.id, &row.kind, filter)? {
+        if edge_fts_hit_passes_filter(&tx, row.write_cursor, &row.kind, filter)? {
             text_results.push(row);
         }
     }
@@ -7446,7 +7574,11 @@ fn read_search_in_tx(
         let per_hit: Vec<PerHitExplain> = results
             .iter()
             .map(|h| PerHitExplain {
-                id: h.id,
+                // `PerHitExplain.id` carries the engine-internal positional
+                // `write_cursor` (the pre-C-2 `SearchHit.id`), matching the
+                // telemetry `result_ids` / importance-map key space; the typed
+                // `SearchHit.id` is the separate caller-facing identity.
+                id: h.write_cursor,
                 arm: h.branch,
                 vector_rank: exp_vector_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
                 text_rank: exp_text_ranks.as_ref().and_then(|m| m.get(&h.body).copied()),
@@ -7454,8 +7586,8 @@ fn read_search_in_tx(
                 fused_score: fused_scores.get(&h.body).copied().unwrap_or(h.score),
                 ce_score: h.ce_score,
                 blended: h.score,
-                importance: exp_importance.as_ref().and_then(|m| m.get(&h.id).copied()),
-                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.id).copied()),
+                importance: exp_importance.as_ref().and_then(|m| m.get(&h.write_cursor).copied()),
+                confidence: exp_confidence.as_ref().and_then(|m| m.get(&h.write_cursor).copied()),
             })
             .collect();
         let ce_active = rerank_depth > 0 && per_hit.iter().any(|p| p.ce_score.is_some());
@@ -7659,7 +7791,7 @@ fn bfs_graph_arm_candidates(
                 if visited.insert(lid.clone()) {
                     // Cause-A: the seed's `logical_id` is in hand (`lid`) — derive the
                     // stable id before `lid` is moved onto the frontier (zero extra query).
-                    let stable_id = Some(derive_stable_id(Some(&lid), &body));
+                    let id = derive_stable_id(Some(&lid), &body);
                     frontier.push_back((lid, 0));
                     if !seed_bodies.contains(body.as_str()) && candidates.len() < cap {
                         // depth-0 hop_score = 1.0/(1.0+0) = 1.0; synthesized penalty for
@@ -7671,14 +7803,14 @@ fn bfs_graph_arm_candidates(
                             edge_confidence_by_cursor.insert(write_cursor as u64, c);
                         }
                         candidates.push(SearchHit {
-                            id: write_cursor as u64,
+                            id,
+                            write_cursor: write_cursor as u64,
                             kind,
                             body,
                             score,
                             branch: SoftFallbackBranch::GraphArm,
                             source_id,
                             ce_score: None,
-                            stable_id,
                         });
                     }
                 }
@@ -7771,14 +7903,15 @@ fn bfs_graph_arm_candidates(
                     // Cause-A: the neighbor's `logical_id` is `neighbor` (still in
                     // scope here; only moved onto the frontier below) — derive the
                     // stable id with no extra query.
-                    let stable_id = Some(derive_stable_id(Some(&neighbor), &body));
+                    let id = derive_stable_id(Some(&neighbor), &body);
                     // F9: record the traversing edge's confidence for this node
                     // (first edge wins — this is the winning-`bfs_rank` edge).
                     if let Some(c) = edge_confidence {
                         edge_confidence_by_cursor.insert(write_cursor as u64, c);
                     }
                     candidates.push(SearchHit {
-                        id: write_cursor as u64,
+                        id,
+                        write_cursor: write_cursor as u64,
                         kind,
                         body,
                         score,
@@ -7786,7 +7919,6 @@ fn bfs_graph_arm_candidates(
                         // BLOCK-2: the session this fact-edge was extracted from.
                         source_id: edge_source_id.clone(),
                         ce_score: None,
-                        stable_id,
                     });
                     if candidates.len() >= cap {
                         break;
@@ -8202,7 +8334,7 @@ fn search_expand_in_tx(
             if hit.branch == SoftFallbackBranch::TextEdge {
                 // Edge-body hit: verify the edge row is still active in THIS snapshot.
                 // Stale edge hits (superseded between search and expansion) are dropped.
-                let cursor_i64 = hit.id as i64;
+                let cursor_i64 = hit.write_cursor as i64;
                 let active: Option<i32> =
                     edge_stmt.query_row([cursor_i64], |row| row.get(0)).optional()?;
                 if active.is_some() {
@@ -8211,7 +8343,7 @@ fn search_expand_in_tx(
                     hit_logical_ids.push(None); // superseded edge: drop
                 }
             } else {
-                let cursor_i64 = hit.id as i64;
+                let cursor_i64 = hit.write_cursor as i64;
                 // Returns Option<Option<String>>:
                 //   None         → no row → superseded
                 //   Some(None)   → row with NULL logical_id → anonymous node
@@ -10598,36 +10730,33 @@ fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Cause-A (0.8.11.2) — derive the additive **stable hit-id** carried on
-/// [`SearchHit::stable_id`] for cross-session real-gold keying.
+/// Cause-A (0.8.11.2) / C-2 (0.8.19, TC-8) — derive the typed **stable hit-id**
+/// ([`IdSpace`]) carried on [`SearchHit::id`] for cross-session real-gold keying.
 ///
 /// The stable id is the active canonical node's `logical_id` — the post-G0
-/// supersession-stable identity, preserved across re-projection/re-ingest by
-/// the tombstone-then-insert contract (whereas `SearchHit.id` ==
-/// `write_cursor` is reassigned on every re-ingest). When `logical_id` is NULL
-/// — the doc-seeded node case, the *dominant* corpus hit type today — we fall
-/// back to a content hash of the body so doc hits still carry a
-/// re-ingest-survivable key (a `None` here would leave the doc-seeded real-gold
-/// arms session-scoped; the Steward DECIDED to adopt this fallback).
+/// supersession-stable identity, preserved across re-projection/re-ingest by the
+/// tombstone-then-insert contract (whereas the engine-internal `write_cursor` is
+/// reassigned on every re-ingest). When `logical_id` is NULL — the doc-seeded
+/// node case, the *dominant* corpus hit type today — we fall back to a content
+/// hash of the body so doc hits still carry a re-ingest-survivable key.
 ///
-/// The result is **prefix-tagged by id-space** so the two provenances are
-/// distinguishable by inspection (honest `id_space`):
-/// - `"l:<logical_id>"` — logical-id space (entities + edges; graph-arm,
+/// The result is a typed [`IdSpace`]; its `to_prefixed()` reproduces the pre-C-2
+/// `stable_id` string byte-for-byte so real-gold keying is a no-op:
+/// - [`IdSpace::logical`] (`"l:<logical_id>"`) — entities + edges (graph-arm,
 ///   vector-node, and edge hits when `logical_id` is present);
-/// - `"h:<sha256(body)>"` — content-hash space (doc nodes with NULL
-///   `logical_id`, and any branch that cannot cheaply resolve a `logical_id`).
+/// - [`IdSpace::content`] (`"h:<sha256(body)>"`) — doc nodes with NULL
+///   `logical_id`, and any branch that cannot cheaply resolve a `logical_id`.
 ///
 /// Behaviour-neutral: the value never participates in ranking/scoring (same
 /// additive posture as `source_id` / `ce_score`).
-fn derive_stable_id(logical_id: Option<&str>, body: &str) -> String {
+fn derive_stable_id(logical_id: Option<&str>, body: &str) -> IdSpace {
     match logical_id {
-        Some(lid) if !lid.is_empty() => format!("l:{lid}"),
+        Some(lid) if !lid.is_empty() => IdSpace::logical(lid),
         _ => {
             let mut hasher = Sha256::new();
             hasher.update(body.as_bytes());
-            format!(
-                "h:{}",
-                hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
+            IdSpace::content(
+                hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>(),
             )
         }
     }
@@ -12233,35 +12362,64 @@ unsafe extern "C" fn profile_callback_trampoline(
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_stable_id, resolve_source_type, Engine, PreparedWrite, KIND_TO_SOURCE_TYPE_CASE_SQL,
+        derive_stable_id, resolve_source_type, Engine, IdSpace, IdSpaceKind, PreparedWrite,
+        KIND_TO_SOURCE_TYPE_CASE_SQL,
     };
     use rusqlite::Connection;
     use tempfile::TempDir;
 
-    /// Cause-A (0.8.11.2) — `derive_stable_id` id-space contract: a present
-    /// `logical_id` yields an `"l:"`-tagged key; a NULL or empty `logical_id`
-    /// falls back to a deterministic `"h:"`-tagged sha256 content-hash of the
-    /// body. The two id-spaces are prefix-distinguishable and the value is
-    /// behaviour-neutral (never used in ranking).
+    /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:
+    /// a present `logical_id` yields a `Logical` (`"l:"`) [`IdSpace`]; a NULL or
+    /// empty `logical_id` falls back to a deterministic `Content` (`"h:"`) sha256
+    /// content-hash of the body. The typed spaces are prefix-distinguishable and
+    /// the value is behaviour-neutral (never used in ranking). Post-C-2 the helper
+    /// returns a typed [`IdSpace`] whose `to_prefixed()` reproduces the pre-swap
+    /// string byte-for-byte (eu7 no-op basis).
     #[test]
     fn derive_stable_id_id_space_contract() {
-        // logical_id present → l:-tagged, body-independent.
-        assert_eq!(derive_stable_id(Some("alice-1"), "any body"), "l:alice-1");
-        assert_eq!(derive_stable_id(Some("alice-1"), "a different body"), "l:alice-1");
+        // logical_id present → Logical space, body-independent.
+        assert_eq!(derive_stable_id(Some("alice-1"), "any body"), IdSpace::logical("alice-1"));
+        assert_eq!(
+            derive_stable_id(Some("alice-1"), "a different body"),
+            IdSpace::logical("alice-1")
+        );
+        // Byte-identical prefixed form to the pre-C-2 `stable_id` string.
+        assert_eq!(derive_stable_id(Some("alice-1"), "any body").to_prefixed(), "l:alice-1");
 
-        // NULL logical_id → h:-tagged content-hash, deterministic on body.
+        // NULL logical_id → Content space, deterministic on body.
         let h1 = derive_stable_id(None, "stable body text");
         let h2 = derive_stable_id(None, "stable body text");
         assert_eq!(h1, h2, "content-hash is deterministic");
-        assert!(h1.starts_with("h:"));
-        assert_eq!(h1.len(), 2 + 64, "h: + sha256 hex");
-        assert!(h1["h:".len()..].chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(h1.space, IdSpaceKind::Content);
+        let h1s = h1.to_prefixed();
+        assert!(h1s.starts_with("h:"));
+        assert_eq!(h1s.len(), 2 + 64, "h: + sha256 hex");
+        assert!(h1s["h:".len()..].chars().all(|c| c.is_ascii_hexdigit()));
 
         // Empty logical_id is treated as absent (falls back to content-hash).
         assert_eq!(derive_stable_id(Some(""), "stable body text"), h1);
 
         // Distinct bodies → distinct content-hashes (no collision).
         assert_ne!(derive_stable_id(None, "body A"), derive_stable_id(None, "body B"));
+    }
+
+    /// C-2 (0.8.19 / TC-8) — [`IdSpace`] parse/format round-trip is stable across
+    /// all three spaces, including a value that itself contains `":"`.
+    #[test]
+    fn id_space_parse_format_round_trip() {
+        let cases = [
+            IdSpace::logical("alice-1"),
+            IdSpace::content("a".repeat(64)),
+            IdSpace::passage("7"),
+            IdSpace::logical("l:weird:value"), // value contains the delimiter
+        ];
+        for id in cases {
+            assert_eq!(IdSpace::parse(&id.to_prefixed()), Some(id.clone()), "round-trip {id:?}");
+        }
+        assert_eq!(IdSpace::logical("x").to_prefixed(), "l:x");
+        assert_eq!(IdSpace::content("y").to_prefixed(), "h:y");
+        assert_eq!(IdSpace::passage("3").to_prefixed(), "p:3");
+        assert_eq!(IdSpace::parse("untagged"), None);
     }
 
     // Pack 1 drift-detection: the Rust helper used by the two writer

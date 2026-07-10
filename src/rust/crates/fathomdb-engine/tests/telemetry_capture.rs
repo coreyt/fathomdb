@@ -84,7 +84,7 @@ fn telemetry_captures_event_and_feedback_deterministically() {
     // Attach agent feedback for the first query.
     opened
         .engine
-        .record_feedback("q0-0", &[r0.results[0].id], &[], "agent:test")
+        .record_feedback("q0-0", &[r0.results[0].write_cursor], &[], "agent:test")
         .expect("feedback");
 
     opened.engine.close().unwrap();
@@ -146,7 +146,10 @@ fn record_feedback_rejects_unissued_query_id_and_writes_nothing() {
     // wrong-nonce id, and a non-parsing string.
     for bogus in ["hybrid", "q0-99", "q1-0", "not-an-id", ""] {
         assert!(
-            opened.engine.record_feedback(bogus, &[r0.results[0].id], &[], "agent:test").is_err(),
+            opened
+                .engine
+                .record_feedback(bogus, &[r0.results[0].write_cursor], &[], "agent:test")
+                .is_err(),
             "record_feedback must reject unissued query_id {bogus:?}"
         );
     }
@@ -154,7 +157,7 @@ fn record_feedback_rejects_unissued_query_id_and_writes_nothing() {
     // The previously-issued id still works (regression guard).
     opened
         .engine
-        .record_feedback("q0-0", &[r0.results[0].id], &[], "agent:test")
+        .record_feedback("q0-0", &[r0.results[0].write_cursor], &[], "agent:test")
         .expect("issued id accepted");
 
     opened.engine.close().unwrap();
