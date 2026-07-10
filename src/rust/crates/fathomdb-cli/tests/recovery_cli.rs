@@ -54,6 +54,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             body: "alpha".to_string(),
             source_id: Some("src-a".to_string()),
             logical_id: None,
+            state: fathomdb::InitialState::Active,
+            reason: None,
         }])
         .expect("write a");
     opened
@@ -63,6 +65,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             body: "beta".to_string(),
             source_id: Some("src-a".to_string()),
             logical_id: None,
+            state: fathomdb::InitialState::Active,
+            reason: None,
         }])
         .expect("write a2");
     opened
@@ -72,6 +76,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             body: "gamma".to_string(),
             source_id: Some("src-b".to_string()),
             logical_id: None,
+            state: fathomdb::InitialState::Active,
+            reason: None,
         }])
         .expect("write b");
     opened.engine.close().expect("close");

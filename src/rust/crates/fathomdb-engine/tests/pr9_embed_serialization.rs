@@ -103,6 +103,8 @@ fn embeds_are_serialized_engine_side() {
             body: format!("serialize-doc-{i}"),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         })
         .collect();
     engine.write(&nodes).expect("write");

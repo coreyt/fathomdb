@@ -63,6 +63,8 @@ fn ingest(engine: &Engine) {
                 body: doc.body.to_string(),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write corpus doc");
     }

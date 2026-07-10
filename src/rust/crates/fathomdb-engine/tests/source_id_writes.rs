@@ -20,6 +20,8 @@ fn phase9_pack_b_source_id_round_trips_through_canonical_nodes() {
                 body: "alpha".to_string(),
                 source_id: Some("S1".to_string()),
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();
@@ -81,6 +83,8 @@ fn phase9_pack_b_source_id_default_none_persists_as_null() {
                 body: "no source".to_string(),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();
@@ -107,6 +111,8 @@ fn phase9_pack_b_empty_source_id_is_validation_error() {
             body: "x".to_string(),
             source_id: Some(String::new()),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect_err("empty source_id must be rejected");
     assert!(matches!(err, fathomdb_engine::EngineError::WriteValidation));

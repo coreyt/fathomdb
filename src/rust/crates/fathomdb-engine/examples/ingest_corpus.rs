@@ -307,6 +307,8 @@ fn run(args: Args) -> Result<(), String> {
             body: doc.body.clone(),
             source_id: Some(doc.doc_id.clone()),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         });
         if node_batch.len() >= NODE_BATCH {
             nodes_written += flush_nodes(&engine, &mut node_batch)?;

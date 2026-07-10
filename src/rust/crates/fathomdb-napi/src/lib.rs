@@ -36,12 +36,13 @@ use fathomdb_engine::{
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
     Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
     FilterTerm as RustFilterTerm, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
-    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
-    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
-    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
-    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
+    InitialState, NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow,
+    OpenReport as RustOpenReport, OpenStage, PerHitExplain as RustPerHitExplain,
+    Predicate as RustPredicate, PreparedWrite, QueryTrace as RustQueryTrace,
+    ScalarValue as RustScalarValue, SearchExpandResult as RustSearchExpandResult,
+    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -671,12 +672,16 @@ mod per_hit_explain_tests {
                     body: "zephyr anchor entity".to_string(),
                     source_id: None,
                     logical_id: Some("zephyr".to_string()),
+                    state: InitialState::Active,
+                    reason: None,
                 },
                 EngPreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "beta reachable payload node".to_string(),
                     source_id: None,
                     logical_id: Some("beta".to_string()),
+                    state: InitialState::Active,
+                    reason: None,
                 },
                 EngPreparedWrite::Edge {
                     kind: "link".to_string(),
@@ -1835,7 +1840,24 @@ fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
     let body = json_serialised(item, "body")?.unwrap_or_else(|| "{}".to_string());
     let source_id = json_str_alt(item, "sourceId", "source_id")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
-    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
+    // OPP-12 Phase-1 (0.8.19 Slice 5) — create-time existence state + advisory
+    // reason (X1 parity with the pyo3 binding). `state` defaults to `active`; an
+    // out-of-subset value (`deleted`/`purged`/unknown) is a TYPED write-validation
+    // rejection — you cannot CREATE a deleted/purged node. Thin pass-through.
+    let state = match json_str_alt(item, "state", "state")? {
+        Some(s) => InitialState::from_create_str(&s).ok_or_else(|| {
+            typed_error(
+                CODE_WRITE_VALIDATION,
+                format!(
+                    "cannot create a node with state {s:?}: only \"pending\" or \"active\" are creatable (deleted/purged require transition/purge)"
+                ),
+                JsonValue::Null,
+            )
+        })?,
+        None => InitialState::Active,
+    };
+    let reason = json_str_alt(item, "reason", "reason")?;
+    Ok(PreparedWrite::Node { kind, body, source_id, logical_id, state, reason })
 }
 
 fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {

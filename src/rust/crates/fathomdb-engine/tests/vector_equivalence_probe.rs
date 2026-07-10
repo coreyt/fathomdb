@@ -632,6 +632,8 @@ fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
             body: "post-open registration body".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write must not block on / be gated by the probe");
     assert!(!engine.dense_disabled(), "in-session serving is safe (same live backend)");
@@ -746,8 +748,8 @@ fn mc_reflect_without_pin_takes_uncentered_path_zero_flips() {
 // ---- fix-1 CONCERN #6 — v18→v19 upgrade with pre-existing kind + pinned mean --
 
 /// Build a genuine v18 DB with a pre-existing vector kind + a pinned mean, then
-/// open it through the engine (which upgrades 18→19). The baseline must be
-/// established at that first v19 open FROM the identity-matched embedder (gated by
+/// open it through the engine (which upgrades 18→head). The baseline must be
+/// established at that first upgraded open FROM the identity-matched embedder (gated by
 /// `check_embedder_profile`), and the subsequent check must behave: same backend ⇒
 /// served; divergent backend ⇒ dense refused (fail-SAFE). The residual (a
 /// same-identity backend that diverged BEFORE upgrade is not retroactively caught)
@@ -795,7 +797,7 @@ fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
         "establishing the baseline at the upgrade open is never degraded"
     );
     assert_eq!(opened.report.schema_version_before, 18, "upgrade started at v18");
-    assert_eq!(opened.report.schema_version_after, 19, "upgrade reached v19");
+    assert_eq!(opened.report.schema_version_after, 20, "upgrade reached head (v20)");
     opened.engine.close().unwrap();
 
     let conn = rusqlite::Connection::open(&path).unwrap();

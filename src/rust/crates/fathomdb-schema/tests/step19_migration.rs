@@ -60,13 +60,13 @@ fn s19_embed_probe_table_present_and_schema_version_is_19() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 19,
-        "SCHEMA_VERSION must be 19 (step-19 #5 vector-equivalence probe)"
+        SCHEMA_VERSION, 20,
+        "SCHEMA_VERSION must be 20 (step-20 OPP-12 Phase-1 existence axis)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        19,
-        "step-19 (#5 vector-equivalence probe) must be the last (head) migration"
+        20,
+        "step-20 (OPP-12 Phase-1 existence axis) must be the last (head) migration"
     );
 
     let cols = column_names(&conn, "_fathomdb_embed_probe");

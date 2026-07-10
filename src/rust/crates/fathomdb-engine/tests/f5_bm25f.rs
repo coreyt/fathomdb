@@ -59,6 +59,8 @@ fn node(kind: &str, body: &str) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: None,
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 

@@ -33,6 +33,8 @@ fn node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: Some(logical_id.to_string()),
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 
@@ -576,6 +578,8 @@ fn search_expand_anon_node_hit_does_not_crash() {
                 body: "anon shimmer unique probe alpha node".to_string(),
                 source_id: None,
                 logical_id: None, // anonymous — no logical_id
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             },
             node("doc", "named shimmer unique probe beta node", "NAMED"),
         ])
@@ -614,6 +618,8 @@ fn write_rejects_logical_id_containing_record_separator() {
         body: "body".to_string(),
         source_id: None,
         logical_id: Some(bad_id.to_string()),
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }]);
     assert!(
         matches!(result, Err(EngineError::WriteValidation)),

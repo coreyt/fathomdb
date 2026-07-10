@@ -40,9 +40,9 @@ use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
     ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, NodeRecord as RustNodeRecord,
-    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
-    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
+    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
@@ -1442,7 +1442,20 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
     let source_id = dict_str(dict, "source_id")?;
     let logical_id = dict_str(dict, "logical_id")?;
-    Ok(PreparedWrite::Node { kind, body, source_id, logical_id })
+    // OPP-12 Phase-1 (0.8.19 Slice 5) — create-time existence state + advisory
+    // reason (X1 parity with the N-API binding). `state` defaults to `active`; an
+    // out-of-subset value (`deleted`/`purged`/unknown) is a TYPED write-validation
+    // rejection — you cannot CREATE a deleted/purged node. Thin pass-through.
+    let state = match dict_str(dict, "state")? {
+        Some(s) => InitialState::from_create_str(&s).ok_or_else(|| {
+            WriteValidationError::new_err(format!(
+                "cannot create a node with state {s:?}: only \"pending\" or \"active\" are creatable (deleted/purged require transition/purge)"
+            ))
+        })?,
+        None => InitialState::Active,
+    };
+    let reason = dict_str(dict, "reason")?;
+    Ok(PreparedWrite::Node { kind, body, source_id, logical_id, state, reason })
 }
 
 fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
@@ -1989,12 +2002,16 @@ mod tests {
                     body: "zephyr anchor entity".to_string(),
                     source_id: None,
                     logical_id: Some("zephyr".to_string()),
+                    state: InitialState::Active,
+                    reason: None,
                 },
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "beta reachable payload node".to_string(),
                     source_id: None,
                     logical_id: Some("beta".to_string()),
+                    state: InitialState::Active,
+                    reason: None,
                 },
                 PreparedWrite::Edge {
                     kind: "link".to_string(),

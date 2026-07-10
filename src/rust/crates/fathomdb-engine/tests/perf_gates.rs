@@ -108,6 +108,8 @@ fn seed_ac020_fixture(engine: &Engine) {
                 body: format!("vector-doc-{i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("vector-only write");
         engine
@@ -116,6 +118,8 @@ fn seed_ac020_fixture(engine: &Engine) {
                 body: format!("hybrid doc hybrid-{i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("hybrid write");
     }
@@ -327,6 +331,8 @@ fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
                 body: synth_chunk_body(&mut rng, &vocab, &cumulative),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             });
         }
         engine.write(&batch).expect("ac-012 seed write");
@@ -437,6 +443,8 @@ fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
                 body: synth_chunk_body(&mut rng, &vocab, &cumulative),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             });
         }
         engine.write(&batch).expect("ac-013 seed write");
@@ -838,6 +846,8 @@ fn ac_013_vector_read_path_smoke() {
             body: b.clone(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         })
         .collect();
     opened.engine.write(&batch).expect("smoke seed write");
@@ -906,6 +916,8 @@ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
                 body: format!("projection doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
 
@@ -948,6 +960,8 @@ fn ac_018_drain_of_100_vectors_le_two_seconds() {
                 body: format!("doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }

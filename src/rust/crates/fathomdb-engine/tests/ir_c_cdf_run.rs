@@ -375,6 +375,8 @@ mod cdf_runner_impl {
                         body: d.body.clone(),
                         source_id: Some(d.doc_id.clone()),
                         logical_id: None,
+                        state: fathomdb_engine::InitialState::Active,
+                        reason: None,
                     })
                     .collect();
                 engine.write(&batch).expect("seed write");

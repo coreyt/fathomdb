@@ -23,9 +23,10 @@
 pub use fathomdb_engine::{
     ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
     EngineError, EngineOpenError, Explanation, ExtractDocument, IngestWithExtractorReceipt,
-    NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
-    QueryTrace, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
-    SoftFallback, SoftFallbackBranch, Subscription, TraversalDirection, WriteReceipt,
+    InitialState, LifecycleState, NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain,
+    Predicate, PreparedWrite, QueryTrace, RecoveryHint, ScalarValue, SearchExpandResult,
+    SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, Subscription, TraversalDirection,
+    WriteReceipt,
 };
 
 // The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

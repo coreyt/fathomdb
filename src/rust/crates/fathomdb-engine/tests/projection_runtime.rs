@@ -135,6 +135,8 @@ fn ac_024a_second_open_rejects_quickly_with_pending_vector_work() {
                 body: format!("doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -183,6 +185,8 @@ fn ac_025_drop_with_pending_vector_work_returns_promptly() {
                 body: format!("doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -220,6 +224,8 @@ fn ac_029_canonical_writes_complete_under_projection_stall() {
                     body: format!("baseline {trial}-{i}"),
                     source_id: None,
                     logical_id: None,
+                    state: fathomdb_engine::InitialState::Active,
+                    reason: None,
                 }])
                 .expect("baseline write");
         }
@@ -240,6 +246,8 @@ fn ac_029_canonical_writes_complete_under_projection_stall() {
                     body: format!("stalled {trial}-{i}"),
                     source_id: None,
                     logical_id: None,
+                    state: fathomdb_engine::InitialState::Active,
+                    reason: None,
                 }])
                 .expect("stalled write");
         }
@@ -269,6 +277,8 @@ fn ac_031_hybrid_search_surfaces_vector_soft_fallback_when_projection_lags() {
             body: "phase nine hybrid search".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
 
@@ -296,6 +306,8 @@ fn hybrid_search_returns_vector_results_when_text_branch_has_no_match() {
             body: "vector-only document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -320,6 +332,8 @@ fn hybrid_search_deduplicates_rows_seen_by_text_and_vector_branches() {
             body: "hybrid retrieval document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -346,6 +360,8 @@ fn ac_032a_drain_succeeds_when_timeout_is_sufficient() {
                 body: format!("doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write")
             .cursor;
@@ -376,6 +392,8 @@ fn ac_032b_drain_returns_typed_timeout_when_work_does_not_finish() {
                 body: format!("doc {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -453,6 +471,8 @@ fn ac_063a_exhausted_projection_failure_is_recorded_once_and_vector_stays_absent
             body: "will fail projection".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write")
         .cursor;
@@ -482,6 +502,8 @@ fn ac_063b_restart_does_not_retry_terminal_projection_failures() {
             body: "still failed after restart".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write")
         .cursor;
@@ -515,6 +537,8 @@ fn projection_status_is_tracked_per_kind_not_just_global_cursor() {
             body: "already projected".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("note write");
     opened.engine.drain(10_000).expect("note drain");
@@ -526,6 +550,8 @@ fn projection_status_is_tracked_per_kind_not_just_global_cursor() {
             body: "still pending".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("doc write");
 

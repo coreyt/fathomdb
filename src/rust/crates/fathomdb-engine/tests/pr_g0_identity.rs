@@ -20,6 +20,8 @@ fn node(kind: &str, body: &str, logical_id: Option<&str>) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: logical_id.map(str::to_string),
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 

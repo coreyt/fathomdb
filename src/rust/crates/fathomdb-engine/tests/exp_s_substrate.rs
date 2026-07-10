@@ -82,6 +82,8 @@ fn write_fixture(engine: &Engine) {
             body: format!("leaf body {i} alpha bravo charlie token-{i}"),
             source_id: Some(format!("leaf-{i}")),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         })
         .collect();
     engine.write(&leaves).expect("write leaf batch");

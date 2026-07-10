@@ -149,6 +149,8 @@ fn search_filter_typed_rejects_json_term() {
             body: r#"{"status":"open","priority":5}"#.to_string(),
             source_id: None,
             logical_id: Some("T1".to_string()),
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -182,6 +184,8 @@ fn read_list_filter_accepts_full_set() {
                 body: body.to_string(),
                 source_id: None,
                 logical_id: Some(lid.to_string()),
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     };
@@ -223,12 +227,16 @@ fn read_list_filter_kind_and_source_type_constant_fold() {
                 body: r#"{"status":"open"}"#.to_string(),
                 source_id: None,
                 logical_id: Some("T1".to_string()),
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             },
             PreparedWrite::Node {
                 kind: "todo".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
                 source_id: None,
                 logical_id: Some("T2".to_string()),
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             },
         ])
         .expect("write");
@@ -281,12 +289,16 @@ fn parity_kind_predicate_both_backends() {
                 body: r#"{"status":"open"}"#.to_string(),
                 source_id: None,
                 logical_id: Some("TODO1".to_string()),
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             },
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
                 source_id: None,
                 logical_id: Some("NOTE1".to_string()),
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             },
         ])
         .expect("write");

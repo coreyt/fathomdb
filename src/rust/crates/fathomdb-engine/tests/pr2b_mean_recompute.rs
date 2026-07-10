@@ -132,6 +132,8 @@ fn write_docs<F: Fn(usize) -> String>(engine: &Engine, count: usize, batch: usiz
                 body: body(written + i),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             })
             .collect();
         engine.write(&nodes).expect("production write");

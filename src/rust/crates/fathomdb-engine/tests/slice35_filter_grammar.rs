@@ -29,6 +29,8 @@ fn write_node(engine: &Engine, logical_id: &str, kind: &str, body: &str) {
             kind: kind.to_string(),
             body: body.to_string(),
             source_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write failed");
 }
@@ -457,6 +459,8 @@ fn read_list_predicate_skips_non_json_body() {
 
 // ===== fix-4: nodes without logical_id included for unfiltered read.list =======
 
+/// Nodes written without a `logical_id` (PreparedWrite::Node { logical_id: None     state: fathomdb_engine::InitialState::Active,
+/// Nodes written without a `logical_id` (PreparedWrite::Node { logical_id: None     reason: None,
 /// Nodes written without a `logical_id` (PreparedWrite::Node { logical_id: None })
 /// are active nodes. `read_list` must not SQL-filter them out with a hard
 /// `logical_id IS NOT NULL` constraint — instead it handles NULL gracefully
@@ -477,6 +481,8 @@ fn read_list_includes_nodes_written_without_logical_id_type_check() {
             kind: "widget".to_string(),
             body: r#"{"status":"ok"}"#.to_string(),
             source_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write without logical_id");
 

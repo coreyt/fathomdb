@@ -147,6 +147,8 @@ fn fts5_control_syntax_is_safe_and_matches_reference() {
             body: (*body).to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         })
         .collect();
     engine.write(&writes).expect("seed write");

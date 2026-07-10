@@ -63,13 +63,13 @@ fn s17_search_index_v2_present_and_schema_version_is_17() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 19,
-        "SCHEMA_VERSION must be 19 (step-19 #5 vector-equivalence probe)"
+        SCHEMA_VERSION, 20,
+        "SCHEMA_VERSION must be 20 (step-20 OPP-12 Phase-1 existence axis)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        19,
-        "step-19 (#5 vector-equivalence probe) must be the last (head) migration"
+        20,
+        "step-20 (OPP-12 Phase-1 existence axis) must be the last (head) migration"
     );
 
     // The v2 table carries the three BM25F fields kind/body/status (+ the

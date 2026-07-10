@@ -13,6 +13,8 @@ fn write_node(engine: &fathomdb_engine::Engine, body: &str, source_id: &str) -> 
             body: body.to_string(),
             source_id: Some(source_id.to_string()),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write")
         .cursor
@@ -88,6 +90,8 @@ fn ac_042_trace_source_ref_excludes_null_source_rows() {
             body: "nullable".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
 

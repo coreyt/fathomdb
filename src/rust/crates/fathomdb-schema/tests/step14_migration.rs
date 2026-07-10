@@ -114,8 +114,8 @@ fn s14_schema_version_is_14() {
     migrate_fresh(&conn);
     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
     assert_eq!(
-        SCHEMA_VERSION, 19,
-        "SCHEMA_VERSION constant must be 19 (step-19 #5 vector-equivalence probe)"
+        SCHEMA_VERSION, 20,
+        "SCHEMA_VERSION constant must be 20 (step-20 OPP-12 Phase-1 existence axis)"
     );
 }
 

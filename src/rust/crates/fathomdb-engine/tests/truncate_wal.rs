@@ -29,6 +29,8 @@ fn ac_040a_truncate_wal_after_write_reports_done() {
             body: "alpha".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     let report = opened.engine.truncate_wal().expect("truncate_wal");

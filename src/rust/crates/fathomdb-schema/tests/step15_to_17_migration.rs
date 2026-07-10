@@ -99,18 +99,18 @@ fn s15_to_17_full_path_migrates_legacy_db_without_loss() {
     // Forward-only + contiguous: exactly steps 16 then 17 ran, in order, with no
     // skips and nothing at/below 15 re-run.
     assert_eq!(report.schema_version_before, 15);
-    assert_eq!(report.schema_version_after, 19);
+    assert_eq!(report.schema_version_after, 20);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 19, "current head must be 19");
+    assert_eq!(SCHEMA_VERSION, 20, "current head must be 20");
     assert_eq!(
         applied,
-        vec![16, 17, 18, 19],
-        "only steps 16, 17, 18 then 19 may run from v15 (forward-only)"
+        vec![16, 17, 18, 19, 20],
+        "only steps 16, 17, 18, 19 then 20 may run from v15 (forward-only)"
     );
     let ran_in_report: Vec<u32> = report.migration_steps.iter().map(|s| s.step_id).collect();
     assert_eq!(
         ran_in_report,
-        vec![16, 17, 18, 19],
+        vec![16, 17, 18, 19, 20],
         "report step order must match the emitted order"
     );
 

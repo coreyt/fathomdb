@@ -162,6 +162,8 @@ fn rrf_end_to_end_order_is_deterministic() {
                 body: body.to_string(),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -198,6 +200,8 @@ fn vector_empty_soft_fallback_signal_survives_fusion() {
             body: "phase nine hybrid search".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
 

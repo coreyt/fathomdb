@@ -26,6 +26,8 @@ fn doc_node(body: &str) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: None,
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 
@@ -36,6 +38,8 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: Some(logical_id.to_string()),
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 

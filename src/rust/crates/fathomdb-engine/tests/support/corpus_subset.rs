@@ -384,6 +384,8 @@ pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, 
             body: doc.body.clone(),
             source_id: Some(doc.doc_id.clone()),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         })
         .collect();
     let nodes_written = node_batch.len();

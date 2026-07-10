@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -485,6 +485,36 @@ pub const MIGRATIONS: &[Migration] = &[
                   embedder_revision TEXT NOT NULL,
                   dim INTEGER NOT NULL
               );",
+    },
+    // 0.8.19 Slice 5 (OPP-12 record-lifecycle Phase-1 KEYSTONE) — the existence
+    // axis. Per `dev/design/0.8.19-slice-0-opp12-phase1-design.md` §5 (the ONE
+    // 19→20 migration) and `dev/plans/plan-0.8.19.md` §2 (R-EX-1/R-MIG-1). Adds
+    // the two existence columns on `canonical_nodes`:
+    //   `state`  — the `LifecycleState` enum, stored as TEXT. `NOT NULL DEFAULT
+    //              'active'` so EVERY pre-existing row back-fills to `active`
+    //              in-place (no data migration / re-open); the shipped corpus is
+    //              wholly `active`, so the new default-read exclusion
+    //              (`AND state = 'active'` co-located with `superseded_at IS NULL`
+    //              at each retrieval site) is a documented NO-OP on it (eu7 no-op
+    //              basis, design §9).
+    //   `reason` — nullable advisory cause for the CURRENT state (quarantine cause
+    //              for `pending`; delete cause for the delete-family). Engine never
+    //              interprets it.
+    // Plus `canonical_nodes_state_active_idx` — a PARTIAL index over active rows
+    // keyed by `write_cursor` (the dominant retrieval/join key), serving the
+    // active-only default-read hot path.
+    // Scoped per F-23 ruling 1a: existence columns ONLY — NO surrogate-`logical_id`
+    // backfill (anonymous rows keep `logical_id = NULL`; surrogate minting is
+    // Phase-2/0.8.20). One migration per release (I-6). This step does NOT rewrite
+    // vec0 / vector rows (eu7 no-op basis). Additive `ADD COLUMN` (no DROP) → the
+    // accretion guard REQUIRES the exemption marker.
+    Migration {
+        step_id: 20,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: OPP-12 Phase-1 existence axis (state NOT NULL DEFAULT 'active' + nullable reason on canonical_nodes + active-only partial index; no surrogate backfill — F-23 ruling 1a)
+              ALTER TABLE canonical_nodes ADD COLUMN state TEXT NOT NULL DEFAULT 'active';
+              ALTER TABLE canonical_nodes ADD COLUMN reason TEXT;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_state_active_idx
+                  ON canonical_nodes(write_cursor) WHERE state = 'active';",
     },
 ];
 

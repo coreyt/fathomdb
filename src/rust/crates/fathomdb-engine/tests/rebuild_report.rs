@@ -51,6 +51,8 @@ fn rebuild_projections_returns_structured_report() {
                 body: format!("payload {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -90,6 +92,8 @@ fn rebuild_vec0_returns_structured_report() {
                 body: format!("payload {i}"),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }

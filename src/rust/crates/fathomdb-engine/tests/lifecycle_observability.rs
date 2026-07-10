@@ -163,6 +163,8 @@ fn ac_002_no_log_files_without_subscriber() {
             body: "hello".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     let _ = opened.engine.search("hello").expect("search");
@@ -233,6 +235,8 @@ fn ac_003a_writer_events_flow_to_subscriber() {
         body: "hello".to_string(),
         source_id: None,
         logical_id: None,
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }]);
     let captured = sink.events.lock().unwrap();
     assert!(captured
@@ -319,6 +323,8 @@ fn ac_004b_counter_delta_exact_over_mixed_ops() {
                 body: "hello".to_string(),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
     }
@@ -461,6 +467,8 @@ fn ac_006_interior_page_corruption_emits_sqlite_corrupt() {
             body: "interior".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("seed write");
     opened.engine.close().expect("close before corruption");

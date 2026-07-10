@@ -72,6 +72,8 @@ fn ac_g1_hit_shape_text_branch() {
             body: "structured retrieval hit shape document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -108,6 +110,8 @@ fn ac_g1_hit_shape_vector_branch() {
             body: "semantic only payload".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -138,6 +142,8 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             body: "hybrid retrieval document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write 1");
     let r2 = opened
@@ -147,6 +153,8 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
             body: "another hybrid document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write 2");
     opened.engine.drain(10_000).expect("drain");
@@ -197,6 +205,8 @@ fn ac_g1_no_eq_but_partial_eq() {
             body: "equality probe document".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -228,6 +238,8 @@ fn cause_a_doc_node_stable_id_is_content_hash() {
             body: "cause-a content hash probe".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -267,6 +279,8 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
                     body: "padding so cursors diverge".to_string(),
                     source_id: None,
                     logical_id: None,
+                    state: fathomdb_engine::InitialState::Active,
+                    reason: None,
                 }])
                 .expect("pad");
         }
@@ -277,6 +291,8 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
                 body: body.to_string(),
                 source_id: None,
                 logical_id: None,
+                state: fathomdb_engine::InitialState::Active,
+                reason: None,
             }])
             .expect("write");
         opened.engine.drain(10_000).expect("drain");
@@ -313,6 +329,8 @@ fn cause_a_logical_id_node_is_l_tagged() {
             body: "cause-a logical identity entity".to_string(),
             source_id: None,
             logical_id: Some("entity-cause-a-42".to_string()),
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -355,6 +373,8 @@ fn supersession_search_excludes_superseded_node_version() {
             body: "alpha obsoleteoldterm original biography".to_string(),
             source_id: None,
             logical_id: Some(logical_id.to_string()),
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write v1");
     opened.engine.drain(10_000).expect("drain v1");
@@ -368,6 +388,8 @@ fn supersession_search_excludes_superseded_node_version() {
             body: "beta freshactiveterm replacement biography".to_string(),
             source_id: None,
             logical_id: Some(logical_id.to_string()),
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write v2");
     opened.engine.drain(10_000).expect("drain v2");
@@ -408,6 +430,8 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
             body: "cause-a distinct alpha unique".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("w1");
     let r2 = opened
@@ -417,6 +441,8 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
             body: "cause-a distinct beta unique".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("w2");
     opened.engine.drain(10_000).expect("drain");

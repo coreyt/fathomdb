@@ -1871,6 +1871,20 @@ pub enum PreparedWrite {
         /// `None` is the legacy/own-identity default: a plain insert with a
         /// NULL `logical_id` (NULL-safe — never collides with other NULLs).
         logical_id: Option<String>,
+        /// OPP-12 Phase-1 (0.8.19 Slice 5) — the create-time existence state.
+        /// `InitialState::Active` (the [`Default`]) is the back-compat default and
+        /// lands `state = 'active'` on disk (value-identical to the migration
+        /// step-20 column DEFAULT). `InitialState::Pending` creates a quarantined
+        /// node excluded from default retrieval. A `deleted`/`purged` node is
+        /// UNREPRESENTABLE at create time (the [`InitialState`] type is the typed
+        /// rejection) — those states are reachable only via the Slice-10
+        /// `transition`/`purge` verbs.
+        state: InitialState,
+        /// OPP-12 Phase-1 (0.8.19 Slice 5) — advisory cause for the create-time
+        /// `state` (e.g. the quarantine cause for a `pending` node), stored
+        /// verbatim in `canonical_nodes.reason`. Engine never interprets it. `None`
+        /// lands NULL (the back-compat default).
+        reason: Option<String>,
     },
     Edge {
         kind: String,
@@ -1946,6 +1960,104 @@ impl RowKind {
             RowKind::Leaf => "leaf",
             RowKind::Coverage => "coverage",
             RowKind::Graph => "graph",
+        }
+    }
+}
+
+/// OPP-12 record-lifecycle Phase-1 (0.8.19 Slice 5) — the existence axis.
+///
+/// One mutually-exclusive typed enum stored as TEXT in the `canonical_nodes.state`
+/// column (schema migration step-20). Semantics (design §2 / plan §1):
+///   `Pending` = present + versioned but NOT admitted to default retrieval
+///               (quarantine / promotion gate);
+///   `Active`  = admitted to default retrieval (the shipped-corpus default);
+///   `Deleted` = soft-deleted, retained + recoverable, excluded from default
+///               reads, stays indexed behind the flag;
+///   `Purged`  = terminal, physically erased.
+/// `Deleted`/`Purged` are reachable only through the Phase-2/Slice-10
+/// `transition`/`purge` verbs — they can NEVER be a create-time state (see
+/// [`InitialState`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LifecycleState {
+    Pending,
+    Active,
+    Deleted,
+    Purged,
+}
+
+impl LifecycleState {
+    /// On-disk `canonical_nodes.state` spelling. Must match the migration step-20
+    /// `DEFAULT 'active'` and the `state = 'active'` default-read exclusion.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LifecycleState::Pending => "pending",
+            LifecycleState::Active => "active",
+            LifecycleState::Deleted => "deleted",
+            LifecycleState::Purged => "purged",
+        }
+    }
+
+    /// Parse the on-disk spelling back into the typed enum. `None` for any value
+    /// outside the closed vocabulary (a corrupt/foreign `state`).
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(LifecycleState::Pending),
+            "active" => Some(LifecycleState::Active),
+            "deleted" => Some(LifecycleState::Deleted),
+            "purged" => Some(LifecycleState::Purged),
+            _ => None,
+        }
+    }
+}
+
+/// OPP-12 Phase-1 (0.8.19 Slice 5) — the CREATE-TIME subset of [`LifecycleState`].
+///
+/// A write can only bring a node into existence as `Pending` or `Active` (design
+/// §2 / gap-6). You CANNOT create a `Deleted`/`Purged` node — those states are
+/// reachable only via the `transition`/`purge` verbs (Slice 10). Making the
+/// create-time surface a separate two-variant type is the TYPED rejection: a
+/// `deleted`/`purged` create is simply unrepresentable in the Rust API (the SDK
+/// bindings map an out-of-subset string to a typed write-validation error).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+pub enum InitialState {
+    Pending,
+    /// The back-compat default: every pre-lifecycle write lands `Active`, matching
+    /// the migration step-20 `DEFAULT 'active'`.
+    #[default]
+    Active,
+}
+
+impl InitialState {
+    /// On-disk `canonical_nodes.state` spelling for a create-time state.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InitialState::Pending => "pending",
+            InitialState::Active => "active",
+        }
+    }
+
+    /// The full [`LifecycleState`] this create-time state corresponds to.
+    #[must_use]
+    pub fn to_lifecycle_state(self) -> LifecycleState {
+        match self {
+            InitialState::Pending => LifecycleState::Pending,
+            InitialState::Active => LifecycleState::Active,
+        }
+    }
+
+    /// Parse a caller-supplied create-time `state` string into the create-time
+    /// subset. `Some(state)` for `"pending"`/`"active"`; `None` for `"deleted"`,
+    /// `"purged"`, or any unknown value — the SDK bindings turn `None` into a
+    /// typed write-validation rejection (you cannot CREATE a deleted/purged node).
+    #[must_use]
+    pub fn from_create_str(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(InitialState::Pending),
+            "active" => Some(InitialState::Active),
+            _ => None,
         }
     }
 }
@@ -3276,6 +3388,8 @@ impl Engine {
                             body: name.to_string(),
                             source_id: source_doc_id,
                             logical_id: Some(logical_id),
+                            state: InitialState::Active,
+                            reason: None,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -4803,6 +4917,8 @@ impl Engine {
             body: "poison-fixture-seed".to_string(),
             source_id: None,
             logical_id: None,
+            state: InitialState::Active,
+            reason: None,
         }])?;
 
         let poison_outcome: Mutex<Option<EngineError>> = Mutex::new(None);
@@ -4824,6 +4940,8 @@ impl Engine {
                     body: "writer-progress".to_string(),
                     source_id: None,
                     logical_id: None,
+                    state: InitialState::Active,
+                    reason: None,
                 }]);
             });
             // One poison thread — empty batch is a deterministic
@@ -6946,7 +7064,7 @@ fn read_search_in_tx(
         // hit can carry a stable cross-session id (derive_stable_id). Read-only
         // additive column — ordering/scores are untouched.
         let mut node_stmt = tx.prepare(
-            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 AND state = 'active' LIMIT 1",
         )?;
         let mut edge_stmt = tx.prepare(
             "SELECT body, logical_id FROM canonical_edges \
@@ -7065,6 +7183,7 @@ fn read_search_in_tx(
              LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
              WHERE search_index MATCH ?1 \
                AND cn.superseded_at IS NULL \
+               AND (cn.state = 'active' OR cn.state IS NULL) \
              ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
         );
         if let Ok(mut statement) = tx.prepare(&join_sql) {
@@ -7492,6 +7611,7 @@ fn bfs_graph_arm_candidates(
                  JOIN canonical_nodes cn ON cn.write_cursor = si.write_cursor \
                  WHERE search_index MATCH ?1 \
                    AND cn.superseded_at IS NULL \
+                   AND cn.state = 'active' \
                    AND cn.logical_id IS NOT NULL \
                  ORDER BY bm25(search_index), si.write_cursor \
                  LIMIT ?2",
@@ -7515,7 +7635,7 @@ fn bfs_graph_arm_candidates(
         // the two-arm result are skipped; the cap is respected.
         let mut active_stmt = tx.prepare(
             "SELECT kind, body, write_cursor FROM canonical_nodes \
-             WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+             WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
         )?;
         for (lid, source_id, seed_confidence) in candidate_seeds {
             stats.seeds_considered += 1;
@@ -7587,7 +7707,7 @@ fn bfs_graph_arm_candidates(
     // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
     let mut body_stmt = tx.prepare(
         "SELECT kind, body, write_cursor FROM canonical_nodes \
-         WHERE logical_id = ?1 AND superseded_at IS NULL \
+         WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' \
          LIMIT 1",
     )?;
 
@@ -7706,7 +7826,7 @@ fn read_get_by_id_in_tx(
         let sql = format!(
             "SELECT logical_id, kind, body, write_cursor
              FROM canonical_nodes
-             WHERE logical_id IN ({placeholders}) AND superseded_at IS NULL"
+             WHERE logical_id IN ({placeholders}) AND superseded_at IS NULL AND state = 'active'"
         );
         let mut statement = tx.prepare(&sql)?;
         let params = rusqlite::params_from_iter(unique.iter().map(|s| s.as_str()));
@@ -7819,6 +7939,7 @@ fn read_list_in_tx(
          FROM canonical_nodes \
          WHERE kind = ?1 \
          AND superseded_at IS NULL \
+         AND state = 'active' \
          AND logical_id IS NOT NULL{json_valid_guard}"
     );
 
@@ -7893,13 +8014,13 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
   traversal(logical_id, depth, visited) AS (
     SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
     UNION ALL
     SELECT e.to_id, t.depth + 1, t.visited || e.to_id || char(30)
     FROM traversal t
     JOIN canonical_edges e ON e.from_id = t.logical_id
     JOIN canonical_nodes next_n ON next_n.logical_id = e.to_id
-      AND next_n.superseded_at IS NULL
+      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -7909,7 +8030,7 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
 JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL
+WHERE n.superseded_at IS NULL AND n.state = 'active'
   AND tr.logical_id != ?1
 LIMIT {cap}"
         ),
@@ -7918,13 +8039,13 @@ LIMIT {cap}"
   traversal(logical_id, depth, visited) AS (
     SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
     UNION ALL
     SELECT e.from_id, t.depth + 1, t.visited || e.from_id || char(30)
     FROM traversal t
     JOIN canonical_edges e ON e.to_id = t.logical_id
     JOIN canonical_nodes next_n ON next_n.logical_id = e.from_id
-      AND next_n.superseded_at IS NULL
+      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -7934,7 +8055,7 @@ LIMIT {cap}"
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
 JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL
+WHERE n.superseded_at IS NULL AND n.state = 'active'
   AND tr.logical_id != ?1
 LIMIT {cap}"
         ),
@@ -7943,7 +8064,7 @@ LIMIT {cap}"
   traversal(logical_id, depth, visited) AS (
     SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
     UNION ALL
     SELECT
       CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
@@ -7953,7 +8074,7 @@ LIMIT {cap}"
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
     JOIN canonical_nodes next_n
       ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
-      AND next_n.superseded_at IS NULL
+      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -7964,7 +8085,7 @@ LIMIT {cap}"
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
 JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL
+WHERE n.superseded_at IS NULL AND n.state = 'active'
   AND tr.logical_id != ?1
 LIMIT {cap}"
         ),
@@ -7984,7 +8105,7 @@ fn build_bfs_with_depth_sql() -> String {
   traversal(logical_id, depth, visited) AS (
     SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL
+    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
     UNION ALL
     SELECT
       CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
@@ -7994,7 +8115,7 @@ fn build_bfs_with_depth_sql() -> String {
     JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
     JOIN canonical_nodes next_n
       ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
-      AND next_n.superseded_at IS NULL
+      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
@@ -8005,7 +8126,7 @@ fn build_bfs_with_depth_sql() -> String {
 SELECT n.logical_id, n.kind, n.body, n.write_cursor, MIN(tr.depth) AS min_depth
 FROM traversal tr
 JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL
+WHERE n.superseded_at IS NULL AND n.state = 'active'
   AND tr.logical_id != ?1
 GROUP BY n.logical_id
 LIMIT {cap}"
@@ -8059,7 +8180,7 @@ fn search_expand_in_tx(
     {
         let mut node_stmt = tx.prepare(
             "SELECT logical_id FROM canonical_nodes
-             WHERE write_cursor = ?1 AND superseded_at IS NULL
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active'
              LIMIT 1",
         )?;
         let mut edge_stmt = tx.prepare(
@@ -10885,7 +11006,7 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, source_id, logical_id } => {
+        PreparedWrite::Node { kind, body, source_id, logical_id, .. } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -11253,7 +11374,7 @@ fn bm25f_search_inner(
             "SELECT v.kind, v.body, v.status
              FROM search_index_v2 v
              JOIN canonical_nodes cn ON cn.write_cursor = v.write_cursor
-             WHERE cn.superseded_at IS NULL",
+             WHERE cn.superseded_at IS NULL AND cn.state = 'active'",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -11288,7 +11409,7 @@ fn bm25f_search_inner(
     // retains superseded versions, exactly like search_index).
     let active: BTreeSet<i64> = {
         let mut stmt = connection
-            .prepare("SELECT write_cursor FROM canonical_nodes WHERE superseded_at IS NULL")?;
+            .prepare("SELECT write_cursor FROM canonical_nodes WHERE superseded_at IS NULL AND state = 'active'")?;
         let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
         rows.collect::<rusqlite::Result<BTreeSet<i64>>>()?
     };
@@ -11363,7 +11484,10 @@ fn commit_batch(
         // comment in `Engine::write_inner`.
         let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
         match (write, plan) {
-            (PreparedWrite::Node { kind, body, source_id, logical_id }, WritePlan::Node) => {
+            (
+                PreparedWrite::Node { kind, body, source_id, logical_id, state, reason },
+                WritePlan::Node,
+            ) => {
                 // G0 — supersession is tombstone-then-insert in this same txn:
                 // mark the prior active version superseded BEFORE inserting the
                 // new active row, so the partial-unique-active index never sees
@@ -11384,10 +11508,15 @@ fn commit_batch(
                 // axis from the doc-type `kind`, and there is no public SDK
                 // surface for it this release). Writing `leaf` explicitly is
                 // value-identical to the column DEFAULT.
+                // OPP-12 Phase-1 (0.8.19 Slice 5) — persist the create-time
+                // existence state + advisory reason. `InitialState::Active`
+                // (the default) writes `state = 'active'`, value-identical to the
+                // migration step-20 column DEFAULT; `Pending` quarantines the node
+                // out of default retrieval (the `state = 'active'` read exclusion).
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
-                     VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str()],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
                 )?;
                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
@@ -12197,6 +12326,8 @@ mod tests {
                 body: "hello".to_string(),
                 source_id: None,
                 logical_id: None,
+                state: crate::InitialState::Active,
+                reason: None,
             }])
             .expect("write should succeed");
 

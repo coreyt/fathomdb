@@ -54,6 +54,8 @@ fn write_node(engine: &Engine, body: &str, source_id: &str) -> u64 {
             body: body.to_string(),
             source_id: Some(source_id.to_string()),
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write")
         .cursor

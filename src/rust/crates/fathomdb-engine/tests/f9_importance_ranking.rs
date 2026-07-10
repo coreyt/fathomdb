@@ -133,6 +133,8 @@ fn importance_write_read_roundtrip_and_range_validation() {
             body: "importance subject".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     let cursor = receipt.cursor;
@@ -166,6 +168,8 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
             body: "importance alpha widget".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write a")
         .cursor;
@@ -175,6 +179,8 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
             body: "importance beta widget".to_string(),
             source_id: None,
             logical_id: None,
+            state: fathomdb_engine::InitialState::Active,
+            reason: None,
         }])
         .expect("write b")
         .cursor;
@@ -270,6 +276,8 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
         body: body.to_string(),
         source_id: None,
         logical_id: Some(logical_id.to_string()),
+        state: fathomdb_engine::InitialState::Active,
+        reason: None,
     }
 }
 
