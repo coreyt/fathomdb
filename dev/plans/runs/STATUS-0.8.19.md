@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **✅ Slices 5 + 15 LANDED to `main` (HITL-approved, `origin/main` @ `c8e2a5b3`); Slice 10 UNBLOCKED; Slice 40 pending. X1 py/ts execution deferred to a quiesced-main window.**
+## Current state — **✅ Slices 5 + 15 + 10 all LANDED to `main`; Slice 40 (verification) next (pre-X1). X1 py/ts execution deferred to a quiesced-main window.**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -27,7 +27,7 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 |------:|-------|-------|----|----|----|----|----|
 | **0** | Setup + ADR (existence axis · transition/purge · C-2 IdSpace · 19→20 migration · 6 gap rulings · Phase boundary) | **✅ CLOSED / HITL SIGNED (2026-07-09)** | A ✓ / B ✓ codex / HITL ✓ | — | — | ✓ | — |
 | **5 ✅** | KEYSTONE — existence axis + **SCHEMA 19→20 (existence columns only)** | **LANDED `36074f91`+`a6970496`** (HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
-| **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **UNBLOCKED** (Slice 5 landed; base `c8e2a5b3`) — NOT STARTED | discharged | — | — | — | — |
+| **10 ✅** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **LANDED `65061fb7`+`9cb9274b`+`dd5eaf82`** (Steward-authorized) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
 | **15 ✅** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **LANDED `6616db93`+`a704c317`+`51c2c785`** (+compose `c8e2a5b3`; HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
 | **40** | Verification + Phase-1 release-readiness (label-only close) | BLOCKED (dep: 5,10,15) | discharged | — | — | — | — |
 
@@ -120,3 +120,15 @@ validates the worktree+preflight+implementer+codex machinery.
   `fathomdb`) + napi tooling not installed — the eval-env trap the Steward flagged; not forced.
 - **Next: Slice 10 (transition/purge), UNBLOCKED** (needs Slice-5's `state` column, now on main) → then Slice 40.
   Label-only; no publish; manifests stay `0.8.9`.
+
+- **2026-07-09 — Slice 10 (transition/purge) LANDED to `main`** (Steward-authorized — clean §9-PASS additive
+  slice: new verbs, no schema bump, no breaking surface, no adoption-default). Cycle: impl `6be0faf4` → codex
+  §9 r1 BLOCK (P1 `secure_delete=ON` writer-only → reader/runtime leak; P2 `IllegalTransitionError.legal`
+  included `purged`) → fix-1 `db9de5ed` (secure_delete every open + per-worker proof seam; verb-specific legal
+  targets) → §9 r2 CONCERN no-BLOCK (stale comment) → fix-2 `1c86589c` → terminal PASS. Cherry-picked clean onto
+  `main @ f2a10274` (`65061fb7`+`9cb9274b`+`dd5eaf82`); **integrated DoD green** (check/clippy `--workspace
+  --all-targets` = 0; opp12_lifecycle_verbs 8/8 + existence 6/6 + tc8-idspace 4/4 + step20 migration 3/3 → all
+  three slices compose). Pushed. Slice-10 source worktree cleaned up.
+- **Next: Slice 40 (Phase-1 verification + label-only close)** — cargo AC gate + X2 mkdocs --strict + X3
+  DOC-INDEX + eu7 no-op basis + AC-074 delta draft, **STOP at X1 py/ts execution** (needs a quiesced-main
+  single-writer window; eval-env native-import trap). No publish; manifests stay `0.8.9`.
