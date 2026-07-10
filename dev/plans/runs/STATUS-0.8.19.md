@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **Slice 5 §9 PASS (canary validated, awaiting HITL 19→20 landing) · Slice 15 in flight · Slice 0 CLOSED**
+## Current state — **Slices 5 + 15 both terminal §9 PASS — AWAITING HITL landings (5=19→20 migration · 15=breaking id-swap); Slice 10 blocked on Slice-5 landing**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -28,7 +28,7 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 | **0** | Setup + ADR (existence axis · transition/purge · C-2 IdSpace · 19→20 migration · 6 gap rulings · Phase boundary) | **✅ CLOSED / HITL SIGNED (2026-07-09)** | A ✓ / B ✓ codex / HITL ✓ | — | — | ✓ | — |
 | **5** | KEYSTONE — existence axis (`state`/`reason` + `active`-only filter) + **SCHEMA 19→20 = existence columns ONLY (no surrogate)** *(HITL-gated bump)* | **§9 PASS (43aa29d6) — AWAITING HITL 19→20 LANDING** | discharged | py/ts written (main-exec pending) | pending | ✓ | **PASS (r2, fix-1)** |
 | **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | BLOCKED (dep: 5 — needs `state` column; waits for Slice-5 landing) | discharged | — | — | — | — |
-| **15** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **IN FLIGHT** (worktree `0.8.19-slice-15` off `9ea3ecc2`, preflight pass) | discharged | pending | pending | pending | pending |
+| **15** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **§9 PASS (b0bb919c) — AWAITING HITL BREAKING-SURFACE LANDING** | discharged | py/ts written (main-exec pending) | pending | ✓ | **PASS (r2, fix-1+fix-2)** |
 | **40** | Verification + Phase-1 release-readiness (label-only close) | BLOCKED (dep: 5,10,15) | discharged | — | — | — | — |
 
 **Keystones / gates (re-derived per F-23 / 1a):** Slice 5 = schema keystone + HITL landing gate (19→20,
@@ -81,6 +81,24 @@ validates the worktree+preflight+implementer+codex machinery.
   r2 = PASS** (no findings, scope clean, eu7 no-op preserved). **Canary machinery VALIDATED.** Slice 5 head
   `43aa29d6` is terminal §9 PASS — **AWAITING HITL sign-off for the SCHEMA 19→20 landing** (R-MIG-1; the
   wheel-build + py/ts X1 execution runs on the MAIN tree at landing).
-- **2026-07-09 — Slice 15 FANNED** (canary validated). Worktree `0.8.19-slice-15` off `9ea3ecc2`, preflight
-  pass; implementer building the C-2 typed `IdSpace` `SearchHit.id` swap (no surrogate; `SCHEMA_VERSION`
-  unchanged; id VALUES == prior `stable_id` for eu7 no-op). Slice 10 stays blocked on Slice-5 landing.
+- **2026-07-09 — Slice 15 → §9 PASS.** Worktree `0.8.19-slice-15` off `9ea3ecc2`, preflight pass. Impl
+  `63d52bc6` (`SearchHit.id: u64 → typed IdSpace {space,value}`, `IdSpaceKind {Logical/Content/Passage}`,
+  non-null + id-space-total; `write_cursor`+`stable_id` subsumed into `id`, `write_cursor` kept
+  engine-internal; synthetic passages mint `p:<ordinal>`; NO surrogate; `SCHEMA_VERSION` unchanged 19). **codex
+  §9 r1 = BLOCK** (P1: signed design's "id value == prior stable_id" read literally vs bare `IdSpace.value`;
+  P2: stale `PerHitExplain.id` docs). **Adjudicated (verified from code): eu7 no-op genuinely preserved** —
+  `IdSpace::to_prefixed()`/`Display` == prior `stable_id` byte-for-byte; telemetry `result_stable_ids` emits
+  `to_prefixed()` (`lib.rs:4203`); bare `.value` is the correct C-2 typed form ("not a magic-prefixed
+  string"). Never overridden → **fix-1** (`d53bd279`, lock the `to_prefixed` no-op proof in Rust+py+ts +
+  telemetry-bytes-unchanged assertion + correct `PerHitExplain.id` docs; engine `lib.rs` untouched). **codex §9
+  r2 = CONCERN, no residual BLOCK** (P1 behaviorally resolved — codex agrees bare value is correct C-2; only 3
+  `SearchHit.id` doc comments still misleading) → **fix-2** (`b0bb919c`, doc-comment-only, the 3 comments
+  corrected per codex's exact instruction; clippy/check 0). §9 **terminal PASS** (sole CONCERN closed by
+  construction). **AWAITING HITL sign-off for the breaking `SearchHit.id` surface landing** (built label-only;
+  publish = 0.8.20).
+- **Design-wording note (for Steward/HITL awareness):** ADR §4/§9 "id VALUE == prior stable_id" is best read as
+  the id's **serialized/`to_prefixed` form** (== prior `stable_id`), NOT the typed bare `.value` field. The
+  implementation + codex both land on: `value` bare (C-2 typed, signed) + `to_prefixed()` no-op. No design
+  change; a wording clarification the Steward may fold into the ADR if desired.
+- **Both keystones terminal §9 PASS in their worktrees; two HITL-gated landings pending** (Slice-5 19→20 R-MIG-1;
+  Slice-15 breaking id-swap). Slice 10 (transition/purge) stays blocked until Slice 5 lands (needs `state`).
