@@ -126,8 +126,9 @@ export interface SearchHit {
   /**
    * C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
    * (`{ space, value }`). Governed hits are `logical` (`"l:"`), doc-seeded hits
-   * `content` (`"h:"`), synthetic passages `passage` (`"p:"`). Its `value`
-   * equals the pre-0.8.19 `stableId` (which this subsumes) so cross-session
+   * `content` (`"h:"`), synthetic passages `passage` (`"p:"`). Its `value` is
+   * the bare (prefix-stripped) id; the prefixed form (`{prefix}{value}`) equals
+   * the pre-0.8.19 `stableId` (which this subsumes) so cross-session
    * real-gold keying continues on `id`; it survives re-ingest and never
    * participates in ranking. The pre-C-2 positional `write_cursor` id is
    * engine-internal and no longer surfaced.

@@ -1280,8 +1280,10 @@ impl std::fmt::Display for IdSpace {
 pub struct SearchHit {
     /// C-2 (0.8.19 / TC-8) — the typed, non-null, id-space-total hit id
     /// ([`IdSpace`]). Was the interim `write_cursor: u64` in prior releases; now
-    /// carries the cross-session-stable key (its `value` == the pre-swap
-    /// `stable_id`). Governed hits are `l:`, doc-seeded hits `h:`, synthetic
+    /// carries the cross-session-stable key: `value` is the BARE (prefix-stripped)
+    /// id, and [`to_prefixed`](IdSpace::to_prefixed) (== `{prefix}{value}`)
+    /// reproduces the pre-swap `stable_id` byte-for-byte (the real-gold-keying
+    /// no-op). Governed hits are `l:`, doc-seeded hits `h:`, synthetic
     /// passages `p:`. This is the caller-facing identity; the positional
     /// `write_cursor` below is engine-internal book-keeping.
     pub id: IdSpace,
