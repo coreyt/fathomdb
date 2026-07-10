@@ -1,0 +1,75 @@
+{
+  "AC": {
+    "dangling": 2,
+    "dangling_rate": 0.0048,
+    "distinct_tokens": 74,
+    "occurrences": 416,
+    "status_breakdown": {
+      "dangling": 2,
+      "resolved": 414
+    }
+  },
+  "ADR-ID": {
+    "dangling": 0,
+    "dangling_rate": 0.0,
+    "distinct_tokens": 33,
+    "occurrences": 64,
+    "status_breakdown": {
+      "resolved": 64
+    }
+  },
+  "ADR-PATH": {
+    "dangling": 0,
+    "dangling_rate": 0.0,
+    "distinct_tokens": 10,
+    "occurrences": 31,
+    "status_breakdown": {
+      "resolved": 31
+    }
+  },
+  "DESIGN-PATH": {
+    "dangling": 1,
+    "dangling_rate": 0.005,
+    "distinct_tokens": 49,
+    "occurrences": 199,
+    "status_breakdown": {
+      "dangling": 1,
+      "resolved": 198
+    }
+  },
+  "F": {
+    "dangling": 0,
+    "dangling_rate": 0.0,
+    "distinct_tokens": 1,
+    "occurrences": 9,
+    "status_breakdown": {
+      "resolved": 9
+    }
+  },
+  "REQ": {
+    "dangling": 0,
+    "dangling_rate": 0.0,
+    "distinct_tokens": 6,
+    "occurrences": 16,
+    "status_breakdown": {
+      "resolved": 16
+    }
+  },
+  "TC": {
+    "dangling": 0,
+    "dangling_rate": 0.0,
+    "distinct_tokens": 1,
+    "occurrences": 1,
+    "status_breakdown": {
+      "resolved-open": 1
+    }
+  },
+  "_registry_sizes": {
+    "ac_ids": 123,
+    "adr_files": 62,
+    "f_ids": 23,
+    "req_ids": 67,
+    "tc_ids": 9
+  },
+  "_total_occurrences": 736
+}

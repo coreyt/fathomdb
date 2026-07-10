@@ -1,0 +1,45 @@
+{
+  "A_memory_wikilinks": {
+    "dangling_occurrence_rate": 0.0,
+    "dangling_occurrences": 0,
+    "dangling_target_examples": [],
+    "distinct_dangling_rate": 0.0,
+    "distinct_dangling_targets": 0,
+    "distinct_targets": 61,
+    "memory_files": 77,
+    "note": "CLAUDE.md tolerates dangling [[links]] by design; this is the actual rate.",
+    "occurrences": 189
+  },
+  "B_commit_refs": {
+    "commits_scanned": 2506,
+    "counts": {
+      "Claude-Session": 217,
+      "TC": 44,
+      "ledger_seq": 15
+    },
+    "dangling": {
+      "TC": 4
+    },
+    "ledger_seq_dangling_rate": 0.0,
+    "note": "Claude-Session refs are external URLs -> unresolvable offline (resolves=null).",
+    "steward_ledger_max_seq": 73,
+    "tc_dangling_rate": 0.0909,
+    "tc_ids_defined": 9,
+    "todos_ledger_max_seq": 21
+  },
+  "C_doc_sha_pins": {
+    "detail": [
+      {
+        "file": "dev/design/embedder.md",
+        "line": 549,
+        "object_exists": false,
+        "reachable_from_head": null,
+        "sha": "5c38ec7c"
+      }
+    ],
+    "missing_object": 1,
+    "note": "In-repo @sha pins are rare; the frequently-cited @c3b3d631 lives in the auto-memory prose, not tracked docs.",
+    "pins": 1,
+    "unreachable": 0
+  }
+}
