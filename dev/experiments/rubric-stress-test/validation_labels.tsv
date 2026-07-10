@@ -1,0 +1,42 @@
+family	detector	conf	sig	file	line	label	reasoning
+A	hitl-soft-redirect	med	recheck	877994fe-e936-4cee	155	TP	real HITL turn redirecting: 'Hmm. ok. re-check the proposed steps to wind/un-wind...'
+A	hitl-soft-redirect	med	instead	1c0b1e0f-5bb5-4abc	1878	TP	real HITL redirect: '...do not yet merge #91. Instead, write a hand-off prompt...'
+A	hitl-soft-redirect	med	reread	3fd7e5c7-cce4-4197	3594	FP	forward instruction 'Write a durable file... you can re-read after a compaction' — not a bounce of a proposed action
+A	hitl-soft-redirect	med	reread	3fd7e5c7-cce4-4197	5748	FP	duplicate of 3594 forward instruction — not a redirect
+A	hitl-reversal-rework	med	revert	d2ae8c40-0aa7-4a9d	209	FP	synthetic 'Monitor poll tick' standing role banner; 'revert' in 'Do NOT edit/apply/revert' — not a human reversal
+A	hitl-reversal-rework	med	revert	d2ae8c40-0aa7-4a9d	227	FP	duplicate monitor-poll banner; not a reversal request
+B	unwitnessed-premise	med	no_callers	ad92cca6	113	TP	'no other callers exist' load-bearing topology claim, no grep witness
+B	unwitnessed-premise	med	no_callers	a358eac3	75	FP	token collision: 'no reference embedder' — not code callers/references
+B	unwitnessed-premise	med	no_consumers	a18edce836	103	TP	'no consumer depends on the old field' — load-bearing rename-safety premise, unwitnessed
+B	unwitnessed-premise	med	no_consumers	a305765fef	30	FP	API-surface description 'NO consumer-facing FTS/projection API' — architecture prose, not a deadness/deletion premise
+B	unwitnessed-premise	high	safe_to_delete+action	1c0b1e0f	1190	TP	'store.py duplicate-method pairs... safe to remove' — action-adjacent safe-to-delete premise on code
+B	unwitnessed-premise	med	is_a_duplicate	a87a83d5	24	FP	cited review finding (golden.py line 101) 'detection is redundant' — has file:line witness, slipped filter
+B	unwitnessed-premise	med	is_a_duplicate	a9e2b0d38439	21	FP	cited review finding (extractor.py line 184) 'raw_t_valid is redundant' — witnessed finding
+B	unwitnessed-premise	med	not_used_anywhere	5d73851e	312	FP	'dead code (vulture)' names a hygiene tooling CATEGORY, not a deadness assertion
+B	unwitnessed-premise	med	not_used_anywhere	aaf959cbb2f6	61	FP	'Dead Code 0.84/1.00' is a benchmark category F1 score, not a deadness premise
+B	unwitnessed-premise	high	not_used_anywhere+action	aba2e38af31d	32	FP	'dead code' listed as an LLM-eval smell category — not a deadness premise
+C	review-catch	med	finding_id+anchor	1ca602a1	128	FP	'F1' matched as finding-id but it is the F1 metric in an eval results table
+C	review-catch	med	P0P1+anchor	a1e6bf53	1	TP	spawn prompt narrates real 'codex §9 review returned CONCERN with 2 [P2] findings'
+C	review-catch	med	P0P1+anchor	a4618af9	1	TP	sibling spawn prompt narrating the same real CONCERN+2 P2 findings
+C	review-catch	med	finding_id+anchor	a4d0745c	1	FP	'F5' matched as finding-id but F5-ADR is a feature/ADR label in a task list
+C	review-catch	med	P0P1+anchor	abb57199	210	TP	'Findings fixed: [P1#1] Added corpus_validity...' — real P1 review finding
+C	review-catch	med	CONCERN+anchor	ad32accf	29	TP	'Review #1 CONCERN 2x[P2] (probes stricter than frozen §5)' — real reviewer catch
+C	review-catch	med	CONCERN+anchor	ad92cca6	25	TP	actual reviewer verdict line '## Verdict: CONCERN (2 new regressions introduced by fix-1)'
+C	review-catch	med	P0P1+anchor	a311b761	1	FP	'1xP1 + 4xP2 -> PASS' harness-provenance summary; verdict PASS, provenance not a catch
+C	review-catch	med	P0P1+anchor	a3305cd5	5	FP	sibling of a311b761 — same PASS-summary provenance narration
+C	review-catch	low	BLOCK+policy	a3ad428c	11	TP	narrates real 'BLOCK-1 fix' (frontier seeds) that a codex review raised
+D	self-correction	high	you_are_right	1ca602a1	1047	TP	'good catch' — concedes snippet used a non-existent model= param, verifies real path
+D	self-correction	med	correcting_my	42c20de3	177	TP	'I need to correct what I told you earlier: the 25.5KB result I attributed... was actually...'
+D	self-correction	high	you_are_right	a1ca8591	142	TP	accepts review findings 'U1-b Accept (good catch). Seam moved...' — concedes design error
+D	self-correction	high	you_are_right	ad68ba83	117	FP	'you're right, they're in separate worktrees' affirms a fact, no own-error admission
+D	self-correction	high	you_are_right	c1471996	579	TP	'You're right to be annoyed — let me verify what actually happened rather than take the agent's word'
+D	self-correction	high	you_are_right	ebec94c7	77	TP	'You're right — I used raw python3... I should use the proper tools' — clear self-correction
+D	self-correction	high	you_are_right	f2f071a5	344	TP	'You're right — full CI is pure ceremony' concedes its over-application of CI
+D	self-correction	high	you_are_right	3fd7e5c7	2558	TP	'You're right that work remains' concedes it understated open work
+D	self-correction	high	you_are_right	9ed961e4	172	TP	'Good catch — let me honor that directive precisely' admits it missed a directive
+D	self-correction	high	you_are_right	b0c66cc3	939	TP	'You're right to question that part' partial self-correction on README redundancy
+E	halt-scout-falsify	med	premise_false+scout	a89c25ce5a28	16	TP	scout finds plan-0.8.19 claim 'just wrong/stale... never reconciled against the new sequence'
+E	halt-scout-falsify	med	premise_false	a160c72b50ba	162	TP	'[DETECT] The re-scope premise for Batch B is false. The facade returns raw dicts...'
+E	halt-scout-falsify	med	premise_false	a38abe8029cb	194	TP	'Batch B — the design premise was false — facade returns raw dicts/TODO stubs, does NOT build model'
+E	halt-scout-falsify	med	premise_false	a3c268343ca9	112	TP	scout: closure artifact 0-failed claim 'is false against the real pre-push gate' — 4 tests break
+E	halt-scout-falsify	med	premise_false	a65af92f5a5f	54	TP	proves commit's 'byte-for-byte behavior-preserving' claim technically false at two sites

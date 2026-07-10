@@ -1,0 +1,21 @@
+{
+  "purpose": "Provenance for the two independent judge runs feeding Q-IRR / C6-grounding / Q-DISC specificity in the v3 revision loop.",
+  "date": "2026-07-09",
+  "pack": "adjudication_pack.jsonl (27 candidates; 16 tuning / 11 validation)",
+  "judges": [
+    {
+      "file": "judge_A.jsonl",
+      "model_tier": "Opus-tier (inherited main-loop model, no override)",
+      "role": "independent non-author adjudicator",
+      "authored_v3": false
+    },
+    {
+      "file": "judge_B.jsonl",
+      "model_tier": "Fable-High (model=fable)",
+      "role": "independent non-author adjudicator",
+      "authored_v3": false
+    }
+  ],
+  "independence_evidence": "Runs were launched separately with no shared state; every rationale differs in phrasing and quoted evidence. Verified 27/27 identical verdicts, 0 disagreements (irr_result.json).",
+  "note": "Model *identities* are recorded here rather than in the JSONL rows, which are kept as pure verdict data (no prose). Base-rate caveat: 26/27 GOOD, so kappa=1.0 is base-rate-limited; the load-bearing claim is 100% observed agreement."
+}

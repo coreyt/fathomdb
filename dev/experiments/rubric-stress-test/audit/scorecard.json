@@ -1,0 +1,346 @@
+{
+  "taxonomy_size": 25,
+  "Q1_coverage": {
+    "covered": 18,
+    "partial": 6,
+    "gap": 1,
+    "coverage_strict": 0.72,
+    "coverage_partial_credit": 0.84,
+    "per_dimension": {
+      "B": {
+        "COVERED": 4
+      },
+      "C": {
+        "PARTIAL": 5,
+        "COVERED": 5,
+        "GAP": 1
+      },
+      "A": {
+        "COVERED": 4
+      },
+      "F": {
+        "COVERED": 1,
+        "PARTIAL": 1
+      },
+      "E": {
+        "COVERED": 2
+      },
+      "H": {
+        "COVERED": 1
+      },
+      "D": {
+        "COVERED": 1
+      }
+    },
+    "per_detectability": {
+      "deterministic-structural": {
+        "COVERED": 7,
+        "PARTIAL": 1
+      },
+      "needs-LLM-adjudication": {
+        "PARTIAL": 3,
+        "COVERED": 4
+      },
+      "needs-reference-comparison": {
+        "COVERED": 2,
+        "GAP": 1
+      },
+      "deterministic-textual": {
+        "PARTIAL": 1,
+        "COVERED": 2
+      }
+    }
+  },
+  "Q2_groundedness": {
+    "criteria": 62,
+    "live": 25,
+    "dead_detectable": 34,
+    "dead_undetectable": 3,
+    "live_fraction": 0.403,
+    "live_fraction_behavioral": null
+  },
+  "Q3_discrimination": {
+    "known_bad_episodes": {
+      "E1_CR047": {
+        "maps_to": [
+          "B7",
+          "C7",
+          "E7",
+          "A9"
+        ],
+        "localized_fires": [
+          "B7(unwitnessed-premise@L1617)"
+        ],
+        "right_criteria": true
+      },
+      "E2_30N": {
+        "maps_to": [
+          "C8",
+          "B7"
+        ],
+        "localized_fires": [
+          "B7(n_sites@L1495)",
+          "C8(unverified-metric d2ae8c40 L327)"
+        ],
+        "right_criteria": true
+      },
+      "E3_36h": {
+        "maps_to": [
+          "F6"
+        ],
+        "localized_fires": [
+          "F6(SILENT-STALL 35.7h@L1226,23.8h@L853)"
+        ],
+        "right_criteria": true
+      },
+      "E4_OPP12": {
+        "maps_to": [
+          "C3"
+        ],
+        "localized_fires": [
+          "C3(NETNEW-DRIFT@L1739/1754/1776/2178/2220)"
+        ],
+        "right_criteria": true
+      }
+    },
+    "known_bad_all_correct": true,
+    "known_good_0816_clean": "INFERRED-CLEAN (false-firing DQ detectors all downgraded to candidate/adjudication; criterion-level [L]/[H] judge rejects good behavior \u2014 DIRECT SCORING PENDING judge run)"
+  },
+  "Q6_nonredundancy": {
+    "comoving_pairs": [
+      {
+        "a": "B5",
+        "b": "F5",
+        "jaccard": 1.0,
+        "shared": 76,
+        "union": 76
+      },
+      {
+        "a": "E7",
+        "b": "H6",
+        "jaccard": 0.933,
+        "shared": 28,
+        "union": 30
+      },
+      {
+        "a": "C8",
+        "b": "F1",
+        "jaccard": 0.875,
+        "shared": 77,
+        "union": 88
+      },
+      {
+        "a": "C1",
+        "b": "C7",
+        "jaccard": 0.831,
+        "shared": 64,
+        "union": 77
+      },
+      {
+        "a": "B5",
+        "b": "C8",
+        "jaccard": 0.802,
+        "shared": 73,
+        "union": 91
+      },
+      {
+        "a": "C8",
+        "b": "F5",
+        "jaccard": 0.802,
+        "shared": 73,
+        "union": 91
+      },
+      {
+        "a": "C3",
+        "b": "E7",
+        "jaccard": 0.784,
+        "shared": 29,
+        "union": 37
+      },
+      {
+        "a": "C3",
+        "b": "H6",
+        "jaccard": 0.778,
+        "shared": 28,
+        "union": 36
+      },
+      {
+        "a": "B5",
+        "b": "F1",
+        "jaccard": 0.759,
+        "shared": 66,
+        "union": 87
+      },
+      {
+        "a": "F1",
+        "b": "F5",
+        "jaccard": 0.759,
+        "shared": 66,
+        "union": 87
+      },
+      {
+        "a": "C1",
+        "b": "C8",
+        "jaccard": 0.753,
+        "shared": 70,
+        "union": 93
+      },
+      {
+        "a": "C7",
+        "b": "C8",
+        "jaccard": 0.75,
+        "shared": 66,
+        "union": 88
+      },
+      {
+        "a": "B7",
+        "b": "C1",
+        "jaccard": 0.727,
+        "shared": 56,
+        "union": 77
+      },
+      {
+        "a": "B5",
+        "b": "C7",
+        "jaccard": 0.711,
+        "shared": 59,
+        "union": 83
+      },
+      {
+        "a": "C7",
+        "b": "F5",
+        "jaccard": 0.711,
+        "shared": 59,
+        "union": 83
+      },
+      {
+        "a": "B5",
+        "b": "C1",
+        "jaccard": 0.697,
+        "shared": 62,
+        "union": 89
+      },
+      {
+        "a": "C1",
+        "b": "F5",
+        "jaccard": 0.697,
+        "shared": 62,
+        "union": 89
+      },
+      {
+        "a": "C2",
+        "b": "C5",
+        "jaccard": 0.682,
+        "shared": 15,
+        "union": 22
+      },
+      {
+        "a": "C1",
+        "b": "F1",
+        "jaccard": 0.67,
+        "shared": 61,
+        "union": 91
+      },
+      {
+        "a": "C7",
+        "b": "F1",
+        "jaccard": 0.625,
+        "shared": 55,
+        "union": 88
+      },
+      {
+        "a": "B2",
+        "b": "C1",
+        "jaccard": 0.622,
+        "shared": 51,
+        "union": 82
+      },
+      {
+        "a": "B2",
+        "b": "C7",
+        "jaccard": 0.61,
+        "shared": 47,
+        "union": 77
+      },
+      {
+        "a": "B2",
+        "b": "C8",
+        "jaccard": 0.604,
+        "shared": 55,
+        "union": 91
+      },
+      {
+        "a": "B2",
+        "b": "B5",
+        "jaccard": 0.595,
+        "shared": 50,
+        "union": 84
+      },
+      {
+        "a": "B2",
+        "b": "F5",
+        "jaccard": 0.595,
+        "shared": 50,
+        "union": 84
+      },
+      {
+        "a": "B2",
+        "b": "F1",
+        "jaccard": 0.588,
+        "shared": 50,
+        "union": 85
+      },
+      {
+        "a": "B7",
+        "b": "C7",
+        "jaccard": 0.57,
+        "shared": 45,
+        "union": 79
+      },
+      {
+        "a": "B7",
+        "b": "C8",
+        "jaccard": 0.57,
+        "shared": 53,
+        "union": 93
+      },
+      {
+        "a": "B7",
+        "b": "F1",
+        "jaccard": 0.552,
+        "shared": 48,
+        "union": 87
+      },
+      {
+        "a": "B2",
+        "b": "B7",
+        "jaccard": 0.526,
+        "shared": 40,
+        "union": 76
+      },
+      {
+        "a": "B5",
+        "b": "B7",
+        "jaccard": 0.523,
+        "shared": 46,
+        "union": 88
+      },
+      {
+        "a": "B7",
+        "b": "F5",
+        "jaccard": 0.523,
+        "shared": 46,
+        "union": 88
+      }
+    ],
+    "max_pairwise": 1.0
+  },
+  "placeholders": {
+    "Q4_interjudge": "PENDING two independent judge runs (method \u00a74)",
+    "Q5_evidence_grounding": "PENDING judge run (fraction of verdicts citing quote/sha/line before score)",
+    "Q7_actionability": "PARTIAL (per-criterion actionability in criteria.jsonl; formal distinct-remediation audit PENDING)",
+    "Q8_false_negative_sensitivity": "PENDING consequence-weighted recall on confirmed failures (needs full adjudication)",
+    "Q9_gaming_resistance": "PENDING adversarial pass (method \u00a74)",
+    "Q10_calibration": "PENDING (hard/soft & severity vs real impact \u2014 needs judge run)"
+  }
+}

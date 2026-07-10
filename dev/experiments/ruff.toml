@@ -1,0 +1,17 @@
+# Lint config for the research/experiment subtree ONLY.
+# Exploratory analysis scripts (detector miners, audit builders, one-off probes)
+# are held to a relaxed bar: correctness lints stay on, but stylistic noise that
+# would gate throwaway research code is ignored. Product code outside
+# dev/experiments/ is linted at the full default bar from the repo root.
+# Rationale: "fix the tooling, not the actor" — the pre-commit ruff gate should
+# not block committing reproducible experiment artifacts over one-line-import style.
+[lint]
+ignore = [
+  "E401",  # multiple imports on one line (compact analysis scripts)
+  "E701",  # multiple statements on one line (colon)
+  "E702",  # multiple statements on one line (semicolon)
+  "E741",  # ambiguous variable name (l/I/O) — common as loop var in scratch code
+  "F401",  # imported but unused
+  "F841",  # local variable assigned but never used
+  "F541",  # f-string without placeholders
+]

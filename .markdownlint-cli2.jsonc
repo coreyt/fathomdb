@@ -48,6 +48,12 @@
     // (verbatim emitted, formatting drifts per agent), not maintained prose.
     "dev/plans/prompts/**",
 
+    // Research/experiment subtree — tool- and agent-emitted analysis reports and
+    // generated artifact dumps (detector output, audit scorecards, adjudication
+    // packs). Same class as runs/**: verbatim emitted, formatting drifts per agent,
+    // not maintained prose. The authored design docs under dev/design/ stay linted.
+    "dev/experiments/**",
+
     // Local-only agent config (gitignored, not part of repo).
     ".claude/**",
 
