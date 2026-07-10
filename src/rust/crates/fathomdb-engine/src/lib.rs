@@ -605,6 +605,14 @@ enum ReaderRequest {
         snapshot_label: String,
         respond: SyncSender<(String, i32, i32, i32)>,
     },
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — debug-only request
+    /// that asks a worker to read its own connection's `PRAGMA secure_delete`
+    /// and return it (`0`/`1`). Used solely by the gap-4 test that asserts the
+    /// standing secure_delete flag is ON at EVERY open, not just the writer.
+    #[cfg(debug_assertions)]
+    SecureDeleteStatus {
+        respond: SyncSender<i64>,
+    },
 }
 
 // G0 Phase-2: the Search response carries a 4th element — the graph-arm frontier
@@ -726,6 +734,25 @@ impl ReaderWorkerPool {
                 cache_miss: -1,
                 cache_used_bytes: -1,
             });
+        }
+        results
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — broadcast a
+    /// `SecureDeleteStatus` request to every worker and collect each worker's
+    /// `PRAGMA secure_delete` value. Same broadcast pattern as G.1's
+    /// `lookaside_used_per_worker`. Proves the standing secure_delete flag is ON
+    /// on the reader-pool connections, not just the writer.
+    #[cfg(debug_assertions)]
+    fn secure_delete_per_worker(&self) -> Vec<i64> {
+        let mut results = Vec::with_capacity(self.senders.len());
+        for sender in &self.senders {
+            let (tx, rx) = mpsc::sync_channel::<i64>(1);
+            if sender.send(ReaderRequest::SecureDeleteStatus { respond: tx }).is_ok() {
+                results.push(rx.recv().unwrap_or(-1));
+            } else {
+                results.push(-1);
+            }
         }
         results
     }
@@ -871,6 +898,12 @@ fn reader_worker_loop(
             ReaderRequest::CacheStatus { snapshot_label, respond } => {
                 let (hit, miss, used) = read_cache_status(&connection);
                 let _ = respond.send((snapshot_label, hit, miss, used));
+            }
+            #[cfg(debug_assertions)]
+            ReaderRequest::SecureDeleteStatus { respond } => {
+                let value: i64 =
+                    connection.query_row("PRAGMA secure_delete", [], |r| r.get(0)).unwrap_or(-1);
+                let _ = respond.send(value);
             }
         }
     }
@@ -2136,25 +2169,29 @@ impl LifecycleState {
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10) — the target states legally reachable from
-    /// `self` in the FULL lifecycle state machine (design §2 legal-transition
-    /// table), across BOTH the `transition` and `purge` verbs. Single source of
-    /// truth for the `IllegalTransitionError.legal` enumeration:
-    ///   `Pending` → `[Active, Deleted]`   (promote / reject — `transition`)
-    ///   `Active`  → `[Deleted]`           (soft-delete — `transition`)
-    ///   `Deleted` → `[Active, Purged]`    (undelete via `transition`; purge via `purge`)
+    /// `self` via the `transition` VERB (design §2 legal-transition table). This
+    /// is the verb-specific enumeration reported by `IllegalTransitionError.legal`:
+    ///   `Pending` → `[Active, Deleted]`   (promote / reject)
+    ///   `Active`  → `[Deleted]`           (soft-delete)
+    ///   `Deleted` → `[Active]`            (undelete)
     ///   `Purged`  → `[]`                  (terminal; nothing is reachable)
-    /// Note the verb split: `Purged` is reachable only via the `purge` verb, and
-    /// `Pending` is a create-time-only state — neither is a `transition` target
-    /// (see [`Engine::transition`]), even though `Purged` appears here for
-    /// `Deleted`.
+    /// `Purged` is DELIBERATELY excluded even from `Deleted`: reaching `purged` is
+    /// the `purge` verb's job (see [`Engine::purge`]), NOT a legal `transition`
+    /// target, so reporting it here would mislead a caller into thinking
+    /// `transition(deleted → purged)` is legal when it is not. Likewise `Pending`
+    /// is create-time-only and is never a `transition` target. Derived directly
+    /// from [`is_legal_transition_move`] so this can never drift from the table.
     #[must_use]
     pub fn legal_next_states(self) -> Vec<LifecycleState> {
-        match self {
-            LifecycleState::Pending => vec![LifecycleState::Active, LifecycleState::Deleted],
-            LifecycleState::Active => vec![LifecycleState::Deleted],
-            LifecycleState::Deleted => vec![LifecycleState::Active, LifecycleState::Purged],
-            LifecycleState::Purged => Vec::new(),
-        }
+        [
+            LifecycleState::Pending,
+            LifecycleState::Active,
+            LifecycleState::Deleted,
+            LifecycleState::Purged,
+        ]
+        .into_iter()
+        .filter(|&to| is_legal_transition_move(self, to))
+        .collect()
     }
 }
 
@@ -3294,6 +3331,16 @@ impl Engine {
             lookaside_rcs.push(rc);
             reader
                 .pragma_update(None, "journal_mode", "WAL")
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
+            // OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — `secure_delete=ON`
+            // at EVERY connection open, not just the writer. `secure_delete` is a
+            // per-connection pager flag, so a reader-pool connection that frees a
+            // page (vector-rewrite / projection DELETEs run off non-writer
+            // connections) would otherwise leave that freed content on disk,
+            // defeating GDPR erasure. Set BEFORE `query_only=ON` so the ordering is
+            // unambiguous (the flag is a pager setting, not a DB write).
+            reader
+                .pragma_update(None, "secure_delete", "ON")
                 .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
             reader
                 .pragma_update(None, "query_only", "ON")
@@ -5332,6 +5379,36 @@ impl Engine {
         self.ensure_open()?;
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let value: i64 = connection
+            .query_row("PRAGMA secure_delete", [], |r| r.get(0))
+            .map_err(|_| EngineError::Storage)?;
+        Ok(value != 0)
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — `true` iff EVERY
+    /// reader-pool connection reports `PRAGMA secure_delete = ON`. Broadcasts a
+    /// per-worker probe; proves the standing flag is set on the non-writer
+    /// connections (which perform projection/vector-rewrite DELETEs), closing
+    /// the GDPR-erasure leak codex flagged.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+        self.ensure_open()?;
+        let per_worker = self.reader_pool.secure_delete_per_worker();
+        if per_worker.is_empty() {
+            return Err(EngineError::Storage);
+        }
+        Ok(per_worker.iter().all(|&v| v == 1))
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — `true` iff a freshly
+    /// opened projection/runtime connection (`open_runtime_connection`) reports
+    /// `PRAGMA secure_delete = ON`. The runtime connection performs the
+    /// vector-rewrite/projection DELETEs, so its freed pages must be scrubbed too.
+    #[doc(hidden)]
+    pub fn runtime_secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+        self.ensure_open()?;
+        let connection = open_runtime_connection(&self.path).map_err(|_| EngineError::Storage)?;
         let value: i64 = connection
             .query_row("PRAGMA secure_delete", [], |r| r.get(0))
             .map_err(|_| EngineError::Storage)?;
@@ -9642,6 +9719,11 @@ fn locator_from_rusqlite_error(err: &rusqlite::Error) -> CorruptionLocator {
 fn open_runtime_connection(path: &Path) -> rusqlite::Result<Connection> {
     let connection = Connection::open(path)?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
+    // OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — `secure_delete=ON` at
+    // EVERY open. The projection/vector-rewrite runtime connection performs
+    // DELETEs (shadow-table rewrites), so its freed pages must be scrubbed too;
+    // setting the pragma only on the writer left a GDPR-erasure leak here.
+    connection.pragma_update(None, "secure_delete", "ON")?;
     Ok(connection)
 }
 

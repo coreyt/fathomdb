@@ -180,7 +180,29 @@ fn illegal_transitions_return_typed_error_with_legal_targets() {
     let engine = &opened.engine;
     engine.write(&[node("body", "a1")]).expect("write");
 
-    // active → purged (purge-only target).
+    // pending → purged: verb-specific legal set from `pending` is [active, deleted]
+    // (promote / reject) and EXCLUDES `purged` (purge-only) and `pending` (self).
+    engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "quarantined body".to_string(),
+            source_id: None,
+            logical_id: Some("pend".to_string()),
+            state: InitialState::Pending,
+            reason: None,
+        }])
+        .expect("write pending");
+    let err = engine.transition("pend", LifecycleState::Purged, None).unwrap_err();
+    assert_eq!(
+        err,
+        EngineError::IllegalTransition {
+            from_state: LifecycleState::Pending,
+            to_state: LifecycleState::Purged,
+            legal: vec![LifecycleState::Active, LifecycleState::Deleted],
+        }
+    );
+
+    // active → purged (purge-only target). Verb-specific legal set is [deleted].
     let err = engine.transition("a1", LifecycleState::Purged, None).unwrap_err();
     assert_eq!(
         err,
@@ -201,8 +223,10 @@ fn illegal_transitions_return_typed_error_with_legal_targets() {
         EngineError::IllegalTransition { to_state: LifecycleState::Pending, .. }
     ));
 
-    // deleted → purged via `transition` is illegal (purge is its own verb); the
-    // legal enumeration from `deleted` still names [active, purged].
+    // deleted → purged via `transition` is illegal (purge is its own verb). The
+    // `legal` enumeration is VERB-SPECIFIC to `transition`: it names ONLY
+    // [active] (undelete) and EXCLUDES `purged` — reporting `purged` here would
+    // falsely tell the caller it is a legal `transition` target (codex §9 P2).
     engine.transition("a1", LifecycleState::Deleted, None).expect("soft-delete");
     let err = engine.transition("a1", LifecycleState::Purged, None).unwrap_err();
     assert_eq!(
@@ -210,7 +234,7 @@ fn illegal_transitions_return_typed_error_with_legal_targets() {
         EngineError::IllegalTransition {
             from_state: LifecycleState::Deleted,
             to_state: LifecycleState::Purged,
-            legal: vec![LifecycleState::Active, LifecycleState::Purged],
+            legal: vec![LifecycleState::Active],
         }
     );
     // deleted → deleted (self-loop).
@@ -416,12 +440,35 @@ fn purge_erases_all_row_owned_targets_and_cascades_edges() {
     );
 }
 
-/// gap-4 — the standing `secure_delete=ON` PRAGMA is applied at open.
+/// gap-4 — the standing `secure_delete=ON` PRAGMA is applied at open on the
+/// WRITER connection.
 #[test]
 fn secure_delete_is_enabled_on_open() {
     let (_dir, opened) = open("secure_delete");
     assert!(
         opened.engine.secure_delete_enabled_for_test().expect("pragma read"),
         "PRAGMA secure_delete must be ON on the writer connection at open"
+    );
+}
+
+/// gap-4 (codex §9 P1) — the standing `secure_delete=ON` PRAGMA must be set at
+/// EVERY connection open, not just the writer. The reader-pool and the
+/// projection/runtime connections perform DELETEs (vector-rewrite / projection
+/// shadow rewrites) whose freed pages would otherwise leak erased content.
+///
+/// Gated `debug_assertions` because the per-worker reader probe seam
+/// (`reader_secure_delete_enabled_for_test`) is debug-only, matching the
+/// existing lookaside / cache-status reader introspection seams.
+#[cfg(debug_assertions)]
+#[test]
+fn secure_delete_is_enabled_on_reader_pool_and_runtime_connections() {
+    let (_dir, opened) = open("secure_delete_all");
+    assert!(
+        opened.engine.reader_secure_delete_enabled_for_test().expect("reader pragma read"),
+        "PRAGMA secure_delete must be ON on EVERY reader-pool connection at open"
+    );
+    assert!(
+        opened.engine.runtime_secure_delete_enabled_for_test().expect("runtime pragma read"),
+        "PRAGMA secure_delete must be ON on the projection/runtime connection at open"
     );
 }
