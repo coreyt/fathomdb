@@ -134,7 +134,67 @@ raw transcript never enters an LLM context.
 
 - Raw Claude Code session JSONL location for gap-2+ ingest (existing probes read a host path
   like `~/transcript-data/…`); witnesses alone suffice for Slice 5.
-- Default judge model family for the self-preference guard (a non-Claude airlock alias vs. an
-  explicit cross-family corroboration run, matching the pilot's Opus-tier + Fable-High pair).
+- ~~Default judge model family for the self-preference guard~~ — **RESOLVED, see §Review
+  resolutions R2 below** (judge runs through the local **airlock** proxy on a non-Claude family).
 - Whether to lift the shared airlock/budget helpers out of `eval/` into a small importable
   module, or import `eval.*` directly via `PYTHONPATH`.
+
+## Review resolutions (2026-07-10) — the five flagged review gaps
+
+The rubric-line review flagged five gaps; the HITL directed the resolutions below. R1/R4 are
+now closed on `main`; R2/R3/R5 are binding design guidance for the slice ladder.
+
+### R1 — merge dependency (closed)
+
+The harness + all its rubric-line dependencies (rubric v3.1, detectors, audit tooling,
+`agent-rubric-ledger`) are **merged to `main`** (2026-07-10). The harness can now audit `main`
+directly; the branch-locality prerequisite is gone.
+
+### R2 — self-preference guard via **airlock** (resolves the judge-family open item)
+
+The `[L]`/`[H]` judge (`harness/judge.py`) reaches models **only through the local airlock
+proxy** (LiteLLM, OpenAI-compatible) — `~/projects/airlock/docs/`. This both enforces the
+`judge ≠ author` guard and lightens the Anthropic burden by making other providers available:
+
+- **Endpoint:** `http://localhost:4000/v1` (OpenAI-compatible; base_url + airlock master key as
+  the API key). The existing `eval/*` LLM client already speaks this shape — reuse it, do not add
+  a gateway (design non-goal).
+- **Self-preference guard (OR-AC-3):** the judge model **family must differ from the audited
+  agent's family.** FathomDB agents are Claude, so the default judge is a **non-Claude** airlock
+  route — an OpenAI/Gemini alias, or a self-hosted vLLM/Ollama model (airlock routes all three).
+  If a Claude judge is ever used, the guard **fails closed** unless the explicit cross-family
+  corroboration pair is run (matching the pilot's Opus-tier + Fable-High two-judge design).
+- **Airlock gives three things the harness needs for free:** per-key **budget control**
+  (complements the `--max-usd` preflight, OR-REQ-5), structured **JSONL request/response logging**
+  (an independent audit trail of every judge call), and **PII stripping** (Presidio) as
+  defense-in-depth on the bounded windows — the raw-transcript-never-in-context invariant still
+  holds; airlock is a second layer, not the primary one.
+- **Config:** the airlock base_url + key live in the gitignored `dev/.env.eval` (alongside the
+  existing `R2_JUDGE_*`), never committed.
+
+### R3 — anti-Goodhart κ is judge-vs-judge, not judge-vs-human (honesty)
+
+`milestone.py`'s κ (via `audit/compute_irr.py`) is computed against `audit/judge_A.jsonl` /
+`judge_B.jsonl`, which are **two independent LLM judges**, not a human gold pack. So it measures
+inter-**judge** reliability, not judge↔human agreement — a fair Goodhart tripwire but a weaker
+claim than "human agreement," and subject to the same base-rate caveat as the rubric's own Q-IRR.
+**Guidance:** label the metric honestly as inter-judge κ; and seed a **small human-labeled pack**
+(even N≈20) so a true judge↔human κ exists per rubric version before adoption leans on it.
+
+### R4 — v3.1 B1/B2 `[D]` sub-check detector (added)
+
+`dev/experiments/rubric-stress-test/detect_s9_transcript.py` implements the v3.1 §13.3 companion
+check ("a §9 review transcript exists on disk per landed slice"): deterministic, 0-LLM, exit-1 on
+UNMET so it can gate in the harness `[D]` layer or CI. It reproduces the 0.8.19 pilot finding
+(0/5 slices → UNMET). The harness `judge.py` `[D]` dispatch for B1/B2 calls
+`check_s9_transcripts(release, repo)` and folds `subcheck_verdict` into the B1/B2 verdict.
+
+### R5 — inherit the airlock / eval-env operational traps
+
+When porting `eval/*`, carry its operational notes (they are real footguns): native `import
+fathomdb` (not a source path); the judge env (`R2_JUDGE_*` + now the airlock base_url/key) reads
+from the **gitignored `dev/.env.eval`**; the airlock **batch path bypasses quarantine** (cheaper —
+use it for the independent per-criterion calls, OR-REQ's batch note); and the GPU-eval wheel-build
+traps (libcuda bundling, stale `.so` shadowing) if any judge/embed step touches CUDA. The harness
+adds one: point the client at the airlock base_url, not a provider directly, so logging/guard/budget
+always apply.
