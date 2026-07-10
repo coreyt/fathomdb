@@ -16,10 +16,31 @@
 //! (both are excluded by the identical `state = 'active'` predicate).
 
 use std::path::Path;
+use std::sync::Arc;
 
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{Engine, InitialState, LifecycleState, PreparedWrite, TraversalDirection};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
+
+/// A dimension-8 embedder that returns the SAME unit vector for every text, so
+/// both node versions land identical embeddings in `vector_default` and the
+/// phase-1 bit-KNN necessarily returns both candidate rowids (distance 0). This
+/// isolates the retrieval-site exclusion (not scoring quality) as the variable
+/// under test in `r_ex_2_vector_search_excludes_superseded_node_version`.
+#[derive(Clone, Debug)]
+struct ConstantEmbedder;
+
+impl Embedder for ConstantEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        EmbedderIdentity::new("const", "rev-a", 8)
+    }
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        let mut v = vec![0.0_f32; 8];
+        v[0] = 1.0;
+        Ok(v)
+    }
+}
 
 fn active_node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
@@ -222,6 +243,72 @@ fn r_ex_2_graph_traversal_excludes_pending_neighbor() {
         neighbors2.contains(&"nbr".to_string()),
         "an active neighbor must be surfaced by graph traversal, got: {neighbors2:?}"
     );
+}
+
+/// R-EX-2 (fix-1, codex §9) — a SUPERSEDED node version must not be recalled
+/// through the VECTOR search arm. Node supersession is tombstone-then-insert
+/// (`commit_batch`): the prior `canonical_nodes` row is kept (same
+/// `write_cursor`, `state = 'active'`, `superseded_at` set) and — unlike the
+/// edge path (fix-30) — its stale `vector_default` row is NOT pruned. So the
+/// phase-1 bit-KNN still surfaces the OLD cursor; the vector-arm node hydration
+/// query must therefore additionally guard `superseded_at IS NULL` (co-located
+/// with the pre-existing `state = 'active'`) to complete the "enforce the
+/// exclusion at every retrieval site" contract (design §2). Before the guard
+/// this test is RED (the stale body leaks); after it is GREEN.
+#[test]
+fn r_ex_2_vector_search_excludes_superseded_node_version() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join(format!("rex2_vector_supersede{SQLITE_SUFFIX}"));
+    let opened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(ConstantEmbedder)).expect("open");
+    let engine = &opened.engine;
+    engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+
+    // v1 — the OLD version under logical_id "L"; vector-index it.
+    engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "quokka original stale body".to_string(),
+            source_id: None,
+            logical_id: Some("L".to_string()),
+            state: InitialState::Active,
+            reason: None,
+        }])
+        .expect("write v1");
+    engine.drain(10_000).expect("drain v1");
+
+    // v2 — re-ingest the SAME logical_id with a CHANGED body (a supersession).
+    // The v1 canonical row is tombstoned (superseded_at set) but its
+    // vector_default row survives; v2 gets a fresh, distinct write_cursor.
+    engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "quokka revised fresh body".to_string(),
+            source_id: None,
+            logical_id: Some("L".to_string()),
+            state: InitialState::Active,
+            reason: None,
+        }])
+        .expect("write v2");
+    engine.drain(10_000).expect("drain v2");
+
+    let hits = engine.search("quokka").expect("search");
+    let bodies: Vec<&str> = hits.results.iter().map(|h| h.body.as_str()).collect();
+
+    // The CURRENT version must be recalled (no-op control: the vector arm still
+    // surfaces the live node).
+    assert!(
+        bodies.iter().any(|b| b.contains("revised fresh body")),
+        "the current node version must be recalled via vector search, got: {bodies:?}"
+    );
+    // The SUPERSEDED version must NOT leak through the vector arm.
+    assert!(
+        !bodies.iter().any(|b| b.contains("original stale body")),
+        "a superseded node version must be EXCLUDED from vector search \
+         (vector hydration must guard `superseded_at IS NULL`), got: {bodies:?}"
+    );
+
+    opened.engine.close().unwrap();
 }
 
 /// R-EX-2 — the `state = 'active'` predicate is a NO-OP on an all-active corpus:

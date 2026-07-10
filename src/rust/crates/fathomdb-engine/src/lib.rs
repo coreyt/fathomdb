@@ -7063,8 +7063,18 @@ fn read_search_in_tx(
         // Cause-A: the two node/edge SELECTs additively fetch `logical_id` so the
         // hit can carry a stable cross-session id (derive_stable_id). Read-only
         // additive column — ordering/scores are untouched.
+        // fix-1 (codex §9): co-locate BOTH existence guards. Node supersession
+        // is tombstone-then-insert (`commit_batch`) — the prior `canonical_nodes`
+        // row is kept (same `write_cursor`, `state = 'active'`, `superseded_at`
+        // set) and, unlike the edge path (fix-30), its stale `vector_default` row
+        // is NOT pruned, so the phase-1 bit-KNN can still surface the OLD cursor.
+        // Without `superseded_at IS NULL` here that superseded version would
+        // hydrate and leak stale content through vector search. This matches the
+        // edge branch below and every other retrieval site (design §2: enforce
+        // the exclusion at EVERY retrieval site). It only drops already-superseded
+        // rows → a no-op on the all-active / non-superseded corpus.
         let mut node_stmt = tx.prepare(
-            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 AND state = 'active' LIMIT 1",
+            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
         )?;
         let mut edge_stmt = tx.prepare(
             "SELECT body, logical_id FROM canonical_edges \
