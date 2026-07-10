@@ -1,5 +1,28 @@
 # FathomDB 0.8.20 — Plan (Library Sweep — owned engine slices) · **Major dependency migrations**
 
+> **⚠️ THIS PLAN IS STALE — DO NOT EXECUTE AS WRITTEN (Steward, 2026-07-10)**
+>
+> **0.8.20 is now `OPP-12 record-lifecycle Phase-2 + the coordinated breaking-pair publish`, NOT the Library
+> Sweep.** Per master **F-19/F-20** the Library Sweep (napi 2→3 · rusqlite 0.31→0.40 + sqlite-vec) was
+> **re-homed to 0.8.22**; the LBS-runbook content below belongs to *that* release and is retained here only
+> until the de-stale rewrite lands. See master §4 rows 0.8.20 / 0.8.22 + **F-23**.
+>
+> **State feeding 0.8.20 (verified from git, origin/main `578fe20b`):** **0.8.19 (OPP-12 Phase-1) is COMPLETE**
+> (master **F-24**) — the **C-2 typed `SearchHit.id` swap has LANDED** (`u64 → IdSpace {space,value}`;
+> `write_cursor`+`stable_id` subsumed; `to_prefixed()` == prior `stable_id` byte-for-byte ⇒ no gold-remap),
+> built **label-only**; existence axis + SCHEMA **19→20** + `transition`/`purge` verbs landed. **0.8.20 is where
+> the OPP-12 breaking surface is first PUBLISHED** (Memex `0.5.x-successor` pairs; #11-full @0.8.18 the prereq).
+>
+> **De-stale = full rewrite to the Phase-2 ladder** (Steward decision-3, in progress): `ReadView`/read-modes ·
+> node-validity (`valid_from`/`valid_until`) · **projection registry (C-1 co-land)** + EAV/property-FTS ·
+> `dense_readiness` · **anonymous-node surrogate `logical_id` minting (deferred from Phase-1, F-23)** · X1 ·
+> coordinated breaking-pair publish. **F-23 GUARDRAIL / TC-11 — do FIRST:** pin the doc-seeded `h:` end-state
+> (terminal-forever / forward-mint-only / backfilled; leading hypothesis **terminal** — doc-chunks aren't
+> `EntityTypeSpec` entities) at the Phase-2 Slice-0 X0 gate before any build. Fold the rubric-pilot carries
+> (parity-before-land G6 · persist §9 transcripts) into the X0 process (todos-ledger seq 22).
+>
+> ---
+>
 > **Plan-as-LBS-runbook (engine depth).** Run via `/goal complete plan-0.8.20.md` acting as the
 > **Library Bump Steward (LBS)**, spawning per-migration **Library Bump Orchestrators (LBOs)** for work
 > that requires real engine changes + a full test matrix. Read first:
