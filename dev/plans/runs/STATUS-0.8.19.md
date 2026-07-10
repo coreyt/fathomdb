@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **✅ Slices 5+10+15 LANDED; Slice 40 verification GREEN except X1 py/ts EXECUTION (pending a quiesced-main single-writer window). Manifests stay `0.8.9`; no publish.**
+## Current state — **✅ 0.8.19 COMPLETE (2026-07-10, label-only). All slices LANDED · Slice-40 verification GREEN · X1 py/ts parity GREEN (26/26, fresh-clone re-run @ `d4b5cd90`) · AC-074 governed-surface delta HITL-SIGNED. Manifests stay `0.8.9`; no tag/publish (OPP-12 publishes at 0.8.20). Master §4 → COMPLETE (F-24).**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -26,10 +26,10 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 | Slice | Title | State | X0 | X1 | X2 | X3 | §9 |
 |------:|-------|-------|----|----|----|----|----|
 | **0** | Setup + ADR (existence axis · transition/purge · C-2 IdSpace · 19→20 migration · 6 gap rulings · Phase boundary) | **✅ CLOSED / HITL SIGNED (2026-07-09)** | A ✓ / B ✓ codex / HITL ✓ | — | — | ✓ | — |
-| **5 ✅** | KEYSTONE — existence axis + **SCHEMA 19→20 (existence columns only)** | **LANDED `36074f91`+`a6970496`** (HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
-| **10 ✅** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **LANDED `65061fb7`+`9cb9274b`+`dd5eaf82`** (Steward-authorized) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
-| **15 ✅** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **LANDED `6616db93`+`a704c317`+`51c2c785`** (+compose `c8e2a5b3`; HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
-| **40** | Verification + Phase-1 release-readiness (label-only close) | **VERIFICATION GREEN except X1 exec (pending quiesce window)** | discharged | Rust ✓ / **py+ts exec PENDING** | ✓ | ✓ | n/a |
+| **5 ✅** | KEYSTONE — existence axis + **SCHEMA 19→20 (existence columns only)** | **LANDED `36074f91`+`a6970496`** (HITL-approved) | discharged | Rust ✓ / py+ts ✓ | ✓ | ✓ | **PASS** |
+| **10 ✅** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **LANDED `65061fb7`+`9cb9274b`+`dd5eaf82`** (Steward-authorized) | discharged | Rust ✓ / py+ts ✓ | ✓ | ✓ | **PASS** |
+| **15 ✅** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **LANDED `6616db93`+`a704c317`+`51c2c785`** (+compose `c8e2a5b3`; HITL-approved) | discharged | Rust ✓ / py+ts ✓ | ✓ | ✓ | **PASS** |
+| **40 ✅** | Verification + Phase-1 release-readiness (label-only close) | **✅ CLOSED (2026-07-10) — AC gate GREEN · X1 26/26 GREEN · AC-074 HITL-SIGNED** | discharged | Rust ✓ / py+ts ✓ | ✓ | ✓ | n/a |
 
 **Keystones / gates (re-derived per F-23 / 1a):** Slice 5 = schema keystone + HITL landing gate (19→20,
 existence columns only). Slice 15 = id-surface keystone (breaking, built label-only; publish = 0.8.20) — the
@@ -169,3 +169,28 @@ Run in the isolated `0.8.19-landing` worktree on integrated `main @ a7921202` (S
   `test_idspace_parity.py` + `idspace-parity.test.ts` (Slice 15), `test_opp12_lifecycle_verbs.py` +
   `opp12-lifecycle-verbs.test.ts` (Slice 10).
 - **Label-only close pending X1 + AC-074 HITL sign-off. Manifests stay `0.8.9`; no `v*` tag / publish.**
+
+## Slice 40 CLOSED — 0.8.19 COMPLETE (2026-07-10, label-only)
+
+- **X1 py/ts parity — GREEN (resolved).** HITL authorized a fresh X1 re-run; the Steward commissioned it in the
+  isolated clone `/home/coreyt/projects/fathomdb-x1-verify` (own `.venv-x1` + `.node`, `origin/main @ d4b5cd90`,
+  the live checkout never touched). **maturin-develop** rebuilt the py wheel + **`npm run build:native:debug`**
+  rebuilt the napi `.node` from current source; the stale-`.so` / `PyInit_fathomdb_py` shadowing trap was
+  resolved (installed module verified to carry `transition`/`purge`/`IdSpace`). **All 6 parity files pass —
+  26/26, 0 failures** (py `test_opp12_existence_axis` 5, `test_idspace_parity` 3, `test_opp12_lifecycle_verbs` 5;
+  ts `opp12-existence-axis` 5, `idspace-parity` 3, `opp12-lifecycle-verbs` 5; Py≡TS shape 5/3/5). Durable log:
+  `fathomdb-x1-verify/x1-rerun-2026-07-10.log`. Steward-verified the artifact + exit codes from primary evidence.
+- **AC-074 governed-surface delta — HITL-SIGNED 2026-07-10.** Mechanism already landed in Slice 10
+  (`src/conformance/governed-surface-allowlist.json` carries `transition`+`purge`); the `_comment` audit trail
+  flipped `proposed → HITL-SIGNED` at this close (per the JSON-governs precedent — AC-074 prose is a frozen
+  illustrative subset; not mirrored). Delta = +`transition`/+`purge` verbs · non-command types
+  +`LifecycleState`/+`IllegalTransitionError`/+`NotLifecycleAddressableError`/+`IdSpace`/`IdSpaceKind` ·
+  `PreparedWrite::Node` +`state`/+`reason` · `SearchHit.id` `u64→IdSpace` retype. **`recovery_denylist`
+  UNCHANGED (five names).** Phase-2 read-view/validity/projection types excluded.
+- **Label-only close (HITL Option-A, mirror 0.8.18):** manifests stay `0.8.9`; **no `v*` tag / publish** —
+  OPP-12 publishes at 0.8.20's coordinated breaking-pair (#11-full @0.8.18 is that prereq). Reconciled: master §4
+  0.8.19 row → **✅ COMPLETE** + new **F-24**; plan-0.8.19 `status: COMPLETE`; steward-ledger **seq 76**; memory
+  `0.8.19-complete-opp12-phase1-lifecycle-id` + MEMORY.md index.
+- **Carry-forward:** TC-11 (0.8.20 doc-seeded `h:` end-state pin + de-stale `plan-0.8.20.md`, do FIRST); the F-22
+  open-TC schedule (embed_batch_cls-TS-parity + eu7-basis → 0.8.20; TC-5 → 0.8.23; TC-9/TC-10 per schedule).
+- **Worktree/clone cleanup** after this commit lands: `fathomdb-worktrees/0.8.19-landing` + `fathomdb-x1-verify`.

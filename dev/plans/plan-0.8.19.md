@@ -2,12 +2,20 @@
 title: FathomDB 0.8.19 — Plan (state-machine ladder)
 subtitle: OPP-12 record-lifecycle Phase-1 — lifecycle + id (odd micro, LABEL-ONLY)
 date: 2026-07-09
-status: PROPOSED
+status: COMPLETE
 target_release: 0.8.19
 ---
 
 # FathomDB 0.8.19 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-1 — lifecycle + id**
 
+> **✅ 0.8.19 COMPLETE — 2026-07-10 (label-only close, HITL Option-A).** All slices (0/5/10/15/40) LANDED +
+> verified from git; **X1 py/ts parity GREEN (26/26, fresh-clone re-run @ `d4b5cd90`)**; **AC-074 governed-surface
+> delta HITL-SIGNED** (`transition`/`purge` + non-command lifecycle/id types; `recovery_denylist` unchanged).
+> Cargo AC gate + workspace clippy/check 0 + mkdocs `--strict` 0 + eu7 no-op basis. **Manifests stay `0.8.9`;
+> no `v*` tag / publish** — OPP-12 publishes at 0.8.20's coordinated breaking-pair. Master §4 0.8.19 row →
+> COMPLETE (**F-24**); steward-ledger seq 76. Next = 0.8.20 Phase-2 (author ladder + pin doc-seeded `h:` end-state
+> per TC-11 FIRST). See master **F-19/F-21/F-23/F-24**.
+>
 > **▶ Slices 5 + 15 LANDED to `main` (2026-07-09, HITL-approved both landings; `origin/main` @ `c8e2a5b3`).**
 > **▶ Slice 5 CLOSED — LANDED to main `36074f91`+`a6970496`** (2026-07-09; existence axis + SCHEMA 19→20).
 > **▶ Slice 15 CLOSED — LANDED to main `6616db93`+`a704c317`+`51c2c785`** (2026-07-09; C-2 `IdSpace` swap, label-only).
