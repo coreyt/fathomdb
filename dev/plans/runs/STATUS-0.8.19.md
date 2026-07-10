@@ -14,7 +14,7 @@
 > (B) independent codex design review → HITL sign-off → RED/GREEN TDD → codex §9. codex via
 > `dev/agent-tools/codex-nostdin.sh` only (bare `codex exec` deadlocks on stdin).
 
-## Current state — **Slices 5 + 15 both terminal §9 PASS — AWAITING HITL landings (5=19→20 migration · 15=breaking id-swap); Slice 10 blocked on Slice-5 landing**
+## Current state — **✅ Slices 5 + 15 LANDED to `main` (HITL-approved, `origin/main` @ `c8e2a5b3`); Slice 10 UNBLOCKED; Slice 40 pending. X1 py/ts execution deferred to a quiesced-main window.**
 
 Base verified from `origin/main` @ `9db9d98b`: `SCHEMA_VERSION = 19` (`fathomdb-schema/src/lib.rs:6`),
 `SearchHit.id: u64` (`fathomdb-engine/src/lib.rs:1173`), `stable_id`/`derive_stable_id` (`:1196`/`:10491`),
@@ -26,9 +26,9 @@ anonymous `logical_id: None` (`:7812`/`:11610`), `PreparedWrite::Node` (`:1859`)
 | Slice | Title | State | X0 | X1 | X2 | X3 | §9 |
 |------:|-------|-------|----|----|----|----|----|
 | **0** | Setup + ADR (existence axis · transition/purge · C-2 IdSpace · 19→20 migration · 6 gap rulings · Phase boundary) | **✅ CLOSED / HITL SIGNED (2026-07-09)** | A ✓ / B ✓ codex / HITL ✓ | — | — | ✓ | — |
-| **5** | KEYSTONE — existence axis (`state`/`reason` + `active`-only filter) + **SCHEMA 19→20 = existence columns ONLY (no surrogate)** *(HITL-gated bump)* | **§9 PASS (43aa29d6) — AWAITING HITL 19→20 LANDING** | discharged | py/ts written (main-exec pending) | pending | ✓ | **PASS (r2, fix-1)** |
-| **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | BLOCKED (dep: 5 — needs `state` column; waits for Slice-5 landing) | discharged | — | — | — | — |
-| **15** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **§9 PASS (b0bb919c) — AWAITING HITL BREAKING-SURFACE LANDING** | discharged | py/ts written (main-exec pending) | pending | ✓ | **PASS (r2, fix-1+fix-2)** |
+| **5 ✅** | KEYSTONE — existence axis + **SCHEMA 19→20 (existence columns only)** | **LANDED `36074f91`+`a6970496`** (HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
+| **10** | `transition`/`purge` verbs + `IllegalTransitionError` + `NotLifecycleAddressableError` + `secure_delete` PRAGMA | **UNBLOCKED** (Slice 5 landed; base `c8e2a5b3`) — NOT STARTED | discharged | — | — | — | — |
+| **15 ✅** | KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8), total via `l:`/`h:`/`p:` **without surrogate** *(breaking, label-only)* | **LANDED `6616db93`+`a704c317`+`51c2c785`** (+compose `c8e2a5b3`; HITL-approved) | discharged | Rust ✓ / py+ts exec deferred | pending | ✓ | **PASS** |
 | **40** | Verification + Phase-1 release-readiness (label-only close) | BLOCKED (dep: 5,10,15) | discharged | — | — | — | — |
 
 **Keystones / gates (re-derived per F-23 / 1a):** Slice 5 = schema keystone + HITL landing gate (19→20,
@@ -102,3 +102,21 @@ validates the worktree+preflight+implementer+codex machinery.
   change; a wording clarification the Steward may fold into the ADR if desired.
 - **Both keystones terminal §9 PASS in their worktrees; two HITL-gated landings pending** (Slice-5 19→20 R-MIG-1;
   Slice-15 breaking id-swap). Slice 10 (transition/purge) stays blocked until Slice 5 lands (needs `state`).
+
+- **2026-07-09 — Slices 5 + 15 LANDED to `main`** (HITL approved BOTH landings: Slice-5 SCHEMA 19→20 R-MIG-1;
+  Slice-15 breaking `SearchHit.id`, label-only). **Landed in an isolated `0.8.19-landing` worktree** after the
+  shared main checkout was contended by a concurrent rubric-eval session (recovered: main was safe; my
+  accidental cherry-pick fully reverted). Cherry-picked Slice 5 (`36074f91`+`a6970496`) then Slice 15
+  (`6616db93`+`a704c317`+`51c2c785`); the one cherry-pick conflict was a mechanical **import-union** in
+  `fathomdb-py`/`fathomdb-napi` `use fathomdb_engine::{…}` (both slices added an import — resolved to the
+  union). **Combined-workspace DoD green:** `cargo check`/`clippy`/`fmt --check` `--workspace --all-targets`
+  = 0; **19→20 migration 3/3** (fresh==upgrade); tc8_idspace_swap + opp12_existence_axis + telemetry_capture
+  green → **the id-swap + existence axis compose.** One cross-slice **compose-fix** (`c8e2a5b3`): Slice-15's
+  `tc8_idspace_swap.rs` (built off Slice 0, pre-Slice-5) lacked `PreparedWrite::Node.state`/`reason` — added
+  the defaults (nodes active; no test-semantics change). **Pushed `origin/main` `44fd6dee → c8e2a5b3`** (clean
+  fast-forward). **X1 py/ts *execution* DEFERRED** to a Steward-arranged quiesced-main single-writer window:
+  the Rust binding side compiles clean (`cargo check --workspace` includes `fathomdb-py`+`fathomdb-napi`), but
+  the isolated wheel build hit the **native-import module-name quirk** (`PyInit_fathomdb_py` symbol; SDK imports
+  `fathomdb`) + napi tooling not installed — the eval-env trap the Steward flagged; not forced.
+- **Next: Slice 10 (transition/purge), UNBLOCKED** (needs Slice-5's `state` column, now on main) → then Slice 40.
+  Label-only; no publish; manifests stay `0.8.9`.

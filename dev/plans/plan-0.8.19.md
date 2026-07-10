@@ -8,6 +8,13 @@ target_release: 0.8.19
 
 # FathomDB 0.8.19 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-1 — lifecycle + id**
 
+> **▶ Slices 5 + 15 LANDED to `main` (2026-07-09, HITL-approved both landings; `origin/main` @ `c8e2a5b3`).**
+> Slice 5 (existence axis + SCHEMA 19→20) `36074f91`+`a6970496`; Slice 15 (C-2 `IdSpace` `SearchHit.id` swap,
+> breaking/label-only) `6616db93`+`a704c317`+`51c2c785`; cross-slice compose-fix `c8e2a5b3`. Combined-DoD green
+> (`cargo check`/`clippy`/`fmt --check` --workspace = 0; 19→20 migration fresh==upgrade 3/3; id-swap + existence
+> axis compose). **X1 py/ts test *execution* deferred to a quiesced-main window** (Rust bindings compile clean;
+> isolated wheel build hit the native-import module-name quirk). **Next: Slice 10 (transition/purge), unblocked.**
+>
 > **▶ Slice 0 CLOSED — HITL-signed 2026-07-09** (codex design review terminal, no residual BLOCK;
 > independent adversarial audit). **gap-1 ruling 1a + the 5 unbundled gaps APPROVED.** **1a:**
 > anonymous/doc-seeded hits stay `h:`; the anonymous-surrogate `logical_id` mechanism is **deferred to
@@ -136,9 +143,9 @@ policy.
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
 | **0 ✅** | **Setup + ADR (X0-gated) — DESIGN CLOSED, HITL-signed 2026-07-09 (codex review terminal; adversarial audit).** Froze Phase-1 semantics: existence-axis state machine + legal-transition table; `LifecycleState`/`IllegalTransitionError`/`InitialState` types; C-2 `IdSpace` newtype; **19→20 migration = existence columns only** (gap-1 **1a**: anonymous-surrogate minting + `h:` end-state → Phase-2); purge = **cascade-remove** edges (gap-3); `secure_delete` PRAGMA + documented residual (gap-4); `active`-only read complete surface (gap-5); `PreparedWrite::Node` state/reason (gap-6); Phase-1/Phase-2 boundary; eu7 no-op basis. Board `runs/STATUS-0.8.19.md` | design-adr | — |
-| **5** | **KEYSTONE — existence axis + SCHEMA 19→20 migration** *(HITL-gated bump)*. `state`/`reason` columns; `InitialState` on `PreparedWrite::Node`; `active`-only default-read exclusion co-located with the 61 `superseded_at IS NULL` sites; the 19→20 migration (**existence columns only, no surrogate backfill** — 1a; fresh + upgrade). **No surrogate minting** (→ Phase-2, 1a) | implementation (schema + write/read path) | 0 |
+| **5 ✅** | **LANDED to main `36074f91`+`a6970496` (2026-07-09, HITL-approved 19→20 bump; combined-DoD green).** **KEYSTONE — existence axis + SCHEMA 19→20 migration** *(HITL-gated bump)*. `state`/`reason` columns; `InitialState` on `PreparedWrite::Node`; `active`-only default-read exclusion co-located with the 61 `superseded_at IS NULL` sites; the 19→20 migration (**existence columns only, no surrogate backfill** — 1a; fresh + upgrade). **No surrogate minting** (→ Phase-2, 1a) | implementation (schema + write/read path) | 0 |
 | **10** | **`transition` / `purge` verbs.** `transition(logical_id, to_state, reason?)` + legal-transition enforcement + typed `IllegalTransitionError`; `purge(logical_id)` hard-erase (secure_delete/VACUUM, FTS/vector removal, **edges-to-purged cascade-removed** — gap-3, no stubs in Phase-1, deleted-first + idempotent) | implementation (engine verbs) | 5 |
-| **15** | **KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8).** `write_cursor → logical_id`; typed `IdSpace {space, value}` newtype (`l:`/`h:`/`p:`), non-null + total; retire `write_cursor` + subsume `stable_id` into `id`; lifecycle verbs key on bare `logical_id` (`l:` only); **doc-seeded/anonymous stay `h:`** (1a — no surrogate). Breaking surface — **built label-only** (publish = 0.8.20). **Parallelizable off Slice 0 (1a): no longer needs Slice-5's surrogate** | implementation (surface/type reshape) | 0 |
+| **15 ✅** | **LANDED to main `6616db93`+`a704c317`+`51c2c785` (2026-07-09, HITL-approved breaking surface, label-only; combined-DoD green; compose-fix `c8e2a5b3`).** **KEYSTONE — C-2 typed `SearchHit.id` swap (TC-8).** `write_cursor → logical_id`; typed `IdSpace {space, value}` newtype (`l:`/`h:`/`p:`), non-null + total; retire `write_cursor` + subsume `stable_id` into `id`; lifecycle verbs key on bare `logical_id` (`l:` only); **doc-seeded/anonymous stay `h:`** (1a — no surrogate). Breaking surface — **built label-only** (publish = 0.8.20). **Parallelizable off Slice 0 (1a): no longer needs Slice-5's surrogate** | implementation (surface/type reshape) | 0 |
 | **40** | **Verification + Phase-1 release-readiness (label-only close).** X0/X1/X2/X3; R-EX/R-TR/R-PG/R-ID/R-MIG AC gate; migration fresh+upgrade; `IdSpace` round-trip all 4 bindings; eu7 no-op basis + gold-keying caveat recorded; AC-074 surface delta; codex §9. **No `v*` tag / publish — manifests stay `0.8.9`** | verification | 5,10,15 |
 
 **Keystones / hard gates.**
