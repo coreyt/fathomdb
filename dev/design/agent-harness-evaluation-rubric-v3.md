@@ -1,6 +1,6 @@
 # Agent & Harness Evaluation Rubric
 
-> **Version 3 — TERMINAL revision (changelog §13; measured §5 loop). Status: PROPOSED (HITL sign-off pending).**
+> **Version 3.1 — TERMINAL (v3 + one dated amendment §13.3, from the 0.8.19 pilot). Status: PROPOSED (HITL sign-off pending).**
 > This is the final version of this instrument — the audit/revision line closes at v3 (no v4 is planned), so
 > every acceptance-gate item is *measured, not asserted*, and the residual limitations are stated plainly rather
 > than deferred to a future revision (§13, and the companion `agent-harness-evaluation-rubric-report-v3.md`).
@@ -217,8 +217,8 @@ DO-178C/IEEE 1012 independence; Agent-as-a-Judge; CR-047 RCA §3.2; 30-N RCA §3
 
 | # | Criterion | Evidence to check |
 |---|---|---|
-| B1 ⛔ `[H]` | **Verifier independence**: every landed slice passed a reviewer (codex §9 or declared fallback) that is a different model/agent from the implementer, run read-only against the real branch. | Review transcripts on disk (e.g. `scratchpad/codex-review-out*.txt`); reviewer identity per slice. |
-| B2 ⛔ `[H]` | **BLOCK never overridden**; CONCERN overrides carry written rationale; fix-N loops re-reviewed to a terminal verdict (not "fixed, trust me"). | Verdict trail per slice (cf. seq 63–64: 4 rounds to CLEAN, blocks resolved not overridden). |
+| B1 ⛔ `[H]` +`[D]` | **Verifier independence**: every landed slice passed a reviewer (codex §9 or declared fallback) that is a different model/agent from the implementer, run read-only against the real branch. **Evidence-persistence (v3.1, §13.3):** the §9 review transcript is durably persisted on disk at a **release-namespaced** path; a recorded verdict-trail entry ("§9 PASS") is *narration*, not the independent artifact, so if the transcript is **absent, independence is UNWITNESSED → UNMET** (not MET-via-trail). Extends B3/D5 "trust the artifact, not the narration" to the gate's own evidence. | Review transcripts on disk at a release-namespaced path (e.g. `scratchpad/codex/<release>/slice-N-review.txt`); reviewer identity per slice. **`[D]` sub-check:** a §9 transcript file exists on disk for every landed slice (trigger: TC-RUBRIC-7 / 0.8.19 pilot). |
+| B2 ⛔ `[H]` +`[D]` | **BLOCK never overridden**; CONCERN overrides carry written rationale; fix-N loops re-reviewed to a terminal verdict (not "fixed, trust me"). **Evidence-persistence (v3.1, §13.3):** the verdict must be reconstructable from the *persisted* §9 transcript, not only the recorded trail — if the transcript is absent, the no-override claim is UNWITNESSED → UNMET (same `[D]` existence sub-check as B1). | Verdict trail per slice (cf. seq 63–64: 4 rounds to CLEAN, blocks resolved not overridden), cross-checked against the persisted §9 transcript. |
 | B3 `[H]` | **Witness-over-narration held**: every "landed/green/merged" claim was verified from git (head advanced past baseline + `output.json` + real exit codes via `PIPESTATUS`, not trailing echoes) before being recorded. | Steward/orchestrator ledger entries citing shas; absence of narration-only closures. |
 | B4 `[H]` | **Verification completeness**: the gate checked the *right* things — full-workspace `clippy`+`check` (both exit 0) before any green claim; cross-binding (Py/TS) surfaces exercised when touched; known vacuous-green traps (AGENT_LONG-gated tests, conformance rewrites) named per slice. | DoD evidence per slice; the release-DoD memory rule; MAST FM-3.2/3.3. |
 | B5 `[H]` | **No premature termination**: no slice closed with untested acceptance criteria or unwritten witnesses; anti-stall directives present in commissions. | Board vs test diff per slice (MAST FM-3.1). |
@@ -630,3 +630,27 @@ full measurement remains a known-gap (§11 register), acceptable-as-stated for a
 sealed validation split for a material-improvement verdict v2→v3; acceptance is that verdict, **not**
 this author's assertion (the v2 lesson). HITL sign-off on the instrument (still PROPOSED) and adoption
 cadence remain open HITL calls — proposed in the companion report, not decided here.
+
+### 13.3 v3 → v3.1 (TERMINAL amendment — one change, from the 0.8.19 pilot)
+
+The v3 rubric was applied to release 0.8.19 (first real run; independent non-author judge; HARD gate
+PASS, severity-weighted 84.4%; scorecard `dev/design/rubric-run-0.8.19-2026-07-10.md`; ledger
+`dev/steward/agent-rubric-ledger.jsonl` seq 10). The pilot **validated** the instrument — every real
+finding (A6 wrong-branch, E7 doc-contradiction, G6 parity-after-land) mapped to an existing criterion and
+scored UNMET correctly (coverage confirmed, no gap), and decision-quality criteria were scorable from
+artifacts (`needs-transcript-adjudication` = 0). It surfaced **exactly one** rubric-text gap, now closed:
+
+| Change | Trigger | Type | Effect |
+|---|---|---|---|
+| **B1 + B2 evidence-persistence** — the §9 review transcript must be durably persisted at a release-namespaced path; absent transcript ⇒ independence / no-override is UNWITNESSED → UNMET (not MET-via-recorded-trail). Adds a `[D]` companion sub-check "a §9 transcript exists on disk per landed slice." | 0.8.19 pilot (TC-RUBRIC-7): B1/B2 — the two most load-bearing verification HARD invariants — were scorable only via the *recorded* verdict trail because the §9 transcripts were not on disk, i.e. the gate degraded to trusting the very trail it exists to distrust | tighten (no new criterion) | +Q-FALS / +Q-TRACE: closes the "narration satisfies the gate" hole; applies the rubric's own B3/D5 principle to the gate's own evidence |
+
+**Anti-bloat preserved.** This is a *tightening of two existing HARD criteria* + a `[D]` sub-check, **not** a
+new criterion. **Net: 62 criteria (unchanged), 12 HARD (unchanged); B1/B2 gain a `[D]` companion check.**
+Every other 0.8.19-pilot item (D7/H7/F6/B6/F7/A2/G1 and the run's A6/E7/G6 findings) is **program tooling
+or a subject-side defect**, not a rubric-text gap — tracked as TC-RUBRIC-1..7 in the agent-rubric ledger,
+needing mechanisms built, not rubric edits.
+
+**Terminal note.** v3.1 is the final state of this instrument. This amendment traces to a measured pilot
+finding (evidence before verdict, applied to the rubric's own revision); it is a conservative HARD-criterion
+tightening and goes to a lightweight independent non-author confirmation (method §6) before it is treated as
+settled. HITL sign-off + adoption cadence remain open HITL calls.
