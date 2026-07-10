@@ -95,6 +95,11 @@ const VECTOR_EQUIVALENCE_P1_FLIP_FLOOR: u64 = 0;
 /// for tests.
 #[cfg(feature = "operator")]
 const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
+/// OPP-12 Phase-1 (0.8.19 Slice 10) — drain budget the `transition`/`purge`
+/// lifecycle verbs use to settle in-flight projection work before mutating.
+/// Same 30 s budget as `REBUILD_DRAIN_TIMEOUT_MS`, but not `operator`-gated
+/// (the lifecycle verbs are always-on governed surface).
+const LIFECYCLE_DRAIN_TIMEOUT_MS: u64 = 30_000;
 /// 0.8.0 Slice 5 (G1) — schema version that introduces the global FTS5
 /// tokenizer-default upgrade (`SCHEMA_VERSION` 11, migration step 11). A DB
 /// migrated to (or past) this version re-tokenizes `search_index` from
@@ -2129,6 +2134,44 @@ impl LifecycleState {
             _ => None,
         }
     }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — the target states legally reachable from
+    /// `self` in the FULL lifecycle state machine (design §2 legal-transition
+    /// table), across BOTH the `transition` and `purge` verbs. Single source of
+    /// truth for the `IllegalTransitionError.legal` enumeration:
+    ///   `Pending` → `[Active, Deleted]`   (promote / reject — `transition`)
+    ///   `Active`  → `[Deleted]`           (soft-delete — `transition`)
+    ///   `Deleted` → `[Active, Purged]`    (undelete via `transition`; purge via `purge`)
+    ///   `Purged`  → `[]`                  (terminal; nothing is reachable)
+    /// Note the verb split: `Purged` is reachable only via the `purge` verb, and
+    /// `Pending` is a create-time-only state — neither is a `transition` target
+    /// (see [`Engine::transition`]), even though `Purged` appears here for
+    /// `Deleted`.
+    #[must_use]
+    pub fn legal_next_states(self) -> Vec<LifecycleState> {
+        match self {
+            LifecycleState::Pending => vec![LifecycleState::Active, LifecycleState::Deleted],
+            LifecycleState::Active => vec![LifecycleState::Deleted],
+            LifecycleState::Deleted => vec![LifecycleState::Active, LifecycleState::Purged],
+            LifecycleState::Purged => Vec::new(),
+        }
+    }
+}
+
+/// OPP-12 Phase-1 (0.8.19 Slice 10) — whether `(from, to)` is one of the four
+/// legal `transition`-verb moves (design §2 table): `pending→active` (promote),
+/// `pending→deleted` (reject), `active→deleted` (soft-delete), `deleted→active`
+/// (undelete). Every other pair — self-loops, any move to `Purged` (purge-only)
+/// or `Pending` (create-only), or from `Purged` — is illegal via `transition`.
+#[must_use]
+fn is_legal_transition_move(from: LifecycleState, to: LifecycleState) -> bool {
+    matches!(
+        (from, to),
+        (LifecycleState::Pending, LifecycleState::Active)
+            | (LifecycleState::Pending, LifecycleState::Deleted)
+            | (LifecycleState::Active, LifecycleState::Deleted)
+            | (LifecycleState::Deleted, LifecycleState::Active)
+    )
 }
 
 /// OPP-12 Phase-1 (0.8.19 Slice 5) — the CREATE-TIME subset of [`LifecycleState`].
@@ -2469,6 +2512,27 @@ pub enum EngineError {
     VectorEquivalenceMismatch {
         reason: String,
     },
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — a lifecycle `transition`/`purge` move
+    /// that the engine-enforced legal-transition table (design §2) forbids.
+    /// Raised for an illegal `transition` target (`purged`/`pending` are never
+    /// `transition` targets; self-loops; a from→to pair not in the table) AND for
+    /// a `purge` precondition failure (purge is legal only from `deleted`).
+    /// `from_state`/`to_state` use the FULL, parity-safe field names (S7 — `from`
+    /// is a Python reserved word); `legal` enumerates the target states reachable
+    /// from `from_state` in the full state machine.
+    IllegalTransition {
+        from_state: LifecycleState,
+        to_state: LifecycleState,
+        legal: Vec<LifecycleState>,
+    },
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — a lifecycle verb (`transition`/`purge`)
+    /// was addressed with a non-`Logical` id space (a `Content`/`h:` doc-seeded or
+    /// `Passage`/`p:` synthetic id). Only the `Logical` (`l:`) space is
+    /// lifecycle-addressable (design §3); this is a typed refusal, never a panic
+    /// or a silent no-op. `id_space` carries the offending [`IdSpaceKind`].
+    NotLifecycleAddressable {
+        id_space: IdSpaceKind,
+    },
 }
 
 impl Display for EngineError {
@@ -2496,6 +2560,23 @@ impl Display for EngineError {
             Self::VectorEquivalenceMismatch { reason } => {
                 write!(f, "vector-equivalence self-check failed; dense retrieval refused: {reason}")
             }
+            Self::IllegalTransition { from_state, to_state, legal } => {
+                let legal_list = legal.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                write!(
+                    f,
+                    "illegal lifecycle transition {} -> {}; legal targets from {}: [{}]",
+                    from_state.as_str(),
+                    to_state.as_str(),
+                    from_state.as_str(),
+                    legal_list,
+                )
+            }
+            Self::NotLifecycleAddressable { id_space } => write!(
+                f,
+                "id space {:?} ({}) is not lifecycle-addressable; only the logical (l:) space is",
+                id_space,
+                id_space.prefix(),
+            ),
         }
     }
 }
@@ -2525,6 +2606,8 @@ impl EngineError {
             Self::InvalidFilter { .. } => "InvalidFilterError",
             Self::InvalidArgument { .. } => "InvalidArgumentError",
             Self::VectorEquivalenceMismatch { .. } => "VectorEquivalenceMismatchError",
+            Self::IllegalTransition { .. } => "IllegalTransitionError",
+            Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
         }
     }
 }
@@ -3087,6 +3170,18 @@ impl Engine {
         // legal window to set it on a fresh DB. Gated on
         // FATHOMDB_PERF_EXPERIMENTS=1; no-op in production.
         apply_perf_experiment_writer_pragmas(&connection);
+        // OPP-12 Phase-1 (0.8.19 Slice 10, design §3 gap-4) — standing
+        // `secure_delete=ON` on the writer, applied at EVERY open (fresh + migrated).
+        // It zeroes every page freed by a future DELETE, so the Slice-10 `purge`
+        // hard-erase is complete WITHOUT a per-purge `VACUUM`. It is a connection
+        // PRAGMA (not schema DDL), so it belongs here, not in the 19→20 migration.
+        // RESIDUAL (documented, not forced): pages freed on a pre-20 DB BEFORE this
+        // was enabled are not retroactively scrubbed; there is no migration-time
+        // full `VACUUM` (O(db-size)). Only the writer frees pages (purge/excise
+        // delete here), so setting it on the writer connection is sufficient.
+        connection
+            .pragma_update(None, "secure_delete", "ON")
+            .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
@@ -5228,6 +5323,21 @@ impl Engine {
         Ok(())
     }
 
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — read the writer connection's
+    /// `PRAGMA secure_delete` (design §3 gap-4). `true` iff the standing
+    /// connection-open PRAGMA is in effect, so `purge` freelist erasure is
+    /// complete without a per-purge `VACUUM`.
+    #[doc(hidden)]
+    pub fn secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let value: i64 = connection
+            .query_row("PRAGMA secure_delete", [], |r| r.get(0))
+            .map_err(|_| EngineError::Storage)?;
+        Ok(value != 0)
+    }
+
     /// EXP-S (0.8.14 Slice 5, D1) — write one canonical node row carrying an
     /// explicit structural `row_kind` (leaf/coverage/graph), routing the index
     /// projection through the SAME `row_kind -> index-target` dispatch seam
@@ -5823,6 +5933,241 @@ impl Engine {
 
         events.sort_by_key(|e| e.write_cursor);
         Ok(TraceReport { source_ref: source_id.to_string(), events })
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — resolve a lifecycle-verb id argument to
+    /// the BARE `logical_id` it addresses, enforcing `Logical`(`l:`)-only
+    /// addressability (design §3). An untagged string is taken as a bare
+    /// `logical_id` (the `l:` form); an explicit `l:`-prefixed string is stripped
+    /// to its value; a `Content`(`h:`) or `Passage`(`p:`) id is a typed
+    /// [`EngineError::NotLifecycleAddressable`] refusal (never a panic / no-op).
+    fn resolve_lifecycle_target(id: &str) -> Result<String, EngineError> {
+        match IdSpace::parse(id) {
+            Some(parsed) => match parsed.space {
+                IdSpaceKind::Logical => Ok(parsed.value),
+                other => Err(EngineError::NotLifecycleAddressable { id_space: other }),
+            },
+            // Untagged — no id-space prefix; treat as a bare logical_id (l: space).
+            None => Ok(id.to_string()),
+        }
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, R-TR-1/2) — move a governed node between
+    /// existence states per the engine-enforced legal-transition table (design
+    /// §2): promote `pending→active`, reject `pending→deleted`, soft-delete
+    /// `active→deleted`, undelete `deleted→active`. `to_state` is a full
+    /// [`LifecycleState`], but `Pending` (create-time only) and `Purged`
+    /// (`purge`-only) are never legal `transition` targets, nor are self-loops or
+    /// any move from a non-existent/`purged` row — each returns a typed
+    /// [`EngineError::IllegalTransition`] enumerating the legal targets.
+    ///
+    /// `reason` semantics (design §3 gap-6): promote/undelete CLEAR `reason` to
+    /// `NULL` (the row is admitted; no standing cause); reject/soft-delete SET
+    /// `reason` to the supplied value (`NULL` allowed but the delete-family
+    /// expects it). `reason` is advisory — the engine never interprets it.
+    ///
+    /// Keys on the BARE `logical_id` (`l:` space only); a `Content`(`h:`) or
+    /// `Passage`(`p:`) id raises [`EngineError::NotLifecycleAddressable`].
+    /// The state flip mutates the single active (`superseded_at IS NULL`) row; a
+    /// `deleted` row STAYS indexed (gap-5) — only the `state='active'` default
+    /// filter excludes it, so an undelete needs no re-projection.
+    pub fn transition(
+        &self,
+        logical_id: &str,
+        to_state: LifecycleState,
+        reason: Option<String>,
+    ) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let lid = Self::resolve_lifecycle_target(logical_id)?;
+
+        // Settle in-flight projection work first: the async projection worker
+        // commits vector/FTS shadows on its OWN connection via `BEGIN IMMEDIATE`,
+        // so a state flip issued while a worker holds the write lock would
+        // SQLITE_BUSY. Draining (unfrozen so any unprojected row completes) leaves
+        // the worker idle; a bare state flip enqueues no new projection work.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+
+        // The lifecycle state lives on the single active (superseded_at IS NULL)
+        // version; a `deleted` row is still that active version, just flagged.
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT state FROM canonical_nodes \
+                 WHERE logical_id = ?1 AND superseded_at IS NULL",
+                params![lid],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|_| EngineError::Storage)?;
+
+        // A missing active row is an absent/purged node — the terminal `Purged`
+        // state for legality purposes (nothing is a legal target from there).
+        let from_state = match current {
+            Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
+            None => LifecycleState::Purged,
+        };
+
+        if !is_legal_transition_move(from_state, to_state) {
+            return Err(EngineError::IllegalTransition {
+                from_state,
+                to_state,
+                legal: from_state.legal_next_states(),
+            });
+        }
+
+        // Admit (promote/undelete) → clear reason; exclude (reject/soft-delete) →
+        // set the supplied reason. `to_state` is Active or Deleted here.
+        let new_reason: Option<String> = match to_state {
+            LifecycleState::Active => None,
+            _ => reason,
+        };
+        tx.execute(
+            "UPDATE canonical_nodes SET state = ?1, reason = ?2 \
+             WHERE logical_id = ?3 AND superseded_at IS NULL",
+            params![to_state.as_str(), new_reason, lid],
+        )
+        .map_err(|_| EngineError::Storage)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(())
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a
+    /// governed node. A SEPARATE verb from [`Engine::transition`] (NOT on the
+    /// `recovery_denylist`). Precondition: DELETED-FIRST — legal only from
+    /// `deleted` (else a typed [`EngineError::IllegalTransition`] to `purged`);
+    /// IDEMPOTENT — purging an already-absent/already-purged id is a no-op
+    /// success. Keys on the bare `logical_id` (`l:` only); `h:`/`p:` →
+    /// [`EngineError::NotLifecycleAddressable`].
+    ///
+    /// In ONE transaction, physically erases every ROW-OWNED target for the node
+    /// (design §3 / gap-3): all `canonical_nodes` versions; its `search_index`,
+    /// `search_index_edges`, `search_index_v2` FTS rows; its `vector_default`
+    /// (vec0) + `_fathomdb_vector_rows` vectors; its `_fathomdb_projection_terminal`
+    /// bookkeeping; and — CASCADE-REMOVE, no content-free stubs — every
+    /// `canonical_edges` row touching it (`from_id`/`to_id`) plus those edges'
+    /// projection shadows. The global/kind-level registries
+    /// `_fathomdb_projection_state` and `_fathomdb_vector_kinds` are NOT keyed to
+    /// a node id and are DELIBERATELY untouched.
+    ///
+    /// Erasure completeness relies on the standing `PRAGMA secure_delete=ON`
+    /// (design §3 gap-4) which zeroes every freed page — so no per-purge `VACUUM`.
+    /// (Freelist content written on a pre-20 DB before `secure_delete` was on is a
+    /// documented residual; there is no forced migration-time `VACUUM`.)
+    pub fn purge(&self, logical_id: &str) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let lid = Self::resolve_lifecycle_target(logical_id)?;
+
+        // Drain in-flight projection work before the erase, exactly as
+        // `excise_source` does: SQLite-WAL would otherwise let a worker that
+        // already dequeued a job for a purged cursor commit its vec0 /
+        // `_fathomdb_vector_rows` INSERT after our DELETE releases the writer
+        // lock, leaving residue that defeats the erasure sweep.
+        // Settle every pending projection FIRST (unfrozen) so no unprojected row
+        // is left behind that a subsequent freeze would wedge `drain` on, and so
+        // the async worker is idle. THEN freeze the scanner (no new work is queued
+        // while we erase), confirm idle, and erase in one writer transaction.
+        // Freezing before the first drain would stall projection of any
+        // just-written row → `database_has_pending_projection_work` never clears →
+        // `drain` times out into `Scheduler`.
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
+        self.projection_runtime.set_frozen(true);
+        let outcome = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS).and_then(|()| self.purge_inner(&lid));
+        self.projection_runtime.set_frozen(false);
+        outcome
+    }
+
+    fn purge_inner(&self, lid: &str) -> Result<(), EngineError> {
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+
+        // Precondition on the active row's state. Absent (never-created or
+        // already-purged) → idempotent no-op success.
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT state FROM canonical_nodes \
+                 WHERE logical_id = ?1 AND superseded_at IS NULL",
+                params![lid],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|_| EngineError::Storage)?;
+        let from_state = match current {
+            None => {
+                // Idempotent: nothing to erase.
+                tx.commit().map_err(|_| EngineError::Storage)?;
+                return Ok(());
+            }
+            Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
+        };
+        if from_state != LifecycleState::Deleted {
+            // Deleted-first precondition. Dropping `tx` rolls back (no-op read).
+            return Err(EngineError::IllegalTransition {
+                from_state,
+                to_state: LifecycleState::Purged,
+                legal: from_state.legal_next_states(),
+            });
+        }
+
+        // Collect every version cursor for the node, plus every cursor of an edge
+        // that touches it (either endpoint), across ALL versions — the projection
+        // shadow tables are keyed by these per-row `write_cursor`s.
+        let node_cursors: Vec<i64> = {
+            let mut stmt = tx
+                .prepare("SELECT write_cursor FROM canonical_nodes WHERE logical_id = ?1")
+                .map_err(|_| EngineError::Storage)?;
+            let rows = stmt
+                .query_map(params![lid], |row| row.get::<_, i64>(0))
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+        };
+        let edge_cursors: Vec<i64> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT write_cursor FROM canonical_edges \
+                     WHERE from_id = ?1 OR to_id = ?1",
+                )
+                .map_err(|_| EngineError::Storage)?;
+            let rows = stmt
+                .query_map(params![lid], |row| row.get::<_, i64>(0))
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+        };
+
+        // Erase the row-owned projection shadows for every collected cursor. vec0
+        // rowid == the canonical row's write_cursor (see `_fathomdb_vector_rows`).
+        for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
+            tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
+                .map_err(|_| EngineError::Storage)?;
+            tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
+                .map_err(|_| EngineError::Storage)?;
+            tx.execute("DELETE FROM search_index_v2 WHERE write_cursor = ?1", [cursor])
+                .map_err(|_| EngineError::Storage)?;
+            tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
+                .map_err(|_| EngineError::Storage)?;
+            tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
+                .map_err(|_| EngineError::Storage)?;
+            tx.execute(
+                "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+                [cursor],
+            )
+            .map_err(|_| EngineError::Storage)?;
+        }
+
+        // Erase the canonical rows: all node versions + all touching edges
+        // (gap-3 CASCADE-REMOVE — no content-free stubs in Phase-1).
+        tx.execute("DELETE FROM canonical_nodes WHERE logical_id = ?1", params![lid])
+            .map_err(|_| EngineError::Storage)?;
+        tx.execute("DELETE FROM canonical_edges WHERE from_id = ?1 OR to_id = ?1", params![lid])
+            .map_err(|_| EngineError::Storage)?;
+
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.counters.record_admin();
+        Ok(())
     }
 
     /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight

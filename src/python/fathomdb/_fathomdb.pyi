@@ -235,6 +235,13 @@ class SearchExpandResult:
     all_logical_ids: list[str]
 
 def admin_configure(engine: Engine, name: str, body: str) -> WriteReceipt: ...
+def transition(
+    engine: Engine,
+    logical_id: str,
+    to_state: str,
+    reason: str | None = ...,
+) -> None: ...
+def purge(engine: Engine, logical_id: str) -> None: ...
 def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
 def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
 def read_collection(
@@ -400,3 +407,17 @@ class InvalidFilterError(EngineError): ...
 
 # Slice 20 — depth > 3 or other argument validation failure.
 class InvalidArgumentError(EngineError): ...
+
+# 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal leaf.
+class VectorEquivalenceMismatchError(EngineError):
+    reason: str
+
+# OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors. Parity-safe
+# field names (S7): `from_state`/`to_state` (never `from`, a Python keyword).
+class IllegalTransitionError(EngineError):
+    from_state: str
+    to_state: str
+    legal: list[str]
+
+class NotLifecycleAddressableError(EngineError):
+    id_space: str

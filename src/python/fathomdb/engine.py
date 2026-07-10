@@ -17,6 +17,8 @@ from typing import Any, cast
 from fathomdb._fathomdb import ConsolidateReceipt
 from fathomdb._fathomdb import Engine as _NativeEngine
 from fathomdb._fathomdb import IngestWithExtractorReceipt
+from fathomdb._fathomdb import purge as _native_purge
+from fathomdb._fathomdb import transition as _native_transition
 from fathomdb.config import EngineConfig
 from fathomdb.types import (
     CounterSnapshot,
@@ -160,6 +162,35 @@ class Engine:
             row_cursors=tuple(receipt.row_cursors),
             dangling_edge_endpoints=receipt.dangling_edge_endpoints,
         )
+
+    def transition(
+        self, logical_id: str, to_state: str, reason: str | None = None
+    ) -> None:
+        """OPP-12 Phase-1 (0.8.19 Slice 10) — the ``transition`` lifecycle verb.
+
+        Move a governed node between existence states per the engine-enforced
+        legal-transition table: promote ``pending``→``active``, reject
+        ``pending``→``deleted``, soft-delete ``active``→``deleted``, undelete
+        ``deleted``→``active``. Promote/undelete CLEAR ``reason``;
+        reject/soft-delete SET it (``reason`` is advisory, never engine-
+        interpreted). Keys on the bare ``logical_id`` (``l:`` space only) — a
+        non-``l:`` id raises ``NotLifecycleAddressableError``; an illegal move
+        (``purged``/``pending`` targets, self-loops, an absent node) raises
+        ``IllegalTransitionError`` with ``from_state``/``to_state``/``legal``.
+        Thin pass-through (no client-side logic)."""
+        _native_transition(self._native, logical_id, to_state, reason)
+
+    def purge(self, logical_id: str) -> None:
+        """OPP-12 Phase-1 (0.8.19 Slice 10) — the ``purge`` lifecycle verb.
+
+        Irreversibly hard-erase a governed node across every row-owned target
+        (all versions + FTS/vector shadows + touching edges, cascade-removed).
+        A SEPARATE verb from ``transition`` (NOT a recovery-denylist name).
+        Precondition: DELETED-FIRST (legal only from ``deleted``; else
+        ``IllegalTransitionError``); IDEMPOTENT (purging an absent/already-purged
+        id is a no-op success). Keys on the bare ``logical_id`` (``l:`` only) — a
+        non-``l:`` id raises ``NotLifecycleAddressableError``. Thin pass-through."""
+        _native_purge(self._native, logical_id)
 
     def embed(self, text: str) -> list[float]:
         """Embed ``text`` with the engine's pinned default embedder

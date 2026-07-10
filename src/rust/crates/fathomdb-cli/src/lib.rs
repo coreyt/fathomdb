@@ -726,6 +726,9 @@ fn engine_error_code(err: &EngineError) -> &'static str {
         EngineError::InvalidArgument { .. } => "InvalidArgumentError",
         // 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense refusal.
         EngineError::VectorEquivalenceMismatch { .. } => "VectorEquivalenceMismatchError",
+        // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
+        EngineError::IllegalTransition { .. } => "IllegalTransitionError",
+        EngineError::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
     }
 }
 

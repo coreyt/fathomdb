@@ -22,6 +22,14 @@ export * from "./errors.js";
 export { read } from "./read.js";
 export type { NodeRecord, OpStoreRow, Predicate, ReadCollectionOptions } from "./read.js";
 
+/**
+ * OPP-12 Phase-1 (0.8.19 Slice 10) — the closed lifecycle existence-state
+ * vocabulary accepted by {@link Engine.transition} (`toState`). `pending` and
+ * `purged` are never legal `transition` targets (create-time-only and
+ * purge-only respectively) — passing them surfaces an `IllegalTransitionError`.
+ */
+export type LifecycleState = "pending" | "active" | "deleted" | "purged";
+
 export interface EngineConfig {
   embedderPoolSize?: number;
   schedulerRuntimeThreads?: number;
@@ -598,6 +606,43 @@ export class Engine {
   async write(batch: unknown[] = []): Promise<WriteReceipt> {
     validateFfiTree(batch);
     return intercept(() => this.#native.write(batch));
+  }
+
+  /**
+   * OPP-12 Phase-1 (0.8.19 Slice 10) — `transition` lifecycle verb. Moves a
+   * governed node between existence states per the engine-enforced
+   * legal-transition table (promote `pending→active`, reject `pending→deleted`,
+   * soft-delete `active→deleted`, undelete `deleted→active`). Promote/undelete
+   * CLEAR `reason`; reject/soft-delete SET it. Keys on the bare `logicalId`
+   * (`l:` only) — a non-`l:` id throws `NotLifecycleAddressableError`; an illegal
+   * move throws `IllegalTransitionError`. Thin pass-through (no client logic).
+   */
+  async transition(
+    logicalId: string,
+    toState: LifecycleState,
+    reason?: string | null,
+  ): Promise<void> {
+    validateFfiString(logicalId);
+    if (reason !== undefined && reason !== null) {
+      validateFfiString(reason);
+    }
+    return intercept(() =>
+      this.#native.transition(logicalId, toState, reason ?? null),
+    );
+  }
+
+  /**
+   * OPP-12 Phase-1 (0.8.19 Slice 10) — `purge` lifecycle verb. Irreversible,
+   * deleted-first, idempotent hard-erase of a governed node across every
+   * row-owned target (all versions + FTS/vector shadows + touching edges,
+   * cascade-removed). A SEPARATE verb from `transition` (NOT a recovery-denylist
+   * name). Keys on the bare `logicalId` (`l:` only) — a non-`l:` id throws
+   * `NotLifecycleAddressableError`; a non-`deleted` node throws
+   * `IllegalTransitionError`.
+   */
+  async purge(logicalId: string): Promise<void> {
+    validateFfiString(logicalId);
+    return intercept(() => this.#native.purge(logicalId));
   }
 
   async search(

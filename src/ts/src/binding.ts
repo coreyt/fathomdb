@@ -283,6 +283,13 @@ interface NativeAdminConfigureOptions {
 
 export interface NativeEngine {
   write(batch: unknown[]): Promise<NativeWriteReceipt>;
+  // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle verbs.
+  transition(
+    logicalId: string,
+    toState: string,
+    reason?: string | null,
+  ): Promise<void>;
+  purge(logicalId: string): Promise<void>;
   search(
     query: string,
     filter?: NativeSearchFilter,

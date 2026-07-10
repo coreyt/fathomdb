@@ -120,6 +120,37 @@ export class InvalidFilterError extends FathomDbError {}
 // Slice 20 — depth > 3 or other invalid argument (G5/G6).
 export class InvalidArgumentError extends FathomDbError {}
 
+// OPP-12 Phase-1 (0.8.19 Slice 10) — an illegal lifecycle `transition`/`purge`
+// move. Parity-safe field names (S7): `fromState`/`toState` (never `from`, a
+// reserved word in the Python peer), plus the legal target enumeration.
+export interface IllegalTransitionPayload {
+  fromState: string;
+  toState: string;
+  legal: string[];
+}
+
+export class IllegalTransitionError extends FathomDbError {
+  readonly fromState: string;
+  readonly toState: string;
+  readonly legal: string[];
+  constructor(message: string, payload: IllegalTransitionPayload) {
+    super(message);
+    this.fromState = payload.fromState;
+    this.toState = payload.toState;
+    this.legal = payload.legal;
+  }
+}
+
+// OPP-12 Phase-1 (0.8.19 Slice 10) — a lifecycle verb addressed with a non-`l:`
+// (`h:`/`p:`) id. Only the logical (`l:`) space is lifecycle-addressable.
+export class NotLifecycleAddressableError extends FathomDbError {
+  readonly idSpace: string;
+  constructor(message: string, idSpace: string) {
+    super(message);
+    this.idSpace = idSpace;
+  }
+}
+
 // 0.8.18 Slice 5 (#5 vector-equivalence probe) — the open-time self-check found a
 // vector-equivalence divergence beyond the D4 floor, so every vector-dependent arm
 // refuses at query time. The text-only/FTS-only path (`searchTextOnly`) stays
@@ -173,6 +204,9 @@ type ErrorCode =
   | "FDB_INVALID_ARGUMENT"
   // 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense refusal.
   | "FDB_VECTOR_EQUIVALENCE_MISMATCH"
+  // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
+  | "FDB_ILLEGAL_TRANSITION"
+  | "FDB_NOT_LIFECYCLE_ADDRESSABLE"
   | "FDB_PANIC";
 
 interface Envelope {
@@ -271,6 +305,17 @@ function build(envelope: Envelope): Error {
       return new VectorEquivalenceMismatchError(
         envelope.message,
         String(p.reason ?? ""),
+      );
+    case "FDB_ILLEGAL_TRANSITION":
+      return new IllegalTransitionError(envelope.message, {
+        fromState: String(p.fromState ?? ""),
+        toState: String(p.toState ?? ""),
+        legal: Array.isArray(p.legal) ? p.legal.map((s) => String(s)) : [],
+      });
+    case "FDB_NOT_LIFECYCLE_ADDRESSABLE":
+      return new NotLifecycleAddressableError(
+        envelope.message,
+        String(p.idSpace ?? ""),
       );
     case "FDB_PANIC":
       return new FathomDbPanicError(envelope.message);

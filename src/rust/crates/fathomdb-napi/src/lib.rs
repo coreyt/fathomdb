@@ -37,8 +37,9 @@ use fathomdb_engine::{
     Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
     FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
     IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
-    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
-    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
@@ -85,6 +86,9 @@ const CODE_INVALID_FILTER: &str = "FDB_INVALID_FILTER";
 const CODE_INVALID_ARGUMENT: &str = "FDB_INVALID_ARGUMENT";
 // 0.8.18 Slice 5 (#5 vector-equivalence probe) — query-time dense-refusal code.
 const CODE_VECTOR_EQUIVALENCE_MISMATCH: &str = "FDB_VECTOR_EQUIVALENCE_MISMATCH";
+// OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
+const CODE_ILLEGAL_TRANSITION: &str = "FDB_ILLEGAL_TRANSITION";
+const CODE_NOT_LIFECYCLE_ADDRESSABLE: &str = "FDB_NOT_LIFECYCLE_ADDRESSABLE";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -208,6 +212,32 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
         RustEngineError::InvalidArgument { msg } => {
             typed_error(CODE_INVALID_ARGUMENT, msg, JsonValue::Null)
         }
+        RustEngineError::IllegalTransition { from_state, to_state, legal } => {
+            let legal_str: Vec<&'static str> = legal.iter().map(|s| s.as_str()).collect();
+            typed_error(
+                CODE_ILLEGAL_TRANSITION,
+                format!(
+                    "illegal lifecycle transition {} -> {}; legal targets: {:?}",
+                    from_state.as_str(),
+                    to_state.as_str(),
+                    legal_str,
+                ),
+                // Parity-safe field names (S7): `fromState`/`toState`, never `from`.
+                json!({
+                    "fromState": from_state.as_str(),
+                    "toState": to_state.as_str(),
+                    "legal": legal_str,
+                }),
+            )
+        }
+        RustEngineError::NotLifecycleAddressable { id_space } => typed_error(
+            CODE_NOT_LIFECYCLE_ADDRESSABLE,
+            format!(
+                "id space {:?} is not lifecycle-addressable; only the logical (l:) space is",
+                id_space.as_str(),
+            ),
+            json!({ "idSpace": id_space.as_str() }),
+        ),
         RustEngineError::VectorEquivalenceMismatch { reason } => typed_error(
             CODE_VECTOR_EQUIVALENCE_MISMATCH,
             format!("vector-equivalence self-check failed; dense retrieval refused: {reason}"),
@@ -1029,6 +1059,50 @@ impl Engine {
         let engine = Arc::clone(&self.inner);
         let receipt = call_engine(move || engine.write(&prepared)).await?;
         Ok(WriteReceipt::from_rust(receipt))
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — `transition` lifecycle verb. Thin
+    /// pass-through: enforces the legal-transition table + `reason`
+    /// clear-on-admit/set-on-exclude semantics (design §2/§3). Keys on the bare
+    /// `logicalId` (`l:` only); a non-`l:` id → `NotLifecycleAddressableError`; an
+    /// illegal move → `IllegalTransitionError { fromState, toState, legal }`.
+    #[napi]
+    pub async fn transition(
+        &self,
+        logical_id: String,
+        to_state: String,
+        reason: Option<String>,
+    ) -> Result<()> {
+        validate_ffi_string_napi(&logical_id)?;
+        if let Some(r) = reason.as_deref() {
+            validate_ffi_string_napi(r)?;
+        }
+        // Full LifecycleState vocabulary accepted so illegal targets surface a
+        // typed IllegalTransitionError from the engine; only an unknown string is
+        // rejected at the boundary.
+        let to_state = RustLifecycleState::from_str_opt(&to_state).ok_or_else(|| {
+            typed_error(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "unknown lifecycle state {to_state:?}: expected one of pending/active/deleted/purged"
+                ),
+                JsonValue::Null,
+            )
+        })?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.transition(&logical_id, to_state, reason)).await
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — `purge` lifecycle verb. Thin
+    /// pass-through: deleted-first, idempotent hard-erase across every row-owned
+    /// target (design §3). Keys on the bare `logicalId` (`l:` only); a non-`l:` id
+    /// → `NotLifecycleAddressableError`; a non-`deleted` node →
+    /// `IllegalTransitionError`.
+    #[napi]
+    pub async fn purge(&self, logical_id: String) -> Result<()> {
+        validate_ffi_string_napi(&logical_id)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.purge(&logical_id)).await
     }
 
     #[napi]

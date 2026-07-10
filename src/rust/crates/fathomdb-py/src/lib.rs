@@ -41,13 +41,14 @@ use fathomdb_engine::{
     EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
     ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
     IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow,
-    OpenReport as RustOpenReport, OpenStage, PerHitExplain as RustPerHitExplain,
-    Predicate as RustPredicate, PreparedWrite, QueryTrace as RustQueryTrace,
-    ScalarValue as RustScalarValue, SearchExpandResult as RustSearchExpandResult,
-    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
-    SoftFallback as RustSoftFallback, SoftFallbackBranch,
-    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
+    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
+    PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
+    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
+    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -91,6 +92,11 @@ create_exception!(_fathomdb, InvalidFilterError, EngineError);
 create_exception!(_fathomdb, VectorEquivalenceMismatchError, EngineError);
 // Slice 20 (G5/G6) — traversal depth > 3 or other out-of-range argument.
 create_exception!(_fathomdb, InvalidArgumentError, EngineError);
+// OPP-12 Phase-1 (0.8.19 Slice 10) — an illegal lifecycle `transition`/`purge`
+// move (carries `from_state`/`to_state`/`legal`) and a non-`l:` lifecycle-verb id
+// (carries `id_space`). Field names are parity-safe (S7 — `from` is reserved).
+create_exception!(_fathomdb, IllegalTransitionError, EngineError);
+create_exception!(_fathomdb, NotLifecycleAddressableError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -194,6 +200,33 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
             ));
             Python::attach(|py| {
                 let _ = exc.value(py).setattr("reason", reason);
+            });
+            exc
+        }
+        RustEngineError::IllegalTransition { from_state, to_state, legal } => {
+            let legal_str: Vec<&'static str> = legal.iter().map(|s| s.as_str()).collect();
+            let exc = IllegalTransitionError::new_err(format!(
+                "illegal lifecycle transition {} -> {}; legal targets: {:?}",
+                from_state.as_str(),
+                to_state.as_str(),
+                legal_str,
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                // Parity-safe field names (S7): `from_state`/`to_state`, NOT `from`.
+                let _ = v.setattr("from_state", from_state.as_str());
+                let _ = v.setattr("to_state", to_state.as_str());
+                let _ = v.setattr("legal", legal_str);
+            });
+            exc
+        }
+        RustEngineError::NotLifecycleAddressable { id_space } => {
+            let exc = NotLifecycleAddressableError::new_err(format!(
+                "id space {:?} is not lifecycle-addressable; only the logical (l:) space is",
+                id_space.as_str(),
+            ));
+            Python::attach(|py| {
+                let _ = exc.value(py).setattr("id_space", id_space.as_str());
             });
             exc
         }
@@ -1230,6 +1263,43 @@ fn admin_configure(
 // read-back with a MANDATORY limit + after-id cursor. All four ride the engine's
 // ReaderWorkerPool DEFERRED-tx path inside the engine; the binding only marshals.
 
+// OPP-12 Phase-1 (0.8.19 Slice 10) — the `transition`/`purge` lifecycle verbs.
+// Thin pass-throughs to the engine (no client-side logic): `transition` enforces
+// the legal-transition table + `reason` clear-on-admit/set-on-exclude semantics;
+// `purge` is the deleted-first, idempotent hard-erase. Both key on the bare
+// `logical_id` (`l:` only); a non-`l:` id raises `NotLifecycleAddressableError`.
+
+#[pyfunction]
+#[pyo3(signature = (engine, logical_id, to_state, reason=None))]
+fn transition(
+    py: Python<'_>,
+    engine: &PyEngine,
+    logical_id: &Bound<'_, PyAny>,
+    to_state: &str,
+    reason: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let logical_id = extract_validated_str(logical_id)?;
+    let reason = extract_opt_validated_str(reason)?;
+    // The full LifecycleState vocabulary is accepted at the boundary so illegal
+    // targets (`pending`/`purged`) reach the engine and surface a typed
+    // IllegalTransitionError; only an out-of-vocabulary string is rejected here.
+    let to_state = RustLifecycleState::from_str_opt(to_state).ok_or_else(|| {
+        InvalidArgumentError::new_err(format!(
+            "unknown lifecycle state {to_state:?}: expected one of pending/active/deleted/purged"
+        ))
+    })?;
+    let inner = Arc::clone(&engine.inner);
+    call_engine(py, move || inner.transition(&logical_id, to_state, reason))
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, logical_id))]
+fn purge(py: Python<'_>, engine: &PyEngine, logical_id: &Bound<'_, PyAny>) -> PyResult<()> {
+    let logical_id = extract_validated_str(logical_id)?;
+    let inner = Arc::clone(&engine.inner);
+    call_engine(py, move || inner.purge(&logical_id))
+}
+
 #[pyfunction]
 #[pyo3(signature = (engine, logical_id))]
 fn read_get(
@@ -1903,6 +1973,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyExpandedNode>()?;
     m.add_class::<PySearchExpandResult>()?;
     m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
+    // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle verbs.
+    m.add_function(wrap_pyfunction!(transition, &m)?)?;
+    m.add_function(wrap_pyfunction!(purge, &m)?)?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
@@ -1946,6 +2019,8 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("InvalidFilterError", py.get_type::<InvalidFilterError>())?;
     m.add("InvalidArgumentError", py.get_type::<InvalidArgumentError>())?;
     m.add("VectorEquivalenceMismatchError", py.get_type::<VectorEquivalenceMismatchError>())?;
+    m.add("IllegalTransitionError", py.get_type::<IllegalTransitionError>())?;
+    m.add("NotLifecycleAddressableError", py.get_type::<NotLifecycleAddressableError>())?;
     Ok(())
 }
 
