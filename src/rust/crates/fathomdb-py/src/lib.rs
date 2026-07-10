@@ -40,14 +40,14 @@ use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
     EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
     ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
-    NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport,
-    OpenStage, PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
-    SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
-    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
-    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
-    WriteReceipt as RustWriteReceipt,
+    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    InitialState, NodeRecord as RustNodeRecord, OpStoreRow as RustOpStoreRow,
+    OpenReport as RustOpenReport, OpenStage, PerHitExplain as RustPerHitExplain,
+    Predicate as RustPredicate, PreparedWrite, QueryTrace as RustQueryTrace,
+    ScalarValue as RustScalarValue, SearchExpandResult as RustSearchExpandResult,
+    SearchFilter as RustSearchFilter, SearchHit as RustSearchHit, SearchResult as RustSearchResult,
+    SoftFallback as RustSoftFallback, SoftFallbackBranch,
+    TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;

@@ -13,7 +13,9 @@
 
 use std::time::{Duration, Instant};
 
-use fathomdb_engine::{rerank_passages, Engine, IdSpace, IdSpaceKind, PreparedWrite, SearchResult};
+use fathomdb_engine::{
+    rerank_passages, Engine, IdSpace, IdSpaceKind, InitialState, PreparedWrite, SearchResult,
+};
 use fathomdb_schema::SQLITE_SUFFIX;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -63,6 +65,8 @@ fn governed_hit_id_is_logical_space() {
             body: "tc8 governed logical entity payload".to_string(),
             source_id: None,
             logical_id: Some("gov-entity-19".to_string()),
+            state: InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -98,6 +102,8 @@ fn doc_seeded_hit_id_is_content_space() {
             body: body.to_string(),
             source_id: None,
             logical_id: None,
+            state: InitialState::Active,
+            reason: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -139,12 +145,16 @@ fn every_hit_id_is_non_null_and_space_total() {
                 body: "tc8 total governed alpha totalterm".to_string(),
                 source_id: None,
                 logical_id: Some("total-gov-1".to_string()),
+                state: InitialState::Active,
+                reason: None,
             },
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: "tc8 total anonymous beta totalterm".to_string(),
                 source_id: None,
                 logical_id: None,
+                state: InitialState::Active,
+                reason: None,
             },
         ])
         .expect("write");
