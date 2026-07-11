@@ -35,6 +35,15 @@ stable.
   Emit a scorecard in the `rubric-run-<release>-<date>.md` shape. *(→ OR-NEED-1; rubric §2)*
 - **OR-REQ-5** — Priced runs are fail-closed budgeted (`--max-usd` preflight refusal), idempotently
   resumable via `custom_id`, and never place a raw transcript in an LLM context. *(→ OR-NEED-3)*
+- **OR-REQ-5a** — **Budget-exhaustion is detected mid-run and handled by a tiered fallback, then a clean
+  stop.** When spend reaches `--max-usd`, or the airlock returns a budget/quota signal (429 / virtual-key
+  limit / provider quota), the harness (1) **detects** it (does not blow past the cap), (2) **tries a
+  configured fallback route** — a cheaper/local airlock model (e.g. a self-hosted vLLM/Ollama alias,
+  ~$0) for the remaining un-judged criteria, and (3) if the fallback is also unavailable or exhausted,
+  **stops cleanly**: checkpoints the completed `custom_id`s, emits a **partial scorecard explicitly marked
+  INCOMPLETE** (which criteria are un-judged), records the stop reason to the ledger, and exits non-zero —
+  never a silent truncation that reads as "fully scored." The fallback tier and its model are HITL-set;
+  a run may disable fallback (`--no-fallback`) to hard-stop at the cap. *(→ OR-NEED-3)*
 
 ### Propose + apply
 

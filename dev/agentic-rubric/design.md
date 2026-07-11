@@ -169,6 +169,15 @@ proxy** (LiteLLM, OpenAI-compatible) — `~/projects/airlock/docs/`. This both e
   (an independent audit trail of every judge call), and **PII stripping** (Presidio) as
   defense-in-depth on the bounded windows — the raw-transcript-never-in-context invariant still
   holds; airlock is a second layer, not the primary one.
+- **Budget-exhaustion → fallback → stop (OR-REQ-5a).** The judge never blows past `--max-usd`. On
+  hitting the cap — or on an airlock budget/quota signal (429 / virtual-key limit / provider quota) —
+  it **(1) detects**, **(2) routes the remaining un-judged criteria to a configured cheaper/local
+  fallback airlock route** (a self-hosted vLLM/Ollama alias, ~$0), and **(3) if the fallback is also
+  exhausted or unavailable, stops cleanly**: checkpoints the completed `custom_id`s, emits a scorecard
+  **marked INCOMPLETE** (un-judged criteria listed), writes a stop-reason ledger entry, and exits
+  non-zero. **Never a silent truncation that reads as fully-scored.** The fallback tier/model is
+  HITL-set; `--no-fallback` hard-stops at the cap. (Fallback quality is lower, so INCOMPLETE +
+  fallback-judged criteria are flagged in the scorecard, not silently blended with primary verdicts.)
 - **Config:** the airlock base_url + key live in the gitignored `dev/.env.eval` (alongside the
   existing `R2_JUDGE_*`), never committed.
 
