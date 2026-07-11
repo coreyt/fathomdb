@@ -1,6 +1,6 @@
 ---
 title: Dedicated-checkout-per-orchestration guard — proposal
-status: PROPOSED (Steward, 2026-07-10) — adoption pending HITL ratification
+status: ADOPTED (HITL 2026-07-11) — TC-RUBRIC-5 authorized; wiring folds into the 0.8.20 X0. Proposed by Steward 2026-07-10.
 decider: HITL
 owner: Program Steward
 refs:
