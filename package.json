@@ -9,7 +9,7 @@
   "comment-scripts": "0.8.9.1: prettier removed from the markdown path (lint:md-format / format:md). prettier's non-configurable *->_ emphasis reflow corrupts fragile markdown (see dev/tools/md-fix-corruption-ledger.md); markdownlint-cli2 --fix via the AST-guarded scripts/md-safe-fix.sh is the safe fixer. prettier kept as a devDependency only for any non-markdown use; remove if unused.",
   "devDependencies": {
     "markdownlint-cli2": "^0.23.0",
-    "prettier": "^3.9.4"
+    "prettier": "^3.9.5"
   },
   "comment-overrides": "0.8.9 R-DEP-1: force transitive security patches for markdown-it (GHSA-6v5v-wf23-fmfq) and js-yaml (GHSA-h67p-54hq-rp68). markdownlint-cli2@0.22.1 pins the vulnerable 14.1.1/4.1.1 exactly and has no patched release yet; `npm audit fix --force` would downgrade markdownlint-cli2 (breaking). Both are backward-compatible minor bumps. Remove when markdownlint-cli2 ships patched deps.",
   "overrides": {
