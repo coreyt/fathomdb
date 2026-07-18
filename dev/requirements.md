@@ -330,11 +330,32 @@ the ADR is authoritative.
     design/recovery.md, design/bindings.md § 1.
 
 - **REQ-037 — Recovery tooling unreachable from runtime SDK.** Application
-  callers cannot accidentally invoke `excise_source`, `purge_logical_id`,
-  or `safe_export`. (Recovery surface is CLI-only — REQ-054 is the
-  surface-shape corollary.)
+  callers cannot accidentally invoke the recovery surface — the REQ-054
+  recovery-verb set (`recover`, `restore`, `repair`, `fix`, `rebuild`), nor
+  `excise_source` or `safe_export`. These are **operator disaster-response**
+  verbs and remain CLI-only. (REQ-054 is the surface-shape corollary.)
+
+  **CARVE-OUT — lawful erasure is an application capability.** Deliberate,
+  caller-initiated data-lifecycle erasure is **not** recovery, and IS exposed
+  on the runtime SDK: `purge(logical_id)` for governed records (shipped
+  0.8.19) and `erase_source(source_id)` for anonymous / doc-seeded content
+  (0.8.20). These are **lifecycle** verbs — explicitly invoked, never
+  reachable by accident — and they share one engine code path with the
+  recovery seam. An application cannot discharge a legal erasure obligation
+  through a CLI it is not shipped (the Python wheel declares no
+  `[project.scripts]`; the npm package declares no `"bin"`).
+  **AC-041 remains the enforcing test and remains GREEN** — it asserts an
+  empty intersection with the REQ-054 five-name set, and neither lifecycle
+  verb is a recovery name.
+
+  _Note:_ `purge_logical_id` was struck from the forbidden list — shipped
+  code (`fathomdb-py:1297`, `fathomdb-napi:1102`, 0.8.19) already
+  contradicted it. This amendment **records reality rather than changing
+  it**.
   _Source:_ `dev/notes/0.5.7-corrected-scope.md` D2; rewrite-proposal
-  § Recovery tooling. _Cross-cite:_ ADR-0.6.0-cli-scope.
+  § Recovery tooling. _Cross-cite:_ ADR-0.6.0-cli-scope;
+  `dev/design/0.8.20-erasure-and-h-end-state-v4.md` §3.1 (carve-out,
+  HITL-APPROVED 2026-07-12).
 
 - **REQ-038 — Source-ref blast-radius enumeration.** Operator can
   `trace --source-ref <id>` to enumerate every canonical row produced

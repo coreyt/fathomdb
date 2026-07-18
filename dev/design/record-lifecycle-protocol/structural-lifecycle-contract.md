@@ -100,11 +100,29 @@ on every re-projection). Today **`SearchHit` returns the `write_cursor` as its p
    bulk-ingest nodes (`PreparedWrite::Node { logical_id: None }`, `lib.rs:7188`), which are content-addressed
    and deliberately never versioned ("anonymous nodes are never superseded-in-batch", `lib.rs:10263`). So the
    engine is **not** missing an object id — governed objects have one; bulk doc-chunks opt out. **Resolution:**
-   (i) complete the F-8a swap (above) so `SearchHit` returns the `logical_id`; (ii) to satisfy the expectation
+   (i) complete the F-8a swap (above) so `SearchHit` returns the `logical_id`; ~~(ii) to satisfy the expectation
    that *every* object is addressable, the engine **mints an opaque surrogate `logical_id` for anonymous
-   nodes** (an auto-assigned primary key), so every canonical node is addressable + version-eligible. Memex's
+   nodes** (an auto-assigned primary key), so every canonical node is addressable + version-eligible.~~ Memex's
    world-model records already carry `logical_id`s, so its lifecycle problem is closed by (i) alone; (ii) is
    the general "a database provides an object id" fix (**net-new**).
+
+   > **⛔ (ii) IS OVERRULED for the anonymous / doc-seeded class. HITL-RATIFIED 2026-07-12 (TC-11 pin A).**
+   > See `dev/design/0.8.20-erasure-and-h-end-state-v4.md` §5.
+   > An opaque surrogate is **by construction not re-derivable from content**, so re-ingesting identical bytes
+   > would mint a **different** id — destroying the re-ingest-stable, content-addressed identity that `h:`
+   > exists to provide (`same bytes ⇒ same handle` — the basis of cross-session gold keying, telemetry
+   > `result_stable_ids`, and explain-correlation). (ii) would imply forward surrogate minting for anonymous
+   > rows and carries its hazard.
+   > **Anonymous / doc-seeded nodes stay `h:<content-hash>` PERMANENTLY** — no backfill, no forward-mint, no
+   > split. (ii)'s stated goal is **already met**: the shipped C-2 `IdSpace` is **total** (every hit is
+   > `l:`/`h:`/`p:`, non-null) — **`h:` IS an address**. And (ii) has **no consumer**: this section itself
+   > concedes Memex's lifecycle problem is closed by (i) alone.
+   > Any Phase-2 surrogate serves **only registry-admitted governed entities**; eligibility is decided **at
+   > write time**, and a stored row's id-space is **never re-derived**. Invariant: *no migration, backfill, or
+   > verb shall ever populate `logical_id` on an existing canonical row.*
+   > **Corollary (accepted):** an anonymous row and a later governed row for the same real-world thing **both
+   > remain active and both surface in search**. The engine does not dedupe them — supplying a `logical_id` at
+   > write time is what makes a record governed. Remove the anonymous row by excising its source.
 
 - **Head-deletion invariant:** currency is **positional** — the latest insert is the head, deleted or not.
   A `logical_id` is *live* iff its **head is admissible**. Deleting the head does **not** resurrect the

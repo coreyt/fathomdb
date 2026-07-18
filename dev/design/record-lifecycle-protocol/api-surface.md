@@ -60,9 +60,15 @@
   The interim `write_cursor` id **and** the `stable_id` field are **retired — subsumed into `id`, not dropped**
   (real-gold keying continues on the `id` value; `h:`/`p:` hits keep an identity). **Lifecycle verbs
   (`transition`/`purge`/`read.get`) key on the bare `logical_id` — the `l:` space only; `h:`/`p:` hits are not
-  lifecycle-addressable** (ungoverned/unversioned by design). **Co-requisite
+  lifecycle-addressable** (ungoverned/unversioned by design). ~~**Co-requisite
   (GATING, lands-together):** the F-8a swap + the anonymous-node **surrogate-`logical_id` minting** (README §2)
-  ship in the same change.
+  ship in the same change.~~
+  > **⛔ The surrogate leg of this co-requisite is CANCELLED for the anonymous class — not deferred.
+  > HITL-RATIFIED 2026-07-12 (TC-11 pin A).** The F-8a / C-2 swap **shipped ALONE** in 0.8.19 and is **total
+  > without a surrogate**: `h:<content-hash>` is a **first-class terminal `IdSpace` variant**, so every hit is
+  > `l:`/`h:`/`p:`, non-null — **no anonymous node is left unaddressed-by-`id`** (only
+  > unaddressed-by-*lifecycle-verb*, which is by design). Anonymous nodes stay `h:` **permanently**. See
+  > `structural-lifecycle-contract.md` §2(ii) and `dev/design/0.8.20-erasure-and-h-end-state-v4.md` §5.
 - **`PreparedWrite` — extend the existing enum (C10; S3 fix).** (`PreparedWrite` is a `#[non_exhaustive]` enum —
   `Node`/`Edge` — not a struct; the `Edge` variant already carries `t_valid`/`t_invalid`/`confidence`.) The
   `Node` variant gains an **initial** `state` typed as an admission subset **`InitialState ∈ {pending, active}`**

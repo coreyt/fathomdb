@@ -1,226 +1,321 @@
-# FathomDB 0.8.20 — Plan (Library Sweep — owned engine slices) · **Major dependency migrations**
+# FathomDB 0.8.20 — Plan (state-machine ladder) · **OPP-12 record-lifecycle Phase-2 + erasure completeness + the coordinated breaking-pair publish**
 
-> **⚠️ THIS PLAN IS STALE — DO NOT EXECUTE AS WRITTEN (Steward, 2026-07-10)**
+> **DE-STALED 2026-07-12.** This file previously held the **Library Sweep / major-dependency-migration**
+> runbook (napi 2→3 · rusqlite 0.31→0.40 + sqlite-vec). Per master **F-19/F-20** that content was re-homed to
+> **`0.8.22`** — it is **removed here** and must be authored at `plan-0.8.22.md`. Nothing in this file is a
+> dependency migration.
 >
-> **0.8.20 is now `OPP-12 record-lifecycle Phase-2 + the coordinated breaking-pair publish`, NOT the Library
-> Sweep.** Per master **F-19/F-20** the Library Sweep (napi 2→3 · rusqlite 0.31→0.40 + sqlite-vec) was
-> **re-homed to 0.8.22**; the LBS-runbook content below belongs to *that* release and is retained here only
-> until the de-stale rewrite lands. See master §4 rows 0.8.20 / 0.8.22 + **F-23**.
+> **0.8.20 = OPP-12 Phase-2 + erasure completeness + the FIRST REAL PUBLISH.** Even micro, publishable.
+> **BUILD-AUTHORIZED (F-21).** Publish remains a **separate per-`x.y.z` HITL gate**.
 >
-> **State feeding 0.8.20 (verified from git, origin/main `578fe20b`):** **0.8.19 (OPP-12 Phase-1) is COMPLETE**
-> (master **F-24**) — the **C-2 typed `SearchHit.id` swap has LANDED** (`u64 → IdSpace {space,value}`;
-> `write_cursor`+`stable_id` subsumed; `to_prefixed()` == prior `stable_id` byte-for-byte ⇒ no gold-remap),
-> built **label-only**; existence axis + SCHEMA **19→20** + `transition`/`purge` verbs landed. **0.8.20 is where
-> the OPP-12 breaking surface is first PUBLISHED** (Memex `0.5.x-successor` pairs; #11-full @0.8.18 the prereq).
->
-> **De-stale = full rewrite to the Phase-2 ladder** (Steward decision-3, in progress): `ReadView`/read-modes ·
-> node-validity (`valid_from`/`valid_until`) · **projection registry (C-1 co-land)** + EAV/property-FTS ·
-> `dense_readiness` · **anonymous-node surrogate `logical_id` minting (deferred from Phase-1, F-23)** · X1 ·
-> coordinated breaking-pair publish. **F-23 GUARDRAIL / TC-11 — do FIRST:** pin the doc-seeded `h:` end-state
-> (terminal-forever / forward-mint-only / backfilled; leading hypothesis **terminal** — doc-chunks aren't
-> `EntityTypeSpec` entities) at the Phase-2 Slice-0 X0 gate before any build. Fold the rubric-pilot carries
-> (parity-before-land G6 · persist §9 transcripts) into the X0 process (todos-ledger seq 22).
->
-> ---
->
-> **Plan-as-LBS-runbook (engine depth).** Run via `/goal complete plan-0.8.20.md` acting as the
-> **Library Bump Steward (LBS)**, spawning per-migration **Library Bump Orchestrators (LBOs)** for work
-> that requires real engine changes + a full test matrix. Read first:
-> `dev/plans/prompts/LIBRARY-BUMP-STEWARD.md` (charter),
-> `dev/plans/prompts/LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md` (LBO prompt),
-> `dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md` (finding **F-12** — disposition of record; the 0.8.20
-> row), `dev/plans/runs/NOTE-2026-06-29-library-sweep-to-0.8.x-steward.md`. Method runbook:
-> `dev/design/orchestration.md`. Live state: stand up `runs/STATUS-0.8.20.md`.
->
-> **⚠ TIMING IS NOT CONFIRMED (F-12).** Unlike the 0.8.11.1 contained sweep, 0.8.20 ships **real engine
-> changes** and **must be strongly reviewed for timing-correctness before it proceeds.** Each migration
-> here is **deferred-with-trigger** — it runs only when a concrete driver exists (a feature needs the
-> new API, a security advisory lands, or the toolchain deprecates the old version). **Slice 0 is a
-> mandatory timing/trigger review that PAUSES for HITL before any migration LBO is spawned.**
->
-> **Theme.** Land the two migration-class dependency upgrades the 0.8.11.1 sweep deliberately excluded:
-> the **napi 2→3** binding migration and the **rusqlite 0.31→0.40 + sqlite-vec** engine/storage
-> migration. These are coupled, behavior-and-build-affecting, and need full Rust + cross-language
-> testing — not a label-only micro.
->
-> **Footprint.** Engine + binding builds (not label-only). Respect the single `.venv`/`maturin` build
-> mutex; GPU not required. **Publishability is a Slice-0 question** — these change shipped crates, so
-> unlike a transitory sweep this may need a real (HITL-gated) publish; resolve the OOB-vs-in-band label
-> at Slice 0 (0.8.20 is even-numbered but was filed "net-new OOB" in F-12 — reconcile).
+> **Base verified from `origin/main` @ `d526d15c` (code, not memory — every anchor below re-read at this SHA).**
 
----
+## 0. Base verification (primary sources, re-read at `d526d15c`)
 
-## 0. START HERE — timing/trigger review + HITL gate (mandatory, blocks everything)
+| Anchor | Claim | Verified |
+|---|---|---|
+| `SCHEMA_VERSION = 20` | 0.8.19 landed the 19→20 existence migration | ✓ `fathomdb-schema/src/lib.rs:6` |
+| manifests = **`0.8.9`** | every release since 0.8.9 was label-only ⇒ **0.8.20 is the first manifest bump `0.8.9 → 0.8.20`** | ✓ `src/python/pyproject.toml:7`, `src/ts/package.json:3` |
+| `transition` / `purge` **shipped in both SDKs** | 0.8.19 Phase-1 surface is live | ✓ `fathomdb-py:1274,1297`; `fathomdb-napi:1070,1102` |
+| **Phase-2 surface = 100 % NET-NEW** | `ReadView`, `valid_from`, `valid_until`, `dense_readiness`, `configure_projections`, `ProjectionSpec`, `EntityTypeSpec`, `id_prefix` | ✓ **ZERO hits** across all crates |
+| `derive_logical_id` = `SHA256("{kind}:{name}")` | natural-key derivation, **not** an opaque surrogate | ✓ `engine lib.rs:11152` |
+| `search_index_v2` = **content-storing** FTS5 | holds the **body verbatim** (no `content=''`) | ✓ `fathomdb-schema/src/lib.rs:427` |
+| `truncate_wal()` **already exists** | `PRAGMA wal_checkpoint(TRUNCATE)`, returns typed `TruncateWalStatus::{Done,Busy}` | ✓ `engine:6379`; **CLI-only** (`fathomdb-cli:389`); **NOT called by `purge`/`excise`** |
+| op-store record erasure | **does not exist** — only a cap-based retention sweep | ✓ `engine:10083` (`enforce_provenance_retention`) |
+| REQ-037 → AC-041 | recovery surface CLI-only; AC-041 tests the **REQ-054 five-name denylist** only | ✓ `dev/requirements.md:332`; `dev/acceptance.md:688` |
+| AC ceiling | highest existing AC | ✓ **AC-077** (`dev/acceptance.md`) |
 
-The **first LBS action is a timing-correctness review**, per F-12. Do this and PAUSE before any LBO:
+### 0.1 THE ROOT-CAUSE FINDING — `search_index_v2` is maintained by **ONE** of FIVE sites
 
-1. **Confirm a trigger exists for each migration.** For napi 2→3 and rusqlite 0.31→0.40: is there a
-   concrete driver (a needed API, a security advisory, a toolchain/Cargo MSRV deprecation), or is the
-   old version still fine? **No trigger ⇒ recommend continued deferral**, do not migrate for novelty.
-2. **Check release collision.** Confirm 0.8.20 does not run adjacent to an already-heavy even release
-   in a way that violates F-10 self-completion; confirm no in-flight orchestrator shares the engine
-   crates.
-3. **Re-verify current-vs-target from git** (versions/lockfile may have moved since 2026-06-29: `napi`
-   = `"2"`, `napi-derive` = `"2"`, `@napi-rs/cli` = `^2.18.4`; `rusqlite` = `"0.31"`,
-   `sqlite-vec` = `"=0.1.7"`).
-4. **Surface the §11 HITL questions and PAUSE** (publish/label decision; per-migration go/defer).
-5. **(Added 2026-07-03, M11 — cross-product roadmap pass.)** **sqlite-vec migration as a predecessor.**
-   *If* the 1–2M-chunk premise (G-1 in `dev/design/fathomdb-memex-overall-roadmap/`) resolves **YES**, the
-   `sqlite-vec 0.1.7 → later` migration in this sweep is a **predecessor of any future vec0-internal latency
-   kernel work** (2MM Path A) — sequence it accordingly and note the dependency for the kernel slice. If G-1 =
-   NO (default), this is informational only. This does **not** pull ANN forward: HNSW/ANN stays 2.x (F-16).
+| # | Site | fn | `search_index` | `search_index_edges` | **`search_index_v2`** | `vector_default` |
+|--:|------|----|---|---|---|---|
+| 1 | **WRITE** | `project_canonical_node_row` `:11779` | ✓ `:11789` | — | **✓ `:11806`** | ✓ |
+| 2 | **PURGE** | `purge_inner` `:6164` | ✓ `:6225` | ✓ `:6227` | **✓ `:6229`** | ✓ `:6231` |
+| 3 | **EXCISE** | `excise_source_inner` `:6398` | ✓ `:6427` | ✓ `:6432` | **❌ MISSING** | ✓ `:6438` |
+| 4 | **REBUILD** | `rebuild_shadow_state` `:6515` | ✓ `:6525`/`:6548` | ✓ `:6529` | **❌ NEVER TOUCHED** (no DELETE, no INSERT) | ✓ `:6533` |
+| 5 | **TOKENIZER-REPROJECT** | `reproject_search_index_after_tokenizer_upgrade` `:9515` | ✓ `:9519`/`:9522` | — | **❌ NEVER TOUCHED** | — |
+
+**`search_index_v2` is WRITTEN by the write path and DELETED only by `purge`.** Excise misses it; rebuild and
+tokenizer-reproject never touch it at all. Consequences, all verified:
+
+- **Erasure leak (data-at-rest).** After `excise_source`, the body **survives verbatim** in `search_index_v2`
+  (`SELECT body FROM search_index_v2`). `secure_delete=ON` cannot help — it only zeroes pages freed by a real
+  `DELETE`, and these rows are never deleted.
+- **Unbounded retention.** `search_index_v2` **monotonically accumulates every body ever written** —
+  superseded, excised, all of it — prunable by no path except `purge`.
+- **Tokenizer divergence (correctness).** After a tokenizer upgrade, v1 is re-tokenized and **v2 is not** ⇒
+  BM25F scores against a stale tokenizer.
+- **Invisible to every functional test.** Both FTS read paths gate candidates on `canonical_nodes` (BM25F
+  inner-joins for corpus stats `:11948`; intersects an `active` set `:11982`/`:12002`). **A test that *searches*
+  for the excised text PASSES on the broken code.** ⇒ **RED tests MUST assert on raw table contents.**
+
+**The bug is not a missing `DELETE`. It is that the row-owned table list is implicit and duplicated five
+times.** Patching site 3 fixes today and re-opens the hole at the next projection table. **Fix the mechanism.**
+
+There is also **no edge projector** — only `project_canonical_node_row`; edge projection is inlined in
+`commit_batch` (`:12166+`). Any "replay through the projector" rebuild MUST cover edges or it silently drops
+edge FTS + edge vectors.
 
 ---
 
 ## 1. Goal & scope
 
-In scope — two **migration/wide** upgrades, each its own LBO, each its own worktree + branch + PR:
+**Theme.** Finish OPP-12 (Phase-2), make deletion actually work, and **publish the breaking pair**.
 
-- **napi 2 → 3 (group: #90 + #102).** Bump `napi` **and** `napi-derive` (matched set — they cannot
-  split) in `fathomdb-napi`, and `@napi-rs/cli` 2→3 in `src/ts`. Follow the napi-rs v3 migration guide
-  (build-system + macro changes); rebuild the native addon; run the **TS + Py binding** suites and
-  cross-language equivalence. Blast: **migration**.
-- **rusqlite 0.31 → 0.40 + sqlite-vec (group: #103 + #99).** Bump `rusqlite` (across `fathomdb-engine` +
-  `fathomdb-schema`, `bundled`) and **un-pin/raise** `sqlite-vec` (`=0.1.7` → 0.1.9) **together** —
-  they are coupled through the bundled SQLite version. Resolve the API jump (9 minors); confirm the
-  bundled-SQLite change does not regress FTS5/vector behavior. Blast: **wide**.
-- **`action-gh-release` 2 → 3 (#98) — escalated here from the 0.8.11.1 sweep (2026-06-30).** Bump
-  `softprops/action-gh-release` in `release.yml` to
-  `718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1`. It could not be validated in the label-only sweep:
-  the consuming `github-release` job is gated `if: ${{ inputs.dry_run != true }}`, so a `workflow_dispatch`
-  dry-run **skips it entirely** (vacuous proof) and the only real validation is a tagged publish (forbidden
-  in a pico). 0.8.20 is a real cut that naturally exercises the publish path under HITL supervision — bump
-  it here and verify on the actual release run. v3.0.0 breaking change = runner Node 20→24 (GitHub-hosted
-  runners support it); no input renames. Blast: **contained** (but release-path → HITL-gated on the cut).
+### In scope
 
-**Out of scope (deferred):** anything the 0.8.11.1 sweep already handles (sha2 unless it escalated here;
-ts-tooling; CI actions). Any further library that is still `contained` belongs in the next Library
-Sweep micro, not 0.8.20.
+**A · OPP-12 Phase-2 (net-new; master §4 0.8.20 row, F-19/F-20/F-21)**
+
+- **`ReadView` / read-modes** — composable relax-flags; uniform on `get`/`list`/`neighbors`.
+- **Node-validity** — `valid_from` / `valid_until`, integer windows, bound-`:now` seam, `valid_as_of`.
+- **Projection registry (C-1 co-land)** — `configure_projections(spec, drop?)`, `ProjectionSpec {name, roles:
+  {filterable, rankable, searchable}}`, idempotent diff + backfill; **engine is the sole projection authority**;
+  **EAV / property-FTS** (the store it projects from — only body-FTS exists today).
+- **`dense_readiness` + `flush_embeddings()`** + the atomic readiness-flip (additions to the existing worker).
+- **Surrogate `logical_id` minting — SCOPE-CORRECTED (see §2.1).** Serves **ONLY registry-admitted governed
+  entities**. **NOT doc-chunks.**
+- **X1 SDK parity** (Py + TS, live functional harnesses).
+
+**B · Erasure completeness (net-new; HITL steer todos-ledger seq 23 + this plan's §0.1)**
+
+- One **shared row-owned projection registry**; a **total projector** (node + edge); five sites collapse to one.
+- Provenance made **mandatory and caller-sourced**; a **reachable erasure verb**.
+
+**C · The coordinated breaking-pair publish** — manifests **`0.8.9 → 0.8.20`**; pairs with a Memex
+`0.5.x-successor`. Prereq **0.8.18 #11-full publish machinery** ✓ (proven + exercised via staging, never fired).
+
+### Out of scope
+
+- **Dependency migrations** (napi 2→3 · rusqlite/sqlite-vec) → **0.8.22** (F-19/F-20).
+- **HNSW / ANN** → **2.x** (F-16). Not here, not anywhere in 0.8.x.
+- **Scale-bound** (soft/stated) → **0.8.23 / 0.8.24** (F-20).
+- **TC-5** (full eu7 floor re-baseline) → 0.8.23 · **TC-9** (`ort` GPU-EP) → 0.8.22 · **TC-10** (#5 open-latency
+  optimization) → ≥0.8.21 only if warranted (F-22).
 
 ---
 
-## 2. Requirements + acceptance criteria (DoD — frozen at Slice 0)
+## 2. Decisions already taken (do NOT re-litigate)
+
+### 2.1 TC-11 — the doc-seeded `h:` end-state pin · ✅ **HITL-RATIFIED 2026-07-12** (F-23 guardrail **DISCHARGED**)
+
+> **Pin A — terminal-forever, by explicit OVERRULE of `structural-lifecycle-contract.md §2(ii)`.**
+> Anonymous / doc-seeded nodes stay **`h:<content-hash>` PERMANENTLY** — no backfill, no forward-mint, no split.
+> Any Phase-2 surrogate serves **ONLY registry-admitted governed entities**; eligibility is decided **at write
+> time**, and a stored row's id-space is **NEVER re-derived**.
+
+**This CANCELS — not defers — the surrogate leg for the anonymous class.** The master 0.8.20 row and F-23 both
+carried it as "deferred from Phase-1"; it is now **cancelled** for doc-chunks. Grounds (all code-verified):
+
+- An opaque surrogate is **not re-derivable from content** ⇒ re-ingest mints a *different* id, destroying the
+  re-ingest-stable content-addressed identity `h:` provides (`same bytes ⇒ same handle` — the basis of
+  cross-session gold keying, telemetry `result_stable_ids`, and explain-correlation).
+- `derive_logical_id` is **not** the surrogate mechanism — `:54` requires "never content-derived/**hashed**", and
+  it *is* hashed (`engine:11152`); §2:98 names it a **separate** mechanism.
+- §2(ii) has **no consumer** — the contract itself states Memex's lifecycle problem is closed by **(i) alone**.
+- Its stated goal is **already met** — the shipped C-2 `IdSpace` is **total** (`l:`/`h:`/`p:`, non-null) ⇒
+  **`h:` IS an address**.
+
+**Enforcement (no new column).** The record **is** `canonical_nodes.logical_id`'s null-ness. The invariant is a
+**prohibition**: *no migration, backfill, or verb shall ever populate `logical_id` on an existing canonical row.*
+
+**Accepted corollary (document it; do not "fix" it).** An anonymous row and a later governed row for the same
+real-world thing **both stay active and both surface in search** — supersession keys on `logical_id`, and the
+partial-unique index is `ON canonical_nodes(logical_id) WHERE superseded_at IS NULL`, so **NULL never collides**.
+The engine does not dedupe them. Supplying a `logical_id` **at write time** is what makes a record governed.
+Remove the anonymous row by excising its source.
+
+**Applied to the authority surfaces:** `structural-lifecycle-contract.md` §2(ii) (**OVERRULED**) ·
+`README.md:108` (struck) · `api-surface.md:64` (surrogate leg **CANCELLED, not deferred**).
+Design of record: `dev/design/0.8.20-erasure-and-h-end-state-v4.md`.
+
+### 2.2 The erasure axis is **PROVENANCE**, not the `l:`/`h:` id-space
+
+`transition`/`purge` are **`l:`-only by design** (an anonymous row's identity *is* its bytes; "change the record"
+is incoherent). Anonymous content — **the dominant corpus class** — is erased by **`source_id`**.
+**Pin A is therefore ORTHOGONAL to GDPR and costs nothing there.**
+
+### 2.3 REQ-037 lawful-erasure carve-out · ✅ **HITL-APPROVED 2026-07-12**
+
+The project's real policy is **"RECOVERY-*NAMED* verbs are CLI-only"** — **not** "destructive ⇒ CLI-only".
+Proof: **`purge(logical_id)` is already an SDK verb** (`py:1297`, `napi:1102`, 0.8.19) *despite being named in
+REQ-037's forbidden list*, because **AC-041 tests only the REQ-054 five-name denylist**
+{`recover`,`restore`,`repair`,`fix`,`rebuild`} — and `purge` is not one of them.
+
+**The defect is an ASYMMETRY:** the `l:` axis got a first-class application erasure verb; the `h:` axis (the
+dominant corpus class) got none. **And `excise_source` is unreachable from any SDK consumer — the wheel declares
+no `[project.scripts]` and the npm package no `"bin"`, so no `fathomdb` CLI is shipped.**
+
+**RULING (HITL 2026-07-12):**
+
+- **`excise_source` stays CLI-only.** It is the **recovery** seam (REQ-026 — built to excise a *corrupt ingest*).
+- **Add `erase_source(source_id)`** — a **first-class SDK lifecycle verb**, alongside `transition`/`purge`. Not a
+  recovery name ⇒ **AC-041 stays GREEN, the denylist stays five, the byte-frozen guardrail is untouched.**
+  **One shared engine code path** with `excise_source` — no second implementation to drift.
+- **REQ-037 prose amended** (carve-out); `purge_logical_id` **struck** from its forbidden list — shipped code
+  already contradicted it. **The amendment records reality rather than changing it.**
+
+---
+
+## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
+
+Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` policy). **New ACs are permitted:
+0.8.20 Slice-0 IS a gated slice.** AC ceiling today = **AC-077**.
+
+### Phase-2 (A)
 
 | ID | Requirement | Acceptance signal (falsifiable, offline) |
 |----|-------------|------------------------------------------|
-| R-20-0 | A trigger + timing review precedes any migration | Slice-0 review recorded; HITL go/defer per migration in `runs/STATUS-0.8.20.md` |
-| R-20-1 | napi 2→3 builds + passes the **full** matrix (incl. `rust-macos`/`rust-windows`) | CI all-SUCCESS; native addon loads; TS + Py binding suites green |
-| R-20-2 | napi cross-language equivalence preserved | Py↔TS functional harness equivalence green (no result/error-shape drift) |
-| R-20-3 | rusqlite 0.31→0.40 builds + full Rust suite green across all OSes | `cargo test --workspace` green on linux/mac/windows |
-| R-20-4 | Vector/FTS behavior preserved under the new bundled SQLite | recall/ANN-fidelity + FTS5 conformance unchanged (byte/score equivalence where the contract requires it); `sqlite-vec` load verified |
-| R-20-5 | Every behavior/API change is registered → changelog | §9 register filled; each row ships a changelog line |
-| R-20-6 | Publish/label decision honored | Slice-0 decision (publish vs label-only) executed exactly; any `v*` tag is HITL-gated |
+| R-20-RV | `ReadView`/read-modes: composable relax-flags, uniform on `get`/`list`/`neighbors` | read-mode matrix test; `include_superseded` returns history; default view unchanged (no silent behavior drift) |
+| R-20-NV | Node-validity `valid_from`/`valid_until` + `valid_as_of` (bound-`:now` seam) | validity-window matrix; `crossed_boundary_since` hook; world-time only (`history_as_of` explicitly OUT) |
+| R-20-PR | Projection registry (C-1): `configure_projections(spec, drop?)` idempotent diff + backfill; engine is **sole** authority; incompatible change ⇒ destructive delta requiring explicit `drop` | re-registration is a no-op; role add/remove builds/drops exactly; boot re-derive is crash-safe + idempotent |
+| R-20-EAV | EAV / property-FTS — the store the registry projects from | property-level filter/search green; body-FTS behavior unchanged |
+| R-20-DR | `dense_readiness` + `flush_embeddings()` + atomic readiness-flip | readiness never reports ready with pending embeds; flip is atomic under concurrent write |
+| R-20-SUR | Surrogate minting serves **ONLY** registry-admitted governed entities; decided **at write time** | **migration-guard: rows transitioning `logical_id NULL → NOT NULL` == 0** (the pin's invariant); registering a kind does **not** alter any pre-existing row's `IdSpace` |
+
+### Erasure completeness (B)
+
+| ID | Requirement | Acceptance signal — **assert on RAW TABLE CONTENTS, not search results** |
+|----|-------------|------------------------------------------|
+| R-20-E1 | **ONE** row-owned projection registry + a **total projector (node + edge)**, consumed by `purge_inner`, `excise_source_inner`, `rebuild_shadow_state`, and `reproject_search_index_after_tokenizer_upgrade`. All five hand-rolled lists deleted. | `guard_row_owned_registry`: introspect `sqlite_master`; **every** `write_cursor`-keyed table is registered — a new projection table cannot be added without failing this test. Post-excise: `SELECT count(*) FROM search_index_v2 WHERE write_cursor=?` **= 0**. Post-rebuild: `search_index_v2` row-count == active canonical node count; **edge** FTS + edge vectors match the write path. |
+| R-20-E2 | Ingest provenance comes from the **caller** (`ExtractDocument.source_doc_id`, `:1934`, already serialized into the prompt at `:3598`) — **never** the model's JSON echo (`:3644`, `:3771`) | an extractor that **omits** `source_doc_id` still yields **excisable** rows |
+| R-20-E3 | Provenance is **structurally mandatory** on public writes: `SourceId` newtype replaces `source_id: Option<String>` (`:2024`, `:2051`). "No provenance" is **inexpressible** on the public type — **not merely rejected** (a validation-only fix leaves a Rust-facade hole: `fathomdb/src/lib.rs` re-exports `PreparedWrite` and `Engine::write` is public `:3364`). Engine-derived rows bypass `PreparedWrite` and take a reserved `_engine:*` provenance. | Rust/Py/TS: an un-provenanced public write **does not compile / raises**; **no canonical row has NULL `source_id`** post-change |
+| R-20-E4 | **`erase_source(source_id)`** — first-class SDK lifecycle verb (Py + TS + Rust facade, X1 parity); one engine path with `excise_source` | an **SDK-only** consumer (no CLI on `PATH`) erases anonymous content end-to-end; **AC-041 still GREEN** |
+| R-20-E5 | Erasure covers the **WAL**. `truncate_wal()` **already exists** (`:6379`, typed `Busy` status) but `purge`/`excise` **do not call it** | post-erasure the raw `.db` **and `-wal`** bytes do not contain the erased body; **`Busy` ⇒ typed `ErasureIncomplete` + non-zero CLI exit — an erasure verb must NEVER report success on an incomplete erasure** |
+| R-20-E6 | Telemetry retains `l:`/`h:` ids after erasure (`result_stable_ids`, `:4462`); `logical_id = SHA256("{kind}:{name}")` over a **low-entropy natural key** is dictionary-attackable | `purge`/`erase` **selectively redact** the sink (drop records referencing erased ids) — **not truncate**: the sink path is **caller-supplied**, so truncation would destroy unrelated operator eval history. Purged id absent; **unrelated records survive.** |
+| R-20-E7 | Op-store records are erasable: `excise_collection_record(collection, record_key)` (no record-level delete exists — only a cap sweep, `:10083`) | app-authored op-store payload erasable by key |
+| R-20-E8 | Legacy NULL-provenance rows become erasable | migration back-fills `source_id='_legacy:pre-0.8.20'` **WHERE `logical_id IS NULL` ONLY** — governed rows keep NULL and stay `purge`-addressable by `logical_id`. **`excise_source _legacy:` deletes NO governed row.** `doctor orphan-provenance` lists per-`source_id` counts. |
+
+### Release / gates (C)
+
+| ID | Requirement | Acceptance signal |
+|----|-------------|-------------------|
+| R-20-H7 | **RUBRIC-H7 GATE (TC-RUBRIC-2)** — a **Pact-style `can-i-deploy`** mechanical contract-conformance check: as-built code still satisfies the ratified `OPP-12-C1-converged-contract.md` at the co-land. **Not humans re-reading prose.** | Gate exists and is GREEN. **An absent-or-failing gate HOLDS the breaking pair** (hard, HITL-directed 2026-07-10) |
+| R-20-X1 | SDK parity (Py + TS) — **live functional harnesses, not symbol presence** | X1 GREEN. **Run parity BEFORE land, same unit** (rubric G6 carry: 0.8.19 ran X1 green *after* land via a native-import env trap — **treat an env trap as a landing blocker, not a follow-up**) |
+| R-20-EU7 | **eu7 basis decision** (F-22): no-op vs real re-baseline — the **real-publish gate** | Recorded at Slice 0. If OPP-12 touches retrieval/gold-keying ⇒ bounded re-baseline. **Pin A keeps `SearchHit.id` byte-identical (`to_prefixed()` == prior `stable_id`) ⇒ the no-op basis is EXPECTED to hold; prove it, don't assume it.** |
+| R-20-PUB | Coordinated breaking-pair publish; manifests **`0.8.9 → 0.8.20`** | Publish executed exactly per the **separate HITL gate** (F-21). Uses 0.8.18 #11-full machinery (proven, never fired). Pairs with Memex `0.5.x-successor` |
+| R-20-AC | Governed-surface delta signed | **new AC (AC-078+)** mirroring AC-074: the Phase-2 + erasure API delta vs the conformance allowlist, **HITL-SIGNED**. `recovery_denylist` **unchanged (stays five)** |
 
 ---
 
-## 3. Slice ladder (mod-5)
+## 4. Slice ladder (mod-5)
 
 ```text
-0 → 5 → 10 → 40
+0 → 5 → 10 → 15 → 20 → 25 → 30 → 40
 ```
 
 | Slice | Title | Work-type | Depends-on |
 |------:|-------|-----------|-----------|
-| **0** | **Timing/trigger review + HITL gate** (§0/§11); stand up `runs/STATUS-0.8.20.md`; ADR if an API contract shifts | steward-review + design-adr | — |
-| **5** | LBO: **rusqlite + sqlite-vec** (coupled) — API migration; FTS5/vector equivalence; full Rust matrix | implementation | 0 (+ HITL go) |
-| **10** | LBO: **napi 2→3** (napi + napi-derive + @napi-rs/cli) — binding migration; cross-language suites | implementation | 0 (+ HITL go) |
-| **40** | **Verification + release readiness** — R-20-* DoD, X1/X2/X3, publish-or-label per Slice 0 | verification | 5,10 |
+| **0** | **X0 design gate** — reqs/ACs frozen; erasure Slice-0 design; **TC-11 pin ✅ ALREADY RATIFIED**; eu7-basis + embed_batch_cls-TS decisions; **TC-RUBRIC-5** (dedicated-checkout/`preflight.sh --landing`) folded in; stand up `runs/STATUS-0.8.20.md`; **codex §9** | design-adr + steward-review | — |
+| **5** | **Erasure completeness** (R-20-E1…E8) — registry + total projector + `erase_source` + provenance + WAL + telemetry + op-store + migration | implementation | 0 |
+| **10** | **`ReadView` / read-modes** + **node-validity** (R-20-RV, R-20-NV) | implementation | 0 |
+| **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) | implementation | 0 |
+| **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
+| **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) | implementation | 15 |
+| **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) | implementation | 10,15,20,25 |
+| **40** | **Verification + release readiness** — full DoD, X1, eu7 basis, AC-078 sign-off, **publish-or-hold per the HITL gate** | verification | 5,30 |
 
-**Keystones / hard gates.** Slice 0 (timing/trigger + HITL go) **blocks both** migration LBOs.
-Each migration is independently go/defer-able — if only one trigger fires, run only that LBO.
+**Keystones / hard gates.**
 
-**Tracks (parallelizable).** Slices 5 ∥ 10 are independent **after** HITL go: 5 touches
-`fathomdb-engine`/`fathomdb-schema` + `Cargo.lock`; 10 touches `fathomdb-napi` + `src/ts`. They share
-`Cargo.lock` → the LBS **serializes their merges** (rebase-then-merge one at a time) even though they
-develop in parallel worktrees. Binding rebuilds respect the single `.venv`/`maturin` mutex.
+- **Slice 0 blocks everything** (X0 process gate, carried from 0.8.18 §5 / 0.8.19).
+- **Slice 5 is INDEPENDENT of Phase-2** — it fixes **defects in shipped code** and can run fully parallel to
+  10/15. It does **not** wait on the registry.
+- **Slice 15 is the Phase-2 keystone** — 20 and 25 both depend on it.
+- **Slice 30 (H7) is a PUBLISH PRECONDITION.** Absent-or-failing ⇒ **the breaking pair HOLDS.**
+
+**Tracks (parallelizable).** `5 ∥ 10 ∥ 15` after Slice 0. Slice 5 touches the erasure/projection paths; 10/15
+touch read + registry. They share `engine/src/lib.rs` ⇒ **serialize the merges** (rebase-then-merge one at a
+time). **One `maturin develop` at a time** (shared `.venv` mutex).
 
 ---
 
-## 4. Reserved-gap policy (carried)
+## 5. Reserved-gap policy
 
-Gaps `1–4, 6–9` absorb unplanned follow-on (e.g. a migration exposes a needed new conformance test).
-Fully orchestrated, not ad-hoc. **HALT to HITL on band overflow** — never spill into the next mod-5.
+Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanned follow-on. Fully orchestrated, not ad-hoc.
+**HALT to HITL on band overflow** — never spill into the next mod-5.
 
 ---
 
-## 5. Cross-cutting DoD (bind every slice)
+## 6. Cross-cutting DoD (X0/X1/X2/X3 — bind EVERY slice)
 
-- **X1 — SDK parity + harnesses.** The napi migration is a binding change: Py + TS surfaces must stay
-  equivalent with live functional harnesses (not symbol presence). Any error/result-shape change lands
-  in both SDKs same-slice.
+- **X0 — elevated process gate.** (A) reqs + **RED-testable** ACs → (B) **independent design review** → HITL
+  sign-off, **before code**. Carried from 0.8.18 §5.
+  **+ TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11):** release orchestration and **all landing git-writes run in a
+  dedicated linked worktree**; `scripts/preflight.sh --landing` **HARD-fails on the primary checkout**.
+  **+ TC-RUBRIC-7:** persist **every codex §9 transcript** to a durable release-namespaced path.
+- **X1 — SDK parity.** Py + TS equivalence via **live functional harnesses**. **Parity runs BEFORE land, as one
+  unit** (rubric G6). An env trap is a **landing blocker**, not a follow-up.
 - **X2 — `mkdocs build` green** for any `docs/` touched.
-- **X3 — docs/changelog per slice + `dev/DOC-INDEX.md`.** Migrations ship real changelog lines.
+- **X3 — docs/changelog per slice + `dev/DOC-INDEX.md`.** This release ships **real** changelog lines (breaking).
+- **Full-workspace gate.** `cargo clippy --workspace --all-targets` **and** `cargo check --workspace
+  --all-targets` **both exit 0** before any green claim (per-crate verify masks cross-crate breaks).
 
 ---
 
-## 7. Prerequisites (before any LBO opens)
+## 7. Prerequisites
 
-1. **Slice-0 HITL go recorded** for each migration (no migration without a trigger).
-2. **`main` clean + current**; worktree-per-LBO from a verified `origin/main` tip; never the shared
-   checkout. One `maturin develop` at a time.
-3. **Baseline captured**: pre-migration recall/ANN-fidelity + FTS5 + cross-language numbers, so R-20-2
-   and R-20-4 equivalence has a reference.
-
----
-
-## 8. Override / duplication register (fill from a real grep at Slice 0)
-
-| # | Concept | Divergent sources (file:line) | Live consequence if they drift |
-|--:|---------|-------------------------------|--------------------------------|
-| 1 | `rusqlite` pin | `fathomdb-engine/Cargo.toml` (×2) · `fathomdb-schema/Cargo.toml` | mixed SQLite ABI across crates → link/runtime breakage |
-| 2 | `sqlite-vec` pin | `fathomdb-engine/Cargo.toml` · `fathomdb-schema/Cargo.toml` | vec-extension/bundled-SQLite mismatch |
-| 3 | `napi`/`napi-derive` | `fathomdb-napi/Cargo.toml` + `@napi-rs/cli` (`src/ts/package.json`) | split versions → addon won't build |
-
-LBOs must bump **all** occurrences of their group consistently.
+1. **Slice-0 X0 sign-off** recorded. *(TC-11 pin is already ✅ ratified 2026-07-12 — do not re-open.)*
+2. **Dedicated worktree** off a verified `origin/main` tip. **Never the primary/shared checkout** (TC-RUBRIC-5).
+3. **`0.8.18 #11-full` publish machinery** ✓ proven + exercised via staging — **never fired**. The 0.8.20 cut is
+   its first real firing: **rehearse the tag→publish path before the HITL gate.**
+4. **Baseline captured** — eu7 recall + FTS/vector numbers + X1, so R-20-EU7 equivalence has a reference.
+5. **Memex `0.5.x-successor` co-land readiness** confirmed (breaking **pair** — one side alone is not a release).
 
 ---
 
-## 9. Behavior-change register (fill as migrations land)
+## 8. Out-of-band / parallel notes + key callouts
 
-| # | Change | Who notices | Changelog entry |
-|--:|--------|-------------|-----------------|
-| 1 | bundled SQLite version change (rusqlite 0.40) | operators with on-disk DBs | "engine: bundled SQLite updated to … (rusqlite 0.40); no schema change" |
-| 2 | napi v3 addon ABI / build | TS consumers, packagers | "node binding: built on napi-rs v3 (…)" |
+- **`13` remains HITL-forbidden** as minor and micro.
+- **Publish ≠ build.** F-21 authorizes the *build*. The **publish is a separate explicit HITL call** on this
+  `x.y.z`, and it is a **coordinated pair** with Memex.
+- **First manifest bump in the line.** Everything since 0.8.9 was label-only. **`0.8.9 → 0.8.20`** touches every
+  crate/py/npm manifest — use `scripts/set-version.sh`; cargo publish order is **embedder → engine**; a pushed
+  `v*` tag **auto-fires REAL crates/PyPI/npm publish** ⇒ **dry-run first**.
+- **Erasure is currently INCOMPLETE and UNREACHABLE.** Until Slice 5 lands: `excise_source` leaves the body in
+  `search_index_v2`; the telemetry sink retains ids; op-store payloads are un-erasable; and **no CLI ships to SDK
+  consumers**. **FathomDB MUST NOT be represented as GDPR-erasure-capable until 0.8.20 ships.**
+- **`source_id` MUST NOT contain PII** — it is retained **permanently** in the `excise_source_audit` row
+  (`:6479`), i.e. in the record of the erasure itself. Document at the write surface.
+- **Outside the erasure boundary** (enumerate + disclose, do not silently omit): `safe_export` archives,
+  operator backups, curated gold files. **Re-generate or destroy after any erasure.**
 
-If equivalence (R-20-2/R-20-4) is **not** byte/score-preserving, that is a behavior change requiring an
-explicit HITL call — do not bury it.
+---
+
+## 9. Immediate next slice
+
+**Slice 0 — X0 design gate.** Stand up `runs/STATUS-0.8.20.md`. Freeze §3 reqs + RED-testable ACs. Author the
+**erasure Slice-0 design** (registry + total projector + `SourceId` + `erase_source` + WAL + telemetry
+redaction + op-store + the `_legacy:` migration) on top of `dev/design/0.8.20-erasure-and-h-end-state-v4.md`. Record the
+**eu7-basis** and **embed_batch_cls-TS-parity** decisions (F-22). Fold **TC-RUBRIC-5** into the process gate.
+Run **codex §9** on the package, persist the transcript (TC-RUBRIC-7), and take X0 to HITL.
+**TC-11 is CLOSED — do not re-open it.**
 
 ---
 
 ## 10. Decisions taken (recorded)
 
-- 2026-06-29 — These two migrations are **deferred-with-trigger**, routed to net-new 0.8.20 · F-12, HITL.
-- 2026-06-29 — **0.8.20 timing must be strongly re-reviewed before proceeding** (Slice 0) · F-12, HITL.
+- 2026-07-07 — **F-19/F-20:** OPP-12 into 0.8.x; 0.8.20 = Phase-2 + breaking-pair publish; deps → 0.8.22 · HITL.
+- 2026-07-08 — **F-21:** OPP-12 **BUILD-AUTHORIZED**; build ≠ adopt; publish = separate per-`x.y.z` gate · HITL.
+- 2026-07-09 — **F-22:** open-TC schedule ratified (eu7-basis + embed_batch_cls → 0.8.20) · HITL.
+- 2026-07-09 — **F-23:** anonymous-surrogate deferred to Phase-2 (ruling 1a) · HITL. **← SUPERSEDED by TC-11.**
+- 2026-07-10 — **RUBRIC-H7 / TC-RUBRIC-2:** `can-i-deploy` contract-conformance gate folded into the 0.8.20 row;
+  **absent-or-failing gate HOLDS the pair** · HITL.
+- 2026-07-11 — **TC-RUBRIC-5:** dedicated-checkout-per-orchestration guardrail ADOPTED; folds into X0 · HITL.
+- 2026-07-11 — **Erasure axis = PROVENANCE**, not the `l:`/`h:` id-space; pin is orthogonal · HITL steer.
+- **2026-07-12 — TC-11: pin A RATIFIED.** Anonymous nodes stay `h:` **permanently**; §2(ii) **OVERRULED**; the
+  surrogate leg is **CANCELLED for the anonymous class, not deferred** · **HITL**.
+- **2026-07-12 — REQ-037 lawful-erasure carve-out APPROVED.** `excise_source` stays CLI-only (recovery seam);
+  **`erase_source()` ships as an SDK lifecycle verb**; `purge_logical_id` struck from REQ-037's forbidden list;
+  **AC-041 unchanged and stays GREEN** · **HITL**.
 
 ---
 
-## 11. Open questions for the human (raise at Slice 0, before LBOs)
+## 11. Open questions for the human (raise at Slice 0)
 
-1. **Trigger present?** For each of napi-3 and rusqlite-0.40 — is there a concrete driver now, or do we
-   keep deferring? (Recommendation: migrate only on a real trigger; otherwise defer.)
-2. **Publish vs label-only?** 0.8.20 changes shipped crates. Does it cut a real (HITL-gated) release, or
-   stay an unpublished engine-validation branch until folded into a publishing release? Reconcile the
-   even-number/"OOB net-new" labeling from F-12.
-3. **Equivalence bar.** For rusqlite's bundled-SQLite change, is byte/score-identical recall+FTS
-   required, or is a characterized, bounded delta acceptable (and who signs it)?
-4. **Sequencing vs the even line.** Confirm 0.8.20 does not collide with an in-flight engine release
-   (F-10 self-completion).
-
----
-
-## 12. Out-of-band / parallel notes
-
-- Coordinate with the program Steward (not just LBS): these touch core engine crates that even-line
-  releases also edit — confirm no concurrent engine orchestrator before spawning the rusqlite LBO.
-- This is the heaviest possible "library bump"; treat each migration like a real engine slice with full
-  codex/§9 review, not a mechanical bump.
-
----
-
-## 13. Immediate next slice
-
-**Slice 0 — timing/trigger review.** Stand up `runs/STATUS-0.8.20.md`; for each migration confirm a
-concrete trigger + re-verify current-vs-target from git; capture the equivalence baseline; **post the
-§11 questions to HITL and PAUSE.** On per-migration go, spawn the rusqlite LBO (Slice 5) and/or the
-napi LBO (Slice 10), each from `LIBRARY-BUMP-ORCHESTRATOR-TEMPLATE.md` in its own worktree, with merges
-serialized on `Cargo.lock`.
+1. **Publish gate.** 0.8.20 is the **first real publish** (`0.8.9 → 0.8.20`) and a **coordinated breaking pair**.
+   Confirm the cut, and confirm Memex `0.5.x-successor` is co-land ready. *(Publish is never implied by build.)*
+2. **eu7 basis** (F-22). Pin A keeps `SearchHit.id` byte-identical ⇒ the **no-op basis is expected to hold**.
+   Confirm no-op after Slice-40 proves it, or authorize a bounded re-baseline.
+3. **`embed_batch_cls` TS-binding parity** (F-22): add-TS, or ratify Py-first? Folds into X1.
+4. **Adoption arms** (build ≠ adopt, F-21): does any Phase-2 item change **shipped default behavior**? Each such
+   item needs its own adoption call. *(Default expectation: read-modes/registry/readiness are opt-in;
+   the erasure fixes are defect repairs and ship ON.)*

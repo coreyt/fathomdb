@@ -105,7 +105,11 @@ Code-grounded delta (`fathomdb-schema` / `fathomdb-engine`, `SCHEMA_VERSION=15`;
 - The **projection registry** (`filterable`/`rankable`/`searchable`) + the **EAV/attribute store + property-FTS**
   it projects from (only `body`-FTS exists today).
 - `dense_readiness` + `flush_embeddings()` + the atomic readiness-flip (additions to the existing worker).
-- An engine-minted **opaque surrogate `logical_id`** for anonymous nodes.
+- ~~An engine-minted **opaque surrogate `logical_id`** for anonymous nodes.~~ **⛔ OVERRULED — HITL-RATIFIED
+  2026-07-12 (TC-11 pin A).** Anonymous / doc-seeded nodes stay `h:<content-hash>` **permanently**; a surrogate
+  would destroy re-ingest-stable content-addressed identity. Any Phase-2 surrogate serves **only
+  registry-admitted governed entities**. See `structural-lifecycle-contract.md` §2 resolution (ii) and
+  `dev/design/0.8.20-erasure-and-h-end-state-v4.md` §5.
 
 ## SDK surface (Python + TS)
 
