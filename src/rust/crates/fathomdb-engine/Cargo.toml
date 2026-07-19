@@ -87,6 +87,10 @@ name = "eu7_real_corpus_ac"
 required-features = ["operator"]
 
 [[test]]
+name = "erasure_projection_registry"
+required-features = ["operator"]
+
+[[test]]
 name = "excise_source"
 required-features = ["operator"]
 
