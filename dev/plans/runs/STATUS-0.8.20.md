@@ -130,22 +130,42 @@ a false regression. **Baseline captured on CPU.**
 *(For this capture the corpus was bridged into the orchestration worktree by symlink, excluded locally via
 `.git/info/exclude`; no tracked file changed.)*
 
-### 6.3 Captured numbers
+### 6.3 Captured numbers — **CAPTURE BLOCKED (root-caused)**
 
-**Status: capture IN FLIGHT at time of writing** (CPU, `4ca70ba6`, `AGENT_LONG=1`,
-`--features default-embedder,operator`, `EU7_N_VALUES` default `1000,7667`). Harness confirmed genuinely running
-(`EU7_SETUP real_docs=18472 queries=100`), **not** skipped.
+**No baseline was captured at `4ca70ba6`. Do not fabricate one, and do not carry the historical GA-signoff
+figures forward as if they were measured here.**
 
-> **The numbers below MUST be filled in from the completed run before X0 sign-off. Do not sign X0 against an
-> unfinished capture, and do not carry forward the historical GA-signoff figures as if they were measured at
-> `4ca70ba6`.**
+**The eu7 harness cannot complete on CPU on this box.** Root-caused by bisecting N (three runs, real exit codes):
 
-| N | vector-stage recall@10 | CI | p50 ms | p99 ms | verdict |
-|---|---|---|---|---|---|
-| 1000 | *pending* | | | | |
-| 7667 | *pending* | | | | |
+| Run | N | Real exit | Outcome |
+|---|---|---|---|
+| full | 7667 (batched 256) | **101** | panic `eu7_real_corpus_ac.rs:414` — `seed drain (batch): Scheduler` |
+| probe | 200 | **101** | identical panic, same line |
+| minimal | 20 | **0** | **PASSED** — vector-stage recall@10 = 1.0000, 258.54 s |
 
----
+`drain(600_000)` → `wait_for_idle` timeout → `EngineError::Scheduler`.
+
+**The worker is NOT wedged — it is throughput.** n=20 passed cleanly, so the embed/projection path is
+functionally correct. That run reports **`seed_ms=111670` for 20 docs = 0.179 docs/sec**, about **7.3× slower**
+than the **1.3 docs/sec** the harness docstring assumes (`:97-99`). At 0.179 docs/s a **`BATCH = 256`** needs
+**~1430 s**, so it can **never** drain inside the hardcoded **600 s** — the harness is **structurally unable to
+run here at any N**, because it fails on the **first batch**. A full 7667-doc seed would need **~11.9 hours**
+even with the timeout raised.
+
+Excluded causes: weights cache is **complete** (`config.json` + `tokenizer.json` + `model.safetensors`);
+CPU load was **4.5 of 24 cores**.
+
+**The tension that must be resolved before Slice 40:** §6.1 forbids GPU for comparability, and CPU cannot
+finish ⇒ **R-20-EU7 currently has no runnable path.**
+
+**Options (Slice 40):** **(a)** reduce `BATCH` 256 → 64 (358 s, fits inside 600 s) or make `BATCH`/timeout
+env-tunable — minimal, surgical, **does not change measurement semantics**; **(b)** raise the drain timeout and
+accept a ~12 h CPU run; **(c)** investigate the 7.3× shortfall, which may itself be a real CPU-embed regression.
+**Recommend (a) + (c).**
+
+**Side-effect hazard.** The harness **writes `dev/plans/runs/eu7-latest-measurements.json` into the repo on every
+run**, so a reduced-N scouting run silently produces a file that *looks* authoritative — the n=20 run wrote
+`recall=1.0000` there. It was **deleted, not committed**. Never commit it from a scouting run. *(TC-19)*
 
 ## 7. Outstanding worktrees
 
@@ -198,7 +218,7 @@ not edit the master plan** — these are handed up for reconciliation.
 | 3 | plan §0.1 / v4 §2.2 | Registry model too coarse. The write path **enqueues** vector work (`_fathomdb_projection_state`, **`kind TEXT PRIMARY KEY`** — verified) rather than projecting it. Registry must split **row-owned** (`write_cursor`-keyed) from **kind-owned**, or the guard demands a per-cursor delete on a kind-keyed table. | — |
 | 4 | v4 §1/§2.2/§6 | The registry consumer is **`rebuild_shadow_state` (:6515)**, not `rebuild_projections` (:5949, the public entry). Taking v4 literally patches the wrong function. | — |
 | 5 | plan §0 / v4 §3.4 | `derive_logical_id` **lowercases** its inputs (`:11156`). Strengthens the dictionary-attack rationale; the stated derivation is incomplete. | — |
-| 6 | plan §7 prereq 4 | **"Baseline captured" was listed as an assumed precondition — no baseline existed.** Capture attempted at Slice 0 and is **BLOCKED** (§6.3). | **TC-13** |
+| 6 | plan §7 prereq 4 | **"Baseline captured" was listed as an assumed precondition — no baseline existed.** Capture attempted at Slice 0 and is **BLOCKED, root-caused** (§6.3): the harness's `BATCH = 256` cannot drain inside its hardcoded 600 s at the measured **0.179 docs/s** (~7.3× below the documented rate), so it fails on the **first batch at any N**. Combined with §6.1 (GPU forbidden for comparability), **R-20-EU7 has no runnable path today.** | **TC-13**, **TC-19** |
 | 7 | R-20-PUB | **The publish dry-run guard is DEAD and has been red since 0.8.14.** `test_actionlint_fixture.sh:53` greps `release.yml` for `cargo publish --dry-run -p`, but the job now delegates to `cargo-publish-if-new.sh --dry-run`. **Behavior is intact** (the helper forwards correctly) — but `./scripts/agent-test.sh` exits 1 wholesale, so a **real** publish-wiring regression would be invisible **in the first release that publishes for real**. | **TC-16** |
 | 8 | v4 §3.2 | **Slice 5's `SourceId` newtype will break the eu7 harness** (`eu7_real_corpus_ac.rs:405` builds `PreparedWrite` with `source_id: None`). v4 enumerated only two internal callers and missed the test-side ones. Sweep `src/` **and** `tests/`. | **TC-17** |
 | 9 | TC-RUBRIC-7 | Committing a §9 transcript **into the reviewed range** pollutes the next review's diff (codex re-read its own prior findings as if unfixed). Recommend committing transcripts **after** the final review round. | **TC-18** |
