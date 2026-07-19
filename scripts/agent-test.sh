@@ -13,6 +13,11 @@ run_capped test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
 run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
 
+# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
+# in the primary checkout and pass in a linked worktree. Builds its own throwaway
+# repo + worktree under mktemp -d; never git-writes into this checkout.
+run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+
 # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
 # python3 -m http.server fixture; never hits crates.io.
 run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh

@@ -8,6 +8,9 @@
 #     of it.
 #   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
 #     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
 #
 # Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
 # never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
@@ -16,7 +19,11 @@
 #   scripts/preflight.sh                              # general repo health (run anytime)
 #   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
 #   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
 #   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
 #
 # Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
 
@@ -29,9 +36,11 @@ WT=""
 EXPECT_CLOSED=""
 PLAN=""
 MIN_DISK_GB=10
+LANDING=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --landing)       LANDING=1; shift ;;
     --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
     --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
     --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
@@ -47,6 +56,11 @@ hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
 warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
 info() { printf 'INFO  %s\n' "$1" >&2; }
 ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
 
 MAIN_SHA="$(git rev-parse main)"
 
@@ -111,6 +125,36 @@ if [ -n "$EXPECT_CLOSED" ]; then
     ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
   else
     hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+  fi
+fi
+
+# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+# git-writes run in a dedicated linked worktree, never in the primary checkout.
+#
+# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+# (a linked worktree's git-dir is <common>/worktrees/<name>).
+#
+# Both paths are canonicalized before comparing. git returns these relative or
+# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+# the toplevel above normalizes that away (both read '.git' there), so a raw
+# string compare would happen to work — but only by accident of that cd. Measured:
+# with the toplevel cd removed, a raw compare run from a subdirectory of the
+# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+# this check self-sufficient rather than dependent on cwd, git version, and the
+# ordering of an unrelated line.
+if [ "$LANDING" -eq 1 ]; then
+  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+  else
+    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
   fi
 fi
 
