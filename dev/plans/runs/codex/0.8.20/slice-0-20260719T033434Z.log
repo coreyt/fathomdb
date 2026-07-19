@@ -1,0 +1,1324 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f7870-a6a8-7272-bf7e-825004685e1b
+--------
+user
+changes against '4ca70ba6'
+exec
+/bin/bash -lc 'cat MEMORY.md && for f in feedback_*.md; do [ -e "$f" ] && echo "--- $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ exited 1 in 0ms:
+cat: MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc 'git diff --stat 4ca70ba69a0100ed09cf4586dffbfe9b51d1823d && git diff 4ca70ba69a0100ed09cf4586dffbfe9b51d1823d' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 0ms:
+ dev/design/0.8.20-slice0-erasure-design.md | 243 +++++++++++++++++++++++++++++
+ dev/plans/runs/STATUS-0.8.20.md            | 182 +++++++++++++++++++++
+ scripts/agent-test.sh                      |   5 +
+ scripts/preflight.sh                       |  44 ++++++
+ scripts/tests/test_preflight_landing.sh    | 179 +++++++++++++++++++++
+ 5 files changed, 653 insertions(+)
+diff --git a/dev/design/0.8.20-slice0-erasure-design.md b/dev/design/0.8.20-slice0-erasure-design.md
+new file mode 100644
+index 00000000..da459541
+--- /dev/null
++++ b/dev/design/0.8.20-slice0-erasure-design.md
+@@ -0,0 +1,243 @@
++# 0.8.20 Slice-0 — Erasure design (X0 gate) · **v5 addendum to the v4 design of record**
++
++> **Status: PROPOSED — awaiting HITL X0 sign-off. The orchestrator has no authority to grant it.**
++>
++> **Relationship to v4.** `dev/design/0.8.20-erasure-and-h-end-state-v4.md` remains the **design of record**.
++> This document does not replace it. It (a) **re-verifies** v4's load-bearing code claims at the Slice-0 base
++> `4ca70ba6`, (b) records **four defects found in v4 itself**, (c) refines the registry design where
++> re-verification showed v4's model was too coarse, and (d) freezes the **RED-testable** work items + AC
++> allocation that Slice 5 will implement.
++>
++> **Method note.** Per `verify-design-against-code-not-just-architecture`, every claim below was re-derived from
++> source at `4ca70ba6`. Line numbers in v4 and in `plan-0.8.20.md` §0.1 were **not trusted**; where they drifted
++> the corrected anchor is given. This pass found four discrepancies — see §2.
++
++---
++
++## 1. The re-verified projection matrix (at `4ca70ba6`)
++
++Engine: `src/rust/crates/fathomdb-engine/src/lib.rs`. **W** = writes/inserts, **D** = deletes.
++
++| # | Site | fn (verified line) | `search_index` | `search_index_edges` | **`search_index_v2`** | `vector_default` | `_fathomdb_vector_rows` | `_projection_terminal` |
++|--:|------|--------------------|---|---|---|---|---|---|
++| 1 | **WRITE** | `project_canonical_node_row` **:11779** | W :11789 | — | **W :11806** | *(enqueue only — see §1.1)* | — | via `record_projection_terminal` |
++| 2 | **PURGE** | `purge_inner` **:6164** | D :6225 | D :6227 | **D :6229** | D :6231 | D :6233 | D :6236 |
++| 3 | **EXCISE** | `excise_source_inner` **:6398** | D :6427 | D :6432 | **❌ ABSENT** | D :6438 | D :6442 | D :6447 |
++| 4 | **REBUILD** | `rebuild_shadow_state` **:6515** | D :6525 / W :6548 | D :6529 / W :6577 | **❌ ABSENT** | D :6533 | D :6536 | D :6540 |
++| 5 | **TOKENIZER** | `reproject_search_index_after_tokenizer_upgrade` **:9515** | D :9519 / W :9522 | — | **❌ ABSENT** | — | — | — |
++
++**Confirmed:** `search_index_v2` is content-storing FTS5 with **no `content=''`** (`fathomdb-schema/src/lib.rs:427`)
++— it holds the body **verbatim**. It is written by site 1 and deleted **only** by site 2. Sites 3, 4 and 5 miss it.
++
++**Confirmed — why this is invisible to functional tests.** Both v2 read paths discard candidates lacking a live
++`canonical_nodes` row: the BM25F path inner-joins for corpus stats (**:11947-11950**) and the second path
++intersects an `active` set (**:11980-11986**, **:12002**). **A test that *searches* for the excised text passes on
++the broken code.** This is the single most important test-design constraint in the slice (§3).
++
++### 1.1 Refinement — v4's registry model is too coarse (row-owned vs kind-owned)
++
++v4 §2.2 lists `vector_default` and `_fathomdb_vector_rows` in `ROW_OWNED_PROJECTIONS` and asserts the write-path
++projector owns vector work. **Re-verification shows the write path does not synchronously write either table.**
++`project_canonical_node_row` (:11817-11830) instead **enqueues** by upserting `_fathomdb_projection_state`, which
++is keyed **by `kind`**, not by `write_cursor`; the async embed worker later materializes the vector rows. Rows
++that will never be vector-projected short-circuit via `record_projection_terminal`.
++
++**Consequence for the design (adopt):** the registry must model **two distinct classes**, not one.
++
++- **Row-owned** (1:1 with a canonical `write_cursor`; dies with the row): `search_index`, `search_index_edges`,
++  `search_index_v2`, `vector_default` (vec0 rowid == write_cursor), `_fathomdb_vector_rows`,
++  `_fathomdb_projection_terminal`. These are what `erase_row_projections(tx, cursor)` covers.
++- **Kind-owned watermark state** (NOT row-keyed; must **not** be deleted per-cursor): `_fathomdb_projection_state`.
++  Erasing a row must **not** rewind a kind's watermark. Rebuild resets it deliberately; erasure must leave it alone.
++
++v4's single-list model would have invited a per-cursor delete against a kind-keyed table. The
++`guard_row_owned_registry` test must therefore assert on **`write_cursor`-keyed** tables specifically and
++**explicitly allowlist** `_fathomdb_projection_state` as kind-owned, or the guard will either miss it or demand
++the wrong thing.
++
++---
++
++## 2. Defects found in the v4 design of record
++
++### D-A · **`excise_source_audit` is NOT retained permanently — v4 §3.6 is REFUTED** *(new, material)*
++
++v4 §3.6 states the audit row "retains `source_id` **permanently** (`:6479`) — by design; that is the audit trail",
++and the plan's §8 repeats it as the justification for the non-PII `source_id` rule.
++
++**Verified false.** The audit row is written into `operational_mutations` (**:6479**), and
++`enforce_provenance_retention` (**:10070**) sweeps that table **cap-first, oldest-`id`-first, with NO collection
++filter** (**:10083-10089**):
++
++```sql
++DELETE FROM operational_mutations
++ WHERE id IN (SELECT id FROM operational_mutations ORDER BY id LIMIT ?1)
++```
++
++Erasure audit rows are swept like any other op-store row. **Two consequences, both in scope for Slice 5:**
++
++1. **The erasure audit trail is not durable.** Accountability (demonstrating *that* an erasure occurred) is a
++   distinct obligation from erasure itself. A retention sweep can silently destroy the proof.
++2. **It collides with work item 9.** `excise_collection_record` operates on the op-store — the *same table* the
++   audit rows live in. The erasure record and the app payloads being erased share one retention pool.
++
++**The non-PII `source_id` rule still stands** (a swept audit row may not have been swept *yet*), but its stated
++justification must be corrected — it is currently argued from a false premise.
++
++**Recommended resolution (Slice 5):** exempt the audit collection from `enforce_provenance_retention` (filter the
++sweep by collection), and state the audit-durability guarantee explicitly. **Flagged for HITL** — it is a
++retention-policy change, not a pure defect repair.
++
++### D-B · Naming drift — `rebuild_projections` is not the function to change
++
++v4 §1/§2.2/§6 name **`rebuild_projections` :6520** as the site consuming the registry. Verified: `:6520` is inside
++**`rebuild_shadow_state` (:6515)**, a private helper. `rebuild_projections` (**:5949**) is the *public entry
++point*; `run_rebuild` (**:6496**) sits between them. Slice 5 must modify **`rebuild_shadow_state`**. Taking v4
++literally would patch the wrong function.
++
++### D-C · `derive_logical_id` **lowercases** its inputs
++
++v4 §3.4 / plan §0 give `logical_id = SHA256("{kind}:{name}")`. Verified (**:11156**): the derivation is
++`SHA256(lowercase(kind) + ":" + lowercase(name))`, and it additionally rejects a `kind` containing `:` and an
++empty `name` (:11153-11155). Case-insensitivity is load-bearing for identity collapse.
++
++**Why it matters here:** it *strengthens* v4 §3.4's dictionary-attack argument — case-folding shrinks the
++preimage space further. The telemetry-redaction requirement is unchanged; the rationale should cite the real
++derivation.
++
++### D-D · Edge-projection anchor drifted
++
++v4 §1 cites the inlined edge projection at `commit_batch` `:12166`. Verified: edge FTS projection is at
++**:12186-12194**, edge vector enqueue at **:12195+**. The *finding* (no edge projector fn exists) is
++**CONFIRMED** — the nearest thing, `prune_edge_projection_shadows` (**:4127**), only deletes.
++
++---
++
++## 3. The RED-test contract (binding on Slice 5)
++
++**Rule 1 — assert on RAW TABLE CONTENTS.** Erasure/rebuild coverage for `search_index_v2` MUST be asserted with
++direct SQL against the table, e.g. `SELECT count(*) FROM search_index_v2 WHERE write_cursor = ?` and
++`SELECT body FROM search_index_v2`. A test that issues a **search** is **invalid as an erasure witness** — both
++read paths gate on `canonical_nodes` (§1), so it passes on the broken code. Any Slice-5 test that proves erasure
++via search results must be rejected at review.
++
++**Rule 2 — the RED test must fail on today's code for the right reason.** Each item below must be demonstrated
++failing at `4ca70ba6` before the fix, and the failure output recorded in the slice `output.json`.
++
++**Rule 3 — byte-level assertions for WAL.** The WAL requirement (E5) is a claim about bytes at rest; assert by
++scanning the raw `.db` and `-wal` files for the erased body, not by querying.
++
++---
++
++## 4. Work items — RED-testable, ordered (supersedes v4 §4 where it conflicts)
++
++| # | Item | RED test (name) | Notes vs v4 |
++|---|---|---|---|
++| 1 | Extract `project_canonical_edge_row` from `commit_batch` (:12186+); `commit_batch` + rebuild call the two projectors exclusively | `rebuild_edge_projection_matches_write_path` | anchor corrected (D-D) |
++| 2 | `ROW_OWNED_PROJECTIONS` registry + `erase_row_projections` / `truncate_all_row_projections`, **row-owned vs kind-owned split** | `guard_row_owned_registry` — `sqlite_master` introspection; every `write_cursor`-keyed table registered; `_fathomdb_projection_state` allowlisted as kind-owned | **refined per §1.1** |
++| 3 | `purge_inner` (:6164), `excise_source_inner` (:6398), **`rebuild_shadow_state` (:6515)**, `reproject_search_index_after_tokenizer_upgrade` (:9515) consume the registry; delete the hand-rolled lists | `excise_source_clears_search_index_v2_raw`, `rebuild_repopulates_search_index_v2_raw`, `tokenizer_reproject_covers_v2` — **RAW TABLE ASSERTIONS** | fn name corrected (D-B) |
++| 4 | `wal_checkpoint(TRUNCATE)` inside erasure verbs; bounded retry; typed `ErasureIncomplete` on persistent BUSY; non-zero CLI exit | `erasure_wal_bytes_absent`, `erasure_busy_yields_incomplete_not_success` | as v4 |
++| 5 | `SourceId` newtype replaces `source_id: Option<String>` on public `PreparedWrite` (:2024, :2051); closes the Rust facade (`fathomdb/src/lib.rs:27`, `Engine::write` pub :3364) | `unprovenanced_public_write_does_not_compile` (trybuild) + Py/TS raises | as v4 |
++| 6 | Engine-derived rows take reserved `_engine:*` provenance | `no_canonical_row_has_null_source_id` | as v4 |
++| 7 | Migration back-fills `source_id='_legacy:pre-0.8.20'` **WHERE `logical_id IS NULL` ONLY** | `legacy_backfill_spares_governed_rows`; `excise_source _legacy:` deletes **no** governed row | as v4 |
++| 8 | Telemetry **selective redaction** (not truncation) on purge/erase | `purged_id_absent_from_sink`, `unrelated_sink_records_survive` | rationale corrected (D-C) |
++| 9 | `excise_collection_record(collection, record_key)` + CLI | `op_store_record_erasable_by_key` | as v4 |
++| **9a** | **Audit-durability: exempt the erasure-audit collection from `enforce_provenance_retention` (:10070)** | `erasure_audit_survives_retention_sweep` | **NEW — D-A; HITL-gated** |
++| 9b | `erase_source(source_id)` SDK lifecycle verb (Py + TS + Rust facade), one engine path with `excise_source` | `sdk_only_consumer_erases_without_cli`; **AC-041 still GREEN** | as v4 |
++| 10 | `ingest_with_extractor` uses `d.source_doc_id` (:1934/:3598), not the model echo (:3643-3646, :3770-3771) | `extractor_omitting_source_doc_id_still_excisable` | anchors confirmed |
++| 11 | `doctor orphan-provenance` read-only verb | `doctor_lists_per_source_counts` | as v4 |
++| 12 | Docs: erasure boundary, non-PII `source_id` (**corrected rationale**), re-generate exports | — | D-A |
++
++**Not gating Slice 0:** Go `fathom-integrity` erasure detection (no Go source in-tree; gitignored).
++
++---
++
++## 5. AC allocation — **the plan's "start at AC-078" is UNSAFE**
++
++`plan-0.8.20.md` §3 states the ceiling is **AC-077** and that new ACs "continue from" it. Re-verification shows
++that is a **reserved-id collision**:
++
++- **AC-077 is a RESERVED PLACEHOLDER**, not a defined gate — `dev/acceptance.md:1286` reserves it for the
++  **IR-eval IR-1/IR-2** initiative ("no fabricated numbers"; thresholds all TBD).
++- **AC-078 is *conditionally* reserved to the same initiative** — `:1297`: *"+ AC-078… only if the consensus
++  splits the measure."* A naive `grep -o 'AC-[0-9]*' | tail` returns AC-078 from this prose and will mislead.
++- Highest **defined, non-reserved** AC is **AC-076** (`:1147`). AC-075/076 are landed.
++
++**Recommendation (HITL call):** 0.8.20 mints its ACs starting at **AC-079**, leaving AC-077/078 to IR-1/IR-2.
++
++**And mint few.** Per the locked-`acceptance.md` policy (`acceptance-md-locked-no-feature-acs`), requirements are
++tracked by **requirement id + TDD test name**, not per-feature ACs. R-20-E1…E8 and the Phase-2 reqs are tracked by
++the §4 test names above. Only genuinely gated surfaces mint an AC:
++
++| New AC | Covers | Mirrors |
++|---|---|---|
++| **AC-079** | Governed-surface delta (Phase-2 + erasure API) vs the conformance allowlist — **HITL-SIGNED**; `recovery_denylist` unchanged (stays five) | AC-074 |
++| **AC-080** | Erasure completeness at rest: post-erase, the body is absent from **every** row-owned projection **and** the `-wal` bytes (raw-table + raw-byte assertions) | new (R-20-E1/E5) |
++
++**AC-041 is UNCHANGED and must stay GREEN** — it tests only the REQ-054 five-name denylist; `erase_source` is not
++one of the five.
++
++---
++
++## 6. Decisions owed to the HITL (options + recommendation; the orchestrator does not decide these)
++
++| # | Decision | Options | Recommendation |
++|---|---|---|---|
++| 1 | **eu7 basis** (F-22, R-20-EU7) | (a) no-op basis; (b) bounded re-baseline | **(a) no-op**, *conditional on proof at Slice 40* — see §7 |
++| 2 | **`embed_batch_cls` TS parity** (F-22) | (a) add TS binding; (b) ratify Py-first, document the asymmetry | **(a) add TS** — the gap is already a *documented known blind-spot* (`napi:709`, mirrored `py:2088`), and X1 parity is a release gate. Deferring again converts a known gap into a shipped asymmetry in the **first published release since 0.8.9** |
++| 3 | **Audit durability (D-A)** | (a) exempt audit collection from the retention sweep; (b) accept sweepable audit + document | **(a)** — an erasure verb whose proof can be silently swept cannot support an accountability claim |
++| 4 | **AC id allocation (§5)** | (a) start AC-079; (b) start AC-078 and push IR-1/IR-2 later | **(a)** — avoids collision with a live reservation at zero cost |
++| 5 | **Adoption arms** (build ≠ adopt, F-21) | per-item | read-modes / registry / readiness are **opt-in**; the erasure fixes are **defect repairs and ship ON**; `SourceId` is **BREAKING** and needs its own call |
++| 6 | **Publish gate** (R-20-PUB) | — | Out of Slice-0 scope. Separate per-`x.y.z` HITL gate; confirm Memex `0.5.x-successor` co-land readiness |
++
++---
++
++## 7. R-20-EU7 — what would actually prove the no-op basis
++
++**Claim to prove:** Pin A keeps `SearchHit.id` byte-identical, so no gold-remap / re-baseline is needed.
++
++**Proof obligation at Slice 40** (all three; any failure ⇒ bounded re-baseline):
++
++1. `IdSpace::to_prefixed()` remains byte-identical to the pre-0.8.19 `stable_id` for `l:`/`h:`/`p:` — assert on a
++   frozen fixture set, not by inspection.
++2. **Migration guard: rows transitioning `logical_id NULL → NOT NULL` == 0** (the pin's invariant, R-20-SUR).
++3. eu7 vector-stage recall at the Slice-40 tip is **statistically indistinguishable** from the Slice-0 baseline
++   (§8) — same N, same seeds, **same backend**.
++
++**Hard constraint — eu7 is a CPU same-backend gate.** See §8; a GPU-run eu7 number is **not comparable** to the
++recorded floor and must never be used as the basis.
++
++---
++
++## 8. eu7 baseline — backend constraint (verified, load-bearing)
++
++The HITL GPU mandate (`repo-must-use-gpu-for-eval-when-3090-room`) directs eval/embed work onto the 3090s when
++there is room. **It does not apply to the eu7 recall gate**, by that mandate's own fidelity caveat:
++
++| Backend | n=7667 vector-stage recall@10 | CI | vs 0.90 floor (one-sided `ci_hi >= floor`) |
++|---|---|---|---|
++| **CPU** (GA-signoff, `GA-signoff-eu7-remeasure-20260608T172804Z.json`) | **0.8960** | [0.8640, **0.9250**] | **PASS** |
++| **GPU** (0.8.14, `0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log:73`) | **0.8330** | [0.8010, **0.8640**] | **FAIL** |
++
++The GPU figure is a **cross-backend artifact**, not a regression (it is the TC-5 re-baseline driver, scheduled
++0.8.23). Running the 0.8.20 baseline on GPU would manufacture a false regression and could wrongly force a
++re-baseline. **The eu7 basis decision must be taken on CPU numbers only.**
++
++### 8.1 Harness defect found — the documented run command does not work
++
++`src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:85-86` documents:
++
++```text
++AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
++  --test eu7_real_corpus_ac -- --nocapture
++```
++
++This **fails with exit 101** — the target also requires the **`operator`** feature:
++`error: target 'eu7_real_corpus_ac' in package 'fathomdb-engine' requires the features: 'operator'`.
++The working invocation is `--features default-embedder,operator`. Fix the docstring in Slice 5.
++
++### 8.2 Corpus is not reachable from a worktree
++
++`data/corpus-data/` is **gitignored** (`.gitignore:9`) and exists only in the primary checkout (2.1 GB). From a
++linked worktree `load_subset_or_skip` finds no corpus and the test **SKIPS** — printing `[skip]` and returning
++**exit 0**. Combined with §8.1 this is a double vacuous-green hazard: an unwary run reports success having
++measured nothing. Slice 40 must assert the harness actually ran (non-skip witness), not merely that it exited 0.
+diff --git a/dev/plans/runs/STATUS-0.8.20.md b/dev/plans/runs/STATUS-0.8.20.md
+new file mode 100644
+index 00000000..d41a062a
+--- /dev/null
++++ b/dev/plans/runs/STATUS-0.8.20.md
+@@ -0,0 +1,182 @@
++# STATUS — FathomDB 0.8.20 · OPP-12 Phase-2 + erasure completeness + the breaking-pair publish
++
++> **Board of record** for 0.8.20 (`orchestration.md` §12.5). Ladder: `dev/plans/plan-0.8.20.md`.
++> Design of record: `dev/design/0.8.20-erasure-and-h-end-state-v4.md`.
++> Slice-0 design (v5 addendum): `dev/design/0.8.20-slice0-erasure-design.md`.
++> **Update at every slice close.** Verify state from git, never from narration.
++
++**Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
++(branch `orch-0.8.20`, dedicated linked worktree per **TC-RUBRIC-5**).
++**Last updated:** 2026-07-19 (Slice 0 in flight).
++
++---
++
++## 1. Current state
++
++| | |
++|---|---|
++| **Slice in flight** | **Slice 0 — X0 design gate** |
++| **Status** | Deliverables authored; **awaiting codex §9 → HITL X0 sign-off** |
++| **Blocks** | Slice 0 blocks **everything** (X0 process gate) |
++| **Next action** | Codex §9 on the Slice-0 package → drive to terminal PASS → **return to Steward for HITL X0 sign-off** |
++
++**The orchestrator has no authority to grant X0 sign-off.** Slices 5+ MUST NOT start until the HITL signs.
++
++---
++
++## 2. Slice ladder
++
++| Slice | Title | Depends-on | Status |
++|------:|-------|-----------|--------|
++| **0** | **X0 design gate** | — | **IN FLIGHT** |
++| 5 | Erasure completeness (R-20-E1…E8, +E9a) | 0 | not started |
++| 10 | `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV) | 0 | not started |
++| 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
++| 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
++| 25 | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | not started |
++| 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started |
++| 40 | Verification + release readiness | 5,30 | not started |
++
++**Parallelization.** `5 ∥ 10 ∥ 15` after Slice 0. Slice 5 fixes **defects in shipped code** and does not wait on
++the registry. All three touch `engine/src/lib.rs` ⇒ **serialize the merges** (rebase-then-merge one at a time).
++**One `maturin develop` at a time** (shared `.venv` mutex) — and **never from a worktree**.
++**Max 3 concurrent worktrees.** Canary the first launch of each new work-type before parallelizing.
++
++---
++
++## 3. AC scoreboard
++
++**⚠ The plan's "new ACs continue from the AC-077 ceiling" is a RESERVED-ID COLLISION.** AC-077 is a *reserved
++placeholder* for the IR-eval IR-1/IR-2 initiative (`dev/acceptance.md:1286`) and **AC-078 is conditionally
++reserved to the same initiative** (`:1297`). Highest **defined, non-reserved** AC = **AC-076**.
++**Recommendation: mint from AC-079.** *(HITL decision #4.)*
++
++| AC | Covers | Status |
++|---|---|---|
++| **AC-079** *(proposed)* | Governed-surface delta (Phase-2 + erasure API) vs conformance allowlist — HITL-SIGNED; `recovery_denylist` unchanged (five) | proposed |
++| **AC-080** *(proposed)* | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | proposed |
++| **AC-041** | REQ-054 five-name recovery denylist | **UNCHANGED — must stay GREEN** (`erase_source` is not a denylist name) |
++
++Everything else is tracked by **requirement id + TDD test name** per the locked-`acceptance.md` policy — see
++`0.8.20-slice0-erasure-design.md` §4.
++
++---
++
++## 4. Open HITL decisions (options + recommendation)
++
++| # | Decision | Recommendation |
++|---|---|---|
++| 1 | **eu7 basis** (F-22) — no-op vs bounded re-baseline | **no-op, conditional on Slice-40 proof** (design §7). **Must be decided on CPU numbers only** — §6 |
++| 2 | **`embed_batch_cls` TS parity** (F-22) | **add the TS binding.** Already a documented blind-spot (`napi:709`, `py:2088`); X1 parity is a release gate and this is the first published release since 0.8.9 |
++| 3 | **Erasure-audit durability** (design §2 D-A — **new finding**) | **exempt the audit collection from `enforce_provenance_retention`.** Retention-policy change ⇒ HITL |
++| 4 | **AC id allocation** (§3) | **start at AC-079** |
++| 5 | **Adoption arms** (build ≠ adopt, F-21) | read-modes/registry/readiness **opt-in**; erasure fixes **ship ON**; **`SourceId` is BREAKING — own call** |
++| 6 | **Publish gate** (R-20-PUB) | Out of Slice-0 scope. Separate per-`x.y.z` gate; confirm Memex `0.5.x-successor` co-land readiness |
++
++---
++
++## 5. Process pins (bind every later slice)
++
++### 5.1 TC-RUBRIC-7 — codex §9 transcript path (**PINNED**)
++
++The rubric requires "a durable release-namespaced path" but names none. **Pinned for 0.8.20:**
++
++```text
++dev/plans/runs/codex/0.8.20/<slice>-<UTC-timestamp>.md
++```
++
++e.g. `dev/plans/runs/codex/0.8.20/slice-0-20260719T034500Z.md`. **Every slice persists its §9 transcript here**,
++including fix-N re-reviews (one file per review round). Invoke codex **only** via
++`dev/agent-tools/codex-nostdin.sh` (bare `codex exec` deadlocks on stdin).
++
++### 5.2 TC-RUBRIC-5 — dedicated checkout
++
++Orchestration and **all landing git-writes** run in a dedicated linked worktree. `scripts/preflight.sh --landing`
++**HARD-fails on the primary checkout**, detecting primary via
++`git rev-parse --git-dir` == `git rev-parse --git-common-dir`. **Built in Slice 0** (it did not previously exist).
++
++### 5.3 Release DoD (every slice)
++
++`cargo clippy --workspace --all-targets` **and** `cargo check --workspace --all-targets`, **both exit 0**.
++Read the **real** exit code (`$?` / `PIPESTATUS`) — a trailing `echo` masking a non-zero exit is a live trap in
++this repo, and **it recurred during Slice 0** (see §6.2).
++
++---
++
++## 6. R-20-EU7 baseline
++
++### 6.1 Backend constraint — **eu7 is a CPU same-backend gate**
++
++| Backend | n=7667 vector-stage recall@10 | CI | vs 0.90 floor (one-sided `ci_hi >= floor`) |
++|---|---|---|---|
++| **CPU** (GA-signoff) | **0.8960** | [0.8640, **0.9250**] | **PASS** |
++| **GPU** (0.8.14 run log `:73`) | **0.8330** | [0.8010, **0.8640**] | **FAIL** |
++
++The GPU figure is a **cross-backend artifact**, not a regression (TC-5 re-baseline driver, scheduled 0.8.23).
++**The HITL GPU-eval mandate does not apply to eu7** — by its own fidelity caveat. A GPU eu7 run would manufacture
++a false regression. **Baseline captured on CPU.**
++
++### 6.2 Two vacuous-green hazards found in the harness (Slice 40 must guard both)
++
++1. **The documented run command is wrong.** `tests/eu7_real_corpus_ac.rs:85-86` omits the required `operator`
++   feature ⇒ **exit 101**. Working: `--features default-embedder,operator`. *Fix the docstring in Slice 5.*
++2. **The corpus is unreachable from a worktree.** `data/corpus-data/` is gitignored (`.gitignore:9`) and lives
++   only in the primary checkout (2.1 GB). From a linked worktree the harness **SKIPS and exits 0**.
++   Slice 40 must assert a **non-skip witness**, not merely exit 0.
++
++*(For this capture the corpus was bridged into the orchestration worktree by symlink, excluded locally via
++`.git/info/exclude`; no tracked file changed.)*
++
++### 6.3 Captured numbers
++
++**Status: capture IN FLIGHT at time of writing** (CPU, `4ca70ba6`, `AGENT_LONG=1`,
++`--features default-embedder,operator`, `EU7_N_VALUES` default `1000,7667`). Harness confirmed genuinely running
++(`EU7_SETUP real_docs=18472 queries=100`), **not** skipped.
++
++> **The numbers below MUST be filled in from the completed run before X0 sign-off. Do not sign X0 against an
++> unfinished capture, and do not carry forward the historical GA-signoff figures as if they were measured at
++> `4ca70ba6`.**
++
++| N | vector-stage recall@10 | CI | p50 ms | p99 ms | verdict |
++|---|---|---|---|---|---|
++| 1000 | *pending* | | | | |
++| 7667 | *pending* | | | | |
++
++---
++
++## 7. Outstanding worktrees
++
++| Path | Branch | Purpose | State |
++|---|---|---|---|
++| `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
++| `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | **active** (implementer) |
++
++Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
++
++---
++
++## 8. Recent decisions (newest first)
++
++- **2026-07-19 — Slice-0 (this board):** eu7 baseline pinned to **CPU same-backend**; TC-RUBRIC-7 transcript path
++  pinned; AC allocation recommended from **AC-079** (reserved-id collision found); **four defects found in the v4
++  design of record** (design §2), incl. the **non-durable erasure audit trail**.
++- 2026-07-12 — **TC-11 pin A RATIFIED** (HITL). Anonymous nodes stay `h:` permanently; §2(ii) **OVERRULED**;
++  surrogate leg **CANCELLED** for the anonymous class. **CLOSED — do not re-open.**
++- 2026-07-12 — **REQ-037 lawful-erasure carve-out APPROVED** (HITL). `excise_source` stays CLI-only;
++  **`erase_source()` ships as an SDK lifecycle verb**; AC-041 unchanged and stays GREEN.
++- 2026-07-11 — TC-RUBRIC-5 dedicated-checkout guardrail ADOPTED (HITL).
++- 2026-07-11 — Erasure axis = **PROVENANCE**, not the `l:`/`h:` id-space (HITL steer).
++- 2026-07-10 — RUBRIC-H7 `can-i-deploy` gate; **absent-or-failing gate HOLDS the breaking pair** (HITL).
++- 2026-07-09 — F-22 open-TC schedule; 2026-07-08 — F-21 build-authorized (build ≠ adopt);
++  2026-07-07 — F-19/F-20 scope.
++
++---
++
++## 9. Compaction-resume checklist
++
++1. `git -C fathomdb-worktrees/orch-0.8.20 rev-parse --abbrev-ref HEAD` ⇒ must be `orch-0.8.20`.
++2. Read this board §1 (current slice) + §4 (open HITL decisions).
++3. Read `plan-0.8.20.md` §4 (ladder) + `0.8.20-slice0-erasure-design.md` §2 (defects) and §4 (work items).
++4. `git worktree list` — reconcile against §7.
++5. **Never** trust a "green" without a printed real exit code.
++6. **TC-11 is CLOSED.** Do not re-open the `h:` pin.
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index 4b59d5ed..a66b1126 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -13,6 +13,11 @@ run_capped test-set-version bash scripts/tests/test_set_version.sh
+ # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+ run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+ 
++# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
++# in the primary checkout and pass in a linked worktree. Builds its own throwaway
++# repo + worktree under mktemp -d; never git-writes into this checkout.
++run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
++
+ # Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+ # python3 -m http.server fixture; never hits crates.io.
+ run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+diff --git a/scripts/preflight.sh b/scripts/preflight.sh
+index e8654932..a246e9a3 100755
+--- a/scripts/preflight.sh
++++ b/scripts/preflight.sh
+@@ -8,6 +8,9 @@
+ #     of it.
+ #   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+ #     never closed. The --expect-closed check greps the plan for the CLOSED block.
++#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
++#     and all landing git-writes to run in a dedicated linked worktree. --landing
++#     HARD-fails when invoked from the primary checkout.
+ #
+ # Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+ # never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+@@ -16,8 +19,12 @@
+ #   scripts/preflight.sh                              # general repo health (run anytime)
+ #   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+ #   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
++#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+ #   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+ #
++# --landing composes with every other flag and is inert unless passed: without it
++# the script behaves exactly as it did before the flag existed.
++#
+ # Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+ 
+ set -euo pipefail
+@@ -29,9 +36,11 @@ WT=""
+ EXPECT_CLOSED=""
+ PLAN=""
+ MIN_DISK_GB=10
++LANDING=0
+ 
+ while [ $# -gt 0 ]; do
+   case "$1" in
++    --landing)       LANDING=1; shift ;;
+     --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+     --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+     --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+@@ -48,6 +57,11 @@ warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+ info() { printf 'INFO  %s\n' "$1" >&2; }
+ ok()   { printf 'ok    %s\n' "$1" >&2; }
+ 
++# Resolve an existing directory to its absolute, symlink-resolved path. Uses
++# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
++# (and returns non-zero) if the path is not a reachable directory.
++abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
++
+ MAIN_SHA="$(git rev-parse main)"
+ 
+ # --- 1. Canonical repo is not mid-operation -------------------------------------
+@@ -114,6 +128,36 @@ if [ -n "$EXPECT_CLOSED" ]; then
+   fi
+ fi
+ 
++# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
++# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
++# git-writes run in a dedicated linked worktree, never in the primary checkout.
++#
++# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
++# (a linked worktree's git-dir is <common>/worktrees/<name>).
++#
++# Both paths are canonicalized before comparing. git returns these relative or
++# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
++# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
++# the toplevel above normalizes that away (both read '.git' there), so a raw
++# string compare would happen to work — but only by accident of that cd. Measured:
++# with the toplevel cd removed, a raw compare run from a subdirectory of the
++# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
++# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
++# this check self-sufficient rather than dependent on cwd, git version, and the
++# ordering of an unrelated line.
++if [ "$LANDING" -eq 1 ]; then
++  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
++  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
++  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
++    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
++  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
++    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
++    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
++  else
++    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
++  fi
++fi
++
+ # --- Summary (JSON, last line) ---------------------------------------------------
+ json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+ 
+diff --git a/scripts/tests/test_preflight_landing.sh b/scripts/tests/test_preflight_landing.sh
+new file mode 100755
+index 00000000..20a8cb2e
+--- /dev/null
++++ b/scripts/tests/test_preflight_landing.sh
+@@ -0,0 +1,179 @@
++#!/usr/bin/env bash
++# scripts/tests/test_preflight_landing.sh — coverage for `preflight.sh --landing`.
++#
++# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11) requires that release orchestration and
++# ALL landing git-writes run in a dedicated linked worktree, never in the primary
++# checkout. `--landing` is the mechanical enforcement of that rule, per the
++# standing guardrail-failures-fix-tooling-not-people principle.
++#
++# Detection under test: primary checkout <=> `git rev-parse --git-dir` equals
++# `git rev-parse --git-common-dir`, compared AFTER resolving both to absolute,
++# symlink-resolved paths.
++#
++# On the canonicalization: on git 2.43 invoked from a SUBDIRECTORY, --git-dir
++# returns an absolute path while --git-common-dir returns a relative one
++# ('../.git'). preflight.sh cds to the repo toplevel before the check, which
++# normalizes that away today — so a raw string compare currently behaves the same
++# and the subdir arms below pass either way. The canonicalization still matters:
++# measured, with that toplevel cd removed, a RAW compare from a subdirectory of
++# the primary checkout fails OPEN (exit 0, "cleared for landing") while the
++# canonicalized compare still HARD-fails. Since no behavioral arm can distinguish
++# the two while the cd stands, Arm 7 asserts the canonicalization structurally —
++# same idiom as the 'User-Agent:' grep in test_assert_co_tagging.sh.
++#
++# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
++# test never git-writes into the real checkout and does not care whether the
++# developer's tree is clean.
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
++
++FAILED=0
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
++
++TMPROOT="$(mktemp -d)"
++cleanup() {
++  # Only ever remove a path we created under the system temp dir.
++  case "$TMPROOT" in
++    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
++    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
++  esac
++}
++trap cleanup EXIT
++
++# --- Fixture: a throwaway primary checkout + a linked worktree inside it -------
++# preflight.sh does `git rev-parse main` under `set -euo pipefail`, so the fixture
++# repo must actually have a `main` branch with a commit.
++PRIMARY="$TMPROOT/primary"
++mkdir -p "$PRIMARY"
++git init -q -b main "$PRIMARY"
++git -C "$PRIMARY" config user.email preflight-test@example.invalid
++git -C "$PRIMARY" config user.name 'Preflight Test'
++mkdir -p "$PRIMARY/src" "$PRIMARY/scripts"
++printf 'fixture\n' >"$PRIMARY/src/keep.txt"
++git -C "$PRIMARY" add -A
++git -C "$PRIMARY" commit -q -m 'fixture: initial commit'
++
++LINKED="$TMPROOT/linked"
++git -C "$PRIMARY" worktree add -q -b landing-fixture "$LINKED" >/dev/null 2>&1
++
++# run_preflight <cwd> [args...] -> sets RC and OUT (stdout+stderr merged)
++run_preflight() {
++  local cwd="$1"; shift
++  set +e
++  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
++  RC=$?
++  set -e
++}
++
++# --- Arm 1: --landing in a linked worktree => exit 0, JSON reports pass --------
++run_preflight "$LINKED" --landing
++if [ "$RC" -eq 0 ]; then
++  pass "--landing in a linked worktree exits 0"
++else
++  fail "--landing in a linked worktree should exit 0; got rc=$RC, out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q '"preflight":"pass"'; then
++  pass "--landing in a linked worktree reports \"preflight\":\"pass\""
++else
++  fail "expected \"preflight\":\"pass\" in summary; got: $OUT"
++fi
++
++# --- Arm 2: --landing in the primary checkout => HARD fail, non-zero ----------
++run_preflight "$PRIMARY" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing in the primary checkout exits non-zero"
++else
++  fail "--landing in the primary checkout MUST fail; got rc=0, out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q '^HARD .*TC-RUBRIC-5'; then
++  pass "--landing in the primary checkout emits a HARD line naming TC-RUBRIC-5"
++else
++  fail "expected a HARD line naming TC-RUBRIC-5; got: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q '"preflight":"fail"'; then
++  pass "--landing in the primary checkout reports \"preflight\":\"fail\""
++else
++  fail "expected \"preflight\":\"fail\" in summary; got: $OUT"
++fi
++
++# --- Arm 3: regression guard — no --landing, primary checkout still passes -----
++run_preflight "$PRIMARY"
++if [ "$RC" -eq 0 ]; then
++  pass "regression guard: primary checkout without --landing still exits 0"
++else
++  fail "plain invocation on the primary checkout must still pass; got rc=$RC, out: $OUT"
++fi
++if printf '%s' "$OUT" | grep -q 'TC-RUBRIC-5'; then
++  fail "plain invocation must not mention TC-RUBRIC-5; got: $OUT"
++else
++  pass "regression guard: plain invocation says nothing about TC-RUBRIC-5"
++fi
++
++# --- Arm 4: invoked from a SUBDIRECTORY of each tree --------------------------
++# Guards the cwd-independence of the check as a whole (the toplevel cd plus the
++# canonicalization). See the header for why this arm cannot, on its own,
++# distinguish a raw compare from a canonicalized one.
++run_preflight "$PRIMARY/scripts" --landing
++if [ "$RC" -ne 0 ]; then
++  pass "--landing from a subdir of the primary checkout still fails (canonicalized)"
++else
++  fail "subdir of primary MUST still fail (relative vs absolute git-dir); got rc=0, out: $OUT"
++fi
++
++mkdir -p "$LINKED/scripts"
++run_preflight "$LINKED/scripts" --landing
++if [ "$RC" -eq 0 ]; then
++  pass "--landing from a subdir of a linked worktree still passes"
++else
++  fail "subdir of a linked worktree should pass; got rc=$RC, out: $OUT"
++fi
++
++# --- Arm 5: --landing composes with the existing flags ------------------------
++run_preflight "$LINKED" --landing --worktree "$LINKED" --min-disk-gb 1
++if [ "$RC" -eq 0 ]; then
++  pass "--landing composes with --worktree/--min-disk-gb in a linked worktree"
++else
++  fail "--landing + --worktree should pass in a linked worktree; got rc=$RC, out: $OUT"
++fi
++
++run_preflight "$PRIMARY" --worktree "$LINKED" --landing --min-disk-gb 1
++if [ "$RC" -ne 0 ]; then
++  pass "--landing composes with --worktree and still fails on the primary checkout"
++else
++  fail "--landing must fail on primary even alongside --worktree; got rc=0, out: $OUT"
++fi
++
++# --- Arm 6: usage header documents --landing ----------------------------------
++if grep -q -- '--landing' "$PREFLIGHT"; then
++  pass "preflight.sh documents/handles --landing"
++else
++  fail "preflight.sh has no --landing handling"
++fi
++
++# --- Arm 7: structural — the landing compare is canonicalized, not raw --------
++# Regression guard for a fail-open no behavioral arm can currently reach: if the
++# comparands are ever reverted to raw `git rev-parse` output, removing or moving
++# the toplevel cd silently clears the primary checkout for landing.
++if grep -qE 'GITDIR_ABS="\$\(abs_dir ' "$PREFLIGHT" \
++  && grep -qE 'COMMONDIR_ABS="\$\(abs_dir ' "$PREFLIGHT"; then
++  pass "landing check compares canonicalized paths (abs_dir), not raw git output"
++else
++  fail "landing check must canonicalize both git-dir and git-common-dir via abs_dir"
++fi
++
++if grep -qE '^\s*GITDIR_ABS="\$\(git rev-parse' "$PREFLIGHT" \
++  || grep -qE '^\s*COMMONDIR_ABS="\$\(git rev-parse' "$PREFLIGHT"; then
++  fail "landing check compares RAW git rev-parse output — fails open without the toplevel cd"
++else
++  pass "landing check does not compare raw git rev-parse output"
++fi
++
++if [ "$FAILED" -gt 0 ]; then
++  printf '\n%d test(s) failed\n' "$FAILED" >&2
++  exit 1
++fi
++printf '\nAll preflight --landing tests passed\n'
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/preflight.sh && sed -n '1,220p' scripts/agent-test.sh && git status --short" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# preflight.sh — orchestrator-side gate, run BEFORE spawning an implementer.
+#
+# Codifies the checks whose absence has cost real slices:
+#   * agent-worktree-stale-base-trap — a worktree cut from a stale base (main had
+#     advanced ~206 commits) silently lost two slices. The --worktree check below
+#     fails loudly when a worktree's HEAD is neither current main nor a descendant
+#     of it.
+#   * dependency-not-actually-CLOSED — spawning a slice whose declared dependency
+#     never closed. The --expect-closed check greps the plan for the CLOSED block.
+#   * landing-in-the-primary-checkout — TC-RUBRIC-5 requires release orchestration
+#     and all landing git-writes to run in a dedicated linked worktree. --landing
+#     HARD-fails when invoked from the primary checkout.
+#
+# Witness-first (orchestration.md §1.5): every check derives from the repo on disk,
+# never from belief. Emits a one-line JSON summary; exits non-zero on any HARD fail.
+#
+# Usage:
+#   scripts/preflight.sh                              # general repo health (run anytime)
+#   scripts/preflight.sh --worktree /tmp/fdb-slice-5-... # + stale-base guard on a freshly cut WT
+#   scripts/preflight.sh --expect-closed 5 --plan dev/plans/plan-0.8.6.md
+#   scripts/preflight.sh --landing                    # TC-RUBRIC-5: refuse to land in the primary checkout
+#   scripts/preflight.sh --worktree <wt> --expect-closed 5 --plan <plan> --min-disk-gb 15
+#
+# --landing composes with every other flag and is inert unless passed: without it
+# the script behaves exactly as it did before the flag existed.
+#
+# Exit codes: 0 = all HARD checks pass (WARN/INFO may print); 1 = a HARD check failed.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+CANON="$(pwd)"
+
+WT=""
+EXPECT_CLOSED=""
+PLAN=""
+MIN_DISK_GB=10
+LANDING=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --landing)       LANDING=1; shift ;;
+    --worktree)      WT="${2:?--worktree needs a path}"; shift 2 ;;
+    --expect-closed) EXPECT_CLOSED="${2:?--expect-closed needs a slice id}"; shift 2 ;;
+    --plan)          PLAN="${2:?--plan needs a file}"; shift 2 ;;
+    --min-disk-gb)   MIN_DISK_GB="${2:?--min-disk-gb needs a number}"; shift 2 ;;
+    *) printf 'preflight: unknown arg %q\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+HARD_FAILS=()
+WARNS=()
+
+hard() { HARD_FAILS+=("$1"); printf 'HARD  %s\n' "$1" >&2; }
+warn() { WARNS+=("$1");      printf 'WARN  %s\n' "$1" >&2; }
+info() { printf 'INFO  %s\n' "$1" >&2; }
+ok()   { printf 'ok    %s\n' "$1" >&2; }
+
+# Resolve an existing directory to its absolute, symlink-resolved path. Uses
+# cd+pwd -P rather than `readlink -f` so this works on macOS too. Prints nothing
+# (and returns non-zero) if the path is not a reachable directory.
+abs_dir() { ( cd "$1" 2>/dev/null && pwd -P ); }
+
+MAIN_SHA="$(git rev-parse main)"
+
+# --- 1. Canonical repo is not mid-operation -------------------------------------
+GITDIR="$(git rev-parse --git-dir)"
+if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+  hard "canonical repo is mid-rebase — finish or abort before spawning"
+elif [ -f "$GITDIR/MERGE_HEAD" ]; then
+  hard "canonical repo is mid-merge — finish or abort before spawning"
+elif [ -f "$GITDIR/CHERRY_PICK_HEAD" ]; then
+  hard "canonical repo is mid-cherry-pick — finish or abort before spawning"
+else
+  ok "canonical repo is not mid-merge/rebase/cherry-pick"
+fi
+
+# --- 2. Tracked source is clean (dev/ docs churn is expected, so only gate src/) -
+DIRTY_SRC="$(git status --porcelain -- src/ scripts/ mkdocs.yml 2>/dev/null || true)"
+if [ -n "$DIRTY_SRC" ]; then
+  warn "tracked source dirty on canonical main (commit/stash before a worktree inherits a stale base):"
+  printf '%s\n' "$DIRTY_SRC" | sed 's/^/        /' >&2
+else
+  ok "tracked source (src/ scripts/ mkdocs.yml) is clean"
+fi
+
+# --- 3. Disk headroom (worktrees + per-worktree target/ are not free) ------------
+WT_PARENT="${WT:+$(dirname "$WT")}"; WT_PARENT="${WT_PARENT:-/tmp}"
+FREE_GB="$(df -BG --output=avail "$WT_PARENT" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "$MIN_DISK_GB" ]; then
+  hard "only ${FREE_GB}G free on $WT_PARENT (need >= ${MIN_DISK_GB}G; prune stale worktrees)"
+else
+  ok "disk headroom on $WT_PARENT: ${FREE_GB:-?}G free (>= ${MIN_DISK_GB}G)"
+fi
+
+# --- 4. Worktree stale-base guard (the load-bearing check) -----------------------
+if [ -n "$WT" ]; then
+  if [ ! -d "$WT" ]; then
+    hard "worktree path does not exist: $WT"
+  elif [ "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || echo MISSING)" != "$WT" ]; then
+    hard "not a git worktree rooted at: $WT"
+  else
+    WT_HEAD="$(git -C "$WT" rev-parse HEAD)"
+    if [ "$WT_HEAD" = "$MAIN_SHA" ]; then
+      ok "worktree HEAD == current main ($MAIN_SHA) — freshly cut, no stale base"
+    elif [ "$(git merge-base "$MAIN_SHA" "$WT_HEAD")" = "$MAIN_SHA" ]; then
+      warn "worktree has advanced past main (main is an ancestor) — OK if it carries this slice's commits"
+    else
+      hard "STALE BASE: worktree HEAD ($WT_HEAD) is not current main and main is not its ancestor."
+      hard "  -> re-create the worktree off \$(git rev-parse main). See agent-worktree-stale-base-trap."
+    fi
+    # maturin/pip -e from a worktree rebinds the shared .venv to the worktree tree.
+    info "reminder: do NOT 'maturin develop' / 'pip install -e' from a worktree — build on the MAIN tree only."
+  fi
+fi
+
+# --- 5. Dependency-CLOSED gate ---------------------------------------------------
+if [ -n "$EXPECT_CLOSED" ]; then
+  if [ -z "$PLAN" ]; then
+    hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
+  elif [ ! -f "$PLAN" ]; then
+    hard "plan file not found: $PLAN"
+  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
+  else
+    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+  fi
+fi
+
+# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+# git-writes run in a dedicated linked worktree, never in the primary checkout.
+#
+# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+# (a linked worktree's git-dir is <common>/worktrees/<name>).
+#
+# Both paths are canonicalized before comparing. git returns these relative or
+# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+# the toplevel above normalizes that away (both read '.git' there), so a raw
+# string compare would happen to work — but only by accident of that cd. Measured:
+# with the toplevel cd removed, a raw compare run from a subdirectory of the
+# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+# this check self-sufficient rather than dependent on cwd, git version, and the
+# ordering of an unrelated line.
+if [ "$LANDING" -eq 1 ]; then
+  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+  else
+    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+  fi
+fi
+
+# --- Summary (JSON, last line) ---------------------------------------------------
+json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+
+STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+
+[ "$STATUS" = pass ]
+#!/usr/bin/env bash
+# Run unit tests across language surfaces.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent-output.sh
+. "$SCRIPT_DIR/lib/agent-output.sh"
+cd_repo_root
+
+# Scripts (bash): set-version.sh two-axis enforcement.
+run_capped test-set-version bash scripts/tests/test_set_version.sh
+
+# Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+
+# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
+# in the primary checkout and pass in a linked worktree. Builds its own throwaway
+# repo + worktree under mktemp -d; never git-writes into this checkout.
+run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+
+# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+# python3 -m http.server fixture; never hits crates.io.
+run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+
+# Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
+# partial-publish — embedder-api surface moved without an Axis-E bump).
+# Offline via a fixture http router; never hits crates.io.
+run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+
+# Scripts (bash): structural shape of the post-publish smoke scripts.
+# NOT integration — see test header for why behavior is exercised at tag
+# time by the release workflow, not here.
+run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+
+# Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
+# assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
+# dist-tag). Pure python3+PyYAML parse; never runs the workflow.
+run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+
+# Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
+# local-registry round-trip (publish -> query-no-op -> install -> loader) +
+# crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
+run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+
+# Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
+# minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
+# (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
+run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+
+# Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
+# publish to prod (npm publish --registry $BASE; twine upload --repository-url).
+run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+
+# Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
+# index-propagation sleep (R-REL-4c). Offline fixture http server.
+run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+
+# Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
+# napi per-platform split. Pure filesystem fixture; no registry.
+run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+
+# actionlint binary present + rejects deliberately-broken fixture.
+run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
+# Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+# gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+# from the Python generators) are markdownlint-ignored, so the normal md gate never
+# sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
+# s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
+# in the pytest step below.
+run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+
+# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+
+# Rust
+run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+
+# Python
+python_bin=""
+if [ -x .venv/bin/python ]; then
+  python_bin=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  python_bin="$(command -v python3)"
+fi
+
+if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
+  run_capped test-python "$python_bin" -m pytest -q src/python/tests
+else
+  skip_notice test-python "pytest not installed or no tests dir"
+fi
+
+# TypeScript
+if [ -d src/ts/node_modules ]; then
+  run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+else
+  skip_notice test-ts "src/ts/node_modules not installed"
+fi
+?? dev/plans/runs/codex/
+
+exec
+/bin/bash -lc 'tmp=$(mktemp -d); git init -q -b main $tmp/primary; git -C $tmp/primary config user.email a@b; git -C $tmp/primary config user.name a; touch $tmp/primary/a; git -C $tmp/primary add a; git -C $tmp/primary commit -q -m init; git -C $tmp/primary worktree add -q -b br $tmp/linked; echo primary; (cd $tmp/primary && git rev-parse --git-dir && git rev-parse --git-common-dir && pwd -P); echo linked; (cd $tmp/linked && git rev-parse --git-dir && git rev-parse --git-common-dir && pwd -P); echo linked/sub; mkdir $tmp/linked/sub; (cd $tmp/linked/sub && git rev-parse --show-toplevel && git rev-parse --git-dir && git rev-parse --git-common-dir && pwd -P); rm -rf $tmp' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 0ms:
+primary
+.git
+.git
+/tmp/tmp.BY9JzsMSXc/primary
+linked
+/tmp/tmp.BY9JzsMSXc/primary/.git/worktrees/linked
+/tmp/tmp.BY9JzsMSXc/primary/.git
+/tmp/tmp.BY9JzsMSXc/linked
+linked/sub
+/tmp/tmp.BY9JzsMSXc/linked
+/tmp/tmp.BY9JzsMSXc/primary/.git/worktrees/linked
+/tmp/tmp.BY9JzsMSXc/primary/.git
+/tmp/tmp.BY9JzsMSXc/linked/sub
+
+exec
+/bin/bash -lc 'bash scripts/tests/test_preflight_landing.sh' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 161ms:
+PASS  --landing composes with --worktree/--min-disk-gb in a linked worktree
+PASS  --landing composes with --worktree and still fails on the primary checkout
+PASS  preflight.sh documents/handles --landing
+PASS  landing check compares canonicalized paths (abs_dir), not raw git output
+PASS  landing check does not compare raw git rev-parse output
+
+All preflight --landing tests passed
+
+exec
+/bin/bash -lc "nl -ba scripts/preflight.sh | sed -n '120,170p'; nl -ba scripts/tests/test_preflight_landing.sh | sed -n '1,190p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 0ms:
+   120	  if [ -z "$PLAN" ]; then
+   121	    hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
+   122	  elif [ ! -f "$PLAN" ]; then
+   123	    hard "plan file not found: $PLAN"
+   124	  elif grep -qiE "(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}[^0-9].*CLOSED|CLOSED.*(Slice|Phase)[^A-Za-z0-9]*${EXPECT_CLOSED}([^0-9]|$)" "$PLAN"; then
+   125	    ok "dependency Slice/Phase $EXPECT_CLOSED has a CLOSED witness in $PLAN"
+   126	  else
+   127	    hard "dependency Slice/Phase $EXPECT_CLOSED has NO 'CLOSED' block in $PLAN — do not spawn dependents"
+   128	  fi
+   129	fi
+   130	
+   131	# --- 6. Landing-mode guard (TC-RUBRIC-5) -----------------------------------------
+   132	# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11): release orchestration and ALL landing
+   133	# git-writes run in a dedicated linked worktree, never in the primary checkout.
+   134	#
+   135	# primary checkout <=> --git-dir and --git-common-dir name the SAME directory
+   136	# (a linked worktree's git-dir is <common>/worktrees/<name>).
+   137	#
+   138	# Both paths are canonicalized before comparing. git returns these relative or
+   139	# absolute depending on cwd and version: from a subdirectory, git 2.43 returns an
+   140	# ABSOLUTE --git-dir but a RELATIVE '../.git' --git-common-dir. Today the `cd` to
+   141	# the toplevel above normalizes that away (both read '.git' there), so a raw
+   142	# string compare would happen to work — but only by accident of that cd. Measured:
+   143	# with the toplevel cd removed, a raw compare run from a subdirectory of the
+   144	# primary checkout FAILS OPEN (exit 0, "cleared for landing"), while the
+   145	# canonicalized compare below still correctly HARD-fails. Canonicalizing makes
+   146	# this check self-sufficient rather than dependent on cwd, git version, and the
+   147	# ordering of an unrelated line.
+   148	if [ "$LANDING" -eq 1 ]; then
+   149	  GITDIR_ABS="$(abs_dir "$(git rev-parse --git-dir)" || true)"
+   150	  COMMONDIR_ABS="$(abs_dir "$(git rev-parse --git-common-dir)" || true)"
+   151	  if [ -z "$GITDIR_ABS" ] || [ -z "$COMMONDIR_ABS" ]; then
+   152	    hard "--landing: cannot resolve git-dir/git-common-dir — refusing to certify this tree for landing"
+   153	  elif [ "$GITDIR_ABS" = "$COMMONDIR_ABS" ]; then
+   154	    hard "TC-RUBRIC-5: --landing invoked in the PRIMARY checkout ($CANON) — landing git-writes are forbidden here."
+   155	    hard "  -> re-run from a dedicated linked worktree: git worktree add <path> <branch>, then run this from <path>."
+   156	  else
+   157	    ok "TC-RUBRIC-5: running in a linked worktree ($CANON) — cleared for landing git-writes"
+   158	  fi
+   159	fi
+   160	
+   161	# --- Summary (JSON, last line) ---------------------------------------------------
+   162	json_arr() { local out="" x; for x in "$@"; do out="${out:+$out,}\"$(printf '%s' "$x" | sed 's/\\/\\\\/g; s/"/\\"/g')\""; done; printf '[%s]' "$out"; }
+   163	
+   164	STATUS=$([ ${#HARD_FAILS[@]} -eq 0 ] && echo pass || echo fail)
+   165	printf '{"preflight":"%s","main_sha":"%s","worktree":"%s","hard_fails":%s,"warnings":%s}\n' \
+   166	  "$STATUS" "$MAIN_SHA" "${WT:-}" "$(json_arr "${HARD_FAILS[@]+"${HARD_FAILS[@]}"}")" "$(json_arr "${WARNS[@]+"${WARNS[@]}"}")"
+   167	
+   168	[ "$STATUS" = pass ]
+     1	#!/usr/bin/env bash
+     2	# scripts/tests/test_preflight_landing.sh — coverage for `preflight.sh --landing`.
+     3	#
+     4	# TC-RUBRIC-5 (HITL-ADOPTED 2026-07-11) requires that release orchestration and
+     5	# ALL landing git-writes run in a dedicated linked worktree, never in the primary
+     6	# checkout. `--landing` is the mechanical enforcement of that rule, per the
+     7	# standing guardrail-failures-fix-tooling-not-people principle.
+     8	#
+     9	# Detection under test: primary checkout <=> `git rev-parse --git-dir` equals
+    10	# `git rev-parse --git-common-dir`, compared AFTER resolving both to absolute,
+    11	# symlink-resolved paths.
+    12	#
+    13	# On the canonicalization: on git 2.43 invoked from a SUBDIRECTORY, --git-dir
+    14	# returns an absolute path while --git-common-dir returns a relative one
+    15	# ('../.git'). preflight.sh cds to the repo toplevel before the check, which
+    16	# normalizes that away today — so a raw string compare currently behaves the same
+    17	# and the subdir arms below pass either way. The canonicalization still matters:
+    18	# measured, with that toplevel cd removed, a RAW compare from a subdirectory of
+    19	# the primary checkout fails OPEN (exit 0, "cleared for landing") while the
+    20	# canonicalized compare still HARD-fails. Since no behavioral arm can distinguish
+    21	# the two while the cd stands, Arm 7 asserts the canonicalization structurally —
+    22	# same idiom as the 'User-Agent:' grep in test_assert_co_tagging.sh.
+    23	#
+    24	# Isolation: every arm runs against a throwaway repo built under mktemp -d. The
+    25	# test never git-writes into the real checkout and does not care whether the
+    26	# developer's tree is clean.
+    27	set -euo pipefail
+    28	
+    29	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    30	REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    31	PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+    32	
+    33	FAILED=0
+    34	pass() { printf 'PASS  %s\n' "$1"; }
+    35	fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+    36	
+    37	TMPROOT="$(mktemp -d)"
+    38	cleanup() {
+    39	  # Only ever remove a path we created under the system temp dir.
+    40	  case "$TMPROOT" in
+    41	    "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$TMPROOT" ;;
+    42	    *) printf 'refusing to remove unexpected temp path: %s\n' "$TMPROOT" >&2 ;;
+    43	  esac
+    44	}
+    45	trap cleanup EXIT
+    46	
+    47	# --- Fixture: a throwaway primary checkout + a linked worktree inside it -------
+    48	# preflight.sh does `git rev-parse main` under `set -euo pipefail`, so the fixture
+    49	# repo must actually have a `main` branch with a commit.
+    50	PRIMARY="$TMPROOT/primary"
+    51	mkdir -p "$PRIMARY"
+    52	git init -q -b main "$PRIMARY"
+    53	git -C "$PRIMARY" config user.email preflight-test@example.invalid
+    54	git -C "$PRIMARY" config user.name 'Preflight Test'
+    55	mkdir -p "$PRIMARY/src" "$PRIMARY/scripts"
+    56	printf 'fixture\n' >"$PRIMARY/src/keep.txt"
+    57	git -C "$PRIMARY" add -A
+    58	git -C "$PRIMARY" commit -q -m 'fixture: initial commit'
+    59	
+    60	LINKED="$TMPROOT/linked"
+    61	git -C "$PRIMARY" worktree add -q -b landing-fixture "$LINKED" >/dev/null 2>&1
+    62	
+    63	# run_preflight <cwd> [args...] -> sets RC and OUT (stdout+stderr merged)
+    64	run_preflight() {
+    65	  local cwd="$1"; shift
+    66	  set +e
+    67	  OUT="$(cd "$cwd" && bash "$PREFLIGHT" "$@" 2>&1)"
+    68	  RC=$?
+    69	  set -e
+    70	}
+    71	
+    72	# --- Arm 1: --landing in a linked worktree => exit 0, JSON reports pass --------
+    73	run_preflight "$LINKED" --landing
+    74	if [ "$RC" -eq 0 ]; then
+    75	  pass "--landing in a linked worktree exits 0"
+    76	else
+    77	  fail "--landing in a linked worktree should exit 0; got rc=$RC, out: $OUT"
+    78	fi
+    79	if printf '%s' "$OUT" | grep -q '"preflight":"pass"'; then
+    80	  pass "--landing in a linked worktree reports \"preflight\":\"pass\""
+    81	else
+    82	  fail "expected \"preflight\":\"pass\" in summary; got: $OUT"
+    83	fi
+    84	
+    85	# --- Arm 2: --landing in the primary checkout => HARD fail, non-zero ----------
+    86	run_preflight "$PRIMARY" --landing
+    87	if [ "$RC" -ne 0 ]; then
+    88	  pass "--landing in the primary checkout exits non-zero"
+    89	else
+    90	  fail "--landing in the primary checkout MUST fail; got rc=0, out: $OUT"
+    91	fi
+    92	if printf '%s' "$OUT" | grep -q '^HARD .*TC-RUBRIC-5'; then
+    93	  pass "--landing in the primary checkout emits a HARD line naming TC-RUBRIC-5"
+    94	else
+    95	  fail "expected a HARD line naming TC-RUBRIC-5; got: $OUT"
+    96	fi
+    97	if printf '%s' "$OUT" | grep -q '"preflight":"fail"'; then
+    98	  pass "--landing in the primary checkout reports \"preflight\":\"fail\""
+    99	else
+   100	  fail "expected \"preflight\":\"fail\" in summary; got: $OUT"
+   101	fi
+   102	
+   103	# --- Arm 3: regression guard — no --landing, primary checkout still passes -----
+   104	run_preflight "$PRIMARY"
+   105	if [ "$RC" -eq 0 ]; then
+   106	  pass "regression guard: primary checkout without --landing still exits 0"
+   107	else
+   108	  fail "plain invocation on the primary checkout must still pass; got rc=$RC, out: $OUT"
+   109	fi
+   110	if printf '%s' "$OUT" | grep -q 'TC-RUBRIC-5'; then
+   111	  fail "plain invocation must not mention TC-RUBRIC-5; got: $OUT"
+   112	else
+   113	  pass "regression guard: plain invocation says nothing about TC-RUBRIC-5"
+   114	fi
+   115	
+   116	# --- Arm 4: invoked from a SUBDIRECTORY of each tree --------------------------
+   117	# Guards the cwd-independence of the check as a whole (the toplevel cd plus the
+   118	# canonicalization). See the header for why this arm cannot, on its own,
+   119	# distinguish a raw compare from a canonicalized one.
+   120	run_preflight "$PRIMARY/scripts" --landing
+   121	if [ "$RC" -ne 0 ]; then
+   122	  pass "--landing from a subdir of the primary checkout still fails (canonicalized)"
+   123	else
+   124	  fail "subdir of primary MUST still fail (relative vs absolute git-dir); got rc=0, out: $OUT"
+   125	fi
+   126	
+   127	mkdir -p "$LINKED/scripts"
+   128	run_preflight "$LINKED/scripts" --landing
+   129	if [ "$RC" -eq 0 ]; then
+   130	  pass "--landing from a subdir of a linked worktree still passes"
+   131	else
+   132	  fail "subdir of a linked worktree should pass; got rc=$RC, out: $OUT"
+   133	fi
+   134	
+   135	# --- Arm 5: --landing composes with the existing flags ------------------------
+   136	run_preflight "$LINKED" --landing --worktree "$LINKED" --min-disk-gb 1
+   137	if [ "$RC" -eq 0 ]; then
+   138	  pass "--landing composes with --worktree/--min-disk-gb in a linked worktree"
+   139	else
+   140	  fail "--landing + --worktree should pass in a linked worktree; got rc=$RC, out: $OUT"
+   141	fi
+   142	
+   143	run_preflight "$PRIMARY" --worktree "$LINKED" --landing --min-disk-gb 1
+   144	if [ "$RC" -ne 0 ]; then
+   145	  pass "--landing composes with --worktree and still fails on the primary checkout"
+   146	else
+   147	  fail "--landing must fail on primary even alongside --worktree; got rc=0, out: $OUT"
+   148	fi
+   149	
+   150	# --- Arm 6: usage header documents --landing ----------------------------------
+   151	if grep -q -- '--landing' "$PREFLIGHT"; then
+   152	  pass "preflight.sh documents/handles --landing"
+   153	else
+   154	  fail "preflight.sh has no --landing handling"
+   155	fi
+   156	
+   157	# --- Arm 7: structural — the landing compare is canonicalized, not raw --------
+   158	# Regression guard for a fail-open no behavioral arm can currently reach: if the
+   159	# comparands are ever reverted to raw `git rev-parse` output, removing or moving
+   160	# the toplevel cd silently clears the primary checkout for landing.
+   161	if grep -qE 'GITDIR_ABS="\$\(abs_dir ' "$PREFLIGHT" \
+   162	  && grep -qE 'COMMONDIR_ABS="\$\(abs_dir ' "$PREFLIGHT"; then
+   163	  pass "landing check compares canonicalized paths (abs_dir), not raw git output"
+   164	else
+   165	  fail "landing check must canonicalize both git-dir and git-common-dir via abs_dir"
+   166	fi
+   167	
+   168	if grep -qE '^\s*GITDIR_ABS="\$\(git rev-parse' "$PREFLIGHT" \
+   169	  || grep -qE '^\s*COMMONDIR_ABS="\$\(git rev-parse' "$PREFLIGHT"; then
+   170	  fail "landing check compares RAW git rev-parse output — fails open without the toplevel cd"
+   171	else
+   172	  pass "landing check does not compare raw git rev-parse output"
+   173	fi
+   174	
+   175	if [ "$FAILED" -gt 0 ]; then
+   176	  printf '\n%d test(s) failed\n' "$FAILED" >&2
+   177	  exit 1
+   178	fi
+   179	printf '\nAll preflight --landing tests passed\n'
+
+exec
+/bin/bash -lc ./scripts/agent-lint.sh in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 11093ms:
+exec
+/bin/bash -lc 'grep -R "git .*commit" -n scripts/tests dev/release/tests | head -50' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ succeeded in 0ms:
+scripts/tests/test_preflight_landing.sh:58:git -C "$PRIMARY" commit -q -m 'fixture: initial commit'
+
+exec
+/bin/bash -lc 'tmp=$(mktemp -d); printf '"'[commit]\\n\\tgpgsign = true\\n' >"'$tmp/gitconfig; GIT_CONFIG_GLOBAL=$tmp/gitconfig bash scripts/tests/test_preflight_landing.sh; rc=$?; rm -rf $tmp; exit $rc' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20
+ exited 128 in 0ms:
+error: gpg failed to sign the data:
+gpg: WARNING: unsafe ownership on homedir '/home/coreyt/.gnupg'
+gpg: failed to create temporary file '/home/coreyt/.gnupg/.#lk0x00005a084036da70.windchill3.3106756': Permission denied
+gpg: keyblock resource '/home/coreyt/.gnupg/pubring.kbx': Permission denied
+[GNUPG:] ERROR add_keyblock_resource 33587201
+[GNUPG:] ERROR keydb_search 33554445
+gpg: skipped "Preflight Test <preflight-test@example.invalid>": No secret key
+[GNUPG:] INV_SGNR 9 Preflight Test <preflight-test@example.invalid>
+[GNUPG:] FAILURE sign 17
+gpg: signing failed: No secret key
+
+fatal: failed to write commit object
+
+codex
+The new preflight behavior appears sound, but the newly added test can fail solely due to global Git signing configuration when creating its temporary fixture commit. Because this test is now part of the standard agent test script, the patch is not fully correct across supported developer environments.
+
+Review comment:
+
+- [P2] Make fixture commit independent of global GPG signing — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20/scripts/tests/test_preflight_landing.sh:58-58
+  In environments where the developer or CI image has `commit.gpgsign=true` in global Git config, this fixture commit tries to GPG-sign with the test identity and aborts before any assertions run, causing `agent-test.sh` to fail for a user-local setting unrelated to the code under test. The throwaway repo should neutralize signing in its local config before creating the fixture commit.
+The new preflight behavior appears sound, but the newly added test can fail solely due to global Git signing configuration when creating its temporary fixture commit. Because this test is now part of the standard agent test script, the patch is not fully correct across supported developer environments.
+
+Review comment:
+
+- [P2] Make fixture commit independent of global GPG signing — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20/scripts/tests/test_preflight_landing.sh:58-58
+  In environments where the developer or CI image has `commit.gpgsign=true` in global Git config, this fixture commit tries to GPG-sign with the test identity and aborts before any assertions run, causing `agent-test.sh` to fail for a user-local setting unrelated to the code under test. The throwaway repo should neutralize signing in its local config before creating the fixture commit.
+CODEX_REAL_EXIT=0

@@ -82,10 +82,13 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 The rubric requires "a durable release-namespaced path" but names none. **Pinned for 0.8.20:**
 
 ```text
-dev/plans/runs/codex/0.8.20/<slice>-<UTC-timestamp>.md
+dev/plans/runs/codex/0.8.20/<slice>-<UTC-timestamp>.log
 ```
 
-e.g. `dev/plans/runs/codex/0.8.20/slice-0-20260719T034500Z.md`. **Every slice persists its §9 transcript here**,
+`.log`, not `.md` — matches the existing transcript convention (`0.8.16-slice-*-codex-review-*.log`) and keeps
+raw transcripts out of markdownlint scope.
+
+e.g. `dev/plans/runs/codex/0.8.20/slice-0-20260719T033434Z.log`. **Every slice persists its §9 transcript here**,
 including fix-N re-reviews (one file per review round). Invoke codex **only** via
 `dev/agent-tools/codex-nostdin.sh` (bare `codex exec` deadlocks on stdin).
 
