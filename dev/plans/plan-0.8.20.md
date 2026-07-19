@@ -23,7 +23,7 @@
 | `truncate_wal()` **already exists** | `PRAGMA wal_checkpoint(TRUNCATE)`, returns typed `TruncateWalStatus::{Done,Busy}` | ✓ `engine:6379`; **CLI-only** (`fathomdb-cli:389`); **NOT called by `purge`/`excise`** |
 | op-store record erasure | **does not exist** — only a cap-based retention sweep | ✓ `engine:10083` (`enforce_provenance_retention`) |
 | REQ-037 → AC-041 | recovery surface CLI-only; AC-041 tests the **REQ-054 five-name denylist** only | ✓ `dev/requirements.md:332`; `dev/acceptance.md:688` |
-| AC ceiling | highest existing AC | ✓ **AC-077** (`dev/acceptance.md`) |
+| AC minting floor | ~~highest existing AC = AC-077~~ **CORRECTED (TC-14):** highest **defined, non-reserved** AC = **AC-076**; AC-077/078 are **live IR-1/IR-2 reservations** ⇒ **0.8.20 mints from AC-079**. Never mint by "max AC id + 1" — see the warning in §3. | ✓ `dev/acceptance.md:1147` (AC-076), `:1286`/`:1297` (reservations) |
 
 ### 0.1 THE ROOT-CAUSE FINDING — `search_index_v2` is maintained by only **TWO** of FIVE sites
 
@@ -337,12 +337,23 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
-**Slice 0 — X0 design gate.** Stand up `runs/STATUS-0.8.20.md`. Freeze §3 reqs + RED-testable ACs. Author the
-**erasure Slice-0 design** (registry + total projector + `SourceId` + `erase_source` + WAL + telemetry
-redaction + op-store + the `_legacy:` migration) on top of `dev/design/0.8.20-erasure-and-h-end-state-v4.md`. Record the
-**eu7-basis** and **embed_batch_cls-TS-parity** decisions (F-22). Fold **TC-RUBRIC-5** into the process gate.
-Run **codex §9** on the package, persist the transcript (TC-RUBRIC-7), and take X0 to HITL.
+**Slice 5 — erasure completeness (R-20-E1…E8).** In flight (commissioned 2026-07-19, master **F-26**). One
+row-owned projection registry + a **total projector covering nodes AND edges** (extract the inlined edge
+projection from `commit_batch` `:12166+`) + `SourceId` newtype + mandatory provenance + **`erase_source()` as an
+SDK lifecycle verb** (Py + TS; `excise_source` stays CLI-only; **AC-041 stays green**, denylist stays five
+names) + `truncate_wal()` inside the verb with typed `ErasureIncomplete` + telemetry **selective redaction** +
+`excise_collection_record` + op-store record erasure + the `_legacy:pre-0.8.20` migration (`logical_id IS NULL`
+only). **Plus the HITL audit-durability ruling (F-27):** exempt the erasure-audit collection from
+`enforce_provenance_retention` so the record of a deletion event cannot be swept.
+**RED tests MUST assert on RAW TABLE CONTENTS** — a test that *searches* for the erased text passes on the
+broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 is closed by decision (F-28).**
 **TC-11 is CLOSED — do not re-open it.**
+
+> **Slice 0 — X0 design gate: ✅ COMPLETE.** HITL-SIGNED and landed 2026-07-19 at `403eb254` (master **F-26**).
+> Delivered the STATUS board, the frozen reqs/ACs, `dev/design/0.8.20-slice0-erasure-design.md` (the v5
+> addendum, which **wins over v4 on conflict**), `scripts/preflight.sh --landing` (TC-RUBRIC-5 now
+> **mechanically enforced**), and the pinned TC-RUBRIC-7 transcript path `dev/plans/runs/codex/0.8.20/`.
+> Its findings are reconciled into master **F-26…F-31**.
 
 ---
 
