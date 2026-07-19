@@ -25,7 +25,7 @@
 | REQ-037 → AC-041 | recovery surface CLI-only; AC-041 tests the **REQ-054 five-name denylist** only | ✓ `dev/requirements.md:332`; `dev/acceptance.md:688` |
 | AC ceiling | highest existing AC | ✓ **AC-077** (`dev/acceptance.md`) |
 
-### 0.1 THE ROOT-CAUSE FINDING — `search_index_v2` is maintained by **ONE** of FIVE sites
+### 0.1 THE ROOT-CAUSE FINDING — `search_index_v2` is maintained by only **TWO** of FIVE sites
 
 | # | Site | fn | `search_index` | `search_index_edges` | **`search_index_v2`** | `vector_default` |
 |--:|------|----|---|---|---|---|

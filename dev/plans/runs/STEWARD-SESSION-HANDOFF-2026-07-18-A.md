@@ -42,7 +42,8 @@ has a reference; `0.8.18 #11-full` machinery ✓ (proven, never fired); Memex `0
 
 ## ⚠ OPERATIONAL — the repo is now consolidated (verify, don't assume)
 
-- **`origin/main` = `cb9e9268`.** Everything is on one line. **Primary checkout `/home/coreyt/projects/fathomdb`
+- **`origin/main` = `f22e4947`** (this hand-off's own commit; the "Verified state" section below is anchored at
+  its parent `cb9e9268`). Everything is on one line. **Primary checkout `/home/coreyt/projects/fathomdb`
   is re-attached to `main`** (was a detached, contended, 18-behind checkout — the anti-pattern TC-RUBRIC-5
   exists to end). Worktrees now: **primary `[main]`**, `0.5.1-memex-build` (memex sandbox, leave alone), and
   whatever steward/orchestrator worktrees you cut. *(This hand-off was written from a dedicated `steward-0718`
@@ -82,12 +83,14 @@ has a reference; `0.8.18 #11-full` machinery ✓ (proven, never fired); Memex `0
     contradicted it — the SDK ships **no CLI**, and `purge` was already an SDK verb); **AC-041 unchanged, stays
     green** (`erase_source` is not a recovery-denylist name).
   - **Erasure root cause (plan §0.1):** `search_index_v2` is a **content-storing** FTS5 table maintained by only
-    1 of 5 sites (`excise`/`rebuild`/`tokenizer-reproject` all miss it) → the body **survives verbatim** after
-    `excise_source`. Fix the **mechanism** (one registry + total projector), not the missing DELETE.
+    2 of 5 sites (written by the write path, deleted only by `purge`; `excise`/`rebuild`/`tokenizer-reproject`
+    all miss it) → the body **survives verbatim** after `excise_source`. Fix the **mechanism** (one registry +
+    total projector), not the missing DELETE.
   - **Design of record:** `dev/design/0.8.20-erasure-and-h-end-state-v4.md`.
   - **Memex notified:** OPP-12 sub-ledger **seq 10** (FATHOM→MEMEX §2(ii)-overrule; **impact on Memex = NONE** —
     `SearchHit.id` byte-unchanged, C-1 unaffected, no re-ratification). `[[opp12-record-lifecycle-protocol]]`.
-- **Ledgers** (use `ledgerwrite`/`ledgerwatch`): steward `dev/steward/steward-ledger.jsonl` **@ seq 79**;
+- **Ledgers** (use `ledgerwrite`/`ledgerwatch`): steward `dev/steward/steward-ledger.jsonl` **@ seq 79** at
+  `cb9e9268` (**seq 80** at `f22e4947`, recording this hand-off);
   todos `dev/todos-and-considerations-ledger.jsonl` **@ seq 24**; OPP-12 sub-ledger **@ seq 10**.
 
 ## The 0.8.20 build (what the orchestrator implements after Slice 0 — plan §4)
