@@ -70,7 +70,7 @@ fn ac_g1_hit_shape_text_branch() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "structured retrieval hit shape document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -109,7 +109,7 @@ fn ac_g1_hit_shape_vector_branch() {
             // FTS query term ("vectorize") is NOT in the body, so the only
             // way this surfaces is the vector branch.
             body: "semantic only payload".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -141,7 +141,7 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "hybrid retrieval document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -152,7 +152,7 @@ fn ac_g1_dedup_on_body_and_vector_first_order() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "another hybrid document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -204,7 +204,7 @@ fn ac_g1_no_eq_but_partial_eq() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "equality probe document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -239,7 +239,7 @@ fn cause_a_doc_node_stable_id_is_content_hash() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "cause-a content hash probe".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -281,7 +281,8 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
                 .write(&[PreparedWrite::Node {
                     kind: "note".to_string(),
                     body: "padding so cursors diverge".to_string(),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,
@@ -293,7 +294,7 @@ fn cause_a_doc_node_stable_id_survives_reingest() {
             .write(&[PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: body.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -331,7 +332,7 @@ fn cause_a_logical_id_node_is_l_tagged() {
         .write(&[PreparedWrite::Node {
             kind: "person".to_string(),
             body: "cause-a logical identity entity".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("entity-cause-a-42".to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -376,7 +377,7 @@ fn supersession_search_excludes_superseded_node_version() {
         .write(&[PreparedWrite::Node {
             kind: "person".to_string(),
             body: "alpha obsoleteoldterm original biography".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some(logical_id.to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -391,7 +392,7 @@ fn supersession_search_excludes_superseded_node_version() {
         .write(&[PreparedWrite::Node {
             kind: "person".to_string(),
             body: "beta freshactiveterm replacement biography".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some(logical_id.to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -433,7 +434,7 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "cause-a distinct alpha unique".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -444,7 +445,7 @@ fn cause_a_distinct_bodies_distinct_stable_ids() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "cause-a distinct beta unique".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

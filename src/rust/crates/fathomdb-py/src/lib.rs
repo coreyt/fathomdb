@@ -47,7 +47,7 @@ use fathomdb_engine::{
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
-    SoftFallbackBranch, TraversalDirection as RustTraversalDirection,
+    SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
     WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
@@ -1521,6 +1521,29 @@ fn dict_str_required(d: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
     })
 }
 
+/// 0.8.20 Slice 5c (R-20-E3) — `source_id` is now MANDATORY on every canonical
+/// write. Rust makes its absence inexpressible via the `SourceId` newtype;
+/// Python has no such type system at the boundary, so the binding raises
+/// `WriteValidationError` for a missing, empty or reserved (`_`-prefixed) id.
+/// This is the Python arm of "an un-provenanced write does not compile / raises".
+///
+/// The rationale is not tidiness: `excise_source` addresses rows BY `source_id`,
+/// so a row written without one is reachable by no erasure call — un-erasable.
+fn dict_source_id_required(d: &Bound<'_, PyDict>, kind: &str) -> PyResult<SourceId> {
+    let raw = dict_str(d, "source_id")?.ok_or_else(|| {
+        WriteValidationError::new_err(format!(
+            "{kind} write item missing required field \"source_id\": provenance is mandatory \
+             since 0.8.20 — a row written without it can never be erased by excise_source"
+        ))
+    })?;
+    SourceId::new(raw).map_err(|_| {
+        WriteValidationError::new_err(
+            "\"source_id\" must be a non-empty identifier outside the engine's reserved \
+             \"_\"-prefixed namespace",
+        )
+    })
+}
+
 fn translate_write_item(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let dict = item
         .cast::<PyDict>()
@@ -1550,7 +1573,7 @@ fn translate_node(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
         .map_err(|_| WriteValidationError::new_err("node write item must be a dict"))?;
     let kind = dict_str_required(dict, "kind")?;
     let body = dict_str(dict, "body")?.unwrap_or_else(|| "{}".to_string());
-    let source_id = dict_str(dict, "source_id")?;
+    let source_id = dict_source_id_required(dict, "node")?;
     let logical_id = dict_str(dict, "logical_id")?;
     // OPP-12 Phase-1 (0.8.19 Slice 5) — create-time existence state + advisory
     // reason (X1 parity with the N-API binding). `state` defaults to `active`; an
@@ -1575,7 +1598,7 @@ fn translate_edge(item: &Bound<'_, PyAny>) -> PyResult<PreparedWrite> {
     let kind = dict_str_required(dict, "kind")?;
     let from = dict_str_required(dict, "from")?;
     let to = dict_str_required(dict, "to")?;
-    let source_id = dict_str(dict, "source_id")?;
+    let source_id = dict_source_id_required(dict, "edge")?;
     let logical_id = dict_str(dict, "logical_id")?;
     // Edge body (the relation text) — optional. Projected into `search_index_edges`
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.
@@ -2118,7 +2141,7 @@ mod tests {
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "zephyr anchor entity".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -2126,7 +2149,7 @@ mod tests {
                 PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "beta reachable payload node".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -2135,7 +2158,7 @@ mod tests {
                     kind: "link".to_string(),
                     from: "zephyr".to_string(),
                     to: "beta".to_string(),
-                    source_id: None,
+                    source_id: SourceId::new("test:fixture").expect("test source id"),
                     logical_id: Some("e-zb".to_string()),
                     body: Some("collaboration record".to_string()),
                     t_valid: None,

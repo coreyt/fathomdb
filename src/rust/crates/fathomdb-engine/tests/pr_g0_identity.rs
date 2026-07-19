@@ -18,7 +18,7 @@ fn node(kind: &str, body: &str, logical_id: Option<&str>) -> PreparedWrite {
     PreparedWrite::Node {
         kind: kind.to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: logical_id.map(str::to_string),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -30,7 +30,7 @@ fn edge(kind: &str, from: &str, to: &str, logical_id: Option<&str>) -> PreparedW
         kind: kind.to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: logical_id.map(str::to_string),
         body: None,
         t_valid: None,

@@ -133,7 +133,7 @@ fn importance_write_read_roundtrip_and_range_validation() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "importance subject".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -168,7 +168,7 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "importance alpha widget".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -179,7 +179,7 @@ fn seed_two_docs(engine: &Engine) -> (u64, u64) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "importance beta widget".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -276,7 +276,7 @@ fn entity_node(body: &str, logical_id: &str) -> PreparedWrite {
     PreparedWrite::Node {
         kind: "doc".to_string(),
         body: body.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         state: fathomdb_engine::InitialState::Active,
         reason: None,
@@ -290,7 +290,7 @@ fn conf_edge(from: &str, to: &str, logical_id: &str, body: &str, confidence: f64
         kind: "link".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: None,
+        source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
         t_valid: None,

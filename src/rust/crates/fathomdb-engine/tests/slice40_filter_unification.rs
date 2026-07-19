@@ -147,7 +147,7 @@ fn search_filter_typed_rejects_json_term() {
         .write(&[PreparedWrite::Node {
             kind: "todo".to_string(),
             body: r#"{"status":"open","priority":5}"#.to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("T1".to_string()),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -182,7 +182,7 @@ fn read_list_filter_accepts_full_set() {
             .write(&[PreparedWrite::Node {
                 kind: "todo".to_string(),
                 body: body.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some(lid.to_string()),
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -225,7 +225,7 @@ fn read_list_filter_kind_and_source_type_constant_fold() {
             PreparedWrite::Node {
                 kind: "todo".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some("T1".to_string()),
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -233,7 +233,7 @@ fn read_list_filter_kind_and_source_type_constant_fold() {
             PreparedWrite::Node {
                 kind: "todo".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some("T2".to_string()),
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -287,7 +287,7 @@ fn parity_kind_predicate_both_backends() {
             PreparedWrite::Node {
                 kind: "todo".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some("TODO1".to_string()),
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -295,7 +295,7 @@ fn parity_kind_predicate_both_backends() {
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: r#"{"status":"open"}"#.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some("NOTE1".to_string()),
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

@@ -402,7 +402,7 @@ fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
             .map(|b| PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: b.clone(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

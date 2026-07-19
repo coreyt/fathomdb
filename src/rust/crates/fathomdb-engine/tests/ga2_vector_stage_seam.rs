@@ -43,7 +43,7 @@ fn seed(engine: &Engine, kind: &str, body: &str) {
         .write(&[PreparedWrite::Node {
             kind: kind.to_string(),
             body: body.to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

@@ -63,7 +63,7 @@ fn governed_hit_id_is_logical_space() {
         .write(&[PreparedWrite::Node {
             kind: "person".to_string(),
             body: "tc8 governed logical entity payload".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: Some("gov-entity-19".to_string()),
             state: InitialState::Active,
             reason: None,
@@ -100,7 +100,7 @@ fn doc_seeded_hit_id_is_content_space() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: body.to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: InitialState::Active,
             reason: None,
@@ -143,7 +143,7 @@ fn every_hit_id_is_non_null_and_space_total() {
             PreparedWrite::Node {
                 kind: "person".to_string(),
                 body: "tc8 total governed alpha totalterm".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: Some("total-gov-1".to_string()),
                 state: InitialState::Active,
                 reason: None,
@@ -151,7 +151,7 @@ fn every_hit_id_is_non_null_and_space_total() {
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: "tc8 total anonymous beta totalterm".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: InitialState::Active,
                 reason: None,

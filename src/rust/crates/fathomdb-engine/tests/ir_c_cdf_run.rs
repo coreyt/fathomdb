@@ -373,7 +373,8 @@ mod cdf_runner_impl {
                     .map(|d| PreparedWrite::Node {
                         kind: VECTOR_KIND.to_string(),
                         body: d.body.clone(),
-                        source_id: Some(d.doc_id.clone()),
+                        source_id: fathomdb_engine::SourceId::new(d.doc_id.clone())
+                            .expect("test source id"),
                         logical_id: None,
                         state: fathomdb_engine::InitialState::Active,
                         reason: None,

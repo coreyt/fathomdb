@@ -305,7 +305,8 @@ fn run(args: Args) -> Result<(), String> {
         node_batch.push(PreparedWrite::Node {
             kind: doc.source_type.clone(),
             body: doc.body.clone(),
-            source_id: Some(doc.doc_id.clone()),
+            source_id: fathomdb_engine::SourceId::new(doc.doc_id.clone())
+                .expect("example source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -343,7 +344,8 @@ fn run(args: Args) -> Result<(), String> {
             kind,
             from: parent.clone(),
             to: doc.doc_id.clone(),
-            source_id: Some(doc.doc_id.clone()),
+            source_id: fathomdb_engine::SourceId::new(doc.doc_id.clone())
+                .expect("example source id"),
             logical_id: None,
             body: None,
             t_valid: None,

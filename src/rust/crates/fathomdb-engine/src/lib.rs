@@ -2038,6 +2038,124 @@ pub struct ConsolidateReceipt {
     pub edges_superseded: u64,
 }
 
+/// 0.8.20 Slice 5c (R-20-E3) — the provenance of a canonical row: which source
+/// document it is attributable to, and therefore what `excise_source` must erase
+/// when that source is withdrawn.
+///
+/// **Why a newtype and not `Option<String>`.** Erasure runs through provenance:
+/// a row whose `source_id` is NULL is reachable by NO `excise_source` call and
+/// is therefore **un-erasable**. Before 0.8.20 the public `PreparedWrite`
+/// carried `source_id: Option<String>`, so a caller could express "no
+/// provenance" and silently create such a row. A *runtime* rejection would not
+/// have closed this: the facade crate re-exports `PreparedWrite` and
+/// `Engine::write` is `pub`, so a caller can build the value directly and skip
+/// any validation the engine performs. Replacing the field's type is what makes
+/// the absence of provenance **inexpressible** rather than merely rejected —
+/// the guarantee is enforced by `rustc`, not by a branch. `tests/ui/` in the
+/// facade crate holds the compile-fail witness.
+///
+/// **This is a BREAKING change**, shipped ON by default as part of the 0.8.20
+/// coordinated breaking-pair release. There is deliberately no compatibility
+/// shim and no deprecation window: a shim would re-open the hole it closes.
+///
+/// **Reserved namespace.** Ids beginning with `_` belong to the engine and are
+/// rejected by [`SourceId::new`]. Two are currently minted internally:
+///
+/// * [`SourceId::ENGINE_PREFIX`] (`_engine:`) — rows the engine derives for
+///   itself (EXP-S coverage/graph substrate rows), which never pass through
+///   `PreparedWrite` (design §4 item 6).
+/// * [`SourceId::LEGACY_PRE_0_8_20`] (`_legacy:pre-0.8.20`) — stamped by schema
+///   migration step 21 onto pre-0.8.20 rows that were stored with NULL
+///   provenance, so they become erasable (R-20-E8). **Gated to UNGOVERNED rows
+///   only** (`logical_id IS NULL`); a governed row keeps NULL `source_id` and
+///   stays `purge`-addressable by its `logical_id` (TC-11 pin).
+///
+/// **`source_id` must not be PII.** It survives the erasure it authorises: the
+/// `excise_source` audit row in `operational_mutations` records it verbatim, and
+/// while 0.8.20 makes that audit row durable (design §2 defect D-A) the rule was
+/// always that the handle you erase BY must not itself be the thing needing
+/// erasure. Use an opaque document id, not an email address.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceId(String);
+
+impl SourceId {
+    /// Reserved prefix for engine-derived rows (design §4 item 6).
+    pub const ENGINE_PREFIX: &'static str = "_engine:";
+
+    /// Reserved provenance stamped by schema migration step 21 onto pre-0.8.20
+    /// UNGOVERNED rows that were stored with NULL provenance (R-20-E8).
+    pub const LEGACY_PRE_0_8_20: &'static str = "_legacy:pre-0.8.20";
+
+    /// The single public constructor. Rejects the two ways a caller could
+    /// express "effectively no provenance":
+    ///
+    /// * an empty or whitespace-only id — it names no source, and
+    ///   `excise_source` already refuses the empty string, so such a row would
+    ///   be un-erasable in practice;
+    /// * an id in the engine's reserved `_`-prefixed namespace — a caller who
+    ///   could mint `_legacy:pre-0.8.20` could hide rows among the migration's
+    ///   back-filled ones, or mint `_engine:` rows that read as engine
+    ///   substrate.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::WriteValidation`] for either rejection above.
+    pub fn new(id: impl Into<String>) -> Result<Self, EngineError> {
+        let id = id.into();
+        if id.trim().is_empty() || id.starts_with('_') {
+            return Err(EngineError::WriteValidation);
+        }
+        Ok(Self(id))
+    }
+
+    /// Mint a reserved `_engine:*` provenance for an engine-derived row. Crate
+    /// -internal by construction: the reserved namespace is exactly what
+    /// [`SourceId::new`] refuses, so a caller cannot reach this spelling.
+    pub(crate) fn engine_derived(role: &str) -> Self {
+        Self(format!("{}{role}", Self::ENGINE_PREFIX))
+    }
+
+    /// The on-disk `source_id` text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume into the owned on-disk text.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for SourceId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for SourceId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for SourceId {
+    type Error = EngineError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for SourceId {
+    type Error = EngineError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
 /// Batch input shape for [`Engine::write`].
 ///
 /// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
@@ -2049,11 +2167,12 @@ pub enum PreparedWrite {
     Node {
         kind: String,
         body: String,
-        /// REQ-026 / AC-028 / AC-042 recovery seam. `None` is the
-        /// back-compat default and lands as NULL on disk; callers that
-        /// participate in `excise_source` / `trace_source_ref` must
-        /// supply a stable identifier.
-        source_id: Option<String>,
+        /// REQ-026 / AC-028 / AC-042 recovery seam, made **structurally
+        /// mandatory** in 0.8.20 (R-20-E3). Was `Option<String>`; a `None`
+        /// landed NULL on disk and produced a row no `excise_source` call could
+        /// reach. See [`SourceId`] for why the fix is a type change rather than
+        /// a validation check.
+        source_id: SourceId,
         /// G0 (Slice 15) — stable cross-re-ingestion identity. `Some(id)`
         /// makes this write a transaction-time supersession of the prior
         /// active version of `(logical_id, kind)` (tombstone-then-insert).
@@ -2079,8 +2198,9 @@ pub enum PreparedWrite {
         kind: String,
         from: String,
         to: String,
-        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node.
-        source_id: Option<String>,
+        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node. Structurally
+        /// mandatory since 0.8.20 (R-20-E3).
+        source_id: SourceId,
         /// G0 (Slice 15) — see Node. Supersession semantics are identical on
         /// edges (keyed by `(logical_id, kind)`).
         logical_id: Option<String>,
@@ -3687,6 +3807,43 @@ impl Engine {
             let result = session
                 .request(&request_id, vec![("documents".to_string(), Value::Array(docs_json))])?;
 
+            // R-20-E2 (0.8.20 Slice 5c, design §4 item 10) — every row this batch
+            // produces takes its provenance from the CALLER's
+            // `ExtractDocument.source_doc_id`, NEVER from the model's echo of that
+            // field. The echo is attacker-/error-controlled: a harness that omits
+            // it used to yield rows with NULL `source_id`, which no
+            // `excise_source` call can reach — the model could make a row
+            // permanently un-erasable simply by dropping a key.
+            //
+            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+            // among ids the caller already supplied in THIS batch, and never as a
+            // value:
+            //
+            //   * single-document batch — attribution is unambiguous, so the
+            //     caller's id is used and the echo is ignored outright;
+            //   * multi-document batch — the echo must name one of the batch's
+            //     caller-supplied ids (the caller's own copy of the string is
+            //     then stored). An absent or unrecognised echo is a protocol
+            //     violation and fails the ingest LOUDLY with
+            //     `EngineError::Extractor`, because the alternative — guessing an
+            //     attribution — would silently mis-file the row under a document
+            //     whose erasure would then not remove it.
+            let batch_provenance = batch
+                .iter()
+                .map(|d| SourceId::new(d.source_doc_id.clone()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+                if let [only] = batch_provenance.as_slice() {
+                    return Ok(only.clone());
+                }
+                let echo = echo.ok_or(EngineError::Extractor)?;
+                batch_provenance
+                    .iter()
+                    .find(|caller_id| caller_id.as_str() == echo)
+                    .cloned()
+                    .ok_or(EngineError::Extractor)
+            };
+
             // --- map entities → PreparedWrite::Node with stable logical_id ---
             let entities =
                 result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -3720,10 +3877,10 @@ impl Engine {
                     .map(|entity| -> Result<PreparedWrite, EngineError> {
                         let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
-                        let source_doc_id = entity
-                            .get("source_doc_id")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string);
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id = resolve_provenance(
+                            entity.get("source_doc_id").and_then(|v| v.as_str()),
+                        )?;
                         // fix-34 [P1]: derive_logical_id now rejects an empty name
                         // or a ':' in kind — inputs that would collide distinct
                         // entities onto one identity and silently drop one.
@@ -3847,8 +4004,9 @@ impl Engine {
                             }
                             c => c,
                         };
+                        // R-20-E2: caller-grounded, echo used only as a selector.
                         let source_doc_id =
-                            edge.get("source_doc_id").and_then(|v| v.as_str()).map(str::to_string);
+                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
 
                         // fix-33 [P1]: resolve each endpoint via the entities[]
                         // index (by name or alias) → the entity's canonical
@@ -5266,7 +5424,7 @@ impl Engine {
         self.write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "poison-fixture-seed".to_string(),
-            source_id: None,
+            source_id: SourceId::engine_derived("poison-fixture"),
             logical_id: None,
             state: InitialState::Active,
             reason: None,
@@ -5289,7 +5447,7 @@ impl Engine {
                 let _ = self.write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "writer-progress".to_string(),
-                    source_id: None,
+                    source_id: SourceId::engine_derived("poison-fixture"),
                     logical_id: None,
                     state: InitialState::Active,
                     reason: None,
@@ -5520,13 +5678,21 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
 
+        // R-20-E3 / design §4 item 6 — this writer BYPASSES `PreparedWrite`, so
+        // the `SourceId` newtype cannot reach it; before 0.8.20 it inserted a
+        // literal NULL `source_id` and produced a row that no `excise_source`
+        // call could reach. Engine-derived rows instead take a reserved
+        // `_engine:*` provenance, keyed by the structural role that produced
+        // them, so they are both erasable and distinguishable from caller data.
+        let engine_provenance = SourceId::engine_derived(row_kind.as_str());
+
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
             let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
             tx.execute(
                 "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
-                 VALUES(?1, ?2, ?3, NULL, NULL, ?4)",
-                params![cursor, kind, body, row_kind.as_str()],
+                 VALUES(?1, ?2, ?3, ?4, NULL, ?5)",
+                params![cursor, kind, body, engine_provenance.as_str(), row_kind.as_str()],
             )
             .map_err(|_| EngineError::Storage)?;
             let enqueued = project_canonical_node_row(
@@ -12166,15 +12332,13 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, source_id, logical_id, .. } => {
+        PreparedWrite::Node { kind, body, logical_id, .. } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
-            if let Some(source_id) = source_id {
-                if source_id.is_empty() {
-                    return Err(EngineError::WriteValidation);
-                }
-            }
+            // R-20-E3: `source_id` needs no emptiness check here — `SourceId`
+            // cannot hold an empty or reserved id, so the check has moved from
+            // this branch into the type's constructor.
             // G0 — an explicit logical_id must be non-empty (NULL/None is the
             // legacy default; an empty string is never a valid identity).
             // Also reject char(30) = \x1e (ASCII RS), which is the BFS cycle-guard
@@ -12186,7 +12350,7 @@ fn validate_write(
             }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to, source_id, logical_id, .. } => {
+        PreparedWrite::Edge { kind, from, to, logical_id, .. } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
@@ -12195,11 +12359,7 @@ fn validate_write(
             if from.contains('\x1e') || to.contains('\x1e') {
                 return Err(EngineError::WriteValidation);
             }
-            if let Some(source_id) = source_id {
-                if source_id.is_empty() {
-                    return Err(EngineError::WriteValidation);
-                }
-            }
+            // R-20-E3: see the Node branch — emptiness is a `SourceId` invariant.
             if let Some(logical_id) = logical_id {
                 if logical_id.is_empty() || logical_id.contains('\x1e') {
                     return Err(EngineError::WriteValidation);
@@ -12907,7 +13067,7 @@ fn commit_batch(
                 tx.execute(
                     "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason)
                      VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![cursor, kind, body, source_id, logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
+                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
                 )?;
                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
@@ -12999,7 +13159,7 @@ fn commit_batch(
                         kind,
                         from,
                         to,
-                        source_id,
+                        source_id.as_str(),
                         logical_id,
                         body,
                         t_valid,
@@ -13831,7 +13991,7 @@ mod tests {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "hello".to_string(),
-                source_id: None,
+                source_id: crate::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: crate::InitialState::Active,
                 reason: None,

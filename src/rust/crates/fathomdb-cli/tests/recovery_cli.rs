@@ -52,7 +52,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
-            source_id: Some("src-a".to_string()),
+            source_id: fathomdb::SourceId::new("src-a").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
@@ -63,7 +63,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "beta".to_string(),
-            source_id: Some("src-a".to_string()),
+            source_id: fathomdb::SourceId::new("src-a").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
@@ -74,7 +74,7 @@ fn db_with_sources() -> (TempDir, PathBuf) {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "gamma".to_string(),
-            source_id: Some("src-b".to_string()),
+            source_id: fathomdb::SourceId::new("src-b").expect("test source id"),
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,

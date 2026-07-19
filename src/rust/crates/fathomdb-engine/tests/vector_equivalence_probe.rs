@@ -630,7 +630,7 @@ fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
         .write(&[PreparedWrite::Node {
             kind: "note".to_string(),
             body: "post-open registration body".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -797,7 +797,7 @@ fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
         "establishing the baseline at the upgrade open is never degraded"
     );
     assert_eq!(opened.report.schema_version_before, 18, "upgrade started at v18");
-    assert_eq!(opened.report.schema_version_after, 20, "upgrade reached head (v20)");
+    assert_eq!(opened.report.schema_version_after, 21, "upgrade reached head (v21)");
     opened.engine.close().unwrap();
 
     let conn = rusqlite::Connection::open(&path).unwrap();

@@ -67,13 +67,13 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 20,
-        "SCHEMA_VERSION must be 20 (step-20 OPP-12 Phase-1 existence axis)"
+        SCHEMA_VERSION, 21,
+        "SCHEMA_VERSION must be 21 (step-21 legacy provenance backfill, R-20-E8)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        20,
-        "step-20 (OPP-12 Phase-1 existence axis) must be the last (head) migration"
+        21,
+        "step-21 (legacy provenance backfill, R-20-E8) must be the last (head) migration"
     );
 }
 

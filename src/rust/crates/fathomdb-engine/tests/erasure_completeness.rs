@@ -47,7 +47,7 @@ fn write_node(engine: &Engine, body: &str, source_id: &str, logical_id: Option<&
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: body.to_string(),
-            source_id: Some(source_id.to_string()),
+            source_id: fathomdb_engine::SourceId::new(source_id).expect("test source id"),
             logical_id: logical_id.map(str::to_string),
             state: fathomdb_engine::InitialState::Active,
             reason: None,

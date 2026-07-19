@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -515,6 +515,47 @@ pub const MIGRATIONS: &[Migration] = &[
               ALTER TABLE canonical_nodes ADD COLUMN reason TEXT;
               CREATE INDEX IF NOT EXISTS canonical_nodes_state_active_idx
                   ON canonical_nodes(write_cursor) WHERE state = 'active';",
+    },
+    // Step 21 (0.8.20 Slice 5c) — legacy provenance backfill, per
+    // `dev/design/0.8.20-slice0-erasure-design.md` §4 work item 7 and
+    // `dev/plans/plan-0.8.20.md` R-20-E8.
+    //
+    // Erasure runs through provenance: `excise_source` addresses rows BY
+    // `source_id`, so a stored row with `source_id IS NULL` is reachable by no
+    // erasure call at all — it is un-erasable. Pre-0.8.20 the public write type
+    // carried `source_id: Option<String>` and a `None` landed NULL, so shipped
+    // databases hold such rows. R-20-E3 closes the write path going forward
+    // (`SourceId` makes the absence inexpressible); this step repairs the rows
+    // already on disk by stamping them with the reserved
+    // `_legacy:pre-0.8.20`, after which an operator can erase them.
+    //
+    // THE GATE IS EXACT AND LOAD-BEARING: `WHERE logical_id IS NULL` ONLY.
+    // It comes from the TC-11 pin (CLOSED). A GOVERNED row — one carrying a
+    // `logical_id` — is addressable in its own right: `purge` reaches it BY
+    // `logical_id`. Stamping it with a shared `_legacy:` provenance would make
+    // it collateral of an `excise_source('_legacy:pre-0.8.20')` call aimed at
+    // anonymous rows, which is precisely the over-erasure the pin forbids. So
+    // governed rows keep NULL `source_id` by design; that is not a gap.
+    //
+    // The pin's enforcing invariant is also respected: this statement READS
+    // `logical_id` as its predicate and NEVER writes one. No row transitions
+    // `logical_id` NULL -> NOT NULL, and no stored row's id-space is re-derived
+    // (`s21_backfill_populates_no_logical_id` asserts both).
+    //
+    // Rows that already carry provenance are untouched (`source_id IS NULL`
+    // half of the predicate), so caller-supplied ids are never overwritten.
+    //
+    // No accretion exemption marker: this is a pure data `UPDATE` with no
+    // `CREATE TABLE` / `ADD COLUMN`, so the guard does not fire (cf. step 13).
+    // One migration per release (I-6).
+    Migration {
+        step_id: 21,
+        sql: "UPDATE canonical_nodes
+                 SET source_id = '_legacy:pre-0.8.20'
+               WHERE source_id IS NULL AND logical_id IS NULL;
+              UPDATE canonical_edges
+                 SET source_id = '_legacy:pre-0.8.20'
+               WHERE source_id IS NULL AND logical_id IS NULL;",
     },
 ];
 

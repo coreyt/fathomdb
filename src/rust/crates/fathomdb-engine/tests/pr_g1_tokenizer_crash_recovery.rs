@@ -61,7 +61,7 @@ fn ingest(engine: &Engine) {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: doc.body.to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

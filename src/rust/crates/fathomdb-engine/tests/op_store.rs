@@ -87,7 +87,7 @@ fn ac_060b_schema_validation_failure_leaves_no_batch_residue() {
             PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "must not commit".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

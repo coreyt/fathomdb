@@ -39,7 +39,7 @@ fn ac_040a_dump_row_counts_reflects_canonical_writes() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "alpha".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

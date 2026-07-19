@@ -33,7 +33,8 @@ fn fact_edge(from: &str, to: &str, logical_id: &str, body: &str, t_valid: &str) 
         kind: "works_for".to_string(),
         from: from.to_string(),
         to: to.to_string(),
-        source_id: Some(format!("doc-{logical_id}")),
+        source_id: fathomdb_engine::SourceId::new(format!("doc-{logical_id}"))
+            .expect("test source id"),
         logical_id: Some(logical_id.to_string()),
         body: Some(body.to_string()),
         t_valid: Some(t_valid.to_string()),

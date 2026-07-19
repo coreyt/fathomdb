@@ -42,7 +42,7 @@ use fathomdb_engine::{
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
-    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch,
+    SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch, SourceId,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
@@ -729,7 +729,8 @@ mod per_hit_explain_tests {
                 EngPreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "zephyr anchor entity".to_string(),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -737,7 +738,8 @@ mod per_hit_explain_tests {
                 EngPreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "beta reachable payload node".to_string(),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
@@ -746,7 +748,8 @@ mod per_hit_explain_tests {
                     kind: "link".to_string(),
                     from: "zephyr".to_string(),
                     to: "beta".to_string(),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: Some("e-zb".to_string()),
                     body: Some("collaboration record".to_string()),
                     t_valid: None,
@@ -1922,6 +1925,37 @@ fn json_str_alt_required(item: &JsonValue, camel: &str, snake: &str) -> Result<S
     })
 }
 
+/// 0.8.20 Slice 5c (R-20-E3) — `sourceId` is now MANDATORY on every canonical
+/// write. Rust makes its absence inexpressible via the `SourceId` newtype;
+/// TypeScript has no such guarantee at the N-API boundary, so the binding throws
+/// a typed write-validation error for a missing, empty or reserved
+/// (`_`-prefixed) id. This is the TS arm of "an un-provenanced write does not
+/// compile / raises", and it mirrors the Python binding exactly.
+///
+/// The rationale is not tidiness: `excise_source` addresses rows BY `source_id`,
+/// so a row written without one is reachable by no erasure call — un-erasable.
+fn json_source_id_required(item: &JsonValue, kind: &str) -> Result<SourceId> {
+    let raw = json_str_alt(item, "sourceId", "source_id")?.ok_or_else(|| {
+        typed_error(
+            CODE_WRITE_VALIDATION,
+            format!(
+                "{kind} write item missing required field \"sourceId\": provenance is mandatory \
+                 since 0.8.20 — a row written without it can never be erased by excise_source"
+            ),
+            JsonValue::Null,
+        )
+    })?;
+    SourceId::new(raw).map_err(|_| {
+        typed_error(
+            CODE_WRITE_VALIDATION,
+            "\"sourceId\" must be a non-empty identifier outside the engine's reserved \
+             \"_\"-prefixed namespace"
+                .to_string(),
+            JsonValue::Null,
+        )
+    })
+}
+
 fn json_serialised_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Option<String>> {
     if let Some(v) = json_serialised(item, camel)? {
         return Ok(Some(v));
@@ -1942,7 +1976,7 @@ fn json_serialised_alt_required(item: &JsonValue, camel: &str, snake: &str) -> R
 fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
     let kind = json_str_required(item, "kind")?;
     let body = json_serialised(item, "body")?.unwrap_or_else(|| "{}".to_string());
-    let source_id = json_str_alt(item, "sourceId", "source_id")?;
+    let source_id = json_source_id_required(item, "node")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
     // OPP-12 Phase-1 (0.8.19 Slice 5) — create-time existence state + advisory
     // reason (X1 parity with the pyo3 binding). `state` defaults to `active`; an
@@ -1968,7 +2002,7 @@ fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
     let kind = json_str_required(item, "kind")?;
     let from = json_str_required(item, "from")?;
     let to = json_str_required(item, "to")?;
-    let source_id = json_str_alt(item, "sourceId", "source_id")?;
+    let source_id = json_source_id_required(item, "edge")?;
     let logical_id = json_str_alt(item, "logicalId", "logical_id")?;
     // Edge body (the relation text) — optional. Projected into `search_index_edges`
     // so the C1 graph arm can seed from edge-fact FTS (`source A`). NULL = not indexed.

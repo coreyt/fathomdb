@@ -56,7 +56,8 @@ fn projection_cursor_bounds_observed_row_count() {
                 let _ = engine.write(&[PreparedWrite::Node {
                     kind: "doc".to_string(),
                     body: "needle".to_string(),
-                    source_id: None,
+                    source_id: fathomdb_engine::SourceId::new("test:fixture")
+                        .expect("test source id"),
                     logical_id: None,
                     state: fathomdb_engine::InitialState::Active,
                     reason: None,

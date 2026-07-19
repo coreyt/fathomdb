@@ -49,7 +49,7 @@ fn rebuild_projections_returns_structured_report() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("payload {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -90,7 +90,7 @@ fn rebuild_vec0_returns_structured_report() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("payload {i}"),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

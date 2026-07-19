@@ -101,7 +101,7 @@ fn filter_prunes_vector_candidates_by_kind() {
             PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "semantic alpha document".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -109,7 +109,7 @@ fn filter_prunes_vector_candidates_by_kind() {
             PreparedWrite::Node {
                 kind: "note".to_string(),
                 body: "semantic beta note".to_string(),
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
@@ -147,7 +147,7 @@ fn status_filter_prunes_all_because_population_is_null_only() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "status probe document".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

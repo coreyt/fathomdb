@@ -11,7 +11,7 @@ fn write_node(engine: &fathomdb_engine::Engine, body: &str, source_id: &str) -> 
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: body.to_string(),
-            source_id: Some(source_id.to_string()),
+            source_id: fathomdb_engine::SourceId::new(source_id).expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -59,7 +59,7 @@ fn ac_042_trace_source_ref_includes_edges_alongside_nodes() {
             kind: "rel".to_string(),
             from: "a".to_string(),
             to: "b".to_string(),
-            source_id: Some("S1".to_string()),
+            source_id: fathomdb_engine::SourceId::new("S1").expect("test source id"),
             logical_id: None,
             body: None,
             t_valid: None,
@@ -88,7 +88,7 @@ fn ac_042_trace_source_ref_excludes_null_source_rows() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "nullable".to_string(),
-            source_id: None,
+            source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,

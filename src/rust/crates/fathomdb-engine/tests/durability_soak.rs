@@ -82,7 +82,7 @@ fn _power_cut_victim_entry() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body,
-                source_id: None,
+                source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,

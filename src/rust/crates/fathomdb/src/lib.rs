@@ -20,13 +20,20 @@
 //   ExtractDocument, IngestWithExtractorReceipt
 // + 3 new types from 0.8.8 Slice 5 (EXP-OBS explain sidecar):
 //   Explanation, QueryTrace, PerHitExplain
+// + 1 new type from 0.8.20 Slice 5c (R-20-E3, erasure): SourceId — the
+//   provenance newtype that replaced `source_id: Option<String>` on
+//   `PreparedWrite`. It MUST be re-exported here: this crate re-exports
+//   `PreparedWrite` and `Engine::write` is public, so without the constructor a
+//   facade consumer could not perform a canonical write at all. Its presence is
+//   also what makes the un-provenanced write a COMPILE error for facade
+//   consumers rather than a runtime rejection (see `tests/ui/`).
 pub use fathomdb_engine::{
     ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
     EngineError, EngineOpenError, Explanation, ExtractDocument, IngestWithExtractorReceipt,
     InitialState, LifecycleState, NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain,
     Predicate, PreparedWrite, QueryTrace, RecoveryHint, ScalarValue, SearchExpandResult,
-    SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, Subscription, TraversalDirection,
-    WriteReceipt,
+    SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, SourceId, Subscription,
+    TraversalDirection, WriteReceipt,
 };
 
 // The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

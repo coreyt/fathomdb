@@ -67,7 +67,7 @@ fn no_canonical_row_has_null_source_id() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "public node body".to_string(),
-            source_id: Some("doc-public".to_string()),
+            source_id: fathomdb_engine::SourceId::new("doc-public").expect("test source id"),
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
@@ -78,7 +78,7 @@ fn no_canonical_row_has_null_source_id() {
             kind: "mentions".to_string(),
             from: "a".to_string(),
             to: "b".to_string(),
-            source_id: Some("doc-public".to_string()),
+            source_id: fathomdb_engine::SourceId::new("doc-public").expect("test source id"),
             logical_id: Some("edge-public".to_string()),
             body: Some("public edge body".to_string()),
             t_valid: None,
@@ -228,7 +228,7 @@ fn excise_legacy_source_deletes_no_governed_row() {
 fn extractor_omitting_source_doc_id_still_excisable() {
     let script = fixture_dir().join("provenance_omitting_harness.py");
     assert!(script.exists(), "fixture harness must exist at {}", script.display());
-    let cmd_strings = vec!["python3".to_string(), script.to_string_lossy().to_string()];
+    let cmd_strings = ["python3".to_string(), script.to_string_lossy().to_string()];
     let cmd_refs: Vec<&str> = cmd_strings.iter().map(|s| s.as_str()).collect();
 
     let dir = TempDir::new().expect("tempdir");
