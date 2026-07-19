@@ -158,8 +158,19 @@ no `[project.scripts]` and the npm package no `"bin"`, so no `fathomdb` CLI is s
 
 ## 3. Requirements + acceptance criteria (release DoD — frozen at Slice 0)
 
-Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` policy). **New ACs are permitted:
-0.8.20 Slice-0 IS a gated slice.** AC ceiling today = **AC-077**.
+Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` policy) — and per that policy,
+**prefer requirement id + TDD test name over minting a per-feature AC at all.** **New ACs are permitted:
+0.8.20 Slice-0 IS a gated slice.**
+
+> **⚠ AC MINTING FLOOR — `AC-079`. Do NOT mint by "max AC id + 1".**
+> The highest **defined, non-reserved** AC is **AC-076** (`dev/acceptance.md:1147`). **AC-077**
+> (`dev/acceptance.md:1286`) is a **RESERVED PLACEHOLDER** for the agentic-IR **IR-1/IR-2** initiative
+> ("not yet a gate; no fabricated numbers"), and **AC-078 is conditionally reserved to the same
+> initiative** (`:1297` — "+ AC-078… only if the consensus splits the measure").
+> **0.8.20 mints from `AC-079`** *(HITL-ratified 2026-07-19)*.
+> **The trap:** a naive grep for the maximum `AC-0NN` returns **AC-078** *from that reservation prose*, so
+> "max + 1" silently collides with a live reservation. Read `dev/acceptance.md:1286-1300` before minting.
+> *(Slice-0 finding **TC-14**; the earlier "AC ceiling today = AC-077, continue from it" text was **wrong**.)*
 
 ### Phase-2 (A)
 
@@ -191,9 +202,37 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 |----|-------------|-------------------|
 | R-20-H7 | **RUBRIC-H7 GATE (TC-RUBRIC-2)** — a **Pact-style `can-i-deploy`** mechanical contract-conformance check: as-built code still satisfies the ratified `OPP-12-C1-converged-contract.md` at the co-land. **Not humans re-reading prose.** | Gate exists and is GREEN. **An absent-or-failing gate HOLDS the breaking pair** (hard, HITL-directed 2026-07-10) |
 | R-20-X1 | SDK parity (Py + TS) — **live functional harnesses, not symbol presence** | X1 GREEN. **Run parity BEFORE land, same unit** (rubric G6 carry: 0.8.19 ran X1 green *after* land via a native-import env trap — **treat an env trap as a landing blocker, not a follow-up**) |
-| R-20-EU7 | **eu7 basis decision** (F-22): no-op vs real re-baseline — the **real-publish gate** | Recorded at Slice 0. If OPP-12 touches retrieval/gold-keying ⇒ bounded re-baseline. **Pin A keeps `SearchHit.id` byte-identical (`to_prefixed()` == prior `stable_id`) ⇒ the no-op basis is EXPECTED to hold; prove it, don't assume it.** |
+| R-20-EU7 | **eu7 basis decision** (F-22) — ✅ **CLOSED BY HITL DECISION 2026-07-19, NOT BY MEASUREMENT** | **ZERO eu7 runs are authorized — on ANY backend, at ANY N.** No GPU run, no CPU run, no reduced-N run, no smoke run, **no "confirmation" run.** The basis is settled on existing evidence and **needs no gate execution.** See the closure note below. |
+
+> **🚫 R-20-EU7 — CLOSED BY DECISION. RUNNING eu7 IS FORBIDDEN, NOT MERELY UNNECESSARY.**
+> *(HITL, 2026-07-19 — decider named per the "name the decider" rule.)*
+>
+> **The ruling.** R-20-EU7 is **closed by HITL decision, not by measurement.** **ZERO eu7 runs are
+> authorized: not GPU, not CPU, not reduced-N, not a smoke run, not a confirmation run.** HITL verbatim:
+> *"no one run. it always turns into 10 runs and 3 days and token burn only for it to become a HITL decision
+> anyway. I did already."*
+>
+> **The basis (settled on existing evidence).** CPU and GPU are **equivalent** — 0.8.7 proved the CPU↔CUDA
+> embed path **bit-identical**. Therefore the **0.8330** GPU eu7 figure
+> (`dev/plans/runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log:73`) was a **cross-backend comparison
+> artifact** measured against a CPU reference (0.8960, CI [0.8640, 0.9250] ⇒ PASS) — **not a regression and
+> not a backend defect.** Nothing about OPP-12 disturbs this: pin A keeps `SearchHit.id` byte-identical
+> (`to_prefixed()` == prior `stable_id`) ⇒ **no gold-remap**, so the no-op basis holds on the argument.
+>
+> **To a future reader or agent:** do **not** schedule, price, or propose an eu7 run to "confirm" this —
+> proposing a cheap confirming run on a question the HITL has already decided **re-opens a closed decision**
+> and is the exact measurement-spiral this ruling guards against. **Close the item and route around it.**
+>
+> **Consequently closed / withdrawn:** **TC-19** (the CPU harness cannot drain `BATCH = 256` inside its
+> hardcoded 600 s at 0.179 docs/s) is **CLOSED by this routing, not by a fix** — the `BATCH 256→64` proposal
+> is **WITHDRAWN**, and **investigating the CPU throughput shortfall is EXPLICITLY FORBIDDEN** (HITL: *"we
+> understand it"*). **TC-12**'s "capture on CPU only" recommendation is **OVERRULED on the merits** — it was
+> right that *cross-backend* comparison is invalid, but the equivalence makes the whole capture moot.
+> **TC-13**'s harness hazards (the documented `--features` invocation is wrong — needs
+> `default-embedder,operator`; the gitignored corpus makes a worktree run a **vacuous skip-exit-0**) remain
+> **recorded as knowledge** for whoever eventually touches that harness — they are **NOT scheduled work.**
 | R-20-PUB | Coordinated breaking-pair publish; manifests **`0.8.9 → 0.8.20`** | Publish executed exactly per the **separate HITL gate** (F-21). Uses 0.8.18 #11-full machinery (proven, never fired). Pairs with Memex `0.5.x-successor` |
-| R-20-AC | Governed-surface delta signed | **new AC (AC-078+)** mirroring AC-074: the Phase-2 + erasure API delta vs the conformance allowlist, **HITL-SIGNED**. `recovery_denylist` **unchanged (stays five)** |
+| R-20-AC | Governed-surface delta signed | **new AC (`AC-079`+ — see the minting-floor warning in §3; NOT AC-077/078, which are reserved)** mirroring AC-074: the Phase-2 + erasure API delta vs the conformance allowlist, **HITL-SIGNED**. `recovery_denylist` **unchanged (stays five)** |
 
 ---
 
@@ -212,7 +251,7 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) | implementation | 15 |
 | **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) | implementation | 10,15,20,25 |
-| **40** | **Verification + release readiness** — full DoD, X1, eu7 basis, AC-078 sign-off, **publish-or-hold per the HITL gate** | verification | 5,30 |
+| **40** | **Verification + release readiness** — full DoD, X1, **AC-079 sign-off** (R-20-EU7 is **CLOSED — run NO eu7**, see §3), **publish-or-hold per the HITL gate** | verification | 5,30 |
 
 **Keystones / hard gates.**
 
@@ -257,7 +296,9 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 2. **Dedicated worktree** off a verified `origin/main` tip. **Never the primary/shared checkout** (TC-RUBRIC-5).
 3. **`0.8.18 #11-full` publish machinery** ✓ proven + exercised via staging — **never fired**. The 0.8.20 cut is
    its first real firing: **rehearse the tag→publish path before the HITL gate.**
-4. **Baseline captured** — eu7 recall + FTS/vector numbers + X1, so R-20-EU7 equivalence has a reference.
+4. **Baseline captured** — FTS/vector numbers + X1. **~~eu7 recall~~ — STRUCK (HITL 2026-07-19):** R-20-EU7 is
+   **closed by decision**, so **no eu7 baseline is required and no eu7 run is authorized** (§3). This prereq was
+   listed as *assumed* and was never actually met — Slice-0 found no baseline existed (**TC-19**); it is now moot.
 5. **Memex `0.5.x-successor` co-land readiness** confirmed (breaking **pair** — one side alone is not a release).
 
 ---
@@ -273,8 +314,22 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 - **Erasure is currently INCOMPLETE and UNREACHABLE.** Until Slice 5 lands: `excise_source` leaves the body in
   `search_index_v2`; the telemetry sink retains ids; op-store payloads are un-erasable; and **no CLI ships to SDK
   consumers**. **FathomDB MUST NOT be represented as GDPR-erasure-capable until 0.8.20 ships.**
-- **`source_id` MUST NOT contain PII** — it is retained **permanently** in the `excise_source_audit` row
-  (`:6479`), i.e. in the record of the erasure itself. Document at the write surface.
+- **`source_id` MUST NOT contain PII** — **the rule STANDS; its ORIGINAL RATIONALE WAS FALSE.**
+  ~~It is retained **permanently** in the `excise_source_audit` row (`:6479`), i.e. in the record of the
+  erasure itself.~~ **VERIFIED FALSE at Slice 0 (TC-15):** the audit row is written into
+  `operational_mutations` (`engine lib.rs:6479`), and `enforce_provenance_retention` (`:10070`) sweeps **that
+  same table** cap-first / oldest-id-first with **NO collection filter** (`:10083-10089`) — so the audit row is
+  **destructible**, and the erasure record shares one retention pool with the very payloads it must prove
+  erased. The **non-PII rule still holds** (an *unswept* audit row may still carry `source_id`, and it may
+  outlive the subject's data), but it was **argued from a false premise**. Document at the write surface —
+  and justify it on the surviving grounds, not on "permanent retention".
+- **THE ERASURE AUDIT TRAIL MUST BE DURABLE** *(HITL ruling, 2026-07-19: **"there must be an auditable record
+  of deletion event"**)*. Demonstrating **that** an erasure occurred is an obligation **distinct** from
+  performing it, and a retention sweep must not silently destroy the proof. **Slice 5 EXEMPTS the
+  erasure-audit collection from `enforce_provenance_retention`** (filter the sweep by collection) and **states
+  the audit-durability guarantee explicitly**. This is a **retention-policy change**, not a pure defect
+  repair — hence HITL-decided. Note the collision it resolves: work-item 9's `excise_collection_record`
+  operates on the **same** op-store table the audit rows live in.
 - **Outside the erasure boundary** (enumerate + disclose, do not silently omit): `safe_export` archives,
   operator backups, curated gold files. **Re-generate or destroy after any erasure.**
 
@@ -306,16 +361,33 @@ Run **codex §9** on the package, persist the transcript (TC-RUBRIC-7), and take
 - **2026-07-12 — REQ-037 lawful-erasure carve-out APPROVED.** `excise_source` stays CLI-only (recovery seam);
   **`erase_source()` ships as an SDK lifecycle verb**; `purge_logical_id` struck from REQ-037's forbidden list;
   **AC-041 unchanged and stays GREEN** · **HITL**.
+- **2026-07-19 — Slice-0 X0 SIGNED.** Package landed to `main` at **`403eb254`**. **TC-RUBRIC-5 is now
+  ENFORCED** via `scripts/preflight.sh --landing` (hard-fails on the primary checkout); **TC-RUBRIC-7**
+  transcript path **pinned at `dev/plans/runs/codex/0.8.20/`** · **HITL**.
+- **2026-07-19 — R-20-EU7 CLOSED BY DECISION, not by measurement. ZERO eu7 runs authorized, any backend, any
+  N** (§3). CPU↔CUDA is bit-identical (0.8.7) ⇒ the 0.8330 GPU figure was a **cross-backend artifact**.
+  **TC-19 closed by routing; TC-12 overruled on the merits; the CPU-throughput investigation is FORBIDDEN** ·
+  **HITL**.
+- **2026-07-19 — The erasure audit trail MUST be DURABLE** — *"there must be an auditable record of deletion
+  event."* **Slice 5 exempts the erasure-audit collection from `enforce_provenance_retention`** (§8). The v4
+  §3.6 "retained permanently" claim is **VERIFIED FALSE and SUPERSEDED** (**TC-15**) · **HITL**.
+- **2026-07-19 — AC ids mint from `AC-079`** (§3); AC-077/078 are **live IR-1/IR-2 reservations** (**TC-14**) ·
+  **HITL**.
+- **2026-07-19 — The `SourceId` breaking change needs NO separate adoption call** — 0.8.20 is *already* a
+  sanctioned coordinated breaking-pair publish. **`embed_batch_cls` TS binding proceeds inside X1** · **HITL**.
 
 ---
 
 ## 11. Open questions for the human (raise at Slice 0)
 
+> **Status: ALL RESOLVED at the X0 sign-off (HITL, 2026-07-19)** — see §10. Retained for the record.
+
 1. **Publish gate.** 0.8.20 is the **first real publish** (`0.8.9 → 0.8.20`) and a **coordinated breaking pair**.
    Confirm the cut, and confirm Memex `0.5.x-successor` is co-land ready. *(Publish is never implied by build.)*
-2. **eu7 basis** (F-22). Pin A keeps `SearchHit.id` byte-identical ⇒ the **no-op basis is expected to hold**.
-   Confirm no-op after Slice-40 proves it, or authorize a bounded re-baseline.
-3. **`embed_batch_cls` TS-binding parity** (F-22): add-TS, or ratify Py-first? Folds into X1.
+2. **eu7 basis** (F-22). ✅ **RESOLVED — CLOSED BY DECISION, ZERO runs authorized** (§3). *(The original text
+   "confirm no-op after Slice-40 proves it" is **withdrawn**: nothing is to be proven by running eu7.)*
+3. **`embed_batch_cls` TS-binding parity** (F-22): add-TS, or ratify Py-first? ✅ **RESOLVED — proceeds inside
+   X1 per recommendation.**
 4. **Adoption arms** (build ≠ adopt, F-21): does any Phase-2 item change **shipped default behavior**? Each such
    item needs its own adoption call. *(Default expectation: read-modes/registry/readiness are opt-in;
    the erasure fixes are defect repairs and ship ON.)*
