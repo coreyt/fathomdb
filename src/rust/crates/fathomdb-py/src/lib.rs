@@ -38,10 +38,11 @@ use fathomdb_engine::{
     rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp,
     ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
     CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, Explanation as RustExplanation,
-    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
@@ -387,6 +388,36 @@ impl PyWriteReceipt {
             cursor: r.cursor,
             row_cursors: r.row_cursors,
             dangling_edge_endpoints: r.dangling_edge_endpoints,
+        }
+    }
+}
+
+/// 0.8.20 Slice 5d (R-20-E4) — outcome of the `erase_source` lifecycle verb.
+/// Mirrors the Rust `ExciseReport` field-for-field. `projections_invalidated`
+/// counts the row-owned projection rows (FTS5 + vec0 + `search_index_v2`)
+/// dropped alongside the canonical rows.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "EraseReport",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyEraseReport {
+    source_ref: String,
+    nodes_excised: u64,
+    edges_excised: u64,
+    projections_invalidated: u64,
+}
+
+impl PyEraseReport {
+    fn from_rust(r: RustExciseReport) -> Self {
+        Self {
+            source_ref: r.source_ref,
+            nodes_excised: r.nodes_excised,
+            edges_excised: r.edges_excised,
+            projections_invalidated: r.projections_invalidated,
         }
     }
 }
@@ -1316,6 +1347,35 @@ fn purge(py: Python<'_>, engine: &PyEngine, logical_id: &Bound<'_, PyAny>) -> Py
     call_engine(py, move || inner.purge(&logical_id))
 }
 
+/// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — the `erase_source` lifecycle
+/// verb. Deletes every canonical row carrying `source_id`, plus its row-owned
+/// projections, and finishes the erasure at rest.
+///
+/// The COMPANION to `purge`, not a duplicate of it: `purge` addresses a
+/// governed node by `logical_id`; `erase_source` addresses ANONYMOUS content
+/// (rows with no `logical_id`) by its provenance, which `purge` cannot reach.
+/// Together they make every canonical row erasable from the SDK alone, with no
+/// CLI on `PATH` (R-20-E4).
+///
+/// NOT a recovery verb: `erase_source` carries no REQ-054 denylist name
+/// (`recover`/`restore`/`repair`/`fix`/`rebuild`), so AC-041 is unaffected.
+///
+/// Raises `WriteValidationError` for an empty, whitespace-only or reserved
+/// (`_`-prefixed) `source_id` — the engine's reserved namespace is reachable
+/// only through the CLI recovery seam.
+#[pyfunction]
+#[pyo3(signature = (engine, source_id))]
+fn erase_source(
+    py: Python<'_>,
+    engine: &PyEngine,
+    source_id: &Bound<'_, PyAny>,
+) -> PyResult<PyEraseReport> {
+    let source_id = extract_validated_str(source_id)?;
+    let inner = Arc::clone(&engine.inner);
+    let report = call_engine(py, move || inner.erase_source(&source_id))?;
+    Ok(PyEraseReport::from_rust(report))
+}
+
 #[pyfunction]
 #[pyo3(signature = (engine, logical_id))]
 fn read_get(
@@ -1990,6 +2050,7 @@ fn force_panic_for_test() -> PyResult<()> {
 fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyWriteReceipt>()?;
+    m.add_class::<PyEraseReport>()?;
     m.add_class::<PyIngestWithExtractorReceipt>()?;
     // 0.8.12 Slice 15 (OPP-2) — consolidation receipt.
     m.add_class::<PyConsolidateReceipt>()?;
@@ -2015,6 +2076,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle verbs.
     m.add_function(wrap_pyfunction!(transition, &m)?)?;
     m.add_function(wrap_pyfunction!(purge, &m)?)?;
+    m.add_function(wrap_pyfunction!(erase_source, &m)?)?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;

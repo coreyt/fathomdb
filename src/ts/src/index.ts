@@ -70,6 +70,23 @@ export interface WriteReceipt {
   danglingEdgeEndpoints: number;
 }
 
+/**
+ * 0.8.20 Slice 5d (R-20-E4) — outcome of {@link Engine.eraseSource}.
+ */
+export interface EraseReport {
+  /** The `sourceId` that was erased (echoed back). */
+  sourceRef: string;
+  /** Canonical node rows deleted. */
+  nodesExcised: number;
+  /** Canonical edge rows deleted. */
+  edgesExcised: number;
+  /**
+   * Row-owned projection rows (FTS5 + vec0 + `search_index_v2`) dropped
+   * alongside the canonical rows.
+   */
+  projectionsInvalidated: number;
+}
+
 /** G11 (Slice 15) — BYO-LLM ingest receipt. */
 export interface IngestWithExtractorReceipt {
   /** Number of `canonical_nodes` rows written (new insertions only). */
@@ -643,6 +660,36 @@ export class Engine {
   async purge(logicalId: string): Promise<void> {
     validateFfiString(logicalId);
     return intercept(() => this.#native.purge(logicalId));
+  }
+
+  /**
+   * 0.8.20 Slice 5d (R-20-E4) — the `eraseSource` lifecycle verb. Erases every
+   * canonical row carrying `sourceId`, together with its row-owned projections
+   * (FTS5, vec0, `search_index_v2`), and finishes the erasure at rest
+   * (telemetry redaction + WAL truncation).
+   *
+   * The COMPANION to {@link Engine.purge}, not a duplicate of it. `purge`
+   * addresses a *governed* node by `logicalId`; `eraseSource` addresses
+   * *anonymous* content — rows written with no `logicalId`, which `purge`
+   * cannot reach at all. Together they make every canonical row erasable from
+   * the SDK alone, with no CLI on `PATH`.
+   *
+   * Idempotent: erasing an absent or already-erased source is a zero-count
+   * success, so an interrupted erasure obligation can be retried without a
+   * pre-check.
+   *
+   * Throws `WriteValidationError` for an empty, whitespace-only or reserved
+   * (`_`-prefixed) `sourceId`. The engine's reserved namespace (`_engine:*`
+   * substrate and the `_legacy:pre-0.8.20` migration cohort) is reachable ONLY
+   * through the CLI recovery seam `fathomdb recover --excise-source`; a single
+   * governed call against it would erase every pre-0.8.20 anonymous row.
+   *
+   * NOT a recovery-denylist name (`recover`/`restore`/`repair`/`fix`/`rebuild`),
+   * so AC-041 is unaffected.
+   */
+  async eraseSource(sourceId: string): Promise<EraseReport> {
+    validateFfiString(sourceId);
+    return intercept(() => this.#native.eraseSource(sourceId));
   }
 
   async search(

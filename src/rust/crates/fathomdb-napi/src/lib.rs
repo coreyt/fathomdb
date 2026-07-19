@@ -34,10 +34,10 @@ use fathomdb_engine::{
     ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
     ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
     Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
-    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
-    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    ExciseReport as RustExciseReport, Explanation as RustExplanation,
+    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
+    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
@@ -418,6 +418,30 @@ impl WriteReceipt {
             cursor: r.cursor as i64,
             row_cursors: r.row_cursors.into_iter().map(|c| c as i64).collect(),
             dangling_edge_endpoints: r.dangling_edge_endpoints as i64,
+        }
+    }
+}
+
+/// 0.8.20 Slice 5d (R-20-E4) — outcome of the `eraseSource` lifecycle verb.
+/// Mirrors the Rust `ExciseReport`. Counts are narrowed `u64 -> i64` at the FFI
+/// boundary, matching the `WriteReceipt.cursor` precedent.
+#[napi(object)]
+pub struct EraseReport {
+    pub source_ref: String,
+    pub nodes_excised: i64,
+    pub edges_excised: i64,
+    /// Row-owned projection rows (FTS5 + vec0 + `search_index_v2`) dropped
+    /// alongside the canonical rows.
+    pub projections_invalidated: i64,
+}
+
+impl EraseReport {
+    fn from_rust(r: RustExciseReport) -> Self {
+        Self {
+            source_ref: r.source_ref,
+            nodes_excised: r.nodes_excised as i64,
+            edges_excised: r.edges_excised as i64,
+            projections_invalidated: r.projections_invalidated as i64,
         }
     }
 }
@@ -1114,6 +1138,27 @@ impl Engine {
         validate_ffi_string_napi(&logical_id)?;
         let engine = Arc::clone(&self.inner);
         call_engine(move || engine.purge(&logical_id)).await
+    }
+
+    /// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — `eraseSource` lifecycle
+    /// verb. Deletes every canonical row carrying `sourceId`, plus its
+    /// row-owned projections, and finishes the erasure at rest.
+    ///
+    /// The COMPANION to `purge`, not a duplicate: `purge` addresses a governed
+    /// node by `logicalId`; `eraseSource` addresses ANONYMOUS content (rows
+    /// with no `logicalId`) by its provenance, which `purge` cannot reach.
+    /// Together they make every canonical row erasable from the SDK alone,
+    /// with no CLI on `PATH`.
+    ///
+    /// Idempotent (an absent source is a zero-count success). Throws
+    /// `WriteValidationError` for an empty, whitespace-only or reserved
+    /// (`_`-prefixed) `sourceId`. NOT a recovery-denylist name — AC-041 holds.
+    #[napi]
+    pub async fn erase_source(&self, source_id: String) -> Result<EraseReport> {
+        validate_ffi_string_napi(&source_id)?;
+        let engine = Arc::clone(&self.inner);
+        let report = call_engine(move || engine.erase_source(&source_id)).await?;
+        Ok(EraseReport::from_rust(report))
     }
 
     #[napi]
