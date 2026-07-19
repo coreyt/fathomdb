@@ -153,6 +153,13 @@ const REDACTED_STABLE_ID: &str = "[erased]";
 /// [`Engine::excise_collection_record`] — an explicit operator act that is
 /// itself audited.
 const ERASURE_AUDIT_COLLECTIONS: &[&str] = &["excise_source_audit", "excise_record_audit"];
+/// 0.8.20 Slice 5 fix-1 (codex §9 P2) — the `operational_mutations` collection
+/// holding the DURABLE record of a telemetry redaction that is owed but not yet
+/// performed. See [`Engine::discharge_pending_redactions`].
+///
+/// Like the audit collections it is exempt from the retention sweep: an
+/// outstanding erasure obligation must not be discharged by cap pressure.
+const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
@@ -6457,8 +6464,8 @@ impl Engine {
         // reporting success. Runs after the connection guard inside
         // `purge_inner` has been dropped: `complete_erasure_at_rest` re-acquires
         // it for the checkpoint.
-        let erased_stable_ids = outcome?;
-        self.complete_erasure_at_rest("purge", &erased_stable_ids)
+        let _erased_stable_ids = outcome?;
+        self.complete_erasure_at_rest("purge")
     }
 
     /// Returns the prefixed stable ids ([`IdSpace::to_prefixed`]) of every row it
@@ -6546,7 +6553,21 @@ impl Engine {
         tx.execute("DELETE FROM canonical_edges WHERE from_id = ?1 OR to_id = ?1", params![lid])
             .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 5 fix-1 (codex §9 P2) — durably record the redaction this
+        // erasure now owes, atomically with the deletes above. Only when a sink
+        // is attached: with telemetry never enabled there is no file the ids
+        // could have leaked into, so there is nothing to owe.
+        let pending_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        let enqueued =
+            self.telemetry_enabled.load(Ordering::Acquire) && !erased_stable_ids.is_empty();
+        if enqueued {
+            enqueue_pending_redaction(&tx, "purge", &erased_stable_ids, pending_cursor)?;
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
+        if enqueued {
+            self.next_cursor.store(pending_cursor, Ordering::SeqCst);
+        }
         self.counters.record_admin();
         Ok(erased_stable_ids)
     }
@@ -6628,15 +6649,15 @@ impl Engine {
         // timeout instead of swallowing it (Pack A pattern).
         self.projection_runtime.set_frozen(true);
         let drain_result = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS);
-        let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
+        let outcome = drain_result.and_then(|()| self.excise_source_inner(verb, source_id));
         self.projection_runtime.set_frozen(false);
         // 0.8.20 Slice 5b (R-20-E5/E6) — finish the erasure AT REST before
         // reporting success: redact the erased stable ids out of the telemetry
         // sink, then truncate the `-wal` so the erased bytes are not still
         // readable on disk. On persistent checkpoint BUSY this returns
         // `ErasureIncomplete` rather than an `ExciseReport`.
-        let (report, erased_stable_ids) = outcome?;
-        self.complete_erasure_at_rest(verb, &erased_stable_ids)?;
+        let (report, _erased_stable_ids) = outcome?;
+        self.complete_erasure_at_rest(verb)?;
         Ok(report)
     }
 
@@ -6868,7 +6889,10 @@ impl Engine {
     /// erasing transaction has committed. Two obligations, in order:
     ///
     /// 1. **Telemetry redaction** — drop the erased stable ids out of the opt-in
-    ///    telemetry sink ([`Engine::redact_telemetry_stable_ids`]).
+    ///    telemetry sink. Driven from the DURABLE pending queue
+    ///    ([`Engine::discharge_pending_redactions`]), NOT from the ids the caller
+    ///    happens to be holding, so a retry after a failed redaction still knows
+    ///    what it owes.
     /// 2. **WAL truncation** — `wal_checkpoint(TRUNCATE)` with a BOUNDED retry.
     ///    `PRAGMA secure_delete=ON` zeroes pages freed inside the database file,
     ///    but the erased content also lives in the write-ahead log as committed
@@ -6881,12 +6905,12 @@ impl Engine {
     /// [`EngineError::ErasureIncomplete`] — **an erasure verb must never report
     /// success on an incomplete erasure.** The retry budget is deliberately small
     /// (~100 ms total): the caller retries the verb, the verb does not block.
-    fn complete_erasure_at_rest(
-        &self,
-        verb: &'static str,
-        erased_stable_ids: &[String],
-    ) -> Result<(), EngineError> {
-        self.redact_telemetry_stable_ids(verb, erased_stable_ids)?;
+    fn complete_erasure_at_rest(&self, verb: &'static str) -> Result<(), EngineError> {
+        // The ids are NOT passed in: they were persisted inside the erasing
+        // transaction, and this drains that queue. The WAL truncation below then
+        // runs AFTER the pending rows have been deleted, so the freed pages
+        // holding them (zeroed by `secure_delete=ON`) are checkpointed out too.
+        self.discharge_pending_redactions(verb)?;
 
         let mut last: Option<TruncateWalReport> = None;
         for attempt in 0..ERASURE_WAL_TRUNCATE_ATTEMPTS {
@@ -6909,6 +6933,131 @@ impl Engine {
                  in the `-wal` file. Retry once the reader has finished."
             ),
         })
+    }
+
+    /// 0.8.20 Slice 5 fix-1 (codex §9 P2) — perform every telemetry redaction the
+    /// engine still OWES, from the durable pending queue.
+    ///
+    /// **The defect this closes.** Redaction necessarily runs after the erasing
+    /// transaction commits (the sink is a file, not a table, so it cannot join
+    /// the transaction). When it failed, the verb correctly raised
+    /// `ErasureIncomplete { stage: "telemetry_redaction" }` and told the operator
+    /// to retry — but the retry recomputed the id set by querying the canonical
+    /// tables, whose rows the FIRST call had already deleted. It therefore got an
+    /// EMPTY set, hit the empty-id fast path in
+    /// [`Engine::redact_telemetry_stable_ids`], and returned success while the
+    /// leaked `l:`/`h:` ids were still sitting in the sink. An erasure verb
+    /// reporting success on an incomplete erasure is precisely what R-20-E5
+    /// forbids, and it is the worst failure mode available to this slice: silent,
+    /// and indistinguishable from a real erasure.
+    ///
+    /// **The mechanism — an intent log.** The ids are captured BEFORE the deletes
+    /// (they are derived from `logical_id`/`body`, which the deletes destroy) and
+    /// written into [`ERASURE_PENDING_REDACTION_COLLECTION`] INSIDE the same
+    /// transaction, so "the rows are gone" and "a redaction is owed for them"
+    /// commit atomically. There is no window in which the rows are deleted and
+    /// the obligation is unrecorded. A pending row is deleted only once its
+    /// redaction has actually been performed, so the obligation survives process
+    /// death, and the empty-id fast path is unreachable while one is outstanding:
+    /// this drains the QUEUE, never the caller's id vector.
+    ///
+    /// The queue is drained by EVERY erasure verb, not just a retry of the one
+    /// that failed — an outstanding obligation is the engine's, not one call's.
+    ///
+    /// **Honest refusal.** If a redaction is owed but no telemetry sink is
+    /// attached to this `Engine` (only reachable if the process restarted between
+    /// the failure and the retry without re-enabling telemetry), the ids really
+    /// are still in the sink file and this returns `ErasureIncomplete` rather
+    /// than guessing. Re-enable telemetry on the same sink and retry.
+    ///
+    /// **Exposure tradeoff, stated plainly.** A pending row holds the stable ids
+    /// in the database for the window between the delete and the redaction. That
+    /// is a strict improvement: those ids are, during exactly that window,
+    /// already readable in the telemetry sink — which is the leak being closed —
+    /// and the pending row is deleted the moment the sink is clean, on pages
+    /// `secure_delete=ON` zeroes and the subsequent `TRUNCATE` checkpoint clears
+    /// from the log.
+    fn discharge_pending_redactions(&self, verb: &'static str) -> Result<(), EngineError> {
+        let pending = self.load_pending_redactions()?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        let mut ids: Vec<String> =
+            pending.iter().flat_map(|(_, ids)| ids.iter().cloned()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+
+        // A queue entry exists ⇒ a sink was attached when the rows were deleted ⇒
+        // the ids are in that file. Never clear the queue without redacting.
+        if !self.telemetry_enabled.load(Ordering::Acquire) {
+            return Err(EngineError::ErasureIncomplete {
+                stage: "telemetry_redaction".to_string(),
+                detail: format!(
+                    "`{verb}` has {} outstanding telemetry redaction(s) covering {} erased \
+                     stable id(s), but no telemetry sink is attached to this engine — the ids \
+                     cannot be removed from the sink file. Re-enable telemetry on the same sink \
+                     path and retry.",
+                    pending.len(),
+                    ids.len()
+                ),
+            });
+        }
+
+        // On failure the queue rows stay put and the error propagates: the verb
+        // does not report success, and the next call retries the same obligation.
+        self.redact_telemetry_stable_ids(verb, &ids)?;
+
+        let row_ids: Vec<i64> = pending.iter().map(|(row_id, _)| *row_id).collect();
+        self.clear_pending_redactions(&row_ids)
+    }
+
+    /// Read the outstanding redaction queue: `(operational_mutations.id, ids)`.
+    fn load_pending_redactions(&self) -> Result<Vec<(i64, Vec<String>)>, EngineError> {
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare(
+                "SELECT id, payload_json FROM operational_mutations \
+                 WHERE collection_name = ?1 ORDER BY id",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let rows = stmt
+            .query_map([ERASURE_PENDING_REDACTION_COLLECTION], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        let mut pending = Vec::new();
+        for row in rows {
+            let (row_id, payload) = row.map_err(|_| EngineError::Storage)?;
+            // A payload we cannot parse is an obligation we cannot discharge;
+            // keeping it (empty) is safe — it never unblocks a false success,
+            // and `discharge_pending_redactions` still refuses.
+            let ids = serde_json::from_str::<serde_json::Value>(&payload)
+                .ok()
+                .and_then(|v| v.get("erased_stable_ids").cloned())
+                .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+                .unwrap_or_default();
+            pending.push((row_id, ids));
+        }
+        Ok(pending)
+    }
+
+    /// Retire queue entries whose redaction has been PERFORMED. Committed before
+    /// the caller's WAL truncation so the freed pages are checkpointed out.
+    fn clear_pending_redactions(&self, row_ids: &[i64]) -> Result<(), EngineError> {
+        if row_ids.is_empty() {
+            return Ok(());
+        }
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut stmt = connection
+            .prepare("DELETE FROM operational_mutations WHERE id = ?1")
+            .map_err(|_| EngineError::Storage)?;
+        for row_id in row_ids {
+            stmt.execute([row_id]).map_err(|_| EngineError::Storage)?;
+        }
+        Ok(())
     }
 
     /// 0.8.20 Slice 5b (R-20-E6) — SELECTIVE redaction of erased stable ids from
@@ -6982,6 +7131,7 @@ impl Engine {
     /// public spellings.
     fn excise_source_inner(
         &self,
+        verb: &'static str,
         source_id: &str,
     ) -> Result<(ExciseReport, Vec<String>), EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
@@ -7083,6 +7233,13 @@ impl Engine {
         )
         .map_err(|_| EngineError::Storage)?;
 
+        // 0.8.20 Slice 5 fix-1 (codex §9 P2) — durably record the redaction this
+        // erasure owes, atomically with the deletes. Shares `audit_cursor`: one
+        // erasure event, and this row is retired as soon as the sink is clean.
+        if self.telemetry_enabled.load(Ordering::Acquire) {
+            enqueue_pending_redaction(&tx, verb, &erased_stable_ids, audit_cursor)?;
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.next_cursor.store(audit_cursor, Ordering::SeqCst);
         Ok((
@@ -7128,7 +7285,7 @@ impl Engine {
             return Err(EngineError::WriteValidation);
         }
         let report = self.excise_collection_record_inner(collection, record_key)?;
-        self.complete_erasure_at_rest("excise_collection_record", &[])?;
+        self.complete_erasure_at_rest("excise_collection_record")?;
         Ok(report)
     }
 
@@ -10901,6 +11058,14 @@ fn recompute_mean_in_tx_inner(
 /// Cap sweep over the op-store mutation log: keeps the newest `cap` SWEEPABLE
 /// rows, dropping the oldest by `id`.
 ///
+/// **Pending-redaction exemption (0.8.20 Slice 5 fix-1).**
+/// [`ERASURE_PENDING_REDACTION_COLLECTION`] is exempt on the same principle for a
+/// stronger reason: that row is not a record of a discharged obligation but an
+/// UNDISCHARGED one. Sweeping it would silently drop an erasure the engine still
+/// owes, and the next retry would then report success with the leaked stable ids
+/// still in the telemetry sink — exactly the R-20-E5 violation this mechanism
+/// exists to prevent.
+///
 /// **Erasure-audit exemption (0.8.20 Slice 5b, design v5 §2 defect D-A;
 /// HITL-ruled 2026-07-19: *"there must be an auditable record of deletion
 /// event."*).** Rows in [`ERASURE_AUDIT_COLLECTIONS`] are excluded from BOTH the
@@ -10924,6 +11089,8 @@ fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::
     // Static, engine-internal identifiers — no caller input reaches this SQL.
     let exempt = ERASURE_AUDIT_COLLECTIONS
         .iter()
+        .copied()
+        .chain(std::iter::once(ERASURE_PENDING_REDACTION_COLLECTION))
         .map(|name| format!("'{name}'"))
         .collect::<Vec<_>>()
         .join(", ");
@@ -10990,6 +11157,38 @@ fn collect_erased_stable_ids(
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
+}
+
+/// 0.8.20 Slice 5 fix-1 (codex §9 P2) — record, INSIDE the erasing transaction,
+/// that a telemetry redaction is owed for `erased_stable_ids`.
+///
+/// Must be called in the same transaction as the DELETEs. That is the whole
+/// point: "the rows are gone" and "a redaction is owed for them" then commit
+/// atomically, so no crash or failure can leave the first true and the second
+/// unrecorded. [`Engine::discharge_pending_redactions`] drains the queue and
+/// deletes the entry only once the sink has actually been rewritten.
+///
+/// `record_key` is the VERB, never a stable id — the ids live in the payload,
+/// which is deleted on discharge.
+fn enqueue_pending_redaction(
+    tx: &Connection,
+    verb: &str,
+    erased_stable_ids: &[String],
+    write_cursor: u64,
+) -> Result<(), EngineError> {
+    if erased_stable_ids.is_empty() {
+        return Ok(());
+    }
+    let payload =
+        serde_json::json!({ "verb": verb, "erased_stable_ids": erased_stable_ids }).to_string();
+    tx.execute(
+        "INSERT INTO operational_mutations(
+            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+         ) VALUES(?1, ?2, 'append', ?3, NULL, ?4)",
+        params![ERASURE_PENDING_REDACTION_COLLECTION, verb, payload, write_cursor],
+    )
+    .map_err(|_| EngineError::Storage)?;
+    Ok(())
 }
 
 /// 0.8.20 Slice 5b (R-20-E7) — the audit handle for an erased op-store record:

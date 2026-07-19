@@ -299,6 +299,12 @@ fn telemetry_redaction_retry_completes_after_failure() {
         hits.results.iter().any(|h| h.id.to_prefixed() == "l:victim-1"),
         "fixture: the victim id must be captured into the sink"
     );
+    let control_hits = opened.engine.search("omega").expect("search omega");
+    assert!(
+        control_hits.results.iter().any(|h| h.id.to_prefixed() == "l:control-1"),
+        "fixture: the control id must be captured into the sink, so the selectivity \
+         assertion below is not vacuous"
+    );
     assert!(
         std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
         "fixture: the victim id must be on disk in the sink before the erasure"
