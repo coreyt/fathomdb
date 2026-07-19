@@ -6,13 +6,17 @@
 //! `excise_source` — un-erasable. Step 21 back-fills those rows with the
 //! reserved `source_id = '_legacy:pre-0.8.20'`.
 //!
-//! **The gate is EXACT and load-bearing: `WHERE logical_id IS NULL` ONLY.**
-//! It comes from the TC-11 pin (CLOSED — not re-openable): a **governed** row
-//! (non-NULL `logical_id`) keeps its NULL `source_id` and stays
-//! `purge`-addressable BY `logical_id`. The pin's enforcing invariant is that no
-//! migration, backfill or verb shall ever populate `logical_id` on an existing
-//! canonical row, and a stored row's id-space is NEVER re-derived — so this
-//! migration reads `logical_id` and never writes it.
+//! **The gate is EXACT, load-bearing and NODE-ONLY.** On `canonical_nodes` it is
+//! `WHERE source_id IS NULL AND logical_id IS NULL`, from the TC-11 pin (CLOSED
+//! — not re-openable): a **governed** node (non-NULL `logical_id`) keeps its NULL
+//! `source_id` and stays `purge`-addressable BY `logical_id`. On
+//! `canonical_edges` it is `WHERE source_id IS NULL` alone, because an edge
+//! `logical_id` is only a supersession identity and `purge` never resolves an
+//! edge by it — see `legacy_backfill_covers_governed_edges`.
+//!
+//! The pin's enforcing invariant is that no migration, backfill or verb shall
+//! ever populate `logical_id` on an existing canonical row, and a stored row's
+//! id-space is NEVER re-derived — so this migration only ever writes `source_id`.
 //!
 //! `SCHEMA_VERSION` advances 20 → 21. One migration per release (I-6).
 

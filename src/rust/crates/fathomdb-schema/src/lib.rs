@@ -529,13 +529,38 @@ pub const MIGRATIONS: &[Migration] = &[
     // already on disk by stamping them with the reserved
     // `_legacy:pre-0.8.20`, after which an operator can erase them.
     //
-    // THE GATE IS EXACT AND LOAD-BEARING: `WHERE logical_id IS NULL` ONLY.
-    // It comes from the TC-11 pin (CLOSED). A GOVERNED row — one carrying a
-    // `logical_id` — is addressable in its own right: `purge` reaches it BY
-    // `logical_id`. Stamping it with a shared `_legacy:` provenance would make
-    // it collateral of an `excise_source('_legacy:pre-0.8.20')` call aimed at
-    // anonymous rows, which is precisely the over-erasure the pin forbids. So
-    // governed rows keep NULL `source_id` by design; that is not a gap.
+    // THE GATE IS EXACT, LOAD-BEARING AND **NODE-ONLY**: on `canonical_nodes`
+    // the predicate is `WHERE source_id IS NULL AND logical_id IS NULL`; on
+    // `canonical_edges` it is `WHERE source_id IS NULL` alone. The asymmetry is
+    // deliberate, and the reason is that the gate's rationale holds for one
+    // table and not the other.
+    //
+    // The rationale comes from the TC-11 pin (CLOSED): a GOVERNED row — one
+    // carrying a `logical_id` — is addressable in its own right, because `purge`
+    // reaches it BY `logical_id`. Stamping it with a shared `_legacy:`
+    // provenance would make it collateral of an
+    // `excise_source('_legacy:pre-0.8.20')` call aimed at anonymous rows, which
+    // is precisely the over-erasure the pin forbids. That argument is sound FOR
+    // NODES: governed nodes keep NULL `source_id` by design, and that is not a
+    // gap.
+    //
+    // It is FALSE FOR EDGES. `purge` resolves its lifecycle target exclusively
+    // through `canonical_nodes` (`SELECT state FROM canonical_nodes WHERE
+    // logical_id = ?1 AND superseded_at IS NULL`) and then erases edges by
+    // ENDPOINT (`from_id`/`to_id`) — it never resolves an edge by edge
+    // `logical_id`. An edge `logical_id` is only a SUPERSESSION identity; it
+    // confers no purge-addressability whatsoever. Applying the node gate to
+    // edges therefore left legacy edges with `source_id IS NULL AND logical_id
+    // IS NOT NULL` skipped by this backfill (⇒ unreachable by
+    // `excise_source`/`erase_source`) AND not purge-addressable (⇒ unreachable
+    // by `purge`), so they were erasable by NO verb and could only disappear
+    // incidentally when a connected node happened to be purged. That defeats
+    // R-20-E8, whose entire purpose is that legacy NULL-provenance rows become
+    // erasable. (codex §9 P1; `legacy_backfill_covers_governed_edges`.)
+    //
+    // Back-filling an edge's `source_id` does NOT touch the TC-11 pin: the pin
+    // forbids populating `logical_id` on an existing row and forbids re-deriving
+    // a stored row's id-space, and this writes neither.
     //
     // The pin's enforcing invariant is also respected: this statement READS
     // `logical_id` as its predicate and NEVER writes one. No row transitions
@@ -555,7 +580,7 @@ pub const MIGRATIONS: &[Migration] = &[
                WHERE source_id IS NULL AND logical_id IS NULL;
               UPDATE canonical_edges
                  SET source_id = '_legacy:pre-0.8.20'
-               WHERE source_id IS NULL AND logical_id IS NULL;",
+               WHERE source_id IS NULL;",
     },
 ];
 
