@@ -252,6 +252,119 @@ fn unrelated_sink_records_survive() {
     );
 }
 
+/// **codex §9 P2 — a retry must not report success on an unfinished redaction.**
+///
+/// The redaction runs AFTER the delete transaction commits. If it fails, the
+/// verb correctly raises `ErasureIncomplete { stage: "telemetry_redaction" }` and
+/// the operator is told to retry. But the retry re-derived `erased_stable_ids`
+/// from the canonical tables — whose rows the FIRST call already deleted — so it
+/// computed an EMPTY id set, hit the empty-id fast path in
+/// `redact_telemetry_stable_ids`, and returned `Ok`. The leaked stable ids were
+/// still sitting in the sink, and the verb said the erasure was complete.
+///
+/// That is the exact failure R-20-E5 forbids: *an erasure verb must NEVER report
+/// success on an incomplete erasure.* The pending redaction has to be DURABLE, so
+/// a retry finishes the job rather than forgetting what it owed.
+///
+/// Failure is injected by making the sink's directory read-only, so
+/// `redact_jsonl_stable_ids` cannot create its `.redact.tmp` sibling
+/// (`PermissionDenied`, not `NotFound` — the latter is a legitimate "sink is
+/// gone, nothing to redact" success).
+#[cfg(unix)]
+#[test]
+fn telemetry_redaction_retry_completes_after_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    fn chmod(dir: &Path, mode: u32) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).expect("chmod");
+    }
+
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "telemetry_retry");
+    // The sink lives in its own directory so it can be made read-only WITHOUT
+    // also freezing the database, its `-wal` or the engine's own scratch files.
+    let sink_dir = dir.path().join("sink");
+    std::fs::create_dir(&sink_dir).expect("create sink dir");
+    let sink = sink_dir.join("telemetry.jsonl");
+
+    let opened = Engine::open(&path).expect("open");
+    opened.engine.enable_telemetry(sink.to_str().unwrap()).expect("enable telemetry");
+
+    write_node(&opened.engine, "erasable zeta payload", "S1", Some("victim-1"));
+    write_node(&opened.engine, "retained omega payload", "S2", Some("control-1"));
+    opened.engine.drain(10_000).expect("drain");
+
+    let hits = opened.engine.search("zeta").expect("search zeta");
+    assert!(
+        hits.results.iter().any(|h| h.id.to_prefixed() == "l:victim-1"),
+        "fixture: the victim id must be captured into the sink"
+    );
+    assert!(
+        std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
+        "fixture: the victim id must be on disk in the sink before the erasure"
+    );
+
+    // --- Attempt 1: redaction fails after the delete commits. ---
+    chmod(&sink_dir, 0o555);
+    // Non-vacuity guard: if the sandbox ignores the mode bits (e.g. running as
+    // root) no failure is injected and the whole test proves nothing.
+    let probe = sink_dir.join("write-probe");
+    if std::fs::write(&probe, b"x").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        chmod(&sink_dir, 0o755);
+        panic!(
+            "cannot inject a redaction failure: the sink directory is still writable at mode \
+             0555 (running as root?) — this test would be vacuous"
+        );
+    }
+
+    let err = opened
+        .engine
+        .excise_source("S1")
+        .expect_err("excise must not report success while the sink cannot be redacted");
+    match &err {
+        EngineError::ErasureIncomplete { stage, .. } => assert_eq!(
+            stage, "telemetry_redaction",
+            "the erasure must fail at the redaction stage, not somewhere else"
+        ),
+        other => panic!("expected ErasureIncomplete{{telemetry_redaction}}, got {other:?}"),
+    }
+
+    // The canonical rows ARE gone (the delete committed) — that is precisely what
+    // makes the naive retry recompute an empty id set. RAW state, per Rule 1.
+    chmod(&sink_dir, 0o755);
+    let probe_conn = Connection::open(&path).expect("probe connection");
+    let remaining: u64 = probe_conn
+        .query_row("SELECT COUNT(*) FROM canonical_nodes WHERE source_id = 'S1'", [], |row| {
+            row.get(0)
+        })
+        .expect("count S1 rows");
+    drop(probe_conn);
+    assert_eq!(remaining, 0, "precondition: the delete transaction committed");
+    assert!(
+        std::fs::read_to_string(&sink).expect("read sink").contains("l:victim-1"),
+        "precondition: the leaked id is still in the sink after the failed redaction"
+    );
+
+    // --- Attempt 2: the retry must actually finish the redaction. ---
+    opened.engine.excise_source("S1").expect("the retry must complete the pending redaction");
+
+    let after = std::fs::read_to_string(&sink).expect("read sink after retry");
+    assert!(
+        !after.contains("l:victim-1"),
+        "the retry reported SUCCESS while the erased stable id is STILL in the telemetry \
+         sink — an erasure verb must never report success on an incomplete erasure \
+         (R-20-E5):\n{after}"
+    );
+    // The retry must stay selective: it redacts what was owed, nothing more.
+    assert!(
+        after.contains("l:control-1"),
+        "the retry destroyed a retained id's telemetry record:\n{after}"
+    );
+
+    opened.engine.close().unwrap();
+}
+
 // ===== R-20-E7 · Op-store record erasure ==============================
 
 /// The op-store had no record-level delete at all: `enforce_provenance_retention`

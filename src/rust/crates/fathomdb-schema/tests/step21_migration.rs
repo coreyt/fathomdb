@@ -128,10 +128,13 @@ fn legacy_backfill_spares_governed_rows() {
         "TC-11 pin: a GOVERNED row keeps NULL source_id — the backfill gate is \
          `WHERE logical_id IS NULL` ONLY"
     );
+    // ...but the gate is NODE-ONLY. A governed EDGE is back-filled: see
+    // `legacy_backfill_covers_governed_edges` for the full argument.
     assert_eq!(
-        source_id_of(&conn, "canonical_edges", 6),
-        None,
-        "TC-11 pin: a GOVERNED edge keeps NULL source_id"
+        source_id_of(&conn, "canonical_edges", 6).as_deref(),
+        Some(LEGACY_SOURCE_ID),
+        "an edge `logical_id` is not purge-addressable, so a governed edge must \
+         still be back-filled or it is erasable by no verb at all"
     );
 
     // Already-provenanced rows are untouched in both id-spaces.
@@ -149,6 +152,71 @@ fn legacy_backfill_spares_governed_rows() {
         source_id_of(&conn, "canonical_edges", 7).as_deref(),
         Some("doc-caller-3"),
         "the backfill must not overwrite caller-supplied edge provenance"
+    );
+}
+
+/// **codex §9 P1 — the gate is NODE-ONLY.** Applying `logical_id IS NULL` to
+/// `canonical_edges` too left a class of rows erasable by NO verb.
+///
+/// The gate's rationale is that a governed row keeps NULL `source_id` because it
+/// stays addressable in its own right — `purge` reaches it BY `logical_id`. That
+/// is TRUE FOR NODES and FALSE FOR EDGES: `purge` resolves its target
+/// exclusively through `canonical_nodes`
+/// (`SELECT state FROM canonical_nodes WHERE logical_id = ?1 …`) and then erases
+/// edges by ENDPOINT (`from_id`/`to_id`), never by edge `logical_id`. An edge
+/// `logical_id` is only a supersession identity; it confers no
+/// purge-addressability whatsoever.
+///
+/// So a legacy edge with `source_id IS NULL AND logical_id IS NOT NULL` was:
+/// skipped by the backfill (⇒ unreachable by `excise_source`/`erase_source`) AND
+/// not purge-addressable (⇒ unreachable by `purge`). It could only disappear
+/// incidentally, if some connected node happened to be purged. That defeats
+/// R-20-E8, whose entire purpose is that legacy NULL-provenance rows become
+/// erasable.
+///
+/// **This does not weaken the TC-11 pin.** The pin forbids populating
+/// `logical_id` on an existing row and forbids re-deriving a stored row's
+/// id-space. Back-filling `source_id` on an edge does neither —
+/// `s21_backfill_populates_no_logical_id` still holds.
+#[test]
+fn legacy_backfill_covers_governed_edges() {
+    let conn = seed_v20_matrix();
+
+    // Seed guard: cursor 6 is exactly the codex shape — NULL provenance, non-NULL
+    // `logical_id` — so the post-assertion below is not vacuous.
+    assert_eq!(source_id_of(&conn, "canonical_edges", 6), None);
+    assert_eq!(
+        logical_id_of(&conn, "canonical_edges", 6).as_deref(),
+        Some("lid-edge-governed"),
+        "seed: the edge under test must carry a `logical_id`"
+    );
+
+    let step21_only: Vec<_> = MIGRATIONS.iter().filter(|m| m.step_id == 21).cloned().collect();
+    assert_eq!(step21_only.len(), 1, "step-21 must exist for this guard to mean anything");
+    migrate_with_steps(&conn, &step21_only).expect("forward migrate to v21");
+
+    // RAW TABLE CONTENTS (design §3 Rule 1) — never via search results.
+    assert_eq!(
+        source_id_of(&conn, "canonical_edges", 6).as_deref(),
+        Some(LEGACY_SOURCE_ID),
+        "a legacy edge with NULL provenance and a non-NULL `logical_id` must be \
+         back-filled: edge `logical_id` is NOT purge-addressable, so without this \
+         the row is erasable by no verb at all (R-20-E8)"
+    );
+
+    // The node half of the gate is UNCHANGED: a governed node still keeps NULL
+    // `source_id`, because `purge` genuinely does reach it by `logical_id`.
+    assert_eq!(
+        source_id_of(&conn, "canonical_nodes", 2),
+        None,
+        "the node gate must remain `source_id IS NULL AND logical_id IS NULL`"
+    );
+
+    // The fix must not turn into a blanket overwrite: provenanced edges untouched.
+    assert_eq!(
+        source_id_of(&conn, "canonical_edges", 7).as_deref(),
+        Some("doc-caller-3"),
+        "caller-supplied edge provenance must never be overwritten"
     );
 }
 
