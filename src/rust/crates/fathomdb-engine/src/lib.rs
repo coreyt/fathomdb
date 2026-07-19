@@ -6464,13 +6464,15 @@ impl Engine {
         // reporting success. Runs after the connection guard inside
         // `purge_inner` has been dropped: `complete_erasure_at_rest` re-acquires
         // it for the checkpoint.
-        let _erased_stable_ids = outcome?;
+        outcome?;
         self.complete_erasure_at_rest("purge")
     }
 
-    /// Returns the prefixed stable ids ([`IdSpace::to_prefixed`]) of every row it
-    /// erased, so the caller can redact them from the telemetry sink (R-20-E6).
-    fn purge_inner(&self, lid: &str) -> Result<Vec<String>, EngineError> {
+    /// The erased rows' prefixed stable ids ([`IdSpace::to_prefixed`]) are NOT
+    /// returned: they are enqueued for redaction inside this transaction (see
+    /// [`enqueue_pending_redaction`]), because a caller-held vector is lost on the
+    /// retry path that codex Â§9 P2 found.
+    fn purge_inner(&self, lid: &str) -> Result<(), EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -6490,7 +6492,7 @@ impl Engine {
             None => {
                 // Idempotent: nothing to erase.
                 tx.commit().map_err(|_| EngineError::Storage)?;
-                return Ok(Vec::new());
+                return Ok(());
             }
             Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
         };
@@ -6569,7 +6571,7 @@ impl Engine {
             self.next_cursor.store(pending_cursor, Ordering::SeqCst);
         }
         self.counters.record_admin();
-        Ok(erased_stable_ids)
+        Ok(())
     }
 
     /// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — the **governed SDK
@@ -6656,7 +6658,7 @@ impl Engine {
         // sink, then truncate the `-wal` so the erased bytes are not still
         // readable on disk. On persistent checkpoint BUSY this returns
         // `ErasureIncomplete` rather than an `ExciseReport`.
-        let (report, _erased_stable_ids) = outcome?;
+        let report = outcome?;
         self.complete_erasure_at_rest(verb)?;
         Ok(report)
     }
@@ -7121,9 +7123,11 @@ impl Engine {
         }
     }
 
-    /// Returns the report plus the prefixed stable ids
-    /// ([`IdSpace::to_prefixed`]) of every erased row, so the caller can redact
-    /// them from the telemetry sink (R-20-E6).
+    /// The erased rows' prefixed stable ids ([`IdSpace::to_prefixed`]) are NOT
+    /// returned to the caller for redaction (R-20-E6). They are enqueued INSIDE
+    /// this transaction via [`enqueue_pending_redaction`]: a caller-held vector
+    /// is lost on the retry path, which is exactly the false-success codex §9 P2
+    /// found. Only the report comes back.
     ///
     /// 0.8.20 Slice 5d (R-20-E4): no longer `operator`-gated — it is the shared
     /// body behind BOTH `erase_source` (governed SDK) and `excise_source`
@@ -7133,7 +7137,7 @@ impl Engine {
         &self,
         verb: &'static str,
         source_id: &str,
-    ) -> Result<(ExciseReport, Vec<String>), EngineError> {
+    ) -> Result<ExciseReport, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -7242,15 +7246,12 @@ impl Engine {
 
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.next_cursor.store(audit_cursor, Ordering::SeqCst);
-        Ok((
-            ExciseReport {
-                source_ref: source_id.to_string(),
-                nodes_excised,
-                edges_excised,
-                projections_invalidated: shadow_invalidated,
-            },
-            erased_stable_ids,
-        ))
+        Ok(ExciseReport {
+            source_ref: source_id.to_string(),
+            nodes_excised,
+            edges_excised,
+            projections_invalidated: shadow_invalidated,
+        })
     }
 
     /// 0.8.20 Slice 5b (R-20-E7) — erase ONE op-store record, by collection and
