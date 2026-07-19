@@ -20,6 +20,9 @@ from pathlib import Path
 
 from fathomdb import Engine, SearchFilter, SearchHit
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:functional-search"
+
 _FIXTURE = Path(__file__).resolve().parent / "functional_search_fixture.json"
 
 
@@ -49,7 +52,9 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         for doc in fixture["corpus"]:
-            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+            engine.write(
+                [{"kind": doc["kind"], "body": doc["body"], "source_id": _SOURCE_ID}]
+            )
         engine.drain(timeout_s=30)
 
         hits = _search_after_projection(engine, "structured")
@@ -84,7 +89,9 @@ def test_functional_search_cross_binding_equivalence(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         for doc in fixture["corpus"]:
-            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+            engine.write(
+                [{"kind": doc["kind"], "body": doc["body"], "source_id": _SOURCE_ID}]
+            )
         engine.drain(timeout_s=30)
 
         for case in fixture["queries"]:
@@ -117,7 +124,9 @@ def test_functional_rrf_fused_order_cross_binding(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         for doc in fixture["corpus"]:
-            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+            engine.write(
+                [{"kind": doc["kind"], "body": doc["body"], "source_id": _SOURCE_ID}]
+            )
         engine.drain(timeout_s=30)
 
         hits = _search_after_projection(engine, _RRF_ORDER_QUERY)
@@ -141,16 +150,21 @@ def test_functional_row_cursors_one_to_one(db_path: str) -> None:
     try:
         first = engine.write(
             [
-                {"kind": "doc", "body": "rc-a"},
-                {"kind": "doc", "body": "rc-b"},
-                {"kind": "doc", "body": "rc-c"},
+                {"kind": "doc", "body": "rc-a", "source_id": _SOURCE_ID},
+                {"kind": "doc", "body": "rc-b", "source_id": _SOURCE_ID},
+                {"kind": "doc", "body": "rc-c", "source_id": _SOURCE_ID},
             ]
         )
         assert list(first.row_cursors) == [1, 2, 3]
         assert first.cursor == 3
         assert first.row_cursors[-1] == first.cursor
 
-        second = engine.write([{"kind": "doc", "body": "rc-d"}, {"kind": "doc", "body": "rc-e"}])
+        second = engine.write(
+            [
+                {"kind": "doc", "body": "rc-d", "source_id": _SOURCE_ID},
+                {"kind": "doc", "body": "rc-e", "source_id": _SOURCE_ID},
+            ]
+        )
         assert list(second.row_cursors) == [4, 5]
         assert second.cursor == 5
     finally:
@@ -166,8 +180,12 @@ def test_functional_supersession_write_surfaces_row_cursor(db_path: str) -> None
 
     engine = Engine.open(db_path)
     try:
-        v1 = engine.write([{"kind": "doc", "body": "fact v1", "logical_id": "L1"}])
-        v2 = engine.write([{"kind": "doc", "body": "fact v2", "logical_id": "L1"}])
+        v1 = engine.write(
+            [{"kind": "doc", "body": "fact v1", "logical_id": "L1", "source_id": _SOURCE_ID}]
+        )
+        v2 = engine.write(
+            [{"kind": "doc", "body": "fact v2", "logical_id": "L1", "source_id": _SOURCE_ID}]
+        )
         assert list(v1.row_cursors) == [1]
         assert list(v2.row_cursors) == [2]
         assert v2.cursor > v1.cursor
@@ -187,16 +205,34 @@ def test_functional_dangling_edge_count_across_ffi(db_path: str) -> None:
         # inserted later in the SAME batch (cross-row) -> 0 dangling.
         clean = engine.write(
             [
-                {"kind": "doc", "body": "n1", "logical_id": "N1"},
-                {"kind": "doc", "body": "n2", "logical_id": "N2"},
-                {"edge": {"kind": "rel", "from": "N1", "to": "N2"}},
+                {"kind": "doc", "body": "n1", "logical_id": "N1", "source_id": _SOURCE_ID},
+                {"kind": "doc", "body": "n2", "logical_id": "N2", "source_id": _SOURCE_ID},
+                {
+                    "edge": {
+                        "kind": "rel",
+                        "from": "N1",
+                        "to": "N2",
+                        "source_id": _SOURCE_ID,
+                    }
+                },
             ]
         )
         assert clean.dangling_edge_endpoints == 0
 
         # Dangling batch: both endpoints reference missing `logical_id`s -> 2
         # (flag-and-count: the write still succeeds).
-        dangling = engine.write([{"edge": {"kind": "rel", "from": "GHOST_A", "to": "GHOST_B"}}])
+        dangling = engine.write(
+            [
+                {
+                    "edge": {
+                        "kind": "rel",
+                        "from": "GHOST_A",
+                        "to": "GHOST_B",
+                        "source_id": _SOURCE_ID,
+                    }
+                }
+            ]
+        )
         assert dangling.dangling_edge_endpoints == 2
     finally:
         engine.close()
@@ -210,7 +246,9 @@ def test_functional_filtered_search_prunes(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         for doc in fixture["corpus"]:
-            engine.write([{"kind": doc["kind"], "body": doc["body"]}])
+            engine.write(
+                [{"kind": doc["kind"], "body": doc["body"], "source_id": _SOURCE_ID}]
+            )
         engine.drain(timeout_s=30)
 
         unfiltered = _search_after_projection(engine, "retrieval")

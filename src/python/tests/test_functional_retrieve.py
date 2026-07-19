@@ -22,6 +22,9 @@ from pathlib import Path
 
 from fathomdb import Engine, admin, read
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:functional-retrieve"
+
 _FIXTURE = Path(__file__).resolve().parent / "functional_retrieve_fixture.json"
 
 
@@ -33,9 +36,27 @@ def _seed(engine: Engine, fixture: dict) -> None:
     # Supersede F1: write the old body first, then the new body (same logical_id)
     # so the active version is the second write — read.get must return only it.
     sup = fixture["superseded"]
-    engine.write([{"kind": sup["kind"], "body": sup["old_body"], "logical_id": sup["logical_id"]}])
+    engine.write(
+        [
+            {
+                "kind": sup["kind"],
+                "body": sup["old_body"],
+                "logical_id": sup["logical_id"],
+                "source_id": _SOURCE_ID,
+            }
+        ]
+    )
     for node in fixture["nodes"]:
-        engine.write([{"kind": node["kind"], "body": node["body"], "logical_id": node["logical_id"]}])
+        engine.write(
+            [
+                {
+                    "kind": node["kind"],
+                    "body": node["body"],
+                    "logical_id": node["logical_id"],
+                    "source_id": _SOURCE_ID,
+                }
+            ]
+        )
     # Register the append_only_log collection (admin.configure is latest_state;
     # the op-store rows need an append_only_log collection registered via write).
     engine.write(

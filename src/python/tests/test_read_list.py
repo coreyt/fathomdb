@@ -23,6 +23,9 @@ import pytest
 from fathomdb import Engine, read
 from fathomdb.errors import InvalidFilterError
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:read-list"
+
 
 def _seed_task_nodes(engine: Engine) -> None:
     """Write three task nodes with JSON bodies for filter tests."""
@@ -33,7 +36,12 @@ def _seed_task_nodes(engine: Engine) -> None:
     ]
     for t in tasks:
         engine.write([
-            {"kind": "task", "body": json.dumps(t["body"]), "logical_id": t["logical_id"]}
+            {
+                "kind": "task",
+                "body": json.dumps(t["body"]),
+                "logical_id": t["logical_id"],
+                "source_id": _SOURCE_ID,
+            }
         ])
 
 
@@ -42,7 +50,9 @@ def test_read_list_unfiltered_returns_all_active_by_kind(db_path: str) -> None:
     try:
         _seed_task_nodes(engine)
         # Also write a node of a different kind — it must NOT appear.
-        engine.write([{"kind": "note", "body": "hello", "logical_id": "N1"}])
+        engine.write(
+            [{"kind": "note", "body": "hello", "logical_id": "N1", "source_id": _SOURCE_ID}]
+        )
 
         rows = read.list(engine, "task")
         assert len(rows) == 3

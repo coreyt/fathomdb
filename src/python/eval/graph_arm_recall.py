@@ -206,7 +206,11 @@ def build_graph_engine(documents: dict[str, str], graphs: dict[str, dict], db_pa
     items = list(documents.items())
     for i in range(0, len(items), 64):
         chunk = items[i : i + 64]
-        receipt = engine.write([{"kind": "doc", "body": b} for _, b in chunk])
+        # 0.8.20 (R-20-E3): provenance is mandatory. The corpus doc id IS the
+        # natural provenance, so each eval row stays excise_source-addressable.
+        receipt = engine.write(
+            [{"kind": "doc", "body": b, "source_id": doc_id} for doc_id, b in chunk]
+        )
         for (sid, _b), cur in zip(chunk, receipt.row_cursors):
             cursor_to_doc[int(cur)] = sid
 

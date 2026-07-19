@@ -16,6 +16,10 @@ from fathomdb import Engine, SearchFilter, admin
 from fathomdb._fathomdb import force_panic_for_test
 from fathomdb.errors import EngineError, WriteValidationError
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:ffi-safety"
+
+
 
 def test_panic_surfaces_as_python_exception(db_path: str) -> None:
     """AC-067 — engine panics must not abort the host process.
@@ -117,7 +121,9 @@ def test_embedded_nul_in_node_kind_rejected(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         with pytest.raises(WriteValidationError):
-            engine.write([{"kind": "do\x00c", "body": "{}"}])
+            # A VALID `source_id` so the rejection is attributable to the embedded
+            # NUL in `kind`, not to missing provenance (0.8.20 R-20-E3).
+            engine.write([{"kind": "do\x00c", "body": "{}", "source_id": _SOURCE_ID}])
     finally:
         engine.close()
 

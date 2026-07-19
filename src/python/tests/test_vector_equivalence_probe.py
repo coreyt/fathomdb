@@ -21,6 +21,10 @@ from __future__ import annotations
 from fathomdb import Engine
 from fathomdb.errors import EngineError, VectorEquivalenceMismatchError
 
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:vector-equivalence-probe"
+
+
 
 def test_vector_equivalence_mismatch_is_engine_error_leaf() -> None:
     assert issubclass(VectorEquivalenceMismatchError, EngineError)
@@ -48,7 +52,9 @@ def test_open_report_surfaces_dense_disabled_default_false(db_path: str) -> None
 def test_search_text_only_serves(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
-        engine.write([{"kind": "note", "body": "alpha bravo charlie"}])
+        engine.write(
+            [{"kind": "note", "body": "alpha bravo charlie", "source_id": _SOURCE_ID}]
+        )
         engine.drain(timeout_s=30)
         result = engine.search_text_only("alpha")
         # FTS-only path returns a SearchResult (may or may not hit; must not raise).

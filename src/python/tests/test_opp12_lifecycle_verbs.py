@@ -23,10 +23,15 @@ import pytest
 
 from fathomdb import Engine, read
 from fathomdb.errors import (
+
     IllegalTransitionError,
     InvalidArgumentError,
     NotLifecycleAddressableError,
 )
+
+# 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+_SOURCE_ID = "py-test:opp12-lifecycle-verbs"
+
 
 
 def test_legal_transitions_and_reason_semantics(db_path: str) -> None:
@@ -35,14 +40,17 @@ def test_legal_transitions_and_reason_semantics(db_path: str) -> None:
         # promote: pending → active clears reason; node becomes visible.
         engine.write([
             {"kind": "doc", "body": "quarantined", "logical_id": "p1",
-             "state": "pending", "reason": "awaiting-review"}
+             "state": "pending", "reason": "awaiting-review",
+             "source_id": _SOURCE_ID}
         ])
         assert read.get(engine, "p1") is None
         engine.transition("p1", "active")
         assert read.get(engine, "p1") is not None
 
         # soft-delete: active → deleted sets reason; node leaves default reads.
-        engine.write([{"kind": "doc", "body": "live", "logical_id": "a1"}])
+        engine.write(
+            [{"kind": "doc", "body": "live", "logical_id": "a1", "source_id": _SOURCE_ID}]
+        )
         engine.transition("a1", "deleted", "user-deleted")
         assert read.get(engine, "a1") is None
         # undelete: deleted → active restores visibility.
@@ -55,7 +63,9 @@ def test_legal_transitions_and_reason_semantics(db_path: str) -> None:
 def test_illegal_transition_is_typed_with_fields(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
-        engine.write([{"kind": "doc", "body": "x", "logical_id": "a1"}])
+        engine.write(
+            [{"kind": "doc", "body": "x", "logical_id": "a1", "source_id": _SOURCE_ID}]
+        )
         with pytest.raises(IllegalTransitionError) as exc:
             engine.transition("a1", "purged")
         err = exc.value
@@ -92,7 +102,9 @@ def test_non_logical_ids_refused(db_path: str, bad_id: str) -> None:
 def test_purge_requires_deleted_first_and_is_idempotent(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
-        engine.write([{"kind": "doc", "body": "x", "logical_id": "a1"}])
+        engine.write(
+            [{"kind": "doc", "body": "x", "logical_id": "a1", "source_id": _SOURCE_ID}]
+        )
         # active (not deleted) → precondition failure.
         with pytest.raises(IllegalTransitionError) as exc:
             engine.purge("a1")

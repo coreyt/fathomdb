@@ -103,7 +103,10 @@ def build_fts_engine(documents: dict[str, str], db_path: str):
     items = list(documents.items())
     for i in range(0, len(items), 64):
         chunk = items[i : i + 64]
-        receipt = eng.write([{"kind": "doc", "body": b} for _, b in chunk])
+        # 0.8.20 (R-20-E3): provenance is mandatory; the corpus doc id IS it.
+        receipt = eng.write(
+            [{"kind": "doc", "body": b, "source_id": doc_id} for doc_id, b in chunk]
+        )
         for (sid, _b), cur in zip(chunk, receipt.row_cursors):
             cursor_to_doc[int(cur)] = sid
     eng.drain(timeout_s=300)
