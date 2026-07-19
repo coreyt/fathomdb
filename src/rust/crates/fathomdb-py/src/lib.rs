@@ -97,6 +97,11 @@ create_exception!(_fathomdb, InvalidArgumentError, EngineError);
 // (carries `id_space`). Field names are parity-safe (S7 — `from` is reserved).
 create_exception!(_fathomdb, IllegalTransitionError, EngineError);
 create_exception!(_fathomdb, NotLifecycleAddressableError, EngineError);
+// 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
+// complete the erasure AT REST (carries `stage`/`detail`). Raised instead of
+// returning success: an erasure verb must never report success on an incomplete
+// erasure.
+create_exception!(_fathomdb, ErasureIncompleteError, EngineError);
 
 // ===== String validation (AC-068a / AC-068b) =========================
 
@@ -227,6 +232,17 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
             ));
             Python::attach(|py| {
                 let _ = exc.value(py).setattr("id_space", id_space.as_str());
+            });
+            exc
+        }
+        RustEngineError::ErasureIncomplete { stage, detail } => {
+            let exc = ErasureIncompleteError::new_err(format!(
+                "erasure incomplete at stage '{stage}': {detail}"
+            ));
+            Python::attach(|py| {
+                let v = exc.value(py);
+                let _ = v.setattr("stage", stage.clone());
+                let _ = v.setattr("detail", detail.clone());
             });
             exc
         }
@@ -2021,6 +2037,7 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("VectorEquivalenceMismatchError", py.get_type::<VectorEquivalenceMismatchError>())?;
     m.add("IllegalTransitionError", py.get_type::<IllegalTransitionError>())?;
     m.add("NotLifecycleAddressableError", py.get_type::<NotLifecycleAddressableError>())?;
+    m.add("ErasureIncompleteError", py.get_type::<ErasureIncompleteError>())?;
     Ok(())
 }
 

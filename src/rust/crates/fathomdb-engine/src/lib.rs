@@ -121,6 +121,38 @@ const SEARCH_INDEX_TOKENIZER_SCHEMA_VERSION: u32 = 11;
 const SEARCH_INDEX_TOKENIZER_REPROJECT_MARKER_KEY: &str =
     "search_index_tokenizer_reproject_complete";
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
+/// 0.8.20 Slice 5b (R-20-E5) — how many times an erasure verb re-tries
+/// `PRAGMA wal_checkpoint(TRUNCATE)` before refusing with
+/// [`EngineError::ErasureIncomplete`]. Deliberately small: a concurrent reader
+/// pinning a WAL snapshot can hold it for an unbounded time, and an erasure verb
+/// must fail loudly rather than block a caller indefinitely.
+const ERASURE_WAL_TRUNCATE_ATTEMPTS: u32 = 5;
+/// 0.8.20 Slice 5b (R-20-E5) — pause between WAL-truncation attempts
+/// (~100 ms total budget across [`ERASURE_WAL_TRUNCATE_ATTEMPTS`]).
+const ERASURE_WAL_TRUNCATE_BACKOFF_MS: u64 = 25;
+/// 0.8.20 Slice 5b (R-20-E6) — the sentinel that replaces an erased
+/// `result_stable_ids` element in the telemetry sink. Positional alignment with
+/// the parallel `result_ids` array is preserved, so a redacted sink stays
+/// parseable by the gold pipeline.
+const REDACTED_STABLE_ID: &str = "[erased]";
+/// 0.8.20 Slice 5b (design `0.8.20-slice0-erasure-design.md` §2 defect D-A,
+/// HITL-ruled 2026-07-19: *"there must be an auditable record of deletion
+/// event."*) — op-store collections holding ERASURE-AUDIT records.
+///
+/// These rows are **exempt from [`enforce_provenance_retention`]**. Before this
+/// slice they were swept like any other op-store row: cap-first, oldest-`id`
+/// first, with no collection filter — and because the audit row is written
+/// *before* the workload that follows it, it was among the FIRST evicted. The
+/// proof of erasure was therefore destructible, and shared a retention pool with
+/// the very payloads it must prove erased. Accountability (demonstrating *that*
+/// an erasure occurred) is a distinct obligation from erasure itself, and a
+/// retention sweep must not silently discharge it.
+///
+/// **Guarantee:** a row in one of these collections is never removed by the
+/// retention sweep. It can still be removed deliberately, by
+/// [`Engine::excise_collection_record`] — an explicit operator act that is
+/// itself audited.
+const ERASURE_AUDIT_COLLECTIONS: &[&str] = &["excise_source_audit", "excise_record_audit"];
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
 /// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
@@ -2570,6 +2602,30 @@ pub enum EngineError {
     NotLifecycleAddressable {
         id_space: IdSpaceKind,
     },
+    /// 0.8.20 Slice 5b (R-20-E5, design `0.8.20-slice0-erasure-design.md` §4
+    /// item 4) — an erasure verb (`purge` / `excise_source` /
+    /// `excise_collection_record`) deleted its rows but could NOT complete the
+    /// erasure **at rest**, so it refuses to report success.
+    ///
+    /// The motivating case is the write-ahead log. `PRAGMA secure_delete=ON`
+    /// zeroes pages freed inside the database file, but the erased content also
+    /// sits in the WAL as committed frames from the ORIGINAL insert: an erasure
+    /// DELETE appends new frames, it never rewrites old ones. Only a
+    /// `wal_checkpoint(TRUNCATE)` removes them, and a concurrent reader pinning a
+    /// WAL snapshot makes that checkpoint return `busy`. After a bounded retry
+    /// the verb raises THIS error rather than returning `Ok` over erased bytes
+    /// that are still `grep`-able on disk.
+    ///
+    /// **Contract: an erasure verb must never report success on an incomplete
+    /// erasure.** The row deletions are committed and durable when this is
+    /// raised; what failed is the at-rest scrub. The remedy is to retry the verb
+    /// (or `recover --truncate-wal`) once the blocking reader has finished.
+    /// `stage` names the uncompleted step (e.g. `"wal_checkpoint"`,
+    /// `"telemetry_redaction"`); `detail` is a human-readable summary.
+    ErasureIncomplete {
+        stage: String,
+        detail: String,
+    },
 }
 
 impl Display for EngineError {
@@ -2614,6 +2670,11 @@ impl Display for EngineError {
                 id_space,
                 id_space.prefix(),
             ),
+            Self::ErasureIncomplete { stage, detail } => write!(
+                f,
+                "erasure incomplete at stage '{stage}': the rows were deleted but the erasure \
+                 could not be completed at rest ({detail})",
+            ),
         }
     }
 }
@@ -2645,6 +2706,7 @@ impl EngineError {
             Self::VectorEquivalenceMismatch { .. } => "VectorEquivalenceMismatchError",
             Self::IllegalTransition { .. } => "IllegalTransitionError",
             Self::NotLifecycleAddressable { .. } => "NotLifecycleAddressableError",
+            Self::ErasureIncomplete { .. } => "ErasureIncompleteError",
         }
     }
 }
@@ -2754,6 +2816,24 @@ pub struct ExciseReport {
     pub nodes_excised: u64,
     pub edges_excised: u64,
     pub projections_invalidated: u64,
+}
+
+/// 0.8.20 Slice 5b (R-20-E7) — outcome of
+/// [`Engine::excise_collection_record`]. `records_excised` counts the erased
+/// `operational_mutations` versions (an append-only-log collection keeps every
+/// version of a key); `state_rows_excised` counts the erased
+/// `operational_state` row (0 or 1).
+///
+/// `record_digest` is `SHA-256(collection + 0x1F + record_key)` — the audit
+/// handle. The raw `record_key` is deliberately NOT carried: it is arbitrary
+/// caller-supplied text and may itself be the identifier being erased, so
+/// echoing it into a durable audit row would defeat the erasure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExciseRecordReport {
+    pub collection: String,
+    pub record_digest: String,
+    pub records_excised: u64,
+    pub state_rows_excised: u64,
 }
 
 /// Typed outcome of [`Engine::verify_embedder`]. Mismatches do not raise
@@ -6165,10 +6245,18 @@ impl Engine {
         self.projection_runtime.set_frozen(true);
         let outcome = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS).and_then(|()| self.purge_inner(&lid));
         self.projection_runtime.set_frozen(false);
-        outcome
+        // 0.8.20 Slice 5b (R-20-E5/E6) — the rows are gone from the tables; now
+        // finish the erasure AT REST (telemetry sink + `-wal` bytes) before
+        // reporting success. Runs after the connection guard inside
+        // `purge_inner` has been dropped: `complete_erasure_at_rest` re-acquires
+        // it for the checkpoint.
+        let erased_stable_ids = outcome?;
+        self.complete_erasure_at_rest("purge", &erased_stable_ids)
     }
 
-    fn purge_inner(&self, lid: &str) -> Result<(), EngineError> {
+    /// Returns the prefixed stable ids ([`IdSpace::to_prefixed`]) of every row it
+    /// erased, so the caller can redact them from the telemetry sink (R-20-E6).
+    fn purge_inner(&self, lid: &str) -> Result<Vec<String>, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -6188,7 +6276,7 @@ impl Engine {
             None => {
                 // Idempotent: nothing to erase.
                 tx.commit().map_err(|_| EngineError::Storage)?;
-                return Ok(());
+                return Ok(Vec::new());
             }
             Some(s) => LifecycleState::from_str_opt(&s).ok_or(EngineError::Storage)?,
         };
@@ -6226,6 +6314,15 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
+        // 0.8.20 Slice 5b (R-20-E6) — the stable ids the telemetry sink may have
+        // persisted for these rows, collected BEFORE the DELETEs.
+        let erased_stable_ids = collect_erased_stable_ids(
+            &tx,
+            "SELECT logical_id, body FROM canonical_nodes WHERE logical_id = ?1",
+            "SELECT logical_id, body FROM canonical_edges WHERE from_id = ?1 OR to_id = ?1",
+            lid,
+        )?;
+
         // Erase the row-owned projection shadows for every collected cursor.
         // 0.8.20 Slice 5a (R-20-E1): registry-driven — the hand-rolled delete
         // list is gone, so a newly registered projection table is erased here
@@ -6244,7 +6341,7 @@ impl Engine {
 
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.counters.record_admin();
-        Ok(())
+        Ok(erased_stable_ids)
     }
 
     /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight
@@ -6273,7 +6370,14 @@ impl Engine {
         let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
         let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
         self.projection_runtime.set_frozen(false);
-        outcome
+        // 0.8.20 Slice 5b (R-20-E5/E6) — finish the erasure AT REST before
+        // reporting success: redact the erased stable ids out of the telemetry
+        // sink, then truncate the `-wal` so the erased bytes are not still
+        // readable on disk. On persistent checkpoint BUSY this returns
+        // `ErasureIncomplete` rather than an `ExciseReport`.
+        let (report, erased_stable_ids) = outcome?;
+        self.complete_erasure_at_rest("excise_source", &erased_stable_ids)?;
+        Ok(report)
     }
 
     /// Doctor `verify-embedder` seam (AC-040a). Compares the
@@ -6374,13 +6478,58 @@ impl Engine {
     #[cfg(feature = "operator")]
     pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
         self.ensure_open()?;
+        // The operator verb keeps SQLite's own busy handler: `recover
+        // --truncate-wal` is an explicit, foreground operator act, so waiting out
+        // a transient reader is the helpful behaviour.
+        self.wal_checkpoint_truncate_once(true)
+    }
+
+    /// One `PRAGMA wal_checkpoint(TRUNCATE)` on the writer connection.
+    ///
+    /// NOT operator-gated: the erasure verbs (`purge` is a default-feature verb)
+    /// need it too, and a `#[cfg(feature = "operator")]` helper would break the
+    /// default build. Acquires the connection mutex, so callers must NOT already
+    /// hold it — every erasure verb calls this AFTER its transaction has
+    /// committed and the guard has been dropped.
+    ///
+    /// `honor_busy_timeout = false` suppresses SQLite's busy handler for the
+    /// duration of the checkpoint. rusqlite installs a **5 s** default
+    /// `busy_timeout`, so a blocked checkpoint sits for 5 s before reporting
+    /// `busy` — under the erasure verbs' bounded retry that compounds to a ~25 s
+    /// stall on a verb that is supposed to fail fast. The erasure path therefore
+    /// takes the immediate `busy` answer and runs its OWN short backoff; the
+    /// prior value is restored before returning, on every path.
+    fn wal_checkpoint_truncate_once(
+        &self,
+        honor_busy_timeout: bool,
+    ) -> Result<TruncateWalReport, EngineError> {
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
-        let (busy, log_frames, checkpointed_frames): (i64, i64, i64) = connection
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+
+        let restore_timeout_ms: Option<i64> = if honor_busy_timeout {
+            None
+        } else {
+            let previous: i64 = connection
+                .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+                .map_err(|_| EngineError::Storage)?;
+            connection.busy_timeout(Duration::ZERO).map_err(|_| EngineError::Storage)?;
+            Some(previous)
+        };
+
+        let checkpoint: rusqlite::Result<(i64, i64, i64)> =
+            connection.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .map_err(|_| EngineError::Storage)?;
+            });
+
+        if let Some(previous) = restore_timeout_ms {
+            let previous = u64::try_from(previous.max(0)).unwrap_or(0);
+            connection
+                .busy_timeout(Duration::from_millis(previous))
+                .map_err(|_| EngineError::Storage)?;
+        }
+
+        let (busy, log_frames, checkpointed_frames) =
+            checkpoint.map_err(|_| EngineError::Storage)?;
         let status = if busy == 0 { TruncateWalStatus::Done } else { TruncateWalStatus::Busy };
         Ok(TruncateWalReport {
             status,
@@ -6390,8 +6539,122 @@ impl Engine {
         })
     }
 
+    /// 0.8.20 Slice 5b (R-20-E5) — complete an erasure **at rest** after the
+    /// erasing transaction has committed. Two obligations, in order:
+    ///
+    /// 1. **Telemetry redaction** — drop the erased stable ids out of the opt-in
+    ///    telemetry sink ([`Engine::redact_telemetry_stable_ids`]).
+    /// 2. **WAL truncation** — `wal_checkpoint(TRUNCATE)` with a BOUNDED retry.
+    ///    `PRAGMA secure_delete=ON` zeroes pages freed inside the database file,
+    ///    but the erased content also lives in the write-ahead log as committed
+    ///    frames from the ORIGINAL insert; the erasure DELETE appends new frames
+    ///    rather than rewriting old ones, so without a truncating checkpoint the
+    ///    erased body stays `grep`-able in `<db>-wal`.
+    ///
+    /// A concurrent reader pinning a WAL snapshot makes the checkpoint report
+    /// `busy`. After [`ERASURE_WAL_TRUNCATE_ATTEMPTS`] tries the verb raises
+    /// [`EngineError::ErasureIncomplete`] — **an erasure verb must never report
+    /// success on an incomplete erasure.** The retry budget is deliberately small
+    /// (~100 ms total): the caller retries the verb, the verb does not block.
+    fn complete_erasure_at_rest(
+        &self,
+        verb: &'static str,
+        erased_stable_ids: &[String],
+    ) -> Result<(), EngineError> {
+        self.redact_telemetry_stable_ids(verb, erased_stable_ids)?;
+
+        let mut last: Option<TruncateWalReport> = None;
+        for attempt in 0..ERASURE_WAL_TRUNCATE_ATTEMPTS {
+            let report = self.wal_checkpoint_truncate_once(false)?;
+            if report.status == TruncateWalStatus::Done {
+                return Ok(());
+            }
+            last = Some(report);
+            if attempt + 1 < ERASURE_WAL_TRUNCATE_ATTEMPTS {
+                std::thread::sleep(Duration::from_millis(ERASURE_WAL_TRUNCATE_BACKOFF_MS));
+            }
+        }
+        let frames = last.map_or(0, |r| r.log_frames);
+        Err(EngineError::ErasureIncomplete {
+            stage: "wal_checkpoint".to_string(),
+            detail: format!(
+                "`{verb}` deleted its rows, but `wal_checkpoint(TRUNCATE)` reported BUSY on all \
+                 {ERASURE_WAL_TRUNCATE_ATTEMPTS} attempts ({frames} frames still in the log) — a \
+                 concurrent reader is pinning a WAL snapshot, so the erased bytes remain readable \
+                 in the `-wal` file. Retry once the reader has finished."
+            ),
+        })
+    }
+
+    /// 0.8.20 Slice 5b (R-20-E6) — SELECTIVE redaction of erased stable ids from
+    /// the opt-in telemetry sink.
+    ///
+    /// `capture_telemetry` persists `result_stable_ids` — `l:`/`h:` prefixed ids
+    /// — into a JSONL file that outlives the erased rows, and nothing in the
+    /// engine could previously remove them. A retained `l:` id is not inert:
+    /// [`derive_logical_id`] is `SHA256(lowercase(kind) + ":" + lowercase(name))`,
+    /// and the case-folding of BOTH inputs shrinks the preimage space, so a
+    /// surviving id is dictionary-attackable back to the natural key it was
+    /// derived from. An `h:` id is a plain `SHA256(body)`, confirmable against a
+    /// guessed body.
+    ///
+    /// **This MUST NOT truncate the sink.** `sink_path` is CALLER-SUPPLIED and
+    /// may hold unrelated operator eval history that the erasure obligation never
+    /// covered; the v3 truncation approach was rejected as unsafe. Only the
+    /// matching `result_stable_ids` ELEMENTS are replaced with
+    /// [`REDACTED_STABLE_ID`], preserving record count, record order and
+    /// positional alignment with the parallel `result_ids` array. Lines that are
+    /// not engine-authored JSON events are copied through verbatim.
+    ///
+    /// **Crash safety.** The rewrite is write-temp-then-`rename`: a sibling
+    /// `.redact.tmp` is written and fsynced, then atomically renamed over the
+    /// sink, so a crash leaves either the old file or the new one — never a
+    /// half-rewritten sink. The telemetry mutex is held across the whole rewrite,
+    /// so no in-process `capture_telemetry` can append into the window; an
+    /// out-of-process appender is handled by re-reading and folding in the tail
+    /// delta before the rename (bounded retry).
+    ///
+    /// The privacy contract is unchanged: query TEXT and `source_id` are never
+    /// captured (ADR-0.8.8 §C), so there is nothing else in the sink to redact.
+    /// The fast-OFF atomic guard is preserved — when telemetry was never enabled
+    /// this is a single relaxed-ordering load and no mutex acquisition.
+    fn redact_telemetry_stable_ids(
+        &self,
+        verb: &'static str,
+        erased_stable_ids: &[String],
+    ) -> Result<(), EngineError> {
+        // Fast OFF path — mirrors `capture_telemetry`. No mutex, no I/O.
+        if erased_stable_ids.is_empty() || !self.telemetry_enabled.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let guard = self.telemetry.lock().map_err(|_| EngineError::Storage)?;
+        let Some(sink) = guard.as_ref() else { return Ok(()) };
+        let erased: std::collections::HashSet<&str> =
+            erased_stable_ids.iter().map(String::as_str).collect();
+
+        match redact_jsonl_stable_ids(&sink.path, &erased) {
+            Ok(()) => Ok(()),
+            // The operator deleted or moved the sink: nothing to redact.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(EngineError::ErasureIncomplete {
+                stage: "telemetry_redaction".to_string(),
+                detail: format!(
+                    "`{verb}` deleted its rows, but the erased stable ids could not be redacted \
+                     from the telemetry sink {}: {err}",
+                    sink.path.display()
+                ),
+            }),
+        }
+    }
+
+    /// Returns the report plus the prefixed stable ids
+    /// ([`IdSpace::to_prefixed`]) of every erased row, so the caller can redact
+    /// them from the telemetry sink (R-20-E6).
     #[cfg(feature = "operator")]
-    fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+    fn excise_source_inner(
+        &self,
+        source_id: &str,
+    ) -> Result<(ExciseReport, Vec<String>), EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
@@ -6417,6 +6680,15 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
+        // 0.8.20 Slice 5b (R-20-E6) — stable ids the telemetry sink may hold for
+        // these rows, collected BEFORE the DELETEs.
+        let erased_stable_ids = collect_erased_stable_ids(
+            &tx,
+            "SELECT logical_id, body FROM canonical_nodes WHERE source_id = ?1",
+            "SELECT logical_id, body FROM canonical_edges WHERE source_id = ?1",
+            source_id,
+        )?;
+
         // 0.8.20 Slice 5a (R-20-E1) — registry-driven erasure. The previous
         // hand-rolled list here OMITTED `search_index_v2`, a CONTENT-STORING
         // FTS5 table (no `content=''`) that keeps the document body verbatim:
@@ -6440,6 +6712,26 @@ impl Engine {
 
         // AC-028a audit row: a single append on the
         // `excise_source_audit` collection naming the excised source.
+        //
+        // DURABILITY (0.8.20 Slice 5b, design v5 §2 defect D-A; HITL-ruled
+        // 2026-07-19: *"there must be an auditable record of deletion event."*).
+        // This row lands in `operational_mutations`, the same table the retention
+        // sweep drains — and it is written BEFORE the workload that follows it,
+        // so an oldest-`id`-first sweep evicted it FIRST. It is now protected:
+        // `excise_source_audit` is in `ERASURE_AUDIT_COLLECTIONS`, which
+        // `enforce_provenance_retention` excludes. The proof of erasure is no
+        // longer destructible by ordinary retention pressure.
+        //
+        // NON-PII `source_id` (rationale corrected in this slice). v4 §3.6
+        // justified the "`source_id` must not be PII" rule by claiming the audit
+        // row retains it *permanently, by design*. That premise was FALSE — the
+        // row was sweepable. The rule stands on a different and simpler footing:
+        // this row persists the caller's raw `source_id` verbatim, and an
+        // `excise_source` that erased the payload while keeping an identifying
+        // source label would not be an erasure. The exemption above makes the
+        // retention now genuinely indefinite, which makes the rule MORE
+        // load-bearing, not less.
+        //
         // `next_cursor` after a prior write holds the LAST committed cursor;
         // mirror the vec writer pattern (load + 1, then store post-commit)
         // so the audit row's `write_cursor` is strictly greater than every
@@ -6464,11 +6756,105 @@ impl Engine {
 
         tx.commit().map_err(|_| EngineError::Storage)?;
         self.next_cursor.store(audit_cursor, Ordering::SeqCst);
-        Ok(ExciseReport {
-            source_ref: source_id.to_string(),
-            nodes_excised,
-            edges_excised,
-            projections_invalidated: shadow_invalidated,
+        Ok((
+            ExciseReport {
+                source_ref: source_id.to_string(),
+                nodes_excised,
+                edges_excised,
+                projections_invalidated: shadow_invalidated,
+            },
+            erased_stable_ids,
+        ))
+    }
+
+    /// 0.8.20 Slice 5b (R-20-E7) — erase ONE op-store record, by collection and
+    /// record key, from both op-store shapes: every `operational_mutations`
+    /// version of the key (append-only-log collections) and its
+    /// `operational_state` row (latest-state collections).
+    ///
+    /// Before this slice the op-store had NO record-level delete at all:
+    /// [`enforce_provenance_retention`] is a cap sweep, not an erasure verb, so a
+    /// caller holding an erasure obligation over an op-store record had no way to
+    /// discharge it. Idempotent — erasing an absent key is a zero-count success.
+    ///
+    /// Like the other erasure verbs this finishes at rest (telemetry is not
+    /// involved — op-store record keys never reach the telemetry sink — but the
+    /// `-wal` is), so it can return [`EngineError::ErasureIncomplete`].
+    ///
+    /// AUDIT (D-A). Appends a row to the retention-exempt `excise_record_audit`
+    /// collection. Unlike `source_id`, a `record_key` carries NO non-PII rule:
+    /// it is arbitrary caller-supplied text and may itself be the identifier
+    /// being erased. The audit therefore records a SHA-256 digest of
+    /// `collection` + `record_key`, never the key — enough to prove *that* a
+    /// specific record was erased to anyone who already knows the key, and
+    /// useless to anyone who does not.
+    #[cfg(feature = "operator")]
+    pub fn excise_collection_record(
+        &self,
+        collection: &str,
+        record_key: &str,
+    ) -> Result<ExciseRecordReport, EngineError> {
+        self.ensure_open()?;
+        if collection.is_empty() || record_key.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+        let report = self.excise_collection_record_inner(collection, record_key)?;
+        self.complete_erasure_at_rest("excise_collection_record", &[])?;
+        Ok(report)
+    }
+
+    #[cfg(feature = "operator")]
+    fn excise_collection_record_inner(
+        &self,
+        collection: &str,
+        record_key: &str,
+    ) -> Result<ExciseRecordReport, EngineError> {
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+
+        let records_excised = tx
+            .execute(
+                "DELETE FROM operational_mutations
+                 WHERE collection_name = ?1 AND record_key = ?2",
+                params![collection, record_key],
+            )
+            .map_err(|_| EngineError::Storage)? as u64;
+        let state_rows_excised = tx
+            .execute(
+                "DELETE FROM operational_state
+                 WHERE collection_name = ?1 AND record_key = ?2",
+                params![collection, record_key],
+            )
+            .map_err(|_| EngineError::Storage)? as u64;
+
+        let record_digest = digest_record_identity(collection, record_key);
+        let excised_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let payload = serde_json::json!({
+            "collection": collection,
+            "record_digest": record_digest,
+            "excised_at": excised_at,
+            "records_excised": records_excised,
+            "state_rows_excised": state_rows_excised,
+        })
+        .to_string();
+        let audit_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        tx.execute(
+            "INSERT INTO operational_mutations(
+                collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+             ) VALUES('excise_record_audit', ?1, 'append', ?2, NULL, ?3)",
+            params![record_digest, payload, audit_cursor],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.next_cursor.store(audit_cursor, Ordering::SeqCst);
+        self.counters.record_admin();
+        Ok(ExciseRecordReport {
+            collection: collection.to_string(),
+            record_digest,
+            records_excised,
+            state_rows_excised,
         })
     }
 
@@ -6840,6 +7226,110 @@ fn append_jsonl(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(file, "{value}")?;
     Ok(())
+}
+
+/// 0.8.20 Slice 5b (R-20-E6) — rewrite a telemetry JSONL sink with every
+/// `result_stable_ids` element in `erased` replaced by [`REDACTED_STABLE_ID`].
+///
+/// **Selective, never truncating.** Every line is carried across: records that
+/// reference no erased id are byte-identical, records that do keep their shape
+/// and only lose the matching id VALUES, and a line that is not an
+/// engine-authored JSON event (an operator note, a hand-appended record) is
+/// copied through verbatim. The sink is a caller-supplied path that may hold
+/// unrelated eval history; destroying it is not part of any erasure obligation.
+///
+/// **Crash safety.** Write-temp-then-`rename`: the redacted content goes to a
+/// sibling `<sink>.redact.tmp`, is `sync_all`ed, and is then atomically renamed
+/// over the sink. A crash at any point leaves either the intact old file or the
+/// complete new one — never a half-rewritten sink. `rename` is atomic because
+/// the temp file is a sibling (same directory ⇒ same filesystem).
+///
+/// **Concurrent appends.** The caller holds the telemetry mutex, so no
+/// in-process `capture_telemetry` can append into the window. An out-of-process
+/// appender is still possible (the sink is just a file), so before renaming we
+/// re-check the source length: if it grew, the tail delta is read, redacted and
+/// appended, and the check repeats — bounded, so a pathologically hot external
+/// writer surfaces as an error rather than an unbounded loop.
+fn redact_jsonl_stable_ids(
+    path: &Path,
+    erased: &std::collections::HashSet<&str>,
+) -> std::io::Result<()> {
+    /// Bound on the re-check loop for an out-of-process appender.
+    const MAX_TAIL_FOLDS: usize = 8;
+
+    let mut source = std::fs::read(path)?;
+    let mut redacted = redact_jsonl_bytes(&source, erased);
+
+    for _ in 0..MAX_TAIL_FOLDS {
+        let current = std::fs::read(path)?;
+        if current.len() == source.len() {
+            let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+            tmp_name.push(".redact.tmp");
+            let tmp = path.with_file_name(tmp_name);
+            {
+                let mut file = std::fs::File::create(&tmp)?;
+                file.write_all(&redacted)?;
+                file.sync_all()?;
+            }
+            std::fs::rename(&tmp, path)?;
+            return Ok(());
+        }
+        // Someone appended while we were building the replacement: fold the
+        // delta in (redacted) rather than dropping it, then re-check.
+        if current.len() > source.len() && current.starts_with(&source) {
+            redacted.extend_from_slice(&redact_jsonl_bytes(&current[source.len()..], erased));
+        } else {
+            // The file was rewritten under us, not appended to. Start over.
+            redacted = redact_jsonl_bytes(&current, erased);
+        }
+        source = current;
+    }
+    Err(std::io::Error::other(format!(
+        "telemetry sink {} is being appended to faster than it can be redacted",
+        path.display()
+    )))
+}
+
+/// Line-wise redaction of a JSONL byte buffer. Non-JSON and non-event lines are
+/// passed through unchanged, as is a trailing partial line (no terminating
+/// newline) — the sink is append-only, so a partial tail is a torn write, not
+/// ours to normalize.
+fn redact_jsonl_bytes(bytes: &[u8], erased: &std::collections::HashSet<&str>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let (line, tail) = match rest.iter().position(|b| *b == b'\n') {
+            Some(idx) => (&rest[..idx], &rest[idx + 1..]),
+            // No trailing newline: a torn/partial final line. Pass it through.
+            None => {
+                out.extend_from_slice(rest);
+                break;
+            }
+        };
+        match redact_jsonl_line(line, erased) {
+            Some(replacement) => out.extend_from_slice(replacement.as_bytes()),
+            None => out.extend_from_slice(line),
+        }
+        out.push(b'\n');
+        rest = tail;
+    }
+    out
+}
+
+/// `Some(replacement)` when the line is an engine-authored telemetry event whose
+/// `result_stable_ids` referenced an erased id; `None` to pass it through.
+fn redact_jsonl_line(line: &[u8], erased: &std::collections::HashSet<&str>) -> Option<String> {
+    let text = std::str::from_utf8(line).ok()?;
+    let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let ids = value.get_mut("result_stable_ids")?.as_array_mut()?;
+    let mut touched = false;
+    for id in ids.iter_mut() {
+        if id.as_str().is_some_and(|s| erased.contains(s)) {
+            *id = serde_json::Value::from(REDACTED_STABLE_ID);
+            touched = true;
+        }
+    }
+    touched.then(|| value.to_string())
 }
 
 /// G9 — fuse the vector and text branches with Reciprocal Rank Fusion.
@@ -10079,28 +10569,114 @@ fn recompute_mean_in_tx_inner(
     })
 }
 
+/// Cap sweep over the op-store mutation log: keeps the newest `cap` SWEEPABLE
+/// rows, dropping the oldest by `id`.
+///
+/// **Erasure-audit exemption (0.8.20 Slice 5b, design v5 §2 defect D-A;
+/// HITL-ruled 2026-07-19: *"there must be an auditable record of deletion
+/// event."*).** Rows in [`ERASURE_AUDIT_COLLECTIONS`] are excluded from BOTH the
+/// count and the DELETE, and are therefore **never removed by retention
+/// pressure**. Previously this swept `operational_mutations` cap-first,
+/// oldest-`id`-first, with no collection filter — so the `excise_source_audit`
+/// row proving an erasure occurred shared one retention pool with the very
+/// payloads it must prove erased, and (being written before whatever workload
+/// followed) was among the first evicted. Accountability is a distinct
+/// obligation from erasure; a sweep must not silently discharge it.
+///
+/// Consequence of excluding audit rows from the count: `cap` is a cap on
+/// SWEEPABLE rows, not on the physical table size. That is deliberate — the
+/// alternative (counting exempt rows toward the cap) would let a growing audit
+/// trail evict ordinary provenance ever more aggressively, and in the limit
+/// leave nothing sweepable while the sweep churned every write.
 fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::Result<()> {
     if cap == 0 {
         return Ok(());
     }
+    // Static, engine-internal identifiers — no caller input reaches this SQL.
+    let exempt = ERASURE_AUDIT_COLLECTIONS
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let slack = cap.max(20) / 20;
     let upper = cap.saturating_add(slack.max(1));
-    let count: u64 =
-        connection.query_row("SELECT COUNT(*) FROM operational_mutations", [], |row| row.get(0))?;
+    let count: u64 = connection.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM operational_mutations
+             WHERE collection_name NOT IN ({exempt})"
+        ),
+        [],
+        |row| row.get(0),
+    )?;
     if count <= upper {
         return Ok(());
     }
     let to_delete = count.saturating_sub(cap);
     connection.execute(
-        "DELETE FROM operational_mutations
-         WHERE id IN (
-             SELECT id FROM operational_mutations
-             ORDER BY id
-             LIMIT ?1
-         )",
+        &format!(
+            "DELETE FROM operational_mutations
+             WHERE id IN (
+                 SELECT id FROM operational_mutations
+                 WHERE collection_name NOT IN ({exempt})
+                 ORDER BY id
+                 LIMIT ?1
+             )"
+        ),
         [to_delete],
     )?;
     Ok(())
+}
+
+/// 0.8.20 Slice 5b (R-20-E6) — the prefixed stable ids
+/// ([`IdSpace::to_prefixed`]) of the canonical rows an erasure verb is about to
+/// delete, so they can be redacted from the telemetry sink.
+///
+/// Must be called INSIDE the erasing transaction and BEFORE the DELETEs — after
+/// them the rows, and with them the `logical_id`/`body` the ids derive from, are
+/// gone. Both queries take one bound parameter (`?1`), applied to nodes and
+/// edges respectively; `derive_stable_id` reproduces exactly what
+/// `capture_telemetry` wrote into `result_stable_ids`.
+fn collect_erased_stable_ids(
+    tx: &Connection,
+    node_sql: &str,
+    edge_sql: &str,
+    bind: &str,
+) -> Result<Vec<String>, EngineError> {
+    let mut ids = Vec::new();
+    for sql in [node_sql, edge_sql] {
+        let mut stmt = tx.prepare(sql).map_err(|_| EngineError::Storage)?;
+        let rows = stmt
+            .query_map(params![bind], |row| {
+                Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        for row in rows {
+            let (logical_id, body) = row.map_err(|_| EngineError::Storage)?;
+            ids.push(
+                derive_stable_id(logical_id.as_deref(), body.as_deref().unwrap_or(""))
+                    .to_prefixed(),
+            );
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// 0.8.20 Slice 5b (R-20-E7) — the audit handle for an erased op-store record:
+/// `SHA-256(collection + 0x1F + record_key)`, lowercase hex.
+///
+/// A record key is arbitrary caller-supplied text and may itself be the
+/// identifier being erased, so a durable audit row must not echo it. `0x1F`
+/// (ASCII unit separator) is the delimiter because it cannot appear in a
+/// well-formed collection name, keeping the pairing unambiguous.
+#[cfg(feature = "operator")]
+fn digest_record_identity(collection: &str, record_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(collection.as_bytes());
+    hasher.update([0x1f_u8]);
+    hasher.update(record_key.as_bytes());
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn projection_status(

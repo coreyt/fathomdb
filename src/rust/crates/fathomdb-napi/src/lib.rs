@@ -89,6 +89,9 @@ const CODE_VECTOR_EQUIVALENCE_MISMATCH: &str = "FDB_VECTOR_EQUIVALENCE_MISMATCH"
 // OPP-12 Phase-1 (0.8.19 Slice 10) — lifecycle-verb typed errors.
 const CODE_ILLEGAL_TRANSITION: &str = "FDB_ILLEGAL_TRANSITION";
 const CODE_NOT_LIFECYCLE_ADDRESSABLE: &str = "FDB_NOT_LIFECYCLE_ADDRESSABLE";
+// 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
+// complete the erasure at rest.
+const CODE_ERASURE_INCOMPLETE: &str = "FDB_ERASURE_INCOMPLETE";
 const CODE_PANIC: &str = "FDB_PANIC";
 
 // ===== Typed-error encoder ============================================
@@ -242,6 +245,11 @@ fn engine_error_to_napi(err: RustEngineError) -> Error {
             CODE_VECTOR_EQUIVALENCE_MISMATCH,
             format!("vector-equivalence self-check failed; dense retrieval refused: {reason}"),
             json!({ "reason": reason }),
+        ),
+        RustEngineError::ErasureIncomplete { stage, detail } => typed_error(
+            CODE_ERASURE_INCOMPLETE,
+            format!("erasure incomplete at stage '{stage}': {detail}"),
+            json!({ "stage": stage, "detail": detail }),
         ),
     }
 }

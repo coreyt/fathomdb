@@ -34,10 +34,10 @@ pub use fathomdb_engine::{
 // `fathomdb-engine`, so the default facade is recovery-clean at the method level.
 #[cfg(feature = "operator")]
 pub use fathomdb_engine::{
-    CheckIntegrityOpts, DumpProfileReport, DumpRowCountsReport, DumpSchemaReport, ExciseReport,
-    Finding, IntegrityReport, MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact,
-    SchemaObject, Section, TableRowCount, TraceEvent, TraceReport, TruncateWalReport,
-    TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+    CheckIntegrityOpts, DumpProfileReport, DumpRowCountsReport, DumpSchemaReport,
+    ExciseRecordReport, ExciseReport, Finding, IntegrityReport, MeanRecomputeReport, RebuildKind,
+    RebuildReport, SafeExportArtifact, SchemaObject, Section, TableRowCount, TraceEvent,
+    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 
 /// AC-074 method-level pin (Q5=BIND-RUST, Slice 27 fix-1): in a **default**

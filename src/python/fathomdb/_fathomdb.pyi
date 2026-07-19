@@ -421,3 +421,10 @@ class IllegalTransitionError(EngineError):
 
 class NotLifecycleAddressableError(EngineError):
     id_space: str
+
+# 0.8.20 Slice 5b (R-20-E5) — an erasure verb deleted its rows but could not
+# complete the erasure at rest (typically a WAL checkpoint blocked by a
+# concurrent reader). `stage` names the uncompleted step.
+class ErasureIncompleteError(EngineError):
+    stage: str
+    detail: str
