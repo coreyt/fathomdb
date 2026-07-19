@@ -17,3 +17,9 @@ default = []
 # DEFAULT facade is recovery-clean + raw-SQL-free at the method level;
 # `fathomdb-cli` enables this so `recover`/`doctor` still compile.
 operator = ["fathomdb-engine/operator"]
+
+[dev-dependencies]
+# 0.8.20 Slice 5c (R-20-E3) — compile-fail harness for
+# `tests/compile_fail_provenance.rs`. TEST-ONLY: `trybuild` is a
+# `[dev-dependencies]` entry and is never linked into the published facade.
+trybuild = "1.0"

@@ -95,6 +95,10 @@ name = "erasure_completeness"
 required-features = ["operator"]
 
 [[test]]
+name = "provenance_mandatory"
+required-features = ["operator"]
+
+[[test]]
 name = "excise_source"
 required-features = ["operator"]
 
