@@ -31,8 +31,13 @@ async function openEngine(path: string): Promise<Engine> {
   return Engine.open(path, { useDefaultEmbedder: false });
 }
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write. Test
+// fixtures carry a per-suite provenance id; it is inert for consolidation
+// (which keys on the fact-edge axis, not on provenance).
+const SOURCE_ID = "ts-test:functional-consolidate";
+
 function nodeItem(logicalId: string, body: string, kind = "entity"): object {
-  return { kind, body, logicalId };
+  return { kind, body, logicalId, sourceId: SOURCE_ID };
 }
 
 function edgeItem(
@@ -42,7 +47,7 @@ function edgeItem(
   body: string,
   tValid: string,
 ): object {
-  return { edge: { kind: "works_for", from, to, logicalId, body, tValid } };
+  return { edge: { kind: "works_for", from, to, logicalId, body, tValid, sourceId: SOURCE_ID } };
 }
 
 /**

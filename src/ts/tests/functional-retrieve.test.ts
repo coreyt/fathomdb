@@ -47,11 +47,18 @@ function loadFixture(): Fixture {
   return JSON.parse(readFileSync(FIXTURE_PATH, "utf-8")) as Fixture;
 }
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+const SOURCE_ID = "ts-test:functional-retrieve";
+
 async function seed(engine: Engine, fixture: Fixture): Promise<void> {
   const sup = fixture.superseded;
-  await engine.write([{ kind: sup.kind, body: sup.old_body, logicalId: sup.logical_id }]);
+  await engine.write([
+    { kind: sup.kind, body: sup.old_body, logicalId: sup.logical_id, sourceId: SOURCE_ID },
+  ]);
   for (const node of fixture.nodes) {
-    await engine.write([{ kind: node.kind, body: node.body, logicalId: node.logical_id }]);
+    await engine.write([
+      { kind: node.kind, body: node.body, logicalId: node.logical_id, sourceId: SOURCE_ID },
+    ]);
   }
   await engine.write([
     {

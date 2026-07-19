@@ -142,7 +142,12 @@ test("AC-068a embedded NUL in node kind also rejected before write", async () =>
   const engine = await Engine.open(freshDbPath());
   try {
     await assert.rejects(
-      () => engine.write([{ kind: `do${NUL}c`, body: "{}" }]),
+      () =>
+        engine.write([
+          // A VALID `sourceId` (0.8.20 R-20-E3) so the rejection is attributable to
+          // the embedded NUL in `kind`, not to missing provenance.
+          { kind: `do${NUL}c`, body: "{}", sourceId: "ts-test:ffi-safety" },
+        ]),
       (err: unknown) => {
         assert.ok(err instanceof WriteValidationError);
         return true;

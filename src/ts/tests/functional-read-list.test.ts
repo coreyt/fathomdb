@@ -20,6 +20,9 @@ import { Engine, read } from "../src/index.js";
 import { InvalidFilterError } from "../src/errors.js";
 import { freshDbPath } from "./helpers.js";
 
+// 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+const SOURCE_ID = "ts-test:functional-read-list";
+
 async function seedTaskNodes(engine: Engine): Promise<void> {
   const tasks = [
     { logicalId: "T1", body: { status: "open",   priority: 10, created_at: 1000 } },
@@ -27,7 +30,9 @@ async function seedTaskNodes(engine: Engine): Promise<void> {
     { logicalId: "T3", body: { status: "open",   priority: 30, created_at: 3000 } },
   ];
   for (const t of tasks) {
-    await engine.write([{ kind: "task", body: JSON.stringify(t.body), logicalId: t.logicalId }]);
+    await engine.write([
+      { kind: "task", body: JSON.stringify(t.body), logicalId: t.logicalId, sourceId: SOURCE_ID },
+    ]);
   }
 }
 
@@ -36,7 +41,7 @@ test("functional read.list: unfiltered returns all active nodes of the kind", as
   try {
     await seedTaskNodes(engine);
     // Write a node of a different kind — it must NOT appear.
-    await engine.write([{ kind: "note", body: "hello", logicalId: "N1" }]);
+    await engine.write([{ kind: "note", body: "hello", logicalId: "N1", sourceId: SOURCE_ID }]);
 
     const rows = await read.list(engine, "task");
     assert.equal(rows.length, 3);

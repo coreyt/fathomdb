@@ -42,7 +42,10 @@ test("openReport surfaces denseDisabled (default false) + accessors", async () =
 test("searchTextOnly serves the FTS-only path", async () => {
   const engine = await Engine.open(freshDbPath());
   try {
-    await engine.write([{ kind: "note", body: "alpha bravo charlie" }]);
+    await engine.write([
+      // 0.8.20 (R-20-E3): `sourceId` is mandatory on every canonical write.
+      { kind: "note", body: "alpha bravo charlie", sourceId: "ts-test:vector-equivalence-probe" },
+    ]);
     await engine.drain(30_000);
     const result = await engine.searchTextOnly("alpha");
     assert.ok(Array.isArray(result.results));
