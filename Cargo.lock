@@ -1137,6 +1137,7 @@ name = "fathomdb"
 version = "0.8.9"
 dependencies = [
  "fathomdb-engine",
+ "tempfile",
  "trybuild",
 ]
 

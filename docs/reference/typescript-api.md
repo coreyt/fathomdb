@@ -132,6 +132,35 @@ parallel, possibly-divergent embedder. Rejects with
 embedder (`useDefaultEmbedder: false`). Mirror of the Python
 `engine.embed(text)` (0.8.6 Slice 10 brought it to Py↔TS parity).
 
+### `engine.eraseSource(sourceId: string) -> Promise<EraseReport>`
+
+**0.8.20.** Erase every canonical row carrying `sourceId`, together with its
+row-owned projections (FTS5, `vec0`, `search_index_v2`), then finish the erasure
+at rest — redact the erased ids from the telemetry sink and truncate the WAL.
+
+The **companion to `purge`, not a duplicate of it.** `purge` addresses a
+*governed* node by `logicalId`; `eraseSource` addresses *anonymous* content —
+rows written with no `logicalId`, which `purge` cannot reach at all. Together
+they make every canonical row erasable from the SDK alone, with no CLI on
+`PATH`.
+
+Idempotent: erasing an absent or already-erased source is a zero-count success,
+so an interrupted erasure obligation can be retried without a pre-check.
+
+Rejects with `WriteValidationError` for an empty, whitespace-only, or
+**reserved** (`_`-prefixed) `sourceId`. The engine's reserved namespace
+(`_engine:*` substrate and the `_legacy:pre-0.8.20` migration cohort) is
+reachable only through `fathomdb recover --excise-source`. Rejects with
+`ErasureIncomplete` rather than reporting success if the erasure could not be
+completed at rest.
+
+Resolves to an `EraseReport` with `sourceRef`, `nodesExcised`, `edgesExcised`,
+and `projectionsInvalidated`. Mirror of the Python
+`engine.erase_source(source_id)` (Py↔TS parity).
+
+See [Erasure](../operations/erasure.md) for what this does and does **not**
+guarantee, and for the non-PII `sourceId` rule.
+
 ### `engine.close() -> Promise<void>`
 
 Release SQLite handles, join the writer thread, drain the scheduler.
