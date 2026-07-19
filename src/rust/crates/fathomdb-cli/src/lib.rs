@@ -13,9 +13,9 @@ use clap::{Args, Parser, Subcommand};
 use fathomdb::{
     CheckIntegrityOpts, CorruptionLocator, DumpProfileReport, DumpRowCountsReport,
     DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseRecordReport, ExciseReport,
-    Finding, IntegrityReport, MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact,
-    SchemaObject, Section, TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport,
-    VerifyEmbedderStatus,
+    Finding, IntegrityReport, MeanRecomputeReport, OrphanProvenanceReport, RebuildKind,
+    RebuildReport, SafeExportArtifact, SchemaObject, Section, TraceReport, TruncateWalReport,
+    TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 use serde_json::{json, Value};
 
@@ -147,6 +147,13 @@ pub enum DoctorCommand {
     /// `ADR-0.6.0-cli-scope`), NOT the rejected `search`/`get`/`list`
     /// application query surface. CLI-only; no SDK parity.
     DumpMutations(DumpMutationsArgs),
+    /// 0.8.20 Slice 5d (R-20-E8) — read-only per-`source_id` census over the
+    /// canonical tables. Reports which provenance buckets exist and, load-
+    /// bearingly, how many rows are reachable by NO erasure verb (neither a
+    /// `source_id` for `erase_source` nor a `logical_id` for `purge`). A
+    /// non-zero un-erasable count exits `DOCTOR_FOUND_ISSUES` (65).
+    /// CLI-only; no SDK parity.
+    OrphanProvenance(SimpleDoctorArgs),
 }
 
 /// EU-5b — `fathomdb doctor warm-cache` argument set.
@@ -491,6 +498,22 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
         DoctorCommand::DumpProfile(args) => run_doctor_verb(&args.db_path, "dump-profile", |e| {
             e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
         }),
+        DoctorCommand::OrphanProvenance(args) => {
+            run_doctor_verb(&args.db_path, "orphan-provenance", |e| {
+                e.orphan_provenance().map(|r| {
+                    // An un-erasable row is actionable non-clean state: the
+                    // database holds content no erasure request can reach.
+                    // Everything else (including `_legacy:` rows, which ARE
+                    // erasable through the operator seam) is merely reported.
+                    let outcome = if r.unerasable_rows > 0 {
+                        CliOutcome::Findings
+                    } else {
+                        CliOutcome::Clean
+                    };
+                    (orphan_provenance_report_json(&r), outcome)
+                })
+            })
+        }
         DoctorCommand::WarmCache(args) => run_doctor_warm_cache(args),
         DoctorCommand::RecomputeMean(args) => {
             run_doctor_verb(&args.db_path, "recompute-mean", |e| {
@@ -957,6 +980,20 @@ fn dump_row_counts_report_json(r: &DumpRowCountsReport) -> Value {
             "name": c.name,
             "rows": c.rows,
         })).collect::<Vec<_>>(),
+    })
+}
+
+fn orphan_provenance_report_json(r: &OrphanProvenanceReport) -> Value {
+    json!({
+        "verb": "orphan-provenance",
+        "sources": r.sources.iter().map(|s| json!({
+            "source_id": s.source_id,
+            "rows": s.rows,
+            "governed_rows": s.governed_rows,
+            "reserved": s.reserved,
+        })).collect::<Vec<_>>(),
+        "total_rows": r.total_rows,
+        "unerasable_rows": r.unerasable_rows,
     })
 }
 

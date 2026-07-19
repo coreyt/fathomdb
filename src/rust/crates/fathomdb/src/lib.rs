@@ -27,24 +27,39 @@
 //   facade consumer could not perform a canonical write at all. Its presence is
 //   also what makes the un-provenanced write a COMPILE error for facade
 //   consumers rather than a runtime rejection (see `tests/ui/`).
+// + 1 new type from 0.8.20 Slice 5d (R-20-E4, erasure): ExciseReport — the
+//   outcome of the net-new governed `Engine::erase_source` lifecycle verb. It
+//   MOVED here from the operator-gated block below: `erase_source` is governed
+//   surface (an SDK-only consumer must be able to erase anonymous content it
+//   wrote), so its return type cannot stay behind the CLI feature gate. The
+//   operator build is unaffected — it now gets the type from this block instead.
 pub use fathomdb_engine::{
     ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
-    EngineError, EngineOpenError, Explanation, ExtractDocument, IngestWithExtractorReceipt,
-    InitialState, LifecycleState, NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain,
-    Predicate, PreparedWrite, QueryTrace, RecoveryHint, ScalarValue, SearchExpandResult,
-    SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, SourceId, Subscription,
-    TraversalDirection, WriteReceipt,
+    EngineError, EngineOpenError, ExciseReport, Explanation, ExtractDocument,
+    IngestWithExtractorReceipt, InitialState, LifecycleState, NodeRecord, OpenReport, OpenStage,
+    OpenedEngine, PerHitExplain, Predicate, PreparedWrite, QueryTrace, RecoveryHint, ScalarValue,
+    SearchExpandResult, SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, SourceId,
+    Subscription, TraversalDirection, WriteReceipt,
 };
 
-// The 20 operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,
+// The operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,
 // gated behind `operator`. The backing `Engine` methods are operator-gated in
 // `fathomdb-engine`, so the default facade is recovery-clean at the method level.
+//
+// 0.8.20 Slice 5d keeps the count at 20 via two offsetting moves:
+//   - `ExciseReport` moved OUT (up to the always-present block): it is the
+//     return type of the governed `Engine::erase_source`, so it cannot sit
+//     behind the CLI feature gate.
+//   - `OrphanProvenanceReport` + `OrphanProvenanceSource` moved IN: the
+//     `doctor orphan-provenance` diagnostic is CLI-only with no SDK parity,
+//     the same posture as `dump-mutations` (Slice 34).
 #[cfg(feature = "operator")]
 pub use fathomdb_engine::{
     CheckIntegrityOpts, DumpProfileReport, DumpRowCountsReport, DumpSchemaReport,
-    ExciseRecordReport, ExciseReport, Finding, IntegrityReport, MeanRecomputeReport, RebuildKind,
-    RebuildReport, SafeExportArtifact, SchemaObject, Section, TableRowCount, TraceEvent,
-    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+    ExciseRecordReport, Finding, IntegrityReport, MeanRecomputeReport, OrphanProvenanceReport,
+    OrphanProvenanceSource, RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section,
+    TableRowCount, TraceEvent, TraceReport, TruncateWalReport, TruncateWalStatus,
+    VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 
 /// AC-074 method-level pin (Q5=BIND-RUST, Slice 27 fix-1): in a **default**

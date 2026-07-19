@@ -23,3 +23,6 @@ operator = ["fathomdb-engine/operator"]
 # `tests/compile_fail_provenance.rs`. TEST-ONLY: `trybuild` is a
 # `[dev-dependencies]` entry and is never linked into the published facade.
 trybuild = "1.0"
+# 0.8.20 Slice 5d (R-20-E4) — scratch databases for `tests/sdk_only_erasure.rs`.
+# TEST-ONLY, same posture as `trybuild`: never linked into the published facade.
+tempfile = "3"

@@ -3012,6 +3012,47 @@ pub struct DumpRowCountsReport {
     pub counts: Vec<TableRowCount>,
 }
 
+/// 0.8.20 Slice 5d (R-20-E8) — one `source_id` bucket in an
+/// [`OrphanProvenanceReport`]. `source_id` is `None` for the NULL-provenance
+/// bucket, which after migration step 21 should contain ONLY governed rows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceSource {
+    /// `None` = the NULL-`source_id` bucket.
+    pub source_id: Option<String>,
+    /// Canonical rows (nodes + edges) carrying this provenance.
+    pub rows: u64,
+    /// How many of `rows` also carry a `logical_id` (i.e. are `purge`-
+    /// addressable as well as `erase_source`-addressable).
+    pub governed_rows: u64,
+    /// True for the engine's reserved `_`-prefixed namespace (`_engine:*`,
+    /// `_legacy:pre-0.8.20`). Reserved buckets are reachable only through the
+    /// operator seam `excise_source`, never through the governed
+    /// [`Engine::erase_source`].
+    pub reserved: bool,
+}
+
+/// Result of [`Engine::orphan_provenance`] — the per-`source_id` census behind
+/// `fathomdb doctor orphan-provenance` (design §4 item 11).
+///
+/// `unerasable_rows` is the load-bearing field: canonical rows carrying
+/// NEITHER a `source_id` NOR a `logical_id`. Such a row is reachable by no
+/// erasure verb at all — `purge` keys on `logical_id`, `erase_source` keys on
+/// `source_id` — so it can never be deleted on request. Slice 5c made that
+/// state unwritable and migration step 21 back-filled the historical cases, so
+/// a non-zero count means the invariant has been violated and the verb exits
+/// `DOCTOR_FOUND_ISSUES`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceReport {
+    /// Per-`source_id` buckets, ordered by descending `rows` then `source_id`
+    /// so the output is deterministic (a diagnostic that reorders between runs
+    /// cannot be diffed).
+    pub sources: Vec<OrphanProvenanceSource>,
+    /// Total canonical rows surveyed.
+    pub total_rows: u64,
+    /// Rows with NO `source_id` AND NO `logical_id` — un-erasable by any verb.
+    pub unerasable_rows: u64,
+}
+
 /// Result of [`Engine::dump_profile`]. Mirrors the open-time embedder
 /// posture + the per-kind vector configuration registered in
 /// `_fathomdb_vector_kinds`.
@@ -6510,21 +6551,74 @@ impl Engine {
         Ok(erased_stable_ids)
     }
 
-    /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight
-    /// projection work, then deletes every canonical row attributable
-    /// to `source_id` plus the FTS5 + vec0 shadow rows that referenced
-    /// those cursors, and appends an audit row to the
-    /// `excise_source_audit` operational collection.
+    /// 0.8.20 Slice 5d (R-20-E4, design §4 item 9b) — the **governed SDK
+    /// erasure verb**. Deletes every canonical row attributable to `source_id`,
+    /// plus its row-owned projections, and finishes the erasure at rest.
+    ///
+    /// This is NOT `operator`-gated: erasing content a consumer wrote is an
+    /// application obligation, not a recovery workflow. Before this slice the
+    /// only erasure path was [`Engine::excise_source`], which lives behind the
+    /// operator feature (i.e. the CLI), so an SDK-only consumer holding a
+    /// deletion obligation over ANONYMOUS content — content with no
+    /// `logical_id`, therefore not reachable by [`Engine::purge`] — had no way
+    /// to discharge it at all. That gap is what R-20-E4 closes.
+    ///
+    /// **One engine path.** `erase_source` and `excise_source` are the SAME
+    /// operation: both delegate to [`Engine::erase_source_shared`]. They are
+    /// not competing implementations, and no behaviour is duplicated.
+    ///
+    /// **Validation differs, deliberately.** `erase_source` admits only ids
+    /// [`SourceId::new`] would admit, so a caller cannot aim the governed verb
+    /// at the engine's reserved `_`-prefixed namespace (`_engine:*` substrate,
+    /// or the `_legacy:pre-0.8.20` cohort migration step 21 back-filled — a
+    /// single call against which would erase every pre-0.8.20 anonymous row).
+    /// `excise_source` stays permissive precisely BECAUSE it is the recovery
+    /// seam: R-20-E8 requires an operator to be able to excise `_legacy:`.
+    ///
+    /// **Not a recovery verb.** `erase_source` carries no REQ-054
+    /// recovery-denylist name (`{recover, restore, repair, fix, rebuild}`); it
+    /// is a lifecycle verb alongside `transition`/`purge`. AC-041 is unaffected.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::WriteValidation`] for an empty, whitespace-only or
+    /// reserved `source_id`; [`EngineError::ErasureIncomplete`] if the erasure
+    /// could not be completed at rest (see [`Engine::complete_erasure_at_rest`]).
+    pub fn erase_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        // Construct-to-validate: reuse the newtype's rule rather than restating
+        // it, so the erasure boundary and the write boundary cannot drift.
+        let _validated = SourceId::new(source_id)?;
+        self.erase_source_shared("erase_source", source_id)
+    }
+
+    /// Phase 9 Pack B / AC-028a/b/c source excise — the **operator/recovery**
+    /// spelling of [`Engine::erase_source`], sharing one engine path with it.
+    ///
+    /// Kept `operator`-gated and kept permissive about reserved ids: this is
+    /// the seam an operator uses to excise `_legacy:pre-0.8.20` (R-20-E8) or
+    /// `_engine:*` substrate, which the governed SDK verb refuses.
+    #[cfg(feature = "operator")]
+    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        if source_id.is_empty() {
+            self.ensure_open()?;
+            return Err(EngineError::WriteValidation);
+        }
+        self.erase_source_shared("excise_source", source_id)
+    }
+
+    /// The single erasure implementation behind [`Engine::erase_source`] and
+    /// [`Engine::excise_source`]. `verb` names the caller for the telemetry
+    /// redaction record only; the deletion semantics are identical.
     ///
     /// Non-perturbation: rows from other sources (and rows with NULL
     /// `source_id`) are untouched; the projection cursor is NOT reset
     /// and no blanket projection rebuild is issued.
-    #[cfg(feature = "operator")]
-    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+    fn erase_source_shared(
+        &self,
+        verb: &'static str,
+        source_id: &str,
+    ) -> Result<ExciseReport, EngineError> {
         self.ensure_open()?;
-        if source_id.is_empty() {
-            return Err(EngineError::WriteValidation);
-        }
 
         // Drain MUST succeed before the excise transaction. SQLite-WAL
         // would otherwise allow a worker that already dequeued a job
@@ -6533,7 +6627,7 @@ impl Engine {
         // lock, leaving residue and breaking AC-028b. Surface the
         // timeout instead of swallowing it (Pack A pattern).
         self.projection_runtime.set_frozen(true);
-        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+        let drain_result = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS);
         let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
         self.projection_runtime.set_frozen(false);
         // 0.8.20 Slice 5b (R-20-E5/E6) — finish the erasure AT REST before
@@ -6542,7 +6636,7 @@ impl Engine {
         // readable on disk. On persistent checkpoint BUSY this returns
         // `ErasureIncomplete` rather than an `ExciseReport`.
         let (report, erased_stable_ids) = outcome?;
-        self.complete_erasure_at_rest("excise_source", &erased_stable_ids)?;
+        self.complete_erasure_at_rest(verb, &erased_stable_ids)?;
         Ok(report)
     }
 
@@ -6609,6 +6703,71 @@ impl Engine {
             counts.push(TableRowCount { name: (*name).to_string(), rows });
         }
         Ok(DumpRowCountsReport { counts })
+    }
+
+    /// 0.8.20 Slice 5d (R-20-E8, design §4 item 11) — doctor
+    /// `orphan-provenance` seam: a **read-only** per-`source_id` census over
+    /// `canonical_nodes` + `canonical_edges`.
+    ///
+    /// Answers the operator question the erasure work made askable: *"for this
+    /// database, is every row actually reachable by some erasure verb?"* A row
+    /// is reachable by `purge` via `logical_id`, or by `erase_source` /
+    /// `excise_source` via `source_id`. A row with neither is un-erasable, and
+    /// is counted into [`OrphanProvenanceReport::unerasable_rows`].
+    ///
+    /// CLI-only (no SDK parity), matching the `dump-*` diagnostic family.
+    ///
+    /// Read-only by construction: this method issues SELECTs exclusively and
+    /// opens no transaction.
+    #[cfg(feature = "operator")]
+    pub fn orphan_provenance(&self) -> Result<OrphanProvenanceReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+        // One UNION ALL over both canonical tables so a source that spans nodes
+        // AND edges reports as a single bucket. `logical_id IS NOT NULL` is
+        // summed rather than counted separately so the two figures cannot drift.
+        let mut stmt = connection
+            .prepare(
+                "SELECT source_id,
+                        COUNT(*) AS rows_total,
+                        SUM(CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END) AS governed
+                   FROM (SELECT source_id, logical_id FROM canonical_nodes
+                         UNION ALL
+                         SELECT source_id, logical_id FROM canonical_edges)
+                  GROUP BY source_id
+                  ORDER BY rows_total DESC, source_id",
+            )
+            .map_err(|_| EngineError::Storage)?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let source_id: Option<String> = row.get(0)?;
+                let rows: i64 = row.get(1)?;
+                let governed: i64 = row.get(2)?;
+                Ok((source_id, rows, governed))
+            })
+            .map_err(|_| EngineError::Storage)?;
+
+        let mut sources = Vec::new();
+        let mut total_rows: u64 = 0;
+        let mut unerasable_rows: u64 = 0;
+        for row in rows {
+            let (source_id, rows, governed) = row.map_err(|_| EngineError::Storage)?;
+            let rows = u64::try_from(rows).unwrap_or(0);
+            let governed_rows = u64::try_from(governed).unwrap_or(0);
+            total_rows = total_rows.saturating_add(rows);
+            if source_id.is_none() {
+                // No provenance: only the governed subset is addressable (by
+                // `purge`). The remainder is reachable by nothing.
+                unerasable_rows = unerasable_rows.saturating_add(rows - governed_rows.min(rows));
+            }
+            let reserved = source_id.as_deref().is_some_and(|s| s.starts_with('_'));
+            sources.push(OrphanProvenanceSource { source_id, rows, governed_rows, reserved });
+        }
+
+        Ok(OrphanProvenanceReport { sources, total_rows, unerasable_rows })
     }
 
     /// Doctor `dump-profile` seam (AC-040a). Returns the stored
@@ -6816,7 +6975,11 @@ impl Engine {
     /// Returns the report plus the prefixed stable ids
     /// ([`IdSpace::to_prefixed`]) of every erased row, so the caller can redact
     /// them from the telemetry sink (R-20-E6).
-    #[cfg(feature = "operator")]
+    ///
+    /// 0.8.20 Slice 5d (R-20-E4): no longer `operator`-gated — it is the shared
+    /// body behind BOTH `erase_source` (governed SDK) and `excise_source`
+    /// (operator seam). Still private; the gate that matters is on the two
+    /// public spellings.
     fn excise_source_inner(
         &self,
         source_id: &str,

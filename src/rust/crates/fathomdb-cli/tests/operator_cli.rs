@@ -38,6 +38,8 @@ const DOCTOR_VERBS: &[&str] = &[
     "dump-profile",
     "recompute-mean",
     "dump-mutations",
+    // 0.8.20 Slice 5d (R-20-E8) — read-only per-source_id census.
+    "orphan-provenance",
 ];
 
 const RECOVER_FLAGS: &[&str] = &[

@@ -142,6 +142,8 @@ fn every_doctor_verb_accepts_json_flag() {
         "dump-schema",
         "dump-row-counts",
         "dump-profile",
+        // 0.8.20 Slice 5d (R-20-E8).
+        "orphan-provenance",
     ] {
         let mut argv: Vec<&str> = vec!["fathomdb", "doctor", verb];
         match verb {
