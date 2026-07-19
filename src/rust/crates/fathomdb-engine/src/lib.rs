@@ -5449,8 +5449,15 @@ impl Engine {
                 params![cursor, kind, body, row_kind.as_str()],
             )
             .map_err(|_| EngineError::Storage)?;
-            let enqueued = project_canonical_node_row(&tx, cursor, kind, body, row_kind)
-                .map_err(|_| EngineError::Storage)?;
+            let enqueued = project_canonical_node_row(
+                &tx,
+                cursor,
+                kind,
+                body,
+                row_kind,
+                ProjectionPass::Write,
+            )
+            .map_err(|_| EngineError::Storage)?;
             advance_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
             tx.commit().map_err(|_| EngineError::Storage)?;
             enqueued
@@ -6219,24 +6226,13 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
-        // Erase the row-owned projection shadows for every collected cursor. vec0
-        // rowid == the canonical row's write_cursor (see `_fathomdb_vector_rows`).
+        // Erase the row-owned projection shadows for every collected cursor.
+        // 0.8.20 Slice 5a (R-20-E1): registry-driven — the hand-rolled delete
+        // list is gone, so a newly registered projection table is erased here
+        // without touching this site. vec0 rowid == the canonical row's
+        // write_cursor (see `_fathomdb_vector_rows`).
         for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
-            tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM search_index_v2 WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
-                .map_err(|_| EngineError::Storage)?;
-            tx.execute(
-                "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
-                [cursor],
-            )
-            .map_err(|_| EngineError::Storage)?;
+            erase_row_projections(&tx, *cursor).map_err(|_| EngineError::Storage)?;
         }
 
         // Erase the canonical rows: all node versions + all touching edges
@@ -6421,33 +6417,17 @@ impl Engine {
             rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
         };
 
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven erasure. The previous
+        // hand-rolled list here OMITTED `search_index_v2`, a CONTENT-STORING
+        // FTS5 table (no `content=''`) that keeps the document body verbatim:
+        // after `excise_source` the erased body was still on disk, invisible to
+        // every functional test because both v2 read paths discard candidates
+        // lacking a live `canonical_nodes` row. `erase_row_projections` covers
+        // every registered projection, so the omission cannot recur.
         let mut shadow_invalidated: u64 = 0;
         for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
             shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            // fix-26 [P2]: also excise edge FTS rows (G11 search_index_edges).
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM search_index_edges WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            // vec0 rowid is the canonical row's write_cursor (see
-            // `_fathomdb_vector_rows.write_cursor UNIQUE`).
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
-                    .map_err(|_| EngineError::Storage)? as u64,
-            );
-            shadow_invalidated = shadow_invalidated.saturating_add(
-                tx.execute(
-                    "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
-                    [cursor],
-                )
-                .map_err(|_| EngineError::Storage)? as u64,
+                erase_row_projections(&tx, *cursor).map_err(|_| EngineError::Storage)?,
             );
         }
 
@@ -6520,64 +6500,70 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
-        let mut rows_invalidated: u64 = 0;
-        if include_fts {
-            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
-            rows_invalidated = rows_invalidated.saturating_add(n as u64);
-            // fix-26 [P2]: also truncate edge FTS shadow (G11 search_index_edges).
-            let n = tx
-                .execute("DELETE FROM search_index_edges", [])
-                .map_err(|_| EngineError::Storage)?;
-            rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        }
-        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        let n = tx
-            .execute("DELETE FROM _fathomdb_vector_rows", [])
-            .map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
-        let n = tx
-            .execute("DELETE FROM _fathomdb_projection_terminal", [])
-            .map_err(|_| EngineError::Storage)?;
-        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven invalidation. A full
+        // rebuild truncates EVERY row-owned projection (the previous hand-rolled
+        // list omitted `search_index_v2`, so a rebuild neither dropped stale v2
+        // rows nor repopulated the table); a vec0-only rebuild truncates the
+        // vector + readiness classes exactly as before. Kind-owned watermark
+        // state (`_fathomdb_projection_state`) is deliberately NOT truncated —
+        // readiness is reset by rewinding the projection cursor below.
+        let rows_invalidated = if include_fts {
+            truncate_all_row_projections(&tx).map_err(|_| EngineError::Storage)?
+        } else {
+            truncate_row_projections_in(&tx, &[ProjectionClass::Vector, ProjectionClass::Readiness])
+                .map_err(|_| EngineError::Storage)?
+        };
         store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+        // 0.8.20 Slice 5a (R-20-E1, work item 1) — the replay runs through the
+        // SAME two projectors the write path uses, so the rebuilt projections
+        // are identical to what a re-write would have produced. `include_fts`
+        // selects the pass: a vec0-only rebuild must not write FTS rows.
+        let pass = if include_fts { ProjectionPass::Write } else { ProjectionPass::VectorOnly };
         let mut rows_rebuilt: u64 = 0;
-        if include_fts {
-            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
-                tx.execute(
-                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
-                    params![row.body, row.kind, row.cursor],
-                )
+        for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+            project_canonical_node_row(&tx, row.cursor, &row.kind, &row.body, row.row_kind, pass)
                 .map_err(|_| EngineError::Storage)?;
+            if include_fts {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
-            // fix-26 [P2]: rebuild edge FTS shadow from active canonical_edges
-            // with non-null bodies (G11 search_index_edges).
-            // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
-            // §9 [P2]): mirror the graph-traversal recency filter
-            // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
-            // here too, so a full rebuild does not re-surface an edge that
-            // recency consolidation already invalidated.
+        }
+        // fix-26 [P2]: rebuild the edge shadows from active canonical_edges
+        // (G11 search_index_edges).
+        // 0.8.12 Slice A (R-CON-2 named default-ON blocker; Slice-20 codex
+        // §9 [P2]): mirror the graph-traversal recency filter
+        // (`t_invalid IS NULL OR datetime(t_invalid) > datetime('now')`)
+        // here too, so a full rebuild does not re-surface an edge that
+        // recency consolidation already invalidated.
+        // 0.8.20 Slice 5a: body-less structural edges are now included in the
+        // replay. They project no FTS/vector row, but the write path DOES record
+        // their readiness terminal — which this rebuild truncated and (before
+        // this slice) never restored, stalling `advance_projection_cursor`.
+        let edge_rows: Vec<(i64, String, Option<String>)> = {
             let mut edge_stmt = tx
                 .prepare(
                     "SELECT write_cursor, kind, body FROM canonical_edges \
-                     WHERE superseded_at IS NULL AND body IS NOT NULL \
+                     WHERE superseded_at IS NULL \
                        AND (t_invalid IS NULL OR datetime(t_invalid) > datetime('now'))",
                 )
                 .map_err(|_| EngineError::Storage)?;
-            let edge_rows: Vec<(i64, String, String)> = edge_stmt
+            let rows = edge_stmt
                 .query_map([], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
                 })
                 .map_err(|_| EngineError::Storage)?
                 .collect::<rusqlite::Result<_>>()
                 .map_err(|_| EngineError::Storage)?;
-            for (cursor, kind, body) in edge_rows {
-                tx.execute(
-                    "INSERT INTO search_index_edges(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
-                    params![body, kind, cursor],
-                )
+            rows
+        };
+        for (cursor, kind, body) in edge_rows {
+            let has_body = body.is_some();
+            project_canonical_edge_row(&tx, cursor as u64, &kind, body.as_deref(), pass)
                 .map_err(|_| EngineError::Storage)?;
+            if include_fts && has_body {
                 rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
         }
@@ -9495,6 +9481,7 @@ struct CanonicalNodeRow {
     cursor: u64,
     kind: String,
     body: String,
+    row_kind: RowKind,
 }
 
 /// 0.8.0 Slice 5 (G1) — re-tokenize `search_index` from the canonical source
@@ -9516,13 +9503,23 @@ fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
     let rows = canonical_node_rows(connection)?;
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
-        connection.execute("DELETE FROM search_index", [])?;
-        {
-            let mut statement = connection
-                .prepare("INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)")?;
-            for row in &rows {
-                statement.execute(params![row.body, row.kind, row.cursor])?;
-            }
+        // 0.8.20 Slice 5a (R-20-E1) — registry-driven: re-tokenize EVERY
+        // node-FTS projection, not just `search_index`. `search_index_v2` uses
+        // the SAME tokenizer (`porter unicode61 remove_diacritics 2`), so it is
+        // equally invalidated by a tokenizer-default upgrade; before this slice
+        // it was neither cleared nor re-tokenized here. Edge FTS is out of scope
+        // for this open-path repair (it postdates the step-11 upgrade and is
+        // rebuilt by `rebuild_projections`).
+        truncate_row_projections_in(connection, &[ProjectionClass::NodeFts])?;
+        for row in &rows {
+            project_canonical_node_row(
+                connection,
+                row.cursor,
+                &row.kind,
+                &row.body,
+                row.row_kind,
+                ProjectionPass::FtsOnly,
+            )?;
         }
         connection.execute(
             "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
@@ -9571,16 +9568,31 @@ fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
 }
 
 fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
-    let mut statement = connection
-        .prepare("SELECT write_cursor, kind, body FROM canonical_nodes ORDER BY write_cursor")?;
+    let mut statement = connection.prepare(
+        "SELECT write_cursor, kind, body, row_kind FROM canonical_nodes ORDER BY write_cursor",
+    )?;
     let rows = statement.query_map([], |row| {
         Ok(CanonicalNodeRow {
             cursor: row.get::<_, u64>(0)?,
             kind: row.get::<_, String>(1)?,
             body: row.get::<_, String>(2)?,
+            row_kind: row_kind_from_column(&row.get::<_, String>(3)?),
         })
     })?;
     rows.collect()
+}
+
+/// 0.8.20 Slice 5a — inverse of [`RowKind::as_str`] for the stored
+/// `canonical_nodes.row_kind` column. An unrecognized spelling degrades to
+/// `Leaf`, the column DEFAULT and the shape every pre-EXP-S row carries; that
+/// keeps a projector replay behavior-identical to the pre-registry rebuild,
+/// which ignored `row_kind` entirely.
+fn row_kind_from_column(value: &str) -> RowKind {
+    match value {
+        "coverage" => RowKind::Coverage,
+        "graph" => RowKind::Graph,
+        _ => RowKind::Leaf,
+    }
 }
 
 #[cfg(feature = "operator")]
@@ -11736,6 +11748,168 @@ struct IndexTargetSet {
     vector: bool,
 }
 
+/// 0.8.20 Slice 5a (R-20-E1) — the class a row-owned projection table belongs
+/// to, so the four maintenance sites can each truncate exactly the subset they
+/// own without re-deriving a hand-rolled table list.
+///
+/// - `NodeFts` — same-txn lexical projection of a canonical NODE body.
+/// - `EdgeFts` — same-txn lexical projection of a canonical EDGE body.
+/// - `Vector` — the async vec0 materialization (written by the embed worker,
+///   not by the write path — see [`project_canonical_node_row`]).
+/// - `Readiness` — the terminal-cursor bookkeeping that lets
+///   `advance_projection_cursor` walk past a row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectionClass {
+    NodeFts,
+    EdgeFts,
+    Vector,
+    Readiness,
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — one ROW-OWNED projection table: a shadow whose
+/// rows are 1:1 with a canonical row's `write_cursor` and therefore MUST die
+/// with that row.
+#[derive(Clone, Copy, Debug)]
+struct RowOwnedProjection {
+    /// Table name. `'static` and never caller-derived: safe to interpolate.
+    table: &'static str,
+    /// The column carrying the owning canonical row's `write_cursor`. For the
+    /// vec0 table this is `rowid` — vec0 rowid IS the write_cursor (see the
+    /// `_fathomdb_vector_rows.write_cursor UNIQUE` identity).
+    cursor_column: &'static str,
+    class: ProjectionClass,
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — **the** registry of row-owned projections.
+///
+/// Every table here is 1:1 with a canonical `write_cursor` and is erased by
+/// [`erase_row_projections`] whenever that canonical row is erased. Adding a
+/// projection table WITHOUT registering it here re-opens the defect this slice
+/// closes (`search_index_v2` was written by one site and deleted by one site,
+/// out of five that maintain projections — so `excise_source` left the erased
+/// body on disk in a content-storing FTS5 table). The `guard_row_owned_registry`
+/// unit test introspects `sqlite_master` and fails if a `write_cursor`-keyed
+/// table is missing from this list.
+///
+/// **NOT here, deliberately (design v5 §1.1): `_fathomdb_projection_state`.**
+/// That table is KIND-owned — keyed by `kind`, holding a per-kind enqueue
+/// watermark. Erasing one row must NOT rewind a whole kind's watermark, so it
+/// must never be deleted per-cursor. A rebuild resets it deliberately; erasure
+/// leaves it alone.
+const ROW_OWNED_PROJECTIONS: &[RowOwnedProjection] = &[
+    RowOwnedProjection {
+        table: "search_index",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::NodeFts,
+    },
+    RowOwnedProjection {
+        table: "search_index_v2",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::NodeFts,
+    },
+    RowOwnedProjection {
+        table: "search_index_edges",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::EdgeFts,
+    },
+    RowOwnedProjection {
+        table: "vector_default",
+        cursor_column: "rowid",
+        class: ProjectionClass::Vector,
+    },
+    RowOwnedProjection {
+        table: "_fathomdb_vector_rows",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Vector,
+    },
+    RowOwnedProjection {
+        table: "_fathomdb_projection_terminal",
+        cursor_column: "write_cursor",
+        class: ProjectionClass::Readiness,
+    },
+];
+
+/// 0.8.20 Slice 5a (R-20-E1) — erase EVERY row-owned projection for one
+/// canonical `write_cursor`. Returns the number of shadow rows deleted.
+///
+/// This is the single erasure primitive: `purge_inner` and `excise_source_inner`
+/// both call it, so a new projection table becomes erasable by registering it in
+/// [`ROW_OWNED_PROJECTIONS`] — not by remembering to patch two hand-rolled
+/// delete lists (the omission that left erased bodies in `search_index_v2`).
+fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS {
+        let sql =
+            format!("DELETE FROM {} WHERE {} = ?1", projection.table, projection.cursor_column);
+        deleted = deleted.saturating_add(tx.execute(&sql, [write_cursor])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — truncate the row-owned projections in `classes`.
+/// Returns the number of shadow rows deleted.
+fn truncate_row_projections_in(
+    tx: &Connection,
+    classes: &[ProjectionClass],
+) -> rusqlite::Result<u64> {
+    let mut deleted: u64 = 0;
+    for projection in ROW_OWNED_PROJECTIONS.iter().filter(|p| classes.contains(&p.class)) {
+        let sql = format!("DELETE FROM {}", projection.table);
+        deleted = deleted.saturating_add(tx.execute(&sql, [])? as u64);
+    }
+    Ok(deleted)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — truncate EVERY row-owned projection (the full
+/// `rebuild_projections` invalidation). Kind-owned watermark state
+/// (`_fathomdb_projection_state`) is deliberately untouched; the rebuild resets
+/// readiness by rewinding the projection cursor instead.
+#[cfg(feature = "operator")]
+fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
+    truncate_row_projections_in(
+        tx,
+        &[
+            ProjectionClass::NodeFts,
+            ProjectionClass::EdgeFts,
+            ProjectionClass::Vector,
+            ProjectionClass::Readiness,
+        ],
+    )
+}
+
+/// 0.8.20 Slice 5a (R-20-E1) — which half of a projector's work a call site
+/// wants. The projectors are TOTAL (they own every row-owned projection for a
+/// canonical row); the pass selects the subset a replay site is rebuilding, so
+/// no call site re-implements projection SQL inline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectionPass {
+    /// The write path: same-txn FTS **and** async vector enqueue / readiness
+    /// termination.
+    Write,
+    /// Lexical replay only (the open-path tokenizer reproject). Readiness and
+    /// vector state are already correct and must not be perturbed.
+    FtsOnly,
+    /// Readiness + async-vector replay only (`rebuild_vec0`, i.e. a rebuild with
+    /// `include_fts = false`): the FTS shadows are not being rebuilt in this
+    /// pass, so they must not be written.
+    ///
+    /// Only the `operator` rebuild seam constructs this pass, so the DEFAULT
+    /// (recovery-clean) build sees it as unconstructed — same gate rationale as
+    /// the operator methods themselves (feature = gate, not delete).
+    #[cfg_attr(not(feature = "operator"), allow(dead_code))]
+    VectorOnly,
+}
+
+impl ProjectionPass {
+    fn writes_fts(self) -> bool {
+        matches!(self, ProjectionPass::Write | ProjectionPass::FtsOnly)
+    }
+
+    fn writes_vector_state(self) -> bool {
+        matches!(self, ProjectionPass::Write | ProjectionPass::VectorOnly)
+    }
+}
+
 /// EXP-S (0.8.14 Slice 5) — the `row_kind -> index-target set` dispatch
 /// (ADR-0.8.14 §D2), and the OPP-12 forward-compat seam (ADR-0.8.14 §D5(a) /
 /// ledger `TC-1`).
@@ -11782,9 +11956,10 @@ fn project_canonical_node_row(
     kind: &str,
     body: &str,
     row_kind: RowKind,
+    pass: ProjectionPass,
 ) -> rusqlite::Result<bool> {
     let targets = index_targets_for_row_kind(row_kind);
-    if targets.fts {
+    if targets.fts && pass.writes_fts() {
         tx.execute(
             "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
             params![body, kind, cursor],
@@ -11816,17 +11991,85 @@ fn project_canonical_node_row(
         )?;
     }
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
-    if enqueue_vector {
-        tx.execute(
-            "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
-             VALUES(?1, ?2, 0)
-             ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
-            params![kind, cursor],
-        )?;
-    } else {
-        // Never-vector-projected rows terminate the cursor up-front so
-        // `advance_projection_cursor` can advance the readiness watermark.
-        record_projection_terminal(tx, cursor, "up_to_date")?;
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+                 VALUES(?1, ?2, 0)
+                 ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![kind, cursor],
+            )?;
+        } else {
+            // Never-vector-projected rows terminate the cursor up-front so
+            // `advance_projection_cursor` can advance the readiness watermark.
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
+    }
+    Ok(enqueue_vector)
+}
+
+/// 0.8.20 Slice 5a (R-20-E1, work item 1) — the EDGE half of the total
+/// projector, extracted verbatim from the inlined `commit_batch` edge arm.
+///
+/// Before this extraction there was NO edge projector function: `commit_batch`
+/// inlined the edge FTS insert + the edge vector enqueue, and
+/// `rebuild_shadow_state` re-implemented a SUBSET of it (edge FTS only, and only
+/// for body-carrying edges), so a projector-replay rebuild silently dropped the
+/// rest — notably the `up_to_date` readiness terminal that the write path
+/// records for a body-less structural edge. With both sites now calling this one
+/// function, the write path and the rebuild path produce identical edge
+/// projections by construction.
+///
+/// Mirrors [`project_canonical_node_row`]'s split (ADR-0.8.14 §D5(b)): FTS in
+/// THIS transaction; vector work only ENQUEUED, embedded later by the worker
+/// pool. Edge bodies enqueue under the fixed kind `"edge_fact"` so
+/// `resolve_source_type` maps them to `source_type = "edge_fact"` in
+/// `vector_default` (partition correctness); that kind is auto-registered in
+/// `_fathomdb_vector_kinds` (idempotent).
+///
+/// Returns `true` iff async vector work was enqueued.
+fn project_canonical_edge_row(
+    tx: &Connection,
+    cursor: u64,
+    kind: &str,
+    body: Option<&str>,
+    pass: ProjectionPass,
+) -> rusqlite::Result<bool> {
+    // G11 — edge FTS projection into `search_index_edges` (separate table from
+    // node-body `search_index` — Option B partition). Body-less structural
+    // edges carry no lexical content and project no FTS row.
+    if pass.writes_fts() {
+        if let Some(edge_body) = body {
+            tx.execute(
+                "INSERT INTO search_index_edges(body, kind, write_cursor)
+                 VALUES(?1, ?2, ?3)",
+                params![edge_body, kind, cursor],
+            )?;
+        }
+    }
+    let enqueue_vector = body.is_some();
+    if pass.writes_vector_state() {
+        if enqueue_vector {
+            let now_unix =
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES('edge_fact', 'default', ?1)",
+                params![now_unix],
+            )?;
+            tx.execute(
+                "INSERT INTO _fathomdb_projection_state(
+                     kind, last_enqueued_cursor, updated_at
+                 ) VALUES('edge_fact', ?1, 0)
+                 ON CONFLICT(kind) DO UPDATE
+                     SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                params![cursor],
+            )?;
+            // Do NOT call record_projection_terminal — let the scheduler embed
+            // the body and mark it terminal after projection.
+        } else {
+            record_projection_terminal(tx, cursor, "up_to_date")?;
+        }
     }
     Ok(enqueue_vector)
 }
@@ -12094,7 +12337,14 @@ fn commit_batch(
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
                 // (sync, in-tx) + vector (async, gated by kind_is_vector_indexed);
                 // else the cursor is terminated up-front.
-                project_canonical_node_row(&tx, cursor, kind, body, RowKind::Leaf)?;
+                project_canonical_node_row(
+                    &tx,
+                    cursor,
+                    kind,
+                    body,
+                    RowKind::Leaf,
+                    ProjectionPass::Write,
+                )?;
             }
             (
                 PreparedWrite::Edge {
@@ -12183,41 +12433,16 @@ fn commit_batch(
                         temporal_fallback_i
                     ],
                 )?;
-                // G11 — edge FTS projection into `search_index_edges` (separate
-                // table from node-body `search_index` — Option B partition).
-                if let Some(edge_body) = body.as_ref() {
-                    tx.execute(
-                        "INSERT INTO search_index_edges(body, kind, write_cursor)
-                         VALUES(?1, ?2, ?3)",
-                        params![edge_body, kind, cursor],
-                    )?;
-                }
-                // G11 — edge vector projection: enqueue for projection scheduler
-                // under a fixed kind `"edge_fact"` (so resolve_source_type maps it
-                // to `source_type = "edge_fact"` in vector_default). Auto-register
-                // "edge_fact" in _fathomdb_vector_kinds (idempotent).
-                if body.is_some() {
-                    let now_unix =
-                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-                            as i64;
-                    tx.execute(
-                        "INSERT OR IGNORE INTO _fathomdb_vector_kinds(kind, profile, created_at)
-                         VALUES('edge_fact', 'default', ?1)",
-                        params![now_unix],
-                    )?;
-                    tx.execute(
-                        "INSERT INTO _fathomdb_projection_state(
-                             kind, last_enqueued_cursor, updated_at
-                         ) VALUES('edge_fact', ?1, 0)
-                         ON CONFLICT(kind) DO UPDATE
-                             SET last_enqueued_cursor = excluded.last_enqueued_cursor",
-                        params![cursor],
-                    )?;
-                    // Do NOT call record_projection_terminal — let the scheduler
-                    // embed the body and mark it terminal after projection.
-                } else {
-                    record_projection_terminal(&tx, cursor, "up_to_date")?;
-                }
+                // 0.8.20 Slice 5a (R-20-E1, work item 1) — edge projection is no
+                // longer inlined here: the write path and the rebuild replay
+                // share ONE projector, so they cannot drift.
+                project_canonical_edge_row(
+                    &tx,
+                    cursor,
+                    kind,
+                    body.as_deref(),
+                    ProjectionPass::Write,
+                )?;
             }
             (
                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },
@@ -12796,10 +13021,115 @@ unsafe extern "C" fn profile_callback_trampoline(
 mod tests {
     use super::{
         derive_stable_id, resolve_source_type, Engine, IdSpace, IdSpaceKind, PreparedWrite,
-        KIND_TO_SOURCE_TYPE_CASE_SQL,
+        KIND_TO_SOURCE_TYPE_CASE_SQL, ROW_OWNED_PROJECTIONS,
     };
     use rusqlite::Connection;
     use tempfile::TempDir;
+
+    /// 0.8.20 Slice 5a (R-20-E1, work item 2) — the registry GUARD.
+    ///
+    /// Introspects `sqlite_master` on a freshly migrated database and asserts
+    /// that EVERY `write_cursor`-keyed table is accounted for: either it is a
+    /// registered row-owned projection, or it is one of the explicitly named
+    /// canonical / operational tables that are sources of truth, not shadows.
+    /// A future projection table therefore cannot be added without either
+    /// registering it in [`ROW_OWNED_PROJECTIONS`] (making it erasable at every
+    /// maintenance site at once) or consciously failing this test.
+    ///
+    /// **`_fathomdb_projection_state` is allowlisted as KIND-owned** (design v5
+    /// §1.1): it is keyed by `kind`, not by `write_cursor`, and holds a per-kind
+    /// enqueue watermark. Erasing one row must not rewind a whole kind's
+    /// watermark, so it must NEVER be deleted per-cursor. The test asserts both
+    /// halves of that claim — that it carries no `write_cursor` column, and that
+    /// it is absent from the row-owned registry.
+    #[test]
+    fn guard_row_owned_registry() {
+        /// Canonical + operational tables: `write_cursor`-carrying SOURCES OF
+        /// TRUTH, never row-owned projections of another row.
+        const NON_PROJECTION_CURSOR_TABLES: &[&str] =
+            &["canonical_nodes", "canonical_edges", "operational_mutations", "operational_state"];
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("registry_guard.fathomdb");
+        Engine::open(&path).expect("open").engine.close().expect("close");
+        let conn = Connection::open(&path).expect("open sqlite");
+
+        let table_names: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM sqlite_master
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .expect("prepare")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect");
+        assert!(table_names.len() > 5, "sqlite_master introspection returned nothing useful");
+
+        let has_write_cursor = |table: &str| -> bool {
+            conn.prepare(&format!("PRAGMA table_info({table})"))
+                .and_then(|mut stmt| {
+                    let names = stmt
+                        .query_map([], |row| row.get::<_, String>(1))?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    Ok(names.iter().any(|n| n == "write_cursor"))
+                })
+                .unwrap_or(false)
+        };
+
+        let registered: Vec<&str> = ROW_OWNED_PROJECTIONS.iter().map(|p| p.table).collect();
+
+        // (1) Every write_cursor-keyed table is registered or explicitly excused.
+        for table in &table_names {
+            if !has_write_cursor(table) {
+                continue;
+            }
+            assert!(
+                registered.contains(&table.as_str())
+                    || NON_PROJECTION_CURSOR_TABLES.contains(&table.as_str()),
+                "table `{table}` is keyed by write_cursor but is neither registered in \
+                 ROW_OWNED_PROJECTIONS nor listed as a non-projection source of truth. \
+                 If it is a projection, register it — otherwise erasure will leave its \
+                 rows on disk (the `search_index_v2` defect)."
+            );
+        }
+
+        // (2) Every registered projection actually exists and is erasable by its
+        //     declared cursor column (vec0's `rowid` included).
+        for projection in ROW_OWNED_PROJECTIONS {
+            assert!(
+                table_names.iter().any(|t| t == projection.table),
+                "registered projection `{}` does not exist in the schema",
+                projection.table
+            );
+            conn.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {} WHERE {} = 0",
+                    projection.table, projection.cursor_column
+                ),
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "registered projection `{}` is not erasable by `{}`: {err}",
+                    projection.table, projection.cursor_column
+                )
+            });
+        }
+
+        // (3) `_fathomdb_projection_state` is KIND-owned, not row-owned.
+        assert!(
+            !has_write_cursor("_fathomdb_projection_state"),
+            "_fathomdb_projection_state gained a write_cursor column — re-decide its ownership \
+             class before treating it as kind-owned"
+        );
+        assert!(
+            !registered.contains(&"_fathomdb_projection_state"),
+            "_fathomdb_projection_state is KIND-owned (per-kind enqueue watermark) and must \
+             never be deleted per-cursor: erasing one row would rewind a whole kind's watermark"
+        );
+    }
 
     /// Cause-A (0.8.11.2) / C-2 (0.8.19) — `derive_stable_id` id-space contract:
     /// a present `logical_id` yields a `Logical` (`"l:"`) [`IdSpace`]; a NULL or
