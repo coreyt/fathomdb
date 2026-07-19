@@ -16,9 +16,9 @@
 | | |
 |---|---|
 | **Slice in flight** | **Slice 0 — X0 design gate** |
-| **Status** | Deliverables authored; **awaiting codex §9 → HITL X0 sign-off** |
+| **Status** | Deliverables landed; **codex §9 terminal verdict = PASS** (fix-1 applied). **Awaiting HITL X0 sign-off.** |
 | **Blocks** | Slice 0 blocks **everything** (X0 process gate) |
-| **Next action** | Codex §9 on the Slice-0 package → drive to terminal PASS → **return to Steward for HITL X0 sign-off** |
+| **Next action** | **Return to Steward for HITL X0 sign-off.** eu7 baseline capture is **BLOCKED** (§6.3) — resolve before Slice 40, not before X0. |
 
 **The orchestrator has no authority to grant X0 sign-off.** Slices 5+ MUST NOT start until the HITL signs.
 
@@ -183,3 +183,25 @@ Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; n
 4. `git worktree list` — reconcile against §7.
 5. **Never** trust a "green" without a printed real exit code.
 6. **TC-11 is CLOSED.** Do not re-open the `h:` pin.
+
+---
+
+## 10. Slice-0 findings the Steward must reconcile into the master
+
+Slice 0 proved several things in `plan-0.8.20.md` / the v4 design wrong or under-specified. **The orchestrator did
+not edit the master plan** — these are handed up for reconciliation.
+
+| # | Where | Finding | Ledger |
+|---|---|---|---|
+| 1 | plan §3 | **"AC ceiling = AC-077, continue from it"** is a reserved-id collision. AC-077 is a *reserved placeholder* for IR-1/IR-2; **AC-078 is conditionally reserved to the same initiative**. Highest defined non-reserved AC = **AC-076**. Recommend minting from **AC-079**. | **TC-14** |
+| 2 | plan §8 / v4 §3.6 | **"`source_id` retained permanently in `excise_source_audit`" is FALSE.** `enforce_provenance_retention` (`:10070`) sweeps `operational_mutations` with **no collection filter** (`:10083`), so audit rows are swept like any other. The erasure **audit trail is destructible**, and it shares a retention pool with the op-store payloads work-item 9 must erase. | **TC-15** |
+| 3 | plan §0.1 / v4 §2.2 | Registry model too coarse. The write path **enqueues** vector work (`_fathomdb_projection_state`, **`kind TEXT PRIMARY KEY`** — verified) rather than projecting it. Registry must split **row-owned** (`write_cursor`-keyed) from **kind-owned**, or the guard demands a per-cursor delete on a kind-keyed table. | — |
+| 4 | v4 §1/§2.2/§6 | The registry consumer is **`rebuild_shadow_state` (:6515)**, not `rebuild_projections` (:5949, the public entry). Taking v4 literally patches the wrong function. | — |
+| 5 | plan §0 / v4 §3.4 | `derive_logical_id` **lowercases** its inputs (`:11156`). Strengthens the dictionary-attack rationale; the stated derivation is incomplete. | — |
+| 6 | plan §7 prereq 4 | **"Baseline captured" was listed as an assumed precondition — no baseline existed.** Capture attempted at Slice 0 and is **BLOCKED** (§6.3). | **TC-13** |
+| 7 | R-20-PUB | **The publish dry-run guard is DEAD and has been red since 0.8.14.** `test_actionlint_fixture.sh:53` greps `release.yml` for `cargo publish --dry-run -p`, but the job now delegates to `cargo-publish-if-new.sh --dry-run`. **Behavior is intact** (the helper forwards correctly) — but `./scripts/agent-test.sh` exits 1 wholesale, so a **real** publish-wiring regression would be invisible **in the first release that publishes for real**. | **TC-16** |
+| 8 | v4 §3.2 | **Slice 5's `SourceId` newtype will break the eu7 harness** (`eu7_real_corpus_ac.rs:405` builds `PreparedWrite` with `source_id: None`). v4 enumerated only two internal callers and missed the test-side ones. Sweep `src/` **and** `tests/`. | **TC-17** |
+| 9 | TC-RUBRIC-7 | Committing a §9 transcript **into the reviewed range** pollutes the next review's diff (codex re-read its own prior findings as if unfixed). Recommend committing transcripts **after** the final review round. | **TC-18** |
+
+**Also carried:** the eu7 basis and `embed_batch_cls` decisions (§4 #1/#2) remain **HITL calls**, recorded with
+recommendations, not decided here.
