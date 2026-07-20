@@ -180,11 +180,20 @@ export interface NativeReadView {
   validAsOf?: number;
 }
 
-/** 0.8.20 Slice 10b (R-20-NV) — native validity-boundary crossing. */
+/**
+ * 0.8.20 Slice 10b (R-20-NV) — native validity-boundary crossing.
+ *
+ * `becameValidAt`/`becameInvalidAt` are `number | null`, NOT `number | undefined`:
+ * napi-rs serialises a `#[napi(object)]` field of type `Option<i64>` by ALWAYS
+ * setting the property, using JS `null` for `None` (the same convention
+ * `NativeOpStoreRow.schemaId` and `NativeSearchHit.ceScore` already carry). A
+ * `?: number` declaration would let `strictNullChecks` narrow a real `null` to
+ * `number`, so it is wrong in the direction that hides bugs.
+ */
 export interface NativeBoundaryCrossing {
   node: NativeNodeRecord;
-  becameValidAt?: number;
-  becameInvalidAt?: number;
+  becameValidAt: number | null;
+  becameInvalidAt: number | null;
 }
 
 export interface NativeOpStoreRow {

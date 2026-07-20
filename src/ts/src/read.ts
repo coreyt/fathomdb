@@ -56,12 +56,20 @@ export interface ReadView {
  * 0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary.
  *
  * A node whose window opened AND closed inside the interrogated interval
- * carries both fields, so they are independent optionals rather than an enum.
+ * carries both fields, so they are independent nullables rather than an enum.
+ *
+ * Both boundary fields are ALWAYS PRESENT and are `number | null` — `null`
+ * means "this boundary was not crossed in the interrogated interval". They are
+ * not `?: number`: the native layer emits `null` (napi-rs renders
+ * `Option::None` as JS `null`, never as an absent property), and the mapper
+ * below passes that through verbatim. Mirrors the Python `BoundaryCrossing`,
+ * whose fields are `int | None` (cross-binding parity; `camelCase` here,
+ * `snake_case` there).
  */
 export interface BoundaryCrossing {
   node: NodeRecord;
-  becameValidAt?: number;
-  becameInvalidAt?: number;
+  becameValidAt: number | null;
+  becameInvalidAt: number | null;
 }
 
 export interface NodeRecord {
