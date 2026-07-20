@@ -1,0 +1,3912 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f7d57-faf2-7412-a4f1-7a0809443a07
+--------
+user
+changes against '8e09b950'
+exec
+/bin/bash -lc "cat MEMORY.md 2>/dev/null; printf '\\n--- feedback files ---\\n'; ls feedback_*.md 2>/dev/null; for f in feedback_*.md; do echo \"--- "'$f ---"; cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited 1 in 0ms:
+
+--- feedback files ---
+--- feedback_*.md ---
+cat: 'feedback_*.md': No such file or directory
+
+exec
+/bin/bash -lc 'git diff --stat 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 && git diff --name-only 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+ CHANGELOG.md                                       |   67 +-
+ dev/design/0.8.20-slice0-erasure-design.md         |   41 +-
+ dev/plans/runs/0.8.20-slice-5-docs-output.json     |  137 +
+ dev/plans/runs/0.8.20-slice-5-fix-1-output.json    |  220 +
+ dev/plans/runs/0.8.20-slice-5-fix-2-output.json    |  197 +
+ dev/plans/runs/0.8.20-slice-5-fix-3-output.json    |  251 +
+ dev/plans/runs/0.8.20-slice-5-fix-4-output.json    |  198 +
+ dev/plans/runs/0.8.20-slice-5a-output.json         |   63 +
+ dev/plans/runs/0.8.20-slice-5b-output.json         |  104 +
+ dev/plans/runs/0.8.20-slice-5c-output.json         |  230 +
+ dev/plans/runs/0.8.20-slice-5d-output.json         |  278 +
+ dev/plans/runs/STATUS-0.8.20.md                    |  265 +-
+ .../runs/codex/0.8.20/slice-5-20260719T231341Z.log | 5727 ++++++++++++
+ .../slice-5-fix-1-rereview-20260719T234803Z.log    | 7808 ++++++++++++++++
+ .../slice-5-fix-2-rereview-20260720T001616Z.log    | 8245 ++++++++++++++++
+ .../slice-5-fix-3-rereview-20260720T005056Z.log    | 9818 ++++++++++++++++++++
+ dev/todos-and-considerations-ledger.jsonl          |   15 +
+ dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+ scripts/agent-test.sh                              |   11 +
+ src/python/eval/elps_live_harness.py               |   31 +-
+ src/python/tests/conftest.py                       |   68 +-
+ src/rust/crates/fathomdb-engine/src/lib.rs         |    7 +
+ .../fathomdb-engine/tests/eu7_real_corpus_ac.rs    |   22 +
+ .../fixtures/slice15_byo_llm/elps_stub_shim.py     |   39 +
+ .../slice15_byo_llm/multidoc_echo_harness.py       |  123 +
+ .../tests/multidoc_extractor_provenance.rs         |  321 +
+ 26 files changed, 34254 insertions(+), 34 deletions(-)
+CHANGELOG.md
+dev/design/0.8.20-slice0-erasure-design.md
+dev/plans/runs/0.8.20-slice-5-docs-output.json
+dev/plans/runs/0.8.20-slice-5-fix-1-output.json
+dev/plans/runs/0.8.20-slice-5-fix-2-output.json
+dev/plans/runs/0.8.20-slice-5-fix-3-output.json
+dev/plans/runs/0.8.20-slice-5-fix-4-output.json
+dev/plans/runs/0.8.20-slice-5a-output.json
+dev/plans/runs/0.8.20-slice-5b-output.json
+dev/plans/runs/0.8.20-slice-5c-output.json
+dev/plans/runs/0.8.20-slice-5d-output.json
+dev/plans/runs/STATUS-0.8.20.md
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log
+dev/todos-and-considerations-ledger.jsonl
+dev/todos-and-considerations-ledger.jsonl.seq
+scripts/agent-test.sh
+src/python/eval/elps_live_harness.py
+src/python/tests/conftest.py
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+
+exec
+/bin/bash -lc 'git diff --find-renames 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- scripts/agent-test.sh src/python/eval/elps_live_harness.py src/python/tests/conftest.py src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index a66b1126..9550a23c 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -75,6 +75,17 @@ run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+ run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+ 
+ # Rust
++#
++# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
++# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
++# Three gates keep it out, in order of what a change is most likely to break:
++#   1. `required-features = ["operator"]` on the test target — not built at all
++#      under the workspace default feature set (`default = []`);
++#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
++#      tests even when `operator` IS on (e.g. the engine's operator suite);
++#   3. `#[ignore]` on the test itself — holds no matter which features are
++#      selected, so `--all-features` still would not run the body.
++# Verify by inspection only (`-- --list --ignored`), never by running it.
+ run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+ 
+ # Python
+diff --git a/src/python/eval/elps_live_harness.py b/src/python/eval/elps_live_harness.py
+index 8587ab8c..50012fef 100644
+--- a/src/python/eval/elps_live_harness.py
++++ b/src/python/eval/elps_live_harness.py
+@@ -39,9 +39,13 @@ You are an information-extraction engine. From the single document supplied by t
+ 
+ ENTITIES
+ - Identify the real-world entities mentioned (people, organizations, places, artifacts, concepts, etc.).
+-- Each entity has a `name`, a `type`, and optional `aliases` (other surface forms used for the same entity in this document).
++- Each entity has a `name`, a `type`, optional `aliases` (other surface forms used for the same entity in this document), and a `source_doc_id`.
+ - Be conservative about identity: when two mentions MIGHT refer to different real-world entities, emit them as DISTINCT entities rather than merging them. Do not collapse homonyms.
+ 
++ATTRIBUTION (load-bearing — a missing value fails the whole ingest)
++- EVERY entity AND every edge MUST carry a `source_doc_id` set to the exact `doc_id` given in the user message. Copy it verbatim; never invent, abbreviate or alter it.
++- This is how the store knows which document each fact came from, and therefore which facts to delete when that document is erased. An element without it cannot be attributed and is REJECTED — the store will not guess an attribution, because guessing would file the fact under the wrong document and leave it behind on erasure.
++
+ EDGES (directed, dated facts)
+ - Each edge is a single fact: `from_entity` -> `to_entity` with a short, lowercase `relation` label (e.g. `works_at`, `founded`, `located_in`).
+ - `body` is the minimal span of source text that states the fact.
+@@ -63,7 +67,7 @@ SOURCE SPANS
+ 
+ Return ONLY valid JSON matching this exact schema — no markdown fences, no prose:
+ {
+-  "entities": [{"name": str, "type": str, "aliases": list[str]}],
++  "entities": [{"name": str, "type": str, "aliases": list[str], "source_doc_id": str}],
+   "edges": [
+     {
+       "from_entity": str,
+@@ -92,7 +96,15 @@ body:
+ # Canned stub response for ELPS_STUB_MODE=1
+ # ---------------------------------------------------------------------------
+ 
+-_STUB_ENTITIES = [{"name": "TestEntity", "type": "concept", "aliases": []}]
++def _stub_entities(doc_id: str) -> list[dict[str, Any]]:
++    """Canned entities, attributed to `doc_id`.
++
++    A FUNCTION returning fresh dicts, not a module-level constant: the engine
++    batches several documents into one extract request, and a shared list would
++    be handed out (and then attributed) once per document, so the last document
++    processed would silently overwrite every earlier document's provenance.
++    """
++    return [{"name": "TestEntity", "type": "concept", "aliases": [], "source_doc_id": doc_id}]
+ 
+ 
+ def _stub_edges(doc_id: str) -> list[dict[str, Any]]:
+@@ -189,7 +201,7 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
+     doc_id = doc["source_doc_id"]
+ 
+     if _STUB_MODE:
+-        return _STUB_ENTITIES, _stub_edges(doc_id), []
++        return _stub_entities(doc_id), _stub_edges(doc_id), []
+ 
+     try:
+         result = _call_llm_httpx(doc)
+@@ -209,6 +221,17 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
+             and str(e.get("from_entity", "")).strip()
+             and str(e.get("to_entity", "")).strip()
+         ]
++        # Attribution backfill (R-20-E2). Every element we hand back must name
++        # the document it came from, because the engine batches documents and
++        # then requires each entity/edge to select its own source among the
++        # batch's caller-supplied ids -- an unattributed element fails the whole
++        # ingest with EngineError::Extractor. This is safe to do here and ONLY
++        # here: `_extract_single_doc` is scoped to exactly one document, so
++        # `doc_id` is the true source, not a guess. The engine deliberately
++        # refuses to make that guess itself.
++        for entity in entities:
++            if not entity.get("source_doc_id"):
++                entity["source_doc_id"] = doc_id
+         for edge in edges:
+             if not edge.get("source_doc_id"):
+                 edge["source_doc_id"] = doc_id
+diff --git a/src/python/tests/conftest.py b/src/python/tests/conftest.py
+index a48a2854..b2821809 100644
+--- a/src/python/tests/conftest.py
++++ b/src/python/tests/conftest.py
+@@ -74,19 +74,46 @@ def _binding_has_test_hooks() -> bool:
+     ).returncode == 0
+ 
+ 
++_REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
++
++
++class TestHooksBindingMissing(RuntimeError):
++    """The binding lacks `test-hooks` and this environment did not opt in to a rebuild."""
++
++
+ def _ensure_test_hooks_binding() -> None:
+-    """Rebuild the editable binding with `test-hooks` enabled before
+-    sibling test modules are collected, unless it is already present.
++    """Ensure the editable binding has `test-hooks` before sibling test modules
++    are collected — rebuilding ONLY if this environment explicitly opted in.
+ 
+     Skipped when not invoked from the source tree (e.g. running the
+     test files against a pip-installed wheel for release-surface
+     verification) — detected by the absence of `pyproject.toml` next
+-    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
+-    is set (developer escape hatch: prebuild once, iterate without
+-    paying the rebuild cost)."""
++    to the tests directory.
++
++    **TC-27 (0.8.20 Slice 5 fix-4) — the rebuild is OPT-IN, not opt-out.**
++
++    This function used to shell out to `maturin develop` autonomously, and did
++    so during an agent session that never issued a build command. It failed
++    only benignly, and only by luck: the interpreter was not an activated
++    virtualenv. Had it been, the rebuild would have rebound the SHARED `.venv`
++    to whatever source tree pytest happened to be launched from — including an
++    agent worktree, silently repointing every other consumer of that venv at
++    unreviewed code.
++
++    Per this repo's standing "fix the tooling, not the actor" rule, the guard
++    lives here rather than in a note asking people to be careful: an
++    unattended `pytest` can no longer mutate a shared environment as a
++    side effect of test collection. Opt in with
++    `FATHOMDB_TESTS_ALLOW_REBUILD=1` when a rebuild is genuinely intended.
++
++    `FATHOMDB_TESTS_NO_REBUILD=1` is retained (it now merely reasserts the
++    default) so existing invocations that set it keep working.
++
++    :raises TestHooksBindingMissing: when a rebuild is required but not
++        authorized. Loud and actionable beats either silently rebuilding or
++        letting sibling modules fail on a confusing missing-attribute import.
++    """
+ 
+-    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+-        return
+     pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
+     if not pyproject.exists():
+         # Not an editable-install context (release-surface tests run
+@@ -94,9 +121,34 @@ def _ensure_test_hooks_binding() -> None:
+         return
+     if _binding_has_test_hooks():
+         # Developer already built with test-hooks (or a previous
+-        # pytest session in the same venv did). Skip the rebuild.
++        # pytest session in the same venv did). Nothing to do — this is the
++        # normal path, and it never consults the opt-in.
+         return
+ 
++    if os.environ.get(_REBUILD_OPT_IN) != "1":
++        raise TestHooksBindingMissing(
++            "the installed `fathomdb` binding was built WITHOUT the `test-hooks` feature, "
++            "so these tests cannot run.\n"
++            "\n"
++            "This conftest will NOT rebuild it for you: `maturin develop` rebinds the "
++            "active virtualenv to this source tree, which silently repoints every other "
++            "consumer of a SHARED venv (TC-27).\n"
++            "\n"
++            "Choose one:\n"
++            f"  * authorize the rebuild here:  {_REBUILD_OPT_IN}=1 pytest ...\n"
++            "  * or build it yourself, from an environment you intend to rebind:\n"
++            f"      cd {_PYTHON_SRC_DIR} && python -m maturin develop --features "
++            "pyo3/extension-module,test-hooks,default-embedder,default-reranker\n"
++            "\n"
++            "NEVER run either from a git worktree against a shared .venv."
++        )
++
++    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
++        raise TestHooksBindingMissing(
++            f"contradictory configuration: {_REBUILD_OPT_IN}=1 asks for a rebuild while "
++            "FATHOMDB_TESTS_NO_REBUILD=1 forbids one. Unset one of them."
++        )
++
+     print(
+         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+         "with test-hooks feature (one-time per venv; ~5-60s) ...",
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index d4f3604d..114ea84c 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -193,6 +193,13 @@ const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
+ /// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
+ /// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
+ /// stays permissive.
++///
++/// Gated on `feature = "operator"` to match its only call site,
++/// [`Engine::excise_collection_record`], which is itself operator-only: without
++/// the matching `cfg` a non-`operator` build emits a `dead_code` warning for a
++/// helper that has nothing to guard, because the verb it guards does not exist
++/// in that build.
++#[cfg(feature = "operator")]
+ fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+     collection == ERASURE_PENDING_REDACTION_COLLECTION
+         || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
+diff --git a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+index 8183eeb5..bb310c0d 100644
+--- a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
++++ b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+@@ -735,7 +735,29 @@ fn measure_stress(
+ 
+ // ── Driver ─────────────────────────────────────────────────────────────
+ 
++/// **TC-20 hard gate (0.8.20 Slice 5 fix-4).** `#[ignore]` — this body NEVER runs
++/// unless a human explicitly asks for it with `-- --ignored`.
++///
++/// The measurement seeds the real BGE embedder through the projection pipeline
++/// at ~1.3 docs/sec, i.e. ~1.5 h of wall clock for the full corpus. It must not
++/// be reachable by an agent's routine `cargo test --workspace`.
++///
++/// Two independent gates, deliberately: the `default-embedder` feature gate
++/// (file-level `#![cfg]`) already keeps this out of the default build, but that
++/// is implicit — a future `--all-features` run, or feature unification via
++/// another crate, would silently arm it. `#[ignore]` holds regardless of which
++/// features are selected.
++///
++/// The `AGENT_LONG` early-return below is kept as a third layer rather than
++/// replaced: an explicit `--ignored` run on a box without the corpus should
++/// still skip rather than fail.
++///
++/// This does NOT create a vacuous green: R-20-EU7 was CLOSED by HITL decision,
++/// so this test no longer gates anything. Run:
++///   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
++///     --test eu7_real_corpus_ac -- --ignored --nocapture
+ #[test]
++#[ignore = "TC-20: EU-7 real-corpus measurement is ~1.5h of wall clock; opt in with --ignored"]
+ fn eu7_real_corpus_ac_validation() {
+     if std::env::var_os("AGENT_LONG").is_none() {
+         eprintln!("[skip] AGENT_LONG not set; EU-7 real-corpus measurement is opt-in");
+diff --git a/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+new file mode 100644
+index 00000000..87d77167
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+@@ -0,0 +1,39 @@
++#!/usr/bin/env python3
++"""Run the REAL shipped ELPS harness (`src/python/eval/elps_live_harness.py`) in stub mode.
++
++TEST-ONLY shim for 0.8.20 Slice 5 fix-4. The engine spawns an extractor as an
++argv command, so this wrapper exists to (a) force `ELPS_STUB_MODE=1` BEFORE the
++harness module is imported — the harness snapshots that variable at import time
++— and (b) load the harness from an absolute path supplied by the caller, so the
++test does not depend on cwd or on `src/python` being installed.
++
++Usage:  elps_stub_shim.py <absolute-path-to-elps_live_harness.py>
++
++Driving the real harness (rather than a hand-written stub) is the point: it is
++what makes the multi-document ingest test a witness for the SHIPPED extractor
++contract instead of for a fixture we control.
++"""
++import importlib.util
++import os
++import sys
++
++# Must be set before importing the harness: `_STUB_MODE` is read at module import.
++os.environ["ELPS_STUB_MODE"] = "1"
++
++if len(sys.argv) < 2:
++    print("usage: elps_stub_shim.py <path-to-elps_live_harness.py>", file=sys.stderr)
++    sys.exit(2)
++
++harness_path = sys.argv[1]
++if not os.path.isfile(harness_path):
++    print(f"[elps_stub_shim] no harness at {harness_path}", file=sys.stderr)
++    sys.exit(2)
++
++spec = importlib.util.spec_from_file_location("elps_live_harness_under_test", harness_path)
++if spec is None or spec.loader is None:
++    print(f"[elps_stub_shim] cannot load {harness_path}", file=sys.stderr)
++    sys.exit(2)
++
++module = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(module)
++module.main()
+diff --git a/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+new file mode 100644
+index 00000000..397ab42d
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+@@ -0,0 +1,123 @@
++#!/usr/bin/env python3
++"""Stub BYO-LLM harness that ECHOES a per-entity `source_doc_id` on multi-doc batches.
++
++TEST-ONLY fixture for 0.8.20 Slice 5 fix-4 (R-20-E2, multi-document arm). It
++speaks the `fathomdb.extract.v1` protocol and emits one entity + one self-edge
++per document in the request, attributing each to a `source_doc_id`.
++
++Two modes, selected by argv[1]:
++
++  ``valid``    — echo each element's own caller-supplied `source_doc_id`. The
++                 engine must accept this and store the CALLER's copy of the
++                 string.
++  ``foreign``  — echo an id that is NOT in the batch. The engine must REJECT
++                 this with `EngineError::Extractor` rather than storing the
++                 model-chosen value; accepting it as a value is exactly how a
++                 row acquires provenance no `excise_source` call can reach.
++
++Transport: NDJSON over stdio (stdin -> stdout). No network calls, no LLM.
++"""
++import json
++import sys
++
++FOREIGN_ID = "doc-not-in-this-batch"
++
++
++def log(msg: str) -> None:
++    """Write diagnostic to stderr (never stdout per protocol)."""
++    print(f"[multidoc_echo_harness] {msg}", file=sys.stderr, flush=True)
++
++
++def _build(documents: list, mode: str) -> tuple[list, list]:
++    """Emit one entity and one self-edge per document, carrying an echo."""
++    entities = []
++    edges = []
++    for doc in documents:
++        doc_id = doc.get("source_doc_id", "")
++        echo = doc_id if mode == "valid" else FOREIGN_ID
++        # A distinct entity name per document, so the rows do NOT collapse onto
++        # a single logical_id and each keeps its own provenance.
++        name = f"Entity-{doc_id}"
++        entities.append(
++            {"name": name, "type": "person", "aliases": [], "source_doc_id": echo}
++        )
++        edges.append(
++            {
++                "from_entity": name,
++                "relation": "appears_in",
++                "to_entity": name,
++                "body": f"{name} appears in {doc_id}",
++                "t_valid": None,
++                "t_invalid": None,
++                "confidence": 0.9,
++                "source_doc_id": echo,
++            }
++        )
++    return entities, edges
++
++
++def main() -> None:
++    mode = sys.argv[1] if len(sys.argv) > 1 else "valid"
++    if mode not in ("valid", "foreign"):
++        log(f"unknown mode {mode!r}; expected 'valid' or 'foreign'")
++        sys.exit(2)
++    log(f"started (mode={mode})")
++
++    for raw_line in sys.stdin:
++        raw_line = raw_line.strip()
++        if not raw_line:
++            continue
++
++        try:
++            msg = json.loads(raw_line)
++        except json.JSONDecodeError as exc:
++            log(f"JSON parse error: {exc}")
++            continue
++
++        if msg.get("protocol", "") != "fathomdb.extract.v1":
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "error",
++                "error_code": "invalid_request",
++                "detail": "unknown protocol",
++            }), flush=True)
++            continue
++
++        msg_type = msg.get("type", "")
++
++        if msg_type == "hello":
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "ready",
++                "schema_version": 1,
++                "provider": "stub",
++                "model": f"multidoc-echo-{mode}",
++                "supports": {},
++                "max_docs_per_request": 8,
++            }), flush=True)
++
++        elif msg_type == "extract":
++            request_id = msg.get("request_id", "unknown")
++            entities, edges = _build(msg.get("documents", []), mode)
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "result",
++                "request_id": request_id,
++                "entities": entities,
++                "edges": edges,
++                "warnings": [],
++            }), flush=True)
++
++        else:
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "error",
++                "error_code": "invalid_request",
++                "detail": f"unknown type: {msg_type}",
++            }), flush=True)
++
++    log("stdin closed, exiting")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs b/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+new file mode 100644
+index 00000000..5a433bbc
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+@@ -0,0 +1,321 @@
++//! 0.8.20 Slice 5 fix-4 — R-20-E2, the **multi-document** arm.
++//!
++//! Slice 5 made ingest provenance caller-grounded: `resolve_provenance`
++//! (`fathomdb-engine/src/lib.rs`) admits the model's `source_doc_id` echo only
++//! as a SELECTOR among ids the caller supplied in the same batch, never as a
++//! value. Coverage for that change was **single-document only**
++//! (`provenance_mandatory::extractor_omitting_source_doc_id_still_excisable`),
++//! and a single-document batch is precisely the case where the echo is ignored
++//! outright — so nothing exercised the branch that actually demands an echo.
++//!
++//! That gap shipped a regression: every MULTI-document extractor batch failed
++//! with `EngineError::Extractor`, because the extractor protocol never required
++//! per-entity attribution and the shipped ELPS harness backfilled
++//! `source_doc_id` onto edges only. This file closes the gap from both sides:
++//!
++//! * the engine's demand is correct and must keep failing loudly
++//!   (`multidoc_batch_*_fails_loudly`);
++//! * the shipped harness must satisfy that demand
++//!   (`elps_live_harness_multidoc_batch_ingests`).
++//!
++//! **Test-design contract (design §3, Rule 1).** Every provenance witness here
++//! asserts on RAW TABLE CONTENTS via direct SQL. Proving provenance through
++//! `search()` is invalid — both `search_index_v2` read paths gate on a live
++//! `canonical_nodes` row, so such a test passes on broken code.
++
++use std::path::PathBuf;
++
++use fathomdb_engine::{Engine, EngineError, ExtractDocument};
++use fathomdb_schema::SQLITE_SUFFIX;
++use rusqlite::{Connection, OptionalExtension};
++use tempfile::TempDir;
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn count(conn: &Connection, sql: &str) -> i64 {
++    conn.query_row(sql, [], |row| row.get::<_, i64>(0)).expect("count query")
++}
++
++fn manifest_dir() -> PathBuf {
++    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
++}
++
++fn fixture_dir() -> PathBuf {
++    manifest_dir().join("tests/fixtures/slice15_byo_llm")
++}
++
++/// Absolute path to the SHIPPED ELPS harness. `CARGO_MANIFEST_DIR` is
++/// `<repo>/src/rust/crates/fathomdb-engine`, so the repo root is four levels up.
++fn shipped_elps_harness() -> PathBuf {
++    manifest_dir()
++        .ancestors()
++        .nth(4)
++        .expect("repo root is four levels above the engine crate")
++        .join("src/python/eval/elps_live_harness.py")
++}
++
++/// A two-document batch. Both ids are caller-supplied; neither is derived from
++/// anything the extractor says.
++fn two_docs() -> Vec<ExtractDocument> {
++    vec![
++        ExtractDocument {
++            source_doc_id: "caller-doc-1".to_string(),
++            body: "Alice owns the project".to_string(),
++        },
++        ExtractDocument {
++            source_doc_id: "caller-doc-2".to_string(),
++            body: "Bob reviews the project".to_string(),
++        },
++    ]
++}
++
++fn cmd_of(parts: &[String]) -> Vec<&str> {
++    parts.iter().map(String::as_str).collect()
++}
++
++// ---------------------------------------------------------------------------
++// The engine's demand — a multi-document batch REQUIRES per-entity attribution
++// ---------------------------------------------------------------------------
++
++/// **Guard (do not "fix" by relaxing).** On a multi-document batch the engine
++/// cannot know which document an entity came from unless the extractor says so.
++/// Guessing — e.g. falling back to the batch's first id — would silently mis-file
++/// the row under a document whose erasure then would NOT remove it, which is the
++/// R-20-E2 defect this slice exists to close. So an absent echo must FAIL, and
++/// fail as `EngineError::Extractor`.
++///
++/// Contrast with the single-document case, which is unambiguous and therefore
++/// ignores the echo outright — asserted below so the two arms cannot drift.
++#[test]
++fn multidoc_batch_without_entity_echo_fails_loudly() {
++    let script = fixture_dir().join("provenance_omitting_harness.py");
++    assert!(script.exists(), "fixture harness must exist at {}", script.display());
++    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_no_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let err = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect_err("a multi-doc batch whose entities carry no source_doc_id echo must FAIL");
++    assert!(
++        matches!(err, EngineError::Extractor),
++        "an unattributable entity is a protocol violation, not a silent default; got {err:?}"
++    );
++
++    // And the failure is total: no half-attributed row reached the tables.
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes"),
++        0,
++        "a rejected batch must leave no node rows behind"
++    );
++}
++
++/// The **same** extractor, the **same** missing echo — but a single-document
++/// batch. Attribution is unambiguous, so the caller's id is used and the ingest
++/// succeeds. This is what made the regression invisible: all pre-existing
++/// coverage lived on this side of the branch.
++#[test]
++fn singledoc_batch_without_entity_echo_still_succeeds() {
++    let script = fixture_dir().join("provenance_omitting_harness.py");
++    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "singledoc_no_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let docs = vec![ExtractDocument {
++        source_doc_id: "caller-doc-1".to_string(),
++        body: "Alice owns the project".to_string(),
++    }];
++    let receipt = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &docs)
++        .expect("a single-doc batch needs no echo: attribution is unambiguous");
++    assert!(receipt.nodes_written > 0, "fixture must produce entity rows");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id IS NOT 'caller-doc-1'"),
++        0,
++        "every row takes the CALLER's id"
++    );
++}
++
++/// **The echo is a selector, never a value.** A model that names a document
++/// outside the batch must be rejected outright. If the engine ever stored this
++/// string, the row would carry provenance the caller never supplied and cannot
++/// erase — a model could make a row permanently un-erasable by inventing an id.
++#[test]
++fn multidoc_batch_with_foreign_echo_fails_loudly() {
++    let script = fixture_dir().join("multidoc_echo_harness.py");
++    assert!(script.exists(), "fixture harness must exist at {}", script.display());
++    let parts =
++        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "foreign".to_string()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_foreign_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let err = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect_err("an echo naming a document outside the batch must FAIL");
++    assert!(matches!(err, EngineError::Extractor), "expected EngineError::Extractor, got {err:?}");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(
++            &conn,
++            "SELECT count(*) FROM canonical_nodes WHERE source_id = 'doc-not-in-this-batch'"
++        ),
++        0,
++        "the model's invented id must never reach a stored row"
++    );
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes"),
++        0,
++        "a rejected batch must leave no node rows behind"
++    );
++}
++
++/// A valid echo SELECTS among the caller's ids; the stored string is then the
++/// caller's own copy. Asserted per-row against raw tables: each entity lands
++/// under the document it was attributed to, and every stored `source_id` is one
++/// of the two ids the caller supplied.
++#[test]
++fn multidoc_batch_with_valid_echo_stores_caller_copy() {
++    let script = fixture_dir().join("multidoc_echo_harness.py");
++    let parts =
++        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "valid".to_string()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_valid_echo");
++    // Full `Engine::open` (as `erasure_completeness` does): `erase_source`
++    // drains the projection runtime, which never reaches idle on an
++    // embedder-less test engine and would fail with `EngineError::Scheduler`.
++    let opened = Engine::open(&path).expect("open");
++
++    let receipt = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect("a multi-doc batch with per-entity attribution must succeed");
++    assert!(receipt.nodes_written >= 2, "one entity per document: {receipt:?}");
++
++    {
++        let conn = Connection::open(&path).expect("open raw");
++        // Every stored provenance is one the CALLER supplied — nothing else.
++        assert_eq!(
++            count(
++                &conn,
++                "SELECT count(*) FROM canonical_nodes \
++                 WHERE source_id NOT IN ('caller-doc-1', 'caller-doc-2')",
++            ),
++            0,
++            "no stored node may carry provenance outside the caller's batch"
++        );
++        // …and each row landed under the document it was attributed to.
++        for (name, expected) in
++            [("Entity-caller-doc-1", "caller-doc-1"), ("Entity-caller-doc-2", "caller-doc-2")]
++        {
++            let got: Option<String> = conn
++                .query_row("SELECT source_id FROM canonical_nodes WHERE body = ?1", [name], |row| {
++                    row.get(0)
++                })
++                .optional()
++                .expect("query")
++                .unwrap_or_else(|| panic!("expected a stored row for {name}"));
++            assert_eq!(
++                got.as_deref(),
++                Some(expected),
++                "{name} must be filed under the document it was attributed to"
++            );
++        }
++    }
++
++    // The consequence that matters: erasing ONE document removes only its rows.
++    // Let the embed/projection work for the ingested rows settle first, as
++    // `erasure_completeness` does: `erase_source` drains internally on a short
++    // budget and reports `EngineError::Scheduler` if in-flight work outlasts it.
++    opened.engine.drain(120_000).expect("drain");
++
++    // `erase_source` (the governed SDK spelling) — not the operator-gated
++    // `excise_source`: a caller document id is exactly what the governed verb
++    // is for, so this also witnesses that the SDK surface can reach these rows.
++    let report = opened.engine.erase_source("caller-doc-1").expect("erase");
++    assert!(report.nodes_excised > 0, "doc-1's rows must be excisable by the caller's id");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id = 'caller-doc-1'"),
++        0,
++        "every caller-doc-1 row is gone"
++    );
++    assert!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id = 'caller-doc-2'") > 0,
++        "caller-doc-2's rows must survive an unrelated document's erasure"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// The contract's other side — the SHIPPED harness must satisfy that demand
++// ---------------------------------------------------------------------------
++
++/// **Regression witness (RED before the harness fix).** Drives the real
++/// `src/python/eval/elps_live_harness.py` in stub mode over a two-document
++/// batch — the exact shape an independent A/B found broken on this branch:
++/// `_fathomdb.ExtractorError: extractor error`, where `origin/main` ingested
++/// fine.
++///
++/// The harness backfilled `source_doc_id` onto edges only, never onto entities,
++/// so the entity loop hit `resolve_provenance(None)` on a multi-doc batch. The
++/// fix is on the CONTRACT side — the harness now backfills entities exactly as
++/// it already did edges — not on the engine side; the engine's demand above
++/// stays as strict as it was.
++///
++/// Uses a shim to force `ELPS_STUB_MODE=1` before import, so this needs no
++/// network, no LLM and no third-party Python packages.
++#[test]
++fn elps_live_harness_multidoc_batch_ingests() {
++    let shim = fixture_dir().join("elps_stub_shim.py");
++    let harness = shipped_elps_harness();
++    assert!(shim.exists(), "shim must exist at {}", shim.display());
++    assert!(harness.exists(), "shipped ELPS harness must exist at {}", harness.display());
++
++    let parts = vec![
++        "python3".to_string(),
++        shim.to_string_lossy().into_owned(),
++        harness.to_string_lossy().into_owned(),
++    ];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "elps_multidoc");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let receipt = opened.engine.ingest_with_extractor(&cmd_of(&parts), &two_docs()).expect(
++        "the shipped ELPS harness must attribute every entity it emits, so that a \
++         multi-document batch ingests instead of failing with EngineError::Extractor",
++    );
++    assert!(receipt.nodes_written > 0, "the stub harness must produce entity rows: {receipt:?}");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(
++            &conn,
++            "SELECT count(*) FROM canonical_nodes \
++             WHERE source_id NOT IN ('caller-doc-1', 'caller-doc-2')",
++        ),
++        0,
++        "every row the harness produced must be filed under a caller-supplied document id"
++    );
++}
+
+exec
+/bin/bash -lc "grep -R \"multidoc_extractor_provenance\\|eu7_real_corpus_ac\" -n src/rust/crates/fathomdb-engine/Cargo.toml src/rust/crates/fathomdb-engine || true; sed -n '1,220p' src/rust/crates/fathomdb-engine/Cargo.toml; sed -n '1,140p' src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/Cargo.toml:86:name = "eu7_real_corpus_ac"
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:670:    // is now `eu7_real_corpus_ac.rs` on the REAL embedder, measured on the
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:761:    // `eu7_real_corpus_ac.rs`, measured on the VECTOR STAGE in isolation
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:769:         recall verdict is eu7_real_corpus_ac.rs on the real embedder, vector stage — AC-075)",
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:1075:    // real-corpus harness `eu7_real_corpus_ac.rs` (bge-small, dim 384), which
+src/rust/crates/fathomdb-engine/tests/recall_gate_predicate.rs:29:/// `eu7_real_corpus_ac::CURRENT_FLOOR`). Kept local so this fast test has no
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:86://!     --test eu7_real_corpus_ac -- --nocapture
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:758:///     --test eu7_real_corpus_ac -- --ignored --nocapture
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:761:fn eu7_real_corpus_ac_validation() {
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:1108:                     --features default-embedder --test eu7_real_corpus_ac. \
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:212:/// ANN recall measured by `eu7_real_corpus_ac.rs`.
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:471:    // Mutex wrapper of its own (unlike eu7_real_corpus_ac.rs, whose
+src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs:790:// ── EU-0 §1.2 query synthesis (mirrors eu7_real_corpus_ac.rs) ──────────--
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:4://! the ANN recall measured by `eu7_real_corpus_ac.rs`. Where ANN recall
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:15://! This harness is fully independent of `eu7_real_corpus_ac.rs`: separate
+src/rust/crates/fathomdb-engine/Cargo.toml:86:name = "eu7_real_corpus_ac"
+[package]
+name = "fathomdb-engine"
+description = "FathomDB engine — embedded vector + JSON database core (storage, projection, ingest, query)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fathomdb-embedder.workspace = true
+fathomdb-embedder-api.workspace = true
+fathomdb-query.workspace = true
+fathomdb-schema.workspace = true
+rusqlite = { version = "0.31", features = ["bundled"] }
+jsonschema = { version = "0.18", default-features = false }
+serde_json = "1"
+sha2 = "0.11"
+sqlite-vec = "=0.1.7"
+
+[features]
+default = []
+# Slice 27 fix-1 (Q5=BIND-RUST, AC-074): the operator/recovery seam
+# (rebuild_*, excise_source, dump_*, trace_source_ref, truncate_wal,
+# verify_embedder, check_integrity, safe_export, recompute_mean + their
+# operator-exclusive private helpers) is gated behind this feature so the
+# DEFAULT engine surface is recovery-clean at the method level. Behavior is
+# identical with the feature on (gate, not delete). `fathomdb-cli` enables it.
+operator = []
+# EU-5b: turning on this feature causes `EmbedderChoice::Default` to
+# materialize a real `CandleBgeEmbedder` via the loader at `Engine::open`.
+# Without it, `EmbedderChoice::Default` returns a typed `EmbedderError`
+# rather than attempting a network fetch (preserves the no-network build
+# closure per ADR-0.7.1-default-embedder-weight-fetch).
+default-embedder = ["fathomdb-embedder/default-embedder"]
+# GPU acceleration (opt-in; forwards to the embedder; default stays CPU).
+# Activate at runtime via FATHOMDB_EMBED_DEVICE=cuda|metal.
+embed-cuda = ["default-embedder", "fathomdb-embedder/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-embedder/embed-metal"]
+# 0.8.1 Slice 10 (R1): enabling this feature gates the CPU cross-encoder CE
+# inference path (TinyBERT-L-2 via Candle) in `rerank_fused`. Without this
+# feature, `rerank_fused` is always the identity (soft-fallback) path — no
+# network call, no ML dependency. With the feature ON and weights cached
+# locally, `rerank_depth > 0` activates the CE scorer + score-blend.
+# Design memo: dev/design/0.8.1-slice-10-reranker-design.md.
+# 0.8.2 Slice E1: forwards to the embedder's `default-reranker` feature, which
+# owns the Candle + tokenizers CE stack (`CandleTinyBertReranker`). The default
+# engine build enables neither, staying ML-free + no-network.
+default-reranker = ["fathomdb-embedder/default-reranker"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; forwards to the
+# embedder; default stays CPU). Activate at runtime via the separate knob
+# FATHOMDB_RERANK_DEVICE=cuda|metal. Mirrors the embed-cuda passthrough.
+rerank-cuda = ["default-reranker", "fathomdb-embedder/rerank-cuda"]
+rerank-metal = ["default-reranker", "fathomdb-embedder/rerank-metal"]
+
+# The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
+# only builds when the `operator` feature is enabled (skipped on default builds).
+[[example]]
+name = "ingest_corpus"
+required-features = ["operator"]
+
+# Slice 27 fix-2: these integration-test targets exercise the operator/recovery
+# `Engine` methods that fix-1 gated behind `operator`. They are PURE-operator
+# (every `#[test]` calls a gated method), so the whole target is skipped on the
+# default build and runs under `--features operator`. This makes
+# `cargo test -p fathomdb-engine` (default) compile again without un-gating any
+# method. (The mixed `pr2b_mean_recompute.rs` is NOT here — its non-operator
+# carve-out test stays default-runnable via per-fn `#[cfg(feature = "operator")]`.)
+[[test]]
+name = "check_integrity"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_profile"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_row_counts"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_schema"
+required-features = ["operator"]
+
+[[test]]
+name = "eu7_real_corpus_ac"
+required-features = ["operator"]
+
+[[test]]
+name = "erasure_projection_registry"
+required-features = ["operator"]
+
+[[test]]
+name = "erasure_completeness"
+required-features = ["operator"]
+
+[[test]]
+name = "provenance_mandatory"
+required-features = ["operator"]
+
+[[test]]
+name = "excise_source"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_projections"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_report"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_vec0"
+required-features = ["operator"]
+
+[[test]]
+name = "safe_export"
+required-features = ["operator"]
+
+[[test]]
+name = "trace_source_ref"
+required-features = ["operator"]
+
+[[test]]
+name = "truncate_wal"
+required-features = ["operator"]
+
+[[test]]
+name = "verify_embedder"
+required-features = ["operator"]
+
+# 0.8.2 Slice E1: the CE-reorders test exercises the real reranker, so the whole
+# target only compiles/runs under `--features default-reranker`. The default
+# build skips it (and the soft-fallback identity tests in `pr_g10_reranker.rs`
+# stay default-runnable).
+[[test]]
+name = "pr_g10_reranker_ce"
+required-features = ["default-reranker"]
+
+# 0.8.2 Slice E2: the standalone-rerank helper (`rerank_passages`) reorder test
+# exercises the real reranker, so the whole target only compiles/runs under
+# `--features default-reranker` (same gate as `pr_g10_reranker_ce`).
+[[test]]
+name = "pr_e2_rerank_passages"
+required-features = ["default-reranker"]
+
+# 0.8.2 Slice E2 fix-1 [P2]: is_finite guard tests — no feature gate because the
+# guard fires before the CE model path (depth/feature state irrelevant).
+[[test]]
+name = "pr_e2_rerank_nonfinite"
+
+[dev-dependencies]
+libc = "0.2"
+proptest = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+//! EU-7 — real-corpus AC validation + recall@10 anchor measurement.
+//!
+//! Per `dev/plans/prompts/0.7.1-EU-7-launch.md`. This harness validates
+//! AC-013 (vector retrieval latency), AC-013b (recall@10 vs f32 ground
+//! truth), and AC-019 (mixed-retrieval stress tail) against the **real
+//! default embedder** (`BAAI/bge-small-en-v1.5`, candle-transformers,
+//! dim 384) over the **real corpus** (`data/corpus-data/raw/*.jsonl`),
+//! at dev-box scale.
+//!
+//! ## What this measures vs. perf_gates.rs
+//!
+//! `tests/perf_gates.rs::ac_013b_recall_at_10_floor` runs against a
+//! synthetic *isotropic* `VaryingEmbedder` and hard-asserts the
+//! HITL-locked 0.90 floor. Isotropic random vectors are the noise-
+//! limited case for sign-bit ANN; real anisotropic BGE embeddings are
+//! *easier* for sign-bit quantization (see
+//! `dev/plans/runs/STATUS-perf-vector-quant.md` "Fixture-replacement
+//! evaluation", post-correction). This harness measures the **real**
+//! number that 0.7.2 PR-2 will use to re-derive `AC013B_RECALL_FLOOR`
+//! as `R - 2*sigma`.
+//!
+//! ## Recall posture (AC-075, 0.8.0 Slice 40 / GA-2 — eu7 is the verdict)
+//!
+//! As of 0.8.0 Slice 40, this real-embedder harness is the **asserting**
+//! recall verdict (AC-075) on the real bge-small embedder over the real
+//! corpus. ◆ GA-3 (◆ HITL ruling 2026-06-08): the verdict is a **one-sided,
+//! CI-based** gate against the unchanged 0.90 floor — PASS iff the recall 95%
+//! bootstrap CI is not significantly below the floor (`recall_ci_hi >=
+//! CURRENT_FLOOR`), NOT a point-estimate `recall >= floor` assert. The 0.90
+//! floor CONSTANT is unchanged; the measured N=7667 point estimate 0.8960 (CI
+//! [0.8640, 0.9250]) clears the gate because ci_hi 0.925 ≥ 0.90. The
+//! point-estimate-≥0.90 recovery (the ~4pt 0.7.x→0.8.0 vector-stage drop) is a
+//! 0.8.1 item, and this CI form is to be revisited after 0.8.0. It supersedes
+//! the informal AC-013b floor assert: the synthetic
+//! `perf_gates::ac_013b_recall_at_10_floor` is now REPORT-ONLY.
+//!
+//! **◆ B-1 correction (GA-2, 2026-06-08).** The system-under-test is the
+//! engine's pre-fusion **VECTOR-STAGE** ranking (1-bit sign-quant K=192
+//! Hamming + f32 rerank), obtained via the test-only
+//! `set_vector_stage_only_for_test` seam — NOT the RRF-fused `search()`
+//! output. The ground truth is an exact-f32 VECTOR top-10, so measuring it
+//! against the unconditional-RRF hybrid `search()` (Slice 10, `d28d204`)
+//! conflated ANN-quantization FIDELITY (what the 0.90 floor gates) with
+//! intended fusion divergence — the cause of the Slice-40 Phase-A HALT
+//! (recall 0.8710 < 0.90), root-caused in
+//! `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`. The corrected
+//! vector-stage SUT measures recall@10 = 0.896 (CI 0.864–0.925, σ 0.0157) at
+//! N=7667 (0.924 at N=1000) — the live B-1 remeasure
+//! (`GA-signoff-eu7-remeasure-20260608T172804Z`). (The 0.937 figure earlier in
+//! this campaign was the 0.7.1 `search()`-SUT anchor, carried as a GA-2
+//! assumption; it is NOT the vector-stage value. The 0.937→0.896 gap is a
+//! vector-stage measurement-SUT change — old `search()` vs this seam — not a
+//! fidelity regression, and not embedder-pooling; bisected in
+//! `dev/plans/runs/0.8.3-eu7-bisect-report.md`.) The
+//! harness ALSO reports the fused-`search()` recall (`EU7_RECALL_FUSED`,
+//! ~0.871) as the report-only delta, so the correction is demonstrably
+//! load-bearing, not cosmetic. This is the ANN-quantization FIDELITY axis,
+//! complementary to and NOT a substitute for the IR/relevance axis (eu8 /
+//! the IR-1 `ir-recall-measure.md`). K stays locked at 192;
+//! `AC013B_RECALL_FLOOR` is unchanged (its sentinel still pins 0.90).
+//! AC-013 latency and AC-019 stress remain REPORTED (dev-box scouting).
+//!
+//! ## Production-path fidelity
+//!
+//! The harness constructs the **real** `CandleBgeEmbedder` and supplies
+//! it via `EmbedderChoice::Caller`. Because its identity name is
+//! `fathomdb-bge-small-en-v1.5`, the engine's mean-centering apply paths
+//! engage exactly as they do for `EmbedderChoice::Default` (identity-
+//! gated; see `identity_requires_mean_centering`), the mean pins at
+//! `MEAN_VEC_PIN_THRESHOLD` (256) docs, and retrieval runs the locked
+//! K=192 bit-KNN + f32 rerank pipeline. Holding the embedder `Arc` lets
+//! the harness embed queries with the *same model* for the f32
+//! ground-truth pass (codex focus: ground truth must use the candidate
+//! model, not a different one).
+//!
+//! ## Gating
+//!
+//! Requires the `default-embedder` Cargo feature (real candle weights)
+//! AND `AGENT_LONG=1` (the embed pass is minutes of wall-clock). The
+//! warm-cache contract is the same as `eu5b_lockflip.rs`: weights are
+//! pre-fetched; set `FATHOMDB_SKIP_NETWORK_TESTS=1` to skip when the
+//! cache is cold and HF is unreachable.
+//!
+//! Run:
+//!   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
+//!     --test eu7_real_corpus_ac -- --nocapture
+//!
+//! Tunables (env):
+//!   EU7_N_VALUES         comma-separated haystack sizes (default "1000,7667")
+//!   EU7_QUERIES          query-set size (default 100)
+//!   EU7_BOOTSTRAP        bootstrap resamples (default 1000)
+//!   EU7_LATENCY_SAMPLES  AC-013 measurement samples (default 1000)
+//!   EU7_STRESS_PER_THREAD AC-019 queries per stress thread (default 250)
+//!
+//! Seeding the real BGE embedder through the projection pipeline runs at
+//! ~1.3 docs/sec on a 24-core dev box (embed + sign-bit quantize + mean-
+//! centering + WAL commit per doc), so the full 7,667-doc corpus seeds in
+//! ~1.5 h. This is expected dev-box cost; canonical N=1M is 0.7.2 PR-3.
+
+#![cfg(feature = "default-embedder")]
+
+#[path = "support/corpus_subset.rs"]
+mod corpus_subset;
+#[path = "support/recall_gate.rs"]
+mod recall_gate;
+
+use std::collections::HashSet;
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use corpus_subset::{load_subset_or_skip, repo_root, Doc};
+use fathomdb_embedder::CandleBgeEmbedder;
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
+use serde_json::json;
+use tempfile::TempDir;
+
+/// Serializes `CandleBgeEmbedder::embed` behind a `Mutex`.
+///
+/// The engine's projection pool runs `PROJECTION_WORKERS` (=2) worker
+/// threads that call `embed()` concurrently on one shared instance.
+/// candle's own guidance is to guard a shared model (`Arc<RwLock<Model>>`)
+/// for concurrent CPU inference; this `Mutex` is that guard, applied
+/// harness-side without touching the engine's writer/projection contracts.
+/// It is a measurement-fidelity wrapper only: the produced vectors,
+/// identity, and mean-centering behaviour are byte-identical to the bare
+/// embedder; only concurrency is constrained.
+///
+/// (The original EU-7 seeding stall was NOT this — it was Finding C, the
+/// missing 512-token truncation, now fixed in `CandleBgeEmbedder`. This
+/// guard remains as defensive isolation against concurrent candle forward.)
+struct SerializedBge {
+    inner: Mutex<CandleBgeEmbedder>,
+    identity: EmbedderIdentity,
+}
+
+impl SerializedBge {
+    fn new(inner: CandleBgeEmbedder) -> Self {
+        let identity = inner.identity();
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --quiet --no-fail-fast multidoc -- --nocapture' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 46487ms:
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+
+running 4 tests
+[provenance_omitting_harness] started (source_doc_id will be omitted from every element)
+[multidoc_echo_harness] started (mode=foreign)
+.[multidoc_echo_harness] started (mode=valid)
+.[elps_harness] starting (model=claude-haiku base_url=http://localhost:4000/v1 stub=True)
+..
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 42.12s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+exec
+/bin/bash -lc "sed -n '1,280p' src/python/eval/elps_live_harness.py; sed -n '1,180p' src/python/tests/conftest.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""ELPS live harness — fathomdb.extract.v1 subprocess protocol.
+
+Spawned by the FathomDB engine (or tests) as a child process. Communicates
+over stdin/stdout via NDJSON (one JSON object per line). Diagnostics go to stderr.
+
+Environment variables:
+  ELPS_LLM_BASE_URL   (default: http://localhost:4000/v1)
+  ELPS_LLM_API_KEY    (default: sk-airlock-mk)
+  ELPS_LLM_MODEL      (default: claude-haiku)
+  ELPS_STUB_MODE      (default: 0; set to 1 to return canned responses without LLM)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+_BASE_URL = os.environ.get("ELPS_LLM_BASE_URL", "http://localhost:4000/v1")
+_API_KEY = os.environ.get("ELPS_LLM_API_KEY", "sk-airlock-mk")
+_MODEL = os.environ.get("ELPS_LLM_MODEL", "claude-haiku")
+_STUB_MODE = os.environ.get("ELPS_STUB_MODE", "0") == "1"
+_MAX_DOCS_PER_REQUEST = 8
+_PROTOCOL = "fathomdb.extract.v1"
+_SCHEMA_VERSION = 1
+
+# ---------------------------------------------------------------------------
+# Memex extraction system prompt (verbatim from §3)
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PROMPT = """\
+You are an information-extraction engine. From the single document supplied by the user, extract knowledge as a graph of entities and directed, dated fact-edges, and return it as structured JSON matching the required schema.
+
+ENTITIES
+- Identify the real-world entities mentioned (people, organizations, places, artifacts, concepts, etc.).
+- Each entity has a `name`, a `type`, optional `aliases` (other surface forms used for the same entity in this document), and a `source_doc_id`.
+- Be conservative about identity: when two mentions MIGHT refer to different real-world entities, emit them as DISTINCT entities rather than merging them. Do not collapse homonyms.
+
+ATTRIBUTION (load-bearing — a missing value fails the whole ingest)
+- EVERY entity AND every edge MUST carry a `source_doc_id` set to the exact `doc_id` given in the user message. Copy it verbatim; never invent, abbreviate or alter it.
+- This is how the store knows which document each fact came from, and therefore which facts to delete when that document is erased. An element without it cannot be attributed and is REJECTED — the store will not guess an attribution, because guessing would file the fact under the wrong document and leave it behind on erasure.
+
+EDGES (directed, dated facts)
+- Each edge is a single fact: `from_entity` -> `to_entity` with a short, lowercase `relation` label (e.g. `works_at`, `founded`, `located_in`).
+- `body` is the minimal span of source text that states the fact.
+- Reference entities by the exact `name` you used in the entities list.
+
+TEMPORAL RULES (load-bearing)
+- `t_valid` is the time the fact BECAME TRUE as stated in the text. If the text states no such time, use the document's `created_at`. NEVER use the current time or ingestion time ("now").
+- Set `t_invalid` ONLY when the text gives explicit evidence the fact ended; otherwise leave it null.
+
+SUPERSEDES (contradicting / replacing an earlier fact)
+- When a fact in this document SUPERSEDES or CONTRADICTS an earlier fact (e.g. a new role, status, or value that replaces a prior one), emit the NEW fact with its own `t_valid` and set `supersedes_prior` to true, with a short `prior_body` describing the prior fact it replaces.
+- Do NOT delete or invalidate the prior fact yourself — only emit the new fact and flag that it supersedes a prior one.
+
+CONFIDENCE
+- `confidence` in [0,1] is the calibrated probability that the fact is correct AND supported by the cited span. Emit ALL facts you find — do not self-censor low-confidence facts behind a threshold; report the low confidence instead.
+
+SOURCE SPANS
+- When you are confident, provide `source_span` as [start, end) character offsets into the supplied document body that locate the supporting text. If you cannot locate it reliably, omit `source_span`.
+
+Return ONLY valid JSON matching this exact schema — no markdown fences, no prose:
+{
+  "entities": [{"name": str, "type": str, "aliases": list[str], "source_doc_id": str}],
+  "edges": [
+    {
+      "from_entity": str,
+      "to_entity": str,
+      "relation": str,
+      "body": str,
+      "t_valid": str,
+      "t_invalid": str | null,
+      "confidence": float,
+      "source_doc_id": str,
+      "source_span": [int, int] | null
+    }
+  ],
+  "warnings": []
+}"""
+
+_USER_TEMPLATE = """\
+Extract from this single document.
+doc_id: {doc_id}
+kind: doc
+created_at: {created_at}
+body:
+{body}"""
+
+# ---------------------------------------------------------------------------
+# Canned stub response for ELPS_STUB_MODE=1
+# ---------------------------------------------------------------------------
+
+def _stub_entities(doc_id: str) -> list[dict[str, Any]]:
+    """Canned entities, attributed to `doc_id`.
+
+    A FUNCTION returning fresh dicts, not a module-level constant: the engine
+    batches several documents into one extract request, and a shared list would
+    be handed out (and then attributed) once per document, so the last document
+    processed would silently overwrite every earlier document's provenance.
+    """
+    return [{"name": "TestEntity", "type": "concept", "aliases": [], "source_doc_id": doc_id}]
+
+
+def _stub_edges(doc_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "from_entity": "TestEntity",
+            "to_entity": "TestEntity",
+            "relation": "self_ref",
+            "body": "stub",
+            "t_valid": "2025-01-01T00:00:00Z",
+            "t_invalid": None,
+            "confidence": 0.5,
+            "source_doc_id": doc_id,
+            "source_span": None,
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
+# LLM call
+# ---------------------------------------------------------------------------
+
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences if the model wraps its JSON in them."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # drop first line (``` or ```json) and last line (```)
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        text = "\n".join(inner).strip()
+    return text
+
+
+def _call_llm_httpx(
+    doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Call the LLM via httpx (preferred) or urllib.request (stdlib fallback)."""
+    user_msg = _USER_TEMPLATE.format(
+        doc_id=doc["source_doc_id"],
+        created_at=doc.get("created_at", "2025-01-01T00:00:00Z"),
+        body=doc.get("body", ""),
+    )
+    payload: dict[str, Any] = {
+        "model": _MODEL,
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+        "max_tokens": 4096,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        import httpx  # type: ignore[import-not-found]
+
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                _BASE_URL.rstrip("/") + "/chat/completions",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {_API_KEY}",
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+    except ImportError:
+        # Fall back to stdlib urllib.request
+        import urllib.request  # noqa: PLC0415
+
+        encoded = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            _BASE_URL.rstrip("/") + "/chat/completions",
+            data=encoded,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {_API_KEY}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
+            body = json.loads(r.read().decode("utf-8"))
+
+    text = body["choices"][0]["message"]["content"]
+    return json.loads(_strip_fences(text))
+
+
+def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], list[dict]]:
+    """Extract entities and edges from a single document.
+
+    Returns (entities, edges, warnings).  On any error returns ([], [], [warning]).
+    """
+    doc_id = doc["source_doc_id"]
+
+    if _STUB_MODE:
+        return _stub_entities(doc_id), _stub_edges(doc_id), []
+
+    try:
+        result = _call_llm_httpx(doc)
+        entities = result.get("entities", [])
+        edges = result.get("edges", [])
+        # Rust derive_logical_id rejects empty names or kinds containing ':'.
+        # Filter those out here rather than aborting the whole extraction.
+        entities = [
+            e for e in entities
+            if isinstance(e, dict)
+            and str(e.get("name", "")).strip()
+            and ":" not in str(e.get("type", ""))
+        ]
+        edges = [
+            e for e in edges
+            if isinstance(e, dict)
+            and str(e.get("from_entity", "")).strip()
+            and str(e.get("to_entity", "")).strip()
+        ]
+        # Attribution backfill (R-20-E2). Every element we hand back must name
+        # the document it came from, because the engine batches documents and
+        # then requires each entity/edge to select its own source among the
+        # batch's caller-supplied ids -- an unattributed element fails the whole
+        # ingest with EngineError::Extractor. This is safe to do here and ONLY
+        # here: `_extract_single_doc` is scoped to exactly one document, so
+        # `doc_id` is the true source, not a guess. The engine deliberately
+        # refuses to make that guess itself.
+        for entity in entities:
+            if not entity.get("source_doc_id"):
+                entity["source_doc_id"] = doc_id
+        for edge in edges:
+            if not edge.get("source_doc_id"):
+                edge["source_doc_id"] = doc_id
+            # Rust rejects confidence outside [0.0, 1.0] with EngineError::Extractor.
+            c = edge.get("confidence")
+            if c is None:
+                pass
+            elif isinstance(c, (int, float)) and c == c:  # c == c is False for NaN
+                edge["confidence"] = max(0.0, min(1.0, float(c)))
+            else:
+                edge["confidence"] = 0.5
+        warnings = result.get("warnings", [])
+        return entities, edges, warnings
+    except Exception as exc:  # noqa: BLE001
+        print(f"[elps_harness] extraction failed for {doc_id}: {exc}", file=sys.stderr, flush=True)
+        return [], [], [{"kind": "extraction_failed", "source_doc_id": doc_id, "detail": str(exc)}]
+
+
+# ---------------------------------------------------------------------------
+# Protocol implementation
+# ---------------------------------------------------------------------------
+
+
+def _write_json(obj: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def _handle_extract(msg: dict[str, Any]) -> None:
+    """Process an extract request and write the result."""
+    request_id = msg.get("request_id", "")
+    documents: list[dict[str, Any]] = msg.get("documents", [])
+
+    all_entities: list[dict] = []
+    all_edges: list[dict] = []
+    all_warnings: list[dict] = []
+
+    for doc in documents:
+        entities, edges, warnings = _extract_single_doc(doc)
+        all_entities.extend(entities)
+        all_edges.extend(edges)
+        all_warnings.extend(warnings)
+
+    _write_json(
+        {
+            "protocol": _PROTOCOL,
+"""Shared pytest fixtures for the FathomDB Python SDK test suite.
+
+Phase 11a wires the PyO3 binding to a real `fathomdb-engine`; each
+test now needs a unique database path (the engine acquires an
+exclusive file lock, so reusing one path across tests in the same
+process would surface as `DatabaseLockedError`). `db_path` yields a
+fresh per-test `Path` under pytest's `tmp_path` fixture.
+
+EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
+`test-hooks` Cargo feature before any test module is imported —
+`pyproject.toml [tool.maturin] features` ships only `default-embedder`
+(parity with the released wheel), so without this `Engine._write_vector_for_test`
+and friends are missing and tests like `test_use_default_embedder.py`,
+`test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
+
+This rebuild runs at conftest IMPORT time (module level below), NOT as a
+session-scoped fixture. A fixture runs during test *setup*, which is too late
+for a test module that imports a test-hooks symbol at MODULE level
+(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
+that import is evaluated during *collection*, before any fixture runs, so the
+binding must already carry the symbol. conftest.py top-level code is the
+earliest hook that still runs before sibling test modules are collected. The
+rebuild short-circuits if the test-hooks symbol is already present (developer
+pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
+session in the same venv built it), so the `maturin develop` cost (~5-60s) is
+paid at most once per venv.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> str:
+    return str(tmp_path / "rewrite.sqlite")
+
+
+_PYTHON_SRC_DIR = Path(__file__).resolve().parent.parent  # src/python
+
+
+_PROBE_SRC = (
+    "import sys\n"
+    "try:\n"
+    "    from fathomdb import _fathomdb\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+    "engine = getattr(_fathomdb, 'Engine', None)\n"
+    "sys.exit(0 if engine is not None and hasattr(engine, '_write_vector_for_test') else 1)\n"
+)
+
+
+def _binding_has_test_hooks() -> bool:
+    """Return True if the installed `Engine` already exposes the test-hooks
+    surface (`_write_vector_for_test`).
+
+    The probe runs in a CHILD process and must NOT import
+    `fathomdb._fathomdb` into this (the pytest) process. Importing the
+    hook-less extension here dlopen()s it; a subsequent `maturin develop`
+    that overwrites the `.so` on disk cannot be re-imported in the same
+    process — the dynamic loader returns the already-mapped library, so the
+    rebuilt symbols never become visible and collection still fails on the
+    missing `force_panic_for_test`. Probing out-of-process keeps this
+    interpreter pristine so pytest's first import sees the FRESH `.so`."""
+
+    return subprocess.run(
+        [sys.executable, "-c", _PROBE_SRC],
+        cwd=str(_PYTHON_SRC_DIR),
+    ).returncode == 0
+
+
+_REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
+
+
+class TestHooksBindingMissing(RuntimeError):
+    """The binding lacks `test-hooks` and this environment did not opt in to a rebuild."""
+
+
+def _ensure_test_hooks_binding() -> None:
+    """Ensure the editable binding has `test-hooks` before sibling test modules
+    are collected — rebuilding ONLY if this environment explicitly opted in.
+
+    Skipped when not invoked from the source tree (e.g. running the
+    test files against a pip-installed wheel for release-surface
+    verification) — detected by the absence of `pyproject.toml` next
+    to the tests directory.
+
+    **TC-27 (0.8.20 Slice 5 fix-4) — the rebuild is OPT-IN, not opt-out.**
+
+    This function used to shell out to `maturin develop` autonomously, and did
+    so during an agent session that never issued a build command. It failed
+    only benignly, and only by luck: the interpreter was not an activated
+    virtualenv. Had it been, the rebuild would have rebound the SHARED `.venv`
+    to whatever source tree pytest happened to be launched from — including an
+    agent worktree, silently repointing every other consumer of that venv at
+    unreviewed code.
+
+    Per this repo's standing "fix the tooling, not the actor" rule, the guard
+    lives here rather than in a note asking people to be careful: an
+    unattended `pytest` can no longer mutate a shared environment as a
+    side effect of test collection. Opt in with
+    `FATHOMDB_TESTS_ALLOW_REBUILD=1` when a rebuild is genuinely intended.
+
+    `FATHOMDB_TESTS_NO_REBUILD=1` is retained (it now merely reasserts the
+    default) so existing invocations that set it keep working.
+
+    :raises TestHooksBindingMissing: when a rebuild is required but not
+        authorized. Loud and actionable beats either silently rebuilding or
+        letting sibling modules fail on a confusing missing-attribute import.
+    """
+
+    pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
+    if not pyproject.exists():
+        # Not an editable-install context (release-surface tests run
+        # against a pip-installed wheel under a throwaway venv).
+        return
+    if _binding_has_test_hooks():
+        # Developer already built with test-hooks (or a previous
+        # pytest session in the same venv did). Nothing to do — this is the
+        # normal path, and it never consults the opt-in.
+        return
+
+    if os.environ.get(_REBUILD_OPT_IN) != "1":
+        raise TestHooksBindingMissing(
+            "the installed `fathomdb` binding was built WITHOUT the `test-hooks` feature, "
+            "so these tests cannot run.\n"
+            "\n"
+            "This conftest will NOT rebuild it for you: `maturin develop` rebinds the "
+            "active virtualenv to this source tree, which silently repoints every other "
+            "consumer of a SHARED venv (TC-27).\n"
+            "\n"
+            "Choose one:\n"
+            f"  * authorize the rebuild here:  {_REBUILD_OPT_IN}=1 pytest ...\n"
+            "  * or build it yourself, from an environment you intend to rebind:\n"
+            f"      cd {_PYTHON_SRC_DIR} && python -m maturin develop --features "
+            "pyo3/extension-module,test-hooks,default-embedder,default-reranker\n"
+            "\n"
+            "NEVER run either from a git worktree against a shared .venv."
+        )
+
+    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+        raise TestHooksBindingMissing(
+            f"contradictory configuration: {_REBUILD_OPT_IN}=1 asks for a rebuild while "
+            "FATHOMDB_TESTS_NO_REBUILD=1 forbids one. Unset one of them."
+        )
+
+    print(
+        "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+        "with test-hooks feature (one-time per venv; ~5-60s) ...",
+        flush=True,
+    )
+    # `maturin develop` requires an activated virtualenv: it looks for
+    # $VIRTUAL_ENV / $CONDA_PREFIX / a `.venv` in cwd-or-parents. A bare
+    # subprocess inherits neither when pytest was launched via an absolute
+    # interpreter path (e.g. `.venv/bin/python -m pytest`, or any venv not
+    # named `.venv`), so it fails with "Couldn't find a virtualenv". Point it
+    # at THIS interpreter's environment root (`sys.prefix` is the venv dir for
+    # a venv interpreter) so the rebuilt `.so` lands in the venv we are running.
+    env = dict(os.environ)
+    env["VIRTUAL_ENV"] = sys.prefix
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "maturin",
+            "develop",
+            "--features",
+            "pyo3/extension-module,test-hooks,default-embedder,default-reranker",
+        ],
+        cwd=str(_PYTHON_SRC_DIR),
+        env=env,
+    )
+    # Belt-and-suspenders: drop any cached `fathomdb*` modules so the first
+    # post-rebuild import re-reads from disk. (The out-of-process probe above
+    # means this interpreter has NOT yet dlopen()ed the extension, so the fresh
+
+exec
+/bin/bash -lc "sed -n '180,360p' src/python/tests/conftest.py; sed -n '280,420p' src/python/eval/elps_live_harness.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+    # means this interpreter has NOT yet dlopen()ed the extension, so the fresh
+    # `.so` is what pytest collection loads.)
+    for mod_name in list(sys.modules):
+        if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
+            del sys.modules[mod_name]
+
+
+# Run the rebuild at conftest IMPORT time (before sibling test modules are
+# collected), not as a fixture — see the module docstring for why a fixture is
+# too late for module-level test-hooks imports (e.g. test_ffi_safety.py).
+_ensure_test_hooks_binding()
+            "protocol": _PROTOCOL,
+            "type": "result",
+            "request_id": request_id,
+            "entities": all_entities,
+            "edges": all_edges,
+            "warnings": all_warnings,
+        }
+    )
+
+
+def main() -> None:
+    print(
+        f"[elps_harness] starting (model={_MODEL} base_url={_BASE_URL} stub={_STUB_MODE})",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    for raw_line in sys.stdin:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            msg = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            print(f"[elps_harness] invalid JSON on stdin: {exc}", file=sys.stderr, flush=True)
+            continue
+
+        msg_type = msg.get("type")
+
+        if msg_type == "hello":
+            _write_json(
+                {
+                    "protocol": _PROTOCOL,
+                    "type": "ready",
+                    "schema_version": _SCHEMA_VERSION,
+                    "provider": "airlock-claude-haiku",
+                    "model": _MODEL,
+                    "supports": {},
+                    "max_docs_per_request": _MAX_DOCS_PER_REQUEST,
+                }
+            )
+        elif msg_type == "extract":
+            try:
+                _handle_extract(msg)
+            except Exception as exc:  # noqa: BLE001
+                request_id = msg.get("request_id", "")
+                print(
+                    f"[elps_harness] fatal error handling extract {request_id}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _write_json(
+                    {
+                        "protocol": _PROTOCOL,
+                        "type": "error",
+                        "request_id": request_id,
+                        "error_code": "extraction_failed",
+                        "detail": str(exc),
+                    }
+                )
+        else:
+            print(
+                f"[elps_harness] unknown message type: {msg_type!r}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/bash -lc "sed -n '1,140p' scripts/agent-test.sh; grep -R \"FATHOMDB_TESTS_ALLOW_REBUILD\\|FATHOMDB_TESTS_NO_REBUILD\" -n . | head -50" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+2026-07-20T02:27:26.669392Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open
+exec
+/bin/bash -lc 'pkill -P $(pgrep -f "grep -R FATHOMDB_TESTS_ALLOW_REBUILD" | head -1) || true; pkill -f "grep -R FATHOMDB_TESTS_ALLOW_REBUILD" || true' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited -1 in 0ms:
+ succeeded in 25006ms:
+exec
+/bin/bash -lc "if [ -x .venv/bin/python ]; then .venv/bin/python - <<'PY'
+import importlib.util, sys
+print(sys.executable)
+print(importlib.util.find_spec('pytest') is not None)
+PY
+else echo no venv; fi" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+no venv
+
+exec
+/bin/bash -lc "grep -R \"fn resolve_provenance\\|resolve_provenance\" -n src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/src | head -20; sed -n '2200,2380p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/src/lib.rs:3916:            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+src/rust/crates/fathomdb-engine/src/lib.rs:3933:            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:3979:                        let source_doc_id = resolve_provenance(
+src/rust/crates/fathomdb-engine/src/lib.rs:4107:                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
+src/rust/crates/fathomdb-engine/src/lib.rs:3916:            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+src/rust/crates/fathomdb-engine/src/lib.rs:3933:            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:3979:                        let source_doc_id = resolve_provenance(
+src/rust/crates/fathomdb-engine/src/lib.rs:4107:                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
+}
+
+impl TryFrom<&str> for SourceId {
+    type Error = EngineError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+/// Batch input shape for [`Engine::write`].
+///
+/// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
+/// entity variants land in 0.6.x without a major bump. Adding fields to
+/// existing variants remains a binding-coordination change.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PreparedWrite {
+    Node {
+        kind: String,
+        body: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam, made **structurally
+        /// mandatory** in 0.8.20 (R-20-E3). Was `Option<String>`; a `None`
+        /// landed NULL on disk and produced a row no `excise_source` call could
+        /// reach. See [`SourceId`] for why the fix is a type change rather than
+        /// a validation check.
+        source_id: SourceId,
+        /// G0 (Slice 15) — stable cross-re-ingestion identity. `Some(id)`
+        /// makes this write a transaction-time supersession of the prior
+        /// active version of `(logical_id, kind)` (tombstone-then-insert).
+        /// `None` is the legacy/own-identity default: a plain insert with a
+        /// NULL `logical_id` (NULL-safe — never collides with other NULLs).
+        logical_id: Option<String>,
+        /// OPP-12 Phase-1 (0.8.19 Slice 5) — the create-time existence state.
+        /// `InitialState::Active` (the [`Default`]) is the back-compat default and
+        /// lands `state = 'active'` on disk (value-identical to the migration
+        /// step-20 column DEFAULT). `InitialState::Pending` creates a quarantined
+        /// node excluded from default retrieval. A `deleted`/`purged` node is
+        /// UNREPRESENTABLE at create time (the [`InitialState`] type is the typed
+        /// rejection) — those states are reachable only via the Slice-10
+        /// `transition`/`purge` verbs.
+        state: InitialState,
+        /// OPP-12 Phase-1 (0.8.19 Slice 5) — advisory cause for the create-time
+        /// `state` (e.g. the quarantine cause for a `pending` node), stored
+        /// verbatim in `canonical_nodes.reason`. Engine never interprets it. `None`
+        /// lands NULL (the back-compat default).
+        reason: Option<String>,
+    },
+    Edge {
+        kind: String,
+        from: String,
+        to: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node. Structurally
+        /// mandatory since 0.8.20 (R-20-E3).
+        source_id: SourceId,
+        /// G0 (Slice 15) — see Node. Supersession semantics are identical on
+        /// edges (keyed by `(logical_id, kind)`).
+        logical_id: Option<String>,
+        /// G11 (Slice 15) — the fact/relationship text. When `Some`, triggers
+        /// FTS projection into `search_index_edges` and vector projection via
+        /// the projection scheduler (kind `"edge_fact"`). Also triggers
+        /// invalidate-not-accumulate on `(from_id, to_id, kind)`.
+        body: Option<String>,
+        /// G11 (Slice 15) — event valid-time (ISO-8601). NULL = unknown / still valid.
+        t_valid: Option<String>,
+        /// G11 (Slice 15) — event invalid-time (ISO-8601). NULL = still valid.
+        t_invalid: Option<String>,
+        /// G11 (Slice 15) — extraction confidence ∈ [0.0, 1.0]. NULL for
+        /// non-BYO-LLM-ingested edges.
+        confidence: Option<f64>,
+        /// G11 (Slice 15) — opaque model/provider id from the BYO-LLM harness
+        /// `ready.model` field. NULL for non-BYO-LLM edges.
+        extractor_model_id: Option<String>,
+        /// R3 (Slice 30, SCHEMA-GATE-1, HITL-SIGNED 2026-06-13) — set when the
+        /// ELPS extractor defaulted this edge's `t_valid` to `created_at` rather
+        /// than deriving it from the document text. Such edges have untrustworthy
+        /// event times and are excluded from graph-arm BFS temporal queries.
+        /// `None`/`false` = not a fallback; `Some(true)` = fallback.
+        temporal_fallback: Option<bool>,
+    },
+    OpStore {
+        collection: String,
+        record_key: String,
+        schema_id: Option<String>,
+        body: String,
+    },
+    AdminSchema {
+        name: String,
+        kind: String,
+        schema_json: String,
+        retention_json: String,
+    },
+}
+
+/// EXP-S (0.8.14 Slice 5, D1) — structural-role tag for a canonical row.
+///
+/// A SEPARATE axis from the doc-type `kind` (email/article/paper/meeting/
+/// note/todo/doc/edge_fact): `row_kind` describes *what structural role* a row
+/// plays in the "one store, many indexes" substrate, not what document type it
+/// carries. Stored in `canonical_nodes.row_kind` (schema migration step 16).
+///
+/// `Leaf` is the default (a normal record; every existing/normal write is a
+/// leaf — back-compat preserving). `Coverage` = coverage/summary rows;
+/// `Graph` = graph structural rows. Engine-internal in 0.8.14 — there is NO
+/// public Py/TS SDK surface for `row_kind` this release (`Leaf` for all normal
+/// writes; `Coverage`/`Graph` are set only by internal paths). Cross-binding
+/// parity (X1) is a Slice-40 concern.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RowKind {
+    Leaf,
+    Coverage,
+    Graph,
+}
+
+impl RowKind {
+    /// On-disk `canonical_nodes.row_kind` spelling. Must match the migration
+    /// step-16 `DEFAULT 'leaf'` and the schema vocabulary (D1).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowKind::Leaf => "leaf",
+            RowKind::Coverage => "coverage",
+            RowKind::Graph => "graph",
+        }
+    }
+}
+
+/// OPP-12 record-lifecycle Phase-1 (0.8.19 Slice 5) — the existence axis.
+///
+/// One mutually-exclusive typed enum stored as TEXT in the `canonical_nodes.state`
+/// column (schema migration step-20). Semantics (design §2 / plan §1):
+///   `Pending` = present + versioned but NOT admitted to default retrieval
+///               (quarantine / promotion gate);
+///   `Active`  = admitted to default retrieval (the shipped-corpus default);
+///   `Deleted` = soft-deleted, retained + recoverable, excluded from default
+///               reads, stays indexed behind the flag;
+///   `Purged`  = terminal, physically erased.
+/// `Deleted`/`Purged` are reachable only through the Phase-2/Slice-10
+/// `transition`/`purge` verbs — they can NEVER be a create-time state (see
+/// [`InitialState`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LifecycleState {
+    Pending,
+    Active,
+    Deleted,
+    Purged,
+}
+
+impl LifecycleState {
+    /// On-disk `canonical_nodes.state` spelling. Must match the migration step-20
+    /// `DEFAULT 'active'` and the `state = 'active'` default-read exclusion.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LifecycleState::Pending => "pending",
+            LifecycleState::Active => "active",
+            LifecycleState::Deleted => "deleted",
+            LifecycleState::Purged => "purged",
+        }
+    }
+
+    /// Parse the on-disk spelling back into the typed enum. `None` for any value
+    /// outside the closed vocabulary (a corrupt/foreign `state`).
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(LifecycleState::Pending),
+            "active" => Some(LifecycleState::Active),
+            "deleted" => Some(LifecycleState::Deleted),
+            "purged" => Some(LifecycleState::Purged),
+            _ => None,
+        }
+    }
+
+    /// OPP-12 Phase-1 (0.8.19 Slice 10) — the target states legally reachable from
+    /// `self` via the `transition` VERB (design §2 legal-transition table). This
+    /// is the verb-specific enumeration reported by `IllegalTransitionError.legal`:
+    ///   `Pending` → `[Active, Deleted]`   (promote / reject)
+    ///   `Active`  → `[Deleted]`           (soft-delete)
+    ///   `Deleted` → `[Active]`            (undelete)
+    ///   `Purged`  → `[]`                  (terminal; nothing is reachable)
+
+exec
+/bin/bash -lc "sed -n '3880,4130p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        let extractor_model_id = session.model.clone();
+        let max_docs = session.max_docs_per_request;
+
+        // --- per-batch extract → write loop ---
+        let mut nodes_written: u64 = 0;
+        let mut edges_written: u64 = 0;
+        let docs_processed = documents.len() as u64;
+
+        for (batch_idx, batch) in documents.chunks(max_docs).enumerate() {
+            let request_id = format!("req-{batch_idx}");
+            let docs_json: Vec<Value> = batch
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "source_doc_id": d.source_doc_id,
+                        "body": d.body,
+                    })
+                })
+                .collect();
+
+            // Send the framed extract request and receive its matching `result`.
+            // The session adds protocol/type/request_id and validates the
+            // type=="result" + matching request_id envelope (fix-24 [P2]).
+            let result = session
+                .request(&request_id, vec![("documents".to_string(), Value::Array(docs_json))])?;
+
+            // R-20-E2 (0.8.20 Slice 5c, design §4 item 10) — every row this batch
+            // produces takes its provenance from the CALLER's
+            // `ExtractDocument.source_doc_id`, NEVER from the model's echo of that
+            // field. The echo is attacker-/error-controlled: a harness that omits
+            // it used to yield rows with NULL `source_id`, which no
+            // `excise_source` call can reach — the model could make a row
+            // permanently un-erasable simply by dropping a key.
+            //
+            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+            // among ids the caller already supplied in THIS batch, and never as a
+            // value:
+            //
+            //   * single-document batch — attribution is unambiguous, so the
+            //     caller's id is used and the echo is ignored outright;
+            //   * multi-document batch — the echo must name one of the batch's
+            //     caller-supplied ids (the caller's own copy of the string is
+            //     then stored). An absent or unrecognised echo is a protocol
+            //     violation and fails the ingest LOUDLY with
+            //     `EngineError::Extractor`, because the alternative — guessing an
+            //     attribution — would silently mis-file the row under a document
+            //     whose erasure would then not remove it.
+            let batch_provenance = batch
+                .iter()
+                .map(|d| SourceId::new(d.source_doc_id.clone()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+                if let [only] = batch_provenance.as_slice() {
+                    return Ok(only.clone());
+                }
+                let echo = echo.ok_or(EngineError::Extractor)?;
+                batch_provenance
+                    .iter()
+                    .find(|caller_id| caller_id.as_str() == echo)
+                    .cloned()
+                    .ok_or(EngineError::Extractor)
+            };
+
+            // --- map entities → PreparedWrite::Node with stable logical_id ---
+            let entities =
+                result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let raw_edges =
+                result.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            // R3 (SCHEMA-GATE-1): collect substituted_t_valid values from
+            // temporal_fallback warnings. An edge whose t_valid matches one of
+            // these values had its event time defaulted to created_at (not
+            // text-grounded) and must be flagged so BFS can exclude it.
+            let fallback_dates: std::collections::HashSet<String> = result
+                .get("warnings")
+                .and_then(|v| v.as_array())
+                .map(|ws| {
+                    ws.iter()
+                        .filter(|w| {
+                            w.get("kind").and_then(|k| k.as_str()) == Some("temporal_fallback")
+                        })
+                        .filter_map(|w| {
+                            w.get("substituted_t_valid")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if !entities.is_empty() {
+                let node_batch: Vec<PreparedWrite> = entities
+                    .iter()
+                    .map(|entity| -> Result<PreparedWrite, EngineError> {
+                        let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id = resolve_provenance(
+                            entity.get("source_doc_id").and_then(|v| v.as_str()),
+                        )?;
+                        // fix-34 [P1]: derive_logical_id now rejects an empty name
+                        // or a ':' in kind — inputs that would collide distinct
+                        // entities onto one identity and silently drop one.
+                        let logical_id = derive_logical_id(kind, name)?;
+                        Ok(PreparedWrite::Node {
+                            kind: kind.to_string(),
+                            body: name.to_string(),
+                            source_id: source_doc_id,
+                            logical_id: Some(logical_id),
+                            state: InitialState::Active,
+                            reason: None,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // fix-29/fix-34 [P2]: deduplicate within the batch by logical_id so
+                // a harness that returns the same entity twice does not write a row
+                // that immediately supersedes its sibling (shared with the edge arm).
+                let node_batch = dedup_prepared_by_logical_id(node_batch);
+
+                // fix-23 [P2]: skip entities whose logical_id is already active
+                // to avoid needless supersede churn on re-ingest.
+                let ids: Vec<String> = node_batch
+                    .iter()
+                    .filter_map(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            Some(id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let existing: std::collections::HashSet<String> = self
+                    .read_get_many(&ids)?
+                    .into_iter()
+                    .zip(ids)
+                    .filter_map(|(opt, id)| opt.map(|_| id))
+                    .collect();
+                let new_nodes: Vec<PreparedWrite> = node_batch
+                    .into_iter()
+                    .filter(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            !existing.contains(id)
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+                if !new_nodes.is_empty() {
+                    let n = new_nodes.len() as u64;
+                    self.write(&new_nodes)?;
+                    nodes_written = nodes_written.saturating_add(n);
+                }
+            }
+
+            // --- map edges → PreparedWrite::Edge with G11 columns ---
+            if !raw_edges.is_empty() {
+                // fix-33 [P1]: the protocol gives edges NO endpoint types —
+                // `from_entity`/`to_entity` reference entities BY NAME (or alias).
+                // Build a name+alias → (canonical name, type) index from the same
+                // result's `entities[]` so each endpoint's logical_id matches the
+                // node's. (Nodes derive id from the entity's real type; defaulting
+                // the edge endpoint kind to "entity" orphaned every contract-faithful
+                // edge from its nodes and tripped the G8 dangling probe.)
+                //
+                // Two passes so a canonical NAME always wins over a (different
+                // entity's) ALIAS regardless of `entities[]` order: pass 1 inserts
+                // all canonical names, pass 2 fills aliases only where no name
+                // already claims that key. (Name↔name clashes remain first-wins —
+                // contradictory input; no principled resolution exists.)
+                let mut entity_index: std::collections::HashMap<String, (String, String)> =
+                    std::collections::HashMap::new();
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    entity_index
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| (name.to_string(), kind));
+                }
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
+                        for alias in aliases.iter().filter_map(|a| a.as_str()) {
+                            if !alias.is_empty() {
+                                entity_index
+                                    .entry(alias.to_lowercase())
+                                    .or_insert_with(|| (name.to_string(), kind.clone()));
+                            }
+                        }
+                    }
+                }
+
+                let edge_batch: Vec<PreparedWrite> = raw_edges
+                    .iter()
+                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                        let from_entity =
+                            edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let to_entity =
+                            edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let relation =
+                            edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
+                        let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_valid =
+                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_invalid =
+                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+                        // protocol boundary; reject out-of-range values.
+                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+                            Some(c) if !(0.0..=1.0).contains(&c) => {
+                                return Err(EngineError::Extractor);
+                            }
+                            c => c,
+                        };
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id =
+                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
+
+                        // fix-33 [P1]: resolve each endpoint via the entities[]
+                        // index (by name or alias) → the entity's canonical
+                        // (name, type); fall back to kind "entity" only for a truly
+                        // unlisted name (synthesized dangling endpoints ARE listed,
+                        // so this is the defensive path). derive_logical_id (fix-34)
+                        // still rejects an empty name / ':' in kind.
+                        let (from_name, from_kind) = entity_index
+                            .get(&from_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (from_entity.to_string(), "entity".to_string()));
+                        let (to_name, to_kind) = entity_index
+                            .get(&to_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (to_entity.to_string(), "entity".to_string()));
+                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
+                        let edge_key = format!("{from_lid}:{to_lid}:{relation}");
+                        let edge_lid = derive_logical_id("edge", &edge_key)?;
+
+                        let is_temporal_fallback = t_valid
+                            .as_deref()
+                            .map(|tv| fallback_dates.contains(tv))
+
+exec
+/bin/bash -lc "git diff 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- CHANGELOG.md dev/design/0.8.20-slice0-erasure-design.md dev/todos-and-considerations-ledger.jsonl dev/todos-and-considerations-ledger.jsonl.seq | sed -n '1,260p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8bfa7efc..705675b4 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -12,6 +12,30 @@ AC-050c) gates merges against this invariant.
+ 
+ ### Changed — BREAKING
+ 
++- **Multi-document `ingest_with_extractor` batches now require per-entity
++  attribution (0.8.20, R-20-E2).** Provenance is taken from the caller's
++  `ExtractDocument.source_doc_id`; the model's echo of that field is accepted
++  only as a *selector* among the ids the caller supplied in the same batch, and
++  never as a value.
++
++  - **Single-document batches are unaffected.** Attribution is unambiguous, so
++    the echo is ignored and the caller's id is used even if the model omits it.
++  - **Multi-document batches** must carry a `source_doc_id` on **every entity
++    and every edge**, naming one of that batch's documents. An absent or
++    unrecognised value now fails the whole ingest with `ExtractorError`
++    (Rust: `EngineError::Extractor`).
++
++  *Why it fails instead of defaulting:* with several documents in flight the
++  engine cannot know which one an entity came from, and every fallback would
++  silently file the row under the wrong document — leaving it behind when that
++  document is erased. That is the un-erasable-row defect this release closes, so
++  the engine refuses to guess.
++
++  *Migration:* have your extractor set `source_doc_id` on each element it
++  returns. **If it cannot attribute its output, submit single-document
++  batches** — one `ExtractDocument` per call. See
++  [Erasure](https://fathomdb.dev/operations/erasure/).
++
+ - **`source_id` (provenance) is now MANDATORY on every canonical write
+   (0.8.20, R-20-E3).** On the Rust surface `PreparedWrite::Node.source_id` and
+   `PreparedWrite::Edge.source_id` changed from `Option<String>` to the new
+@@ -50,13 +74,33 @@ AC-050c) gates merges against this invariant.
+ - **Retention `cap` semantics changed (0.8.20, R-20-E7/D-A).** The
+   `enforce_provenance_retention` cap now bounds the **sweepable** rows in
+   `operational_mutations`, not every row in the table: the erasure-audit
+-  collections (`excise_source_audit`, `excise_record_audit`) are exempt from the
+-  sweep. A database with audit rows will therefore retain more total op-store
+-  rows than the configured cap.
++  collections (`excise_source_audit`, `excise_record_audit`) and the engine's
++  pending-redaction intent queue (`erasure_pending_redaction`) are exempt from
++  the sweep. A database with audit rows will therefore retain more total
++  op-store rows than the configured cap. An operator who sized `cap` against a
++  physical row count should re-check that assumption.
+ 
+   *Why:* accountability — demonstrating *that* an erasure occurred — is a
+   distinct obligation from erasure itself, and the previous behaviour let a
+-  retention cap silently destroy the proof.
++  retention cap silently destroy the proof. The pending-redaction queue is
++  exempt for a second reason: it records an *undischarged* erasure obligation,
++  so sweeping it under cap pressure would silently convert a pending redaction
++  into a reported success.
++
++- **Schema version 20 → 21 (0.8.20).** Migration step 21 back-fills legacy
++  NULL provenance (see the `source_id` entry above). The bump is one-way: an
++  engine older than 0.8.20 refuses to open a migrated database.
++
++  The back-fill predicate is **asymmetric between the two canonical tables**,
++  deliberately. On `canonical_nodes` it is
++  `source_id IS NULL AND logical_id IS NULL`; on `canonical_edges` it is
++  `source_id IS NULL` alone. The `logical_id` gate exists so that a governed
++  row — which `purge` can already reach by `logical_id` — is not made
++  collateral of an `excise_source('_legacy:pre-0.8.20')` call. That rationale
++  holds for nodes and **not** for edges: `purge` resolves its target only
++  through `canonical_nodes` and then erases edges by *endpoint*, never by edge
++  `logical_id`. Gating edges on `logical_id` would therefore have left legacy
++  edges reachable by no erasure verb at all.
+ 
+ ### Added
+ 
+@@ -80,14 +124,21 @@ AC-050c) gates merges against this invariant.
+   truncate the write-ahead log (the erased bytes were previously still
+   `grep`-able in `<db>-wal`, since a `DELETE` appends frames rather than
+   rewriting them) and selectively redact the erased ids from the telemetry sink,
+-  leaving unrelated sink records intact. On a persistent checkpoint `BUSY` the
+-  verb now raises the typed `ErasureIncomplete` rather than reporting success —
+-  an erasure verb must never report success on an incomplete erasure.
++  leaving unrelated sink records intact. On a persistent checkpoint `BUSY`, on
++  a telemetry sink that could not be redacted, and on a sink that has since
++  been **rotated** (a rotated file is not a redacted file — the erased ids may
++  still be in the rotated copy), the verb raises the typed `ErasureIncomplete`
++  rather than reporting success. An erasure verb must never report success on
++  an incomplete erasure. A redaction that cannot be completed in-line is
++  recorded as a durable pending-redaction obligation rather than dropped.
+ 
+ - **`excise_collection_record(collection, record_key)` (0.8.20, R-20-E7).**
+   Record-level op-store erasure. The op-store previously had no record-level
+   delete at all, so a caller holding an erasure obligation over an op-store
+-  record had no way to discharge it.
++  record had no way to discharge it. It **refuses** to address the engine's
++  own erasure bookkeeping (the audit collections and the pending-redaction
++  queue), which would otherwise let an operator destroy the proof of an
++  erasure, or an undischarged obligation, through a normal-looking call.
+ 
+ - **New public types.** Rust: `SourceId`, `OrphanProvenanceReport`,
+   `OrphanProvenanceSource`; `ExciseReport` is no longer behind the `operator`
+diff --git a/dev/design/0.8.20-slice0-erasure-design.md b/dev/design/0.8.20-slice0-erasure-design.md
+index cf801cdb..ec0a773c 100644
+--- a/dev/design/0.8.20-slice0-erasure-design.md
++++ b/dev/design/0.8.20-slice0-erasure-design.md
+@@ -143,12 +143,51 @@ scanning the raw `.db` and `-wal` files for the erased body, not by querying.
+ | 9 | `excise_collection_record(collection, record_key)` + CLI | `op_store_record_erasable_by_key` | as v4 |
+ | **9a** | **Audit-durability: exempt the erasure-audit collection from `enforce_provenance_retention` (:10070)** | `erasure_audit_survives_retention_sweep` | **NEW — D-A; HITL-gated** |
+ | 9b | `erase_source(source_id)` SDK lifecycle verb (Py + TS + Rust facade), one engine path with `excise_source` | `sdk_only_consumer_erases_without_cli`; **AC-041 still GREEN** | as v4 |
+-| 10 | `ingest_with_extractor` uses `d.source_doc_id` (:1934/:3598), not the model echo (:3643-3646, :3770-3771) | `extractor_omitting_source_doc_id_still_excisable` | anchors confirmed |
++| 10 | `ingest_with_extractor` uses `d.source_doc_id` (:1934/:3598), not the model echo (:3643-3646, :3770-3771) | `extractor_omitting_source_doc_id_still_excisable`; multi-doc arm in `multidoc_extractor_provenance` | anchors confirmed; **see §4.1 — contract change for extractor callers** |
+ | 11 | `doctor orphan-provenance` read-only verb | `doctor_lists_per_source_counts` | as v4 |
+ | 12 | Docs: erasure boundary, non-PII `source_id` (**corrected rationale**), re-generate exports | — | D-A |
+ 
+ **Not gating Slice 0:** Go `fathom-integrity` erasure detection (no Go source in-tree; gitignored).
+ 
++### 4.1 Item 10 consequence — **multi-document extractor batches now require per-entity attribution** *(behavioral contract change)*
++
++Item 10 made ingest provenance caller-grounded. The mechanism (`resolve_provenance`)
++admits the model's `source_doc_id` echo **only as a selector** among the ids the
++caller supplied in the same batch, never as a value. That yields two different
++contracts depending on batch size, and the second one is **new work for callers**:
++
++| Batch | Echo required? | Behavior |
++|---|---|---|
++| **Single document** | No | Attribution is unambiguous. The echo is ignored outright and the caller's `ExtractDocument.source_doc_id` is used, even if the model omitted or altered the field. |
++| **Multiple documents** | **Yes, per entity AND per edge** | The echo must name one of the batch's caller-supplied ids. The caller's own copy of that string is then stored. An **absent or unrecognised** echo is a protocol violation and fails the ingest with `EngineError::Extractor`. |
++
++**Why the multi-document arm fails rather than defaults.** With several documents
++in flight the engine cannot know which one an entity came from. Every available
++fallback — first id in the batch, most recent, arbitrary — silently *mis-files*
++the row under a document whose erasure would then not remove it. That is exactly
++the un-erasable-row defect item 10 exists to close, so guessing would reintroduce
++the bug in a quieter form. **Failing loudly is the designed behavior and must not
++be relaxed.** `multidoc_batch_without_entity_echo_fails_loudly` and
++`multidoc_batch_with_foreign_echo_fails_loudly` pin it.
++
++**What callers must do.** An extractor that can attribute each element should set
++`source_doc_id` on every entity and every edge it returns. **An extractor that
++cannot attribute its output must submit single-document batches** — one
++`ExtractDocument` per `ingest_with_extractor` call — where attribution is
++unambiguous and no echo is needed. There is no third option, by construction.
++
++**How this was found (coverage note).** Item 10 shipped with single-document
++coverage only, which is precisely the branch that ignores the echo — so nothing
++exercised the arm that demands one, and the in-tree ELPS harness (which backfilled
++`source_doc_id` onto edges but never entities) broke on every multi-document
++batch. The general lesson for this slice: when a change introduces a
++**cardinality-dependent** contract, coverage of one cardinality proves nothing
++about the other.
++
++**Files carrying the requirement.** `src/python/eval/elps_live_harness.py` — both
++the runtime backfill and the LLM-facing system prompt + JSON schema, since a stub
++satisfying the contract is not evidence a live model will.
++
+ ---
+ 
+ ## 5. AC allocation — **the plan's "start at AC-078" is UNSAFE**
+diff --git a/dev/todos-and-considerations-ledger.jsonl b/dev/todos-and-considerations-ledger.jsonl
+index 0af51159..349119b4 100644
+--- a/dev/todos-and-considerations-ledger.jsonl
++++ b/dev/todos-and-considerations-ledger.jsonl
+@@ -30,3 +30,18 @@
+ {"ts": "2026-07-19T03:45:24.246Z", "seq": 30, "kind": "caveat", "summary": "SLICE 5's SourceId NEWTYPE WILL BREAK THE eu7 HARNESS (and every other in-tree PreparedWrite construction) -- budget for it. R-20-E3 / v4 section 3.2 replaces 'source_id: Option<String>' with a mandatory SourceId newtype on the public PreparedWrite, making 'no provenance' INEXPRESSIBLE. That is the point of the change -- but it means EVERY existing in-tree construction of PreparedWrite with 'source_id: None' stops compiling. CONFIRMED INSTANCE: src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:405 seeds the real-corpus haystack with 'source_id: None, logical_id: None'. eu7 is the ANN-fidelity gate feeding R-20-EU7 at Slice 40, so if Slice 5 lands the newtype without updating this harness, the Slice-40 eu7 basis decision cannot even be measured -- the test will not build. v4 section 3.2 only anticipated 'two internal callers (:5186, :5209, the doc(hidden) poison fixture)'; the TEST-side callers were not enumerated. ACTION for Slice 5: sweep ALL constructions of PreparedWrite across src/ AND tests/ (not just the two v4 names), give each a real SourceId, and re-verify the eu7 harness still BUILDS before landing. Cheap to do with the change, expensive to discover at Slice 40.", "cx": "TC-17", "release": "0.8.20", "slice": "5", "status": "OPEN", "refs": ["file:src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs", "file:dev/design/0.8.20-erasure-and-h-end-state-v4.md#3.2"]}
+ {"ts": "2026-07-19T03:45:24.280Z", "seq": 31, "kind": "observation", "summary": "PROCESS: committing a codex transcript into the reviewed range pollutes the NEXT review's diff. TC-RUBRIC-7 requires persisting every codex section-9 transcript to a durable release-namespaced path. At 0.8.20 Slice-0 the transcript was committed to dev/plans/runs/codex/0.8.20/ and the fix-1 RE-review was then run with the same '--base 4ca70ba6'. Because the base was unchanged, the re-review's diff INCLUDED the previously-committed transcript file, so codex re-read its own prior findings as though they were part of the change under review -- the old [P2] finding text reappeared verbatim in the new transcript, which is easy to misread as 'the finding was not fixed'. It was fixed (verified independently: pre-fix exit 128, post-fix exit 0 under codex's own reproduction), and codex's actual terminal verdict was PASS. MITIGATIONS (pick one, for every later slice): (a) re-review against a base that already contains the prior transcript, (b) persist transcripts on a path excluded from the review scope, or (c) commit transcripts only AFTER the slice's final review round. Recommend (c) as the simplest: it keeps the reviewed diff to real code+docs and still satisfies TC-RUBRIC-7 at slice close. Also note the transcript path was pinned as .log (not .md) to match the existing 0.8.16-slice-*-codex-review-*.log convention and stay out of markdownlint scope.", "cx": "TC-18", "release": "0.8.20", "slice": "0", "status": "OPEN", "refs": ["file:dev/plans/runs/STATUS-0.8.20.md#5.1"]}
+ {"ts": "2026-07-19T04:09:21.079Z", "seq": 32, "kind": "observation", "summary": "ROOT CAUSE: the eu7 harness CANNOT COMPLETE ON CPU on this box -- BATCH=256 exceeds its own hardcoded 600s drain timeout at the measured embed rate. Measured at 4ca70ba6 by bisecting N (three runs): n=7667 FAILED, n=200 FAILED, n=20 PASSED. All three failures are identical: panic at eu7_real_corpus_ac.rs:414 'seed drain (batch): Scheduler' == engine.drain(600_000) -> wait_for_idle timed out -> EngineError::Scheduler. THE WORKER IS NOT WEDGED: n=20 passed cleanly (exit 0, vector_stage recall@10 = 1.0000, 258.54s) so the embed/projection path is FUNCTIONALLY CORRECT. It is THROUGHPUT. The n=20 run reports seed_ms=111670 for 20 docs = 0.179 docs/sec, which is ~7.3x SLOWER than the 1.3 docs/sec the harness docstring assumes (:97-99). At 0.179 docs/s a BATCH of 256 needs ~1430s, so it can NEVER drain inside the hardcoded 600_000 ms -- the harness is STRUCTURALLY unable to run here regardless of N, because failure happens on the FIRST batch. Full 7667-doc seed would need ~11.9 HOURS even if the timeout were raised. NOT a weights problem (cache complete: config.json + tokenizer.json + model.safetensors present) and not CPU contention (load 4.5 of 24 cores). OPTIONS for Slice 40: (a) reduce BATCH 256 -> 64 (64/0.179 = 358s, fits inside 600s) or make BATCH/timeout env-tunable -- minimal, surgical, does NOT change measurement semantics; (b) raise the drain timeout and accept a ~12h CPU run; (c) investigate the 7x throughput shortfall vs the documented rate, which may itself be a real CPU-embed regression worth catching. RECOMMEND (a)+(c). NOTE THE TENSION: TC-12 forbids running eu7 on GPU for comparability, and CPU cannot finish -- so R-20-EU7 has NO runnable path until this is fixed. Slice 40 must not treat this as optional. SIDE-EFFECT HAZARD: the harness WRITES dev/plans/runs/eu7-latest-measurements.json into the repo on every run, so a reduced-N scouting run silently produces a file that LOOKS authoritative (the n=20 run wrote recall=1.0000 there). Do not commit it from a scouting run.", "cx": "TC-19", "release": "0.8.20", "slice": "40", "status": "OPEN", "refs": ["file:src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs", "seq:26"]}
++{"ts": "2026-07-19T23:49:04.707Z", "seq": 33, "kind": "observation", "summary": "R-20-EU7 is CLOSED BY HITL (zero runs authorized) but the prohibition is UNENFORCEABLE: eu7_real_corpus_ac has no #[ignore] and no env gate, so a bare 'cargo test --workspace' or 'cargo test -p fathomdb-engine --features operator' WILL execute it. Slice 5 complied only by running targets individually. Per fix-the-tooling-not-the-actor this wants a mechanical guard -- but a naive #[ignore] creates the OPPOSITE hazard at Slice 40, where eu7 IS wanted and would then silently never run (TC-13 vacuous-green class). Needs a Steward/HITL decision on the guard's shape, not a unilateral fix.", "id": "TC-20", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:00b46b84"]}
++{"ts": "2026-07-19T23:49:04.735Z", "seq": 34, "kind": "observation", "summary": "PRE-EXISTING (not 0.8.20): pr_g10_reranker_ce has NOT COMPILED under --features default-reranker since 0.8.19's SearchHit.id u64->IdSpace swap; file verified byte-identical to baseline, so this is not a Slice-5 regression. Root cause of its survival: the release DoD full-workspace gate (cargo clippy/check --workspace --all-targets) does NOT cover feature-gated targets, so default-reranker targets are invisible to it. Two gaps: fix the compile break, and decide whether the DoD gate must fan out over feature combinations.", "id": "TC-21", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:00b46b84"]}
++{"ts": "2026-07-19T23:49:04.758Z", "seq": 35, "kind": "caveat", "summary": "STRUCTURAL: a BREAKING change to the write path cannot be X1-verified from an orchestration worktree. maturin develop / pip install -e are prohibited there (they rebind the shared .venv), so the Python native extension cannot be built or executed -- Slice 5c's SourceId newtype broke ~50 Python fixtures that could only be statically checked (py_compile + ruff + AST audit), never run. TypeScript is NOT subject to this: 'npm install' in src/ts is directory-local, creates no shared state, and gave a real tsc + node --test green (170 passing). Rule of thumb for future breaking slices: TS is worktree-verifiable, Python is NOT, and a main-tree pytest run is owed before land. 0.8.19 already taught that an env trap is a landing blocker, not a follow-up.", "id": "TC-22", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:875017a2"]}
++{"ts": "2026-07-19T23:49:04.781Z", "seq": 36, "kind": "observation", "summary": "TOOLING: implementer closure output.json artifacts left UNTRACKED (orchestration.md section 8 permits this, orchestrator promotes later) are destroyed by routine git hygiene. Happened TWICE in Slice 5: one implementer ran 'git checkout --' on uncommitted lib.rs and lost a whole implementation; another ran 'git stash push -u' + 'git stash drop' and swept away three prior sub-slices' untracked output.json (recovered byte-identical from the dropped stash's third parent, verified via git hash-object). Fix the tooling: have implementers COMMIT output.json as their final commit rather than leaving it untracked, so the closure witness is not destructible by ordinary git commands.", "id": "TC-23", "release": "0.8.20", "slice": "5", "status": "open"}
++{"ts": "2026-07-19T23:49:04.804Z", "seq": 37, "kind": "caveat", "summary": "BEHAVIOR CHANGE to a shipped knob: enforce_provenance_retention's 'cap' now bounds SWEEPABLE rows, not physical rows in operational_mutations. Slice 5 exempts two collections from the sweep -- the erasure-audit collection (per HITL ruling 'there must be an auditable record of deletion event', defect D-A) and the new pending-redaction intent queue (sweeping it would re-create the P2 false-success defect via cap pressure). Consequence: an operator who sized 'cap' against physical row count will see the table grow beyond it by the exempt collections. Deliberate, but it needs a changelog line and any operator-facing retention docs updated.", "id": "TC-24", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:18197495"]}
++{"ts": "2026-07-19T23:49:04.827Z", "seq": 38, "kind": "observation", "summary": "VACUOUS-GREEN HAZARD: src/rust/crates/fathomdb/tests/sdk_only_erasure.rs is '#![cfg(not(feature = \"operator\"))]' by design -- it proves an SDK-ONLY consumer with no CLI/operator surface can erase (R-20-E4). Consequence: any feature-unified run (cargo test --workspace, or anything enabling 'operator') compiles it to ZERO tests and reports success having asserted nothing. It requires the explicit invocation 'cargo test -p fathomdb --test sdk_only_erasure'. CI must carry that invocation explicitly or the R-20-E4 guarantee is untested.", "id": "TC-25", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:4b78658d"]}
++{"ts": "2026-07-19T23:49:04.851Z", "seq": 39, "kind": "todo", "summary": "DESIGN TEXT CORRECTION OWED: plan-0.8.20 R-20-E8 and the v4/v5 designs state the legacy provenance backfill is gated on 'logical_id IS NULL ONLY', rationale being that governed rows stay purge-addressable by logical_id. codex section 9 proved that rationale is TRUE FOR NODES and FALSE FOR EDGES -- purge_inner resolves targets exclusively via 'SELECT state FROM canonical_nodes WHERE logical_id = ?1', so an edge's logical_id is only a supersession identity and confers NO purge-addressability. A legacy edge with source_id NULL and logical_id NOT NULL was therefore erasable by no verb at all. Shipped fix (step 21): nodes keep the logical_id IS NULL gate; edges backfill on source_id IS NULL alone. TC-11 pin NOT affected (only source_id is written, never logical_id). The design/plan prose still states the unqualified rule and must be corrected.", "id": "TC-26", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:989fd7ef"]}
++{"ts": "2026-07-20T00:51:27.551Z", "seq": 40, "kind": "observation", "summary": "HARD-RULE TRAP: 'maturin develop' can fire AUTONOMOUSLY from a worktree without any agent issuing it. src/python/tests/conftest.py::_ensure_test_hooks_binding (line ~118) shells out to 'maturin develop' to build the test-hooks extension. So merely running the Python suite from an orchestration worktree attempts the one thing the build-isolation rule forbids (it rebinds the SHARED .venv). Observed live in Slice 5 fix-3. It failed harmlessly ONLY because the interpreter was not an activated virtualenv (conftest guards on that); with an activated venv it would have rebound the shared .venv to the worktree. Orchestrator verified no damage: /home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth mtime still 2026-07-09, still pointing at the MAIN repo. Per fix-the-tooling-not-the-actor, conftest needs an explicit guard that refuses to run maturin when CWD is a linked worktree.", "id": "TC-27", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:8e09b950"]}
++{"ts": "2026-07-20T00:51:27.581Z", "seq": 41, "kind": "observation", "summary": "UPDATE (raised on THREE consecutive codex rounds in Slice 5): the eu7 no-run prohibition is still unenforceable, and scripts/agent-test.sh contains a bare 'cargo test --workspace' that WOULD execute eu7_real_corpus_ac. Slice 5 complied only by every implementer remembering to pass '-- --skip eu7_real_corpus_ac_validation' or to run targets individually. Original entry stands: the guard's shape needs a Steward/HITL decision because a naive #[ignore] creates the opposite (vacuous-green) hazard at Slice 40 where eu7 IS wanted.", "id": "TC-20", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:8e09b950"]}
++{"ts": "2026-07-20T00:51:27.604Z", "seq": 42, "kind": "caveat", "summary": "DESIGN HARDENING OWED (FU-FIX3-3): the pending-redaction queue introduced in Slice 5 is a transactional outbox stored as ordinary operational_mutations rows (collection_name='erasure_pending_redaction'). Its 'a row is removed ONLY when the obligation is discharged' invariant is upheld by THREE separate correct call sites (retention sweep exemption, excise_collection_record refusal, the NotFound arm) rather than enforced structurally -- and it shipped with three ways to remove a row of which only one proved anything. Every known path is now closed, but NOTHING PREVENTS A FIFTH. Codex found a defect in this mechanism on each of rounds 1, 2 and 3. Structural options: give it its own table with no generic DELETE verb, or a trigger. Deliberately NOT done inside a fix round.", "id": "TC-28", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:8e09b950"]}
++{"ts": "2026-07-20T00:51:27.627Z", "seq": 43, "kind": "observation", "summary": "RESIDUAL PATTERN (FU-FIX2-2): 'freeze the projection scanner, then wait on a DATABASE-derived idleness probe' is the shape behind a Slice-5 P2 where erase_source/excise_source could strand unqueued work and time out with EngineError::Scheduler after the full 30s LIFECYCLE_DRAIN_TIMEOUT_MS. purge and (now) the source-erasure path drain BEFORE freezing. run_rebuild is the LAST remaining instance that still freezes before its only drain -- likely benign (operator action, not a write-then-act sequence) but unaudited. Also logged: operator_cli::t_s34_dump_mutations_lock_held_exits_71 is FLAKY under cross-binary lock contention (it spawns its own lock holder); 25/25 in isolation, flaked once in a full-suite run. Touches no erasure path.", "id": "TC-29", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:7be20ec3"]}
++{"ts": "2026-07-20T01:09:57.581Z", "seq": 44, "kind": "observation", "summary": "VACUOUS-GREEN HAZARD (found closing Slice 5): scripts/agent-lint-md.sh exits 0 SILENTLY from any linked worktree because node_modules/.bin/markdownlint-cli2 is absent there and the structural lint self-skips -- same failure class as TC-13 (eu7 corpus skip) and TC-25 (cfg-gated target compiles to zero tests). Running the real linter (npx --yes markdownlint-cli2) gives exit 1: 9 PRE-EXISTING MD025/MD001 issues in dev/research/personal-agent-database-market-2026-07-02.md, untouched since c366d6e0 (2026-07-02). Two implications: (a) the markdown gate is unreliable from every orchestration worktree, and (b) agent-lint-md.sh is likely RED in the main tree right now on that research file, independent of 0.8.20. Note also STATUS boards sit inside the config's dev/plans/runs/** ignore and are never linted.", "id": "TC-30", "release": "0.8.20", "slice": "5", "status": "open"}
++{"ts": "2026-07-20T02:14:53.190Z", "seq": 45, "kind": "observation", "summary": "WRITE/READ PROVENANCE ASYMMETRY -- the 'NO SDK EXPOSURE' erasure gap, now measured. 0.8.20 makes provenance structurally MANDATORY on write (SourceId newtype), but PySearchHit.source_id is populated ONLY for graph-arm hits and is None for every two-arm (text/vector) hit -- documented at src/rust/crates/fathomdb-py/src/lib.rs:537-539. So a caller can be forced to supply provenance yet cannot read it back on an ordinary search hit. Measured consequence: BOTH remaining Python suite failures (test_option2_elps_pipeline::test_build_fathomdb_elps_path_uses_ingest_with_extractor and test_verify_embed_db::test_complete_embed_is_queryable) are caused by this -- _doc_id_of falls through the 'if sid:' branch because source_id is None, reaching int(sh.id) which has raised TypeError since 0.8.19 made SearchHit.id an IdSpace (C-2). ONE read-side fix (expose source_id on all arms) likely closes BOTH. Verified pre-existing: identical failures on origin/main f22e4947 in an isolated A/B clone; _doc_id_of is byte-identical on main.", "id": "TC-31", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:9c87d758"]}
++{"ts": "2026-07-20T02:14:53.219Z", "seq": 46, "kind": "observation", "summary": "ERASURE GAP adjacent to R-20-E2 (found during fix-4, NOT fixed -- entity-identity design, out of slice scope): ingest_with_extractor dedupes entities within a batch by logical_id derived from (kind, name). Two documents naming the SAME entity collapse to ONE canonical row carrying the FIRST document's provenance. Consequence for erasure completeness: erasing the second document leaves that entity row behind, still attributed to the first document -- the row survives an erasure that should have removed the second document's contribution. Visible in the ELPS stub path (both docs yield 'TestEntity' => 1 node). Interacts with the multi-doc per-entity attribution contract added in 0.8.20: attribution is now required per entity, but dedup silently discards all but the first attribution.", "id": "TC-32", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:9c87d758"]}
++{"ts": "2026-07-20T02:14:53.242Z", "seq": 47, "kind": "observation", "summary": "UPDATE -- GUARD SHIPPED, and the hazard was confirmed LIVE not hypothetical. src/python/tests/conftest.py now REFUSES to shell out to 'maturin develop' unless FATHOMDB_TESTS_ALLOW_REBUILD=1 is set (0.8.20 Slice 5, commit 265c54c0). During verification the probe showed the orchestration worktree's binding LACKS test-hooks, meaning the pre-guard code WOULD have rebuilt from that worktree into the shared .venv given an activated virtualenv. Downstream effect to know about: scripts/agent-test.sh's pytest step now FAILS LOUDLY instead of silently auto-rebuilding -- any isolated/throwaway verification environment must set FATHOMDB_TESTS_ALLOW_REBUILD=1 explicitly (the fresh-clone verification run did exactly this).", "id": "TC-27", "release": "0.8.20", "slice": "5", "status": "open", "refs": ["git:265c54c0"]}
+diff --git a/dev/todos-and-considerations-ledger.jsonl.seq b/dev/todos-and-considerations-ledger.jsonl.seq
+index 1758dddc..801f1801 100644
+--- a/dev/todos-and-considerations-ledger.jsonl.seq
++++ b/dev/todos-and-considerations-ledger.jsonl.seq
+@@ -1 +1 @@
+-32
+\ No newline at end of file
++47
+\ No newline at end of file
+
+exec
+/bin/bash -lc "grep -n \"pub fn open\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -20; sed -n '2500,2640p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+3167:    pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+3186:    pub fn open_with_choice(
+3260:    pub fn open_with_migration_event_sink(
+3276:    pub fn open_with_migrations_for_test(
+3293:    pub fn open_with_subscriber_for_test(
+3308:    pub fn open_without_embedder_for_test(
+3322:    pub fn open_with_embedder_for_test(
+/// parameter. The `search_index_v2` FTS5 index is still load-bearing — it does
+/// the candidate recall (`MATCH`) that the scorer then ranks.
+///
+/// Defaults match Robertson/SQLite BM25 (`b = 0.75`, `k1 = 1.2`) with uniform
+/// field weights. Engine-internal for 0.8.14 (no SDK surface).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bm25fQueryPlan {
+    pub weights: Bm25fFieldWeights,
+    pub b: f64,
+    pub k1: f64,
+}
+
+impl Default for Bm25fQueryPlan {
+    fn default() -> Self {
+        Self { weights: Bm25fFieldWeights::default(), b: 0.75, k1: 1.2 }
+    }
+}
+
+/// Snapshot of engine-internal counters returned by [`Engine::counters`].
+///
+/// Public key set is owned by `dev/design/lifecycle.md` § Public key set
+/// and locked by AC-004a. Reading a snapshot is non-perturbing per
+/// AC-004c. The 0.6.0 surface exposes exactly these seven fields.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CounterSnapshot {
+    pub queries: u64,
+    pub writes: u64,
+    pub write_rows: u64,
+    pub errors_by_code: BTreeMap<String, u64>,
+    pub admin_ops: u64,
+    pub cache_hit: u64,
+    pub cache_miss: u64,
+}
+
+pub use lifecycle::Subscription;
+
+/// Stable corruption-on-open detail carried by
+/// [`EngineOpenError::Corruption`].
+///
+/// Layout owned by `dev/design/errors.md` § Corruption detail owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CorruptionDetail {
+    pub kind: CorruptionKind,
+    pub stage: OpenStage,
+    pub locator: CorruptionLocator,
+    pub recovery_hint: RecoveryHint,
+}
+
+/// Open-path corruption category.
+///
+/// 0.6.0 emits exactly the four members below; per
+/// `dev/design/errors.md` § Engine.open corruption table, doctor-only
+/// finding codes are not represented here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CorruptionKind {
+    WalReplayFailure,
+    HeaderMalformed,
+    SchemaInconsistent,
+    EmbedderIdentityDrift,
+}
+
+/// `Engine.open` stage at which corruption was detected.
+///
+/// Per ADR-0.6.0-corruption-open-behavior, `LockAcquisition` is intentionally
+/// not a member here; lock contention is surfaced via
+/// [`EngineOpenError::DatabaseLocked`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenStage {
+    WalReplay,
+    HeaderProbe,
+    SchemaProbe,
+    EmbedderIdentity,
+}
+
+/// Locator pointing at the corrupted region of the database file.
+///
+/// Variant set owned by `dev/design/errors.md` § CorruptionLocator
+/// ownership. `OpaqueSqliteError` is the required fallback when SQLite
+/// surfaces corruption without a usable structured locator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CorruptionLocator {
+    FileOffset { offset: u64 },
+    PageId { page: u32 },
+    TableRow { table: &'static str, rowid: i64 },
+    Vec0ShadowRow { partition: &'static str, rowid: i64 },
+    MigrationStep { from: u32, to: u32 },
+    OpaqueSqliteError { sqlite_extended_code: i32 },
+}
+
+/// Recovery dispatch surface attached to a corruption detail.
+///
+/// `code` is the stable dispatch key used by bindings and doctor output;
+/// `doc_anchor` points at the documentation section that explains the
+/// remediation path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecoveryHint {
+    pub code: &'static str,
+    pub doc_anchor: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EngineOpenError {
+    DatabaseLocked {
+        holder_pid: Option<u32>,
+    },
+    Corruption(CorruptionDetail),
+    IncompatibleSchemaVersion {
+        seen: u32,
+        supported: u32,
+    },
+    MigrationError {
+        schema_version_before: u32,
+        schema_version_current: u32,
+        step_id: u32,
+    },
+    EmbedderIdentityMismatch {
+        stored: EmbedderIdentity,
+        supplied: EmbedderIdentity,
+    },
+    EmbedderDimensionMismatch {
+        stored: u32,
+        supplied: u32,
+    },
+    /// Embedder runtime returned a typed error during `Engine::open`.
+    Embedder(RuntimeEmbedderError),
+    Io {
+        message: String,
+    },
+}
+
+/// Caller-facing selector for the embedder used by an opened engine
+/// (`dev/design/embedder.md` §0).
+#[derive(Clone)]
+pub enum EmbedderChoice {
+    /// Use the engine's default embedder. With the `default-embedder`
+    /// Cargo feature enabled, this materializes a `CandleBgeEmbedder`
+    /// via the EU-3 loader at `Engine::open`; on first use the loader
+    /// downloads pinned bge-small-en-v1.5 weights from HuggingFace per
+    /// `ADR-0.7.1-default-embedder-weight-fetch`. Without the feature,
+    /// this returns `EmbedderError::Failed` directing the caller to
+    /// rebuild with `--features default-embedder` or supply
+
+exec
+/bin/bash -lc "sed -n '2640,2735p' src/rust/crates/fathomdb-engine/src/lib.rs; sed -n '3160,3195p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+    /// rebuild with `--features default-embedder` or supply
+    /// `EmbedderChoice::Caller`.
+    Default,
+    /// Caller supplies the embedder instance. The supplied embedder's
+    /// `identity()` becomes the workspace's default-profile identity.
+    Caller(Arc<dyn Embedder>),
+    /// No embedder configured. Engine opens; subsequent vector writes
+    /// fail with `EngineError::EmbedderNotConfigured`. Useful for
+    /// read-only or canonical-only flows.
+    None,
+}
+
+impl Display for EngineOpenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DatabaseLocked { holder_pid } => match holder_pid {
+                Some(pid) => write!(f, "database is locked by process {pid}"),
+                None => write!(f, "database is locked by another engine instance"),
+            },
+            Self::Corruption(detail) => {
+                write!(
+                    f,
+                    "engine corruption at {:?} stage: {}",
+                    detail.stage, detail.recovery_hint.code
+                )
+            }
+            Self::IncompatibleSchemaVersion { seen, supported } => write!(
+                f,
+                "database schema version {seen} is incompatible with supported version {supported}"
+            ),
+            Self::MigrationError {
+                schema_version_before,
+                schema_version_current,
+                step_id,
+            } => write!(
+                f,
+                "schema migration failed at step {step_id}; schema version remained between {schema_version_before} and {schema_version_current}"
+            ),
+            Self::EmbedderIdentityMismatch { stored, supplied } => write!(
+                f,
+                "embedder identity mismatch: stored {}@{}, supplied {}@{}",
+                stored.name, stored.revision, supplied.name, supplied.revision,
+            ),
+            Self::EmbedderDimensionMismatch { stored, supplied } => write!(
+                f,
+                "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
+            ),
+            Self::Embedder(err) => match err {
+                RuntimeEmbedderError::Timeout => write!(f, "embedder timeout during open"),
+                RuntimeEmbedderError::Failed { message } => {
+                    write!(f, "embedder failure during open: {message}")
+                }
+            },
+            Self::Io { message } => write!(f, "database I/O error: {message}"),
+        }
+    }
+}
+
+impl Error for EngineOpenError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EngineError {
+    Storage,
+    Projection,
+    Vector,
+    Embedder,
+    EmbedderNotConfigured,
+    KindNotVectorIndexed,
+    EmbedderDimensionMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    Scheduler,
+    OpStore,
+    WriteValidation,
+    SchemaValidation,
+    Overloaded,
+    Closing,
+    /// G11 (Slice 15) — BYO-LLM extractor subprocess error (protocol mismatch,
+    /// spawn failure, or harness-returned error code).
+    Extractor,
+    /// 0.8.12 Slice 15 (OPP-2, ADR-0.8.12) — BYO-LLM consolidation provider
+    /// error (protocol mismatch, spawn/handshake failure, task not advertised in
+    /// `supported_tasks`, or a malformed/out-of-cluster verdict). Rides the SAME
+    /// `provider_session` transport as `Extractor`; this is the task-specific leaf.
+    Consolidator,
+    /// G4 (Slice 35) — filter predicate construction error: non-allowlisted
+    /// path or invalid filter argument. NOT a panic — returned as a typed error
+    /// from [`Predicate::json_path_eq`] / [`Predicate::json_path_compare`].
+    InvalidFilter {
+        reason: String,
+    },
+    /// Slice 20 (G5/G6) — an argument is out of the accepted range (e.g.
+    /// `depth > 3` for graph traversal). The `msg` field carries a
+    /// human-readable explanation; it is intentionally non-exhaustive so the
+    /// binding layer can forward it as a `ValueError` / `TypeError`.
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+impl Engine {
+    pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            None,
+            None,
+            &mut |_| {},
+        )
+    }
+
+    /// Open an engine with an explicit [`EmbedderChoice`].
+    ///
+    /// Per `dev/design/embedder.md` §0 + the 0.7.1 EU-5 campaign, this is
+    /// the canonical entry point for selecting how the workspace's
+    /// default embedder is supplied. See [`EmbedderChoice`] for the
+    /// semantics of each variant; in particular `Default` materializes
+    /// the pinned BGE embedder via the loader when the `default-embedder`
+    /// feature is enabled.
+    pub fn open_with_choice(
+        path: impl Into<PathBuf>,
+        choice: EmbedderChoice,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        match choice {
+            EmbedderChoice::Default => Self::open_default_embedder(path),
+            EmbedderChoice::Caller(embedder) => {
+                let identity = embedder.identity();
+                Self::open_with_embedder_and_subscriber(
+                    path,
+
+exec
+/bin/bash -lc 'git diff --check 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited 2 in 0ms:
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:378: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:559: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:584: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:609: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:657: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:721: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:745: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:814: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:849: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:852: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:858: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:936: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:957: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:962: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1097: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1226: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1273: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1275: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1302: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1411: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1527: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1641: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1676: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1693: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1713: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1779: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:1880: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:2248: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3444: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3446: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3449: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:3498: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4134: trailing whitespace.
++   561	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4138: trailing whitespace.
++   565	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4144: trailing whitespace.
++  6752	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4161: trailing whitespace.
++  6769	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4172: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4184: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4249: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4262: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4266: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4327: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4355: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4444: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4446: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4464: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4468: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4505: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4541: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4609: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4671: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4696: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4705: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4729: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4784: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4788: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4815: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4890: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4894: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:4915: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5370: trailing whitespace.
++    32	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5386: trailing whitespace.
++  6890	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5394: trailing whitespace.
++  6959	
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5605: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5626: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5638: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5639: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5647: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5648: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5665: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log:5692: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:400: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:581: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:606: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:631: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:679: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:743: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:767: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:827: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:862: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:867: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:886: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:964: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:986: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:991: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1126: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1386: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1433: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1435: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1464: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1478: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1688: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1802: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1837: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1854: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1874: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:1950: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:2083: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:2451: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:4862: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:4885: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:4894: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:4945: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:4957: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5006: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5010: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5037: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5112: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5116: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5137: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5188: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5201: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5205: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5266: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5294: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5383: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5385: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5403: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5407: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5444: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5480: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5548: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5610: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5635: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5644: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5672: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5696: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5755: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5776: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5788: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5789: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5797: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5798: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5815: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5842: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5866: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5868: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5871: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:5945: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:6577: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:6612: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:6627: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7328: trailing whitespace.
++  6750	
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7344: trailing whitespace.
++  6766	
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7353: trailing whitespace.
++  6775	
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7544: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7573: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7676: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log:7680: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:390: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:571: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:596: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:621: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:675: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:739: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:763: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:823: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:858: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:863: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:882: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:960: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:995: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1000: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1173: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1433: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1480: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1482: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1511: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1525: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1735: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1849: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1884: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1901: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1921: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:1997: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:2130: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:2498: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3763: trailing whitespace.
++  6876	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3777: trailing whitespace.
++  6890	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3799: trailing whitespace.
++  6912	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3809: trailing whitespace.
++  6922	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3814: trailing whitespace.
++  6927	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3821: trailing whitespace.
++  6934	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3832: trailing whitespace.
++  6945	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3859: trailing whitespace.
++  6972	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3882: trailing whitespace.
++  6995	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3930: trailing whitespace.
++  7043	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3935: trailing whitespace.
++  7048	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3951: trailing whitespace.
++  7064	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3955: trailing whitespace.
++  7068	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3959: trailing whitespace.
++  7072	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:3990: trailing whitespace.
++  7103	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4007: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4019: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4068: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4072: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4099: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4174: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4178: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4199: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4250: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4263: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4267: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4328: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4356: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4445: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4447: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4465: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4469: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4506: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4542: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4610: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4643: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4645: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4648: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4722: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4758: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4783: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4792: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4816: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4865: trailing whitespace.
++ 11182	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4901: trailing whitespace.
++ 11218	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4933: trailing whitespace.
++ 11250	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4949: trailing whitespace.
++ 11266	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4984: trailing whitespace.
++ 11301	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4996: trailing whitespace.
++ 11313	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:4999: trailing whitespace.
++ 11316	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5006: trailing whitespace.
++ 11323	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5010: trailing whitespace.
++ 11327	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5027: trailing whitespace.
++ 11344	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5033: trailing whitespace.
++ 11350	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5037: trailing whitespace.
++ 11354	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5053: trailing whitespace.
++ 11370	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5147: trailing whitespace.
++ 11464	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5159: trailing whitespace.
++ 11476	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5170: trailing whitespace.
++ 11487	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5177: trailing whitespace.
++ 11494	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5231: trailing whitespace.
++ 11548	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5239: trailing whitespace.
++ 11556	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5244: trailing whitespace.
++ 11561	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5254: trailing whitespace.
++ 11571	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5273: trailing whitespace.
++  7765	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5281: trailing whitespace.
++  7773	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5310: trailing whitespace.
++  7802	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5313: trailing whitespace.
++  7805	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5343: trailing whitespace.
++  7835	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5369: trailing whitespace.
++  7861	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5385: trailing whitespace.
++  7877	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5398: trailing whitespace.
++  7890	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5462: trailing whitespace.
++  4701	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5468: trailing whitespace.
++  4707	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5526: trailing whitespace.
++  4765	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5574: trailing whitespace.
++  4813	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5619: trailing whitespace.
++  5683	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5635: trailing whitespace.
++  5699	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5649: trailing whitespace.
++  5713	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5670: trailing whitespace.
++  5734	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5678: trailing whitespace.
++  5742	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5719: trailing whitespace.
++  7422	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5801: trailing whitespace.
++  7504	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5806: trailing whitespace.
++  7509	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5866: trailing whitespace.
++  7373	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5885: trailing whitespace.
++  7392	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5896: trailing whitespace.
++  7403	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5917: trailing whitespace.
++  7504	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5922: trailing whitespace.
++  7509	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5926: trailing whitespace.
++  7513	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5930: trailing whitespace.
++  7517	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5940: trailing whitespace.
++  7527	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5947: trailing whitespace.
++  7534	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5984: trailing whitespace.
++  1001	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5987: trailing whitespace.
++  1004	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5993: trailing whitespace.
++  1010	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:5996: trailing whitespace.
++  1013	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6003: trailing whitespace.
++  1020	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6013: trailing whitespace.
++  1030	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6025: trailing whitespace.
++  3391	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6071: trailing whitespace.
++  3437	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6079: trailing whitespace.
++  3654	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6082: trailing whitespace.
++  3657	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6086: trailing whitespace.
++  3661	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6112: trailing whitespace.
++  3687	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6130: trailing whitespace.
++  3705	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6767: trailing whitespace.
++ 11114	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6840: trailing whitespace.
++ 11182	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6965: trailing whitespace.
++  6731	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:6982: trailing whitespace.
++  6748	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7008: trailing whitespace.
++  6774	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7050: trailing whitespace.
++  6816	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7060: trailing whitespace.
++  6826	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7082: trailing whitespace.
++  6848	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7085: trailing whitespace.
++  6851	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7106: trailing whitespace.
++  1972	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7137: trailing whitespace.
++  2003	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7144: trailing whitespace.
++  2010	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7154: trailing whitespace.
++  2020	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7179: trailing whitespace.
++  2045	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7698: trailing whitespace.
++  4374	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7702: trailing whitespace.
++  4378	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7721: trailing whitespace.
++  4397	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7764: trailing whitespace.
++  4440	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7770: trailing whitespace.
++  5885	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7792: trailing whitespace.
++  5907	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7811: trailing whitespace.
++  5926	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7835: trailing whitespace.
++ 13425	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7845: trailing whitespace.
++ 13435	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7852: trailing whitespace.
++ 13442	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:7861: trailing whitespace.
++ 13451	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8068: trailing whitespace.
++ 13648	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8100: trailing whitespace.
++ 13680	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8129: trailing whitespace.
++ 13709	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8132: trailing whitespace.
++ 13712	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8136: trailing whitespace.
++ 13716	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8144: trailing whitespace.
++ 13724	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8168: trailing whitespace.
++  7166	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8194: trailing whitespace.
++  7348	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8208: trailing whitespace.
++  7802	
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log:8211: trailing whitespace.
++  7805	
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:482: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:663: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:688: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:713: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:767: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:831: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:855: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:915: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:950: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:955: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:974: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1052: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1087: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1092: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1265: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1555: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1602: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1604: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1633: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1647: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1882: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:1996: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2031: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2048: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2068: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2144: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2277: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:2645: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4511: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4526: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4538: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4603: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4616: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4620: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4681: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4709: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4798: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4800: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4818: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4822: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4859: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4895: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:4963: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5025: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5050: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5059: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5087: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5111: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5154: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5156: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5159: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5233: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5467: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5471: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5498: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5573: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5577: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:5598: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6401: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6413: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6414: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6422: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6423: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6440: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6467: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6771: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6806: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:6821: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:7851: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:7866: trailing whitespace.
++ 
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:9763: trailing whitespace.
++ 11342	
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log:9779: trailing whitespace.
++ 11358	
+
+exec
+/bin/bash -lc 'python3 -m py_compile src/python/eval/elps_live_harness.py src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py src/python/tests/conftest.py' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+exec
+/bin/bash -lc "nl -ba src/python/tests/conftest.py | sed -n '118,160p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+   118	    if not pyproject.exists():
+   119	        # Not an editable-install context (release-surface tests run
+   120	        # against a pip-installed wheel under a throwaway venv).
+   121	        return
+   122	    if _binding_has_test_hooks():
+   123	        # Developer already built with test-hooks (or a previous
+   124	        # pytest session in the same venv did). Nothing to do — this is the
+   125	        # normal path, and it never consults the opt-in.
+   126	        return
+   127	
+   128	    if os.environ.get(_REBUILD_OPT_IN) != "1":
+   129	        raise TestHooksBindingMissing(
+   130	            "the installed `fathomdb` binding was built WITHOUT the `test-hooks` feature, "
+   131	            "so these tests cannot run.\n"
+   132	            "\n"
+   133	            "This conftest will NOT rebuild it for you: `maturin develop` rebinds the "
+   134	            "active virtualenv to this source tree, which silently repoints every other "
+   135	            "consumer of a SHARED venv (TC-27).\n"
+   136	            "\n"
+   137	            "Choose one:\n"
+   138	            f"  * authorize the rebuild here:  {_REBUILD_OPT_IN}=1 pytest ...\n"
+   139	            "  * or build it yourself, from an environment you intend to rebind:\n"
+   140	            f"      cd {_PYTHON_SRC_DIR} && python -m maturin develop --features "
+   141	            "pyo3/extension-module,test-hooks,default-embedder,default-reranker\n"
+   142	            "\n"
+   143	            "NEVER run either from a git worktree against a shared .venv."
+   144	        )
+   145	
+   146	    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+   147	        raise TestHooksBindingMissing(
+   148	            f"contradictory configuration: {_REBUILD_OPT_IN}=1 asks for a rebuild while "
+   149	            "FATHOMDB_TESTS_NO_REBUILD=1 forbids one. Unset one of them."
+   150	        )
+   151	
+   152	    print(
+   153	        "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+   154	        "with test-hooks feature (one-time per venv; ~5-60s) ...",
+   155	        flush=True,
+   156	    )
+   157	    # `maturin develop` requires an activated virtualenv: it looks for
+   158	    # $VIRTUAL_ENV / $CONDA_PREFIX / a `.venv` in cwd-or-parents. A bare
+   159	    # subprocess inherits neither when pytest was launched via an absolute
+   160	    # interpreter path (e.g. `.venv/bin/python -m pytest`, or any venv not
+
+codex
+The Rust multidoc tests pass locally, but the Python conftest change breaks the documented/default pytest path used by the repository's agent verification loop unless an extra environment variable or prebuilt native extension is supplied. That makes the patch incorrect as-is for normal source-tree verification.
+
+Review comment:
+
+- [P2] Restore the default pytest path — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/conftest.py:128-129
+  In a normal source checkout that follows the documented setup (`pip install -e 'src/python[dev]'`), the editable binding is built without `test-hooks`; `scripts/agent-test.sh` then invokes `pytest` without setting `FATHOMDB_TESTS_ALLOW_REBUILD`, so this import-time raise makes the agent test/verify loop fail before collection. If auto-rebuild is unsafe by default, the dev-loop/setup path still needs to explicitly build/authorize hooks in an intended environment or skip consistently, otherwise clean editable installs with pytest are always red.
+The Rust multidoc tests pass locally, but the Python conftest change breaks the documented/default pytest path used by the repository's agent verification loop unless an extra environment variable or prebuilt native extension is supplied. That makes the patch incorrect as-is for normal source-tree verification.
+
+Review comment:
+
+- [P2] Restore the default pytest path — /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/conftest.py:128-129
+  In a normal source checkout that follows the documented setup (`pip install -e 'src/python[dev]'`), the editable binding is built without `test-hooks`; `scripts/agent-test.sh` then invokes `pytest` without setting `FATHOMDB_TESTS_ALLOW_REBUILD`, so this import-time raise makes the agent test/verify loop fail before collection. If auto-rebuild is unsafe by default, the dev-loop/setup path still needs to explicitly build/authorize hooks in an intended environment or skip consistently, otherwise clean editable installs with pytest are always red.
+CODEX_EXIT=0

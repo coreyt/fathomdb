@@ -10,8 +10,8 @@
 **Slice-5 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5` (branch `orch-0.8.20-s5`,
 cut from `origin/main` `19b568e2`, rebased onto `30ad3524`). **Terminal HEAD `8e09b950` is SUPERSEDED** — a
 **regression was found after that first closure** by independent Steward verification and fixed in **fix-4**;
-see §11.7. Terminal HEAD is now **`9c87d758`** plus the two **fix-5** commits (`93eca45a` + this docs commit).
-**Last updated:** 2026-07-20 (Slice 5 **re-closed** after fix-4; awaiting Steward land).
+see §11.7. Terminal HEAD is now **`d710721a`** (fix-6) plus the two **fix-7** commits (`7c353ac5` + this docs
+commit). **Last updated:** 2026-07-20 (Slice 5 re-closed after fix-4/5/6/7; awaiting Steward land).
 
 ---
 
@@ -20,7 +20,7 @@ see §11.7. Terminal HEAD is now **`9c87d758`** plus the two **fix-5** commits (
 | | |
 |---|---|
 | **Slice in flight** | **Slice 5 — erasure completeness (R-20-E1…E8)** — **CODE-COMPLETE ON-BRANCH** |
-| **Status** | `orch-0.8.20-s5` @ **`9c87d758`** + fix-5. codex §9 returned **PASS** at `8e09b950` after three fix rounds — but **a PASS is not a run**: independent Steward verification (fresh clone, isolated venv, A/B against `origin/main`) then found a **live regression** that all four review rounds and every on-branch gate had missed. **Fixed in fix-4** (§11.7). Release-DoD gates re-verified with real exit codes (§11.3). |
+| **Status** | `orch-0.8.20-s5` @ **`d710721a`** + fix-7. codex §9 returned **PASS** at `8e09b950` after three fix rounds — but **a PASS is not a run**: independent Steward verification (fresh clone, isolated venv, A/B against `origin/main`) then found a **live regression** that all four review rounds and every on-branch gate had missed. **Fixed in fix-4** (§11.7). codex then reviewed the fix-4/5 delta and found a **P2 in our own TC-27 guard** — fixed in **fix-6** (§11.9), on which codex returned a **terminal PASS**. **fix-7** widens the test-hooks probe (§11.10). Release-DoD gates re-verified with real exit codes (§11.3). |
 | **Blocks** | Nothing is blocked *by* Slice 5. Slice 5 itself is blocked **from landing** pending the Steward + the HITL decisions in §4 (#7–#14) — notably **AC-079 governed-surface sign-off**. The **owed Python X1 is DISCHARGED** (§11.8) and TC-20/TC-27 guards are **shipped**. |
 | **Next action** | **Return to Steward: land `orch-0.8.20-s5`, then obtain the HITL decisions in §4.** Nothing may be **published** until AC-079 is signed. |
 
@@ -34,7 +34,7 @@ authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Sli
 | Slice | Title | Depends-on | Status |
 |------:|-------|-----------|--------|
 | **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
-| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `9c87d758`+fix-5** — first closure at `8e09b950` **re-opened by a regression** (§11.7), now fixed; awaiting land (§11) |
+| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `d710721a`+fix-7** — first closure at `8e09b950` **re-opened by a regression** (§11.7), now fixed; awaiting land (§11) |
 | 10 | `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV) | 0 | not started |
 | 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
 | 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
@@ -105,7 +105,7 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 | 8 | **Design-text correction** — the `logical_id IS NULL ONLY` backfill rule is right for NODES and **wrong for EDGES** | **TC-26** | **Correct plan §R-20-E8 + v4/v5 prose** to the shipped asymmetry. Code is right; the prose is not. TC-11 unaffected |
 | 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` had no `#[ignore]` and no env gate; `scripts/agent-test.sh` carried a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds. **GUARD SHIPPED in fix-4** (`eu7_real_corpus_ac.rs:760` `#[ignore]`; `agent-test.sh` can no longer invoke it) — **verified by INSPECTION ONLY, zero eu7 runs**, with a control proving the check was not vacuous | **TC-20** | **Still a decision:** the shipped `#[ignore]` is the hard gate the HITL asked for, but it creates the *opposite* vacuous-green hazard at Slice 40, where eu7 IS wanted (TC-13 class). **Slice 40 must carry a non-skip witness** and opt in with `-- --ignored` |
 | 10 | **Python X1 was OWED** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures, swept but **only statically verified** (`py_compile` + `ruff` + AST audit). **DISCHARGED:** the suite has now been executed in an **isolated fresh clone with its own venv** (never the shared `.venv`) ⇒ **`2 failed, 754 passed, 7 skipped`**, and **the identical two tests fail on `origin/main`** — see §11.8. It was exactly this run that caught the fix-4 regression, vindicating the "landing blocker, not a follow-up" call | **TC-22** | **Satisfied.** The two residual failures are **pre-existing** and tracked as **TC-31** (#13) |
-| 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3. **GUARD SHIPPED in fix-4:** `conftest.py` now **refuses** to auto-run `maturin develop` without `FATHOMDB_TESTS_ALLOW_REBUILD=1` (`conftest.py:77`) | **TC-27** | **Closed by tooling** (fix-the-tooling, not a be-careful note). *No damage occurred:* the shared `.venv` was re-verified intact — `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime still **2026-07-09**, still pointing at the **main** repo |
+| 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3. **GUARD SHIPPED in fix-4, then CORRECTED in fix-6** — fix-4's env-var guard raised at import time and made the *documented* default path permanently red; fix-6 restates the policy positively as a pure function returning `PROCEED`/`REBUILD`/`DEGRADED`/`CONTRADICTORY` (`src/python/tests/_test_hooks_gate.py`). The load-bearing check is **`venv_belongs_to_source_tree()`** — `maturin develop` may run **only** when the venv prefix lies **inside the repo root** — and **the opt-in env var CANNOT override it**. See **§11.9** | **TC-27** | **RESOLVED** (ledger **seq-48**), closed by tooling (fix-the-tooling, not a be-careful note), and closed **structurally** rather than by an env var. *No damage occurred:* the shared `.venv` was re-verified intact — `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime still **2026-07-09**, still pointing at the **main** repo |
 | 12 | **Pending-redaction queue hardening** — its "a row is removed ONLY when the obligation is discharged" invariant is upheld by **three correct call sites, not structurally**. codex found a defect in this one mechanism on **each** of rounds 1, 2 and 3 | **TC-28** | **Make it structural** (own table with no generic `DELETE` verb, or a trigger). Every known path is now closed but **nothing prevents a fifth.** Deliberately NOT attempted inside a fix round |
 
 **Raised by Slice 5 fix-4** (details in §11.7/§11.8):
@@ -215,7 +215,7 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 |---|---|---|---|
 | `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
 | `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | Slice 0 landed — **reclaimable** |
-| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `9c87d758`+fix-5, **do not remove before land** |
+| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `d710721a`+fix-7, **do not remove before land** |
 
 Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
 
@@ -223,6 +223,18 @@ Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; n
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-20 — fix-7: the test-hooks probe was NARROWER than the surface it gated** (`7c353ac5`). It checked
+  one of three symbols, so a **partial** binding read as "hooks present" and a marked test **failed on a
+  missing import instead of skipping**. Now probes all three, fails safe to DEGRADED, and carries a drift guard
+  against `lib.rs`. Found by isolated-clone verification **after** codex's terminal PASS. (§11.10)
+- **2026-07-20 — fix-6: codex found a P2 in our OWN TC-27 guard** (`5452016f`, `d710721a`). fix-4's env-var
+  guard turned a silent-rebuild hazard into a **permanently red default pytest path**. TC-27 is now stated
+  **positively** as a pure policy function, and the load-bearing check is `venv_belongs_to_source_tree()` —
+  **the opt-in env var cannot override it**, so the shared `.venv` is protected **structurally**. codex
+  returned a **terminal PASS** on the delta. **TC-27 RESOLVED** (ledger seq-48); **TC-16 corrected**
+  (seq-49: the dead assertion is in `test_actionlint_fixture.sh`, aborting `agent-test.sh` at line 63 **before**
+  the Rust and Python steps, so its exit code is not a suite verdict). **Lesson: a guard that breaks the
+  documented default path is a worse defect than the hazard it closes.** (§11.9)
 - **2026-07-20 — Slice 5 RE-CLOSED after a post-closure REGRESSION** (fix-4, `9c87d758`). Independent Steward
   verification — **fresh clone, isolated venv, A/B against `origin/main`** — found multi-document
   `ingest_with_extractor` failing with `ExtractorError`. **The engine was not the defect and was not changed**
@@ -275,7 +287,7 @@ not edit the master plan** — these are handed up for reconciliation.
 | 4 | v4 §1/§2.2/§6 | The registry consumer is **`rebuild_shadow_state` (:6515)**, not `rebuild_projections` (:5949, the public entry). Taking v4 literally patches the wrong function. | — |
 | 5 | plan §0 / v4 §3.4 | `derive_logical_id` **lowercases** its inputs (`:11156`). Strengthens the dictionary-attack rationale; the stated derivation is incomplete. | — |
 | 6 | plan §7 prereq 4 | **"Baseline captured" was listed as an assumed precondition — no baseline existed.** Capture attempted at Slice 0 and is **BLOCKED, root-caused** (§6.3): the harness's `BATCH = 256` cannot drain inside its hardcoded 600 s at the measured **0.179 docs/s** (~7.3× below the documented rate), so it fails on the **first batch at any N**. Combined with §6.1 (GPU forbidden for comparability), **R-20-EU7 has no runnable path today.** | **TC-13**, **TC-19** |
-| 7 | R-20-PUB | **The publish dry-run guard is DEAD and has been red since 0.8.14.** `test_actionlint_fixture.sh:53` greps `release.yml` for `cargo publish --dry-run -p`, but the job now delegates to `cargo-publish-if-new.sh --dry-run`. **Behavior is intact** (the helper forwards correctly) — but `./scripts/agent-test.sh` exits 1 wholesale, so a **real** publish-wiring regression would be invisible **in the first release that publishes for real**. | **TC-16** |
+| 7 | R-20-PUB | **The publish dry-run guard is DEAD and has been red since 0.8.14.** `test_actionlint_fixture.sh:53` greps `release.yml` for `cargo publish --dry-run -p`, but the job now delegates to `cargo-publish-if-new.sh --dry-run`. **Behavior is intact** (the helper forwards correctly) — but `./scripts/agent-test.sh` exits 1 wholesale, so a **real** publish-wiring regression would be invisible **in the first release that publishes for real**. **⚠ CORRECTED (ledger seq-49):** the dead assertion is **NOT** in `test_pypi_publish_roundtrip.sh` (that script passes cleanly) — it is in **`scripts/tests/test_actionlint_fixture.sh`**, invoked at **`scripts/agent-test.sh` line 63**. Because `set -euo pipefail` aborts there, **`agent-test.sh` never reaches the Rust or Python steps**, so its aggregate exit code says **NOTHING** about whether those suites pass. Confirmed **pre-existing**: that script and `.github/workflows/release.yml` are byte-identical to `origin/main`. | **TC-16** |
 | 8 | v4 §3.2 | **Slice 5's `SourceId` newtype will break the eu7 harness** (`eu7_real_corpus_ac.rs:405` builds `PreparedWrite` with `source_id: None`). v4 enumerated only two internal callers and missed the test-side ones. Sweep `src/` **and** `tests/`. | **TC-17** |
 | 9 | TC-RUBRIC-7 | Committing a §9 transcript **into the reviewed range** pollutes the next review's diff (codex re-read its own prior findings as if unfixed). Recommend committing transcripts **after** the final review round. | **TC-18** |
 
@@ -286,7 +298,7 @@ recommendations, not decided here.
 
 ## 11. Slice 5 close — erasure completeness (R-20-E1…E8)
 
-**Branch `orch-0.8.20-s5`, terminal HEAD `9c87d758` + fix-5** — cut from `origin/main` `19b568e2`, rebased onto
+**Branch `orch-0.8.20-s5`, terminal HEAD `d710721a` + fix-7** — cut from `origin/main` `19b568e2`, rebased onto
 `30ad3524`. **Not landed.** The Steward lands it.
 
 **⚠ The first closure at `8e09b950` was premature.** Post-`8e09b950` history:
@@ -299,6 +311,9 @@ recommendations, not decided here.
 | `265c54c0` | **fix-4** — tooling guards: TC-20 eu7 hard gate, TC-27 `maturin` opt-in |
 | `9c87d758` | **fix-4** — docs: the per-entity-attribution contract |
 | `93eca45a` | **fix-5** — `cfg`-gate `is_erasure_bookkeeping_collection` (non-`operator` `dead_code`) |
+| `5452016f` | **fix-6** — codex **P2**: fix-4's TC-27 guard broke the default pytest path; restate the policy positively (§11.9) |
+| `d710721a` | **fix-6** — docs/ledger for the above |
+| `7c353ac5` | **fix-7** — probe **all three** test-hook symbols so a partial binding DEGRADES (§11.10) |
 
 ### 11.1 What shipped
 
@@ -313,12 +328,14 @@ recommendations, not decided here.
 | fix-3 | `8e09b950` | codex **P1** refuse excising erasure bookkeeping + **P2** rotated-sink ⇒ `ErasureIncomplete` |
 | **fix-4** | `9c87d758` | **REGRESSION** — multi-doc extractor batches require **per-entity attribution** (§11.7) · TC-20 eu7 hard gate · TC-27 `maturin` opt-in guard |
 | fix-5 | `93eca45a` | `cfg`-gate `is_erasure_bookkeeping_collection` — the fix-3 guard lacked the `#[cfg(feature = "operator")]` its only call site carries, warning `dead_code` on every non-`operator` build. Behavior unchanged |
+| **fix-6** | `d710721a` | **codex P2 in our OWN TC-27 guard** — fix-4 turned a silent-rebuild hazard into a **permanently red default pytest path**. Policy restated positively as a pure function; the ownership check, not the env var, is load-bearing (§11.9) |
+| fix-7 | `7c353ac5` | The test-hooks probe checked **one** of the **three** symbols it gates, so a partial binding read as PROCEED and a marked test **failed instead of skipping**. Probe all three; fail safe to DEGRADED (§11.10) |
 
 The central defect this slice closes: **`search_index_v2` stores the body**, so before R-20-E1 an excised body
 **survived erasure** in that table. It never surfaced in results (both read paths gate on `canonical_nodes`),
 which is exactly why it went unnoticed — a data-at-rest leak, invisible to any result-level assertion.
 
-### 11.2 codex §9 — four rounds, terminal PASS
+### 11.2 codex §9 — four rounds on the branch, then two delta rounds, terminal PASS
 
 Transcripts under `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7 path), committed **after** the final round per
 TC-18.
@@ -329,17 +346,28 @@ TC-18.
 | 2 | `slice-5-fix-1-rereview-20260719T234803Z.log` | P1 cleared; **P2** doctor gives false assurance on unerasable edges; **P2** freeze-before-drain timeout |
 | 3 | `slice-5-fix-2-rereview-20260720T001616Z.log` | **P1** `excise_collection_record` could delete the pending-redaction queue; **P2** rotated sink treated as redacted |
 | 4 | `slice-5-fix-3-rereview-20260720T005056Z.log` | **TERMINAL PASS** — *"No actionable correctness issues were found in the reviewed diff. The added erasure/provenance paths appear consistently wired through Rust, Python, TypeScript, CLI, schema migration, and tests."* |
+| 5 (fix-4/5 delta) | `slice-5-fix-4-5-delta-20260720T022544Z.log` | **P2** — the fix-4 TC-27 guard **broke the documented default pytest path** (import-time raise before collection). Fixed in fix-6 (§11.9) |
+| 6 (fix-6 delta) | `slice-5-fix-6-rereview-20260720T024726Z.log` | **TERMINAL PASS on the delta** |
+
+**Read the round count honestly:** rounds 1–4 reviewed the **full branch** (P1+P2 → P2+P2 → P1+P2 → PASS);
+rounds 5–6 reviewed only the **fix-4/5 and fix-6 deltas**. **fix-7 has NOT been through codex** — it was found
+by isolated-clone verification after the terminal PASS and is covered by §11.10's executed evidence.
 
 ### 11.3 Gates — re-verified on the terminal HEAD (real exit codes)
 
-Re-run at **fix-5** (`93eca45a`). Read via `$?` / `PIPESTATUS`, never a trailing `echo`.
+Re-run at **fix-7** (`7c353ac5`). Read via `$?` / `PIPESTATUS`, never a trailing `echo`.
+
+**⚠ Invocation matters — a bare invocation of the first two is NOT a run.** `erasure_projection_registry` and
+`provenance_mandatory` live in **`fathomdb-engine`** and **require `--features operator`** (without it, `cargo
+test` exits **101**). `sdk_only_erasure` lives in **`fathomdb`** and needs the explicit
+`cargo test -p fathomdb --test sdk_only_erasure` (TC-25).
 
 | Gate | Result |
 |---|---|
 | `cargo clippy --workspace --all-targets` | **0** — and **zero `dead_code`** on a non-`operator` build (fix-5) |
 | `cargo check --workspace --all-targets` | **0** |
-| `erasure_projection_registry` | **4/4** |
-| `provenance_mandatory` | **3/3** |
+| `erasure_projection_registry` | **4/4** — `-p fathomdb-engine --features operator` |
+| `provenance_mandatory` | **3/3** — `-p fathomdb-engine --features operator` |
 | `multidoc_extractor_provenance` (**fix-4**) | **5/5** |
 | `erasure_completeness` (AC-080) | **10/10** |
 | `sdk_only_erasure` | **3/3** — via **explicit non-operator invocation** (TC-25: it is `#![cfg(not(feature = "operator"))]`, so any feature-unified run compiles it to **zero** tests and reports success having asserted nothing) |
@@ -348,8 +376,16 @@ Re-run at **fix-5** (`93eca45a`). Read via `$?` / `PIPESTATUS`, never a trailing
 | `fathomdb-schema`, all targets | green, incl. new `step21_migration.rs` **5/5** |
 | `fathomdb-cli`, all targets | green |
 | TypeScript | **170/170**, `tsc` **0** |
-| **Python** | **`2 failed, 754 passed, 7 skipped`** in an **isolated fresh clone** — failure set **identical to `origin/main`**, both pre-existing (**TC-31**). See **§11.8**; do **not** read this row without it |
+| **Python** | **`2 failed, 766 passed, 7 skipped`** (hooks available) in an **isolated fresh clone** — failure set **identical to `origin/main`**, both pre-existing (**TC-31**). See **§11.8**; do **not** read this row without it |
+| `ruff check src/python` | **0**; `py_compile` clean on every file fix-7 touched |
+| `test_test_hooks_gate.py` (fix-7) | **20/20** — synthetic complete / partial / import-failure bindings; **no compiled extension required** |
 | `SCHEMA_VERSION` | **20 → 21** |
+
+**⚠ `scripts/agent-test.sh`'s aggregate exit code is NOT a suite verdict** — it aborts at line 63 on the
+pre-existing dead publish assertion (**TC-16**, §10 #7) and never reaches the Rust or Python steps. Gate on the
+individual commands above, not on that script. The **invocation** `agent-test.sh` uses for pytest was run
+directly and is healthy (**`2 failed, 766 passed, 7 skipped`**); `cargo test --workspace --no-fail-fast` exits
+**0** across 148 test binaries.
 
 ### 11.4 What Slice 5 proved WRONG
 
@@ -436,11 +472,28 @@ construction.
 
 ### 11.8 Python verification — the honest number
 
-Full suite, **isolated fresh clone with its own venv** (never the shared `.venv`):
+Full suite, **isolated fresh clone with its own venv** (never the shared `.venv`). **Re-executed at `d710721a`**
+across all three environment states — the numbers below are **runs, not reasoning**:
 
 ```text
-2 failed, 754 passed, 7 skipped   ·   exit 1
+hooks available (in-tree venv)      2 failed, 766 passed,  7 skipped   ·   exit 1
+default path (hook-less, no opt-in) 1 failed, 762 passed, 12 skipped   ·   exit 1
+degraded (FATHOMDB_TESTS_NO_REBUILD=1) 1 failed, 762 passed, 12 skipped · exit 1
 ```
+
+**What each state proves.**
+
+- **Default path is NOT red-by-construction any more** (the fix-4 defect, §11.9): collection **succeeds**, 775
+  items, **no import-time raise**, and the degraded banner is on screen before the first test.
+- **The hook-dependent tests genuinely RAN and PASSED** when hooks were available — **verified three ways**,
+  including an explicit verbose re-run. They did **not** skip. This is the check that distinguishes a real pass
+  from a vacuous one.
+- **Degraded is not a session-wide self-skip:** **exactly two** marker skips, each with a clear reason, and
+  **762 tests still ran**. The extra skips vs the hooks-available run are the two markers plus three
+  `test_verify_embed_db` tests whose module-scoped fixture cannot build a real embed DB without the hooks.
+- **The ownership check holds:** in-clone venv → owned; **shared `/home/coreyt/projects/fathomdb/.venv` → NOT
+  owned**; worktree venv → not owned; and `decide(allow_rebuild=True, venv_owned=False)` → **`degraded`, not
+  `rebuild`**. **The opt-in env var cannot override it.**
 
 **This is NOT a regression, and this board says why.**
 
@@ -456,13 +509,74 @@ Full suite, **isolated fresh clone with its own venv** (never the shared `.venv`
   populated **only for graph-arm hits** (`fathomdb-py/src/lib.rs:537-539`), so `_doc_id_of` falls through to
   `int(sh.id)`, which has raised `TypeError` since 0.8.19 made `SearchHit.id` an `IdSpace` (C-2). `_doc_id_of`
   is **byte-identical on main**. **One read-side fix likely closes both.** Scheduled separately —
-  **out of scope for Slice 5.**
+  **out of scope for Slice 5.** Re-verified at fix-7: `git diff origin/main...HEAD` is **empty** over
+  `src/python/tests/test_option2_elps_pipeline.py`, `src/python/tests/test_verify_embed_db.py` **and**
+  `eval/r2_parity_eval.py` — this branch did not touch the failing surface at all.
 - **7 skips, all environmental/opt-in**: musique corpus absent (`data/corpus-data/` is gitignored),
   `RELEASE_SURFACE_TESTS != 1`, `FDB_S15A_INTEGRATION` opt-in. **No skip masked a pass; no skip came from a
   missing binding.**
 - **Shared `.venv` integrity verified intact:** `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime
-  still **2026-07-09**, still pointing at the **main** repo.
+  still **2026-07-09**, content still `/home/coreyt/projects/fathomdb/src/python`; the shared `.so` untouched.
+  Re-verified after **every** round through fix-7.
 
 **TC-20 eu7 hard gate — verified by INSPECTION ONLY, with ZERO eu7 runs.** `eu7_real_corpus_ac` now carries
 `#[ignore]` (`:760`) and `scripts/agent-test.sh` can no longer invoke it; a **control** was run to prove the
 check was not vacuous. The prohibition on running eu7 was honored in the course of enforcing it.
+
+### 11.9 fix-6 — codex found a P2 in our OWN TC-27 guard
+
+**The guard for a hazard became a worse defect than the hazard.** fix-4 closed the autonomous-`maturin develop`
+hole by **raising at import time** when a rebuild was not authorized. But `conftest.py` is imported before
+collection, so a clean, **documented** checkout — `pip install -e 'src/python[dev]'`, whose
+`[tool.maturin] features` deliberately ships **no** `test-hooks` surface — raised **before a single test was
+collected**. The default path was **permanently red**, and the fix traded a silent-corruption risk for a
+guaranteed outage.
+
+**fix-6 restates TC-27 positively.** The policy is now a **pure function** —
+`src/python/tests/_test_hooks_gate.py`, no I/O, no environment, no subprocess — returning one of
+`PROCEED` / `REBUILD` / `DEGRADED` / `CONTRADICTORY`. It is unit-tested **without a binding, a venv, or a
+build**, which is exactly the configuration the policy exists to handle.
+
+**The load-bearing check is `venv_belongs_to_source_tree()`, NOT the env var.** `maturin develop` may run
+**only** when the venv prefix lies **inside the repo root** that owns `src/python`. The opt-in env var
+**cannot override it**: `decide(allow_rebuild=True, venv_owned=False)` → **`degraded`**. The shared `.venv` is
+therefore protected **structurally**, by the shape of the filesystem, rather than by an environment variable
+someone might export. `scripts/agent-test.sh` now sets the opt-in **itself**, when it has selected the in-tree
+`.venv` — the authorization is issued by the thing that knows it is safe.
+
+A missing surface **degrades**: the suite runs, and only the tests marked `@pytest.mark.requires_test_hooks`
+skip — visibly, with the reason, plus a banner in the pytest header at any verbosity.
+
+### 11.10 fix-7 — the probe was narrower than the surface it gated
+
+**Found by isolated-clone verification on a real `.so`, after codex's terminal PASS.**
+
+`_binding_has_test_hooks()` probed **one** symbol, `Engine._write_vector_for_test`, while the gate it drives
+protects **three** (`src/rust/crates/fathomdb-py/src/lib.rs`, each behind
+`#[cfg(any(test, feature = "test-hooks"))]`): `Engine._configure_vector_kind_for_test` (`:1239`),
+`Engine._write_vector_for_test` (`:1247`), and module-level `force_panic_for_test` (`:2038`).
+
+**The observed failure mode.** A binding can carry both `Engine` methods while module-level
+`force_panic_for_test` is **absent** — reachable from a stale or interrupted build. The single-symbol probe
+called that **"hooks present" ⇒ PROCEED**, so the `requires_test_hooks` skips did **not** apply and
+`test_panic_surfaces_as_python_exception` **failed on a missing import instead of skipping cleanly**. The
+narrow probe is the classic vacuous-gate shape: a check weaker than the thing it certifies.
+
+**The fix.** The probed set lives next to the gate as `TEST_HOOK_SYMBOLS`, so it cannot drift from the surface
+it gates, and the surface counts as present only if **all** of it is. A partial binding yields **DEGRADED** and
+leads its reason with what is actually missing — *"built WITHOUT test-hooks"* is the wrong diagnosis for it. A
+crashed or unparseable probe **fails safe** to "the whole surface is absent": DEGRADED, never PROCEED.
+
+**Evidence is executed, not reasoned:** the probe was run against **synthetic** bindings — complete, partial
+(both `Engine` methods, no `force_panic_for_test`), and import-failure — so the tests need **no compiled
+extension**. `test_test_hooks_gate.py` **20/20**. A drift guard asserts each probed symbol is still
+`test-hooks`-gated in `lib.rs`. The three fix-6 requirements were re-verified and hold: the default path still
+collects and runs, the ownership check is untouched and still un-overridable, and a missing surface still
+produces a visible skip.
+
+**Left deliberately unfixed (cosmetic, and NOT worth the risk).** Three `test_verify_embed_db.py` tests depend
+on the hook surface without carrying the marker, so in degraded mode they skip with an internal error string
+(`'Engine' object has no attribute '_configure_vector_kind_for_test'`) rather than the gate's reason. **They do
+skip visibly** — this is presentation only. It was left alone because `test_verify_embed_db.py` is currently
+**byte-identical to `origin/main`**, and that identity is load-bearing evidence for the **TC-31**
+pre-existing-failure attribution above. Editing it for cosmetics would destroy the proof.

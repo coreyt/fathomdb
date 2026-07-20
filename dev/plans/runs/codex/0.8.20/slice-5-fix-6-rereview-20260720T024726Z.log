@@ -1,0 +1,3807 @@
+OpenAI Codex v0.136.0
+--------
+workdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f7d6b-d50c-7931-99e3-c33a8428a348
+--------
+user
+changes against '8e09b950'
+exec
+/bin/bash -lc 'cat MEMORY.md 2>/dev/null; for f in feedback_*.md; do [ -f "$f" ] && echo "--- $f" && cat "$f"; done' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 && git diff --name-only 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+ CHANGELOG.md                                       |   67 +-
+ dev/design/0.8.20-slice0-erasure-design.md         |   41 +-
+ dev/plans/runs/0.8.20-slice-5-docs-output.json     |  137 +
+ dev/plans/runs/0.8.20-slice-5-fix-1-output.json    |  220 +
+ dev/plans/runs/0.8.20-slice-5-fix-2-output.json    |  197 +
+ dev/plans/runs/0.8.20-slice-5-fix-3-output.json    |  251 +
+ dev/plans/runs/0.8.20-slice-5-fix-4-output.json    |  198 +
+ dev/plans/runs/0.8.20-slice-5-fix-6-output.json    |  130 +
+ dev/plans/runs/0.8.20-slice-5a-output.json         |   63 +
+ dev/plans/runs/0.8.20-slice-5b-output.json         |  104 +
+ dev/plans/runs/0.8.20-slice-5c-output.json         |  230 +
+ dev/plans/runs/0.8.20-slice-5d-output.json         |  278 +
+ dev/plans/runs/STATUS-0.8.20.md                    |  265 +-
+ .../runs/codex/0.8.20/slice-5-20260719T231341Z.log | 5727 ++++++++++++
+ .../slice-5-fix-1-rereview-20260719T234803Z.log    | 7808 ++++++++++++++++
+ .../slice-5-fix-2-rereview-20260720T001616Z.log    | 8245 ++++++++++++++++
+ .../slice-5-fix-3-rereview-20260720T005056Z.log    | 9818 ++++++++++++++++++++
+ dev/todos-and-considerations-ledger.jsonl          |   15 +
+ dev/todos-and-considerations-ledger.jsonl.seq      |    2 +-
+ scripts/agent-test.sh                              |   29 +-
+ src/python/eval/elps_live_harness.py               |   31 +-
+ src/python/pyproject.toml                          |   27 +-
+ src/python/tests/_test_hooks_gate.py               |  158 +
+ src/python/tests/conftest.py                       |  163 +-
+ src/python/tests/test_ffi_safety.py                |   12 +-
+ src/python/tests/test_test_hooks_gate.py           |  153 +
+ src/python/tests/test_use_default_embedder.py      |    1 +
+ src/rust/crates/fathomdb-engine/src/lib.rs         |    7 +
+ .../fathomdb-engine/tests/eu7_real_corpus_ac.rs    |   22 +
+ .../fixtures/slice15_byo_llm/elps_stub_shim.py     |   39 +
+ .../slice15_byo_llm/multidoc_echo_harness.py       |  123 +
+ .../tests/multidoc_extractor_provenance.rs         |  321 +
+ 32 files changed, 34813 insertions(+), 69 deletions(-)
+CHANGELOG.md
+dev/design/0.8.20-slice0-erasure-design.md
+dev/plans/runs/0.8.20-slice-5-docs-output.json
+dev/plans/runs/0.8.20-slice-5-fix-1-output.json
+dev/plans/runs/0.8.20-slice-5-fix-2-output.json
+dev/plans/runs/0.8.20-slice-5-fix-3-output.json
+dev/plans/runs/0.8.20-slice-5-fix-4-output.json
+dev/plans/runs/0.8.20-slice-5-fix-6-output.json
+dev/plans/runs/0.8.20-slice-5a-output.json
+dev/plans/runs/0.8.20-slice-5b-output.json
+dev/plans/runs/0.8.20-slice-5c-output.json
+dev/plans/runs/0.8.20-slice-5d-output.json
+dev/plans/runs/STATUS-0.8.20.md
+dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log
+dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log
+dev/todos-and-considerations-ledger.jsonl
+dev/todos-and-considerations-ledger.jsonl.seq
+scripts/agent-test.sh
+src/python/eval/elps_live_harness.py
+src/python/pyproject.toml
+src/python/tests/_test_hooks_gate.py
+src/python/tests/conftest.py
+src/python/tests/test_ffi_safety.py
+src/python/tests/test_test_hooks_gate.py
+src/python/tests/test_use_default_embedder.py
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+
+exec
+/bin/bash -lc 'git diff 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- scripts/agent-test.sh src/python/eval/elps_live_harness.py src/python/pyproject.toml src/python/tests/conftest.py src/python/tests/_test_hooks_gate.py src/python/tests/test_ffi_safety.py src/python/tests/test_test_hooks_gate.py src/python/tests/test_use_default_embedder.py src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+diff --git a/scripts/agent-test.sh b/scripts/agent-test.sh
+index a66b1126..e1d44c8c 100755
+--- a/scripts/agent-test.sh
++++ b/scripts/agent-test.sh
+@@ -75,6 +75,17 @@ run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+ run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+ 
+ # Rust
++#
++# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
++# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
++# Three gates keep it out, in order of what a change is most likely to break:
++#   1. `required-features = ["operator"]` on the test target — not built at all
++#      under the workspace default feature set (`default = []`);
++#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
++#      tests even when `operator` IS on (e.g. the engine's operator suite);
++#   3. `#[ignore]` on the test itself — holds no matter which features are
++#      selected, so `--all-features` still would not run the body.
++# Verify by inspection only (`-- --list --ignored`), never by running it.
+ run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+ 
+ # Python
+@@ -86,7 +97,23 @@ elif command -v python3 >/dev/null 2>&1; then
+ fi
+ 
+ if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
+-  run_capped test-python "$python_bin" -m pytest -q src/python/tests
++  # TC-27 (0.8.20 Slice 5 fix-6): the editable binding built by the documented
++  # `pip install -e 'src/python[dev]'` has no `test-hooks` surface, so
++  # `tests/conftest.py` may rebuild it with `maturin develop` — which REBINDS the
++  # active virtualenv to this source tree. This is the repo's own sanctioned dev
++  # loop, so it authorizes that rebuild, but ONLY when the interpreter we picked
++  # is the `.venv` INSIDE this checkout (`cd_repo_root` above, so in a linked
++  # worktree that is the worktree's own venv). If we fell back to a system
++  # `python3` — or to any environment that is not ours to rebind — we stay
++  # silent and conftest degrades to visibly SKIPPING the hook-dependent tests
++  # rather than repointing a shared venv. conftest re-checks venv ownership
++  # itself; this is the outer half of a belt-and-suspenders pair.
++  if [ "$python_bin" = ".venv/bin/python" ]; then
++    run_capped test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
++      "$python_bin" -m pytest -q src/python/tests
++  else
++    run_capped test-python "$python_bin" -m pytest -q src/python/tests
++  fi
+ else
+   skip_notice test-python "pytest not installed or no tests dir"
+ fi
+diff --git a/src/python/eval/elps_live_harness.py b/src/python/eval/elps_live_harness.py
+index 8587ab8c..50012fef 100644
+--- a/src/python/eval/elps_live_harness.py
++++ b/src/python/eval/elps_live_harness.py
+@@ -39,9 +39,13 @@ You are an information-extraction engine. From the single document supplied by t
+ 
+ ENTITIES
+ - Identify the real-world entities mentioned (people, organizations, places, artifacts, concepts, etc.).
+-- Each entity has a `name`, a `type`, and optional `aliases` (other surface forms used for the same entity in this document).
++- Each entity has a `name`, a `type`, optional `aliases` (other surface forms used for the same entity in this document), and a `source_doc_id`.
+ - Be conservative about identity: when two mentions MIGHT refer to different real-world entities, emit them as DISTINCT entities rather than merging them. Do not collapse homonyms.
+ 
++ATTRIBUTION (load-bearing — a missing value fails the whole ingest)
++- EVERY entity AND every edge MUST carry a `source_doc_id` set to the exact `doc_id` given in the user message. Copy it verbatim; never invent, abbreviate or alter it.
++- This is how the store knows which document each fact came from, and therefore which facts to delete when that document is erased. An element without it cannot be attributed and is REJECTED — the store will not guess an attribution, because guessing would file the fact under the wrong document and leave it behind on erasure.
++
+ EDGES (directed, dated facts)
+ - Each edge is a single fact: `from_entity` -> `to_entity` with a short, lowercase `relation` label (e.g. `works_at`, `founded`, `located_in`).
+ - `body` is the minimal span of source text that states the fact.
+@@ -63,7 +67,7 @@ SOURCE SPANS
+ 
+ Return ONLY valid JSON matching this exact schema — no markdown fences, no prose:
+ {
+-  "entities": [{"name": str, "type": str, "aliases": list[str]}],
++  "entities": [{"name": str, "type": str, "aliases": list[str], "source_doc_id": str}],
+   "edges": [
+     {
+       "from_entity": str,
+@@ -92,7 +96,15 @@ body:
+ # Canned stub response for ELPS_STUB_MODE=1
+ # ---------------------------------------------------------------------------
+ 
+-_STUB_ENTITIES = [{"name": "TestEntity", "type": "concept", "aliases": []}]
++def _stub_entities(doc_id: str) -> list[dict[str, Any]]:
++    """Canned entities, attributed to `doc_id`.
++
++    A FUNCTION returning fresh dicts, not a module-level constant: the engine
++    batches several documents into one extract request, and a shared list would
++    be handed out (and then attributed) once per document, so the last document
++    processed would silently overwrite every earlier document's provenance.
++    """
++    return [{"name": "TestEntity", "type": "concept", "aliases": [], "source_doc_id": doc_id}]
+ 
+ 
+ def _stub_edges(doc_id: str) -> list[dict[str, Any]]:
+@@ -189,7 +201,7 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
+     doc_id = doc["source_doc_id"]
+ 
+     if _STUB_MODE:
+-        return _STUB_ENTITIES, _stub_edges(doc_id), []
++        return _stub_entities(doc_id), _stub_edges(doc_id), []
+ 
+     try:
+         result = _call_llm_httpx(doc)
+@@ -209,6 +221,17 @@ def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], li
+             and str(e.get("from_entity", "")).strip()
+             and str(e.get("to_entity", "")).strip()
+         ]
++        # Attribution backfill (R-20-E2). Every element we hand back must name
++        # the document it came from, because the engine batches documents and
++        # then requires each entity/edge to select its own source among the
++        # batch's caller-supplied ids -- an unattributed element fails the whole
++        # ingest with EngineError::Extractor. This is safe to do here and ONLY
++        # here: `_extract_single_doc` is scoped to exactly one document, so
++        # `doc_id` is the true source, not a guess. The engine deliberately
++        # refuses to make that guess itself.
++        for entity in entities:
++            if not entity.get("source_doc_id"):
++                entity["source_doc_id"] = doc_id
+         for edge in edges:
+             if not edge.get("source_doc_id"):
+                 edge["source_doc_id"] = doc_id
+diff --git a/src/python/pyproject.toml b/src/python/pyproject.toml
+index 7948c84a..b4ddb115 100644
+--- a/src/python/pyproject.toml
++++ b/src/python/pyproject.toml
+@@ -42,13 +42,16 @@ python-source = "."
+ #
+ # `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
+ # `_write_vector_for_test` etc. on `Engine`) and would leak onto every
+-# wheel `release.yml`'s build-python job emits to PyPI. Tests that need
+-# the hook surface (`test_use_default_embedder.py`, `test_ffi_safety.py`,
+-# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
+-# in `tests/conftest.py` that runs
+-#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
+-# before the suite. The release workflow's `args:` pins its own explicit
+-# feature list, so this file never gates the shipped artifact.
++# wheel `release.yml`'s build-python job emits to PyPI. So a plain
++# `pip install -e 'src/python[dev]'` has NO hook surface. The few tests that
++# need it carry `@pytest.mark.requires_test_hooks`; `tests/conftest.py` may
++# rebuild the binding with
++#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder,...`
++# but ONLY when that is authorized AND the active venv belongs to this source
++# tree (TC-27 — see `tests/_test_hooks_gate.py`). Otherwise those tests SKIP
++# visibly and the rest of the suite runs normally. The release workflow's
++# `args:` pins its own explicit feature list, so this file never gates the
++# shipped artifact.
+ features = ["pyo3/extension-module", "default-embedder", "default-reranker"]
+ 
+ [tool.pytest.ini_options]
+@@ -63,6 +66,11 @@ pythonpath = ["."]
+ # FDB_S15A_INTEGRATION=1 + torch/transformers present (see test_s15a_embedder_probe.py).
+ markers = [
+     "integration: opt-in tests that load real models (require FDB_S15A_INTEGRATION=1 + torch/transformers)",
++    # 0.8.20 Slice 5 fix-6 (codex §9 [P2]): tests needing the dev-only `test-hooks`
++    # binding surface. conftest.py turns these into visible SKIPs (never silent
++    # passes) when the installed binding lacks the feature and TC-27 forbids an
++    # unattended `maturin develop`.
++    "requires_test_hooks: needs the dev-only `test-hooks` binding surface (see tests/_test_hooks_gate.py)",
+ ]
+ 
+ [tool.ruff]
+@@ -71,6 +79,11 @@ target-version = "py310"
+ 
+ [tool.pyright]
+ include = ["fathomdb", "tests", "eval"]
++# `tests/` has no `__init__.py` (pytest prepend import mode inserts the conftest's
++# own directory on sys.path), so sibling helper imports like
++# `from _test_hooks_gate import ...` in tests/conftest.py are resolvable at
++# runtime but invisible to pyright without this.
++extraPaths = ["tests"]
+ typeCheckingMode = "standard"
+ pythonVersion = "3.10"
+ venvPath = "../.."
+diff --git a/src/python/tests/_test_hooks_gate.py b/src/python/tests/_test_hooks_gate.py
+new file mode 100644
+index 00000000..d0d1c075
+--- /dev/null
++++ b/src/python/tests/_test_hooks_gate.py
+@@ -0,0 +1,158 @@
++"""Pure decision logic for the dev-only `test-hooks` binding gate (TC-27).
++
++`pyproject.toml [tool.maturin] features` deliberately ships only the
++release feature set, so an editable install built by the documented
++`pip install -e 'src/python[dev]'` has NO `test-hooks` surface
++(`Engine._write_vector_for_test`, `force_panic_for_test`, ...). A handful
++of tests need it.
++
++`conftest.py` may rebuild the binding with `maturin develop`, but that
++command **rebinds the active virtualenv to the source tree it is run
++from**. Firing it unattended from an agent worktree would silently
++repoint every other consumer of a SHARED `.venv` at unreviewed code —
++that is TC-27.
++
++The policy is therefore a three-way decision, kept here as a **pure
++function** so it is unit-testable without a binding, a venv, or a
++subprocess (see `test_test_hooks_gate.py`):
++
++* ``PROCEED``  — nothing to do (hooks present, or not a source checkout).
++* ``REBUILD``  — a rebuild is both authorized and safe; run it.
++* ``DEGRADED`` — hooks are missing and a rebuild is not authorized/not
++  safe. The suite still runs; the tests that need the hook surface are
++  SKIPPED with `reason`, never silently passed.
++* ``CONTRADICTORY`` — the environment both requests and forbids a
++  rebuild. A configuration error; raise.
++
++`DEGRADED` is what keeps the default `pytest` path green-but-honest: a
++clean editable checkout collects and runs, and the hook-dependent tests
++report as real skips carrying `reason`.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from pathlib import Path
++
++#: Opt in to letting conftest run `maturin develop` for you.
++REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
++
++#: Legacy opt-out. Predates `REBUILD_OPT_IN`; now merely reasserts the default.
++REBUILD_OPT_OUT = "FATHOMDB_TESTS_NO_REBUILD"
++
++PROCEED = "proceed"
++REBUILD = "rebuild"
++DEGRADED = "degraded"
++CONTRADICTORY = "contradictory"
++
++#: Marker applied to tests that need the `test-hooks` surface. Registered in
++#: `pyproject.toml [tool.pytest.ini_options] markers`.
++REQUIRES_HOOKS_MARKER = "requires_test_hooks"
++
++_MANUAL_BUILD_HINT = (
++    "python -m maturin develop --features "
++    "pyo3/extension-module,test-hooks,default-embedder,default-reranker"
++)
++
++
++@dataclass(frozen=True)
++class Decision:
++    """What `conftest.py` should do about a missing `test-hooks` surface."""
++
++    action: str
++    reason: str
++
++    @property
++    def is_degraded(self) -> bool:
++        return self.action == DEGRADED
++
++
++def venv_belongs_to_source_tree(venv_prefix: str | Path, python_src_dir: str | Path) -> bool:
++    """True if the running interpreter's environment lives INSIDE the repo that
++    owns `python_src_dir` (i.e. `src/python`).
++
++    This is the TC-27 test, stated positively: `maturin develop` rebinds
++    `venv_prefix` to `python_src_dir`. That is only ever intended when the two
++    already belong together. A venv rooted anywhere else — the canonical
++    example being the primary checkout's `/…/fathomdb/.venv` while
++    `python_src_dir` is `/…/fathomdb-worktrees/<slice>/src/python` — is a
++    SHARED environment we must not silently repoint.
++
++    A system interpreter (`sys.prefix == /usr`) is likewise "not ours" and
++    correctly returns False.
++    """
++
++    repo_root = Path(python_src_dir).resolve().parents[1]
++    try:
++        Path(venv_prefix).resolve().relative_to(repo_root)
++    except ValueError:
++        return False
++    return True
++
++
++def decide(
++    *,
++    is_source_tree: bool,
++    hooks_present: bool,
++    allow_rebuild: bool,
++    forbid_rebuild: bool,
++    venv_owned_by_source_tree: bool,
++) -> Decision:
++    """Pure `test-hooks` policy. No I/O, no environment access, no subprocess.
++
++    Callers supply the five observations; `conftest.py` gathers them.
++    """
++
++    if not is_source_tree:
++        return Decision(
++            PROCEED,
++            "not an editable-install checkout (release-surface tests run against a "
++            "pip-installed wheel); nothing to build",
++        )
++    if hooks_present:
++        return Decision(PROCEED, "the installed binding already exposes the test-hooks surface")
++    if allow_rebuild and forbid_rebuild:
++        return Decision(
++            CONTRADICTORY,
++            f"contradictory configuration: {REBUILD_OPT_IN}=1 asks for a rebuild while "
++            f"{REBUILD_OPT_OUT}=1 forbids one. Unset one of them.",
++        )
++    if forbid_rebuild:
++        return Decision(
++            DEGRADED,
++            f"the installed `fathomdb` binding was built WITHOUT `test-hooks`, and "
++            f"{REBUILD_OPT_OUT}=1 forbids rebuilding it. "
++            f"Build it yourself to run these: {_MANUAL_BUILD_HINT}",
++        )
++    if not allow_rebuild:
++        return Decision(
++            DEGRADED,
++            "the installed `fathomdb` binding was built WITHOUT `test-hooks`, and this "
++            "conftest will not rebuild it unattended: `maturin develop` rebinds the active "
++            "virtualenv to this source tree, which silently repoints every other consumer "
++            "of a SHARED venv (TC-27).\n"
++            f"  * authorize it here, from an environment you intend to rebind:  "
++            f"{REBUILD_OPT_IN}=1 pytest ...\n"
++            f"  * or build it yourself:  {_MANUAL_BUILD_HINT}\n"
++            "  * `scripts/agent-test.sh` authorizes this automatically when it runs the "
++            "in-tree `.venv`.",
++        )
++    if not venv_owned_by_source_tree:
++        return Decision(
++            DEGRADED,
++            f"{REBUILD_OPT_IN}=1 authorized a rebuild, but the active Python environment "
++            "does NOT live inside this source tree, so `maturin develop` would rebind a "
++            "SHARED or system environment to this checkout (TC-27). Refusing.\n"
++            "  * run the tests from a venv created inside this checkout, or\n"
++            f"  * build it yourself from the tree that owns that venv:  {_MANUAL_BUILD_HINT}",
++        )
++    return Decision(
++        REBUILD,
++        "authorized, and the active virtualenv belongs to this source tree",
++    )
++
++
++def skip_reason(reason: str) -> str:
++    """Render `Decision.reason` as the skip message attached to hook-dependent tests."""
++
++    return f"test-hooks surface unavailable — {reason}"
+diff --git a/src/python/tests/conftest.py b/src/python/tests/conftest.py
+index a48a2854..ec2e068e 100644
+--- a/src/python/tests/conftest.py
++++ b/src/python/tests/conftest.py
+@@ -13,17 +13,22 @@ EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
+ and friends are missing and tests like `test_use_default_embedder.py`,
+ `test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
+ 
+-This rebuild runs at conftest IMPORT time (module level below), NOT as a
+-session-scoped fixture. A fixture runs during test *setup*, which is too late
+-for a test module that imports a test-hooks symbol at MODULE level
+-(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
+-that import is evaluated during *collection*, before any fixture runs, so the
+-binding must already carry the symbol. conftest.py top-level code is the
+-earliest hook that still runs before sibling test modules are collected. The
+-rebuild short-circuits if the test-hooks symbol is already present (developer
+-pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
+-session in the same venv built it), so the `maturin develop` cost (~5-60s) is
+-paid at most once per venv.
++That rebuild is gated: see `_test_hooks_gate.py` for the policy (TC-27) and
++`_ensure_test_hooks_binding` below for how the observations are gathered. When
++the gate returns DEGRADED the suite still collects and runs; only the tests
++marked `@pytest.mark.requires_test_hooks` are skipped, with the gate's reason
++attached, plus a banner in the pytest report header.
++
++When a rebuild IS authorized it runs at conftest IMPORT time (module level
++below), NOT as a session-scoped fixture. A fixture runs during test *setup*,
++which is too late: a test module that imports the extension during *collection*
++dlopen()s the stale `.so`, and a later `maturin develop` cannot be re-imported
++in the same process. conftest.py top-level code is the earliest hook that still
++runs before sibling test modules are collected. The rebuild short-circuits if
++the test-hooks symbol is already present (developer pre-warmed with
++`maturin develop --features ...,test-hooks,...`, or a previous session in the
++same venv built it), so the `maturin develop` cost (~5-60s) is paid at most
++once per venv.
+ """
+ 
+ from __future__ import annotations
+@@ -35,6 +40,19 @@ from pathlib import Path
+ 
+ import pytest
+ 
++from _test_hooks_gate import (
++    CONTRADICTORY,
++    DEGRADED,
++    REBUILD,
++    REBUILD_OPT_IN,
++    REBUILD_OPT_OUT,
++    REQUIRES_HOOKS_MARKER,
++    Decision,
++    decide,
++    skip_reason,
++    venv_belongs_to_source_tree,
++)
++
+ 
+ @pytest.fixture
+ def db_path(tmp_path: Path) -> str:
+@@ -74,28 +92,59 @@ def _binding_has_test_hooks() -> bool:
+     ).returncode == 0
+ 
+ 
+-def _ensure_test_hooks_binding() -> None:
+-    """Rebuild the editable binding with `test-hooks` enabled before
+-    sibling test modules are collected, unless it is already present.
++class TestHooksBindingMisconfigured(RuntimeError):
++    """The environment both requests and forbids a `test-hooks` rebuild."""
++
++
++def _ensure_test_hooks_binding() -> Decision:
++    """Gather the observations `_test_hooks_gate.decide` needs, then act on its
++    verdict — before sibling test modules are collected.
++
++    **TC-27 (0.8.20 Slice 5 fix-4/fix-6) — the rebuild is OPT-IN and
++    ownership-checked; a missing binding DEGRADES the run, it does not abort it.**
++
++    This function used to shell out to `maturin develop` autonomously, and did
++    so during an agent session that never issued a build command. It failed
++    only benignly, and only by luck: the interpreter was not an activated
++    virtualenv. Had it been, the rebuild would have rebound the SHARED `.venv`
++    to whatever source tree pytest happened to be launched from — including an
++    agent worktree, silently repointing every other consumer of that venv at
++    unreviewed code.
++
++    fix-4 closed that by raising at import time when the rebuild was not
++    authorized — which made the *documented* default path
++    (`pip install -e 'src/python[dev]'` then `scripts/agent-test.sh`) fail
++    before collection, i.e. permanently red. fix-6 keeps the hazard closed but
++    returns DEGRADED instead: the suite runs, and only the tests carrying
++    ``@pytest.mark.requires_test_hooks`` skip (visibly, with the reason). The
++    sanctioned dev loop authorizes the rebuild explicitly from
++    ``scripts/agent-test.sh``.
++
++    :raises TestHooksBindingMisconfigured: only for a contradictory
++        opt-in/opt-out pair — a configuration error the caller must fix.
++    """
++
++    # Not an editable-install context when `pyproject.toml` is absent (the
++    # release-surface tests run against a pip-installed wheel under a throwaway
++    # venv). Probing the binding there would be a pointless subprocess, so keep
++    # the short-circuit here rather than inside the pure policy.
++    is_source_tree = (_PYTHON_SRC_DIR / "pyproject.toml").exists()
++
++    decision = decide(
++        is_source_tree=is_source_tree,
++        # Developer already built with test-hooks (or a previous pytest session
++        # in the same venv did) — the normal path, which never consults the opt-in.
++        hooks_present=is_source_tree and _binding_has_test_hooks(),
++        allow_rebuild=os.environ.get(REBUILD_OPT_IN) == "1",
++        forbid_rebuild=os.environ.get(REBUILD_OPT_OUT) == "1",
++        # `sys.prefix` is the environment root for a venv interpreter.
++        venv_owned_by_source_tree=venv_belongs_to_source_tree(sys.prefix, _PYTHON_SRC_DIR),
++    )
+ 
+-    Skipped when not invoked from the source tree (e.g. running the
+-    test files against a pip-installed wheel for release-surface
+-    verification) — detected by the absence of `pyproject.toml` next
+-    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
+-    is set (developer escape hatch: prebuild once, iterate without
+-    paying the rebuild cost)."""
+-
+-    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+-        return
+-    pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
+-    if not pyproject.exists():
+-        # Not an editable-install context (release-surface tests run
+-        # against a pip-installed wheel under a throwaway venv).
+-        return
+-    if _binding_has_test_hooks():
+-        # Developer already built with test-hooks (or a previous
+-        # pytest session in the same venv did). Skip the rebuild.
+-        return
++    if decision.action == CONTRADICTORY:
++        raise TestHooksBindingMisconfigured(decision.reason)
++    if decision.action != REBUILD:
++        return decision
+ 
+     print(
+         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+@@ -131,8 +180,54 @@ def _ensure_test_hooks_binding() -> None:
+         if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
+             del sys.modules[mod_name]
+ 
++    # Re-probe rather than trusting a zero exit code. If `maturin develop`
++    # somehow lands a binding that still lacks the hooks, DEGRADED (visible
++    # skips) is the honest outcome — never let the marked tests run and
++    # "pass" against a surface that is not there.
++    if not _binding_has_test_hooks():
++        return Decision(
++            DEGRADED,
++            "`maturin develop` completed but the rebuilt binding still does not expose "
++            "the test-hooks surface. Check that the `test-hooks` Cargo feature still "
++            "gates the expected methods.",
++        )
++    return decision
++
+ 
+ # Run the rebuild at conftest IMPORT time (before sibling test modules are
+ # collected), not as a fixture — see the module docstring for why a fixture is
+-# too late for module-level test-hooks imports (e.g. test_ffi_safety.py).
+-_ensure_test_hooks_binding()
++# too late once a sibling module has dlopen()ed the stale extension.
++_TEST_HOOKS_DECISION = _ensure_test_hooks_binding()
++
++
++def pytest_report_header() -> list[str] | None:
++    """Announce a degraded run in the pytest header, at ANY verbosity.
++
++    Requirement: never a silent green. If the hook surface is missing, the
++    reason is on screen before the first test runs, not buried in `-rs`.
++    """
++
++    if not _TEST_HOOKS_DECISION.is_degraded:
++        return None
++    return [
++        "test-hooks: UNAVAILABLE — tests marked "
++        f"`{REQUIRES_HOOKS_MARKER}` will be SKIPPED (not run).",
++        *(f"  {line}" for line in _TEST_HOOKS_DECISION.reason.splitlines()),
++    ]
++
++
++def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
++    """Skip — visibly, with the gate's reason — every test that needs the
++    `test-hooks` surface when the gate came back DEGRADED.
++
++    A real `pytest.mark.skip`, so the run reports `s` and `-rs` prints the
++    reason. Tests that do not carry the marker are untouched: a missing dev-only
++    feature must not silently shrink the rest of the suite either.
++    """
++
++    if not _TEST_HOOKS_DECISION.is_degraded:
++        return
++    mark = pytest.mark.skip(reason=skip_reason(_TEST_HOOKS_DECISION.reason))
++    for item in items:
++        if item.get_closest_marker(REQUIRES_HOOKS_MARKER) is not None:
++            item.add_marker(mark)
+diff --git a/src/python/tests/test_ffi_safety.py b/src/python/tests/test_ffi_safety.py
+index 6d087bb8..0b74b4cb 100644
+--- a/src/python/tests/test_ffi_safety.py
++++ b/src/python/tests/test_ffi_safety.py
+@@ -13,14 +13,22 @@ from typing import Callable
+ import pytest
+ 
+ from fathomdb import Engine, SearchFilter, admin
+-from fathomdb._fathomdb import force_panic_for_test
+ from fathomdb.errors import EngineError, WriteValidationError
+ 
++# `force_panic_for_test` is `test-hooks`-gated and therefore ABSENT from a
++# binding built with the release feature set (the documented
++# `pip install -e 'src/python[dev]'`). Importing it at MODULE level made the
++# whole file un-collectable there — a collection ERROR, which is indistinguishable
++# from a real breakage. It is imported inside the one test that needs it instead,
++# so the `requires_test_hooks` marker can turn that into a visible SKIP
++# (see `conftest.py` / `_test_hooks_gate.py`).
++
+ # 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+ _SOURCE_ID = "py-test:ffi-safety"
+ 
+ 
+ 
++@pytest.mark.requires_test_hooks
+ def test_panic_surfaces_as_python_exception(db_path: str) -> None:
+     """AC-067 — engine panics must not abort the host process.
+ 
+@@ -29,6 +37,8 @@ def test_panic_surfaces_as_python_exception(db_path: str) -> None:
+     catch `EngineError` must not silently swallow it.
+     """
+ 
++    from fathomdb._fathomdb import force_panic_for_test  # test-hooks-gated
++
+     pid_before = os.getpid()
+     with pytest.raises(BaseException) as excinfo:
+         force_panic_for_test()
+diff --git a/src/python/tests/test_test_hooks_gate.py b/src/python/tests/test_test_hooks_gate.py
+new file mode 100644
+index 00000000..86742d74
+--- /dev/null
++++ b/src/python/tests/test_test_hooks_gate.py
+@@ -0,0 +1,153 @@
++"""Unit tests for the `test-hooks` gate policy (TC-27, 0.8.20 Slice 5 fix-6).
++
++These pin the decision table that `conftest.py` acts on. They are pure: no
++binding, no venv, no subprocess — so they run identically on a hook-less
++editable install, which is precisely the configuration the policy exists to
++handle.
++
++Two regressions are locked here:
++
++* fix-4 made a hook-less editable checkout raise at conftest import time, so the
++  documented `pip install -e 'src/python[dev]'` + `scripts/agent-test.sh` loop
++  was always red. `test_default_editable_checkout_degrades_never_raises` forbids
++  any verdict other than DEGRADED on that path.
++* The original defect fix-4 was closing: an unattended `maturin develop` firing
++  from an agent worktree into the primary checkout's shared `.venv`.
++  `test_authorized_rebuild_still_refused_when_venv_is_foreign` and
++  `test_worktree_against_shared_primary_venv_is_not_owned` forbid REBUILD there.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from _test_hooks_gate import (
++    CONTRADICTORY,
++    DEGRADED,
++    PROCEED,
++    REBUILD,
++    REBUILD_OPT_IN,
++    decide,
++    venv_belongs_to_source_tree,
++)
++
++# The "everything is fine, rebuild is safe" baseline; each test overrides the
++# one or two observations it is about.
++_SAFE = {
++    "is_source_tree": True,
++    "hooks_present": False,
++    "allow_rebuild": True,
++    "forbid_rebuild": False,
++    "venv_owned_by_source_tree": True,
++}
++
++
++def _decide(**overrides: bool):
++    return decide(**{**_SAFE, **overrides})
++
++
++def test_authorized_rebuild_in_owned_venv_proceeds_to_rebuild() -> None:
++    assert _decide().action == REBUILD
++
++
++def test_hooks_already_present_short_circuits() -> None:
++    """The common warm path: never consults the opt-in at all."""
++
++    for allow in (True, False):
++        for owned in (True, False):
++            decision = _decide(hooks_present=True, allow_rebuild=allow,
++                               venv_owned_by_source_tree=owned)
++            assert decision.action == PROCEED
++
++
++def test_wheel_context_proceeds_without_a_source_tree() -> None:
++    """Release-surface tests run the test files against a pip-installed wheel."""
++
++    assert _decide(is_source_tree=False, allow_rebuild=False).action == PROCEED
++
++
++def test_default_editable_checkout_degrades_never_raises() -> None:
++    """codex §9 [P2] regression: the DOCUMENTED default path must stay runnable.
++
++    A clean `pip install -e 'src/python[dev]'` has no hooks and sets no env
++    vars. That must degrade (suite runs, marked tests skip), NOT raise.
++    """
++
++    decision = _decide(allow_rebuild=False)
++    assert decision.action == DEGRADED
++    assert decision.is_degraded
++    # The message has to tell the reader how to fix it.
++    assert REBUILD_OPT_IN in decision.reason
++    assert "maturin develop" in decision.reason
++
++
++def test_authorized_rebuild_still_refused_when_venv_is_foreign() -> None:
++    """TC-27: authorization alone does not make a rebuild safe.
++
++    `scripts/agent-test.sh` sets the opt-in automatically, so the ownership
++    check — not the env var — is what stops a shared venv being rebound.
++    """
++
++    decision = _decide(venv_owned_by_source_tree=False)
++    assert decision.action == DEGRADED
++    assert "TC-27" in decision.reason
++
++
++def test_opt_out_degrades_and_is_not_an_error() -> None:
++    decision = _decide(allow_rebuild=False, forbid_rebuild=True)
++    assert decision.action == DEGRADED
++
++
++def test_contradictory_opt_in_and_opt_out_is_an_error() -> None:
++    assert _decide(allow_rebuild=True, forbid_rebuild=True).action == CONTRADICTORY
++
++
++def test_no_input_combination_yields_an_unsafe_rebuild() -> None:
++    """Exhaustive sweep of the 32-cell decision table: REBUILD requires a source
++    tree, absent hooks, explicit authorization, no opt-out, AND an owned venv."""
++
++    for bits in range(32):
++        obs = {
++            "is_source_tree": bool(bits & 1),
++            "hooks_present": bool(bits & 2),
++            "allow_rebuild": bool(bits & 4),
++            "forbid_rebuild": bool(bits & 8),
++            "venv_owned_by_source_tree": bool(bits & 16),
++        }
++        decision = decide(**obs)
++        assert decision.reason, f"every verdict must carry a reason: {obs}"
++        if decision.action != REBUILD:
++            continue
++        assert obs["is_source_tree"]
++        assert not obs["hooks_present"]
++        assert obs["allow_rebuild"]
++        assert not obs["forbid_rebuild"]
++        assert obs["venv_owned_by_source_tree"]
++
++
++def test_in_tree_venv_is_owned() -> None:
++    repo = Path("/repo")
++    assert venv_belongs_to_source_tree(repo / ".venv", repo / "src" / "python")
++
++
++def test_worktree_against_shared_primary_venv_is_not_owned() -> None:
++    """The exact TC-27 shape: pytest launched from a worktree while the
++    interpreter is the primary checkout's shared `.venv`."""
++
++    assert not venv_belongs_to_source_tree(
++        "/home/u/projects/fathomdb/.venv",
++        "/home/u/projects/fathomdb-worktrees/slice-5/src/python",
++    )
++
++
++def test_system_interpreter_is_not_owned() -> None:
++    assert not venv_belongs_to_source_tree("/usr", "/repo/src/python")
++
++
++def test_real_repo_layout_resolves() -> None:
++    """Guards the `parents[1]` hop: `src/python` -> repo root, not `src`."""
++
++    python_src_dir = Path(__file__).resolve().parent.parent
++    repo_root = python_src_dir.parents[1]
++    assert (repo_root / "src" / "python").resolve() == python_src_dir
++    assert venv_belongs_to_source_tree(repo_root / ".venv", python_src_dir)
+diff --git a/src/python/tests/test_use_default_embedder.py b/src/python/tests/test_use_default_embedder.py
+index 62068eb5..39b72cc0 100644
+--- a/src/python/tests/test_use_default_embedder.py
++++ b/src/python/tests/test_use_default_embedder.py
+@@ -114,6 +114,7 @@ def test_open_report_carries_mean_vec_pinned_initial_state(db_path: str) -> None
+         engine.close()
+ 
+ 
++@pytest.mark.requires_test_hooks
+ def test_open_report_mean_vec_pinned_transitions_after_threshold(
+     db_path: str,
+ ) -> None:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index d4f3604d..114ea84c 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -193,6 +193,13 @@ const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
+ /// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
+ /// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
+ /// stays permissive.
++///
++/// Gated on `feature = "operator"` to match its only call site,
++/// [`Engine::excise_collection_record`], which is itself operator-only: without
++/// the matching `cfg` a non-`operator` build emits a `dead_code` warning for a
++/// helper that has nothing to guard, because the verb it guards does not exist
++/// in that build.
++#[cfg(feature = "operator")]
+ fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+     collection == ERASURE_PENDING_REDACTION_COLLECTION
+         || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
+diff --git a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+index 8183eeb5..bb310c0d 100644
+--- a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
++++ b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+@@ -735,7 +735,29 @@ fn measure_stress(
+ 
+ // ── Driver ─────────────────────────────────────────────────────────────
+ 
++/// **TC-20 hard gate (0.8.20 Slice 5 fix-4).** `#[ignore]` — this body NEVER runs
++/// unless a human explicitly asks for it with `-- --ignored`.
++///
++/// The measurement seeds the real BGE embedder through the projection pipeline
++/// at ~1.3 docs/sec, i.e. ~1.5 h of wall clock for the full corpus. It must not
++/// be reachable by an agent's routine `cargo test --workspace`.
++///
++/// Two independent gates, deliberately: the `default-embedder` feature gate
++/// (file-level `#![cfg]`) already keeps this out of the default build, but that
++/// is implicit — a future `--all-features` run, or feature unification via
++/// another crate, would silently arm it. `#[ignore]` holds regardless of which
++/// features are selected.
++///
++/// The `AGENT_LONG` early-return below is kept as a third layer rather than
++/// replaced: an explicit `--ignored` run on a box without the corpus should
++/// still skip rather than fail.
++///
++/// This does NOT create a vacuous green: R-20-EU7 was CLOSED by HITL decision,
++/// so this test no longer gates anything. Run:
++///   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
++///     --test eu7_real_corpus_ac -- --ignored --nocapture
+ #[test]
++#[ignore = "TC-20: EU-7 real-corpus measurement is ~1.5h of wall clock; opt in with --ignored"]
+ fn eu7_real_corpus_ac_validation() {
+     if std::env::var_os("AGENT_LONG").is_none() {
+         eprintln!("[skip] AGENT_LONG not set; EU-7 real-corpus measurement is opt-in");
+diff --git a/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+new file mode 100644
+index 00000000..87d77167
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py
+@@ -0,0 +1,39 @@
++#!/usr/bin/env python3
++"""Run the REAL shipped ELPS harness (`src/python/eval/elps_live_harness.py`) in stub mode.
++
++TEST-ONLY shim for 0.8.20 Slice 5 fix-4. The engine spawns an extractor as an
++argv command, so this wrapper exists to (a) force `ELPS_STUB_MODE=1` BEFORE the
++harness module is imported — the harness snapshots that variable at import time
++— and (b) load the harness from an absolute path supplied by the caller, so the
++test does not depend on cwd or on `src/python` being installed.
++
++Usage:  elps_stub_shim.py <absolute-path-to-elps_live_harness.py>
++
++Driving the real harness (rather than a hand-written stub) is the point: it is
++what makes the multi-document ingest test a witness for the SHIPPED extractor
++contract instead of for a fixture we control.
++"""
++import importlib.util
++import os
++import sys
++
++# Must be set before importing the harness: `_STUB_MODE` is read at module import.
++os.environ["ELPS_STUB_MODE"] = "1"
++
++if len(sys.argv) < 2:
++    print("usage: elps_stub_shim.py <path-to-elps_live_harness.py>", file=sys.stderr)
++    sys.exit(2)
++
++harness_path = sys.argv[1]
++if not os.path.isfile(harness_path):
++    print(f"[elps_stub_shim] no harness at {harness_path}", file=sys.stderr)
++    sys.exit(2)
++
++spec = importlib.util.spec_from_file_location("elps_live_harness_under_test", harness_path)
++if spec is None or spec.loader is None:
++    print(f"[elps_stub_shim] cannot load {harness_path}", file=sys.stderr)
++    sys.exit(2)
++
++module = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(module)
++module.main()
+diff --git a/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+new file mode 100644
+index 00000000..397ab42d
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py
+@@ -0,0 +1,123 @@
++#!/usr/bin/env python3
++"""Stub BYO-LLM harness that ECHOES a per-entity `source_doc_id` on multi-doc batches.
++
++TEST-ONLY fixture for 0.8.20 Slice 5 fix-4 (R-20-E2, multi-document arm). It
++speaks the `fathomdb.extract.v1` protocol and emits one entity + one self-edge
++per document in the request, attributing each to a `source_doc_id`.
++
++Two modes, selected by argv[1]:
++
++  ``valid``    — echo each element's own caller-supplied `source_doc_id`. The
++                 engine must accept this and store the CALLER's copy of the
++                 string.
++  ``foreign``  — echo an id that is NOT in the batch. The engine must REJECT
++                 this with `EngineError::Extractor` rather than storing the
++                 model-chosen value; accepting it as a value is exactly how a
++                 row acquires provenance no `excise_source` call can reach.
++
++Transport: NDJSON over stdio (stdin -> stdout). No network calls, no LLM.
++"""
++import json
++import sys
++
++FOREIGN_ID = "doc-not-in-this-batch"
++
++
++def log(msg: str) -> None:
++    """Write diagnostic to stderr (never stdout per protocol)."""
++    print(f"[multidoc_echo_harness] {msg}", file=sys.stderr, flush=True)
++
++
++def _build(documents: list, mode: str) -> tuple[list, list]:
++    """Emit one entity and one self-edge per document, carrying an echo."""
++    entities = []
++    edges = []
++    for doc in documents:
++        doc_id = doc.get("source_doc_id", "")
++        echo = doc_id if mode == "valid" else FOREIGN_ID
++        # A distinct entity name per document, so the rows do NOT collapse onto
++        # a single logical_id and each keeps its own provenance.
++        name = f"Entity-{doc_id}"
++        entities.append(
++            {"name": name, "type": "person", "aliases": [], "source_doc_id": echo}
++        )
++        edges.append(
++            {
++                "from_entity": name,
++                "relation": "appears_in",
++                "to_entity": name,
++                "body": f"{name} appears in {doc_id}",
++                "t_valid": None,
++                "t_invalid": None,
++                "confidence": 0.9,
++                "source_doc_id": echo,
++            }
++        )
++    return entities, edges
++
++
++def main() -> None:
++    mode = sys.argv[1] if len(sys.argv) > 1 else "valid"
++    if mode not in ("valid", "foreign"):
++        log(f"unknown mode {mode!r}; expected 'valid' or 'foreign'")
++        sys.exit(2)
++    log(f"started (mode={mode})")
++
++    for raw_line in sys.stdin:
++        raw_line = raw_line.strip()
++        if not raw_line:
++            continue
++
++        try:
++            msg = json.loads(raw_line)
++        except json.JSONDecodeError as exc:
++            log(f"JSON parse error: {exc}")
++            continue
++
++        if msg.get("protocol", "") != "fathomdb.extract.v1":
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "error",
++                "error_code": "invalid_request",
++                "detail": "unknown protocol",
++            }), flush=True)
++            continue
++
++        msg_type = msg.get("type", "")
++
++        if msg_type == "hello":
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "ready",
++                "schema_version": 1,
++                "provider": "stub",
++                "model": f"multidoc-echo-{mode}",
++                "supports": {},
++                "max_docs_per_request": 8,
++            }), flush=True)
++
++        elif msg_type == "extract":
++            request_id = msg.get("request_id", "unknown")
++            entities, edges = _build(msg.get("documents", []), mode)
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "result",
++                "request_id": request_id,
++                "entities": entities,
++                "edges": edges,
++                "warnings": [],
++            }), flush=True)
++
++        else:
++            print(json.dumps({
++                "protocol": "fathomdb.extract.v1",
++                "type": "error",
++                "error_code": "invalid_request",
++                "detail": f"unknown type: {msg_type}",
++            }), flush=True)
++
++    log("stdin closed, exiting")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs b/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+new file mode 100644
+index 00000000..5a433bbc
+--- /dev/null
++++ b/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs
+@@ -0,0 +1,321 @@
++//! 0.8.20 Slice 5 fix-4 — R-20-E2, the **multi-document** arm.
++//!
++//! Slice 5 made ingest provenance caller-grounded: `resolve_provenance`
++//! (`fathomdb-engine/src/lib.rs`) admits the model's `source_doc_id` echo only
++//! as a SELECTOR among ids the caller supplied in the same batch, never as a
++//! value. Coverage for that change was **single-document only**
++//! (`provenance_mandatory::extractor_omitting_source_doc_id_still_excisable`),
++//! and a single-document batch is precisely the case where the echo is ignored
++//! outright — so nothing exercised the branch that actually demands an echo.
++//!
++//! That gap shipped a regression: every MULTI-document extractor batch failed
++//! with `EngineError::Extractor`, because the extractor protocol never required
++//! per-entity attribution and the shipped ELPS harness backfilled
++//! `source_doc_id` onto edges only. This file closes the gap from both sides:
++//!
++//! * the engine's demand is correct and must keep failing loudly
++//!   (`multidoc_batch_*_fails_loudly`);
++//! * the shipped harness must satisfy that demand
++//!   (`elps_live_harness_multidoc_batch_ingests`).
++//!
++//! **Test-design contract (design §3, Rule 1).** Every provenance witness here
++//! asserts on RAW TABLE CONTENTS via direct SQL. Proving provenance through
++//! `search()` is invalid — both `search_index_v2` read paths gate on a live
++//! `canonical_nodes` row, so such a test passes on broken code.
++
++use std::path::PathBuf;
++
++use fathomdb_engine::{Engine, EngineError, ExtractDocument};
++use fathomdb_schema::SQLITE_SUFFIX;
++use rusqlite::{Connection, OptionalExtension};
++use tempfile::TempDir;
++
++fn db_path(dir: &TempDir, name: &str) -> PathBuf {
++    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
++}
++
++fn count(conn: &Connection, sql: &str) -> i64 {
++    conn.query_row(sql, [], |row| row.get::<_, i64>(0)).expect("count query")
++}
++
++fn manifest_dir() -> PathBuf {
++    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
++}
++
++fn fixture_dir() -> PathBuf {
++    manifest_dir().join("tests/fixtures/slice15_byo_llm")
++}
++
++/// Absolute path to the SHIPPED ELPS harness. `CARGO_MANIFEST_DIR` is
++/// `<repo>/src/rust/crates/fathomdb-engine`, so the repo root is four levels up.
++fn shipped_elps_harness() -> PathBuf {
++    manifest_dir()
++        .ancestors()
++        .nth(4)
++        .expect("repo root is four levels above the engine crate")
++        .join("src/python/eval/elps_live_harness.py")
++}
++
++/// A two-document batch. Both ids are caller-supplied; neither is derived from
++/// anything the extractor says.
++fn two_docs() -> Vec<ExtractDocument> {
++    vec![
++        ExtractDocument {
++            source_doc_id: "caller-doc-1".to_string(),
++            body: "Alice owns the project".to_string(),
++        },
++        ExtractDocument {
++            source_doc_id: "caller-doc-2".to_string(),
++            body: "Bob reviews the project".to_string(),
++        },
++    ]
++}
++
++fn cmd_of(parts: &[String]) -> Vec<&str> {
++    parts.iter().map(String::as_str).collect()
++}
++
++// ---------------------------------------------------------------------------
++// The engine's demand — a multi-document batch REQUIRES per-entity attribution
++// ---------------------------------------------------------------------------
++
++/// **Guard (do not "fix" by relaxing).** On a multi-document batch the engine
++/// cannot know which document an entity came from unless the extractor says so.
++/// Guessing — e.g. falling back to the batch's first id — would silently mis-file
++/// the row under a document whose erasure then would NOT remove it, which is the
++/// R-20-E2 defect this slice exists to close. So an absent echo must FAIL, and
++/// fail as `EngineError::Extractor`.
++///
++/// Contrast with the single-document case, which is unambiguous and therefore
++/// ignores the echo outright — asserted below so the two arms cannot drift.
++#[test]
++fn multidoc_batch_without_entity_echo_fails_loudly() {
++    let script = fixture_dir().join("provenance_omitting_harness.py");
++    assert!(script.exists(), "fixture harness must exist at {}", script.display());
++    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_no_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let err = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect_err("a multi-doc batch whose entities carry no source_doc_id echo must FAIL");
++    assert!(
++        matches!(err, EngineError::Extractor),
++        "an unattributable entity is a protocol violation, not a silent default; got {err:?}"
++    );
++
++    // And the failure is total: no half-attributed row reached the tables.
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes"),
++        0,
++        "a rejected batch must leave no node rows behind"
++    );
++}
++
++/// The **same** extractor, the **same** missing echo — but a single-document
++/// batch. Attribution is unambiguous, so the caller's id is used and the ingest
++/// succeeds. This is what made the regression invisible: all pre-existing
++/// coverage lived on this side of the branch.
++#[test]
++fn singledoc_batch_without_entity_echo_still_succeeds() {
++    let script = fixture_dir().join("provenance_omitting_harness.py");
++    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "singledoc_no_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let docs = vec![ExtractDocument {
++        source_doc_id: "caller-doc-1".to_string(),
++        body: "Alice owns the project".to_string(),
++    }];
++    let receipt = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &docs)
++        .expect("a single-doc batch needs no echo: attribution is unambiguous");
++    assert!(receipt.nodes_written > 0, "fixture must produce entity rows");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id IS NOT 'caller-doc-1'"),
++        0,
++        "every row takes the CALLER's id"
++    );
++}
++
++/// **The echo is a selector, never a value.** A model that names a document
++/// outside the batch must be rejected outright. If the engine ever stored this
++/// string, the row would carry provenance the caller never supplied and cannot
++/// erase — a model could make a row permanently un-erasable by inventing an id.
++#[test]
++fn multidoc_batch_with_foreign_echo_fails_loudly() {
++    let script = fixture_dir().join("multidoc_echo_harness.py");
++    assert!(script.exists(), "fixture harness must exist at {}", script.display());
++    let parts =
++        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "foreign".to_string()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_foreign_echo");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let err = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect_err("an echo naming a document outside the batch must FAIL");
++    assert!(matches!(err, EngineError::Extractor), "expected EngineError::Extractor, got {err:?}");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(
++            &conn,
++            "SELECT count(*) FROM canonical_nodes WHERE source_id = 'doc-not-in-this-batch'"
++        ),
++        0,
++        "the model's invented id must never reach a stored row"
++    );
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes"),
++        0,
++        "a rejected batch must leave no node rows behind"
++    );
++}
++
++/// A valid echo SELECTS among the caller's ids; the stored string is then the
++/// caller's own copy. Asserted per-row against raw tables: each entity lands
++/// under the document it was attributed to, and every stored `source_id` is one
++/// of the two ids the caller supplied.
++#[test]
++fn multidoc_batch_with_valid_echo_stores_caller_copy() {
++    let script = fixture_dir().join("multidoc_echo_harness.py");
++    let parts =
++        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "valid".to_string()];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "multidoc_valid_echo");
++    // Full `Engine::open` (as `erasure_completeness` does): `erase_source`
++    // drains the projection runtime, which never reaches idle on an
++    // embedder-less test engine and would fail with `EngineError::Scheduler`.
++    let opened = Engine::open(&path).expect("open");
++
++    let receipt = opened
++        .engine
++        .ingest_with_extractor(&cmd_of(&parts), &two_docs())
++        .expect("a multi-doc batch with per-entity attribution must succeed");
++    assert!(receipt.nodes_written >= 2, "one entity per document: {receipt:?}");
++
++    {
++        let conn = Connection::open(&path).expect("open raw");
++        // Every stored provenance is one the CALLER supplied — nothing else.
++        assert_eq!(
++            count(
++                &conn,
++                "SELECT count(*) FROM canonical_nodes \
++                 WHERE source_id NOT IN ('caller-doc-1', 'caller-doc-2')",
++            ),
++            0,
++            "no stored node may carry provenance outside the caller's batch"
++        );
++        // …and each row landed under the document it was attributed to.
++        for (name, expected) in
++            [("Entity-caller-doc-1", "caller-doc-1"), ("Entity-caller-doc-2", "caller-doc-2")]
++        {
++            let got: Option<String> = conn
++                .query_row("SELECT source_id FROM canonical_nodes WHERE body = ?1", [name], |row| {
++                    row.get(0)
++                })
++                .optional()
++                .expect("query")
++                .unwrap_or_else(|| panic!("expected a stored row for {name}"));
++            assert_eq!(
++                got.as_deref(),
++                Some(expected),
++                "{name} must be filed under the document it was attributed to"
++            );
++        }
++    }
++
++    // The consequence that matters: erasing ONE document removes only its rows.
++    // Let the embed/projection work for the ingested rows settle first, as
++    // `erasure_completeness` does: `erase_source` drains internally on a short
++    // budget and reports `EngineError::Scheduler` if in-flight work outlasts it.
++    opened.engine.drain(120_000).expect("drain");
++
++    // `erase_source` (the governed SDK spelling) — not the operator-gated
++    // `excise_source`: a caller document id is exactly what the governed verb
++    // is for, so this also witnesses that the SDK surface can reach these rows.
++    let report = opened.engine.erase_source("caller-doc-1").expect("erase");
++    assert!(report.nodes_excised > 0, "doc-1's rows must be excisable by the caller's id");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id = 'caller-doc-1'"),
++        0,
++        "every caller-doc-1 row is gone"
++    );
++    assert!(
++        count(&conn, "SELECT count(*) FROM canonical_nodes WHERE source_id = 'caller-doc-2'") > 0,
++        "caller-doc-2's rows must survive an unrelated document's erasure"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// The contract's other side — the SHIPPED harness must satisfy that demand
++// ---------------------------------------------------------------------------
++
++/// **Regression witness (RED before the harness fix).** Drives the real
++/// `src/python/eval/elps_live_harness.py` in stub mode over a two-document
++/// batch — the exact shape an independent A/B found broken on this branch:
++/// `_fathomdb.ExtractorError: extractor error`, where `origin/main` ingested
++/// fine.
++///
++/// The harness backfilled `source_doc_id` onto edges only, never onto entities,
++/// so the entity loop hit `resolve_provenance(None)` on a multi-doc batch. The
++/// fix is on the CONTRACT side — the harness now backfills entities exactly as
++/// it already did edges — not on the engine side; the engine's demand above
++/// stays as strict as it was.
++///
++/// Uses a shim to force `ELPS_STUB_MODE=1` before import, so this needs no
++/// network, no LLM and no third-party Python packages.
++#[test]
++fn elps_live_harness_multidoc_batch_ingests() {
++    let shim = fixture_dir().join("elps_stub_shim.py");
++    let harness = shipped_elps_harness();
++    assert!(shim.exists(), "shim must exist at {}", shim.display());
++    assert!(harness.exists(), "shipped ELPS harness must exist at {}", harness.display());
++
++    let parts = vec![
++        "python3".to_string(),
++        shim.to_string_lossy().into_owned(),
++        harness.to_string_lossy().into_owned(),
++    ];
++
++    let dir = TempDir::new().expect("tempdir");
++    let path = db_path(&dir, "elps_multidoc");
++    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
++
++    let receipt = opened.engine.ingest_with_extractor(&cmd_of(&parts), &two_docs()).expect(
++        "the shipped ELPS harness must attribute every entity it emits, so that a \
++         multi-document batch ingests instead of failing with EngineError::Extractor",
++    );
++    assert!(receipt.nodes_written > 0, "the stub harness must produce entity rows: {receipt:?}");
++
++    drop(opened);
++    let conn = Connection::open(&path).expect("open raw");
++    assert_eq!(
++        count(
++            &conn,
++            "SELECT count(*) FROM canonical_nodes \
++             WHERE source_id NOT IN ('caller-doc-1', 'caller-doc-2')",
++        ),
++        0,
++        "every row the harness produced must be filed under a caller-supplied document id"
++    );
++}
+
+exec
+/bin/bash -lc 'git diff 8e09b9506ce69060fa29bbed01f8f17b2f2dfd63 -- src/python/tests/conftest.py src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs src/python/tests/test_ffi_safety.py src/python/tests/test_test_hooks_gate.py src/python/tests/test_use_default_embedder.py' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+diff --git a/src/python/tests/conftest.py b/src/python/tests/conftest.py
+index a48a2854..ec2e068e 100644
+--- a/src/python/tests/conftest.py
++++ b/src/python/tests/conftest.py
+@@ -13,17 +13,22 @@ EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
+ and friends are missing and tests like `test_use_default_embedder.py`,
+ `test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
+ 
+-This rebuild runs at conftest IMPORT time (module level below), NOT as a
+-session-scoped fixture. A fixture runs during test *setup*, which is too late
+-for a test module that imports a test-hooks symbol at MODULE level
+-(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
+-that import is evaluated during *collection*, before any fixture runs, so the
+-binding must already carry the symbol. conftest.py top-level code is the
+-earliest hook that still runs before sibling test modules are collected. The
+-rebuild short-circuits if the test-hooks symbol is already present (developer
+-pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
+-session in the same venv built it), so the `maturin develop` cost (~5-60s) is
+-paid at most once per venv.
++That rebuild is gated: see `_test_hooks_gate.py` for the policy (TC-27) and
++`_ensure_test_hooks_binding` below for how the observations are gathered. When
++the gate returns DEGRADED the suite still collects and runs; only the tests
++marked `@pytest.mark.requires_test_hooks` are skipped, with the gate's reason
++attached, plus a banner in the pytest report header.
++
++When a rebuild IS authorized it runs at conftest IMPORT time (module level
++below), NOT as a session-scoped fixture. A fixture runs during test *setup*,
++which is too late: a test module that imports the extension during *collection*
++dlopen()s the stale `.so`, and a later `maturin develop` cannot be re-imported
++in the same process. conftest.py top-level code is the earliest hook that still
++runs before sibling test modules are collected. The rebuild short-circuits if
++the test-hooks symbol is already present (developer pre-warmed with
++`maturin develop --features ...,test-hooks,...`, or a previous session in the
++same venv built it), so the `maturin develop` cost (~5-60s) is paid at most
++once per venv.
+ """
+ 
+ from __future__ import annotations
+@@ -35,6 +40,19 @@ from pathlib import Path
+ 
+ import pytest
+ 
++from _test_hooks_gate import (
++    CONTRADICTORY,
++    DEGRADED,
++    REBUILD,
++    REBUILD_OPT_IN,
++    REBUILD_OPT_OUT,
++    REQUIRES_HOOKS_MARKER,
++    Decision,
++    decide,
++    skip_reason,
++    venv_belongs_to_source_tree,
++)
++
+ 
+ @pytest.fixture
+ def db_path(tmp_path: Path) -> str:
+@@ -74,28 +92,59 @@ def _binding_has_test_hooks() -> bool:
+     ).returncode == 0
+ 
+ 
+-def _ensure_test_hooks_binding() -> None:
+-    """Rebuild the editable binding with `test-hooks` enabled before
+-    sibling test modules are collected, unless it is already present.
++class TestHooksBindingMisconfigured(RuntimeError):
++    """The environment both requests and forbids a `test-hooks` rebuild."""
++
++
++def _ensure_test_hooks_binding() -> Decision:
++    """Gather the observations `_test_hooks_gate.decide` needs, then act on its
++    verdict — before sibling test modules are collected.
++
++    **TC-27 (0.8.20 Slice 5 fix-4/fix-6) — the rebuild is OPT-IN and
++    ownership-checked; a missing binding DEGRADES the run, it does not abort it.**
++
++    This function used to shell out to `maturin develop` autonomously, and did
++    so during an agent session that never issued a build command. It failed
++    only benignly, and only by luck: the interpreter was not an activated
++    virtualenv. Had it been, the rebuild would have rebound the SHARED `.venv`
++    to whatever source tree pytest happened to be launched from — including an
++    agent worktree, silently repointing every other consumer of that venv at
++    unreviewed code.
++
++    fix-4 closed that by raising at import time when the rebuild was not
++    authorized — which made the *documented* default path
++    (`pip install -e 'src/python[dev]'` then `scripts/agent-test.sh`) fail
++    before collection, i.e. permanently red. fix-6 keeps the hazard closed but
++    returns DEGRADED instead: the suite runs, and only the tests carrying
++    ``@pytest.mark.requires_test_hooks`` skip (visibly, with the reason). The
++    sanctioned dev loop authorizes the rebuild explicitly from
++    ``scripts/agent-test.sh``.
++
++    :raises TestHooksBindingMisconfigured: only for a contradictory
++        opt-in/opt-out pair — a configuration error the caller must fix.
++    """
++
++    # Not an editable-install context when `pyproject.toml` is absent (the
++    # release-surface tests run against a pip-installed wheel under a throwaway
++    # venv). Probing the binding there would be a pointless subprocess, so keep
++    # the short-circuit here rather than inside the pure policy.
++    is_source_tree = (_PYTHON_SRC_DIR / "pyproject.toml").exists()
++
++    decision = decide(
++        is_source_tree=is_source_tree,
++        # Developer already built with test-hooks (or a previous pytest session
++        # in the same venv did) — the normal path, which never consults the opt-in.
++        hooks_present=is_source_tree and _binding_has_test_hooks(),
++        allow_rebuild=os.environ.get(REBUILD_OPT_IN) == "1",
++        forbid_rebuild=os.environ.get(REBUILD_OPT_OUT) == "1",
++        # `sys.prefix` is the environment root for a venv interpreter.
++        venv_owned_by_source_tree=venv_belongs_to_source_tree(sys.prefix, _PYTHON_SRC_DIR),
++    )
+ 
+-    Skipped when not invoked from the source tree (e.g. running the
+-    test files against a pip-installed wheel for release-surface
+-    verification) — detected by the absence of `pyproject.toml` next
+-    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
+-    is set (developer escape hatch: prebuild once, iterate without
+-    paying the rebuild cost)."""
+-
+-    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+-        return
+-    pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
+-    if not pyproject.exists():
+-        # Not an editable-install context (release-surface tests run
+-        # against a pip-installed wheel under a throwaway venv).
+-        return
+-    if _binding_has_test_hooks():
+-        # Developer already built with test-hooks (or a previous
+-        # pytest session in the same venv did). Skip the rebuild.
+-        return
++    if decision.action == CONTRADICTORY:
++        raise TestHooksBindingMisconfigured(decision.reason)
++    if decision.action != REBUILD:
++        return decision
+ 
+     print(
+         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+@@ -131,8 +180,54 @@ def _ensure_test_hooks_binding() -> None:
+         if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
+             del sys.modules[mod_name]
+ 
++    # Re-probe rather than trusting a zero exit code. If `maturin develop`
++    # somehow lands a binding that still lacks the hooks, DEGRADED (visible
++    # skips) is the honest outcome — never let the marked tests run and
++    # "pass" against a surface that is not there.
++    if not _binding_has_test_hooks():
++        return Decision(
++            DEGRADED,
++            "`maturin develop` completed but the rebuilt binding still does not expose "
++            "the test-hooks surface. Check that the `test-hooks` Cargo feature still "
++            "gates the expected methods.",
++        )
++    return decision
++
+ 
+ # Run the rebuild at conftest IMPORT time (before sibling test modules are
+ # collected), not as a fixture — see the module docstring for why a fixture is
+-# too late for module-level test-hooks imports (e.g. test_ffi_safety.py).
+-_ensure_test_hooks_binding()
++# too late once a sibling module has dlopen()ed the stale extension.
++_TEST_HOOKS_DECISION = _ensure_test_hooks_binding()
++
++
++def pytest_report_header() -> list[str] | None:
++    """Announce a degraded run in the pytest header, at ANY verbosity.
++
++    Requirement: never a silent green. If the hook surface is missing, the
++    reason is on screen before the first test runs, not buried in `-rs`.
++    """
++
++    if not _TEST_HOOKS_DECISION.is_degraded:
++        return None
++    return [
++        "test-hooks: UNAVAILABLE — tests marked "
++        f"`{REQUIRES_HOOKS_MARKER}` will be SKIPPED (not run).",
++        *(f"  {line}" for line in _TEST_HOOKS_DECISION.reason.splitlines()),
++    ]
++
++
++def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
++    """Skip — visibly, with the gate's reason — every test that needs the
++    `test-hooks` surface when the gate came back DEGRADED.
++
++    A real `pytest.mark.skip`, so the run reports `s` and `-rs` prints the
++    reason. Tests that do not carry the marker are untouched: a missing dev-only
++    feature must not silently shrink the rest of the suite either.
++    """
++
++    if not _TEST_HOOKS_DECISION.is_degraded:
++        return
++    mark = pytest.mark.skip(reason=skip_reason(_TEST_HOOKS_DECISION.reason))
++    for item in items:
++        if item.get_closest_marker(REQUIRES_HOOKS_MARKER) is not None:
++            item.add_marker(mark)
+diff --git a/src/python/tests/test_ffi_safety.py b/src/python/tests/test_ffi_safety.py
+index 6d087bb8..0b74b4cb 100644
+--- a/src/python/tests/test_ffi_safety.py
++++ b/src/python/tests/test_ffi_safety.py
+@@ -13,14 +13,22 @@ from typing import Callable
+ import pytest
+ 
+ from fathomdb import Engine, SearchFilter, admin
+-from fathomdb._fathomdb import force_panic_for_test
+ from fathomdb.errors import EngineError, WriteValidationError
+ 
++# `force_panic_for_test` is `test-hooks`-gated and therefore ABSENT from a
++# binding built with the release feature set (the documented
++# `pip install -e 'src/python[dev]'`). Importing it at MODULE level made the
++# whole file un-collectable there — a collection ERROR, which is indistinguishable
++# from a real breakage. It is imported inside the one test that needs it instead,
++# so the `requires_test_hooks` marker can turn that into a visible SKIP
++# (see `conftest.py` / `_test_hooks_gate.py`).
++
+ # 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
+ _SOURCE_ID = "py-test:ffi-safety"
+ 
+ 
+ 
++@pytest.mark.requires_test_hooks
+ def test_panic_surfaces_as_python_exception(db_path: str) -> None:
+     """AC-067 — engine panics must not abort the host process.
+ 
+@@ -29,6 +37,8 @@ def test_panic_surfaces_as_python_exception(db_path: str) -> None:
+     catch `EngineError` must not silently swallow it.
+     """
+ 
++    from fathomdb._fathomdb import force_panic_for_test  # test-hooks-gated
++
+     pid_before = os.getpid()
+     with pytest.raises(BaseException) as excinfo:
+         force_panic_for_test()
+diff --git a/src/python/tests/test_test_hooks_gate.py b/src/python/tests/test_test_hooks_gate.py
+new file mode 100644
+index 00000000..86742d74
+--- /dev/null
++++ b/src/python/tests/test_test_hooks_gate.py
+@@ -0,0 +1,153 @@
++"""Unit tests for the `test-hooks` gate policy (TC-27, 0.8.20 Slice 5 fix-6).
++
++These pin the decision table that `conftest.py` acts on. They are pure: no
++binding, no venv, no subprocess — so they run identically on a hook-less
++editable install, which is precisely the configuration the policy exists to
++handle.
++
++Two regressions are locked here:
++
++* fix-4 made a hook-less editable checkout raise at conftest import time, so the
++  documented `pip install -e 'src/python[dev]'` + `scripts/agent-test.sh` loop
++  was always red. `test_default_editable_checkout_degrades_never_raises` forbids
++  any verdict other than DEGRADED on that path.
++* The original defect fix-4 was closing: an unattended `maturin develop` firing
++  from an agent worktree into the primary checkout's shared `.venv`.
++  `test_authorized_rebuild_still_refused_when_venv_is_foreign` and
++  `test_worktree_against_shared_primary_venv_is_not_owned` forbid REBUILD there.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from _test_hooks_gate import (
++    CONTRADICTORY,
++    DEGRADED,
++    PROCEED,
++    REBUILD,
++    REBUILD_OPT_IN,
++    decide,
++    venv_belongs_to_source_tree,
++)
++
++# The "everything is fine, rebuild is safe" baseline; each test overrides the
++# one or two observations it is about.
++_SAFE = {
++    "is_source_tree": True,
++    "hooks_present": False,
++    "allow_rebuild": True,
++    "forbid_rebuild": False,
++    "venv_owned_by_source_tree": True,
++}
++
++
++def _decide(**overrides: bool):
++    return decide(**{**_SAFE, **overrides})
++
++
++def test_authorized_rebuild_in_owned_venv_proceeds_to_rebuild() -> None:
++    assert _decide().action == REBUILD
++
++
++def test_hooks_already_present_short_circuits() -> None:
++    """The common warm path: never consults the opt-in at all."""
++
++    for allow in (True, False):
++        for owned in (True, False):
++            decision = _decide(hooks_present=True, allow_rebuild=allow,
++                               venv_owned_by_source_tree=owned)
++            assert decision.action == PROCEED
++
++
++def test_wheel_context_proceeds_without_a_source_tree() -> None:
++    """Release-surface tests run the test files against a pip-installed wheel."""
++
++    assert _decide(is_source_tree=False, allow_rebuild=False).action == PROCEED
++
++
++def test_default_editable_checkout_degrades_never_raises() -> None:
++    """codex §9 [P2] regression: the DOCUMENTED default path must stay runnable.
++
++    A clean `pip install -e 'src/python[dev]'` has no hooks and sets no env
++    vars. That must degrade (suite runs, marked tests skip), NOT raise.
++    """
++
++    decision = _decide(allow_rebuild=False)
++    assert decision.action == DEGRADED
++    assert decision.is_degraded
++    # The message has to tell the reader how to fix it.
++    assert REBUILD_OPT_IN in decision.reason
++    assert "maturin develop" in decision.reason
++
++
++def test_authorized_rebuild_still_refused_when_venv_is_foreign() -> None:
++    """TC-27: authorization alone does not make a rebuild safe.
++
++    `scripts/agent-test.sh` sets the opt-in automatically, so the ownership
++    check — not the env var — is what stops a shared venv being rebound.
++    """
++
++    decision = _decide(venv_owned_by_source_tree=False)
++    assert decision.action == DEGRADED
++    assert "TC-27" in decision.reason
++
++
++def test_opt_out_degrades_and_is_not_an_error() -> None:
++    decision = _decide(allow_rebuild=False, forbid_rebuild=True)
++    assert decision.action == DEGRADED
++
++
++def test_contradictory_opt_in_and_opt_out_is_an_error() -> None:
++    assert _decide(allow_rebuild=True, forbid_rebuild=True).action == CONTRADICTORY
++
++
++def test_no_input_combination_yields_an_unsafe_rebuild() -> None:
++    """Exhaustive sweep of the 32-cell decision table: REBUILD requires a source
++    tree, absent hooks, explicit authorization, no opt-out, AND an owned venv."""
++
++    for bits in range(32):
++        obs = {
++            "is_source_tree": bool(bits & 1),
++            "hooks_present": bool(bits & 2),
++            "allow_rebuild": bool(bits & 4),
++            "forbid_rebuild": bool(bits & 8),
++            "venv_owned_by_source_tree": bool(bits & 16),
++        }
++        decision = decide(**obs)
++        assert decision.reason, f"every verdict must carry a reason: {obs}"
++        if decision.action != REBUILD:
++            continue
++        assert obs["is_source_tree"]
++        assert not obs["hooks_present"]
++        assert obs["allow_rebuild"]
++        assert not obs["forbid_rebuild"]
++        assert obs["venv_owned_by_source_tree"]
++
++
++def test_in_tree_venv_is_owned() -> None:
++    repo = Path("/repo")
++    assert venv_belongs_to_source_tree(repo / ".venv", repo / "src" / "python")
++
++
++def test_worktree_against_shared_primary_venv_is_not_owned() -> None:
++    """The exact TC-27 shape: pytest launched from a worktree while the
++    interpreter is the primary checkout's shared `.venv`."""
++
++    assert not venv_belongs_to_source_tree(
++        "/home/u/projects/fathomdb/.venv",
++        "/home/u/projects/fathomdb-worktrees/slice-5/src/python",
++    )
++
++
++def test_system_interpreter_is_not_owned() -> None:
++    assert not venv_belongs_to_source_tree("/usr", "/repo/src/python")
++
++
++def test_real_repo_layout_resolves() -> None:
++    """Guards the `parents[1]` hop: `src/python` -> repo root, not `src`."""
++
++    python_src_dir = Path(__file__).resolve().parent.parent
++    repo_root = python_src_dir.parents[1]
++    assert (repo_root / "src" / "python").resolve() == python_src_dir
++    assert venv_belongs_to_source_tree(repo_root / ".venv", python_src_dir)
+diff --git a/src/python/tests/test_use_default_embedder.py b/src/python/tests/test_use_default_embedder.py
+index 62068eb5..39b72cc0 100644
+--- a/src/python/tests/test_use_default_embedder.py
++++ b/src/python/tests/test_use_default_embedder.py
+@@ -114,6 +114,7 @@ def test_open_report_carries_mean_vec_pinned_initial_state(db_path: str) -> None
+         engine.close()
+ 
+ 
++@pytest.mark.requires_test_hooks
+ def test_open_report_mean_vec_pinned_transitions_after_threshold(
+     db_path: str,
+ ) -> None:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index d4f3604d..114ea84c 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -193,6 +193,13 @@ const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
+ /// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
+ /// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
+ /// stays permissive.
++///
++/// Gated on `feature = "operator"` to match its only call site,
++/// [`Engine::excise_collection_record`], which is itself operator-only: without
++/// the matching `cfg` a non-`operator` build emits a `dead_code` warning for a
++/// helper that has nothing to guard, because the verb it guards does not exist
++/// in that build.
++#[cfg(feature = "operator")]
+ fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+     collection == ERASURE_PENDING_REDACTION_COLLECTION
+         || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
+diff --git a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+index 8183eeb5..bb310c0d 100644
+--- a/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
++++ b/src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs
+@@ -735,7 +735,29 @@ fn measure_stress(
+ 
+ // ── Driver ─────────────────────────────────────────────────────────────
+ 
++/// **TC-20 hard gate (0.8.20 Slice 5 fix-4).** `#[ignore]` — this body NEVER runs
++/// unless a human explicitly asks for it with `-- --ignored`.
++///
++/// The measurement seeds the real BGE embedder through the projection pipeline
++/// at ~1.3 docs/sec, i.e. ~1.5 h of wall clock for the full corpus. It must not
++/// be reachable by an agent's routine `cargo test --workspace`.
++///
++/// Two independent gates, deliberately: the `default-embedder` feature gate
++/// (file-level `#![cfg]`) already keeps this out of the default build, but that
++/// is implicit — a future `--all-features` run, or feature unification via
++/// another crate, would silently arm it. `#[ignore]` holds regardless of which
++/// features are selected.
++///
++/// The `AGENT_LONG` early-return below is kept as a third layer rather than
++/// replaced: an explicit `--ignored` run on a box without the corpus should
++/// still skip rather than fail.
++///
++/// This does NOT create a vacuous green: R-20-EU7 was CLOSED by HITL decision,
++/// so this test no longer gates anything. Run:
++///   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
++///     --test eu7_real_corpus_ac -- --ignored --nocapture
+ #[test]
++#[ignore = "TC-20: EU-7 real-corpus measurement is ~1.5h of wall clock; opt in with --ignored"]
+ fn eu7_real_corpus_ac_validation() {
+     if std::env::var_os("AGENT_LONG").is_none() {
+         eprintln!("[skip] AGENT_LONG not set; EU-7 real-corpus measurement is opt-in");
+
+exec
+/bin/bash -lc "grep -R \"required-features\\|multidoc_extractor\" -n src/rust/crates/fathomdb-engine/Cargo.toml Cargo.toml; sed -n '1,80p' src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs; sed -n '1,160p' src/python/tests/test_use_default_embedder.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/Cargo.toml:60:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:71:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:75:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:79:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:83:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:87:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:91:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:95:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:99:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:103:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:107:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:111:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:115:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:119:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:123:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:127:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:131:required-features = ["operator"]
+src/rust/crates/fathomdb-engine/Cargo.toml:139:required-features = ["default-reranker"]
+src/rust/crates/fathomdb-engine/Cargo.toml:146:required-features = ["default-reranker"]
+//! EU-7 — real-corpus AC validation + recall@10 anchor measurement.
+//!
+//! Per `dev/plans/prompts/0.7.1-EU-7-launch.md`. This harness validates
+//! AC-013 (vector retrieval latency), AC-013b (recall@10 vs f32 ground
+//! truth), and AC-019 (mixed-retrieval stress tail) against the **real
+//! default embedder** (`BAAI/bge-small-en-v1.5`, candle-transformers,
+//! dim 384) over the **real corpus** (`data/corpus-data/raw/*.jsonl`),
+//! at dev-box scale.
+//!
+//! ## What this measures vs. perf_gates.rs
+//!
+//! `tests/perf_gates.rs::ac_013b_recall_at_10_floor` runs against a
+//! synthetic *isotropic* `VaryingEmbedder` and hard-asserts the
+//! HITL-locked 0.90 floor. Isotropic random vectors are the noise-
+//! limited case for sign-bit ANN; real anisotropic BGE embeddings are
+//! *easier* for sign-bit quantization (see
+//! `dev/plans/runs/STATUS-perf-vector-quant.md` "Fixture-replacement
+//! evaluation", post-correction). This harness measures the **real**
+//! number that 0.7.2 PR-2 will use to re-derive `AC013B_RECALL_FLOOR`
+//! as `R - 2*sigma`.
+//!
+//! ## Recall posture (AC-075, 0.8.0 Slice 40 / GA-2 — eu7 is the verdict)
+//!
+//! As of 0.8.0 Slice 40, this real-embedder harness is the **asserting**
+//! recall verdict (AC-075) on the real bge-small embedder over the real
+//! corpus. ◆ GA-3 (◆ HITL ruling 2026-06-08): the verdict is a **one-sided,
+//! CI-based** gate against the unchanged 0.90 floor — PASS iff the recall 95%
+//! bootstrap CI is not significantly below the floor (`recall_ci_hi >=
+//! CURRENT_FLOOR`), NOT a point-estimate `recall >= floor` assert. The 0.90
+//! floor CONSTANT is unchanged; the measured N=7667 point estimate 0.8960 (CI
+//! [0.8640, 0.9250]) clears the gate because ci_hi 0.925 ≥ 0.90. The
+//! point-estimate-≥0.90 recovery (the ~4pt 0.7.x→0.8.0 vector-stage drop) is a
+//! 0.8.1 item, and this CI form is to be revisited after 0.8.0. It supersedes
+//! the informal AC-013b floor assert: the synthetic
+//! `perf_gates::ac_013b_recall_at_10_floor` is now REPORT-ONLY.
+//!
+//! **◆ B-1 correction (GA-2, 2026-06-08).** The system-under-test is the
+//! engine's pre-fusion **VECTOR-STAGE** ranking (1-bit sign-quant K=192
+//! Hamming + f32 rerank), obtained via the test-only
+//! `set_vector_stage_only_for_test` seam — NOT the RRF-fused `search()`
+//! output. The ground truth is an exact-f32 VECTOR top-10, so measuring it
+//! against the unconditional-RRF hybrid `search()` (Slice 10, `d28d204`)
+//! conflated ANN-quantization FIDELITY (what the 0.90 floor gates) with
+//! intended fusion divergence — the cause of the Slice-40 Phase-A HALT
+//! (recall 0.8710 < 0.90), root-caused in
+//! `dev/plans/runs/GA-1-corpus-ab-20260608T012503Z.md`. The corrected
+//! vector-stage SUT measures recall@10 = 0.896 (CI 0.864–0.925, σ 0.0157) at
+//! N=7667 (0.924 at N=1000) — the live B-1 remeasure
+//! (`GA-signoff-eu7-remeasure-20260608T172804Z`). (The 0.937 figure earlier in
+//! this campaign was the 0.7.1 `search()`-SUT anchor, carried as a GA-2
+//! assumption; it is NOT the vector-stage value. The 0.937→0.896 gap is a
+//! vector-stage measurement-SUT change — old `search()` vs this seam — not a
+//! fidelity regression, and not embedder-pooling; bisected in
+//! `dev/plans/runs/0.8.3-eu7-bisect-report.md`.) The
+//! harness ALSO reports the fused-`search()` recall (`EU7_RECALL_FUSED`,
+//! ~0.871) as the report-only delta, so the correction is demonstrably
+//! load-bearing, not cosmetic. This is the ANN-quantization FIDELITY axis,
+//! complementary to and NOT a substitute for the IR/relevance axis (eu8 /
+//! the IR-1 `ir-recall-measure.md`). K stays locked at 192;
+//! `AC013B_RECALL_FLOOR` is unchanged (its sentinel still pins 0.90).
+//! AC-013 latency and AC-019 stress remain REPORTED (dev-box scouting).
+//!
+//! ## Production-path fidelity
+//!
+//! The harness constructs the **real** `CandleBgeEmbedder` and supplies
+//! it via `EmbedderChoice::Caller`. Because its identity name is
+//! `fathomdb-bge-small-en-v1.5`, the engine's mean-centering apply paths
+//! engage exactly as they do for `EmbedderChoice::Default` (identity-
+//! gated; see `identity_requires_mean_centering`), the mean pins at
+//! `MEAN_VEC_PIN_THRESHOLD` (256) docs, and retrieval runs the locked
+//! K=192 bit-KNN + f32 rerank pipeline. Holding the embedder `Arc` lets
+//! the harness embed queries with the *same model* for the f32
+//! ground-truth pass (codex focus: ground truth must use the candidate
+//! model, not a different one).
+//!
+//! ## Gating
+//!
+//! Requires the `default-embedder` Cargo feature (real candle weights)
+//! AND `AGENT_LONG=1` (the embed pass is minutes of wall-clock). The
+//! warm-cache contract is the same as `eu5b_lockflip.rs`: weights are
+"""EU-6 — Python binding surface for `use_default_embedder` + EU-5b
+`OpenReport` fields.
+
+Per `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` §EU-6, the
+Python binding exposes the EU-5b binary opt-in selector via the
+`Engine.open(path, use_default_embedder=...)` kwarg:
+
+- `True` → `EmbedderChoice::Default` (engine materialises the pinned
+  bge-small embedder via the EU-3 loader; weights fetched from HF on
+  first use).
+- `False` (default) → `EmbedderChoice::None` (no embedder; vector
+  writes fail with `EmbedderNotConfiguredError`).
+
+These tests also assert that the four EU-5a1/5a2/5b `OpenReport` fields
+round-trip through the binding:
+
+- `embedder_download_ms`
+- `embedder_events`
+- `embedder_mean_centering_required`
+- `embedder_mean_vec_pinned`
+
+Network-hitting tests honour `FATHOMDB_SKIP_NETWORK_TESTS` per EU-5c.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from fathomdb import Engine
+from fathomdb._fathomdb import Engine as _NativeEngine
+
+# Threshold mirrors `fathomdb_engine::MEAN_VEC_PIN_THRESHOLD` (256).
+_MEAN_VEC_PIN_THRESHOLD = 256
+
+
+def _skip_if_no_network() -> None:
+    if os.environ.get("FATHOMDB_SKIP_NETWORK_TESTS"):
+        pytest.skip("FATHOMDB_SKIP_NETWORK_TESTS set; skipping network-hitting test")
+
+
+def test_open_default_embedder_succeeds(db_path: str) -> None:
+    _skip_if_no_network()
+    engine = Engine.open(db_path, use_default_embedder=True)
+    try:
+        report = engine.open_report()
+        assert report.default_embedder.name == "fathomdb-bge-small-en-v1.5"
+        assert report.default_embedder.dimension == 384
+    finally:
+        engine.close()
+
+
+def test_open_default_embedder_false_does_not_download(db_path: str) -> None:
+    engine = Engine.open(db_path, use_default_embedder=False)
+    try:
+        report = engine.open_report()
+        # No download attempted; no DefaultEmbedderDownload event.
+        assert report.embedder_download_ms is None
+        for event in report.embedder_events:
+            assert event["kind"] != "DefaultEmbedderDownload"
+    finally:
+        engine.close()
+
+
+def test_open_default_embedder_default_kwarg_is_false(db_path: str) -> None:
+    """Omitting the kwarg must behave like `False` — no network."""
+
+    engine = Engine.open(db_path)
+    try:
+        report = engine.open_report()
+        assert report.embedder_download_ms is None
+        for event in report.embedder_events:
+            assert event["kind"] != "DefaultEmbedderDownload"
+    finally:
+        engine.close()
+
+
+def test_open_report_carries_mean_centering_required(db_path: str, tmp_path) -> None:
+    """Workspace identity is bge-small (EU-5b lock-flip), so the static
+    capability flag is ``True`` regardless of whether the embedder is
+    materialised. Both the ``False`` and ``True`` kwarg paths must
+    surface the field — that's the EU-6 binding-coverage point."""
+
+    engine_false = Engine.open(db_path, use_default_embedder=False)
+    try:
+        report_false = engine_false.open_report()
+        # Field type round-trips as a bool through the binding.
+        assert isinstance(report_false.embedder_mean_centering_required, bool)
+        # Per EU-5b lock-flip — workspace identity is bge-small.
+        assert report_false.embedder_mean_centering_required is True
+    finally:
+        engine_false.close()
+
+    _skip_if_no_network()
+    path_true = str(tmp_path / "mc_true.sqlite")
+    engine_true = Engine.open(path_true, use_default_embedder=True)
+    try:
+        report_true = engine_true.open_report()
+        assert report_true.embedder_mean_centering_required is True
+    finally:
+        engine_true.close()
+
+
+def test_open_report_carries_mean_vec_pinned_initial_state(db_path: str) -> None:
+    """Fresh workspace → mean_vec_pinned is False (no writes yet)."""
+
+    _skip_if_no_network()
+    engine = Engine.open(db_path, use_default_embedder=True)
+    try:
+        report = engine.open_report()
+        assert report.embedder_mean_vec_pinned is False
+    finally:
+        engine.close()
+
+
+@pytest.mark.requires_test_hooks
+def test_open_report_mean_vec_pinned_transitions_after_threshold(
+    db_path: str,
+) -> None:
+    """After 256+ vector writes + reopen, mean_vec_pinned becomes True.
+
+    Uses the `test-hooks`-gated native seam `_write_vector_for_test`
+    because the public Python surface does not yet expose typed vector
+    writes (deferred to a later slice). The seam exists solely so the
+    cross-binding pin-transition witness is observable end-to-end through
+    the binding.
+    """
+
+    _skip_if_no_network()
+    engine = Engine.open(db_path, use_default_embedder=True)
+    try:
+        native: _NativeEngine = engine._native  # type: ignore[attr-defined]
+        # `_configure_vector_kind_for_test` / `_write_vector_for_test` are
+        # `test-hooks`-feature-only FFI methods, deliberately absent from the
+        # release binding's `_fathomdb.pyi` stub (see its NOTE) — so pyright
+        # cannot see them. Targeted, line-scoped (matches :132's style).
+        native._configure_vector_kind_for_test("doc")  # type: ignore[attr-defined]
+        for i in range(_MEAN_VEC_PIN_THRESHOLD):
+            native._write_vector_for_test("doc", f"doc-{i}")  # type: ignore[attr-defined]
+    finally:
+        engine.close()
+
+    engine2 = Engine.open(db_path, use_default_embedder=True)
+    try:
+        report = engine2.open_report()
+        assert report.embedder_mean_vec_pinned is True
+    finally:
+        engine2.close()
+
+exec
+/bin/bash -lc "sed -n '1,170p' src/rust/crates/fathomdb-engine/Cargo.toml" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+[package]
+name = "fathomdb-engine"
+description = "FathomDB engine — embedded vector + JSON database core (storage, projection, ingest, query)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fathomdb-embedder.workspace = true
+fathomdb-embedder-api.workspace = true
+fathomdb-query.workspace = true
+fathomdb-schema.workspace = true
+rusqlite = { version = "0.31", features = ["bundled"] }
+jsonschema = { version = "0.18", default-features = false }
+serde_json = "1"
+sha2 = "0.11"
+sqlite-vec = "=0.1.7"
+
+[features]
+default = []
+# Slice 27 fix-1 (Q5=BIND-RUST, AC-074): the operator/recovery seam
+# (rebuild_*, excise_source, dump_*, trace_source_ref, truncate_wal,
+# verify_embedder, check_integrity, safe_export, recompute_mean + their
+# operator-exclusive private helpers) is gated behind this feature so the
+# DEFAULT engine surface is recovery-clean at the method level. Behavior is
+# identical with the feature on (gate, not delete). `fathomdb-cli` enables it.
+operator = []
+# EU-5b: turning on this feature causes `EmbedderChoice::Default` to
+# materialize a real `CandleBgeEmbedder` via the loader at `Engine::open`.
+# Without it, `EmbedderChoice::Default` returns a typed `EmbedderError`
+# rather than attempting a network fetch (preserves the no-network build
+# closure per ADR-0.7.1-default-embedder-weight-fetch).
+default-embedder = ["fathomdb-embedder/default-embedder"]
+# GPU acceleration (opt-in; forwards to the embedder; default stays CPU).
+# Activate at runtime via FATHOMDB_EMBED_DEVICE=cuda|metal.
+embed-cuda = ["default-embedder", "fathomdb-embedder/embed-cuda"]
+embed-metal = ["default-embedder", "fathomdb-embedder/embed-metal"]
+# 0.8.1 Slice 10 (R1): enabling this feature gates the CPU cross-encoder CE
+# inference path (TinyBERT-L-2 via Candle) in `rerank_fused`. Without this
+# feature, `rerank_fused` is always the identity (soft-fallback) path — no
+# network call, no ML dependency. With the feature ON and weights cached
+# locally, `rerank_depth > 0` activates the CE scorer + score-blend.
+# Design memo: dev/design/0.8.1-slice-10-reranker-design.md.
+# 0.8.2 Slice E1: forwards to the embedder's `default-reranker` feature, which
+# owns the Candle + tokenizers CE stack (`CandleTinyBertReranker`). The default
+# engine build enables neither, staying ML-free + no-network.
+default-reranker = ["fathomdb-embedder/default-reranker"]
+# 0.8.12 — GPU acceleration for the CE reranker (opt-in; forwards to the
+# embedder; default stays CPU). Activate at runtime via the separate knob
+# FATHOMDB_RERANK_DEVICE=cuda|metal. Mirrors the embed-cuda passthrough.
+rerank-cuda = ["default-reranker", "fathomdb-embedder/rerank-cuda"]
+rerank-metal = ["default-reranker", "fathomdb-embedder/rerank-metal"]
+
+# The corpus-ingest example calls the operator-seam `trace_source_ref`, so it
+# only builds when the `operator` feature is enabled (skipped on default builds).
+[[example]]
+name = "ingest_corpus"
+required-features = ["operator"]
+
+# Slice 27 fix-2: these integration-test targets exercise the operator/recovery
+# `Engine` methods that fix-1 gated behind `operator`. They are PURE-operator
+# (every `#[test]` calls a gated method), so the whole target is skipped on the
+# default build and runs under `--features operator`. This makes
+# `cargo test -p fathomdb-engine` (default) compile again without un-gating any
+# method. (The mixed `pr2b_mean_recompute.rs` is NOT here — its non-operator
+# carve-out test stays default-runnable via per-fn `#[cfg(feature = "operator")]`.)
+[[test]]
+name = "check_integrity"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_profile"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_row_counts"
+required-features = ["operator"]
+
+[[test]]
+name = "dump_schema"
+required-features = ["operator"]
+
+[[test]]
+name = "eu7_real_corpus_ac"
+required-features = ["operator"]
+
+[[test]]
+name = "erasure_projection_registry"
+required-features = ["operator"]
+
+[[test]]
+name = "erasure_completeness"
+required-features = ["operator"]
+
+[[test]]
+name = "provenance_mandatory"
+required-features = ["operator"]
+
+[[test]]
+name = "excise_source"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_projections"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_report"
+required-features = ["operator"]
+
+[[test]]
+name = "rebuild_vec0"
+required-features = ["operator"]
+
+[[test]]
+name = "safe_export"
+required-features = ["operator"]
+
+[[test]]
+name = "trace_source_ref"
+required-features = ["operator"]
+
+[[test]]
+name = "truncate_wal"
+required-features = ["operator"]
+
+[[test]]
+name = "verify_embedder"
+required-features = ["operator"]
+
+# 0.8.2 Slice E1: the CE-reorders test exercises the real reranker, so the whole
+# target only compiles/runs under `--features default-reranker`. The default
+# build skips it (and the soft-fallback identity tests in `pr_g10_reranker.rs`
+# stay default-runnable).
+[[test]]
+name = "pr_g10_reranker_ce"
+required-features = ["default-reranker"]
+
+# 0.8.2 Slice E2: the standalone-rerank helper (`rerank_passages`) reorder test
+# exercises the real reranker, so the whole target only compiles/runs under
+# `--features default-reranker` (same gate as `pr_g10_reranker_ce`).
+[[test]]
+name = "pr_e2_rerank_passages"
+required-features = ["default-reranker"]
+
+# 0.8.2 Slice E2 fix-1 [P2]: is_finite guard tests — no feature gate because the
+# guard fires before the CE model path (depth/feature state irrelevant).
+[[test]]
+name = "pr_e2_rerank_nonfinite"
+
+[dev-dependencies]
+libc = "0.2"
+proptest = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+
+exec
+/bin/bash -lc 'cargo test -p fathomdb-engine --test multidoc_extractor_provenance --quiet --no-fail-fast' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 42231ms:
+[provenance_omitting_harness] started (source_doc_id will be omitted from every element)
+.[multidoc_echo_harness] started (mode=foreign)
+[multidoc_echo_harness] started (mode=valid)
+[provenance_omitting_harness] started (source_doc_id will be omitted from every element)
+[elps_harness] starting (model=claude-haiku base_url=http://localhost:4000/v1 stub=True)
+....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.15s
+
+
+exec
+/bin/bash -lc "sed -n '1,130p' scripts/agent-test.sh" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Run unit tests across language surfaces.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/agent-output.sh
+. "$SCRIPT_DIR/lib/agent-output.sh"
+cd_repo_root
+
+# Scripts (bash): set-version.sh two-axis enforcement.
+run_capped test-set-version bash scripts/tests/test_set_version.sh
+
+# Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
+run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+
+# Scripts (bash): TC-RUBRIC-5 landing guard — preflight.sh --landing must HARD-fail
+# in the primary checkout and pass in a linked worktree. Builds its own throwaway
+# repo + worktree under mktemp -d; never git-writes into this checkout.
+run_capped test-preflight-landing bash scripts/tests/test_preflight_landing.sh
+
+# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+# python3 -m http.server fixture; never hits crates.io.
+run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+
+# Scripts (bash): Axis-E published-API drift guard (prevents the v0.8.9
+# partial-publish — embedder-api surface moved without an Axis-E bump).
+# Offline via a fixture http router; never hits crates.io.
+run_capped test-embedder-api-no-drift bash scripts/tests/test_verify_embedder_api_no_drift.sh
+
+# Scripts (bash): structural shape of the post-publish smoke scripts.
+# NOT integration — see test header for why behavior is exercised at tag
+# time by the release workflow, not here.
+run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
+
+# Scripts (bash): 0.8.18 Slice 20 (#11-full publish) — static release.yml scope
+# assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
+# dist-tag). Pure python3+PyYAML parse; never runs the workflow.
+run_capped test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+
+# Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
+# local-registry round-trip (publish -> query-no-op -> install -> loader) +
+# crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
+run_capped test-idempotent-republish bash scripts/tests/test_idempotent_republish.sh
+
+# Scripts (bash): REAL PyPI round-trip (R-REL-4b) — genuine twine upload to a
+# minimal local index -> query-sees-it -> re-run no-op. Self-provisions twine<6
+# (twine 6 blocks --skip-existing on non-prod repos); SKIPS loudly if it cannot.
+run_capped test-pypi-publish-roundtrip bash scripts/tests/test_pypi_publish_roundtrip.sh
+
+# Scripts (bash): Fix-1 publish-registry SAFETY — a staging/test run can never
+# publish to prod (npm publish --registry $BASE; twine upload --repository-url).
+run_capped test-publish-registry-safety bash scripts/tests/test_publish_registry_safety.sh
+
+# Scripts (bash): poll-for-resolvability guard that replaced the fixed 60s
+# index-propagation sleep (R-REL-4c). Offline fixture http server.
+run_capped test-wait-for-crate-version bash scripts/tests/test_wait_for_crate_version.sh
+
+# Scripts (bash): publish-time npm optionalDependencies injection (R-REL-4f) —
+# napi per-platform split. Pure filesystem fixture; no registry.
+run_capped test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optional_deps.sh
+
+# actionlint binary present + rejects deliberately-broken fixture.
+run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
+# Markdown generators (shell): context-clarity.sh / memory-clarity.sh emit
+# gate-compliant markdown. Their output trees (and the dev/plans/runs/** reports
+# from the Python generators) are markdownlint-ignored, so the normal md gate never
+# sees a regenerated report. The Python generators (aggregate / m1_verdict_run /
+# s15a_embedder_probe) are guarded by src/python/tests/test_md_generator_hygiene.py
+# in the pytest step below.
+run_capped test-md-generators bash scripts/tests/test_md_generators.sh
+
+# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+
+# Rust
+#
+# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
+# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
+# Three gates keep it out, in order of what a change is most likely to break:
+#   1. `required-features = ["operator"]` on the test target — not built at all
+#      under the workspace default feature set (`default = []`);
+#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
+#      tests even when `operator` IS on (e.g. the engine's operator suite);
+#   3. `#[ignore]` on the test itself — holds no matter which features are
+#      selected, so `--all-features` still would not run the body.
+# Verify by inspection only (`-- --list --ignored`), never by running it.
+run_capped test-rust cargo test --workspace --quiet --no-fail-fast
+
+# Python
+python_bin=""
+if [ -x .venv/bin/python ]; then
+  python_bin=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  python_bin="$(command -v python3)"
+fi
+
+if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
+  # TC-27 (0.8.20 Slice 5 fix-6): the editable binding built by the documented
+  # `pip install -e 'src/python[dev]'` has no `test-hooks` surface, so
+  # `tests/conftest.py` may rebuild it with `maturin develop` — which REBINDS the
+  # active virtualenv to this source tree. This is the repo's own sanctioned dev
+  # loop, so it authorizes that rebuild, but ONLY when the interpreter we picked
+  # is the `.venv` INSIDE this checkout (`cd_repo_root` above, so in a linked
+  # worktree that is the worktree's own venv). If we fell back to a system
+  # `python3` — or to any environment that is not ours to rebind — we stay
+  # silent and conftest degrades to visibly SKIPPING the hook-dependent tests
+  # rather than repointing a shared venv. conftest re-checks venv ownership
+  # itself; this is the outer half of a belt-and-suspenders pair.
+  if [ "$python_bin" = ".venv/bin/python" ]; then
+    run_capped test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
+      "$python_bin" -m pytest -q src/python/tests
+  else
+    run_capped test-python "$python_bin" -m pytest -q src/python/tests
+  fi
+else
+  skip_notice test-python "pytest not installed or no tests dir"
+fi
+
+# TypeScript
+if [ -d src/ts/node_modules ]; then
+  run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+else
+  skip_notice test-ts "src/ts/node_modules not installed"
+fi
+
+exec
+/bin/bash -lc 'cargo check -p fathomdb-engine --quiet' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 952ms:
+exec
+/bin/bash -lc 'cd src/python && python3 -m pytest -q tests/test_test_hooks_gate.py' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 280ms:
+............                                                             [100%]
+12 passed in 0.11s
+
+exec
+/bin/bash -lc "sed -n '1,280p' src/python/eval/elps_live_harness.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""ELPS live harness — fathomdb.extract.v1 subprocess protocol.
+
+Spawned by the FathomDB engine (or tests) as a child process. Communicates
+over stdin/stdout via NDJSON (one JSON object per line). Diagnostics go to stderr.
+
+Environment variables:
+  ELPS_LLM_BASE_URL   (default: http://localhost:4000/v1)
+  ELPS_LLM_API_KEY    (default: sk-airlock-mk)
+  ELPS_LLM_MODEL      (default: claude-haiku)
+  ELPS_STUB_MODE      (default: 0; set to 1 to return canned responses without LLM)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+_BASE_URL = os.environ.get("ELPS_LLM_BASE_URL", "http://localhost:4000/v1")
+_API_KEY = os.environ.get("ELPS_LLM_API_KEY", "sk-airlock-mk")
+_MODEL = os.environ.get("ELPS_LLM_MODEL", "claude-haiku")
+_STUB_MODE = os.environ.get("ELPS_STUB_MODE", "0") == "1"
+_MAX_DOCS_PER_REQUEST = 8
+_PROTOCOL = "fathomdb.extract.v1"
+_SCHEMA_VERSION = 1
+
+# ---------------------------------------------------------------------------
+# Memex extraction system prompt (verbatim from §3)
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PROMPT = """\
+You are an information-extraction engine. From the single document supplied by the user, extract knowledge as a graph of entities and directed, dated fact-edges, and return it as structured JSON matching the required schema.
+
+ENTITIES
+- Identify the real-world entities mentioned (people, organizations, places, artifacts, concepts, etc.).
+- Each entity has a `name`, a `type`, optional `aliases` (other surface forms used for the same entity in this document), and a `source_doc_id`.
+- Be conservative about identity: when two mentions MIGHT refer to different real-world entities, emit them as DISTINCT entities rather than merging them. Do not collapse homonyms.
+
+ATTRIBUTION (load-bearing — a missing value fails the whole ingest)
+- EVERY entity AND every edge MUST carry a `source_doc_id` set to the exact `doc_id` given in the user message. Copy it verbatim; never invent, abbreviate or alter it.
+- This is how the store knows which document each fact came from, and therefore which facts to delete when that document is erased. An element without it cannot be attributed and is REJECTED — the store will not guess an attribution, because guessing would file the fact under the wrong document and leave it behind on erasure.
+
+EDGES (directed, dated facts)
+- Each edge is a single fact: `from_entity` -> `to_entity` with a short, lowercase `relation` label (e.g. `works_at`, `founded`, `located_in`).
+- `body` is the minimal span of source text that states the fact.
+- Reference entities by the exact `name` you used in the entities list.
+
+TEMPORAL RULES (load-bearing)
+- `t_valid` is the time the fact BECAME TRUE as stated in the text. If the text states no such time, use the document's `created_at`. NEVER use the current time or ingestion time ("now").
+- Set `t_invalid` ONLY when the text gives explicit evidence the fact ended; otherwise leave it null.
+
+SUPERSEDES (contradicting / replacing an earlier fact)
+- When a fact in this document SUPERSEDES or CONTRADICTS an earlier fact (e.g. a new role, status, or value that replaces a prior one), emit the NEW fact with its own `t_valid` and set `supersedes_prior` to true, with a short `prior_body` describing the prior fact it replaces.
+- Do NOT delete or invalidate the prior fact yourself — only emit the new fact and flag that it supersedes a prior one.
+
+CONFIDENCE
+- `confidence` in [0,1] is the calibrated probability that the fact is correct AND supported by the cited span. Emit ALL facts you find — do not self-censor low-confidence facts behind a threshold; report the low confidence instead.
+
+SOURCE SPANS
+- When you are confident, provide `source_span` as [start, end) character offsets into the supplied document body that locate the supporting text. If you cannot locate it reliably, omit `source_span`.
+
+Return ONLY valid JSON matching this exact schema — no markdown fences, no prose:
+{
+  "entities": [{"name": str, "type": str, "aliases": list[str], "source_doc_id": str}],
+  "edges": [
+    {
+      "from_entity": str,
+      "to_entity": str,
+      "relation": str,
+      "body": str,
+      "t_valid": str,
+      "t_invalid": str | null,
+      "confidence": float,
+      "source_doc_id": str,
+      "source_span": [int, int] | null
+    }
+  ],
+  "warnings": []
+}"""
+
+_USER_TEMPLATE = """\
+Extract from this single document.
+doc_id: {doc_id}
+kind: doc
+created_at: {created_at}
+body:
+{body}"""
+
+# ---------------------------------------------------------------------------
+# Canned stub response for ELPS_STUB_MODE=1
+# ---------------------------------------------------------------------------
+
+def _stub_entities(doc_id: str) -> list[dict[str, Any]]:
+    """Canned entities, attributed to `doc_id`.
+
+    A FUNCTION returning fresh dicts, not a module-level constant: the engine
+    batches several documents into one extract request, and a shared list would
+    be handed out (and then attributed) once per document, so the last document
+    processed would silently overwrite every earlier document's provenance.
+    """
+    return [{"name": "TestEntity", "type": "concept", "aliases": [], "source_doc_id": doc_id}]
+
+
+def _stub_edges(doc_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "from_entity": "TestEntity",
+            "to_entity": "TestEntity",
+            "relation": "self_ref",
+            "body": "stub",
+            "t_valid": "2025-01-01T00:00:00Z",
+            "t_invalid": None,
+            "confidence": 0.5,
+            "source_doc_id": doc_id,
+            "source_span": None,
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
+# LLM call
+# ---------------------------------------------------------------------------
+
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences if the model wraps its JSON in them."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # drop first line (``` or ```json) and last line (```)
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        text = "\n".join(inner).strip()
+    return text
+
+
+def _call_llm_httpx(
+    doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Call the LLM via httpx (preferred) or urllib.request (stdlib fallback)."""
+    user_msg = _USER_TEMPLATE.format(
+        doc_id=doc["source_doc_id"],
+        created_at=doc.get("created_at", "2025-01-01T00:00:00Z"),
+        body=doc.get("body", ""),
+    )
+    payload: dict[str, Any] = {
+        "model": _MODEL,
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+        "max_tokens": 4096,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        import httpx  # type: ignore[import-not-found]
+
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                _BASE_URL.rstrip("/") + "/chat/completions",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {_API_KEY}",
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+    except ImportError:
+        # Fall back to stdlib urllib.request
+        import urllib.request  # noqa: PLC0415
+
+        encoded = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            _BASE_URL.rstrip("/") + "/chat/completions",
+            data=encoded,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {_API_KEY}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
+            body = json.loads(r.read().decode("utf-8"))
+
+    text = body["choices"][0]["message"]["content"]
+    return json.loads(_strip_fences(text))
+
+
+def _extract_single_doc(doc: dict[str, Any]) -> tuple[list[dict], list[dict], list[dict]]:
+    """Extract entities and edges from a single document.
+
+    Returns (entities, edges, warnings).  On any error returns ([], [], [warning]).
+    """
+    doc_id = doc["source_doc_id"]
+
+    if _STUB_MODE:
+        return _stub_entities(doc_id), _stub_edges(doc_id), []
+
+    try:
+        result = _call_llm_httpx(doc)
+        entities = result.get("entities", [])
+        edges = result.get("edges", [])
+        # Rust derive_logical_id rejects empty names or kinds containing ':'.
+        # Filter those out here rather than aborting the whole extraction.
+        entities = [
+            e for e in entities
+            if isinstance(e, dict)
+            and str(e.get("name", "")).strip()
+            and ":" not in str(e.get("type", ""))
+        ]
+        edges = [
+            e for e in edges
+            if isinstance(e, dict)
+            and str(e.get("from_entity", "")).strip()
+            and str(e.get("to_entity", "")).strip()
+        ]
+        # Attribution backfill (R-20-E2). Every element we hand back must name
+        # the document it came from, because the engine batches documents and
+        # then requires each entity/edge to select its own source among the
+        # batch's caller-supplied ids -- an unattributed element fails the whole
+        # ingest with EngineError::Extractor. This is safe to do here and ONLY
+        # here: `_extract_single_doc` is scoped to exactly one document, so
+        # `doc_id` is the true source, not a guess. The engine deliberately
+        # refuses to make that guess itself.
+        for entity in entities:
+            if not entity.get("source_doc_id"):
+                entity["source_doc_id"] = doc_id
+        for edge in edges:
+            if not edge.get("source_doc_id"):
+                edge["source_doc_id"] = doc_id
+            # Rust rejects confidence outside [0.0, 1.0] with EngineError::Extractor.
+            c = edge.get("confidence")
+            if c is None:
+                pass
+            elif isinstance(c, (int, float)) and c == c:  # c == c is False for NaN
+                edge["confidence"] = max(0.0, min(1.0, float(c)))
+            else:
+                edge["confidence"] = 0.5
+        warnings = result.get("warnings", [])
+        return entities, edges, warnings
+    except Exception as exc:  # noqa: BLE001
+        print(f"[elps_harness] extraction failed for {doc_id}: {exc}", file=sys.stderr, flush=True)
+        return [], [], [{"kind": "extraction_failed", "source_doc_id": doc_id, "detail": str(exc)}]
+
+
+# ---------------------------------------------------------------------------
+# Protocol implementation
+# ---------------------------------------------------------------------------
+
+
+def _write_json(obj: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def _handle_extract(msg: dict[str, Any]) -> None:
+    """Process an extract request and write the result."""
+    request_id = msg.get("request_id", "")
+    documents: list[dict[str, Any]] = msg.get("documents", [])
+
+    all_entities: list[dict] = []
+    all_edges: list[dict] = []
+    all_warnings: list[dict] = []
+
+    for doc in documents:
+        entities, edges, warnings = _extract_single_doc(doc)
+        all_entities.extend(entities)
+        all_edges.extend(edges)
+        all_warnings.extend(warnings)
+
+    _write_json(
+        {
+            "protocol": _PROTOCOL,
+
+exec
+/bin/bash -lc "sed -n '280,420p' src/python/eval/elps_live_harness.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+            "protocol": _PROTOCOL,
+            "type": "result",
+            "request_id": request_id,
+            "entities": all_entities,
+            "edges": all_edges,
+            "warnings": all_warnings,
+        }
+    )
+
+
+def main() -> None:
+    print(
+        f"[elps_harness] starting (model={_MODEL} base_url={_BASE_URL} stub={_STUB_MODE})",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    for raw_line in sys.stdin:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            msg = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            print(f"[elps_harness] invalid JSON on stdin: {exc}", file=sys.stderr, flush=True)
+            continue
+
+        msg_type = msg.get("type")
+
+        if msg_type == "hello":
+            _write_json(
+                {
+                    "protocol": _PROTOCOL,
+                    "type": "ready",
+                    "schema_version": _SCHEMA_VERSION,
+                    "provider": "airlock-claude-haiku",
+                    "model": _MODEL,
+                    "supports": {},
+                    "max_docs_per_request": _MAX_DOCS_PER_REQUEST,
+                }
+            )
+        elif msg_type == "extract":
+            try:
+                _handle_extract(msg)
+            except Exception as exc:  # noqa: BLE001
+                request_id = msg.get("request_id", "")
+                print(
+                    f"[elps_harness] fatal error handling extract {request_id}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _write_json(
+                    {
+                        "protocol": _PROTOCOL,
+                        "type": "error",
+                        "request_id": request_id,
+                        "error_code": "extraction_failed",
+                        "detail": str(exc),
+                    }
+                )
+        else:
+            print(
+                f"[elps_harness] unknown message type: {msg_type!r}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/bash -lc "grep -R \"_write_vector_for_test\\|force_panic_for_test\\|_configure_vector_kind_for_test\\|requires_test_hooks\" -n src/python/tests | sed -n '1,200p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+grep: src/python/tests/__pycache__/test_ffi_safety.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_release_surface.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/_test_hooks_gate.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_workflow_yaml.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/test_use_default_embedder.cpython-312.pyc: binary file matches
+grep: src/python/tests/__pycache__/conftest.cpython-312-pytest-9.1.0.pyc: binary file matches
+grep: src/python/tests/__pycache__/conftest.cpython-312.pyc: binary file matches
+src/python/tests/test_workflow_yaml.py:69:        f"({features!r}); release wheels will leak _write_vector_for_test "
+src/python/tests/test_ffi_safety.py:18:# `force_panic_for_test` is `test-hooks`-gated and therefore ABSENT from a
+src/python/tests/test_ffi_safety.py:23:# so the `requires_test_hooks` marker can turn that into a visible SKIP
+src/python/tests/test_ffi_safety.py:31:@pytest.mark.requires_test_hooks
+src/python/tests/test_ffi_safety.py:40:    from fathomdb._fathomdb import force_panic_for_test  # test-hooks-gated
+src/python/tests/test_ffi_safety.py:44:        force_panic_for_test()
+src/python/tests/test_release_surface.py:8:- AC-FIX1-1: ``_write_vector_for_test`` and
+src/python/tests/test_release_surface.py:9:  ``_configure_vector_kind_for_test`` are NOT present on
+src/python/tests/test_release_surface.py:108:    ``_write_vector_for_test`` or ``_configure_vector_kind_for_test``
+src/python/tests/test_release_surface.py:117:                "_write_vector_for_test",
+src/python/tests/test_release_surface.py:118:                "_configure_vector_kind_for_test",
+src/python/tests/test_release_surface.py:119:                "_force_panic_for_test",
+src/python/tests/conftest.py:12:(parity with the released wheel), so without this `Engine._write_vector_for_test`
+src/python/tests/conftest.py:19:marked `@pytest.mark.requires_test_hooks` are skipped, with the gate's reason
+src/python/tests/conftest.py:72:    "sys.exit(0 if engine is not None and hasattr(engine, '_write_vector_for_test') else 1)\n"
+src/python/tests/conftest.py:78:    surface (`_write_vector_for_test`).
+src/python/tests/conftest.py:86:    missing `force_panic_for_test`. Probing out-of-process keeps this
+src/python/tests/conftest.py:119:    ``@pytest.mark.requires_test_hooks`` skip (visibly, with the reason). The
+src/python/tests/test_use_default_embedder.py:117:@pytest.mark.requires_test_hooks
+src/python/tests/test_use_default_embedder.py:123:    Uses the `test-hooks`-gated native seam `_write_vector_for_test`
+src/python/tests/test_use_default_embedder.py:134:        # `_configure_vector_kind_for_test` / `_write_vector_for_test` are
+src/python/tests/test_use_default_embedder.py:138:        native._configure_vector_kind_for_test("doc")  # type: ignore[attr-defined]
+src/python/tests/test_use_default_embedder.py:140:            native._write_vector_for_test("doc", f"doc-{i}")  # type: ignore[attr-defined]
+src/python/tests/_test_hooks_gate.py:6:(`Engine._write_vector_for_test`, `force_panic_for_test`, ...). A handful
+src/python/tests/_test_hooks_gate.py:50:REQUIRES_HOOKS_MARKER = "requires_test_hooks"
+
+exec
+/bin/bash -lc "sed -n '1,180p' src/python/tests/test_release_surface.py" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+"""EU-6 FIX-1 — release-surface introspection tests (RED).
+
+Builds a release-equivalent ``fathomdb`` wheel (i.e. ``maturin build
+--release --features pyo3/extension-module,default-embedder``, with NO
+``test-hooks``), installs it into a throwaway venv, and asserts the
+*published-artifact-equivalent* surface:
+
+- AC-FIX1-1: ``_write_vector_for_test`` and
+  ``_configure_vector_kind_for_test`` are NOT present on
+  ``fathomdb.Engine`` after installing the release-shaped wheel.
+- AC-FIX1-3: ``Engine.open(path, use_default_embedder=True)`` succeeds
+  (network-gated via ``FATHOMDB_SKIP_NETWORK_TESTS`` symmetrically with
+  EU-5c).
+
+Gated on ``RELEASE_SURFACE_TESTS=1`` because the build is slow
+(~30-60s cold). Default ``pytest`` invocations skip with a clear log
+line; CI sets the env var in a dedicated job.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import textwrap
+import venv
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PYTHON_SRC_DIR = REPO_ROOT / "src" / "python"
+
+
+def _skip_if_release_surface_not_enabled() -> None:
+    if os.environ.get("RELEASE_SURFACE_TESTS") != "1":
+        pytest.skip(
+            "RELEASE_SURFACE_TESTS!=1; set RELEASE_SURFACE_TESTS=1 to enable "
+            "release-equivalent wheel build + introspection."
+        )
+
+
+def _skip_if_no_network() -> None:
+    if os.environ.get("FATHOMDB_SKIP_NETWORK_TESTS"):
+        pytest.skip("FATHOMDB_SKIP_NETWORK_TESTS set; skipping network-hitting test")
+
+
+@pytest.fixture(scope="module")
+def release_venv_python(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build a release-equivalent wheel and install it into a fresh
+    venv. Returns the venv's Python executable.
+
+    The maturin invocation mirrors ``release.yml::jobs.build-python``
+    EXACTLY (per the FIX-1 design §5.1) — no ``test-hooks``, with
+    ``default-embedder``.
+    """
+
+    _skip_if_release_surface_not_enabled()
+
+    work = tmp_path_factory.mktemp("eu6_fix1_release")
+    wheel_dir = work / "wheels"
+    wheel_dir.mkdir()
+
+    # Build the release-equivalent wheel.
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "maturin",
+            "build",
+            "--release",
+            "--out",
+            str(wheel_dir),
+            "-i",
+            sys.executable,
+            "--features",
+            "pyo3/extension-module,default-embedder",
+        ],
+        cwd=str(PYTHON_SRC_DIR),
+    )
+
+    wheels = sorted(wheel_dir.glob("*.whl"))
+    assert wheels, f"maturin produced no wheels in {wheel_dir}"
+
+    # Create a throwaway venv and install the wheel.
+    venv_dir = work / "venv"
+    venv.create(str(venv_dir), with_pip=True, clear=True)
+    if os.name == "nt":
+        venv_python = venv_dir / "Scripts" / "python.exe"
+    else:
+        venv_python = venv_dir / "bin" / "python"
+    subprocess.check_call(
+        [str(venv_python), "-m", "pip", "install", "--quiet", str(wheels[0])]
+    )
+    return venv_python
+
+
+def _run_in_venv(venv_python: Path, script: str) -> str:
+    return subprocess.check_output(
+        [str(venv_python), "-c", textwrap.dedent(script)],
+        text=True,
+    )
+
+
+def test_release_wheel_hides_test_hooks_methods(release_venv_python: Path) -> None:
+    """AC-FIX1-1: the release-equivalent wheel must NOT expose
+    ``_write_vector_for_test`` or ``_configure_vector_kind_for_test``
+    on the native ``Engine`` PyO3 class."""
+
+    script = """
+        import json
+        from fathomdb._fathomdb import Engine
+        members = dir(Engine)
+        leaked = [
+            m for m in (
+                "_write_vector_for_test",
+                "_configure_vector_kind_for_test",
+                "_force_panic_for_test",
+            )
+            if m in members
+        ]
+        print(json.dumps({"leaked": leaked, "members_sample": members[:20]}))
+    """
+    output = _run_in_venv(release_venv_python, script)
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result["leaked"] == [], (
+        f"Release-equivalent wheel still exposes dev-only hooks: "
+        f"{result['leaked']!r}. AC-FIX1-1 requires these to be absent."
+    )
+
+
+def test_release_wheel_opens_with_default_embedder(
+    release_venv_python: Path, tmp_path: Path
+) -> None:
+    """AC-FIX1-3: release-equivalent wheel must successfully open an
+    engine with ``use_default_embedder=True`` (proves
+    ``default-embedder`` feature is compiled in)."""
+
+    _skip_if_no_network()
+
+    db_path = tmp_path / "release_smoke.sqlite"
+    script = f"""
+        import json
+        from fathomdb import Engine
+        engine = Engine.open({str(db_path)!r}, use_default_embedder=True)
+        try:
+            report = engine.open_report()
+            print(json.dumps({{
+                "name": report.default_embedder.name,
+                "dimension": report.default_embedder.dimension,
+            }}))
+        finally:
+            engine.close()
+    """
+    output = _run_in_venv(release_venv_python, script)
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result["name"] == "fathomdb-bge-small-en-v1.5", result
+    assert result["dimension"] == 384, result
+
+exec
+/bin/bash -lc "grep -n \"fn resolve_provenance\\|resolve_provenance\" -n src/rust/crates/fathomdb-engine/src/lib.rs | head -20 && sed -n '3000,3220p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+3916:            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+3933:            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+3979:                        let source_doc_id = resolve_provenance(
+4107:                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
+/// caller-supplied text and may itself be the identifier being erased, so
+/// echoing it into a durable audit row would defeat the erasure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExciseRecordReport {
+    pub collection: String,
+    pub record_digest: String,
+    pub records_excised: u64,
+    pub state_rows_excised: u64,
+}
+
+/// Typed outcome of [`Engine::verify_embedder`]. Mismatches do not raise
+/// `EngineError`; the operator workflow needs to see the stored vs.
+/// supplied pair to decide on next action.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerifyEmbedderStatus {
+    Match,
+    IdentityMismatch,
+    DimensionMismatch,
+    BothMismatch,
+}
+
+/// Result of [`Engine::verify_embedder`]. `stored_identity` is the
+/// `name:revision` pair persisted in `_fathomdb_embedder_profiles`;
+/// `supplied_identity` echoes the operator's input verbatim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifyEmbedderReport {
+    pub stored_identity: String,
+    pub stored_dimension: u32,
+    pub supplied_identity: String,
+    pub supplied_dimension: u32,
+    pub status: VerifyEmbedderStatus,
+}
+
+/// Single table or index entry emitted by [`Engine::dump_schema`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchemaObject {
+    pub name: String,
+    pub sql: String,
+}
+
+/// Result of [`Engine::dump_schema`]. `user_version` is the
+/// `PRAGMA user_version` sentinel. Canonical tables appear first per
+/// [`fathomdb_schema::CANONICAL_TABLES`], then remaining non-`sqlite_*`
+/// tables alphabetically. Indexes follow the same alphabetical rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpSchemaReport {
+    pub user_version: u32,
+    pub tables: Vec<SchemaObject>,
+    pub indexes: Vec<SchemaObject>,
+}
+
+/// Single canonical-table row count emitted by [`Engine::dump_row_counts`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TableRowCount {
+    pub name: String,
+    pub rows: u64,
+}
+
+/// Result of [`Engine::dump_row_counts`]. Canonical tables only;
+/// projection / FTS / vec0 shadow tables are excluded. Order matches
+/// [`fathomdb_schema::CANONICAL_TABLES`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpRowCountsReport {
+    pub counts: Vec<TableRowCount>,
+}
+
+/// 0.8.20 Slice 5d (R-20-E8) — one `source_id` bucket in an
+/// [`OrphanProvenanceReport`]. `source_id` is `None` for the NULL-provenance
+/// bucket, which after migration step 21 should contain ONLY governed NODES.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceSource {
+    /// `None` = the NULL-`source_id` bucket.
+    pub source_id: Option<String>,
+    /// Canonical rows (nodes + edges) carrying this provenance.
+    pub rows: u64,
+    /// How many of `rows` carry a `logical_id`.
+    ///
+    /// NOT the same thing as "purge-addressable": only a NODE's `logical_id`
+    /// confers purge-addressability. An EDGE's `logical_id` is a supersession
+    /// identity and reaches no erasure verb (see
+    /// [`Engine::orphan_provenance`]), so governed edges are counted here but
+    /// are NOT subtracted from
+    /// [`OrphanProvenanceReport::unerasable_rows`].
+    pub governed_rows: u64,
+    /// True for the engine's reserved `_`-prefixed namespace (`_engine:*`,
+    /// `_legacy:pre-0.8.20`). Reserved buckets are reachable only through the
+    /// operator seam `excise_source`, never through the governed
+    /// [`Engine::erase_source`].
+    pub reserved: bool,
+}
+
+/// Result of [`Engine::orphan_provenance`] — the per-`source_id` census behind
+/// `fathomdb doctor orphan-provenance` (design §4 item 11).
+///
+/// `unerasable_rows` is the load-bearing field: canonical rows carrying
+/// NEITHER a `source_id` NOR a `logical_id`. Such a row is reachable by no
+/// erasure verb at all — `purge` keys on `logical_id`, `erase_source` keys on
+/// `source_id` — so it can never be deleted on request. Slice 5c made that
+/// state unwritable and migration step 21 back-filled the historical cases, so
+/// a non-zero count means the invariant has been violated and the verb exits
+/// `DOCTOR_FOUND_ISSUES`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrphanProvenanceReport {
+    /// Per-`source_id` buckets, ordered by descending `rows` then `source_id`
+    /// so the output is deterministic (a diagnostic that reorders between runs
+    /// cannot be diffed).
+    pub sources: Vec<OrphanProvenanceSource>,
+    /// Total canonical rows surveyed.
+    pub total_rows: u64,
+    /// Rows with NO `source_id` AND NO `logical_id` — un-erasable by any verb.
+    pub unerasable_rows: u64,
+}
+
+/// Result of [`Engine::dump_profile`]. Mirrors the open-time embedder
+/// posture + the per-kind vector configuration registered in
+/// `_fathomdb_vector_kinds`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpProfileReport {
+    pub embedder_identity: String,
+    pub embedder_dimension: u32,
+    pub vectorized_kinds: Vec<String>,
+}
+
+/// 0.7.2 PR-2b — result of [`Engine::recompute_mean`] (the manual
+/// `doctor recompute-mean` path) and of the shared in-transaction
+/// recompute core. `drift_cos_before` is the cosine between the freshly
+/// derived corpus mean and the previously-pinned mean (1.0 when nothing
+/// was pinned yet, i.e. a first pin). `mean_was_pinned` distinguishes a
+/// refresh of an existing mean from an initial pin. See
+/// `dev/design/embedder.md` §0.3.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeanRecomputeReport {
+    pub dim: u32,
+    pub old_doc_count: u64,
+    pub doc_count_requantized: u64,
+    pub drift_cos_before: f32,
+    pub mean_was_pinned: bool,
+    pub elapsed_ms: u64,
+}
+
+/// Typed outcome of [`Engine::truncate_wal`]. `Done` matches SQLite's
+/// `busy = 0` return from `PRAGMA wal_checkpoint(TRUNCATE)`; any other
+/// value surfaces as `Busy`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TruncateWalStatus {
+    Done,
+    Busy,
+}
+
+/// Result of [`Engine::truncate_wal`]. Carries the three counters
+/// returned by `PRAGMA wal_checkpoint(TRUNCATE)`: `busy`, `log_frames`,
+/// `checkpointed_frames`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TruncateWalReport {
+    pub status: TruncateWalStatus,
+    pub busy: u32,
+    pub log_frames: u32,
+    pub checkpointed_frames: u32,
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+impl Engine {
+    pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            None,
+            None,
+            &mut |_| {},
+        )
+    }
+
+    /// Open an engine with an explicit [`EmbedderChoice`].
+    ///
+    /// Per `dev/design/embedder.md` §0 + the 0.7.1 EU-5 campaign, this is
+    /// the canonical entry point for selecting how the workspace's
+    /// default embedder is supplied. See [`EmbedderChoice`] for the
+    /// semantics of each variant; in particular `Default` materializes
+    /// the pinned BGE embedder via the loader when the `default-embedder`
+    /// feature is enabled.
+    pub fn open_with_choice(
+        path: impl Into<PathBuf>,
+        choice: EmbedderChoice,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        match choice {
+            EmbedderChoice::Default => Self::open_default_embedder(path),
+            EmbedderChoice::Caller(embedder) => {
+                let identity = embedder.identity();
+                Self::open_with_embedder_and_subscriber(
+                    path,
+                    identity,
+                    Some(embedder),
+                    None,
+                    None,
+                    &mut |_| {},
+                )
+            }
+            EmbedderChoice::None => Self::open_with_embedder_and_subscriber(
+                path,
+                default_embedder_identity(),
+                None,
+                None,
+                None,
+                &mut |_| {},
+            ),
+        }
+    }
+
+    /// EU-5b: materialize the engine's pinned default embedder
+    /// (`CandleBgeEmbedder` backed by the EU-3 loader) and open the
+    /// workspace with it. Without the `default-embedder` feature, fails
+    /// with a typed `Embedder` error rather than touching the network.
+    #[cfg(feature = "default-embedder")]
+    fn open_default_embedder(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        use std::time::Instant as DownloadInstant;
+
+exec
+/bin/bash -lc "sed -n '3880,4130p' src/rust/crates/fathomdb-engine/src/lib.rs" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+        documents: &[ExtractDocument],
+    ) -> Result<IngestWithExtractorReceipt, EngineError> {
+        let extractor_model_id = session.model.clone();
+        let max_docs = session.max_docs_per_request;
+
+        // --- per-batch extract → write loop ---
+        let mut nodes_written: u64 = 0;
+        let mut edges_written: u64 = 0;
+        let docs_processed = documents.len() as u64;
+
+        for (batch_idx, batch) in documents.chunks(max_docs).enumerate() {
+            let request_id = format!("req-{batch_idx}");
+            let docs_json: Vec<Value> = batch
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "source_doc_id": d.source_doc_id,
+                        "body": d.body,
+                    })
+                })
+                .collect();
+
+            // Send the framed extract request and receive its matching `result`.
+            // The session adds protocol/type/request_id and validates the
+            // type=="result" + matching request_id envelope (fix-24 [P2]).
+            let result = session
+                .request(&request_id, vec![("documents".to_string(), Value::Array(docs_json))])?;
+
+            // R-20-E2 (0.8.20 Slice 5c, design §4 item 10) — every row this batch
+            // produces takes its provenance from the CALLER's
+            // `ExtractDocument.source_doc_id`, NEVER from the model's echo of that
+            // field. The echo is attacker-/error-controlled: a harness that omits
+            // it used to yield rows with NULL `source_id`, which no
+            // `excise_source` call can reach — the model could make a row
+            // permanently un-erasable simply by dropping a key.
+            //
+            // `resolve_provenance` therefore admits the echo only as a SELECTOR
+            // among ids the caller already supplied in THIS batch, and never as a
+            // value:
+            //
+            //   * single-document batch — attribution is unambiguous, so the
+            //     caller's id is used and the echo is ignored outright;
+            //   * multi-document batch — the echo must name one of the batch's
+            //     caller-supplied ids (the caller's own copy of the string is
+            //     then stored). An absent or unrecognised echo is a protocol
+            //     violation and fails the ingest LOUDLY with
+            //     `EngineError::Extractor`, because the alternative — guessing an
+            //     attribution — would silently mis-file the row under a document
+            //     whose erasure would then not remove it.
+            let batch_provenance = batch
+                .iter()
+                .map(|d| SourceId::new(d.source_doc_id.clone()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let resolve_provenance = |echo: Option<&str>| -> Result<SourceId, EngineError> {
+                if let [only] = batch_provenance.as_slice() {
+                    return Ok(only.clone());
+                }
+                let echo = echo.ok_or(EngineError::Extractor)?;
+                batch_provenance
+                    .iter()
+                    .find(|caller_id| caller_id.as_str() == echo)
+                    .cloned()
+                    .ok_or(EngineError::Extractor)
+            };
+
+            // --- map entities → PreparedWrite::Node with stable logical_id ---
+            let entities =
+                result.get("entities").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let raw_edges =
+                result.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            // R3 (SCHEMA-GATE-1): collect substituted_t_valid values from
+            // temporal_fallback warnings. An edge whose t_valid matches one of
+            // these values had its event time defaulted to created_at (not
+            // text-grounded) and must be flagged so BFS can exclude it.
+            let fallback_dates: std::collections::HashSet<String> = result
+                .get("warnings")
+                .and_then(|v| v.as_array())
+                .map(|ws| {
+                    ws.iter()
+                        .filter(|w| {
+                            w.get("kind").and_then(|k| k.as_str()) == Some("temporal_fallback")
+                        })
+                        .filter_map(|w| {
+                            w.get("substituted_t_valid")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if !entities.is_empty() {
+                let node_batch: Vec<PreparedWrite> = entities
+                    .iter()
+                    .map(|entity| -> Result<PreparedWrite, EngineError> {
+                        let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let kind = entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity");
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id = resolve_provenance(
+                            entity.get("source_doc_id").and_then(|v| v.as_str()),
+                        )?;
+                        // fix-34 [P1]: derive_logical_id now rejects an empty name
+                        // or a ':' in kind — inputs that would collide distinct
+                        // entities onto one identity and silently drop one.
+                        let logical_id = derive_logical_id(kind, name)?;
+                        Ok(PreparedWrite::Node {
+                            kind: kind.to_string(),
+                            body: name.to_string(),
+                            source_id: source_doc_id,
+                            logical_id: Some(logical_id),
+                            state: InitialState::Active,
+                            reason: None,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // fix-29/fix-34 [P2]: deduplicate within the batch by logical_id so
+                // a harness that returns the same entity twice does not write a row
+                // that immediately supersedes its sibling (shared with the edge arm).
+                let node_batch = dedup_prepared_by_logical_id(node_batch);
+
+                // fix-23 [P2]: skip entities whose logical_id is already active
+                // to avoid needless supersede churn on re-ingest.
+                let ids: Vec<String> = node_batch
+                    .iter()
+                    .filter_map(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            Some(id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let existing: std::collections::HashSet<String> = self
+                    .read_get_many(&ids)?
+                    .into_iter()
+                    .zip(ids)
+                    .filter_map(|(opt, id)| opt.map(|_| id))
+                    .collect();
+                let new_nodes: Vec<PreparedWrite> = node_batch
+                    .into_iter()
+                    .filter(|w| {
+                        if let PreparedWrite::Node { logical_id: Some(id), .. } = w {
+                            !existing.contains(id)
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+                if !new_nodes.is_empty() {
+                    let n = new_nodes.len() as u64;
+                    self.write(&new_nodes)?;
+                    nodes_written = nodes_written.saturating_add(n);
+                }
+            }
+
+            // --- map edges → PreparedWrite::Edge with G11 columns ---
+            if !raw_edges.is_empty() {
+                // fix-33 [P1]: the protocol gives edges NO endpoint types —
+                // `from_entity`/`to_entity` reference entities BY NAME (or alias).
+                // Build a name+alias → (canonical name, type) index from the same
+                // result's `entities[]` so each endpoint's logical_id matches the
+                // node's. (Nodes derive id from the entity's real type; defaulting
+                // the edge endpoint kind to "entity" orphaned every contract-faithful
+                // edge from its nodes and tripped the G8 dangling probe.)
+                //
+                // Two passes so a canonical NAME always wins over a (different
+                // entity's) ALIAS regardless of `entities[]` order: pass 1 inserts
+                // all canonical names, pass 2 fills aliases only where no name
+                // already claims that key. (Name↔name clashes remain first-wins —
+                // contradictory input; no principled resolution exists.)
+                let mut entity_index: std::collections::HashMap<String, (String, String)> =
+                    std::collections::HashMap::new();
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    entity_index
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| (name.to_string(), kind));
+                }
+                for entity in &entities {
+                    let name = entity.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let kind =
+                        entity.get("type").and_then(|v| v.as_str()).unwrap_or("entity").to_string();
+                    if let Some(aliases) = entity.get("aliases").and_then(|v| v.as_array()) {
+                        for alias in aliases.iter().filter_map(|a| a.as_str()) {
+                            if !alias.is_empty() {
+                                entity_index
+                                    .entry(alias.to_lowercase())
+                                    .or_insert_with(|| (name.to_string(), kind.clone()));
+                            }
+                        }
+                    }
+                }
+
+                let edge_batch: Vec<PreparedWrite> = raw_edges
+                    .iter()
+                    .map(|edge| -> Result<PreparedWrite, EngineError> {
+                        let from_entity =
+                            edge.get("from_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let to_entity =
+                            edge.get("to_entity").and_then(|v| v.as_str()).unwrap_or("");
+                        let relation =
+                            edge.get("relation").and_then(|v| v.as_str()).unwrap_or("related_to");
+                        let body = edge.get("body").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_valid =
+                            edge.get("t_valid").and_then(|v| v.as_str()).map(str::to_string);
+                        let t_invalid =
+                            edge.get("t_invalid").and_then(|v| v.as_str()).map(str::to_string);
+                        // fix-26 [P2]: validate confidence is in [0.0, 1.0] at the
+                        // protocol boundary; reject out-of-range values.
+                        let confidence = match edge.get("confidence").and_then(|v| v.as_f64()) {
+                            Some(c) if !(0.0..=1.0).contains(&c) => {
+                                return Err(EngineError::Extractor);
+                            }
+                            c => c,
+                        };
+                        // R-20-E2: caller-grounded, echo used only as a selector.
+                        let source_doc_id =
+                            resolve_provenance(edge.get("source_doc_id").and_then(|v| v.as_str()))?;
+
+                        // fix-33 [P1]: resolve each endpoint via the entities[]
+                        // index (by name or alias) → the entity's canonical
+                        // (name, type); fall back to kind "entity" only for a truly
+                        // unlisted name (synthesized dangling endpoints ARE listed,
+                        // so this is the defensive path). derive_logical_id (fix-34)
+                        // still rejects an empty name / ':' in kind.
+                        let (from_name, from_kind) = entity_index
+                            .get(&from_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (from_entity.to_string(), "entity".to_string()));
+                        let (to_name, to_kind) = entity_index
+                            .get(&to_entity.to_lowercase())
+                            .cloned()
+                            .unwrap_or_else(|| (to_entity.to_string(), "entity".to_string()));
+                        let from_lid = derive_logical_id(&from_kind, &from_name)?;
+                        let to_lid = derive_logical_id(&to_kind, &to_name)?;
+                        let edge_key = format!("{from_lid}:{to_lid}:{relation}");
+                        let edge_lid = derive_logical_id("edge", &edge_key)?;
+
+                        let is_temporal_fallback = t_valid
+                            .as_deref()
+                            .map(|tv| fallback_dates.contains(tv))
+
+exec
+/bin/bash -lc "grep -R \"\\\"python3\\\"\" -n src/rust/crates/fathomdb-engine/tests | head -50" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/tests/provenance_mandatory.rs:231:    let cmd_strings = ["python3".to_string(), script.to_string_lossy().to_string()];
+src/rust/crates/fathomdb-engine/tests/elps_conformance_golden.rs:40:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:306:        let cmd = ["python3".to_string(), script.to_string_lossy().to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:29:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:694:    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness_script.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:958:    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:994:    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:1039:    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:1080:    let cmd = ["python3".to_string(), "-c".to_string(), bad_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:1119:    let cmd = ["python3".to_string(), "-c".to_string(), dup_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs:1165:    let cmd = ["python3".to_string(), "-c".to_string(), hung_harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice5_provider_seam.rs:27:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/slice5_provider_seam.rs:101:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/slice5_provider_seam.rs:148:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidation_value_test.rs:27:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs:368:    let cmd = ["python3".to_string(), stub_str.clone()];
+src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs:381:    let cmd2 = ["python3".to_string(), stub_str.clone()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:33:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:42:    vec!["python3".to_string(), script.to_string_lossy().to_string()]
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:323:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:409:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:454:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:619:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:677:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/consolidate_provider.rs:727:    let cmd = ["python3".to_string(), "-c".to_string(), harness.to_string()];
+src/rust/crates/fathomdb-engine/tests/qd_envelope_deserialize.rs:257:        let cmd = ["python3".to_string(), stub_str.clone()];
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:95:    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:127:    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:161:        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "foreign".to_string()];
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:198:        vec!["python3".to_string(), script.to_string_lossy().into_owned(), "valid".to_string()];
+src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:295:        "python3".to_string(),
+
+exec
+/bin/bash -lc 'cd src/python && python3 -m pytest -q tests' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited 3 in 1457ms:
+INTERNALERROR> Traceback (most recent call last):
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 330, in wrap_session
+INTERNALERROR>     session.exitstatus = doit(config, session) or 0
+INTERNALERROR>                          ^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 383, in _main
+INTERNALERROR>     config.hook.pytest_collection(session=session)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/logging.py", line 803, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/warnings.py", line 99, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/config/__init__.py", line 1445, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 394, in pytest_collection
+INTERNALERROR>     session.perform_collect()
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 872, in perform_collect
+INTERNALERROR>     hook.pytest_collection_modifyitems(
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/cacheprovider.py", line 437, in pytest_collection_modifyitems
+INTERNALERROR>     res = yield
+INTERNALERROR>           ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/cacheprovider.py", line 367, in pytest_collection_modifyitems
+INTERNALERROR>     res = yield
+INTERNALERROR>           ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_hypothesis_pytestplugin.py", line 444, in pytest_collection_modifyitems
+INTERNALERROR>     _get_local_constants()
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/hypothesis/internal/conjecture/providers.py", line 368, in _get_local_constants
+INTERNALERROR>     ) is not None and is_local_module_file(module_file):
+INTERNALERROR>                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/hypothesis/internal/constants_ast.py", line 259, in is_local_module_file
+INTERNALERROR>     and "/site-packages/" not in path
+INTERNALERROR>         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR> TypeError: argument of type 'type' is not iterable
+
+5 errors in 1.25s
+
+exec
+/bin/bash -lc 'cd src/python && python3 -m pytest -q -p no:hypothesis tests' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ exited 3 in 605ms:
+INTERNALERROR> Traceback (most recent call last):
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 330, in wrap_session
+INTERNALERROR>     session.exitstatus = doit(config, session) or 0
+INTERNALERROR>                          ^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 383, in _main
+INTERNALERROR>     config.hook.pytest_collection(session=session)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/logging.py", line 803, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/warnings.py", line 99, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/config/__init__.py", line 1445, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 394, in pytest_collection
+INTERNALERROR>     session.perform_collect()
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/main.py", line 872, in perform_collect
+INTERNALERROR>     hook.pytest_collection_modifyitems(
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/cacheprovider.py", line 437, in pytest_collection_modifyitems
+INTERNALERROR>     res = yield
+INTERNALERROR>           ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_pytest/cacheprovider.py", line 367, in pytest_collection_modifyitems
+INTERNALERROR>     res = yield
+INTERNALERROR>           ^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/_hypothesis_pytestplugin.py", line 444, in pytest_collection_modifyitems
+INTERNALERROR>     _get_local_constants()
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/hypothesis/internal/conjecture/providers.py", line 368, in _get_local_constants
+INTERNALERROR>     ) is not None and is_local_module_file(module_file):
+INTERNALERROR>                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/home/coreyt/.local/lib/python3.12/site-packages/hypothesis/internal/constants_ast.py", line 259, in is_local_module_file
+INTERNALERROR>     and "/site-packages/" not in path
+INTERNALERROR>         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR> TypeError: argument of type 'type' is not iterable
+
+5 errors in 0.39s
+
+exec
+/bin/bash -lc 'cd src/python && python3 -m ruff check tests/_test_hooks_gate.py tests/test_test_hooks_gate.py tests/conftest.py eval/elps_live_harness.py' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+All checks passed!
+
+exec
+/bin/bash -lc "grep -n \"maturin\\|\\[project.optional-dependencies\\]\\|dev =\" -n src/python/pyproject.toml && sed -n '1,55p' src/python/pyproject.toml" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+2:requires = ["maturin>=1.7,<2"]
+3:build-backend = "maturin"
+14:[project.optional-dependencies]
+15:test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+27:dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+29:[tool.maturin]
+34:# `maturin develop`) AND the release workflow's `PyO3/maturin-action`
+49:#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder,...`
+59:# test-infra, NOT part of the shipped wheel (maturin only packages `fathomdb`).
+72:    # unattended `maturin develop`.
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fathomdb"
+version = "0.8.9"
+description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+lint = ["ruff>=0.6"]
+typecheck = ["pyright>=1.1.380"]
+# numpy is required by the M1 eval harness (eval/m1_baseline.py, eval/m1_baseline_run.py,
+# eval/m1_graph_build.py) and their test suites (test_m1_baseline.py imports numpy directly).
+# Without this declaration `pip install -e src/python[dev]` fails with ModuleNotFoundError
+# ([P1] from codex §9 Slice 5 fix-1 review).
+#
+# scipy + networkx are required by the M1 PPR-fusion arm (eval/m1_ppr.py — networkx for
+# Personalized-PageRank, scipy as its sparse-linalg backend) and test_m1_ppr.py (Slice 15).
+# They are HARNESS-only CPU deps (NOT linked into the FathomDB library → footprint-invariant
+# safe; design §9). Declared here so a clean `pip install -e src/python[dev]` runs the arm.
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6", "numpy>=1.24", "scipy>=1.11", "networkx>=3.0"]
+
+[tool.maturin]
+manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
+module-name = "fathomdb._fathomdb"
+python-source = "."
+# EU-6 FIX-1: this list is what BOTH editable installs (`pip install -e .`,
+# `maturin develop`) AND the release workflow's `PyO3/maturin-action`
+# inherit unless they pass an explicit `--features` override. Therefore
+# it must match the SHIPPED feature surface exactly:
+#
+#   * `pyo3/extension-module` — required for the abi3 extension build.
+#   * `default-embedder` — kept ON so editable installs have parity with
+#     the shipped wheel (the `use_default_embedder=True` opt-in must
+#     work against `pip install -e .` without any extra step).
+#
+# `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
+# `_write_vector_for_test` etc. on `Engine`) and would leak onto every
+# wheel `release.yml`'s build-python job emits to PyPI. So a plain
+# `pip install -e 'src/python[dev]'` has NO hook surface. The few tests that
+# need it carry `@pytest.mark.requires_test_hooks`; `tests/conftest.py` may
+# rebuild the binding with
+#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder,...`
+# but ONLY when that is authorized AND the active venv belongs to this source
+# tree (TC-27 — see `tests/_test_hooks_gate.py`). Otherwise those tests SKIP
+# visibly and the rest of the suite runs normally. The release workflow's
+# `args:` pins its own explicit feature list, so this file never gates the
+# shipped artifact.
+features = ["pyo3/extension-module", "default-embedder", "default-reranker"]
+
+exec
+/bin/bash -lc 'ls pyproject.toml setup.cfg pytest.ini tox.ini 2>/dev/null || true; find . -maxdepth 2 -name pyproject.toml -print' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'python3 -m pytest --collect-only -q src/python/tests/test_test_hooks_gate.py -vv 2>&1 | head -40' in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 272ms:
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.0, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+test-hooks: UNAVAILABLE — tests marked `requires_test_hooks` will be SKIPPED (not run).
+  the installed `fathomdb` binding was built WITHOUT `test-hooks`, and this conftest will not rebuild it unattended: `maturin develop` rebinds the active virtualenv to this source tree, which silently repoints every other consumer of a SHARED venv (TC-27).
+    * authorize it here, from an environment you intend to rebind:  FATHOMDB_TESTS_ALLOW_REBUILD=1 pytest ...
+    * or build it yourself:  python -m maturin develop --features pyo3/extension-module,test-hooks,default-embedder,default-reranker
+    * `scripts/agent-test.sh` authorizes this automatically when it runs the in-tree `.venv`.
+rootdir: /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python
+configfile: pyproject.toml
+plugins: hypothesis-6.155.2, anyio-4.13.0
+collecting ... collected 12 items
+
+<Dir python>
+  <Dir tests>
+    <Module test_test_hooks_gate.py>
+      Unit tests for the `test-hooks` gate policy (TC-27, 0.8.20 Slice 5 fix-6).
+      
+      These pin the decision table that `conftest.py` acts on. They are pure: no
+      binding, no venv, no subprocess — so they run identically on a hook-less
+      editable install, which is precisely the configuration the policy exists to
+      handle.
+      
+      Two regressions are locked here:
+      
+      * fix-4 made a hook-less editable checkout raise at conftest import time, so the
+        documented `pip install -e 'src/python[dev]'` + `scripts/agent-test.sh` loop
+        was always red. `test_default_editable_checkout_degrades_never_raises` forbids
+        any verdict other than DEGRADED on that path.
+      * The original defect fix-4 was closing: an unattended `maturin develop` firing
+        from an agent worktree into the primary checkout's shared `.venv`.
+        `test_authorized_rebuild_still_refused_when_venv_is_foreign` and
+        `test_worktree_against_shared_primary_venv_is_not_owned` forbid REBUILD there.
+      <Function test_authorized_rebuild_in_owned_venv_proceeds_to_rebuild>
+      <Function test_hooks_already_present_short_circuits>
+        The common warm path: never consults the opt-in at all.
+      <Function test_wheel_context_proceeds_without_a_source_tree>
+        Release-surface tests run the test files against a pip-installed wheel.
+      <Function test_default_editable_checkout_degrades_never_raises>
+
+exec
+/bin/bash -lc "nl -ba src/python/tests/conftest.py | sed -n '140,190p'" in /home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5
+ succeeded in 0ms:
+   140	        # `sys.prefix` is the environment root for a venv interpreter.
+   141	        venv_owned_by_source_tree=venv_belongs_to_source_tree(sys.prefix, _PYTHON_SRC_DIR),
+   142	    )
+   143	
+   144	    if decision.action == CONTRADICTORY:
+   145	        raise TestHooksBindingMisconfigured(decision.reason)
+   146	    if decision.action != REBUILD:
+   147	        return decision
+   148	
+   149	    print(
+   150	        "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
+   151	        "with test-hooks feature (one-time per venv; ~5-60s) ...",
+   152	        flush=True,
+   153	    )
+   154	    # `maturin develop` requires an activated virtualenv: it looks for
+   155	    # $VIRTUAL_ENV / $CONDA_PREFIX / a `.venv` in cwd-or-parents. A bare
+   156	    # subprocess inherits neither when pytest was launched via an absolute
+   157	    # interpreter path (e.g. `.venv/bin/python -m pytest`, or any venv not
+   158	    # named `.venv`), so it fails with "Couldn't find a virtualenv". Point it
+   159	    # at THIS interpreter's environment root (`sys.prefix` is the venv dir for
+   160	    # a venv interpreter) so the rebuilt `.so` lands in the venv we are running.
+   161	    env = dict(os.environ)
+   162	    env["VIRTUAL_ENV"] = sys.prefix
+   163	    subprocess.check_call(
+   164	        [
+   165	            sys.executable,
+   166	            "-m",
+   167	            "maturin",
+   168	            "develop",
+   169	            "--features",
+   170	            "pyo3/extension-module,test-hooks,default-embedder,default-reranker",
+   171	        ],
+   172	        cwd=str(_PYTHON_SRC_DIR),
+   173	        env=env,
+   174	    )
+   175	    # Belt-and-suspenders: drop any cached `fathomdb*` modules so the first
+   176	    # post-rebuild import re-reads from disk. (The out-of-process probe above
+   177	    # means this interpreter has NOT yet dlopen()ed the extension, so the fresh
+   178	    # `.so` is what pytest collection loads.)
+   179	    for mod_name in list(sys.modules):
+   180	        if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
+   181	            del sys.modules[mod_name]
+   182	
+   183	    # Re-probe rather than trusting a zero exit code. If `maturin develop`
+   184	    # somehow lands a binding that still lacks the hooks, DEGRADED (visible
+   185	    # skips) is the honest outcome — never let the marked tests run and
+   186	    # "pass" against a surface that is not there.
+   187	    if not _binding_has_test_hooks():
+   188	        return Decision(
+   189	            DEGRADED,
+   190	            "`maturin develop` completed but the rebuilt binding still does not expose "
+
+codex
+I did not find a discrete, actionable regression in the changed code. The new Rust integration target passed when run directly.
+I did not find a discrete, actionable regression in the changed code. The new Rust integration target passed when run directly.
+CODEX_EXIT=0
