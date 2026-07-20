@@ -8,8 +8,10 @@
 **Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
 (branch `orch-0.8.20`, dedicated linked worktree per **TC-RUBRIC-5**).
 **Slice-5 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5` (branch `orch-0.8.20-s5`,
-cut from `origin/main` `19b568e2`, rebased onto `30ad3524`, terminal HEAD **`8e09b950`**, 22 commits).
-**Last updated:** 2026-07-20 (Slice 5 code-complete on-branch; awaiting Steward land).
+cut from `origin/main` `19b568e2`, rebased onto `30ad3524`). **Terminal HEAD `8e09b950` is SUPERSEDED** — a
+**regression was found after that first closure** by independent Steward verification and fixed in **fix-4**;
+see §11.7. Terminal HEAD is now **`9c87d758`** plus the two **fix-5** commits (`93eca45a` + this docs commit).
+**Last updated:** 2026-07-20 (Slice 5 **re-closed** after fix-4; awaiting Steward land).
 
 ---
 
@@ -18,8 +20,8 @@ cut from `origin/main` `19b568e2`, rebased onto `30ad3524`, terminal HEAD **`8e0
 | | |
 |---|---|
 | **Slice in flight** | **Slice 5 — erasure completeness (R-20-E1…E8)** — **CODE-COMPLETE ON-BRANCH** |
-| **Status** | `orch-0.8.20-s5` @ **`8e09b950`**. **codex §9 terminal verdict = PASS** after **three fix rounds**. All release-DoD gates re-verified on the terminal HEAD with real exit codes (§11.3). |
-| **Blocks** | Nothing is blocked *by* Slice 5. Slice 5 itself is blocked **from landing** pending the Steward + the HITL decisions in §4 (#7–#12) — notably **AC-079 governed-surface sign-off** and the **owed main-tree Python X1**. |
+| **Status** | `orch-0.8.20-s5` @ **`9c87d758`** + fix-5. codex §9 returned **PASS** at `8e09b950` after three fix rounds — but **a PASS is not a run**: independent Steward verification (fresh clone, isolated venv, A/B against `origin/main`) then found a **live regression** that all four review rounds and every on-branch gate had missed. **Fixed in fix-4** (§11.7). Release-DoD gates re-verified with real exit codes (§11.3). |
+| **Blocks** | Nothing is blocked *by* Slice 5. Slice 5 itself is blocked **from landing** pending the Steward + the HITL decisions in §4 (#7–#14) — notably **AC-079 governed-surface sign-off**. The **owed Python X1 is DISCHARGED** (§11.8) and TC-20/TC-27 guards are **shipped**. |
 | **Next action** | **Return to Steward: land `orch-0.8.20-s5`, then obtain the HITL decisions in §4.** Nothing may be **published** until AC-079 is signed. |
 
 **Slice 0 is COMPLETE and HITL-SIGNED** (`403eb254`, 2026-07-19) — the X0 gate is open and slices 5+ are
@@ -32,7 +34,7 @@ authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Sli
 | Slice | Title | Depends-on | Status |
 |------:|-------|-----------|--------|
 | **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
-| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `8e09b950`** — codex §9 **PASS**, awaiting land (§11) |
+| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `9c87d758`+fix-5** — first closure at `8e09b950` **re-opened by a regression** (§11.7), now fixed; awaiting land (§11) |
 | 10 | `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV) | 0 | not started |
 | 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
 | 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
@@ -101,10 +103,17 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 |---|---|---|---|
 | 7 | **AC-079 governed-surface sign-off** — `erase_source`/`eraseSource`, `EraseReport`, `SourceId`, `ExciseReport`. Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`** in the allowlist `_comment` | — | **Sign or amend before publish.** The REQ-037 carve-out (2026-07-12) already approved `erase_source` as an SDK verb in principle; this signs the *exact* symbol set. **Publish is blocked until signed.** |
 | 8 | **Design-text correction** — the `logical_id IS NULL ONLY` backfill rule is right for NODES and **wrong for EDGES** | **TC-26** | **Correct plan §R-20-E8 + v4/v5 prose** to the shipped asymmetry. Code is right; the prose is not. TC-11 unaffected |
-| 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` has no `#[ignore]` and no env gate; `scripts/agent-test.sh` still carries a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds | **TC-20** | **Decide the guard's SHAPE — do not let an agent fix it unilaterally.** A naive `#[ignore]` creates the *opposite* vacuous-green hazard at Slice 40, where eu7 IS wanted (TC-13 class). Prefer an **env-gated** run + a Slice-40 **non-skip witness** |
-| 10 | **Python X1 is OWED on the main tree** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures. They were swept but **only statically verified** (`py_compile` + `ruff` + AST audit); `maturin develop` is prohibited in a worktree so the native extension could never be built or run. TypeScript **was** executed green (170/170, `tsc` 0) | **TC-22** | **Run the Python suite on the main tree BEFORE land.** Per the 0.8.19 lesson an env trap is a **landing blocker, not a follow-up** |
-| 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3 | **TC-27** | **Add a conftest guard** that refuses `maturin` when CWD is a linked worktree (fix-the-tooling). *No damage occurred:* it failed harmlessly because the interpreter was not an activated venv; orchestrator verified `.venv/.../fathomdb.pth` unmodified (mtime 2026-07-09, still pointing at the **main** repo) |
+| 9 | **eu7 no-run prohibition is UNENFORCEABLE** — `eu7_real_corpus_ac` had no `#[ignore]` and no env gate; `scripts/agent-test.sh` carried a bare `cargo test --workspace`. Raised on **three consecutive** codex rounds. **GUARD SHIPPED in fix-4** (`eu7_real_corpus_ac.rs:760` `#[ignore]`; `agent-test.sh` can no longer invoke it) — **verified by INSPECTION ONLY, zero eu7 runs**, with a control proving the check was not vacuous | **TC-20** | **Still a decision:** the shipped `#[ignore]` is the hard gate the HITL asked for, but it creates the *opposite* vacuous-green hazard at Slice 40, where eu7 IS wanted (TC-13 class). **Slice 40 must carry a non-skip witness** and opt in with `-- --ignored` |
+| 10 | **Python X1 was OWED** — 5c's `SourceId` is BREAKING and broke ~50 Python fixtures, swept but **only statically verified** (`py_compile` + `ruff` + AST audit). **DISCHARGED:** the suite has now been executed in an **isolated fresh clone with its own venv** (never the shared `.venv`) ⇒ **`2 failed, 754 passed, 7 skipped`**, and **the identical two tests fail on `origin/main`** — see §11.8. It was exactly this run that caught the fix-4 regression, vindicating the "landing blocker, not a follow-up" call | **TC-22** | **Satisfied.** The two residual failures are **pre-existing** and tracked as **TC-31** (#13) |
+| 11 | **`maturin develop` fires AUTONOMOUSLY** from `src/python/tests/conftest.py::_ensure_test_hooks_binding` — merely running the Python suite from a worktree attempts to rebind the **shared** `.venv`. Observed live in fix-3. **GUARD SHIPPED in fix-4:** `conftest.py` now **refuses** to auto-run `maturin develop` without `FATHOMDB_TESTS_ALLOW_REBUILD=1` (`conftest.py:77`) | **TC-27** | **Closed by tooling** (fix-the-tooling, not a be-careful note). *No damage occurred:* the shared `.venv` was re-verified intact — `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime still **2026-07-09**, still pointing at the **main** repo |
 | 12 | **Pending-redaction queue hardening** — its "a row is removed ONLY when the obligation is discharged" invariant is upheld by **three correct call sites, not structurally**. codex found a defect in this one mechanism on **each** of rounds 1, 2 and 3 | **TC-28** | **Make it structural** (own table with no generic `DELETE` verb, or a trigger). Every known path is now closed but **nothing prevents a fifth.** Deliberately NOT attempted inside a fix round |
+
+**Raised by Slice 5 fix-4** (details in §11.7/§11.8):
+
+| # | Decision | Ledger | Recommendation |
+|---|---|---|---|
+| 13 | **WRITE/READ PROVENANCE ASYMMETRY.** 0.8.20 makes provenance **mandatory on write** (R-20-E2, `SourceId`) but it is **unreadable on a text or vector hit**: `PySearchHit.source_id` is populated **only for graph-arm hits** and is `None` for every two-arm hit (`fathomdb-py/src/lib.rs:537-539`). Consumers therefore fall back to `int(sh.id)`, which has raised `TypeError` since 0.8.19 made `SearchHit.id` an `IdSpace` (C-2). This is the measured form of the known "NO SDK EXPOSURE" erasure gap — a caller cannot tell which document a hit came from, so it cannot audit or scope an erasure | **TC-31** | **Schedule a read-side fix** — populate `source_id` on every arm. **One fix likely closes BOTH** residual Python failures (§11.8). **OUT OF SCOPE for Slice 5**: `_doc_id_of` is **byte-identical on `main`** and both failures reproduce there |
+| 14 | **ENTITY-DEDUPE ERASURE GAP, adjacent to R-20-E2 — found in fix-4, NOT fixed.** Entities dedupe **within a batch** by `logical_id` derived from `(kind, name)`, so two documents naming the same entity **collapse to one row** carrying the **FIRST** document's provenance. Erasing the second document therefore **leaves that entity behind**, still attributed to the first. An **erasure-completeness gap**: the slice's own guarantee ("erase every row owned by this source") does not hold for a co-named entity | **TC-32** | **Entity-identity design question, not a fix round.** Options: per-source entity rows, or a multi-valued provenance edge set. Must be decided before the erasure guarantee is stated unconditionally to users |
 
 ---
 
@@ -206,7 +215,7 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 |---|---|---|---|
 | `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
 | `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | Slice 0 landed — **reclaimable** |
-| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `8e09b950`, **do not remove before land** |
+| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `9c87d758`+fix-5, **do not remove before land** |
 
 Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
 
@@ -214,6 +223,14 @@ Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; n
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-20 — Slice 5 RE-CLOSED after a post-closure REGRESSION** (fix-4, `9c87d758`). Independent Steward
+  verification — **fresh clone, isolated venv, A/B against `origin/main`** — found multi-document
+  `ingest_with_extractor` failing with `ExtractorError`. **The engine was not the defect and was not changed**
+  (`engine/src/lib.rs` byte-identical across fix-4); the **extractor protocol** was, in never requiring
+  per-entity attribution. **Behavioral contract change:** multi-doc extractor batches now require **per-entity
+  attribution**; a caller who cannot attribute must submit **single-document batches**. Also shipped the TC-20
+  eu7 hard gate and the TC-27 `maturin` opt-in guard. New: **TC-31**, **TC-32** (§4 #13/#14). **Lesson: a codex
+  PASS plus four green on-branch gate runs did not substitute for one honest execution.** (§11.7/§11.8)
 - **2026-07-20 — Slice 5 CODE-COMPLETE** on `orch-0.8.20-s5` @ `8e09b950`; **codex §9 terminal PASS** after three
   fix rounds (§11). Proved the **`logical_id IS NULL ONLY` backfill rule wrong for EDGES** (TC-26); shipped the
   HITL-ruled erasure-audit retention exemption (§4 #3). **Six HITL items owed** (§4 #7–#12) — AC-079 is **NOT
@@ -269,8 +286,19 @@ recommendations, not decided here.
 
 ## 11. Slice 5 close — erasure completeness (R-20-E1…E8)
 
-**Branch `orch-0.8.20-s5`, terminal HEAD `8e09b950`** — cut from `origin/main` `19b568e2`, rebased onto
-`30ad3524`, **22 commits**. **Not landed.** The Steward lands it.
+**Branch `orch-0.8.20-s5`, terminal HEAD `9c87d758` + fix-5** — cut from `origin/main` `19b568e2`, rebased onto
+`30ad3524`. **Not landed.** The Steward lands it.
+
+**⚠ The first closure at `8e09b950` was premature.** Post-`8e09b950` history:
+
+| Commit | Content |
+|---|---|
+| `9898fd8e` | ledger TC-30 + Slice-5 docs closure artifact |
+| `ff2d641c` | **fix-4** — RED: multi-document extractor batches require per-entity attribution |
+| `9550bcde` | **fix-4** — GREEN: ELPS harness must attribute ENTITIES, not just edges |
+| `265c54c0` | **fix-4** — tooling guards: TC-20 eu7 hard gate, TC-27 `maturin` opt-in |
+| `9c87d758` | **fix-4** — docs: the per-entity-attribution contract |
+| `93eca45a` | **fix-5** — `cfg`-gate `is_erasure_bookkeeping_collection` (non-`operator` `dead_code`) |
 
 ### 11.1 What shipped
 
@@ -283,6 +311,8 @@ recommendations, not decided here.
 | fix-1 | `00b46b84` | codex **P1** legacy-edge backfill (via `989fd7ef`) + **P2** durable pending-redaction queue |
 | fix-2 | `7be20ec3` | codex **P2** doctor edge accounting + **P2** drain-before-freeze |
 | fix-3 | `8e09b950` | codex **P1** refuse excising erasure bookkeeping + **P2** rotated-sink ⇒ `ErasureIncomplete` |
+| **fix-4** | `9c87d758` | **REGRESSION** — multi-doc extractor batches require **per-entity attribution** (§11.7) · TC-20 eu7 hard gate · TC-27 `maturin` opt-in guard |
+| fix-5 | `93eca45a` | `cfg`-gate `is_erasure_bookkeeping_collection` — the fix-3 guard lacked the `#[cfg(feature = "operator")]` its only call site carries, warning `dead_code` on every non-`operator` build. Behavior unchanged |
 
 The central defect this slice closes: **`search_index_v2` stores the body**, so before R-20-E1 an excised body
 **survived erasure** in that table. It never surfaced in results (both read paths gate on `canonical_nodes`),
@@ -300,19 +330,25 @@ TC-18.
 | 3 | `slice-5-fix-2-rereview-20260720T001616Z.log` | **P1** `excise_collection_record` could delete the pending-redaction queue; **P2** rotated sink treated as redacted |
 | 4 | `slice-5-fix-3-rereview-20260720T005056Z.log` | **TERMINAL PASS** — *"No actionable correctness issues were found in the reviewed diff. The added erasure/provenance paths appear consistently wired through Rust, Python, TypeScript, CLI, schema migration, and tests."* |
 
-### 11.3 Gates — re-verified by the orchestrator on the terminal HEAD (real exit codes)
+### 11.3 Gates — re-verified on the terminal HEAD (real exit codes)
+
+Re-run at **fix-5** (`93eca45a`). Read via `$?` / `PIPESTATUS`, never a trailing `echo`.
 
 | Gate | Result |
 |---|---|
-| `cargo clippy --workspace --all-targets` | **0** |
+| `cargo clippy --workspace --all-targets` | **0** — and **zero `dead_code`** on a non-`operator` build (fix-5) |
 | `cargo check --workspace --all-targets` | **0** |
 | `erasure_projection_registry` | **4/4** |
+| `provenance_mandatory` | **3/3** |
+| `multidoc_extractor_provenance` (**fix-4**) | **5/5** |
 | `erasure_completeness` (AC-080) | **10/10** |
 | `sdk_only_erasure` | **3/3** — via **explicit non-operator invocation** (TC-25: it is `#![cfg(not(feature = "operator"))]`, so any feature-unified run compiles it to **zero** tests and reports success having asserted nothing) |
 | `no_recovery_surface` (**AC-041**) | **1/1** — denylist unchanged at five |
 | `governed_surface` | **3/3** — *against an unsigned proposal*, see §3 |
 | `fathomdb-schema`, all targets | green, incl. new `step21_migration.rs` **5/5** |
+| `fathomdb-cli`, all targets | green |
 | TypeScript | **170/170**, `tsc` **0** |
+| **Python** | **`2 failed, 754 passed, 7 skipped`** in an **isolated fresh clone** — failure set **identical to `origin/main`**, both pre-existing (**TC-31**). See **§11.8**; do **not** read this row without it |
 | `SCHEMA_VERSION` | **20 → 21** |
 
 ### 11.4 What Slice 5 proved WRONG
@@ -341,9 +377,10 @@ TC-18.
 
 ### 11.5 Owed to the HITL / Steward
 
-All six are in §4 as decisions **#7–#12**, with ledger ids: **AC-079 sign-off** (blocks publish) · **design-text
-correction** TC-26 · **eu7 guard shape** TC-20 · **main-tree Python X1** TC-22 (landing blocker) ·
-**`maturin develop` conftest guard** TC-27 · **pending-redaction structural hardening** TC-28.
+In §4 as decisions **#7–#14**, with ledger ids: **AC-079 sign-off** (blocks publish, **still NOT SIGNED**) ·
+**design-text correction** TC-26 · **eu7 guard shape** TC-20 (guard now **shipped**) · **Python X1** TC-22
+(**discharged**, §11.8) · **`maturin develop` conftest guard** TC-27 (**shipped**) · **pending-redaction
+structural hardening** TC-28 · **write/read provenance asymmetry** TC-31 · **entity-dedupe erasure gap** TC-32.
 Also logged by this slice and **not** requiring a decision: **TC-21** (`pr_g10_reranker_ce` has not compiled
 under `--features default-reranker` since 0.8.19 — **pre-existing**, file byte-identical to baseline; it survived
 because the release-DoD full-workspace gate does **not** fan out over feature combinations), **TC-23**
@@ -356,5 +393,76 @@ erasure path).
 
 ### 11.6 Closure artifacts
 
-`dev/plans/runs/0.8.20-slice-5{a,b,c,d}-output.json` and `dev/plans/runs/0.8.20-slice-5-fix-{1,2,3}-output.json`
-(seven), plus the four §9 transcripts in §11.2. Committed with this close.
+`dev/plans/runs/0.8.20-slice-5{a,b,c,d}-output.json` and
+`dev/plans/runs/0.8.20-slice-5-fix-{1,2,3,4,5}-output.json` (nine), plus the four §9 transcripts in §11.2.
+Committed with this close **(TC-23** — an untracked closure witness is destructible by routine git hygiene, and
+**two implementers in this slice destroyed work exactly that way**; the witness gets committed, not left loose).
+
+### 11.7 fix-4 — the REGRESSION found AFTER the first closure
+
+**Found by independent Steward verification** — a **fresh clone with its own isolated venv**, run **A/B against
+`origin/main`**. Not by codex (four rounds, terminal PASS), and not by any on-branch gate.
+
+**What broke.** Multi-document `ingest_with_extractor` failed with `ExtractorError`.
+
+**Mechanism.** `resolve_provenance` (`engine/src/lib.rs:3933-3943`) admits the model's echo **only as a
+SELECTOR** among the caller-supplied batch ids: a single-document batch short-circuits to the one caller id, but
+on a **multi-document** batch the echo **must name one of them** or the ingest fails loudly. Meanwhile
+`src/python/eval/elps_live_harness.py` backfilled `source_doc_id` onto **edges only**, and the stub entities
+carried none — so **every multi-doc batch failed at the entity loop** (`lib.rs:3972`, resolving at `:3979`).
+
+**The engine was NOT the defect and was NOT changed.** `engine/src/lib.rs` is **byte-identical across all of
+fix-4** (verified by `git diff 9898fd8e..9c87d758 -- src/rust/crates/fathomdb-engine/src/lib.rs`, empty).
+Accepting the echo as a **value** rather than a selector is precisely the **R-20-E2 defect this slice exists to
+fix** — provenance must be **caller-grounded**, never taken from the LLM's own echo. **Failing loudly is
+correct.** The defect was in the **extractor protocol**, which never required per-entity attribution.
+
+**The fix (contract side, `9550bcde`).**
+
+1. Entities are now backfilled **symmetrically with edges** (`elps_live_harness.py:233-237`).
+2. `_STUB_ENTITIES` (a module-level list) became **`_stub_entities(doc_id)`** returning **fresh dicts** (`:99`).
+   The module-level list was a **latent aliasing bug**: backfilling it in place would have let the **last**
+   document overwrite **every earlier document's** provenance — silently mis-attributing, which for an erasure
+   slice is worse than the loud failure.
+3. The per-entity requirement is now **explicit in the extractor prompt and schema** (`:42`, `:46`, `:70`).
+4. A new **engine-level multi-doc test target** was added — `multidoc_extractor_provenance` (**5/5**).
+
+**⚠ BEHAVIORAL CONTRACT CHANGE — record it.** Multi-document extractor batches now require **per-entity
+attribution**. **A caller whose extractor cannot attribute must submit single-document batches.**
+
+**The coverage gap that let it through: every existing extractor test was SINGLE-DOC only** — and a single-doc
+batch takes the short-circuit path that never consults the echo at all. The regression was invisible by
+construction.
+
+### 11.8 Python verification — the honest number
+
+Full suite, **isolated fresh clone with its own venv** (never the shared `.venv`):
+
+```text
+2 failed, 754 passed, 7 skipped   ·   exit 1
+```
+
+**This is NOT a regression, and this board says why.**
+
+- **The identical two tests fail on `origin/main` `f22e4947`** in the same isolated clone (targeted main run:
+  `2 failed, 8 passed`). **The branch's failure set is identical to main's.**
+- An expected **"755 passed / 1 failed" was NOT REACHABLE.** It assumed
+  `test_option2_elps_pipeline::test_build_fathomdb_elps_path_uses_ingest_with_extractor` would go green once the
+  ingest regression was fixed — but **that test also fails on main**, at a later point.
+- **The regression IS fixed.** The ELPS test now gets **all the way past ingest** (`blocker is None`,
+  `adapter is not None`, `_use_graph_arm is True`, `db.exists()` all pass) and dies at `adapter.retrieve(...)`
+  — **the same pre-existing failure point as main**.
+- **Both remaining failures share ONE pre-existing root cause** (**TC-31**, §4 #13): `PySearchHit.source_id` is
+  populated **only for graph-arm hits** (`fathomdb-py/src/lib.rs:537-539`), so `_doc_id_of` falls through to
+  `int(sh.id)`, which has raised `TypeError` since 0.8.19 made `SearchHit.id` an `IdSpace` (C-2). `_doc_id_of`
+  is **byte-identical on main**. **One read-side fix likely closes both.** Scheduled separately —
+  **out of scope for Slice 5.**
+- **7 skips, all environmental/opt-in**: musique corpus absent (`data/corpus-data/` is gitignored),
+  `RELEASE_SURFACE_TESTS != 1`, `FDB_S15A_INTEGRATION` opt-in. **No skip masked a pass; no skip came from a
+  missing binding.**
+- **Shared `.venv` integrity verified intact:** `/home/coreyt/projects/fathomdb/.venv/.../fathomdb.pth` mtime
+  still **2026-07-09**, still pointing at the **main** repo.
+
+**TC-20 eu7 hard gate — verified by INSPECTION ONLY, with ZERO eu7 runs.** `eu7_real_corpus_ac` now carries
+`#[ignore]` (`:760`) and `scripts/agent-test.sh` can no longer invoke it; a **control** was run to prove the
+check was not vacuous. The prohibition on running eu7 was honored in the course of enforcing it.

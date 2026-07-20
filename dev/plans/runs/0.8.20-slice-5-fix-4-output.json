@@ -1,0 +1,198 @@
+{
+  "slice": "0.8.20-slice-5-fix-4",
+  "agent": "fix-4",
+  "status": "COMPLETE",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "9898fd8ede86131544983743feaf507d57a9893d",
+  "head": "9c87d758a5a72f7c685a2d420f311177d118200a",
+  "worktree": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5",
+
+  "summary": "Fixed the multi-document ingest_with_extractor regression on the CONTRACT side (the shipped ELPS harness never attributed entities), left resolve_provenance untouched, added the missing multi-doc engine coverage, and landed the two owed tooling guards (TC-20 eu7 hard gate, TC-27 maturin opt-in).",
+
+  "commits": [
+    {
+      "sha": "ff2d641c",
+      "kind": "test",
+      "subject": "test(0.8.20): RED — multi-document extractor batches require per-entity attribution"
+    },
+    {
+      "sha": "9550bcde",
+      "kind": "fix",
+      "subject": "fix(0.8.20): ELPS harness must attribute ENTITIES, not just edges (R-20-E2)"
+    },
+    {
+      "sha": "265c54c0",
+      "kind": "chore",
+      "subject": "chore(0.8.20): tooling guards — TC-20 eu7 hard gate, TC-27 maturin opt-in"
+    },
+    {
+      "sha": "9c87d758",
+      "kind": "docs",
+      "subject": "docs(0.8.20): multi-doc extractor batches require per-entity attribution (R-20-E2)"
+    }
+  ],
+
+  "red_evidence": {
+    "claim": "GENUINE RED held and captured at the baseline harness before the fix. Exactly one test failed, for the specified reason.",
+    "test": "multidoc_extractor_provenance::elps_live_harness_multidoc_batch_ingests",
+    "command": "cargo test -p fathomdb-engine --test multidoc_extractor_provenance",
+    "red_exit": 101,
+    "red_output": "running 5 tests\ntest multidoc_batch_with_foreign_echo_fails_loudly ... ok\ntest multidoc_batch_without_entity_echo_fails_loudly ... ok\ntest singledoc_batch_without_entity_echo_still_succeeds ... ok\ntest multidoc_batch_with_valid_echo_stores_caller_copy ... ok\ntest elps_live_harness_multidoc_batch_ingests ... FAILED\n\n---- elps_live_harness_multidoc_batch_ingests stdout ----\nthread 'elps_live_harness_multidoc_batch_ingests' panicked at src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs:306:85:\nthe shipped ELPS harness must attribute every entity it emits, so that a multi-document batch ingests instead of failing with EngineError::Extractor: Extractor\n\ntest result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out",
+    "green_after": "harness commit 9550bcde -> 5 passed; 0 failed",
+    "why_this_is_the_right_reason": "The failure is EngineError::Extractor raised from the entity loop's resolve_provenance(None) on a 2-document batch, driving the REAL src/python/eval/elps_live_harness.py. This reproduces the Steward's fresh-clone A/B (main ingests, Slice-5 raises _fathomdb.ExtractorError) inside the Rust suite, with no network/LLM/third-party deps.",
+    "which_change_made_which_test_green": {
+      "elps_live_harness_multidoc_batch_ingests": "GREEN by the HARNESS fix (9550bcde) — entity backfill + _stub_entities(doc_id). Not by any engine change.",
+      "multidoc_batch_without_entity_echo_fails_loudly": "PASSED AT BASELINE — guards the engine's existing, correct demand. Not a RED.",
+      "multidoc_batch_with_foreign_echo_fails_loudly": "PASSED AT BASELINE — guards echo-as-selector-not-value. Not a RED.",
+      "multidoc_batch_with_valid_echo_stores_caller_copy": "PASSED AT BASELINE once the test itself was corrected (see test_authoring_corrections). Not a RED.",
+      "singledoc_batch_without_entity_echo_still_succeeds": "PASSED AT BASELINE — pins the arm that hid the regression. Not a RED."
+    },
+    "test_authoring_corrections": [
+      "First draft used engine.excise_source(), which is #[cfg(feature=\"operator\")]-gated and did not compile in this non-operator test target. Switched to the governed SDK verb erase_source() — also the more appropriate verb, since a caller document id is exactly what the governed surface is for.",
+      "erase_source drains the projection runtime on a short internal budget and returned EngineError::Scheduler on an embedder-less test engine. Switched that one test to full Engine::open plus an explicit drain(120_000), matching erasure_completeness's established pattern. This was a defect in MY test, not in shipped code."
+    ]
+  },
+
+  "regression_fix": {
+    "root_cause": "The extractor protocol never REQUIRED per-entity attribution, so the engine's (correct) multi-document demand had no counterpart on the contract side. src/python/eval/elps_live_harness.py backfilled source_doc_id onto edges ONLY; _STUB_ENTITIES carried none.",
+    "resolve_provenance_touched": false,
+    "resolve_provenance_note": "UNCHANGED and deliberately so. The engine still fails loudly on an absent or unrecognised echo in a multi-document batch. No fallback-to-first-id, no single-doc equivalence, no error downgrade. Two tests now pin that behavior so it cannot be 'fixed' by relaxation later.",
+    "changes": [
+      "src/python/eval/elps_live_harness.py — backfill source_doc_id onto entities, symmetric with the pre-existing edge backfill, inside _extract_single_doc (scoped to exactly one document, so doc_id is the true source, not a guess).",
+      "src/python/eval/elps_live_harness.py — _STUB_ENTITIES (module-level list) became _stub_entities(doc_id) returning fresh dicts, mirroring _stub_edges. LATENT ALIASING BUG AVOIDED: the same list object was returned for every document in a batch, so in-place attribution would have let the last document overwrite every earlier document's provenance.",
+      "src/python/eval/elps_live_harness.py — _SYSTEM_PROMPT: new load-bearing ATTRIBUTION section + source_doc_id added to the entities JSON schema (edges already had it)."
+    ]
+  },
+
+  "files_carrying_per_entity_attribution_requirement": [
+    {
+      "path": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/eval/elps_live_harness.py",
+      "carries": [
+        "_SYSTEM_PROMPT ATTRIBUTION section — instructs the LLM that EVERY entity AND edge must carry source_doc_id copied verbatim from the supplied doc_id, and states the consequence (rejection; the store will not guess).",
+        "_SYSTEM_PROMPT JSON schema — entities element is now {name, type, aliases, source_doc_id}.",
+        "_extract_single_doc runtime backfill — entities loop added alongside the existing edges loop.",
+        "_stub_entities(doc_id) — stub path now attributes too."
+      ],
+      "note": "This is the ONLY runtime file that needed the change. Item 2 of the mandate is satisfied at both layers: prompt/schema (for a real LLM) and runtime backfill (defence in depth). The stub passing was explicitly not treated as evidence a live model would."
+    },
+    {
+      "path": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/dev/design/0.8.20-slice0-erasure-design.md",
+      "carries": "NEW §4.1 — the behavioral contract change, the per-cardinality table, why the engine refuses to guess, the 'cannot attribute => submit single-document batches' migration, and the coverage lesson. Work-item-10 row updated to point at §4.1 and the new test."
+    },
+    {
+      "path": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/CHANGELOG.md",
+      "carries": "[Unreleased] > Changed — BREAKING — new first entry stating the multi-document requirement, that single-document batches are unaffected, the ExtractorError behavior, and the migration."
+    }
+  ],
+
+  "new_tests": {
+    "file": "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/rust/crates/fathomdb-engine/tests/multidoc_extractor_provenance.rs",
+    "count": 5,
+    "assertion_basis": "RAW TABLE CONTENTS via direct SQL on canonical_nodes only (binding slice rule — Rule 1). No test in this file issues a search().",
+    "tests": [
+      "multidoc_batch_without_entity_echo_fails_loudly — 2 docs, no echo => EngineError::Extractor AND zero rows left behind (mandate item 3a).",
+      "multidoc_batch_with_valid_echo_stores_caller_copy — 2 docs, valid echo => Ok; every stored source_id is one the caller supplied; each entity filed under the document it was attributed to; erasing caller-doc-1 removes only its rows and caller-doc-2 survives (mandate item 3b).",
+      "multidoc_batch_with_foreign_echo_fails_loudly — EXTRA. Echo names a doc outside the batch => EngineError::Extractor and the invented id never reaches a stored row. This is the assertion that actually proves the echo is a selector and not a value; two equal strings are otherwise observationally indistinguishable.",
+      "singledoc_batch_without_entity_echo_still_succeeds — EXTRA. Pins the arm that hid the regression, so the two cardinalities cannot drift.",
+      "elps_live_harness_multidoc_batch_ingests — the RED. Drives the real shipped harness end-to-end."
+    ],
+    "fixtures_added": [
+      "tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py — emits one entity+edge per document with a per-element echo; modes 'valid' | 'foreign'.",
+      "tests/fixtures/slice15_byo_llm/elps_stub_shim.py — loads the real elps_live_harness.py from an absolute path with ELPS_STUB_MODE=1 set BEFORE import (the harness snapshots that var at import time). No network, no LLM, no third-party deps."
+    ],
+    "note_on_caller_copy_assertion": "Asserted as 'stored source_id equals the caller's id and is one of the batch's ids'. A valid echo is byte-equal to the caller's string, so caller-copy vs model-copy cannot be distinguished by content alone; the foreign-echo test is what makes the selector-not-value property observable."
+  },
+
+  "tooling_guards": {
+    "TC-20": {
+      "change": "#[ignore] on eu7_real_corpus_ac_validation, with a doc-comment recording why; plus a comment block at the scripts/agent-test.sh `cargo test --workspace` call site recording the invariant and forbidding --all-features there.",
+      "gate_layers": [
+        "1. required-features = [\"operator\"] on the [[test]] target — not built at all under the workspace default feature set (default = []), so the bare `cargo test --workspace` in agent-test.sh cannot reach it.",
+        "2. file-level #![cfg(feature = \"default-embedder\")] — compiles to ZERO tests even when `operator` IS enabled (i.e. during the engine operator suite).",
+        "3. #[ignore] (NEW) — holds regardless of feature selection, so even --all-features would not run the body.",
+        "4. AGENT_LONG runtime early-return — kept as a further layer, not replaced."
+      ],
+      "eu7_runs_executed": 0,
+      "verification_method": "INSPECTION ONLY — never execution.",
+      "verification_evidence": [
+        "`cargo test -p fathomdb-engine --features default-embedder,operator --test eu7_real_corpus_ac -- --list --ignored` => 'eu7_real_corpus_ac_validation: test / 1 test, 0 benchmarks' (it IS in the ignored set).",
+        "CONTROL proving --list --ignored actually filters (not just listing everything): the same flags on the non-ignored multidoc target => '0 tests, 0 benchmarks', while plain --list on it => '5 tests'.",
+        "During the full engine operator suite the eu7 target is built but contributes 0 tests (feature-stripped), i.e. not-run: aggregate over the whole suite was passed=511 failed=0 ignored=0."
+      ],
+      "vacuous_green_note": "Not a vacuous green: R-20-EU7 was CLOSED by HITL decision, so this test gates nothing. The earlier Slice-40 objection was withdrawn on that basis."
+    },
+    "TC-27": {
+      "change": "src/python/tests/conftest.py::_ensure_test_hooks_binding — `maturin develop` is now OPT-IN via FATHOMDB_TESTS_ALLOW_REBUILD=1. Without it the function raises a new TestHooksBindingMissing with an actionable message; it never shells out. FATHOMDB_TESTS_NO_REBUILD=1 retained (now reasserts the default); setting both is a typed contradiction error.",
+      "no_cost_to_correct_environments": "The `_binding_has_test_hooks()` early-return comes BEFORE the opt-in check, so an environment whose binding already has test-hooks proceeds exactly as before and never sees the guard.",
+      "verification_method": "Imported the conftest with the opt-in unset (env -u) — raised TestHooksBindingMissing and executed no subprocess build. The Python TEST SUITE was NOT run (prohibited).",
+      "live_confirmation_of_the_hazard": "During that verification `_binding_has_test_hooks()` returned False in this worktree, which means the PRE-EXISTING code would have run `maturin develop` from THIS worktree against the shared .venv had the interpreter been an activated virtualenv. The guard is not hypothetical.",
+      "downstream_behavior_change": "scripts/agent-test.sh's pytest step will now FAIL LOUDLY rather than silently rebuilding when the venv binding lacks test-hooks. That is the intended TC-27 behavior; whoever runs the isolated Python verification should set FATHOMDB_TESTS_ALLOW_REBUILD=1 in that throwaway venv where a rebuild is genuinely intended."
+    }
+  },
+
+  "gates": {
+    "CLIPPY_EXIT": 0,
+    "CHECK_EXIT": 0,
+    "clippy_command": "cargo clippy --workspace --all-targets",
+    "check_command": "cargo check --workspace --all-targets",
+    "exit_read_via": "PIPESTATUS[0] / $? — never a trailing echo",
+    "engine_suite_operator": {
+      "command": "cargo test -p fathomdb-engine --features operator",
+      "exit": 0,
+      "aggregate": "passed=511 failed=0 ignored=0",
+      "eu7": "target built, 0 tests contributed (feature-stripped) — not run"
+    },
+    "named_suites": {
+      "erasure_projection_registry": {"expected": 4, "got": 4, "exit": 0},
+      "erasure_completeness": {"expected": 10, "got": 10, "exit": 0},
+      "provenance_mandatory": {"expected": 3, "got": 3, "exit": 0},
+      "sdk_only_erasure": {"expected": 3, "got": 3, "exit": 0, "command": "cargo test -p fathomdb --test sdk_only_erasure", "note": "run WITHOUT operator, as required — it is #![cfg(not(feature=\"operator\"))] and would compile to zero tests otherwise"},
+      "no_recovery_surface": {"got": 1, "exit": 0, "note": "AC-041 GREEN"},
+      "governed_surface": {"expected": 3, "got": 3, "exit": 0},
+      "fathomdb-schema": {"command": "cargo test -p fathomdb-schema --all-targets", "exit": 0, "step21_migration": {"expected": 5, "got": 5}},
+      "cli": {"command": "cargo test -p fathomdb-cli", "exit": 0, "note": "all green; 7 pre-existing ignored in one target, unchanged by this work"},
+      "typescript": {"command": "npm test (src/ts)", "exit": 0, "result": "tests 170, pass 170, fail 0"},
+      "multidoc_extractor_provenance": {"got": 5, "exit": 0, "note": "NEW"}
+    },
+    "python_static": {
+      "ruff": {"command": "ruff check src/python + fixtures", "exit": 0},
+      "py_compile": {"exit": 0, "files": ["src/python/eval/elps_live_harness.py", "src/python/tests/conftest.py", "tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py", "tests/fixtures/slice15_byo_llm/elps_stub_shim.py"]}
+    },
+    "markdown": {
+      "command": "npx markdownlint-cli2 (via pre-commit md-safe-fix)",
+      "exit": 0,
+      "note": "The 9 reported issues are ALL in dev/research/personal-agent-database-market-2026-07-02.md, pre-existing and untouched by this work. Both files I edited are clean. Confirms TC-30: the tool globs all 406 files regardless of the paths passed as arguments."
+    },
+    "regressions": "NONE observed in any required suite."
+  },
+
+  "prohibitions_honored": {
+    "no_maturin_develop_or_pip_install_e": true,
+    "no_python_test_suite_run": true,
+    "no_eu7_execution_in_any_form": true,
+    "resolve_provenance_not_weakened": true,
+    "recovery_denylist_untouched": true,
+    "no_HITL_SIGNED_written": true,
+    "STATUS-0.8.20.md_untouched": true,
+    "todos_ledger_untouched": true,
+    "no_git_push": true,
+    "main_repo_untouched": true,
+    "no_stash_clean_or_checkout_dash_dash": true,
+    "branch_verified_before_every_commit": "git rev-parse --abbrev-ref HEAD == orch-0.8.20-s5 checked before each of the 4 commits"
+  },
+
+  "left_alone_as_instructed": {
+    "test": "test_verify_embed_db.py::test_complete_embed_is_queryable",
+    "action": "NOT TOUCHED",
+    "reason": "Pre-existing, fails identically on main (r2_parity_eval.py:325). Latent 0.8.19 C-2 issue: SearchHit.id is IdSpace so int(sh.id) raises, reached only because SearchHit.source_id returns None. Expected to remain the one failure. Being scheduled separately."
+  },
+
+  "notes_for_orchestrator": [
+    "The mandate cited engine anchors as engine/src/lib.rs:3946-3956 / :3972 / :3900-3921. The real path is src/rust/crates/fathomdb-engine/src/lib.rs and the lines are :3926-3939 (closure), :3972 (entity loop), :3894-3921 (comment). CONTENT matched exactly on all four anchors — path/offset drift only, so I proceeded rather than stopping.",
+    "All four harness/stub anchors in the mandate were confirmed verbatim.",
+    "The harness calls the LLM once PER DOCUMENT (_extract_single_doc), so the entity backfill is exact rather than a heuristic — doc_id there is ground truth. This is why the fix is safe in the harness but would NOT be safe in the engine.",
+    "PRE-EXISTING BEHAVIOR WORTH A DECISION (not changed here, out of slice scope): entities are deduplicated within a batch by logical_id, which is derived from (kind, name). Two documents mentioning the same entity name collapse to ONE row carrying the FIRST document's provenance — so erasing the second document leaves that row behind. Visible in the stub path (both docs yield 'TestEntity' => 1 node). This is entity-identity design, not the regression I was sent to fix, but it is an erasure-completeness edge worth logging as a TC.",
+    "TC-27 side effect the next runner must know: scripts/agent-test.sh's pytest step now fails loudly instead of auto-rebuilding. The commissioned isolated fresh-clone Python verification should export FATHOMDB_TESTS_ALLOW_REBUILD=1 in its throwaway venv, where rebinding is intended and harmless.",
+    "Reviewer focus suggestion: (a) confirm resolve_provenance is byte-identical to baseline; (b) confirm the RED was real (ff2d641c is the tests-only commit — checking it out reproduces 4 pass / 1 fail); (c) sanity-check the TC-27 message wording."
+  ]
+}
