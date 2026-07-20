@@ -31,6 +31,7 @@ from fathomdb.types import (
     OpenReport,
     PerHitExplain,
     QueryTrace,
+    ReadView,
     SearchFilter,
     SearchHit,
     SearchResult,
@@ -39,6 +40,12 @@ from fathomdb.types import (
     WriteReceipt,
 )
 from fathomdb.filter import Filter
+
+# 0.8.20 Slice 15b fix-2 — reuse the read namespace's dataclass -> native
+# ReadView translator rather than duplicating it here, so the two search entry
+# points can never drift from the five read verbs. `fathomdb.read` imports
+# `fathomdb.engine` only under TYPE_CHECKING, so this is not circular at runtime.
+from fathomdb.read import _to_native_view
 
 _KWARG_FIELDS = {
     "embedder_pool_size",
@@ -267,6 +274,7 @@ class Engine:
         alpha: float | None = None,
         pool_n: int | None = None,
         explain: bool = False,
+        view: ReadView | None = None,
     ) -> SearchResult:
         """Hybrid search with optional CE reranking and optional graph-BFS arm.
 
@@ -287,6 +295,20 @@ class Engine:
                 agentic-answer/memory path — the default protects naive lookups.
             pool_n: 0.8.5 (EXP-0) reranked-pool size. ``None`` (default) ⇒
                 ``rerank_depth`` (preserves today's pool == depth semantics).
+            view: 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity
+                view, the same keyword the five read verbs take. ``None``
+                (default) is the STRICT view: active-only, non-superseded, and
+                valid AT QUERY TIME. ``ReadView(include_out_of_window=True)``
+                returns hits whatever their ``[valid_from, valid_until)``
+                window; ``ReadView(valid_as_of=t)`` evaluates validity at the
+                bound instant ``t``.
+
+                Only the VALIDITY axis is honoured here. The existence flags
+                (``include_superseded`` / ``include_inactive``) raise
+                ``InvalidArgumentError`` on the search path rather than being
+                silently ignored: search hydrates from projection indexes that
+                are not version-complete, so they have no truthful answer.
+                Use ``read.list`` to enumerate history.
 
         Returns:
             ``SearchResult`` with RRF-fused (and optionally CE-reranked) hits.
@@ -332,6 +354,11 @@ class Engine:
                 )
             if pool_n < 0:
                 raise ValueError(f"pool_n must be >= 0, got {pool_n!r}")
+        if not isinstance(view, (ReadView, type(None))):
+            raise TypeError(
+                f"view must be a ReadView or None, got {type(view).__name__!r}"
+            )
+        native_view = _to_native_view(view)
         # 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search
         # path; lower to the SearchFilter sugar (typed-rejects a Json term, D3).
         if isinstance(filter, Filter):
@@ -344,6 +371,7 @@ class Engine:
                 alpha=alpha,
                 pool_n=pool_n,
                 explain=explain,
+                view=native_view,
             )
         else:
             result = self._native.search(
@@ -357,6 +385,7 @@ class Engine:
                 alpha=alpha,
                 pool_n=pool_n,
                 explain=explain,
+                view=native_view,
             )
         fallback = result.soft_fallback
         soft = (
@@ -406,7 +435,9 @@ class Engine:
             explanation=explanation,
         )
 
-    def search_text_only(self, query: str) -> SearchResult:
+    def search_text_only(
+        self, query: str, view: ReadView | None = None
+    ) -> SearchResult:
         """0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only / FTS-only search.
 
         Does NOT embed the query and NEVER raises
@@ -415,7 +446,11 @@ class Engine:
         contract). Returns node-body FTS hits only — no vector recall, no CE
         rerank, no graph arm.
         """
-        result = self._native.search_text_only(query)
+        if not isinstance(view, (ReadView, type(None))):
+            raise TypeError(
+                f"view must be a ReadView or None, got {type(view).__name__!r}"
+            )
+        result = self._native.search_text_only(query, view=_to_native_view(view))
         fallback = result.soft_fallback
         soft = (
             SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))

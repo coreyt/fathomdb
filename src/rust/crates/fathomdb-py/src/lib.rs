@@ -1062,7 +1062,7 @@ impl PyEngine {
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
                      status=None, rerank_depth=0, use_graph_arm=false,
-                     alpha=None, pool_n=None, explain=false)
+                     alpha=None, pool_n=None, explain=false, view=None)
     )]
     fn search(
         &self,
@@ -1087,6 +1087,15 @@ impl PyEngine {
         // with per-hit provenance + score breakdown + query trace. Default False
         // returns `explanation=None` and a byte-identical result (R-OBS-2 zero-cost).
         explain: bool,
+        // 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity view,
+        // the same kwarg the five read verbs take. `None` (the default) is the
+        // strict view: active-only, non-superseded, and valid AT QUERY TIME.
+        // `ReadView(include_out_of_window=True)` returns hits whatever their
+        // window; `ReadView(valid_as_of=t)` evaluates validity at the bound
+        // instant `t`. The existence flags are REFUSED here (typed
+        // `InvalidArgumentError`), never silently ignored — see
+        // `Engine::search_view`.
+        view: Option<&PyReadView>,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -1116,14 +1125,24 @@ impl PyEngine {
         // the engine's `ce_rerank`.
         let alpha = alpha.unwrap_or(0.3);
         let pool_n = pool_n.unwrap_or(rerank_depth);
+        // Resolved BEFORE the GIL is released, exactly as the read verbs do.
+        let view = read_view_or_default(view);
         // 0.8.8 EXP-OBS: `explain=True` routes to `search_explained` (same retrieval,
         // plus the sidecar); `explain=False` (default) stays on `search_reranked`.
+        // fix-2: ONE call now that the view rides the full-arity entry point —
+        // `explain` is a parameter of it, so the explain/non-explain split no
+        // longer duplicates the argument list (and cannot drift on `view`).
         let result = call_engine(py, move || {
-            if explain {
-                engine.search_explained(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
-            } else {
-                engine.search_reranked(&query, filter, rerank_depth, use_graph_arm, alpha, pool_n)
-            }
+            engine.search_reranked_view(
+                &query,
+                filter,
+                rerank_depth,
+                use_graph_arm,
+                alpha,
+                pool_n,
+                explain,
+                &view,
+            )
         })?;
         Ok(PySearchResult::from_rust(result))
     }
@@ -1133,11 +1152,20 @@ impl PyEngine {
     /// `VectorEquivalenceMismatchError`, so it stays serviceable when the engine
     /// opened in the degraded `dense_disabled` state. Returns node-body FTS hits
     /// only (no vector recall, no CE rerank, no graph arm).
-    fn search_text_only(&self, py: Python<'_>, query: &str) -> PyResult<PySearchResult> {
+    ///
+    /// 0.8.20 Slice 15b fix-2 — takes the same optional `view` as `search`.
+    #[pyo3(signature = (query, view=None))]
+    fn search_text_only(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        view: Option<&PyReadView>,
+    ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
-        let result = call_engine(py, move || engine.search_text_only(&query))?;
+        let view = read_view_or_default(view);
+        let result = call_engine(py, move || engine.search_text_only_view(&query, &view))?;
         Ok(PySearchResult::from_rust(result))
     }
 

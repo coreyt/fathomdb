@@ -211,6 +211,50 @@ drift:
 what schema step 22 left on every pre-existing row — so a write that does not
 mention validity keeps exactly its pre-slice default-view visibility.
 
+## Read-side validity on `search` (0.8.20 Slice 15b fix-2)
+
+**Status: PROPOSED / NOT SIGNED.**
+
+Slice 10b applied `ReadView` to the five read verbs only. Because Slice 15b made
+validity windows AUTHORABLE from the SDK, the default `search` path now also
+applies the validity predicate — otherwise a node hidden by `read_get` /
+`read_list` would still be returned by `search`.
+
+**Default behaviour change (deliberate, and the only one in this fix).** Every
+search entry point (`search`, `search_filtered`, `search_filter`,
+`search_reranked`, `search_explained`, `search_text_only`, and the opt-in graph
+arm) now hides nodes that are out of window AT QUERY TIME. This is a **no-op on
+any corpus that never authored a window**: schema step 22 back-filled
+`valid_from` / `valid_until` as NULL with no DEFAULT, and NULL is unbounded on
+that side, so the predicate matches every pre-existing row and leaves the
+row-set, the `bm25()` ordering and the scores byte-unchanged.
+
+**New methods** (additive; the six shipped search signatures are UNCHANGED):
+
+- `Engine::search_view(query, &ReadView) -> Result<SearchResult, EngineError>`
+- `Engine::search_reranked_view(query, filter, rerank_depth, use_graph_arm,
+  alpha, pool_n, explain, &ReadView) -> Result<SearchResult, EngineError>` — the
+  full-arity form the Python/TS `view=` bindings call, so a caller can combine a
+  content filter, the CE knobs and a validity view in one query.
+- `Engine::search_text_only_view(query, &ReadView) -> Result<SearchResult, EngineError>`
+
+`search_reranked(q, f, d, g, a, p)` is exactly
+`search_reranked_view(q, f, d, g, a, p, false, &ReadView::default())`.
+
+**Axis scope — VALIDITY only.** `valid_as_of` and `include_out_of_window` are
+honoured. `include_superseded` and `include_inactive` are **refused** with
+`EngineError::InvalidArgument`, NOT silently ignored: search hydrates from
+projection indexes (`search_index`, `vector_default`) that are not
+version-complete, so the existence axis has no truthful answer on this path, and
+relaxing `superseded_at IS NULL` here would re-open the stale-body leak the
+Slice-15 fix-1 review closed. Use `read_list` to enumerate history. **This is a
+decision owed to HITL** — refusing is the smallest coherent option, but ignoring
+or fully honouring are both defensible alternatives.
+
+The instant is INTEGER epoch SECONDS, read in Rust and BOUND as a positional
+parameter (never `datetime('now')`), once per query — the same `:now` seam as
+the read verbs, so search validity is deterministically testable.
+
 ## Errors
 
 Rust exposes typed open/runtime errors without message parsing:

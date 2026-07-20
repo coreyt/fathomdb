@@ -1191,6 +1191,14 @@ impl Engine {
         // with per-hit provenance + score breakdown + query trace. Default false
         // returns `explanation=null` and a byte-identical result (R-OBS-2 zero-cost).
         explain: Option<bool>,
+        // 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity view,
+        // the same trailing options object the five read verbs take. Omitted /
+        // `undefined` is the strict view: active-only, non-superseded, and valid
+        // AT QUERY TIME. `{ includeOutOfWindow: true }` returns hits whatever
+        // their window; `{ validAsOf: t }` evaluates validity at the bound
+        // instant `t`. The existence flags are REFUSED here (typed
+        // `FDB_INVALID_ARGUMENT`), never silently ignored.
+        view: Option<ReadViewInput>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -1246,13 +1254,14 @@ impl Engine {
         // 0.8.8 EXP-OBS: explain=true routes to search_explained (same retrieval +
         // the sidecar); default stays on search_reranked (byte-identical).
         let explain = explain.unwrap_or(false);
+        let view = read_view_or_default(view);
         let engine = Arc::clone(&self.inner);
+        // fix-2: ONE call — `explain` is a parameter of the full-arity view entry
+        // point, so the two arms can no longer drift on `view`.
         let result = call_engine(move || {
-            if explain {
-                engine.search_explained(&query, filter, depth, graph_arm, alpha, pool_n)
-            } else {
-                engine.search_reranked(&query, filter, depth, graph_arm, alpha, pool_n)
-            }
+            engine.search_reranked_view(
+                &query, filter, depth, graph_arm, alpha, pool_n, explain, &view,
+            )
         })
         .await?;
         Ok(SearchResult::from_rust(result))
@@ -1264,7 +1273,13 @@ impl Engine {
     /// opened in the degraded `denseDisabled` state. Returns node-body FTS hits
     /// only (no vector recall, no CE rerank, no graph arm).
     #[napi]
-    pub async fn search_text_only(&self, query: String) -> Result<SearchResult> {
+    ///
+    /// 0.8.20 Slice 15b fix-2 — takes the same optional `view` as `search`.
+    pub async fn search_text_only(
+        &self,
+        query: String,
+        view: Option<ReadViewInput>,
+    ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
             return Err(typed_error(
@@ -1273,8 +1288,9 @@ impl Engine {
                 JsonValue::Null,
             ));
         }
+        let view = read_view_or_default(view);
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_text_only(&query)).await?;
+        let result = call_engine(move || engine.search_text_only_view(&query, &view)).await?;
         Ok(SearchResult::from_rust(result))
     }
 

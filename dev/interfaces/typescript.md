@@ -224,6 +224,44 @@ surface is binary: `useDefaultEmbedder: true` (engine's bge-small) or
 omitted/`false` (no embedder; vector writes reject with
 `EmbedderNotConfiguredError`).
 
+## `view` on `search` / `searchTextOnly` (0.8.20 Slice 15b fix-2)
+
+**Status: PROPOSED / NOT SIGNED.**
+
+Both search verbs take the SAME optional `view` argument the five read verbs
+take, as a trailing options object.
+
+```ts
+engine.search(query, filter?, rerankDepth?, useGraphArm?, alpha?, poolN?,
+              explain?, view?): Promise<SearchResult>
+engine.searchTextOnly(query, view?): Promise<SearchResult>
+```
+
+`view` is the exported `ReadView` interface — the same shape `read.get` /
+`read.list` / `graph.neighbors` accept (`camelCase` here, `snake_case` in
+Python), with no new type minted.
+
+- Omitted / `undefined` is the STRICT view: active-only, non-superseded, and
+  valid AT QUERY TIME.
+- `{ validAsOf: t }` evaluates validity at the bound instant `t` (INTEGER epoch
+  SECONDS, UTC). Half-open, matching the write side and the read verbs:
+  `t === validFrom` is IN, `t === validUntil` is OUT.
+- `{ includeOutOfWindow: true }` returns hits whatever their window.
+
+**Default behaviour change.** A node whose window has closed (or has not opened)
+is no longer returned by a default `search`. This is a no-op on any corpus that
+never authored a window: omitting the write fields lands NULL/NULL, and NULL is
+unbounded, so every pre-existing row still matches.
+
+**Axis scope — VALIDITY only.** `{ includeSuperseded: true }` and
+`{ includeInactive: true }` reject with `InvalidArgumentError` on the search
+path; they are REFUSED rather than silently ignored, because search hydrates
+from projection indexes that are not version-complete. Use `read.list` to
+enumerate history.
+
+These are ARGUMENTS, not new verbs — the governed command surface
+(`src/conformance/governed-surface-allowlist.json`) is unchanged.
+
 ## Non-presence
 
 TypeScript does not expose recovery verbs or doctor-only flags. In particular,

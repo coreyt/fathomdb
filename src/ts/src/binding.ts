@@ -350,10 +350,14 @@ export interface NativeEngine {
     alpha?: number,
     poolN?: number,
     explain?: boolean,
+    // 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional VALIDITY view.
+    // Omitted = the strict view (active-only, non-superseded, valid at query
+    // time). The existence flags are refused by the engine on this path.
+    view?: NativeReadView,
   ): Promise<NativeSearchResult>;
   // 0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only/FTS-only path +
   // degraded-state observability.
-  searchTextOnly(query: string): Promise<NativeSearchResult>;
+  searchTextOnly(query: string, view?: NativeReadView): Promise<NativeSearchResult>;
   denseDisabled(): boolean;
   denseDisabledReason(): string | null;
   vectorEquivalenceRefusalCount(): number;

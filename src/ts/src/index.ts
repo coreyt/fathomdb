@@ -735,6 +735,19 @@ export class Engine {
     alpha?: number,
     poolN?: number,
     explain?: boolean,
+    /**
+     * 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity view, the
+     * same options object the five read verbs take. Omitted is the strict view:
+     * active-only, non-superseded, and valid AT QUERY TIME. `{ includeOutOfWindow:
+     * true }` returns hits whatever their `[validFrom, validUntil)` window;
+     * `{ validAsOf: t }` evaluates validity at the bound instant `t`.
+     *
+     * The EXISTENCE flags (`includeSuperseded` / `includeInactive`) are REFUSED
+     * on the search path with a typed `InvalidArgumentError` — search hydrates
+     * from projection indexes that are not version-complete, so they have no
+     * truthful answer here. They are refused rather than silently ignored.
+     */
+    view?: ReadView,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search path;
@@ -802,7 +815,7 @@ export class Engine {
       throw new TypeError(`explain must be a boolean, got ${typeof explain}`);
     }
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN, explain),
+      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN, explain, view),
     );
     const branch = r.softFallback?.branch;
     // 0.8.8 EXP-OBS: map the opt-in explanation sidecar; `null` (default) stays null.
@@ -854,9 +867,9 @@ export class Engine {
    * opened in the degraded `denseDisabled` state. Returns node-body FTS hits
    * only (no vector recall, no CE rerank, no graph arm).
    */
-  async searchTextOnly(query: string): Promise<SearchResult> {
+  async searchTextOnly(query: string, view?: ReadView): Promise<SearchResult> {
     validateFfiString(query);
-    const r = await intercept(() => this.#native.searchTextOnly(query));
+    const r = await intercept(() => this.#native.searchTextOnly(query, view));
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,

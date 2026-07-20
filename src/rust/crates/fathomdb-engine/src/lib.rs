@@ -4732,6 +4732,45 @@ impl Engine {
         self.search_reranked_with_explain(query, None, 0, false, 0.3, 0, false, *view)
     }
 
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — the FULL-arity view entry
+    /// point: [`search_reranked`][Engine::search_reranked] /
+    /// [`search_explained`][Engine::search_explained] under an explicit
+    /// [`ReadView`]. This is what the Python and TypeScript `search(..., view=)`
+    /// bindings call, so a caller can combine a content filter, the CE knobs and
+    /// a validity view in one query — passing `view` must not silently disable
+    /// the filter, and passing a filter must not silently disable `view`.
+    ///
+    /// `search_reranked(q, f, d, g, a, p)` is exactly
+    /// `search_reranked_view(q, f, d, g, a, p, false, &ReadView::default())`.
+    ///
+    /// Validity axis only; existence flags are refused. See
+    /// [`search_view`][Engine::search_view].
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    #[allow(clippy::too_many_arguments)] // mirrors search_explained + the view
+    pub fn search_reranked_view(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        explain: bool,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_explain(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+            *view,
+        )
+    }
+
     /// G10 — hybrid `search` with an optional closed [`SearchFilter`]. `None`
     /// (or an all-`None` filter) is the unfiltered path whose phase-1 SQL is
     /// byte-identical to 0.7.2. The filter prunes the vector branch in the

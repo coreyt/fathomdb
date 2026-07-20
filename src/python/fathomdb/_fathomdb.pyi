@@ -203,6 +203,17 @@ class Engine:
         alpha: float | None = ...,
         pool_n: int | None = ...,
         explain: bool = ...,
+        # 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional VALIDITY view.
+        # `None` (default) is the strict view: active-only, non-superseded, and
+        # valid AT QUERY TIME. The EXISTENCE flags (`include_superseded` /
+        # `include_inactive`) raise `InvalidArgumentError` on this path rather
+        # than being silently ignored. See `fathomdb.engine.Engine.search`.
+        view: ReadView | None = ...,
+    ) -> SearchResult: ...
+    # 0.8.18 Slice 5 (R-VEQ-4) — text-only / FTS-only path; takes the same
+    # optional validity view as `search` (0.8.20 Slice 15b fix-2).
+    def search_text_only(
+        self, query: str, view: ReadView | None = ...
     ) -> SearchResult: ...
     # 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture.
     def enable_telemetry(self, sink_path: str) -> None: ...
