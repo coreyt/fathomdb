@@ -1279,13 +1279,28 @@ pub enum SoftFallbackBranch {
 /// comparable). `branch` tags which retrieval branch produced the representative
 /// hit (vector-first when a body is surfaced by both).
 ///
-/// `source_id` (G0 Phase-2 / BLOCK-2) carries the source-document provenance of
-/// a hit. For the GraphArm branch it is the **traversed edge's** `source_id`
-/// (the session the fact-edge was extracted from), enabling `doc_id_of` to
-/// resolve a graph-reached entity back to a gold session id. For every two-arm
-/// (vector/text/edge) hit it is `None` — those resolve via the cursor map. The
-/// field is additive and nullable; `use_graph_arm=false` results are byte-stable
-/// (every hit `source_id == None`).
+/// `source_id` (G0 Phase-2 / BLOCK-2; generalised by TC-31 in 0.8.20 Slice 10a)
+/// carries the source-document provenance of a hit — the identifier
+/// [`Engine::erase_source`] consumes. It is populated on **every** hit path:
+/// - **Node hits** (text/BM25F, vector, and the pre-step-12 legacy text
+///   fallback) carry the **node's own** `canonical_nodes.source_id`.
+/// - **Edge hits** (edge-FTS from `search_index_edges`, and edge-fact hits
+///   hydrated by the vector arm) carry the **edge's own**
+///   `canonical_edges.source_id`.
+/// - **GraphArm** hits carry the **traversed edge's** `source_id` (the session
+///   the fact-edge was extracted from) — unchanged by TC-31 — enabling
+///   `doc_id_of` to resolve a graph-reached entity back to a gold session id.
+///
+/// Before TC-31 only the GraphArm branch populated this, which left
+/// `erase_source` shipping with its argument unreachable from a text or vector
+/// hit (0.8.19 also stopped surfacing `write_cursor` to the SDKs, removing the
+/// only fallback route). It stays `Option<String>`: a row written before 0.8.20,
+/// or a GOVERNED row deliberately spared by the step-21 backfill under the TC-11
+/// pin, legitimately carries NULL at rest and must read back as `None` rather
+/// than a fabricated value.
+///
+/// The field never participates in ranking, so result order and scores are
+/// unaffected.
 ///
 /// C-2 (0.8.19 / OPP-12 record-lifecycle Phase-1, TC-8) — the **id-space** of a
 /// [`SearchHit::id`]. A closed, typed enum (NOT a magic-prefixed string) — the
@@ -8747,19 +8762,29 @@ fn read_search_in_tx(
         // edge branch below and every other retrieval site (design §2: enforce
         // the exclusion at EVERY retrieval site). It only drops already-superseded
         // rows → a no-op on the all-active / non-superseded corpus.
+        // TC-31 (0.8.20 Slice 10a): both hydration SELECTs additively fetch the
+        // canonical row's OWN `source_id` so a vector hit carries the provenance
+        // `erase_source` consumes. These statements already read the canonical
+        // row by `write_cursor`, so this is one extra COLUMN on an existing
+        // lookup — NOT an extra query. (A per-hit `WHERE write_cursor = ?`
+        // probe would be a full scan: there is no index on
+        // `canonical_nodes(write_cursor)`. This site already pays that cost by
+        // construction; TC-31 must not add a second one.) Read-only additive
+        // column — row-set, ordering and scores are untouched.
         let mut node_stmt = tx.prepare(
-            "SELECT kind, body, logical_id FROM canonical_nodes WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
+            "SELECT kind, body, logical_id, source_id FROM canonical_nodes WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
         )?;
         let mut edge_stmt = tx.prepare(
-            "SELECT body, logical_id FROM canonical_edges \
+            "SELECT body, logical_id, source_id FROM canonical_edges \
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
         )?;
         for (rowid, score) in rowids {
-            if let Ok((kind, body, logical_id)) = node_stmt.query_row([rowid], |row| {
+            if let Ok((kind, body, logical_id, source_id)) = node_stmt.query_row([rowid], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
                 ))
             }) {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
@@ -8770,11 +8795,17 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::Vector,
-                    source_id: None,
+                    // TC-31: the NODE's own provenance (a node hit is erased by
+                    // the document it was written from).
+                    source_id,
                     ce_score: None,
                 });
-            } else if let Ok((body, logical_id)) = edge_stmt.query_row([rowid], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            } else if let Ok((body, logical_id, source_id)) = edge_stmt.query_row([rowid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             }) {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
@@ -8784,7 +8815,9 @@ fn read_search_in_tx(
                     body,
                     score,
                     branch: SoftFallbackBranch::TextEdge,
-                    source_id: None,
+                    // TC-31: the EDGE's own provenance — consistent with the
+                    // graph arm's existing edge-source semantics.
+                    source_id,
                     ce_score: None,
                 });
             }
@@ -8861,9 +8894,12 @@ fn read_search_in_tx(
         // `cn` with `superseded_at` NOT NULL (dropped); a legacy/orphan
         // `search_index` row with no `cn` gets `superseded_at = NULL` via the
         // LEFT JOIN (KEPT — preserves prior behaviour for ownerless rows).
+        // TC-31 (0.8.20 Slice 10a): `cn.source_id` is selected off the SAME
+        // already-present 1:1 LEFT JOIN that supplies `cn.logical_id` — one extra
+        // column, no extra query, no row-set or ordering change.
         let join_sql = format!(
             "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
-             bm25(search_index), cn.logical_id FROM search_index \
+             bm25(search_index), cn.logical_id, cn.source_id FROM search_index \
              LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
              WHERE search_index MATCH ?1 \
                AND cn.superseded_at IS NULL \
@@ -8881,7 +8917,10 @@ fn read_search_in_tx(
                     write_cursor: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::Text,
-                    source_id: None,
+                    // TC-31: the NODE's own provenance. NULL for a legacy /
+                    // TC-11-spared governed row, and NULL for an ownerless
+                    // `search_index` row the LEFT JOIN keeps with no `cn`.
+                    source_id: row.get::<_, Option<String>>(5)?,
                     ce_score: None,
                 })
             })?;
@@ -8893,28 +8932,63 @@ fn read_search_in_tx(
             // `superseded_at` in the SAME migration, so this schema has neither
             // column. Supersession (`commit_batch`) is a no-op without
             // `logical_id`, so no superseded node rows can exist on this path.
-            // Left byte-identical to preserve old-schema compatibility.
-            let plain_sql = format!(
-                "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
+            //
+            // TC-31 (0.8.20 Slice 10a): `source_id` arrived in step 8, `logical_id`
+            // in step 12, so a schema that lands HERE (no `logical_id`) may still
+            // HAVE `source_id` — steps 8..11. Try a provenance-bearing variant
+            // first, adding only `cn.source_id` over the SAME 1:1 LEFT JOIN shape
+            // used above (row-set and ordering unchanged; a missing `cn` row keeps
+            // NULL as before). Fall back to the historical, byte-identical
+            // provenance-free statement on a pre-step-8 schema, where the column
+            // genuinely does not exist and `None` is the only truthful answer.
+            let source_sql = format!(
+                "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
+                 bm25(search_index), cn.source_id FROM search_index \
+                 LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
                  WHERE search_index MATCH ?1 \
-                 ORDER BY bm25(search_index), write_cursor{limit_clause}"
+                 ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
             );
-            let mut statement = tx.prepare(&plain_sql)?;
-            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
-                let body = row.get::<_, String>(0)?;
-                Ok(SearchHit {
-                    // No logical_id column on this schema → content-hash id.
-                    id: derive_stable_id(None, &body),
-                    body,
-                    kind: row.get::<_, String>(1)?,
-                    write_cursor: row.get::<_, i64>(2)? as u64,
-                    score: row.get::<_, f64>(3)?,
-                    branch: SoftFallbackBranch::Text,
-                    source_id: None,
-                    ce_score: None,
-                })
-            })?;
-            rows.flatten().collect()
+            if let Ok(mut statement) = tx.prepare(&source_sql) {
+                let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                    let body = row.get::<_, String>(0)?;
+                    Ok(SearchHit {
+                        // No logical_id column on this schema → content-hash id.
+                        id: derive_stable_id(None, &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::Text,
+                        source_id: row.get::<_, Option<String>>(4)?,
+                        ce_score: None,
+                    })
+                })?;
+                rows.flatten().collect()
+            } else {
+                // Pre-step-8: no `source_id` column anywhere. Byte-identical to
+                // the historical statement.
+                let plain_sql = format!(
+                    "SELECT body, kind, write_cursor, bm25(search_index) FROM search_index \
+                     WHERE search_index MATCH ?1 \
+                     ORDER BY bm25(search_index), write_cursor{limit_clause}"
+                );
+                let mut statement = tx.prepare(&plain_sql)?;
+                let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
+                    let body = row.get::<_, String>(0)?;
+                    Ok(SearchHit {
+                        // No logical_id column on this schema → content-hash id.
+                        id: derive_stable_id(None, &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::Text,
+                        source_id: None,
+                        ce_score: None,
+                    })
+                })?;
+                rows.flatten().collect()
+            }
         }
     };
     let mut text_results: Vec<SearchHit> = Vec::with_capacity(text_candidates.len());
@@ -8943,8 +9017,12 @@ fn read_search_in_tx(
         // Cause-A: the JOIN to canonical_edges already exists; additively select
         // `ce.logical_id` (edges always carry one) for the stable hit-id. No
         // ordering/row-set change.
+        // TC-31 (0.8.20 Slice 10a): `ce.source_id` rides the SAME existing inner
+        // JOIN as `ce.logical_id` — one extra column, no extra query, no
+        // row-set/ordering change. An edge hit carries the EDGE's own provenance,
+        // matching the graph arm's edge-source semantics.
         let edge_sql = "SELECT sei.body, sei.kind, sei.write_cursor, bm25(search_index_edges), \
-             ce.logical_id \
+             ce.logical_id, ce.source_id \
              FROM search_index_edges sei \
              JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
              WHERE search_index_edges MATCH ?1 \
@@ -8963,7 +9041,8 @@ fn read_search_in_tx(
                     write_cursor: row.get::<_, i64>(2)? as u64,
                     score: row.get::<_, f64>(3)?,
                     branch: SoftFallbackBranch::TextEdge,
-                    source_id: None,
+                    // TC-31: the EDGE's own provenance.
+                    source_id: row.get::<_, Option<String>>(5)?,
                     ce_score: None,
                 })
             }) {

@@ -527,8 +527,13 @@ pub struct SearchHit {
     pub score: f64,
     /// "vector" | "text"
     pub branch: String,
-    /// G0 Phase-2 — source-document provenance (`sourceId` in JS). Set (to the
-    /// traversed edge's `source_id`) only for graph-arm hits; `null` otherwise.
+    /// Source-document provenance (`sourceId` in JS) — the identifier
+    /// `eraseSource` consumes. TC-31 (0.8.20): populated on EVERY hit path, not
+    /// just the graph arm. Node hits (text/vector) carry the node's own
+    /// `source_id`; edge hits (edge-FTS, vector edge-fact) carry the edge's own;
+    /// graph-arm hits carry the traversed edge's (unchanged). `null` only when
+    /// the stored row really has NULL provenance: written before 0.8.20, or a
+    /// governed row spared by the step-21 backfill under the TC-11 pin.
     pub source_id: Option<String>,
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`
     /// (`ceScore` in JS). Set only for hits inside the reranked pool; `null`

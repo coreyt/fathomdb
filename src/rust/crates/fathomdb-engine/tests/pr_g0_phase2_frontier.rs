@@ -180,7 +180,15 @@ fn test_graph_arm_hit_carries_traversed_edge_source_id() {
 }
 
 // ---------------------------------------------------------------------------
-// §C-4: byte stability — use_graph_arm=false unchanged; every hit source_id==None
+// §C-4: byte stability — use_graph_arm=false unchanged.
+//
+// TC-31 (0.8.20 Slice 10a) AMENDED this test. It previously also asserted that
+// every two-arm hit had `source_id == None`. That assertion ENCODED THE DEFECT:
+// with the graph arm off, a caller could read no provenance off any hit, so the
+// `erase_source` argument was unreachable. Two-arm hits now carry their own
+// canonical `source_id`. The byte-stability half of the contract — the part
+// that actually matters here — is unchanged and still asserted: `use_graph_arm
+// =false` must be byte-identical to `Engine::search()`.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -207,9 +215,12 @@ fn test_two_arm_search_byte_stable_with_source_id_field() {
         without_arm.results, classic.results,
         "use_graph_arm=false must be byte-identical to Engine::search()"
     );
+    // TC-31: every two-arm hit now carries its own canonical provenance — the
+    // fixture writes everything under "test:fixture" (docs/entities) or "docX"
+    // (the edge), so no hit may come back with NULL.
     assert!(
-        without_arm.results.iter().all(|h| h.source_id.is_none()),
-        "every two-arm hit must have source_id==None: {:?}",
+        without_arm.results.iter().all(|h| h.source_id.is_some()),
+        "TC-31: every two-arm hit must carry a readable source_id: {:?}",
         without_arm.results.iter().map(|h| (&h.body, &h.source_id)).collect::<Vec<_>>()
     );
 

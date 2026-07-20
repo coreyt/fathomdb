@@ -534,8 +534,13 @@ struct PySearchHit {
     body: String,
     score: f64,
     branch: String,
-    /// G0 Phase-2 — source-document provenance. Set (to the traversed edge's
-    /// `source_id`) only for graph-arm hits; `None` for every two-arm hit.
+    /// Source-document provenance — the identifier `erase_source` consumes.
+    /// TC-31 (0.8.20): populated on EVERY hit path, not just the graph arm.
+    /// Node hits (text/vector) carry the node's own `source_id`; edge hits
+    /// (edge-FTS, vector edge-fact) carry the edge's own; graph-arm hits carry
+    /// the traversed edge's (unchanged). `None` only when the stored row really
+    /// has NULL provenance: written before 0.8.20, or a governed row spared by
+    /// the step-21 backfill under the TC-11 pin.
     source_id: Option<String>,
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`.
     /// `Some` only for hits inside the reranked pool; `None` otherwise.
