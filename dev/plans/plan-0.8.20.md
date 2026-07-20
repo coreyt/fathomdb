@@ -66,7 +66,8 @@ edge FTS + edge vectors.
 
 **A · OPP-12 Phase-2 (net-new; master §4 0.8.20 row, F-19/F-20/F-21)**
 
-- **`ReadView` / read-modes** — composable relax-flags; uniform on `get`/`list`/`neighbors`.
+- **`ReadView` / read-modes** — composable relax-flags; uniform on the five read verbs `read_get` /
+  `read_get_many` / `read_list` / `read_list_filter` / `graph_neighbors` *(names corrected at Slice 10)*.
 - **Node-validity** — `valid_from` / `valid_until`, integer windows, bound-`:now` seam, `valid_as_of`.
 - **Projection registry (C-1 co-land)** — `configure_projections(spec, drop?)`, `ProjectionSpec {name, roles:
   {filterable, rankable, searchable}}`, idempotent diff + backfill; **engine is the sole projection authority**;
@@ -176,8 +177,8 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 
 | ID | Requirement | Acceptance signal (falsifiable, offline) |
 |----|-------------|------------------------------------------|
-| R-20-RV | `ReadView`/read-modes: composable relax-flags, uniform on `get`/`list`/`neighbors` | read-mode matrix test; `include_superseded` returns history; default view unchanged (no silent behavior drift) |
-| R-20-NV | Node-validity `valid_from`/`valid_until` + `valid_as_of` (bound-`:now` seam) | validity-window matrix; `crossed_boundary_since` hook; world-time only (`history_as_of` explicitly OUT) |
+| R-20-RV | `ReadView`/read-modes: composable relax-flags, uniform on the **five** read verbs — **`read_get`, `read_get_many`, `read_list`, `read_list_filter`, `graph_neighbors`** *(CORRECTED at Slice 10: the earlier "`get`/`list`/`neighbors`" shorthand named no real symbol)* | read-mode matrix test; `include_superseded` returns history; default view unchanged (no silent behavior drift) · **CLOSED at Slice 10** |
+| R-20-NV | Node-validity `valid_from`/`valid_until` + `valid_as_of` (bound-`:now` seam) | validity-window matrix; `crossed_boundary_since` hook; world-time only (`history_as_of` explicitly OUT) · **CLOSED at Slice 10**, with **TC-34** open (no write-side authoring verb — §11 of the STATUS board) |
 | R-20-PR | Projection registry (C-1): `configure_projections(spec, drop?)` idempotent diff + backfill; engine is **sole** authority; incompatible change ⇒ destructive delta requiring explicit `drop` | re-registration is a no-op; role add/remove builds/drops exactly; boot re-derive is crash-safe + idempotent |
 | R-20-EAV | EAV / property-FTS — the store the registry projects from | property-level filter/search green; body-FTS behavior unchanged |
 | R-20-DR | `dense_readiness` + `flush_embeddings()` + atomic readiness-flip | readiness never reports ready with pending embeds; flip is atomic under concurrent write |
@@ -246,7 +247,7 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 |------:|-------|-----------|-----------|
 | **0** | **X0 design gate** — reqs/ACs frozen; erasure Slice-0 design; **TC-11 pin ✅ ALREADY RATIFIED**; eu7-basis + embed_batch_cls-TS decisions; **TC-RUBRIC-5** (dedicated-checkout/`preflight.sh --landing`) folded in; stand up `runs/STATUS-0.8.20.md`; **codex §9** | design-adr + steward-review | — |
 | **5** | **Erasure completeness** (R-20-E1…E8) — registry + total projector + `erase_source` + provenance + WAL + telemetry + op-store + migration | implementation | 0 |
-| **10** | **`ReadView` / read-modes** + **node-validity** (R-20-RV, R-20-NV) | implementation | 0 |
+| **10** | **`ReadView` / read-modes** + **node-validity** (R-20-RV, R-20-NV) — ✅ **COMPLETE on-branch @ `93a57b10`** (SCHEMA 21→22) | implementation | 0 |
 | **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) | implementation | 0 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) | implementation | 15 |
@@ -337,7 +338,22 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
-**Slice 5 — erasure completeness (R-20-E1…E8).** In flight (commissioned 2026-07-19, master **F-26**). One
+**Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV).** It is the Phase-2
+keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on 10/15/20/25.
+
+> **Slice 5 — erasure completeness: ✅ COMPLETE and LANDED** at **`1f8ed8bf`** (in `origin/main`).
+> **AC-079 remains UNSIGNED and still blocks publish.**
+>
+> **Slice 10 — `ReadView` / node-validity: ✅ COMPLETE ON-BRANCH @ `93a57b10`** (branch `orch-0.8.20-s10`,
+> rebased onto `origin/main` `ae44770f`). **Not landed — the Steward lands it.** **R-20-RV + R-20-NV closed.**
+> **SCHEMA 21 → 22** (step 22: `canonical_nodes.valid_from`/`valid_until`, INTEGER epoch, nullable, half-open
+> `[from, until)`, NULL = unbounded; existing rows back-fill NULL/NULL ⇒ always valid ⇒ **default-view
+> visibility unchanged**). **TC-31 RESOLVED**; **TC-32 annotated** per the HITL ruling (accepted, no behavior
+> change). Governed-surface delta is **PROPOSED / NOT SIGNED**; **no AC minted — AC-079 remains available and
+> unminted**. **Zero eu7 runs.** Four decisions are owed to the HITL — **TC-33/TC-34** plus the two carried
+> sign-offs — see `runs/STATUS-0.8.20.md` §4 and §12.
+
+**Slice 5 — erasure completeness (R-20-E1…E8) — LANDED at `1f8ed8bf`; retained for the record.** One
 row-owned projection registry + a **total projector covering nodes AND edges** (extract the inlined edge
 projection from `commit_batch` `:12166+`) + `SourceId` newtype + mandatory provenance + **`erase_source()` as an
 SDK lifecycle verb** (Py + TS; `excise_source` stays CLI-only; **AC-041 stays green**, denylist stays five
@@ -386,6 +402,15 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
   **HITL**.
 - **2026-07-19 — The `SourceId` breaking change needs NO separate adoption call** — 0.8.20 is *already* a
   sanctioned coordinated breaking-pair publish. **`embed_batch_cls` TS binding proceeds inside X1** · **HITL**.
+- **2026-07-20 — Slice 5 LANDED** at **`1f8ed8bf`** (in `origin/main`). AC-079 **still unsigned** ⇒ **publish
+  stays blocked**.
+- **2026-07-20 — TC-32 (co-named-entity dedupe) ACCEPTED as-is, no behavior change** — annotated in code
+  rather than fixed · **HITL**. **Carry-forward caveat: the erasure guarantee MUST NOT be stated
+  unconditionally to users while this stands.**
+- **2026-07-20 — Slice 10 COMPLETE on-branch @ `93a57b10`.** R-20-RV + R-20-NV closed; **SCHEMA 21 → 22**;
+  **TC-31 RESOLVED**. Opens **TC-33** (temporal-model split: node validity INTEGER epoch vs shipped edge
+  `t_valid`/`t_invalid` ISO-8601 TEXT) and **TC-34** (node validity has **no write-side authoring verb**) —
+  **both owed to the HITL**. Governed-surface delta **PROPOSED / NOT SIGNED**; **no AC minted**.
 
 ---
 

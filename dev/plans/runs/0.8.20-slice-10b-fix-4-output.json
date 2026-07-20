@@ -1,0 +1,132 @@
+{
+  "slice": "0.8.20-slice-10b-fix-4",
+  "branch": "orch-0.8.20-s10",
+  "baseline_sha": "a6c849eea81be5d6bb47af26024088837dcd5ecb",
+  "head_sha": "cf92d1c473bddf3eaa209857007541fea5096c57",
+  "status": "COMPLETE_WITH_FINDING",
+  "mandate": "Fix one codex §9 [P2]: keep src/python/tests/test_slice10_read_view.py pyright-clean.",
+  "commits": [
+    {
+      "sha": "cf92d1c473bddf3eaa209857007541fea5096c57",
+      "subject": "test(0.8.20-s10b): annotate neighbors direction matrix as TraversalDirection",
+      "files": ["src/python/tests/test_slice10_read_view.py"],
+      "lines_changed": "1 insertion, 1 deletion"
+    }
+  ],
+  "fix": {
+    "file": "src/python/tests/test_slice10_read_view.py",
+    "line": 411,
+    "before": "cases = [",
+    "after": "cases: list[tuple[graph.TraversalDirection, ReadView, list[str]]] = [",
+    "approach": "real annotation (not cast, not type: ignore), per mandate preference",
+    "runtime_impact": "none - local variable annotations are never evaluated at runtime",
+    "cases_preserved": 6,
+    "directions_preserved": ["outgoing", "incoming", "both"]
+  },
+  "gates": [
+    {
+      "gate": "pyright tests/test_slice10_read_view.py (before fix)",
+      "cwd": "src/python",
+      "exit_code": 1,
+      "result": "1 error, 0 warnings (reportArgumentType at 420:56)"
+    },
+    {
+      "gate": "pyright tests/test_slice10_read_view.py (after fix)",
+      "cwd": "src/python",
+      "exit_code": 0,
+      "result": "0 errors, 0 warnings, 0 informations"
+    },
+    {
+      "gate": "ruff check tests/test_slice10_read_view.py",
+      "exit_code": 0,
+      "result": "All checks passed"
+    },
+    {
+      "gate": "cargo check --workspace --all-targets",
+      "exit_code": 0,
+      "result": "Finished dev profile - no Rust touched"
+    }
+  ],
+  "wider_pyright_sweep": {
+    "method": "pyright -p src/python at HEAD vs at merge-base ae44770f (tree extracted to scratch; no worktree created)",
+    "baseline_error_count": 8,
+    "head_error_count": 12,
+    "project_gate_red_at_baseline": true,
+    "pre_existing_not_fixed": [
+      {
+        "file": "src/python/fathomdb/graph.py",
+        "line": 153,
+        "error": "Argument of type IdSpace cannot be assigned to parameter id of type IdSpace (_fathomdb.IdSpace vs types.IdSpace)",
+        "note": "pre-existing; was line 141 at baseline, only shifted by this slice"
+      },
+      {
+        "file": "src/python/tests/test_vector_equivalence_probe.py",
+        "line": 32,
+        "error": "No parameter named reason (reportCallIssue)",
+        "note": "pre-existing, untouched by this slice"
+      }
+    ],
+    "clean_files": [
+      "src/python/tests/test_slice10_read_view.py",
+      "src/python/tests/test_tc31_source_id_every_hit.py",
+      "src/python/fathomdb/read.py",
+      "src/python/fathomdb/types.py",
+      "src/python/fathomdb/_fathomdb.pyi",
+      "src/python/eval/p0a_base_retrieval.py"
+    ],
+    "NEW_slice_introduced_errors_NOT_fixed": {
+      "count": 4,
+      "distinct_sites": 2,
+      "reason_not_fixed": "outside the fix-4 mandate (one codex P2, minimal scope, do nothing else); flagged for orchestrator decision rather than silently edited",
+      "sites": [
+        {
+          "file": "src/python/eval/exp_cov1_sweep.py",
+          "line": 186,
+          "column": 42,
+          "error": "Argument of type 'Any | None' cannot be assigned to parameter 'x' of type 'ConvertibleToInt' in function '__new__' (reportArgumentType)",
+          "code": "return cursor_to_doc.get(int(key), str(key))",
+          "baseline_code": "return cursor_to_doc.get(int(sh.id), str(sh.id))"
+        },
+        {
+          "file": "src/python/eval/r2_parity_eval.py",
+          "line": 351,
+          "column": 42,
+          "error": "Argument of type 'Any | None' cannot be assigned to parameter 'x' of type 'ConvertibleToInt' in function '__new__' (reportArgumentType)",
+          "code": "return cursor_to_doc.get(int(key), str(key))",
+          "baseline_code": "return cursor_to_doc.get(int(sh.id), str(sh.id))"
+        }
+      ],
+      "cause": "the TC-31/C-2 rewrite replaced 'sh.id' (typed Any, so int() was accepted) with 'raw = getattr(sh, \"id\", None)' -> 'Any | None', which int() rejects",
+      "runtime_safety": "safe - both call sites already wrap int(key) in try/except (TypeError, ValueError); this is a type-level regression only",
+      "suggested_minimal_fix": "annotate 'raw: Any = getattr(sh, \"id\", None)' at both sites (Any already imported in both files); restores Any and clears all 4 errors with zero runtime change",
+      "recommendation": "orchestrator to decide fix-5 vs accept; note the project-level pyright gate is ALREADY red at baseline (8 errors), so this is red->redder, not green->red"
+    }
+  },
+  "non_gate_observations": [
+    {
+      "observation": "ruff format --check fails on src/python/tests/test_slice10_read_view.py",
+      "pre_existing": true,
+      "verified": "the HEAD (pre-edit) version of the file also fails ruff format --check; the requested reformats are all in regions this fix did not touch (line-length wrapping)",
+      "is_a_gate": false,
+      "note": "scripts/agent-lint.sh runs only 'ruff check src/python', not 'ruff format --check'"
+    }
+  ],
+  "constraints_honoured": {
+    "engine_rust_behaviour_unchanged": true,
+    "ranking_unchanged": true,
+    "provenance_unchanged": true,
+    "tc11_unchanged": true,
+    "slice10a_unchanged": true,
+    "ts_files_unchanged": true,
+    "write_side_validity_verb_added": false,
+    "delta_status": "PROPOSED / NOT SIGNED",
+    "ac_minted": false,
+    "denylist_count": 5,
+    "eu7_runs": 0,
+    "slices_15_20_25_30_40_started": false,
+    "pushed": false,
+    "rebased_or_fetched": false,
+    "worktrees_created": false
+  },
+  "next_step": "orchestrator: run codex §9 re-review of cf92d1c4; decide whether the 2 slice-introduced eval-script pyright sites warrant a fix-5 before cherry-pick"
+}
