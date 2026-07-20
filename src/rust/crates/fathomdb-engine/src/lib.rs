@@ -12550,6 +12550,14 @@ fn derive_stable_id(logical_id: Option<&str>, body: &str) -> IdSpace {
 /// first occurrence. Shared by the entity and edge arms of the BYO-LLM ingest
 /// path so a harness that returns the same node/edge twice in one response does
 /// not write a row that immediately supersedes its sibling.
+///
+/// **TC-32 (0.8.20) — single-provenance entity dedupe is INTENTIONAL and
+/// ACCEPTED.** Because dedupe keeps the FIRST occurrence, same-name entities
+/// collapse onto one `logical_id` row that carries only the FIRST document's
+/// `source_id`; erasing a later document therefore does not remove the shared
+/// entity row. The HITL has ruled this acceptable for now and explicitly
+/// declined a multi-source-provenance model. Tracked as TC-32 — do not "fix"
+/// this by changing dedupe behaviour without a fresh decision.
 fn dedup_prepared_by_logical_id(batch: Vec<PreparedWrite>) -> Vec<PreparedWrite> {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     batch
