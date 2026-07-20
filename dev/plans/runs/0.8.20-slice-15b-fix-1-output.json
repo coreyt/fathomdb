@@ -1,0 +1,119 @@
+{
+  "slice": "0.8.20 Slice 15b fix-1",
+  "title": "Interface contracts for node-validity write fields (codex §9 [P2])",
+  "branch": "orch-0.8.20-s15",
+  "head_sha": "ab79088094ca1972a8220fe799d5b383769823ca",
+  "baseline_sha": "31f550a8",
+  "status": "COMPLETE",
+  "kind": "DOCS-ONLY",
+  "commits": [
+    {
+      "sha": "ab79088094ca1972a8220fe799d5b383769823ca",
+      "subject": "docs(0.8.20): Slice 15b fix-1 — interface contracts for node-validity write fields",
+      "files_changed": 4,
+      "insertions": 138,
+      "deletions": 1
+    }
+  ],
+  "files_changed": [
+    "dev/interfaces/rust.md",
+    "dev/interfaces/python.md",
+    "dev/interfaces/typescript.md",
+    "dev/DOC-INDEX.md"
+  ],
+  "docs_only_proof": "git diff --name-only | grep '^src/' => exit 1 (no match). No code, test, fixture or behaviour change.",
+  "finding_addressed": {
+    "id": "codex §9 [P2]",
+    "log": "dev/plans/runs/codex/0.8.20/slice-15b-20260720T195420Z.log",
+    "range": "29eba153..31f550a8",
+    "summary": "Adding valid_from/valid_until changed the public PreparedWrite::Node contract and the Py/TS write-item shapes; AGENTS.md:25 requires an ADR or dev/interfaces/* update in the same PR, and Slice 15b updated no file under dev/interfaces/.",
+    "verdict": "CONFIRMED — the GREEN commit 35523156 touched 76 files, zero under dev/interfaces/."
+  },
+  "how_satisfied": {
+    "dev/interfaces/rust.md": "New '## Caller-supplied write shapes' section inserted ahead of '## Errors', with a '### PreparedWrite::Node — world-time validity window (0.8.20 Slice 15b, TC-34)' subsection. Documents valid_from: Option<i64> / valid_until: Option<i64>, INTEGER epoch seconds UTC, None => SQL NULL => unbounded on that side. Matches the file's existing prose+bullet convention (no tables in this file); no restructuring.",
+    "dev/interfaces/python.md": "New '## Node write-item validity window (0.8.20 Slice 15b, TC-34)' section after '## Caller-visible data shapes', before '## Errors'. Documents the valid_from/valid_until keys on a node item of engine.write([...]) as int | None, snake_case per the file's stated casing rule, with a short worked example.",
+    "dev/interfaces/typescript.md": "Parallel section in the same position. Documents that BOTH validFrom/validUntil AND valid_from/valid_until are accepted, camelCase consulted first with snake_case as fallback, explicitly mirroring the existing edge tValid/t_valid precedent."
+  },
+  "claims_documented_and_their_code_grounding": [
+    {
+      "claim": "Half-open [valid_from, valid_until); instant == valid_from is IN, == valid_until is OUT",
+      "grounding": "src/rust/crates/fathomdb-engine/src/lib.rs:2431-2441 doc comment; matches ReadView::validity_sql"
+    },
+    {
+      "claim": "None/omitted => NULL => unbounded on that side; omitting both preserves existing default-view visibility",
+      "grounding": "lib.rs:2419-2441; schema step 22 left NULL/NULL on every pre-existing row; asserted against the RAW TABLE in all three Slice-15b suites (property W4)"
+    },
+    {
+      "claim": "Unsatisfiable window (both bounds, valid_from >= valid_until) refused in the engine, whole batch rejected before any INSERT, surfacing as EngineError::InvalidArgument => InvalidArgumentError in both bindings",
+      "grounding": "src/rust/crates/fathomdb-engine/src/lib.rs:13284-13295 inside validate_write"
+    },
+    {
+      "claim": "A one-sided window is never refused, however extreme its single bound",
+      "grounding": "lib.rs:13284 guards on `if let (Some(from), Some(until))` — the pair only"
+    },
+    {
+      "claim": "Non-integer bound is a typed WriteValidationError refusal; Python rejects bool explicitly",
+      "grounding": "src/rust/crates/fathomdb-py/src/lib.rs:1770-1784 (dict_epoch_seconds; explicit PyBool check at :1774); src/rust/crates/fathomdb-napi/src/lib.rs:2160-2176 (json_i64, as_i64 rejects non-integral)"
+    },
+    {
+      "claim": "TS accepts both spellings, camelCase first",
+      "grounding": "src/rust/crates/fathomdb-napi/src/lib.rs:2181-2186 (json_i64_alt) called at :2139-2140"
+    },
+    {
+      "claim": "Fields, not a new verb; governed command surface unchanged; precedent is PreparedWrite::Edge t_valid/t_invalid",
+      "grounding": "governed-surface-allowlist.json membership byte-unchanged in 35523156 (only _comment changed); Edge variant carries t_valid/t_invalid since Slice 30"
+    }
+  ],
+  "proposed_not_signed": "Every added section records the fields-only governed-surface delta as PROPOSED / NOT SIGNED. The string 'HITL-SIGNED' appears nowhere in the diff (verified: grep -c => 0).",
+  "doc_index_finding": {
+    "verdict": "UPDATE REQUIRED and performed",
+    "convention": "dev/DOC-INDEX.md states its own binding rule in the header: 'every slice updates dev/DOC-INDEX.md in its closing docs commit... adds/edits that doc's row here (path · purpose · owning slice/AC · last-touched) in the same commit'. last-touched = date of the last commit that modified the file. Slice 40 gate m fails the release on a stale/missing row (X3 gap).",
+    "actions": [
+      "dev/interfaces/rust.md row: purpose extended with the PreparedWrite::Node validity-window fields, owning-slice column gains '0.8.20 15b fix-1 (node-validity write fields)', last-touched 2026-06-06 -> 2026-07-20.",
+      "dev/interfaces/python.md: row ADDED (did not exist).",
+      "dev/interfaces/typescript.md: row ADDED (did not exist)."
+    ],
+    "pre_existing_gap_found": "dev/interfaces/python.md, typescript.md, wire.md and README.md had NO DOC-INDEX rows at all — only rust.md and cli.md were indexed. This is a PRE-EXISTING X3 gap NOT created by Slice 15b. Rows were added for the two files this commit changes (the convention-conformant scope). dev/interfaces/wire.md and dev/interfaces/README.md remain unrowed and were deliberately left alone as out of scope for this fix — FLAGGED for the orchestrator as remaining X3 debt against Slice 40 gate m.",
+    "convention_ambiguity": "None material. The row format and last-touched semantics are stated explicitly in the file header, so no guessing was required."
+  },
+  "adr_finding": {
+    "verdict": "NO ADR REQUIRED — interface-doc update alone satisfies AGENTS.md:25",
+    "reasoning": "AGENTS.md:25 reads verbatim: 'Public surface is contract. Anything in dev/interfaces/ or pub Rust APIs is a contract; changes need an ADR or interface-doc update in the same PR.' That is a disjunction; the interface-doc update discharges it.",
+    "search_performed": "grep for 'requires an ADR' / 'needs an ADR' / 'MUST.*ADR' / 'ADR required' across AGENTS.md, CLAUDE.md and dev/interfaces/README.md returned no overriding convention. dev/plans/plan-0.8.20.md contains no ADR obligation for this slice.",
+    "note": "Sign-off on the PROPOSED governed-surface delta is a HITL act (per the AC-074 / allowlist process), not an ADR, so no ADR was added on that basis either. If the orchestrator or HITL prefers an ADR to carry the node-validity axis decision, that is a separate deliberate act, not a gap this fix left open."
+  },
+  "gates": {
+    "rust": "NOT RUN — not needed; markdown-only commit. The Rust/TS/Python gates recorded in 35523156 remain the operative evidence and are untouched by this commit.",
+    "typescript": "NOT RUN — same reason.",
+    "python": "NOT RUN — same reason.",
+    "markdown_lint": "NOT RUN. scripts/agent-lint-md.sh exits 0 VACUOUSLY from a linked worktree (TC-37): markdownlint-cli2 and lychee are both absent here, so it skips every check and reports success having linted nothing. Its exit code would be meaningless. The orchestrator must lint with the primary checkout's binary. Note dev/research/personal-agent-database-market-2026-07-02.md carries 9 PRE-EXISTING MD025/MD001 errors that are not from this commit.",
+    "pre_commit_hook": "md-safe-fix (AST-guarded markdownlint --fix on staged .md) ran automatically at commit time and altered nothing — post-commit stat (138 insertions / 1 deletion, 4 files) is byte-identical to the staged stat."
+  },
+  "could_not_verify": [
+    "Rendered markdown lint cleanliness of the four edited files — see gates.markdown_lint (TC-37 tooling absent in this worktree). The additions use only constructs already present in these files (## / ### headings, bullet lists, fenced python/typescript blocks, pipe-table rows in DOC-INDEX), so lint risk is low, but this is asserted-not-measured.",
+    "Runtime behaviour of the documented Python path — unchanged from 35523156, which itself flagged Python as UNVERIFIED-BY-EXECUTION because the native module cannot be built from a linked worktree. This fix documents that path but does not and cannot exercise it; the orchestrator's fresh-clone run remains the outstanding verification."
+  ],
+  "prompt_corrections": [
+    "The prompt said to check whether DOC-INDEX 'needs its last updated / slice-reference column touched for any file you edit (it tracks these per-doc — see its rows for dev/interfaces/*)'. It tracks only SOME of them: rust.md and cli.md had rows; python.md, typescript.md, wire.md and README.md had none. The premise that dev/interfaces/* is uniformly indexed is false at baseline.",
+    "The prompt directed matching 'existing structure, table shape'. None of the three interface docs contain tables — they are prose plus bullet lists — so the additions follow that convention instead. Only dev/DOC-INDEX.md is table-shaped, and its rows were edited in place.",
+    "Minor precision the prompt did not state: on the TS surface the camelCase spelling is consulted FIRST and snake_case is the fallback (json_i64_alt), rather than the two being symmetric. Documented as such. A camelCase key present but explicitly null falls through to the snake_case key."
+  ],
+  "boundaries_respected": {
+    "primary_checkout_untouched": true,
+    "pushed": false,
+    "worktrees_created_or_removed": false,
+    "maturin_or_pip_install_run": false,
+    "plan_or_status_files_touched": false,
+    "src_touched": false,
+    "agent_test_sh_run": false,
+    "agent_lint_md_sh_run": false
+  },
+  "untracked_left_in_worktree": [
+    "dev/plans/runs/codex/0.8.20/slice-15b-20260720T195420Z.log — the orchestrator's codex log, present at preflight, deliberately NOT staged or committed."
+  ],
+  "next_steps_for_orchestrator": [
+    "Lint the four edited markdown files with the primary checkout's markdownlint-cli2 (this worktree cannot).",
+    "Decide whether to close the remaining pre-existing DOC-INDEX gap for dev/interfaces/wire.md and dev/interfaces/README.md before Slice 40 gate m.",
+    "Cherry-pick ab790880 and re-run codex §9 on the extended range if desired."
+  ]
+}
