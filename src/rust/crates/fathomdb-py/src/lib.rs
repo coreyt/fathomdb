@@ -35,17 +35,17 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    rerank_passages as rust_rerank_passages, ComparisonOp as RustComparisonOp,
-    ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
-    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
-    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
-    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
-    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
-    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
-    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    rerank_passages as rust_rerank_passages, BoundaryCrossing as RustBoundaryCrossing,
+    ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
+    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
+    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
+    ExciseReport as RustExciseReport, Explanation as RustExplanation,
+    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
+    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
+    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
@@ -534,8 +534,13 @@ struct PySearchHit {
     body: String,
     score: f64,
     branch: String,
-    /// G0 Phase-2 — source-document provenance. Set (to the traversed edge's
-    /// `source_id`) only for graph-arm hits; `None` for every two-arm hit.
+    /// Source-document provenance — the identifier `erase_source` consumes.
+    /// TC-31 (0.8.20): populated on EVERY hit path, not just the graph arm.
+    /// Node hits (text/vector) carry the node's own `source_id`; edge hits
+    /// (edge-FTS, vector edge-fact) carry the edge's own; graph-arm hits carry
+    /// the traversed edge's (unchanged). `None` only when the stored row really
+    /// has NULL provenance: written before 0.8.20, or a governed row spared by
+    /// the step-21 backfill under the TC-11 pin.
     source_id: Option<String>,
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`.
     /// `Some` only for hits inside the reranked pool; `None` otherwise.
@@ -723,6 +728,86 @@ impl PyNodeRecord {
             kind: r.kind.clone(),
             body: r.body.clone(),
             write_cursor: r.write_cursor,
+        }
+    }
+}
+
+/// 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the Python face of `ReadView`.
+///
+/// Idiomatic `snake_case` keyword arguments; every one defaults to the STRICT
+/// view, so `ReadView()` (and passing no `view=` at all) reproduces the shipped
+/// read behaviour exactly.
+///
+/// World-time only — there is deliberately no `history_as_of`.
+#[pyclass(module = "fathomdb._fathomdb", name = "ReadView", frozen, get_all, skip_from_py_object)]
+#[derive(Clone, Default)]
+struct PyReadView {
+    /// Relax `superseded_at IS NULL` — include historical versions.
+    include_superseded: bool,
+    /// Relax `state = 'active'` — include non-active lifecycle states.
+    include_inactive: bool,
+    /// Relax the validity window entirely (ignores `valid_as_of`).
+    include_out_of_window: bool,
+    /// Validity instant, INTEGER epoch SECONDS. `None` = now.
+    valid_as_of: Option<i64>,
+}
+
+#[pymethods]
+impl PyReadView {
+    #[new]
+    #[pyo3(signature = (
+        include_superseded = false,
+        include_inactive = false,
+        include_out_of_window = false,
+        valid_as_of = None,
+    ))]
+    fn new(
+        include_superseded: bool,
+        include_inactive: bool,
+        include_out_of_window: bool,
+        valid_as_of: Option<i64>,
+    ) -> Self {
+        Self { include_superseded, include_inactive, include_out_of_window, valid_as_of }
+    }
+}
+
+impl PyReadView {
+    fn to_rust(&self) -> RustReadView {
+        RustReadView {
+            include_superseded: self.include_superseded,
+            include_inactive: self.include_inactive,
+            include_out_of_window: self.include_out_of_window,
+            valid_as_of: self.valid_as_of,
+        }
+    }
+}
+
+/// `view=None` means the strict default view.
+fn read_view_or_default(view: Option<&PyReadView>) -> RustReadView {
+    view.map(PyReadView::to_rust).unwrap_or_default()
+}
+
+/// 0.8.20 Slice 10b (R-20-NV) — the Python face of `BoundaryCrossing`.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "BoundaryCrossing",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyBoundaryCrossing {
+    node: PyNodeRecord,
+    became_valid_at: Option<i64>,
+    became_invalid_at: Option<i64>,
+}
+
+impl PyBoundaryCrossing {
+    fn from_rust(c: &RustBoundaryCrossing) -> Self {
+        Self {
+            node: PyNodeRecord::from_rust(&c.node),
+            became_valid_at: c.became_valid_at,
+            became_invalid_at: c.became_invalid_at,
         }
     }
 }
@@ -1377,31 +1462,35 @@ fn erase_source(
 }
 
 #[pyfunction]
-#[pyo3(signature = (engine, logical_id))]
+#[pyo3(signature = (engine, logical_id, view = None))]
 fn read_get(
     py: Python<'_>,
     engine: &PyEngine,
     logical_id: &Bound<'_, PyAny>,
+    view: Option<&PyReadView>,
 ) -> PyResult<Option<PyNodeRecord>> {
     let logical_id = extract_validated_str(logical_id)?;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let record = call_engine(py, move || inner.read_get(&logical_id))?;
+    let record = call_engine(py, move || inner.read_get(&logical_id, &view))?;
     Ok(record.as_ref().map(PyNodeRecord::from_rust))
 }
 
 #[pyfunction]
-#[pyo3(signature = (engine, logical_ids))]
+#[pyo3(signature = (engine, logical_ids, view = None))]
 fn read_get_many(
     py: Python<'_>,
     engine: &PyEngine,
     logical_ids: &Bound<'_, PyList>,
+    view: Option<&PyReadView>,
 ) -> PyResult<Vec<Option<PyNodeRecord>>> {
     let mut ids = Vec::with_capacity(logical_ids.len());
     for item in logical_ids.iter() {
         ids.push(extract_validated_str(&item)?);
     }
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(py, move || inner.read_get_many(&ids))?;
+    let rows = call_engine(py, move || inner.read_get_many(&ids, &view))?;
     Ok(rows.iter().map(|r| r.as_ref().map(PyNodeRecord::from_rust)).collect())
 }
 
@@ -1486,13 +1575,14 @@ fn py_predicate_to_rust(pred: &Bound<'_, PyAny>) -> PyResult<RustPredicate> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (engine, kind, predicates=None, limit=100))]
+#[pyo3(signature = (engine, kind, predicates=None, limit=100, view=None))]
 fn read_list(
     py: Python<'_>,
     engine: &PyEngine,
     kind: &Bound<'_, PyAny>,
     predicates: Option<&Bound<'_, PyList>>,
     limit: u64,
+    view: Option<&PyReadView>,
 ) -> PyResult<Vec<PyNodeRecord>> {
     let kind = extract_validated_str(kind)?;
     let mut rust_predicates: Vec<RustPredicate> = Vec::new();
@@ -1502,8 +1592,9 @@ fn read_list(
         }
     }
     let limit = limit as usize;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(py, move || inner.read_list(&kind, &rust_predicates, limit))?;
+    let rows = call_engine(py, move || inner.read_list(&kind, &rust_predicates, limit, &view))?;
     Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
 }
 
@@ -1532,13 +1623,14 @@ fn py_filter_term_to_rust(term: &Bound<'_, PyAny>) -> PyResult<RustFilterTerm> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (engine, kind, terms=None, limit=100))]
+#[pyo3(signature = (engine, kind, terms=None, limit=100, view=None))]
 fn read_list_filter(
     py: Python<'_>,
     engine: &PyEngine,
     kind: &Bound<'_, PyAny>,
     terms: Option<&Bound<'_, PyList>>,
     limit: u64,
+    view: Option<&PyReadView>,
 ) -> PyResult<Vec<PyNodeRecord>> {
     let kind = extract_validated_str(kind)?;
     let mut rust_terms: Vec<RustFilterTerm> = Vec::new();
@@ -1550,7 +1642,8 @@ fn read_list_filter(
     let filter = RustFilter { terms: rust_terms };
     let limit = limit as usize;
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(py, move || inner.read_list_filter(&kind, &filter, limit))?;
+    let view = read_view_or_default(view);
+    let rows = call_engine(py, move || inner.read_list_filter(&kind, &filter, limit, &view))?;
     Ok(rows.iter().map(PyNodeRecord::from_rust).collect())
 }
 
@@ -1769,19 +1862,37 @@ fn parse_direction(s: &str) -> PyResult<RustTraversalDirection> {
 /// Returns the set of reachable nodes (excluding the root) within `depth` hops,
 /// hard-capped at 50.
 #[pyfunction]
-#[pyo3(signature = (engine, logical_id, depth, direction))]
+#[pyo3(signature = (engine, logical_id, depth, direction, view=None))]
 fn graph_neighbors(
     py: Python<'_>,
     engine: &PyEngine,
     logical_id: &Bound<'_, PyAny>,
     depth: u32,
     direction: &str,
+    view: Option<&PyReadView>,
 ) -> PyResult<Vec<PyNodeRecord>> {
     let logical_id = extract_validated_str(logical_id)?;
     let dir = parse_direction(direction)?;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let nodes = call_engine(py, move || inner.graph_neighbors(&logical_id, depth, dir))?;
+    let nodes = call_engine(py, move || inner.graph_neighbors(&logical_id, depth, dir, &view))?;
     Ok(nodes.iter().map(PyNodeRecord::from_rust).collect())
+}
+
+/// 0.8.20 Slice 10b (R-20-NV) — nodes that crossed a validity boundary in
+/// `(since, view-instant]`. `since` is INTEGER epoch SECONDS.
+#[pyfunction]
+#[pyo3(signature = (engine, since, view=None))]
+fn crossed_boundary_since(
+    py: Python<'_>,
+    engine: &PyEngine,
+    since: i64,
+    view: Option<&PyReadView>,
+) -> PyResult<Vec<PyBoundaryCrossing>> {
+    let view = read_view_or_default(view);
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(py, move || inner.crossed_boundary_since(since, &view))?;
+    Ok(rows.iter().map(PyBoundaryCrossing::from_rust).collect())
 }
 
 /// Slice 20 (G6) — hybrid search followed by bounded BFS expansion.
@@ -2088,6 +2199,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_list_filter, &m)?)?;
     // Slice 20 — G5/G6 graph traversal fns.
     m.add_function(wrap_pyfunction!(graph_neighbors, &m)?)?;
+    m.add_function(wrap_pyfunction!(crossed_boundary_since, &m)?)?;
+    m.add_class::<PyReadView>()?;
+    m.add_class::<PyBoundaryCrossing>()?;
     m.add_function(wrap_pyfunction!(search_expand, &m)?)?;
     // 0.8.2 Slice E2 — standalone rerank over an arbitrary passage list.
     m.add_function(wrap_pyfunction!(rerank, &m)?)?;

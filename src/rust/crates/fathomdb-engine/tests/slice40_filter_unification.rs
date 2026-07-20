@@ -20,8 +20,8 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    ComparisonOp, Engine, EngineError, Filter, FilterTerm, Predicate, PreparedWrite, ScalarValue,
-    SearchFilter,
+    ComparisonOp, Engine, EngineError, Filter, FilterTerm, Predicate, PreparedWrite, ReadView,
+    ScalarValue, SearchFilter,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -208,7 +208,9 @@ fn read_list_filter_accepts_full_set() {
             ),
         ],
     };
-    let rows = engine.read_list_filter("todo", &filter, 100).expect("read_list_filter");
+    let rows = engine
+        .read_list_filter("todo", &filter, 100, &ReadView::default())
+        .expect("read_list_filter");
     let ids: Vec<&str> = rows.iter().map(|r| r.logical_id.as_str()).collect();
     assert_eq!(ids, vec!["C"], "open AND created_at>=150 AND priority>3 => only C; got {ids:?}");
 }
@@ -244,27 +246,33 @@ fn read_list_filter_kind_and_source_type_constant_fold() {
     // Kind matching the partition: pass-all (no-op).
     let kind_match = Filter { terms: vec![FilterTerm::Kind("todo".to_string())] };
     assert_eq!(
-        engine.read_list_filter("todo", &kind_match, 100).unwrap().len(),
+        engine.read_list_filter("todo", &kind_match, 100, &ReadView::default()).unwrap().len(),
         2,
         "Kind(todo) on partition todo is a no-op => all rows"
     );
     // Kind mismatching the partition: guaranteed-empty.
     let kind_mismatch = Filter { terms: vec![FilterTerm::Kind("note".to_string())] };
     assert!(
-        engine.read_list_filter("todo", &kind_mismatch, 100).unwrap().is_empty(),
+        engine
+            .read_list_filter("todo", &kind_mismatch, 100, &ReadView::default())
+            .unwrap()
+            .is_empty(),
         "Kind(note) on partition todo constant-folds to empty"
     );
 
     // SourceType: resolve_source_type("todo") == "todo" => pass-all; else empty.
     let st_match = Filter { terms: vec![FilterTerm::SourceType("todo".to_string())] };
     assert_eq!(
-        engine.read_list_filter("todo", &st_match, 100).unwrap().len(),
+        engine.read_list_filter("todo", &st_match, 100, &ReadView::default()).unwrap().len(),
         2,
         "SourceType(todo) folds pass-all on partition todo (resolve_source_type)"
     );
     let st_mismatch = Filter { terms: vec![FilterTerm::SourceType("email".to_string())] };
     assert!(
-        engine.read_list_filter("todo", &st_mismatch, 100).unwrap().is_empty(),
+        engine
+            .read_list_filter("todo", &st_mismatch, 100, &ReadView::default())
+            .unwrap()
+            .is_empty(),
         "SourceType(email) constant-folds to empty on partition todo"
     );
 }
@@ -317,13 +325,20 @@ fn parity_kind_predicate_both_backends() {
 
     // canonical_nodes backend: the same Kind(todo) term constant-folds (no-op on
     // partition todo) and returns the todo node.
-    let rows = opened.engine.read_list_filter("todo", &filter, 100).expect("read_list_filter");
+    let rows = opened
+        .engine
+        .read_list_filter("todo", &filter, 100, &ReadView::default())
+        .expect("read_list_filter");
     let ids: Vec<&str> = rows.iter().map(|r| r.logical_id.as_str()).collect();
     assert_eq!(ids, vec!["TODO1"], "read_list_filter returns the todo node; got {ids:?}");
 
     // Cross-partition: the Kind(todo) term folds to empty on the note partition.
     assert!(
-        opened.engine.read_list_filter("note", &filter, 100).unwrap().is_empty(),
+        opened
+            .engine
+            .read_list_filter("note", &filter, 100, &ReadView::default())
+            .unwrap()
+            .is_empty(),
         "Kind(todo) folds empty on the note partition"
     );
 

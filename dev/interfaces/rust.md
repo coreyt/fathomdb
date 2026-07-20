@@ -46,7 +46,15 @@ which binds AC-074 — not a new AC id):
   Slice 35 (G4) filter-grammar types (`Predicate`, `ScalarValue`, `ComparisonOp`),
   Slice 15 (G11) BYO-LLM ingest types (`ExtractDocument`,
   `IngestWithExtractorReceipt`), and 0.8.8 Slice 5 (EXP-OBS) explain-sidecar types
-  (`Explanation`, `QueryTrace`, `PerHitExplain`). Each resolves through the facade
+  (`Explanation`, `QueryTrace`, `PerHitExplain`). 0.8.20 Slice 10b
+  (R-20-RV / R-20-NV) adds the read-view / node-validity types (`ReadView`,
+  `BoundaryCrossing`) — **PROPOSED, NOT SIGNED** (see
+  `src/conformance/governed-surface-allowlist.json`). `ReadView` is threaded as a
+  PARAMETER on the five existing read verbs (`read_get`, `read_get_many`,
+  `read_list`, `read_list_filter`, `graph_neighbors`) rather than shipped as five
+  `*_with_view` sibling verbs, which is what keeps the delta at two TYPES and zero
+  new verb names; `ReadView::default()` is the strict view and reproduces the
+  pre-slice read semantics exactly. Each resolves through the facade
   at compile time (`type_name::<…>()`). The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are

@@ -32,7 +32,10 @@ from fathomdb._fathomdb import read_get_many as _native_get_many
 from fathomdb._fathomdb import read_list as _native_list
 from fathomdb._fathomdb import read_list_filter as _native_list_filter
 from fathomdb._fathomdb import read_mutations as _native_mutations
-from fathomdb.types import NodeRecord, OpStoreRow
+from fathomdb._fathomdb import crossed_boundary_since as _native_crossed_boundary_since
+from fathomdb._fathomdb import ReadView as _NativeReadView
+from fathomdb._fathomdb import BoundaryCrossing as _NativeBoundaryCrossing
+from fathomdb.types import BoundaryCrossing, NodeRecord, OpStoreRow, ReadView
 
 if TYPE_CHECKING:
     from fathomdb.engine import Engine
@@ -48,6 +51,31 @@ def _to_node_record(native: _NativeNodeRecord) -> NodeRecord:
     )
 
 
+def _to_native_view(view: ReadView | None) -> _NativeReadView | None:
+    """Translate the public dataclass to the native ``ReadView``.
+
+    ``None`` stays ``None`` — the native layer then applies the strict default
+    view, so an omitted ``view=`` is exactly the shipped behaviour.
+    """
+
+    if view is None:
+        return None
+    return _NativeReadView(
+        include_superseded=view.include_superseded,
+        include_inactive=view.include_inactive,
+        include_out_of_window=view.include_out_of_window,
+        valid_as_of=view.valid_as_of,
+    )
+
+
+def _to_boundary_crossing(native: _NativeBoundaryCrossing) -> BoundaryCrossing:
+    return BoundaryCrossing(
+        node=_to_node_record(native.node),
+        became_valid_at=native.became_valid_at,
+        became_invalid_at=native.became_invalid_at,
+    )
+
+
 def _to_op_store_row(native: _NativeOpStoreRow) -> OpStoreRow:
     return OpStoreRow(
         id=native.id,
@@ -60,7 +88,7 @@ def _to_op_store_row(native: _NativeOpStoreRow) -> OpStoreRow:
     )
 
 
-def get(engine: "Engine", logical_id: str) -> NodeRecord | None:
+def get(engine: "Engine", logical_id: str, *, view: ReadView | None = None) -> NodeRecord | None:
     """Return the ACTIVE node carrying ``logical_id``, or ``None`` if absent.
 
     Active-only (``superseded_at IS NULL``): a superseded version is never
@@ -69,18 +97,23 @@ def get(engine: "Engine", logical_id: str) -> NodeRecord | None:
 
     if not logical_id:
         raise ValueError("read.get requires a non-empty logical_id")
-    native = _native_get(engine._native, logical_id)
+    native = _native_get(engine._native, logical_id, _to_native_view(view))
     return _to_node_record(native) if native is not None else None
 
 
-def get_many(engine: "Engine", logical_ids: builtins.list[str]) -> builtins.list[NodeRecord | None]:
+def get_many(
+    engine: "Engine",
+    logical_ids: builtins.list[str],
+    *,
+    view: ReadView | None = None,
+) -> builtins.list[NodeRecord | None]:
     """Return one slot per requested id, in REQUEST ORDER.
 
     A missing/superseded id yields ``None`` in its slot (partial result, never
     all-or-nothing). Order is preserved 1:1 with ``logical_ids``.
     """
 
-    natives = _native_get_many(engine._native, builtins.list(logical_ids))
+    natives = _native_get_many(engine._native, builtins.list(logical_ids), _to_native_view(view))
     return [_to_node_record(n) if n is not None else None for n in natives]
 
 
@@ -128,6 +161,7 @@ def list(  # noqa: A001 — shadows builtin; public API requires this name
     *,
     limit: int = 100,
     filter: "Filter | None" = None,
+    view: ReadView | None = None,
 ) -> builtins.list[NodeRecord]:
     """G4 (Slice 35) — list active ``canonical_nodes`` of the given ``kind``.
 
@@ -157,10 +191,36 @@ def list(  # noqa: A001 — shadows builtin; public API requires this name
         if predicates:
             raise ValueError("read.list: pass either `predicates` or `filter`, not both")
         terms = filter.to_native_terms()
-        rows = _native_list_filter(engine._native, kind, terms or None, limit)
+        rows = _native_list_filter(engine._native, kind, terms or None, limit, _to_native_view(view))
     else:
-        rows = _native_list(engine._native, kind, predicates or None, limit)
+        rows = _native_list(engine._native, kind, predicates or None, limit, _to_native_view(view))
     return [_to_node_record(row) for row in rows]
+
+
+def crossed_boundary_since(
+    engine: "Engine",
+    since: int,
+    *,
+    view: ReadView | None = None,
+) -> builtins.list[BoundaryCrossing]:
+    """R-20-NV — nodes that crossed a validity boundary in ``(since, as_of]``.
+
+    ``since`` is an INTEGER epoch-second instant, and the upper bound is the
+    view's own ``valid_as_of`` (defaulting to now). Both are bound parameters,
+    so the answer is deterministic for a fixed pair.
+
+    A node whose window opened AND closed inside the interval reports both
+    boundaries. Rows with no window (every row predating schema step 22) can
+    never cross one, so they never appear.
+
+    World-time only — this asks what was true in the world, never what the
+    database believed.
+    """
+
+    if not isinstance(since, int) or isinstance(since, bool):
+        raise ValueError("read.crossed_boundary_since requires an integer `since`")
+    rows = _native_crossed_boundary_since(engine._native, since, _to_native_view(view))
+    return [_to_boundary_crossing(row) for row in rows]
 
 
 def _validate_limit(limit: int) -> None:
@@ -170,4 +230,4 @@ def _validate_limit(limit: int) -> None:
         raise ValueError("read.collection/read.mutations limit must be non-negative")
 
 
-__all__ = ["get", "get_many", "collection", "mutations", "list"]
+__all__ = ["get", "get_many", "collection", "mutations", "list", "crossed_boundary_since"]

@@ -1,0 +1,79 @@
+{
+  "slice": "0.8.20-slice-10-closure",
+  "status": "COMPLETE",
+  "branch": "orch-0.8.20-s10",
+  "base_sha": "93a57b10fbd8e86e46ce6ef3f39fce78b4bf8161",
+  "head_sha": "7271438971c0098625e235bf81e486349fef46e1",
+  "commits": [
+    {
+      "sha": "7271438971c0098625e235bf81e486349fef46e1",
+      "subject": "docs(0.8.20): Slice 10 close — R-20-RV + R-20-NV; TC-31 resolved; TC-32 accepted"
+    }
+  ],
+  "files_changed": [
+    "dev/plans/plan-0.8.20.md",
+    "dev/plans/runs/STATUS-0.8.20.md",
+    "dev/plans/runs/0.8.20-slice-10b-fix-4-output.json",
+    "dev/plans/runs/0.8.20-slice-10b-fix-5-output.json",
+    "dev/plans/runs/codex/0.8.20/slice-10b-20260720T175114Z.log",
+    "dev/plans/runs/codex/0.8.20/slice-10b-rereview-20260720T180124Z.log",
+    "dev/todos-and-considerations-ledger.jsonl",
+    "dev/todos-and-considerations-ledger.jsonl.seq"
+  ],
+  "diffstat": "8 files changed, 17249 insertions(+), 20 deletions(-)",
+  "mandate": "DOCS-ONLY closure for Slice 10: update dev/plans/plan-0.8.20.md and dev/plans/runs/STATUS-0.8.20.md to record the verified Slice-10 close, correct three board inaccuracies, and commit the untracked closure artifacts plus the ledgerwrite-appended TC ledger. Touch no source and no test files.",
+  "change_detail": [
+    "plan §1 in-scope + §3 R-20-RV row: corrected the verb names to read_get / read_get_many / read_list / read_list_filter / graph_neighbors (the prior 'get/list/neighbors' shorthand named no real symbol); R-20-RV and R-20-NV marked CLOSED at Slice 10, with TC-34 flagged open on R-20-NV.",
+    "plan §4 ladder: Slice 10 row marked COMPLETE on-branch @ 93a57b10 (SCHEMA 21->22).",
+    "plan §9: rewritten — next slice is now Slice 15 (Phase-2 keystone); Slice 5 recorded as LANDED at 1f8ed8bf; Slice 10 recorded as COMPLETE on-branch, not landed.",
+    "plan §10: added the 2026-07-20 decisions — Slice 5 landed, TC-32 accepted as-is, Slice 10 complete on-branch opening TC-33/TC-34.",
+    "STATUS header + §1: Slice-5 'awaiting Steward land' corrected to LANDED at 1f8ed8bf; in-flight/status/blocks/next-action switched to Slice 10.",
+    "STATUS §2 ladder: Slice 5 -> COMPLETE/LANDED; Slice 10 -> COMPLETE on-branch @ 93a57b10.",
+    "STATUS §3: recorded that Slice 10 minted NO AC, AC-079 remains available and unminted, AC-041 GREEN live in both bindings, denylist unchanged at five.",
+    "STATUS §4: decision #13 (TC-31) marked RESOLVED; #14 (TC-32) marked RULED/ACCEPTED with the carry-forward caveat; new #15 (TC-34), #16 (TC-33), #17 (Slice-10 surface delta); TC-35/TC-36 logged as no-decision-needed.",
+    "STATUS §7 worktrees: s5 marked reclaimable (landed); s10 added as active, holds 93a57b10, do not remove before land.",
+    "STATUS §8: three new dated entries (Slice 10 complete, TC-32 ruling, Slice 5 landed).",
+    "STATUS §12 (new): Slice-10 close section mirroring Slice 5's §11 shape — what shipped, schema 21->22, gates, the honest Python comparison, the PROPOSED/NOT SIGNED surface delta, codex §9 rounds, what is owed to the HITL, closure artifacts.",
+    "Committed the four untracked artifacts (two closure JSONs, two codex transcripts) and the ledgerwrite-appended TC ledger + its .seq companion. The ledger was NOT hand-edited."
+  ],
+  "gates": {
+    "scripts/agent-lint-md.sh": "exit 0 — BUT VACUOUS IN THIS WORKTREE: node_modules/.bin/markdownlint-cli2 is absent and lychee is absent, so the script self-skipped its checks. Reported as a vacuous green, not a real one.",
+    "markdownlint-cli2 (real run, binary borrowed from the primary checkout)": "exit 1 overall — 9 errors, ALL in dev/research/personal-agent-database-market-2026-07-02.md, which is pre-existing, untouched by this commit (empty git diff), and last modified in c366d6e0. ZERO errors in dev/plans/plan-0.8.20.md. dev/plans/runs/** is excluded by the repo .markdownlint-cli2.jsonc ignore list, so STATUS-0.8.20.md is out of markdownlint scope by config.",
+    "git diff --stat over src/ for this commit": "EMPTY — no source or test file touched",
+    "worktree status after commit": "clean"
+  },
+  "invariants_held": {
+    "docs_only": "true — only dev/plans/**, dev/plans/runs/**, and the TC ledger were touched; src/ diff empty",
+    "branch_verified_before_commit": "true — git rev-parse --abbrev-ref HEAD == orch-0.8.20-s10, checked immediately before staging",
+    "no_push": "true — nothing was pushed, fetched, or rebased",
+    "ledger_not_hand_edited": "true — dev/todos-and-considerations-ledger.jsonl was committed exactly as the orchestrator's ledgerwrite left it",
+    "never_wrote_HITL_SIGNED": "true — the Slice-10 surface delta is recorded as PROPOSED / NOT SIGNED, and AC-079 is recorded as still unsigned and still blocking publish",
+    "no_invented_numbers": "true — every figure written came from the task's verified set or was re-measured from git in this session",
+    "zero_eu7_runs": "true — no eu7 harness was invoked"
+  },
+  "blockers": [],
+  "discrepancies_found": [
+    {
+      "item": "governed-surface allowlist count",
+      "task_stated": "allowlist 31 -> 33",
+      "measured_from_git": "the 'allowlist' array in src/conformance/governed-surface-allowlist.json goes 25 -> 27 (baseline ae44770f vs HEAD), adding exactly read.crossed_boundary_since and read.crossedBoundarySince; 'core' unchanged at 5; 'recovery_denylist' unchanged at 5",
+      "resolution": "Wrote the git-measured figure (25 -> 27 array entries) and described it precisely as the allowlist array count. The 31 -> 33 figure may refer to the live introspected command surface, which cannot be verified without running the bindings. Flagged for the orchestrator rather than silently reconciled.",
+      "severity": "low — the delta CONTENT (two command names, two types, denylist unchanged at five) matches exactly; only the cardinality basis differs"
+    },
+    {
+      "item": "slice commit list",
+      "task_stated": "15 commits",
+      "measured_from_git": "18 commits in ae44770f..93a57b10 — the task's list omits 9392dbc5 (TC-31 fix-1), 073b2d3a (fix-2 closure artifact), and a6c849ee (fix-3 closure artifact)",
+      "resolution": "Recorded the full git-verified list of 18 in STATUS §12.1.",
+      "severity": "low — the three omissions are one fix and two docs-only closure artifacts"
+    }
+  ],
+  "open_decisions_recorded": [
+    "TC-34 (#15) — node validity has NO write-side authoring verb; queryable but not settable from any SDK, tests author windows via direct SQL. Is R-20-NV met without it?",
+    "TC-33 (#16) — temporal-model split: node validity INTEGER epoch vs shipped edge t_valid/t_invalid ISO-8601 TEXT. Accept long-term, or schedule a unifying slice?",
+    "#17 — Slice-10 governed-surface delta awaits HITL sign-off, as does Slice 5's AC-079 (#7), which still blocks publish",
+    "TC-32 carry-forward caveat — the erasure guarantee must NOT be stated unconditionally to users while co-named-entity dedupe stands",
+    "TC-35 / TC-36 — logged in the TC ledger, no decision needed"
+  ],
+  "notes": "Docs-only closure, one commit, output.json written last. Two things the orchestrator should read: (1) scripts/agent-lint-md.sh returns exit 0 in this worktree WITHOUT LINTING ANYTHING — markdownlint-cli2 and lychee are both absent here, so the script self-skips; a real lint was obtained by borrowing the primary checkout's binary, and plan-0.8.20.md is clean while STATUS-0.8.20.md is outside markdownlint scope by repo config. This is a live vacuous-green trap in any worktree without node_modules. (2) The allowlist cardinality in the task brief (31 -> 33) does not match what git shows for the allowlist array (25 -> 27); the delta's content matches exactly, so this is a counting-basis question, not a substantive one. Both are recorded under discrepancies_found rather than reconciled away."
+}

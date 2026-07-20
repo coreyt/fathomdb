@@ -80,8 +80,13 @@ class SearchHit:
     branch, `bm25()` for the text branch); the two are not comparable raw.
     `branch` tags which retrieval branch produced the hit.
 
-    `source_id` (G0 Phase-2) carries source-document provenance: the traversed
-    edge's `source_id` for a graph-arm hit, `None` for every two-arm hit.
+    `source_id` (G0 Phase-2) carries source-document provenance — the identifier
+    `erase_source` consumes. TC-31 (0.8.20): populated on EVERY hit path, not
+    just the graph arm. Node hits (text/vector) carry the node's own
+    `source_id`; edge hits (edge-FTS, vector edge-fact) carry the edge's own;
+    graph-arm hits carry the traversed edge's (unchanged). `None` only when the
+    stored row really has NULL provenance: written before 0.8.20, or a governed
+    row spared by the step-21 backfill under the TC-11 pin.
 
     `ce_score` (0.8.5 / EXP-0) is the per-candidate cross-encoder score
     (`ce_norm = sigmoid(ce_logit)`), set only for hits inside the reranked pool;
@@ -95,6 +100,47 @@ class SearchHit:
     branch: SoftFallbackBranch
     source_id: str | None = None
     ce_score: float | None = None
+
+
+@dataclass(frozen=True)
+class ReadView:
+    """0.8.20 Slice 10b (R-20-RV / R-20-NV) — the read view.
+
+    Every field is a RELAXATION, and every default is the STRICT view, so
+    ``ReadView()`` — and omitting ``view=`` entirely — reproduces the shipped
+    read behaviour exactly. Flags compose independently: each drops exactly one
+    predicate and no other.
+
+    Accepted by ``read.get`` / ``read.get_many`` / ``read.list`` and
+    ``graph.neighbors``. Mirrors the TypeScript ``ReadView`` (cross-binding
+    parity; ``snake_case`` here, ``camelCase`` there).
+
+    World-time only — there is deliberately no ``history_as_of``.
+    """
+
+    #: Relax ``superseded_at IS NULL`` — include historical versions.
+    include_superseded: bool = False
+    #: Relax ``state = 'active'`` — include non-active lifecycle states.
+    include_inactive: bool = False
+    #: Relax the validity window entirely (ignores ``valid_as_of``).
+    include_out_of_window: bool = False
+    #: Validity instant, INTEGER epoch SECONDS. ``None`` means now.
+    valid_as_of: int | None = None
+
+
+@dataclass(frozen=True)
+class BoundaryCrossing:
+    """0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary.
+
+    A node whose window both opened AND closed inside the interrogated interval
+    carries both fields, so they are independent optionals rather than an enum.
+    """
+
+    node: "NodeRecord"
+    #: Set when the node BECAME VALID inside the interval.
+    became_valid_at: int | None = None
+    #: Set when the node BECAME INVALID inside the interval.
+    became_invalid_at: int | None = None
 
 
 @dataclass(frozen=True)
@@ -443,6 +489,8 @@ class CounterSnapshot:
 
 
 __all__ = [
+    "ReadView",
+    "BoundaryCrossing",
     "CounterSnapshot",
     "DefaultEmbedderCacheHitEvent",
     "DefaultEmbedderDownloadEvent",

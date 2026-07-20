@@ -1,0 +1,58 @@
+{
+  "slice": "0.8.20-slice-10b-fix-3",
+  "branch": "orch-0.8.20-s10",
+  "head_sha": "9a6e4896",
+  "status": "COMPLETE",
+  "mandate": "Settle the BoundaryCrossing napi Option shape by MEASUREMENT, fix the declaration and the failing test.",
+  "gates": {
+    "cargo_clippy_workspace_all_targets": 0,
+    "cargo_check_workspace_all_targets": 0,
+    "cargo_test_engine_schema_test_threads_1": 0,
+    "tsc_noEmit": 0
+  },
+  "measured_napi_shape": {
+    "question": "What does napi produce for a #[napi(object)] Option<i64> field when the Rust value is Option::None?",
+    "answer": "The property is ABSENT from the object. It is not set to null, and not set to undefined.",
+    "evidence": [
+      "napi-derive-backend 1.0.75 src/codegen/struct.rs, obj_field_setters: for an Option<_> field with use_nullable == false the derive emits `if field_.is_some() { obj.set(\"field\", field_)?; }` — None skips the set entirely.",
+      "The `use_nullable == true` arm is the only one that emits `else { obj.set(field, napi::bindgen_prelude::Null) }`.",
+      "grep for `use_nullable` across src/rust/crates/fathomdb-napi/src/ returns ZERO hits, so every Option object field in this crate is omitted when None.",
+      "napi 2.16.17 src/bindgen_runtime/js_values.rs:218 `impl ToNapiValue for Option<T>` DOES map None -> napi_get_null, but #[napi(object)] fields never reach that impl; it governs bare returns and nested positions. Conflating the two produced the earlier wrong premise.",
+      "Independent live confirmation: the predecessor's own test run observed `undefined` at the public surface, which is consistent only with omission at the native layer (read.ts re-set the property explicitly, turning absent into present-and-undefined)."
+    ]
+  },
+  "ce_score_asymmetry": {
+    "verdict": "RESOLVED — there is NO napi-level asymmetry.",
+    "explanation": "SearchHit.ce_score is the same #[napi(object)] Option<f64> with no use_nullable, so napi omits it exactly as it omits became_valid_at. binding.ts already declared it `ceScore?: number | null` (OPTIONAL) — the predecessor cited it as `number | null`, dropping the `?`. The public `null` that functional-reranker.test.ts observes is manufactured in TypeScript: src/ts/src/index.ts lines 353, 821, 853, 1165 all build hits with `ceScore: h.ceScore ?? null`. read.ts had a bare passthrough (`becameValidAt: c.becameValidAt`) with no `?? null`. That missing normalisation is the entire difference between the two fields.",
+    "mechanism_determined": true
+  },
+  "python_verification": {
+    "claim_inherited": false,
+    "verdict": "The .pyi `int | None` is CORRECT, verified independently.",
+    "evidence": "src/rust/crates/fathomdb-py/src/lib.rs PyBoundaryCrossing is #[pyclass(module=\"fathomdb._fathomdb\", name=\"BoundaryCrossing\", frozen, get_all, skip_from_py_object)] over became_valid_at: Option<i64>. get_all generates a getter, so the attribute always exists on the instance, and Option::None converts to Python None. Python has no `undefined`, so `int | None` is total and accurate. No change needed."
+  },
+  "changes": [
+    "src/ts/src/binding.ts — NativeBoundaryCrossing.becameValidAt/becameInvalidAt changed from `number | null` to `?: number`, matching the measured native shape; doc comment now records the napi-derive codegen evidence and the ToNapiValue distinction that caused the earlier error.",
+    "src/ts/src/read.ts — public BoundaryCrossing KEEPS `number | null` (cross-binding parity with Python's `int | None`) and now earns it: the mapper normalises with `?? null`, matching the `ceScore ?? null` convention already shipped in index.ts. Doc comment corrected to say the null is manufactured here, not by napi.",
+    "src/ts/tests/slice10-read-view.test.ts — the failing assertion now pins BOTH layers: public surface strictly `null` with property present, and native surface strictly ABSENT (`\"becameInvalidAt\" in rawOpened === false` plus `=== undefined`), driven through `native.crossedBoundarySince` with the SAME inputs as the public call. All comparisons remain strictEqual, so null and undefined stay distinguishable and a future `use_nullable` addition fails loudly."
+  ],
+  "test_strictness_note": "No assertion was weakened. The count of assertions in this test INCREASED (native-layer pin added). Loose `==` was not used anywhere.",
+  "boundaries_respected": {
+    "engine_rust_behaviour_unchanged": true,
+    "ranking_provenance_tc11_slice10a_untouched": true,
+    "write_side_validity_authoring_verb_added": false,
+    "governed_surface_delta": "PROPOSED / NOT SIGNED — unchanged in scope",
+    "ac_minted": false,
+    "denylist_names": 5,
+    "eu7_runs": 0,
+    "slices_15_20_25_30_40_started": false,
+    "symlink_left_in_commit": false,
+    "pushed": false,
+    "rebased_or_fetched": false
+  },
+  "expected_ts_suite": "186/186 pass, exit 0",
+  "residual_risk": [
+    "The native-layer assertion depends on napi-derive-backend keeping the omit-on-None codegen and on fathomdb-napi never adopting `use_nullable`. That is exactly what the new assertion guards, so a change surfaces as a test failure rather than silent drift.",
+    "Out of scope, noted not fixed: the Rust doc comments on SearchHit.ce_score (src/rust/crates/fathomdb-napi/src/lib.rs:540-541) and PerHitExplain still describe the value as `null` where the native truth is `absent`. The TypeScript declarations are correct; only the prose is stale. Left untouched to avoid scope creep."
+  ]
+}

@@ -7,11 +7,11 @@
 
 **Release base:** `4ca70ba6` · **Orchestration worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20`
 (branch `orch-0.8.20`, dedicated linked worktree per **TC-RUBRIC-5**).
-**Slice-5 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5` (branch `orch-0.8.20-s5`,
-cut from `origin/main` `19b568e2`, rebased onto `30ad3524`). **Terminal HEAD `8e09b950` is SUPERSEDED** — a
-**regression was found after that first closure** by independent Steward verification and fixed in **fix-4**;
-see §11.7. Terminal HEAD is now **`d710721a`** (fix-6) plus the two **fix-7** commits (`7c353ac5` + this docs
-commit). **Last updated:** 2026-07-20 (Slice 5 re-closed after fix-4/5/6/7; awaiting Steward land).
+**Slice 5 is LANDED** at **`1f8ed8bf`** — it is in `origin/main`. *(This board previously described it as
+"awaiting Steward land"; that was stale. §11 is retained as the historical close record.)*
+**Slice-10 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s10` (branch `orch-0.8.20-s10`,
+rebased onto `origin/main` `ae44770f`), terminal HEAD **`93a57b10`** — **COMPLETE on-branch, NOT landed.**
+**Last updated:** 2026-07-20 (Slice 10 closed on-branch; §12).
 
 ---
 
@@ -19,10 +19,12 @@ commit). **Last updated:** 2026-07-20 (Slice 5 re-closed after fix-4/5/6/7; awai
 
 | | |
 |---|---|
-| **Slice in flight** | **Slice 5 — erasure completeness (R-20-E1…E8)** — **CODE-COMPLETE ON-BRANCH** |
-| **Status** | `orch-0.8.20-s5` @ **`d710721a`** + fix-7. codex §9 returned **PASS** at `8e09b950` after three fix rounds — but **a PASS is not a run**: independent Steward verification (fresh clone, isolated venv, A/B against `origin/main`) then found a **live regression** that all four review rounds and every on-branch gate had missed. **Fixed in fix-4** (§11.7). codex then reviewed the fix-4/5 delta and found a **P2 in our own TC-27 guard** — fixed in **fix-6** (§11.9), on which codex returned a **terminal PASS**. **fix-7** widens the test-hooks probe (§11.10). Release-DoD gates re-verified with real exit codes (§11.3). |
-| **Blocks** | Nothing is blocked *by* Slice 5. Slice 5 itself is blocked **from landing** pending the Steward + the HITL decisions in §4 (#7–#14) — notably **AC-079 governed-surface sign-off**. The **owed Python X1 is DISCHARGED** (§11.8) and TC-20/TC-27 guards are **shipped**. |
-| **Next action** | **Return to Steward: land `orch-0.8.20-s5`, then obtain the HITL decisions in §4.** Nothing may be **published** until AC-079 is signed. |
+| **Slice in flight** | **Slice 10 — `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** — **COMPLETE ON-BRANCH** |
+| **Status** | `orch-0.8.20-s10` @ **`93a57b10`**, rebased onto `origin/main` `ae44770f`. **R-20-RV + R-20-NV closed. TC-31 RESOLVED; TC-32 annotated** per the HITL ruling (accepted, no behavior change). **SCHEMA 21 → 22.** codex §9 returned **two terminal PASSes** (10a; 10b after one [P2] fix — **not overridden**). All release-DoD gates verified in **one fresh clone at exactly `93a57b10`**, run serially, with real exit codes (§12.3). **Not landed — the Steward lands it.** |
+| **Blocks** | Nothing is blocked *by* Slice 10. Slice 15 (the Phase-2 keystone) does **not** depend on it. Slice 30 (H7) does. **Publish remains blocked on AC-079**, which is **still unsigned**. |
+| **Next action** | **Return to Steward: land `orch-0.8.20-s10`, then commission Slice 15.** Four HITL decisions are owed — **TC-34**, **TC-33**, the **Slice-10 governed-surface delta**, and the carried **AC-079 sign-off** (§4 #15–#17). |
+
+**Slice 5 is COMPLETE and LANDED** at **`1f8ed8bf`** (in `origin/main`). Its close record is §11.
 
 **Slice 0 is COMPLETE and HITL-SIGNED** (`403eb254`, 2026-07-19) — the X0 gate is open and slices 5+ are
 authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Slice 40.
@@ -34,8 +36,8 @@ authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Sli
 | Slice | Title | Depends-on | Status |
 |------:|-------|-----------|--------|
 | **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
-| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE on-branch @ `d710721a`+fix-7** — first closure at `8e09b950` **re-opened by a regression** (§11.7), now fixed; awaiting land (§11) |
-| 10 | `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV) | 0 | not started |
+| **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
+| **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE on-branch @ `93a57b10`** — SCHEMA 21→22; **not landed** (§12) |
 | 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
 | 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
 | 25 | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | not started |
@@ -81,6 +83,12 @@ row-owned projection (registry-driven, incl. `search_index_v2`, the table that p
 the five REQ-054 names** — `["recover","restore","repair","fix","rebuild"]`. **`erase_source` is not one of
 them**, so the denylist is untouched by this slice.
 
+**Slice 10 minted NO AC.** Its governed-surface delta is recorded as a **PROPOSAL, NOT SIGNED** (§12.5), the same
+shape Slice 5d used. **`AC-079` remains available and unminted** — Slice 5's delta is still awaiting the sign-off
+that would consume it, so Slice 10 did not mint over it. **AC-041 is GREEN on the Slice-10 branch too**, verified
+**live in both bindings**: `test_no_recovery_surface.py` and `no-recovery-surface.test.ts` ran inside the
+zero-failure suite runs of §12.3. **Denylist unchanged at exactly five.**
+
 Everything else is tracked by **requirement id + TDD test name** per the locked-`acceptance.md` policy — see
 `0.8.20-slice0-erasure-design.md` §4.
 
@@ -112,8 +120,21 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 
 | # | Decision | Ledger | Recommendation |
 |---|---|---|---|
-| 13 | **WRITE/READ PROVENANCE ASYMMETRY.** 0.8.20 makes provenance **mandatory on write** (R-20-E2, `SourceId`) but it is **unreadable on a text or vector hit**: `PySearchHit.source_id` is populated **only for graph-arm hits** and is `None` for every two-arm hit (`fathomdb-py/src/lib.rs:537-539`). Consumers therefore fall back to `int(sh.id)`, which has raised `TypeError` since 0.8.19 made `SearchHit.id` an `IdSpace` (C-2). This is the measured form of the known "NO SDK EXPOSURE" erasure gap — a caller cannot tell which document a hit came from, so it cannot audit or scope an erasure | **TC-31** | **Schedule a read-side fix** — populate `source_id` on every arm. **One fix likely closes BOTH** residual Python failures (§11.8). **OUT OF SCOPE for Slice 5**: `_doc_id_of` is **byte-identical on `main`** and both failures reproduce there |
-| 14 | **ENTITY-DEDUPE ERASURE GAP, adjacent to R-20-E2 — found in fix-4, NOT fixed.** Entities dedupe **within a batch** by `logical_id` derived from `(kind, name)`, so two documents naming the same entity **collapse to one row** carrying the **FIRST** document's provenance. Erasing the second document therefore **leaves that entity behind**, still attributed to the first. An **erasure-completeness gap**: the slice's own guarantee ("erase every row owned by this source") does not hold for a co-named entity | **TC-32** | **Entity-identity design question, not a fix round.** Options: per-source entity rows, or a multi-valued provenance edge set. Must be decided before the erasure guarantee is stated unconditionally to users |
+| 13 | **✅ RESOLVED at Slice 10** (`63dfbc08` — `source_id` now populated on **every** hit path, not just the graph arm; RED test `f29f7d91`). **WRITE/READ PROVENANCE ASYMMETRY.** 0.8.20 makes provenance **mandatory on write** (R-20-E2, `SourceId`) but it is **unreadable on a text or vector hit**: `PySearchHit.source_id` is populated **only for graph-arm hits** and is `None` for every two-arm hit (`fathomdb-py/src/lib.rs:537-539`). Consumers therefore fall back to `int(sh.id)`, which has raised `TypeError` since 0.8.19 made `SearchHit.id` an `IdSpace` (C-2). This is the measured form of the known "NO SDK EXPOSURE" erasure gap — a caller cannot tell which document a hit came from, so it cannot audit or scope an erasure | **TC-31** | **Schedule a read-side fix** — populate `source_id` on every arm. **One fix likely closes BOTH** residual Python failures (§11.8). **OUT OF SCOPE for Slice 5**: `_doc_id_of` is **byte-identical on `main`** and both failures reproduce there |
+| 14 | **ENTITY-DEDUPE ERASURE GAP, adjacent to R-20-E2 — found in fix-4, NOT fixed. ✅ RULED ON (HITL, 2026-07-20): ACCEPTED AS-IS, no behavior change** — annotated in code at Slice 10 (`e62309e1`). **Carry-forward caveat: the erasure guarantee MUST NOT be stated unconditionally to users while co-named-entity dedupe stands.** Entities dedupe **within a batch** by `logical_id` derived from `(kind, name)`, so two documents naming the same entity **collapse to one row** carrying the **FIRST** document's provenance. Erasing the second document therefore **leaves that entity behind**, still attributed to the first. An **erasure-completeness gap**: the slice's own guarantee ("erase every row owned by this source") does not hold for a co-named entity | **TC-32** | **Entity-identity design question, not a fix round.** Options: per-source entity rows, or a multi-valued provenance edge set. Must be decided before the erasure guarantee is stated unconditionally to users |
+
+**Raised by Slice 10** (details in §12):
+
+| # | Decision | Ledger | Recommendation |
+|---|---|---|---|
+| 15 | **Node validity has NO write-side authoring verb.** `valid_from`/`valid_until` are **queryable but not settable from any SDK** — the tests author windows via **direct SQL**. **Is R-20-NV met without it?** The read half is complete and closed; the write half does not exist on the governed surface | **TC-34** | **HITL call, not an implementer call.** Either (a) ratify R-20-NV as read-only for 0.8.20 and schedule the authoring verb, or (b) re-open Slice 10 to add it. Note the coupling: an authoring verb is a **governed-surface addition**, so it lands with a delta and a sign-off |
+| 16 | **TEMPORAL-MODEL SPLIT.** Node validity is **INTEGER epoch**; the shipped edge `t_valid`/`t_invalid` are **ISO-8601 TEXT**. Edges were **deliberately untouched**, and the divergence is **pinned by two tests** so it cannot drift silently | **TC-33** | **Accept long-term, or schedule a unifying slice.** Recorded as a deliberate divergence with an explicit migration note in the step-22 SQL — **not** an accident. Unifying is a breaking migration and belongs in its own slice if wanted |
+| 17 | **Slice-10 governed-surface delta — PROPOSED / NOT SIGNED.** Adds commands `read.crossed_boundary_since` / `read.crossedBoundarySince` and types `ReadView`, `BoundaryCrossing` | — | **Sign or amend before publish**, together with **AC-079** (#7). Recorded exactly as Slice 5d recorded its own. **Recovery denylist UNCHANGED at five; AC-041 GREEN** |
+
+Also logged by Slice 10 and **not** requiring a decision: **TC-35** (napi `#[napi(object)]` **OMITS** the property
+for `Option::None` rather than emitting `null` — **measured, not reasoned**; drove the `9a6e4896` shape fix) and
+**TC-36** (the published API docs still declare `SearchHit.id` as `int`/`number` "write_cursor" — **stale since
+0.8.19 C-2** made it an `IdSpace`; a docs defect, pre-existing, not introduced here).
 
 ---
 
@@ -215,7 +236,8 @@ run**, so a reduced-N scouting run silently produces a file that *looks* authori
 |---|---|---|---|
 | `fathomdb-worktrees/orch-0.8.20` | `orch-0.8.20` | orchestration + Slice-0 docs (TC-RUBRIC-5) | **active** |
 | `fathomdb-worktrees/slice-0-preflight-landing` | `slice-0-preflight-landing` | `preflight.sh --landing` guardrail | Slice 0 landed — **reclaimable** |
-| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | **active** — holds `d710721a`+fix-7, **do not remove before land** |
+| `fathomdb-worktrees/orch-0.8.20-s5` | `orch-0.8.20-s5` | Slice 5 erasure completeness | Slice 5 **landed** (`1f8ed8bf`) — **reclaimable** |
+| `fathomdb-worktrees/orch-0.8.20-s10` | `orch-0.8.20-s10` | Slice 10 `ReadView` + node-validity | **active** — holds **`93a57b10`**, **do not remove before land** |
 
 Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; never `find -delete`.
 
@@ -223,6 +245,15 @@ Clean up per `orchestration.md` §11 — **one destructive op per Bash call**; n
 
 ## 8. Recent decisions (newest first)
 
+- **2026-07-20 — Slice 10 COMPLETE on-branch** at **`93a57b10`**. **R-20-RV + R-20-NV closed**; **SCHEMA 21 → 22**
+  (node validity window); **TC-31 RESOLVED** — `source_id` is now readable on **every** search-hit path, closing
+  the measured "NO SDK EXPOSURE" erasure gap on the read side. **Two codex §9 terminal PASSes.** The Python
+  failure Slice 5 attributed to TC-31 **now passes**. Opens **TC-33/TC-34** (§4 #15/#16) and logs **TC-35/TC-36**.
+  Governed-surface delta **PROPOSED / NOT SIGNED**; **no AC minted**. **Zero eu7 runs.** (§12)
+- **2026-07-20 — TC-32 ACCEPTED AS-IS, no behavior change** (HITL). Co-named-entity dedupe is **annotated, not
+  fixed** (`e62309e1`). **The erasure guarantee must NOT be stated unconditionally to users while it stands.**
+- **2026-07-20 — Slice 5 LANDED** at **`1f8ed8bf`**, in `origin/main`. **AC-079 is still UNSIGNED and still
+  blocks publish** — landing the code did **not** discharge the sign-off.
 - **2026-07-20 — fix-7: the test-hooks probe was NARROWER than the surface it gated** (`7c353ac5`). It checked
   one of three symbols, so a **partial** binding read as "hooks present" and a marked test **failed on a
   missing import instead of skipping**. Now probes all three, fails safe to DEGRADED, and carries a drift guard
@@ -580,3 +611,123 @@ on the hook surface without carrying the marker, so in degraded mode they skip w
 skip visibly** — this is presentation only. It was left alone because `test_verify_embed_db.py` is currently
 **byte-identical to `origin/main`**, and that identity is load-bearing evidence for the **TC-31**
 pre-existing-failure attribution above. Editing it for cosmetics would destroy the proof.
+
+---
+
+## 12. Slice 10 close — `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)
+
+**Branch `orch-0.8.20-s10`, terminal HEAD `93a57b10`** — rebased onto `origin/main` **`ae44770f`**.
+**COMPLETE on-branch. NOT landed — the Steward lands it.**
+
+**R-20-RV and R-20-NV are CLOSED. TC-31 is RESOLVED. TC-32 is ANNOTATED** per the HITL ruling (accepted, no
+behavior change). **No AC was minted** — see §3.
+
+### 12.1 What shipped
+
+| Commit | Content |
+|---|---|
+| `f29f7d91` | **RED** — `source_id` must be readable on every search-hit path |
+| `63dfbc08` | **TC-31 fix** — populate `SearchHit.source_id` on **every** hit path, not just the graph arm |
+| `e62309e1` | **TC-32** — annotate the accepted single-provenance entity dedupe |
+| `b90c9a0d` | **TC-31** — IdSpace-safe doc-id resolution at the two remaining eval sites |
+| `9392dbc5` | **TC-31 fix-1** — correct the remaining stale "`source_id` is graph-arm-only" contract text |
+| `43ae248f` | Slice-10a closure artifacts + the codex §9 PASS transcript |
+| `9c6420e5` | **R-20-NV** — schema **step 22**, `canonical_nodes` validity window (**SCHEMA 21 → 22**) |
+| `e3cc071b` | **R-20-RV/R-20-NV** — thread `ReadView` through **all five** read verbs + both bindings |
+| `4524ffd2` | Read-mode + validity matrices; Py/TS parity; the surface delta |
+| `e069e3a9` | Record the `ReadView` / `BoundaryCrossing` surface delta (Rust docs) |
+| `c5e12da6` | Slice-10b closure artifact |
+| `742a347e` | `BoundaryCrossing` boundaries are `number \| null`, not `?: number` — **superseded by fix-3** |
+| `14d33bba` | **X1** — live Py + TS functional harnesses for the read-view surface |
+| `073b2d3a` | Slice-10b fix-2 closure artifact — X1 binding-execution parity |
+| `9a6e4896` | **fix-3 (TC-35)** — napi **OMITS** `None` `Option` object fields; **measured, not reasoned** |
+| `a6c849ee` | Slice-10b fix-3 closure artifact — the measured napi object-field shape |
+| `cf92d1c4` | codex **[P2]** — annotate the neighbors direction matrix as `TraversalDirection` |
+| `93a57b10` | Annotate the `_doc_id_of` `getattr` result as `Any` (pyright **12 → 8**) |
+
+**The five read verbs are `read_get`, `read_get_many`, `read_list`, `read_list_filter`, `graph_neighbors`.**
+*(The plan's §3 shorthand "`get`/`list`/`neighbors`" named no real symbol; corrected there.)*
+**`graph_neighbors` has THREE direction variants, not four** — `Outgoing` / `Incoming` / `Both`
+(`engine/src/lib.rs:1948-1952`). The 4th CTE that made the brief say "four" is **`build_bfs_with_depth_sql`**,
+which serves **`search_expand`** — **not one of the five read verbs**, and **deliberately left on the strict
+path**.
+
+### 12.2 Schema — 21 → 22
+
+Step 22 adds `canonical_nodes.valid_from` / `valid_until`: **INTEGER epoch seconds, nullable**, half-open
+**`[valid_from, valid_until)`**, **NULL = unbounded**. **Existing rows back-fill NULL/NULL ⇒ always valid ⇒
+default-view visibility is unchanged.** The INTEGER choice **deliberately diverges** from the shipped
+ISO-8601 TEXT `canonical_edges.t_valid`/`t_invalid`, which are **untouched** — the divergence is **pinned by two
+tests** and carries a migration note in the step-22 SQL, so it cannot drift silently. **That divergence is
+TC-33, and it is a decision owed to the HITL** (§4 #16) — it is recorded here as deliberate, not as settled.
+
+### 12.3 Gates — ONE fresh clone at exactly `93a57b10`, everything SERIAL
+
+The clone head was verified **equal to the branch head** before any gate ran. Real exit codes throughout.
+
+| Gate | Result |
+|---|---|
+| `cargo clippy --workspace --all-targets` | **exit 0** |
+| `cargo check --workspace --all-targets` | **exit 0** |
+| `cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1` | **exit 0** — **540 passed / 0 failed** |
+| `cargo test -p fathomdb --test governed_surface` | **exit 0** |
+| **Python** | **787 passed / 12 skipped · exit 0** — fresh clone, **own venv**, `pip install -e "src/python[dev]"`; **never** the shared `.venv` |
+| **TypeScript** | **186 pass / 0 fail · exit 0** |
+| `pyright -p src/python` | **8 errors, exit 1** — **the pre-slice baseline is ALSO 8**; see below |
+| **AC-041** (`test_no_recovery_surface.py`, `no-recovery-surface.test.ts`) | **GREEN, live in BOTH bindings** — inside the zero-failure runs above; denylist unchanged at five |
+| **eu7** | **ZERO runs, any backend, any N.** `eu7_real_corpus_ac` is still `#[ignore]`d |
+
+**pyright, stated honestly: the project gate was ALREADY RED before this slice, and is not made worse.** The
+slice **introduced 4 errors and cleared all 4**; the residual **8 are the pre-existing baseline**. This is
+**not** a green gate and is **not** claimed as one.
+
+### 12.4 Python — the honest comparison
+
+**Baseline at `c82feb80`, same method: `1 failed, 770 passed, 12 skipped`.** The single failure was
+`test_option2_elps_pipeline.py::test_build_fathomdb_elps_path_uses_ingest_with_extractor` — the **TC-31**
+`int(sh.id)` `TypeError`. **It now PASSES**, and the suite is **787 passed / 12 skipped, exit 0**.
+
+**On the earlier "2 failed" figure — both numbers are real; neither disproves the other.** §11.8 row 1 measured
+the **hooks-available** environment; the **hook-less default path** shows **1**. They are different environment
+states of the same suite, and are recorded as such rather than one being retconned.
+
+### 12.5 Governed-surface delta — **PROPOSED / NOT SIGNED**
+
+Recorded in the same shape Slice 5d used, and for the same reason: the branch is not red, but **that is not an
+approval**.
+
+- **Commands added:** `read.crossed_boundary_since` / `read.crossedBoundarySince`
+- **Types added:** `ReadView`, `BoundaryCrossing`
+- **Allowlist:** the `allowlist` array goes **25 → 27** entries (the two command names above); `core` **unchanged
+  at 5**; `recovery_denylist` **UNCHANGED at exactly five** — `["recover","restore","repair","fix","rebuild"]`
+- **AC-041 GREEN** in both bindings (§12.3). **No AC minted — `AC-079` remains available and unminted**, since
+  Slice 5's delta has not yet consumed it
+
+### 12.6 codex §9 — two terminal PASSes
+
+Transcripts under `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7 path), committed with this close.
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| 10a | `slice-10-20260720T155459Z.log` | **PASS** |
+| 10b initial | `slice-10b-20260720T175114Z.log` | **CONCERN** — one **[P2]** (pyright). **Fixed in `cf92d1c4`, NOT overridden** |
+| 10b re-review | `slice-10b-rereview-20260720T180124Z.log` | **TERMINAL PASS** |
+
+### 12.7 Owed to the HITL
+
+**§4 #15 (TC-34)** node validity has **no write-side authoring verb** — queryable but not settable from any SDK;
+the tests author windows **via direct SQL**. **Is R-20-NV met without it?** · **§4 #16 (TC-33)** the temporal-model
+split · **§4 #17** the Slice-10 governed-surface delta · and the carried **§4 #7 AC-079 sign-off**, which still
+**blocks publish**. **§4 #14 (TC-32)** is ruled and closed, but its **carry-forward caveat stands: do not state
+the erasure guarantee unconditionally to users** while co-named-entity dedupe stands.
+
+Logged, no decision needed: **TC-35** (napi `#[napi(object)]` omits `None` `Option` properties — measured) and
+**TC-36** (published API docs still declare `SearchHit.id` as `int`/`number` "write_cursor", **stale since
+0.8.19 C-2**).
+
+### 12.8 Closure artifacts
+
+`dev/plans/runs/0.8.20-slice-10a-output.json`, `0.8.20-slice-10a-fix-1-output.json`,
+`0.8.20-slice-10b-output.json`, and `0.8.20-slice-10b-fix-{2,3,4,5}-output.json`, plus the three §9 transcripts
+in §12.6. Committed with this close per **TC-23** — an untracked closure witness is destructible by routine git
+hygiene.

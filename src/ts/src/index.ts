@@ -15,12 +15,19 @@ import {
   type NativePerHitExplain,
 } from "./binding.js";
 import { InvalidArgumentError, InvalidFilterError, rethrowTyped } from "./errors.js";
-import type { NodeRecord, Predicate } from "./read.js";
+import type { NodeRecord, Predicate, ReadView } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
 export { read } from "./read.js";
-export type { NodeRecord, OpStoreRow, Predicate, ReadCollectionOptions } from "./read.js";
+export type {
+  BoundaryCrossing,
+  NodeRecord,
+  OpStoreRow,
+  Predicate,
+  ReadCollectionOptions,
+  ReadView,
+} from "./read.js";
 
 /**
  * OPP-12 Phase-1 (0.8.19 Slice 10) — the closed lifecycle existence-state
@@ -169,8 +176,13 @@ export interface SearchHit {
   score: number;
   branch: SoftFallbackBranch;
   /**
-   * G0 Phase-2 — source-document provenance. The traversed edge's `source_id`
-   * for a graph-arm hit; `null` for every two-arm hit.
+   * G0 Phase-2 — source-document provenance, the identifier `eraseSource`
+   * consumes. TC-31 (0.8.20): populated on EVERY hit path, not just the graph
+   * arm. Node hits (text/vector) carry the node's own `source_id`; edge hits
+   * (edge-FTS, vector edge-fact) carry the edge's own; graph-arm hits carry the
+   * traversed edge's (unchanged). `null` only when the stored row really has
+   * NULL provenance: written before 0.8.20, or a governed row spared by the
+   * step-21 backfill under the TC-11 pin.
    */
   sourceId: string | null;
   /**
@@ -1091,6 +1103,7 @@ export const graph = {
     logicalId: string,
     depth: number,
     direction: TraversalDirection = "both",
+    view?: ReadView,
   ): Promise<NodeRecord[]> {
     validateFfiString(logicalId);
     if (!Number.isInteger(depth) || depth < 1 || depth > 3) {
@@ -1098,7 +1111,9 @@ export const graph = {
         `graph.neighbors depth must be an integer between 1 and 3; got ${depth}`,
       );
     }
-    return intercept(() => native.graphNeighbors(engine._native, logicalId, depth, direction));
+    return intercept(() =>
+      native.graphNeighbors(engine._native, logicalId, depth, direction, view),
+    );
   },
 
   /**

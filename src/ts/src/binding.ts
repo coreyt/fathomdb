@@ -90,7 +90,11 @@ interface NativeSearchHit {
   body: string;
   score: number;
   branch: string;
-  /** G0 Phase-2 — source-document provenance; set only for graph-arm hits. */
+  /**
+   * G0 Phase-2 — source-document provenance (the `eraseSource` argument).
+   * TC-31 (0.8.20): set on EVERY hit path, not just the graph arm; null/absent
+   * only for a row with genuinely NULL provenance.
+   */
   sourceId?: string | null;
   /** 0.8.5 (EXP-0) — CE score (sigmoid of the cross-encoder logit) for in-pool
    * reranked hits; null otherwise. */
@@ -166,6 +170,44 @@ export interface NativeNodeRecord {
   kind: string;
   body: string;
   writeCursor: number;
+}
+
+/** 0.8.20 Slice 10b (R-20-RV / R-20-NV) — native read-view input. */
+export interface NativeReadView {
+  includeSuperseded?: boolean;
+  includeInactive?: boolean;
+  includeOutOfWindow?: boolean;
+  validAsOf?: number;
+}
+
+/**
+ * 0.8.20 Slice 10b (R-20-NV) — native validity-boundary crossing.
+ *
+ * `becameValidAt`/`becameInvalidAt` are OPTIONAL: when the Rust `Option<i64>` is
+ * `None` the property is ABSENT from the object, so reading it yields
+ * `undefined` — it is NOT set to `null`.
+ *
+ * This is the measured behaviour of `napi-derive-backend` 1.0.75, which emits
+ * this setter for every `Option<_>` field of a `#[napi(object)]` struct that is
+ * NOT declared `use_nullable = true` (codegen/struct.rs, `obj_field_setters`):
+ *
+ *     if field_.is_some() { obj.set("field", field_)?; }
+ *
+ * i.e. `None` simply skips the `set`. Only `use_nullable = true` emits the
+ * `else { obj.set(field, Null) }` branch, and NO struct in `fathomdb-napi` sets
+ * it. The generic `impl ToNapiValue for Option<T>` (napi 2.16.17,
+ * js_values.rs:218) DOES map `None → napi_get_null`, but object fields never
+ * reach it — that impl governs bare returns and nested positions instead. That
+ * distinction is what made the "napi renders None as null" reading wrong here.
+ *
+ * `NativeSearchHit.ceScore` is declared `?: number | null` for exactly the same
+ * reason; the public `SearchHit.ceScore` reads `null` only because `index.ts`
+ * normalises it with `?? null`. `read.ts` now does the same for these fields.
+ */
+export interface NativeBoundaryCrossing {
+  node: NativeNodeRecord;
+  becameValidAt?: number;
+  becameInvalidAt?: number;
 }
 
 export interface NativeOpStoreRow {
@@ -360,11 +402,22 @@ export interface NativeModule {
     options: NativeAdminConfigureOptions,
   ): Promise<NativeWriteReceipt>;
   // Slice 30 — governed read.* native fns (G2/G3).
-  readGet(engine: NativeEngine, logicalId: string): Promise<NativeNodeRecord | null>;
+  readGet(
+    engine: NativeEngine,
+    logicalId: string,
+    view?: NativeReadView,
+  ): Promise<NativeNodeRecord | null>;
   readGetMany(
     engine: NativeEngine,
     logicalIds: string[],
+    view?: NativeReadView,
   ): Promise<(NativeNodeRecord | null)[]>;
+  // 0.8.20 Slice 10b (R-20-NV).
+  crossedBoundarySince(
+    engine: NativeEngine,
+    since: number,
+    view?: NativeReadView,
+  ): Promise<NativeBoundaryCrossing[]>;
   readCollection(
     engine: NativeEngine,
     collection: string,
@@ -381,6 +434,7 @@ export interface NativeModule {
     kind: string,
     predicates?: NativePredicateInput[],
     limit?: number,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   // 0.8.11 Slice 40 (#17) — unified Filter → read.list backend.
   readListFilter(
@@ -388,6 +442,7 @@ export interface NativeModule {
     kind: string,
     terms?: NativeFilterTermInput[],
     limit?: number,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   // Slice 20 — G5/G6 graph traversal fns.
   graphNeighbors(
@@ -395,6 +450,7 @@ export interface NativeModule {
     logicalId: string,
     depth: number,
     direction: string,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   searchExpand(
     engine: NativeEngine,

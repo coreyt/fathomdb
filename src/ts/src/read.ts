@@ -29,6 +29,53 @@ import { validateFfiString } from "./validation.js";
 import type { Engine, Filter, FilterTerm } from "./index.js";
 
 /** Slice 30 (G2) — an active canonical node row from `read.get`/`read.getMany`. */
+/**
+ * 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the read view.
+ *
+ * Every field is a RELAXATION and every default is the STRICT view, so omitting
+ * `view` entirely reproduces the shipped read behaviour exactly. Flags compose
+ * independently: each drops exactly one predicate and no other.
+ *
+ * Mirrors the Python `ReadView` (cross-binding parity; `camelCase` here,
+ * `snake_case` there).
+ *
+ * World-time only — there is deliberately no `historyAsOf`.
+ */
+export interface ReadView {
+  /** Relax `superseded_at IS NULL` — include historical versions. */
+  includeSuperseded?: boolean;
+  /** Relax `state = 'active'` — include non-active lifecycle states. */
+  includeInactive?: boolean;
+  /** Relax the validity window entirely (ignores `validAsOf`). */
+  includeOutOfWindow?: boolean;
+  /** Validity instant, INTEGER epoch SECONDS. Omitted means now. */
+  validAsOf?: number;
+}
+
+/**
+ * 0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary.
+ *
+ * A node whose window opened AND closed inside the interrogated interval
+ * carries both fields, so they are independent nullables rather than an enum.
+ *
+ * Both boundary fields are ALWAYS PRESENT on this PUBLIC type and are
+ * `number | null` — `null` means "this boundary was not crossed in the
+ * interrogated interval".
+ *
+ * That `null` is manufactured HERE, not by napi. The native layer OMITS the
+ * property when the Rust `Option<i64>` is `None` (see `NativeBoundaryCrossing`
+ * in binding.ts for the napi-derive codegen that proves it), so the mapper
+ * below normalises `undefined → null` with `?? null` — the same normalisation
+ * `index.ts` already applies to `ceScore`. Public consumers therefore see one
+ * shape, and it mirrors the Python `BoundaryCrossing`, whose fields are
+ * `int | None` (cross-binding parity; `camelCase` here, `snake_case` there).
+ */
+export interface BoundaryCrossing {
+  node: NodeRecord;
+  becameValidAt: number | null;
+  becameInvalidAt: number | null;
+}
+
 export interface NodeRecord {
   logicalId: string;
   kind: string;
@@ -156,9 +203,9 @@ export const read = {
    * absent. Active-only (`superseded_at IS NULL`): a superseded version is never
    * returned. A missing/superseded id is a normal `null`, not a thrown error.
    */
-  async get(engine: Engine, logicalId: string): Promise<NodeRecord | null> {
+  async get(engine: Engine, logicalId: string, view?: ReadView): Promise<NodeRecord | null> {
     validateFfiString(logicalId);
-    const n = await intercept(() => native.readGet(engine._native, logicalId));
+    const n = await intercept(() => native.readGet(engine._native, logicalId, view));
     return n === null ? null : toNodeRecord(n);
   },
 
@@ -167,9 +214,13 @@ export const read = {
    * missing/superseded id yields `null` in its slot (partial, never
    * all-or-nothing).
    */
-  async getMany(engine: Engine, logicalIds: string[]): Promise<(NodeRecord | null)[]> {
+  async getMany(
+    engine: Engine,
+    logicalIds: string[],
+    view?: ReadView,
+  ): Promise<(NodeRecord | null)[]> {
     for (const id of logicalIds) validateFfiString(id);
-    const rows = await intercept(() => native.readGetMany(engine._native, logicalIds));
+    const rows = await intercept(() => native.readGetMany(engine._native, logicalIds, view));
     return rows.map((n) => (n === null ? null : toNodeRecord(n)));
   },
 
@@ -220,6 +271,7 @@ export const read = {
     predicates?: Predicate[],
     limit = 100,
     filter?: Filter,
+    view?: ReadView,
   ): Promise<NodeRecord[]> {
     validateFfiString(kind);
     validateLimit(limit);
@@ -238,14 +290,52 @@ export const read = {
       }
       const terms = filter.terms.map(toNativeFilterTerm);
       const rows = await intercept(() =>
-        native.readListFilter(engine._native, kind, terms, limit),
+        native.readListFilter(engine._native, kind, terms, limit, view),
       );
       return rows.map(toNodeRecord);
     }
     const nativePredicates = predicates?.map(toNativePredicate);
     const rows = await intercept(() =>
-      native.readList(engine._native, kind, nativePredicates, limit),
+      native.readList(engine._native, kind, nativePredicates, limit, view),
     );
     return rows.map(toNodeRecord);
+  },
+
+  /**
+   * `read.crossedBoundarySince` (R-20-NV) — nodes that crossed a validity
+   * boundary in `(since, asOf]`.
+   *
+   * `since` is an INTEGER epoch-second instant and the upper bound is the
+   * view's own `validAsOf` (defaulting to now). Both are bound parameters, so
+   * the answer is deterministic for a fixed pair.
+   *
+   * A node whose window opened AND closed inside the interval reports both
+   * boundaries. Rows with no window (every row predating schema step 22) can
+   * never cross one, so they never appear.
+   *
+   * World-time only — this asks what was true in the world, never what the
+   * database believed.
+   */
+  async crossedBoundarySince(
+    engine: Engine,
+    since: number,
+    view?: ReadView,
+  ): Promise<BoundaryCrossing[]> {
+    if (!Number.isInteger(since)) {
+      throw new InvalidArgumentError(
+        `read.crossedBoundarySince requires an integer \`since\`; got ${since}`,
+      );
+    }
+    const rows = await intercept(() =>
+      native.crossedBoundarySince(engine._native, since, view),
+    );
+    return rows.map((c) => ({
+      node: toNodeRecord(c.node),
+      // napi OMITS these when the Rust `Option` is `None` → `undefined`.
+      // Normalise to `null` so the public shape is total (see the doc comment
+      // on `BoundaryCrossing`).
+      becameValidAt: c.becameValidAt ?? null,
+      becameInvalidAt: c.becameInvalidAt ?? null,
+    }));
   },
 };

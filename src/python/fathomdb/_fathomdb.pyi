@@ -93,6 +93,30 @@ class NodeRecord:
     body: str
     write_cursor: int
 
+class ReadView:
+    """0.8.20 Slice 10b (R-20-RV / R-20-NV) — read-mode / validity selector.
+
+    Every field defaults to the STRICT view, so ``ReadView()`` is the shipped
+    read behaviour. World-time only — no ``history_as_of``.
+    """
+
+    include_superseded: bool
+    include_inactive: bool
+    include_out_of_window: bool
+    valid_as_of: int | None
+    def __init__(
+        self,
+        include_superseded: bool = False,
+        include_inactive: bool = False,
+        include_out_of_window: bool = False,
+        valid_as_of: int | None = None,
+    ) -> None: ...
+
+class BoundaryCrossing:
+    node: NodeRecord
+    became_valid_at: int | None
+    became_invalid_at: int | None
+
 class OpStoreRow:
     id: int
     collection: str
@@ -251,8 +275,12 @@ class EraseReport:
     projections_invalidated: int
 
 def erase_source(engine: Engine, source_id: str) -> EraseReport: ...
-def read_get(engine: Engine, logical_id: str) -> NodeRecord | None: ...
-def read_get_many(engine: Engine, logical_ids: list[str]) -> list[NodeRecord | None]: ...
+def read_get(
+    engine: Engine, logical_id: str, view: ReadView | None = None
+) -> NodeRecord | None: ...
+def read_get_many(
+    engine: Engine, logical_ids: list[str], view: ReadView | None = None
+) -> list[NodeRecord | None]: ...
 def read_collection(
     engine: Engine,
     collection: str,
@@ -270,18 +298,26 @@ def read_list(
     kind: str,
     predicates: list[dict[str, Any]] | None = ...,
     limit: int = ...,
+    view: ReadView | None = ...,
 ) -> list[NodeRecord]: ...
 def read_list_filter(
     engine: Engine,
     kind: str,
     terms: list[dict[str, Any]] | None = ...,
     limit: int = ...,
+    view: ReadView | None = ...,
 ) -> list[NodeRecord]: ...
+def crossed_boundary_since(
+    engine: Engine,
+    since: int,
+    view: ReadView | None = ...,
+) -> list[BoundaryCrossing]: ...
 def graph_neighbors(
     engine: Engine,
     logical_id: str,
     depth: int,
     direction: str,
+    view: ReadView | None = ...,
 ) -> list[NodeRecord]:
     """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
 

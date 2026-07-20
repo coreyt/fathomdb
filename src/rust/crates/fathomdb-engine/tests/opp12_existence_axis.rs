@@ -19,7 +19,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
-use fathomdb_engine::{Engine, InitialState, LifecycleState, PreparedWrite, TraversalDirection};
+use fathomdb_engine::{
+    Engine, InitialState, LifecycleState, PreparedWrite, ReadView, TraversalDirection,
+};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
@@ -160,15 +162,15 @@ fn r_ex_2_pending_absent_from_default_search_and_read() {
     );
 
     // read.* point lookup — pending excluded, active present.
-    assert!(engine.read_get("act1").expect("read_get active").is_some());
+    assert!(engine.read_get("act1", &ReadView::default()).expect("read_get active").is_some());
     assert!(
-        engine.read_get("pen1").expect("read_get pending").is_none(),
+        engine.read_get("pen1", &ReadView::default()).expect("read_get pending").is_none(),
         "read.get must not surface a pending node"
     );
 
     // read.list — pending excluded from the kind listing.
     let listed: Vec<String> = engine
-        .read_list("doc", &[], 100)
+        .read_list("doc", &[], 100, &ReadView::default())
         .expect("read_list")
         .into_iter()
         .map(|n| n.logical_id)
@@ -204,7 +206,7 @@ fn r_ex_2_graph_traversal_excludes_pending_neighbor() {
     }])
     .unwrap();
     let neighbors: Vec<String> = e1
-        .graph_neighbors("root", 1, TraversalDirection::Outgoing)
+        .graph_neighbors("root", 1, TraversalDirection::Outgoing, &ReadView::default())
         .unwrap()
         .into_iter()
         .map(|n| n.logical_id)
@@ -234,7 +236,7 @@ fn r_ex_2_graph_traversal_excludes_pending_neighbor() {
     }])
     .unwrap();
     let neighbors2: Vec<String> = e2
-        .graph_neighbors("root", 1, TraversalDirection::Outgoing)
+        .graph_neighbors("root", 1, TraversalDirection::Outgoing, &ReadView::default())
         .unwrap()
         .into_iter()
         .map(|n| n.logical_id)

@@ -31,16 +31,17 @@ use std::sync::Arc;
 use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    ComparisonOp as RustComparisonOp, ConsolidateAxis as RustConsolidateAxis,
-    ConsolidateReceipt as RustConsolidateReceipt, CorruptionDetail, CorruptionKind, EmbedderChoice,
-    Engine as RustEngine, EngineError as RustEngineError, EngineOpenError,
-    ExciseReport as RustExciseReport, Explanation as RustExplanation,
-    ExtractDocument as RustExtractDocument, Filter as RustFilter, FilterTerm as RustFilterTerm,
-    IdSpace as RustIdSpace, IngestWithExtractorReceipt as RustIngestWithExtractorReceipt,
-    InitialState, LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
+    BoundaryCrossing as RustBoundaryCrossing, ComparisonOp as RustComparisonOp,
+    ConsolidateAxis as RustConsolidateAxis, ConsolidateReceipt as RustConsolidateReceipt,
+    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, ExciseReport as RustExciseReport,
+    Explanation as RustExplanation, ExtractDocument as RustExtractDocument, Filter as RustFilter,
+    FilterTerm as RustFilterTerm, IdSpace as RustIdSpace,
+    IngestWithExtractorReceipt as RustIngestWithExtractorReceipt, InitialState,
+    LifecycleState as RustLifecycleState, NodeRecord as RustNodeRecord,
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
-    QueryTrace as RustQueryTrace, ScalarValue as RustScalarValue,
+    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch, SourceId,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
@@ -527,8 +528,13 @@ pub struct SearchHit {
     pub score: f64,
     /// "vector" | "text"
     pub branch: String,
-    /// G0 Phase-2 — source-document provenance (`sourceId` in JS). Set (to the
-    /// traversed edge's `source_id`) only for graph-arm hits; `null` otherwise.
+    /// Source-document provenance (`sourceId` in JS) — the identifier
+    /// `eraseSource` consumes. TC-31 (0.8.20): populated on EVERY hit path, not
+    /// just the graph arm. Node hits (text/vector) carry the node's own
+    /// `source_id`; edge hits (edge-FTS, vector edge-fact) carry the edge's own;
+    /// graph-arm hits carry the traversed edge's (unchanged). `null` only when
+    /// the stored row really has NULL provenance: written before 0.8.20, or a
+    /// governed row spared by the step-21 backfill under the TC-11 pin.
     pub source_id: Option<String>,
     /// 0.8.5 (EXP-0) — per-candidate CE score `ce_norm = sigmoid(ce_logit)`
     /// (`ceScore` in JS). Set only for hits inside the reranked pool; `null`
@@ -1546,6 +1552,59 @@ pub async fn admin_configure(
 /// Slice 30 (G3) — options for `read.collection` / `read.mutations`. `limit` is
 /// MANDATORY (no default — the engine clamps it to the ~1M cap); `afterId` is
 /// the exclusive cursor.
+/// 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the TypeScript face of `ReadView`.
+///
+/// Idiomatic `camelCase`; every field is optional and every one defaults to the
+/// STRICT view, so omitting `view` entirely reproduces the shipped read
+/// behaviour exactly.
+///
+/// World-time only — there is deliberately no `historyAsOf`.
+#[napi(object)]
+pub struct ReadViewInput {
+    /// Relax `superseded_at IS NULL` — include historical versions.
+    pub include_superseded: Option<bool>,
+    /// Relax `state = 'active'` — include non-active lifecycle states.
+    pub include_inactive: Option<bool>,
+    /// Relax the validity window entirely (ignores `validAsOf`).
+    pub include_out_of_window: Option<bool>,
+    /// Validity instant, INTEGER epoch SECONDS. Omitted = now.
+    pub valid_as_of: Option<i64>,
+}
+
+/// An omitted `view` means the strict default view.
+fn read_view_or_default(view: Option<ReadViewInput>) -> RustReadView {
+    match view {
+        None => RustReadView::default(),
+        Some(v) => RustReadView {
+            include_superseded: v.include_superseded.unwrap_or(false),
+            include_inactive: v.include_inactive.unwrap_or(false),
+            include_out_of_window: v.include_out_of_window.unwrap_or(false),
+            valid_as_of: v.valid_as_of,
+        },
+    }
+}
+
+/// 0.8.20 Slice 10b (R-20-NV) — the TypeScript face of `BoundaryCrossing`.
+#[napi(object)]
+pub struct BoundaryCrossing {
+    /// The node that crossed a validity boundary.
+    pub node: NodeRecord,
+    /// Set when the node BECAME VALID inside the interrogated interval.
+    pub became_valid_at: Option<i64>,
+    /// Set when the node BECAME INVALID inside the interrogated interval.
+    pub became_invalid_at: Option<i64>,
+}
+
+impl BoundaryCrossing {
+    fn from_rust(c: &RustBoundaryCrossing) -> Self {
+        Self {
+            node: NodeRecord::from_rust(&c.node),
+            became_valid_at: c.became_valid_at,
+            became_invalid_at: c.became_invalid_at,
+        }
+    }
+}
+
 #[napi(object)]
 pub struct ReadCollectionOptions {
     pub after_id: Option<i64>,
@@ -1553,10 +1612,15 @@ pub struct ReadCollectionOptions {
 }
 
 #[napi(js_name = "readGet")]
-pub async fn read_get(engine: &Engine, logical_id: String) -> Result<Option<NodeRecord>> {
+pub async fn read_get(
+    engine: &Engine,
+    logical_id: String,
+    view: Option<ReadViewInput>,
+) -> Result<Option<NodeRecord>> {
     validate_ffi_string_napi(&logical_id)?;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let record = call_engine(move || inner.read_get(&logical_id)).await?;
+    let record = call_engine(move || inner.read_get(&logical_id, &view)).await?;
     Ok(record.as_ref().map(NodeRecord::from_rust))
 }
 
@@ -1564,12 +1628,14 @@ pub async fn read_get(engine: &Engine, logical_id: String) -> Result<Option<Node
 pub async fn read_get_many(
     engine: &Engine,
     logical_ids: Vec<String>,
+    view: Option<ReadViewInput>,
 ) -> Result<Vec<Option<NodeRecord>>> {
     for id in &logical_ids {
         validate_ffi_string_napi(id)?;
     }
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(move || inner.read_get_many(&logical_ids)).await?;
+    let rows = call_engine(move || inner.read_get_many(&logical_ids, &view)).await?;
     Ok(rows.iter().map(|r| r.as_ref().map(NodeRecord::from_rust)).collect())
 }
 
@@ -1664,6 +1730,7 @@ pub async fn read_list(
     kind: String,
     predicates: Option<Vec<PredicateInput>>,
     limit: Option<i64>,
+    view: Option<ReadViewInput>,
 ) -> Result<Vec<NodeRecord>> {
     validate_ffi_string_napi(&kind)?;
     let mut rust_predicates: Vec<RustPredicate> = Vec::new();
@@ -1673,8 +1740,9 @@ pub async fn read_list(
         }
     }
     let limit = limit.unwrap_or(100).max(0) as usize;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(move || inner.read_list(&kind, &rust_predicates, limit)).await?;
+    let rows = call_engine(move || inner.read_list(&kind, &rust_predicates, limit, &view)).await?;
     Ok(rows.iter().map(NodeRecord::from_rust).collect())
 }
 
@@ -1730,6 +1798,7 @@ pub async fn read_list_filter(
     kind: String,
     terms: Option<Vec<FilterTermInput>>,
     limit: Option<i64>,
+    view: Option<ReadViewInput>,
 ) -> Result<Vec<NodeRecord>> {
     validate_ffi_string_napi(&kind)?;
     let mut rust_terms: Vec<RustFilterTerm> = Vec::new();
@@ -1741,7 +1810,8 @@ pub async fn read_list_filter(
     let filter = RustFilter { terms: rust_terms };
     let limit = limit.unwrap_or(100).max(0) as usize;
     let inner = Arc::clone(&engine.inner);
-    let rows = call_engine(move || inner.read_list_filter(&kind, &filter, limit)).await?;
+    let view = read_view_or_default(view);
+    let rows = call_engine(move || inner.read_list_filter(&kind, &filter, limit, &view)).await?;
     Ok(rows.iter().map(NodeRecord::from_rust).collect())
 }
 
@@ -1814,12 +1884,28 @@ pub async fn graph_neighbors(
     logical_id: String,
     depth: u32,
     direction: String,
+    view: Option<ReadViewInput>,
 ) -> Result<Vec<NodeRecord>> {
     validate_ffi_string_napi(&logical_id)?;
     let dir = parse_direction_napi(&direction)?;
+    let view = read_view_or_default(view);
     let inner = Arc::clone(&engine.inner);
-    let nodes = call_engine(move || inner.graph_neighbors(&logical_id, depth, dir)).await?;
+    let nodes = call_engine(move || inner.graph_neighbors(&logical_id, depth, dir, &view)).await?;
     Ok(nodes.iter().map(NodeRecord::from_rust).collect())
+}
+
+/// 0.8.20 Slice 10b (R-20-NV) — nodes that crossed a validity boundary in
+/// `(since, view-instant]`. `since` is INTEGER epoch SECONDS.
+#[napi(js_name = "crossedBoundarySince")]
+pub async fn crossed_boundary_since(
+    engine: &Engine,
+    since: i64,
+    view: Option<ReadViewInput>,
+) -> Result<Vec<BoundaryCrossing>> {
+    let view = read_view_or_default(view);
+    let inner = Arc::clone(&engine.inner);
+    let rows = call_engine(move || inner.crossed_boundary_since(since, &view)).await?;
+    Ok(rows.iter().map(BoundaryCrossing::from_rust).collect())
 }
 
 /// Slice 20 (G6) — FTS/vector search followed by bounded BFS expansion.

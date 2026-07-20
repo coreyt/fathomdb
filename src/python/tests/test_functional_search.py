@@ -73,10 +73,17 @@ def test_functional_search_hit_shape_across_ffi(db_path: str) -> None:
             assert isinstance(hit.body, str) and hit.body
             assert isinstance(hit.score, float)
             assert hit.branch in ("vector", "text")
-            # G0 Phase-2 (CONCERN-4) — `source_id` is present across the FFI and
-            # is None for every two-arm hit (only graph-arm hits carry it).
+            # G0 Phase-2 (CONCERN-4) — `source_id` is present across the FFI.
+            #
+            # TC-31 (0.8.20 Slice 10a) AMENDED this assertion. It previously
+            # asserted `source_id is None` for every two-arm hit, on the claim
+            # that only graph-arm hits carry provenance. That ENCODED THE
+            # DEFECT: with the graph arm off, a caller could read no provenance
+            # off any hit, so the `erase_source` argument was unreachable
+            # across the FFI. Two-arm (text/vector) hits now carry their own
+            # canonical row's `source_id`, so it must equal what was written.
             assert hasattr(hit, "source_id")
-            assert hit.source_id is None
+            assert hit.source_id == _SOURCE_ID
     finally:
         engine.close()
 

@@ -1,0 +1,82 @@
+{
+  "slice": "0.8.20-slice-10b-fix-5",
+  "status": "COMPLETE",
+  "branch": "orch-0.8.20-s10",
+  "base_sha": "cf92d1c473bddf3eaa209857007541fea5096c57",
+  "head_sha": "93a57b10fbd8e86e46ce6ef3f39fce78b4bf8161",
+  "commits": [
+    {
+      "sha": "93a57b10fbd8e86e46ce6ef3f39fce78b4bf8161",
+      "subject": "fix(0.8.20-s10b): annotate _doc_id_of getattr result as Any (pyright 12→8)"
+    }
+  ],
+  "files_changed": [
+    "src/python/eval/r2_parity_eval.py",
+    "src/python/eval/exp_cov1_sweep.py"
+  ],
+  "diffstat": "2 files changed, 2 insertions(+), 2 deletions(-)",
+  "mandate": "Annotate the getattr result as Any at 2 sites to clear the 4 pyright errors this slice introduced. Zero runtime change.",
+  "change_detail": [
+    {
+      "file": "src/python/eval/r2_parity_eval.py",
+      "line": 348,
+      "before": "raw = getattr(sh, \"id\", None)",
+      "after": "raw: Any = getattr(sh, \"id\", None)"
+    },
+    {
+      "file": "src/python/eval/exp_cov1_sweep.py",
+      "line": 183,
+      "before": "raw = getattr(sh, \"id\", None)",
+      "after": "raw: Any = getattr(sh, \"id\", None)"
+    }
+  ],
+  "gates": {
+    "pyright": {
+      "cmd": "pyright -p src/python",
+      "errors_before": 12,
+      "errors_after": 8,
+      "exit_code": 1,
+      "expected_after": 8,
+      "met": true,
+      "note": "Exit 1 is expected: the project gate was ALREADY RED at 8 errors pre-slice. The 4 errors this slice introduced are cleared; count is back to the pre-slice baseline.",
+      "remaining_errors_not_ours": [
+        "src/python/fathomdb/engine.py:394:31 - Cannot access attribute \"search_text_only\" for class \"Engine\"",
+        "src/python/fathomdb/engine.py:426:29 - Cannot access attribute \"dense_disabled\" for class \"Engine\"",
+        "src/python/fathomdb/engine.py:430:29 - Cannot access attribute \"dense_disabled_reason\" for class \"Engine\"",
+        "src/python/fathomdb/engine.py:434:29 - Cannot access attribute \"vector_equivalence_refusal_count\" for class \"Engine\"",
+        "src/python/fathomdb/engine.py:547:35 - Cannot access attribute \"dense_disabled\" for class \"OpenReport\"",
+        "src/python/fathomdb/engine.py:548:42 - Cannot access attribute \"dense_disabled_reason\" for class \"OpenReport\"",
+        "src/python/fathomdb/graph.py:153:16 - Argument of type \"IdSpace\" cannot be assigned to parameter \"id\" of type \"IdSpace\"",
+        "src/python/tests/test_vector_equivalence_probe.py:32:50 - No parameter named \"reason\" (reportCallIssue)"
+      ]
+    },
+    "ruff": {
+      "cmd": "ruff check src/python",
+      "exit_code": 0,
+      "result": "All checks passed!"
+    },
+    "cargo_check": {
+      "cmd": "cargo check --workspace --all-targets",
+      "exit_code": 0,
+      "note": "No Rust touched; confirmed clean."
+    }
+  },
+  "invariants_held": {
+    "runtime_change": "NONE - try/except (TypeError, ValueError) at both call sites is byte-identical; annotation is erased at runtime",
+    "doc_id_of_logic_restructured": false,
+    "tc31_source_id_first_behaviour_changed": false,
+    "rust_engine_ranking_provenance_tc11_slice10a_ts_touched": false,
+    "write_side_validity_verb_added": false,
+    "delta_status": "PROPOSED / NOT SIGNED",
+    "ac_minted": false,
+    "denylist_count": 5,
+    "eu7_runs": 0,
+    "ruff_format_run": false,
+    "slices_15_20_25_30_40_started": false,
+    "pushed": false,
+    "rebased_or_fetched": false,
+    "maturin_develop_or_pip_install_e": false
+  },
+  "blockers": [],
+  "notes": "Two-line change only, exactly as mandated. Pyright reached the expected 8. The remaining 8 errors are all pre-existing (6 in engine.py from unresolved native-stub attributes, plus the 2 the mandate explicitly flagged as not ours) and were left untouched."
+}

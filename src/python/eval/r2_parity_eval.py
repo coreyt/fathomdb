@@ -314,15 +314,43 @@ def session_id_of(source_doc_id: str) -> str:
 
 def _make_doc_id_of(cursor_to_doc: dict[int, str]) -> Any:
     """G0 Phase-2 §B — resolve a hit to its corpus doc id, preferring the hit's
-    carried ``source_id`` (the traversed edge's session, canonicalized) when
-    present — this is how a graph-arm entity hit resolves to a gold session —
-    else the write-order cursor map."""
+    carried ``source_id`` (canonicalized) when present, else the write-order
+    cursor map.
+
+    TC-31 (0.8.20 Slice 10a) changed which branch does the work. ``source_id``
+    used to be populated for graph-arm hits ONLY, so text/vector hits fell
+    through to ``cursor_to_doc``; now EVERY hit carries its own canonical
+    provenance, so the first branch resolves them too. **This is a real change
+    of resolution basis for text/vector hits: cursor map → source_id-derived.**
+    The two agree by construction when the corpus was ingested one document per
+    write with ``source_doc_id`` equal to the corpus doc id (the harness's own
+    ingest path), and ``session_id_of`` strips the ``#c<N>`` chunk suffix so a
+    chunked ingest lands in the same id space as gold.
+
+    The fallback is also now ``IdSpace``-safe. 0.8.19 retyped ``SearchHit.id``
+    from ``int`` to ``IdSpace``, so ``int(sh.id)`` raised ``TypeError`` on every
+    hit that reached it. 0.8.19 additionally stopped surfacing ``write_cursor``
+    to the SDKs, so the cursor map is not merely broken but **unrecoverable**
+    from a hit — populating ``source_id`` (TC-31) is the only remaining route
+    from a hit back to its source document. The fallback is retained solely for
+    genuinely NULL-provenance rows (pre-0.8.20 writes; governed rows spared by
+    the step-21 backfill under the TC-11 pin) and now degrades to the hit's
+    string id instead of raising."""
 
     def _doc_id_of(sh: Any) -> str:
         sid = getattr(sh, "source_id", None)
         if sid:
             return session_id_of(str(sid))
-        return cursor_to_doc.get(int(sh.id), str(sh.id))
+        # C-2: `sh.id` is an `IdSpace`, not an int. Key the legacy cursor map by
+        # int ONLY when the id is genuinely integral; otherwise fall through to
+        # the string form. Never raise — an unresolvable hit must score as a
+        # miss, not abort the run.
+        raw: Any = getattr(sh, "id", None)
+        key = getattr(raw, "value", raw)
+        try:
+            return cursor_to_doc.get(int(key), str(key))
+        except (TypeError, ValueError):
+            return str(key)
 
     return _doc_id_of
 

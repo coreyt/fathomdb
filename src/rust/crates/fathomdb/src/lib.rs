@@ -33,13 +33,19 @@
 //   surface (an SDK-only consumer must be able to erase anonymous content it
 //   wrote), so its return type cannot stay behind the CLI feature gate. The
 //   operator build is unaffected — it now gets the type from this block instead.
+// + 2 new types from 0.8.20 Slice 10b (R-20-RV / R-20-NV): `ReadView` — the
+//   read-mode / validity selector every one of the five read verbs now takes —
+//   and `BoundaryCrossing`, the return shape of `Engine::crossed_boundary_since`.
+//   Threading `ReadView` as a parameter (rather than shipping five `*_with_view`
+//   sibling verbs) is what keeps this delta at TWO TYPES and ZERO new verbs.
+//   PROPOSED / NOT SIGNED — see `src/conformance/governed-surface-allowlist.json`.
 pub use fathomdb_engine::{
-    ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot, Engine,
-    EngineError, EngineOpenError, ExciseReport, Explanation, ExtractDocument,
-    IngestWithExtractorReceipt, InitialState, LifecycleState, NodeRecord, OpenReport, OpenStage,
-    OpenedEngine, PerHitExplain, Predicate, PreparedWrite, QueryTrace, RecoveryHint, ScalarValue,
-    SearchExpandResult, SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch, SourceId,
-    Subscription, TraversalDirection, WriteReceipt,
+    BoundaryCrossing, ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator,
+    CounterSnapshot, Engine, EngineError, EngineOpenError, ExciseReport, Explanation,
+    ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState, NodeRecord,
+    OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite, QueryTrace,
+    ReadView, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
+    SoftFallback, SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
 };
 
 // The operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

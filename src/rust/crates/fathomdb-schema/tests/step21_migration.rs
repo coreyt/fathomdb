@@ -18,7 +18,8 @@
 //! ever populate `logical_id` on an existing canonical row, and a stored row's
 //! id-space is NEVER re-derived — so this migration only ever writes `source_id`.
 //!
-//! `SCHEMA_VERSION` advances 20 → 21. One migration per release (I-6).
+//! `SCHEMA_VERSION` advances 20 → 21 (head moved to 22 by 0.8.20 Slice 10b,
+//! R-20-NV). One migration per release (I-6).
 
 use fathomdb_schema::{check_migration_accretion, migrate_with_steps, MIGRATIONS, SCHEMA_VERSION};
 use rusqlite::Connection;
@@ -272,21 +273,28 @@ fn s21_backfill_populates_no_logical_id() {
 
 /// ADR §6 — the head advances to 21 and step-21 is last, with a contiguous ladder.
 #[test]
-fn s21_is_head_and_schema_version_is_21() {
+fn s21_is_in_registry_and_schema_version_is_head() {
     register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
     migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    // 0.8.20 Slice 10b superseded step-21 as head with step-22 (R-20-NV node
+    // validity window). Step-21 is no longer the last migration, but it MUST
+    // still be in the registry and still run on the way to head.
     assert_eq!(
-        SCHEMA_VERSION, 21,
-        "SCHEMA_VERSION must be 21 (step-21 legacy provenance backfill)"
+        SCHEMA_VERSION, 22,
+        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
+    );
+    assert!(
+        MIGRATIONS.iter().any(|m| m.step_id == 21),
+        "step-21 (legacy provenance backfill) must remain in the registry"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        21,
-        "step-21 must be the last (head) migration"
+        22,
+        "step-22 (node validity window, R-20-NV) must be the last (head) migration"
     );
 }
 
