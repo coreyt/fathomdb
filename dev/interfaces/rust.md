@@ -166,6 +166,51 @@ The Rust workspace also exposes the semver-stable companion crate
   owned by `design/retrieval.md`
 - counter/profile/stress payload shapes are owned by `design/lifecycle.md`
 
+## Caller-supplied write shapes
+
+`PreparedWrite` is the caller-supplied input to `Engine::write` and is itself
+governed surface (§ P1), so adding a variant field changes what every binding
+must accept.
+
+### `PreparedWrite::Node` — world-time validity window (0.8.20 Slice 15b, TC-34)
+
+`PreparedWrite::Node` carries two optional validity bounds:
+
+- `valid_from: Option<i64>` — INCLUSIVE lower bound, INTEGER epoch **seconds**
+  UTC. `None` lands SQL NULL = unbounded below.
+- `valid_until: Option<i64>` — EXCLUSIVE upper bound, same units. `None` lands
+  SQL NULL = unbounded above.
+
+The window is **half-open** — `[valid_from, valid_until)` — matching the read
+predicate `ReadView::validity_sql` exactly: an instant equal to `valid_from` is
+IN the window, an instant equal to `valid_until` is OUT.
+
+These are **fields, not a new verb**. The governed *command* surface is
+unchanged and allowlist membership in
+`src/conformance/governed-surface-allowlist.json` is byte-identical; the
+precedent is `PreparedWrite::Edge`, which has carried `t_valid`/`t_invalid` the
+same way since Slice 30. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
+Slice 10b (R-20-NV) shipped the `canonical_nodes.valid_from`/`valid_until`
+columns, the `ReadView` validity predicate and `Engine::crossed_boundary_since`
+as a READ-ONLY axis with no writer; these two fields are that writer.
+
+**Refusal rule (engine-owned).** Validation lives in the engine's
+`validate_write`, so Rust, Python and TypeScript share one rule and cannot
+drift:
+
+- Both bounds present with `valid_from >= valid_until` describes an
+  UNSATISFIABLE half-open window that no instant can ever match. It is refused
+  with `EngineError::InvalidArgument` naming both bounds. Validation runs
+  **before any INSERT**, so the WHOLE batch is rejected. It surfaces as
+  `InvalidArgumentError` in both bindings.
+- A **one-sided** window (exactly one bound present) can never be empty and is
+  **never** refused, however extreme its single bound.
+
+**No-regression guarantee.** Omitting both fields binds NULL/NULL — identical to
+what schema step 22 left on every pre-existing row — so a write that does not
+mention validity keeps exactly its pre-slice default-view visibility.
+
 ## Errors
 
 Rust exposes typed open/runtime errors without message parsing:

@@ -63,6 +63,49 @@ The helper maps engine events into Python `logging.LogRecord`s with the stable
 
 `soft_fallback.branch` uses the typed values owned by `design/retrieval.md`.
 
+## Node write-item validity window (0.8.20 Slice 15b, TC-34)
+
+`engine.write([...])` takes loose mappings, not typed structs. A **node** item
+accepts two optional validity keys, snake_case per this file's casing rule:
+
+- `valid_from` — `int | None`, INCLUSIVE lower bound, INTEGER epoch **seconds**
+  UTC. Omitted or `None` lands SQL NULL = unbounded below.
+- `valid_until` — `int | None`, EXCLUSIVE upper bound, same units. Omitted or
+  `None` lands SQL NULL = unbounded above.
+
+```python
+engine.write([
+    {
+        "kind": "note",
+        "body": "…",
+        "source_id": "s1",
+        "valid_from": 1_700_000_000,
+        "valid_until": 1_700_003_600,
+    },
+])
+```
+
+The window is **half-open** `[valid_from, valid_until)`: an instant equal to
+`valid_from` is IN, an instant equal to `valid_until` is OUT.
+
+**Omitting both keys preserves existing default-view visibility.** The pair
+binds NULL/NULL — exactly what every pre-slice row already carries — so an
+unchanged caller sees unchanged behaviour.
+
+Refusals (the rule is enforced in the engine's `validate_write`, so it is
+identical across Rust / Python / TypeScript and cannot drift):
+
+- Both bounds present with `valid_from >= valid_until` is an UNSATISFIABLE
+  window and raises `InvalidArgumentError`. Validation runs before any insert,
+  so the **whole batch** is rejected.
+- A **one-sided** window is never refused, however extreme its single bound.
+- A non-integer bound raises `WriteValidationError`; the value is never coerced.
+  `bool` is rejected **explicitly** — it subclasses `int`, so `True` must not be
+  silently taken as the instant `1`.
+
+These are keys on an existing verb, not a new verb: the runtime-verb surface
+above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical

@@ -67,6 +67,53 @@ Subscriber attachment is provided by:
 
 `softFallback.branch` uses the typed values owned by `design/retrieval.md`.
 
+## Node write-item validity window (0.8.20 Slice 15b, TC-34)
+
+`engine.write([...])` takes loose objects, not typed structs. A **node** item
+accepts two optional validity keys:
+
+- `validFrom` / `valid_from` — `number | null`, INCLUSIVE lower bound, INTEGER
+  epoch **seconds** UTC. Omitted or `null` lands SQL NULL = unbounded below.
+- `validUntil` / `valid_until` — `number | null`, EXCLUSIVE upper bound, same
+  units. Omitted or `null` lands SQL NULL = unbounded above.
+
+**BOTH spellings are accepted** for each bound. The camelCase spelling is
+consulted first and the snake_case spelling is the fallback, mirroring the
+existing edge `tValid` / `t_valid` precedent, so a caller porting from the
+Python surface keeps working.
+
+```typescript
+await engine.write([
+  {
+    kind: "note",
+    body: "…",
+    sourceId: "s1",
+    validFrom: 1_700_000_000,
+    validUntil: 1_700_003_600,
+  },
+]);
+```
+
+The window is **half-open** `[validFrom, validUntil)`: an instant equal to
+`validFrom` is IN, an instant equal to `validUntil` is OUT.
+
+**Omitting both keys preserves existing default-view visibility.** The pair
+binds NULL/NULL — exactly what every pre-slice row already carries — so an
+unchanged caller sees unchanged behaviour.
+
+Refusals (the rule is enforced in the engine's `validate_write`, so it is
+identical across Rust / Python / TypeScript and cannot drift):
+
+- Both bounds present with `validFrom >= validUntil` is an UNSATISFIABLE window
+  and rejects with `InvalidArgumentError`. Validation runs before any insert, so
+  the **whole batch** is rejected.
+- A **one-sided** window is never refused, however extreme its single bound.
+- A non-integral bound rejects with `WriteValidationError`; the value is never
+  truncated or coerced.
+
+These are keys on an existing verb, not a new verb: the runtime-verb surface
+above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
 ## Errors
 
 TypeScript exposes one concrete leaf class per canonical row in
