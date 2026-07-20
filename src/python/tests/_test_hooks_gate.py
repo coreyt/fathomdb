@@ -31,8 +31,29 @@ report as real skips carrying `reason`.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+#: Every symbol the dev-only `test-hooks` Cargo feature adds to the binding, as
+#: ``(owner, attribute)``; ``owner=None`` means module level. Mirrors
+#: `src/rust/crates/fathomdb-py/src/lib.rs` — the two `Engine` methods and the
+#: module-level AC-067 panic probe, each behind
+#: ``#[cfg(any(test, feature = "test-hooks"))]``.
+#:
+#: The probe checks ALL of these. An earlier version checked only
+#: `Engine._write_vector_for_test`, so a binding carrying the two `Engine`
+#: methods but NOT `force_panic_for_test` — reachable from a stale or
+#: interrupted build — reported "hooks present" and returned PROCEED. The
+#: `requires_test_hooks` skips then did not apply and
+#: `test_panic_surfaces_as_python_exception` failed on a missing import instead
+#: of skipping cleanly. The gate must be no weaker than the surface it gates.
+TEST_HOOK_SYMBOLS: tuple[tuple[str | None, str], ...] = (
+    ("Engine", "_configure_vector_kind_for_test"),
+    ("Engine", "_write_vector_for_test"),
+    (None, "force_panic_for_test"),
+)
 
 #: Opt in to letting conftest run `maturin develop` for you.
 REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
@@ -65,6 +86,91 @@ class Decision:
     @property
     def is_degraded(self) -> bool:
         return self.action == DEGRADED
+
+
+def hook_symbol_name(owner: str | None, attribute: str) -> str:
+    """Render one `TEST_HOOK_SYMBOLS` entry for humans (`Engine.foo` / `foo`)."""
+
+    return f"{owner}.{attribute}" if owner else attribute
+
+
+#: Every hook symbol, rendered. Also the fail-safe "assume nothing is there" answer.
+ALL_HOOK_SYMBOL_NAMES: tuple[str, ...] = tuple(
+    hook_symbol_name(owner, attribute) for owner, attribute in TEST_HOOK_SYMBOLS
+)
+
+
+def probe_source() -> str:
+    """Source for the CHILD-process probe that reports which hook symbols are absent.
+
+    Kept here, next to `TEST_HOOK_SYMBOLS`, so the probed set and the gated set
+    cannot drift apart. It must run in a child: importing the hook-less
+    extension into the pytest process dlopen()s it, and a later `maturin
+    develop` that overwrites the `.so` can never be re-imported in the same
+    process (see `conftest._probe_missing_test_hook_symbols`).
+
+    Contract: prints one JSON object `{"missing": [...]}` on stdout and exits 0
+    only when NOTHING is missing.
+    """
+
+    symbols = repr([[owner, attribute] for owner, attribute in TEST_HOOK_SYMBOLS])
+    return (
+        "import json, sys\n"
+        f"SYMBOLS = {symbols}\n"
+        f"ALL = {list(ALL_HOOK_SYMBOL_NAMES)!r}\n"
+        "try:\n"
+        "    from fathomdb import _fathomdb\n"
+        "except Exception as exc:\n"
+        "    print(json.dumps({'missing': ALL, 'error': repr(exc)}))\n"
+        "    sys.exit(1)\n"
+        "missing = []\n"
+        "for owner, attribute in SYMBOLS:\n"
+        "    target = _fathomdb if owner is None else getattr(_fathomdb, owner, None)\n"
+        "    if target is None or not hasattr(target, attribute):\n"
+        "        missing.append(attribute if owner is None else owner + '.' + attribute)\n"
+        "print(json.dumps({'missing': missing}))\n"
+        "sys.exit(1 if missing else 0)\n"
+    )
+
+
+def missing_symbols_from_probe(returncode: int, stdout: str) -> tuple[str, ...]:
+    """Pure reader for `probe_source()`'s output. Returns the absent symbols.
+
+    Fail-safe: a probe that crashed, or whose output we cannot parse, is
+    reported as the WHOLE surface being missing. The consequence of that is
+    DEGRADED — visible skips — never a PROCEED that would let the marked tests
+    run against a surface that is not there.
+    """
+
+    if returncode == 0:
+        return ()
+    for line in reversed(stdout.strip().splitlines()):
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        missing = payload.get("missing") if isinstance(payload, dict) else None
+        if isinstance(missing, list) and missing:
+            return tuple(str(name) for name in missing)
+        break
+    return ALL_HOOK_SYMBOL_NAMES
+
+
+def partial_binding_note(missing: Sequence[str]) -> str | None:
+    """Extra reason line when SOME hook symbols are present and others are not.
+
+    A partial binding is the case the single-symbol probe used to mis-read as
+    "hooks present"; say so explicitly, because "built WITHOUT test-hooks" would
+    be a misleading diagnosis for it.
+    """
+
+    if not missing or len(missing) >= len(TEST_HOOK_SYMBOLS):
+        return None
+    return (
+        "PARTIAL `test-hooks` binding: the installed extension exposes part of the hook "
+        f"surface but is MISSING {', '.join(missing)} — usually a stale or interrupted "
+        "build. Treating the surface as UNAVAILABLE."
+    )
 
 
 def venv_belongs_to_source_tree(venv_prefix: str | Path, python_src_dir: str | Path) -> bool:
