@@ -6655,6 +6655,18 @@ impl Engine {
         // _fathomdb_vector_rows after our DELETE releases the writer
         // lock, leaving residue and breaking AC-028b. Surface the
         // timeout instead of swallowing it (Pack A pattern).
+        //
+        // ORDER IS LOAD-BEARING, exactly as in `purge`: settle every pending
+        // projection FIRST (UNFROZEN), and only THEN freeze the scanner and
+        // confirm idle. Freezing first parks the dispatcher, so a row written
+        // moments ago can never be scanned and enqueued — while `drain` ->
+        // `wait_for_idle` keeps seeing it via
+        // `database_has_pending_projection_work`, which reads the DATABASE and
+        // not the queue. The result is that the ordinary sequence "write a
+        // vector-indexed row, then erase it" stalls for the whole
+        // LIFECYCLE_DRAIN_TIMEOUT_MS and fails with `Scheduler`.
+        // (codex §9 [P2]; `erase_source_drains_before_freezing`.)
+        self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
         self.projection_runtime.set_frozen(true);
         let drain_result = self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS);
         let outcome = drain_result.and_then(|()| self.excise_source_inner(verb, source_id));
