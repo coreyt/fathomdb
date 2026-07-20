@@ -613,6 +613,13 @@ enum ReaderRequest {
         /// `search_reranked`) does ZERO extra work and returns `explanation = None`
         /// (R-OBS-2 zero-cost; byte-identical `results`).
         explain: bool,
+        /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — the VALIDITY view the
+        /// node-hydration SELECTs filter by. `ReadView::default()` reproduces
+        /// the pre-fix predicate on any corpus that never authored a window
+        /// (step 22 back-filled NULL/NULL with no DEFAULT, and `validity_sql`
+        /// treats NULL as unbounded ⇒ the conjunct is a provable no-op there).
+        /// The existence axis is refused upstream, never carried here.
+        view: ReadView,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -935,6 +942,7 @@ fn reader_worker_loop(
                 alpha,
                 pool_n,
                 explain,
+                view,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -953,6 +961,7 @@ fn reader_worker_loop(
                     alpha,
                     pool_n,
                     explain,
+                    view,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -1618,6 +1627,25 @@ impl ReadView {
     /// ONE function every read site calls, so no site can drift from another.
     fn node_sql(&self, alias: &str, now_idx: usize) -> String {
         format!("{}{}", self.existence_sql(alias), self.validity_sql(alias, now_idx))
+    }
+
+    /// 0.8.20 Slice 15b fix-2 — the `search` path honours the VALIDITY axis of a
+    /// `ReadView` and refuses the EXISTENCE axis. See [`Engine::search_view`] for
+    /// why refusing beats silently ignoring.
+    fn reject_existence_relaxation_on_search(&self) -> Result<(), EngineError> {
+        let relaxed = match (self.include_superseded, self.include_inactive) {
+            (true, true) => "include_superseded + include_inactive",
+            (true, false) => "include_superseded",
+            (false, true) => "include_inactive",
+            (false, false) => return Ok(()),
+        };
+        Err(EngineError::InvalidArgument {
+            msg: format!(
+                "ReadView.{relaxed} is not supported on the search path; search hydrates from \
+                 projection indexes that are not version-complete, so only the validity axis \
+                 (valid_as_of / include_out_of_window) is honoured. Use read_list for history."
+            ),
+        })
     }
 }
 
@@ -4685,6 +4713,25 @@ impl Engine {
         self.search_filtered(query, None)
     }
 
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — `search` under an explicit
+    /// [`ReadView`], the escape hatch matching the one the five read verbs got in
+    /// Slice 10b. `search(query)` is exactly `search_view(query, &ReadView::default())`.
+    ///
+    /// **Scope: the VALIDITY axis only.** `include_out_of_window` and
+    /// `valid_as_of` are honoured; the EXISTENCE flags (`include_superseded`,
+    /// `include_inactive`) are **refused** with
+    /// [`EngineError::InvalidArgument`] rather than silently ignored. Relaxing
+    /// `superseded_at IS NULL` on a retrieval path would resurrect the stale-body
+    /// leak the Slice-15 fix-1 review closed, and search hydrates from projection
+    /// indexes (`search_index`, `vector_default`) that are not version-complete —
+    /// so "include superseded" has no truthful answer here. Refusing says that;
+    /// ignoring would be the dead surface this fix exists to remove.
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    pub fn search_view(&self, query: &str, view: &ReadView) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_explain(query, None, 0, false, 0.3, 0, false, *view)
+    }
+
     /// G10 — hybrid `search` with an optional closed [`SearchFilter`]. `None`
     /// (or an all-`None` filter) is the unfiltered path whose phase-1 SQL is
     /// byte-identical to 0.7.2. The filter prunes the vector branch in the
@@ -4752,6 +4799,7 @@ impl Engine {
             alpha,
             pool_n,
             false,
+            ReadView::default(),
         )
     }
 
@@ -4781,6 +4829,7 @@ impl Engine {
             alpha,
             pool_n,
             true,
+            ReadView::default(),
         )
     }
 
@@ -4797,7 +4846,21 @@ impl Engine {
     ///
     /// Governed surface: re-exported from the `fathomdb` facade + Py/TS bindings.
     pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
+        self.search_text_only_view(query, &ReadView::default())
+    }
+
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — [`search_text_only`][Engine::search_text_only]
+    /// under an explicit [`ReadView`]. Same validity-axis-only scope, and the same
+    /// typed refusal of the existence flags, as [`search_view`][Engine::search_view].
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    pub fn search_text_only_view(
+        &self,
+        query: &str,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
+        view.reject_existence_relaxation_on_search()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
         }
@@ -4828,6 +4891,7 @@ impl Engine {
             alpha: 0.3,
             pool_n: 0,
             explain: false,
+            view: *view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -4882,11 +4946,24 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<SearchResult, EngineError> {
+        // fix-2: refuse an existence-relaxing view BEFORE any work (and before the
+        // Started event), so the refusal is a pure argument error rather than a
+        // half-emitted query lifecycle.
+        view.reject_existence_relaxation_on_search()?;
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome =
-            self.search_inner(query, filter, rerank_depth, use_graph_arm, alpha, pool_n, explain);
+        let outcome = self.search_inner(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+            view,
+        );
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -5110,6 +5187,7 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<SearchResult, EngineError> {
         self.search_inner_with_stats(
             query,
@@ -5119,6 +5197,7 @@ impl Engine {
             alpha,
             pool_n,
             explain,
+            view,
         )
         .map(|(result, _stats)| result)
     }
@@ -5136,6 +5215,7 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the SINGLE
@@ -5223,6 +5303,7 @@ impl Engine {
             alpha,
             pool_n,
             explain,
+            view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -5263,7 +5344,7 @@ impl Engine {
         &self,
         query: &str,
     ) -> Result<GraphFrontierStats, EngineError> {
-        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false)
+        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false, ReadView::default())
             .map(|(_result, stats)| stats)
     }
 
@@ -5385,7 +5466,8 @@ impl Engine {
         }
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
         // 0.8.5: depth=0 → no rerank, so α/pool_n (0.3, 0) are inert here.
-        let search_result = self.search_inner(query, filter, 0, false, 0.3, 0, false)?;
+        let search_result =
+            self.search_inner(query, filter, 0, false, 0.3, 0, false, ReadView::default())?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -8954,7 +9036,15 @@ fn read_search_in_tx(
     alpha: f64,
     pool_n: usize,
     explain: bool,
+    view: ReadView,
 ) -> ReaderResponse {
+    // 0.8.20 Slice 15b fix-2 (R-20-NV) — the `:now` instant is read HERE, in
+    // Rust, ONCE per query, and bound positionally into every node-hydration
+    // SELECT. Never `datetime('now')` / `strftime('%s','now')`: an inline clock
+    // would make the query non-deterministic, untestable, and re-evaluated per
+    // row. `None` ⇒ the view relaxes validity ⇒ no conjunct is emitted and
+    // nothing is bound (`validity_sql` returns the empty string).
+    let now_param = view.now_param();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
@@ -9026,22 +9116,44 @@ fn read_search_in_tx(
         // `canonical_nodes(write_cursor)`. This site already pays that cost by
         // construction; TC-31 must not add a second one.) Read-only additive
         // column — row-set, ordering and scores are untouched.
-        let mut node_stmt = tx.prepare(
-            "SELECT kind, body, logical_id, source_id FROM canonical_nodes WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
-        )?;
+        // fix-2 (codex §9 [P2]): the validity conjunct comes from
+        // `ReadView::validity_sql` — the SAME generator the five read verbs use.
+        // It is NOT hand-rolled here: Slice 10's whole design is that the
+        // predicate exists in exactly ONE place, so no retrieval site can drift
+        // from another. `?1` is the candidate rowid, so `:now` binds at `?2`.
+        // On a corpus that never authored a window every row is NULL/NULL and
+        // the conjunct matches everything ⇒ default behaviour is unchanged.
+        let node_validity = view.validity_sql("canonical_nodes", 2);
+        let mut node_stmt = tx.prepare(&format!(
+            "SELECT kind, body, logical_id, source_id FROM canonical_nodes \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active'\
+             {node_validity} LIMIT 1"
+        ))?;
         let mut edge_stmt = tx.prepare(
             "SELECT body, logical_id, source_id FROM canonical_edges \
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
         )?;
+        // The bound parameter list for the node lookup: the candidate rowid,
+        // plus `:now` when (and only when) the view emitted a validity conjunct.
+        // One instant for the whole query — resolved once, above, not per row.
+        let node_params = |rowid: i64| -> Vec<rusqlite::types::Value> {
+            let mut p = vec![rusqlite::types::Value::Integer(rowid)];
+            if let Some(now) = now_param {
+                p.push(rusqlite::types::Value::Integer(now));
+            }
+            p
+        };
         for (rowid, score) in rowids {
-            if let Ok((kind, body, logical_id, source_id)) = node_stmt.query_row([rowid], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                ))
-            }) {
+            if let Ok((kind, body, logical_id, source_id)) =
+                node_stmt.query_row(rusqlite::params_from_iter(node_params(rowid)), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                })
+            {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
                     id,
@@ -9152,33 +9264,62 @@ fn read_search_in_tx(
         // TC-31 (0.8.20 Slice 10a): `cn.source_id` is selected off the SAME
         // already-present 1:1 LEFT JOIN that supplies `cn.logical_id` — one extra
         // column, no extra query, no row-set or ordering change.
+        // fix-2 (codex §9 [P2]): the node-body FTS branch takes the SAME
+        // validity conjunct, generated by `ReadView::validity_sql` rather than
+        // hand-rolled — the predicate lives in exactly one place (Slice 10).
+        // `?1` is the MATCH expression, so `:now` binds at `?2`.
+        //
+        // The generated conjunct is NULL-PERMISSIVE by construction
+        // (`valid_from IS NULL OR ...`), which is exactly what this LEFT JOIN
+        // needs: an ownerless `search_index` row with no `cn` reads NULL on both
+        // columns and is KEPT, preserving the deliberate keep-ownerless
+        // behaviour the `superseded_at` / `state` conjuncts above encode with
+        // their explicit `OR ... IS NULL`. No extra `OR IS NULL` is needed here,
+        // and none may be added: that would be a second, drifting copy of the
+        // predicate.
+        //
+        // NO-REGRESSION: on a corpus that never authored a window every
+        // `cn.valid_from` / `cn.valid_until` is NULL (step 22 back-filled NULL
+        // with no DEFAULT), so both disjuncts are TRUE for every row and the
+        // row-set, the `bm25(search_index), write_cursor` ordering and the
+        // scores are all byte-unchanged.
+        let text_validity = view.validity_sql("cn", 2);
         let join_sql = format!(
             "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
              bm25(search_index), cn.logical_id, cn.source_id FROM search_index \
              LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
              WHERE search_index MATCH ?1 \
                AND cn.superseded_at IS NULL \
-               AND (cn.state = 'active' OR cn.state IS NULL) \
+               AND (cn.state = 'active' OR cn.state IS NULL)\
+               {text_validity} \
              ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
         );
+        // `:now` rides at ?2 only when the view emitted a conjunct; the relaxed
+        // view produces the byte-identical single-parameter statement.
+        let mut text_params: Vec<rusqlite::types::Value> =
+            vec![rusqlite::types::Value::Text(compiled.match_expression.clone())];
+        if let Some(now) = now_param {
+            text_params.push(rusqlite::types::Value::Integer(now));
+        }
         if let Ok(mut statement) = tx.prepare(&join_sql) {
-            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
-                let body = row.get::<_, String>(0)?;
-                let logical_id = row.get::<_, Option<String>>(4)?;
-                Ok(SearchHit {
-                    id: derive_stable_id(logical_id.as_deref(), &body),
-                    body,
-                    kind: row.get::<_, String>(1)?,
-                    write_cursor: row.get::<_, i64>(2)? as u64,
-                    score: row.get::<_, f64>(3)?,
-                    branch: SoftFallbackBranch::Text,
-                    // TC-31: the NODE's own provenance. NULL for a legacy /
-                    // TC-11-spared governed row, and NULL for an ownerless
-                    // `search_index` row the LEFT JOIN keeps with no `cn`.
-                    source_id: row.get::<_, Option<String>>(5)?,
-                    ce_score: None,
-                })
-            })?;
+            let rows =
+                statement.query_map(rusqlite::params_from_iter(text_params.iter()), |row| {
+                    let body = row.get::<_, String>(0)?;
+                    let logical_id = row.get::<_, Option<String>>(4)?;
+                    Ok(SearchHit {
+                        id: derive_stable_id(logical_id.as_deref(), &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::Text,
+                        // TC-31: the NODE's own provenance. NULL for a legacy /
+                        // TC-11-spared governed row, and NULL for an ownerless
+                        // `search_index` row the LEFT JOIN keeps with no `cn`.
+                        source_id: row.get::<_, Option<String>>(5)?,
+                        ce_score: None,
+                    })
+                })?;
             rows.flatten().collect()
         } else {
             // No `superseded_at IS NULL` filter here (and none is possible): this
@@ -9386,6 +9527,7 @@ fn read_search_in_tx(
             compiled.match_expression.as_str(),
             3,
             50,
+            view,
         )?;
         graph_stats = stats;
         if explain {
@@ -9534,7 +9676,14 @@ fn bfs_graph_arm_candidates(
     match_expression: &str,
     max_depth: u32,
     cap: usize,
+    view: ReadView,
 ) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats, HashMap<u64, f64>)> {
+    // fix-2 (codex §9 [P2]): the opt-in graph arm hydrates NODES too, so it takes
+    // the same validity conjunct as the vector and FTS branches — otherwise
+    // `search_reranked(.., use_graph_arm = true)` would keep the exact leak the
+    // other two branches just closed. Same generator, same bound `:now`,
+    // resolved ONCE here rather than per statement or per row.
+    let now_param = view.now_param();
     // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
     const SEED_FTS_N: usize = 10;
     const SYNTHESIZED_PENALTY: f64 = 0.3;
@@ -9627,19 +9776,29 @@ fn bfs_graph_arm_candidates(
         // `logical_id IS NOT NULL` structurally excludes doc nodes (the bug surface).
         // Provenance = the node's own `source_id` (the session it was extracted from).
         {
-            let mut node_seed_stmt = tx.prepare(
+            // `?1` MATCH, `?2` LIMIT ⇒ `:now` binds at `?3`.
+            let seed_validity = view.validity_sql("cn", 3);
+            let mut node_seed_stmt = tx.prepare(&format!(
                 "SELECT cn.logical_id, cn.source_id \
                  FROM search_index si \
                  JOIN canonical_nodes cn ON cn.write_cursor = si.write_cursor \
                  WHERE search_index MATCH ?1 \
                    AND cn.superseded_at IS NULL \
                    AND cn.state = 'active' \
-                   AND cn.logical_id IS NOT NULL \
+                   AND cn.logical_id IS NOT NULL\
+                   {seed_validity} \
                  ORDER BY bm25(search_index), si.write_cursor \
-                 LIMIT ?2",
-            )?;
+                 LIMIT ?2"
+            ))?;
+            let mut seed_params: Vec<rusqlite::types::Value> = vec![
+                rusqlite::types::Value::Text(match_expression.to_string()),
+                rusqlite::types::Value::Integer(SEED_FTS_N as i64),
+            ];
+            if let Some(now) = now_param {
+                seed_params.push(rusqlite::types::Value::Integer(now));
+            }
             let rows = node_seed_stmt
-                .query_map(rusqlite::params![match_expression, SEED_FTS_N as i64], |row| {
+                .query_map(rusqlite::params_from_iter(seed_params.iter()), |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
                 })?;
             for pair in rows {
@@ -9655,14 +9814,21 @@ fn bfs_graph_arm_candidates(
         // 0, hop_score 1.0) — so an edge-only query match surfaces the connected ENTITY
         // nodes, not just the fact body (codex §9 [P2]). Seeds whose body is already in
         // the two-arm result are skipped; the cap is respected.
-        let mut active_stmt = tx.prepare(
+        let active_validity = view.validity_sql("canonical_nodes", 2);
+        let mut active_stmt = tx.prepare(&format!(
             "SELECT kind, body, write_cursor FROM canonical_nodes \
-             WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
-        )?;
+             WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active'\
+             {active_validity} LIMIT 1"
+        ))?;
         for (lid, source_id, seed_confidence) in candidate_seeds {
             stats.seeds_considered += 1;
+            let mut active_params: Vec<rusqlite::types::Value> =
+                vec![rusqlite::types::Value::Text(lid.clone())];
+            if let Some(now) = now_param {
+                active_params.push(rusqlite::types::Value::Integer(now));
+            }
             let row: Option<(String, String, i64)> = active_stmt
-                .query_row(rusqlite::params![&lid], |r| {
+                .query_row(rusqlite::params_from_iter(active_params.iter()), |r| {
                     Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
                 })
                 .optional()?;
@@ -9727,11 +9893,13 @@ fn bfs_graph_arm_candidates(
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
     // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
-    let mut body_stmt = tx.prepare(
+    let body_validity = view.validity_sql("canonical_nodes", 2);
+    let mut body_stmt = tx.prepare(&format!(
         "SELECT kind, body, write_cursor FROM canonical_nodes \
-         WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' \
-         LIMIT 1",
-    )?;
+         WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active'\
+         {body_validity} \
+         LIMIT 1"
+    ))?;
 
     while let Some((lid, depth)) = frontier.pop_front() {
         if candidates.len() >= cap {
@@ -9768,8 +9936,13 @@ fn bfs_graph_arm_candidates(
             visited.insert(neighbor.clone());
 
             // Fetch neighbor body + write_cursor from canonical_nodes.
+            let mut body_params: Vec<rusqlite::types::Value> =
+                vec![rusqlite::types::Value::Text(neighbor.clone())];
+            if let Some(now) = now_param {
+                body_params.push(rusqlite::types::Value::Integer(now));
+            }
             let row: Option<(String, String, i64)> = body_stmt
-                .query_row([&neighbor], |row| {
+                .query_row(rusqlite::params_from_iter(body_params.iter()), |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
                 })
                 .optional()?;
