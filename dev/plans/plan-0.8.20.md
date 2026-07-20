@@ -248,7 +248,7 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 | **0** | **X0 design gate** — reqs/ACs frozen; erasure Slice-0 design; **TC-11 pin ✅ ALREADY RATIFIED**; eu7-basis + embed_batch_cls-TS decisions; **TC-RUBRIC-5** (dedicated-checkout/`preflight.sh --landing`) folded in; stand up `runs/STATUS-0.8.20.md`; **codex §9** | design-adr + steward-review | — |
 | **5** | **Erasure completeness** (R-20-E1…E8) — registry + total projector + `erase_source` + provenance + WAL + telemetry + op-store + migration | implementation | 0 |
 | **10** | **`ReadView` / read-modes** + **node-validity** (R-20-RV, R-20-NV) — ✅ **COMPLETE on-branch @ `93a57b10`** (SCHEMA 21→22) | implementation | 0 |
-| **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) | implementation | 0 |
+| **15** | **Projection registry (C-1 co-land) + EAV/property-FTS** (R-20-PR, R-20-EAV) **+ TC-34 node-validity write-side authoring verb + TC-33 temporal-representation harmonisation** *(both folded in by HITL 2026-07-20)* | implementation | 0, 10 |
 | **20** | **`dense_readiness` + `flush_embeddings()`** (R-20-DR) | implementation | 15 |
 | **25** | **Surrogate minting — registry-admitted governed entities ONLY** (R-20-SUR) | implementation | 15 |
 | **30** | **RUBRIC-H7 `can-i-deploy` contract-conformance gate** (R-20-H7) | implementation | 10,15,20,25 |
@@ -338,9 +338,26 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
-**Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV).** It is the Phase-2
-keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on 10/15/20/25.
+**Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus TC-34 and TC-33.**
+It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on 10/15/20/25.
 
+> **FOLDED IN BY HITL (2026-07-20) — both must close in this slice:**
+>
+> - **TC-34 — node validity has NO write-side authoring verb.** Slice 10 shipped `valid_from`/`valid_until`
+>   **queryable but not settable from any SDK**. This is the **same class as TC-31**, which the HITL closed on
+>   the grounds that leaving it would make FathomDB "seen as poor" — a validity window a caller can filter on
+>   but never set is dead surface. Ship the authoring path in **both** bindings (X1 parity), with a round-trip
+>   test: set a window → query at an instant inside it → query at an instant outside it.
+> - **TC-33 — the temporal model is internally inconsistent.** Node validity is **INTEGER epoch seconds**
+>   (step 22) while **edge** validity is **ISO-8601 TEXT**. Harmonise them. **Steward recommendation: converge
+>   on INTEGER epoch seconds**, matching the node representation, §1's "integer windows", and the
+>   deterministic bound-`:now` seam that makes validity testable without wall-clock. **Now is the cheapest
+>   moment** — 0.8.20 is already a coordinated breaking-pair publish, so harmonising later costs a second
+>   breaking change. If the slice's design work concludes the other representation should win, **escalate to
+>   the Steward before implementing** — that is a direction call, not an implementation detail.
+>
+> ---
+>
 > **Slice 5 — erasure completeness: ✅ COMPLETE and LANDED** at **`1f8ed8bf`** (in `origin/main`).
 > **AC-079 remains UNSIGNED and still blocks publish.**
 >
