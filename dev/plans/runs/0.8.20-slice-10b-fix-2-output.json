@@ -1,0 +1,109 @@
+{
+  "slice": "0.8.20 Slice 10b — fix-2 (X1 binding-execution parity)",
+  "requirements": ["R-20-RV", "R-20-NV", "R-20-X1"],
+  "branch": "orch-0.8.20-s10",
+  "baseline": "c5e12da6",
+  "head": "14d33bba28eb31d1f0e9beb0a2f7e1b56b4dc0dd",
+  "status": "COMPLETE",
+  "mandate": "Close the measured X1 parity gap: Slice 10b shipped a substantial Python/TypeScript surface with ZERO tests in either binding, so both suites returned pre-slice counts (Py 775 passed / 12 skipped, TS 174) and the entire ReadView / validity / crossed_boundary_since surface was live-but-unexercised.",
+  "commits": [
+    {
+      "sha": "742a347e",
+      "subject": "fix(ts/R-20-NV): BoundaryCrossing boundaries are `number | null`, not `?: number`"
+    },
+    {
+      "sha": "14d33bba",
+      "subject": "test(R-20-RV/R-20-NV): live Py+TS functional harnesses for the read-view surface"
+    }
+  ],
+  "gates": {
+    "cargo clippy --workspace --all-targets": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo test -p fathomdb-engine -p fathomdb-schema (--test-threads=1)": 0,
+    "ruff check src/python/tests/test_slice10_read_view.py": 0,
+    "tsc --noEmit -p src/ts/tsconfig.json": 0,
+    "note": "Real exit codes captured from $? / PIPESTATUS on the command itself, never a trailing echo. Rust suites run SERIALLY (--test-threads=1) per the lifecycle_observability.rs::ac_002 false-failure warning; nothing was run concurrently. Result: 540 passed / 0 failed / 13 ignored across 102 suites. The TypeScript typecheck required node_modules, which this worktree does not have: a symlink to the main checkout's src/ts/node_modules was created, tsc run, and the symlink REMOVED before committing (git status clean of it). tsc --listFiles confirmed the new test file and @types/node/sqlite.d.ts were both in the compilation."
+  },
+  "files_added": [
+    "src/python/tests/test_slice10_read_view.py",
+    "src/ts/tests/slice10-read-view.test.ts"
+  ],
+  "files_modified": ["src/ts/src/binding.ts", "src/ts/src/read.ts"],
+  "coverage_of_the_seven_required_items": {
+    "1_default_view_unchanged_on_five_verbs": {
+      "python": "test_default_view_is_unchanged_on_all_five_verbs",
+      "typescript": "R-20-RV: the default view is unchanged on all five read verbs",
+      "detail": "read.get / read.get_many / read.list / read.list filter-form / graph.neighbors, all asserted on REAL returned rows against a raw-table oracle (`superseded_at IS NULL AND state='active'` read with sqlite3 / node:sqlite AFTER the engine released its lock) — not against a second SDK call. Also pins that the explicit `view=None` (Py) / `view: undefined` and `view: {}` (TS) call shapes are identical to omitting the argument."
+    },
+    "2_include_superseded_returns_history": {
+      "python": "test_include_superseded_returns_history, test_point_lookup_under_include_superseded_is_deterministic",
+      "typescript": "R-20-RV: includeSuperseded returns history; R-20-RV: the point lookup under includeSuperseded is deterministic",
+      "detail": "Three versions of one logical_id written; strict view returns exactly [v3], relaxed view returns the FULL [v1,v2,v3] history (not merely one extra row). Point lookup pinned to resolve to the newest version across repeated calls."
+    },
+    "3_state_active_relax_flag": {
+      "python": "test_include_inactive_returns_non_active_states",
+      "typescript": "R-20-RV: includeInactive returns non-active states",
+      "detail": "Node soft-deleted via the real `transition` verb; strict view hides it, include_inactive surfaces it on BOTH the list verb and the point-lookup verb."
+    },
+    "4_flags_compose": {
+      "python": "test_existence_flags_compose_independently, test_validity_and_existence_flags_compose, test_read_list_filter_form_inherits_the_view",
+      "typescript": "R-20-RV: the existence flags compose independently (read-mode matrix); R-20-NV: the validity flag composes with the existence flag; R-20-RV: the read.list filter-form inherits the view",
+      "detail": "TWO independent composition proofs, not just each flag alone. (a) The 4-cell existence matrix over a corpus holding one row of each (current|superseded) x (active|inactive) class, INCLUDING the include_superseded+include_inactive cell. (b) A validity x existence composition where a node is BOTH out-of-window and deleted: each flag ALONE is asserted insufficient, and only the pair surfaces the row — which is the actual claim 'each flag drops exactly one conjunct'. Plus a fully-relaxed-view assertion that the row count equals the raw canonical_nodes count (the view is a filter, never a source)."
+    },
+    "5_graph_neighbors_every_direction": {
+      "python": "test_graph_neighbors_honours_the_view_in_every_direction, test_graph_neighbors_view_reaches_the_recursive_join",
+      "typescript": "R-20-RV: graph.neighbors honours the view in every direction; R-20-RV: the graph.neighbors view reaches the BFS recursive join",
+      "detail": "6-cell direction x view matrix over a symmetric graph (Outgoing/Incoming/Both x strict/include_inactive) — THREE TraversalDirection variants, not four. Plus a recursive-join probe: traversal THROUGH a non-active intermediate reaches the far node only under the relaxed view."
+    },
+    "6_valid_as_of_R_20_NV": {
+      "python": "test_valid_as_of_window_visibility_on_every_read_verb",
+      "typescript": "R-20-NV: validAsOf window visibility on every read verb",
+      "detail": "A node given a bounded [1000,2000) window is visible at instant 1500 and invisible at 5000 on ALL FIVE read verbs, selected through the bound `:now` seam. Half-open convention pinned at the boundary cells (999 out / 1000 in / 1999 in / 2000 out). include_out_of_window drops the conjunct entirely. Window is authored by direct SQL on the CLOSED DB (sqlite3 in Python, node:sqlite in TypeScript) exactly as the Rust suite does with rusqlite, and verified at rest before read-back; only the READ path goes through the SDK."
+    },
+    "7_crossed_boundary_since": {
+      "python": "test_crossed_boundary_since_reports_both_boundaries, test_crossed_boundary_since_honours_existence_flags",
+      "typescript": "R-20-NV: crossedBoundarySince reports both boundaries; R-20-NV: crossedBoundarySince honours the view's existence flags",
+      "detail": "The delta's ONE net-new command is called LIVE in both SDKs and asserted on real BoundaryCrossing data: exactly {BOTH(1200,1800), CLOSED(None,1500), OPENED(1500,None)} over (1000,2000], the carried NodeRecord fully populated (body/kind/write_cursor), unbounded rows silent over the widest interval, and the view's existence flags widening the candidate set. It is NOT left untested."
+    }
+  },
+  "binding_defect_found": {
+    "severity": "REAL DEFECT shipped by the predecessor (commit e3cc071b) — declaration disagreed with runtime",
+    "where": [
+      "src/ts/src/binding.ts — NativeBoundaryCrossing.becameValidAt / becameInvalidAt",
+      "src/ts/src/read.ts — public BoundaryCrossing.becameValidAt / becameInvalidAt"
+    ],
+    "was": "becameValidAt?: number  (i.e. number | undefined, property possibly ABSENT)",
+    "now": "becameValidAt: number | null  (property ALWAYS present, null when the boundary was not crossed)",
+    "evidence": "napi-rs serialises a #[napi(object)] field of type Option<i64> by always setting the property and rendering None as JS null. The repo already depends on this: NativeOpStoreRow.schemaId is `string | null`, NativeSearchHit.ceScore is `number | null`, and src/ts/tests/functional-reranker.test.ts:191 pins it STRICTLY on a real FFI result with `h.ceScore === null || typeof h.ceScore === \"number\"` — an assertion that would fail if napi emitted undefined. (The nearby assert.equal(h.ceScore, null) calls are loose == and do NOT distinguish, so line 191 is the load-bearing evidence.)",
+    "why_it_matters": "It errs in the bug-hiding direction. Under strictNullChecks a caller writing `if (c.becameValidAt !== undefined)` narrows to `number`, and a real `null` then flows on typed as a number. read.ts passes the native value through verbatim, so the public shape carried the same lie.",
+    "pinned_by": "The TypeScript test asserts `\"becameInvalidAt\" in opened` (property present) and `assert.strictEqual(opened.becameInvalidAt, null)` (null, not undefined), so the corrected declaration cannot silently regress.",
+    "python_side": "CORRECT as shipped — _fathomdb.pyi declares `became_valid_at: int | None` and pyo3 maps Option<i64> to None. No change needed."
+  },
+  "observations_not_changed": [
+    "ASYMMETRY (deliberately left alone): TypeScript exports ReadView and BoundaryCrossing from the top-level index.ts, whereas Python exposes them only from fathomdb.types — they are NOT in fathomdb/__init__.py's __all__. This is not an oversight to fix here: the governed-surface allowlist _comment explicitly names their Python home as `fathomdb.types.ReadView` / `fathomdb.types.BoundaryCrossing`, so promoting them to the top-level package would WIDEN an unsigned delta. Flagging it for the HITL sign-off conversation instead. The new Python test imports from fathomdb.types accordingly.",
+    "read.list in TypeScript takes `view` as the SIXTH positional parameter (engine, kind, predicates?, limit, filter?, view?), so exercising it requires passing `undefined` placeholders. Ergonomically poor next to Python's keyword-only `view=`, but it is the shipped shape and changing it would alter the unsigned delta. Recorded, not changed."
+  ],
+  "constraints_honoured": {
+    "engine_behaviour": "UNCHANGED — zero Rust source edits in this round. Only two TypeScript type declarations and two new test files.",
+    "ranking_scoring_ordering": "untouched",
+    "write_side_provenance_resolve_provenance_slice10a_source_id": "untouched",
+    "tc11_h_pin": "untouched",
+    "write_side_validity_authoring_verb": "NOT added — the deliberate, HITL-escalated gap is left open. Windows are authored by direct SQL in fixtures only.",
+    "governed_surface_delta": "Still PROPOSED / NOT SIGNED. The phrase HITL-SIGNED was not written anywhere. No allowlist member added or removed by this round.",
+    "ac_minting": "No AC minted. AC-079 remains available.",
+    "recovery_denylist": "UNCHANGED — verified still exactly {recover, restore, repair, fix, rebuild}. AC-041 unaffected.",
+    "eu7": "ZERO runs. eu7_real_corpus_ac.rs untouched and still #[ignore]d (verified at tests/eu7_real_corpus_ac.rs:760).",
+    "slices_15_20_25_30_40": "not started",
+    "worktree_hygiene": "No maturin develop, no pip install -e, no push, no rebase, no fetch. All commits on orch-0.8.20-s10 (branch verified with git rev-parse --abbrev-ref HEAD before each commit)."
+  },
+  "could_not_test_here": [
+    "The Python and TypeScript suites CANNOT be executed in this worktree — there is no native build (maturin develop / pip install -e are forbidden here, and src/ts has no node_modules). That is precisely the condition that let the original gap through, so every symbol, signature and argument shape used in the two new files was verified by READING the binding sources rather than assumed: src/rust/crates/fathomdb-py/src/lib.rs (pyo3 #[pyo3(signature=...)] for read_get/read_get_many/read_list/read_list_filter/graph_neighbors/crossed_boundary_since and the PyReadView #[new] keyword defaults), src/rust/crates/fathomdb-napi/src/lib.rs (ReadViewInput / BoundaryCrossing #[napi(object)] shapes), src/python/fathomdb/{read,graph,types,engine,filter,__init__}.py, src/python/fathomdb/_fathomdb.pyi, and src/ts/src/{read,binding,index}.ts. The TypeScript file additionally passed a real `tsc --noEmit` against the project tsconfig, which type-checks every call shape it makes. The Python file passed `ruff check` and `py_compile`. Both totals should RISE in a fresh clone: Python +9 tests, TypeScript +10 tests.",
+    "node:sqlite availability was verified empirically on this host (node v25.9.0 exposes DatabaseSync and round-trips NULL integer columns as JS null with no warning), and @types/node 25.6.0 ships sqlite.d.ts so the import type-checks. If the fresh-clone runner is on a Node older than 22.5, the TypeScript validity tests (items 6 and 7) would fail at import — flagging as the one environment assumption I could not test in the target environment itself."
+  ],
+  "blockers": [],
+  "expected_fresh_clone_counts": {
+    "python": "775 passed / 12 skipped  ->  784 passed / 12 skipped  (+9 tests)",
+    "typescript": "174 pass  ->  184 pass  (+10 tests)",
+    "caveat": "Counts assume every new test passes. If any fails, that is a real finding about the surface, not a harness artifact — the assertions are on returned data, and the Rust equivalents of each matrix are already green."
+  }
+}
