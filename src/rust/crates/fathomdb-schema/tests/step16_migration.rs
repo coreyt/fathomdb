@@ -67,13 +67,13 @@ fn s16_row_kind_column_present_and_schema_version_is_head() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 21,
-        "SCHEMA_VERSION must be 21 (step-21 legacy provenance backfill, R-20-E8)"
+        SCHEMA_VERSION, 22,
+        "SCHEMA_VERSION must be 22 (step-22 node validity window, R-20-NV)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        21,
-        "step-21 (legacy provenance backfill, R-20-E8) must be the last (head) migration"
+        22,
+        "step-22 (node validity window, R-20-NV) must be the last (head) migration"
     );
 }
 

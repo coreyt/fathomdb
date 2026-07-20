@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -581,6 +581,58 @@ pub const MIGRATIONS: &[Migration] = &[
               UPDATE canonical_edges
                  SET source_id = '_legacy:pre-0.8.20'
                WHERE source_id IS NULL;",
+    },
+    // Step 22 (0.8.20 Slice 10b) — R-20-NV node validity window, per
+    // `dev/plans/plan-0.8.20.md` §3 (R-20-NV). Adds the two world-time validity
+    // columns on `canonical_nodes`:
+    //   `valid_from`  — inclusive lower bound of the window.
+    //   `valid_until` — EXCLUSIVE upper bound of the window.
+    // The interval is HALF-OPEN: `[valid_from, valid_until)`. A node is valid at
+    // instant `t` iff `(valid_from IS NULL OR valid_from <= t) AND (valid_until
+    // IS NULL OR valid_until > t)`. NULL means UNBOUNDED on that side, so
+    // NULL/NULL is "valid for all time". This convention is stated once here and
+    // is the same one `ReadView::valid_as_of` compiles to at every read site.
+    //
+    // **UNITS: INTEGER epoch SECONDS (UTC).** This DELIBERATELY DIVERGES from
+    // `canonical_edges.t_valid`/`t_invalid` (step 14), which are ISO-8601 TEXT
+    // compared through `datetime(...)`. The divergence is intentional and the
+    // edge columns are NOT changed and NOT unified with these:
+    //   (a) the release contract for R-20-NV specifies INTEGER windows;
+    //   (b) INTEGER windows are directly comparable/indexable with no `datetime()`
+    //       conversion per row, so the validity conjunct stays sargable against
+    //       `canonical_nodes_validity_idx`;
+    //   (c) the node-validity instant is a BOUND PARAMETER (`:now` seam), never a
+    //       `datetime('now')` SQL literal, so node validity is deterministically
+    //       testable — whereas the shipped EDGE path still inlines
+    //       `datetime('now')`. Unifying the two would either re-litigate the
+    //       shipped edge semantics or force a data rewrite of `canonical_edges`,
+    //       both out of scope for this slice.
+    // The divergence is a KNOWN, FLAGGED inconsistency in the temporal model and
+    // is escalated with this slice rather than silently resolved.
+    //
+    // Existing rows get NULL/NULL on both columns (SQLite `ADD COLUMN` with no
+    // DEFAULT back-fills NULL in place, no table rewrite), i.e. unbounded ⇒
+    // always valid ⇒ EVERY pre-existing row's default-view visibility is
+    // UNCHANGED (asserted by `s22_preexisting_rows_stay_visible_in_default_view`
+    // and, at the engine level, by the R-20-NV suite). This step does NOT rewrite
+    // vec0 / vector rows (eu7 no-op basis).
+    //
+    // Crash-safety + idempotence come from the runner, exactly as for step 20:
+    // `apply_one` wraps the batch AND the `PRAGMA user_version` bump in a single
+    // `BEGIN IMMEDIATE`/`COMMIT`, so a crash mid-step rolls back to 21 and the
+    // step re-runs whole; and `migrate_with_event_sink` only applies steps with
+    // `step_id > user_version`, so a completed step never re-runs (which matters
+    // because `ALTER TABLE ... ADD COLUMN` has no `IF NOT EXISTS` form).
+    // One migration per release (I-6). Additive `ADD COLUMN` (no DROP) → the
+    // accretion guard REQUIRES the exemption marker.
+    Migration {
+        step_id: 22,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: R-20-NV node validity window (valid_from/valid_until INTEGER epoch-seconds on canonical_nodes; NULL = unbounded; half-open [valid_from, valid_until); deliberately INTEGER, diverging from the ISO-8601 TEXT canonical_edges.t_valid/t_invalid, which are unchanged)
+              ALTER TABLE canonical_nodes ADD COLUMN valid_from INTEGER;
+              ALTER TABLE canonical_nodes ADD COLUMN valid_until INTEGER;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_validity_idx
+                  ON canonical_nodes(valid_from, valid_until)
+                  WHERE superseded_at IS NULL AND state = 'active';",
     },
 ];
 

@@ -114,8 +114,8 @@ fn s14_schema_version_is_14() {
     migrate_fresh(&conn);
     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
     assert_eq!(
-        SCHEMA_VERSION, 21,
-        "SCHEMA_VERSION constant must be 21 (step-21 legacy provenance backfill, R-20-E8)"
+        SCHEMA_VERSION, 22,
+        "SCHEMA_VERSION constant must be 22 (step-22 node validity window, R-20-NV)"
     );
 }
 
