@@ -1629,6 +1629,15 @@ impl ReadView {
         format!("{}{}", self.existence_sql(alias), self.validity_sql(alias, now_idx))
     }
 
+    /// 0.8.20 Slice 15b fix-3 (F2) — resolve this view's validity instant ONCE
+    /// and hand back a [`FrozenView`] that carries the resolved value.
+    ///
+    /// This is the ONLY constructor of a `FrozenView`, and therefore the only
+    /// point on the search path where the wall clock is read.
+    fn freeze(self) -> FrozenView {
+        FrozenView { view: self, now: self.now_param() }
+    }
+
     /// 0.8.20 Slice 15b fix-2 — the `search` path honours the VALIDITY axis of a
     /// `ReadView` and refuses the EXISTENCE axis. See [`Engine::search_view`] for
     /// why refusing beats silently ignoring.
@@ -1664,6 +1673,46 @@ pub struct BoundaryCrossing {
     pub became_valid_at: Option<i64>,
     /// `Some(valid_until)` when the node BECAME INVALID inside the interval.
     pub became_invalid_at: Option<i64>,
+}
+
+/// 0.8.20 Slice 15b fix-3 (F2) — a [`ReadView`] whose validity instant has
+/// ALREADY been resolved, produced only by [`ReadView::freeze`].
+///
+/// R-20-NV requires `:now` to bind ONCE PER QUERY — not per row, and not per
+/// ARM. The multi-arm search path made that easy to violate: each arm held a
+/// `ReadView` and could call `now_param()`, which for the default view
+/// (`valid_as_of == None`) reads the wall clock. Two arms, two instants, and a
+/// query straddling a validity boundary gets nondeterministic membership.
+///
+/// The fix is TYPE-LEVEL rather than a comment asking future arms to behave:
+/// the instant is resolved once at the top of `read_search_in_tx` and every arm
+/// receives a `FrozenView`, which stores the resolved value in `now` and has NO
+/// path back to the clock. An arm cannot re-resolve the instant because it
+/// never holds anything that could — the failure mode is unreachable, not
+/// merely discouraged.
+#[derive(Clone, Copy, Debug)]
+struct FrozenView {
+    /// The underlying view — consulted for SQL SHAPE only (which conjuncts to
+    /// emit), never to re-resolve the instant.
+    view: ReadView,
+    /// The instant resolved at freeze time. `None` ⇔ the view relaxes validity
+    /// entirely, in which case no conjunct is emitted and nothing is bound.
+    now: Option<i64>,
+}
+
+impl FrozenView {
+    /// The instant to bind, resolved at freeze time. Unlike
+    /// [`ReadView::now_param`] this is a stored value: calling it a second time
+    /// cannot yield a different answer, and it never touches the clock.
+    fn now_param(&self) -> Option<i64> {
+        self.now
+    }
+
+    /// The validity conjunct — delegated to the one generator every read site
+    /// shares, so the search arms cannot drift from the five read verbs.
+    fn validity_sql(&self, alias: &str, now_idx: usize) -> String {
+        self.view.validity_sql(alias, now_idx)
+    }
 }
 
 /// 0.8.20 Slice 15b fix-3 (F2) — how many times [`current_epoch_seconds`] has
@@ -9113,6 +9162,13 @@ fn read_search_in_tx(
     // would make the query non-deterministic, untestable, and re-evaluated per
     // row. `None` ⇒ the view relaxes validity ⇒ no conjunct is emitted and
     // nothing is bound (`validity_sql` returns the empty string).
+    //
+    // fix-3 (F2): FREEZE the view here, at the single point every arm flows
+    // through. `freeze()` is the only place on this path that reads the clock;
+    // downstream arms hold a `FrozenView` and have no way to resolve a second,
+    // different instant. Previously the graph arm re-derived it from the raw
+    // `ReadView`, so a boundary-straddling query could have its arms disagree.
+    let view = view.freeze();
     let now_param = view.now_param();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -9139,7 +9195,38 @@ fn read_search_in_tx(
             // byte-identical to 0.7.2. `?1`/`?2` are the sign-quant + f32 query
             // vectors; filter values bind at ?3.. in `vector_filter_clause`
             // order.
-            let sql = build_vector_phase1_sql(filter, final_limit);
+            // fix-3 (F1, codex §9 [P2]) — OVERFETCH the phase-2 rerank so the
+            // validity/existence filter applied at hydration cannot starve the
+            // result set.
+            //
+            // The defect: hydration drops rows that are expired, superseded or
+            // inactive, but it ran on candidates ALREADY truncated to
+            // `final_limit`. If the nearest `final_limit` neighbours were all
+            // out-of-window they consumed every slot and were then dropped, so
+            // valid rows just below the cutoff were never considered — a
+            // default search silently returned too few hits, or none.
+            //
+            // Why overfetch rather than filtering in SQL: the natural fix is to
+            // join `canonical_nodes` into the candidate query, but (i) phase 1
+            // is a `vec0` KNN and ADR-0.8.11 D3 forbids demoting it with
+            // non-metadata predicates, and (ii) there is NO index on
+            // `canonical_nodes(write_cursor)`, so an `EXISTS` per candidate
+            // would be a full scan × the whole pool on EVERY query — a
+            // guaranteed cost to fix a degenerate case.
+            //
+            // Overfetching is free by comparison: phase 2 already computes
+            // `vec_distance_l2` for all `TOP_K_BIT_CANDIDATES` in order to sort
+            // them, so raising the LIMIT only returns more of a result set that
+            // was already materialized. No extra vec0 work, no schema change,
+            // no new index, no second query. The hydration loop below then
+            // stops at `final_limit` SURVIVING hits, so the common case does
+            // exactly as many hydration probes as before.
+            //
+            // `max` (not a bare constant) because `set_search_limit_for_test`
+            // may raise `final_limit` above the pool for the recall harness;
+            // this must never request FEWER candidates than the caller wants.
+            let candidate_limit = final_limit.max(TOP_K_BIT_CANDIDATES);
+            let sql = build_vector_phase1_sql(filter, candidate_limit);
             let mut params: Vec<rusqlite::types::Value> = vec![
                 rusqlite::types::Value::Text(bin_vector.to_string()),
                 rusqlite::types::Value::Text(query_vector.to_string()),
@@ -9213,6 +9300,17 @@ fn read_search_in_tx(
             p
         };
         for (rowid, score) in rowids {
+            // fix-3 (F1): the candidate list is now the OVERFETCHED pool in
+            // exact-L2 order, so the caller's cutoff is applied HERE — after
+            // the validity/existence filter, not before it. Bounded worst case:
+            // at most `TOP_K_BIT_CANDIDATES` hydration probes when nearly every
+            // candidate is filtered out; exactly `final_limit` (i.e. unchanged)
+            // when nothing is. Ordering is unchanged — the surviving rows are
+            // still emitted nearest-first — so on a corpus with no windows this
+            // loop yields byte-identical results to the pre-fix code.
+            if results.len() >= final_limit {
+                break;
+            }
             if let Ok((kind, body, logical_id, source_id)) =
                 node_stmt.query_row(rusqlite::params_from_iter(node_params(rowid)), |row| {
                     Ok((
@@ -9745,13 +9843,16 @@ fn bfs_graph_arm_candidates(
     match_expression: &str,
     max_depth: u32,
     cap: usize,
-    view: ReadView,
+    view: FrozenView,
 ) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats, HashMap<u64, f64>)> {
     // fix-2 (codex §9 [P2]): the opt-in graph arm hydrates NODES too, so it takes
     // the same validity conjunct as the vector and FTS branches — otherwise
     // `search_reranked(.., use_graph_arm = true)` would keep the exact leak the
-    // other two branches just closed. Same generator, same bound `:now`,
-    // resolved ONCE here rather than per statement or per row.
+    // other two branches just closed. Same generator, same bound `:now`.
+    //
+    // fix-3 (F2): the instant arrives ALREADY RESOLVED in the `FrozenView` — it
+    // is the identical value the vector and FTS arms bound. This arm cannot
+    // re-read the clock: a `FrozenView` carries no route to one.
     let now_param = view.now_param();
     // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
     const SEED_FTS_N: usize = 10;
