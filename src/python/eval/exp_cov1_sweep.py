@@ -180,7 +180,7 @@ def build_condition_engine(
         # by int only when the id is genuinely integral; never raise. Reached
         # only for a genuinely NULL-provenance row now that TC-31 populates
         # `source_id` on every arm.
-        raw = getattr(sh, "id", None)
+        raw: Any = getattr(sh, "id", None)
         key = getattr(raw, "value", raw)
         try:
             return cursor_to_doc.get(int(key), str(key))

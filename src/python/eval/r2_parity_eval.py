@@ -345,7 +345,7 @@ def _make_doc_id_of(cursor_to_doc: dict[int, str]) -> Any:
         # int ONLY when the id is genuinely integral; otherwise fall through to
         # the string form. Never raise — an unresolvable hit must score as a
         # miss, not abort the run.
-        raw = getattr(sh, "id", None)
+        raw: Any = getattr(sh, "id", None)
         key = getattr(raw, "value", raw)
         try:
             return cursor_to_doc.get(int(key), str(key))
