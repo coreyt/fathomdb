@@ -310,6 +310,8 @@ fn run(args: Args) -> Result<(), String> {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         });
         if node_batch.len() >= NODE_BATCH {
             nodes_written += flush_nodes(&engine, &mut node_batch)?;

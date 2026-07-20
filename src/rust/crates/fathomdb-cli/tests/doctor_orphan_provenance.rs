@@ -47,6 +47,8 @@ fn node(body: &str, source_id: &str, logical_id: Option<&str>) -> PreparedWrite 
         logical_id: logical_id.map(str::to_string),
         state: InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 

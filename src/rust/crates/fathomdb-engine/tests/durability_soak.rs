@@ -86,6 +86,8 @@ fn _power_cut_victim_entry() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("victim write");
         if first {

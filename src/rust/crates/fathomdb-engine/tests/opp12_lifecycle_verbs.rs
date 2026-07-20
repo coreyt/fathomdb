@@ -70,6 +70,8 @@ fn node(body: &str, logical_id: &str) -> PreparedWrite {
         logical_id: Some(logical_id.to_string()),
         state: InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 
@@ -125,6 +127,8 @@ fn transition_legal_moves_and_reason_semantics() {
             logical_id: Some("p1".to_string()),
             state: InitialState::Pending,
             reason: Some("awaiting-review".to_string()),
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write pending");
     assert_eq!(read_state_reason(&path, "p1").unwrap().0, "pending");
@@ -144,6 +148,8 @@ fn transition_legal_moves_and_reason_semantics() {
             logical_id: Some("p2".to_string()),
             state: InitialState::Pending,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write pending 2");
     engine
@@ -190,6 +196,8 @@ fn illegal_transitions_return_typed_error_with_legal_targets() {
             logical_id: Some("pend".to_string()),
             state: InitialState::Pending,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write pending");
     let err = engine.transition("pend", LifecycleState::Purged, None).unwrap_err();

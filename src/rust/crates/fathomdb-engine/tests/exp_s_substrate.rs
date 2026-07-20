@@ -84,6 +84,8 @@ fn write_fixture(engine: &Engine) {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         })
         .collect();
     engine.write(&leaves).expect("write leaf batch");

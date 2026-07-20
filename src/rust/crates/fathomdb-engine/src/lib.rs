@@ -613,6 +613,13 @@ enum ReaderRequest {
         /// `search_reranked`) does ZERO extra work and returns `explanation = None`
         /// (R-OBS-2 zero-cost; byte-identical `results`).
         explain: bool,
+        /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — the VALIDITY view the
+        /// node-hydration SELECTs filter by. `ReadView::default()` reproduces
+        /// the pre-fix predicate on any corpus that never authored a window
+        /// (step 22 back-filled NULL/NULL with no DEFAULT, and `validity_sql`
+        /// treats NULL as unbounded ⇒ the conjunct is a provable no-op there).
+        /// The existence axis is refused upstream, never carried here.
+        view: ReadView,
         respond: SyncSender<ReaderResponse>,
     },
     /// Slice 30 (G2) — active-only point lookup by `logical_id`. Returns one
@@ -935,6 +942,7 @@ fn reader_worker_loop(
                 alpha,
                 pool_n,
                 explain,
+                view,
                 respond,
             } => {
                 let result = read_search_in_tx(
@@ -953,6 +961,7 @@ fn reader_worker_loop(
                     alpha,
                     pool_n,
                     explain,
+                    view,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -1619,6 +1628,34 @@ impl ReadView {
     fn node_sql(&self, alias: &str, now_idx: usize) -> String {
         format!("{}{}", self.existence_sql(alias), self.validity_sql(alias, now_idx))
     }
+
+    /// 0.8.20 Slice 15b fix-3 (F2) — resolve this view's validity instant ONCE
+    /// and hand back a [`FrozenView`] that carries the resolved value.
+    ///
+    /// This is the ONLY constructor of a `FrozenView`, and therefore the only
+    /// point on the search path where the wall clock is read.
+    fn freeze(self) -> FrozenView {
+        FrozenView { view: self, now: self.now_param() }
+    }
+
+    /// 0.8.20 Slice 15b fix-2 — the `search` path honours the VALIDITY axis of a
+    /// `ReadView` and refuses the EXISTENCE axis. See [`Engine::search_view`] for
+    /// why refusing beats silently ignoring.
+    fn reject_existence_relaxation_on_search(&self) -> Result<(), EngineError> {
+        let relaxed = match (self.include_superseded, self.include_inactive) {
+            (true, true) => "include_superseded + include_inactive",
+            (true, false) => "include_superseded",
+            (false, true) => "include_inactive",
+            (false, false) => return Ok(()),
+        };
+        Err(EngineError::InvalidArgument {
+            msg: format!(
+                "ReadView.{relaxed} is not supported on the search path; search hydrates from \
+                 projection indexes that are not version-complete, so only the validity axis \
+                 (valid_as_of / include_out_of_window) is honoured. Use read_list for history."
+            ),
+        })
+    }
 }
 
 /// 0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary
@@ -1638,10 +1675,80 @@ pub struct BoundaryCrossing {
     pub became_invalid_at: Option<i64>,
 }
 
+/// 0.8.20 Slice 15b fix-3 (F2) — a [`ReadView`] whose validity instant has
+/// ALREADY been resolved, produced only by [`ReadView::freeze`].
+///
+/// R-20-NV requires `:now` to bind ONCE PER QUERY — not per row, and not per
+/// ARM. The multi-arm search path made that easy to violate: each arm held a
+/// `ReadView` and could call `now_param()`, which for the default view
+/// (`valid_as_of == None`) reads the wall clock. Two arms, two instants, and a
+/// query straddling a validity boundary gets nondeterministic membership.
+///
+/// The fix is TYPE-LEVEL rather than a comment asking future arms to behave:
+/// the instant is resolved once at the top of `read_search_in_tx` and every arm
+/// receives a `FrozenView`, which stores the resolved value in `now` and has NO
+/// path back to the clock. An arm cannot re-resolve the instant because it
+/// never holds anything that could — the failure mode is unreachable, not
+/// merely discouraged.
+#[derive(Clone, Copy, Debug)]
+struct FrozenView {
+    /// The underlying view — consulted for SQL SHAPE only (which conjuncts to
+    /// emit), never to re-resolve the instant.
+    view: ReadView,
+    /// The instant resolved at freeze time. `None` ⇔ the view relaxes validity
+    /// entirely, in which case no conjunct is emitted and nothing is bound.
+    now: Option<i64>,
+}
+
+impl FrozenView {
+    /// The instant to bind, resolved at freeze time. Unlike
+    /// [`ReadView::now_param`] this is a stored value: calling it a second time
+    /// cannot yield a different answer, and it never touches the clock.
+    fn now_param(&self) -> Option<i64> {
+        self.now
+    }
+
+    /// The validity conjunct — delegated to the one generator every read site
+    /// shares, so the search arms cannot drift from the five read verbs.
+    fn validity_sql(&self, alias: &str, now_idx: usize) -> String {
+        self.view.validity_sql(alias, now_idx)
+    }
+}
+
+/// 0.8.20 Slice 15b fix-3 (F2) — how many times [`current_epoch_seconds`] has
+/// been called in this process. Test-only observation; see
+/// [`clock_reads_for_test`].
+static CLOCK_READS: AtomicU64 = AtomicU64::new(0);
+
+/// Test seam — the process-wide count of wall-clock reads on the validity path.
+/// Kept OFF the governed surface (`#[doc(hidden)]`, `_for_test`), mirroring the
+/// sanctioned `set_vector_stage_only_for_test` / `vector_phase1_sql_for_test`
+/// pattern; it is never re-exported from the `fathomdb` facade.
+///
+/// The counter is PROCESS-WIDE, so a test asserting on a delta must hold a
+/// lock that excludes every other clock-reading test in its binary (test
+/// binaries are separate processes, so only intra-binary contention matters).
+/// `slice15b_search_validity_recall.rs` does this with a file-local mutex.
+#[doc(hidden)]
+#[must_use]
+pub fn clock_reads_for_test() -> u64 {
+    CLOCK_READS.load(Ordering::Relaxed)
+}
+
 /// Wall-clock now as INTEGER epoch SECONDS (UTC), saturating at 0 before the
 /// Unix epoch. The single place the node-validity path reads the clock — and it
 /// is read in RUST, then BOUND, never inlined into SQL as `datetime('now')`.
 fn current_epoch_seconds() -> i64 {
+    // 0.8.20 Slice 15b fix-3 (F2) — meter every wall-clock read on the validity
+    // path. R-20-NV requires `:now` to bind ONCE PER QUERY (not per row, not per
+    // ARM): if two arms of one query each resolve *now*, a query that straddles
+    // a validity boundary can have its arms disagree about which side they are
+    // on. That is invisible to a result-shape assertion and unreachable by a
+    // deterministic test — you cannot assert on a race. Counting the reads makes
+    // the property testable WITHOUT racing the clock, and keeps failing for any
+    // arm added later that re-reads it. `Relaxed` is sufficient: the counter is
+    // an observation, never a synchronization point.
+    CLOCK_READS.fetch_add(1, Ordering::Relaxed);
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
@@ -2416,6 +2523,29 @@ pub enum PreparedWrite {
         /// verbatim in `canonical_nodes.reason`. Engine never interprets it. `None`
         /// lands NULL (the back-compat default).
         reason: Option<String>,
+        /// 0.8.20 Slice 15b (TC-34) — world-time validity window, INCLUSIVE lower
+        /// bound, INTEGER epoch SECONDS UTC. `None` lands NULL = unbounded below.
+        ///
+        /// Slice 10b added the `valid_from`/`valid_until` columns, the [`ReadView`]
+        /// validity predicate and [`Engine::crossed_boundary_since`] but NO writer,
+        /// so a window could only be authored with raw SQL. These two fields are
+        /// that writer. They are deliberately FIELDS rather than a new verb,
+        /// exactly as [`PreparedWrite::Edge`] already carries `t_valid`/`t_invalid`:
+        /// the governed command surface is unchanged.
+        ///
+        /// The pair is validated together — see `valid_until`.
+        valid_from: Option<i64>,
+        /// 0.8.20 Slice 15b (TC-34) — world-time validity window, EXCLUSIVE upper
+        /// bound, INTEGER epoch SECONDS UTC. `None` lands NULL = unbounded above.
+        ///
+        /// The window is half-open `[valid_from, valid_until)`, matching the read
+        /// predicate in `ReadView::validity_sql` exactly. Because it is half-open,
+        /// a pair with `valid_from >= valid_until` describes an EMPTY window that no
+        /// instant can ever satisfy — so [`Engine::write`] refuses it with
+        /// [`EngineError::InvalidArgument`] rather than storing a row that no
+        /// default read could ever return. A ONE-SIDED window is never empty and is
+        /// never refused, however extreme its single bound.
+        valid_until: Option<i64>,
     },
     Edge {
         kind: String,
@@ -4162,6 +4292,8 @@ impl Engine {
                             logical_id: Some(logical_id),
                             state: InitialState::Active,
                             reason: None,
+                            valid_from: None,
+                            valid_until: None,
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -4660,6 +4792,64 @@ impl Engine {
         self.search_filtered(query, None)
     }
 
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — `search` under an explicit
+    /// [`ReadView`], the escape hatch matching the one the five read verbs got in
+    /// Slice 10b. `search(query)` is exactly `search_view(query, &ReadView::default())`.
+    ///
+    /// **Scope: the VALIDITY axis only.** `include_out_of_window` and
+    /// `valid_as_of` are honoured; the EXISTENCE flags (`include_superseded`,
+    /// `include_inactive`) are **refused** with
+    /// [`EngineError::InvalidArgument`] rather than silently ignored. Relaxing
+    /// `superseded_at IS NULL` on a retrieval path would resurrect the stale-body
+    /// leak the Slice-15 fix-1 review closed, and search hydrates from projection
+    /// indexes (`search_index`, `vector_default`) that are not version-complete —
+    /// so "include superseded" has no truthful answer here. Refusing says that;
+    /// ignoring would be the dead surface this fix exists to remove.
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    pub fn search_view(&self, query: &str, view: &ReadView) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_explain(query, None, 0, false, 0.3, 0, false, *view)
+    }
+
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — the FULL-arity view entry
+    /// point: [`search_reranked`][Engine::search_reranked] /
+    /// [`search_explained`][Engine::search_explained] under an explicit
+    /// [`ReadView`]. This is what the Python and TypeScript `search(..., view=)`
+    /// bindings call, so a caller can combine a content filter, the CE knobs and
+    /// a validity view in one query — passing `view` must not silently disable
+    /// the filter, and passing a filter must not silently disable `view`.
+    ///
+    /// `search_reranked(q, f, d, g, a, p)` is exactly
+    /// `search_reranked_view(q, f, d, g, a, p, false, &ReadView::default())`.
+    ///
+    /// Validity axis only; existence flags are refused. See
+    /// [`search_view`][Engine::search_view].
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    #[allow(clippy::too_many_arguments)] // mirrors search_explained + the view
+    pub fn search_reranked_view(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        explain: bool,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_explain(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+            *view,
+        )
+    }
+
     /// G10 — hybrid `search` with an optional closed [`SearchFilter`]. `None`
     /// (or an all-`None` filter) is the unfiltered path whose phase-1 SQL is
     /// byte-identical to 0.7.2. The filter prunes the vector branch in the
@@ -4727,6 +4917,7 @@ impl Engine {
             alpha,
             pool_n,
             false,
+            ReadView::default(),
         )
     }
 
@@ -4756,6 +4947,7 @@ impl Engine {
             alpha,
             pool_n,
             true,
+            ReadView::default(),
         )
     }
 
@@ -4772,7 +4964,21 @@ impl Engine {
     ///
     /// Governed surface: re-exported from the `fathomdb` facade + Py/TS bindings.
     pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
+        self.search_text_only_view(query, &ReadView::default())
+    }
+
+    /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — [`search_text_only`][Engine::search_text_only]
+    /// under an explicit [`ReadView`]. Same validity-axis-only scope, and the same
+    /// typed refusal of the existence flags, as [`search_view`][Engine::search_view].
+    ///
+    /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
+    pub fn search_text_only_view(
+        &self,
+        query: &str,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
+        view.reject_existence_relaxation_on_search()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
         }
@@ -4803,6 +5009,7 @@ impl Engine {
             alpha: 0.3,
             pool_n: 0,
             explain: false,
+            view: *view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -4857,11 +5064,24 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<SearchResult, EngineError> {
+        // fix-2: refuse an existence-relaxing view BEFORE any work (and before the
+        // Started event), so the refusal is a pure argument error rather than a
+        // half-emitted query lifecycle.
+        view.reject_existence_relaxation_on_search()?;
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
-        let outcome =
-            self.search_inner(query, filter, rerank_depth, use_graph_arm, alpha, pool_n, explain);
+        let outcome = self.search_inner(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+            view,
+        );
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
@@ -5085,6 +5305,7 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<SearchResult, EngineError> {
         self.search_inner_with_stats(
             query,
@@ -5094,6 +5315,7 @@ impl Engine {
             alpha,
             pool_n,
             explain,
+            view,
         )
         .map(|(result, _stats)| result)
     }
@@ -5111,6 +5333,7 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
         explain: bool,
+        view: ReadView,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the SINGLE
@@ -5198,6 +5421,7 @@ impl Engine {
             alpha,
             pool_n,
             explain,
+            view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -5238,7 +5462,7 @@ impl Engine {
         &self,
         query: &str,
     ) -> Result<GraphFrontierStats, EngineError> {
-        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false)
+        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false, ReadView::default())
             .map(|(_result, stats)| stats)
     }
 
@@ -5360,7 +5584,8 @@ impl Engine {
         }
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
         // 0.8.5: depth=0 → no rerank, so α/pool_n (0.3, 0) are inert here.
-        let search_result = self.search_inner(query, filter, 0, false, 0.3, 0, false)?;
+        let search_result =
+            self.search_inner(query, filter, 0, false, 0.3, 0, false, ReadView::default())?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -5758,6 +5983,8 @@ impl Engine {
             logical_id: None,
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])?;
 
         let poison_outcome: Mutex<Option<EngineError>> = Mutex::new(None);
@@ -5781,6 +6008,8 @@ impl Engine {
                     logical_id: None,
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 }]);
             });
             // One poison thread — empty batch is a deterministic
@@ -6019,6 +6248,15 @@ impl Engine {
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let enqueued = {
             let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+            // 0.8.20 Slice 15b (TC-34) — this writer takes NO validity window, and
+            // that is deliberate rather than an oversight. It is a `#[doc(hidden)]`
+            // test-only writer for the internal `coverage`/`graph` row kinds, which
+            // have no public SDK surface at all (see the doc comment above); the
+            // caller-facing authoring path is `PreparedWrite::Node`, handled in
+            // `commit_batch`. Omitting the columns binds NULL — the migration
+            // step-22 default and the UNBOUNDED reading — so engine-derived rows
+            // stay valid at every instant, which is the only correct answer for a
+            // structural row that no caller can address a window to.
             tx.execute(
                 "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind)
                  VALUES(?1, ?2, ?3, ?4, NULL, ?5)",
@@ -8916,7 +9154,22 @@ fn read_search_in_tx(
     alpha: f64,
     pool_n: usize,
     explain: bool,
+    view: ReadView,
 ) -> ReaderResponse {
+    // 0.8.20 Slice 15b fix-2 (R-20-NV) — the `:now` instant is read HERE, in
+    // Rust, ONCE per query, and bound positionally into every node-hydration
+    // SELECT. Never `datetime('now')` / `strftime('%s','now')`: an inline clock
+    // would make the query non-deterministic, untestable, and re-evaluated per
+    // row. `None` ⇒ the view relaxes validity ⇒ no conjunct is emitted and
+    // nothing is bound (`validity_sql` returns the empty string).
+    //
+    // fix-3 (F2): FREEZE the view here, at the single point every arm flows
+    // through. `freeze()` is the only place on this path that reads the clock;
+    // downstream arms hold a `FrozenView` and have no way to resolve a second,
+    // different instant. Previously the graph arm re-derived it from the raw
+    // `ReadView`, so a boundary-straddling query could have its arms disagree.
+    let view = view.freeze();
+    let now_param = view.now_param();
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
@@ -8942,7 +9195,38 @@ fn read_search_in_tx(
             // byte-identical to 0.7.2. `?1`/`?2` are the sign-quant + f32 query
             // vectors; filter values bind at ?3.. in `vector_filter_clause`
             // order.
-            let sql = build_vector_phase1_sql(filter, final_limit);
+            // fix-3 (F1, codex §9 [P2]) — OVERFETCH the phase-2 rerank so the
+            // validity/existence filter applied at hydration cannot starve the
+            // result set.
+            //
+            // The defect: hydration drops rows that are expired, superseded or
+            // inactive, but it ran on candidates ALREADY truncated to
+            // `final_limit`. If the nearest `final_limit` neighbours were all
+            // out-of-window they consumed every slot and were then dropped, so
+            // valid rows just below the cutoff were never considered — a
+            // default search silently returned too few hits, or none.
+            //
+            // Why overfetch rather than filtering in SQL: the natural fix is to
+            // join `canonical_nodes` into the candidate query, but (i) phase 1
+            // is a `vec0` KNN and ADR-0.8.11 D3 forbids demoting it with
+            // non-metadata predicates, and (ii) there is NO index on
+            // `canonical_nodes(write_cursor)`, so an `EXISTS` per candidate
+            // would be a full scan × the whole pool on EVERY query — a
+            // guaranteed cost to fix a degenerate case.
+            //
+            // Overfetching is free by comparison: phase 2 already computes
+            // `vec_distance_l2` for all `TOP_K_BIT_CANDIDATES` in order to sort
+            // them, so raising the LIMIT only returns more of a result set that
+            // was already materialized. No extra vec0 work, no schema change,
+            // no new index, no second query. The hydration loop below then
+            // stops at `final_limit` SURVIVING hits, so the common case does
+            // exactly as many hydration probes as before.
+            //
+            // `max` (not a bare constant) because `set_search_limit_for_test`
+            // may raise `final_limit` above the pool for the recall harness;
+            // this must never request FEWER candidates than the caller wants.
+            let candidate_limit = final_limit.max(TOP_K_BIT_CANDIDATES);
+            let sql = build_vector_phase1_sql(filter, candidate_limit);
             let mut params: Vec<rusqlite::types::Value> = vec![
                 rusqlite::types::Value::Text(bin_vector.to_string()),
                 rusqlite::types::Value::Text(query_vector.to_string()),
@@ -8988,22 +9272,55 @@ fn read_search_in_tx(
         // `canonical_nodes(write_cursor)`. This site already pays that cost by
         // construction; TC-31 must not add a second one.) Read-only additive
         // column — row-set, ordering and scores are untouched.
-        let mut node_stmt = tx.prepare(
-            "SELECT kind, body, logical_id, source_id FROM canonical_nodes WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
-        )?;
+        // fix-2 (codex §9 [P2]): the validity conjunct comes from
+        // `ReadView::validity_sql` — the SAME generator the five read verbs use.
+        // It is NOT hand-rolled here: Slice 10's whole design is that the
+        // predicate exists in exactly ONE place, so no retrieval site can drift
+        // from another. `?1` is the candidate rowid, so `:now` binds at `?2`.
+        // On a corpus that never authored a window every row is NULL/NULL and
+        // the conjunct matches everything ⇒ default behaviour is unchanged.
+        let node_validity = view.validity_sql("canonical_nodes", 2);
+        let mut node_stmt = tx.prepare(&format!(
+            "SELECT kind, body, logical_id, source_id FROM canonical_nodes \
+             WHERE write_cursor = ?1 AND superseded_at IS NULL AND state = 'active'\
+             {node_validity} LIMIT 1"
+        ))?;
         let mut edge_stmt = tx.prepare(
             "SELECT body, logical_id, source_id FROM canonical_edges \
              WHERE write_cursor = ?1 AND superseded_at IS NULL AND body IS NOT NULL LIMIT 1",
         )?;
+        // The bound parameter list for the node lookup: the candidate rowid,
+        // plus `:now` when (and only when) the view emitted a validity conjunct.
+        // One instant for the whole query — resolved once, above, not per row.
+        let node_params = |rowid: i64| -> Vec<rusqlite::types::Value> {
+            let mut p = vec![rusqlite::types::Value::Integer(rowid)];
+            if let Some(now) = now_param {
+                p.push(rusqlite::types::Value::Integer(now));
+            }
+            p
+        };
         for (rowid, score) in rowids {
-            if let Ok((kind, body, logical_id, source_id)) = node_stmt.query_row([rowid], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                ))
-            }) {
+            // fix-3 (F1): the candidate list is now the OVERFETCHED pool in
+            // exact-L2 order, so the caller's cutoff is applied HERE — after
+            // the validity/existence filter, not before it. Bounded worst case:
+            // at most `TOP_K_BIT_CANDIDATES` hydration probes when nearly every
+            // candidate is filtered out; exactly `final_limit` (i.e. unchanged)
+            // when nothing is. Ordering is unchanged — the surviving rows are
+            // still emitted nearest-first — so on a corpus with no windows this
+            // loop yields byte-identical results to the pre-fix code.
+            if results.len() >= final_limit {
+                break;
+            }
+            if let Ok((kind, body, logical_id, source_id)) =
+                node_stmt.query_row(rusqlite::params_from_iter(node_params(rowid)), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                })
+            {
                 let id = derive_stable_id(logical_id.as_deref(), &body);
                 results.push(SearchHit {
                     id,
@@ -9114,33 +9431,62 @@ fn read_search_in_tx(
         // TC-31 (0.8.20 Slice 10a): `cn.source_id` is selected off the SAME
         // already-present 1:1 LEFT JOIN that supplies `cn.logical_id` — one extra
         // column, no extra query, no row-set or ordering change.
+        // fix-2 (codex §9 [P2]): the node-body FTS branch takes the SAME
+        // validity conjunct, generated by `ReadView::validity_sql` rather than
+        // hand-rolled — the predicate lives in exactly one place (Slice 10).
+        // `?1` is the MATCH expression, so `:now` binds at `?2`.
+        //
+        // The generated conjunct is NULL-PERMISSIVE by construction
+        // (`valid_from IS NULL OR ...`), which is exactly what this LEFT JOIN
+        // needs: an ownerless `search_index` row with no `cn` reads NULL on both
+        // columns and is KEPT, preserving the deliberate keep-ownerless
+        // behaviour the `superseded_at` / `state` conjuncts above encode with
+        // their explicit `OR ... IS NULL`. No extra `OR IS NULL` is needed here,
+        // and none may be added: that would be a second, drifting copy of the
+        // predicate.
+        //
+        // NO-REGRESSION: on a corpus that never authored a window every
+        // `cn.valid_from` / `cn.valid_until` is NULL (step 22 back-filled NULL
+        // with no DEFAULT), so both disjuncts are TRUE for every row and the
+        // row-set, the `bm25(search_index), write_cursor` ordering and the
+        // scores are all byte-unchanged.
+        let text_validity = view.validity_sql("cn", 2);
         let join_sql = format!(
             "SELECT search_index.body, search_index.kind, search_index.write_cursor, \
              bm25(search_index), cn.logical_id, cn.source_id FROM search_index \
              LEFT JOIN canonical_nodes cn ON cn.write_cursor = search_index.write_cursor \
              WHERE search_index MATCH ?1 \
                AND cn.superseded_at IS NULL \
-               AND (cn.state = 'active' OR cn.state IS NULL) \
+               AND (cn.state = 'active' OR cn.state IS NULL)\
+               {text_validity} \
              ORDER BY bm25(search_index), search_index.write_cursor{limit_clause}"
         );
+        // `:now` rides at ?2 only when the view emitted a conjunct; the relaxed
+        // view produces the byte-identical single-parameter statement.
+        let mut text_params: Vec<rusqlite::types::Value> =
+            vec![rusqlite::types::Value::Text(compiled.match_expression.clone())];
+        if let Some(now) = now_param {
+            text_params.push(rusqlite::types::Value::Integer(now));
+        }
         if let Ok(mut statement) = tx.prepare(&join_sql) {
-            let rows = statement.query_map([compiled.match_expression.as_str()], |row| {
-                let body = row.get::<_, String>(0)?;
-                let logical_id = row.get::<_, Option<String>>(4)?;
-                Ok(SearchHit {
-                    id: derive_stable_id(logical_id.as_deref(), &body),
-                    body,
-                    kind: row.get::<_, String>(1)?,
-                    write_cursor: row.get::<_, i64>(2)? as u64,
-                    score: row.get::<_, f64>(3)?,
-                    branch: SoftFallbackBranch::Text,
-                    // TC-31: the NODE's own provenance. NULL for a legacy /
-                    // TC-11-spared governed row, and NULL for an ownerless
-                    // `search_index` row the LEFT JOIN keeps with no `cn`.
-                    source_id: row.get::<_, Option<String>>(5)?,
-                    ce_score: None,
-                })
-            })?;
+            let rows =
+                statement.query_map(rusqlite::params_from_iter(text_params.iter()), |row| {
+                    let body = row.get::<_, String>(0)?;
+                    let logical_id = row.get::<_, Option<String>>(4)?;
+                    Ok(SearchHit {
+                        id: derive_stable_id(logical_id.as_deref(), &body),
+                        body,
+                        kind: row.get::<_, String>(1)?,
+                        write_cursor: row.get::<_, i64>(2)? as u64,
+                        score: row.get::<_, f64>(3)?,
+                        branch: SoftFallbackBranch::Text,
+                        // TC-31: the NODE's own provenance. NULL for a legacy /
+                        // TC-11-spared governed row, and NULL for an ownerless
+                        // `search_index` row the LEFT JOIN keeps with no `cn`.
+                        source_id: row.get::<_, Option<String>>(5)?,
+                        ce_score: None,
+                    })
+                })?;
             rows.flatten().collect()
         } else {
             // No `superseded_at IS NULL` filter here (and none is possible): this
@@ -9348,6 +9694,7 @@ fn read_search_in_tx(
             compiled.match_expression.as_str(),
             3,
             50,
+            view,
         )?;
         graph_stats = stats;
         if explain {
@@ -9496,7 +9843,17 @@ fn bfs_graph_arm_candidates(
     match_expression: &str,
     max_depth: u32,
     cap: usize,
+    view: FrozenView,
 ) -> rusqlite::Result<(Vec<SearchHit>, GraphFrontierStats, HashMap<u64, f64>)> {
+    // fix-2 (codex §9 [P2]): the opt-in graph arm hydrates NODES too, so it takes
+    // the same validity conjunct as the vector and FTS branches — otherwise
+    // `search_reranked(.., use_graph_arm = true)` would keep the exact leak the
+    // other two branches just closed. Same generator, same bound `:now`.
+    //
+    // fix-3 (F2): the instant arrives ALREADY RESOLVED in the `FrozenView` — it
+    // is the identical value the vector and FTS arms bound. This arm cannot
+    // re-read the clock: a `FrozenView` carries no route to one.
+    let now_param = view.now_param();
     // C1 — seed-FTS fan-out cap per source (A: edge endpoints, B: entity nodes).
     const SEED_FTS_N: usize = 10;
     const SYNTHESIZED_PENALTY: f64 = 0.3;
@@ -9589,19 +9946,29 @@ fn bfs_graph_arm_candidates(
         // `logical_id IS NOT NULL` structurally excludes doc nodes (the bug surface).
         // Provenance = the node's own `source_id` (the session it was extracted from).
         {
-            let mut node_seed_stmt = tx.prepare(
+            // `?1` MATCH, `?2` LIMIT ⇒ `:now` binds at `?3`.
+            let seed_validity = view.validity_sql("cn", 3);
+            let mut node_seed_stmt = tx.prepare(&format!(
                 "SELECT cn.logical_id, cn.source_id \
                  FROM search_index si \
                  JOIN canonical_nodes cn ON cn.write_cursor = si.write_cursor \
                  WHERE search_index MATCH ?1 \
                    AND cn.superseded_at IS NULL \
                    AND cn.state = 'active' \
-                   AND cn.logical_id IS NOT NULL \
+                   AND cn.logical_id IS NOT NULL\
+                   {seed_validity} \
                  ORDER BY bm25(search_index), si.write_cursor \
-                 LIMIT ?2",
-            )?;
+                 LIMIT ?2"
+            ))?;
+            let mut seed_params: Vec<rusqlite::types::Value> = vec![
+                rusqlite::types::Value::Text(match_expression.to_string()),
+                rusqlite::types::Value::Integer(SEED_FTS_N as i64),
+            ];
+            if let Some(now) = now_param {
+                seed_params.push(rusqlite::types::Value::Integer(now));
+            }
             let rows = node_seed_stmt
-                .query_map(rusqlite::params![match_expression, SEED_FTS_N as i64], |row| {
+                .query_map(rusqlite::params_from_iter(seed_params.iter()), |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
                 })?;
             for pair in rows {
@@ -9617,14 +9984,21 @@ fn bfs_graph_arm_candidates(
         // 0, hop_score 1.0) — so an edge-only query match surfaces the connected ENTITY
         // nodes, not just the fact body (codex §9 [P2]). Seeds whose body is already in
         // the two-arm result are skipped; the cap is respected.
-        let mut active_stmt = tx.prepare(
+        let active_validity = view.validity_sql("canonical_nodes", 2);
+        let mut active_stmt = tx.prepare(&format!(
             "SELECT kind, body, write_cursor FROM canonical_nodes \
-             WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' LIMIT 1",
-        )?;
+             WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active'\
+             {active_validity} LIMIT 1"
+        ))?;
         for (lid, source_id, seed_confidence) in candidate_seeds {
             stats.seeds_considered += 1;
+            let mut active_params: Vec<rusqlite::types::Value> =
+                vec![rusqlite::types::Value::Text(lid.clone())];
+            if let Some(now) = now_param {
+                active_params.push(rusqlite::types::Value::Integer(now));
+            }
             let row: Option<(String, String, i64)> = active_stmt
-                .query_row(rusqlite::params![&lid], |r| {
+                .query_row(rusqlite::params_from_iter(active_params.iter()), |r| {
                     Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
                 })
                 .optional()?;
@@ -9689,11 +10063,13 @@ fn bfs_graph_arm_candidates(
     )?;
     // Fetch write_cursor alongside kind+body so graph-arm hits carry a real id
     // for apply_recency_reweight (id=0 would force min_id=0 and distort span).
-    let mut body_stmt = tx.prepare(
+    let body_validity = view.validity_sql("canonical_nodes", 2);
+    let mut body_stmt = tx.prepare(&format!(
         "SELECT kind, body, write_cursor FROM canonical_nodes \
-         WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active' \
-         LIMIT 1",
-    )?;
+         WHERE logical_id = ?1 AND superseded_at IS NULL AND state = 'active'\
+         {body_validity} \
+         LIMIT 1"
+    ))?;
 
     while let Some((lid, depth)) = frontier.pop_front() {
         if candidates.len() >= cap {
@@ -9730,8 +10106,13 @@ fn bfs_graph_arm_candidates(
             visited.insert(neighbor.clone());
 
             // Fetch neighbor body + write_cursor from canonical_nodes.
+            let mut body_params: Vec<rusqlite::types::Value> =
+                vec![rusqlite::types::Value::Text(neighbor.clone())];
+            if let Some(now) = now_param {
+                body_params.push(rusqlite::types::Value::Integer(now));
+            }
             let row: Option<(String, String, i64)> = body_stmt
-                .query_row([&neighbor], |row| {
+                .query_row(rusqlite::params_from_iter(body_params.iter()), |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
                 })
                 .optional()?;
@@ -13228,9 +13609,31 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body, logical_id, .. } => {
+        PreparedWrite::Node { kind, body, logical_id, valid_from, valid_until, .. } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
+            }
+            // 0.8.20 Slice 15b (TC-34) — the validity window is HALF-OPEN
+            // `[valid_from, valid_until)`, so a pair with `from >= until` selects
+            // no instant at all: the row would be written but no default read
+            // could ever return it. Silently accepting that is a trap, so it is a
+            // typed refusal carrying the offending bounds. `InvalidArgument` (not
+            // the message-less `WriteValidation`) is deliberate — a caller has to
+            // be able to tell WHICH pair was rejected, and it already maps to
+            // `InvalidArgumentError` in both bindings.
+            //
+            // Only the PAIR can be empty. A one-sided window is unbounded on the
+            // missing side and can never be empty, so it is never refused.
+            if let (Some(from), Some(until)) = (valid_from, valid_until) {
+                if from >= until {
+                    return Err(EngineError::InvalidArgument {
+                        msg: format!(
+                            "invalid validity window: valid_from ({from}) must be strictly less \
+                             than valid_until ({until}); the window is half-open \
+                             [valid_from, valid_until), so this pair can never match any instant"
+                        ),
+                    });
+                }
             }
             // R-20-E3: `source_id` needs no emptiness check here — `SourceId`
             // cannot hold an empty or reserved id, so the check has moved from
@@ -13932,7 +14335,16 @@ fn commit_batch(
         let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
         match (write, plan) {
             (
-                PreparedWrite::Node { kind, body, source_id, logical_id, state, reason },
+                PreparedWrite::Node {
+                    kind,
+                    body,
+                    source_id,
+                    logical_id,
+                    state,
+                    reason,
+                    valid_from,
+                    valid_until,
+                },
                 WritePlan::Node,
             ) => {
                 // G0 — supersession is tombstone-then-insert in this same txn:
@@ -13960,10 +14372,16 @@ fn commit_batch(
                 // (the default) writes `state = 'active'`, value-identical to the
                 // migration step-20 column DEFAULT; `Pending` quarantines the node
                 // out of default retrieval (the `state = 'active'` read exclusion).
+                // 0.8.20 Slice 15b (TC-34) — persist the world-time validity
+                // window. A `None` binds SQL NULL, which is what the migration
+                // step-22 columns already hold for every pre-existing row and what
+                // `ReadView::validity_sql` reads as UNBOUNDED on that side. So a
+                // write that omits the window is byte-identical on disk to a
+                // pre-slice write, and default-view visibility cannot drift.
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason)
-                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id, logical_id, row_kind, state, reason, valid_from, valid_until)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![cursor, kind, body, source_id.as_str(), logical_id, RowKind::Leaf.as_str(), state.as_str(), reason, valid_from, valid_until],
                 )?;
                 // EXP-S (D2/D5) — per-row_kind index-target dispatch. For `leaf`
                 // this is behavior-identical to the pre-EXP-S inline path: FTS
@@ -14891,6 +15309,8 @@ mod tests {
                 logical_id: None,
                 state: crate::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write should succeed");
 

@@ -63,6 +63,49 @@ The helper maps engine events into Python `logging.LogRecord`s with the stable
 
 `soft_fallback.branch` uses the typed values owned by `design/retrieval.md`.
 
+## Node write-item validity window (0.8.20 Slice 15b, TC-34)
+
+`engine.write([...])` takes loose mappings, not typed structs. A **node** item
+accepts two optional validity keys, snake_case per this file's casing rule:
+
+- `valid_from` — `int | None`, INCLUSIVE lower bound, INTEGER epoch **seconds**
+  UTC. Omitted or `None` lands SQL NULL = unbounded below.
+- `valid_until` — `int | None`, EXCLUSIVE upper bound, same units. Omitted or
+  `None` lands SQL NULL = unbounded above.
+
+```python
+engine.write([
+    {
+        "kind": "note",
+        "body": "…",
+        "source_id": "s1",
+        "valid_from": 1_700_000_000,
+        "valid_until": 1_700_003_600,
+    },
+])
+```
+
+The window is **half-open** `[valid_from, valid_until)`: an instant equal to
+`valid_from` is IN, an instant equal to `valid_until` is OUT.
+
+**Omitting both keys preserves existing default-view visibility.** The pair
+binds NULL/NULL — exactly what every pre-slice row already carries — so an
+unchanged caller sees unchanged behaviour.
+
+Refusals (the rule is enforced in the engine's `validate_write`, so it is
+identical across Rust / Python / TypeScript and cannot drift):
+
+- Both bounds present with `valid_from >= valid_until` is an UNSATISFIABLE
+  window and raises `InvalidArgumentError`. Validation runs before any insert,
+  so the **whole batch** is rejected.
+- A **one-sided** window is never refused, however extreme its single bound.
+- A non-integer bound raises `WriteValidationError`; the value is never coerced.
+  `bool` is rejected **explicitly** — it subclasses `int`, so `True` must not be
+  silently taken as the instant `1`.
+
+These are keys on an existing verb, not a new verb: the runtime-verb surface
+above is unchanged. The fields-only delta is **PROPOSED, NOT SIGNED**.
+
 ## Errors
 
 Python exposes one catch-all base class plus one concrete subclass per canonical
@@ -164,6 +207,45 @@ callback bridge subject to ADR-0.6.0-embedder-protocol Invariant 3 (no
 campaign deferred to 0.8.x. In 0.7.1 the binding surface is binary:
 `use_default_embedder=True` (engine's bge-small) or `False` (no embedder;
 vector writes fail with `EmbedderNotConfiguredError`).
+
+## `view=` on `search` / `search_text_only` (0.8.20 Slice 15b fix-2)
+
+**Status: PROPOSED / NOT SIGNED.**
+
+Both search verbs take the SAME optional `view` keyword the five read verbs
+take. It is keyword-only and defaults to `None`.
+
+```python
+engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False,
+              alpha=None, pool_n=None, explain=False, view=None)
+engine.search_text_only(query, view=None)
+```
+
+`view` is a `fathomdb.types.ReadView` — the same dataclass `read.get` /
+`read.list` / `graph.neighbors` accept, with no new type minted.
+
+- `view=None` (default) is the STRICT view: active-only, non-superseded, and
+  valid AT QUERY TIME.
+- `ReadView(valid_as_of=t)` evaluates validity at the bound instant `t`
+  (INTEGER epoch SECONDS, UTC). Half-open, matching the write side and the read
+  verbs: `t == valid_from` is IN, `t == valid_until` is OUT.
+- `ReadView(include_out_of_window=True)` returns hits whatever their window.
+
+**Default behaviour change.** A node whose window has closed (or has not opened)
+is no longer returned by a default `search`. This is a no-op on any corpus that
+never authored a window: omitting the write fields lands NULL/NULL, and NULL is
+unbounded, so every pre-existing row still matches.
+
+**Axis scope — VALIDITY only.** `ReadView(include_superseded=True)` and
+`ReadView(include_inactive=True)` raise `InvalidArgumentError` on the search
+path; they are REFUSED rather than silently ignored, because search hydrates
+from projection indexes that are not version-complete. Use `read.list` to
+enumerate history. A `view=` that is not a `ReadView` (or `None`) raises
+`TypeError` at the Python boundary, matching the `rerank_depth` / `explain` /
+alpha / `pool_n` guards.
+
+These are ARGUMENTS, not new verbs — the governed command surface
+(`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
 ## Non-presence
 

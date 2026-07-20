@@ -67,6 +67,8 @@ fn governed_hit_id_is_logical_space() {
             logical_id: Some("gov-entity-19".to_string()),
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -104,6 +106,8 @@ fn doc_seeded_hit_id_is_content_space() {
             logical_id: None,
             state: InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
@@ -147,6 +151,8 @@ fn every_hit_id_is_non_null_and_space_total() {
                 logical_id: Some("total-gov-1".to_string()),
                 state: InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             },
             PreparedWrite::Node {
                 kind: "note".to_string(),
@@ -155,6 +161,8 @@ fn every_hit_id_is_non_null_and_space_total() {
                 logical_id: None,
                 state: InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             },
         ])
         .expect("write");

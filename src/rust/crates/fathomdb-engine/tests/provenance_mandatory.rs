@@ -71,6 +71,8 @@ fn no_canonical_row_has_null_source_id() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("public node write");
     engine

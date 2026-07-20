@@ -158,6 +158,8 @@ fn doc(body: &str) -> PreparedWrite {
         logical_id: None,
         state: fathomdb_engine::InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 

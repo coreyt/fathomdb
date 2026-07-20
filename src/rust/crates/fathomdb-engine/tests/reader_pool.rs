@@ -118,6 +118,8 @@ fn concurrent_searches_route_to_workers_without_loss_or_duplication() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("seed write");
 

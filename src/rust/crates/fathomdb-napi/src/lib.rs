@@ -764,6 +764,8 @@ mod per_hit_explain_tests {
                     logical_id: Some("zephyr".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 EngPreparedWrite::Node {
                     kind: "doc".to_string(),
@@ -773,6 +775,8 @@ mod per_hit_explain_tests {
                     logical_id: Some("beta".to_string()),
                     state: InitialState::Active,
                     reason: None,
+                    valid_from: None,
+                    valid_until: None,
                 },
                 EngPreparedWrite::Edge {
                     kind: "link".to_string(),
@@ -1187,6 +1191,14 @@ impl Engine {
         // with per-hit provenance + score breakdown + query trace. Default false
         // returns `explanation=null` and a byte-identical result (R-OBS-2 zero-cost).
         explain: Option<bool>,
+        // 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity view,
+        // the same trailing options object the five read verbs take. Omitted /
+        // `undefined` is the strict view: active-only, non-superseded, and valid
+        // AT QUERY TIME. `{ includeOutOfWindow: true }` returns hits whatever
+        // their window; `{ validAsOf: t }` evaluates validity at the bound
+        // instant `t`. The existence flags are REFUSED here (typed
+        // `FDB_INVALID_ARGUMENT`), never silently ignored.
+        view: Option<ReadViewInput>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -1242,13 +1254,14 @@ impl Engine {
         // 0.8.8 EXP-OBS: explain=true routes to search_explained (same retrieval +
         // the sidecar); default stays on search_reranked (byte-identical).
         let explain = explain.unwrap_or(false);
+        let view = read_view_or_default(view);
         let engine = Arc::clone(&self.inner);
+        // fix-2: ONE call — `explain` is a parameter of the full-arity view entry
+        // point, so the two arms can no longer drift on `view`.
         let result = call_engine(move || {
-            if explain {
-                engine.search_explained(&query, filter, depth, graph_arm, alpha, pool_n)
-            } else {
-                engine.search_reranked(&query, filter, depth, graph_arm, alpha, pool_n)
-            }
+            engine.search_reranked_view(
+                &query, filter, depth, graph_arm, alpha, pool_n, explain, &view,
+            )
         })
         .await?;
         Ok(SearchResult::from_rust(result))
@@ -1260,7 +1273,13 @@ impl Engine {
     /// opened in the degraded `denseDisabled` state. Returns node-body FTS hits
     /// only (no vector recall, no CE rerank, no graph arm).
     #[napi]
-    pub async fn search_text_only(&self, query: String) -> Result<SearchResult> {
+    ///
+    /// 0.8.20 Slice 15b fix-2 — takes the same optional `view` as `search`.
+    pub async fn search_text_only(
+        &self,
+        query: String,
+        view: Option<ReadViewInput>,
+    ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
             return Err(typed_error(
@@ -1269,8 +1288,9 @@ impl Engine {
                 JsonValue::Null,
             ));
         }
+        let view = read_view_or_default(view);
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_text_only(&query)).await?;
+        let result = call_engine(move || engine.search_text_only_view(&query, &view)).await?;
         Ok(SearchResult::from_rust(result))
     }
 
@@ -2126,7 +2146,59 @@ fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
         None => InitialState::Active,
     };
     let reason = json_str_alt(item, "reason", "reason")?;
-    Ok(PreparedWrite::Node { kind, body, source_id, logical_id, state, reason })
+    // 0.8.20 Slice 15b (TC-34) — world-time validity window (X1 parity with the
+    // pyo3 binding). INTEGER epoch seconds; absent or `null` means unbounded on
+    // that side, which lands NULL and reproduces pre-slice behaviour exactly.
+    // Both spellings are accepted, exactly as `tValid`/`t_valid` are on edges.
+    // The half-open pair is validated in the ENGINE (`validate_write`), so Rust,
+    // Python and TypeScript share one rule and cannot drift.
+    let valid_from = json_i64_alt(item, "validFrom", "valid_from")?;
+    let valid_until = json_i64_alt(item, "validUntil", "valid_until")?;
+    Ok(PreparedWrite::Node {
+        kind,
+        body,
+        source_id,
+        logical_id,
+        state,
+        reason,
+        valid_from,
+        valid_until,
+    })
+}
+
+/// 0.8.20 Slice 15b (TC-34) — read an optional INTEGER epoch-second field.
+///
+/// JavaScript has ONE number type, so `10.5` and `true` both arrive where an
+/// integer was meant. Both are refused with a typed write-validation error
+/// rather than truncated or coerced: a silently truncated instant is a wrong
+/// answer that only surfaces at the window boundary. `serde_json`'s `as_i64`
+/// returns `None` for any non-integral number, which is exactly the test wanted.
+fn json_i64(v: &JsonValue, key: &str) -> Result<Option<i64>> {
+    match json_get(v, key) {
+        Some(JsonValue::Null) | None => Ok(None),
+        Some(JsonValue::Number(n)) => n.as_i64().map(Some).ok_or_else(|| {
+            typed_error(
+                CODE_WRITE_VALIDATION,
+                format!("field {key:?} must be an integer (epoch seconds), not {n}"),
+                JsonValue::Null,
+            )
+        }),
+        Some(_other) => Err(typed_error(
+            CODE_WRITE_VALIDATION,
+            format!("field {key:?} must be an integer (epoch seconds) or null"),
+            JsonValue::Null,
+        )),
+    }
+}
+
+/// The `json_str_alt` analogue for integers: accept the camelCase spelling
+/// first, then the snake_case one, so a caller porting from the Python stub
+/// keeps working. See [`json_str_alt`].
+fn json_i64_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Option<i64>> {
+    if let Some(v) = json_i64(item, camel)? {
+        return Ok(Some(v));
+    }
+    json_i64(item, snake)
 }
 
 fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {

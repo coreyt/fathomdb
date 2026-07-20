@@ -176,6 +176,19 @@ class Engine:
     # them on the public stub would imply they are callable by end users,
     # which is false.
     def open_report(self) -> OpenReport: ...
+    # Write items are loose mappings, not typed structs, so the stub cannot
+    # express their shape. A NODE item accepts:
+    #   kind: str (required)        body: str
+    #   source_id: str (required, 0.8.20 R-20-E3)
+    #   logical_id: str | None      state: "pending" | "active" | None
+    #   reason: str | None
+    #   valid_from: int | None      valid_until: int | None
+    # 0.8.20 Slice 15b (TC-34): `valid_from`/`valid_until` are the world-time
+    # validity window in INTEGER epoch SECONDS, half-open
+    # [valid_from, valid_until). Absent/None = unbounded on that side, which is
+    # the back-compat default (valid at every instant). `valid_from >=
+    # valid_until` raises InvalidArgumentError; a non-integer (including bool)
+    # raises WriteValidationError. See `fathomdb.engine.Engine.write`.
     def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
     def embed(self, text: str) -> list[float]: ...
     def search(
@@ -190,6 +203,17 @@ class Engine:
         alpha: float | None = ...,
         pool_n: int | None = ...,
         explain: bool = ...,
+        # 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional VALIDITY view.
+        # `None` (default) is the strict view: active-only, non-superseded, and
+        # valid AT QUERY TIME. The EXISTENCE flags (`include_superseded` /
+        # `include_inactive`) raise `InvalidArgumentError` on this path rather
+        # than being silently ignored. See `fathomdb.engine.Engine.search`.
+        view: ReadView | None = ...,
+    ) -> SearchResult: ...
+    # 0.8.18 Slice 5 (R-VEQ-4) — text-only / FTS-only path; takes the same
+    # optional validity view as `search` (0.8.20 Slice 15b fix-2).
+    def search_text_only(
+        self, query: str, view: ReadView | None = ...
     ) -> SearchResult: ...
     # 0.8.8 Slice 15 (OPP-9) — opt-in local telemetry capture.
     def enable_telemetry(self, sink_path: str) -> None: ...

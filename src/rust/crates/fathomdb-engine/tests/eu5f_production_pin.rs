@@ -136,6 +136,8 @@ fn write_docs_production(engine: &Engine, start: usize, count: usize, batch: usi
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             })
             .collect();
         engine.write(&nodes).expect("production write");
@@ -334,6 +336,8 @@ fn panicking_embedder_does_not_wedge_drain() {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         })
         .collect();
     engine.write(&nodes).expect("write");

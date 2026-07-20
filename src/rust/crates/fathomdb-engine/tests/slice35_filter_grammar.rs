@@ -32,6 +32,8 @@ fn write_node(engine: &Engine, logical_id: &str, kind: &str, body: &str) {
             source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write failed");
 }
@@ -488,6 +490,8 @@ fn read_list_includes_nodes_written_without_logical_id_type_check() {
             source_id: fathomdb_engine::SourceId::new("test:fixture").expect("test source id"),
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write without logical_id");
 

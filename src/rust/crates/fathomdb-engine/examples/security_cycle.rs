@@ -29,6 +29,8 @@ fn run(path: PathBuf) -> Result<(), String> {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .map_err(|e| format!("write: {e:?}"))?;
 

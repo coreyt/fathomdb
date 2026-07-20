@@ -128,6 +128,8 @@ fn sustained_seed_serialized_path_completes_and_is_correct() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             })
             .collect();
         engine.write(&batch).expect("seed write");

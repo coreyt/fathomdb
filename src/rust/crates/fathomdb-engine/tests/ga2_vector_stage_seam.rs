@@ -47,6 +47,8 @@ fn seed(engine: &Engine, kind: &str, body: &str) {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
 }

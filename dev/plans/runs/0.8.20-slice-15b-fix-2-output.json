@@ -1,0 +1,210 @@
+{
+  "slice": "0.8.20 Slice 15b fix-2",
+  "mandate": "Close codex §9 [P2]: SDK-authored out-of-window nodes leak through Engine::search. Part 1 = apply the default validity predicate on the search hydration path. Part 2 = thread ReadView through search as an optional argument, both bindings, X1 parity.",
+  "branch": "orch-0.8.20-s15",
+  "baseline_head": "ab790880",
+  "head_sha": "0457908cf63fbb16d3965c39118396dfe378545b",
+  "status": "COMPLETE — both parts done. No blockers. Two decisions owed to HITL (below).",
+
+  "commits": [
+    {
+      "sha": "25943ae8",
+      "kind": "RED",
+      "subject": "test(0.8.20): RED — Slice 15b fix-2, validity window must govern search",
+      "adds": "src/rust/crates/fathomdb-engine/tests/slice15b_search_validity.rs (8 tests)"
+    },
+    {
+      "sha": "41044405",
+      "kind": "GREEN (Part 1 + Rust half of Part 2)",
+      "subject": "fix(0.8.20): GREEN — validity window governs every search hydration site",
+      "touches": "src/rust/crates/fathomdb-engine/src/lib.rs"
+    },
+    {
+      "sha": "0457908c",
+      "kind": "GREEN (Part 2 bindings + mandatory interface contracts)",
+      "subject": "feat(0.8.20): Slice 15b fix-2 Part 2 — ReadView on search across Py + TS",
+      "touches": "fathomdb-engine, fathomdb-py, fathomdb-napi, python/fathomdb/{engine.py,_fathomdb.pyi}, python/tests, ts/src/{index.ts,binding.ts}, ts/tests, dev/interfaces/{rust,python,typescript}.md, dev/DOC-INDEX.md"
+    }
+  ],
+
+  "leak_test_evidence": {
+    "reproduced_before_fix": true,
+    "method": "Temporary probe test on the UNMODIFIED engine, using only the shipped public API (no new methods), then deleted. The suite's own RED state was a compile error (it calls the not-yet-existing search_view), which alone would NOT have proven the leak — so the runtime reproduction was done separately and deliberately.",
+    "probe_input": "engine.write([node(logical_id=EXPIRED, body='quarterly telemetry report', valid_until=2000), node(logical_id=ALWAYS, body='quarterly telemetry summary', no window)]); drain; engine.search('telemetry')",
+    "probe_observed_before_fix": [
+      "quarterly telemetry report",
+      "quarterly telemetry summary"
+    ],
+    "probe_expected": [
+      "quarterly telemetry summary"
+    ],
+    "verdict": "LEAK CONFIRMED. valid_until = 2000 (i.e. 1970) is decades in the past; read_get/read_list correctly hid the node while search returned it. After the fix the same input returns only the unbounded sibling.",
+    "green_after_fix": "cargo test -p fathomdb-engine --test slice15b_search_validity -> exit 0, 8 passed / 0 failed"
+  },
+
+  "part_1_the_fix": {
+    "sites_patched": [
+      "read_search_in_tx vector branch — canonical_nodes lookup by write_cursor (:now bound at ?2)",
+      "read_search_in_tx text branch — search_index LEFT JOIN canonical_nodes cn (:now bound at ?2)",
+      "bfs_graph_arm_candidates — entity-node FTS seed (:now bound at ?3, after ?1 MATCH / ?2 LIMIT)",
+      "bfs_graph_arm_candidates — seed resolution active_stmt (:now bound at ?2)",
+      "bfs_graph_arm_candidates — BFS neighbour hydration body_stmt (:now bound at ?2)"
+    ],
+    "graph_arm_note": "The three graph-arm sites were NOT named in the codex finding (which cited read_search_in_tx only) but are the SAME defect class, reachable from the governed surface via search_reranked(.., use_graph_arm = true). Fixing only read_search_in_tx would have left search_reranked leaking. Flagging as a deliberate, slightly-wider-than-cited scope.",
+    "predicate_reuse": "Every site calls ReadView::validity_sql(alias, now_idx). ZERO hand-rolled copies of the predicate — verified by grep: no site emits valid_from/valid_until comparison SQL of its own. Reuse was possible at all five sites; no STOP-and-report was needed.",
+    "now_seam": "ReadView::now_param() is called ONCE per query in read_search_in_tx and ONCE per call in bfs_graph_arm_candidates, in Rust, then bound positionally. Confirmed by grep that the fix introduces no datetime('now') and no strftime('%s','now') anywhere. It binds once per query, not per row (the per-hit vector lookup rebinds the SAME precomputed i64).",
+    "left_untouched_deliberately": "The pre-step-12 and pre-step-8 fallback statements in the text branch. valid_from/valid_until arrive in schema step 22, so those schemas cannot hold a window and a predicate there would be a compile error at SQL-prepare time. Comment added recording this."
+  },
+
+  "part_2_the_escape_hatch": {
+    "did_it": true,
+    "stopped_and_reported_instead": false,
+    "why_not_a_signature_change": "The prompt said to STOP if threading ReadView forced a signature change across many call sites. It WOULD have: measured 181 call sites of the six public search entry points (.search( alone = 125). So the six shipped signatures were left BYTE-UNCHANGED and the view rides the PRIVATE choke point instead (search_reranked_with_explain -> search_inner -> search_inner_with_stats -> ReaderRequest::Search -> read_search_in_tx). Three ADDITIVE public methods carry the view. This is a deviation from Slice 10's literal plumbing (which made view a REQUIRED &ReadView param on the read verbs) and is the reason I did not stop: the additive route achieves the same caller-visible outcome at zero call-site churn. Flagging it explicitly so the reviewer can overrule.",
+    "new_rust_methods": [
+      "Engine::search_view(query, &ReadView)",
+      "Engine::search_reranked_view(query, filter, rerank_depth, use_graph_arm, alpha, pool_n, explain, &ReadView)",
+      "Engine::search_text_only_view(query, &ReadView)"
+    ],
+    "python": "engine.search(..., view: ReadView | None = None) and engine.search_text_only(query, view=None). Reuses fathomdb.types.ReadView (no new type) and read._to_native_view (no duplicated translation). Not circular at runtime: fathomdb.read imports fathomdb.engine only under TYPE_CHECKING.",
+    "typescript": "engine.search(..., view?: ReadView) and engine.searchTextOnly(query, view?). Reuses the exported ReadView interface; mirrors the read verbs' trailing options object.",
+    "binding_ts_note": "src/ts/src/binding.ts is a HAND-WRITTEN mirror of the native surface and had to be updated too — the generated src/ts/index.d.ts is gitignored (.gitignore:46) and regenerates correctly, but tsc types #native from binding.ts. Without the binding.ts edit the TS build fails 'Expected 1-7 arguments, but got 8'. Not mentioned in the prompt; worth knowing for future binding work."
+  },
+
+  "no_regression_proof": {
+    "claim": "Adding the predicate to the DEFAULT search path does not change results on any corpus that never authored a window.",
+    "mechanism": "validity_sql emits '(alias.valid_from IS NULL OR alias.valid_from <= ?n) AND (alias.valid_until IS NULL OR alias.valid_until > ?n)'. Schema step 22 added both columns as nullable INTEGER with NO DEFAULT and back-filled NULL, so both disjuncts are TRUE for every pre-existing row.",
+    "premise_asserted_not_assumed": "default_search_is_unchanged_on_a_corpus_with_no_authored_windows reads canonical_nodes DIRECTLY and asserts (valid_from, valid_until) == (NULL, NULL) for every seeded row BEFORE asserting search equality — so the no-op argument rests on a measured premise, not a claim.",
+    "empirical_proof": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1 => 557 passed / 0 failed / 13 ignored. Baseline was 549 passed / 0 failed. Delta is +8, which is EXACTLY the 8 tests added in the RED commit. Every changed count is accounted for: no pre-existing test changed state, none was adjusted, none was deleted or re-ignored.",
+    "ts_accounting": "201 pass / 0 fail vs baseline 194 pass / 0 fail. Delta +7 = exactly the 7 new TS tests. No pre-existing TS test changed state.",
+    "r20rv_guard": "default_read_view_is_behavior_identical (the guard the prompt named as the tripwire for this class of change) is in slice10_read_view.rs and PASSES unchanged.",
+    "left_join_semantics_preserved": "The text branch deliberately KEEPS ownerless search_index rows (no matching cn) via its LEFT JOIN and explicit 'OR cn.state IS NULL'. validity_sql is NULL-permissive by construction, so an ownerless row reads NULL on both validity columns and is still kept. No extra 'OR IS NULL' was added — that would have been a second, drifting copy of the predicate."
+  },
+
+  "gates": [
+    { "gate": "cargo fmt --check", "exit": 0 },
+    { "gate": "cargo clippy --workspace --all-targets", "exit": 0, "note": "zero warnings" },
+    { "gate": "cargo check --workspace --all-targets", "exit": 0 },
+    { "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1", "exit": 0, "passed": 557, "failed": 0, "ignored": 13, "baseline_passed": 549, "delta": "+8 = the 8 new tests, fully accounted" },
+    { "gate": "cargo test -p fathomdb --test governed_surface", "exit": 0, "passed": 3, "failed": 0 },
+    { "gate": "cargo test -p fathomdb --test compile_fail_provenance", "exit": 0, "passed": 1, "failed": 0 },
+    { "gate": "cargo test -p fathomdb --test no_recovery_surface (AC-041)", "exit": 0, "passed": 1, "failed": 0 },
+    { "gate": "npm ci (src/ts)", "exit": 0 },
+    { "gate": "npm test (src/ts)", "exit": 0, "pass": 201, "fail": 0, "skipped": 0, "baseline_pass": 194, "delta": "+7 = the 7 new TS tests" },
+    { "gate": "ruff check (changed python)", "exit": 0, "note": "also enforced by the pre-commit hook on the staged set" },
+    { "gate": "python -m py_compile (changed python)", "exit": 0 },
+    { "gate": "pytest", "exit": null, "status": "NOT RUN — UNVERIFIED-BY-EXECUTION, see unverified[] below" },
+    { "gate": "eu7", "exit": null, "status": "ZERO runs, any backend, any N. eu7_real_corpus_ac.rs has an EMPTY diff vs baseline; #[ignore] attribute untouched." }
+  ],
+
+  "trap_compliance": {
+    "trailing_echo_masking": "Every gate exit was read via PIPESTATUS[0] or the immediate $? of the ACTUAL command, never a wrapper aggregate. This mattered: the first two npm test runs really did exit 2 (a genuine tsc failure from the stale binding.ts) and were reported as 2, not swallowed.",
+    "npm_ci_first": "Ran npm ci before npm test in this worktree (exit 0). No bare 127.",
+    "tc16": "scripts/agent-test.sh NOT used as a gate.",
+    "tc37": "scripts/agent-lint-md.sh NOT run and NOT cited. Markdown for the four .md files I touched was normalized by the repo's own md-safe-fix pre-commit hook, which DID run (visible in the commit output). Orchestrator should still lint from the primary checkout.",
+    "tc35": "No new #[napi(object)] Option field was added, so the None-omits-property hazard is not in play. ReadViewInput is an INPUT object and was reused unchanged."
+  },
+
+  "governed_surface": {
+    "status": "PROPOSED / NOT SIGNED",
+    "never_written": "HITL-SIGNED — I have no authority to sign and did not claim it anywhere.",
+    "ac_minted": null,
+    "ac_079_left_unminted": true,
+    "why_no_ac": "Part 2 adds ARGUMENTS (an optional view on existing verbs), not verbs. src/conformance/governed-surface-allowlist.json enumerates SDK verb NAMES (search, search_text_only, searchTextOnly) and is unchanged; governed_surface passes untouched. Tracked by requirement ids R-20-NV / R-20-RV plus the TDD test names, per the prompt's preference.",
+    "interface_docs_updated_same_commit": [
+      "dev/interfaces/rust.md — new section 'Read-side validity on search (0.8.20 Slice 15b fix-2)'",
+      "dev/interfaces/python.md — 'view= on search / search_text_only'",
+      "dev/interfaces/typescript.md — 'view on search / searchTextOnly'",
+      "dev/DOC-INDEX.md — the three rows refreshed per its own stated rule"
+    ],
+    "recovery_denylist": ["recover", "restore", "repair", "fix", "rebuild"],
+    "recovery_denylist_unchanged": true
+  },
+
+  "decisions_owed_to_hitl": [
+    {
+      "id": "D1",
+      "topic": "Axis scope of ReadView on search — I chose REFUSE, and it is arguable.",
+      "what_i_did": "search honours the VALIDITY axis (valid_as_of, include_out_of_window) and REFUSES the EXISTENCE axis (include_superseded, include_inactive) with a typed EngineError::InvalidArgument.",
+      "why": "Silently ignoring them would be exactly the dead/incoherent surface this fix exists to remove. Fully honouring them would mean relaxing 'superseded_at IS NULL' on a retrieval path, which resurrects the stale-body leak the Slice-15 fix-1 review closed; and search hydrates from projection indexes (search_index, vector_default) that are not version-complete, so 'include superseded' has no truthful answer there. Also, the text branch's existence predicate is deliberately 'cn.superseded_at IS NULL AND (cn.state = active OR cn.state IS NULL)' — the OR-IS-NULL keeps ownerless rows — so ReadView::existence_sql could NOT have been reused verbatim without changing that behaviour, which the hard no-regression requirement forbids.",
+      "alternatives": "(a) silently ignore, (b) fully honour on the vector branch only, (c) honour by routing through a version-complete source. All are defensible; I picked the smallest coherent one.",
+      "reversibility": "Cheap. It is one guard function (ReadView::reject_existence_relaxation_on_search) called from two places, plus one Rust test and one Py test asserting the refusal."
+    },
+    {
+      "id": "D2",
+      "topic": "Additive methods instead of Slice-10-style signature change.",
+      "what_i_did": "Left the six shipped search signatures byte-unchanged and added search_view / search_reranked_view / search_text_only_view.",
+      "why": "181 measured call sites. The prompt told me to STOP before forcing a signature change across many call sites; the additive route reaches the same caller-visible outcome without one, so I proceeded rather than blocking.",
+      "cost": "Three new Rust methods rather than one uniform convention — a mild divergence from how the five read verbs look. If uniformity is preferred over call-site churn, this should be re-done as a signature change and is a mechanical (if wide) edit."
+    }
+  ],
+
+  "unverified": [
+    {
+      "item": "Python test suite",
+      "status": "UNVERIFIED-BY-EXECUTION",
+      "reason": "The native module cannot be built from this worktree, and src/python/tests/_test_hooks_gate.py is a structural guard which I did NOT defeat.",
+      "what_was_done_instead": "ruff check clean; python -m py_compile clean on both engine.py and the new test module; _fathomdb.pyi updated with the view parameter on search AND with a search_text_only stub that was MISSING entirely at baseline.",
+      "needs": "The orchestrator's fresh-clone run. Reference baseline was 800 passed / 12 skipped, exit 0. Expect +7 tests (the new module has 6 test functions, one of which is parametrized 2 ways = 7 collected) => expect 807 passed / 12 skipped."
+    },
+    {
+      "item": "Whether the Python view= kwarg actually reaches PyO3 at runtime",
+      "status": "UNVERIFIED-BY-EXECUTION",
+      "detail": "cargo check confirms the pyo3 signature accepts view=None and that the types line up, but the Python-side keyword plumbing (engine.py -> _to_native_view -> native search(view=...)) is only statically checked. This is the highest-value thing for the fresh-clone run to confirm.",
+      "mitigation": "The equivalent TS path IS execution-verified (201/201), and the two bindings are structurally parallel."
+    }
+  ],
+
+  "things_this_prompt_or_the_docs_got_wrong": [
+    {
+      "item": "api-surface.md:50 — VERIFIED CORRECT, as instructed.",
+      "detail": "Read it directly. It does specify ReadView as 'A single optional arg (an options-object / kwargs — never positional) on search, read.get, read.list, graph.neighbors'. The prompt's citation holds. Worth noting the doc explicitly says never positional, which is why the additive Rust methods + optional kwarg/options-object in the bindings is a faithful lowering."
+    },
+    {
+      "item": "Engine test baseline 549 — CONFIRMED.",
+      "detail": "549 + 8 new = 557 measured. The prompt's baseline was accurate."
+    },
+    {
+      "item": "TS baseline 194 — CONFIRMED.",
+      "detail": "194 + 7 new = 201 measured."
+    },
+    {
+      "item": "The codex finding named only read_search_in_tx — INCOMPLETE, not wrong.",
+      "detail": "The same defect class exists at three further node-hydration sites inside bfs_graph_arm_candidates (the opt-in graph arm), reachable from the governed surface via search_reranked(use_graph_arm=true). Fixing only the cited function would have shipped a partial fix. All three are now patched."
+    },
+    {
+      "item": "The prompt did not mention src/ts/src/binding.ts.",
+      "detail": "It is a hand-written mirror of the native surface and MUST be updated alongside any napi signature change; the generated index.d.ts being gitignored makes this easy to miss. Failure mode is a tsc arity error that looks like a code defect."
+    },
+    {
+      "item": "_fathomdb.pyi had NO search_text_only stub at baseline.",
+      "detail": "Pre-existing gap, not one this fix created. Added while updating the stub for view=."
+    }
+  ],
+
+  "files_touched": {
+    "engine": ["src/rust/crates/fathomdb-engine/src/lib.rs"],
+    "bindings": ["src/rust/crates/fathomdb-py/src/lib.rs", "src/rust/crates/fathomdb-napi/src/lib.rs"],
+    "python_sdk": ["src/python/fathomdb/engine.py", "src/python/fathomdb/_fathomdb.pyi"],
+    "ts_sdk": ["src/ts/src/index.ts", "src/ts/src/binding.ts"],
+    "tests_new": [
+      "src/rust/crates/fathomdb-engine/tests/slice15b_search_validity.rs (8 tests, GREEN)",
+      "src/ts/tests/slice15b-search-validity.test.ts (7 tests, GREEN)",
+      "src/python/tests/test_slice15b_search_validity.py (7 collected, UNVERIFIED-BY-EXECUTION)"
+    ],
+    "docs": ["dev/interfaces/rust.md", "dev/interfaces/python.md", "dev/interfaces/typescript.md", "dev/DOC-INDEX.md"]
+  },
+
+  "not_touched_as_instructed": [
+    "dev/plans/plan-0.8.20.md",
+    "dev/plans/runs/STATUS-0.8.20.md",
+    "dev/plans/runs/0.8.20-slice-15b-fix-1-output.json (pre-existing untracked)",
+    "dev/plans/runs/codex/0.8.20/*.log (pre-existing untracked)",
+    "src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs (empty diff; #[ignore] intact)"
+  ],
+
+  "orchestrator_attention": [
+    "dev/todos-and-considerations-ledger.jsonl and .jsonl.seq are MODIFIED in the worktree with entries seq 57-61 (TC-38..TC-41, TC-33). They were NOT present at my preflight and are NOT mine — they appear to be yours, written concurrently at ~20:08-20:09. I deliberately did NOT stage or commit them; every commit used explicit paths. They are still uncommitted in the worktree — decide whether to commit them yourself.",
+    "Markdown lint should be run from the primary checkout per TC-37; I did not run or cite agent-lint-md.sh.",
+    "The Python suite needs your fresh-clone run — that is the one real hole in this fix's evidence."
+  ]
+}

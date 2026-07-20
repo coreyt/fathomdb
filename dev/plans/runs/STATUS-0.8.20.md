@@ -11,7 +11,10 @@
 "awaiting Steward land"; that was stale. §11 is retained as the historical close record.)*
 **Slice-10 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s10` (branch `orch-0.8.20-s10`,
 rebased onto `origin/main` `ae44770f`), terminal HEAD **`93a57b10`** — **COMPLETE on-branch, NOT landed.**
-**Last updated:** 2026-07-20 (Slice 10 closed on-branch; §12).
+**Slice-15 worktree:** `/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s15` (branch `orch-0.8.20-s15`,
+based on `29eba153`), terminal HEAD **`a8087dfb`** (docs/artifacts `cd5620be`) — **NOT landed.**
+**⚠ Slice 15 is PARTIAL: TC-34 closed; R-20-PR + R-20-EAV + TC-33 NOT STARTED; Slices 20/25 stay BLOCKED.**
+**Last updated:** 2026-07-20 (Slice 15b closed on-branch; §13).
 
 ---
 
@@ -19,10 +22,10 @@ rebased onto `origin/main` `ae44770f`), terminal HEAD **`93a57b10`** — **COMPL
 
 | | |
 |---|---|
-| **Slice in flight** | **Slice 10 — `ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** — **COMPLETE ON-BRANCH** |
-| **Status** | `orch-0.8.20-s10` @ **`93a57b10`**, rebased onto `origin/main` `ae44770f`. **R-20-RV + R-20-NV closed. TC-31 RESOLVED; TC-32 annotated** per the HITL ruling (accepted, no behavior change). **SCHEMA 21 → 22.** codex §9 returned **two terminal PASSes** (10a; 10b after one [P2] fix — **not overridden**). All release-DoD gates verified in **one fresh clone at exactly `93a57b10`**, run serially, with real exit codes (§12.3). **Not landed — the Steward lands it.** |
-| **Blocks** | Nothing is blocked *by* Slice 10. Slice 15 (the Phase-2 keystone) does **not** depend on it. Slice 30 (H7) does. **Publish remains blocked on AC-079**, which is **still unsigned**. |
-| **Next action** | **Return to Steward: land `orch-0.8.20-s10`, then commission Slice 15.** Four HITL decisions are owed — **TC-34**, **TC-33**, the **Slice-10 governed-surface delta**, and the carried **AC-079 sign-off** (§4 #15–#17). |
+| **Slice in flight** | **Slice 15 — Phase-2 keystone** — **⚠ IN PROGRESS / PARTIAL.** Only **TC-34** (+ an unscoped search-validity coherence fix) has closed. **R-20-PR, R-20-EAV and TC-33 are NOT STARTED.** |
+| **Status** | `orch-0.8.20-s15` @ **`a8087dfb`** (docs/artifacts `cd5620be`), based on `29eba153`. **TC-34 CLOSED** — node-validity write-side authoring as **optional fields on the existing node write item**, **zero new commands** — plus **search-validity coherence**: `ReadView` now governs `search`, across **five** hydration sites, filtering **before** the vector cutoff and binding **one instant per query**. codex §9 ran **four rounds to a TERMINAL PASS**, **no verdict overridden**. Gates green at `a8087dfb` (§13.3). **Not landed — the Steward lands it.** **Slice 15 itself remains OPEN.** |
+| **Blocks** | **Slices 20 and 25 remain BLOCKED** — they depend on **R-20-PR (the projection registry), which does not exist**. TC-34 closing does **not** unblock them. Slice 30 (H7) depends on 10/15/20/25. **Publish remains blocked on AC-079**, which is **still unsigned**. |
+| **Next action** | **Return to Steward: land `orch-0.8.20-s10` and `orch-0.8.20-s15`, then commission the REMAINDER of Slice 15 — R-20-PR + R-20-EAV + TC-33.** Nine HITL decisions are owed — **TC-33**, the **Slice-10** and **Slice-15b** governed-surface deltas, the carried **AC-079 sign-off**, and **§4 #18–#22**. |
 
 **Slice 5 is COMPLETE and LANDED** at **`1f8ed8bf`** (in `origin/main`). Its close record is §11.
 
@@ -38,9 +41,9 @@ authorized. eu7 baseline capture remains **BLOCKED** (§6.3); resolve before Sli
 | **0** | **X0 design gate** | — | **COMPLETE — HITL-SIGNED, landed `403eb254`** |
 | **5** | **Erasure completeness (R-20-E1…E8, +E9a)** | 0 | **COMPLETE — LANDED `1f8ed8bf`** (in `origin/main`). Close record §11 |
 | **10** | **`ReadView` / read-modes + node-validity (R-20-RV, R-20-NV)** | 0 | **COMPLETE on-branch @ `93a57b10`** — SCHEMA 21→22; **not landed** (§12) |
-| 15 | Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) | 0 | not started |
-| 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | not started |
-| 25 | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | not started |
+| **15** | **Projection registry (C-1) + EAV/property-FTS (R-20-PR, R-20-EAV) + TC-34 + TC-33** | 0, 10 | **⚠ IN PROGRESS / PARTIAL** — **TC-34 CLOSED** on-branch @ `a8087dfb` (+ search-validity coherence; §13). **R-20-PR, R-20-EAV and TC-33 NOT STARTED — no code.** **Slice 15 stays OPEN** |
+| 20 | `dense_readiness` + `flush_embeddings()` (R-20-DR) | 15 | **BLOCKED on R-20-PR** (the registry does not exist) — not started |
+| 25 | Surrogate minting — governed entities ONLY (R-20-SUR) | 15 | **BLOCKED on R-20-PR** (the registry does not exist) — not started |
 | 30 | RUBRIC-H7 `can-i-deploy` contract gate (R-20-H7) | 10,15,20,25 | not started |
 | 40 | Verification + release readiness | 5,30 | not started |
 
@@ -135,6 +138,16 @@ Also logged by Slice 10 and **not** requiring a decision: **TC-35** (napi `#[nap
 for `Option::None` rather than emitting `null` — **measured, not reasoned**; drove the `9a6e4896` shape fix) and
 **TC-36** (the published API docs still declare `SearchHit.id` as `int`/`number` "write_cursor" — **stale since
 0.8.19 C-2** made it an `IdSpace`; a docs defect, pre-existing, not introduced here).
+
+**Raised by Slice 15b** (details in §13):
+
+| # | Decision | Ledger | Recommendation |
+|---|---|---|---|
+| 18 | **Error-variant choice.** An unsatisfiable window raises **`EngineError::InvalidArgument`** (carrying **both** bounds) rather than the **message-less `WriteValidation`** its sibling checks use. Python therefore raises **`InvalidArgumentError`** for an inverted window but **`WriteValidationError`** for a non-integer bound | — | **Deliberate** — a semantic violation is not a type-shape violation, and the caller needs the bounds in the message. But it **is** a family inconsistency. **One line plus tests to reverse**; cheapest to settle now, before the surface is signed |
+| 19 | **`search` view is scoped to the VALIDITY AXIS ONLY.** `include_superseded` / `include_inactive` on a **search** view are a **typed refusal** | — | **Accept.** Search hydrates from **projection indexes that are not version-complete**, so there is **no truthful answer** to give — a refusal is honest where a silent partial answer would not be. **Reversible via one guard function** if the indexes later become version-complete |
+| 20 | **Vector-cutoff limitation** (§13.2). Recall is restored **only within the 192-candidate bit-KNN pool**; with >192 expired near-neighbours the result set can still be short | — | **Either** accept the bounded-192-pool behaviour as the pre-existing ANN bound, **or** schedule the `canonical_nodes(write_cursor)` index + the `EXISTS` general fix. The latter is a **schema step**, and was **deliberately not taken inside a fix commit** |
+| 21 | **The five read verbs still call `view.now_param()` directly.** **Correct today** — they are single-arm queries — but it is the **same latent shape** as the fix-3 defect: an instant re-read per arm rather than bound once per query | — | **Follow-up, not scope creep.** ~**24 call sites**. Recommended as its own small slice rather than folded into a fix round |
+| 22 | **⚠ SLICE 15 IS INCOMPLETE.** **R-20-PR, R-20-EAV and TC-33 are NOT STARTED** — design work exists, **no code**. **Slices 20 and 25 remain BLOCKED** on the registry | — | **Commission the remainder of Slice 15.** TC-34 closing does **not** unblock 20/25 — only **R-20-PR** does. The board must not be read as the keystone having landed |
 
 ---
 
@@ -731,3 +744,134 @@ Logged, no decision needed: **TC-35** (napi `#[napi(object)]` omits `None` `Opti
 `0.8.20-slice-10b-output.json`, and `0.8.20-slice-10b-fix-{2,3,4,5}-output.json`, plus the three §9 transcripts
 in §12.6. Committed with this close per **TC-23** — an untracked closure witness is destructible by routine git
 hygiene.
+
+---
+
+## 13. Slice 15b close — TC-34 node-validity authoring + search-validity coherence
+
+**Branch `orch-0.8.20-s15`, terminal HEAD `a8087dfb`** (docs/artifacts at **`cd5620be`**), based on **`29eba153`**.
+**COMPLETE on-branch. NOT landed — the Steward lands it.**
+
+> **⚠ SLICE 15 IS NOT COMPLETE. This close covers ONE of its four parts.**
+> **TC-34 is CLOSED** (plus a search-validity coherence fix that was **not originally scoped**).
+> **R-20-PR (projection registry, the C-1 co-land), R-20-EAV (EAV / property-FTS) and TC-33 (temporal
+> harmonisation) are NOT STARTED — no code exists for any of them.** **Slice 15 remains OPEN**, and
+> **Slices 20 and 25 remain BLOCKED** on the registry that does not yet exist. Do not read this section as
+> the Phase-2 keystone landing.
+
+### 13.1 What shipped
+
+| Commit | Content |
+|---|---|
+| `f2ce7268` | **RED** — TC-34 node-validity write-side authoring path |
+| `35523156` | **GREEN** — TC-34 authoring path (Rust + Py + TS) |
+| `31f550a8` | Slice 15b closure witness |
+| `ab790880` | **fix-1** — interface contracts for the node-validity write fields (codex **[P2]**) |
+| `25943ae8` | **RED** — fix-2, validity window must govern search |
+| `41044405` | **fix-2 Part 1** — validity governs every search hydration site |
+| `0457908c` | **fix-2 Part 2** — `ReadView` on `search` across Py + TS |
+| `83566058` | **RED** — fix-3, vector-cutoff recall + one instant per query |
+| `a8087dfb` | **fix-3 GREEN** — validity filters before the vector cutoff; one instant per query |
+| `cd5620be` | Closure artifacts — witnesses, 4 codex transcripts, TC-38…42 |
+
+**The shape.** Authoring is via **optional fields on the existing node write batch item** (`valid_from` /
+`valid_until`, **INTEGER epoch seconds**; TS accepts both `validFrom`/`validUntil` and the snake_case
+spellings) — **not a new verb**. That is exactly symmetric with how `PreparedWrite::Edge` has always accepted
+`t_valid`/`t_invalid`. **Zero new commands**; allowlist membership is **byte-unchanged**.
+
+Validation lives in the **engine** (`validate_write`), so Rust, Python and TypeScript share **one** rule and
+cannot drift: an **unsatisfiable** window (both bounds present, `valid_from >= valid_until`) is refused
+**before any INSERT** and **rejects the whole batch**; a **one-sided** window is **never** refused; a
+non-integer bound is a **typed refusal** — Python rejects `bool` **explicitly**, since `bool` subclasses `int`
+and `True` must not silently become the instant `1`.
+
+### 13.2 The defect codex found — and why it was in scope
+
+**Slice 10 scoped `ReadView` to the five read verbs and deliberately left `search` out.** That was defensible
+**only while no SDK caller could author a window** — raw SQL was the sole route, so the gap was **unreachable**.
+**TC-34 made authoring reachable and thereby turned a latent gap into a live defect:** an SDK-authored
+out-of-window node **still came back from `Engine::search`** while `read_get`/`read_list` correctly hid it. The
+implementer **reproduced it at runtime on the unmodified engine** before fixing it.
+`dev/design/record-lifecycle-protocol/api-surface.md:50` had **always** specified `ReadView` on **`search`**, so
+the five-verb scope was a **narrowing of the contract, not the contract**.
+
+The fix touched **five** node-hydration sites, not the one codex cited — `bfs_graph_arm_candidates` carried
+**three more of the same class**, reachable from governed surface via `search_reranked(use_graph_arm=true)`.
+
+Then **two further [P2]s**: validity was filtering **after** the vector KNN cutoff — a **recall** defect, whose
+RED reproduced **ZERO** hits for a query with **two valid matches** — and the graph arm **re-read the clock**
+independently of the other arms, a **determinism** defect. **Both fixed.**
+
+**The honest limitation on the vector fix.** Recall is restored **only within the existing 192-candidate
+bit-KNN pool** (`TOP_K_BIT_CANDIDATES = 192`, `engine/src/lib.rs:8095`). With **more than 192 expired
+near-neighbours** the result set can still come back short. That is the **pre-existing ANN bound of the
+two-stage design, not a new one** — but it is **not a fully general fix**, and it is recorded here as such.
+The rejected alternative was an `EXISTS` join — **legal**, since phase 2 is an ordinary rowid JOIN and so
+**ADR-0.8.11 D3 does not bite there** — rejected on **cost**: the only index on `canonical_nodes(write_cursor)`
+is the **PARTIAL** `canonical_nodes_state_active_idx … WHERE state = 'active'` (migration step 20,
+`fathomdb-schema/src/lib.rs:516-517`), which **cannot serve a general validity join**, so the `EXISTS` form
+would impose a **full scan × the 192-row pool on EVERY search** to fix a degenerate case.
+
+### 13.3 Gates — real exit codes, terminal HEAD `a8087dfb`
+
+| Gate | Result |
+|---|---|
+| `cargo clippy --workspace --all-targets` | **exit 0** (0 warnings) |
+| `cargo check --workspace --all-targets` | **exit 0** |
+| `cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1` | **exit 0 — 560 passed / 0 failed** (baseline 540 ⇒ **+20, all new**) |
+| `cargo test -p fathomdb --test governed_surface` | **exit 0** |
+| `cargo test -p fathomdb --test compile_fail_provenance` | **exit 0** |
+| **Python** | **exit 0 — 809 passed / 12 skipped** — **fresh clone at `a8087dfb`**, **own venv inside the clone**, clone head **verified == branch head**; baseline 787 ⇒ **+22 = exactly the new tests** |
+| **TypeScript** | **exit 0 — 201 pass / 0 fail** (baseline 186) |
+| **markdown lint** | Run with the **PRIMARY checkout's** binary — the worktree script is **vacuous** (**TC-37**). **0 errors in every file this slice touched.** The exit 1 is **entirely** the **9 pre-existing** MD025/MD001 errors in `dev/research/personal-agent-database-market-2026-07-02.md`, **untouched here** |
+| **AC-041** | **GREEN**, both bindings; recovery denylist **UNCHANGED at exactly five** |
+| **eu7** | **ZERO runs**, any backend, any N; `eu7_real_corpus_ac` still `#[ignore]`d, attribute untouched |
+
+### 13.4 Governed-surface delta — **PROPOSED / NOT SIGNED**
+
+- **Commands added: NONE** from TC-34 — it is **fields only**. **fix-2 Part 2** adds an **optional `view`
+  argument to `search`** in **both** bindings.
+- **Types:** `ReadView` **reused** — no new type. `recovery_denylist` **UNCHANGED at exactly five**.
+  **AC-041 GREEN.**
+- **`AC-079` remains available and UNMINTED.**
+- Marked **`AWAITING HITL SIGN-OFF, NOT SIGNED`**.
+
+### 13.5 codex §9 — four rounds, terminal PASS
+
+Transcripts under `dev/plans/runs/codex/0.8.20/` (TC-RUBRIC-7 path), committed with this close.
+
+| Round | Transcript | Verdict |
+|---|---|---|
+| initial | `slice-15b-20260720T195420Z.log` | **CONCERN** — **[P2]** missing interface-contract docs |
+| fix-1 re-review | `slice-15b-fix-1-rereview-20260720T200434Z.log` | **CONCERN** — **[P2]** search ignores validity windows |
+| fix-2 re-review | `slice-15b-fix-2-rereview-20260720T205344Z.log` | **CONCERN** — **2×[P2]** vector cutoff + clock re-read |
+| fix-3 re-review | `slice-15b-fix-3-rereview-20260720T213603Z.log` | **TERMINAL PASS** |
+
+**No verdict was overridden. Every [P2] was fixed.**
+
+### 13.6 What Slice 15b proved WRONG
+
+1. **A named RED test was never written, and the property it guarded then regressed.**
+   `dev/design/0.8.20-slice0-erasure-design.md:308` names **three** RED tests for **R-20-NV**;
+   **`valid_as_of_binds_now_once` has ZERO hits in `src/`** — it exists **only in that design table**. R-20-NV
+   was nevertheless **CLOSED at Slice 10**, and the exact property it named (`:now` binds **once per query**)
+   **regressed in fix-2**. Traceability from the Slice-0 acceptance tables to real tests is **UNENFORCED**.
+   **Slice 40 should mechanically verify that every test named in those tables exists** — this was found **by
+   accident** and is unlikely to be the only one. (**TC-42**)
+2. **`ReadView` never covered `search`** — a five-verb **narrowing** of a contract that named `search`.
+   (**TC-38**)
+3. **`AGENTS.md:25`'s interface-doc obligation is routinely missed**, and `dev/DOC-INDEX.md` did not track
+   `dev/interfaces/python.md`, `typescript.md`, `wire.md` or `README.md` **at all**. Rows were added for the
+   **first two**; **`wire.md` and `README.md` remain gate-m debt.** (**TC-39**)
+4. **Not a defect, but load-bearing for the unstarted work:** the plan's `roles: {filterable, rankable,
+   searchable}` **cannot express the ratified C-1 contract** (**TC-40**), and `filterable` has **two
+   incompatible backends** (**TC-41**).
+
+### 13.7 Owed to the HITL
+
+Recorded as **§4 #18–#22**.
+
+### 13.8 Closure artifacts
+
+`dev/plans/runs/0.8.20-slice-15b-output.json` and `0.8.20-slice-15b-fix-{1,2,3}-output.json`, plus the four §9
+transcripts in §13.5. Ledger entries **TC-38…TC-42**. Committed with this close per **TC-23**.

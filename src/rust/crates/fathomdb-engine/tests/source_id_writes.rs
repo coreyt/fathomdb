@@ -22,6 +22,8 @@ fn phase9_pack_b_source_id_round_trips_through_canonical_nodes() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();
@@ -92,6 +94,8 @@ fn every_write_stores_a_non_null_source_id() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
         opened.engine.close().unwrap();

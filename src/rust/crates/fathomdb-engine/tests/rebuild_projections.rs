@@ -115,6 +115,8 @@ fn ac_044_rebuild_projections_purges_sentinel_bytes() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
         opened.engine.drain(10_000).expect("drain");
@@ -188,6 +190,8 @@ fn ac_063c_rebuild_projections_materializes_failed_terminal_rows() {
                 logical_id: None,
                 state: fathomdb_engine::InitialState::Active,
                 reason: None,
+                valid_from: None,
+                valid_until: None,
             }])
             .expect("write");
         assert!(wait_until(

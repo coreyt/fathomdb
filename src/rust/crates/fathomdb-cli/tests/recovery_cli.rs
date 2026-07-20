@@ -56,6 +56,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write a");
     opened
@@ -67,6 +69,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write a2");
     opened
@@ -78,6 +82,8 @@ fn db_with_sources() -> (TempDir, PathBuf) {
             logical_id: None,
             state: fathomdb::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write b");
     opened.engine.close().expect("close");
@@ -138,6 +144,8 @@ fn t_erasure_bookkeeping_collections_refused_via_cli() {
             logical_id: Some("victim-1".to_string()),
             state: fathomdb::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");

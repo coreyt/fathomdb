@@ -1,0 +1,141 @@
+{
+  "slice": "0.8.20 Slice 15b fix-3",
+  "mandate": "Close two codex §9 [P2] correctness findings from the fix-2 re-review: (F1) validity is applied only while hydrating already-limited vector candidates, so expired nearest neighbours starve valid rows below the cutoff; (F2) the graph arm re-resolves `now` instead of reusing the instant already resolved for the vector/text arms.",
+  "branch": "orch-0.8.20-s15",
+  "baseline_head": "0457908c",
+  "head_sha": "a8087dfb",
+  "status": "COMPLETE — both findings closed, all gates green. No blockers. One prompt correction and two decisions owed (below).",
+
+  "commits": [
+    {
+      "sha": "83566058",
+      "kind": "RED",
+      "subject": "test(0.8.20): RED — Slice 15b fix-3, vector-cutoff recall + one instant per query",
+      "adds": "src/rust/crates/fathomdb-engine/tests/slice15b_search_validity_recall.rs (3 tests)",
+      "also_touches": "src/rust/crates/fathomdb-engine/src/lib.rs — the doc-hidden clock_reads_for_test() meter the F2 test asserts on"
+    },
+    {
+      "sha": "a8087dfb",
+      "kind": "GREEN",
+      "subject": "fix(0.8.20): GREEN — validity filters before the vector cutoff; one instant per query",
+      "touches": "src/rust/crates/fathomdb-engine/src/lib.rs only"
+    }
+  ],
+
+  "red_evidence": {
+    "method": "RED tests run against the unmodified engine at 0457908c, before any production change beyond the test meter. Real exit code captured (101), not a wrapper aggregate.",
+    "f1_observed_before_fix": "[] — ZERO hits returned for a query with two perfectly valid matching rows",
+    "f1_expected": "[\"r11 telemetry rollup\", \"r12 telemetry rollup\"]",
+    "f1_verdict": "CONFIRMED, and at the SEVERE end of what codex described: not merely 'too few' hits but none at all. Ten expired nearest neighbours exactly filled SEARCH_RERANK_LIMIT, were dropped at hydration, and the two valid rows immediately below the cutoff were never considered.",
+    "f2_observed_before_fix": "2 clock reads for one default-view graph-arm query",
+    "f2_expected": "1",
+    "f2_verdict": "CONFIRMED. Violates R-20-NV (`:now` binds once per query, not per row/arm).",
+    "non_vacuity": "The third test (graph arm OFF) PASSED at RED, proving the F2 assertion is not trivially satisfiable and cannot pass by skipping the arm. F1 asserts RAW TABLE CONTENTS first — vector_default row count == 12 and 10 on-disk expired windows — so it cannot pass on code that simply never indexed anything.",
+    "green_after_fix": "cargo test -p fathomdb-engine --test slice15b_search_validity_recall -> exit 0, 3 passed / 0 failed"
+  },
+
+  "f1_option_chosen": {
+    "option": "(a) bounded overfetch — but WITHOUT a backfill round-trip, and the bound is the pre-existing candidate pool rather than a new retry budget",
+    "what_was_rejected_and_why": {
+      "pre_filter_the_vec0_knn": "FORBIDDEN as the prompt anticipated. Phase 1 is a vec0 KNN; ADR-0.8.11 D3 no-demotion is enforced in the type system, and the pre-KNN filter set is a hardcoded four-column vec0 metadata map. Validity is not one of those columns and cannot be added without recreating the table and re-embedding the corpus. Not attempted.",
+      "exists_join_in_phase_2": "LEGAL but rejected on measured cost. Phase 2 is an ordinary rowid JOIN, not a vec0 KNN, so an EXISTS against canonical_nodes/canonical_edges there would NOT violate D3 — and would have been an exact pre-limit filter. It was rejected because there is NO index on canonical_nodes(write_cursor) (verified: the only canonical_nodes indexes are source_id, kind, state_active, validity). An EXISTS per candidate is therefore a full scan × the 192-row pool on EVERY search — trading a guaranteed cost on every query for a fix to a degenerate case. Recording this explicitly because it is the option a reviewer is most likely to ask about."
+    },
+    "what_was_done": "Raise the phase-2 rerank LIMIT from `final_limit` to `final_limit.max(TOP_K_BIT_CANDIDATES)` and move the caller's cutoff into the hydration loop, which now breaks at `final_limit` SURVIVING hits. Validity/existence filtering therefore happens BEFORE the cutoff is applied.",
+    "why_this_is_close_to_free": "Phase 2 already computes vec_distance_l2 across all TOP_K_BIT_CANDIDATES in order to ORDER BY and truncate. Raising the LIMIT only returns more of a result set that was already materialized — no extra vec0 work, no second query, no schema change, no new index, no D3 demotion.",
+    "honest_worst_case": {
+      "recall": "Recall is restored only WITHIN the existing 192-candidate bit-KNN pool. If MORE than TOP_K_BIT_CANDIDATES (192) nearer neighbours are out-of-window, the result set can still be short. This is the pre-existing ANN-recall bound of the two-stage design — the same bound that already applies to bit-KNN quantization loss — not a new limitation introduced here. It is NOT a fully general fix and should not be described as one.",
+      "cost": "Common case UNCHANGED: the loop breaks at final_limit, performing exactly as many hydration probes as before (10). Degenerate case: at most 192 hydration probes, each an unindexed scan of canonical_nodes — a ~19x worst-case increase on a corpus where nearly every near neighbour is expired. Bounded and terminating; no backfill round-trip, no retry loop, no unbounded iteration.",
+      "not_faked": "No unbounded loop and no silent short result were introduced. If the pool is exhausted the search returns fewer hits, exactly as it does today for quantization loss."
+    },
+    "behavioural_invariance": "On any corpus with no validity windows the row-set, the ordering and the count are unchanged — surviving rows are still emitted nearest-first and the conjunct is a no-op on NULL/NULL windows. Confirmed by the full suite staying green with zero pre-existing tests changing state."
+  },
+
+  "f2_structural_non_regressability": {
+    "weak_form_rejected": "A comment saying 'resolve once' — explicitly not what was done.",
+    "what_was_done": "Introduced `FrozenView`, a private type constructible ONLY by `ReadView::freeze()`. It STORES the resolved instant in a field and exposes `now_param()` as a plain field read plus `validity_sql()` delegated to the shared generator. It has no field, method or route that can reach a clock.",
+    "why_it_cannot_regress": "`read_search_in_tx` freezes the view at the single point every arm flows through, and `bfs_graph_arm_candidates` now takes a `FrozenView` rather than a `ReadView`. The arm cannot re-resolve the instant because it no longer holds anything that could — the failure mode is unreachable, not merely discouraged. Any arm added later inherits the same guarantee by construction, since the only value in scope to pass it is the frozen one.",
+    "belt_and_braces": "The RED test meters clock reads directly, so even a future arm that bypassed the type (by calling current_epoch_seconds() outright) would fail the assertion. Type-level prevention plus a runtime detector.",
+    "determinism": "No wall-clock assertion and no sleep. The property 'the arms cannot disagree about the instant' is converted into 'the clock was read exactly once', which is directly and deterministically observable."
+  },
+
+  "gates": {
+    "note": "Every exit code below is the REAL exit of the named command, captured via $? or PIPESTATUS of the actual command — never a wrapper aggregate. The trailing-echo masking trap fired twice earlier in this slice and was specifically guarded against.",
+    "cargo_clippy_workspace_all_targets": { "exit": 0, "warnings": 0 },
+    "cargo_check_workspace_all_targets": { "exit": 0 },
+    "cargo_test_engine_schema_test_threads_1": {
+      "exit": 0,
+      "passed": 560,
+      "failed": 0,
+      "ignored": 13,
+      "baseline_passed": 557,
+      "delta_accounted": "+3 = exactly the three new tests in slice15b_search_validity_recall.rs. NO pre-existing test changed state; nothing was adjusted to match new behaviour."
+    },
+    "cargo_test_fathomdb_governed_surface": { "exit": 0, "passed": 3, "failed": 0 },
+    "cargo_test_fathomdb_compile_fail_provenance": { "exit": 0, "passed": 1, "failed": 0 },
+    "ac_041_no_recovery_surface": { "exit": 0, "passed": 1, "failed": 0 },
+    "recovery_denylist": "unchanged — exactly five names {recover, restore, repair, fix, rebuild}; t_074_recovery_denylist_absent_from_governed_surface and its non-vacuity detector both green",
+    "typescript": {
+      "npm_ci_exit": 0,
+      "npm_test_exit": 0,
+      "pass": 201,
+      "fail": 0,
+      "baseline": "201 pass / 0 fail — matches exactly",
+      "note": "npm ci was run first per the recorded trap (bare `127 napi: not found` otherwise)."
+    },
+    "python": {
+      "executed": false,
+      "status": "UNVERIFIED-BY-EXECUTION — the suite was deliberately NOT run in this worktree, per the prompt.",
+      "static": "ruff check src/python -> exit 0, all checks passed. _fathomdb.pyi present and unmodified.",
+      "risk_assessment": "Zero Python files changed and no pyo3/napi signature changed (git diff vs 0457908c touches only fathomdb-engine lib.rs + one new Rust test file), so the Python surface is untouched by construction.",
+      "orchestrator_baseline": "809 passed / 12 skipped, exit 0 at 0457908c (fresh clone)"
+    },
+    "eu7": "ZERO runs, any backend, any N. `eu7_real_corpus_ac_validation` remains #[ignore]d (TC-20) — verified, not assumed.",
+    "tc_16_agent_test_sh": "NOT used as a gate (aborts at line 63).",
+    "tc_37_agent_lint_md_sh": "NOT run and NOT cited (exits 0 vacuously in a worktree)."
+  },
+
+  "surface_and_governance": {
+    "governed_surface_delta": "NONE.",
+    "new_public_item": "`fathomdb_engine::clock_reads_for_test()` — `#[doc(hidden)]`, `_for_test`-suffixed, never re-exported from the `fathomdb` facade. This matches the sanctioned seam pattern already used by `set_vector_stage_only_for_test`, `vector_phase1_sql_for_test` and `_graph_frontier_stats_for_test`.",
+    "interface_docs_not_updated_and_why": "dev/interfaces/rust.md does NOT enumerate `_for_test` seams — none of the existing sanctioned seams appear there (verified by grep: the single `_for_test` hit is prose about `execute_for_test`). Omitting the new seam is therefore the CONSISTENT choice, not an oversight of the AGENTS.md:25 same-commit rule. Flagging explicitly so the reviewer can overrule if the convention is meant to be read the other way.",
+    "hitl_signing": "Nothing is claimed as HITL-SIGNED. No AC was minted — AC-079 remains unminted; this work is tracked by requirement id R-20-NV plus the TDD test names.",
+    "sdk_visible_behaviour_change": "F1 changes observable results: a default search over a corpus with expired near-neighbours now returns MORE (correct) hits than before. This is a bug fix, but it is a behaviour change on the governed search surface and is worth a reviewer's explicit attention."
+  },
+
+  "prompt_corrections": [
+    {
+      "item": "The prompt states that R-20-NV's RED test `valid_as_of_binds_now_once` ALREADY EXISTS and that F2 'already violates a pinned requirement' enforced by it.",
+      "finding": "That test does not exist in the codebase. `valid_as_of_binds_now_once` appears ONLY as a planned test name in dev/design/0.8.20-slice0-erasure-design.md:308; grep across src/rust finds no such test. The REQUIREMENT R-20-NV is real and pinned in the design doc, but it had no executable enforcement — which is precisely why F2 could regress unnoticed.",
+      "action_taken": "Did not claim a pre-existing test as evidence. Wrote the missing enforcement as `default_view_search_reads_the_clock_once_per_query` (plus a control), which is the first executable pin of the 'binds once per query' half of R-20-NV.",
+      "consequence": "R-20-NV's `:now`-binds-once property is now enforced by a test for the first time. If the orchestrator's traceability matrix expects the name `valid_as_of_binds_now_once`, the new test should be renamed or cross-referenced."
+    }
+  ],
+
+  "could_not_verify": [
+    "The Python test suite was not executed here (prompt-mandated). Static checks only; see gates.python.",
+    "Real-corpus recall impact of the F1 fix was NOT measured — eu7 was correctly not run. The claim 'no ranking change on a corpus without windows' is argued from the code path (ordering preserved, conjunct is a no-op on NULL/NULL) and from the full suite staying green, NOT from a recall measurement.",
+    "The 192-probe degenerate-case cost is reasoned from the absence of an index on canonical_nodes(write_cursor), not benchmarked. No perf run was made."
+  ],
+
+  "decisions_owed": [
+    {
+      "id": "D-1",
+      "question": "Accept the bounded-pool recall limitation, or schedule a general fix?",
+      "detail": "F1 restores recall only within the 192-candidate bit-KNN pool. A corpus with >192 expired near-neighbours to a query can still return a short result set. The general fix is an index on canonical_nodes(write_cursor) plus an EXISTS pre-filter in phase 2 — a SCHEMA step, deliberately NOT taken in a fix commit. Recommend: accept now, consider the index separately on its own merits (it would also speed up the existing per-hit hydration probes, which are unindexed scans TODAY).",
+      "owner": "HITL / orchestrator"
+    },
+    {
+      "id": "D-2",
+      "question": "Should the remaining `ReadView` consumers be migrated to `FrozenView`?",
+      "detail": "The five read verbs and graph_neighbors still call `view.now_param()` directly and so still read the clock at each call. That is CORRECT today — each is a single-arm query, so one read is one instant — but it is the same shape of latent hazard that produced F2, and a future multi-statement read verb could reintroduce it. Scoped OUT of this fix deliberately (it touches ~24 call sites and this is a P2 fix commit, not a refactor). Recommend a follow-up ticket rather than scope creep here.",
+      "owner": "HITL / orchestrator"
+    }
+  ],
+
+  "worktree_hygiene": {
+    "committed_paths": "Explicit paths only — src/rust/crates/fathomdb-engine/src/lib.rs and the one new test file.",
+    "left_untouched": "dev/todos-and-considerations-ledger.jsonl(+.seq) modifications and all dev/plans/runs/* + dev/plans/runs/codex/0.8.20/* untracked files are the ORCHESTRATOR's and were neither staged, committed, reverted nor tidied.",
+    "not_done": "No push. No branch/worktree creation or removal. No git write in the primary checkout. No maturin develop / pip install -e. dev/plans/plan-0.8.20.md and dev/plans/runs/STATUS-0.8.20.md untouched.",
+    "branch_verified_before_every_commit": true
+  }
+}

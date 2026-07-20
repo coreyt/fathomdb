@@ -1,0 +1,250 @@
+{
+  "slice": "0.8.20 Slice 15b",
+  "requirement": "TC-34 — node-validity write-side authoring path",
+  "branch": "orch-0.8.20-s15",
+  "baseline": "29eba153",
+  "head": "35523156452407fe9403ece074351c73b946cd37",
+  "status": "COMPLETE-PENDING-PYTHON-EXECUTION",
+
+  "commits": [
+    {
+      "sha": "f2ce7268",
+      "type": "RED",
+      "subject": "test(0.8.20): RED — TC-34 node-validity write-side authoring path",
+      "contents": "Three new suites (Rust engine, TS, Python) authoring windows through fields that did not yet exist.",
+      "red_evidence": "cargo test -p fathomdb-engine --test slice15b_node_validity_write => real exit 101, E0559 'variant `PreparedWrite::Node` has no field named `valid_from`' (x2)"
+    },
+    {
+      "sha": "35523156452407fe9403ece074351c73b946cd37",
+      "type": "GREEN",
+      "subject": "feat(0.8.20): TC-34 — node-validity write-side authoring path (Py + TS + Rust)",
+      "note": "Amended once BEFORE any push, purely to correct a mechanical-edit count in the message (148 -> 150). Pre-amend sha was 48162eec; it exists in no other repo."
+    }
+  ],
+
+  "shape_implemented": {
+    "decision_source": "ORCHESTRATOR-SPECIFIED, not redesigned by the implementer.",
+    "engine": "PreparedWrite::Node gains valid_from: Option<i64> and valid_until: Option<i64> (INTEGER epoch seconds UTC), threaded into the commit_batch INSERT.",
+    "python": "engine.write([{..., \"valid_from\": int|None, \"valid_until\": int|None}])",
+    "typescript": "engine.write([{..., validFrom|valid_from, validUntil|valid_until}]) — BOTH spellings, via a new json_i64_alt that mirrors the existing json_str_alt used for edge tValid/t_valid.",
+    "new_commands": 0,
+    "precedent_followed": "PreparedWrite::Edge has accepted t_valid/t_invalid on the same batch item since Slice 30 (pyo3 translate_edge, napi translate_edge). This is the in-repo convention for temporal fields."
+  },
+
+  "both_node_insert_sites_addressed": {
+    "site_1_commit_batch": {
+      "location": "src/rust/crates/fathomdb-engine/src/lib.rs — the WritePlan::Node arm of commit_batch",
+      "action": "THREADED. INSERT extended from 8 to 10 columns; valid_from/valid_until bound as ?9/?10. A None binds SQL NULL."
+    },
+    "site_2_write_canonical_row_with_kind_for_test": {
+      "location": "src/rust/crates/fathomdb-engine/src/lib.rs — write_canonical_row_with_kind_for_test",
+      "action": "DELIBERATELY NOT THREADED, and an in-line comment now says why.",
+      "justification": "It is #[doc(hidden)] and is the internal-only writer for the coverage/graph row_kinds. Per its own doc comment there is NO public SDK surface for row_kind in this release, so no caller can reach it and no caller can address a window to it. Omitting the columns binds NULL/NULL — the migration step-22 default and the UNBOUNDED reading — so engine-derived structural rows stay valid at every instant, which is the only correct answer for a row nobody can scope. This satisfies the prompt's 'or explain precisely why one is not a public write path'."
+    }
+  },
+
+  "validation": {
+    "where": "ENGINE — validate_write() in src/rust/crates/fathomdb-engine/src/lib.rs. Deliberately NOT duplicated per binding, so Rust, Python and TypeScript share one rule and cannot drift.",
+    "unsatisfiable_window": {
+      "rule": "If BOTH bounds are present and valid_from >= valid_until, refuse.",
+      "error": "EngineError::InvalidArgument { msg } — carries both offending bounds.",
+      "why_this_variant": "The sibling checks in validate_write use the message-less EngineError::WriteValidation, which cannot tell a caller WHICH pair was rejected. InvalidArgument is an EXISTING typed variant already mapped to InvalidArgumentError in both bindings (fathomdb-py lib.rs:202, fathomdb-napi lib.rs:216), so no new error mechanism and no new error type were invented — per the prompt's constraint.",
+      "batch_scope": "validate_batch runs before any INSERT (write_inner), so the WHOLE batch is rejected. Asserted."
+    },
+    "one_sided_window": "NEVER refused — a one-sided window is unbounded on the missing side and can never be empty, however extreme its single bound. Asserted in Rust and Python.",
+    "non_integer": {
+      "python": "WriteValidationError. bool is rejected EXPLICITLY via is_instance_of::<PyBool>() BEFORE extract::<i64>(), because Python's bool subclasses int and a bare extract would have silently taken True as the instant 1. Floats are rejected by extract::<i64>() itself.",
+      "typescript": "WriteValidationError (CODE_WRITE_VALIDATION). serde_json's as_i64() returns None for any non-integral number, so 10.5 is refused rather than truncated; booleans/strings/objects fall to the non-Number arm."
+    }
+  },
+
+  "must_not_regress_evidence": {
+    "claim": "Existing rows and every write that omits the fields back-fill NULL/NULL => always valid => default-view visibility unchanged.",
+    "how_asserted": "Against the RAW TABLE (SELECT valid_from, valid_until FROM canonical_nodes WHERE ...) in ALL THREE suites, not only via a read verb. This was required and is load-bearing: a row wrongly written with valid_from = 0 is ALSO visible under a default view, so a read-only assertion would pass on broken code and the defect would surface only for a caller reading at a pre-1970 instant.",
+    "tests": [
+      "rust: tc34_omitted_window_lands_null_null_and_stays_visible",
+      "ts: 'TC-34: omitting both fields lands NULL/NULL and preserves default visibility'",
+      "py: test_omitted_window_lands_null_null_and_preserves_default_visibility"
+    ],
+    "corroboration": "The whole pre-existing engine suite (540 baseline tests) stayed green with zero behavioural edits — none of the 146 mechanical test-fixture updates changed an assertion."
+  },
+
+  "round_trip_evidence_per_binding": {
+    "determinism": "Every round-trip assertion uses the ReadView.valid_as_of bound-:now seam. NO wall-clock dependence and NO sleep anywhere in the three suites.",
+    "rust": {
+      "test": "tc34_authored_window_round_trips_through_read_view",
+      "evidence": "window [1000,2000) authored via engine.write; raw table reads (Some(1000), Some(2000)); read_get/read_list at 1500 => present; at 500 and 2500 => absent; include_out_of_window at 2500 => present again.",
+      "result": "PASS"
+    },
+    "typescript": {
+      "test": "TC-34: an SDK-authored window round-trips through validAsOf",
+      "evidence": "same matrix through the napi binding; rawWindow(path,'WINDOWED') === [1000,2000]; read.get at 1500 non-null; at 500/2500 null.",
+      "result": "PASS (97.07ms)"
+    },
+    "python": {
+      "test": "test_authored_window_round_trips_through_valid_as_of",
+      "evidence": "same matrix through the pyo3 binding, same raw-table oracle.",
+      "result": "NOT EXECUTED — see could_not_verify."
+    },
+    "half_open_boundaries": "instant == valid_from is IN, instant == valid_until is OUT — asserted in all three (rust tc34_authored_window_is_half_open; ts/py equivalents), on a window that went THROUGH the write path, so a bound silently shifted by one second fails.",
+    "unbounded_sides": "from-set/until-NULL and the reverse, each with the omitted side asserted NULL on disk rather than a sentinel — all three.",
+    "crossed_boundary_since": "Now exercised end-to-end on SDK-authored windows in Rust (tc34_crossed_boundary_since_works_on_an_authored_window) and TS; PASS in both. Previously reachable only via raw-SQL fixtures."
+  },
+
+  "gates": [
+    { "gate": "cargo clippy --workspace --all-targets", "exit_code": 0, "result": "PASS" },
+    { "gate": "cargo check --workspace --all-targets", "exit_code": 0, "result": "PASS" },
+    {
+      "gate": "cargo test -p fathomdb-engine -p fathomdb-schema -- --test-threads=1",
+      "exit_code": 0,
+      "passed": 549,
+      "failed": 0,
+      "ignored": 13,
+      "baseline": "540 passed / 0 failed",
+      "delta": "+9 = exactly the 9 new engine tests; no pre-existing test changed state",
+      "result": "PASS"
+    },
+    { "gate": "cargo test -p fathomdb --test governed_surface", "exit_code": 0, "passed": 3, "failed": 0, "result": "PASS" },
+    {
+      "gate": "cargo test -p fathomdb --test compile_fail_provenance",
+      "exit_code": 0,
+      "passed": 1,
+      "failed": 0,
+      "result": "PASS",
+      "note": "NOT in the assigned gate list — run because adding fields would otherwise inject an extra E0063 into the trybuild fixture's expected stderr and break it. The fixture was updated; only the intended E0308 remains."
+    },
+    {
+      "gate": "npm test (src/ts): build:native:debug + tsc + node --test",
+      "exit_code": 0,
+      "passed": 194,
+      "failed": 0,
+      "baseline": "186 pass / 0 fail",
+      "delta": "+8 = exactly the 8 new TS tests",
+      "result": "PASS"
+    },
+    { "gate": "ruff check (new + changed Python)", "exit_code": 0, "result": "PASS" },
+    { "gate": "python3 -m py_compile (new + changed Python)", "exit_code": 0, "result": "PASS" },
+    { "gate": "eu7 / eu7_real_corpus_ac", "exit_code": null, "result": "NOT RUN — zero runs on any backend at any N, as directed. Still #[ignore]d; the attribute was not touched." }
+  ],
+
+  "could_not_verify": [
+    {
+      "item": "The Python test suite (src/python/tests/test_slice15b_node_validity_write.py) — 8 test functions, of which the non-integer matrix is parametrised x5.",
+      "status": "UNVERIFIED-BY-EXECUTION",
+      "reason": "The native module cannot be built from this linked worktree: maturin develop / pip install -e would rebind the shared .venv, which is forbidden and is structurally blocked by src/python/tests/_test_hooks_gate.py::venv_belongs_to_source_tree(). No attempt was made to defeat the guard.",
+      "what_was_done_instead": "ruff check (exit 0), python3 -m py_compile (exit 0), and the .pyi stub updated. STATIC CHECKING IS NOT VERIFICATION — this is stated plainly per the Slice-5 lesson. The Python arm's PASS is a claim, not a measurement.",
+      "needs": "The orchestrator's fresh-clone run must execute this file before the slice is closed.",
+      "confidence_note": "Confidence is raised but NOT established by the fact that the Rust and TS arms assert the same matrix against the same engine-side rule, and that the pyo3 translator is a thin field read of the same shape as the napi one. The pyo3-specific bool-rejection path (dict_epoch_seconds) is exercised by NO executed test anywhere — it is the single highest-risk unverified line in this slice."
+    }
+  ],
+
+  "governed_surface": {
+    "delta_type": "FIELDS ONLY — zero new commands.",
+    "allowlist_membership_changed": false,
+    "membership_note": "Neither `allowlist` nor `core` was modified; only the `_comment` narrative. Verified by diffstat: the JSON file shows 1 insertion / 1 deletion (the single-line _comment).",
+    "recovery_denylist": ["fix", "rebuild", "recover", "repair", "restore"],
+    "recovery_denylist_count": 5,
+    "recovery_denylist_changed": false,
+    "ac_041": "GREEN — governed_surface suite re-run, 3/3 pass including t_074_recovery_denylist_absent_from_governed_surface and the non-vacuity detector.",
+    "ac_079": "LEFT UNMINTED, as instructed. The gate is expressed by requirement id (TC-34 / R-20-NV) + TDD test names instead.",
+    "signing_status": "PROPOSED / NOT SIGNED. The _comment entry is explicitly marked '***AWAITING HITL SIGN-OFF, NOT SIGNED***', in the same style Slice 5d and Slice 10 used. The implementer wrote no 'HITL-SIGNED' text anywhere and has no authority to sign."
+  },
+
+  "what_the_plan_or_docs_got_wrong": [
+    {
+      "item": "Prompt line-number drift (minor, non-blocking).",
+      "detail": "The prompt cited the commit_batch Node INSERT at lib.rs:13963-13967 and the destructure at :13935; at commit 29eba153 the actual lines were 13963-13967 and 13935 respectively — these matched. But ReadView::validity_sql was cited at :1607-1615 and is at :1607-1615 (matched), while PreparedWrite::Node was cited at :2390-2419 and is at :2390-2419 (matched). No material drift found; the prompt's file:line claims were accurate. Recorded because the prompt asked me to re-read rather than trust them, which I did."
+    },
+    {
+      "item": "The prompt's TC-35 warning about #[napi(object)] omitting Option::None does NOT apply to this slice's input path.",
+      "detail": "Node write items cross the N-API boundary as serde_json::Value (translate_node reads a JsonValue), NOT as a #[napi(object)] struct. So there is no generated TS input type for write items and no optional-vs-nullable property to get wrong on the way IN. The TS test therefore builds items that OMIT an absent bound rather than sending null, and additionally asserts that an explicitly-sent null is accepted. The measured-not-reasoned discipline the trap asks for was still applied: the TS suite asserts the on-disk result, not the inferred one."
+    },
+    {
+      "item": "Engine.write had NO docstring/JSDoc in either binding.",
+      "detail": "Neither src/python/fathomdb/engine.py::write nor src/ts/src/index.ts::write documented the accepted write-item keys at all — including the pre-existing sourceId/state/reason/logicalId fields. Since the HITL's stated concern is that undiscoverable surface 'makes FathomDB look poor', both were given docs covering the full node item shape, not just the new fields. This is slightly beyond the literal mandate; flagging it as a judgement call rather than hiding it."
+    },
+    {
+      "item": "src/ts had no node_modules in the worktree; `npm test` first failed with exit 127 (`napi: not found`).",
+      "detail": "Resolved with `npm ci` (exit 0) inside the worktree. node_modules is gitignored, so nothing was committed. Worth the orchestrator knowing: a fresh linked worktree cannot run the TS gate until npm ci is run, and the failure mode is a bare 127 that a careless reader could mistake for a code defect."
+    },
+    {
+      "item": "The repo is NOT `ruff format`-clean, so ruff format is not a gate.",
+      "detail": "`ruff format --check src/python` reports 106 files would be reformatted, including Slice 10's own test_slice10_read_view.py. The enforced Python gate is `ruff check` (that is what the pre-commit hook runs), which passes. The new Python file was left in the repo's prevailing style rather than reformatted, to avoid a spurious diff. Not mine to fix."
+    }
+  ],
+
+  "traps_encountered": [
+    {
+      "trap": "Trailing-echo masking a real exit — MATERIALISED, caught.",
+      "detail": "The first backgrounded `npm test ...; echo TS_EXIT=$?` was reported by the harness as 'completed (exit code 0)' while the REAL npm exit was 127. The `;`-joined echo made the compound succeed. Caught because $? was captured into the log and read; the aggregate notification was ignored. Every count in this file comes from the command's own output, never from a wrapper's exit."
+    },
+    {
+      "trap": "scripts/agent-test.sh (TC-16)",
+      "detail": "NOT USED as a gate, as instructed. All Rust/TS/Python steps were run individually."
+    },
+    {
+      "trap": "scripts/agent-lint-md.sh (TC-37)",
+      "detail": "NOT USED and NOT CITED. No markdown files were touched by this slice, so there is nothing for the orchestrator to re-lint."
+    },
+    {
+      "trap": "Self-inflicted: the mechanical sed also matched my own new test helper, producing duplicate valid_from/valid_until fields.",
+      "detail": "Caught immediately by cargo check and fixed before the GREEN commit. Recorded because it is the kind of thing that would otherwise silently survive if the script had produced a still-compiling wrong result."
+    }
+  ],
+
+  "decisions_owed_to_a_human": [
+    {
+      "id": "D1",
+      "topic": "Error-variant choice for the unsatisfiable window.",
+      "decision_taken": "EngineError::InvalidArgument { msg } rather than the message-less EngineError::WriteValidation used by every sibling check in validate_write.",
+      "rationale": "A caller must be able to tell WHICH bound pair was rejected; WriteValidation carries no payload. InvalidArgument already exists and already maps to InvalidArgumentError in both bindings, so nothing new was invented and no enum variant was added.",
+      "the_tension": "It is nonetheless a family inconsistency: this is a write-item validation failure being reported as an argument error. A reviewer may reasonably prefer WriteValidation for consistency, or prefer minting a dedicated InvalidValidityWindow variant. Both are cheap to switch to; the tests assert the variant, so the change is one-line-plus-test. FLAGGING FOR THE REVIEWER — I do not think this is settled.",
+      "binding_consequence": "Python raises InvalidArgumentError (not WriteValidationError) for an inverted window, but WriteValidationError for a non-integer bound. That two-error split is deliberate (semantic vs type-shape) but is a surface detail a human should confirm before sign-off."
+    },
+    {
+      "id": "D2",
+      "topic": "150 mechanical edits to existing test/example files.",
+      "detail": "PreparedWrite::Node is an enum variant, so its fields cannot be defaulted and every literal construction site had to be updated (146 in tests/examples, 4 at genuine internal engine sites). These add nothing semantically but they do inflate the review diff to 79 files. If the project expects to keep adding fields to this variant, a builder or an Options sub-struct would stop the recurrence — that is a design question above my mandate, raised not proposed."
+    },
+    {
+      "id": "D3",
+      "topic": "No TS input type for write items.",
+      "detail": "Engine.write is typed `unknown[]`, so validFrom/validUntil are discoverable only via the JSDoc I added — there is no compile-time help for a TS caller, and a typo like `validForm` silently writes an unbounded row. This is pre-existing (sourceId, logicalId, state and the edge tValid/tInvalid all have the same hole) and fixing it is a real slice, not a bolt-on. Raised because the HITL's stated standard is discoverability, and JSDoc is a weaker answer than a type."
+    },
+    {
+      "id": "D4",
+      "topic": "Python arm is unverified by execution.",
+      "detail": "See could_not_verify. This is the one thing that could still make the slice's X1-parity claim false. It needs the orchestrator's fresh-clone run, not a reviewer's reading."
+    }
+  ],
+
+  "files_touched": {
+    "new": [
+      "src/rust/crates/fathomdb-engine/tests/slice15b_node_validity_write.rs",
+      "src/ts/tests/slice15b-node-validity-write.test.ts",
+      "src/python/tests/test_slice15b_node_validity_write.py"
+    ],
+    "core_implementation": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs",
+      "src/rust/crates/fathomdb-py/src/lib.rs",
+      "src/rust/crates/fathomdb-napi/src/lib.rs"
+    ],
+    "docs_and_stubs": [
+      "src/python/fathomdb/engine.py",
+      "src/python/fathomdb/_fathomdb.pyi",
+      "src/ts/src/index.ts"
+    ],
+    "governance": ["src/conformance/governed-surface-allowlist.json"],
+    "mechanical_only": "70 further .rs files under src/rust — valid_from: None, valid_until: None added at existing PreparedWrite::Node literals, plus the trybuild fixture src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.rs."
+  },
+
+  "not_done_by_design": [
+    "Did NOT update dev/plans/plan-0.8.20.md or the STATUS board — the orchestrator closes the slice.",
+    "Did NOT push, branch, or create/remove worktrees.",
+    "Did NOT git-write in the primary checkout /home/coreyt/projects/fathomdb.",
+    "Did NOT run maturin develop or pip install -e.",
+    "Did NOT run eu7 on any backend at any N; did NOT un-ignore eu7_real_corpus_ac.",
+    "Did NOT mint AC-079 or any new AC.",
+    "Did NOT write 'HITL-SIGNED' anywhere."
+  ]
+}

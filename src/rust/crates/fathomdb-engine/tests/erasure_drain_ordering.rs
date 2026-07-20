@@ -112,6 +112,8 @@ fn seed_rows(engine: &Engine, source_id: &str) {
             logical_id: None,
             state: fathomdb_engine::InitialState::Active,
             reason: None,
+            valid_from: None,
+            valid_until: None,
         })
         .collect();
     engine.write(&writes).expect("write");

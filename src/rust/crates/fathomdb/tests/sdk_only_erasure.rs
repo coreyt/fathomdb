@@ -57,6 +57,8 @@ fn anonymous_node(body: &str, source_id: &str) -> PreparedWrite {
         logical_id: None,
         state: InitialState::Active,
         reason: None,
+        valid_from: None,
+        valid_until: None,
     }
 }
 
