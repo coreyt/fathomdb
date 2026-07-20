@@ -1,0 +1,194 @@
+{
+  "slice": "0.8.20-slice-10a-fix-1",
+  "tracking_id": "TC-31",
+  "branch": "orch-0.8.20-s10",
+  "baseline_sha": "b90c9a0d",
+  "head_sha": "9392dbc5066ca5a9d2ecf9855cb06edaacf04273",
+  "status": "COMPLETE",
+  "commits": [
+    {
+      "sha": "9392dbc5066ca5a9d2ecf9855cb06edaacf04273",
+      "subject": "fix(TC-31): correct the remaining \"source_id is graph-arm-only\" stale contract (fix-1)",
+      "files_changed": 7
+    }
+  ],
+  "mandate": {
+    "item_1_failing_assertion_fixed": true,
+    "item_2_sweep_completed": true,
+    "item_3_rust_gates_run": true,
+    "item_4_python_ts_left_to_orchestrator": true
+  },
+  "primary_fix": {
+    "file": "src/python/tests/test_functional_search.py",
+    "test": "test_functional_search_hit_shape_across_ffi",
+    "line": 79,
+    "before": "assert hit.source_id is None",
+    "after": "assert hit.source_id == _SOURCE_ID",
+    "strengthened": true,
+    "rationale": "Asserts the hit carries ITS OWN row's written source_id, not merely non-None. Stale comment claiming 'None for every two-arm hit (only graph-arm hits carry it)' rewritten."
+  },
+  "sweep": {
+    "method": "repo-wide grep over .rs/.py/.ts/.js/.md for source_id.is_none, 'source_id is None', 'source_id == None', 'source_id: None', sourceId===null/toBeNull, and prose 'only graph-arm' / 'graph-arm only' / 'None for every two-arm' / 'set only for graph-arm'",
+    "fixed": [
+      {
+        "path": "src/python/tests/test_functional_search.py",
+        "line": 79,
+        "class": "stale assertion encoding the defect",
+        "disposition": "FIXED",
+        "note": "the verified live failure; now asserts equality with the written source_id"
+      },
+      {
+        "path": "src/python/fathomdb/types.py",
+        "line": 84,
+        "class": "stale shipped-SDK docstring",
+        "disposition": "FIXED",
+        "note": "SearchHit docstring said \"`None` for every two-arm hit\"; now states every-hit population + the real NULL cases"
+      },
+      {
+        "path": "src/ts/src/index.ts",
+        "line": 172,
+        "class": "stale shipped-SDK doc-comment",
+        "disposition": "FIXED",
+        "note": "SearchHit.sourceId said \"`null` for every two-arm hit\""
+      },
+      {
+        "path": "src/ts/src/binding.ts",
+        "line": 93,
+        "class": "stale NAPI shim doc-comment",
+        "disposition": "FIXED",
+        "note": "\"set only for graph-arm hits\""
+      },
+      {
+        "path": "docs/reference/python-api.md",
+        "line": 385,
+        "class": "stale PUBLISHED user-facing contract",
+        "disposition": "FIXED",
+        "note": "\"# G0 Phase-2 provenance; set only for graph-arm hits\"; also added a prose paragraph documenting source_id, which was previously undocumented despite being the erase_source argument"
+      },
+      {
+        "path": "docs/reference/typescript-api.md",
+        "line": 353,
+        "class": "stale PUBLISHED user-facing contract",
+        "disposition": "FIXED",
+        "note": "\"// G0 Phase-2 provenance; set only for graph-arm hits\"; same prose addition for sourceId/eraseSource"
+      },
+      {
+        "path": "src/python/tests/test_r2_harness.py",
+        "line": 51,
+        "class": "stale PROSE ONLY (assertions legitimate, retained)",
+        "disposition": "FIXED-PROSE-ONLY",
+        "note": "docstring + two inline comments called the source_id=None stubs 'a two-arm hit'. The stubs exercise _doc_id_of's fallback, still required for genuinely NULL-provenance rows, so no assertion changed; they are now described as a legacy NULL-provenance row."
+      }
+    ],
+    "left_deliberately": [
+      {
+        "path": "src/rust/crates/fathomdb-engine/src/lib.rs",
+        "line": 8297,
+        "disposition": "LEGITIMATE",
+        "reason": "rerank_passages synthetic passage — private adapter over caller-supplied tuples, no canonical row and no DB handle in scope; the hit never escapes to a caller. Populating it would fabricate provenance. (Explicitly reserved by 63dfbc08.)"
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/src/lib.rs",
+        "line": 8986,
+        "disposition": "LEGITIMATE",
+        "reason": "text pre-step-8 legacy path — that schema has no source_id column at all, so None is the only truthful value."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/f9_importance_ranking.rs",
+        "line": 37,
+        "disposition": "LEGITIMATE",
+        "reason": "in-memory SearchHit literal feeding a pure ranking function; asserts nothing about engine provenance."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/pr_g9_rrf_fusion.rs",
+        "line": 36,
+        "disposition": "LEGITIMATE",
+        "reason": "same — test-helper SearchHit builder for RRF fusion."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/pr_g12_recency.rs",
+        "line": 28,
+        "disposition": "LEGITIMATE",
+        "reason": "same — test-helper SearchHit builder for recency reweighting."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/pr_g10_reranker.rs",
+        "line": "22, 89, 99",
+        "disposition": "LEGITIMATE",
+        "reason": "same — test-helper SearchHit builders for the reranker."
+      },
+      {
+        "path": "src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.rs",
+        "line": 17,
+        "disposition": "LEGITIMATE",
+        "reason": "compile-fail UI test — `source_id: None` MUST remain a compile error (R-20-E3). Inverting it would break mandatory provenance."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/tc31_source_id_on_every_hit.rs",
+        "line": 392,
+        "disposition": "LEGITIMATE",
+        "reason": "asserts a genuinely NULL-at-rest row reads back as None, not a fabricated value. Correct post-TC-31 contract."
+      },
+      {
+        "path": "src/rust/crates/fathomdb-engine/tests/pr_g0_phase2_frontier.rs",
+        "line": 331,
+        "disposition": "LEGITIMATE",
+        "reason": "§C-5: a NULL-source_id edge must yield a graph hit with source_id==None (no panic/skip). Correct post-TC-31 contract."
+      },
+      {
+        "path": "dev/plans/runs/**, dev/design/**, dev/plans/prompts/**",
+        "line": "multiple",
+        "disposition": "LEGITIMATE-HISTORICAL",
+        "reason": "dated design/plan/status records (incl. STATUS-0.8.20.md:115, which correctly describes TC-31 AS the defect, and 0.8.1-g0-phase2-design.md, which records the original graph-arm-only design). Not rewritten — they record what was true when written."
+      }
+    ],
+    "third_instance_found": true,
+    "third_instance_note": "The orchestrator predicted a third instance. Found FIVE further sites beyond the Python test: two shipped SDK doc-comments (Py types.py, TS index.ts), one NAPI shim (binding.ts), and — most consequential — TWO PUBLISHED user-facing API reference docs (docs/reference/python-api.md, typescript-api.md) stating the wrong contract to end users."
+  },
+  "gates": {
+    "cargo_check_workspace_all_targets": { "exit": 0 },
+    "cargo_clippy_workspace_all_targets": { "exit": 0 },
+    "cargo_test_engine_schema": {
+      "exit": 0,
+      "passed": 507,
+      "failed": 0,
+      "ignored": 13,
+      "ac_002_no_log_files_without_subscriber": "ok",
+      "eu7_real_corpus_ac": "still #[ignore]d, not run",
+      "run_serially": true
+    },
+    "ruff_check_edited_python": { "exit": 0 },
+    "py_compile_edited_python": { "exit": 0 },
+    "agent_lint_md": { "exit": 0 },
+    "agent_lint_docs": { "exit": 0 },
+    "exit_codes_captured_via": "$? / PIPESTATUS — never a trailing echo"
+  },
+  "not_verified_here": {
+    "python_suite": "no native build in a worktree — orchestrator runs in a fresh clone",
+    "typescript_suite": "same; no napi build in a worktree",
+    "note": "No maturin develop / pip install -e was run in this worktree."
+  },
+  "constraints_honored": {
+    "read_side_only": true,
+    "engine_behavior_unchanged": "this commit touches only test assertions, doc-comments and published docs — zero engine/source logic",
+    "write_side_provenance_untouched": true,
+    "resolve_provenance_untouched": true,
+    "ranking_scoring_ordering_untouched": true,
+    "tc11_h_pin_untouched": true,
+    "recovery_denylist_unchanged": "{recover, restore, repair, fix, rebuild}",
+    "ac_041_unaffected": true,
+    "readview_not_implemented": true,
+    "node_validity_not_implemented": true,
+    "eu7_not_run": true,
+    "tc32_untouched": true,
+    "no_push": true,
+    "no_rebase_no_fetch": true,
+    "branch_verified_before_commit": "orch-0.8.20-s10"
+  },
+  "blockers": [],
+  "notes_for_orchestrator": [
+    "Re-run the Python suite in a fresh clone: test_functional_search.py::test_functional_search_hit_shape_across_ffi should now PASS, and the assertion is strengthened to equality with the written source_id.",
+    "OBSERVED BUT NOT FIXED (out of TC-31 scope, separate staleness class): docs/reference/python-api.md:380 and typescript-api.md:348 still declare `id: int` / `id: number` with the comment 'canonical row write_cursor (interim identity carrier)'. That is stale since 0.8.19 C-2 retyped SearchHit.id to IdSpace. Same doc blocks I edited. Recommend a follow-up doc fix; I did not touch it to avoid scope creep.",
+    "The untracked dev/plans/runs/0.8.20-slice-10a-output.json (predecessor's closure file) was left untracked and uncommitted."
+  ]
+}

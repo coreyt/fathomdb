@@ -1,0 +1,49 @@
+{
+  "phase": "0.8.20-slice-10a",
+  "baseline_sha": "c82feb809da0eadb24b46c70d0fc8ce402c1d979",
+  "branch": "orch-0.8.20-s10",
+  "head_sha": "13fab2658c45cb4e69b80550661e3a66c6243a46",
+  "commits": [
+    "27b0853d: test(TC-31): RED — source_id must be readable on every search-hit path",
+    "a6576844: fix(TC-31): populate SearchHit.source_id on every hit path, not just the graph arm",
+    "9c862903: docs(TC-32): annotate accepted single-provenance entity dedupe",
+    "13fab265: fix(TC-31): IdSpace-safe doc-id resolution at the two remaining eval sites"
+  ],
+  "findings_addressed": [
+    "TC-31 — SearchHit.source_id was populated by the graph arm ONLY; six of eight construction sites hard-coded None. erase_source shipped with its argument unreachable from any text/vector/edge hit. Fixed read-side at all five caller-reachable sites by adding source_id as one extra COLUMN to an already-present SELECT/JOIN (no N+1 scan; there is no index on canonical_nodes(write_cursor)).",
+    "TC-31 — node hits (vector, text/BM25F, pre-step-12 legacy text fallback) carry canonical_nodes.source_id; edge hits (vector edge_fact hydration, search_index_edges FTS) carry canonical_edges.source_id. Graph-arm semantics (traversed edge's source_id) left EXACTLY as they were.",
+    "TC-31 — corrected the now-false 'graph-arm only / None otherwise' prose on SearchHit::source_id (engine) and on both binding mirrors (fathomdb-py PySearchHit, fathomdb-napi SearchHit). Neither binding needed a logic change; both already cloned h.source_id.",
+    "TC-31 — eval doc-id resolution made IdSpace-safe so it cannot raise. int(sh.id) had raised TypeError on every hit since 0.8.19 retyped SearchHit.id to IdSpace.",
+    "TC-32 — annotated (ANNOTATION ONLY, zero behaviour change) at fn dedup_prepared_by_logical_id and in dev/design/0.8.20-slice0-erasure-design.md §D-C.1: same-name entity dedupe collapsing provenance onto the FIRST document is intentional, HITL-accepted, and tracked as TC-32."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "B-1",
+      "description": "SPEC DIAGNOSIS INCOMPLETE. The brief named eval/r2_parity_eval.py:_doc_id_of as THE root cause of the two failing Python tests. int(sh.id) is actually present at THREE sites, and test_verify_embed_db.py reaches p0a_base_retrieval.py:463 (via _build_fathomdb_variant), NOT r2_parity_eval.py. Fixing only the named site would have left that test failing.",
+      "resolution": "Fixed all three (r2_parity_eval.py:_doc_id_of, p0a_base_retrieval.py:463, exp_cov1_sweep.py:178). At p0a the inline lambda was replaced with the shared _make_doc_id_of rather than merely made non-raising: cursor_to_doc is keyed by int and 0.8.19 stopped surfacing write_cursor to the SDKs, so an IdSpace-safe cursor lookup would miss on every hit and silently score recall as zero. Reported, not silently absorbed."
+    },
+    {
+      "id": "B-2",
+      "description": "PASSAGES SITE (rerank_passages, was :8271) NOT CHANGED — by design, reported rather than guessed as the brief instructed. rerank_passages is a pure function with NO database handle over caller-supplied (ordinal, body, score) tuples that have no canonical row and no reachable parent node; it projects back to (id, score, ce_score), so that SearchHit NEVER escapes to a caller. There is no user-facing source_id on that path to populate, and minting one would fabricate provenance.",
+      "resolution": "Left as source_id: None. Rationale documented in the test-file module docs and the fix commit message. No restructuring attempted."
+    },
+    {
+      "id": "B-3",
+      "description": "PYTHON AND TS ARE UNVERIFIED-BY-ME. The native extension cannot be built in this worktree (maturin develop / pip install -e are forbidden — they rebind the shared .venv). The shared main-tree .venv's _fathomdb.abi3.so is additionally STALE: `import fathomdb` fails with ImportError: cannot import name 'IllegalTransitionError', i.e. it predates 0.8.19. So no Python test could be executed here at all.",
+      "resolution": "Python and TS tests were written to the established conventions and are correct by construction (API names verified against src/ts/src/index.ts and the existing erase_source suites). ruff check passes; py_compile passes. The _doc_id_of fix WAS verified in isolation with a stub IdSpace across four hit shapes, and the baseline TypeError was reproduced. The orchestrator must run the Python/TS suites in a fresh clone."
+    },
+    {
+      "id": "B-4",
+      "description": "One flaky failure observed: fathomdb-cli --test operator_cli failed once (24 passed / 1 failed) during a full parallel `cargo test --workspace`, then passed 25/25 in isolation and on every subsequent workspace run. CLI tests do not touch search hits; consistent with lock contention under parallel load, not this change.",
+      "resolution": "Not caused by this slice and not fixed here. Flagged for the reviewer."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "AMENDED src/rust/crates/fathomdb-engine/tests/pr_g0_phase2_frontier.rs::test_two_arm_search_byte_stable_with_source_id_field — it asserted `without_arm.results.iter().all(|h| h.source_id.is_none())`. THAT ASSERTION ENCODED THE DEFECT (with the graph arm off, no hit exposed provenance, so erase_source was unreachable). Now asserts is_some(). The byte-stability half of the contract — use_graph_arm=false must be byte-identical to Engine::search() — is UNCHANGED and still asserted, and still passes. LOUD FLAG for the reviewer.",
+    "pr_g1_search_hits.rs required NO change: contrary to the brief's caveat, ac_g1_hit_shape_text_branch and ac_g1_hit_shape_vector_branch never asserted source_id.is_none(). Both still pass unmodified.",
+    "Pre-step-12 legacy text fallback made TIERED rather than left provenance-blind: source_id arrived in schema step 8 and logical_id in step 12, so a schema landing on that fallback may still HAVE source_id (steps 8..11). A provenance-bearing variant is prepared first; on failure it falls back to the historical, byte-identical provenance-free statement (pre-step-8), preserving old-schema compatibility.",
+    "SEMANTIC CHANGE TO REPORT (per the brief's explicit instruction): eval doc-id resolution for text/vector hits moves from the write-order cursor map to source_id-derived. The two agree by construction when the corpus was ingested one document per write with source_doc_id == corpus doc id (the harness's own ingest path), and session_id_of strips the #c<N> chunk suffix so chunked ingests land in gold's id space. The cursor map was in any case UNRECOVERABLE from a hit after 0.8.19 stopped surfacing write_cursor, so this is a repair, not a regression. NO eu7 or eval measurement was run to assess impact — eu7 is CLOSED by HITL decision and eu7_real_corpus_ac remains #[ignore]d and untouched."
+  ],
+  "agent_verify_result": "pass — cargo clippy --workspace --all-targets exit 0; cargo check --workspace --all-targets exit 0; cargo test --workspace exit 0 (662 passed, 0 failed, across 149 test binaries); cargo test -p fathomdb-engine -p fathomdb-schema exit 0 (507 passed, 0 failed); new tc31_source_id_on_every_hit.rs 6/6 pass (was 4 RED / 2 pass at the RED commit 27b0853d); ruff check src/python exit 0. scripts/agent-test.sh aggregate NOT used — it aborts early at the pre-existing TC-16 dead assertion in scripts/tests/test_actionlint_fixture.sh under set -euo pipefail and never reaches the Rust/Python steps. PYTHON AND TS SUITES UNVERIFIED BY ME (see blocker B-3).",
+  "next_step_for_orchestrator": "1) Run the Python and TS suites in a fresh clone with its own venv — specifically src/python/tests/test_tc31_source_id_every_hit.py, src/ts/tests/tc31-source-id-every-hit.test.ts, and the two previously-failing tests test_option2_elps_pipeline.py + test_verify_embed_db.py. I could NOT establish the pass/fail counts vs the 2-failed baseline (B-3); note that closing BOTH required fixing three sites, not the one the brief named (B-1). 2) Send to codex §9 review, flagging: the amended pr_g0_phase2_frontier assertion, the passages non-change rationale (B-2), the tiered pre-step-8 fallback, and the eval doc-id resolution-basis change. 3) Slice 10b (ReadView / node-validity) was correctly NOT touched. TC-11 pin, resolve_provenance, write-side provenance semantics, ranking/scoring/ordering and the recovery denylist {recover, restore, repair, fix, rebuild} are all untouched; AC-041 green."
+}
