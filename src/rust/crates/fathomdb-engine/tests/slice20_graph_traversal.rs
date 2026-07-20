@@ -15,7 +15,7 @@
 //! ADR refs: `ADR-0.8.0-graph-traversal-scope.md` (D-G1..D-G5),
 //! `ADR-0.8.1-graph-substrate-g11-migration.md` §5.2.
 
-use fathomdb_engine::{Engine, EngineError, PreparedWrite, TraversalDirection};
+use fathomdb_engine::{Engine, EngineError, PreparedWrite, ReadView, TraversalDirection};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
@@ -93,7 +93,7 @@ fn graph_neighbors_depth1_returns_adjacent() {
 
     let neighbors = opened
         .engine
-        .graph_neighbors("A", 1, TraversalDirection::Outgoing)
+        .graph_neighbors("A", 1, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
 
     let mut ids: Vec<_> = neighbors.iter().map(|n| n.logical_id.as_str()).collect();
@@ -126,7 +126,7 @@ fn graph_neighbors_depth2_returns_two_hops() {
 
     let neighbors = opened
         .engine
-        .graph_neighbors("A", 2, TraversalDirection::Outgoing)
+        .graph_neighbors("A", 2, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
 
     let mut ids: Vec<_> = neighbors.iter().map(|n| n.logical_id.as_str()).collect();
@@ -156,7 +156,7 @@ fn graph_neighbors_depth3_limit() {
 
     let neighbors = opened
         .engine
-        .graph_neighbors("A", 3, TraversalDirection::Outgoing)
+        .graph_neighbors("A", 3, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
 
     let mut ids: Vec<_> = neighbors.iter().map(|n| n.logical_id.as_str()).collect();
@@ -173,7 +173,8 @@ fn graph_neighbors_depth_gt3_rejected() {
     let opened = Engine::open(db_path(&dir, "depth_gt3")).expect("open");
     opened.engine.write(&[node("doc", "Root A", "A")]).expect("write");
 
-    let result = opened.engine.graph_neighbors("A", 4, TraversalDirection::Outgoing);
+    let result =
+        opened.engine.graph_neighbors("A", 4, TraversalDirection::Outgoing, &ReadView::default());
     match result {
         Err(EngineError::InvalidArgument { .. }) => {
             // Correct: typed error for depth > 3
@@ -202,7 +203,7 @@ fn graph_neighbors_cycle_guard() {
     // depth=3 with a cycle — must terminate and NOT visit A or B more than once.
     let neighbors = opened
         .engine
-        .graph_neighbors("A", 3, TraversalDirection::Both)
+        .graph_neighbors("A", 3, TraversalDirection::Both, &ReadView::default())
         .expect("graph_neighbors must not loop on cycles");
 
     // B should be reachable; A itself should not appear in the neighbor set.
@@ -231,7 +232,7 @@ fn graph_neighbors_cap50_enforced() {
 
     let neighbors = opened
         .engine
-        .graph_neighbors("ROOT", 1, TraversalDirection::Outgoing)
+        .graph_neighbors("ROOT", 1, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
 
     assert!(neighbors.len() <= 50, "hard cap 50 must be enforced; got {} results", neighbors.len());
@@ -262,7 +263,7 @@ fn graph_neighbors_valid_time_filter_drops_invalidated() {
 
     let neighbors = opened
         .engine
-        .graph_neighbors("A", 1, TraversalDirection::Outgoing)
+        .graph_neighbors("A", 1, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
 
     let ids: Vec<_> = neighbors.iter().map(|n| n.logical_id.as_str()).collect();
@@ -426,7 +427,7 @@ fn t_invalid_tformat_edge_correctly_excluded() {
 
     let result = opened
         .engine
-        .graph_neighbors(a_id, 1, TraversalDirection::Outgoing)
+        .graph_neighbors(a_id, 1, TraversalDirection::Outgoing, &ReadView::default())
         .expect("graph_neighbors");
     assert!(result.is_empty(), "expired T-format edge must be excluded; got {result:?}");
 
@@ -473,7 +474,8 @@ fn graph_neighbors_depth0_rejected() {
     let opened = Engine::open(db_path(&dir, "depth0rej")).expect("open");
     opened.engine.write(&[node("doc", "{}", "A")]).expect("write");
 
-    let result = opened.engine.graph_neighbors("A", 0, TraversalDirection::Outgoing);
+    let result =
+        opened.engine.graph_neighbors("A", 0, TraversalDirection::Outgoing, &ReadView::default());
     assert!(
         matches!(result, Err(EngineError::InvalidArgument { .. })),
         "graph_neighbors depth=0 must return InvalidArgument; got {result:?}"
@@ -549,7 +551,12 @@ fn graph_neighbors_inactive_intermediate_not_traversed() {
 
     let results = opened
         .engine
-        .graph_neighbors("A", 2, fathomdb_engine::TraversalDirection::Outgoing)
+        .graph_neighbors(
+            "A",
+            2,
+            fathomdb_engine::TraversalDirection::Outgoing,
+            &ReadView::default(),
+        )
         .expect("graph_neighbors");
 
     let ids: Vec<&str> = results.iter().map(|n| n.logical_id.as_str()).collect();

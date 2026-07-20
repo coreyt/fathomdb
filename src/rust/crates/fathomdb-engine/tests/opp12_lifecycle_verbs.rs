@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    Engine, EngineError, InitialState, LifecycleState, OpenedEngine, PreparedWrite,
+    Engine, EngineError, InitialState, LifecycleState, OpenedEngine, PreparedWrite, ReadView,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -292,9 +292,12 @@ fn soft_delete_excludes_from_default_reads_and_undelete_restores() {
     engine.write(&[node("zephyrunique payload", "a1")]).expect("write");
     engine.drain(15_000).expect("drain");
 
-    assert!(engine.read_get("a1").expect("get").is_some());
+    assert!(engine.read_get("a1", &ReadView::default()).expect("get").is_some());
     engine.transition("a1", LifecycleState::Deleted, Some("x".to_string())).expect("soft-delete");
-    assert!(engine.read_get("a1").expect("get").is_none(), "deleted node absent from read.get");
+    assert!(
+        engine.read_get("a1", &ReadView::default()).expect("get").is_none(),
+        "deleted node absent from read.get"
+    );
     let hits = engine.search("zephyrunique").expect("search");
     assert!(
         !hits.results.iter().any(|h| h.body.contains("zephyrunique payload")),
@@ -302,7 +305,10 @@ fn soft_delete_excludes_from_default_reads_and_undelete_restores() {
     );
 
     engine.transition("a1", LifecycleState::Active, None).expect("undelete");
-    assert!(engine.read_get("a1").expect("get").is_some(), "undelete restores read.get visibility");
+    assert!(
+        engine.read_get("a1", &ReadView::default()).expect("get").is_some(),
+        "undelete restores read.get visibility"
+    );
 }
 
 /// R-PG-2 — `purge` requires deleted-first and is idempotent.

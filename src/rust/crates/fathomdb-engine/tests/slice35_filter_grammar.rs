@@ -9,7 +9,8 @@
 //! `dev/adr/ADR-0.8.0-filter-grammar.md` for the binding spec.
 
 use fathomdb_engine::{
-    ComparisonOp, Engine, EngineError, Predicate, PreparedWrite, ScalarValue, SearchFilter,
+    ComparisonOp, Engine, EngineError, Predicate, PreparedWrite, ReadView, ScalarValue,
+    SearchFilter,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -215,14 +216,14 @@ fn injection_safe_value_is_bound_not_interpolated() {
     // read_list must NOT panic and must NOT fail with a storage error.
     // The injection value is a bound `?` parameter — SQLite treats it as a
     // literal string comparison, not SQL. No rows match (no node has that status).
-    let result = engine.read_list("note", &[pred], 100);
+    let result = engine.read_list("note", &[pred], 100, &ReadView::default());
     assert!(result.is_ok(), "read_list with injection-shaped value must not error: {result:?}");
     let rows = result.unwrap();
     assert_eq!(rows.len(), 0, "injection-shaped value matches no row");
 
     // Confirm the table is still there by reading the legitimate node.
     let legit = Predicate::json_path_eq("$.status", ScalarValue::Text("open".to_string())).unwrap();
-    let legit_rows = engine.read_list("note", &[legit], 100).unwrap();
+    let legit_rows = engine.read_list("note", &[legit], 100, &ReadView::default()).unwrap();
     assert_eq!(legit_rows.len(), 1, "canonical_nodes still exists after injection attempt");
     assert_eq!(legit_rows[0].logical_id, "I1");
 }
@@ -240,13 +241,13 @@ fn read_list_returns_active_nodes_by_kind() {
     write_node(&engine, "B1", "note", r#"{"status":"open"}"#);
     write_node(&engine, "B2", "note", r#"{"status":"draft"}"#);
 
-    let tasks = engine.read_list("task", &[], 100).expect("read_list failed");
+    let tasks = engine.read_list("task", &[], 100, &ReadView::default()).expect("read_list failed");
     assert_eq!(tasks.len(), 2, "expected 2 tasks, got {}", tasks.len());
     for t in &tasks {
         assert_eq!(t.kind, "task", "wrong kind: {}", t.kind);
     }
 
-    let notes = engine.read_list("note", &[], 100).expect("read_list failed");
+    let notes = engine.read_list("note", &[], 100, &ReadView::default()).expect("read_list failed");
     assert_eq!(notes.len(), 2, "expected 2 notes, got {}", notes.len());
     for n in &notes {
         assert_eq!(n.kind, "note", "wrong kind: {}", n.kind);
@@ -265,7 +266,8 @@ fn read_list_filter_eq_matches() {
 
     let pred =
         Predicate::json_path_eq("$.status", ScalarValue::Text("open".to_string())).expect("valid");
-    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("task", &[pred], 100, &ReadView::default()).expect("read_list failed");
     assert_eq!(rows.len(), 2, "expected 2 open tasks, got {}", rows.len());
     for r in &rows {
         let body: serde_json::Value = serde_json::from_str(&r.body).unwrap();
@@ -288,7 +290,8 @@ fn read_list_filter_gt_matches() {
     let pred =
         Predicate::json_path_compare("$.priority", ComparisonOp::Gt, ScalarValue::Integer(3))
             .expect("valid");
-    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("task", &[pred], 100, &ReadView::default()).expect("read_list failed");
     assert_eq!(rows.len(), 2, "expected 2 rows with priority > 3, got {}", rows.len());
     for r in &rows {
         let body: serde_json::Value = serde_json::from_str(&r.body).unwrap();
@@ -313,7 +316,8 @@ fn read_list_and_composition() {
     let p2 = Predicate::json_path_compare("$.priority", ComparisonOp::Gt, ScalarValue::Integer(3))
         .unwrap();
 
-    let rows = engine.read_list("task", &[p1, p2], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("task", &[p1, p2], 100, &ReadView::default()).expect("read_list failed");
     // Only C2 (open, priority=4) and C4 (open, priority=5) match both.
     assert_eq!(rows.len(), 2, "expected 2 rows matching both predicates, got {}", rows.len());
     let ids: std::collections::HashSet<&str> = rows.iter().map(|r| r.logical_id.as_str()).collect();
@@ -331,7 +335,8 @@ fn read_list_empty_filter_returns_all() {
         write_node(&engine, &format!("N{i}"), "widget", &format!(r#"{{"i":{i}}}"#));
     }
 
-    let rows = engine.read_list("widget", &[], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("widget", &[], 100, &ReadView::default()).expect("read_list failed");
     assert_eq!(rows.len(), 5, "expected 5 widgets, got {}", rows.len());
 }
 
@@ -422,7 +427,7 @@ fn direct_construction_bypass_caught_by_read_list() {
         path: "$.not_in_allowlist".to_string(),
         value: ScalarValue::Text("x".to_string()),
     };
-    let result = engine.read_list("note", &[bad_pred], 10);
+    let result = engine.read_list("note", &[bad_pred], 10, &ReadView::default());
     assert!(
         matches!(result, Err(EngineError::InvalidFilter { .. })),
         "read_list must reject a directly-constructed Predicate with a non-allowlisted path; got {result:?}"
@@ -448,7 +453,7 @@ fn read_list_predicate_skips_non_json_body() {
         .expect("allowlisted path");
 
     let result = engine
-        .read_list("widget", &[pred], 10)
+        .read_list("widget", &[pred], 10, &ReadView::default())
         .expect("read_list must not error on non-JSON body rows; should skip them silently");
 
     // Only the JSON-body node (which matches the predicate) should be returned.
@@ -487,7 +492,7 @@ fn read_list_includes_nodes_written_without_logical_id_type_check() {
         .expect("write without logical_id");
 
     let result = engine
-        .read_list("widget", &[], 100)
+        .read_list("widget", &[], 100, &ReadView::default())
         .expect("read_list must not error when some rows have NULL logical_id");
 
     // The node with a logical_id must be present.
@@ -514,7 +519,8 @@ fn read_list_integer_predicate_does_not_match_boolean_field() {
 
     let pred =
         Predicate::json_path_eq("$.priority", ScalarValue::Integer(1)).expect("allowlisted path");
-    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("task", &[pred], 100, &ReadView::default()).expect("read_list failed");
 
     let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
     assert!(ids.contains(&"INT1"), "integer node must be returned; got {ids:?}");
@@ -539,7 +545,8 @@ fn read_list_bool_predicate_does_not_match_integer_field() {
 
     let pred =
         Predicate::json_path_eq("$.priority", ScalarValue::Bool(true)).expect("allowlisted path");
-    let rows = engine.read_list("task", &[pred], 100).expect("read_list failed");
+    let rows =
+        engine.read_list("task", &[pred], 100, &ReadView::default()).expect("read_list failed");
 
     let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
     assert!(
@@ -574,7 +581,8 @@ fn read_list_text_compare_does_not_match_integer_field() {
         ScalarValue::Text("zzz".to_string()),
     )
     .expect("allowlisted path");
-    let rows = engine.read_list("task", &[pred_match], 100).expect("read_list");
+    let rows =
+        engine.read_list("task", &[pred_match], 100, &ReadView::default()).expect("read_list");
     let ids: Vec<_> = rows.iter().map(|n| n.logical_id.as_str()).collect();
     assert!(ids.contains(&"STR_NODE"), "string-valued field must match text compare; got {ids:?}");
 
@@ -585,7 +593,8 @@ fn read_list_text_compare_does_not_match_integer_field() {
         ScalarValue::Text("zzz".to_string()),
     )
     .expect("allowlisted path");
-    let rows2 = engine.read_list("task", &[pred_no_match], 100).expect("read_list");
+    let rows2 =
+        engine.read_list("task", &[pred_no_match], 100, &ReadView::default()).expect("read_list");
     let ids2: Vec<_> = rows2.iter().map(|n| n.logical_id.as_str()).collect();
     assert!(
         !ids2.contains(&"STR_NODE"),

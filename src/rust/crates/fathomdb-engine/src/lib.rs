@@ -621,6 +621,9 @@ enum ReaderRequest {
     /// `ReaderResponse` byte-identical (no Search regression).
     GetById {
         logical_ids: Vec<String>,
+        /// R-20-RV — the read view this lookup runs under. `ReadView::default()`
+        /// is the strict (pre-slice) view.
+        view: ReadView,
         respond: SyncSender<rusqlite::Result<Vec<Option<NodeRecord>>>>,
     },
     /// Slice 30 (G3) — paginated op-store read-back over `operational_mutations`
@@ -640,6 +643,8 @@ enum ReaderRequest {
         kind: String,
         predicates: Vec<Predicate>,
         limit: usize,
+        /// R-20-RV — the read view this listing runs under.
+        view: ReadView,
         respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
     },
     /// Slice 20 (G5) — bounded BFS from a single root node over
@@ -649,7 +654,17 @@ enum ReaderRequest {
         root_logical_id: String,
         depth: u32,
         direction: TraversalDirection,
+        /// R-20-RV — the read view applied at EVERY node position of the BFS
+        /// CTE (anchor, recursive join, final projection), for every direction.
+        view: ReadView,
         respond: SyncSender<rusqlite::Result<Vec<NodeRecord>>>,
+    },
+    /// 0.8.20 Slice 10b (R-20-NV) — nodes that crossed a validity boundary in
+    /// `(since, view-instant]`.
+    CrossedBoundarySince {
+        since: i64,
+        view: ReadView,
+        respond: SyncSender<rusqlite::Result<Vec<BoundaryCrossing>>>,
     },
     /// Slice 20 (G6) — compose the previous search result with BFS expansion.
     /// Resolves search hit `write_cursor`s to `logical_id`s, runs G5 traversal
@@ -943,21 +958,30 @@ fn reader_worker_loop(
                 // away; nothing to do in that case.
                 let _ = respond.send(result);
             }
-            ReaderRequest::GetById { logical_ids, respond } => {
-                let result = read_get_by_id_in_tx(&mut connection, &logical_ids);
+            ReaderRequest::GetById { logical_ids, view, respond } => {
+                let result = read_get_by_id_in_tx(&mut connection, &logical_ids, &view);
                 let _ = respond.send(result);
             }
             ReaderRequest::ReadCollection { collection, after_id, limit, respond } => {
                 let result = read_collection_in_tx(&mut connection, &collection, after_id, limit);
                 let _ = respond.send(result);
             }
-            ReaderRequest::ReadList { kind, predicates, limit, respond } => {
-                let result = read_list_in_tx(&mut connection, &kind, &predicates, limit);
+            ReaderRequest::ReadList { kind, predicates, limit, view, respond } => {
+                let result = read_list_in_tx(&mut connection, &kind, &predicates, limit, &view);
                 let _ = respond.send(result);
             }
-            ReaderRequest::GraphNeighbors { root_logical_id, depth, direction, respond } => {
-                let result =
-                    graph_neighbors_in_tx(&mut connection, &root_logical_id, depth, direction);
+            ReaderRequest::GraphNeighbors { root_logical_id, depth, direction, view, respond } => {
+                let result = graph_neighbors_in_tx(
+                    &mut connection,
+                    &root_logical_id,
+                    depth,
+                    direction,
+                    &view,
+                );
+                let _ = respond.send(result);
+            }
+            ReaderRequest::CrossedBoundarySince { since, view, respond } => {
+                let result = crossed_boundary_since_in_tx(&mut connection, since, &view);
                 let _ = respond.send(result);
             }
             ReaderRequest::SearchExpand { search_hits, depth, respond } => {
@@ -1489,6 +1513,139 @@ pub struct NodeRecord {
     pub kind: String,
     pub body: String,
     pub write_cursor: u64,
+}
+
+/// 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the **read view**: the single knob
+/// that decides which `canonical_nodes` rows a read verb may see.
+///
+/// Every field is a *relaxation*: `ReadView::default()` is the STRICT view and
+/// compiles to exactly the predicates the five read verbs carried before this
+/// slice (`superseded_at IS NULL AND state = 'active'`), so the default read
+/// path is behaviourally unchanged. Flags compose INDEPENDENTLY — each one
+/// drops exactly one conjunct and no other.
+///
+/// The view is applied UNIFORMLY by [`Engine::read_get`],
+/// [`Engine::read_get_many`], [`Engine::read_list`],
+/// [`Engine::read_list_filter`] and [`Engine::graph_neighbors`] — and, inside
+/// `graph_neighbors`, at EVERY position of EVERY direction's recursive CTE
+/// (anchor, recursive join, final projection), so a relaxation cannot silently
+/// apply on one traversal position and not another.
+///
+/// # World-time only
+///
+/// `valid_as_of` selects along the **world-time** (validity) axis only.
+/// Transaction-time / `history_as_of` is explicitly OUT OF SCOPE — this type
+/// deliberately has no way to ask "what did the database believe at time T".
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReadView {
+    /// Relax `superseded_at IS NULL` — include superseded (historical) versions
+    /// of a row, not just the current one. `false` (default) keeps the shipped
+    /// current-version-only behaviour.
+    ///
+    /// On the point-lookup verbs ([`Engine::read_get`] /
+    /// [`Engine::read_get_many`]) a `logical_id` can now match several rows;
+    /// the slot resolves DETERMINISTICALLY to the highest `write_cursor` (the
+    /// most recent version). Use [`Engine::read_list`] to enumerate history.
+    pub include_superseded: bool,
+
+    /// Relax `state = 'active'` — include rows in a non-`active` lifecycle
+    /// state (`pending` / `deleted` / `purged`). `false` (default) keeps the
+    /// shipped active-only behaviour.
+    pub include_inactive: bool,
+
+    /// Relax the validity-window predicate ENTIRELY — return rows whatever
+    /// their `[valid_from, valid_until)` window, ignoring `valid_as_of`.
+    /// `false` (default) filters to rows valid at the selected instant.
+    ///
+    /// Note this is a NO-OP on any row with an unbounded (NULL/NULL) window,
+    /// which is every row that predates schema step 22.
+    pub include_out_of_window: bool,
+
+    /// The instant (INTEGER epoch SECONDS, UTC) at which validity is evaluated.
+    /// `None` (default) resolves to *now* at query time.
+    ///
+    /// This is the **`:now` seam**: whichever way it resolves, the instant is
+    /// compiled as a BOUND PARAMETER, never a `datetime('now')` SQL literal —
+    /// which is what makes node validity deterministically testable without
+    /// clock games. (The shipped EDGE temporal filter still inlines
+    /// `datetime('now')`; that path is untouched by this slice.)
+    pub valid_as_of: Option<i64>,
+}
+
+impl ReadView {
+    /// The instant to bind for the validity predicate, or `None` when the view
+    /// relaxes validity entirely (in which case no `:now` parameter is emitted
+    /// and none must be bound).
+    fn now_param(&self) -> Option<i64> {
+        if self.include_out_of_window {
+            return None;
+        }
+        Some(self.valid_as_of.unwrap_or_else(current_epoch_seconds))
+    }
+
+    /// The existence conjunct for node-table `alias`. Each flag drops exactly
+    /// one conjunct; the strict view reproduces the pre-slice predicate pair
+    /// verbatim. Always begins with ` AND ` (or is empty), so every call site
+    /// must already have a preceding `WHERE` predicate.
+    fn existence_sql(&self, alias: &str) -> String {
+        let mut sql = String::new();
+        if !self.include_superseded {
+            sql.push_str(&format!(" AND {alias}.superseded_at IS NULL"));
+        }
+        if !self.include_inactive {
+            sql.push_str(&format!(" AND {alias}.state = 'active'"));
+        }
+        sql
+    }
+
+    /// The validity conjunct for node-table `alias`, bound to positional
+    /// parameter `?{now_idx}`. Empty when validity is relaxed.
+    ///
+    /// Encodes the HALF-OPEN window `[valid_from, valid_until)` with NULL
+    /// meaning unbounded on that side — so a NULL/NULL row is valid at every
+    /// instant and this conjunct never changes its visibility.
+    fn validity_sql(&self, alias: &str, now_idx: usize) -> String {
+        if self.include_out_of_window {
+            return String::new();
+        }
+        format!(
+            " AND ({alias}.valid_from IS NULL OR {alias}.valid_from <= ?{now_idx}) \
+             AND ({alias}.valid_until IS NULL OR {alias}.valid_until > ?{now_idx})"
+        )
+    }
+
+    /// The full node predicate (existence + validity) for `alias`. This is the
+    /// ONE function every read site calls, so no site can drift from another.
+    fn node_sql(&self, alias: &str, now_idx: usize) -> String {
+        format!("{}{}", self.existence_sql(alias), self.validity_sql(alias, now_idx))
+    }
+}
+
+/// 0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary
+/// inside the interrogated interval, as reported by
+/// [`Engine::crossed_boundary_since`].
+///
+/// A node can cross BOTH boundaries in the same interval (a window that opened
+/// and closed inside it), so the two fields are independent `Option`s rather
+/// than one enum.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundaryCrossing {
+    /// The node that crossed.
+    pub node: NodeRecord,
+    /// `Some(valid_from)` when the node BECAME VALID inside the interval.
+    pub became_valid_at: Option<i64>,
+    /// `Some(valid_until)` when the node BECAME INVALID inside the interval.
+    pub became_invalid_at: Option<i64>,
+}
+
+/// Wall-clock now as INTEGER epoch SECONDS (UTC), saturating at 0 before the
+/// Unix epoch. The single place the node-validity path reads the clock — and it
+/// is read in RUST, then BOUND, never inlined into SQL as `datetime('now')`.
+fn current_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
 }
 
 /// Slice 30 (G3) — one `operational_mutations` row returned by `read.collection`
@@ -4027,7 +4184,9 @@ impl Engine {
                     })
                     .collect();
                 let existing: std::collections::HashSet<String> = self
-                    .read_get_many(&ids)?
+                    // Internal existence probe: STRICT view — this must see
+                    // exactly the rows the pre-slice code saw.
+                    .read_get_many(&ids, &ReadView::default())?
                     .into_iter()
                     .zip(ids)
                     .filter_map(|(opt, id)| opt.map(|_| id))
@@ -5087,9 +5246,13 @@ impl Engine {
     /// Delegates to [`Engine::read_get_many`]; returns the single slot. A
     /// missing/superseded id is `None` (a normal absence, not an error). Reads
     /// ride the ReaderWorkerPool DEFERRED-tx path (never the writer lock).
-    pub fn read_get(&self, logical_id: &str) -> Result<Option<NodeRecord>, EngineError> {
+    pub fn read_get(
+        &self,
+        logical_id: &str,
+        view: &ReadView,
+    ) -> Result<Option<NodeRecord>, EngineError> {
         let ids = [logical_id.to_string()];
-        let rows = self.read_get_many(&ids)?;
+        let rows = self.read_get_many(&ids, view)?;
         Ok(rows.into_iter().next().flatten())
     }
 
@@ -5099,14 +5262,18 @@ impl Engine {
     pub fn read_get_many(
         &self,
         logical_ids: &[String],
+        view: &ReadView,
     ) -> Result<Vec<Option<NodeRecord>>, EngineError> {
         self.ensure_open()?;
         if logical_ids.is_empty() {
             return Ok(Vec::new());
         }
         let (response_tx, response_rx) = mpsc::sync_channel(1);
-        let request =
-            ReaderRequest::GetById { logical_ids: logical_ids.to_vec(), respond: response_tx };
+        let request = ReaderRequest::GetById {
+            logical_ids: logical_ids.to_vec(),
+            view: *view,
+            respond: response_tx,
+        };
         if self.reader_pool.dispatch(request).is_err() {
             return Err(EngineError::Closing);
         }
@@ -5134,6 +5301,7 @@ impl Engine {
         root_logical_id: &str,
         depth: u32,
         direction: TraversalDirection,
+        view: &ReadView,
     ) -> Result<Vec<NodeRecord>, EngineError> {
         self.ensure_open()?;
         if depth == 0 || depth > 3 {
@@ -5146,6 +5314,7 @@ impl Engine {
             root_logical_id: root_logical_id.to_string(),
             depth,
             direction,
+            view: *view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -5316,6 +5485,7 @@ impl Engine {
         kind: &str,
         predicates: &[Predicate],
         limit: usize,
+        view: &ReadView,
     ) -> Result<Vec<NodeRecord>, EngineError> {
         self.ensure_open()?;
         // Defense-in-depth: revalidate paths even if the caller bypassed the
@@ -5333,6 +5503,7 @@ impl Engine {
             kind: kind.to_string(),
             predicates: predicates.to_vec(),
             limit,
+            view: *view,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -5361,11 +5532,57 @@ impl Engine {
         kind: &str,
         filter: &Filter,
         limit: usize,
+        view: &ReadView,
     ) -> Result<Vec<NodeRecord>, EngineError> {
         self.ensure_open()?;
         match filter.lower_for_read_list(kind)? {
             None => Ok(Vec::new()),
-            Some(preds) => self.read_list(kind, &preds, limit),
+            Some(preds) => self.read_list(kind, &preds, limit, view),
+        }
+    }
+
+    /// 0.8.20 Slice 10b (R-20-NV) — the **validity-boundary hook**: which nodes
+    /// crossed a `[valid_from, valid_until)` boundary in the half-open interval
+    /// `(since, as_of]`?
+    ///
+    /// `since` and the resolved upper bound are INTEGER epoch SECONDS. The upper
+    /// bound is the view's own instant (`view.valid_as_of`, defaulting to now),
+    /// so one instant governs both the boundary interval and the view — and, as
+    /// everywhere else on this path, it is BOUND, never a `datetime('now')`
+    /// literal, so the answer is deterministic for a fixed `(since, as_of)`.
+    ///
+    /// A node appears once, carrying whichever of the two boundaries it crossed;
+    /// a window that both opened AND closed inside the interval reports both.
+    /// Rows with an unbounded window on a side cannot cross that side, so a
+    /// NULL/NULL row (every row predating schema step 22) never appears.
+    ///
+    /// The view's EXISTENCE flags still apply (so by default only current,
+    /// active rows are considered), but its validity predicate does NOT: the
+    /// question is about boundary crossings, not about being valid right now.
+    ///
+    /// When the view relaxes validity entirely (`include_out_of_window`), the
+    /// interval is unbounded above.
+    ///
+    /// This is world-time only. There is deliberately no transaction-time
+    /// (`history_as_of`) counterpart.
+    pub fn crossed_boundary_since(
+        &self,
+        since: i64,
+        view: &ReadView,
+    ) -> Result<Vec<BoundaryCrossing>, EngineError> {
+        self.ensure_open()?;
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request =
+            ReaderRequest::CrossedBoundarySince { since, view: *view, respond: response_tx };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(rows) => Ok(rows),
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
         }
     }
 
@@ -9576,6 +9793,7 @@ const READ_COLLECTION_MAX_LIMIT: usize = 1_000_000;
 fn read_get_by_id_in_tx(
     reader: &mut Connection,
     logical_ids: &[String],
+    view: &ReadView,
 ) -> rusqlite::Result<Vec<Option<NodeRecord>>> {
     if logical_ids.is_empty() {
         return Ok(Vec::new());
@@ -9590,14 +9808,27 @@ fn read_get_by_id_in_tx(
             logical_ids.iter().filter(|id| seen.insert((*id).clone())).collect()
         };
         let placeholders = std::iter::repeat_n("?", unique.len()).collect::<Vec<_>>().join(", ");
+        // The `?` placeholders above auto-number 1..=unique.len(), so the
+        // validity instant takes the next positional slot.
+        let now_idx = unique.len() + 1;
+        let node_sql = view.node_sql("canonical_nodes", now_idx);
+        // R-20-RV: with `include_superseded` a logical_id can match several
+        // rows. `ORDER BY write_cursor` + last-write-wins into `found` resolves
+        // the slot DETERMINISTICALLY to the most recent version, rather than
+        // leaving it at the mercy of scan order.
         let sql = format!(
             "SELECT logical_id, kind, body, write_cursor
              FROM canonical_nodes
-             WHERE logical_id IN ({placeholders}) AND superseded_at IS NULL AND state = 'active'"
+             WHERE logical_id IN ({placeholders}){node_sql}
+             ORDER BY write_cursor"
         );
         let mut statement = tx.prepare(&sql)?;
-        let params = rusqlite::params_from_iter(unique.iter().map(|s| s.as_str()));
-        let rows = statement.query_map(params, |row| {
+        let mut binds: Vec<rusqlite::types::Value> =
+            unique.iter().map(|s| rusqlite::types::Value::Text((*s).clone())).collect();
+        if let Some(now) = view.now_param() {
+            binds.push(rusqlite::types::Value::Integer(now));
+        }
+        let rows = statement.query_map(rusqlite::params_from_iter(binds.iter()), |row| {
             let logical_id: String = row.get(0)?;
             Ok(NodeRecord {
                 logical_id,
@@ -9688,6 +9919,7 @@ fn read_list_in_tx(
     kind: &str,
     predicates: &[Predicate],
     limit: usize,
+    view: &ReadView,
 ) -> rusqlite::Result<Vec<NodeRecord>> {
     if limit == 0 {
         return Ok(Vec::new());
@@ -9701,12 +9933,18 @@ fn read_list_in_tx(
     // When predicates are present we add `json_valid(body)` so rows with
     // non-JSON bodies are skipped rather than causing a `malformed JSON` error.
     let json_valid_guard = if predicates.is_empty() { "" } else { " AND json_valid(body)" };
+    // R-20-RV/R-20-NV: the view's predicates replace the previously hard-coded
+    // existence pair. The validity instant takes the positional slot AFTER the
+    // predicate binds (?1 = kind, ?2..=?(1+n) = predicate values), so it is
+    // `?{predicates.len() + 2}`. Positional `?N` is order-independent in SQLite,
+    // so emitting it here — textually before the predicate clauses appended
+    // below — is safe and unambiguous.
+    let now_idx = predicates.len() + 2;
+    let node_sql = view.node_sql("canonical_nodes", now_idx);
     let mut sql = format!(
         "SELECT logical_id, kind, body, write_cursor \
          FROM canonical_nodes \
-         WHERE kind = ?1 \
-         AND superseded_at IS NULL \
-         AND state = 'active' \
+         WHERE kind = ?1{node_sql} \
          AND logical_id IS NOT NULL{json_valid_guard}"
     );
 
@@ -9722,10 +9960,16 @@ fn read_list_in_tx(
     let mut statement = tx.prepare(&sql)?;
 
     // Bind all parameters: [kind, predicate_values...]
-    let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(1 + predicates.len());
+    let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(2 + predicates.len());
     params.push(rusqlite::types::Value::Text(kind.to_string()));
     for pred in predicates {
         params.push(pred.bind_value());
+    }
+    // Lands at index `now_idx` (= predicates.len() + 2), matching `?{now_idx}`
+    // emitted by `ReadView::validity_sql`. Omitted entirely when the view
+    // relaxes validity, in which case no `?{now_idx}` was emitted either.
+    if let Some(now) = view.now_param() {
+        params.push(rusqlite::types::Value::Integer(now));
     }
 
     let rows = statement.query_map(rusqlite::params_from_iter(params.iter()), |row| {
@@ -9753,15 +9997,33 @@ fn read_list_in_tx(
 /// the final SELECT). Defense-in-depth against unbounded traversal.
 const GRAPH_NEIGHBORS_HARD_CAP: usize = 50;
 
-/// Build the BFS CTE SQL for the given `direction`.
+/// Build the BFS CTE SQL for the given `direction`, under `view`.
 ///
 /// Parameters (positional):
 ///   `?1` — root `logical_id`
 ///   `?2` — max_depth (`u32`, SDK-facing depth ceiling ≤ 3)
+///   `?3` — R-20-NV node-validity instant (`:now` seam), emitted at EVERY node
+///          position; omitted entirely when the view relaxes validity.
 ///
-/// `datetime('now')` is inlined for the valid-time filter (no extra parameter).
 /// `LIMIT {GRAPH_NEIGHBORS_HARD_CAP}` appears on both the CTE and the final SELECT.
-fn build_bfs_sql(direction: TraversalDirection) -> String {
+///
+/// # Why one template instead of three
+///
+/// The three directions previously carried three hand-maintained copies of the
+/// CTE, each repeating the node predicate at THREE positions (anchor, recursive
+/// join, final projection) — nine hand-written copies in total. R-20-RV requires
+/// a relax flag to apply at every one of them, and nine copies is exactly the
+/// shape in which "it works on `Outgoing` but silently not on `Both`" hides. The
+/// directions are folded into ONE template parameterised by the two things that
+/// actually differ (the edge join condition and the traversed-to expression), so
+/// `view.node_sql(...)` is written once per position and applying to all three
+/// directions is structural rather than a thing to remember.
+///
+/// **The `canonical_edges` temporal filter is deliberately UNCHANGED**, still
+/// `datetime(e.t_invalid) > datetime('now')` inline: edge validity is ISO-8601
+/// TEXT and out of scope for this slice. Only the NODE validity predicate is
+/// parameterised.
+fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
     let cap = GRAPH_NEIGHBORS_HARD_CAP;
     // cte_cap: the SQLite CTE LIMIT counts path-rows, not distinct nodes. In a
     // multigraph (multiple parallel edges between the same pair of nodes), the CTE
@@ -9775,88 +10037,50 @@ fn build_bfs_sql(direction: TraversalDirection) -> String {
     // of comma, so logical_ids containing commas are handled correctly. char(30) is
     // a non-printable control character that callers cannot place in logical_id values
     // via normal text input.
-    match direction {
-        TraversalDirection::Outgoing => format!(
-            "WITH RECURSIVE
+    //
+    // `?3` is the node-validity instant. Positional (not named), so the repeated
+    // occurrences across the three node positions all bind the SAME value once.
+    const NOW_IDX: usize = 3;
+
+    // The ONLY two things that differ between directions.
+    let (edge_join, target_expr) = match direction {
+        TraversalDirection::Outgoing => ("e.from_id = t.logical_id", "e.to_id"),
+        TraversalDirection::Incoming => ("e.to_id = t.logical_id", "e.from_id"),
+        TraversalDirection::Both => (
+            "(e.from_id = t.logical_id OR e.to_id = t.logical_id)",
+            "CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END",
+        ),
+    };
+
+    // Position 1 (anchor), position 2 (recursive join), position 3 (final
+    // projection) — the view is applied at all three, for every direction.
+    let anchor_node = view.node_sql("n", NOW_IDX);
+    let next_node = view.node_sql("next_n", NOW_IDX);
+    let projection_node = view.node_sql("n", NOW_IDX);
+
+    format!(
+        "WITH RECURSIVE
   traversal(logical_id, depth, visited) AS (
     SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
     FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
+    WHERE n.logical_id = ?1{anchor_node}
     UNION ALL
-    SELECT e.to_id, t.depth + 1, t.visited || e.to_id || char(30)
+    SELECT {target_expr}, t.depth + 1, t.visited || {target_expr} || char(30)
     FROM traversal t
-    JOIN canonical_edges e ON e.from_id = t.logical_id
-    JOIN canonical_nodes next_n ON next_n.logical_id = e.to_id
-      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
+    JOIN canonical_edges e ON {edge_join}
+    JOIN canonical_nodes next_n ON next_n.logical_id = {target_expr}{next_node}
     WHERE t.depth < ?2
       AND e.superseded_at IS NULL
       AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
-      AND instr(t.visited, char(30) || e.to_id || char(30)) = 0
+      AND instr(t.visited, char(30) || {target_expr} || char(30)) = 0
     LIMIT {cte_cap}
   )
 SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
 FROM traversal tr
 JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL AND n.state = 'active'
-  AND tr.logical_id != ?1
+WHERE tr.logical_id != ?1{projection_node}
 LIMIT {cap}"
-        ),
-        TraversalDirection::Incoming => format!(
-            "WITH RECURSIVE
-  traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
-    FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
-    UNION ALL
-    SELECT e.from_id, t.depth + 1, t.visited || e.from_id || char(30)
-    FROM traversal t
-    JOIN canonical_edges e ON e.to_id = t.logical_id
-    JOIN canonical_nodes next_n ON next_n.logical_id = e.from_id
-      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
-    WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
-      AND instr(t.visited, char(30) || e.from_id || char(30)) = 0
-    LIMIT {cte_cap}
-  )
-SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
-FROM traversal tr
-JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL AND n.state = 'active'
-  AND tr.logical_id != ?1
-LIMIT {cap}"
-        ),
-        TraversalDirection::Both => format!(
-            "WITH RECURSIVE
-  traversal(logical_id, depth, visited) AS (
-    SELECT n.logical_id, 0, char(30) || n.logical_id || char(30)
-    FROM canonical_nodes n
-    WHERE n.logical_id = ?1 AND n.superseded_at IS NULL AND n.state = 'active'
-    UNION ALL
-    SELECT
-      CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END,
-      t.depth + 1,
-      t.visited || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)
-    FROM traversal t
-    JOIN canonical_edges e ON (e.from_id = t.logical_id OR e.to_id = t.logical_id)
-    JOIN canonical_nodes next_n
-      ON next_n.logical_id = CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END
-      AND next_n.superseded_at IS NULL AND next_n.state = 'active'
-    WHERE t.depth < ?2
-      AND e.superseded_at IS NULL
-      AND (e.t_invalid IS NULL OR datetime(e.t_invalid) > datetime('now'))
-      AND instr(t.visited,
-            char(30) || CASE WHEN e.from_id = t.logical_id THEN e.to_id ELSE e.from_id END || char(30)) = 0
-    LIMIT {cte_cap}
-  )
-SELECT DISTINCT n.logical_id, n.kind, n.body, n.write_cursor
-FROM traversal tr
-JOIN canonical_nodes n ON n.logical_id = tr.logical_id
-WHERE n.superseded_at IS NULL AND n.state = 'active'
-  AND tr.logical_id != ?1
-LIMIT {cap}"
-        ),
-    }
+    )
 }
 
 /// Build the BFS CTE SQL for `search_expand` — identical to `build_bfs_sql`
@@ -9900,6 +10124,59 @@ LIMIT {cap}"
     )
 }
 
+/// 0.8.20 Slice 10b (R-20-NV) — the validity-boundary hook, on the DEFERRED
+/// reader transaction.
+///
+/// Reports nodes whose `valid_from` and/or `valid_until` falls in the half-open
+/// interval `(since, upper]`. Both bounds are BOUND parameters (`?1`, `?2`) —
+/// the node-validity path never inlines `datetime('now')`.
+///
+/// The view's EXISTENCE conjunct applies (default: current + active rows only);
+/// its VALIDITY conjunct deliberately does not, because the question is "did
+/// this window cross a boundary", not "is this row valid now".
+fn crossed_boundary_since_in_tx(
+    reader: &mut Connection,
+    since: i64,
+    view: &ReadView,
+) -> rusqlite::Result<Vec<BoundaryCrossing>> {
+    // `now_param()` is None exactly when the view relaxes validity, which here
+    // means "no upper bound on the interval".
+    let upper = view.now_param().unwrap_or(i64::MAX);
+    let existence = view.existence_sql("canonical_nodes");
+    // `1 = 1` keeps the leading ` AND ` of `existence_sql` well-formed even when
+    // every existence flag is relaxed and the conjunct is empty.
+    let sql = format!(
+        "SELECT logical_id, kind, body, write_cursor, valid_from, valid_until \
+         FROM canonical_nodes \
+         WHERE 1 = 1{existence} \
+           AND logical_id IS NOT NULL \
+           AND ( (valid_from IS NOT NULL AND valid_from > ?1 AND valid_from <= ?2) \
+              OR (valid_until IS NOT NULL AND valid_until > ?1 AND valid_until <= ?2) ) \
+         ORDER BY write_cursor"
+    );
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let mut statement = tx.prepare(&sql)?;
+    let rows = statement.query_map(params![since, upper], |row| {
+        let valid_from: Option<i64> = row.get(4)?;
+        let valid_until: Option<i64> = row.get(5)?;
+        Ok(BoundaryCrossing {
+            node: NodeRecord {
+                logical_id: row.get(0)?,
+                kind: row.get(1)?,
+                body: row.get(2)?,
+                write_cursor: row.get::<_, i64>(3)? as u64,
+            },
+            became_valid_at: valid_from.filter(|t| *t > since && *t <= upper),
+            became_invalid_at: valid_until.filter(|t| *t > since && *t <= upper),
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 /// Slice 20 (G5) — execute a bounded BFS on the DEFERRED reader transaction.
 /// Called inside the reader worker loop.
 fn graph_neighbors_in_tx(
@@ -9907,12 +10184,22 @@ fn graph_neighbors_in_tx(
     root_logical_id: &str,
     depth: u32,
     direction: TraversalDirection,
+    view: &ReadView,
 ) -> rusqlite::Result<Vec<NodeRecord>> {
-    let sql = build_bfs_sql(direction);
+    let sql = build_bfs_sql(direction, view);
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let depth_i64 = depth as i64;
     let mut statement = tx.prepare(&sql)?;
-    let rows = statement.query_map(params![root_logical_id, depth_i64], |row| {
+    // ?1 root, ?2 depth, then ?3 = the validity instant (omitted when relaxed,
+    // in which case `build_bfs_sql` emitted no `?3` either).
+    let mut binds: Vec<rusqlite::types::Value> = vec![
+        rusqlite::types::Value::Text(root_logical_id.to_string()),
+        rusqlite::types::Value::Integer(depth_i64),
+    ];
+    if let Some(now) = view.now_param() {
+        binds.push(rusqlite::types::Value::Integer(now));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(binds.iter()), |row| {
         Ok(NodeRecord {
             logical_id: row.get(0)?,
             kind: row.get(1)?,
@@ -10068,15 +10355,19 @@ fn explain_graph_neighbors_in_tx(
     depth: u32,
     direction: TraversalDirection,
 ) -> rusqlite::Result<Vec<String>> {
-    let bfs_sql = build_bfs_sql(direction);
+    // The EXPLAIN index-usage gate measures the DEFAULT (strict) read path.
+    let view = ReadView::default();
+    let bfs_sql = build_bfs_sql(direction, &view);
     let explain_sql = format!("EXPLAIN QUERY PLAN {bfs_sql}");
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let depth_i64 = depth as i64;
     let mut statement = tx.prepare(&explain_sql)?;
     // EXPLAIN QUERY PLAN returns rows: (id, parent, notused, detail).
     // We collect the `detail` column (index 3).
-    let rows =
-        statement.query_map(params![root_logical_id, depth_i64], |row| row.get::<_, String>(3))?;
+    // The strict view emits `?3` (the validity instant) at every node position.
+    let now = view.now_param().expect("the strict view always binds a validity instant");
+    let rows = statement
+        .query_map(params![root_logical_id, depth_i64, now], |row| row.get::<_, String>(3))?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);

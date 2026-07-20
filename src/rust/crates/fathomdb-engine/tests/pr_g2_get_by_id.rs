@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use fathomdb_engine::{Engine, PreparedWrite};
+use fathomdb_engine::{Engine, PreparedWrite, ReadView};
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
 
@@ -45,7 +45,8 @@ fn read_get_returns_the_active_node_by_logical_id() {
     let opened = Engine::open(db_path(&dir, "get_active")).expect("open");
     opened.engine.write(&[node("doc", "hello world", Some("L1"))]).expect("write");
 
-    let got = opened.engine.read_get("L1").expect("read_get").expect("present");
+    let got =
+        opened.engine.read_get("L1", &ReadView::default()).expect("read_get").expect("present");
     assert_eq!(got.logical_id, "L1");
     assert_eq!(got.kind, "doc");
     assert_eq!(got.body, "hello world");
@@ -61,7 +62,8 @@ fn read_get_returns_none_for_a_missing_logical_id() {
     opened.engine.write(&[node("doc", "present", Some("L1"))]).expect("write");
 
     // A missing id is a NORMAL absence (None), not an error.
-    let got = opened.engine.read_get("DOES_NOT_EXIST").expect("read_get is Ok");
+    let got =
+        opened.engine.read_get("DOES_NOT_EXIST", &ReadView::default()).expect("read_get is Ok");
     assert!(got.is_none(), "missing logical_id must yield None, not an error");
 
     opened.engine.close().unwrap();
@@ -76,7 +78,8 @@ fn read_get_active_only_does_not_return_superseded_versions() {
         opened.engine.write(&[node("doc", body, Some("L1"))]).expect("write");
     }
 
-    let got = opened.engine.read_get("L1").expect("read_get").expect("present");
+    let got =
+        opened.engine.read_get("L1", &ReadView::default()).expect("read_get").expect("present");
     assert_eq!(got.body, "v3", "read.get must return only the active (latest) version");
 
     opened.engine.close().unwrap();
@@ -97,7 +100,7 @@ fn read_get_many_preserves_request_order_with_none_for_misses() {
 
     // Mixed present/missing in a deliberately non-sorted order.
     let ids = vec!["C".to_string(), "MISSING".to_string(), "A".to_string()];
-    let rows = opened.engine.read_get_many(&ids).expect("read_get_many");
+    let rows = opened.engine.read_get_many(&ids, &ReadView::default()).expect("read_get_many");
 
     assert_eq!(rows.len(), 3, "one slot per requested id");
     assert_eq!(rows[0].as_ref().unwrap().body, "body-C", "slot 0 == request[0] == C");
@@ -114,7 +117,10 @@ fn read_get_many_omits_superseded_versions() {
     opened.engine.write(&[node("doc", "x-v1", Some("X"))]).expect("write v1");
     opened.engine.write(&[node("doc", "x-v2", Some("X"))]).expect("supersede to v2");
 
-    let rows = opened.engine.read_get_many(&["X".to_string()]).expect("read_get_many");
+    let rows = opened
+        .engine
+        .read_get_many(&["X".to_string()], &ReadView::default())
+        .expect("read_get_many");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].as_ref().unwrap().body, "x-v2", "only the active version is returned");
 
@@ -141,7 +147,8 @@ fn read_get_rides_the_reader_pool_under_concurrency() {
         let engine = Arc::clone(&engine);
         handles.push(thread::spawn(move || {
             for _ in 0..PER_CALLER {
-                let got = engine.read_get("L1").expect("concurrent read_get is Ok");
+                let got =
+                    engine.read_get("L1", &ReadView::default()).expect("concurrent read_get is Ok");
                 assert_eq!(got.expect("present").body, "shared");
             }
         }));
@@ -171,7 +178,8 @@ fn read_get_is_deterministic_after_a_kind_change_reingest() {
     // Repeated reads must all return the SAME single active record (the latest,
     // kind=note), with no ambiguity from a forked second active row.
     for _ in 0..8 {
-        let got = opened.engine.read_get("L1").expect("read_get").expect("present");
+        let got =
+            opened.engine.read_get("L1", &ReadView::default()).expect("read_get").expect("present");
         assert_eq!(got.logical_id, "L1");
         assert_eq!(got.kind, "note", "read.get returns the single active (kind-changed) version");
         assert_eq!(got.body, "v2");
