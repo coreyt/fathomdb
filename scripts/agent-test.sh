@@ -75,6 +75,17 @@ run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
 
 # Rust
+#
+# TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
+# a ~1.5h real-corpus embed measurement. Do NOT add `--all-features` here.
+# Three gates keep it out, in order of what a change is most likely to break:
+#   1. `required-features = ["operator"]` on the test target — not built at all
+#      under the workspace default feature set (`default = []`);
+#   2. file-level `#![cfg(feature = "default-embedder")]` — compiles to zero
+#      tests even when `operator` IS on (e.g. the engine's operator suite);
+#   3. `#[ignore]` on the test itself — holds no matter which features are
+#      selected, so `--all-features` still would not run the body.
+# Verify by inspection only (`-- --list --ignored`), never by running it.
 run_capped test-rust cargo test --workspace --quiet --no-fail-fast
 
 # Python

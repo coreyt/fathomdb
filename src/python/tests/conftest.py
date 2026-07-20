@@ -74,19 +74,46 @@ def _binding_has_test_hooks() -> bool:
     ).returncode == 0
 
 
+_REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
+
+
+class TestHooksBindingMissing(RuntimeError):
+    """The binding lacks `test-hooks` and this environment did not opt in to a rebuild."""
+
+
 def _ensure_test_hooks_binding() -> None:
-    """Rebuild the editable binding with `test-hooks` enabled before
-    sibling test modules are collected, unless it is already present.
+    """Ensure the editable binding has `test-hooks` before sibling test modules
+    are collected — rebuilding ONLY if this environment explicitly opted in.
 
     Skipped when not invoked from the source tree (e.g. running the
     test files against a pip-installed wheel for release-surface
     verification) — detected by the absence of `pyproject.toml` next
-    to the tests directory. Skipped when `FATHOMDB_TESTS_NO_REBUILD=1`
-    is set (developer escape hatch: prebuild once, iterate without
-    paying the rebuild cost)."""
+    to the tests directory.
 
-    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
-        return
+    **TC-27 (0.8.20 Slice 5 fix-4) — the rebuild is OPT-IN, not opt-out.**
+
+    This function used to shell out to `maturin develop` autonomously, and did
+    so during an agent session that never issued a build command. It failed
+    only benignly, and only by luck: the interpreter was not an activated
+    virtualenv. Had it been, the rebuild would have rebound the SHARED `.venv`
+    to whatever source tree pytest happened to be launched from — including an
+    agent worktree, silently repointing every other consumer of that venv at
+    unreviewed code.
+
+    Per this repo's standing "fix the tooling, not the actor" rule, the guard
+    lives here rather than in a note asking people to be careful: an
+    unattended `pytest` can no longer mutate a shared environment as a
+    side effect of test collection. Opt in with
+    `FATHOMDB_TESTS_ALLOW_REBUILD=1` when a rebuild is genuinely intended.
+
+    `FATHOMDB_TESTS_NO_REBUILD=1` is retained (it now merely reasserts the
+    default) so existing invocations that set it keep working.
+
+    :raises TestHooksBindingMissing: when a rebuild is required but not
+        authorized. Loud and actionable beats either silently rebuilding or
+        letting sibling modules fail on a confusing missing-attribute import.
+    """
+
     pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
     if not pyproject.exists():
         # Not an editable-install context (release-surface tests run
@@ -94,8 +121,33 @@ def _ensure_test_hooks_binding() -> None:
         return
     if _binding_has_test_hooks():
         # Developer already built with test-hooks (or a previous
-        # pytest session in the same venv did). Skip the rebuild.
+        # pytest session in the same venv did). Nothing to do — this is the
+        # normal path, and it never consults the opt-in.
         return
+
+    if os.environ.get(_REBUILD_OPT_IN) != "1":
+        raise TestHooksBindingMissing(
+            "the installed `fathomdb` binding was built WITHOUT the `test-hooks` feature, "
+            "so these tests cannot run.\n"
+            "\n"
+            "This conftest will NOT rebuild it for you: `maturin develop` rebinds the "
+            "active virtualenv to this source tree, which silently repoints every other "
+            "consumer of a SHARED venv (TC-27).\n"
+            "\n"
+            "Choose one:\n"
+            f"  * authorize the rebuild here:  {_REBUILD_OPT_IN}=1 pytest ...\n"
+            "  * or build it yourself, from an environment you intend to rebind:\n"
+            f"      cd {_PYTHON_SRC_DIR} && python -m maturin develop --features "
+            "pyo3/extension-module,test-hooks,default-embedder,default-reranker\n"
+            "\n"
+            "NEVER run either from a git worktree against a shared .venv."
+        )
+
+    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
+        raise TestHooksBindingMissing(
+            f"contradictory configuration: {_REBUILD_OPT_IN}=1 asks for a rebuild while "
+            "FATHOMDB_TESTS_NO_REBUILD=1 forbids one. Unset one of them."
+        )
 
     print(
         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
