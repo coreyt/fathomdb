@@ -1148,6 +1148,7 @@ dependencies = [
  "clap",
  "fathomdb",
  "fathomdb-embedder",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

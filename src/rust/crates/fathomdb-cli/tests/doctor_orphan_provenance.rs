@@ -5,8 +5,12 @@
 //! **What "orphan provenance" means here.** After Slice 5c every canonical row
 //! is addressable by exactly one of two handles:
 //!
-//! * `logical_id` — governed rows, reachable by `purge`;
+//! * `logical_id` — governed **nodes**, reachable by `purge`;
 //! * `source_id` — anonymous rows, reachable by `erase_source`.
+//!
+//! The node qualifier is load-bearing: `purge` resolves its target only through
+//! `canonical_nodes` and erases edges by ENDPOINT, so an EDGE's `logical_id`
+//! reaches no erasure verb (`null_source_governed_edge_counts_as_unerasable`).
 //!
 //! A row with NEITHER is reachable by no erasure verb at all: permanently
 //! un-erasable. That is precisely the defect R-20-E3/E8 closed (5c made
@@ -139,6 +143,85 @@ fn orphan_provenance_is_read_only() {
         "orphan-provenance is READ-ONLY: two consecutive runs must report an identical census"
     );
     assert_eq!(before["unerasable_rows"], after["unerasable_rows"]);
+}
+
+/// Fabricate the legacy/corrupt row shape the migration comments call out: a
+/// `canonical_edges` row with NULL `source_id` and a NON-NULL `logical_id`. No
+/// supported write path can produce it (5c made provenance mandatory), so it is
+/// injected with raw SQL — which is also what design §3 Rule 1 demands of an
+/// erasure witness.
+fn inject_null_source_governed_edge(db_path: &str) {
+    let conn = rusqlite::Connection::open(db_path).expect("open sqlite");
+    conn.execute(
+        "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id, logical_id)
+         VALUES(999001, 'link', 'n-1', 'n-2', NULL, 'edge-gov-1')",
+        [],
+    )
+    .expect("inject NULL-source governed edge");
+}
+
+/// codex §9 [P2] — an edge's `logical_id` is a SUPERSESSION identity and confers
+/// NO purge-addressability: `purge_inner` resolves its target exclusively
+/// through `canonical_nodes` (`SELECT state FROM canonical_nodes WHERE
+/// logical_id = ?1`) and then erases edges by ENDPOINT. So a `canonical_edges`
+/// row with NULL `source_id` is reachable by NO erasure verb whatever its
+/// `logical_id`, and the doctor must say so.
+///
+/// This is the reporting-surface half of the P1 that fix-1 corrected in
+/// migration step 21: with the doctor still crediting an edge `logical_id` as
+/// purge-addressable, `orphan-provenance` exits CLEAN on precisely the hole the
+/// migration now closes — false assurance, which is worse than no verb.
+#[test]
+fn null_source_governed_edge_counts_as_unerasable() {
+    let dir = TempDir::new().expect("tempdir");
+    let db_path = seeded_db(&dir);
+    inject_null_source_governed_edge(&db_path);
+
+    let (output, value) = run_orphan_provenance(&db_path);
+
+    // The doctor's own report is the assertion surface (Rule 1: raw state, never
+    // a search).
+    assert_eq!(
+        value["unerasable_rows"].as_i64(),
+        Some(1),
+        "a canonical_edges row with NULL source_id is erasable by NO verb — an edge \
+         logical_id is not purge-addressable; report={value:#?}"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::DOCTOR_FOUND_ISSUES),
+        "a database still carrying an un-erasable row must NOT exit clean; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The node side of the asymmetry is UNCHANGED, and this pins that the fix did
+/// not over-correct into it: a `canonical_nodes` row with NULL `source_id` but a
+/// non-NULL `logical_id` genuinely IS reachable — `purge` resolves it by
+/// `logical_id` — so it must NOT be counted un-erasable.
+#[test]
+fn null_source_governed_node_stays_erasable() {
+    let dir = TempDir::new().expect("tempdir");
+    let db_path = seeded_db(&dir);
+    {
+        let conn = rusqlite::Connection::open(&db_path).expect("open sqlite");
+        conn.execute(
+            "INSERT INTO canonical_nodes(write_cursor, kind, body, state, source_id, logical_id)
+             VALUES(999002, 'doc', 'legacy governed node', 'active', NULL, 'node-gov-1')",
+            [],
+        )
+        .expect("inject NULL-source governed node");
+    }
+
+    let (output, value) = run_orphan_provenance(&db_path);
+
+    assert_eq!(
+        value["unerasable_rows"].as_i64(),
+        Some(0),
+        "a governed NODE with NULL source_id is purge-addressable by logical_id and is \
+         NOT un-erasable; report={value:#?}"
+    );
+    assert_eq!(output.status.code(), Some(exit_code::OK));
 }
 
 /// `--help` exits 0 with a `Usage:` line, matching AC-040a/AC-040b for every

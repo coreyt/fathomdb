@@ -3021,15 +3021,21 @@ pub struct DumpRowCountsReport {
 
 /// 0.8.20 Slice 5d (R-20-E8) — one `source_id` bucket in an
 /// [`OrphanProvenanceReport`]. `source_id` is `None` for the NULL-provenance
-/// bucket, which after migration step 21 should contain ONLY governed rows.
+/// bucket, which after migration step 21 should contain ONLY governed NODES.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrphanProvenanceSource {
     /// `None` = the NULL-`source_id` bucket.
     pub source_id: Option<String>,
     /// Canonical rows (nodes + edges) carrying this provenance.
     pub rows: u64,
-    /// How many of `rows` also carry a `logical_id` (i.e. are `purge`-
-    /// addressable as well as `erase_source`-addressable).
+    /// How many of `rows` carry a `logical_id`.
+    ///
+    /// NOT the same thing as "purge-addressable": only a NODE's `logical_id`
+    /// confers purge-addressability. An EDGE's `logical_id` is a supersession
+    /// identity and reaches no erasure verb (see
+    /// [`Engine::orphan_provenance`]), so governed edges are counted here but
+    /// are NOT subtracted from
+    /// [`OrphanProvenanceReport::unerasable_rows`].
     pub governed_rows: u64,
     /// True for the engine's reserved `_`-prefixed namespace (`_engine:*`,
     /// `_legacy:pre-0.8.20`). Reserved buckets are reachable only through the
@@ -6734,9 +6740,15 @@ impl Engine {
     ///
     /// Answers the operator question the erasure work made askable: *"for this
     /// database, is every row actually reachable by some erasure verb?"* A row
-    /// is reachable by `purge` via `logical_id`, or by `erase_source` /
-    /// `excise_source` via `source_id`. A row with neither is un-erasable, and
-    /// is counted into [`OrphanProvenanceReport::unerasable_rows`].
+    /// is reachable by `erase_source` / `excise_source` via `source_id`, or —
+    /// **if it is a NODE** — by `purge` via `logical_id`. A row with neither is
+    /// un-erasable, and is counted into
+    /// [`OrphanProvenanceReport::unerasable_rows`].
+    ///
+    /// The node/edge asymmetry is load-bearing and mirrors migration step 21:
+    /// an EDGE's `logical_id` is a supersession identity only and confers no
+    /// purge-addressability, so a NULL-`source_id` edge is un-erasable however
+    /// governed it looks. See the query comment below.
     ///
     /// CLI-only (no SDK parity), matching the `dump-*` diagnostic family.
     ///
@@ -6749,16 +6761,42 @@ impl Engine {
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
 
         // One UNION ALL over both canonical tables so a source that spans nodes
-        // AND edges reports as a single bucket. `logical_id IS NOT NULL` is
-        // summed rather than counted separately so the two figures cannot drift.
+        // AND edges reports as a single bucket.
+        //
+        // TWO DIFFERENT SUMS, and the difference is the whole point:
+        //
+        // * `governed` counts `logical_id` carriers — a reporting figure;
+        // * `purge_addressable` counts rows that `purge` can actually reach,
+        //   and it is NODE-ONLY (the edge arm contributes a literal 0).
+        //
+        // This is the same node/edge asymmetry migration step 21 carries, for
+        // the same reason, and the two must stay in step: `purge_inner`
+        // resolves its target exclusively through `canonical_nodes` (`SELECT
+        // state FROM canonical_nodes WHERE logical_id = ?1`) and then erases
+        // edges by ENDPOINT (`from_id`/`to_id`). It NEVER resolves an edge by
+        // edge `logical_id` — an edge `logical_id` is only a SUPERSESSION
+        // identity and confers no purge-addressability whatsoever.
+        //
+        // Crediting an edge's `logical_id` here made the diagnostic subtract
+        // exactly the rows it exists to find: a NULL-`source_id` edge is
+        // reachable by no erasure verb at all, yet `orphan-provenance` would
+        // exit CLEAN on precisely the legacy/corrupt shape step 21 closes.
+        // False assurance from a governance verb is worse than no verb.
+        // (codex §9 [P2]; `null_source_governed_edge_counts_as_unerasable`.)
         let mut stmt = connection
             .prepare(
                 "SELECT source_id,
                         COUNT(*) AS rows_total,
-                        SUM(CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END) AS governed
-                   FROM (SELECT source_id, logical_id FROM canonical_nodes
+                        SUM(CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END) AS governed,
+                        SUM(purge_addressable) AS purge_addressable
+                   FROM (SELECT source_id,
+                                logical_id,
+                                CASE WHEN logical_id IS NOT NULL THEN 1 ELSE 0 END
+                                    AS purge_addressable
+                           FROM canonical_nodes
                          UNION ALL
-                         SELECT source_id, logical_id FROM canonical_edges)
+                         SELECT source_id, logical_id, 0 AS purge_addressable
+                           FROM canonical_edges)
                   GROUP BY source_id
                   ORDER BY rows_total DESC, source_id",
             )
@@ -6769,7 +6807,8 @@ impl Engine {
                 let source_id: Option<String> = row.get(0)?;
                 let rows: i64 = row.get(1)?;
                 let governed: i64 = row.get(2)?;
-                Ok((source_id, rows, governed))
+                let purge_addressable: i64 = row.get(3)?;
+                Ok((source_id, rows, governed, purge_addressable))
             })
             .map_err(|_| EngineError::Storage)?;
 
@@ -6777,14 +6816,19 @@ impl Engine {
         let mut total_rows: u64 = 0;
         let mut unerasable_rows: u64 = 0;
         for row in rows {
-            let (source_id, rows, governed) = row.map_err(|_| EngineError::Storage)?;
+            let (source_id, rows, governed, purge_addressable) =
+                row.map_err(|_| EngineError::Storage)?;
             let rows = u64::try_from(rows).unwrap_or(0);
             let governed_rows = u64::try_from(governed).unwrap_or(0);
+            let purge_addressable = u64::try_from(purge_addressable).unwrap_or(0);
             total_rows = total_rows.saturating_add(rows);
             if source_id.is_none() {
-                // No provenance: only the governed subset is addressable (by
-                // `purge`). The remainder is reachable by nothing.
-                unerasable_rows = unerasable_rows.saturating_add(rows - governed_rows.min(rows));
+                // No provenance: only the PURGE-ADDRESSABLE subset (governed
+                // NODES) is reachable. The remainder — including every governed
+                // EDGE, whose `logical_id` reaches nothing — is reachable by no
+                // erasure verb at all.
+                unerasable_rows =
+                    unerasable_rows.saturating_add(rows - purge_addressable.min(rows));
             }
             let reserved = source_id.as_deref().is_some_and(|s| s.starts_with('_'));
             sources.push(OrphanProvenanceSource { source_id, rows, governed_rows, reserved });
