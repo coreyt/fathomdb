@@ -13,14 +13,22 @@ from typing import Callable
 import pytest
 
 from fathomdb import Engine, SearchFilter, admin
-from fathomdb._fathomdb import force_panic_for_test
 from fathomdb.errors import EngineError, WriteValidationError
+
+# `force_panic_for_test` is `test-hooks`-gated and therefore ABSENT from a
+# binding built with the release feature set (the documented
+# `pip install -e 'src/python[dev]'`). Importing it at MODULE level made the
+# whole file un-collectable there — a collection ERROR, which is indistinguishable
+# from a real breakage. It is imported inside the one test that needs it instead,
+# so the `requires_test_hooks` marker can turn that into a visible SKIP
+# (see `conftest.py` / `_test_hooks_gate.py`).
 
 # 0.8.20 (R-20-E3): `source_id` is mandatory on every canonical write.
 _SOURCE_ID = "py-test:ffi-safety"
 
 
 
+@pytest.mark.requires_test_hooks
 def test_panic_surfaces_as_python_exception(db_path: str) -> None:
     """AC-067 — engine panics must not abort the host process.
 
@@ -28,6 +36,8 @@ def test_panic_surfaces_as_python_exception(db_path: str) -> None:
     panic is a contract bug, not a typed engine outcome, so callers that
     catch `EngineError` must not silently swallow it.
     """
+
+    from fathomdb._fathomdb import force_panic_for_test  # test-hooks-gated
 
     pid_before = os.getpid()
     with pytest.raises(BaseException) as excinfo:

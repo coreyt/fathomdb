@@ -42,13 +42,16 @@ python-source = "."
 #
 # `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
 # `_write_vector_for_test` etc. on `Engine`) and would leak onto every
-# wheel `release.yml`'s build-python job emits to PyPI. Tests that need
-# the hook surface (`test_use_default_embedder.py`, `test_ffi_safety.py`,
-# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
-# in `tests/conftest.py` that runs
-#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
-# before the suite. The release workflow's `args:` pins its own explicit
-# feature list, so this file never gates the shipped artifact.
+# wheel `release.yml`'s build-python job emits to PyPI. So a plain
+# `pip install -e 'src/python[dev]'` has NO hook surface. The few tests that
+# need it carry `@pytest.mark.requires_test_hooks`; `tests/conftest.py` may
+# rebuild the binding with
+#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder,...`
+# but ONLY when that is authorized AND the active venv belongs to this source
+# tree (TC-27 — see `tests/_test_hooks_gate.py`). Otherwise those tests SKIP
+# visibly and the rest of the suite runs normally. The release workflow's
+# `args:` pins its own explicit feature list, so this file never gates the
+# shipped artifact.
 features = ["pyo3/extension-module", "default-embedder", "default-reranker"]
 
 [tool.pytest.ini_options]
@@ -63,6 +66,11 @@ pythonpath = ["."]
 # FDB_S15A_INTEGRATION=1 + torch/transformers present (see test_s15a_embedder_probe.py).
 markers = [
     "integration: opt-in tests that load real models (require FDB_S15A_INTEGRATION=1 + torch/transformers)",
+    # 0.8.20 Slice 5 fix-6 (codex §9 [P2]): tests needing the dev-only `test-hooks`
+    # binding surface. conftest.py turns these into visible SKIPs (never silent
+    # passes) when the installed binding lacks the feature and TC-27 forbids an
+    # unattended `maturin develop`.
+    "requires_test_hooks: needs the dev-only `test-hooks` binding surface (see tests/_test_hooks_gate.py)",
 ]
 
 [tool.ruff]
@@ -71,6 +79,11 @@ target-version = "py310"
 
 [tool.pyright]
 include = ["fathomdb", "tests", "eval"]
+# `tests/` has no `__init__.py` (pytest prepend import mode inserts the conftest's
+# own directory on sys.path), so sibling helper imports like
+# `from _test_hooks_gate import ...` in tests/conftest.py are resolvable at
+# runtime but invisible to pyright without this.
+extraPaths = ["tests"]
 typeCheckingMode = "standard"
 pythonVersion = "3.10"
 venvPath = "../.."

@@ -97,7 +97,23 @@ elif command -v python3 >/dev/null 2>&1; then
 fi
 
 if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
-  run_capped test-python "$python_bin" -m pytest -q src/python/tests
+  # TC-27 (0.8.20 Slice 5 fix-6): the editable binding built by the documented
+  # `pip install -e 'src/python[dev]'` has no `test-hooks` surface, so
+  # `tests/conftest.py` may rebuild it with `maturin develop` — which REBINDS the
+  # active virtualenv to this source tree. This is the repo's own sanctioned dev
+  # loop, so it authorizes that rebuild, but ONLY when the interpreter we picked
+  # is the `.venv` INSIDE this checkout (`cd_repo_root` above, so in a linked
+  # worktree that is the worktree's own venv). If we fell back to a system
+  # `python3` — or to any environment that is not ours to rebind — we stay
+  # silent and conftest degrades to visibly SKIPPING the hook-dependent tests
+  # rather than repointing a shared venv. conftest re-checks venv ownership
+  # itself; this is the outer half of a belt-and-suspenders pair.
+  if [ "$python_bin" = ".venv/bin/python" ]; then
+    run_capped test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
+      "$python_bin" -m pytest -q src/python/tests
+  else
+    run_capped test-python "$python_bin" -m pytest -q src/python/tests
+  fi
 else
   skip_notice test-python "pytest not installed or no tests dir"
 fi

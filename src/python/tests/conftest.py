@@ -13,17 +13,22 @@ EU-6 FIX-1 / 0.8.9.2: rebuild the editable binding with the dev-only
 and friends are missing and tests like `test_use_default_embedder.py`,
 `test_ffi_safety.py`, the AC-067 force-panic probe, etc. break.
 
-This rebuild runs at conftest IMPORT time (module level below), NOT as a
-session-scoped fixture. A fixture runs during test *setup*, which is too late
-for a test module that imports a test-hooks symbol at MODULE level
-(`test_ffi_safety.py: from fathomdb._fathomdb import force_panic_for_test`):
-that import is evaluated during *collection*, before any fixture runs, so the
-binding must already carry the symbol. conftest.py top-level code is the
-earliest hook that still runs before sibling test modules are collected. The
-rebuild short-circuits if the test-hooks symbol is already present (developer
-pre-warmed with `maturin develop --features ...,test-hooks,...`, or a previous
-session in the same venv built it), so the `maturin develop` cost (~5-60s) is
-paid at most once per venv.
+That rebuild is gated: see `_test_hooks_gate.py` for the policy (TC-27) and
+`_ensure_test_hooks_binding` below for how the observations are gathered. When
+the gate returns DEGRADED the suite still collects and runs; only the tests
+marked `@pytest.mark.requires_test_hooks` are skipped, with the gate's reason
+attached, plus a banner in the pytest report header.
+
+When a rebuild IS authorized it runs at conftest IMPORT time (module level
+below), NOT as a session-scoped fixture. A fixture runs during test *setup*,
+which is too late: a test module that imports the extension during *collection*
+dlopen()s the stale `.so`, and a later `maturin develop` cannot be re-imported
+in the same process. conftest.py top-level code is the earliest hook that still
+runs before sibling test modules are collected. The rebuild short-circuits if
+the test-hooks symbol is already present (developer pre-warmed with
+`maturin develop --features ...,test-hooks,...`, or a previous session in the
+same venv built it), so the `maturin develop` cost (~5-60s) is paid at most
+once per venv.
 """
 
 from __future__ import annotations
@@ -34,6 +39,19 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from _test_hooks_gate import (
+    CONTRADICTORY,
+    DEGRADED,
+    REBUILD,
+    REBUILD_OPT_IN,
+    REBUILD_OPT_OUT,
+    REQUIRES_HOOKS_MARKER,
+    Decision,
+    decide,
+    skip_reason,
+    venv_belongs_to_source_tree,
+)
 
 
 @pytest.fixture
@@ -74,23 +92,16 @@ def _binding_has_test_hooks() -> bool:
     ).returncode == 0
 
 
-_REBUILD_OPT_IN = "FATHOMDB_TESTS_ALLOW_REBUILD"
+class TestHooksBindingMisconfigured(RuntimeError):
+    """The environment both requests and forbids a `test-hooks` rebuild."""
 
 
-class TestHooksBindingMissing(RuntimeError):
-    """The binding lacks `test-hooks` and this environment did not opt in to a rebuild."""
+def _ensure_test_hooks_binding() -> Decision:
+    """Gather the observations `_test_hooks_gate.decide` needs, then act on its
+    verdict — before sibling test modules are collected.
 
-
-def _ensure_test_hooks_binding() -> None:
-    """Ensure the editable binding has `test-hooks` before sibling test modules
-    are collected — rebuilding ONLY if this environment explicitly opted in.
-
-    Skipped when not invoked from the source tree (e.g. running the
-    test files against a pip-installed wheel for release-surface
-    verification) — detected by the absence of `pyproject.toml` next
-    to the tests directory.
-
-    **TC-27 (0.8.20 Slice 5 fix-4) — the rebuild is OPT-IN, not opt-out.**
+    **TC-27 (0.8.20 Slice 5 fix-4/fix-6) — the rebuild is OPT-IN and
+    ownership-checked; a missing binding DEGRADES the run, it does not abort it.**
 
     This function used to shell out to `maturin develop` autonomously, and did
     so during an agent session that never issued a build command. It failed
@@ -100,54 +111,40 @@ def _ensure_test_hooks_binding() -> None:
     agent worktree, silently repointing every other consumer of that venv at
     unreviewed code.
 
-    Per this repo's standing "fix the tooling, not the actor" rule, the guard
-    lives here rather than in a note asking people to be careful: an
-    unattended `pytest` can no longer mutate a shared environment as a
-    side effect of test collection. Opt in with
-    `FATHOMDB_TESTS_ALLOW_REBUILD=1` when a rebuild is genuinely intended.
+    fix-4 closed that by raising at import time when the rebuild was not
+    authorized — which made the *documented* default path
+    (`pip install -e 'src/python[dev]'` then `scripts/agent-test.sh`) fail
+    before collection, i.e. permanently red. fix-6 keeps the hazard closed but
+    returns DEGRADED instead: the suite runs, and only the tests carrying
+    ``@pytest.mark.requires_test_hooks`` skip (visibly, with the reason). The
+    sanctioned dev loop authorizes the rebuild explicitly from
+    ``scripts/agent-test.sh``.
 
-    `FATHOMDB_TESTS_NO_REBUILD=1` is retained (it now merely reasserts the
-    default) so existing invocations that set it keep working.
-
-    :raises TestHooksBindingMissing: when a rebuild is required but not
-        authorized. Loud and actionable beats either silently rebuilding or
-        letting sibling modules fail on a confusing missing-attribute import.
+    :raises TestHooksBindingMisconfigured: only for a contradictory
+        opt-in/opt-out pair — a configuration error the caller must fix.
     """
 
-    pyproject = _PYTHON_SRC_DIR / "pyproject.toml"
-    if not pyproject.exists():
-        # Not an editable-install context (release-surface tests run
-        # against a pip-installed wheel under a throwaway venv).
-        return
-    if _binding_has_test_hooks():
-        # Developer already built with test-hooks (or a previous
-        # pytest session in the same venv did). Nothing to do — this is the
-        # normal path, and it never consults the opt-in.
-        return
+    # Not an editable-install context when `pyproject.toml` is absent (the
+    # release-surface tests run against a pip-installed wheel under a throwaway
+    # venv). Probing the binding there would be a pointless subprocess, so keep
+    # the short-circuit here rather than inside the pure policy.
+    is_source_tree = (_PYTHON_SRC_DIR / "pyproject.toml").exists()
 
-    if os.environ.get(_REBUILD_OPT_IN) != "1":
-        raise TestHooksBindingMissing(
-            "the installed `fathomdb` binding was built WITHOUT the `test-hooks` feature, "
-            "so these tests cannot run.\n"
-            "\n"
-            "This conftest will NOT rebuild it for you: `maturin develop` rebinds the "
-            "active virtualenv to this source tree, which silently repoints every other "
-            "consumer of a SHARED venv (TC-27).\n"
-            "\n"
-            "Choose one:\n"
-            f"  * authorize the rebuild here:  {_REBUILD_OPT_IN}=1 pytest ...\n"
-            "  * or build it yourself, from an environment you intend to rebind:\n"
-            f"      cd {_PYTHON_SRC_DIR} && python -m maturin develop --features "
-            "pyo3/extension-module,test-hooks,default-embedder,default-reranker\n"
-            "\n"
-            "NEVER run either from a git worktree against a shared .venv."
-        )
+    decision = decide(
+        is_source_tree=is_source_tree,
+        # Developer already built with test-hooks (or a previous pytest session
+        # in the same venv did) — the normal path, which never consults the opt-in.
+        hooks_present=is_source_tree and _binding_has_test_hooks(),
+        allow_rebuild=os.environ.get(REBUILD_OPT_IN) == "1",
+        forbid_rebuild=os.environ.get(REBUILD_OPT_OUT) == "1",
+        # `sys.prefix` is the environment root for a venv interpreter.
+        venv_owned_by_source_tree=venv_belongs_to_source_tree(sys.prefix, _PYTHON_SRC_DIR),
+    )
 
-    if os.environ.get("FATHOMDB_TESTS_NO_REBUILD") == "1":
-        raise TestHooksBindingMissing(
-            f"contradictory configuration: {_REBUILD_OPT_IN}=1 asks for a rebuild while "
-            "FATHOMDB_TESTS_NO_REBUILD=1 forbids one. Unset one of them."
-        )
+    if decision.action == CONTRADICTORY:
+        raise TestHooksBindingMisconfigured(decision.reason)
+    if decision.action != REBUILD:
+        return decision
 
     print(
         "\n[conftest] EU-6 FIX-1: rebuilding fathomdb editable binding "
@@ -183,8 +180,54 @@ def _ensure_test_hooks_binding() -> None:
         if mod_name == "fathomdb" or mod_name.startswith("fathomdb."):
             del sys.modules[mod_name]
 
+    # Re-probe rather than trusting a zero exit code. If `maturin develop`
+    # somehow lands a binding that still lacks the hooks, DEGRADED (visible
+    # skips) is the honest outcome — never let the marked tests run and
+    # "pass" against a surface that is not there.
+    if not _binding_has_test_hooks():
+        return Decision(
+            DEGRADED,
+            "`maturin develop` completed but the rebuilt binding still does not expose "
+            "the test-hooks surface. Check that the `test-hooks` Cargo feature still "
+            "gates the expected methods.",
+        )
+    return decision
+
 
 # Run the rebuild at conftest IMPORT time (before sibling test modules are
 # collected), not as a fixture — see the module docstring for why a fixture is
-# too late for module-level test-hooks imports (e.g. test_ffi_safety.py).
-_ensure_test_hooks_binding()
+# too late once a sibling module has dlopen()ed the stale extension.
+_TEST_HOOKS_DECISION = _ensure_test_hooks_binding()
+
+
+def pytest_report_header() -> list[str] | None:
+    """Announce a degraded run in the pytest header, at ANY verbosity.
+
+    Requirement: never a silent green. If the hook surface is missing, the
+    reason is on screen before the first test runs, not buried in `-rs`.
+    """
+
+    if not _TEST_HOOKS_DECISION.is_degraded:
+        return None
+    return [
+        "test-hooks: UNAVAILABLE — tests marked "
+        f"`{REQUIRES_HOOKS_MARKER}` will be SKIPPED (not run).",
+        *(f"  {line}" for line in _TEST_HOOKS_DECISION.reason.splitlines()),
+    ]
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip — visibly, with the gate's reason — every test that needs the
+    `test-hooks` surface when the gate came back DEGRADED.
+
+    A real `pytest.mark.skip`, so the run reports `s` and `-rs` prints the
+    reason. Tests that do not carry the marker are untouched: a missing dev-only
+    feature must not silently shrink the rest of the suite either.
+    """
+
+    if not _TEST_HOOKS_DECISION.is_degraded:
+        return
+    mark = pytest.mark.skip(reason=skip_reason(_TEST_HOOKS_DECISION.reason))
+    for item in items:
+        if item.get_closest_marker(REQUIRES_HOOKS_MARKER) is not None:
+            item.add_marker(mark)

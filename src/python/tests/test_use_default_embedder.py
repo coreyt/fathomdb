@@ -114,6 +114,7 @@ def test_open_report_carries_mean_vec_pinned_initial_state(db_path: str) -> None
         engine.close()
 
 
+@pytest.mark.requires_test_hooks
 def test_open_report_mean_vec_pinned_transitions_after_threshold(
     db_path: str,
 ) -> None:
