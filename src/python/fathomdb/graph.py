@@ -23,7 +23,15 @@ from typing import TYPE_CHECKING, Literal, cast
 from fathomdb._fathomdb import NodeRecord as _NativeNodeRecord
 from fathomdb._fathomdb import graph_neighbors as _native_graph_neighbors
 from fathomdb._fathomdb import search_expand as _native_search_expand
-from fathomdb.types import ExpandedNode, NodeRecord, SearchExpandResult, SearchHit, SoftFallbackBranch
+from fathomdb.read import _to_native_view
+from fathomdb.types import (
+    ExpandedNode,
+    NodeRecord,
+    ReadView,
+    SearchExpandResult,
+    SearchHit,
+    SoftFallbackBranch,
+)
 
 if TYPE_CHECKING:
     from fathomdb.engine import Engine
@@ -46,6 +54,8 @@ def neighbors(
     logical_id: str,
     depth: int,
     direction: TraversalDirection = "both",
+    *,
+    view: ReadView | None = None,
 ) -> list[NodeRecord]:
     """G5 — bounded BFS from ``logical_id`` over ``canonical_edges``.
 
@@ -75,7 +85,9 @@ def neighbors(
         raise InvalidArgumentError(
             f"graph.neighbors depth must be a non-negative integer; got {depth!r}"
         )
-    native_nodes = _native_graph_neighbors(engine._native, logical_id, depth, direction)
+    native_nodes = _native_graph_neighbors(
+        engine._native, logical_id, depth, direction, _to_native_view(view)
+    )
     return [_to_node_record(n) for n in native_nodes]
 
 

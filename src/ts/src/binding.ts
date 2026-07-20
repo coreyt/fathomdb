@@ -172,6 +172,21 @@ export interface NativeNodeRecord {
   writeCursor: number;
 }
 
+/** 0.8.20 Slice 10b (R-20-RV / R-20-NV) — native read-view input. */
+export interface NativeReadView {
+  includeSuperseded?: boolean;
+  includeInactive?: boolean;
+  includeOutOfWindow?: boolean;
+  validAsOf?: number;
+}
+
+/** 0.8.20 Slice 10b (R-20-NV) — native validity-boundary crossing. */
+export interface NativeBoundaryCrossing {
+  node: NativeNodeRecord;
+  becameValidAt?: number;
+  becameInvalidAt?: number;
+}
+
 export interface NativeOpStoreRow {
   id: number;
   collection: string;
@@ -364,11 +379,22 @@ export interface NativeModule {
     options: NativeAdminConfigureOptions,
   ): Promise<NativeWriteReceipt>;
   // Slice 30 — governed read.* native fns (G2/G3).
-  readGet(engine: NativeEngine, logicalId: string): Promise<NativeNodeRecord | null>;
+  readGet(
+    engine: NativeEngine,
+    logicalId: string,
+    view?: NativeReadView,
+  ): Promise<NativeNodeRecord | null>;
   readGetMany(
     engine: NativeEngine,
     logicalIds: string[],
+    view?: NativeReadView,
   ): Promise<(NativeNodeRecord | null)[]>;
+  // 0.8.20 Slice 10b (R-20-NV).
+  crossedBoundarySince(
+    engine: NativeEngine,
+    since: number,
+    view?: NativeReadView,
+  ): Promise<NativeBoundaryCrossing[]>;
   readCollection(
     engine: NativeEngine,
     collection: string,
@@ -385,6 +411,7 @@ export interface NativeModule {
     kind: string,
     predicates?: NativePredicateInput[],
     limit?: number,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   // 0.8.11 Slice 40 (#17) — unified Filter → read.list backend.
   readListFilter(
@@ -392,6 +419,7 @@ export interface NativeModule {
     kind: string,
     terms?: NativeFilterTermInput[],
     limit?: number,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   // Slice 20 — G5/G6 graph traversal fns.
   graphNeighbors(
@@ -399,6 +427,7 @@ export interface NativeModule {
     logicalId: string,
     depth: number,
     direction: string,
+    view?: NativeReadView,
   ): Promise<NativeNodeRecord[]>;
   searchExpand(
     engine: NativeEngine,

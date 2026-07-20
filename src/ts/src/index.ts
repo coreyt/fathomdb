@@ -15,12 +15,19 @@ import {
   type NativePerHitExplain,
 } from "./binding.js";
 import { InvalidArgumentError, InvalidFilterError, rethrowTyped } from "./errors.js";
-import type { NodeRecord, Predicate } from "./read.js";
+import type { NodeRecord, Predicate, ReadView } from "./read.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
 export { read } from "./read.js";
-export type { NodeRecord, OpStoreRow, Predicate, ReadCollectionOptions } from "./read.js";
+export type {
+  BoundaryCrossing,
+  NodeRecord,
+  OpStoreRow,
+  Predicate,
+  ReadCollectionOptions,
+  ReadView,
+} from "./read.js";
 
 /**
  * OPP-12 Phase-1 (0.8.19 Slice 10) — the closed lifecycle existence-state
@@ -1096,6 +1103,7 @@ export const graph = {
     logicalId: string,
     depth: number,
     direction: TraversalDirection = "both",
+    view?: ReadView,
   ): Promise<NodeRecord[]> {
     validateFfiString(logicalId);
     if (!Number.isInteger(depth) || depth < 1 || depth > 3) {
@@ -1103,7 +1111,9 @@ export const graph = {
         `graph.neighbors depth must be an integer between 1 and 3; got ${depth}`,
       );
     }
-    return intercept(() => native.graphNeighbors(engine._native, logicalId, depth, direction));
+    return intercept(() =>
+      native.graphNeighbors(engine._native, logicalId, depth, direction, view),
+    );
   },
 
   /**

@@ -77,6 +77,10 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "SoftFallbackBranch",
     "CounterSnapshot",
     "Subscription",
+    // 0.8.20 Slice 10b (R-20-RV / R-20-NV) — the read-view / validity types.
+    // PROPOSED, NOT SIGNED (see the allowlist JSON `_comment`).
+    "ReadView",
+    "BoundaryCrossing",
     // Slice 20 (G5/G6) — graph traversal types
     "TraversalDirection",
     "NodeRecord",
@@ -161,11 +165,15 @@ fn t_074_rust_governed_surface_resolves() {
     // 0.8.20 Slice 5c/5d (R-20-E3/E4) — erasure types
     let _ = type_name::<fathomdb::SourceId>();
     let _ = type_name::<fathomdb::ExciseReport>();
+    // 0.8.20 Slice 10b (R-20-RV / R-20-NV) — read-view / validity types.
+    // PROPOSED, NOT SIGNED.
+    let _ = type_name::<fathomdb::ReadView>();
+    let _ = type_name::<fathomdb::BoundaryCrossing>();
 
     assert_eq!(
         GOVERNED_SURFACE_ALLOWLIST.len(),
-        31,
-        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 31 resolved governed types"
+        33,
+        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 33 resolved governed types"
     );
 }
 

@@ -103,6 +103,47 @@ class SearchHit:
 
 
 @dataclass(frozen=True)
+class ReadView:
+    """0.8.20 Slice 10b (R-20-RV / R-20-NV) — the read view.
+
+    Every field is a RELAXATION, and every default is the STRICT view, so
+    ``ReadView()`` — and omitting ``view=`` entirely — reproduces the shipped
+    read behaviour exactly. Flags compose independently: each drops exactly one
+    predicate and no other.
+
+    Accepted by ``read.get`` / ``read.get_many`` / ``read.list`` and
+    ``graph.neighbors``. Mirrors the TypeScript ``ReadView`` (cross-binding
+    parity; ``snake_case`` here, ``camelCase`` there).
+
+    World-time only — there is deliberately no ``history_as_of``.
+    """
+
+    #: Relax ``superseded_at IS NULL`` — include historical versions.
+    include_superseded: bool = False
+    #: Relax ``state = 'active'`` — include non-active lifecycle states.
+    include_inactive: bool = False
+    #: Relax the validity window entirely (ignores ``valid_as_of``).
+    include_out_of_window: bool = False
+    #: Validity instant, INTEGER epoch SECONDS. ``None`` means now.
+    valid_as_of: int | None = None
+
+
+@dataclass(frozen=True)
+class BoundaryCrossing:
+    """0.8.20 Slice 10b (R-20-NV) — one node that crossed a validity boundary.
+
+    A node whose window both opened AND closed inside the interrogated interval
+    carries both fields, so they are independent optionals rather than an enum.
+    """
+
+    node: "NodeRecord"
+    #: Set when the node BECAME VALID inside the interval.
+    became_valid_at: int | None = None
+    #: Set when the node BECAME INVALID inside the interval.
+    became_invalid_at: int | None = None
+
+
+@dataclass(frozen=True)
 class NodeRecord:
     """Slice 30 (G2) — an ACTIVE canonical node returned by `read.get` /
     `read.get_many`.
@@ -448,6 +489,8 @@ class CounterSnapshot:
 
 
 __all__ = [
+    "ReadView",
+    "BoundaryCrossing",
     "CounterSnapshot",
     "DefaultEmbedderCacheHitEvent",
     "DefaultEmbedderDownloadEvent",
