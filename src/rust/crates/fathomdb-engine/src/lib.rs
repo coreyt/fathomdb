@@ -193,6 +193,13 @@ const ERASURE_PENDING_REDACTION_COLLECTION: &str = "erasure_pending_redaction";
 /// mirrors the slice's existing precedent: [`Engine::erase_source`] refuses the
 /// reserved `_`-prefixed provenance namespace while [`Engine::excise_source`]
 /// stays permissive.
+///
+/// Gated on `feature = "operator"` to match its only call site,
+/// [`Engine::excise_collection_record`], which is itself operator-only: without
+/// the matching `cfg` a non-`operator` build emits a `dead_code` warning for a
+/// helper that has nothing to guard, because the verb it guards does not exist
+/// in that build.
+#[cfg(feature = "operator")]
 fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
     collection == ERASURE_PENDING_REDACTION_COLLECTION
         || ERASURE_AUDIT_COLLECTIONS.contains(&collection)
