@@ -12,6 +12,30 @@ AC-050c) gates merges against this invariant.
 
 ### Changed — BREAKING
 
+- **Multi-document `ingest_with_extractor` batches now require per-entity
+  attribution (0.8.20, R-20-E2).** Provenance is taken from the caller's
+  `ExtractDocument.source_doc_id`; the model's echo of that field is accepted
+  only as a *selector* among the ids the caller supplied in the same batch, and
+  never as a value.
+
+  - **Single-document batches are unaffected.** Attribution is unambiguous, so
+    the echo is ignored and the caller's id is used even if the model omits it.
+  - **Multi-document batches** must carry a `source_doc_id` on **every entity
+    and every edge**, naming one of that batch's documents. An absent or
+    unrecognised value now fails the whole ingest with `ExtractorError`
+    (Rust: `EngineError::Extractor`).
+
+  *Why it fails instead of defaulting:* with several documents in flight the
+  engine cannot know which one an entity came from, and every fallback would
+  silently file the row under the wrong document — leaving it behind when that
+  document is erased. That is the un-erasable-row defect this release closes, so
+  the engine refuses to guess.
+
+  *Migration:* have your extractor set `source_doc_id` on each element it
+  returns. **If it cannot attribute its output, submit single-document
+  batches** — one `ExtractDocument` per call. See
+  [Erasure](https://fathomdb.dev/operations/erasure/).
+
 - **`source_id` (provenance) is now MANDATORY on every canonical write
   (0.8.20, R-20-E3).** On the Rust surface `PreparedWrite::Node.source_id` and
   `PreparedWrite::Edge.source_id` changed from `Option<String>` to the new
