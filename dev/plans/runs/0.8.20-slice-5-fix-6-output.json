@@ -1,0 +1,130 @@
+{
+  "slice": "0.8.20-slice-5-fix-6",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "1820317f049ff8f935c1278cc0cab984cdb9abbd",
+  "head": "5452016fb43645817acd305c8d84e3ddfc5ce142",
+  "status": "COMPLETE",
+  "mandate": "Fix the single codex §9 [P2] on the fix-4/fix-5 delta: the TC-27 rebuild guard at src/python/tests/conftest.py:128-129 made the documented default pytest path fail at collection.",
+  "verdict": "codex is CORRECT and the finding is ACCEPTED. fix-4 converted a silent-rebuild hazard into a hard import-time raise, so a clean `pip install -e 'src/python[dev]'` checkout running `scripts/agent-test.sh` (or bare pytest) died before collection. Fixed without weakening TC-27.",
+
+  "files_changed": [
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/_test_hooks_gate.py (NEW)",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/test_test_hooks_gate.py (NEW)",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/conftest.py",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/test_ffi_safety.py",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/tests/test_use_default_embedder.py",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/src/python/pyproject.toml",
+    "/home/coreyt/projects/fathomdb-worktrees/orch-0.8.20-s5/scripts/agent-test.sh"
+  ],
+
+  "design": {
+    "shape": "The policy is extracted into a PURE function so it is unit-testable without a binding, a venv, or a subprocess. conftest.py only gathers the five observations and acts on the verdict.",
+    "verdicts": {
+      "PROCEED": "hooks already present, or not a source checkout (release-surface tests run against a pip-installed wheel)",
+      "REBUILD": "authorized AND the active venv belongs to this source tree",
+      "DEGRADED": "hooks missing and a rebuild is not authorized / not safe -> suite RUNS, marked tests SKIP with the reason",
+      "CONTRADICTORY": "opt-in and opt-out both set -> raise (a configuration error the caller must fix)"
+    },
+    "tc27_stated_positively": "venv_belongs_to_source_tree(sys.prefix, src/python): `maturin develop` rebinds sys.prefix to the source tree, so it may run only when the two already belong together. A worktree running against /home/coreyt/projects/fathomdb/.venv resolves outside the worktree's repo root -> refused. Path.resolve() is used, so a `.venv` symlinked to the shared venv is also caught."
+  },
+
+  "three_requirements": [
+    {
+      "requirement": "1. The documented default path works again (clean `pip install -e 'src/python[dev]'` + scripts/agent-test.sh or bare pytest must not fail at collection).",
+      "satisfied_by": [
+        "conftest.py::_ensure_test_hooks_binding now RETURNS a DEGRADED Decision instead of raising TestHooksBindingMissing. The only remaining import-time raise is TestHooksBindingMisconfigured, reached solely when the caller sets BOTH FATHOMDB_TESTS_ALLOW_REBUILD=1 and FATHOMDB_TESTS_NO_REBUILD=1.",
+        "test_ffi_safety.py moved `from fathomdb._fathomdb import force_panic_for_test` from module level into the single test that uses it. At module level it made the entire file un-collectable on a hook-less binding (a collection ERROR), which is what forced the original import-time-or-nothing design.",
+        "scripts/agent-test.sh explicitly authorizes the rebuild for the sanctioned dev loop, so in the main checkout the hooks are actually built rather than merely skipped."
+      ],
+      "regression_locked_by": "test_test_hooks_gate.py::test_default_editable_checkout_degrades_never_raises"
+    },
+    {
+      "requirement": "2. The TC-27 hazard stays closed (no unintended `maturin develop` silently rebinding a shared venv).",
+      "satisfied_by": [
+        "The rebuild remains OPT-IN: FATHOMDB_TESTS_ALLOW_REBUILD=1 is still mandatory. A bare `pytest` from any tree never shells out.",
+        "NEW, and the stronger half: an ownership check that the opt-in CANNOT override. Even with FATHOMDB_TESTS_ALLOW_REBUILD=1, a rebuild is refused when sys.prefix is not inside the repo that owns src/python. This matters precisely because agent-test.sh now sets the opt-in automatically — the env var alone is no longer what stands between an agent worktree and the shared .venv.",
+        "scripts/agent-test.sh sets the opt-in ONLY when it selected the in-tree `.venv/bin/python` (it runs after cd_repo_root, so in a linked worktree that is the worktree's own venv). A system-python fallback gets no authorization. This is the outer half of a belt-and-suspenders pair; conftest re-checks independently."
+      ],
+      "regression_locked_by": "test_test_hooks_gate.py::test_authorized_rebuild_still_refused_when_venv_is_foreign, ::test_worktree_against_shared_primary_venv_is_not_owned, ::test_no_input_combination_yields_an_unsafe_rebuild (exhaustive 32-cell sweep asserting REBUILD implies all five safety observations)"
+    },
+    {
+      "requirement": "3. No silent vacuous green — hook-dependent tests skip VISIBLY or fail loudly, never pass while asserting nothing.",
+      "satisfied_by": [
+        "A registered marker `requires_test_hooks` (pyproject [tool.pytest.ini_options] markers). conftest's pytest_collection_modifyitems attaches a REAL pytest.mark.skip carrying the gate's reason, so the run reports `s` and `-rs` prints why. Nothing is silently deselected or collect-ignored.",
+        "conftest's pytest_report_header prints a banner at ANY verbosity naming the marker and the reason, so a degraded run is visible before the first test, not buried in a summary flag.",
+        "Only marked items are touched. Unmarked tests keep running — a missing dev-only feature must not silently shrink the rest of the suite either.",
+        "After a rebuild, conftest RE-PROBES rather than trusting maturin's exit code; if the rebuilt binding still lacks the hooks it returns DEGRADED so the marked tests skip instead of running against an absent surface.",
+        "Exhaustive coverage check: the only Python-visible test-hooks symbols are `_configure_vector_kind_for_test`, `_write_vector_for_test` (src/rust/crates/fathomdb-py/src/lib.rs:1238,1246) and `force_panic_for_test` (:2036, registered :2096). Both consuming tests now carry the marker; no third consumer exists.",
+        "Deliberately NOT a whole-session self-skip (the TC-13/TC-25/TC-30 failure mode). Exactly two test functions skip; everything else is unaffected."
+      ]
+    }
+  ],
+
+  "verified_by_execution": [
+    {
+      "what": "The pure decision table — all 12 tests in test_test_hooks_gate.py, executed directly (no pytest, no binding, no conftest).",
+      "how": "python3 loop calling each test_* function in the module",
+      "result": "12/12 PASS, rc=0"
+    },
+    {
+      "what": "conftest.py imports WITHOUT raising on the exact path codex flagged (hook-less binding, no env vars set) and yields DEGRADED.",
+      "how": "`env -u FATHOMDB_TESTS_NO_REBUILD -u FATHOMDB_TESTS_ALLOW_REBUILD <python> -c 'import conftest'` from src/python/tests",
+      "result": "printed `default-path action = degraded`; no exception; no subprocess build. NOTE the same snippet then hit an UNRELATED pre-existing ImportError (`IllegalTransitionError` missing from the MAIN checkout's stale `_fathomdb.abi3.so`) on a follow-on `import fathomdb` — that is the shared venv's own staleness, not this change, and it independently demonstrates why this worktree must not touch that venv."
+    },
+    {
+      "what": "The DEGRADED end-to-end behavior: header banner + skip marker applied to marked items ONLY.",
+      "how": "`FATHOMDB_TESTS_NO_REBUILD=1 <python> -c 'import conftest; ...'` with two stub items (one marked, one not)",
+      "result": "action=degraded; header banner emitted naming `requires_test_hooks` + the reason; needs_hooks item got 1 skip marker with the reason text; plain item got 0. No maturin invoked."
+    },
+    {
+      "what": "test_ffi_safety.py / test_use_default_embedder.py structure.",
+      "how": "AST parse (no import, since importing fathomdb from this worktree resolves to the stale main-tree install)",
+      "result": "module-level force_panic_for_test import ABSENT; it is now inside test_panic_surfaces_as_python_exception; both target tests carry `pytest.mark.requires_test_hooks`."
+    },
+    {
+      "what": "Static gates.",
+      "how": "see gates block",
+      "result": "all green"
+    }
+  ],
+
+  "verified_by_reasoning_only": [
+    "That a real `pytest` run over the full suite collects and passes. The Python suite was NOT run here — `maturin develop`/`pip install -e` are prohibited from this worktree (they rebind the shared .venv, the very TC-27 hazard). Reasoning: conftest no longer raises on the default path (executed above), test_ffi_safety.py's module-level hook import is gone (AST-verified), and pytest_collection_modifyitems only ADDS skip markers.",
+    "That scripts/agent-test.sh's pytest step now succeeds in the main checkout. `bash -n` passes and the branch was read end-to-end, but the script was NOT executed (prohibited — it runs the Python suite). Reasoning: `python_bin` is assigned the literal string `.venv/bin/python`, so the `=` comparison is exact; `run_capped` execs `\"$@\"`, so the `env FATHOMDB_TESTS_ALLOW_REBUILD=1` prefix is passed through correctly and is scoped to that one child process.",
+    "That `from _test_hooks_gate import ...` resolves at pytest runtime. Relies on pytest's prepend import mode inserting the conftest's own directory on sys.path before importing it (tests/ has no __init__.py). NOT executed under pytest here; it WAS executed under a manual `sys.path.insert(0, '.')` equivalent. pyright resolution was fixed explicitly via `extraPaths = [\"tests\"]` and confirmed by a real pyright run (no unresolved-import error for that module).",
+    "That the ordering of agent-test.sh is unaffected: the change is confined to the single `test-python` invocation; no variable is exported, so no later step inherits the opt-in."
+  ],
+
+  "gates": [
+    { "gate": "cargo clippy --workspace --all-targets", "exit_code": 0, "note": "no Rust touched; confirmed unaffected" },
+    { "gate": "cargo check --workspace --all-targets", "exit_code": 0, "note": "no Rust touched; confirmed unaffected" },
+    { "gate": "ruff check src/python", "exit_code": 0, "note": "run twice — PATH ruff and .venv ruff; also re-run green by the pre-commit hook on the staged set" },
+    { "gate": "python3 -m py_compile (all 5 touched/new .py files)", "exit_code": 0 },
+    { "gate": "bash -n scripts/agent-test.sh", "exit_code": 0 },
+    { "gate": "tomllib.load(src/python/pyproject.toml)", "exit_code": 0 },
+    { "gate": "gate-policy unit tests (direct execution, 12 tests)", "exit_code": 0 },
+    {
+      "gate": "pyright -p src/python",
+      "exit_code": 1,
+      "assessment": "PRE-EXISTING, NOT a regression. All 8 errors are in files this fix did not touch: fathomdb/engine.py (6), fathomdb/graph.py (1), tests/test_vector_equivalence_probe.py (1). They are stale-stub artifacts of the shared venv's installed `_fathomdb.abi3.so` lagging the worktree source. ZERO errors in conftest.py, _test_hooks_gate.py, or test_test_hooks_gate.py — confirming `extraPaths = [\"tests\"]` resolved the sibling import."
+    }
+  ],
+
+  "prohibitions_honored": [
+    "No `maturin develop`, no `pip install -e`, no pytest run over the real suite, no execution of scripts/agent-test.sh.",
+    "eu7_real_corpus_ac not run in any form; its #[ignore] gate untouched.",
+    "TC-27 protection not weakened to 'always rebuild' — it was strengthened with an ownership check the opt-in cannot override.",
+    "recovery_denylist untouched; the string 'HITL-SIGNED' written nowhere.",
+    "dev/plans/runs/STATUS-0.8.20.md and dev/todos-and-considerations-ledger.jsonl NOT edited (orchestrator-owned).",
+    "No git push. Nothing touched in /home/coreyt/projects/fathomdb or /home/coreyt/projects/fathomdb-verify-s5.",
+    "No git stash -u / git clean / git checkout -- was run at any point.",
+    "Pre-existing untracked files in the worktree (0.8.20-slice-5-fix-5-output.json, the codex log) left alone."
+  ],
+
+  "notes_for_orchestrator": [
+    "STATUS-0.8.20.md row 11 (TC-27) and ledger seq-47 both state the fix-4 consequence 'scripts/agent-test.sh's pytest step now FAILS LOUDLY instead of auto-rebuilding' and instruct verification runners to export FATHOMDB_TESTS_ALLOW_REBUILD=1. That is now STALE: agent-test.sh sets it itself when using the in-tree .venv, and the failure mode is a visible skip rather than a hard fail. Orchestrator owns both files — please update.",
+    "For the isolated fresh-clone verification: create the venv INSIDE the clone (e.g. <clone>/.venv) so the ownership check passes and the hooks are genuinely rebuilt. A venv outside the clone will DEGRADE and skip the two hook tests — visibly, but they would not actually run.",
+    "The fresh-clone run should confirm: (a) collection succeeds, (b) with an in-tree venv the two `requires_test_hooks` tests RUN and pass, (c) with FATHOMDB_TESTS_NO_REBUILD=1 they report as skips with the reason and the header banner appears.",
+    "The 8 pyright errors above pre-date this fix and are worth a separate look; they are visible from this worktree because the shared venv's compiled stub lags the source."
+  ]
+}
