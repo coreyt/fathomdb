@@ -14,7 +14,7 @@
 
 | Anchor | Claim | Verified |
 |---|---|---|
-| `SCHEMA_VERSION = 20` | 0.8.19 landed the 19→20 existence migration | ✓ `fathomdb-schema/src/lib.rs:6` |
+| ~~`SCHEMA_VERSION = 20`~~ → **`SCHEMA_VERSION = 22`** | **CORRECTED 2026-07-20 (Slice 15b).** The `20` row was **stale**: it recorded the 0.8.19 19→20 existence migration, but 0.8.20 has since added **step 21** (legacy provenance backfill, Slice 5c) and **step 22** (`canonical_nodes` validity window, Slice 10) | ✓ **`fathomdb-schema/src/lib.rs:6` reads `pub const SCHEMA_VERSION: u32 = 22;`**, pinned by `s22_is_head_and_schema_version_is_22` (`fathomdb-schema/tests/step22_migration.rs:285`) |
 | manifests = **`0.8.9`** | every release since 0.8.9 was label-only ⇒ **0.8.20 is the first manifest bump `0.8.9 → 0.8.20`** | ✓ `src/python/pyproject.toml:7`, `src/ts/package.json:3` |
 | `transition` / `purge` **shipped in both SDKs** | 0.8.19 Phase-1 surface is live | ✓ `fathomdb-py:1274,1297`; `fathomdb-napi:1070,1102` |
 | **Phase-2 surface = 100 % NET-NEW** | `ReadView`, `valid_from`, `valid_until`, `dense_readiness`, `configure_projections`, `ProjectionSpec`, `EntityTypeSpec`, `id_prefix` | ✓ **ZERO hits** across all crates |
@@ -260,6 +260,10 @@ Tracked by **requirement id + TDD test name** (per the locked-`acceptance.md` po
 - **Slice 5 is INDEPENDENT of Phase-2** — it fixes **defects in shipped code** and can run fully parallel to
   10/15. It does **not** wait on the registry.
 - **Slice 15 is the Phase-2 keystone** — 20 and 25 both depend on it.
+  **⚠ PARTIALLY COMPLETE (2026-07-20).** Only **TC-34** has closed (on-branch @ `a8087dfb`, with the
+  search-validity coherence fix). **R-20-PR, R-20-EAV and TC-33 are NOT STARTED — no code exists.**
+  **20 and 25 stay BLOCKED until R-20-PR lands**; TC-34 closing does **not** unblock them. See
+  `runs/STATUS-0.8.20.md` §13.
 - **Slice 30 (H7) is a PUBLISH PRECONDITION.** Absent-or-failing ⇒ **the breaking pair HOLDS.**
 
 **Tracks (parallelizable).** `5 ∥ 10 ∥ 15` after Slice 0. Slice 5 touches the erasure/projection paths; 10/15
@@ -338,16 +342,31 @@ Gaps `1–4, 6–9, 11–14, 16–19, 21–24, 26–29, 31–39` absorb unplanne
 
 ## 9. Immediate next slice
 
-**Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus TC-34 and TC-33.**
-It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on 10/15/20/25.
+**The REMAINDER of Slice 15 — projection registry (C-1 co-land) + EAV/property-FTS (R-20-PR, R-20-EAV), plus
+TC-33.** It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additionally depends on
+10/15/20/25.
 
-> **FOLDED IN BY HITL (2026-07-20) — both must close in this slice:**
+> **⚠ SLICE 15 IS OPEN. It had FOUR parts; ONE has closed.**
 >
-> - **TC-34 — node validity has NO write-side authoring verb.** Slice 10 shipped `valid_from`/`valid_until`
->   **queryable but not settable from any SDK**. This is the **same class as TC-31**, which the HITL closed on
->   the grounds that leaving it would make FathomDB "seen as poor" — a validity window a caller can filter on
->   but never set is dead surface. Ship the authoring path in **both** bindings (X1 parity), with a round-trip
->   test: set a window → query at an instant inside it → query at an instant outside it.
+> **✅ TC-34 — CLOSED at `a8087dfb`** (branch `orch-0.8.20-s15`, docs/artifacts `cd5620be`; **not landed**).
+> Node-validity authoring shipped as **optional `valid_from`/`valid_until` fields on the existing node write
+> item** — **not a new verb**, **zero new commands**, symmetric with `PreparedWrite::Edge`'s `t_valid`/
+> `t_invalid`; validation in the **engine** so all three languages share one rule. It also carried an
+> **unscoped but in-scope search-validity coherence fix**: TC-34 made window-authoring reachable from the SDK
+> and thereby turned Slice 10's deliberate "`ReadView` covers the five read verbs, not `search`" narrowing
+> into a **live defect**, reproduced at runtime. `ReadView` now governs `search` across **five** hydration
+> sites, filters **before** the vector cutoff (a **recall** defect) and binds **one instant per query** (a
+> **determinism** defect). **codex §9: four rounds to a TERMINAL PASS, no verdict overridden.**
+> Governed-surface delta **PROPOSED / NOT SIGNED**; **AC-079 still unminted.** See `runs/STATUS-0.8.20.md` §13.
+>
+> **❌ The OTHER THREE parts are UNTOUCHED — `R-20-PR`, `R-20-EAV` and `TC-33` have design work but NO code.**
+> **Slices 20 and 25 therefore REMAIN BLOCKED.** Two findings are load-bearing for this remaining work and
+> should be resolved as part of its design, not discovered mid-build: the plan's
+> `roles: {filterable, rankable, searchable}` **cannot express the ratified C-1 contract** (**TC-40**), and
+> `filterable` has **two incompatible backends** (**TC-41**).
+>
+> **STILL LIVE — FOLDED IN BY HITL (2026-07-20), must close in this slice:**
+>
 > - **TC-33 — the temporal model is internally inconsistent.** Node validity is **INTEGER epoch seconds**
 >   (step 22) while **edge** validity is **ISO-8601 TEXT**. Harmonise them. **Steward recommendation: converge
 >   on INTEGER epoch seconds**, matching the node representation, §1's "integer windows", and the
@@ -367,8 +386,8 @@ It is the Phase-2 keystone: 20 and 25 both depend on it. Slice 30 (H7) additiona
 > `[from, until)`, NULL = unbounded; existing rows back-fill NULL/NULL ⇒ always valid ⇒ **default-view
 > visibility unchanged**). **TC-31 RESOLVED**; **TC-32 annotated** per the HITL ruling (accepted, no behavior
 > change). Governed-surface delta is **PROPOSED / NOT SIGNED**; **no AC minted — AC-079 remains available and
-> unminted**. **Zero eu7 runs.** Four decisions are owed to the HITL — **TC-33/TC-34** plus the two carried
-> sign-offs — see `runs/STATUS-0.8.20.md` §4 and §12.
+> unminted**. **Zero eu7 runs.** **TC-34 has since been CLOSED by Slice 15b** (above); **TC-33 is still owed**,
+> alongside the two carried sign-offs and Slice 15b's **§4 #18–#22** — see `runs/STATUS-0.8.20.md` §4, §12, §13.
 
 **Slice 5 — erasure completeness (R-20-E1…E8) — LANDED at `1f8ed8bf`; retained for the record.** One
 row-owned projection registry + a **total projector covering nodes AND edges** (extract the inlined edge
@@ -428,6 +447,15 @@ broken code (§0.1). **Mint ACs from AC-079** (§3). **Run NO eu7 — R-20-EU7 i
   **TC-31 RESOLVED**. Opens **TC-33** (temporal-model split: node validity INTEGER epoch vs shipped edge
   `t_valid`/`t_invalid` ISO-8601 TEXT) and **TC-34** (node validity has **no write-side authoring verb**) —
   **both owed to the HITL**. Governed-surface delta **PROPOSED / NOT SIGNED**; **no AC minted**.
+- **2026-07-20 — TC-34 CLOSED in Slice 15b** @ **`a8087dfb`** (branch `orch-0.8.20-s15`; **not landed**).
+  Node-validity authoring ships as **optional fields on the existing node write item**, **zero new commands**.
+  **`ReadView` EXTENDED TO `search`** — Slice 10's five-verb scope was a narrowing of a contract that already
+  named `search`, and TC-34 made the gap reachable, so it was fixed here rather than deferred; the fix also
+  moved validity **before** the vector cutoff (recall) and bound **one instant per query** (determinism).
+  Governed-surface delta **PROPOSED / NOT SIGNED**. **codex §9: FOUR rounds to a TERMINAL PASS, with no
+  verdict overridden and every [P2] fixed.** **AC-079 remains UNMINTED and publish remains BLOCKED.**
+  **⚠ Slice 15 is NOT complete** — R-20-PR, R-20-EAV and TC-33 are **not started**, so **Slices 20 and 25
+  stay blocked**.
 
 ---
 
