@@ -1,0 +1,117 @@
+{
+  "slice": "0.8.20 Slice 10b",
+  "requirements": ["R-20-RV", "R-20-NV"],
+  "branch": "orch-0.8.20-s10",
+  "baseline": "43ae248f",
+  "head": "e069e3a9c758891f5a15e6dadd550be6dbacb326",
+  "status": "COMPLETE",
+  "commits": [
+    {
+      "sha": "9c6420e5",
+      "subject": "feat(R-20-NV): schema step 22 — canonical_nodes validity window (SCHEMA 21→22)"
+    },
+    {
+      "sha": "e3cc071b",
+      "subject": "feat(R-20-RV/R-20-NV): thread ReadView through all five read verbs + bindings"
+    },
+    {
+      "sha": "4524ffd2",
+      "subject": "test(R-20-RV/R-20-NV): read-mode + validity matrices; Py/TS parity; surface delta"
+    },
+    {
+      "sha": "e069e3a9",
+      "subject": "docs(rust): record the Slice-10b ReadView/BoundaryCrossing surface delta"
+    }
+  ],
+  "gates": {
+    "cargo clippy --workspace --all-targets": 0,
+    "cargo check --workspace --all-targets": 0,
+    "cargo test -p fathomdb-engine -p fathomdb-schema (--test-threads=1)": 0,
+    "scripts/agent-lint-migrations.sh": 0,
+    "scripts/agent-lint-md.sh": 0,
+    "cargo test -p fathomdb -p fathomdb-cli -p fathomdb-query": 0,
+    "note": "Real exit codes captured via $? on the command itself, never a trailing echo. Test suites were run SERIALLY (--test-threads=1) per the lifecycle_observability.rs false-failure warning; no parallel suite run was performed. 540 tests passed across 102 suites."
+  },
+  "api_shape_decision": {
+    "chosen": "thread a `ReadView` parameter through the five existing read verbs",
+    "rejected": "`*_with_view` sibling verbs",
+    "rationale": "Governed-surface minimisation. Sibling verbs would have added roughly eight new allowlist members across the Py/TS naming conventions (read.get_with_view / readGetWithView, and so on for five verbs); threading adds ZERO new verb names on the read path. The net delta is TWO TYPES (`ReadView`, `BoundaryCrossing`) plus ONE genuinely new command (`crossed_boundary_since`, which has no existing verb to ride on). 0.8.20 is already breaking on the Rust facade, and in both bindings the parameter is OPTIONAL (`view=None` / `view?`), so neither SDK is source-broken. Cost: ~60 internal/test call sites updated to pass `&ReadView::default()` — mechanical, and it has the side benefit that every pre-existing read-verb test now explicitly exercises the strict view."
+  },
+  "integer_vs_text_divergence": {
+    "flag": "DELIBERATE DIVERGENCE — ESCALATED TO HITL, NOT SILENTLY RESOLVED",
+    "what": "`canonical_nodes.valid_from` / `valid_until` are INTEGER epoch seconds. The shipped `canonical_edges.t_valid` / `t_invalid` (migration step 14) are ISO-8601 TEXT compared through `datetime(...)`. The temporal model is now internally inconsistent between nodes and edges.",
+    "why": [
+      "the R-20-NV release contract specifies INTEGER windows",
+      "an INTEGER window stays sargable against `canonical_nodes_validity_idx` with no per-row `datetime()` conversion",
+      "INTEGER lets the instant be a BOUND parameter (the `:now` seam), which is what makes node validity deterministically testable; the shipped EDGE path still inlines `datetime('now')`",
+      "unifying would either re-litigate shipped edge semantics or force a data rewrite of `canonical_edges` — both out of scope for this slice"
+    ],
+    "not_done": "The edge columns were NOT changed, NOT unified, and NOT rewritten. Pinned by `s22_edge_temporal_columns_are_untouched_text` and `r_20_nv_edge_temporal_filter_is_unchanged` so the divergence is a recorded decision rather than drift.",
+    "recommendation": "HITL should decide whether the node/edge temporal split is acceptable long-term or whether a future slice unifies edges onto INTEGER. This slice does not presume that answer."
+  },
+  "governed_surface_delta": {
+    "status": "PROPOSED / NOT SIGNED",
+    "recorded_in": [
+      "src/conformance/governed-surface-allowlist.json (_comment + allowlist)",
+      "src/rust/crates/fathomdb/tests/governed_surface.rs (GOVERNED_SURFACE_ALLOWLIST, count 31→33)",
+      "dev/interfaces/rust.md"
+    ],
+    "commands_added": ["read.crossed_boundary_since", "read.crossedBoundarySince"],
+    "types_added": ["ReadView", "BoundaryCrossing"],
+    "verbs_modified_not_added": [
+      "read.get",
+      "read.get_many",
+      "read.list",
+      "read.list (filter= form)",
+      "graph.neighbors"
+    ],
+    "recovery_denylist": "UNCHANGED — exactly {recover, restore, repair, fix, rebuild}. No new name collides (nothing is named rebuild_*). AC-041 (`no_recovery_surface`) re-run GREEN.",
+    "ac_minting": "No new AC minted. Work is tracked by requirement id (R-20-RV / R-20-NV) + TDD test names, per the acceptance.md lock. AC-079 remains unminted and available.",
+    "note": "The phrase HITL-SIGNED was NOT written anywhere by this slice."
+  },
+  "schema": {
+    "version": "21 → 22",
+    "step": 22,
+    "columns": "canonical_nodes.valid_from, canonical_nodes.valid_until (INTEGER, nullable, no DEFAULT)",
+    "convention": "half-open [valid_from, valid_until); NULL = unbounded on that side",
+    "index": "canonical_nodes_validity_idx ON (valid_from, valid_until) WHERE superseded_at IS NULL AND state = 'active'",
+    "crash_safety": "rides the existing `apply_one` BEGIN IMMEDIATE wrapping SQL + PRAGMA user_version together; a failed step rolls back to 21 with BOTH columns absent (asserted by s22_failed_step_rolls_back_columns_and_version_together)",
+    "idempotence": "`migrate_with_event_sink` only applies steps with step_id > user_version — load-bearing because ALTER TABLE ADD COLUMN has no IF NOT EXISTS form (asserted by s22_is_idempotent_across_repeated_migrate_calls)",
+    "no_op_on_existing_data": "existing rows back-fill to NULL/NULL ⇒ unbounded ⇒ valid at every instant ⇒ default-view visibility unchanged (asserted against the raw table at seven instants including i64::MIN/MAX)",
+    "version_pins_updated": [
+      "fathomdb-schema/tests: step14, step15_to_17, step16, step17, step18, step19, step20, step21, migrations",
+      "fathomdb-engine/tests: compatibility.rs (step-id event list), vector_equivalence_probe.rs (upgrade head)"
+    ]
+  },
+  "tests_added": {
+    "src/rust/crates/fathomdb-schema/tests/step22_migration.rs": 9,
+    "src/rust/crates/fathomdb-engine/tests/slice10_read_view.rs": 12,
+    "src/rust/crates/fathomdb-engine/tests/slice10_node_validity.rs": 12
+  },
+  "mutation_verification": [
+    "Forced the BFS recursive-join node predicate to ignore the view (`ReadView::default()` instead of `view`): 3 RV tests FAILED, including `r_20_rv_graph_neighbors_view_applies_at_the_recursive_join` specifically. Restored and re-verified green.",
+    "Flipped the validity upper bound from `>` to `>=` (breaking the half-open convention): `r_20_nv_validity_window_matrix` FAILED. Restored and re-verified green.",
+    "Conclusion: neither suite is vacuously green."
+  ],
+  "uniform_application_evidence": {
+    "note": "The three per-direction BFS CTE copies (nine hand-written node predicates across anchor / recursive join / final projection) were folded into ONE template parameterised by the only two things that differ (edge join condition, traversed-to expression). Uniform application is therefore STRUCTURAL, not a thing to remember. Note the task brief said FOUR direction variants; there are in fact THREE `TraversalDirection` variants (Outgoing/Incoming/Both) — the fourth CTE is `build_bfs_with_depth_sql` for `search_expand`, which is NOT one of the five read verbs and was deliberately left on the strict path (unchanged behaviour).",
+    "positions_covered_by_separate_tests": ["anchor (all 3 directions)", "recursive join", "final projection"],
+    "matrix_test": "r_20_rv_graph_neighbors_matrix_over_all_directions_and_views — 6 cells (3 directions x 2 views)"
+  },
+  "not_done": [
+    "NO write-side surface for AUTHORING validity windows. R-20-NV specifies the columns, the read-side selector and the boundary hook; a write verb is not in the requirement and inventing one would grow the governed surface. Tests set windows via direct SQL on a closed DB. CONSEQUENCE: validity is not yet end-to-end usable from an SDK — a consumer can query by window but cannot set one. This is the single most likely follow-up and is flagged for HITL, not silently assumed.",
+    "history_as_of / transaction-time: NOT built, not even partially. Pinned absent at the schema level (s22_adds_no_transaction_time_substrate) and at the type level (r_20_nv_read_view_has_no_transaction_time_selector, an exhaustive struct destructuring that stops compiling if a fifth ReadView field appears).",
+    "search / search_expand paths were NOT given a ReadView. They are not among the five read verbs, and touching them would risk ranking/scoring drift.",
+    "canonical_edges temporal columns and the edge `datetime('now')` filter: untouched by design.",
+    "Slices 15 / 20 / 25 / 30 / 40 (projection registry, EAV, etc.): not started.",
+    "TC-11 (h: pin A) untouched. resolve_provenance, source_id and Slice-10a work untouched.",
+    "Ranking, scoring, ordering and search-hit shape untouched.",
+    "eu7: ZERO runs on any backend at any N. `eu7_real_corpus_ac.rs` is byte-identical to baseline (git diff vs 43ae248f is empty) and still #[ignore]d."
+  ],
+  "blockers": [],
+  "caveats_for_reviewer": [
+    "Python and TypeScript could NOT be built or executed in this worktree (no node_modules; maturin develop / pip install -e are forbidden here because they rebind the shared .venv). The Rust halves of both bindings compile and clippy clean under `cargo check/clippy --workspace --all-targets`, but the .py / .ts / .pyi edits are UNEXECUTED. They need a fresh-clone run before any green claim on X1 parity.",
+    "`ReadView::default()` reproduces the pre-slice EXISTENCE predicates exactly, and every pre-existing read-verb suite passes unchanged. It is not literally byte-identical SQL, because R-20-NV requires the validity conjunct with valid_as_of 'defaulting to now' — that conjunct is always emitted in the default view. It is a PROVABLE no-op on any row with an unbounded (NULL/NULL) window, which is every row in every database predating step 22. Both facts are asserted. Calling this out explicitly because the brief phrased RV's constraint as 'byte-identical' while NV's requirement mandates the always-on conjunct; the two are reconciled in favour of behavioural identity on existing data, and a caller who wants the conjunct gone entirely can set include_out_of_window.",
+    "`read_get` / `read_get_many` under include_superseded resolve a multi-match logical_id to the HIGHEST write_cursor (most recent version), via ORDER BY write_cursor. This is a new semantic choice the requirement did not specify; it is documented on the field and pinned by r_20_rv_point_lookup_under_include_superseded_is_deterministic."
+  ]
+}
