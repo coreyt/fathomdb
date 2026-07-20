@@ -58,13 +58,17 @@ export interface ReadView {
  * A node whose window opened AND closed inside the interrogated interval
  * carries both fields, so they are independent nullables rather than an enum.
  *
- * Both boundary fields are ALWAYS PRESENT and are `number | null` — `null`
- * means "this boundary was not crossed in the interrogated interval". They are
- * not `?: number`: the native layer emits `null` (napi-rs renders
- * `Option::None` as JS `null`, never as an absent property), and the mapper
- * below passes that through verbatim. Mirrors the Python `BoundaryCrossing`,
- * whose fields are `int | None` (cross-binding parity; `camelCase` here,
- * `snake_case` there).
+ * Both boundary fields are ALWAYS PRESENT on this PUBLIC type and are
+ * `number | null` — `null` means "this boundary was not crossed in the
+ * interrogated interval".
+ *
+ * That `null` is manufactured HERE, not by napi. The native layer OMITS the
+ * property when the Rust `Option<i64>` is `None` (see `NativeBoundaryCrossing`
+ * in binding.ts for the napi-derive codegen that proves it), so the mapper
+ * below normalises `undefined → null` with `?? null` — the same normalisation
+ * `index.ts` already applies to `ceScore`. Public consumers therefore see one
+ * shape, and it mirrors the Python `BoundaryCrossing`, whose fields are
+ * `int | None` (cross-binding parity; `camelCase` here, `snake_case` there).
  */
 export interface BoundaryCrossing {
   node: NodeRecord;
@@ -327,8 +331,11 @@ export const read = {
     );
     return rows.map((c) => ({
       node: toNodeRecord(c.node),
-      becameValidAt: c.becameValidAt,
-      becameInvalidAt: c.becameInvalidAt,
+      // napi OMITS these when the Rust `Option` is `None` → `undefined`.
+      // Normalise to `null` so the public shape is total (see the doc comment
+      // on `BoundaryCrossing`).
+      becameValidAt: c.becameValidAt ?? null,
+      becameInvalidAt: c.becameInvalidAt ?? null,
     }));
   },
 };

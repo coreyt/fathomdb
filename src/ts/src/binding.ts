@@ -183,17 +183,31 @@ export interface NativeReadView {
 /**
  * 0.8.20 Slice 10b (R-20-NV) — native validity-boundary crossing.
  *
- * `becameValidAt`/`becameInvalidAt` are `number | null`, NOT `number | undefined`:
- * napi-rs serialises a `#[napi(object)]` field of type `Option<i64>` by ALWAYS
- * setting the property, using JS `null` for `None` (the same convention
- * `NativeOpStoreRow.schemaId` and `NativeSearchHit.ceScore` already carry). A
- * `?: number` declaration would let `strictNullChecks` narrow a real `null` to
- * `number`, so it is wrong in the direction that hides bugs.
+ * `becameValidAt`/`becameInvalidAt` are OPTIONAL: when the Rust `Option<i64>` is
+ * `None` the property is ABSENT from the object, so reading it yields
+ * `undefined` — it is NOT set to `null`.
+ *
+ * This is the measured behaviour of `napi-derive-backend` 1.0.75, which emits
+ * this setter for every `Option<_>` field of a `#[napi(object)]` struct that is
+ * NOT declared `use_nullable = true` (codegen/struct.rs, `obj_field_setters`):
+ *
+ *     if field_.is_some() { obj.set("field", field_)?; }
+ *
+ * i.e. `None` simply skips the `set`. Only `use_nullable = true` emits the
+ * `else { obj.set(field, Null) }` branch, and NO struct in `fathomdb-napi` sets
+ * it. The generic `impl ToNapiValue for Option<T>` (napi 2.16.17,
+ * js_values.rs:218) DOES map `None → napi_get_null`, but object fields never
+ * reach it — that impl governs bare returns and nested positions instead. That
+ * distinction is what made the "napi renders None as null" reading wrong here.
+ *
+ * `NativeSearchHit.ceScore` is declared `?: number | null` for exactly the same
+ * reason; the public `SearchHit.ceScore` reads `null` only because `index.ts`
+ * normalises it with `?? null`. `read.ts` now does the same for these fields.
  */
 export interface NativeBoundaryCrossing {
   node: NativeNodeRecord;
-  becameValidAt: number | null;
-  becameInvalidAt: number | null;
+  becameValidAt?: number;
+  becameInvalidAt?: number;
 }
 
 export interface NativeOpStoreRow {

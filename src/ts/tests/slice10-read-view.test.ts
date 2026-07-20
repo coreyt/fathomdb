@@ -39,6 +39,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 
 import { Engine, graph, read } from "../src/index.js";
+import { native } from "../src/binding.js";
 import type { NodeRecord, ReadView } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
@@ -661,19 +662,41 @@ test("R-20-NV: crossedBoundarySince reports both boundaries", async () => {
     assert.equal(byId.get("BOTH")?.node.kind, "doc");
     assert.ok((byId.get("BOTH")?.node.writeCursor ?? 0) > 0);
 
-    // Cross-binding shape pin: an UNCROSSED boundary is JS `null` with the
-    // property PRESENT — never `undefined` and never absent. napi-rs renders
-    // `Option::None` that way, which is why `BoundaryCrossing.becameValidAt` is
-    // declared `number | null` and not `?: number`. Python's mirror is `None`.
+    // Cross-binding shape pin, MEASURED at both layers (an earlier revision got
+    // this wrong by reasoning about napi instead of observing it).
+    //
+    // PUBLIC layer: an uncrossed boundary is exactly `null`, property PRESENT.
+    // `read.crossedBoundarySince` manufactures that `null` via `?? null`, so the
+    // SDK surface is total and mirrors Python's `int | None`.
     const opened = byId.get("OPENED");
     assert.ok(opened !== undefined);
     assert.ok("becameInvalidAt" in opened, "the uncrossed boundary field must be PRESENT");
     assert.strictEqual(
       opened.becameInvalidAt,
       null,
-      "an uncrossed boundary must be exactly `null` (napi Option::None), not `undefined`",
+      "an uncrossed boundary must be exactly `null` on the PUBLIC surface, not `undefined`",
     );
     assert.strictEqual(opened.becameValidAt, 1500);
+
+    // NATIVE layer: napi does NOT emit `null` here. `napi-derive-backend` skips
+    // the `obj.set` entirely for a `None` `Option<_>` field of a
+    // `#[napi(object)]` struct that is not `use_nullable = true`, so the
+    // property is ABSENT. This is the assertion that distinguishes the two
+    // layers; if napi ever starts emitting `null` (e.g. someone adds
+    // `use_nullable`), this fails and the `?? null` in read.ts becomes dead
+    // normalisation that should be revisited.
+    const rawCrossings = await native.crossedBoundarySince(engine._native, 1000, {
+      validAsOf: 2000,
+    });
+    const rawOpened = rawCrossings.find((c) => c.node.logicalId === "OPENED");
+    assert.ok(rawOpened !== undefined, "native must report the OPENED crossing");
+    assert.strictEqual(
+      "becameInvalidAt" in rawOpened,
+      false,
+      "napi must OMIT an uncrossed boundary field (Option::None skips obj.set), not set it to null",
+    );
+    assert.strictEqual(rawOpened.becameInvalidAt, undefined);
+    assert.strictEqual(rawOpened.becameValidAt, 1500, "a CROSSED boundary is a real number");
 
     // A row with no window can never cross a boundary, even over the widest
     // interval — so the hook is silent on every pre-step-22 row.
