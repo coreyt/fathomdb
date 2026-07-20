@@ -1,0 +1,137 @@
+{
+  "slice": "5-docs",
+  "title": "Slice 5 closure documentation — board of record, changelog, ledger + artifact promotion",
+  "branch": "orch-0.8.20-s5",
+  "baseline": "8e09b9506ce69060fa29bbed01f8f17b2f2dfd63",
+  "head": "3a246dbbf0d8a440339f8820436973572001e822",
+  "status": "COMPLETE",
+  "commits": [
+    {
+      "sha": "3a246dbb",
+      "subject": "docs(0.8.20): close Slice 5 — erasure completeness (R-20-E1…E8), codex §9 PASS",
+      "files": 15,
+      "insertions": 33133,
+      "deletions": 21
+    }
+  ],
+  "commit_split_note": "ONE docs commit, as mandated. Nothing under src/ is touched — verified with `git diff --name-only HEAD~1 HEAD -- src/` (empty).",
+  "deliverables": {
+    "board": {
+      "path": "dev/plans/runs/STATUS-0.8.20.md",
+      "header": "Slice-5 worktree line added; Last updated 2026-07-19 (Slice 0 in flight) -> 2026-07-20 (Slice 5 code-complete on-branch; awaiting Steward land).",
+      "section_1": "Rewritten. Slice 5 code-complete on orch-0.8.20-s5 @ 8e09b950, codex §9 terminal PASS after three fix rounds, awaiting Steward land + the §4 #7-#12 HITL decisions. Slice 0 recorded COMPLETE + HITL-SIGNED at 403eb254. The false line 'Slices 5+ MUST NOT start until the HITL signs' was REMOVED.",
+      "section_2": "Slice 0 -> COMPLETE (HITL-SIGNED, 403eb254). Slice 5 -> COMPLETE on-branch @ 8e09b950, codex PASS, awaiting land. 10/15/20/25/30/40 left 'not started'.",
+      "section_3": "AC-079 = BUILT, AWAITING HITL SIGN-OFF, NOT SIGNED (exact symbol set enumerated). AC-080 = BUILT, GREEN. AC-041 = VERIFIED GREEN, denylist unchanged at five.",
+      "section_4": "Six new decisions #7-#12 added with ledger ids and recommendations.",
+      "section_7_8": "Worktree table + decision log updated.",
+      "section_11": "NEW Slice-5 close: work items, four codex rounds, gates with real exit codes, what the slice proved wrong, owed HITL items, closure artifacts."
+    },
+    "changelog": {
+      "path": "CHANGELOG.md",
+      "policy": "VERIFIED-THEN-EXTENDED, not duplicated. 5d had already written the SourceId BREAKING entry, the projections_invalidated/rows_invalidated count-increase entry, the retention-cap entry, the erase_source / doctor orphan-provenance / erasure-completeness / excise_collection_record Added entries, the new-public-types entry and the Erasure docs entry.",
+      "extended": [
+        "Retention cap entry now also names the exempt pending-redaction queue (erasure_pending_redaction) and states the operator consequence (cap bounds SWEEPABLE rows, not physical rows) — TC-24.",
+        "NEW entry: Schema version 20 -> 21, one-way, documenting the deliberate node/edge backfill asymmetry and why the logical_id gate is right for nodes and wrong for edges.",
+        "ErasureIncomplete bullet extended to the fix-3 rotated-sink case and the durable pending-redaction obligation.",
+        "excise_collection_record bullet extended with the fix-3 refusal to address the engine's own erasure bookkeeping."
+      ],
+      "already_present_verified": [
+        "SourceId breaking change",
+        "erase_source as a new governed SDK verb",
+        "projections_invalidated / rows_invalidated count increase (v2 deletions now counted)"
+      ]
+    },
+    "ledger": {
+      "paths": [
+        "dev/todos-and-considerations-ledger.jsonl",
+        "dev/todos-and-considerations-ledger.jsonl.seq"
+      ],
+      "action": "COMMITTED AS-IS. Not hand-edited. seq 32 -> 43; entries seq 33-43 carry TC-20 (x2), TC-21, TC-22, TC-23, TC-24, TC-25, TC-26, TC-27, TC-28, TC-29."
+    },
+    "artifacts_promoted": {
+      "closure_json": [
+        "dev/plans/runs/0.8.20-slice-5a-output.json",
+        "dev/plans/runs/0.8.20-slice-5b-output.json",
+        "dev/plans/runs/0.8.20-slice-5c-output.json",
+        "dev/plans/runs/0.8.20-slice-5d-output.json",
+        "dev/plans/runs/0.8.20-slice-5-fix-1-output.json",
+        "dev/plans/runs/0.8.20-slice-5-fix-2-output.json",
+        "dev/plans/runs/0.8.20-slice-5-fix-3-output.json"
+      ],
+      "codex_transcripts": [
+        "dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log",
+        "dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log",
+        "dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log",
+        "dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log"
+      ],
+      "count_note": "The task text said SIX closure output.json artifacts; there are SEVEN on disk (5a, 5b, 5c, 5d, fix-1, fix-2, fix-3). All seven committed."
+    },
+    "doc_index": {
+      "path": "dev/DOC-INDEX.md",
+      "action": "NO CHANGE NEEDED — 5d already indexed docs/operations/erasure.md (line 222). No doc was added by this closure commit; the STATUS board is not and has never been DOC-INDEX-tracked (no STATUS-0.8.19 entry either).",
+      "mkdocs": "NOT RUN — nothing under docs/ was touched by this commit."
+    }
+  },
+  "facts_verified_against_repo": {
+    "slice_0_landed_sha": "403eb254 — 'merge(0.8.20): Slice-0 X0 design gate — HITL-SIGNED 2026-07-19'. CONFIRMED.",
+    "terminal_head": "8e09b950 — 'fix(0.8.20): refuse excising engine-internal erasure bookkeeping + a rotated sink is not a redacted sink (codex P1/P2)'. CONFIRMED as the pre-docs HEAD.",
+    "schema_version": "src/rust/crates/fathomdb-schema/src/lib.rs:6 — `pub const SCHEMA_VERSION: u32 = 21;`. CONFIRMED.",
+    "step_21_asymmetry": "lib.rs:576-584 — canonical_nodes `WHERE source_id IS NULL AND logical_id IS NULL`; canonical_edges `WHERE source_id IS NULL` alone. CONFIRMED, with the rationale documented in the step comment at :532-568.",
+    "plan_still_states_unqualified_rule": "dev/plans/plan-0.8.20.md:197 (R-20-E8) still reads \"back-fills source_id='_legacy:pre-0.8.20' **WHERE `logical_id IS NULL` ONLY**\". CONFIRMED — the correction owed under TC-26 is real and not yet applied.",
+    "allowlist_not_signed": "src/conformance/governed-surface-allowlist.json:2 `_comment` contains '***0.8.20 Slice 5d (R-20-E4, erasure) — AWAITING HITL SIGN-OFF, NOT SIGNED.***' and enumerates erase_source/eraseSource, EraseReport, SourceId, ExciseReport. CONFIRMED. The string 'HITL-SIGNED' was NOT written for AC-079 anywhere.",
+    "exempt_collections": "engine lib.rs:155 ERASURE_AUDIT_COLLECTIONS = [excise_source_audit, excise_record_audit]; :162 ERASURE_PENDING_REDACTION_COLLECTION = erasure_pending_redaction. CONFIRMED — both exempt, both changelogged."
+  },
+  "discrepancies_found": [
+    {
+      "severity": "informational",
+      "item": "Artifact count",
+      "detail": "Task said six untracked 0.8.20-slice-5*-output.json; seven exist. All seven committed. No action needed."
+    },
+    {
+      "severity": "informational",
+      "item": "Ledger TC-26 ref sha",
+      "detail": "Ledger entry seq 39 (TC-26) refs git:989fd7ef, not the fix-1 head 00b46b84 given in the task table. Both are real commits on the branch: 989fd7ef is the P1 edge-backfill fix commit itself, 00b46b84 is the fix-1 round head. The ledger ref is MORE precise, not wrong. Ledger left untouched; the board's §11.1 table records fix-1 as 00b46b84 'via 989fd7ef'."
+    },
+    {
+      "severity": "worth-the-Steward's-attention",
+      "item": "scripts/agent-lint-md.sh is VACUOUSLY GREEN in this worktree",
+      "detail": "It exited 0 silently ONLY because node_modules/.bin/markdownlint-cli2 is absent in a linked worktree, so the structural lint self-skips. I re-ran the real linter via `npx --yes markdownlint-cli2` (real exit 1): the ONLY 9 issues are pre-existing MD025/MD001 in dev/research/personal-agent-database-market-2026-07-02.md, untouched by this branch since c366d6e0 (2026-07-02). CHANGELOG.md lints CLEAN. The STATUS board is inside the config's `dev/plans/runs/**` ignore, so it is not linted at all. Two separate observations for the Steward: (a) the md gate self-skips to green from any worktree, same vacuous-green class as TC-13/TC-25; (b) if the main tree HAS node_modules, agent-lint-md.sh is presently RED there on that pre-existing research file, independent of 0.8.20."
+    }
+  ],
+  "gates": {
+    "note": "No code gate was re-run by this docs task — nothing under src/ changed. The gate results recorded in board §11.3 are the orchestrator's own re-verification on 8e09b950, transcribed verbatim, not re-measured here.",
+    "markdownlint_on_touched_files": "CHANGELOG.md clean (npx markdownlint-cli2, real exit 1 overall but zero issues attributable to this commit; see discrepancies). STATUS board is in an ignored path.",
+    "pre_commit_hook": "md-safe-fix ran on staged .md; commit succeeded.",
+    "working_tree_after_commit": "CLEAN — `git status --porcelain` produced no output."
+  },
+  "prohibitions_observed": [
+    "No file under src/ modified — verified empty `git diff HEAD~1 HEAD -- src/`.",
+    "Ledger committed as-is; not hand-edited.",
+    "'HITL-SIGNED' NOT written for AC-079 anywhere; it is recorded as AWAITING HITL SIGN-OFF, NOT SIGNED.",
+    "No git push. No touch of /home/coreyt/projects/fathomdb.",
+    "eu7_real_corpus_ac NOT run. Python test suite NOT run (TC-27).",
+    "No `git stash -u`, no `git clean`, no `git checkout --`. All eleven untracked artifacts survived and are committed.",
+    "No worktree created, moved or removed. No agent spawned."
+  ],
+  "blockers_and_follow_ups": {
+    "blocks_land": [
+      "TC-22 — main-tree Python X1 is OWED. 5c's SourceId is BREAKING and broke ~50 Python fixtures verified only statically. Per the 0.8.19 lesson this is a landing blocker, not a follow-up."
+    ],
+    "blocks_publish": [
+      "AC-079 governed-surface sign-off — the allowlist delta is a PROPOSAL. Nothing may be published until the HITL signs."
+    ],
+    "decisions_owed": [
+      "TC-26 — design-text correction for the node/edge backfill asymmetry (plan-0.8.20.md:197 + v4/v5 prose).",
+      "TC-20 — eu7 no-run prohibition is unenforceable; the guard's SHAPE needs a decision (a naive #[ignore] creates the opposite vacuous-green hazard at Slice 40).",
+      "TC-27 — conftest guard so `maturin develop` cannot fire autonomously from a linked worktree.",
+      "TC-28 — make the pending-redaction queue's invariant structural rather than call-site-upheld."
+    ],
+    "logged_no_decision_needed": [
+      "TC-21 pre-existing pr_g10_reranker_ce compile break under --features default-reranker",
+      "TC-23 untracked closure artifacts are destructible by routine git hygiene",
+      "TC-25 sdk_only_erasure needs an explicit non-operator CI invocation",
+      "TC-29 run_rebuild freeze-before-drain residual + a flaky operator_cli lock test"
+    ]
+  },
+  "next_step_for_orchestrator": "Land orch-0.8.20-s5 (now @ 3a246dbb) via the Steward, gated on the owed main-tree Python X1 (TC-22). Then carry the six §4 HITL items. Do not publish before AC-079 is signed."
+}
