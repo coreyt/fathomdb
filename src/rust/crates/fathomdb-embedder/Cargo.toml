@@ -29,7 +29,7 @@ thiserror = { version = "1", optional = true }
 candle-core         = { version = "0.10", optional = true }
 candle-nn           = { version = "0.10", optional = true }
 candle-transformers = { version = "0.10", optional = true, default-features = false }
-tokenizers          = { version = "0.20", optional = true, default-features = false, features = ["onig"] }
+tokenizers          = { version = "0.22", optional = true, default-features = false, features = ["onig"] }
 
 # 0.8.16 Slice 10 (ADR-0.8.16-onnx-embedder-backend §2) — cross-vendor ONNX
 # Runtime backend for `OrtBgeEmbedder` (mod ort_bge), a caller-supplied
